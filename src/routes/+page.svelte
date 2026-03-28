@@ -1,6 +1,8 @@
 <script lang="ts">
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
+	import SearchStepComponent from '$lib/components/SearchStep.svelte';
+	import SourceChip from '$lib/components/SourceChip.svelte';
 	import { renderMarkdown } from '$lib/markdown';
 	import {
 		getConversations,
@@ -9,6 +11,8 @@
 		getIsGenerating,
 		getStreamingContent,
 		getErrorMessage,
+		getSearchSteps,
+		getSourceUrls,
 		createConversation,
 		setActiveConversation,
 		deleteConversation,
@@ -30,6 +34,8 @@
 	const isGenerating = $derived(getIsGenerating());
 	const streamingContent = $derived(getStreamingContent());
 	const errorMessage = $derived(getErrorMessage());
+	const searchSteps = $derived(getSearchSteps());
+	const sourceUrls = $derived(getSourceUrls());
 	const serverState = $derived(getServerState());
 
 	const serverReady = $derived(serverState.status === 'ready');
@@ -154,6 +160,10 @@
 					{/if}
 				{/each}
 
+				{#if searchSteps.length > 0}
+					<SearchStepComponent steps={searchSteps} />
+				{/if}
+
 				{#if isGenerating && streamingContent}
 					<div class="message" data-role="assistant">
 						<div class="message-label">Haruspex</div>
@@ -164,6 +174,10 @@
 					</div>
 				{:else if isGenerating}
 					<ThinkingIndicator />
+				{/if}
+
+				{#if sourceUrls.length > 0 && !isGenerating}
+					<SourceChip urls={sourceUrls} />
 				{/if}
 
 				{#if errorMessage}

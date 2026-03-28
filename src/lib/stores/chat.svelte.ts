@@ -1,10 +1,15 @@
-import { chatCompletionStream, type ChatMessage, ApiError } from '$lib/api';
+import { type ChatMessage, ApiError } from '$lib/api';
+import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 
 const SYSTEM_PROMPT: ChatMessage = {
 	role: 'system',
 	content: `You are Haruspex, a helpful AI assistant running locally on the user's computer.
 You are private — nothing the user says leaves their device.
-Be concise, accurate, and helpful. If you don't know something, say so.`
+Be concise, accurate, and helpful. If you don't know something, say so.
+When you use web_search, you will receive a list of search results with titles, URLs, and snippets.
+If you need more detail, use fetch_url on the most relevant 2-3 results.
+Always cite your sources by mentioning the website name.
+Never fabricate URLs or sources.`
 };
 
 export interface Conversation {
@@ -20,6 +25,8 @@ let activeConversationId = $state<string | null>(null);
 let isGenerating = $state(false);
 let streamingContent = $state('');
 let errorMessage = $state<string | null>(null);
+let searchSteps = $state<SearchStep[]>([]);
+let sourceUrls = $state<string[]>([]);
 
 let abortController: AbortController | null = null;
 
@@ -53,6 +60,14 @@ export function getStreamingContent(): string {
 
 export function getErrorMessage(): string | null {
 	return errorMessage;
+}
+
+export function getSearchSteps(): SearchStep[] {
+	return searchSteps;
+}
+
+export function getSourceUrls(): string[] {
+	return sourceUrls;
 }
 
 export function createConversation(): string {
@@ -99,10 +114,28 @@ export function cancelGeneration(): void {
 	isGenerating = false;
 }
 
+function extractUrlsFromSteps(steps: SearchStep[]): string[] {
+	const urls: string[] = [];
+	for (const step of steps) {
+		if (step.toolName === 'web_search' && step.result) {
+			try {
+				const results = JSON.parse(step.result);
+				if (Array.isArray(results)) {
+					for (const r of results) {
+						if (r.url) urls.push(r.url);
+					}
+				}
+			} catch {
+				// ignore
+			}
+		}
+	}
+	return [...new Set(urls)];
+}
+
 export async function sendMessage(content: string): Promise<void> {
 	if (!content.trim() || isGenerating) return;
 
-	// Ensure we have an active conversation
 	if (!activeConversationId) {
 		createConversation();
 	}
@@ -110,44 +143,71 @@ export async function sendMessage(content: string): Promise<void> {
 	const conversation = getActiveConversation();
 	if (!conversation) return;
 
-	// Update title from first user message
 	if (conversation.messages.length === 0) {
 		conversation.title = generateTitle(content);
 	}
 
-	// Add user message
 	const userMessage: ChatMessage = { role: 'user', content: content.trim() };
 	conversation.messages.push(userMessage);
 	conversation.updatedAt = Date.now();
 
-	// Start generation
 	isGenerating = true;
 	streamingContent = '';
 	errorMessage = null;
+	searchSteps = [];
+	sourceUrls = [];
 	abortController = new AbortController();
 
 	try {
-		// Build messages array with system prompt
 		const messagesForApi: ChatMessage[] = [SYSTEM_PROMPT, ...conversation.messages];
 
-		const stream = chatCompletionStream({ messages: messagesForApi }, abortController.signal);
-
-		for await (const chunk of stream) {
-			if (chunk.delta.content) {
-				streamingContent += chunk.delta.content;
+		await runAgentLoop({
+			messages: messagesForApi,
+			signal: abortController.signal,
+			onToolStart: (call) => {
+				const query =
+					call.name === 'web_search'
+						? (call.arguments.query as string)
+						: (call.arguments.url as string);
+				searchSteps = [
+					...searchSteps,
+					{
+						id: call.id,
+						toolName: call.name,
+						query,
+						status: 'running'
+					}
+				];
+			},
+			onToolEnd: (call, result) => {
+				searchSteps = searchSteps.map((s) =>
+					s.id === call.id ? { ...s, status: 'done' as const, result } : s
+				);
+			},
+			onStreamChunk: (chunk) => {
+				if (chunk.delta.content) {
+					streamingContent += chunk.delta.content;
+				}
+			},
+			onComplete: () => {
+				const finalContent = streamingContent;
+				if (finalContent) {
+					conversation.messages.push({ role: 'assistant', content: finalContent });
+				} else {
+					errorMessage = 'Model returned an empty response. Try rephrasing.';
+				}
+				sourceUrls = extractUrlsFromSteps(searchSteps);
+			},
+			onError: (error) => {
+				if (error instanceof ApiError) {
+					errorMessage = error.message;
+				} else {
+					errorMessage = 'An unexpected error occurred.';
+				}
 			}
-		}
-
-		// Finalize: add assistant message
-		const finalContent = streamingContent;
-		if (finalContent) {
-			conversation.messages.push({ role: 'assistant', content: finalContent });
-		} else {
-			errorMessage = 'Model returned an empty response. Try rephrasing.';
-		}
+		});
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'AbortError') {
-			// User cancelled — save partial content if any
 			if (streamingContent) {
 				conversation.messages.push({
 					role: 'assistant',

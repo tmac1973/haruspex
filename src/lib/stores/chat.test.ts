@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the api module
+// Mock the agent loop module
+vi.mock('$lib/agent/loop', () => ({
+	runAgentLoop: vi.fn()
+}));
+
+// Mock the api module (for ApiError)
 vi.mock('$lib/api', () => ({
-	chatCompletionStream: vi.fn(),
 	ApiError: class ApiError extends Error {
 		statusCode?: number;
 		constructor(message: string, statusCode?: number) {
@@ -82,12 +86,13 @@ describe('chat store', () => {
 	});
 
 	it('sendMessage creates conversation if none active', async () => {
-		const { chatCompletionStream } = await import('$lib/api');
-		vi.mocked(chatCompletionStream).mockReturnValue(
-			(async function* () {
-				yield { delta: { content: 'Hi!' }, finish_reason: null };
-			})()
-		);
+		const { runAgentLoop } = await import('$lib/agent/loop');
+
+		// Mock runAgentLoop to simulate a simple response
+		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
+			options.onStreamChunk({ delta: { content: 'Hi!' }, finish_reason: null });
+			options.onComplete();
+		});
 
 		const { sendMessage, getConversations, getActiveConversation } =
 			await import('$lib/stores/chat.svelte');
@@ -105,12 +110,12 @@ describe('chat store', () => {
 	});
 
 	it('sendMessage sets title from first user message', async () => {
-		const { chatCompletionStream } = await import('$lib/api');
-		vi.mocked(chatCompletionStream).mockReturnValue(
-			(async function* () {
-				yield { delta: { content: 'response' }, finish_reason: null };
-			})()
-		);
+		const { runAgentLoop } = await import('$lib/agent/loop');
+
+		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
+			options.onStreamChunk({ delta: { content: 'response' }, finish_reason: null });
+			options.onComplete();
+		});
 
 		const { sendMessage, getActiveConversation } = await import('$lib/stores/chat.svelte');
 
@@ -128,32 +133,33 @@ describe('chat store', () => {
 		expect(getConversations()).toHaveLength(0);
 	});
 
-	it('cancelGeneration stops and saves partial content', async () => {
-		const { chatCompletionStream } = await import('$lib/api');
+	it('sendMessage tracks search steps from tool calls', async () => {
+		const { runAgentLoop } = await import('$lib/agent/loop');
 
-		// Create a stream that will be aborted
-		vi.mocked(chatCompletionStream).mockImplementation((_opts, signal) => {
-			return (async function* () {
-				yield { delta: { content: 'partial ' }, finish_reason: null };
-				// Simulate waiting then abort
-				if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-				yield { delta: { content: 'content' }, finish_reason: null };
-			})();
+		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
+			options.onToolStart({
+				id: 'call_1',
+				name: 'web_search',
+				arguments: { query: 'test query' }
+			});
+			options.onToolEnd(
+				{ id: 'call_1', name: 'web_search', arguments: { query: 'test query' } },
+				JSON.stringify([{ title: 'Result', url: 'https://example.com', snippet: 'text' }])
+			);
+			options.onStreamChunk({ delta: { content: 'Answer based on search' }, finish_reason: null });
+			options.onComplete();
 		});
 
-		const { sendMessage, getActiveConversation, createConversation } =
-			await import('$lib/stores/chat.svelte');
+		const { sendMessage, getSearchSteps, getSourceUrls } = await import('$lib/stores/chat.svelte');
 
-		createConversation();
+		await sendMessage('Search for something');
 
-		// sendMessage is async, and we need to cancel during it
-		// Since our mock yields immediately, the stream will complete before we can cancel
-		// This tests the basic flow
-		await sendMessage('Test');
+		const steps = getSearchSteps();
+		expect(steps).toHaveLength(1);
+		expect(steps[0].toolName).toBe('web_search');
+		expect(steps[0].status).toBe('done');
 
-		const conv = getActiveConversation();
-		expect(conv).toBeDefined();
-		// Should have user + assistant messages
-		expect(conv!.messages.length).toBeGreaterThanOrEqual(2);
+		const urls = getSourceUrls();
+		expect(urls).toContain('https://example.com');
 	});
 });
