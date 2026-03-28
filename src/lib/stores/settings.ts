@@ -6,13 +6,15 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 export interface AppSettings {
 	responseFormat: ResponseFormat;
 	theme: ThemeMode;
+	ttsVoice: string;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
 
 const defaults: AppSettings = {
 	responseFormat: 'standard',
-	theme: 'system'
+	theme: 'system',
+	ttsVoice: 'af_heart'
 };
 
 function load(): AppSettings {

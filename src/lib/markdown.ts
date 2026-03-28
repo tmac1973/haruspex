@@ -64,6 +64,38 @@ function convertThinkingBlocks(text: string): string {
 	});
 }
 
+export function stripMarkdown(text: string): string {
+	let cleaned = convertThinkingBlocks(text);
+	// Remove thinking blocks entirely for TTS
+	cleaned = cleaned.replace(/<details[\s\S]*?<\/details>/g, '');
+	// Remove code blocks
+	cleaned = cleaned.replace(/```[\s\S]*?```/g, '');
+	// Remove inline code
+	cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
+	// Remove headings markers
+	cleaned = cleaned.replace(/^#{1,6}\s+/gm, '');
+	// Remove bold/italic markers
+	cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1');
+	cleaned = cleaned.replace(/\*([^*]+)\*/g, '$1');
+	cleaned = cleaned.replace(/__([^_]+)__/g, '$1');
+	cleaned = cleaned.replace(/_([^_]+)_/g, '$1');
+	// Remove links — keep text
+	cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+	// Remove images
+	cleaned = cleaned.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
+	// Remove horizontal rules
+	cleaned = cleaned.replace(/^[-*_]{3,}$/gm, '');
+	// Remove bullet/list markers
+	cleaned = cleaned.replace(/^[\s]*[-*+]\s+/gm, '');
+	cleaned = cleaned.replace(/^[\s]*\d+\.\s+/gm, '');
+	// Remove table formatting
+	cleaned = cleaned.replace(/\|/g, ' ');
+	cleaned = cleaned.replace(/^[\s]*[-:]+[\s]*$/gm, '');
+	// Collapse whitespace
+	cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+	return cleaned.trim();
+}
+
 export function renderMarkdown(text: string): string {
 	const withThinking = convertThinkingBlocks(text);
 	return marked.parse(withThinking) as string;

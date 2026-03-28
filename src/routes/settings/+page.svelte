@@ -58,6 +58,26 @@
 	}
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);
+	let ttsVoice = $state(getSettings().ttsVoice);
+
+	const voiceOptions = [
+		{ id: 'af_heart', name: 'Heart (Female)' },
+		{ id: 'af_sky', name: 'Sky (Female)' },
+		{ id: 'af_nicole', name: 'Nicole (Female)' },
+		{ id: 'af_bella', name: 'Bella (Female)' },
+		{ id: 'af_sarah', name: 'Sarah (Female)' },
+		{ id: 'am_adam', name: 'Adam (Male)' },
+		{ id: 'am_michael', name: 'Michael (Male)' },
+		{ id: 'bf_emma', name: 'Emma (British Female)' },
+		{ id: 'bf_isabella', name: 'Isabella (British Female)' },
+		{ id: 'bm_george', name: 'George (British Male)' },
+		{ id: 'bm_lewis', name: 'Lewis (British Male)' }
+	];
+
+	function setTtsVoice(voice: string) {
+		ttsVoice = voice;
+		updateSettings({ ttsVoice: voice });
+	}
 
 	function setResponseFormat(format: ResponseFormat) {
 		responseFormat = format;
@@ -240,6 +260,23 @@
 				</button>
 			{/each}
 		</div>
+	</section>
+
+	<section>
+		<h2>Voice</h2>
+		<div class="voice-select">
+			<label for="tts-voice">Text-to-speech voice:</label>
+			<select
+				id="tts-voice"
+				value={ttsVoice}
+				onchange={(e) => setTtsVoice((e.target as HTMLSelectElement).value)}
+			>
+				{#each voiceOptions as voice (voice.id)}
+					<option value={voice.id}>{voice.name}</option>
+				{/each}
+			</select>
+		</div>
+		<p class="hint">Click the speaker icon on any assistant message to hear it read aloud.</p>
 	</section>
 
 	<section>
@@ -518,6 +555,33 @@
 		border: 1px solid var(--error-border);
 		border-radius: 6px;
 		font-size: 0.85rem;
+	}
+
+	.voice-select {
+		margin-bottom: 8px;
+	}
+
+	.voice-select label {
+		display: block;
+		font-size: 0.85rem;
+		font-weight: 500;
+		margin-bottom: 6px;
+	}
+
+	.voice-select select {
+		width: 100%;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		font-size: 0.9rem;
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
+		color-scheme: light dark;
+	}
+
+	.voice-select select option {
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
 	}
 
 	.theme-options {
