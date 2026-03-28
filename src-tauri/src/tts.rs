@@ -275,10 +275,10 @@ impl TtsEngine {
             return Err("TTS produced no audio".to_string());
         }
 
-        // PCM format: 32-bit float, mono, 24kHz
+        // PCM format from koko: 16-bit signed integer, mono, 24kHz
         let samples: Vec<f32> = audio_bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 32768.0)
             .collect();
 
         info!(
