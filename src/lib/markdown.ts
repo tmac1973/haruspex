@@ -88,11 +88,19 @@ export function stripMarkdown(text: string): string {
 	// Remove bullet/list markers
 	cleaned = cleaned.replace(/^[\s]*[-*+]\s+/gm, '');
 	cleaned = cleaned.replace(/^[\s]*\d+\.\s+/gm, '');
-	// Remove table formatting
-	cleaned = cleaned.replace(/\|/g, ' ');
-	cleaned = cleaned.replace(/^[\s]*[-:]+[\s]*$/gm, '');
+	// Remove entire table separator rows (lines of dashes/colons/pipes)
+	cleaned = cleaned.replace(/^[\s|:-]+$/gm, '');
+	// Remove pipe characters from table cells
+	cleaned = cleaned.replace(/\|/g, ', ');
+	// Clean up resulting double commas and leading commas
+	cleaned = cleaned.replace(/,\s*,/g, ',');
+	cleaned = cleaned.replace(/^\s*,\s*/gm, '');
+	cleaned = cleaned.replace(/,\s*$/gm, '');
+	// Remove URLs in parentheses that might remain
+	cleaned = cleaned.replace(/https?:\/\/\S+/g, '');
 	// Collapse whitespace
 	cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+	cleaned = cleaned.replace(/  +/g, ' ');
 	return cleaned.trim();
 }
 
