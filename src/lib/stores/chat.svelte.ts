@@ -1,5 +1,6 @@
 import { type ChatMessage, ApiError } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
+import { getResponseFormatPrompt } from '$lib/stores/settings';
 
 function buildSystemPrompt(): ChatMessage {
 	const today = new Date().toLocaleDateString('en-US', {
@@ -23,7 +24,9 @@ IMPORTANT RULES FOR TOOL USE:
 - When you do search, use web_search with a concise, specific query. Then optionally use fetch_url on the 1-3 most relevant results for more detail.
 - Always cite sources by mentioning the website name. Never fabricate URLs.
 
-Be concise, accurate, and helpful. If you don't know something and it's a factual question, search for it. Otherwise, just say you don't know.`
+Be concise, accurate, and helpful. If you don't know something and it's a factual question, search for it. Otherwise, just say you don't know.
+
+${getResponseFormatPrompt()}`
 	};
 }
 

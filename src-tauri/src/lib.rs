@@ -38,6 +38,7 @@ pub fn run() {
             models::get_models_dir,
             models::has_any_model,
             models::get_active_model_path,
+            models::delete_model,
             proxy::proxy_search,
             proxy::proxy_fetch,
         ])
