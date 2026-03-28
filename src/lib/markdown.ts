@@ -64,43 +64,29 @@ function convertThinkingBlocks(text: string): string {
 	});
 }
 
-export function stripMarkdown(text: string): string {
-	let cleaned = convertThinkingBlocks(text);
-	// Remove thinking blocks entirely for TTS
-	cleaned = cleaned.replace(/<details[\s\S]*?<\/details>/g, '');
-	// Remove code blocks
-	cleaned = cleaned.replace(/```[\s\S]*?```/g, '');
-	// Remove inline code
-	cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
-	// Remove headings markers
-	cleaned = cleaned.replace(/^#{1,6}\s+/gm, '');
-	// Remove bold/italic markers
-	cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1');
-	cleaned = cleaned.replace(/\*([^*]+)\*/g, '$1');
-	cleaned = cleaned.replace(/__([^_]+)__/g, '$1');
-	cleaned = cleaned.replace(/_([^_]+)_/g, '$1');
-	// Remove links — keep text
-	cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-	// Remove images
-	cleaned = cleaned.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
-	// Remove horizontal rules
-	cleaned = cleaned.replace(/^[-*_]{3,}$/gm, '');
-	// Remove bullet/list markers
-	cleaned = cleaned.replace(/^[\s]*[-*+]\s+/gm, '');
-	cleaned = cleaned.replace(/^[\s]*\d+\.\s+/gm, '');
-	// Remove entire table separator rows (lines of dashes/colons/pipes)
-	cleaned = cleaned.replace(/^[\s|:-]+$/gm, '');
-	// Remove pipe characters from table cells
-	cleaned = cleaned.replace(/\|/g, ', ');
-	// Clean up resulting double commas and leading commas
-	cleaned = cleaned.replace(/,\s*,/g, ',');
-	cleaned = cleaned.replace(/^\s*,\s*/gm, '');
-	cleaned = cleaned.replace(/,\s*$/gm, '');
-	// Remove URLs in parentheses that might remain
+export function stripMarkdownForTTS(text: string): string {
+	// Render to HTML first, then extract text — this produces clean,
+	// naturally structured text without regex artifacts that confuse TTS
+	const html = marked.parse(convertThinkingBlocks(text)) as string;
+
+	// Remove thinking blocks
+	let cleaned = html.replace(/<details[\s\S]*?<\/details>/g, '');
+	// Remove code blocks entirely (don't read code aloud)
+	cleaned = cleaned.replace(/<div class="code-block">[\s\S]*?<\/div>\s*<\/div>/g, '');
+	cleaned = cleaned.replace(/<pre[\s\S]*?<\/pre>/g, '');
+	// Remove all HTML tags, keeping text content
+	cleaned = cleaned.replace(/<[^>]+>/g, ' ');
+	// Decode HTML entities
+	cleaned = cleaned.replace(/&amp;/g, '&');
+	cleaned = cleaned.replace(/&lt;/g, '<');
+	cleaned = cleaned.replace(/&gt;/g, '>');
+	cleaned = cleaned.replace(/&quot;/g, '"');
+	cleaned = cleaned.replace(/&#39;/g, "'");
+	cleaned = cleaned.replace(/&nbsp;/g, ' ');
+	// Remove URLs
 	cleaned = cleaned.replace(/https?:\/\/\S+/g, '');
 	// Collapse whitespace
-	cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
-	cleaned = cleaned.replace(/  +/g, ' ');
+	cleaned = cleaned.replace(/\s+/g, ' ');
 	return cleaned.trim();
 }
 

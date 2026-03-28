@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderMarkdown } from '$lib/markdown';
+import { renderMarkdown, stripMarkdownForTTS } from '$lib/markdown';
 
 describe('renderMarkdown', () => {
 	it('renders paragraphs', () => {
@@ -76,5 +76,24 @@ describe('renderMarkdown', () => {
 		const result = renderMarkdown('<think></think>\n\nJust the answer.');
 		expect(result).not.toContain('thinking-block');
 		expect(result).toContain('Just the answer');
+	});
+
+	it('stripMarkdownForTTS produces clean text', () => {
+		const md = '## Title\n\n**Bold text** and *italic*.\n\n- Item one\n- Item two';
+		const result = stripMarkdownForTTS(md);
+		expect(result).toContain('Title');
+		expect(result).toContain('Bold text');
+		expect(result).toContain('italic');
+		expect(result).not.toContain('**');
+		expect(result).not.toContain('##');
+		expect(result).not.toContain('<');
+	});
+
+	it('stripMarkdownForTTS removes code blocks', () => {
+		const md = 'Before code\n\n```js\nconst x = 1;\n```\n\nAfter code';
+		const result = stripMarkdownForTTS(md);
+		expect(result).toContain('Before code');
+		expect(result).toContain('After code');
+		expect(result).not.toContain('const x');
 	});
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { renderMarkdown, stripMarkdown } from '$lib/markdown';
+	import { renderMarkdown, stripMarkdownForTTS } from '$lib/markdown';
 	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
 	import type { ChatMessage } from '$lib/api';
 
@@ -11,7 +11,7 @@
 	let { message, isStreaming = false }: Props = $props();
 
 	let renderedContent = $derived(message.content ? renderMarkdown(message.content) : '');
-	let plainText = $derived(message.content ? stripMarkdown(message.content) : '');
+	let plainText = $derived(message.content ? stripMarkdownForTTS(message.content) : '');
 </script>
 
 <div class="message" data-role={message.role}>
