@@ -6,6 +6,16 @@
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/llama-server",
+          "sidecar": true
+        }
+      ]
+    },
+    "shell:allow-kill"
   ]
 }

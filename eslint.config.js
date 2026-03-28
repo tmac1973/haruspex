@@ -21,6 +21,10 @@ export default ts.config(
 			parserOptions: {
 				parser: ts.parser
 			}
+		},
+		rules: {
+			// $state() runes require `let` even though the variable is never reassigned
+			'prefer-const': 'off'
 		}
 	},
 	{
