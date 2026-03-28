@@ -65,13 +65,17 @@
 		{ id: 'af_sky', name: 'Sky (Female)' },
 		{ id: 'af_nicole', name: 'Nicole (Female)' },
 		{ id: 'af_bella', name: 'Bella (Female)' },
+		{ id: 'af_nova', name: 'Nova (Female)' },
 		{ id: 'af_sarah', name: 'Sarah (Female)' },
+		{ id: 'af_alloy', name: 'Alloy (Female)' },
+		{ id: 'af_river', name: 'River (Female)' },
 		{ id: 'am_adam', name: 'Adam (Male)' },
 		{ id: 'am_michael', name: 'Michael (Male)' },
-		{ id: 'bf_emma', name: 'Emma (British Female)' },
-		{ id: 'bf_isabella', name: 'Isabella (British Female)' },
-		{ id: 'bm_george', name: 'George (British Male)' },
-		{ id: 'bm_lewis', name: 'Lewis (British Male)' }
+		{ id: 'am_echo', name: 'Echo (Male)' },
+		{ id: 'am_eric', name: 'Eric (Male)' },
+		{ id: 'am_liam', name: 'Liam (Male)' },
+		{ id: 'ef_dora', name: 'Dora (European Female)' },
+		{ id: 'em_alex', name: 'Alex (European Male)' }
 	];
 
 	function setTtsVoice(voice: string) {
