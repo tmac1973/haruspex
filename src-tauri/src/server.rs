@@ -159,26 +159,21 @@ impl LlamaServer {
     }
 
     fn get_sidecar_dir(app: &AppHandle) -> Option<String> {
-        // llama-server discovers its backends (libggml-*.so) via /proc/self/exe
-        // and loads them from the same directory as the binary.
-        // We also need LD_LIBRARY_PATH for the shared libs (libllama.so, etc.)
-        let resource_dir = app.path().resource_dir().ok()?;
-        let binaries_dir = resource_dir.join("binaries");
-        if binaries_dir.exists() {
-            return Some(binaries_dir.to_string_lossy().to_string());
-        }
+        // llama-server discovers its backends (libggml-*.so) via /proc/self/exe.
+        // In dev mode, Tauri copies the sidecar to target/debug/llama-server,
+        // so the .so files need to be there too (symlinked by scripts/link-sidecar-libs.sh).
+        // In production, they'll be in the resource dir alongside the binary.
 
-        // Fallback: check relative to the executable
+        // First: check the executable's own directory (works for both dev and prod)
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
-                let binaries = exe_dir.join("binaries");
-                if binaries.exists() {
-                    return Some(binaries.to_string_lossy().to_string());
-                }
+                return Some(exe_dir.to_string_lossy().to_string());
             }
         }
 
-        None
+        // Fallback: resource dir
+        let resource_dir = app.path().resource_dir().ok()?;
+        Some(resource_dir.to_string_lossy().to_string())
     }
 
     async fn spawn_and_monitor(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
