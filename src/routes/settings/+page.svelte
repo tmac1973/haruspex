@@ -100,6 +100,14 @@
 		await startServer(path);
 	}
 
+	async function restartServer() {
+		const modelPath = await invoke<string | null>('get_active_model_path');
+		if (modelPath) {
+			await stopServer();
+			await startServer(modelPath);
+		}
+	}
+
 	async function cancelDownload() {
 		await invoke('cancel_download');
 		downloading = null;
@@ -237,6 +245,18 @@
 		<div class="info-row">
 			<span>Port</span>
 			<span>8765</span>
+		</div>
+		<div class="server-actions">
+			{#if serverState.status === 'ready' || serverState.status === 'error'}
+				<button class="btn btn-primary" onclick={restartServer}>Restart Server</button>
+			{:else if serverState.status === 'stopped'}
+				<button class="btn btn-primary" onclick={restartServer}>Start Server</button>
+			{:else}
+				<button class="btn" disabled>Starting...</button>
+			{/if}
+			{#if serverState.status === 'ready' || serverState.status === 'starting'}
+				<button class="btn btn-danger" onclick={() => stopServer()}>Stop Server</button>
+			{/if}
 		</div>
 	</section>
 </div>
@@ -478,6 +498,12 @@
 		font-size: 0.8rem;
 		color: var(--text-secondary);
 		margin-top: 2px;
+	}
+
+	.server-actions {
+		display: flex;
+		gap: 8px;
+		margin-top: 12px;
 	}
 
 	.info-row {
