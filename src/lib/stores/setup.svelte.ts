@@ -36,6 +36,7 @@ let downloadProgress = $state<DownloadProgress | null>(null);
 let downloadError = $state<string | null>(null);
 let testResult = $state<TestResult>('pending');
 let testResponse = $state('');
+let testStatusMessage = $state('');
 let models = $state<ModelInfo[]>([]);
 
 export function getStep(): SetupStep {
@@ -58,6 +59,9 @@ export function getTestResult(): TestResult {
 }
 export function getTestResponse(): string {
 	return testResponse;
+}
+export function getTestStatusMessage(): string {
+	return testStatusMessage;
 }
 export function getModels(): ModelInfo[] {
 	return models;
@@ -126,38 +130,51 @@ export async function importModel(path: string): Promise<boolean> {
 export async function runTestQuery(): Promise<void> {
 	testResult = 'running';
 	testResponse = '';
+	testStatusMessage = 'Looking for model...';
 
 	try {
-		// Get the model path and start the server
 		const modelPath = await invoke<string | null>('get_active_model_path');
 		if (!modelPath) {
+			testStatusMessage = 'No model found.';
 			testResult = 'error';
 			return;
 		}
 
+		testStatusMessage = 'Starting the AI model (this may take a minute)...';
 		await invoke('start_server', { modelPath });
 
-		// Wait for server to be ready (poll status)
+		// Poll for ready status with visible countdown
 		let ready = false;
 		for (let i = 0; i < 120; i++) {
 			await new Promise((r) => setTimeout(r, 500));
-			const status = await invoke<{ type: string }>('get_server_status');
+			const status = await invoke<{ type: string; message?: string }>('get_server_status');
+
 			if (status.type === 'Ready') {
 				ready = true;
 				break;
 			}
 			if (status.type === 'Error') {
+				testStatusMessage = `Server error: ${status.message || 'unknown'}`;
 				testResult = 'error';
 				return;
 			}
+
+			// Update message with elapsed time
+			const elapsed = Math.floor((i + 1) / 2);
+			testStatusMessage = `Loading model... (${elapsed}s)`;
 		}
 
 		if (!ready) {
+			testStatusMessage = 'Server took too long to start.';
 			testResult = 'error';
 			return;
 		}
 
-		// Send test message
+		testStatusMessage = 'Model loaded! Sending test message...';
+
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), 30000);
+
 		const response = await fetch('http://127.0.0.1:8765/v1/chat/completions', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -171,10 +188,14 @@ export async function runTestQuery(): Promise<void> {
 				],
 				stream: false,
 				max_tokens: 100
-			})
+			}),
+			signal: controller.signal
 		});
 
+		clearTimeout(timeout);
+
 		if (!response.ok) {
+			testStatusMessage = `Server returned error ${response.status}`;
 			testResult = 'error';
 			return;
 		}
@@ -182,7 +203,11 @@ export async function runTestQuery(): Promise<void> {
 		const data = await response.json();
 		testResponse = data.choices?.[0]?.message?.content || '';
 		testResult = testResponse ? 'success' : 'error';
-	} catch {
+		if (!testResponse) {
+			testStatusMessage = 'Model returned an empty response.';
+		}
+	} catch (e) {
+		testStatusMessage = `Error: ${e instanceof Error ? e.message : String(e)}`;
 		testResult = 'error';
 	}
 }
@@ -195,4 +220,5 @@ export function resetSetup(): void {
 	downloadError = null;
 	testResult = 'pending';
 	testResponse = '';
+	testStatusMessage = '';
 }

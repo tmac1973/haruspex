@@ -9,6 +9,7 @@
 		getDownloadError,
 		getTestResult,
 		getTestResponse,
+		getTestStatusMessage,
 		getModels,
 		setStep,
 		setSelectedModel,
@@ -26,6 +27,7 @@
 	const downloadError = $derived(getDownloadError());
 	const testResult = $derived(getTestResult());
 	const testResponse = $derived(getTestResponse());
+	const testStatusMessage = $derived(getTestStatusMessage());
 	const models = $derived(getModels());
 
 	function formatBytes(bytes: number): string {
@@ -203,7 +205,7 @@
 		<div class="wizard-step">
 			<h1>Testing the model</h1>
 			{#if testResult === 'running'}
-				<p class="loading">Starting the AI model and running a test message...</p>
+				<p class="loading">{testStatusMessage}</p>
 				<div class="test-dots">
 					<span class="dot"></span>
 					<span class="dot"></span>
@@ -218,7 +220,9 @@
 				<button class="primary-btn" onclick={() => setStep('done')}>Continue</button>
 			{:else if testResult === 'error'}
 				<div class="error-box">
-					<p>Something went wrong with the test. The model may still work fine.</p>
+					<p>
+						{testStatusMessage || 'Something went wrong with the test.'} The model may still work fine.
+					</p>
 					<div class="actions">
 						<button class="primary-btn" onclick={goToTest}>Retry</button>
 						<button class="secondary-btn" onclick={() => setStep('done')}>Skip</button>
@@ -417,7 +421,13 @@
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		font-size: 0.9rem;
-		background: var(--bg-primary);
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
+		color-scheme: light dark;
+	}
+
+	.model-select select option {
+		background-color: var(--bg-primary);
 		color: var(--text-primary);
 	}
 
