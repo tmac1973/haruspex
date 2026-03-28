@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { getSettings } from '$lib/stores/settings';
 
 export interface SearchResult {
 	title: string;
@@ -8,7 +9,13 @@ export interface SearchResult {
 
 export async function executeWebSearch(query: string): Promise<string> {
 	try {
-		const results = await invoke<SearchResult[]>('proxy_search', { query });
+		const settings = getSettings();
+		const results = await invoke<SearchResult[]>('proxy_search', {
+			query,
+			provider: settings.searchProvider,
+			apiKey: settings.braveApiKey || null,
+			instanceUrl: settings.searxngUrl || null
+		});
 		return JSON.stringify(results);
 	} catch (e) {
 		return JSON.stringify({ error: `Search failed: ${e}` });

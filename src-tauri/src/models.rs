@@ -39,6 +39,7 @@ pub struct HardwareInfo {
     pub total_ram_mb: u64,
     pub available_ram_mb: u64,
     pub recommended_quant: String,
+    pub recommended_context_size: u32,
 }
 
 fn model_registry() -> Vec<ModelInfo> {
@@ -403,6 +404,18 @@ pub fn detect_hardware() -> HardwareInfo {
         "Qwen3.5-9B-Q6_K"
     };
 
+    // Context size recommendation based on available memory
+    // Qwen 3.5 9B Q4 uses ~5.7GB model + KV cache scales with context
+    let recommended_context_size = if available_ram_mb < 8192 {
+        16384 // 16K for tight VRAM
+    } else if available_ram_mb < 12288 {
+        32768 // 32K for 8-12GB
+    } else if available_ram_mb < 24576 {
+        65536 // 64K for 12-24GB
+    } else {
+        131072 // 128K for 24GB+
+    };
+
     HardwareInfo {
         gpu_available,
         gpu_name,
@@ -410,6 +423,7 @@ pub fn detect_hardware() -> HardwareInfo {
         total_ram_mb,
         available_ram_mb,
         recommended_quant: recommended_quant.to_string(),
+        recommended_context_size,
     }
 }
 

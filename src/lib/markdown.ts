@@ -94,12 +94,9 @@ export function stripMarkdownForTTS(text: string): string {
 	// Clean up double periods from our injected pauses
 	cleaned = cleaned.replace(/\.{2,}/g, '.');
 	cleaned = cleaned.replace(/\.\s*\./g, '.');
-	// Remove emojis and other unicode symbols
-	// eslint-disable-next-line no-misleading-character-class
-	cleaned = cleaned.replace(
-		/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FA9F}\u{200D}]/gu,
-		''
-	);
+	// Remove emojis and other unicode symbols (codepoints above basic multilingual plane)
+	cleaned = cleaned.replace(/\p{Emoji_Presentation}/gu, '');
+	cleaned = cleaned.replace(/\p{Extended_Pictographic}/gu, '');
 	// Collapse whitespace
 	cleaned = cleaned.replace(/\s+/g, ' ');
 	return cleaned.trim();

@@ -1,12 +1,17 @@
-// App settings — persisted to localStorage for now (Phase 7 will move to Tauri app data)
+// App settings — persisted to localStorage
 
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
 export type ThemeMode = 'system' | 'light' | 'dark';
+export type SearchProvider = 'duckduckgo' | 'brave' | 'searxng';
 
 export interface AppSettings {
 	responseFormat: ResponseFormat;
 	theme: ThemeMode;
 	ttsVoice: string;
+	searchProvider: SearchProvider;
+	braveApiKey: string;
+	searxngUrl: string;
+	contextSize: number;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -14,7 +19,11 @@ const SETTINGS_KEY = 'haruspex-settings';
 const defaults: AppSettings = {
 	responseFormat: 'standard',
 	theme: 'system',
-	ttsVoice: 'af_heart'
+	ttsVoice: 'af_heart',
+	searchProvider: 'duckduckgo',
+	braveApiKey: '',
+	searxngUrl: 'http://localhost:8080',
+	contextSize: 32768
 };
 
 function load(): AppSettings {
@@ -57,7 +66,6 @@ export function applyTheme(theme?: ThemeMode): void {
 	} else if (mode === 'dark') {
 		root.setAttribute('data-theme', 'dark');
 	}
-	// 'system' = no attribute, CSS media query handles it
 }
 
 export function getResponseFormatPrompt(): string {

@@ -345,12 +345,127 @@ fn extract_body_text(document: &Html) -> String {
     }
 }
 
+// Brave Search API
+
+async fn search_brave(query: &str, api_key: &str) -> Result<Vec<SearchResult>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(FETCH_TIMEOUT)
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let resp = client
+        .get("https://api.search.brave.com/res/v1/web/search")
+        .header("Accept", "application/json")
+        .header("Accept-Encoding", "gzip")
+        .header("X-Subscription-Token", api_key)
+        .query(&[("q", query), ("count", "8")])
+        .send()
+        .await
+        .map_err(|e| format!("Brave search failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Brave search error {}: {}", status, body));
+    }
+
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Brave response: {}", e))?;
+
+    let mut results = Vec::new();
+    if let Some(web_results) = data
+        .get("web")
+        .and_then(|w| w.get("results"))
+        .and_then(|r| r.as_array())
+    {
+        for item in web_results.iter().take(8) {
+            let title = item
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or_default();
+            let url = item.get("url").and_then(|u| u.as_str()).unwrap_or_default();
+            let snippet = item
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or_default();
+
+            if !title.is_empty() && !url.is_empty() {
+                results.push(SearchResult {
+                    title: title.to_string(),
+                    url: url.to_string(),
+                    snippet: snippet.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+// SearXNG instance search
+
+async fn search_searxng(query: &str, instance_url: &str) -> Result<Vec<SearchResult>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(FETCH_TIMEOUT)
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let url = format!("{}/search", instance_url.trim_end_matches('/'));
+
+    let resp = client
+        .get(&url)
+        .query(&[("q", query), ("format", "json"), ("categories", "general")])
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+        .map_err(|e| format!("SearXNG search failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("SearXNG error: {}", resp.status()));
+    }
+
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse SearXNG response: {}", e))?;
+
+    let mut results = Vec::new();
+    if let Some(items) = data.get("results").and_then(|r| r.as_array()) {
+        for item in items.iter().take(8) {
+            let title = item
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or_default();
+            let url = item.get("url").and_then(|u| u.as_str()).unwrap_or_default();
+            let snippet = item
+                .get("content")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default();
+
+            if !title.is_empty() && !url.is_empty() {
+                results.push(SearchResult {
+                    title: title.to_string(),
+                    url: url.to_string(),
+                    snippet: snippet.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 // Tauri commands
 
 #[tauri::command]
 pub async fn proxy_search(
     state: tauri::State<'_, ProxyState>,
     query: String,
+    provider: Option<String>,
+    api_key: Option<String>,
+    instance_url: Option<String>,
 ) -> Result<Vec<SearchResult>, String> {
     // Check cache
     if let Some(cached) = state.get_cached_search(&query) {
@@ -358,11 +473,28 @@ pub async fn proxy_search(
         return Ok(cached);
     }
 
-    // Rate limit
-    state.rate_limit();
+    let provider = provider.as_deref().unwrap_or("duckduckgo");
 
-    info!("Searching DDG for: {}", query);
-    let results = search_duckduckgo(&query).await?;
+    let results = match provider {
+        "brave" => {
+            let key = api_key.as_deref().unwrap_or("");
+            if key.is_empty() {
+                return Err("Brave Search API key not configured".to_string());
+            }
+            info!("Searching Brave for: {}", query);
+            search_brave(&query, key).await?
+        }
+        "searxng" => {
+            let url = instance_url.as_deref().unwrap_or("http://localhost:8080");
+            info!("Searching SearXNG ({}) for: {}", url, query);
+            search_searxng(&query, url).await?
+        }
+        _ => {
+            state.rate_limit();
+            info!("Searching DDG for: {}", query);
+            search_duckduckgo(&query).await?
+        }
+    };
 
     if results.is_empty() {
         warn!("No search results for: {}", query);

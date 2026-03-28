@@ -18,7 +18,10 @@ describe('executeTool', () => {
 		const { executeTool } = await import('$lib/agent/search');
 		const result = await executeTool('web_search', { query: 'test query' });
 
-		expect(invoke).toHaveBeenCalledWith('proxy_search', { query: 'test query' });
+		expect(invoke).toHaveBeenCalledWith(
+			'proxy_search',
+			expect.objectContaining({ query: 'test query' })
+		);
 		expect(JSON.parse(result)).toEqual(mockResults);
 	});
 

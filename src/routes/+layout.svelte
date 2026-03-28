@@ -3,7 +3,7 @@
 	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { initServerStore, startServer } from '$lib/stores/server.svelte';
-	import { applyTheme } from '$lib/stores/settings';
+	import { applyTheme, getSettings } from '$lib/stores/settings';
 	import { invoke } from '@tauri-apps/api/core';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -38,7 +38,7 @@
 				// Auto-start server with available model
 				const modelPath = await invoke<string | null>('get_active_model_path');
 				if (modelPath) {
-					startServer(modelPath);
+					startServer(modelPath, getSettings().contextSize);
 				}
 			}
 		} catch {

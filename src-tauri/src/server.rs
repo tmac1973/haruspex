@@ -509,8 +509,13 @@ pub async fn start_server(
     app: AppHandle,
     state: tauri::State<'_, LlamaServer>,
     model_path: String,
+    ctx_size: Option<u32>,
 ) -> Result<(), String> {
-    state.start(&app, &model_path, None).await
+    let config = ctx_size.map(|size| ServerConfig {
+        ctx_size: size,
+        ..Default::default()
+    });
+    state.start(&app, &model_path, config).await
 }
 
 #[tauri::command]

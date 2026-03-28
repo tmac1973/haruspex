@@ -26,9 +26,12 @@ describe('server store', () => {
 		const { startServer } = await import('$lib/stores/server.svelte');
 		await startServer('/path/to/model.gguf');
 
-		expect(mockInvoke).toHaveBeenCalledWith('start_server', {
-			modelPath: '/path/to/model.gguf'
-		});
+		expect(mockInvoke).toHaveBeenCalledWith(
+			'start_server',
+			expect.objectContaining({
+				modelPath: '/path/to/model.gguf'
+			})
+		);
 	});
 
 	it('invoke is called with correct command for stopServer', async () => {

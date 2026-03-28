@@ -9,7 +9,8 @@
 		updateSettings,
 		applyTheme,
 		type ResponseFormat,
-		type ThemeMode
+		type ThemeMode,
+		type SearchProvider
 	} from '$lib/stores/settings';
 
 	interface ModelInfo {
@@ -78,9 +79,32 @@
 		{ id: 'em_alex', name: 'Alex (European Male)' }
 	];
 
+	let searchProvider = $state<SearchProvider>(getSettings().searchProvider);
+	let braveApiKey = $state(getSettings().braveApiKey);
+	let searxngUrl = $state(getSettings().searxngUrl);
+	let contextSize = $state(getSettings().contextSize);
+
 	function setTtsVoice(voice: string) {
 		ttsVoice = voice;
 		updateSettings({ ttsVoice: voice });
+	}
+
+	function setSearchProvider(provider: SearchProvider) {
+		searchProvider = provider;
+		updateSettings({ searchProvider: provider });
+	}
+
+	function saveBraveKey() {
+		updateSettings({ braveApiKey: braveApiKey });
+	}
+
+	function saveSearxngUrl() {
+		updateSettings({ searxngUrl: searxngUrl });
+	}
+
+	function setContextSize(size: number) {
+		contextSize = size;
+		updateSettings({ contextSize: size });
 	}
 
 	function setResponseFormat(format: ResponseFormat) {
@@ -164,7 +188,7 @@
 		const modelPath = await invoke<string | null>('get_active_model_path');
 		if (modelPath) {
 			await stopServer();
-			await startServer(modelPath);
+			await startServer(modelPath, getSettings().contextSize);
 		}
 	}
 
@@ -326,6 +350,74 @@
 				</div>
 			</label>
 		</div>
+	</section>
+
+	<section>
+		<h2>Web Search</h2>
+		<div class="search-provider">
+			<label for="search-provider">Search provider:</label>
+			<select
+				id="search-provider"
+				value={searchProvider}
+				onchange={(e) => setSearchProvider((e.target as HTMLSelectElement).value as SearchProvider)}
+			>
+				<option value="duckduckgo">DuckDuckGo (no key needed)</option>
+				<option value="brave">Brave Search (API key required)</option>
+				<option value="searxng">SearXNG (self-hosted)</option>
+			</select>
+		</div>
+
+		{#if searchProvider === 'brave'}
+			<div class="search-field">
+				<label for="brave-key">Brave API Key:</label>
+				<input
+					id="brave-key"
+					type="password"
+					bind:value={braveApiKey}
+					onblur={saveBraveKey}
+					placeholder="BSA..."
+				/>
+				<p class="hint">Get a free key at brave.com/search/api (2,000 queries/month)</p>
+			</div>
+		{/if}
+
+		{#if searchProvider === 'searxng'}
+			<div class="search-field">
+				<label for="searxng-url">SearXNG Instance URL:</label>
+				<input
+					id="searxng-url"
+					type="text"
+					bind:value={searxngUrl}
+					onblur={saveSearxngUrl}
+					placeholder="http://localhost:8080"
+				/>
+			</div>
+		{/if}
+	</section>
+
+	<section>
+		<h2>Context Size</h2>
+		<p class="hint">
+			Larger context allows longer conversations but uses more VRAM. Requires server restart to take
+			effect.
+		</p>
+		<div class="context-options">
+			{#each [{ value: 8192, label: '8K', desc: 'Low VRAM' }, { value: 16384, label: '16K', desc: 'Standard' }, { value: 32768, label: '32K', desc: 'Recommended' }, { value: 65536, label: '64K', desc: '16+ GB VRAM' }, { value: 131072, label: '128K', desc: 'Maximum' }] as opt (opt.value)}
+				<button
+					class="ctx-btn"
+					class:selected={contextSize === opt.value}
+					onclick={() => setContextSize(opt.value)}
+				>
+					<strong>{opt.label}</strong>
+					<span>{opt.desc}</span>
+				</button>
+			{/each}
+		</div>
+		{#if contextSize !== getSettings().contextSize}
+			<p class="hint" style="color: var(--accent)">
+				Restart the server for the new context size to take effect.
+			</p>
+		{/if}
 	</section>
 
 	<section>
@@ -559,6 +651,78 @@
 		border: 1px solid var(--error-border);
 		border-radius: 6px;
 		font-size: 0.85rem;
+	}
+
+	.search-provider {
+		margin-bottom: 12px;
+	}
+
+	.search-provider label,
+	.search-field label {
+		display: block;
+		font-size: 0.85rem;
+		font-weight: 500;
+		margin-bottom: 6px;
+	}
+
+	.search-provider select,
+	.search-field input {
+		width: 100%;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		font-size: 0.9rem;
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
+		color-scheme: light dark;
+	}
+
+	.search-provider select option {
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
+	}
+
+	.search-field {
+		margin-bottom: 12px;
+	}
+
+	.context-options {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.ctx-btn {
+		flex: 1;
+		min-width: 80px;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		cursor: pointer;
+		text-align: center;
+	}
+
+	.ctx-btn:hover {
+		border-color: var(--text-secondary);
+	}
+
+	.ctx-btn.selected {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
+	}
+
+	.ctx-btn strong {
+		display: block;
+		font-size: 0.95rem;
+	}
+
+	.ctx-btn span {
+		display: block;
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
 	}
 
 	.voice-select {

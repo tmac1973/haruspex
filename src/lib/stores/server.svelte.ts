@@ -48,11 +48,11 @@ export async function initServerStore(): Promise<void> {
 	});
 }
 
-export async function startServer(modelPath: string): Promise<void> {
+export async function startServer(modelPath: string, ctxSize?: number): Promise<void> {
 	serverState.status = 'starting';
 	serverState.errorMessage = undefined;
 	try {
-		await invoke('start_server', { modelPath });
+		await invoke('start_server', { modelPath, ctxSize: ctxSize || null });
 	} catch (e) {
 		serverState.status = 'error';
 		serverState.errorMessage = String(e);
