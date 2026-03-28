@@ -4,7 +4,13 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { startServer, stopServer, getServerState } from '$lib/stores/server.svelte';
-	import { getSettings, updateSettings, type ResponseFormat } from '$lib/stores/settings';
+	import {
+		getSettings,
+		updateSettings,
+		applyTheme,
+		type ResponseFormat,
+		type ThemeMode
+	} from '$lib/stores/settings';
 
 	interface ModelInfo {
 		id: string;
@@ -29,10 +35,17 @@
 	let modelsDir = $state('');
 	const serverState = $derived(getServerState());
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
+	let theme = $state<ThemeMode>(getSettings().theme);
 
 	function setResponseFormat(format: ResponseFormat) {
 		responseFormat = format;
 		updateSettings({ responseFormat: format });
+	}
+
+	function setTheme(mode: ThemeMode) {
+		theme = mode;
+		updateSettings({ theme: mode });
+		applyTheme(mode);
 	}
 
 	onMount(async () => {
@@ -190,6 +203,21 @@
 		{#if downloadError}
 			<div class="error-box">{downloadError}</div>
 		{/if}
+	</section>
+
+	<section>
+		<h2>Theme</h2>
+		<div class="theme-options">
+			{#each [{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as opt (opt.value)}
+				<button
+					class="theme-btn"
+					class:selected={theme === opt.value}
+					onclick={() => setTheme(opt.value as ThemeMode)}
+				>
+					{opt.label}
+				</button>
+			{/each}
+		</div>
 	</section>
 
 	<section>
@@ -456,6 +484,32 @@
 		border: 1px solid var(--error-border);
 		border-radius: 6px;
 		font-size: 0.85rem;
+	}
+
+	.theme-options {
+		display: flex;
+		gap: 8px;
+	}
+
+	.theme-btn {
+		flex: 1;
+		padding: 8px 16px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		cursor: pointer;
+		font-size: 0.9rem;
+	}
+
+	.theme-btn:hover {
+		border-color: var(--text-secondary);
+	}
+
+	.theme-btn.selected {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
+		font-weight: 500;
 	}
 
 	.format-options {

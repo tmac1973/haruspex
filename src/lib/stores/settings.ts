@@ -1,15 +1,18 @@
 // App settings — persisted to localStorage for now (Phase 7 will move to Tauri app data)
 
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
+export type ThemeMode = 'system' | 'light' | 'dark';
 
 export interface AppSettings {
 	responseFormat: ResponseFormat;
+	theme: ThemeMode;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
 
 const defaults: AppSettings = {
-	responseFormat: 'standard'
+	responseFormat: 'standard',
+	theme: 'system'
 };
 
 function load(): AppSettings {
@@ -41,6 +44,18 @@ export function getSettings(): AppSettings {
 export function updateSettings(partial: Partial<AppSettings>): void {
 	settings = { ...settings, ...partial };
 	save(settings);
+}
+
+export function applyTheme(theme?: ThemeMode): void {
+	const mode = theme ?? settings.theme;
+	const root = document.documentElement;
+	root.removeAttribute('data-theme');
+	if (mode === 'light') {
+		root.setAttribute('data-theme', 'light');
+	} else if (mode === 'dark') {
+		root.setAttribute('data-theme', 'dark');
+	}
+	// 'system' = no attribute, CSS media query handles it
 }
 
 export function getResponseFormatPrompt(): string {

@@ -2,6 +2,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
 	import { initServerStore, startServer } from '$lib/stores/server.svelte';
+	import { applyTheme } from '$lib/stores/settings';
 	import { invoke } from '@tauri-apps/api/core';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -10,6 +11,7 @@
 	let { children } = $props();
 
 	onMount(async () => {
+		applyTheme();
 		initServerStore();
 
 		// Intercept clicks on external links and open in system browser
@@ -92,7 +94,7 @@
 	}
 
 	@media (prefers-color-scheme: dark) {
-		:global(:root) {
+		:global(:root:not([data-theme='light'])) {
 			--bg-primary: #111111;
 			--bg-secondary: #1a1a1a;
 			--bg-chat: #111111;
@@ -106,6 +108,21 @@
 			--error-text: #f87171;
 			--error-border: #3b1111;
 		}
+	}
+
+	:global(:root[data-theme='dark']) {
+		--bg-primary: #111111;
+		--bg-secondary: #1a1a1a;
+		--bg-chat: #111111;
+		--text-primary: #e5e5e5;
+		--text-secondary: #9ca3af;
+		--accent: #60a5fa;
+		--border: #2e2e2e;
+		--code-bg: #0d0d0d;
+		--user-bubble: #1e293b;
+		--error-bg: #1c1111;
+		--error-text: #f87171;
+		--error-border: #3b1111;
 	}
 
 	:global(html),
