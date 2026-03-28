@@ -103,41 +103,20 @@ async fn search_duckduckgo(query: &str) -> Result<Vec<SearchResult>, String> {
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .redirect(reqwest::redirect::Policy::limited(5))
+        .cookie_store(true)
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-    let url = format!(
-        "https://html.duckduckgo.com/html/?q={}",
-        urlencoding::encode(query)
-    );
-
+    // Use POST like a real form submission — less likely to trigger bot detection
     let response = client
-        .get(&url)
+        .post("https://html.duckduckgo.com/html/")
         .header("User-Agent", USER_AGENT)
+        .header("Referer", "https://html.duckduckgo.com/")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(format!("q={}&b=", urlencoding::encode(query)))
         .send()
         .await
         .map_err(|e| format!("Search request failed: {}", e))?;
-
-    if response.status().as_u16() == 429 {
-        // Rate limited — wait and retry once
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        let response = client
-            .get(&url)
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await
-            .map_err(|e| format!("Search retry failed: {}", e))?;
-
-        if !response.status().is_success() {
-            return Err(format!("Search failed with status: {}", response.status()));
-        }
-
-        let html = response
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read response: {}", e))?;
-        return parse_ddg_html(&html);
-    }
 
     if !response.status().is_success() {
         return Err(format!("Search failed with status: {}", response.status()));
@@ -147,6 +126,15 @@ async fn search_duckduckgo(query: &str) -> Result<Vec<SearchResult>, String> {
         .text()
         .await
         .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    // Detect bot/captcha page
+    if html.contains("cc=botnet") || html.contains("anomaly.js") {
+        warn!("DuckDuckGo returned a bot detection page — search temporarily unavailable");
+        return Err(
+            "Web search is temporarily unavailable (rate limited). Try again in a few minutes."
+                .to_string(),
+        );
+    }
 
     parse_ddg_html(&html)
 }
