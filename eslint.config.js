@@ -24,7 +24,9 @@ export default ts.config(
 		},
 		rules: {
 			// $state() runes require `let` even though the variable is never reassigned
-			'prefer-const': 'off'
+			'prefer-const': 'off',
+			// We use {@html} for rendering trusted markdown output
+			'svelte/no-at-html-tags': 'off'
 		}
 	},
 	{

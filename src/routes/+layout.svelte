@@ -47,6 +47,13 @@
 	}
 
 	main {
-		padding: 16px;
+		flex: 1;
+		overflow: hidden;
+	}
+
+	:global(html),
+	:global(body) {
+		height: 100%;
+		overflow: hidden;
 	}
 </style>

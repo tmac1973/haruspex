@@ -1,0 +1,139 @@
+<script lang="ts">
+	import { renderMarkdown } from '$lib/markdown';
+	import type { ChatMessage } from '$lib/api';
+
+	interface Props {
+		message: ChatMessage;
+		isStreaming?: boolean;
+	}
+
+	let { message, isStreaming = false }: Props = $props();
+
+	let renderedContent = $derived(message.content ? renderMarkdown(message.content) : '');
+</script>
+
+<div class="message" data-role={message.role}>
+	<div class="message-label">
+		{message.role === 'user' ? 'You' : 'Haruspex'}
+	</div>
+	<div class="message-content">
+		{#if message.role === 'user'}
+			<p>{message.content}</p>
+		{:else}
+			{@html renderedContent}
+			{#if isStreaming}
+				<span class="cursor"></span>
+			{/if}
+		{/if}
+	</div>
+</div>
+
+<style>
+	.message {
+		padding: 12px 16px;
+		border-bottom: 1px solid var(--border, #e5e7eb);
+	}
+
+	.message-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 4px;
+		color: var(--text-secondary, #6b7280);
+	}
+
+	[data-role='user'] .message-label {
+		color: var(--accent, #3b82f6);
+	}
+
+	.message-content {
+		line-height: 1.6;
+		overflow-wrap: break-word;
+	}
+
+	.message-content :global(p) {
+		margin: 0 0 0.5em 0;
+	}
+
+	.message-content :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.message-content :global(ul),
+	.message-content :global(ol) {
+		margin: 0.5em 0;
+		padding-left: 1.5em;
+	}
+
+	.message-content :global(.code-block) {
+		margin: 0.75em 0;
+		border-radius: 6px;
+		overflow: hidden;
+		border: 1px solid var(--border, #e5e7eb);
+	}
+
+	.message-content :global(.code-header) {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 4px 12px;
+		background: var(--bg-secondary, #f3f4f6);
+		font-size: 0.75rem;
+	}
+
+	.message-content :global(.code-lang) {
+		color: var(--text-secondary, #6b7280);
+	}
+
+	.message-content :global(.copy-btn) {
+		background: none;
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: 4px;
+		padding: 2px 8px;
+		font-size: 0.7rem;
+		cursor: pointer;
+		color: var(--text-secondary, #6b7280);
+	}
+
+	.message-content :global(.copy-btn:hover) {
+		background: var(--bg-primary, #ffffff);
+	}
+
+	.message-content :global(pre) {
+		margin: 0;
+		padding: 12px;
+		overflow-x: auto;
+		background: var(--code-bg, #1e1e1e);
+		color: #d4d4d4;
+		font-size: 0.85rem;
+		line-height: 1.5;
+	}
+
+	.message-content :global(code) {
+		font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+	}
+
+	.message-content :global(:not(pre) > code) {
+		background: var(--bg-secondary, #f3f4f6);
+		padding: 0.15em 0.4em;
+		border-radius: 3px;
+		font-size: 0.9em;
+	}
+
+	.cursor {
+		display: inline-block;
+		width: 2px;
+		height: 1em;
+		background: var(--text-primary, #1a1a1a);
+		animation: blink 0.8s step-end infinite;
+		vertical-align: text-bottom;
+		margin-left: 1px;
+	}
+
+	@keyframes blink {
+		50% {
+			opacity: 0;
+		}
+	}
+</style>

@@ -1,2 +1,506 @@
-<h1>Welcome to SvelteKit</h1>
-<p>Visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to read the documentation</p>
+<script lang="ts">
+	import ChatMessage from '$lib/components/ChatMessage.svelte';
+	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
+	import { renderMarkdown } from '$lib/markdown';
+	import {
+		getConversations,
+		getActiveConversation,
+		getActiveConversationId,
+		getIsGenerating,
+		getStreamingContent,
+		getErrorMessage,
+		createConversation,
+		setActiveConversation,
+		deleteConversation,
+		sendMessage,
+		cancelGeneration
+	} from '$lib/stores/chat.svelte';
+	import { getServerState } from '$lib/stores/server.svelte';
+	import { onMount, tick } from 'svelte';
+
+	let inputText = $state('');
+	let messagesContainer: HTMLDivElement | undefined = $state();
+	let autoScroll = $state(true);
+	let showScrollButton = $state(false);
+	let sidebarCollapsed = $state(false);
+
+	const conversations = $derived(getConversations());
+	const activeConversation = $derived(getActiveConversation());
+	const activeId = $derived(getActiveConversationId());
+	const isGenerating = $derived(getIsGenerating());
+	const streamingContent = $derived(getStreamingContent());
+	const errorMessage = $derived(getErrorMessage());
+	const serverState = $derived(getServerState());
+
+	const serverReady = $derived(serverState.status === 'ready');
+
+	$effect(() => {
+		// Auto-scroll when streaming content changes
+		if (streamingContent && autoScroll) {
+			scrollToBottom();
+		}
+	});
+
+	$effect(() => {
+		// Auto-scroll when new messages appear
+		if (activeConversation?.messages.length) {
+			if (autoScroll) {
+				tick().then(scrollToBottom);
+			}
+		}
+	});
+
+	function scrollToBottom() {
+		if (messagesContainer) {
+			messagesContainer.scrollTop = messagesContainer.scrollHeight;
+		}
+	}
+
+	function handleScroll() {
+		if (!messagesContainer) return;
+		const { scrollTop, scrollHeight, clientHeight } = messagesContainer;
+		const atBottom = scrollHeight - scrollTop - clientHeight < 50;
+		autoScroll = atBottom;
+		showScrollButton = !atBottom && isGenerating;
+	}
+
+	function handleScrollToBottom() {
+		autoScroll = true;
+		scrollToBottom();
+	}
+
+	async function handleSend() {
+		const text = inputText.trim();
+		if (!text || isGenerating) return;
+		inputText = '';
+		autoScroll = true;
+		await sendMessage(text);
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			handleSend();
+		}
+		if (e.key === 'Escape' && isGenerating) {
+			cancelGeneration();
+		}
+	}
+
+	function handleGlobalKeydown(e: KeyboardEvent) {
+		if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+			e.preventDefault();
+			createConversation();
+		}
+	}
+
+	onMount(() => {
+		window.addEventListener('keydown', handleGlobalKeydown);
+		return () => window.removeEventListener('keydown', handleGlobalKeydown);
+	});
+
+	const renderedStreamingContent = $derived(
+		streamingContent ? renderMarkdown(streamingContent) : ''
+	);
+</script>
+
+<div class="chat-layout">
+	<aside class="sidebar" class:collapsed={sidebarCollapsed}>
+		<div class="sidebar-header">
+			{#if !sidebarCollapsed}
+				<button class="new-chat-btn" onclick={() => createConversation()}>+ New Chat</button>
+			{/if}
+			<button
+				class="collapse-btn"
+				onclick={() => (sidebarCollapsed = !sidebarCollapsed)}
+				title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+			>
+				{sidebarCollapsed ? '\u25B6' : '\u25C0'}
+			</button>
+		</div>
+		{#if !sidebarCollapsed}
+			<div class="conversation-list">
+				{#each conversations as conv (conv.id)}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="conversation-item"
+						class:active={conv.id === activeId}
+						onclick={() => setActiveConversation(conv.id)}
+					>
+						<span class="conv-title">{conv.title}</span>
+						<button
+							class="delete-btn"
+							onclick={(e) => {
+								e.stopPropagation();
+								deleteConversation(conv.id);
+							}}
+							title="Delete conversation"
+						>
+							&times;
+						</button>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</aside>
+
+	<div class="chat-main">
+		<div class="messages" bind:this={messagesContainer} onscroll={handleScroll}>
+			{#if activeConversation && activeConversation.messages.length > 0}
+				{#each activeConversation.messages as msg, i (i)}
+					{#if msg.role !== 'system'}
+						<ChatMessage message={msg} />
+					{/if}
+				{/each}
+
+				{#if isGenerating && streamingContent}
+					<div class="message" data-role="assistant">
+						<div class="message-label">Haruspex</div>
+						<div class="message-content">
+							{@html renderedStreamingContent}
+							<span class="cursor"></span>
+						</div>
+					</div>
+				{:else if isGenerating}
+					<ThinkingIndicator />
+				{/if}
+
+				{#if errorMessage}
+					<div class="error-message">
+						<p>{errorMessage}</p>
+					</div>
+				{/if}
+			{:else}
+				<div class="empty-state">
+					<h2>Start a conversation</h2>
+					<p>Type a message below to begin chatting with Haruspex.</p>
+					{#if !serverReady}
+						<p class="hint">Waiting for the AI model to load...</p>
+					{/if}
+				</div>
+			{/if}
+
+			{#if showScrollButton}
+				<button class="scroll-btn" onclick={handleScrollToBottom}> &darr; New messages </button>
+			{/if}
+		</div>
+
+		<div class="input-area">
+			{#if isGenerating}
+				<button class="stop-btn" onclick={() => cancelGeneration()}>Stop generating</button>
+			{/if}
+			<div class="input-row">
+				<textarea
+					bind:value={inputText}
+					onkeydown={handleKeydown}
+					placeholder={serverReady ? 'Type a message...' : 'Waiting for model to load...'}
+					disabled={!serverReady && !activeConversation}
+					rows="1"
+				></textarea>
+				<button class="send-btn" onclick={handleSend} disabled={!inputText.trim() || isGenerating}>
+					Send
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+
+<style>
+	.chat-layout {
+		display: flex;
+		height: calc(100vh - 45px);
+		overflow: hidden;
+	}
+
+	/* Sidebar */
+	.sidebar {
+		width: 260px;
+		border-right: 1px solid var(--border, #e5e7eb);
+		display: flex;
+		flex-direction: column;
+		flex-shrink: 0;
+		background: var(--bg-secondary, #f9fafb);
+		transition: width 0.2s ease;
+	}
+
+	.sidebar.collapsed {
+		width: 40px;
+	}
+
+	.sidebar-header {
+		display: flex;
+		align-items: center;
+		padding: 8px;
+		gap: 4px;
+		border-bottom: 1px solid var(--border, #e5e7eb);
+	}
+
+	.new-chat-btn {
+		flex: 1;
+		padding: 6px 12px;
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: 6px;
+		background: var(--bg-primary, #ffffff);
+		cursor: pointer;
+		font-size: 0.85rem;
+		text-align: left;
+	}
+
+	.new-chat-btn:hover {
+		background: var(--bg-secondary, #f3f4f6);
+	}
+
+	.collapse-btn {
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 4px 6px;
+		font-size: 0.7rem;
+		color: var(--text-secondary, #6b7280);
+	}
+
+	.conversation-list {
+		flex: 1;
+		overflow-y: auto;
+		padding: 4px;
+	}
+
+	.conversation-item {
+		display: flex;
+		align-items: center;
+		width: 100%;
+		padding: 8px 10px;
+		border: none;
+		border-radius: 6px;
+		background: none;
+		cursor: pointer;
+		text-align: left;
+		font-size: 0.85rem;
+		color: var(--text-primary, #1a1a1a);
+		gap: 4px;
+	}
+
+	.conversation-item:hover {
+		background: var(--bg-primary, #ffffff);
+	}
+
+	.conversation-item.active {
+		background: var(--bg-primary, #ffffff);
+		font-weight: 500;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+	}
+
+	.conv-title {
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.delete-btn {
+		background: none;
+		border: none;
+		cursor: pointer;
+		color: var(--text-secondary, #6b7280);
+		font-size: 1rem;
+		padding: 0 4px;
+		opacity: 0;
+		transition: opacity 0.15s;
+	}
+
+	.conversation-item:hover .delete-btn {
+		opacity: 1;
+	}
+
+	.delete-btn:hover {
+		color: #ef4444;
+	}
+
+	/* Chat main */
+	.chat-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+
+	.messages {
+		flex: 1;
+		overflow-y: auto;
+		position: relative;
+	}
+
+	/* Streaming message inline styles (matching ChatMessage component) */
+	.messages .message {
+		padding: 12px 16px;
+		border-bottom: 1px solid var(--border, #e5e7eb);
+	}
+
+	.messages .message-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 4px;
+		color: var(--text-secondary, #6b7280);
+	}
+
+	.messages .message-content {
+		line-height: 1.6;
+		overflow-wrap: break-word;
+	}
+
+	.messages .message-content :global(p) {
+		margin: 0 0 0.5em 0;
+	}
+
+	.messages .message-content :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.cursor {
+		display: inline-block;
+		width: 2px;
+		height: 1em;
+		background: var(--text-primary, #1a1a1a);
+		animation: blink 0.8s step-end infinite;
+		vertical-align: text-bottom;
+		margin-left: 1px;
+	}
+
+	@keyframes blink {
+		50% {
+			opacity: 0;
+		}
+	}
+
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		height: 100%;
+		color: var(--text-secondary, #6b7280);
+		text-align: center;
+		padding: 32px;
+	}
+
+	.empty-state h2 {
+		margin: 0 0 8px 0;
+		font-size: 1.2rem;
+		color: var(--text-primary, #1a1a1a);
+	}
+
+	.empty-state p {
+		margin: 0 0 4px 0;
+	}
+
+	.hint {
+		font-size: 0.85rem;
+		font-style: italic;
+	}
+
+	.error-message {
+		padding: 12px 16px;
+		background: #fef2f2;
+		color: #dc2626;
+		border-bottom: 1px solid #fecaca;
+		font-size: 0.9rem;
+	}
+
+	.error-message p {
+		margin: 0;
+	}
+
+	.scroll-btn {
+		position: sticky;
+		bottom: 8px;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 6px 16px;
+		background: var(--bg-primary, #ffffff);
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: 16px;
+		cursor: pointer;
+		font-size: 0.8rem;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+		z-index: 10;
+	}
+
+	/* Input area */
+	.input-area {
+		border-top: 1px solid var(--border, #e5e7eb);
+		padding: 12px 16px;
+		background: var(--bg-primary, #ffffff);
+	}
+
+	.stop-btn {
+		display: block;
+		margin: 0 auto 8px;
+		padding: 4px 16px;
+		background: none;
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 0.8rem;
+		color: var(--text-secondary, #6b7280);
+	}
+
+	.stop-btn:hover {
+		background: #fef2f2;
+		color: #dc2626;
+		border-color: #fecaca;
+	}
+
+	.input-row {
+		display: flex;
+		gap: 8px;
+		align-items: flex-end;
+	}
+
+	textarea {
+		flex: 1;
+		padding: 10px 12px;
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: 8px;
+		resize: none;
+		font-family: inherit;
+		font-size: 0.95rem;
+		line-height: 1.4;
+		min-height: 40px;
+		max-height: 200px;
+		outline: none;
+	}
+
+	textarea:focus {
+		border-color: var(--accent, #3b82f6);
+		box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+	}
+
+	textarea:disabled {
+		background: var(--bg-secondary, #f3f4f6);
+		cursor: not-allowed;
+	}
+
+	.send-btn {
+		padding: 10px 20px;
+		background: var(--accent, #3b82f6);
+		color: white;
+		border: none;
+		border-radius: 8px;
+		cursor: pointer;
+		font-size: 0.9rem;
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	.send-btn:hover:not(:disabled) {
+		opacity: 0.9;
+	}
+
+	.send-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+</style>
