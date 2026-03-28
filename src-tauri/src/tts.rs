@@ -67,17 +67,35 @@ impl TtsEngine {
                 &TTS_PORT.to_string(),
             ]);
 
-        // Set LD_LIBRARY_PATH
+        // Set library path so koko can find its bundled shared libraries
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let bin_dir = exe_dir.to_string_lossy().to_string();
-                let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                let ld_path = if existing.is_empty() {
-                    bin_dir
-                } else {
-                    format!("{}:{}", bin_dir, existing)
-                };
-                sidecar = sidecar.env("LD_LIBRARY_PATH", ld_path);
+
+                #[cfg(target_os = "linux")]
+                {
+                    let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                    let new_path = if existing.is_empty() {
+                        bin_dir.clone()
+                    } else {
+                        format!("{}:{}", bin_dir, existing)
+                    };
+                    sidecar = sidecar.env("LD_LIBRARY_PATH", new_path);
+                }
+
+                #[cfg(target_os = "macos")]
+                {
+                    let existing = std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
+                    let new_path = if existing.is_empty() {
+                        bin_dir.clone()
+                    } else {
+                        format!("{}:{}", bin_dir, existing)
+                    };
+                    sidecar = sidecar.env("DYLD_LIBRARY_PATH", new_path);
+                }
+
+                // Windows: DLLs are found automatically from the binary's directory
+                let _ = &bin_dir; // suppress unused warning on Windows
             }
         }
 
@@ -207,6 +225,35 @@ impl TtsEngine {
                         }
                     }
                 }
+                for _ in 0..20 {
+                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
+                        return;
+                    }
+                    sleep(Duration::from_millis(100)).await;
+                }
+            }
+
+            #[cfg(windows)]
+            {
+                if let Ok(output) = std::process::Command::new("netstat")
+                    .args(["-ano"])
+                    .output()
+                {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    for line in stdout.lines() {
+                        if line.contains(&format!(":{}", port)) && line.contains("LISTENING") {
+                            if let Some(pid_str) = line.split_whitespace().last() {
+                                if let Ok(pid) = pid_str.parse::<u32>() {
+                                    info!("Killing process {} on port {}", pid, port);
+                                    let _ = std::process::Command::new("taskkill")
+                                        .args(["/F", "/PID", &pid.to_string()])
+                                        .output();
+                                }
+                            }
+                        }
+                    }
+                }
+
                 for _ in 0..20 {
                     if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
                         return;
