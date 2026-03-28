@@ -22,7 +22,7 @@ log = "0.4"
 tauri = { version = "2.10.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2.3.5"
-reqwest = { version = "0.13.2", default-features = false, features = ["cookies", "rustls", "stream"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["cookies", "multipart", "rustls", "stream"] }
 tokio = { version = "1.50.0", features = ["time", "rt", "fs", "sync", "macros"] }
 sha2 = "0.10.9"
 sysinfo = "0.36.1"
@@ -33,3 +33,7 @@ urlencoding = "2.1.3"
 url = "2.5.8"
 libc = "0.2.183"
 rusqlite = { version = "0.39.0", features = ["bundled"] }
+cpal = "0.17.1"
+rodio = "0.21.1"
+hound = "3.5.1"
+kokoro-micro = "1.0.0"

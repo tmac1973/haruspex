@@ -13,6 +13,10 @@
         {
           "name": "binaries/llama-server",
           "sidecar": true
+        },
+        {
+          "name": "binaries/whisper-server",
+          "sidecar": true
         }
       ]
     },

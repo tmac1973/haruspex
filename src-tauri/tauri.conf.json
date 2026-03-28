@@ -27,7 +27,8 @@
     "active": true,
     "targets": "all",
     "externalBin": [
-      "binaries/llama-server"
+      "binaries/llama-server",
+      "binaries/whisper-server"
     ],
     "resources": [
       "binaries/*.so*"

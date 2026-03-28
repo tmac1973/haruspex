@@ -3,6 +3,7 @@
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
 	import SourceChip from '$lib/components/SourceChip.svelte';
+	import MicButton from '$lib/components/MicButton.svelte';
 	import { renderMarkdown } from '$lib/markdown';
 	import {
 		getConversations,
@@ -264,6 +265,12 @@
 					disabled={!serverReady && !activeConversation}
 					rows="1"
 				></textarea>
+				<MicButton
+					onTranscription={(text) => {
+						inputText = text;
+					}}
+					disabled={isGenerating}
+				/>
 				<button class="send-btn" onclick={handleSend} disabled={!inputText.trim() || isGenerating}>
 					Send
 				</button>

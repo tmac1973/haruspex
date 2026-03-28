@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { renderMarkdown } from '$lib/markdown';
+	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
 	import type { ChatMessage } from '$lib/api';
 
 	interface Props {
@@ -15,6 +16,9 @@
 <div class="message" data-role={message.role}>
 	<div class="message-label">
 		{message.role === 'user' ? 'You' : 'Haruspex'}
+		{#if message.role === 'assistant' && message.content && !isStreaming}
+			<SpeakerButton text={message.content} />
+		{/if}
 	</div>
 	<div class="message-content">
 		{#if message.role === 'user'}

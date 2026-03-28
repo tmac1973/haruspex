@@ -1,0 +1,243 @@
+use log::{error, info, warn};
+use serde::Serialize;
+use std::sync::Arc;
+use std::time::Duration;
+use tauri::AppHandle;
+use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::ShellExt;
+use tokio::sync::Mutex;
+use tokio::time::sleep;
+
+const WHISPER_PORT: u16 = 8766;
+const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub enum WhisperStatus {
+    Stopped,
+    Starting,
+    Ready,
+    Error(String),
+}
+
+pub struct WhisperServer {
+    child: Mutex<Option<CommandChild>>,
+    status: Arc<Mutex<WhisperStatus>>,
+}
+
+impl WhisperServer {
+    pub fn new() -> Self {
+        Self {
+            child: Mutex::new(None),
+            status: Arc::new(Mutex::new(WhisperStatus::Stopped)),
+        }
+    }
+
+    pub async fn start(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
+        self.stop().await?;
+
+        {
+            let mut status = self.status.lock().await;
+            *status = WhisperStatus::Starting;
+        }
+
+        info!("Starting whisper-server with model: {}", model_path);
+
+        let args = vec![
+            "--model".to_string(),
+            model_path.to_string(),
+            "--host".to_string(),
+            "127.0.0.1".to_string(),
+            "--port".to_string(),
+            WHISPER_PORT.to_string(),
+        ];
+
+        // Get LD_LIBRARY_PATH for sidecar
+        let mut sidecar = app
+            .shell()
+            .sidecar("whisper-server")
+            .map_err(|e| format!("Failed to create whisper sidecar: {}", e))?
+            .args(&args);
+
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let bin_dir = exe_dir.to_string_lossy().to_string();
+                let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                let ld_path = if existing.is_empty() {
+                    bin_dir
+                } else {
+                    format!("{}:{}", bin_dir, existing)
+                };
+                sidecar = sidecar.env("LD_LIBRARY_PATH", ld_path);
+            }
+        }
+
+        let (mut rx, child) = sidecar
+            .spawn()
+            .map_err(|e| format!("Failed to spawn whisper-server: {}", e))?;
+
+        {
+            let mut c = self.child.lock().await;
+            *c = Some(child);
+        }
+
+        // Spawn stderr reader
+        let status_clone = Arc::clone(&self.status);
+        tauri::async_runtime::spawn(async move {
+            use tauri_plugin_shell::process::CommandEvent;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stderr(line) => {
+                        let line_str = String::from_utf8_lossy(&line);
+                        info!("whisper-server: {}", line_str.trim());
+                    }
+                    CommandEvent::Terminated(payload) => {
+                        let code = payload.code.unwrap_or(-1);
+                        warn!("whisper-server exited with code: {}", code);
+                        let mut status = status_clone.lock().await;
+                        if *status != WhisperStatus::Stopped {
+                            *status = WhisperStatus::Error(format!("Exited with code {}", code));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        // Health poll
+        let status_for_health = Arc::clone(&self.status);
+        tauri::async_runtime::spawn(async move {
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+                .unwrap();
+
+            let url = format!("http://127.0.0.1:{}/health", WHISPER_PORT);
+            let max_attempts =
+                (HEALTH_POLL_TIMEOUT.as_millis() / HEALTH_POLL_INTERVAL.as_millis()) as usize;
+
+            for _ in 0..max_attempts {
+                {
+                    let status = status_for_health.lock().await;
+                    if *status != WhisperStatus::Starting {
+                        return;
+                    }
+                }
+                sleep(HEALTH_POLL_INTERVAL).await;
+
+                if let Ok(resp) = client.get(&url).send().await {
+                    if resp.status().is_success() {
+                        info!("whisper-server health check passed");
+                        let mut status = status_for_health.lock().await;
+                        *status = WhisperStatus::Ready;
+                        return;
+                    }
+                }
+            }
+
+            let mut status = status_for_health.lock().await;
+            if *status == WhisperStatus::Starting {
+                error!("whisper-server health check timed out");
+                *status = WhisperStatus::Error("Health check timed out".to_string());
+            }
+        });
+
+        Ok(())
+    }
+
+    pub async fn stop(&self) -> Result<(), String> {
+        let mut child = self.child.lock().await;
+        if let Some(c) = child.take() {
+            info!("Stopping whisper-server");
+            c.kill()
+                .map_err(|e| format!("Failed to kill whisper-server: {}", e))?;
+        }
+        let mut status = self.status.lock().await;
+        *status = WhisperStatus::Stopped;
+        Ok(())
+    }
+
+    pub async fn get_status(&self) -> WhisperStatus {
+        self.status.lock().await.clone()
+    }
+
+    pub async fn transcribe(&self, audio_data: Vec<u8>) -> Result<String, String> {
+        let status = self.status.lock().await;
+        if *status != WhisperStatus::Ready {
+            return Err("Whisper server is not ready".to_string());
+        }
+        drop(status);
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| format!("HTTP client error: {}", e))?;
+
+        let part = reqwest::multipart::Part::bytes(audio_data)
+            .file_name("recording.wav")
+            .mime_str("audio/wav")
+            .map_err(|e| format!("Multipart error: {}", e))?;
+
+        let form = reqwest::multipart::Form::new().part("file", part);
+
+        let resp = client
+            .post(format!("http://127.0.0.1:{}/inference", WHISPER_PORT))
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| format!("Transcription request failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!(
+                "Transcription failed with status: {}",
+                resp.status()
+            ));
+        }
+
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
+
+        // whisper-server returns JSON with "text" field
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) {
+            if let Some(text) = parsed.get("text").and_then(|v| v.as_str()) {
+                return Ok(text.trim().to_string());
+            }
+        }
+
+        // Fallback: return raw body trimmed
+        Ok(body.trim().to_string())
+    }
+}
+
+// Tauri commands
+
+#[tauri::command]
+pub async fn start_whisper(
+    app: AppHandle,
+    state: tauri::State<'_, WhisperServer>,
+    model_path: String,
+) -> Result<(), String> {
+    state.start(&app, &model_path).await
+}
+
+#[tauri::command]
+pub async fn stop_whisper(state: tauri::State<'_, WhisperServer>) -> Result<(), String> {
+    state.stop().await
+}
+
+#[tauri::command]
+pub async fn get_whisper_status(
+    state: tauri::State<'_, WhisperServer>,
+) -> Result<WhisperStatus, ()> {
+    Ok(state.get_status().await)
+}
+
+#[tauri::command]
+pub async fn transcribe_audio(
+    state: tauri::State<'_, WhisperServer>,
+    audio: Vec<u8>,
+) -> Result<String, String> {
+    state.transcribe(audio).await
+}
