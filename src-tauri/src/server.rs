@@ -90,6 +90,7 @@ struct ServerInner {
     config: ServerConfig,
     log_buffer: VecDeque<String>,
     gpu_fallback_attempted: bool,
+    gpu_error_detected: bool,
 }
 
 pub struct LlamaServer {
@@ -105,6 +106,7 @@ impl LlamaServer {
                 config: ServerConfig::default(),
                 log_buffer: VecDeque::with_capacity(LOG_RING_BUFFER_SIZE),
                 gpu_fallback_attempted: false,
+                gpu_error_detected: false,
             })),
         }
     }
@@ -153,6 +155,7 @@ impl LlamaServer {
             let mut inner = self.inner.lock().await;
             inner.config = config;
             inner.gpu_fallback_attempted = false;
+            inner.gpu_error_detected = false;
         }
 
         self.spawn_and_monitor(app, model_path).await
@@ -248,6 +251,7 @@ impl LlamaServer {
 
                         if Self::detect_gpu_error(&line_str) && !state.gpu_fallback_attempted {
                             warn!("GPU error detected, will attempt CPU fallback on exit");
+                            state.gpu_error_detected = true;
                         }
                     }
                     CommandEvent::Terminated(payload) => {
@@ -260,9 +264,11 @@ impl LlamaServer {
 
                             if state.status == ServerStatus::Starting
                                 && !state.gpu_fallback_attempted
+                                && state.gpu_error_detected
                                 && state.config.n_gpu_layers != 0
                             {
                                 state.gpu_fallback_attempted = true;
+                                state.gpu_error_detected = false;
                                 state.config.n_gpu_layers = 0;
                                 true
                             } else {
@@ -394,14 +400,27 @@ impl LlamaServer {
     }
 
     pub async fn stop(&self) -> Result<(), String> {
-        let mut inner = self.inner.lock().await;
-        if let Some(child) = inner.child.take() {
-            info!("Stopping llama-server");
-            child
-                .kill()
-                .map_err(|e| format!("Failed to kill llama-server: {}", e))?;
+        let port = {
+            let mut inner = self.inner.lock().await;
+            let port = inner.config.port;
+            if let Some(child) = inner.child.take() {
+                info!("Stopping llama-server");
+                child
+                    .kill()
+                    .map_err(|e| format!("Failed to kill llama-server: {}", e))?;
+            }
+            inner.status = ServerStatus::Stopped;
+            port
+        };
+
+        // Wait for the port to be released
+        for _ in 0..20 {
+            if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
+                return Ok(()); // Port is free
+            }
+            sleep(Duration::from_millis(100)).await;
         }
-        inner.status = ServerStatus::Stopped;
+        warn!("Port {} still in use after stop", port);
         Ok(())
     }
 
@@ -550,6 +569,7 @@ mod tests {
             config: ServerConfig::default(),
             log_buffer: VecDeque::with_capacity(LOG_RING_BUFFER_SIZE),
             gpu_fallback_attempted: false,
+            gpu_error_detected: false,
         };
 
         for i in 0..LOG_RING_BUFFER_SIZE + 100 {
