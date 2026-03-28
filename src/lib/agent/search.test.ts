@@ -1,23 +1,39 @@
-import { describe, it, expect } from 'vitest';
-import { executeTool } from '$lib/agent/search';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('@tauri-apps/api/core', () => ({
+	invoke: vi.fn()
+}));
+
+import { invoke } from '@tauri-apps/api/core';
 
 describe('executeTool', () => {
-	it('routes web_search to search handler', async () => {
-		const result = await executeTool('web_search', { query: 'test query' });
-		const parsed = JSON.parse(result);
-		expect(Array.isArray(parsed)).toBe(true);
-		expect(parsed.length).toBeGreaterThan(0);
-		expect(parsed[0]).toHaveProperty('title');
-		expect(parsed[0]).toHaveProperty('url');
-		expect(parsed[0]).toHaveProperty('snippet');
+	beforeEach(() => {
+		vi.clearAllMocks();
 	});
 
-	it('routes fetch_url to fetch handler', async () => {
+	it('routes web_search to proxy_search invoke', async () => {
+		const mockResults = [{ title: 'Result 1', url: 'https://example.com', snippet: 'A result' }];
+		vi.mocked(invoke).mockResolvedValue(mockResults);
+
+		const { executeTool } = await import('$lib/agent/search');
+		const result = await executeTool('web_search', { query: 'test query' });
+
+		expect(invoke).toHaveBeenCalledWith('proxy_search', { query: 'test query' });
+		expect(JSON.parse(result)).toEqual(mockResults);
+	});
+
+	it('routes fetch_url to proxy_fetch invoke', async () => {
+		vi.mocked(invoke).mockResolvedValue('page content');
+
+		const { executeTool } = await import('$lib/agent/search');
 		const result = await executeTool('fetch_url', { url: 'https://example.com' });
-		expect(result).toContain('example.com');
+
+		expect(invoke).toHaveBeenCalledWith('proxy_fetch', { url: 'https://example.com' });
+		expect(result).toBe('page content');
 	});
 
 	it('returns error for unknown tool', async () => {
+		const { executeTool } = await import('$lib/agent/search');
 		const result = await executeTool('unknown_tool', {});
 		const parsed = JSON.parse(result);
 		expect(parsed.error).toContain('Unknown tool');

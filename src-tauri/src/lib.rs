@@ -1,9 +1,9 @@
 mod models;
-#[allow(dead_code)]
 mod proxy;
 mod server;
 
 use models::ModelManager;
+use proxy::ProxyState;
 use server::LlamaServer;
 use tauri::Manager;
 
@@ -24,6 +24,7 @@ pub fn run() {
             Ok(())
         })
         .manage(LlamaServer::new())
+        .manage(ProxyState::new())
         .invoke_handler(tauri::generate_handler![
             server::start_server,
             server::stop_server,
@@ -37,6 +38,8 @@ pub fn run() {
             models::get_models_dir,
             models::has_any_model,
             models::get_active_model_path,
+            proxy::proxy_search,
+            proxy::proxy_fetch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
