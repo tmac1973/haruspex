@@ -31,7 +31,7 @@
 <style>
 	.message {
 		padding: 12px 16px;
-		border-bottom: 1px solid var(--border, #e5e7eb);
+		border-bottom: 1px solid var(--border);
 	}
 
 	.message-label {
@@ -40,11 +40,11 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		margin-bottom: 4px;
-		color: var(--text-secondary, #6b7280);
+		color: var(--text-secondary);
 	}
 
 	[data-role='user'] .message-label {
-		color: var(--accent, #3b82f6);
+		color: var(--accent);
 	}
 
 	.message-content {
@@ -70,7 +70,7 @@
 		margin: 0.75em 0;
 		border-radius: 6px;
 		overflow: hidden;
-		border: 1px solid var(--border, #e5e7eb);
+		border: 1px solid var(--border);
 	}
 
 	.message-content :global(.code-header) {
@@ -78,33 +78,33 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 4px 12px;
-		background: var(--bg-secondary, #f3f4f6);
+		background: var(--bg-secondary);
 		font-size: 0.75rem;
 	}
 
 	.message-content :global(.code-lang) {
-		color: var(--text-secondary, #6b7280);
+		color: var(--text-secondary);
 	}
 
 	.message-content :global(.copy-btn) {
 		background: none;
-		border: 1px solid var(--border, #e5e7eb);
+		border: 1px solid var(--border);
 		border-radius: 4px;
 		padding: 2px 8px;
 		font-size: 0.7rem;
 		cursor: pointer;
-		color: var(--text-secondary, #6b7280);
+		color: var(--text-secondary);
 	}
 
 	.message-content :global(.copy-btn:hover) {
-		background: var(--bg-primary, #ffffff);
+		background: var(--bg-primary);
 	}
 
 	.message-content :global(pre) {
 		margin: 0;
 		padding: 12px;
 		overflow-x: auto;
-		background: var(--code-bg, #1e1e1e);
+		background: var(--code-bg);
 		color: #d4d4d4;
 		font-size: 0.85rem;
 		line-height: 1.5;
@@ -115,7 +115,7 @@
 	}
 
 	.message-content :global(:not(pre) > code) {
-		background: var(--bg-secondary, #f3f4f6);
+		background: var(--bg-secondary);
 		padding: 0.15em 0.4em;
 		border-radius: 3px;
 		font-size: 0.9em;
@@ -125,7 +125,7 @@
 		display: inline-block;
 		width: 2px;
 		height: 1em;
-		background: var(--text-primary, #1a1a1a);
+		background: var(--text-primary);
 		animation: blink 0.8s step-end infinite;
 		vertical-align: text-bottom;
 		margin-left: 1px;

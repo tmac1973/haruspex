@@ -10,7 +10,7 @@
 <style>
 	.thinking {
 		padding: 12px 16px;
-		border-bottom: 1px solid var(--border, #e5e7eb);
+		border-bottom: 1px solid var(--border);
 	}
 
 	.message-label {
@@ -19,7 +19,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		margin-bottom: 4px;
-		color: var(--text-secondary, #6b7280);
+		color: var(--text-secondary);
 	}
 
 	.dots {
@@ -32,7 +32,7 @@
 		width: 6px;
 		height: 6px;
 		border-radius: 50%;
-		background: var(--text-secondary, #6b7280);
+		background: var(--text-secondary);
 		animation: bounce 1.2s ease-in-out infinite;
 	}
 
