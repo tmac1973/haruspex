@@ -76,9 +76,8 @@ impl ServerConfig {
             "127.0.0.1".to_string(),
         ];
 
-        if self.flash_attn {
-            args.push("--flash-attn".to_string());
-        }
+        args.push("--flash-attn".to_string());
+        args.push(if self.flash_attn { "on" } else { "off" }.to_string());
 
         args.extend(self.extra_args.clone());
         args
@@ -474,6 +473,7 @@ mod tests {
         assert!(args.contains(&"--n-gpu-layers".to_string()));
         assert!(args.contains(&"99".to_string()));
         assert!(args.contains(&"--flash-attn".to_string()));
+        assert!(args.contains(&"on".to_string()));
         assert!(args.contains(&"--cache-type-k".to_string()));
         assert!(args.contains(&"q8_0".to_string()));
         assert!(args.contains(&"--jinja".to_string()));
@@ -488,7 +488,9 @@ mod tests {
             ..Default::default()
         };
         let args = config.build_args("/path/to/model.gguf");
-        assert!(!args.contains(&"--flash-attn".to_string()));
+        assert!(args.contains(&"--flash-attn".to_string()));
+        assert!(args.contains(&"off".to_string()));
+        assert!(!args.contains(&"on".to_string()));
     }
 
     #[test]
