@@ -43,6 +43,34 @@ pub struct HardwareInfo {
 
 fn model_registry() -> Vec<ModelInfo> {
     vec![
+        // Qwen 3.5 9B — best quality, native tool calling
+        ModelInfo {
+            id: "Qwen3.5-9B-Q4_K_M".to_string(),
+            filename: "Qwen3.5-9B-Q4_K_M.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf".to_string(),
+            sha256: String::new(),
+            size_bytes: 5_680_000_000,
+            description: "Qwen 3.5 9B Q4 — recommended for 8GB VRAM (~5.7 GB)".to_string(),
+            downloaded: false,
+        },
+        ModelInfo {
+            id: "Qwen3.5-9B-Q5_K_M".to_string(),
+            filename: "Qwen3.5-9B-Q5_K_M.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf".to_string(),
+            sha256: String::new(),
+            size_bytes: 6_580_000_000,
+            description: "Qwen 3.5 9B Q5 — higher quality, tight on 8GB VRAM (~6.6 GB)".to_string(),
+            downloaded: false,
+        },
+        ModelInfo {
+            id: "Qwen3.5-9B-Q6_K".to_string(),
+            filename: "Qwen3.5-9B-Q6_K.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q6_K.gguf".to_string(),
+            sha256: String::new(),
+            size_bytes: 7_460_000_000,
+            description: "Qwen 3.5 9B Q6 — best quality, needs 10+ GB VRAM (~7.5 GB)".to_string(),
+            downloaded: false,
+        },
         // Granite 4.0 H-Tiny — 7B MoE (1B active), better quality
         ModelInfo {
             id: "granite-4.0-h-tiny-Q4_K_M".to_string(),
@@ -425,7 +453,7 @@ pub fn detect_hardware() -> HardwareInfo {
     } else if available_ram_mb < 8192 {
         "granite-4.0-h-tiny-Q4_K_M"
     } else {
-        "granite-4.0-h-tiny-Q6_K"
+        "Qwen3.5-9B-Q4_K_M"
     };
 
     HardwareInfo {
@@ -581,15 +609,14 @@ mod tests {
     #[test]
     fn model_registry_has_expected_entries() {
         let models = model_registry();
-        assert_eq!(models.len(), 6);
+        assert_eq!(models.len(), 9);
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        assert!(ids.contains(&"Qwen3.5-9B-Q4_K_M"));
+        assert!(ids.contains(&"Qwen3.5-9B-Q5_K_M"));
+        assert!(ids.contains(&"Qwen3.5-9B-Q6_K"));
         assert!(ids.contains(&"granite-4.0-h-tiny-Q4_K_M"));
-        assert!(ids.contains(&"granite-4.0-h-tiny-Q6_K"));
-        assert!(ids.contains(&"granite-4.0-h-tiny-Q8_0"));
         assert!(ids.contains(&"granite-4.0-micro-IQ4_XS"));
-        assert!(ids.contains(&"granite-4.0-micro-Q4_K_M"));
-        assert!(ids.contains(&"granite-4.0-micro-Q5_K_M"));
     }
 
     #[test]
@@ -643,7 +670,7 @@ mod tests {
             "granite-4.0-micro-IQ4_XS",
             "granite-4.0-micro-Q4_K_M",
             "granite-4.0-h-tiny-Q4_K_M",
-            "granite-4.0-h-tiny-Q6_K",
+            "Qwen3.5-9B-Q4_K_M",
         ];
         assert!(
             valid_quants.contains(&info.recommended_quant.as_str()),

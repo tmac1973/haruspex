@@ -60,4 +60,21 @@ describe('renderMarkdown', () => {
 		expect(result).not.toContain('<script>');
 		expect(result).toContain('&lt;script&gt;');
 	});
+
+	it('converts thinking blocks to collapsed details', () => {
+		const result = renderMarkdown(
+			'<think>Let me reason about this...</think>\n\nThe answer is 42.'
+		);
+		expect(result).toContain('thinking-block');
+		expect(result).toContain('<summary>');
+		expect(result).toContain('Thinking...');
+		expect(result).toContain('reason about this');
+		expect(result).toContain('The answer is 42');
+	});
+
+	it('removes empty thinking blocks', () => {
+		const result = renderMarkdown('<think></think>\n\nJust the answer.');
+		expect(result).not.toContain('thinking-block');
+		expect(result).toContain('Just the answer');
+	});
 });

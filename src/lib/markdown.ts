@@ -56,6 +56,15 @@ function escapeHtml(text: string): string {
 		.replace(/"/g, '&quot;');
 }
 
+function convertThinkingBlocks(text: string): string {
+	return text.replace(/<think>([\s\S]*?)<\/think>/g, (_match, content: string) => {
+		const trimmed = content.trim();
+		if (!trimmed) return '';
+		return `<details class="thinking-block"><summary>Thinking...</summary>\n\n${trimmed}\n\n</details>\n\n`;
+	});
+}
+
 export function renderMarkdown(text: string): string {
-	return marked.parse(text) as string;
+	const withThinking = convertThinkingBlocks(text);
+	return marked.parse(withThinking) as string;
 }

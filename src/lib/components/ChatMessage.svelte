@@ -121,6 +121,30 @@
 		font-size: 0.9em;
 	}
 
+	.message-content :global(.thinking-block) {
+		margin: 0.5em 0;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 0;
+		font-size: 0.85em;
+		color: var(--text-secondary);
+	}
+
+	.message-content :global(.thinking-block summary) {
+		padding: 6px 12px;
+		cursor: pointer;
+		font-style: italic;
+		user-select: none;
+	}
+
+	.message-content :global(.thinking-block summary:hover) {
+		color: var(--text-primary);
+	}
+
+	.message-content :global(.thinking-block > :not(summary)) {
+		padding: 0 12px;
+	}
+
 	.cursor {
 		display: inline-block;
 		width: 2px;
