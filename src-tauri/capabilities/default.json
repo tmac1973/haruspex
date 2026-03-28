@@ -17,6 +17,7 @@
       ]
     },
     "shell:allow-kill",
+    "shell:allow-open",
     "dialog:allow-open"
   ]
 }

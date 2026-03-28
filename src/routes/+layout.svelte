@@ -12,6 +12,19 @@
 	onMount(async () => {
 		initServerStore();
 
+		// Intercept clicks on external links and open in system browser
+		document.addEventListener('click', (e) => {
+			const anchor = (e.target as HTMLElement).closest('a');
+			if (!anchor) return;
+			const href = anchor.getAttribute('href');
+			if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+				e.preventDefault();
+				invoke('plugin:shell|open', { path: href }).catch(() => {
+					window.open(href, '_blank');
+				});
+			}
+		});
+
 		// First-run detection: redirect to setup if no model found
 		try {
 			const hasModel = await invoke<boolean>('has_any_model');
