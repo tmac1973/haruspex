@@ -1,7 +1,11 @@
 name: Release
 on:
-  push:
-    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v0.1.0). Must already exist as a git tag.'
+        required: true
+        type: string
 
 jobs:
   build-sidecars:
@@ -88,7 +92,7 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Haruspex ${{ github.ref_name }}'
+          tagName: ${{ inputs.tag }}
+          releaseName: 'Haruspex ${{ inputs.tag }}'
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
