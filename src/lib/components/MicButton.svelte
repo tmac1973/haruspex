@@ -28,7 +28,7 @@
 
 			// Try to find the whisper model
 			const modelsDir = await invoke<string>('get_models_dir');
-			const whisperModel = `${modelsDir}/../whisper/ggml-base.en.bin`;
+			const whisperModel = `${modelsDir}/whisper/ggml-base.en.bin`;
 
 			// Start whisper server
 			await invoke('start_whisper', { modelPath: whisperModel });
