@@ -16,6 +16,8 @@
 		createConversation,
 		setActiveConversation,
 		deleteConversation,
+		renameConversation,
+		clearAllConversations,
 		sendMessage,
 		cancelGeneration
 	} from '$lib/stores/chat.svelte';
@@ -27,6 +29,29 @@
 	let autoScroll = $state(true);
 	let showScrollButton = $state(false);
 	let sidebarCollapsed = $state(false);
+	let renamingId = $state<string | null>(null);
+	let renameText = $state('');
+
+	function startRename(id: string, currentTitle: string) {
+		renamingId = id;
+		renameText = currentTitle;
+	}
+
+	function finishRename() {
+		if (renamingId && renameText.trim()) {
+			renameConversation(renamingId, renameText.trim());
+		}
+		renamingId = null;
+	}
+
+	function handleRenameKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			finishRename();
+		} else if (e.key === 'Escape') {
+			renamingId = null;
+		}
+	}
 
 	const conversations = $derived(getConversations());
 	const activeConversation = $derived(getActiveConversation());
@@ -133,8 +158,23 @@
 						class="conversation-item"
 						class:active={conv.id === activeId}
 						onclick={() => setActiveConversation(conv.id)}
+						ondblclick={(e) => {
+							e.stopPropagation();
+							startRename(conv.id, conv.title);
+						}}
 					>
-						<span class="conv-title">{conv.title}</span>
+						{#if renamingId === conv.id}
+							<input
+								class="rename-input"
+								type="text"
+								bind:value={renameText}
+								onblur={finishRename}
+								onkeydown={handleRenameKeydown}
+								onclick={(e) => e.stopPropagation()}
+							/>
+						{:else}
+							<span class="conv-title">{conv.title}</span>
+						{/if}
 						<button
 							class="delete-btn"
 							onclick={(e) => {
@@ -148,6 +188,18 @@
 					</div>
 				{/each}
 			</div>
+			{#if conversations.length > 0}
+				<div class="sidebar-footer">
+					<button
+						class="clear-all-btn"
+						onclick={() => {
+							if (confirm('Delete all conversations?')) clearAllConversations();
+						}}
+					>
+						Clear all
+					</button>
+				</div>
+			{/if}
 		{/if}
 	</aside>
 
@@ -330,6 +382,39 @@
 
 	.delete-btn:hover {
 		color: var(--error-text);
+	}
+
+	.rename-input {
+		flex: 1;
+		padding: 2px 6px;
+		border: 1px solid var(--accent);
+		border-radius: 4px;
+		font-size: 0.85rem;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		outline: none;
+		min-width: 0;
+	}
+
+	.sidebar-footer {
+		padding: 8px;
+		border-top: 1px solid var(--border);
+	}
+
+	.clear-all-btn {
+		width: 100%;
+		padding: 6px;
+		border: none;
+		border-radius: 6px;
+		background: none;
+		color: var(--text-secondary);
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	.clear-all-btn:hover {
+		color: var(--error-text);
+		background: var(--error-bg);
 	}
 
 	/* Chat main */

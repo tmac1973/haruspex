@@ -34,6 +34,28 @@
 	let downloadError = $state<string | null>(null);
 	let modelsDir = $state('');
 	const serverState = $derived(getServerState());
+	let showLogs = $state(false);
+	let logLines = $state<string[]>([]);
+	let logInterval: ReturnType<typeof setInterval> | null = null;
+
+	async function toggleLogs() {
+		showLogs = !showLogs;
+		if (showLogs) {
+			await refreshLogs();
+			logInterval = setInterval(refreshLogs, 2000);
+		} else if (logInterval) {
+			clearInterval(logInterval);
+			logInterval = null;
+		}
+	}
+
+	async function refreshLogs() {
+		try {
+			logLines = await invoke<string[]>('get_server_logs');
+		} catch {
+			// ignore
+		}
+	}
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);
 
@@ -287,6 +309,18 @@
 				<button class="btn btn-danger" onclick={() => stopServer()}>Stop Server</button>
 			{/if}
 		</div>
+		<button class="btn" style="margin-top: 12px" onclick={toggleLogs}>
+			{showLogs ? 'Hide Logs' : 'Show Server Logs'}
+		</button>
+		{#if showLogs}
+			<div class="log-viewer">
+				{#each logLines as line, i (i)}
+					<div class="log-line">{line}</div>
+				{:else}
+					<div class="log-line log-empty">No log output yet.</div>
+				{/each}
+			</div>
+		{/if}
 	</section>
 </div>
 
@@ -559,6 +593,29 @@
 		display: flex;
 		gap: 8px;
 		margin-top: 12px;
+	}
+
+	.log-viewer {
+		margin-top: 12px;
+		max-height: 300px;
+		overflow-y: auto;
+		background: var(--code-bg);
+		border-radius: 6px;
+		padding: 8px 12px;
+		font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+		font-size: 0.7rem;
+		line-height: 1.5;
+	}
+
+	.log-line {
+		color: #d4d4d4;
+		white-space: pre-wrap;
+		word-break: break-all;
+	}
+
+	.log-empty {
+		color: var(--text-secondary);
+		font-style: italic;
 	}
 
 	.info-row {

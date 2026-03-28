@@ -1,6 +1,7 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
 	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
+	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { initServerStore, startServer } from '$lib/stores/server.svelte';
 	import { applyTheme } from '$lib/stores/settings';
 	import { invoke } from '@tauri-apps/api/core';
@@ -13,6 +14,7 @@
 	onMount(async () => {
 		applyTheme();
 		initServerStore();
+		initChatStore();
 
 		// Intercept clicks on external links and open in system browser
 		document.addEventListener('click', (e) => {

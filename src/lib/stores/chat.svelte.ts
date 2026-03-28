@@ -1,6 +1,7 @@
 import { type ChatMessage, ApiError } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 import { getResponseFormatPrompt } from '$lib/stores/settings';
+import { invoke } from '@tauri-apps/api/core';
 
 function buildSystemPrompt(): ChatMessage {
 	const today = new Date().toLocaleDateString('en-US', {
@@ -47,6 +48,28 @@ export interface Conversation {
 	updatedAt: number;
 }
 
+interface DbMessage {
+	role: string;
+	content: string;
+	tool_calls: string | null;
+	tool_call_id: string | null;
+}
+
+interface DbConversation {
+	id: string;
+	title: string;
+	created_at: number;
+	updated_at: number;
+	messages: DbMessage[];
+}
+
+interface DbConversationSummary {
+	id: string;
+	title: string;
+	created_at: number;
+	updated_at: number;
+}
+
 let conversations = $state<Conversation[]>([]);
 let activeConversationId = $state<string | null>(null);
 let isGenerating = $state(false);
@@ -54,6 +77,7 @@ let streamingContent = $state('');
 let errorMessage = $state<string | null>(null);
 let searchSteps = $state<SearchStep[]>([]);
 let sourceUrls = $state<string[]>([]);
+let dbAvailable = false;
 
 let abortController: AbortController | null = null;
 
@@ -63,6 +87,87 @@ function generateId(): string {
 
 function generateTitle(content: string): string {
 	return content.slice(0, 50).replace(/\n/g, ' ').trim() || 'New chat';
+}
+
+// Database persistence helpers
+
+async function dbSaveMessage(conversationId: string, msg: ChatMessage): Promise<void> {
+	if (!dbAvailable) return;
+	try {
+		await invoke('db_save_message', {
+			conversationId,
+			role: msg.role,
+			content: msg.content || '',
+			toolCalls: msg.tool_calls ? JSON.stringify(msg.tool_calls) : null,
+			toolCallId: msg.tool_call_id || null
+		});
+	} catch {
+		// DB write failure is non-fatal
+	}
+}
+
+async function dbCreateConversation(id: string, title: string): Promise<void> {
+	if (!dbAvailable) return;
+	try {
+		await invoke('db_create_conversation', { id, title });
+	} catch {
+		// non-fatal
+	}
+}
+
+function dbMessageToChatMessage(msg: DbMessage): ChatMessage {
+	const chatMsg: ChatMessage = {
+		role: msg.role as ChatMessage['role'],
+		content: msg.content
+	};
+	if (msg.tool_calls) {
+		try {
+			chatMsg.tool_calls = JSON.parse(msg.tool_calls);
+		} catch {
+			// ignore
+		}
+	}
+	if (msg.tool_call_id) {
+		chatMsg.tool_call_id = msg.tool_call_id;
+	}
+	return chatMsg;
+}
+
+// Public API
+
+export async function initChatStore(): Promise<void> {
+	try {
+		const summaries = await invoke<DbConversationSummary[]>('db_list_conversations');
+		dbAvailable = true;
+
+		conversations = summaries.map((s) => ({
+			id: s.id,
+			title: s.title,
+			messages: [], // loaded lazily
+			createdAt: s.created_at,
+			updatedAt: s.updated_at
+		}));
+
+		if (conversations.length > 0) {
+			activeConversationId = conversations[0].id;
+			await loadConversationMessages(conversations[0].id);
+		}
+	} catch {
+		dbAvailable = false;
+	}
+}
+
+async function loadConversationMessages(id: string): Promise<void> {
+	if (!dbAvailable) return;
+	const conv = conversations.find((c) => c.id === id);
+	if (!conv || conv.messages.length > 0) return; // already loaded
+
+	try {
+		const full = await invoke<DbConversation>('db_get_conversation', { id });
+		conv.messages = full.messages.map(dbMessageToChatMessage);
+	} catch {
+		// non-fatal
+	}
 }
 
 export function getConversations(): Conversation[] {
@@ -109,28 +214,58 @@ export function createConversation(): string {
 	});
 	activeConversationId = id;
 	errorMessage = null;
+	dbCreateConversation(id, 'New chat');
 	return id;
 }
 
-export function setActiveConversation(id: string): void {
+export async function setActiveConversation(id: string): Promise<void> {
 	if (conversations.some((c) => c.id === id)) {
 		activeConversationId = id;
 		errorMessage = null;
+		await loadConversationMessages(id);
 	}
 }
 
-export function deleteConversation(id: string): void {
+export async function deleteConversation(id: string): Promise<void> {
 	conversations = conversations.filter((c) => c.id !== id);
 	if (activeConversationId === id) {
 		activeConversationId = conversations.length > 0 ? conversations[0].id : null;
 	}
+	if (dbAvailable) {
+		try {
+			await invoke('db_delete_conversation', { id });
+		} catch {
+			// non-fatal
+		}
+	}
 }
 
-export function clearAllConversations(): void {
+export async function renameConversation(id: string, title: string): Promise<void> {
+	const conv = conversations.find((c) => c.id === id);
+	if (conv) {
+		conv.title = title;
+		if (dbAvailable) {
+			try {
+				await invoke('db_rename_conversation', { id, title });
+			} catch {
+				// non-fatal
+			}
+		}
+	}
+}
+
+export async function clearAllConversations(): Promise<void> {
 	if (isGenerating) cancelGeneration();
 	conversations = [];
 	activeConversationId = null;
 	errorMessage = null;
+	if (dbAvailable) {
+		try {
+			await invoke('db_clear_all_conversations');
+		} catch {
+			// non-fatal
+		}
+	}
 }
 
 export function cancelGeneration(): void {
@@ -171,12 +306,17 @@ export async function sendMessage(content: string): Promise<void> {
 	if (!conversation) return;
 
 	if (conversation.messages.length === 0) {
-		conversation.title = generateTitle(content);
+		const title = generateTitle(content);
+		conversation.title = title;
+		if (dbAvailable) {
+			invoke('db_rename_conversation', { id: conversation.id, title }).catch(() => {});
+		}
 	}
 
 	const userMessage: ChatMessage = { role: 'user', content: content.trim() };
 	conversation.messages.push(userMessage);
 	conversation.updatedAt = Date.now();
+	dbSaveMessage(conversation.id, userMessage);
 
 	isGenerating = true;
 	streamingContent = '';
@@ -219,7 +359,12 @@ export async function sendMessage(content: string): Promise<void> {
 			onComplete: () => {
 				const finalContent = streamingContent;
 				if (finalContent) {
-					conversation.messages.push({ role: 'assistant', content: finalContent });
+					const assistantMsg: ChatMessage = {
+						role: 'assistant',
+						content: finalContent
+					};
+					conversation.messages.push(assistantMsg);
+					dbSaveMessage(conversation.id, assistantMsg);
 				} else {
 					errorMessage = 'Model returned an empty response. Try rephrasing.';
 				}
@@ -236,10 +381,12 @@ export async function sendMessage(content: string): Promise<void> {
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'AbortError') {
 			if (streamingContent) {
-				conversation.messages.push({
+				const partialMsg: ChatMessage = {
 					role: 'assistant',
 					content: streamingContent
-				});
+				};
+				conversation.messages.push(partialMsg);
+				dbSaveMessage(conversation.id, partialMsg);
 			}
 		} else if (e instanceof ApiError) {
 			errorMessage = e.message;

@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the agent loop module
 vi.mock('$lib/agent/loop', () => ({
 	runAgentLoop: vi.fn()
 }));
 
-// Mock the api module (for ApiError)
 vi.mock('$lib/api', () => ({
 	ApiError: class ApiError extends Error {
 		statusCode?: number;
@@ -15,6 +13,10 @@ vi.mock('$lib/api', () => ({
 			this.statusCode = statusCode;
 		}
 	}
+}));
+
+vi.mock('@tauri-apps/api/core', () => ({
+	invoke: vi.fn().mockRejectedValue(new Error('not available'))
 }));
 
 describe('chat store', () => {
@@ -47,7 +49,7 @@ describe('chat store', () => {
 		const id2 = createConversation();
 		expect(getActiveConversationId()).toBe(id2);
 
-		deleteConversation(id2);
+		await deleteConversation(id2);
 		expect(getConversations()).toHaveLength(1);
 		expect(getActiveConversationId()).toBe(id1);
 	});
@@ -58,7 +60,7 @@ describe('chat store', () => {
 
 		createConversation();
 		createConversation();
-		clearAllConversations();
+		await clearAllConversations();
 
 		expect(getConversations()).toHaveLength(0);
 		expect(getActiveConversationId()).toBeNull();
@@ -70,7 +72,7 @@ describe('chat store', () => {
 
 		const id1 = createConversation();
 		createConversation();
-		setActiveConversation(id1);
+		await setActiveConversation(id1);
 
 		expect(getActiveConversationId()).toBe(id1);
 	});
@@ -80,7 +82,7 @@ describe('chat store', () => {
 			await import('$lib/stores/chat.svelte');
 
 		const id = createConversation();
-		setActiveConversation('nonexistent');
+		await setActiveConversation('nonexistent');
 
 		expect(getActiveConversationId()).toBe(id);
 	});
@@ -88,7 +90,6 @@ describe('chat store', () => {
 	it('sendMessage creates conversation if none active', async () => {
 		const { runAgentLoop } = await import('$lib/agent/loop');
 
-		// Mock runAgentLoop to simulate a simple response
 		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
 			options.onStreamChunk({ delta: { content: 'Hi!' }, finish_reason: null });
 			options.onComplete();
@@ -102,7 +103,7 @@ describe('chat store', () => {
 		expect(getConversations()).toHaveLength(1);
 		const conv = getActiveConversation();
 		expect(conv).toBeDefined();
-		expect(conv!.messages).toHaveLength(2); // user + assistant
+		expect(conv!.messages).toHaveLength(2);
 		expect(conv!.messages[0].role).toBe('user');
 		expect(conv!.messages[0].content).toBe('Hello');
 		expect(conv!.messages[1].role).toBe('assistant');
@@ -131,6 +132,16 @@ describe('chat store', () => {
 		await sendMessage('   ');
 
 		expect(getConversations()).toHaveLength(0);
+	});
+
+	it('renameConversation updates title', async () => {
+		const { createConversation, renameConversation, getActiveConversation } =
+			await import('$lib/stores/chat.svelte');
+
+		createConversation();
+		await renameConversation(getActiveConversation()!.id, 'New title');
+
+		expect(getActiveConversation()!.title).toBe('New title');
 	});
 
 	it('sendMessage tracks search steps from tool calls', async () => {

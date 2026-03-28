@@ -1,7 +1,9 @@
+mod db;
 mod models;
 mod proxy;
 mod server;
 
+use db::Database;
 use models::ModelManager;
 use proxy::ProxyState;
 use server::LlamaServer;
@@ -21,6 +23,7 @@ pub fn run() {
                 )?;
             }
             app.manage(ModelManager::new(app.handle()));
+            app.manage(Database::new(app.handle()).expect("Failed to initialize database"));
             Ok(())
         })
         .manage(LlamaServer::new())
@@ -41,6 +44,13 @@ pub fn run() {
             models::delete_model,
             proxy::proxy_search,
             proxy::proxy_fetch,
+            db::db_list_conversations,
+            db::db_get_conversation,
+            db::db_create_conversation,
+            db::db_save_message,
+            db::db_rename_conversation,
+            db::db_delete_conversation,
+            db::db_clear_all_conversations,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
