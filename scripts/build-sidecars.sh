@@ -173,6 +173,8 @@ else
 
     cd "$KOKO_SRC"
     echo "   Building..."
+    # audiopus_sys uses old cmake_minimum_required incompatible with newer cmake
+    export CMAKE_POLICY_VERSION_MINIMUM=3.5
     cargo build --release --bin koko 2>&1
 
     cp target/release/koko${EXT} "$KOKO_BIN"
