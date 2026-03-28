@@ -2,16 +2,48 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Release tag (e.g., v0.1.0). Must already exist as a git tag.'
+      version:
+        description: 'Release version (e.g., 0.1.0)'
         required: true
         type: string
 
 jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        run: |
+          VERSION="${{ inputs.version }}"
+          npm version "$VERSION" --no-git-tag-version
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          git commit -m "chore: bump version to $VERSION"
+          git tag "v$VERSION"
+          git push
+          git push origin "v$VERSION"
+
   build-sidecars:
+    needs: bump-version
     uses: ./.github/workflows/build-sidecars.yml
 
   create-release:
+    needs: bump-version
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -19,9 +51,12 @@ jobs:
       release_id: ${{ steps.create.outputs.id }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
       - id: create
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ inputs.version }}
           draft: true
           generate_release_notes: true
 
@@ -47,6 +82,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
 
       - uses: actions/setup-node@v4
         with:
@@ -62,9 +99,7 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            libasound2-dev \
-            libsonic-dev \
-            libpcaudio-dev
+            libasound2-dev
 
       - name: Download sidecars
         uses: actions/download-artifact@v4
@@ -82,9 +117,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Code signing — optional, omit secrets for unsigned builds
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          # macOS signing (only used if secrets are set)
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERT }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -92,7 +125,7 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ inputs.tag }}
-          releaseName: 'Haruspex ${{ inputs.tag }}'
+          tagName: v${{ inputs.version }}
+          releaseName: 'Haruspex v${{ inputs.version }}'
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
