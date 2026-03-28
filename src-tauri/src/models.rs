@@ -47,7 +47,9 @@ fn model_registry() -> Vec<ModelInfo> {
         ModelInfo {
             id: "Qwen3.5-9B-Q4_K_M".to_string(),
             filename: "Qwen3.5-9B-Q4_K_M.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf".to_string(),
+            url:
+                "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf"
+                    .to_string(),
             sha256: String::new(),
             size_bytes: 5_680_000_000,
             description: "Qwen 3.5 9B Q4 — recommended for 8GB VRAM (~5.7 GB)".to_string(),
@@ -56,7 +58,9 @@ fn model_registry() -> Vec<ModelInfo> {
         ModelInfo {
             id: "Qwen3.5-9B-Q5_K_M".to_string(),
             filename: "Qwen3.5-9B-Q5_K_M.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf".to_string(),
+            url:
+                "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf"
+                    .to_string(),
             sha256: String::new(),
             size_bytes: 6_580_000_000,
             description: "Qwen 3.5 9B Q5 — higher quality, tight on 8GB VRAM (~6.6 GB)".to_string(),
@@ -65,66 +69,11 @@ fn model_registry() -> Vec<ModelInfo> {
         ModelInfo {
             id: "Qwen3.5-9B-Q6_K".to_string(),
             filename: "Qwen3.5-9B-Q6_K.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q6_K.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q6_K.gguf"
+                .to_string(),
             sha256: String::new(),
             size_bytes: 7_460_000_000,
             description: "Qwen 3.5 9B Q6 — best quality, needs 10+ GB VRAM (~7.5 GB)".to_string(),
-            downloaded: false,
-        },
-        // Granite 4.0 H-Tiny — 7B MoE (1B active), better quality
-        ModelInfo {
-            id: "granite-4.0-h-tiny-Q4_K_M".to_string(),
-            filename: "granite-4.0-h-tiny-Q4_K_M.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/granite-4.0-h-tiny-GGUF/resolve/main/granite-4.0-h-tiny-Q4_K_M.gguf".to_string(),
-            sha256: String::new(),
-            size_bytes: 4_250_000_000,
-            description: "H-Tiny 7B MoE Q4 — good quality, ~4.3 GB".to_string(),
-            downloaded: false,
-        },
-        ModelInfo {
-            id: "granite-4.0-h-tiny-Q6_K".to_string(),
-            filename: "granite-4.0-h-tiny-Q6_K.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/granite-4.0-h-tiny-GGUF/resolve/main/granite-4.0-h-tiny-Q6_K.gguf".to_string(),
-            sha256: String::new(),
-            size_bytes: 5_730_000_000,
-            description: "H-Tiny 7B MoE Q6 — best quality for 8GB VRAM (~5.7 GB)".to_string(),
-            downloaded: false,
-        },
-        ModelInfo {
-            id: "granite-4.0-h-tiny-Q8_0".to_string(),
-            filename: "granite-4.0-h-tiny-Q8_0.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/granite-4.0-h-tiny-GGUF/resolve/main/granite-4.0-h-tiny-Q8_0.gguf".to_string(),
-            sha256: String::new(),
-            size_bytes: 7_390_000_000,
-            description: "H-Tiny 7B MoE Q8 — highest quality, needs 10+ GB VRAM (~7.4 GB)".to_string(),
-            downloaded: false,
-        },
-        // Granite 4.0 Micro — 3B dense, smaller/faster
-        ModelInfo {
-            id: "granite-4.0-micro-IQ4_XS".to_string(),
-            filename: "granite-4.0-micro-IQ4_XS.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/granite-4.0-micro-GGUF/resolve/main/granite-4.0-micro-IQ4_XS.gguf".to_string(),
-            sha256: String::new(),
-            size_bytes: 1_890_000_000,
-            description: "Micro 3B IQ4 — smallest, for <4 GB RAM (~1.9 GB)".to_string(),
-            downloaded: false,
-        },
-        ModelInfo {
-            id: "granite-4.0-micro-Q4_K_M".to_string(),
-            filename: "granite-4.0-micro-Q4_K_M.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/granite-4.0-micro-GGUF/resolve/main/granite-4.0-micro-Q4_K_M.gguf".to_string(),
-            sha256: String::new(),
-            size_bytes: 2_100_000_000,
-            description: "Micro 3B Q4 — fast, low resource (~2.1 GB)".to_string(),
-            downloaded: false,
-        },
-        ModelInfo {
-            id: "granite-4.0-micro-Q5_K_M".to_string(),
-            filename: "granite-4.0-micro-Q5_K_M.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/granite-4.0-micro-GGUF/resolve/main/granite-4.0-micro-Q5_K_M.gguf".to_string(),
-            sha256: String::new(),
-            size_bytes: 2_440_000_000,
-            description: "Micro 3B Q5 — balanced (~2.4 GB)".to_string(),
             downloaded: false,
         },
     ]
@@ -446,14 +395,12 @@ pub fn detect_hardware() -> HardwareInfo {
     // GPU detection
     let (gpu_available, gpu_name, gpu_api) = detect_gpu();
 
-    let recommended_quant = if available_ram_mb < 4096 {
-        "granite-4.0-micro-IQ4_XS"
-    } else if available_ram_mb < 6144 {
-        "granite-4.0-micro-Q4_K_M"
-    } else if available_ram_mb < 8192 {
-        "granite-4.0-h-tiny-Q4_K_M"
-    } else {
+    let recommended_quant = if available_ram_mb < 8192 {
         "Qwen3.5-9B-Q4_K_M"
+    } else if available_ram_mb < 12288 {
+        "Qwen3.5-9B-Q5_K_M"
+    } else {
+        "Qwen3.5-9B-Q6_K"
     };
 
     HardwareInfo {
@@ -609,14 +556,12 @@ mod tests {
     #[test]
     fn model_registry_has_expected_entries() {
         let models = model_registry();
-        assert_eq!(models.len(), 9);
+        assert_eq!(models.len(), 3);
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert!(ids.contains(&"Qwen3.5-9B-Q4_K_M"));
         assert!(ids.contains(&"Qwen3.5-9B-Q5_K_M"));
         assert!(ids.contains(&"Qwen3.5-9B-Q6_K"));
-        assert!(ids.contains(&"granite-4.0-h-tiny-Q4_K_M"));
-        assert!(ids.contains(&"granite-4.0-micro-IQ4_XS"));
     }
 
     #[test]
@@ -666,12 +611,7 @@ mod tests {
     #[test]
     fn recommended_quant_based_on_ram() {
         let info = detect_hardware();
-        let valid_quants = [
-            "granite-4.0-micro-IQ4_XS",
-            "granite-4.0-micro-Q4_K_M",
-            "granite-4.0-h-tiny-Q4_K_M",
-            "Qwen3.5-9B-Q4_K_M",
-        ];
+        let valid_quants = ["Qwen3.5-9B-Q4_K_M", "Qwen3.5-9B-Q5_K_M", "Qwen3.5-9B-Q6_K"];
         assert!(
             valid_quants.contains(&info.recommended_quant.as_str()),
             "Unexpected quant: {}",
