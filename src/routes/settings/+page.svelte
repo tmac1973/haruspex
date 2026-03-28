@@ -98,6 +98,7 @@
 		const path = `${modelsDir}/${filename}`;
 		await stopServer();
 		await startServer(path);
+		activeModelPath = path;
 	}
 
 	async function restartServer() {

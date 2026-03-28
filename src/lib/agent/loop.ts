@@ -43,14 +43,20 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		const toolCalls = resolveToolCalls(response);
 
 		if (toolCalls.length === 0) {
-			if (usedTools) {
+			if (usedTools && response.content) {
 				// After tool use, use the non-streaming response directly
 				// since it already incorporates tool results
-				if (response.content) {
-					options.onStreamChunk({
-						delta: { content: response.content },
-						finish_reason: 'stop'
-					});
+				options.onStreamChunk({
+					delta: { content: response.content },
+					finish_reason: 'stop'
+				});
+				options.onComplete();
+			} else if (usedTools) {
+				// Response was empty after tools — re-request streaming
+				// (can happen if model only produced thinking tokens)
+				const stream = chatCompletionStream({ messages }, signal);
+				for await (const chunk of stream) {
+					options.onStreamChunk(chunk);
 				}
 				options.onComplete();
 			} else {
