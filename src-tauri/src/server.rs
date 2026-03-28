@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
@@ -159,6 +159,28 @@ impl LlamaServer {
         self.spawn_and_monitor(app, model_path).await
     }
 
+    fn get_sidecar_libs_dir(app: &AppHandle) -> Option<String> {
+        // In dev mode, libs are next to the binary in src-tauri/binaries/libs/
+        // In production, they'll be in the resource dir
+        let resource_dir = app.path().resource_dir().ok()?;
+        let libs_dir = resource_dir.join("binaries").join("libs");
+        if libs_dir.exists() {
+            return Some(libs_dir.to_string_lossy().to_string());
+        }
+
+        // Fallback: check relative to the executable
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let libs = exe_dir.join("binaries").join("libs");
+                if libs.exists() {
+                    return Some(libs.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        None
+    }
+
     async fn spawn_and_monitor(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
         self.set_status(ServerStatus::Starting, app).await;
 
@@ -169,11 +191,23 @@ impl LlamaServer {
 
         info!("Starting llama-server with args: {:?}", args);
 
-        let sidecar = app
+        let mut sidecar = app
             .shell()
             .sidecar("llama-server")
             .map_err(|e| format!("Failed to create sidecar command: {}", e))?
             .args(&args);
+
+        // Set LD_LIBRARY_PATH so llama-server can find its bundled .so files
+        if let Some(libs_dir) = Self::get_sidecar_libs_dir(app) {
+            info!("Setting LD_LIBRARY_PATH to: {}", libs_dir);
+            let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+            let new_path = if existing.is_empty() {
+                libs_dir
+            } else {
+                format!("{}:{}", libs_dir, existing)
+            };
+            sidecar = sidecar.env("LD_LIBRARY_PATH", new_path);
+        }
 
         let (rx, child) = sidecar
             .spawn()
@@ -251,7 +285,20 @@ impl LlamaServer {
                             let sidecar_result = app
                                 .shell()
                                 .sidecar("llama-server")
-                                .map(|cmd| cmd.args(&args))
+                                .map(|cmd| {
+                                    let mut cmd = cmd.args(&args);
+                                    if let Some(libs_dir) = Self::get_sidecar_libs_dir(&app) {
+                                        let existing =
+                                            std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                                        let new_path = if existing.is_empty() {
+                                            libs_dir
+                                        } else {
+                                            format!("{}:{}", libs_dir, existing)
+                                        };
+                                        cmd = cmd.env("LD_LIBRARY_PATH", new_path);
+                                    }
+                                    cmd
+                                })
                                 .and_then(|cmd| cmd.spawn());
 
                             match sidecar_result {

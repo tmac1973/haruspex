@@ -9,8 +9,9 @@ build/
 # Rust / Tauri
 src-tauri/target/
 
-# Sidecar binaries (large, built separately)
+# Sidecar binaries and libs (large, built separately)
 src-tauri/binaries/llama-server-*
+src-tauri/binaries/libs/
 
 # Environment files
 .env
