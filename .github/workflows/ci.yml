@@ -22,10 +22,25 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - name: Install Tauri system dependencies
+
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libasound2-dev
+
+      - name: Create placeholder sidecar binaries
+        run: |
+          TARGET=$(rustc --print host-tuple)
+          mkdir -p src-tauri/binaries
+          for name in llama-server whisper-server koko; do
+            echo '#!/bin/sh' > "src-tauri/binaries/${name}-${TARGET}"
+            chmod +x "src-tauri/binaries/${name}-${TARGET}"
+          done
+
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
