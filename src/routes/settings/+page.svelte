@@ -89,6 +89,13 @@
 		updateSettings({ ttsVoice: voice });
 	}
 
+	let ttsReadTablesByColumn = $state(getSettings().ttsReadTablesByColumn);
+
+	function toggleTableReading() {
+		ttsReadTablesByColumn = !ttsReadTablesByColumn;
+		updateSettings({ ttsReadTablesByColumn });
+	}
+
 	function setSearchProvider(provider: SearchProvider) {
 		searchProvider = provider;
 		updateSettings({ searchProvider: provider });
@@ -304,6 +311,13 @@
 				{/each}
 			</select>
 		</div>
+		<label class="toggle-row">
+			<input type="checkbox" checked={ttsReadTablesByColumn} onchange={toggleTableReading} />
+			<div>
+				<strong>Read tables by subject</strong>
+				<span>Read all data for each column subject, instead of row by row</span>
+			</div>
+		</label>
 		<p class="hint">Click the speaker icon on any assistant message to hear it read aloud.</p>
 	</section>
 
@@ -721,6 +735,31 @@
 	.ctx-btn span {
 		display: block;
 		font-size: 0.7rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
+	}
+
+	.toggle-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		padding: 8px 0;
+		cursor: pointer;
+	}
+
+	.toggle-row input[type='checkbox'] {
+		margin-top: 3px;
+		accent-color: var(--accent);
+	}
+
+	.toggle-row strong {
+		display: block;
+		font-size: 0.9rem;
+	}
+
+	.toggle-row span {
+		display: block;
+		font-size: 0.8rem;
 		color: var(--text-secondary);
 		margin-top: 2px;
 	}

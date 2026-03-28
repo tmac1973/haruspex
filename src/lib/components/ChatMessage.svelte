@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { renderMarkdown, stripMarkdownForTTS } from '$lib/markdown';
 	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
+	import { getSettings } from '$lib/stores/settings';
 	import type { ChatMessage } from '$lib/api';
 
 	interface Props {
@@ -11,7 +12,9 @@
 	let { message, isStreaming = false }: Props = $props();
 
 	let renderedContent = $derived(message.content ? renderMarkdown(message.content) : '');
-	let plainText = $derived(message.content ? stripMarkdownForTTS(message.content) : '');
+	let plainText = $derived(
+		message.content ? stripMarkdownForTTS(message.content, getSettings().ttsReadTablesByColumn) : ''
+	);
 </script>
 
 <div class="message" data-role={message.role}>

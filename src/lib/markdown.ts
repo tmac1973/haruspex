@@ -64,16 +64,64 @@ function convertThinkingBlocks(text: string): string {
 	});
 }
 
-export function stripMarkdownForTTS(text: string): string {
-	// Render to HTML first, then extract text — this produces clean,
-	// naturally structured text without regex artifacts that confuse TTS
+function convertTableToColumnFirst(tableHtml: string): string {
+	// Parse table into a 2D grid
+	const rows: string[][] = [];
+	const rowMatches = tableHtml.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+
+	for (const rowHtml of rowMatches) {
+		const cells: string[] = [];
+		const cellMatches = rowHtml.match(/<(?:td|th)[^>]*>([\s\S]*?)<\/(?:td|th)>/gi) || [];
+		for (const cellHtml of cellMatches) {
+			const text = cellHtml.replace(/<[^>]+>/g, '').trim();
+			cells.push(text);
+		}
+		if (cells.length > 0) {
+			rows.push(cells);
+		}
+	}
+
+	if (rows.length < 2 || rows[0].length < 2) {
+		// Too small to reorder — just flatten
+		return rows.map((r) => r.join(', ')).join('. ');
+	}
+
+	const headers = rows[0]; // Column headers
+	const dataRows = rows.slice(1);
+	const numCols = headers.length;
+	const parts: string[] = [];
+
+	// Read column by column (skipping column 0 which is the row label)
+	for (let col = 1; col < numCols; col++) {
+		parts.push(`${headers[col]}.`);
+		for (const row of dataRows) {
+			const label = row[0] || '';
+			const value = row[col] || '';
+			if (label && value) {
+				parts.push(`${label}: ${value}.`);
+			}
+		}
+	}
+
+	return parts.join(' ');
+}
+
+export function stripMarkdownForTTS(text: string, readTablesByColumn = true): string {
 	const html = marked.parse(convertThinkingBlocks(text)) as string;
 
 	// Remove thinking blocks
 	let cleaned = html.replace(/<details[\s\S]*?<\/details>/g, '');
-	// Remove code blocks entirely (don't read code aloud)
+	// Remove code blocks entirely
 	cleaned = cleaned.replace(/<div class="code-block">[\s\S]*?<\/div>\s*<\/div>/g, '');
 	cleaned = cleaned.replace(/<pre[\s\S]*?<\/pre>/g, '');
+
+	// Convert tables to column-first reading order
+	if (readTablesByColumn) {
+		cleaned = cleaned.replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => {
+			return ' ' + convertTableToColumnFirst(tableHtml) + ' ';
+		});
+	}
+
 	// Convert block elements to pauses before stripping tags
 	cleaned = cleaned.replace(/<\/h[1-6]>/g, '.\n\n');
 	cleaned = cleaned.replace(/<\/p>/g, '.\n');
@@ -91,10 +139,10 @@ export function stripMarkdownForTTS(text: string): string {
 	cleaned = cleaned.replace(/&nbsp;/g, ' ');
 	// Remove URLs
 	cleaned = cleaned.replace(/https?:\/\/\S+/g, '');
-	// Clean up double periods from our injected pauses
+	// Clean up double periods
 	cleaned = cleaned.replace(/\.{2,}/g, '.');
 	cleaned = cleaned.replace(/\.\s*\./g, '.');
-	// Remove emojis and other unicode symbols (codepoints above basic multilingual plane)
+	// Remove emojis
 	cleaned = cleaned.replace(/\p{Emoji_Presentation}/gu, '');
 	cleaned = cleaned.replace(/\p{Extended_Pictographic}/gu, '');
 	// Collapse whitespace

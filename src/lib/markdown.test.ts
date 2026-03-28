@@ -89,6 +89,27 @@ describe('renderMarkdown', () => {
 		expect(result).not.toContain('<');
 	});
 
+	it('stripMarkdownForTTS reads tables by column', () => {
+		const md =
+			'| Board | Price | Rating |\n|---|---|---|\n| ROG Crosshair | $500 | 9.5 |\n| ASRock Pro | $200 | 8.0 |';
+		const result = stripMarkdownForTTS(md, true);
+		// Should read Price column first, then Rating column
+		// "Price. ROG Crosshair: $500. ASRock Pro: $200. Rating. ROG Crosshair: 9.5. ASRock Pro: 8.0."
+		expect(result).toContain('Price');
+		expect(result).toContain('ROG Crosshair: $500');
+		expect(result).toContain('ASRock Pro: $200');
+		// Price section should come before Rating section
+		expect(result.indexOf('Price')).toBeLessThan(result.indexOf('Rating'));
+	});
+
+	it('stripMarkdownForTTS reads tables by row when disabled', () => {
+		const md = '| Board | Price |\n|---|---|\n| ROG | $500 |';
+		const result = stripMarkdownForTTS(md, false);
+		// Should just read row by row
+		expect(result).toContain('ROG');
+		expect(result).toContain('$500');
+	});
+
 	it('stripMarkdownForTTS removes code blocks', () => {
 		const md = 'Before code\n\n```js\nconst x = 1;\n```\n\nAfter code';
 		const result = stripMarkdownForTTS(md);

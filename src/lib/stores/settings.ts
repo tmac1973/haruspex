@@ -12,6 +12,7 @@ export interface AppSettings {
 	braveApiKey: string;
 	searxngUrl: string;
 	contextSize: number;
+	ttsReadTablesByColumn: boolean;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -23,7 +24,8 @@ const defaults: AppSettings = {
 	searchProvider: 'duckduckgo',
 	braveApiKey: '',
 	searxngUrl: 'http://localhost:8080',
-	contextSize: 32768
+	contextSize: 32768,
+	ttsReadTablesByColumn: true
 };
 
 function load(): AppSettings {
