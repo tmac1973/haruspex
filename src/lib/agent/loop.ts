@@ -25,6 +25,7 @@ export interface AgentLoopOptions {
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	const { messages, maxIterations = 5, signal } = options;
 	let iteration = 0;
+	let usedTools = false;
 
 	while (iteration < maxIterations) {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -42,26 +43,40 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		const toolCalls = resolveToolCalls(response);
 
 		if (toolCalls.length === 0) {
-			// No tool calls — stream the final answer
-			// Re-request with streaming since chatCompletion already consumed the response
-			const stream = chatCompletionStream(
-				{
-					messages,
-					tools: AGENT_TOOLS
-				},
-				signal
-			);
-			for await (const chunk of stream) {
-				options.onStreamChunk(chunk);
+			if (usedTools) {
+				// After tool use, use the non-streaming response directly
+				// since it already incorporates tool results
+				if (response.content) {
+					options.onStreamChunk({
+						delta: { content: response.content },
+						finish_reason: 'stop'
+					});
+				}
+				options.onComplete();
+			} else {
+				// No tools used at all — stream the response for better UX
+				const stream = chatCompletionStream(
+					{
+						messages,
+						tools: AGENT_TOOLS
+					},
+					signal
+				);
+				for await (const chunk of stream) {
+					options.onStreamChunk(chunk);
+				}
+				options.onComplete();
 			}
-			options.onComplete();
 			return;
 		}
 
-		// Append assistant message with tool calls
+		usedTools = true;
+
+		// Append assistant message with tool calls (but NOT the content —
+		// the model should regenerate its answer after seeing tool results)
 		messages.push({
 			role: 'assistant',
-			content: response.content || '',
+			content: '',
 			tool_calls: toolCalls.map((tc) => ({
 				id: tc.id,
 				type: 'function' as const,
@@ -86,9 +101,12 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	}
 
 	// Max iterations reached — request final answer without tools
-	const stream = chatCompletionStream({ messages }, signal);
-	for await (const chunk of stream) {
-		options.onStreamChunk(chunk);
+	const response = await chatCompletion({ messages }, signal);
+	if (response.content) {
+		options.onStreamChunk({
+			delta: { content: response.content },
+			finish_reason: 'stop'
+		});
 	}
 	options.onComplete();
 }
