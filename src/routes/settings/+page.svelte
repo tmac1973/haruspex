@@ -70,11 +70,13 @@
 		});
 
 		try {
-			await invoke('download_model', { modelId });
+			const modelPath = await invoke<string>('download_model', { modelId });
 			unlisten();
 			downloading = null;
 			downloadProgress = null;
 			await refreshModels();
+			// Auto-start server with the newly downloaded model
+			await switchModel(modelPath.split('/').pop()!);
 		} catch (e) {
 			unlisten();
 			downloading = null;
