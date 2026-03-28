@@ -74,6 +74,12 @@ export function stripMarkdownForTTS(text: string): string {
 	// Remove code blocks entirely (don't read code aloud)
 	cleaned = cleaned.replace(/<div class="code-block">[\s\S]*?<\/div>\s*<\/div>/g, '');
 	cleaned = cleaned.replace(/<pre[\s\S]*?<\/pre>/g, '');
+	// Convert block elements to pauses before stripping tags
+	cleaned = cleaned.replace(/<\/h[1-6]>/g, '.\n\n');
+	cleaned = cleaned.replace(/<\/p>/g, '.\n');
+	cleaned = cleaned.replace(/<\/li>/g, '.\n');
+	cleaned = cleaned.replace(/<\/tr>/g, '.\n');
+	cleaned = cleaned.replace(/<br\s*\/?>/g, '.\n');
 	// Remove all HTML tags, keeping text content
 	cleaned = cleaned.replace(/<[^>]+>/g, ' ');
 	// Decode HTML entities
@@ -85,8 +91,15 @@ export function stripMarkdownForTTS(text: string): string {
 	cleaned = cleaned.replace(/&nbsp;/g, ' ');
 	// Remove URLs
 	cleaned = cleaned.replace(/https?:\/\/\S+/g, '');
+	// Clean up double periods from our injected pauses
+	cleaned = cleaned.replace(/\.{2,}/g, '.');
+	cleaned = cleaned.replace(/\.\s*\./g, '.');
 	// Remove emojis and other unicode symbols
-	cleaned = cleaned.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FA9F}\u{200D}]/gu, '');
+	// eslint-disable-next-line no-misleading-character-class
+	cleaned = cleaned.replace(
+		/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FA9F}\u{200D}]/gu,
+		''
+	);
 	// Collapse whitespace
 	cleaned = cleaned.replace(/\s+/g, ' ');
 	return cleaned.trim();

@@ -266,8 +266,10 @@
 					rows="1"
 				></textarea>
 				<MicButton
-					onTranscription={(text) => {
-						inputText = text;
+					onTranscription={async (text) => {
+						inputText = '';
+						autoScroll = true;
+						await sendMessage(text);
 					}}
 					disabled={isGenerating}
 				/>
