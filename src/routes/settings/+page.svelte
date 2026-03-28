@@ -206,12 +206,12 @@
 	}
 </script>
 
-<div class="settings">
-	<div class="settings-header">
-		<button class="back-btn" onclick={() => goto('/')}>&#8592; Back</button>
-		<h1>Settings</h1>
-	</div>
+<div class="settings-header">
+	<button class="back-btn" onclick={() => goto('/')}>&#8592; Back</button>
+	<h1>Settings</h1>
+</div>
 
+<div class="settings">
 	<section>
 		<h2>Models</h2>
 		<p class="hint">Models are stored in: <code>{modelsDir}</code></p>
@@ -472,24 +472,40 @@
 </div>
 
 <style>
-	.settings {
-		max-width: 640px;
-		margin: 0 auto;
-		padding: 24px;
-		height: calc(100vh - 45px);
-		overflow-y: auto;
-	}
-
 	.settings-header {
 		display: flex;
 		align-items: center;
 		gap: 16px;
-		margin-bottom: 24px;
+		padding: 12px 24px;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-primary);
+		position: sticky;
+		top: 0;
+		z-index: 10;
 	}
 
 	.settings-header h1 {
 		margin: 0;
 		font-size: 1.3rem;
+	}
+
+	.settings {
+		max-width: 640px;
+		margin: 0 auto;
+		padding: 24px;
+		height: calc(100vh - 45px - 50px);
+		overflow-y: auto;
+	}
+
+	section {
+		padding-bottom: 24px;
+		margin-bottom: 24px;
+		border-bottom: 1px solid var(--border);
+	}
+
+	section:last-child {
+		border-bottom: none;
+		margin-bottom: 0;
 	}
 
 	.back-btn {
