@@ -29,14 +29,20 @@ jobs:
       - name: Bump version
         run: |
           VERSION="${{ inputs.version }}"
-          npm version "$VERSION" --no-git-tag-version
+          # Update version in all files (npm version errors if already at target)
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
-          git commit -m "chore: bump version to $VERSION"
-          git tag "v$VERSION"
-          git push
-          git push origin "v$VERSION"
+          # Only commit if there are changes
+          if git diff --quiet; then
+            echo "Version already at $VERSION, skipping commit"
+          else
+            git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+            git commit -m "chore: bump version to $VERSION"
+            git push
+          fi
+          git tag -f "v$VERSION"
+          git push origin "v$VERSION" --force
 
   build-sidecars:
     needs: bump-version
