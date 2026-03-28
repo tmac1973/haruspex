@@ -145,6 +145,9 @@ impl LlamaServer {
 
         let config = config.unwrap_or_default();
 
+        // Kill any orphaned process on the port (e.g., from a previous hot-reload)
+        Self::kill_process_on_port(config.port).await;
+
         if !Path::new(model_path).exists() {
             let msg = format!("Model file not found: {}", model_path);
             self.set_status(ServerStatus::Error(msg.clone()), app).await;
@@ -159,6 +162,43 @@ impl LlamaServer {
         }
 
         self.spawn_and_monitor(app, model_path).await
+    }
+
+    async fn kill_process_on_port(port: u16) {
+        if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
+            warn!(
+                "Port {} is occupied, attempting to kill the existing process",
+                port
+            );
+
+            #[cfg(unix)]
+            {
+                // Use lsof to find and kill the process
+                if let Ok(output) = std::process::Command::new("lsof")
+                    .args(["-t", "-i", &format!(":{}", port)])
+                    .output()
+                {
+                    let pids = String::from_utf8_lossy(&output.stdout);
+                    for pid_str in pids.trim().lines() {
+                        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                            info!("Killing orphaned process {} on port {}", pid, port);
+                            unsafe {
+                                libc::kill(pid, libc::SIGTERM);
+                            }
+                        }
+                    }
+                }
+
+                // Wait for port to be released
+                for _ in 0..20 {
+                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
+                        return;
+                    }
+                    sleep(Duration::from_millis(100)).await;
+                }
+                warn!("Failed to free port {}", port);
+            }
+        }
     }
 
     fn get_sidecar_dir(app: &AppHandle) -> Option<String> {
