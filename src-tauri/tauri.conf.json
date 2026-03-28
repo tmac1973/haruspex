@@ -28,7 +28,8 @@
     "targets": "all",
     "externalBin": [
       "binaries/llama-server",
-      "binaries/whisper-server"
+      "binaries/whisper-server",
+      "binaries/koko"
     ],
     "resources": [
       "binaries/*.so*"

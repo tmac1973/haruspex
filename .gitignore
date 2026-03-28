@@ -11,6 +11,8 @@ src-tauri/target/
 
 # Sidecar binaries and libs (large, built separately)
 src-tauri/binaries/llama-server-*
+src-tauri/binaries/whisper-server-*
+src-tauri/binaries/koko-*
 src-tauri/binaries/*.so*
 src-tauri/binaries/libs/
 

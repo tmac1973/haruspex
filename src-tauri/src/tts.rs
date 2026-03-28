@@ -1,85 +1,262 @@
-use kokoro_micro::TtsEngine as KokoroEngine;
-use log::info;
+use log::{error, info, warn};
 use rodio::{OutputStream, OutputStreamBuilder, Sink};
-use std::sync::Mutex;
+use std::sync::Arc;
+use std::time::Duration;
+use tauri::AppHandle;
+use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::ShellExt;
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 
-const TTS_SAMPLE_RATE: u32 = 24000;
+const TTS_PORT: u16 = 3001;
+
+#[derive(Clone, Debug, PartialEq)]
+enum TtsStatus {
+    Stopped,
+    Starting,
+    Ready,
+    Error(String),
+}
 
 pub struct TtsEngine {
-    kokoro: Mutex<Option<KokoroEngine>>,
-    sink: Mutex<Option<Sink>>,
-    _stream: Mutex<Option<OutputStream>>,
+    child: Mutex<Option<CommandChild>>,
+    status: Arc<Mutex<TtsStatus>>,
+    sink: std::sync::Mutex<Option<Sink>>,
+    _stream: std::sync::Mutex<Option<OutputStream>>,
 }
 
 impl TtsEngine {
     pub fn new() -> Self {
         Self {
-            kokoro: Mutex::new(None),
-            sink: Mutex::new(None),
-            _stream: Mutex::new(None),
+            child: Mutex::new(None),
+            status: Arc::new(Mutex::new(TtsStatus::Stopped)),
+            sink: std::sync::Mutex::new(None),
+            _stream: std::sync::Mutex::new(None),
         }
     }
 
-    pub async fn initialize(&self) -> Result<(), String> {
-        info!("Initializing TTS engine (will download model if needed)...");
-        let kokoro = KokoroEngine::new()
+    pub async fn start(&self, app: &AppHandle) -> Result<(), String> {
+        {
+            let status = self.status.lock().await;
+            if *status == TtsStatus::Ready || *status == TtsStatus::Starting {
+                return Ok(());
+            }
+        }
+
+        self.stop().await?;
+
+        {
+            let mut status = self.status.lock().await;
+            *status = TtsStatus::Starting;
+        }
+
+        info!("Starting Kokoro TTS server on port {}", TTS_PORT);
+
+        let mut sidecar = app
+            .shell()
+            .sidecar("koko")
+            .map_err(|e| format!("Failed to create koko sidecar: {}", e))?
+            .args([
+                "openai",
+                "--ip",
+                "127.0.0.1",
+                "--port",
+                &TTS_PORT.to_string(),
+            ]);
+
+        // Set LD_LIBRARY_PATH
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let bin_dir = exe_dir.to_string_lossy().to_string();
+                let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                let ld_path = if existing.is_empty() {
+                    bin_dir
+                } else {
+                    format!("{}:{}", bin_dir, existing)
+                };
+                sidecar = sidecar.env("LD_LIBRARY_PATH", ld_path);
+            }
+        }
+
+        let (mut rx, child) = sidecar
+            .spawn()
+            .map_err(|e| format!("Failed to spawn koko: {}", e))?;
+
+        {
+            let mut c = self.child.lock().await;
+            *c = Some(child);
+        }
+
+        // Spawn stderr reader
+        let status_clone = Arc::clone(&self.status);
+        tauri::async_runtime::spawn(async move {
+            use tauri_plugin_shell::process::CommandEvent;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stderr(line) => {
+                        let line_str = String::from_utf8_lossy(&line);
+                        info!("koko: {}", line_str.trim());
+                    }
+                    CommandEvent::Stdout(line) => {
+                        let line_str = String::from_utf8_lossy(&line);
+                        let trimmed = line_str.trim();
+                        if !trimmed.is_empty() {
+                            info!("koko: {}", trimmed);
+                        }
+                        // Detect when server is listening
+                        if trimmed.contains("listening") || trimmed.contains("Listening") {
+                            let mut status = status_clone.lock().await;
+                            if *status == TtsStatus::Starting {
+                                *status = TtsStatus::Ready;
+                                info!("Kokoro TTS server is ready");
+                            }
+                        }
+                    }
+                    CommandEvent::Terminated(payload) => {
+                        let code = payload.code.unwrap_or(-1);
+                        warn!("koko exited with code: {}", code);
+                        let mut status = status_clone.lock().await;
+                        if *status != TtsStatus::Stopped {
+                            *status = TtsStatus::Error(format!("Exited with code {}", code));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        // Also do a health poll as fallback
+        let status_for_health = Arc::clone(&self.status);
+        tauri::async_runtime::spawn(async move {
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+                .unwrap();
+
+            for _ in 0..60 {
+                {
+                    let status = status_for_health.lock().await;
+                    if *status == TtsStatus::Ready {
+                        return;
+                    }
+                    if *status != TtsStatus::Starting {
+                        return;
+                    }
+                }
+                sleep(Duration::from_millis(500)).await;
+
+                // Try a simple GET to see if server is up
+                if let Ok(resp) = client
+                    .get(format!("http://127.0.0.1:{}/", TTS_PORT))
+                    .send()
+                    .await
+                {
+                    // Any response means server is running
+                    if resp.status().as_u16() > 0 {
+                        let mut status = status_for_health.lock().await;
+                        if *status == TtsStatus::Starting {
+                            *status = TtsStatus::Ready;
+                            info!("Kokoro TTS server ready (health poll)");
+                        }
+                        return;
+                    }
+                }
+            }
+
+            let mut status = status_for_health.lock().await;
+            if *status == TtsStatus::Starting {
+                *status = TtsStatus::Error("TTS server startup timed out".to_string());
+                error!("Kokoro TTS server startup timed out");
+            }
+        });
+
+        Ok(())
+    }
+
+    pub async fn stop(&self) -> Result<(), String> {
+        let mut child = self.child.lock().await;
+        if let Some(c) = child.take() {
+            info!("Stopping koko TTS server");
+            c.kill()
+                .map_err(|e| format!("Failed to kill koko: {}", e))?;
+        }
+        let mut status = self.status.lock().await;
+        *status = TtsStatus::Stopped;
+        Ok(())
+    }
+
+    pub async fn is_ready(&self) -> bool {
+        *self.status.lock().await == TtsStatus::Ready
+    }
+
+    pub async fn synthesize_and_play(&self, text: &str, voice: &str) -> Result<(), String> {
+        let status = self.status.lock().await;
+        if *status != TtsStatus::Ready {
+            return Err("TTS server not ready".to_string());
+        }
+        drop(status);
+
+        // Call the OpenAI-compatible endpoint
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .build()
+            .map_err(|e| format!("HTTP client error: {}", e))?;
+
+        let body = serde_json::json!({
+            "model": "tts-1",
+            "input": text,
+            "voice": voice,
+            "response_format": "wav"
+        });
+
+        let resp = client
+            .post(format!("http://127.0.0.1:{}/v1/audio/speech", TTS_PORT))
+            .json(&body)
+            .send()
             .await
-            .map_err(|e| format!("Failed to initialize Kokoro: {}", e))?;
+            .map_err(|e| format!("TTS request failed: {}", e))?;
 
-        let voices = kokoro.voices();
-        info!("TTS engine initialized with {} voices", voices.len());
+        if !resp.status().is_success() {
+            let err_text = resp.text().await.unwrap_or_default();
+            return Err(format!("TTS failed: {}", err_text));
+        }
 
-        *self.kokoro.lock().unwrap() = Some(kokoro);
+        let wav_bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("Failed to read TTS response: {}", e))?;
+
+        // Decode WAV and play
+        let cursor = std::io::Cursor::new(wav_bytes.to_vec());
+        let reader =
+            hound::WavReader::new(cursor).map_err(|e| format!("Failed to decode WAV: {}", e))?;
+
+        let spec = reader.spec();
+        let samples: Vec<f32> = if spec.sample_format == hound::SampleFormat::Int {
+            reader
+                .into_samples::<i16>()
+                .filter_map(|s| s.ok())
+                .map(|s| s as f32 / 32768.0)
+                .collect()
+        } else {
+            reader
+                .into_samples::<f32>()
+                .filter_map(|s| s.ok())
+                .collect()
+        };
+
+        self.play_samples(&samples, spec.sample_rate)?;
         Ok(())
     }
 
-    pub fn is_initialized(&self) -> bool {
-        self.kokoro.lock().unwrap().is_some()
-    }
-
-    pub fn synthesize_and_play(
-        &self,
-        text: &str,
-        voice: Option<&str>,
-        speed: f32,
-    ) -> Result<(), String> {
-        let samples = self.synthesize(text, voice, speed)?;
-        self.play_samples(&samples)?;
-        Ok(())
-    }
-
-    pub fn synthesize(
-        &self,
-        text: &str,
-        voice: Option<&str>,
-        speed: f32,
-    ) -> Result<Vec<f32>, String> {
-        let mut kokoro = self.kokoro.lock().unwrap();
-        let kokoro = kokoro.as_mut().ok_or("TTS engine not initialized")?;
-
-        info!(
-            "Synthesizing {} chars with voice '{}'",
-            text.len(),
-            voice.unwrap_or("default")
-        );
-
-        let samples = kokoro
-            .synthesize_with_options(text, voice, speed, 1.0, Some("en"))
-            .map_err(|e| format!("TTS synthesis failed: {}", e))?;
-
-        info!("Synthesized {} samples", samples.len());
-        Ok(samples)
-    }
-
-    pub fn play_samples(&self, samples: &[f32]) -> Result<(), String> {
+    fn play_samples(&self, samples: &[f32], sample_rate: u32) -> Result<(), String> {
         self.stop_playback();
 
         let stream = OutputStreamBuilder::open_default_stream()
             .map_err(|e| format!("Audio output error: {}", e))?;
 
         let sink = Sink::connect_new(stream.mixer());
-
-        let source = rodio::buffer::SamplesBuffer::new(1, TTS_SAMPLE_RATE, samples.to_vec());
+        let source = rodio::buffer::SamplesBuffer::new(1, sample_rate, samples.to_vec());
         sink.append(source);
 
         *self._stream.lock().unwrap() = Some(stream);
@@ -102,31 +279,26 @@ impl TtsEngine {
             false
         }
     }
-
-    pub fn get_voices(&self) -> Vec<String> {
-        if let Some(ref kokoro) = *self.kokoro.lock().unwrap() {
-            kokoro.voices()
-        } else {
-            Vec::new()
-        }
-    }
 }
 
 // Tauri commands
 
 #[tauri::command]
-pub async fn tts_initialize(state: tauri::State<'_, TtsEngine>) -> Result<(), String> {
-    state.initialize().await
+pub async fn tts_initialize(
+    app: AppHandle,
+    state: tauri::State<'_, TtsEngine>,
+) -> Result<(), String> {
+    state.start(&app).await
 }
 
 #[tauri::command]
-pub fn tts_synthesize_and_play(
+pub async fn tts_synthesize_and_play(
     state: tauri::State<'_, TtsEngine>,
     text: String,
     voice: Option<String>,
-    speed: Option<f32>,
 ) -> Result<(), String> {
-    state.synthesize_and_play(&text, voice.as_deref(), speed.unwrap_or(1.0))
+    let voice = voice.unwrap_or_else(|| "af_heart".to_string());
+    state.synthesize_and_play(&text, &voice).await
 }
 
 #[tauri::command]
@@ -141,11 +313,23 @@ pub fn tts_is_playing(state: tauri::State<'_, TtsEngine>) -> bool {
 }
 
 #[tauri::command]
-pub fn tts_list_voices(state: tauri::State<'_, TtsEngine>) -> Vec<String> {
-    state.get_voices()
+pub async fn tts_is_initialized(state: tauri::State<'_, TtsEngine>) -> Result<bool, ()> {
+    Ok(state.is_ready().await)
 }
 
 #[tauri::command]
-pub fn tts_is_initialized(state: tauri::State<'_, TtsEngine>) -> bool {
-    state.is_initialized()
+pub async fn tts_list_voices() -> Result<Vec<String>, ()> {
+    Ok(vec![
+        "af_heart".to_string(),
+        "af_sky".to_string(),
+        "af_nicole".to_string(),
+        "af_bella".to_string(),
+        "af_sarah".to_string(),
+        "am_adam".to_string(),
+        "am_michael".to_string(),
+        "bf_emma".to_string(),
+        "bf_isabella".to_string(),
+        "bm_george".to_string(),
+        "bm_lewis".to_string(),
+    ])
 }

@@ -17,6 +17,10 @@
         {
           "name": "binaries/whisper-server",
           "sidecar": true
+        },
+        {
+          "name": "binaries/koko",
+          "sidecar": true
         }
       ]
     },
