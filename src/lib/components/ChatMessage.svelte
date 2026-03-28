@@ -66,6 +66,29 @@
 		padding-left: 1.5em;
 	}
 
+	.message-content :global(table) {
+		width: 100%;
+		border-collapse: collapse;
+		margin: 0.75em 0;
+		font-size: 0.9em;
+	}
+
+	.message-content :global(th),
+	.message-content :global(td) {
+		border: 1px solid var(--border);
+		padding: 6px 12px;
+		text-align: left;
+	}
+
+	.message-content :global(th) {
+		background: var(--bg-secondary);
+		font-weight: 600;
+	}
+
+	.message-content :global(tr:nth-child(even)) {
+		background: color-mix(in srgb, var(--bg-secondary) 50%, transparent);
+	}
+
 	.message-content :global(.code-block) {
 		margin: 0.75em 0;
 		border-radius: 6px;
