@@ -196,17 +196,28 @@ impl TtsEngine {
         }
         drop(status);
 
-        // Call the OpenAI-compatible endpoint
+        if text.trim().is_empty() {
+            return Err("No text to speak".to_string());
+        }
+
+        info!(
+            "TTS request: {} chars, voice='{}', text: {:?}",
+            text.len(),
+            voice,
+            &text[..text.len().min(100)]
+        );
+
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(120))
             .build()
             .map_err(|e| format!("HTTP client error: {}", e))?;
 
+        // Use PCM format — raw 32-bit float samples at 24kHz
         let body = serde_json::json!({
             "model": "tts-1",
             "input": text,
             "voice": voice,
-            "response_format": "wav"
+            "response_format": "pcm"
         });
 
         let resp = client
@@ -221,31 +232,30 @@ impl TtsEngine {
             return Err(format!("TTS failed: {}", err_text));
         }
 
-        let wav_bytes = resp
+        let audio_bytes = resp
             .bytes()
             .await
             .map_err(|e| format!("Failed to read TTS response: {}", e))?;
 
-        // Decode WAV and play
-        let cursor = std::io::Cursor::new(wav_bytes.to_vec());
-        let reader =
-            hound::WavReader::new(cursor).map_err(|e| format!("Failed to decode WAV: {}", e))?;
+        info!("TTS response: {} bytes", audio_bytes.len());
 
-        let spec = reader.spec();
-        let samples: Vec<f32> = if spec.sample_format == hound::SampleFormat::Int {
-            reader
-                .into_samples::<i16>()
-                .filter_map(|s| s.ok())
-                .map(|s| s as f32 / 32768.0)
-                .collect()
-        } else {
-            reader
-                .into_samples::<f32>()
-                .filter_map(|s| s.ok())
-                .collect()
-        };
+        if audio_bytes.len() < 100 {
+            return Err("TTS produced no audio".to_string());
+        }
 
-        self.play_samples(&samples, spec.sample_rate)?;
+        // PCM format: 32-bit float, mono, 24kHz
+        let samples: Vec<f32> = audio_bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect();
+
+        info!(
+            "Playing {} samples ({:.1}s)",
+            samples.len(),
+            samples.len() as f32 / 24000.0
+        );
+
+        self.play_samples(&samples, 24000)?;
         Ok(())
     }
 
