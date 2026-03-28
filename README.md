@@ -42,7 +42,7 @@ Haruspex wraps a local LLM (via [llama.cpp](https://github.com/ggml-org/llama.cp
 ### Dev Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/haruspex.git
+git clone https://github.com/tmac1973/haruspex.git
 cd haruspex
 
 # Build sidecars and download models (first time only)
