@@ -158,21 +158,22 @@ impl LlamaServer {
         self.spawn_and_monitor(app, model_path).await
     }
 
-    fn get_sidecar_libs_dir(app: &AppHandle) -> Option<String> {
-        // In dev mode, libs are next to the binary in src-tauri/binaries/libs/
-        // In production, they'll be in the resource dir
+    fn get_sidecar_dir(app: &AppHandle) -> Option<String> {
+        // llama-server discovers its backends (libggml-*.so) via /proc/self/exe
+        // and loads them from the same directory as the binary.
+        // We also need LD_LIBRARY_PATH for the shared libs (libllama.so, etc.)
         let resource_dir = app.path().resource_dir().ok()?;
-        let libs_dir = resource_dir.join("binaries").join("libs");
-        if libs_dir.exists() {
-            return Some(libs_dir.to_string_lossy().to_string());
+        let binaries_dir = resource_dir.join("binaries");
+        if binaries_dir.exists() {
+            return Some(binaries_dir.to_string_lossy().to_string());
         }
 
         // Fallback: check relative to the executable
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
-                let libs = exe_dir.join("binaries").join("libs");
-                if libs.exists() {
-                    return Some(libs.to_string_lossy().to_string());
+                let binaries = exe_dir.join("binaries");
+                if binaries.exists() {
+                    return Some(binaries.to_string_lossy().to_string());
                 }
             }
         }
@@ -197,13 +198,14 @@ impl LlamaServer {
             .args(&args);
 
         // Set LD_LIBRARY_PATH so llama-server can find its bundled .so files
-        if let Some(libs_dir) = Self::get_sidecar_libs_dir(app) {
-            info!("Setting LD_LIBRARY_PATH to: {}", libs_dir);
+        // (backends are discovered via /proc/self/exe, but libllama.so etc. need LD_LIBRARY_PATH)
+        if let Some(bin_dir) = Self::get_sidecar_dir(app) {
+            info!("Setting LD_LIBRARY_PATH to: {}", bin_dir);
             let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
             let new_path = if existing.is_empty() {
-                libs_dir
+                bin_dir
             } else {
-                format!("{}:{}", libs_dir, existing)
+                format!("{}:{}", bin_dir, existing)
             };
             sidecar = sidecar.env("LD_LIBRARY_PATH", new_path);
         }
@@ -286,13 +288,13 @@ impl LlamaServer {
                                 .sidecar("llama-server")
                                 .map(|cmd| {
                                     let mut cmd = cmd.args(&args);
-                                    if let Some(libs_dir) = Self::get_sidecar_libs_dir(&app) {
+                                    if let Some(bin_dir) = Self::get_sidecar_dir(&app) {
                                         let existing =
                                             std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
                                         let new_path = if existing.is_empty() {
-                                            libs_dir
+                                            bin_dir
                                         } else {
-                                            format!("{}:{}", libs_dir, existing)
+                                            format!("{}:{}", bin_dir, existing)
                                         };
                                         cmd = cmd.env("LD_LIBRARY_PATH", new_path);
                                     }

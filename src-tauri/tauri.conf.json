@@ -30,7 +30,7 @@
       "binaries/llama-server"
     ],
     "resources": [
-      "binaries/libs/*"
+      "binaries/*.so*"
     ],
     "icon": [
       "icons/32x32.png",
