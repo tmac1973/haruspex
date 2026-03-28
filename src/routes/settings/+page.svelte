@@ -244,6 +244,8 @@
 		max-width: 640px;
 		margin: 0 auto;
 		padding: 24px;
+		height: calc(100vh - 45px);
+		overflow-y: auto;
 	}
 
 	.settings-header {
