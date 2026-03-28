@@ -45,6 +45,9 @@ impl TtsEngine {
 
         self.stop().await?;
 
+        // Kill any orphaned koko process on our port
+        Self::kill_process_on_port(TTS_PORT).await;
+
         {
             let mut status = self.status.lock().await;
             *status = TtsStatus::Starting;
@@ -183,6 +186,35 @@ impl TtsEngine {
         let mut status = self.status.lock().await;
         *status = TtsStatus::Stopped;
         Ok(())
+    }
+
+    async fn kill_process_on_port(port: u16) {
+        if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
+            warn!("Port {} occupied, killing existing process", port);
+            #[cfg(unix)]
+            {
+                if let Ok(output) = std::process::Command::new("lsof")
+                    .args(["-t", "-i", &format!(":{}", port)])
+                    .output()
+                {
+                    let pids = String::from_utf8_lossy(&output.stdout);
+                    for pid_str in pids.trim().lines() {
+                        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                            info!("Killing process {} on port {}", pid, port);
+                            unsafe {
+                                libc::kill(pid, libc::SIGTERM);
+                            }
+                        }
+                    }
+                }
+                for _ in 0..20 {
+                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
+                        return;
+                    }
+                    sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
     }
 
     pub async fn is_ready(&self) -> bool {
