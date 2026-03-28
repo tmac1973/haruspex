@@ -76,8 +76,18 @@ else
     rm -rf "$BUILD_DIR/llama"
     mkdir -p "$BUILD_DIR/llama"
     cd "$BUILD_DIR/llama"
-    cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1 | tail -3
-    cmake --build . --config Release -j"$NPROC" --target llama-server 2>&1 | tail -3
+
+    echo "   Configuring..."
+    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1; then
+        echo "   WARN: cmake configure failed with GPU flags, retrying CPU-only..."
+        rm -rf "$BUILD_DIR/llama"
+        mkdir -p "$BUILD_DIR/llama"
+        cd "$BUILD_DIR/llama"
+        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release 2>&1
+    fi
+
+    echo "   Building..."
+    cmake --build . --config Release -j"$NPROC" --target llama-server 2>&1
 
     cp bin/llama-server${EXT} "$LLAMA_BIN"
     chmod +x "$LLAMA_BIN"
@@ -116,8 +126,18 @@ else
     rm -rf "$BUILD_DIR/whisper"
     mkdir -p "$BUILD_DIR/whisper"
     cd "$BUILD_DIR/whisper"
-    cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1 | tail -3
-    cmake --build . --config Release -j"$NPROC" --target whisper-server 2>&1 | tail -3
+
+    echo "   Configuring..."
+    if ! cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1; then
+        echo "   WARN: cmake configure failed with GPU flags, retrying CPU-only..."
+        rm -rf "$BUILD_DIR/whisper"
+        mkdir -p "$BUILD_DIR/whisper"
+        cd "$BUILD_DIR/whisper"
+        cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release 2>&1
+    fi
+
+    echo "   Building..."
+    cmake --build . --config Release -j"$NPROC" --target whisper-server 2>&1
 
     cp bin/whisper-server${EXT} "$WHISPER_BIN"
     chmod +x "$WHISPER_BIN"
@@ -152,7 +172,8 @@ else
     fi
 
     cd "$KOKO_SRC"
-    cargo build --release --bin koko 2>&1 | tail -3
+    echo "   Building..."
+    cargo build --release --bin koko 2>&1
 
     cp target/release/koko${EXT} "$KOKO_BIN"
     chmod +x "$KOKO_BIN"
