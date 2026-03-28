@@ -63,12 +63,35 @@ impl TtsEngine {
             voice.unwrap_or("default")
         );
 
-        let samples = kokoro
-            .synthesize_with_options(text, voice, speed, 1.0, Some("en"))
-            .map_err(|e| format!("TTS synthesis failed: {}", e))?;
+        // Split into sentences and synthesize each individually
+        // to avoid kokoro-micro's internal chunking which causes
+        // inconsistent volume/speed between chunks
+        let sentences = split_into_sentences(text);
+        let mut all_samples: Vec<f32> = Vec::new();
 
-        info!("Synthesized {} samples", samples.len());
-        Ok(samples)
+        for sentence in &sentences {
+            if sentence.trim().is_empty() {
+                continue;
+            }
+            match kokoro.synthesize_with_options(sentence, voice, speed, 1.0, Some("en")) {
+                Ok(mut samples) => {
+                    normalize_volume(&mut samples);
+                    all_samples.extend_from_slice(&samples);
+                    // Add a small pause between sentences
+                    all_samples.extend(std::iter::repeat(0.0).take(2400)); // 100ms at 24kHz
+                }
+                Err(e) => {
+                    info!("Skipping sentence synthesis error: {}", e);
+                }
+            }
+        }
+
+        info!(
+            "Synthesized {} samples from {} sentences",
+            all_samples.len(),
+            sentences.len()
+        );
+        Ok(all_samples)
     }
 
     pub fn play_samples(&self, samples: &[f32]) -> Result<(), String> {
@@ -108,6 +131,61 @@ impl TtsEngine {
             kokoro.voices()
         } else {
             Vec::new()
+        }
+    }
+}
+
+fn split_into_sentences(text: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current = String::new();
+
+    for ch in text.chars() {
+        current.push(ch);
+        if matches!(ch, '.' | '!' | '?' | '\n') {
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                sentences.push(trimmed);
+            }
+            current.clear();
+        }
+    }
+
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() {
+        sentences.push(trimmed);
+    }
+
+    // Merge very short sentences with the next one
+    let mut merged = Vec::new();
+    let mut buf = String::new();
+    for s in sentences {
+        if buf.is_empty() {
+            buf = s;
+        } else if buf.len() + s.len() < 100 {
+            buf.push(' ');
+            buf.push_str(&s);
+        } else {
+            merged.push(buf);
+            buf = s;
+        }
+    }
+    if !buf.is_empty() {
+        merged.push(buf);
+    }
+
+    merged
+}
+
+fn normalize_volume(samples: &mut [f32]) {
+    if samples.is_empty() {
+        return;
+    }
+    let peak = samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    if peak > 0.01 && peak != 1.0 {
+        let target = 0.7; // Target peak volume
+        let scale = target / peak;
+        for s in samples.iter_mut() {
+            *s *= scale;
         }
     }
 }
