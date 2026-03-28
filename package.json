@@ -1,0 +1,42 @@
+{
+	"name": "haruspex",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"lint": "eslint src/",
+		"format": "prettier --write 'src/**/*.{ts,svelte,js,css,html}'",
+		"format:check": "prettier --check 'src/**/*.{ts,svelte,js,css,html}'",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"tauri": "tauri"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-static": "^3.0.0",
+		"@sveltejs/kit": "^2.50.2",
+		"@sveltejs/vite-plugin-svelte": "^6.2.4",
+		"@tauri-apps/cli": "^2.0.0",
+		"@testing-library/svelte": "^5.0.0",
+		"eslint": "^9.0.0",
+		"eslint-plugin-svelte": "^3.0.0",
+		"globals": "^16.0.0",
+		"jsdom": "^26.0.0",
+		"prettier": "^3.0.0",
+		"prettier-plugin-svelte": "^3.5.0",
+		"svelte": "^5.54.0",
+		"svelte-check": "^4.4.2",
+		"typescript": "^5.9.3",
+		"typescript-eslint": "^8.0.0",
+		"vite": "^7.3.1",
+		"vitest": "^3.0.0"
+	},
+	"dependencies": {
+		"@tauri-apps/api": "^2.0.0"
+	}
+}
