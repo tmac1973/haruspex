@@ -204,8 +204,8 @@
 	{:else if step === 'test'}
 		<div class="wizard-step">
 			<h1>Testing the model</h1>
-			{#if testResult === 'running'}
-				<p class="loading">{testStatusMessage}</p>
+			{#if testResult === 'pending' || testResult === 'running'}
+				<p class="loading">{testStatusMessage || 'Preparing test...'}</p>
 				<div class="test-dots">
 					<span class="dot"></span>
 					<span class="dot"></span>

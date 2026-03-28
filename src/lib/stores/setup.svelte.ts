@@ -97,6 +97,7 @@ export async function startDownload(): Promise<void> {
 		await invoke('download_model', { modelId: selectedModel });
 		unlisten();
 		step = 'test';
+		runTestQuery();
 	} catch (e) {
 		unlisten();
 		const msg = String(e);
