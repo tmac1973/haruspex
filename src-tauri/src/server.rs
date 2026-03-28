@@ -91,6 +91,7 @@ struct ServerInner {
     log_buffer: VecDeque<String>,
     gpu_fallback_attempted: bool,
     gpu_error_detected: bool,
+    generation: u64, // incremented on each start, used to ignore stale events
 }
 
 pub struct LlamaServer {
@@ -107,6 +108,7 @@ impl LlamaServer {
                 log_buffer: VecDeque::with_capacity(LOG_RING_BUFFER_SIZE),
                 gpu_fallback_attempted: false,
                 gpu_error_detected: false,
+                generation: 0,
             })),
         }
     }
@@ -252,16 +254,24 @@ impl LlamaServer {
             .spawn()
             .map_err(|e| format!("Failed to spawn llama-server: {}", e))?;
 
-        {
+        let gen = {
             let mut inner = self.inner.lock().await;
             inner.child = Some(child);
-        }
+            inner.generation += 1;
+            inner.generation
+        };
 
         // Spawn stdout/stderr reader
-        Self::spawn_output_reader(self.inner.clone(), app.clone(), model_path.to_string(), rx);
+        Self::spawn_output_reader(
+            self.inner.clone(),
+            app.clone(),
+            model_path.to_string(),
+            rx,
+            gen,
+        );
 
         // Spawn health poller
-        Self::spawn_health_poller(self.inner.clone(), app.clone());
+        Self::spawn_health_poller(self.inner.clone(), app.clone(), gen);
 
         Ok(())
     }
@@ -271,6 +281,7 @@ impl LlamaServer {
         app: AppHandle,
         model_path: String,
         mut rx: tauri::async_runtime::Receiver<tauri_plugin_shell::process::CommandEvent>,
+        generation: u64,
     ) {
         tauri::async_runtime::spawn(async move {
             use tauri_plugin_shell::process::CommandEvent;
@@ -296,7 +307,22 @@ impl LlamaServer {
                     }
                     CommandEvent::Terminated(payload) => {
                         let code = payload.code.unwrap_or(-1);
-                        info!("llama-server exited with code: {}", code);
+                        info!(
+                            "llama-server (gen {}) exited with code: {}",
+                            generation, code
+                        );
+
+                        // Ignore termination events from old generations
+                        {
+                            let state = inner.lock().await;
+                            if state.generation != generation {
+                                info!(
+                                    "Ignoring stale termination event from generation {}",
+                                    generation
+                                );
+                                return;
+                            }
+                        }
 
                         let should_fallback = {
                             let mut state = inner.lock().await;
@@ -355,6 +381,7 @@ impl LlamaServer {
                                         app.clone(),
                                         model_path,
                                         new_rx,
+                                        generation,
                                     );
                                     // Health poller is still running, it will pick up the new process
                                 }
@@ -388,7 +415,7 @@ impl LlamaServer {
         });
     }
 
-    fn spawn_health_poller(inner: Arc<Mutex<ServerInner>>, app: AppHandle) {
+    fn spawn_health_poller(inner: Arc<Mutex<ServerInner>>, app: AppHandle, generation: u64) {
         tauri::async_runtime::spawn(async move {
             let port = {
                 let state = inner.lock().await;
@@ -407,7 +434,7 @@ impl LlamaServer {
             for _ in 0..max_attempts {
                 {
                     let state = inner.lock().await;
-                    if state.status != ServerStatus::Starting {
+                    if state.generation != generation || state.status != ServerStatus::Starting {
                         return;
                     }
                 }
@@ -610,6 +637,7 @@ mod tests {
             log_buffer: VecDeque::with_capacity(LOG_RING_BUFFER_SIZE),
             gpu_fallback_attempted: false,
             gpu_error_detected: false,
+            generation: 0,
         };
 
         for i in 0..LOG_RING_BUFFER_SIZE + 100 {
