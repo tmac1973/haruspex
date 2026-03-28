@@ -26,7 +26,9 @@ export default ts.config(
 			// $state() runes require `let` even though the variable is never reassigned
 			'prefer-const': 'off',
 			// We use {@html} for rendering trusted markdown output
-			'svelte/no-at-html-tags': 'off'
+			'svelte/no-at-html-tags': 'off',
+			// We use simple goto() navigation without the resolve pattern
+			'svelte/no-navigation-without-resolve': 'off'
 		}
 	},
 	{

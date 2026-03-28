@@ -1,13 +1,32 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
 	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
-	import { initServerStore } from '$lib/stores/server.svelte';
+	import { initServerStore, startServer } from '$lib/stores/server.svelte';
+	import { invoke } from '@tauri-apps/api/core';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 
 	let { children } = $props();
 
-	onMount(() => {
+	onMount(async () => {
 		initServerStore();
+
+		// First-run detection: redirect to setup if no model found
+		try {
+			const hasModel = await invoke<boolean>('has_any_model');
+			if (!hasModel && !page.url.pathname.startsWith('/setup')) {
+				goto('/setup');
+			} else if (hasModel && !page.url.pathname.startsWith('/setup')) {
+				// Auto-start server with available model
+				const modelPath = await invoke<string | null>('get_active_model_path');
+				if (modelPath) {
+					startServer(modelPath);
+				}
+			}
+		} catch {
+			// Tauri commands not available (e.g., in browser dev mode)
+		}
 	});
 </script>
 
