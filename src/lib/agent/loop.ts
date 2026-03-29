@@ -2,6 +2,7 @@ import { chatCompletion, chatCompletionStream, type ChatMessage, type StreamChun
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { AGENT_TOOLS } from '$lib/agent/tools';
 import { executeTool } from '$lib/agent/search';
+import { getSamplingParams } from '$lib/stores/settings';
 
 export interface SearchStep {
 	id: string;
@@ -32,10 +33,13 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		iteration++;
 
 		// Non-streaming request to check for tool calls
+		const sampling = getSamplingParams();
 		const response = await chatCompletion(
 			{
 				messages,
-				tools: AGENT_TOOLS
+				tools: AGENT_TOOLS,
+				temperature: sampling.temperature,
+				top_p: sampling.top_p
 			},
 			signal
 		);
@@ -44,27 +48,27 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 
 		if (toolCalls.length === 0) {
 			if (usedTools && response.content) {
-				// After tool use, use the non-streaming response directly
-				// since it already incorporates tool results
 				options.onStreamChunk({
 					delta: { content: response.content },
 					finish_reason: 'stop'
 				});
 				options.onComplete();
 			} else if (usedTools) {
-				// Response was empty after tools — re-request streaming
-				// (can happen if model only produced thinking tokens)
-				const stream = chatCompletionStream({ messages }, signal);
+				const stream = chatCompletionStream(
+					{ messages, temperature: sampling.temperature, top_p: sampling.top_p },
+					signal
+				);
 				for await (const chunk of stream) {
 					options.onStreamChunk(chunk);
 				}
 				options.onComplete();
 			} else {
-				// No tools used at all — stream the response for better UX
 				const stream = chatCompletionStream(
 					{
 						messages,
-						tools: AGENT_TOOLS
+						tools: AGENT_TOOLS,
+						temperature: sampling.temperature,
+						top_p: sampling.top_p
 					},
 					signal
 				);
@@ -107,7 +111,11 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	}
 
 	// Max iterations reached — request final answer without tools
-	const response = await chatCompletion({ messages }, signal);
+	const sampling2 = getSamplingParams();
+	const response = await chatCompletion(
+		{ messages, temperature: sampling2.temperature, top_p: sampling2.top_p },
+		signal
+	);
 	if (response.content) {
 		options.onStreamChunk({
 			delta: { content: response.content },

@@ -13,6 +13,7 @@ export interface AppSettings {
 	searxngUrl: string;
 	contextSize: number;
 	ttsReadTablesByColumn: boolean;
+	thinkingMode: boolean;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -25,7 +26,8 @@ const defaults: AppSettings = {
 	braveApiKey: '',
 	searxngUrl: 'http://localhost:8080',
 	contextSize: 32768,
-	ttsReadTablesByColumn: true
+	ttsReadTablesByColumn: true,
+	thinkingMode: false
 };
 
 function load(): AppSettings {
@@ -68,6 +70,25 @@ export function applyTheme(theme?: ThemeMode): void {
 	} else if (mode === 'dark') {
 		root.setAttribute('data-theme', 'dark');
 	}
+}
+
+export function getThinkingModeArgs(): string[] {
+	if (settings.thinkingMode) {
+		return ['--chat-template-kwargs', '{"enable_thinking":true}'];
+	}
+	return ['--chat-template-kwargs', '{"enable_thinking":false}'];
+}
+
+export interface SamplingParams {
+	temperature: number;
+	top_p: number;
+}
+
+export function getSamplingParams(): SamplingParams {
+	if (settings.thinkingMode) {
+		return { temperature: 1.0, top_p: 0.95 };
+	}
+	return { temperature: 0.7, top_p: 0.8 };
 }
 
 export function getResponseFormatPrompt(): string {

@@ -8,6 +8,7 @@
 		getSettings,
 		updateSettings,
 		applyTheme,
+		getThinkingModeArgs,
 		type ResponseFormat,
 		type ThemeMode,
 		type SearchProvider
@@ -79,6 +80,7 @@
 		{ id: 'em_alex', name: 'Alex (European Male)' }
 	];
 
+	let thinkingMode = $state(getSettings().thinkingMode);
 	let searchProvider = $state<SearchProvider>(getSettings().searchProvider);
 	let braveApiKey = $state(getSettings().braveApiKey);
 	let searxngUrl = $state(getSettings().searxngUrl);
@@ -94,6 +96,11 @@
 	function toggleTableReading() {
 		ttsReadTablesByColumn = !ttsReadTablesByColumn;
 		updateSettings({ ttsReadTablesByColumn });
+	}
+
+	function toggleThinkingMode() {
+		thinkingMode = !thinkingMode;
+		updateSettings({ thinkingMode });
 	}
 
 	function setSearchProvider(provider: SearchProvider) {
@@ -195,7 +202,7 @@
 		const modelPath = await invoke<string | null>('get_active_model_path');
 		if (modelPath) {
 			await stopServer();
-			await startServer(modelPath, getSettings().contextSize);
+			await startServer(modelPath, getSettings().contextSize, getThinkingModeArgs());
 		}
 	}
 
@@ -406,6 +413,25 @@
 					placeholder="http://localhost:8080"
 				/>
 			</div>
+		{/if}
+	</section>
+
+	<section>
+		<h2>Thinking Mode</h2>
+		<label class="toggle-row">
+			<input type="checkbox" checked={thinkingMode} onchange={toggleThinkingMode} />
+			<div>
+				<strong>Enable thinking mode</strong>
+				<span
+					>Model reasons step-by-step before answering (slower but more accurate for complex
+					questions). Requires server restart.</span
+				>
+			</div>
+		</label>
+		{#if thinkingMode}
+			<p class="hint">Sampling: temperature=1.0, top_p=0.95 (optimized for reasoning)</p>
+		{:else}
+			<p class="hint">Sampling: temperature=0.7, top_p=0.8 (optimized for general tasks)</p>
 		{/if}
 	</section>
 

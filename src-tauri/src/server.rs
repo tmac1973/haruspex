@@ -574,12 +574,14 @@ pub async fn start_server(
     state: tauri::State<'_, LlamaServer>,
     model_path: String,
     ctx_size: Option<u32>,
+    extra_args: Option<Vec<String>>,
 ) -> Result<(), String> {
-    let config = ctx_size.map(|size| ServerConfig {
-        ctx_size: size,
+    let config = ServerConfig {
+        ctx_size: ctx_size.unwrap_or(16384),
+        extra_args: extra_args.unwrap_or_default(),
         ..Default::default()
-    });
-    state.start(&app, &model_path, config).await
+    };
+    state.start(&app, &model_path, Some(config)).await
 }
 
 #[tauri::command]
