@@ -1,4 +1,10 @@
-import { chatCompletion, chatCompletionStream, type ChatMessage, type StreamChunk } from '$lib/api';
+import {
+	chatCompletion,
+	chatCompletionStream,
+	type ChatMessage,
+	type StreamChunk,
+	type Usage
+} from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { AGENT_TOOLS } from '$lib/agent/tools';
 import { executeTool } from '$lib/agent/search';
@@ -19,6 +25,7 @@ export interface AgentLoopOptions {
 	onStreamChunk: (chunk: StreamChunk) => void;
 	onComplete: () => void;
 	onError: (error: Error) => void;
+	onUsageUpdate?: (usage: Usage) => void;
 	signal?: AbortSignal;
 	maxIterations?: number;
 }
@@ -53,6 +60,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				response.content && response.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
 			if (usedTools && hasRealContent) {
+				if (response.usage) options.onUsageUpdate?.(response.usage);
 				options.onStreamChunk({
 					delta: { content: response.content! },
 					finish_reason: 'stop'
@@ -70,6 +78,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 					signal
 				);
 				for await (const chunk of stream) {
+					if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
 					options.onStreamChunk(chunk);
 				}
 				options.onComplete();
@@ -85,6 +94,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 					signal
 				);
 				for await (const chunk of stream) {
+					if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
 					options.onStreamChunk(chunk);
 				}
 				options.onComplete();
@@ -128,6 +138,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		{ messages, temperature: sampling2.temperature, top_p: sampling2.top_p, max_tokens: 4096 },
 		signal
 	);
+	if (response.usage) options.onUsageUpdate?.(response.usage);
 	if (response.content) {
 		options.onStreamChunk({
 			delta: { content: response.content },

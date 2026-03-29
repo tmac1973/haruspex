@@ -44,15 +44,23 @@ export interface ChatCompletionOptions {
 	max_tokens?: number;
 }
 
+export interface Usage {
+	prompt_tokens: number;
+	completion_tokens: number;
+	total_tokens: number;
+}
+
 export interface StreamChunk {
 	delta: { content?: string; reasoning_content?: string; tool_calls?: ToolCallDelta[] };
 	finish_reason: string | null;
+	usage?: Usage;
 }
 
 export interface ChatCompletionResponse {
 	content: string | null;
 	tool_calls?: ToolCall[];
 	finish_reason: string;
+	usage?: Usage;
 }
 
 export class ApiError extends Error {
@@ -116,10 +124,14 @@ export async function* parseSSE(response: Response): AsyncGenerator<StreamChunk>
 					try {
 						const parsed = JSON.parse(data);
 						if (parsed.choices && parsed.choices[0]) {
-							yield {
+							const chunk: StreamChunk = {
 								delta: parsed.choices[0].delta || {},
 								finish_reason: parsed.choices[0].finish_reason
 							};
+							if (parsed.usage) {
+								chunk.usage = parsed.usage;
+							}
+							yield chunk;
 						}
 					} catch {
 						// Skip malformed JSON chunks
@@ -216,6 +228,7 @@ export async function chatCompletion(
 	return {
 		content: fullContent,
 		tool_calls: choice.message?.tool_calls,
-		finish_reason: choice.finish_reason ?? 'stop'
+		finish_reason: choice.finish_reason ?? 'stop',
+		usage: data.usage
 	};
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
 	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
+	import ContextIndicator from '$lib/components/ContextIndicator.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { initServerStore, startServer } from '$lib/stores/server.svelte';
 	import { applyTheme, getSettings, getThinkingModeArgs } from '$lib/stores/settings';
@@ -55,6 +56,7 @@
 	<h1>Haruspex</h1>
 	<div class="header-right">
 		<ServerStatusBadge />
+		<ContextIndicator />
 		<a href="/settings" class="settings-link" title="Settings">
 			<svg
 				width="18"

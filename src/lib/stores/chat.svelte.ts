@@ -1,6 +1,7 @@
-import { type ChatMessage, ApiError } from '$lib/api';
+import { type ChatMessage, type Usage, ApiError } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
-import { getResponseFormatPrompt } from '$lib/stores/settings';
+import { getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
+import { updateContextUsage, resetContextUsage } from '$lib/stores/context.svelte';
 import { invoke } from '@tauri-apps/api/core';
 
 function buildSystemPrompt(): ChatMessage {
@@ -214,6 +215,7 @@ export function createConversation(): string {
 	});
 	activeConversationId = id;
 	errorMessage = null;
+	resetContextUsage();
 	dbCreateConversation(id, 'New chat');
 	return id;
 }
@@ -222,6 +224,7 @@ export async function setActiveConversation(id: string): Promise<void> {
 	if (conversations.some((c) => c.id === id)) {
 		activeConversationId = id;
 		errorMessage = null;
+		resetContextUsage();
 		await loadConversationMessages(id);
 	}
 }
@@ -334,6 +337,9 @@ export async function sendMessage(content: string): Promise<void> {
 		await runAgentLoop({
 			messages: messagesForApi,
 			signal: abortController.signal,
+			onUsageUpdate: (u: Usage) => {
+				updateContextUsage(u, getSettings().contextSize);
+			},
 			onToolStart: (call) => {
 				const query =
 					call.name === 'web_search'
