@@ -80,11 +80,16 @@ function getBaseUrl(port: number = DEFAULT_PORT): string {
 }
 
 function buildRequestBody(options: ChatCompletionOptions): Record<string, unknown> {
+	const isStream = options.stream ?? true;
 	const body: Record<string, unknown> = {
 		model: 'default',
 		messages: options.messages,
-		stream: options.stream ?? true
+		stream: isStream
 	};
+
+	if (isStream) {
+		body.stream_options = { include_usage: true };
+	}
 
 	if (options.tools && options.tools.length > 0) {
 		body.tools = options.tools;
@@ -132,6 +137,13 @@ export async function* parseSSE(response: Response): AsyncGenerator<StreamChunk>
 								chunk.usage = parsed.usage;
 							}
 							yield chunk;
+						} else if (parsed.usage) {
+							// Final usage-only chunk (no choices) when stream_options.include_usage is set
+							yield {
+								delta: {},
+								finish_reason: null,
+								usage: parsed.usage
+							};
 						}
 					} catch {
 						// Skip malformed JSON chunks
