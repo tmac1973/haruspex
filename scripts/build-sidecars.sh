@@ -98,19 +98,20 @@ else
     cp "$LLAMA_OUT" "$LLAMA_BIN"
     chmod +x "$LLAMA_BIN"
 
-    # Copy shared libraries next to the binary
+    # Copy shared libraries to libs/ subdirectory
+    mkdir -p "$BINARIES_DIR/libs"
     find . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
-        cp "$lib" "$BINARIES_DIR/"
+        cp "$lib" "$BINARIES_DIR/libs/"
     done
 
     # Create soname symlinks on Linux
-    for f in "$BINARIES_DIR"/*.so.*.*; do
+    for f in "$BINARIES_DIR"/libs/*.so.*.*; do
         [ -f "$f" ] || continue
         base=$(basename "$f")
         soname=$(echo "$base" | sed 's/\.[0-9]*\.[0-9]*$//')
-        [ "$soname" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/$soname"
+        [ "$soname" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/libs/$soname"
         short=$(echo "$base" | sed 's/\.so\..*/.so/')
-        [ "$short" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/$short"
+        [ "$short" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/libs/$short"
     done
 
     echo "   Built: $LLAMA_BIN"

@@ -32,7 +32,7 @@
       "binaries/koko"
     ],
     "resources": [
-      "binaries/*.so*"
+      "binaries/libs/*"
     ],
     "icon": [
       "icons/32x32.png",

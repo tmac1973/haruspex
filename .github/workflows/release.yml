@@ -120,9 +120,12 @@ jobs:
           name: sidecars-${{ matrix.target }}
           path: src-tauri/binaries/
 
-      - name: Set sidecar permissions
+      - name: Set sidecar permissions and ensure libs dir
         if: runner.os != 'Windows'
-        run: chmod +x src-tauri/binaries/*-${{ matrix.target }}*
+        run: |
+          chmod +x src-tauri/binaries/*-${{ matrix.target }}*
+          mkdir -p src-tauri/binaries/libs
+          touch src-tauri/binaries/libs/.placeholder
 
       - run: npm ci
 
