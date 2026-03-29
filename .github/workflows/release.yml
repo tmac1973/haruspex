@@ -75,7 +75,7 @@ jobs:
         include:
           - platform: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            args: ''
+            args: '--bundles deb,rpm'
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             args: ''
