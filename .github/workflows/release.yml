@@ -73,7 +73,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - platform: ubuntu-22.04
+          - platform: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             args: ''
           - platform: windows-latest
