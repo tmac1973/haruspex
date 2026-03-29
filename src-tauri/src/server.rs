@@ -408,8 +408,8 @@ impl LlamaServer {
                                     #[cfg(target_os = "linux")]
                                     {
                                         let mut parts = Self::get_library_paths(&app);
-                                        let existing = std::env::var("LD_LIBRARY_PATH")
-                                            .unwrap_or_default();
+                                        let existing =
+                                            std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
                                         if !existing.is_empty() {
                                             parts.push(existing);
                                         }
@@ -419,8 +419,8 @@ impl LlamaServer {
                                     #[cfg(target_os = "macos")]
                                     {
                                         let mut parts = Self::get_library_paths(&app);
-                                        let existing = std::env::var("DYLD_LIBRARY_PATH")
-                                            .unwrap_or_default();
+                                        let existing =
+                                            std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
                                         if !existing.is_empty() {
                                             parts.push(existing);
                                         }
