@@ -11,7 +11,8 @@
 		getThinkingModeArgs,
 		type ResponseFormat,
 		type ThemeMode,
-		type SearchProvider
+		type SearchProvider,
+		type AppSettings
 	} from '$lib/stores/settings';
 
 	interface ModelInfo {
@@ -82,6 +83,7 @@
 
 	let thinkingMode = $state(getSettings().thinkingMode);
 	let searchProvider = $state<SearchProvider>(getSettings().searchProvider);
+	let searchRecency = $state(getSettings().searchRecency);
 	let braveApiKey = $state(getSettings().braveApiKey);
 	let searxngUrl = $state(getSettings().searxngUrl);
 	let contextSize = $state(getSettings().contextSize);
@@ -114,6 +116,11 @@
 
 	function saveSearxngUrl() {
 		updateSettings({ searxngUrl: searxngUrl });
+	}
+
+	function setSearchRecency(value: string) {
+		searchRecency = value as AppSettings['searchRecency'];
+		updateSettings({ searchRecency: searchRecency });
 	}
 
 	function setContextSize(size: number) {
@@ -414,6 +421,21 @@
 				/>
 			</div>
 		{/if}
+
+		<div class="search-provider" style="margin-top: 12px">
+			<label for="search-recency">Result recency:</label>
+			<select
+				id="search-recency"
+				value={searchRecency}
+				onchange={(e) => setSearchRecency((e.target as HTMLSelectElement).value)}
+			>
+				<option value="any">Any time</option>
+				<option value="day">Past 24 hours</option>
+				<option value="week">Past week</option>
+				<option value="month">Past month</option>
+				<option value="year">Past year</option>
+			</select>
+		</div>
 	</section>
 
 	<section>

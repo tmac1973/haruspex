@@ -14,7 +14,8 @@ export async function executeWebSearch(query: string): Promise<string> {
 			query,
 			provider: settings.searchProvider,
 			apiKey: settings.braveApiKey || null,
-			instanceUrl: settings.searxngUrl || null
+			instanceUrl: settings.searxngUrl || null,
+			recency: settings.searchRecency || null
 		});
 		return JSON.stringify(results);
 	} catch (e) {

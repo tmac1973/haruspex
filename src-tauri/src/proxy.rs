@@ -99,7 +99,7 @@ impl ProxyState {
 
 // DuckDuckGo HTML search
 
-async fn search_duckduckgo(query: &str) -> Result<Vec<SearchResult>, String> {
+async fn search_duckduckgo(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .redirect(reqwest::redirect::Policy::limited(5))
@@ -107,13 +107,21 @@ async fn search_duckduckgo(query: &str) -> Result<Vec<SearchResult>, String> {
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-    // Use POST like a real form submission — less likely to trigger bot detection
+    // DDG date filter: df=d (day), df=w (week), df=m (month), df=y (year)
+    let df = match recency {
+        "day" => "&df=d",
+        "week" => "&df=w",
+        "month" => "&df=m",
+        "year" => "&df=y",
+        _ => "",
+    };
+
     let response = client
         .post("https://html.duckduckgo.com/html/")
         .header("User-Agent", USER_AGENT)
         .header("Referer", "https://html.duckduckgo.com/")
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(format!("q={}&b=", urlencoding::encode(query)))
+        .body(format!("q={}&b={}", urlencoding::encode(query), df))
         .send()
         .await
         .map_err(|e| format!("Search request failed: {}", e))?;
@@ -347,18 +355,36 @@ fn extract_body_text(document: &Html) -> String {
 
 // Brave Search API
 
-async fn search_brave(query: &str, api_key: &str) -> Result<Vec<SearchResult>, String> {
+async fn search_brave(
+    query: &str,
+    api_key: &str,
+    recency: &str,
+) -> Result<Vec<SearchResult>, String> {
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    // Brave freshness: pd (past day), pw (past week), pm (past month), py (past year)
+    let freshness = match recency {
+        "day" => "pd",
+        "week" => "pw",
+        "month" => "pm",
+        "year" => "py",
+        _ => "",
+    };
+
+    let mut params = vec![("q", query), ("count", "8")];
+    if !freshness.is_empty() {
+        params.push(("freshness", freshness));
+    }
 
     let resp = client
         .get("https://api.search.brave.com/res/v1/web/search")
         .header("Accept", "application/json")
         .header("Accept-Encoding", "gzip")
         .header("X-Subscription-Token", api_key)
-        .query(&[("q", query), ("count", "8")])
+        .query(&params)
         .send()
         .await
         .map_err(|e| format!("Brave search failed: {}", e))?;
@@ -406,7 +432,11 @@ async fn search_brave(query: &str, api_key: &str) -> Result<Vec<SearchResult>, S
 
 // SearXNG instance search
 
-async fn search_searxng(query: &str, instance_url: &str) -> Result<Vec<SearchResult>, String> {
+async fn search_searxng(
+    query: &str,
+    instance_url: &str,
+    recency: &str,
+) -> Result<Vec<SearchResult>, String> {
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .build()
@@ -414,9 +444,15 @@ async fn search_searxng(query: &str, instance_url: &str) -> Result<Vec<SearchRes
 
     let url = format!("{}/search", instance_url.trim_end_matches('/'));
 
+    // SearXNG time_range: day, week, month, year
+    let mut params = vec![("q", query), ("format", "json"), ("categories", "general")];
+    if recency != "any" && !recency.is_empty() {
+        params.push(("time_range", recency));
+    }
+
     let resp = client
         .get(&url)
-        .query(&[("q", query), ("format", "json"), ("categories", "general")])
+        .query(&params)
         .header("User-Agent", USER_AGENT)
         .send()
         .await
@@ -466,14 +502,17 @@ pub async fn proxy_search(
     provider: Option<String>,
     api_key: Option<String>,
     instance_url: Option<String>,
+    recency: Option<String>,
 ) -> Result<Vec<SearchResult>, String> {
     // Check cache
-    if let Some(cached) = state.get_cached_search(&query) {
+    let cache_key = format!("{}:{}", query, recency.as_deref().unwrap_or("any"));
+    if let Some(cached) = state.get_cached_search(&cache_key) {
         info!("Search cache hit for: {}", query);
         return Ok(cached);
     }
 
     let provider = provider.as_deref().unwrap_or("duckduckgo");
+    let recency = recency.as_deref().unwrap_or("any");
 
     let results = match provider {
         "brave" => {
@@ -481,18 +520,21 @@ pub async fn proxy_search(
             if key.is_empty() {
                 return Err("Brave Search API key not configured".to_string());
             }
-            info!("Searching Brave for: {}", query);
-            search_brave(&query, key).await?
+            info!("Searching Brave for: {} (recency: {})", query, recency);
+            search_brave(&query, key, recency).await?
         }
         "searxng" => {
             let url = instance_url.as_deref().unwrap_or("http://localhost:8080");
-            info!("Searching SearXNG ({}) for: {}", url, query);
-            search_searxng(&query, url).await?
+            info!(
+                "Searching SearXNG ({}) for: {} (recency: {})",
+                url, query, recency
+            );
+            search_searxng(&query, url, recency).await?
         }
         _ => {
             state.rate_limit();
-            info!("Searching DDG for: {}", query);
-            search_duckduckgo(&query).await?
+            info!("Searching DDG for: {} (recency: {})", query, recency);
+            search_duckduckgo(&query, recency).await?
         }
     };
 
@@ -500,7 +542,7 @@ pub async fn proxy_search(
         warn!("No search results for: {}", query);
     }
 
-    state.cache_search(&query, &results);
+    state.cache_search(&cache_key, &results);
     Ok(results)
 }
 

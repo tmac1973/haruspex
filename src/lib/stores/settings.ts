@@ -14,6 +14,7 @@ export interface AppSettings {
 	contextSize: number;
 	ttsReadTablesByColumn: boolean;
 	thinkingMode: boolean;
+	searchRecency: 'any' | 'day' | 'week' | 'month' | 'year';
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -27,7 +28,8 @@ const defaults: AppSettings = {
 	searxngUrl: 'http://localhost:8080',
 	contextSize: 32768,
 	ttsReadTablesByColumn: true,
-	thinkingMode: false
+	thinkingMode: false,
+	searchRecency: 'any' as const
 };
 
 function load(): AppSettings {
