@@ -30,7 +30,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan-dev libsonic-dev libpcaudio-dev libssl-dev pkg-config
+          sudo apt-get install -y libvulkan-dev glslc libsonic-dev libpcaudio-dev libssl-dev pkg-config
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'

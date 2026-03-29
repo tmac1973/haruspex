@@ -77,9 +77,9 @@ else
     mkdir -p "$BUILD_DIR/llama"
     cd "$BUILD_DIR/llama"
 
-    echo "   Configuring..."
+    echo "   Configuring with flags: $CMAKE_GPU_FLAGS"
     if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1; then
-        echo "   WARN: cmake configure failed with GPU flags, retrying CPU-only..."
+        echo "   WARN: cmake configure failed with GPU flags ($CMAKE_GPU_FLAGS), retrying CPU-only..."
         rm -rf "$BUILD_DIR/llama"
         mkdir -p "$BUILD_DIR/llama"
         cd "$BUILD_DIR/llama"
