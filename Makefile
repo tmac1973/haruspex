@@ -46,6 +46,20 @@ fmt: ## Auto-format all code
 	npm run format
 	cargo fmt --manifest-path src-tauri/Cargo.toml
 
+# ---- Clean ----
+
+.PHONY: clean
+clean: ## Remove built sidecars, forcing rebuild on next make sidecars
+	rm -f src-tauri/binaries/llama-server-*
+	rm -f src-tauri/binaries/whisper-server-*
+	rm -f src-tauri/binaries/koko-*
+	rm -rf src-tauri/binaries/libs/*.so* src-tauri/binaries/libs/*.dylib src-tauri/binaries/libs/*.dll
+
+.PHONY: clean-all
+clean-all: clean ## Remove sidecars + Rust/frontend build artifacts
+	rm -rf src-tauri/target
+	rm -rf build node_modules
+
 # ---- Help ----
 
 .PHONY: help

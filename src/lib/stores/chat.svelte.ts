@@ -326,7 +326,10 @@ export async function sendMessage(content: string): Promise<void> {
 	abortController = new AbortController();
 
 	try {
-		const messagesForApi: ChatMessage[] = [buildSystemPrompt(), ...conversation.messages];
+		// Strip tool-related messages from previous turns to keep context clean.
+		// The agent loop adds its own tool messages for the current turn.
+		const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
+		const messagesForApi: ChatMessage[] = [buildSystemPrompt(), ...historyMessages];
 
 		await runAgentLoop({
 			messages: messagesForApi,

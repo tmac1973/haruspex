@@ -39,7 +39,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				messages,
 				tools: AGENT_TOOLS,
 				temperature: sampling.temperature,
-				top_p: sampling.top_p
+				top_p: sampling.top_p,
+				max_tokens: 4096
 			},
 			signal
 		);
@@ -47,15 +48,25 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		const toolCalls = resolveToolCalls(response);
 
 		if (toolCalls.length === 0) {
-			if (usedTools && response.content) {
+			// After tool use, strip thinking-only responses and get a real answer
+			const hasRealContent =
+				response.content && response.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
+			if (usedTools && hasRealContent) {
 				options.onStreamChunk({
-					delta: { content: response.content },
+					delta: { content: response.content! },
 					finish_reason: 'stop'
 				});
 				options.onComplete();
 			} else if (usedTools) {
+				// Model returned only thinking or empty — stream a fresh response without tools
 				const stream = chatCompletionStream(
-					{ messages, temperature: sampling.temperature, top_p: sampling.top_p },
+					{
+						messages,
+						temperature: sampling.temperature,
+						top_p: sampling.top_p,
+						max_tokens: 4096
+					},
 					signal
 				);
 				for await (const chunk of stream) {
@@ -68,7 +79,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 						messages,
 						tools: AGENT_TOOLS,
 						temperature: sampling.temperature,
-						top_p: sampling.top_p
+						top_p: sampling.top_p,
+						max_tokens: 4096
 					},
 					signal
 				);
@@ -113,7 +125,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	// Max iterations reached — request final answer without tools
 	const sampling2 = getSamplingParams();
 	const response = await chatCompletion(
-		{ messages, temperature: sampling2.temperature, top_p: sampling2.top_p },
+		{ messages, temperature: sampling2.temperature, top_p: sampling2.top_p, max_tokens: 4096 },
 		signal
 	);
 	if (response.content) {
