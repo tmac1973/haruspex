@@ -1,5 +1,5 @@
 use log::{error, info, warn};
-use rodio::{OutputStream, OutputStreamBuilder, Sink};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
@@ -18,11 +18,13 @@ enum TtsStatus {
     Error(String),
 }
 
+// TtsEngine is Send + Sync because it only contains Send+Sync types.
+// Audio playback happens on a dedicated thread (not stored in the struct).
 pub struct TtsEngine {
     child: Mutex<Option<CommandChild>>,
     status: Arc<Mutex<TtsStatus>>,
-    sink: std::sync::Mutex<Option<Sink>>,
-    _stream: std::sync::Mutex<Option<OutputStream>>,
+    playing: Arc<AtomicBool>,
+    stop_flag: Arc<AtomicBool>,
 }
 
 impl TtsEngine {
@@ -30,8 +32,8 @@ impl TtsEngine {
         Self {
             child: Mutex::new(None),
             status: Arc::new(Mutex::new(TtsStatus::Stopped)),
-            sink: std::sync::Mutex::new(None),
-            _stream: std::sync::Mutex::new(None),
+            playing: Arc::new(AtomicBool::new(false)),
+            stop_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -44,8 +46,6 @@ impl TtsEngine {
         }
 
         self.stop().await?;
-
-        // Kill any orphaned koko process on our port
         Self::kill_process_on_port(TTS_PORT).await;
 
         {
@@ -67,7 +67,6 @@ impl TtsEngine {
                 &TTS_PORT.to_string(),
             ]);
 
-        // Set library path so koko can find its bundled shared libraries
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let bin_dir = exe_dir.to_string_lossy().to_string();
@@ -94,8 +93,7 @@ impl TtsEngine {
                     sidecar = sidecar.env("DYLD_LIBRARY_PATH", new_path);
                 }
 
-                // Windows: DLLs are found automatically from the binary's directory
-                let _ = &bin_dir; // suppress unused warning on Windows
+                let _ = &bin_dir;
             }
         }
 
@@ -108,7 +106,6 @@ impl TtsEngine {
             *c = Some(child);
         }
 
-        // Spawn stderr reader
         let status_clone = Arc::clone(&self.status);
         tauri::async_runtime::spawn(async move {
             use tauri_plugin_shell::process::CommandEvent;
@@ -124,7 +121,6 @@ impl TtsEngine {
                         if !trimmed.is_empty() {
                             info!("koko: {}", trimmed);
                         }
-                        // Detect when server is listening
                         if trimmed.contains("listening") || trimmed.contains("Listening") {
                             let mut status = status_clone.lock().await;
                             if *status == TtsStatus::Starting {
@@ -146,7 +142,6 @@ impl TtsEngine {
             }
         });
 
-        // Also do a health poll as fallback
         let status_for_health = Arc::clone(&self.status);
         tauri::async_runtime::spawn(async move {
             let client = reqwest::Client::builder()
@@ -157,22 +152,17 @@ impl TtsEngine {
             for _ in 0..60 {
                 {
                     let status = status_for_health.lock().await;
-                    if *status == TtsStatus::Ready {
-                        return;
-                    }
-                    if *status != TtsStatus::Starting {
+                    if *status == TtsStatus::Ready || *status != TtsStatus::Starting {
                         return;
                     }
                 }
                 sleep(Duration::from_millis(500)).await;
 
-                // Try a simple GET to see if server is up
                 if let Ok(resp) = client
                     .get(format!("http://127.0.0.1:{}/", TTS_PORT))
                     .send()
                     .await
                 {
-                    // Any response means server is running
                     if resp.status().as_u16() > 0 {
                         let mut status = status_for_health.lock().await;
                         if *status == TtsStatus::Starting {
@@ -203,6 +193,7 @@ impl TtsEngine {
         }
         let mut status = self.status.lock().await;
         *status = TtsStatus::Stopped;
+        self.stop_flag.store(true, Ordering::SeqCst);
         Ok(())
     }
 
@@ -253,7 +244,6 @@ impl TtsEngine {
                         }
                     }
                 }
-
                 for _ in 0..20 {
                     if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
                         return;
@@ -291,7 +281,6 @@ impl TtsEngine {
             .build()
             .map_err(|e| format!("HTTP client error: {}", e))?;
 
-        // Use PCM format — raw 32-bit float samples at 24kHz
         let body = serde_json::json!({
             "model": "tts-1",
             "input": text,
@@ -334,39 +323,50 @@ impl TtsEngine {
             samples.len() as f32 / 24000.0
         );
 
-        self.play_samples(&samples, 24000)?;
-        Ok(())
-    }
+        // Play audio on a dedicated thread (OutputStream is not Send on macOS)
+        self.stop_flag.store(false, Ordering::SeqCst);
+        self.playing.store(true, Ordering::SeqCst);
 
-    fn play_samples(&self, samples: &[f32], sample_rate: u32) -> Result<(), String> {
-        self.stop_playback();
+        let playing = Arc::clone(&self.playing);
+        let stop_flag = Arc::clone(&self.stop_flag);
 
-        let stream = OutputStreamBuilder::open_default_stream()
-            .map_err(|e| format!("Audio output error: {}", e))?;
+        std::thread::spawn(move || {
+            use rodio::{OutputStreamBuilder, Sink};
 
-        let sink = Sink::connect_new(stream.mixer());
-        let source = rodio::buffer::SamplesBuffer::new(1, sample_rate, samples.to_vec());
-        sink.append(source);
+            let stream = match OutputStreamBuilder::open_default_stream() {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Audio output error: {}", e);
+                    playing.store(false, Ordering::SeqCst);
+                    return;
+                }
+            };
 
-        *self._stream.lock().unwrap() = Some(stream);
-        *self.sink.lock().unwrap() = Some(sink);
+            let sink = Sink::connect_new(stream.mixer());
+            let source = rodio::buffer::SamplesBuffer::new(1, 24000, samples);
+            sink.append(source);
+
+            // Wait for playback to complete or stop signal
+            while !sink.empty() && !stop_flag.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            if stop_flag.load(Ordering::SeqCst) {
+                sink.stop();
+            }
+
+            playing.store(false, Ordering::SeqCst);
+        });
 
         Ok(())
     }
 
     pub fn stop_playback(&self) {
-        if let Some(sink) = self.sink.lock().unwrap().take() {
-            sink.stop();
-        }
-        *self._stream.lock().unwrap() = None;
+        self.stop_flag.store(true, Ordering::SeqCst);
     }
 
     pub fn is_playing(&self) -> bool {
-        if let Some(ref sink) = *self.sink.lock().unwrap() {
-            !sink.empty()
-        } else {
-            false
-        }
+        self.playing.load(Ordering::SeqCst)
     }
 }
 
@@ -408,8 +408,6 @@ pub async fn tts_is_initialized(state: tauri::State<'_, TtsEngine>) -> Result<bo
 
 #[tauri::command]
 pub async fn tts_list_voices() -> Result<Vec<String>, ()> {
-    // Note: British voices (bf_*, bm_*) are broken in koko openai server
-    // (produce truncated audio). Only American and European voices work.
     Ok(vec![
         "af_heart".to_string(),
         "af_sky".to_string(),
