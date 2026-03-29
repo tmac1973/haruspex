@@ -76,9 +76,9 @@ export function applyTheme(theme?: ThemeMode): void {
 
 export function getThinkingModeArgs(): string[] {
 	if (settings.thinkingMode) {
-		return ['--chat-template-kwargs', '{"enable_thinking":true}'];
+		return ['--reasoning', 'on'];
 	}
-	return ['--chat-template-kwargs', '{"enable_thinking":false}'];
+	return ['--reasoning', 'off'];
 }
 
 export interface SamplingParams {
