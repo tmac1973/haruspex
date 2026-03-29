@@ -10,6 +10,7 @@
 		getActiveConversation,
 		getActiveConversationId,
 		getIsGenerating,
+		getIsCompacting,
 		getStreamingContent,
 		getErrorMessage,
 		getSearchSteps,
@@ -58,6 +59,7 @@
 	const activeConversation = $derived(getActiveConversation());
 	const activeId = $derived(getActiveConversationId());
 	const isGenerating = $derived(getIsGenerating());
+	const isCompacting = $derived(getIsCompacting());
 	const streamingContent = $derived(getStreamingContent());
 	const errorMessage = $derived(getErrorMessage());
 	const searchSteps = $derived(getSearchSteps());
@@ -229,6 +231,10 @@
 					<ThinkingIndicator />
 				{/if}
 
+				{#if isCompacting}
+					<div class="compacting-indicator">Compacting conversation history...</div>
+				{/if}
+
 				{#if sourceUrls.length > 0 && !isGenerating}
 					<SourceChip urls={sourceUrls} />
 				{/if}
@@ -271,9 +277,13 @@
 						autoScroll = true;
 						await sendMessage(text);
 					}}
-					disabled={isGenerating}
+					disabled={isGenerating || isCompacting}
 				/>
-				<button class="send-btn" onclick={handleSend} disabled={!inputText.trim() || isGenerating}>
+				<button
+					class="send-btn"
+					onclick={handleSend}
+					disabled={!inputText.trim() || isGenerating || isCompacting}
+				>
 					Send
 				</button>
 			</div>
@@ -520,6 +530,13 @@
 
 	.error-message p {
 		margin: 0;
+	}
+
+	.compacting-indicator {
+		padding: 12px 16px;
+		color: var(--text-secondary);
+		font-size: 0.85rem;
+		font-style: italic;
 	}
 
 	.scroll-btn {

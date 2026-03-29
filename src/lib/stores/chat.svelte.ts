@@ -1,7 +1,8 @@
 import { type ChatMessage, type Usage, ApiError } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
+import { shouldCompact, compactConversation } from '$lib/agent/compaction';
 import { getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
-import { updateContextUsage, resetContextUsage } from '$lib/stores/context.svelte';
+import { getContextUsage, updateContextUsage, resetContextUsage } from '$lib/stores/context.svelte';
 import { invoke } from '@tauri-apps/api/core';
 
 function buildSystemPrompt(): ChatMessage {
@@ -74,6 +75,7 @@ interface DbConversationSummary {
 let conversations = $state<Conversation[]>([]);
 let activeConversationId = $state<string | null>(null);
 let isGenerating = $state(false);
+let isCompacting = $state(false);
 let streamingContent = $state('');
 let errorMessage = $state<string | null>(null);
 let searchSteps = $state<SearchStep[]>([]);
@@ -203,6 +205,57 @@ export function getSourceUrls(): string[] {
 	return sourceUrls;
 }
 
+export function getIsCompacting(): boolean {
+	return isCompacting;
+}
+
+async function compactIfNeeded(): Promise<void> {
+	const usage = getContextUsage();
+	if (!shouldCompact(usage.promptTokens, usage.contextSize)) return;
+
+	const conversation = getActiveConversation();
+	if (!conversation || conversation.messages.length < 10) return;
+
+	isCompacting = true;
+	try {
+		const { summary, removedCount } = await compactConversation(conversation.messages);
+		if (!summary || removedCount === 0) return;
+
+		// Build new messages: summary + remaining messages
+		const remaining = conversation.messages.filter(
+			(m) => m.role === 'user' || m.role === 'assistant'
+		);
+		const kept = remaining.slice(remaining.length - 8); // last 4 turns
+		const summaryMsg: ChatMessage = {
+			role: 'system',
+			content: `[Earlier conversation summary]\n${summary}`
+		};
+		const newMessages: ChatMessage[] = [summaryMsg, ...kept];
+
+		conversation.messages = newMessages;
+		resetContextUsage();
+
+		// Persist to DB
+		if (dbAvailable) {
+			try {
+				await invoke('db_replace_messages', {
+					conversationId: conversation.id,
+					messages: newMessages.map((m) => ({
+						role: m.role,
+						content: m.content,
+						tool_calls: m.tool_calls ? JSON.stringify(m.tool_calls) : null,
+						tool_call_id: m.tool_call_id || null
+					}))
+				});
+			} catch {
+				// non-fatal
+			}
+		}
+	} finally {
+		isCompacting = false;
+	}
+}
+
 export function createConversation(): string {
 	const id = generateId();
 	const now = Date.now();
@@ -299,7 +352,7 @@ function extractUrlsFromSteps(steps: SearchStep[]): string[] {
 }
 
 export async function sendMessage(content: string): Promise<void> {
-	if (!content.trim() || isGenerating) return;
+	if (!content.trim() || isGenerating || isCompacting) return;
 
 	if (!activeConversationId) {
 		createConversation();
@@ -307,6 +360,9 @@ export async function sendMessage(content: string): Promise<void> {
 
 	const conversation = getActiveConversation();
 	if (!conversation) return;
+
+	// Compact if context is getting full
+	await compactIfNeeded();
 
 	if (conversation.messages.length === 0) {
 		const title = generateTitle(content);

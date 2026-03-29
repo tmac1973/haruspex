@@ -1,9 +1,17 @@
 use log::info;
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct MessageInput {
+    pub role: String,
+    pub content: String,
+    pub tool_calls: Option<String>,
+    pub tool_call_id: Option<String>,
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ConversationSummary {
@@ -251,6 +259,46 @@ impl Database {
             .map_err(|e| format!("Clear failed: {}", e))?;
         Ok(())
     }
+
+    pub fn replace_messages(
+        &self,
+        conversation_id: &str,
+        messages: &[MessageInput],
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono_now();
+
+        conn.execute(
+            "DELETE FROM messages WHERE conversation_id = ?1",
+            params![conversation_id],
+        )
+        .map_err(|e| format!("Delete failed: {}", e))?;
+
+        for (i, msg) in messages.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO messages (conversation_id, role, content, tool_calls, tool_call_id, created_at, sort_order)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    conversation_id,
+                    msg.role,
+                    msg.content,
+                    msg.tool_calls,
+                    msg.tool_call_id,
+                    now,
+                    i as i64 + 1
+                ],
+            )
+            .map_err(|e| format!("Insert failed: {}", e))?;
+        }
+
+        conn.execute(
+            "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
+            params![now, conversation_id],
+        )
+        .map_err(|e| format!("Update failed: {}", e))?;
+
+        Ok(())
+    }
 }
 
 fn chrono_now() -> i64 {
@@ -321,6 +369,15 @@ pub fn db_delete_conversation(state: tauri::State<'_, Database>, id: String) -> 
 #[tauri::command]
 pub fn db_clear_all_conversations(state: tauri::State<'_, Database>) -> Result<(), String> {
     state.clear_all_conversations()
+}
+
+#[tauri::command]
+pub fn db_replace_messages(
+    state: tauri::State<'_, Database>,
+    conversation_id: String,
+    messages: Vec<MessageInput>,
+) -> Result<(), String> {
+    state.replace_messages(&conversation_id, &messages)
 }
 
 #[cfg(test)]

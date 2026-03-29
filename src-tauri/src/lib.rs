@@ -75,6 +75,7 @@ pub fn run() {
             db::db_rename_conversation,
             db::db_delete_conversation,
             db::db_clear_all_conversations,
+            db::db_replace_messages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
