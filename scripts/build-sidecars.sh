@@ -89,12 +89,18 @@ else
     echo "   Building..."
     cmake --build . --config Release -j"$NPROC" --target llama-server 2>&1
 
-    cp bin/llama-server${EXT} "$LLAMA_BIN"
+    # Binary location varies by platform (bin/ on Linux/Mac, bin/Release/ on Windows)
+    LLAMA_OUT=$(find . -name "llama-server${EXT}" -type f | head -1)
+    if [ -z "$LLAMA_OUT" ]; then
+        echo "ERROR: llama-server binary not found after build"
+        exit 1
+    fi
+    cp "$LLAMA_OUT" "$LLAMA_BIN"
     chmod +x "$LLAMA_BIN"
 
-    # Copy shared libraries
-    find . -name "*.so*" -o -name "*.dylib" -o -name "*.dll" | while read lib; do
-        [ -f "$lib" ] && cp "$lib" "$BINARIES_DIR/"
+    # Copy shared libraries next to the binary
+    find . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
+        cp "$lib" "$BINARIES_DIR/"
     done
 
     # Create soname symlinks on Linux
@@ -139,12 +145,17 @@ else
     echo "   Building..."
     cmake --build . --config Release -j"$NPROC" --target whisper-server 2>&1
 
-    cp bin/whisper-server${EXT} "$WHISPER_BIN"
+    WHISPER_OUT=$(find . -name "whisper-server${EXT}" -type f | head -1)
+    if [ -z "$WHISPER_OUT" ]; then
+        echo "ERROR: whisper-server binary not found after build"
+        exit 1
+    fi
+    cp "$WHISPER_OUT" "$WHISPER_BIN"
     chmod +x "$WHISPER_BIN"
 
     # Copy shared libraries
-    find . -name "*.so*" -o -name "*.dylib" -o -name "*.dll" | while read lib; do
-        [ -f "$lib" ] && cp "$lib" "$BINARIES_DIR/"
+    find . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
+        cp "$lib" "$BINARIES_DIR/"
     done
 
     for f in "$BINARIES_DIR"/*.so.*.*; do
