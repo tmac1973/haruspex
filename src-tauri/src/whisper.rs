@@ -2,7 +2,7 @@ use log::{error, info, warn};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
@@ -118,34 +118,38 @@ impl WhisperServer {
             .args(&args);
 
         // Set library path so whisper-server can find its bundled shared libraries
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                let bin_dir = exe_dir.to_string_lossy().to_string();
-
-                #[cfg(target_os = "linux")]
-                {
-                    let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                    let new_path = if existing.is_empty() {
-                        bin_dir.clone()
-                    } else {
-                        format!("{}:{}", bin_dir, existing)
-                    };
-                    sidecar = sidecar.env("LD_LIBRARY_PATH", new_path);
+        {
+            let mut lib_paths = Vec::new();
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_dir) = exe_path.parent() {
+                    lib_paths.push(exe_dir.to_string_lossy().to_string());
                 }
-
-                #[cfg(target_os = "macos")]
-                {
-                    let existing = std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
-                    let new_path = if existing.is_empty() {
-                        bin_dir.clone()
-                    } else {
-                        format!("{}:{}", bin_dir, existing)
-                    };
-                    sidecar = sidecar.env("DYLD_LIBRARY_PATH", new_path);
+            }
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                let resource_str = resource_dir.to_string_lossy().to_string();
+                if !lib_paths.contains(&resource_str) {
+                    lib_paths.push(resource_str);
                 }
+            }
 
-                // Windows: DLLs are found automatically from the binary's directory
-                let _ = &bin_dir; // suppress unused warning on Windows
+            #[cfg(target_os = "linux")]
+            {
+                let mut parts = lib_paths;
+                let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                if !existing.is_empty() {
+                    parts.push(existing);
+                }
+                sidecar = sidecar.env("LD_LIBRARY_PATH", parts.join(":"));
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                let mut parts = lib_paths;
+                let existing = std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
+                if !existing.is_empty() {
+                    parts.push(existing);
+                }
+                sidecar = sidecar.env("DYLD_LIBRARY_PATH", parts.join(":"));
             }
         }
 

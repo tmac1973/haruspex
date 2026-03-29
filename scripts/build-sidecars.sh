@@ -99,19 +99,28 @@ else
     chmod +x "$LLAMA_BIN"
 
     # Copy shared libraries to libs/ subdirectory
+    # Use -L to dereference symlinks so we get real files (symlinks don't survive packaging)
     mkdir -p "$BINARIES_DIR/libs"
-    find . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
-        cp "$lib" "$BINARIES_DIR/libs/"
+    find -L . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
+        cp -L "$lib" "$BINARIES_DIR/libs/"
     done
 
-    # Create soname symlinks on Linux
-    for f in "$BINARIES_DIR"/libs/*.so.*.*; do
+    # Create soname copies on Linux (real files, not symlinks, for reliable packaging)
+    # Handles patterns like libfoo.so.1.2.3 -> libfoo.so.1 and libfoo.so
+    for f in "$BINARIES_DIR"/libs/*.so.*; do
         [ -f "$f" ] || continue
         base=$(basename "$f")
-        soname=$(echo "$base" | sed 's/\.[0-9]*\.[0-9]*$//')
-        [ "$soname" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/libs/$soname"
-        short=$(echo "$base" | sed 's/\.so\..*/.so/')
-        [ "$short" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/libs/$short"
+        # Skip if this is already a soname (e.g. libfoo.so.0 with no further dots)
+        # Generate soname: libfoo.so.1.2.3 -> libfoo.so.1, libfoo.so.0.1 -> libfoo.so.0
+        soname=$(echo "$base" | sed -E 's/(\.so\.[0-9]+)\..*/\1/')
+        if [ "$soname" != "$base" ] && [ ! -f "$BINARIES_DIR/libs/$soname" ]; then
+            cp "$f" "$BINARIES_DIR/libs/$soname"
+        fi
+        # Generate short name: libfoo.so.anything -> libfoo.so
+        short=$(echo "$base" | sed 's/\.so\..*/\.so/')
+        if [ "$short" != "$base" ] && [ ! -f "$BINARIES_DIR/libs/$short" ]; then
+            cp "$f" "$BINARIES_DIR/libs/$short"
+        fi
     done
 
     echo "   Built: $LLAMA_BIN"
@@ -154,18 +163,23 @@ else
     cp "$WHISPER_OUT" "$WHISPER_BIN"
     chmod +x "$WHISPER_BIN"
 
-    # Copy shared libraries
-    find . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
-        cp "$lib" "$BINARIES_DIR/"
+    # Copy shared libraries to libs/ subdirectory (same as llama-server)
+    mkdir -p "$BINARIES_DIR/libs"
+    find -L . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
+        cp -L "$lib" "$BINARIES_DIR/libs/"
     done
 
-    for f in "$BINARIES_DIR"/*.so.*.*; do
+    for f in "$BINARIES_DIR"/libs/*.so.*; do
         [ -f "$f" ] || continue
         base=$(basename "$f")
-        soname=$(echo "$base" | sed 's/\.[0-9]*\.[0-9]*$//')
-        [ "$soname" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/$soname"
-        short=$(echo "$base" | sed 's/\.so\..*/.so/')
-        [ "$short" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/$short"
+        soname=$(echo "$base" | sed -E 's/(\.so\.[0-9]+)\..*/\1/')
+        if [ "$soname" != "$base" ] && [ ! -f "$BINARIES_DIR/libs/$soname" ]; then
+            cp "$f" "$BINARIES_DIR/libs/$soname"
+        fi
+        short=$(echo "$base" | sed 's/\.so\..*/\.so/')
+        if [ "$short" != "$base" ] && [ ! -f "$BINARIES_DIR/libs/$short" ]; then
+            cp "$f" "$BINARIES_DIR/libs/$short"
+        fi
     done
 
     echo "   Built: $WHISPER_BIN"

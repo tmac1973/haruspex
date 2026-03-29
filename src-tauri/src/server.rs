@@ -233,22 +233,26 @@ impl LlamaServer {
         }
     }
 
-    fn get_sidecar_dir(app: &AppHandle) -> Option<String> {
-        // llama-server discovers its backends (libggml-*.so) via /proc/self/exe.
-        // In dev mode, Tauri copies the sidecar to target/debug/llama-server,
-        // so the .so files need to be there too (symlinked by scripts/link-sidecar-libs.sh).
-        // In production, they'll be in the resource dir alongside the binary.
+    fn get_library_paths(app: &AppHandle) -> Vec<String> {
+        // In dev mode, .so files are symlinked to target/debug/ (same dir as the exe).
+        // In production, Tauri places externalBin in /usr/bin/ but resources (libs)
+        // in the resource dir (e.g. /usr/lib/haruspex/). We need both paths.
+        let mut paths = Vec::new();
 
-        // First: check the executable's own directory (works for both dev and prod)
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
-                return Some(exe_dir.to_string_lossy().to_string());
+                paths.push(exe_dir.to_string_lossy().to_string());
             }
         }
 
-        // Fallback: resource dir
-        let resource_dir = app.path().resource_dir().ok()?;
-        Some(resource_dir.to_string_lossy().to_string())
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            let resource_str = resource_dir.to_string_lossy().to_string();
+            if !paths.contains(&resource_str) {
+                paths.push(resource_str);
+            }
+        }
+
+        paths
     }
 
     async fn spawn_and_monitor(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
@@ -268,29 +272,28 @@ impl LlamaServer {
             .args(&args);
 
         // Set library path so llama-server can find its bundled shared libraries
-        if let Some(bin_dir) = Self::get_sidecar_dir(app) {
-            info!("Setting library path to: {}", bin_dir);
+        {
+            let lib_paths = Self::get_library_paths(app);
+            info!("Setting library paths to: {:?}", lib_paths);
 
             #[cfg(target_os = "linux")]
             {
+                let mut parts = lib_paths;
                 let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                let new_path = if existing.is_empty() {
-                    bin_dir
-                } else {
-                    format!("{}:{}", bin_dir, existing)
-                };
-                sidecar = sidecar.env("LD_LIBRARY_PATH", new_path);
+                if !existing.is_empty() {
+                    parts.push(existing);
+                }
+                sidecar = sidecar.env("LD_LIBRARY_PATH", parts.join(":"));
             }
 
             #[cfg(target_os = "macos")]
             {
+                let mut parts = lib_paths;
                 let existing = std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
-                let new_path = if existing.is_empty() {
-                    bin_dir
-                } else {
-                    format!("{}:{}", bin_dir, existing)
-                };
-                sidecar = sidecar.env("DYLD_LIBRARY_PATH", new_path);
+                if !existing.is_empty() {
+                    parts.push(existing);
+                }
+                sidecar = sidecar.env("DYLD_LIBRARY_PATH", parts.join(":"));
             }
 
             // Windows: DLLs are found automatically from the binary's directory
@@ -401,34 +404,29 @@ impl LlamaServer {
                                 .sidecar("llama-server")
                                 .map(|cmd| {
                                     let mut cmd = cmd.args(&args);
-                                    if let Some(bin_dir) = Self::get_sidecar_dir(&app) {
-                                        #[cfg(target_os = "linux")]
-                                        {
-                                            let existing = std::env::var("LD_LIBRARY_PATH")
-                                                .unwrap_or_default();
-                                            let new_path = if existing.is_empty() {
-                                                bin_dir.clone()
-                                            } else {
-                                                format!("{}:{}", bin_dir, existing)
-                                            };
-                                            cmd = cmd.env("LD_LIBRARY_PATH", new_path);
-                                        }
 
-                                        #[cfg(target_os = "macos")]
-                                        {
-                                            let existing = std::env::var("DYLD_LIBRARY_PATH")
-                                                .unwrap_or_default();
-                                            let new_path = if existing.is_empty() {
-                                                bin_dir.clone()
-                                            } else {
-                                                format!("{}:{}", bin_dir, existing)
-                                            };
-                                            cmd = cmd.env("DYLD_LIBRARY_PATH", new_path);
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        let mut parts = Self::get_library_paths(&app);
+                                        let existing = std::env::var("LD_LIBRARY_PATH")
+                                            .unwrap_or_default();
+                                        if !existing.is_empty() {
+                                            parts.push(existing);
                                         }
-
-                                        // Windows: DLLs are found automatically from the binary's directory
-                                        let _ = &bin_dir; // suppress unused warning on Windows
+                                        cmd = cmd.env("LD_LIBRARY_PATH", parts.join(":"));
                                     }
+
+                                    #[cfg(target_os = "macos")]
+                                    {
+                                        let mut parts = Self::get_library_paths(&app);
+                                        let existing = std::env::var("DYLD_LIBRARY_PATH")
+                                            .unwrap_or_default();
+                                        if !existing.is_empty() {
+                                            parts.push(existing);
+                                        }
+                                        cmd = cmd.env("DYLD_LIBRARY_PATH", parts.join(":"));
+                                    }
+
                                     cmd
                                 })
                                 .and_then(|cmd| cmd.spawn());
