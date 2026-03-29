@@ -75,6 +75,13 @@ impl TtsEngine {
                 }
             }
             if let Ok(resource_dir) = app.path().resource_dir() {
+                let libs_dir = resource_dir.join("binaries").join("libs");
+                if libs_dir.exists() {
+                    let libs_str = libs_dir.to_string_lossy().to_string();
+                    if !lib_paths.contains(&libs_str) {
+                        lib_paths.push(libs_str);
+                    }
+                }
                 let resource_str = resource_dir.to_string_lossy().to_string();
                 if !lib_paths.contains(&resource_str) {
                     lib_paths.push(resource_str);

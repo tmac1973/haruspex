@@ -246,6 +246,15 @@ impl LlamaServer {
         }
 
         if let Ok(resource_dir) = app.path().resource_dir() {
+            // Libs are bundled as resources at binaries/libs/* so they end up
+            // in <resource_dir>/binaries/libs/ in production installs.
+            let libs_dir = resource_dir.join("binaries").join("libs");
+            if libs_dir.exists() {
+                let libs_str = libs_dir.to_string_lossy().to_string();
+                if !paths.contains(&libs_str) {
+                    paths.push(libs_str);
+                }
+            }
             let resource_str = resource_dir.to_string_lossy().to_string();
             if !paths.contains(&resource_str) {
                 paths.push(resource_str);
