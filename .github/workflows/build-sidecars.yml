@@ -22,11 +22,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Vulkan SDK (Linux)
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan-dev
+          sudo apt-get install -y libvulkan-dev libsonic-dev libpcaudio-dev libssl-dev pkg-config
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install opus pkg-config
 
       - name: Install Vulkan SDK (Windows)
         if: runner.os == 'Windows'
