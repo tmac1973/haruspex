@@ -51,6 +51,8 @@ pub fn run() {
             models::has_any_model,
             models::get_active_model_path,
             models::delete_model,
+            models::get_whisper_model_path,
+            models::download_whisper_model,
             proxy::proxy_search,
             proxy::proxy_fetch,
             audio::start_recording,

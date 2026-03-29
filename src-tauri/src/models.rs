@@ -563,6 +563,148 @@ pub async fn delete_model(
     state.delete_model(&filename).await
 }
 
+#[tauri::command]
+pub async fn get_whisper_model_path(
+    state: tauri::State<'_, ModelManager>,
+) -> Result<Option<String>, ()> {
+    let path = state.models_dir().join("whisper").join("ggml-base.en.bin");
+    if path.exists() {
+        Ok(Some(path.to_string_lossy().to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub async fn download_whisper_model(
+    app: AppHandle,
+    state: tauri::State<'_, ModelManager>,
+) -> Result<String, String> {
+    let whisper_dir = state.models_dir().join("whisper");
+    fs::create_dir_all(&whisper_dir)
+        .await
+        .map_err(|e| format!("Failed to create whisper dir: {}", e))?;
+
+    let final_path = whisper_dir.join("ggml-base.en.bin");
+    if final_path.exists() {
+        return Ok(final_path.to_string_lossy().to_string());
+    }
+
+    let partial_path = whisper_dir.join("ggml-base.en.bin.partial");
+    let url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+    let expected_size: u64 = 148_000_000;
+
+    // Reset cancel flag
+    {
+        let mut cancel = state.cancel_flag.lock().await;
+        *cancel = false;
+    }
+
+    let existing_size = if partial_path.exists() {
+        fs::metadata(&partial_path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    info!(
+        "Downloading whisper model (resume from {} bytes)",
+        existing_size
+    );
+
+    let client = reqwest::Client::new();
+    let mut request = client.get(url);
+    if existing_size > 0 {
+        request = request.header("Range", format!("bytes={}-", existing_size));
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("Download failed: {}", e))?;
+
+    if !response.status().is_success() && response.status().as_u16() != 206 {
+        return Err(format!(
+            "Download failed with status: {}",
+            response.status()
+        ));
+    }
+
+    let total_size = if existing_size > 0 {
+        existing_size
+            + response
+                .content_length()
+                .unwrap_or(expected_size - existing_size)
+    } else {
+        response.content_length().unwrap_or(expected_size)
+    };
+
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&partial_path)
+        .await
+        .map_err(|e| format!("Failed to open file: {}", e))?;
+
+    let mut downloaded = existing_size;
+    let start_time = std::time::Instant::now();
+    let mut last_progress_time = start_time;
+
+    use tokio::io::AsyncWriteExt;
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk_result) = StreamExt::next(&mut stream).await {
+        {
+            let cancel = state.cancel_flag.lock().await;
+            if *cancel {
+                drop(file);
+                info!("Whisper download cancelled");
+                return Err("Download cancelled".to_string());
+            }
+        }
+
+        let chunk = chunk_result.map_err(|e| format!("Download error: {}", e))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Write error: {}", e))?;
+
+        downloaded += chunk.len() as u64;
+
+        let now = std::time::Instant::now();
+        if now.duration_since(last_progress_time).as_millis() >= 100 {
+            let elapsed = now.duration_since(start_time).as_secs_f64();
+            let speed_bps = if elapsed > 0.0 {
+                ((downloaded - existing_size) as f64 / elapsed) as u64
+            } else {
+                0
+            };
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    downloaded,
+                    total: total_size,
+                    speed_bps,
+                },
+            );
+            last_progress_time = now;
+        }
+    }
+
+    file.flush()
+        .await
+        .map_err(|e| format!("Flush error: {}", e))?;
+    drop(file);
+
+    fs::rename(&partial_path, &final_path)
+        .await
+        .map_err(|e| format!("Failed to finalize download: {}", e))?;
+
+    info!("Whisper model downloaded successfully");
+    Ok(final_path.to_string_lossy().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

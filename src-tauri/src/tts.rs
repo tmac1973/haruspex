@@ -389,7 +389,17 @@ pub async fn tts_initialize(
     app: AppHandle,
     state: tauri::State<'_, TtsEngine>,
 ) -> Result<(), String> {
-    state.start(&app).await
+    state.start(&app).await?;
+
+    // Wait for the server to become ready before returning,
+    // so the caller can immediately synthesize after this resolves.
+    for _ in 0..60 {
+        if state.is_ready().await {
+            return Ok(());
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+    Err("TTS server failed to become ready".to_string())
 }
 
 #[tauri::command]

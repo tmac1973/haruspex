@@ -9,6 +9,7 @@
 	let { onTranscription, disabled = false }: Props = $props();
 	let recording = $state(false);
 	let processing = $state(false);
+	let downloading = $state(false);
 	let error = $state<string | null>(null);
 
 	type WhisperStatusResponse = 'Stopped' | 'Starting' | 'Ready' | { Error: string };
@@ -26,12 +27,22 @@
 			const status = await invoke<WhisperStatusResponse>('get_whisper_status');
 			if (isReady(status)) return true;
 
-			// Try to find the whisper model
-			const modelsDir = await invoke<string>('get_models_dir');
-			const whisperModel = `${modelsDir}/whisper/ggml-base.en.bin`;
+			// Check if whisper model exists, download if not
+			let modelPath = await invoke<string | null>('get_whisper_model_path');
+			if (!modelPath) {
+				downloading = true;
+				try {
+					modelPath = await invoke<string>('download_whisper_model');
+				} catch (e) {
+					error = `Whisper model download failed: ${e}`;
+					return false;
+				} finally {
+					downloading = false;
+				}
+			}
 
 			// Start whisper server
-			await invoke('start_whisper', { modelPath: whisperModel });
+			await invoke('start_whisper', { modelPath });
 
 			// Wait for ready (up to 15s)
 			for (let i = 0; i < 30; i++) {
@@ -93,16 +104,22 @@
 	<button
 		class="mic-btn"
 		class:recording
-		class:processing
-		{disabled}
+		class:processing={processing || downloading}
+		disabled={disabled || downloading}
 		onmousedown={startRecording}
 		onmouseup={stopRecording}
 		onmouseleave={() => {
 			if (recording) stopRecording();
 		}}
-		title={recording ? 'Release to send' : processing ? 'Transcribing...' : 'Hold to record'}
+		title={downloading
+			? 'Downloading speech model...'
+			: recording
+				? 'Release to send'
+				: processing
+					? 'Transcribing...'
+					: 'Hold to record'}
 	>
-		{#if processing}
+		{#if processing || downloading}
 			<span class="spinner"></span>
 		{:else}
 			<svg
