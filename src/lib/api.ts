@@ -45,7 +45,7 @@ export interface ChatCompletionOptions {
 }
 
 export interface StreamChunk {
-	delta: { content?: string; tool_calls?: ToolCallDelta[] };
+	delta: { content?: string; reasoning_content?: string; tool_calls?: ToolCallDelta[] };
 	finish_reason: string | null;
 }
 
@@ -202,8 +202,19 @@ export async function chatCompletion(
 		throw new ApiError('No response from model');
 	}
 
+	const content = choice.message?.content ?? null;
+	const reasoning = choice.message?.reasoning_content;
+
+	// If model returned reasoning in a separate field, prepend as <think> block
+	const fullContent =
+		reasoning && content
+			? `<think>${reasoning}</think>\n\n${content}`
+			: reasoning && !content
+				? `<think>${reasoning}</think>`
+				: content;
+
 	return {
-		content: choice.message?.content ?? null,
+		content: fullContent,
 		tool_calls: choice.message?.tool_calls,
 		finish_reason: choice.finish_reason ?? 'stop'
 	};

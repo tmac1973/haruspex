@@ -352,7 +352,18 @@ export async function sendMessage(content: string): Promise<void> {
 				);
 			},
 			onStreamChunk: (chunk) => {
+				if (chunk.delta.reasoning_content) {
+					// Wrap reasoning in think tags for the markdown renderer
+					if (!streamingContent.includes('<think>')) {
+						streamingContent += '<think>';
+					}
+					streamingContent += chunk.delta.reasoning_content;
+				}
 				if (chunk.delta.content) {
+					// Close think block if one was open
+					if (streamingContent.includes('<think>') && !streamingContent.includes('</think>')) {
+						streamingContent += '</think>\n\n';
+					}
 					streamingContent += chunk.delta.content;
 				}
 			},
