@@ -53,6 +53,15 @@ case "$TARGET" in
         echo "GPU: Metal"
         ;;
 esac
+
+# On Windows, statically link the MSVC CRT to avoid runtime DLL dependencies
+CMAKE_CRT_FLAGS=""
+case "$TARGET" in
+    *-windows-msvc)
+        CMAKE_CRT_FLAGS="-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded"
+        echo "CRT: Static (/MT)"
+        ;;
+esac
 echo
 
 # Determine binary extension
@@ -77,13 +86,13 @@ else
     mkdir -p "$BUILD_DIR/llama"
     cd "$BUILD_DIR/llama"
 
-    echo "   Configuring with flags: $CMAKE_GPU_FLAGS"
-    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1; then
+    echo "   Configuring with flags: $CMAKE_GPU_FLAGS $CMAKE_CRT_FLAGS"
+    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS $CMAKE_CRT_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags ($CMAKE_GPU_FLAGS), retrying CPU-only..."
         rm -rf "$BUILD_DIR/llama"
         mkdir -p "$BUILD_DIR/llama"
         cd "$BUILD_DIR/llama"
-        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release 2>&1
+        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_CRT_FLAGS 2>&1
     fi
 
     echo "   Building..."
@@ -144,12 +153,12 @@ else
     cd "$BUILD_DIR/whisper"
 
     echo "   Configuring..."
-    if ! cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1; then
+    if ! cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS $CMAKE_CRT_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags, retrying CPU-only..."
         rm -rf "$BUILD_DIR/whisper"
         mkdir -p "$BUILD_DIR/whisper"
         cd "$BUILD_DIR/whisper"
-        cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release 2>&1
+        cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_CRT_FLAGS 2>&1
     fi
 
     echo "   Building..."
@@ -201,7 +210,20 @@ else
     echo "   Building..."
     # audiopus_sys uses old cmake_minimum_required incompatible with newer cmake
     export CMAKE_POLICY_VERSION_MINIMUM=3.5
-    cargo build --release --bin koko 2>&1
+
+    # Use rustls instead of native-tls to avoid OpenSSL dependency.
+    # Patch reqwest in kokoros/Cargo.toml to disable default features and use rustls-tls.
+    sed -i.bak 's/reqwest = { version = "0.12.19" }/reqwest = { version = "0.12.19", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml
+
+    # On Windows, statically link the MSVC CRT to avoid msvcp140.dll/vcruntime140.dll deps
+    KOKO_RUSTFLAGS="${RUSTFLAGS:-}"
+    case "$TARGET" in
+        *-windows-msvc) KOKO_RUSTFLAGS="$KOKO_RUSTFLAGS -C target-feature=+crt-static" ;;
+    esac
+    RUSTFLAGS="$KOKO_RUSTFLAGS" cargo build --release --bin koko 2>&1
+
+    # Restore original Cargo.toml
+    mv kokoros/Cargo.toml.bak kokoros/Cargo.toml
 
     cp target/release/koko${EXT} "$KOKO_BIN"
     chmod +x "$KOKO_BIN"
