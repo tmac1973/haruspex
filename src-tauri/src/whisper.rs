@@ -158,6 +158,16 @@ impl WhisperServer {
                 }
                 sidecar = sidecar.env("DYLD_LIBRARY_PATH", parts.join(":"));
             }
+
+            #[cfg(target_os = "windows")]
+            {
+                let mut parts = lib_paths;
+                let existing = std::env::var("PATH").unwrap_or_default();
+                if !existing.is_empty() {
+                    parts.push(existing);
+                }
+                sidecar = sidecar.env("PATH", parts.join(";"));
+            }
         }
 
         let (mut rx, child) = sidecar
