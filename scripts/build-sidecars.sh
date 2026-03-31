@@ -54,14 +54,6 @@ case "$TARGET" in
         ;;
 esac
 
-# On Windows, statically link the MSVC CRT to avoid runtime DLL dependencies
-CMAKE_CRT_FLAGS=""
-case "$TARGET" in
-    *-windows-msvc)
-        CMAKE_CRT_FLAGS="-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded"
-        echo "CRT: Static (/MT)"
-        ;;
-esac
 echo
 
 # Determine binary extension
@@ -86,13 +78,13 @@ else
     mkdir -p "$BUILD_DIR/llama"
     cd "$BUILD_DIR/llama"
 
-    echo "   Configuring with flags: $CMAKE_GPU_FLAGS $CMAKE_CRT_FLAGS"
-    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS $CMAKE_CRT_FLAGS 2>&1; then
+    echo "   Configuring with flags: $CMAKE_GPU_FLAGS"
+    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags ($CMAKE_GPU_FLAGS), retrying CPU-only..."
         rm -rf "$BUILD_DIR/llama"
         mkdir -p "$BUILD_DIR/llama"
         cd "$BUILD_DIR/llama"
-        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_CRT_FLAGS 2>&1
+        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release 2>&1
     fi
 
     echo "   Building..."
@@ -153,12 +145,12 @@ else
     cd "$BUILD_DIR/whisper"
 
     echo "   Configuring..."
-    if ! cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS $CMAKE_CRT_FLAGS 2>&1; then
+    if ! cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags, retrying CPU-only..."
         rm -rf "$BUILD_DIR/whisper"
         mkdir -p "$BUILD_DIR/whisper"
         cd "$BUILD_DIR/whisper"
-        cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_CRT_FLAGS 2>&1
+        cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release 2>&1
     fi
 
     echo "   Building..."
@@ -215,12 +207,7 @@ else
     # Patch reqwest in kokoros/Cargo.toml to disable default features and use rustls-tls.
     sed -i.bak 's/reqwest = { version = "0.12.19" }/reqwest = { version = "0.12.19", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml
 
-    # On Windows, statically link the MSVC CRT to avoid msvcp140.dll/vcruntime140.dll deps
-    KOKO_RUSTFLAGS="${RUSTFLAGS:-}"
-    case "$TARGET" in
-        *-windows-msvc) KOKO_RUSTFLAGS="$KOKO_RUSTFLAGS -C target-feature=+crt-static" ;;
-    esac
-    RUSTFLAGS="$KOKO_RUSTFLAGS" cargo build --release --bin koko 2>&1
+    cargo build --release --bin koko 2>&1
 
     # Restore original Cargo.toml
     mv kokoros/Cargo.toml.bak kokoros/Cargo.toml
@@ -231,6 +218,49 @@ else
     echo "   Built: $KOKO_BIN"
 fi
 echo
+
+# ---- Bundle MSVC runtime DLLs on Windows ----
+case "$TARGET" in
+    *-windows-msvc)
+        echo ">> Bundling MSVC runtime DLLs..."
+        mkdir -p "$BINARIES_DIR/libs"
+        # Find the VC redist directory (works with VS 2022 Build Tools and full VS)
+        MSVC_REDIST=""
+        for base in \
+            "$VCToolsRedistDir" \
+            "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Redist/MSVC" \
+            "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Redist/MSVC" \
+            "C:/Program Files/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC" \
+            "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC"; do
+            [ -z "$base" ] && continue
+            # VCToolsRedistDir points directly to the version dir; others need a glob
+            if [ -f "$base/x64/Microsoft.VC143.CRT/msvcp140.dll" ]; then
+                MSVC_REDIST="$base/x64/Microsoft.VC143.CRT"
+                break
+            fi
+            # Try globbing version subdirectories
+            for ver_dir in "$base"/*/x64/Microsoft.VC143.CRT; do
+                if [ -f "$ver_dir/msvcp140.dll" ]; then
+                    MSVC_REDIST="$ver_dir"
+                    break 2
+                fi
+            done
+        done
+
+        if [ -n "$MSVC_REDIST" ]; then
+            echo "   Found MSVC CRT at: $MSVC_REDIST"
+            for dll in msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+                if [ -f "$MSVC_REDIST/$dll" ]; then
+                    cp "$MSVC_REDIST/$dll" "$BINARIES_DIR/libs/"
+                    echo "   Copied: $dll"
+                fi
+            done
+        else
+            echo "   WARN: Could not find MSVC runtime DLLs to bundle"
+        fi
+        echo
+        ;;
+esac
 
 # ---- Summary ----
 echo "========================================"
