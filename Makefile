@@ -27,8 +27,22 @@ act-ci: ## Run the CI checks workflow locally via act
 
 # ---- Dev ----
 
+.PHONY: ensure-sidecars
+ensure-sidecars: ## Check that all sidecar binaries are built
+	@missing=""; \
+	for bin in llama-server whisper-server koko; do \
+		if [ ! -x src-tauri/binaries/$$bin-$(TARGET) ]; then \
+			missing="$$missing $$bin"; \
+		fi; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "ERROR: Missing sidecar binaries:$$missing"; \
+		echo "Run 'make sidecars' or './scripts/dev-setup.sh' to build them."; \
+		exit 1; \
+	fi
+
 .PHONY: dev
-dev: ## Run the app in dev mode
+dev: ensure-sidecars ## Run the app in dev mode
 	GDK_BACKEND=x11 npm run tauri dev
 
 .PHONY: check
