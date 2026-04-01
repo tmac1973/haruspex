@@ -212,7 +212,7 @@ else
     # Patch reqwest in kokoros/Cargo.toml to disable default features and use rustls-tls.
     # Match any reqwest version to be resilient to upstream updates.
     cp kokoros/Cargo.toml kokoros/Cargo.toml.bak
-    sed -i 's/reqwest = { version = "[^"]*" }/reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml
+    sed 's/reqwest = { version = "[^"]*" }/reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml.bak > kokoros/Cargo.toml
     echo "   Patched reqwest:"
     grep reqwest kokoros/Cargo.toml
 
