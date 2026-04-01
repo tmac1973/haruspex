@@ -164,10 +164,15 @@ else
     cp "$WHISPER_OUT" "$WHISPER_BIN"
     chmod +x "$WHISPER_BIN"
 
-    # Copy shared libraries to libs/ subdirectory (same as llama-server)
+    # Copy shared libraries to libs/ subdirectory.
+    # Only copy libs that don't already exist — llama-server's GGML libs take
+    # precedence since llama-server needs the exact versions it was built against.
     mkdir -p "$BINARIES_DIR/libs"
     find -L . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
-        cp -L "$lib" "$BINARIES_DIR/libs/"
+        libname=$(basename "$lib")
+        if [ ! -f "$BINARIES_DIR/libs/$libname" ]; then
+            cp -L "$lib" "$BINARIES_DIR/libs/"
+        fi
     done
 
     for f in "$BINARIES_DIR"/libs/*.so.*; do
@@ -205,7 +210,11 @@ else
 
     # Use rustls instead of native-tls to avoid OpenSSL dependency.
     # Patch reqwest in kokoros/Cargo.toml to disable default features and use rustls-tls.
-    sed -i.bak 's/reqwest = { version = "0.12.19" }/reqwest = { version = "0.12.19", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml
+    # Match any reqwest version to be resilient to upstream updates.
+    cp kokoros/Cargo.toml kokoros/Cargo.toml.bak
+    sed -i 's/reqwest = { version = "[^"]*" }/reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml
+    echo "   Patched reqwest:"
+    grep reqwest kokoros/Cargo.toml
 
     cargo build --release --bin koko 2>&1
 
@@ -224,8 +233,9 @@ case "$TARGET" in
     *-windows-msvc)
         echo ">> Bundling MSVC runtime DLLs..."
         mkdir -p "$BINARIES_DIR/libs"
-        # Find the VC redist directory (works with VS 2022 Build Tools and full VS)
-        MSVC_REDIST=""
+        # Find the VC redist base directory (works with VS 2022 Build Tools and full VS).
+        # VCToolsRedistDir env var points to e.g. .../Redist/MSVC/14.44.35207/
+        MSVC_REDIST_BASE=""
         for base in \
             "$VCToolsRedistDir" \
             "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Redist/MSVC" \
@@ -233,28 +243,34 @@ case "$TARGET" in
             "C:/Program Files/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC" \
             "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC"; do
             [ -z "$base" ] && continue
-            # VCToolsRedistDir points directly to the version dir; others need a glob
-            if [ -f "$base/x64/Microsoft.VC143.CRT/msvcp140.dll" ]; then
-                MSVC_REDIST="$base/x64/Microsoft.VC143.CRT"
+            if [ -d "$base/x64/Microsoft.VC143.CRT" ]; then
+                MSVC_REDIST_BASE="$base/x64"
                 break
             fi
             # Try globbing version subdirectories
-            for ver_dir in "$base"/*/x64/Microsoft.VC143.CRT; do
-                if [ -f "$ver_dir/msvcp140.dll" ]; then
-                    MSVC_REDIST="$ver_dir"
+            for ver_dir in "$base"/*/x64; do
+                if [ -d "$ver_dir/Microsoft.VC143.CRT" ]; then
+                    MSVC_REDIST_BASE="$ver_dir"
                     break 2
                 fi
             done
         done
 
-        if [ -n "$MSVC_REDIST" ]; then
-            echo "   Found MSVC CRT at: $MSVC_REDIST"
+        if [ -n "$MSVC_REDIST_BASE" ]; then
+            echo "   Found MSVC redist at: $MSVC_REDIST_BASE"
+            # CRT DLLs are in Microsoft.VC143.CRT/
             for dll in msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
-                if [ -f "$MSVC_REDIST/$dll" ]; then
-                    cp "$MSVC_REDIST/$dll" "$BINARIES_DIR/libs/"
+                src="$MSVC_REDIST_BASE/Microsoft.VC143.CRT/$dll"
+                if [ -f "$src" ]; then
+                    cp "$src" "$BINARIES_DIR/libs/"
                     echo "   Copied: $dll"
                 fi
             done
+            # OpenMP runtime is in Microsoft.VC143.OpenMP/
+            if [ -f "$MSVC_REDIST_BASE/Microsoft.VC143.OpenMP/vcomp140.dll" ]; then
+                cp "$MSVC_REDIST_BASE/Microsoft.VC143.OpenMP/vcomp140.dll" "$BINARIES_DIR/libs/"
+                echo "   Copied: vcomp140.dll"
+            fi
         else
             echo "   WARN: Could not find MSVC runtime DLLs to bundle"
         fi
