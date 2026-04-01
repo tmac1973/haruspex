@@ -209,12 +209,14 @@ else
     export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
     # Use rustls instead of native-tls to avoid OpenSSL dependency.
-    # Patch reqwest in kokoros/Cargo.toml to disable default features and use rustls-tls.
-    # Match any reqwest version to be resilient to upstream updates.
+    # Patch reqwest line in kokoros/Cargo.toml — replace the whole line to avoid
+    # regex matching issues with varying formats across upstream versions.
     cp kokoros/Cargo.toml kokoros/Cargo.toml.bak
-    sed 's/reqwest = { version = "[^"]*" }/reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml.bak > kokoros/Cargo.toml
+    sed '/^reqwest[[:space:]]*=/c\reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }' kokoros/Cargo.toml.bak > kokoros/Cargo.toml
     echo "   Patched reqwest:"
     grep reqwest kokoros/Cargo.toml
+    # Remove lock file to force fresh dependency resolution with rustls
+    rm -f Cargo.lock
 
     cargo build --release --bin koko 2>&1
 
