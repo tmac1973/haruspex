@@ -10,7 +10,7 @@ sidecars: ## Build sidecar binaries (llama-server, whisper-server, koko)
 app: ## Build the Tauri app (requires sidecars)
 	npm ci
 ifeq ($(OS),Windows_NT)
-	npm run tauri build -- --bundles nsis,msi
+	source scripts/msvc-path-fix.sh && npm run tauri build -- --bundles nsis,msi
 else
 	npm run tauri build -- --bundles deb,rpm
 endif

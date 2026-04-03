@@ -23,23 +23,8 @@ if [ -z "$TARGET" ]; then
     TARGET="$(rustc --print host-tuple)"
 fi
 
-# On Windows (Git Bash), Git ships a POSIX link.exe in /usr/bin that shadows
-# the MSVC linker. Find the real MSVC link.exe and prepend its directory so
-# it takes priority.
-case "$TARGET" in
-    *-windows-msvc)
-        MSVC_LINK=$(cmd //c "where link.exe" 2>/dev/null | grep -i "MSVC\|Visual Studio\|HostX64" | head -1 | tr -d '\r')
-        if [ -n "$MSVC_LINK" ]; then
-            MSVC_LINK_DIR=$(dirname "$MSVC_LINK")
-            # Convert Windows path to Unix-style for Git Bash
-            MSVC_LINK_DIR=$(cygpath -u "$MSVC_LINK_DIR" 2>/dev/null || echo "$MSVC_LINK_DIR")
-            export PATH="$MSVC_LINK_DIR:$PATH"
-            echo "MSVC linker: $MSVC_LINK"
-        else
-            echo "WARN: Could not find MSVC link.exe — linking may fail"
-        fi
-        ;;
-esac
+# Fix MSVC link.exe PATH conflict on Windows
+source "$SCRIPT_DIR/msvc-path-fix.sh"
 
 LLAMA_VERSION=$(cat "$PROJECT_ROOT/LLAMA_CPP_VERSION" 2>/dev/null || echo "master")
 WHISPER_VERSION=$(cat "$PROJECT_ROOT/WHISPER_CPP_VERSION" 2>/dev/null || echo "master")
