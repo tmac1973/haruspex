@@ -23,6 +23,14 @@ if [ -z "$TARGET" ]; then
     TARGET="$(rustc --print host-tuple)"
 fi
 
+# On Windows (Git Bash), remove /usr/bin from PATH so that Git's POSIX
+# link.exe doesn't shadow the MSVC linker. Keep /mingw64/bin for git itself.
+case "$TARGET" in
+    *-windows-msvc)
+        PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '^/usr/bin$' | paste -sd:)
+        ;;
+esac
+
 LLAMA_VERSION=$(cat "$PROJECT_ROOT/LLAMA_CPP_VERSION" 2>/dev/null || echo "master")
 WHISPER_VERSION=$(cat "$PROJECT_ROOT/WHISPER_CPP_VERSION" 2>/dev/null || echo "master")
 case "$TARGET" in
