@@ -226,7 +226,7 @@ else
     # Patch reqwest line in kokoros/Cargo.toml — replace the whole line to avoid
     # regex matching issues with varying formats across upstream versions.
     cp kokoros/Cargo.toml kokoros/Cargo.toml.bak
-    sed '/^reqwest[[:space:]]*=/c\reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }' kokoros/Cargo.toml.bak > kokoros/Cargo.toml
+    sed 's/^reqwest[[:space:]]*=.*/reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml.bak > kokoros/Cargo.toml
     echo "   Patched reqwest:"
     grep reqwest kokoros/Cargo.toml
     # Remove lock file to force fresh dependency resolution with rustls
