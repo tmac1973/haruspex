@@ -23,11 +23,14 @@ if [ -z "$TARGET" ]; then
     TARGET="$(rustc --print host-tuple)"
 fi
 
-# On Windows (Git Bash), remove /usr/bin from PATH so that Git's POSIX
-# link.exe doesn't shadow the MSVC linker. Keep /mingw64/bin for git itself.
+# On Windows (Git Bash), Git ships a POSIX link.exe in /usr/bin that shadows
+# the MSVC linker. Hide it so cargo/cmake find the real one.
 case "$TARGET" in
     *-windows-msvc)
-        PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '^/usr/bin$' | paste -sd:)
+        if [ -f /usr/bin/link.exe ]; then
+            mv /usr/bin/link.exe /usr/bin/link.exe.bak
+            trap 'mv /usr/bin/link.exe.bak /usr/bin/link.exe 2>/dev/null' EXIT
+        fi
         ;;
 esac
 
