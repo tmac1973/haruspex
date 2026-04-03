@@ -1,5 +1,5 @@
 ifeq ($(OS),Windows_NT)
-SHELL := C:/Program Files/Git/bin/bash.exe
+SHELL := C:/PROGRA~1/Git/bin/bash.exe
 endif
 
 TARGET := $(shell rustc --print host-tuple)
