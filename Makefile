@@ -1,7 +1,3 @@
-ifeq ($(OS),Windows_NT)
-SHELL := C:/PROGRA~1/Git/bin/bash.exe
-endif
-
 TARGET := $(shell rustc --print host-tuple)
 
 # ---- Local builds ----
