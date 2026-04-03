@@ -9,10 +9,14 @@ sidecars: ## Build sidecar binaries (llama-server, whisper-server, koko)
 .PHONY: app
 app: ## Build the Tauri app (requires sidecars)
 	npm ci
+ifeq ($(OS),Windows_NT)
+	npm run tauri build -- --bundles nsis,msi
+else
 	npm run tauri build -- --bundles deb,rpm
+endif
 
 .PHONY: release-local
-release-local: sidecars app ## Build everything: sidecars + app packages (DEB/RPM)
+release-local: sidecars app ## Build everything: sidecars + app packages
 
 # ---- CI testing with act ----
 

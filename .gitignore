@@ -15,6 +15,9 @@ data/
 src-tauri/checkpoints/
 src-tauri/data/
 
+# Sidecar build directory (Windows local builds)
+.sidecar-build/
+
 # Sidecar binaries and libs (large, built separately)
 src-tauri/binaries/llama-server-*
 src-tauri/binaries/whisper-server-*

@@ -25,8 +25,11 @@ fi
 
 LLAMA_VERSION=$(cat "$PROJECT_ROOT/LLAMA_CPP_VERSION" 2>/dev/null || echo "master")
 WHISPER_VERSION=$(cat "$PROJECT_ROOT/WHISPER_CPP_VERSION" 2>/dev/null || echo "master")
-BUILD_DIR="/tmp/haruspex-sidecar-build"
-NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+case "$TARGET" in
+    *-windows-msvc) BUILD_DIR="$PROJECT_ROOT/.sidecar-build" ;;
+    *)              BUILD_DIR="/tmp/haruspex-sidecar-build" ;;
+esac
+NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")
 
 echo "========================================"
 echo "  Building Haruspex Sidecars"
@@ -40,12 +43,20 @@ mkdir -p "$BINARIES_DIR"
 # Detect GPU build flags per platform
 CMAKE_GPU_FLAGS=""
 case "$TARGET" in
-    *-linux-gnu|*-windows-msvc)
+    *-linux-gnu)
         if pkg-config --exists vulkan 2>/dev/null || [ -f /usr/include/vulkan/vulkan.h ]; then
             CMAKE_GPU_FLAGS="-DGGML_VULKAN=ON"
             echo "GPU: Vulkan"
         else
             echo "GPU: None (Vulkan headers not found)"
+        fi
+        ;;
+    *-windows-msvc)
+        if [ -n "$VULKAN_SDK" ] && [ -d "$VULKAN_SDK/Include/vulkan" ]; then
+            CMAKE_GPU_FLAGS="-DGGML_VULKAN=ON"
+            echo "GPU: Vulkan (SDK: $VULKAN_SDK)"
+        else
+            echo "GPU: None (VULKAN_SDK not set or Vulkan headers not found)"
         fi
         ;;
     *-apple-darwin)
@@ -68,7 +79,7 @@ if [ -f "$LLAMA_BIN" ]; then
     echo ">> llama-server already built, skipping."
 else
     echo ">> Building llama-server (llama.cpp $LLAMA_VERSION)..."
-    LLAMA_SRC="/tmp/llama.cpp"
+    LLAMA_SRC="${BUILD_DIR}/llama.cpp"
     if [ ! -d "$LLAMA_SRC" ]; then
         git clone --depth 1 --branch "$LLAMA_VERSION" https://github.com/ggml-org/llama.cpp.git "$LLAMA_SRC" 2>/dev/null || \
         git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$LLAMA_SRC" 2>/dev/null
@@ -134,7 +145,7 @@ if [ -f "$WHISPER_BIN" ]; then
     echo ">> whisper-server already built, skipping."
 else
     echo ">> Building whisper-server (whisper.cpp $WHISPER_VERSION)..."
-    WHISPER_SRC="/tmp/whisper.cpp"
+    WHISPER_SRC="${BUILD_DIR}/whisper.cpp"
     if [ ! -d "$WHISPER_SRC" ]; then
         git clone --depth 1 --branch "$WHISPER_VERSION" https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC" 2>/dev/null || \
         git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC" 2>/dev/null
@@ -198,7 +209,7 @@ if [ -f "$KOKO_BIN" ]; then
     echo ">> koko already built, skipping."
 else
     echo ">> Building koko (Kokoros TTS)..."
-    KOKO_SRC="/tmp/Kokoros"
+    KOKO_SRC="${BUILD_DIR}/Kokoros"
     if [ ! -d "$KOKO_SRC" ]; then
         git clone --depth 1 https://github.com/lucasjinreal/Kokoros.git "$KOKO_SRC" 2>/dev/null
     fi
