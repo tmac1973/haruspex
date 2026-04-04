@@ -12,7 +12,7 @@ app: ## Build the Tauri app (requires sidecars)
 ifeq ($(OS),Windows_NT)
 	source scripts/msvc-path-fix.sh && npm run tauri build -- --bundles nsis,msi
 else
-	npm run tauri build -- --bundles deb,rpm
+	npm run tauri build -- --bundles appimage,deb,rpm
 endif
 
 .PHONY: release-local

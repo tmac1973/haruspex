@@ -75,7 +75,7 @@ jobs:
         include:
           - platform: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            args: '--bundles deb,rpm'
+            args: '--bundles appimage,deb,rpm'
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             args: ''
@@ -112,7 +112,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            libasound2-dev
+            libasound2-dev \
+            libfuse2t64
 
       - name: Download sidecars
         uses: actions/download-artifact@v4
