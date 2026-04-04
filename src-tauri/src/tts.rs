@@ -1,4 +1,5 @@
 use log::{error, info, warn};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,6 +10,7 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 const TTS_PORT: u16 = 3001;
+const LOG_RING_BUFFER_SIZE: usize = 1000;
 
 #[derive(Clone, Debug, PartialEq)]
 enum TtsStatus {
@@ -25,6 +27,33 @@ pub struct TtsEngine {
     status: Arc<Mutex<TtsStatus>>,
     playing: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
+    log_buffer: Arc<Mutex<VecDeque<String>>>,
+}
+
+/// Strip ANSI escape sequences (e.g. color codes) from a string.
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip until we hit a letter (the terminator of the escape sequence)
+            for esc_c in chars.by_ref() {
+                if esc_c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+fn push_log(buffer: &mut VecDeque<String>, line: &str) {
+    if buffer.len() >= LOG_RING_BUFFER_SIZE {
+        buffer.pop_front();
+    }
+    buffer.push_back(strip_ansi(line));
 }
 
 impl TtsEngine {
@@ -34,6 +63,7 @@ impl TtsEngine {
             status: Arc::new(Mutex::new(TtsStatus::Stopped)),
             playing: Arc::new(AtomicBool::new(false)),
             stop_flag: Arc::new(AtomicBool::new(false)),
+            log_buffer: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_RING_BUFFER_SIZE))),
         }
     }
 
@@ -141,19 +171,25 @@ impl TtsEngine {
         }
 
         let status_clone = Arc::clone(&self.status);
+        let log_buffer_clone = Arc::clone(&self.log_buffer);
         tauri::async_runtime::spawn(async move {
             use tauri_plugin_shell::process::CommandEvent;
             while let Some(event) = rx.recv().await {
                 match event {
                     CommandEvent::Stderr(line) => {
                         let line_str = String::from_utf8_lossy(&line);
-                        info!("koko: {}", line_str.trim());
+                        let trimmed = line_str.trim();
+                        info!("koko: {}", trimmed);
+                        let mut buf = log_buffer_clone.lock().await;
+                        push_log(&mut buf, trimmed);
                     }
                     CommandEvent::Stdout(line) => {
                         let line_str = String::from_utf8_lossy(&line);
                         let trimmed = line_str.trim();
                         if !trimmed.is_empty() {
                             info!("koko: {}", trimmed);
+                            let mut buf = log_buffer_clone.lock().await;
+                            push_log(&mut buf, trimmed);
                         }
                         if trimmed.contains("listening") || trimmed.contains("Listening") {
                             let mut status = status_clone.lock().await;
@@ -166,6 +202,9 @@ impl TtsEngine {
                     CommandEvent::Terminated(payload) => {
                         let code = payload.code.unwrap_or(-1);
                         warn!("koko exited with code: {}", code);
+                        let msg = format!("[terminated] code={}", code);
+                        let mut buf = log_buffer_clone.lock().await;
+                        push_log(&mut buf, &msg);
                         let mut status = status_clone.lock().await;
                         if *status != TtsStatus::Stopped {
                             *status = TtsStatus::Error(format!("Exited with code {}", code));
@@ -292,7 +331,17 @@ impl TtsEngine {
         *self.status.lock().await == TtsStatus::Ready
     }
 
-    pub async fn synthesize_and_play(&self, text: &str, voice: &str) -> Result<(), String> {
+    pub async fn get_logs(&self) -> Vec<String> {
+        let buffer = self.log_buffer.lock().await;
+        buffer.iter().cloned().collect()
+    }
+
+    pub async fn synthesize_and_play(
+        &self,
+        text: &str,
+        voice: &str,
+        output_device: Option<&str>,
+    ) -> Result<(), String> {
         let status = self.status.lock().await;
         if *status != TtsStatus::Ready {
             return Err("TTS server not ready".to_string());
@@ -363,11 +412,36 @@ impl TtsEngine {
 
         let playing = Arc::clone(&self.playing);
         let stop_flag = Arc::clone(&self.stop_flag);
+        let device_name = output_device.unwrap_or("").to_string();
 
         std::thread::spawn(move || {
             use rodio::{OutputStreamBuilder, Sink};
 
-            let stream = match OutputStreamBuilder::open_default_stream() {
+            let stream = if device_name.is_empty() || device_name == "System Default" {
+                OutputStreamBuilder::open_default_stream()
+            } else {
+                // Use rodio's re-exported cpal to get a compatible Device type
+                use rodio::cpal::traits::{DeviceTrait, HostTrait};
+                let host = rodio::cpal::default_host();
+                let found = host.output_devices().ok().and_then(|devices| {
+                    devices.into_iter().find(|d| {
+                        d.name().unwrap_or_default() == device_name
+                    })
+                });
+                match found {
+                    Some(device) => OutputStreamBuilder::from_device(device)
+                        .and_then(|b| b.open_stream()),
+                    None => {
+                        warn!(
+                            "Output device '{}' not found, using default",
+                            device_name
+                        );
+                        OutputStreamBuilder::open_default_stream()
+                    }
+                }
+            };
+
+            let stream = match stream {
                 Ok(s) => s,
                 Err(e) => {
                     error!("Audio output error: {}", e);
@@ -429,9 +503,12 @@ pub async fn tts_synthesize_and_play(
     state: tauri::State<'_, TtsEngine>,
     text: String,
     voice: Option<String>,
+    output_device: Option<String>,
 ) -> Result<(), String> {
     let voice = voice.unwrap_or_else(|| "af_heart".to_string());
-    state.synthesize_and_play(&text, &voice).await
+    state
+        .synthesize_and_play(&text, &voice, output_device.as_deref())
+        .await
 }
 
 #[tauri::command]
@@ -448,6 +525,11 @@ pub fn tts_is_playing(state: tauri::State<'_, TtsEngine>) -> bool {
 #[tauri::command]
 pub async fn tts_is_initialized(state: tauri::State<'_, TtsEngine>) -> Result<bool, ()> {
     Ok(state.is_ready().await)
+}
+
+#[tauri::command]
+pub async fn get_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<Vec<String>, ()> {
+    Ok(state.get_logs().await)
 }
 
 #[tauri::command]

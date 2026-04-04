@@ -1,4 +1,5 @@
 TARGET := $(shell rustc --print host-tuple)
+TAURI_ARGS ?=
 
 # ---- Local builds ----
 
@@ -10,9 +11,11 @@ sidecars: ## Build sidecar binaries (llama-server, whisper-server, koko)
 app: ## Build the Tauri app (requires sidecars)
 	npm ci
 ifeq ($(OS),Windows_NT)
-	source scripts/msvc-path-fix.sh && npm run tauri build -- --bundles nsis,msi
+	npm run tauri build -- --bundles nsis,msi $(TAURI_ARGS)
+else ifeq ($(shell uname),Darwin)
+	npm run tauri build -- $(TAURI_ARGS)
 else
-	NO_STRIP=1 LD_LIBRARY_PATH=$(CURDIR)/src-tauri/binaries/libs npm run tauri build -- --bundles appimage,deb,rpm
+	NO_STRIP=1 LD_LIBRARY_PATH=$(CURDIR)/src-tauri/binaries/libs:$(CURDIR)/src-tauri/binaries npm run tauri build -- --bundles appimage,deb,rpm $(TAURI_ARGS)
 endif
 
 .PHONY: release-local
@@ -47,7 +50,7 @@ ensure-sidecars: ## Check that all sidecar binaries are built
 
 .PHONY: dev
 dev: ensure-sidecars ## Run the app in dev mode
-	GDK_BACKEND=x11 npm run tauri dev
+	GDK_BACKEND=x11 npm run tauri dev; stty sane
 
 .PHONY: check
 check: ## Run all checks (lint, format, typecheck, test)
@@ -77,6 +80,11 @@ clean: ## Remove built sidecars, forcing rebuild on next make sidecars
 clean-all: clean ## Remove sidecars + Rust/frontend build artifacts
 	rm -rf src-tauri/target
 	rm -rf build node_modules
+
+.PHONY: reset-data
+reset-data: ## Remove all app data (models, db) for a fresh start
+	rm -rf ~/.local/share/com.haruspex.app
+	@echo "App data removed. Next launch will start fresh."
 
 # ---- Help ----
 

@@ -1,11 +1,38 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{SampleFormat, WavSpec, WavWriter};
-use log::{error, info};
+use log::{error, info, warn};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 const WHISPER_SAMPLE_RATE: u32 = 16000;
+
+fn device_name(device: &cpal::Device) -> String {
+    device
+        .description()
+        .map(|d| d.name().to_string())
+        .unwrap_or_else(|_| "unknown".to_string())
+}
+
+fn find_input_device_by_name(name: &str) -> Result<cpal::Device, String> {
+    let host = cpal::default_host();
+    if name.is_empty() || name == "System Default" {
+        return host
+            .default_input_device()
+            .ok_or_else(|| "No default input device".to_string());
+    }
+    if let Ok(devices) = host.input_devices() {
+        for device in devices {
+            if device_name(&device) == name {
+                return Ok(device);
+            }
+        }
+    }
+    warn!("Input device '{}' not found, falling back to default", name);
+    host.default_input_device()
+        .ok_or_else(|| "No default input device".to_string())
+}
+
 
 pub struct AudioRecorder {
     is_recording: Arc<AtomicBool>,
@@ -22,23 +49,23 @@ impl AudioRecorder {
         }
     }
 
-    pub fn start_recording(&self) -> Result<(), String> {
+    pub fn start_recording(&self, device_name_opt: Option<&str>) -> Result<(), String> {
         if self.is_recording.load(Ordering::SeqCst) {
             return Err("Already recording".to_string());
         }
 
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or("No audio input device found")?;
+        let device = match device_name_opt {
+            Some(name) if !name.is_empty() && name != "System Default" => {
+                find_input_device_by_name(name)?
+            }
+            _ => {
+                let host = cpal::default_host();
+                host.default_input_device()
+                    .ok_or("No audio input device found")?
+            }
+        };
 
-        info!(
-            "Recording from: {}",
-            device
-                .description()
-                .map(|d| d.name().to_string())
-                .unwrap_or_else(|_| "unknown".to_string())
-        );
+        info!("Recording from: {}", device_name(&device));
 
         // Request 16kHz mono f32 for whisper compatibility
         let config = cpal::StreamConfig {
@@ -148,8 +175,11 @@ fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> {
 // Tauri commands
 
 #[tauri::command]
-pub fn start_recording(state: tauri::State<'_, AudioRecorder>) -> Result<(), String> {
-    state.start_recording()
+pub fn start_recording(
+    state: tauri::State<'_, AudioRecorder>,
+    device_name: Option<String>,
+) -> Result<(), String> {
+    state.start_recording(device_name.as_deref())
 }
 
 #[tauri::command]
@@ -160,6 +190,36 @@ pub fn stop_recording(state: tauri::State<'_, AudioRecorder>) -> Result<Vec<u8>,
 #[tauri::command]
 pub fn is_recording(state: tauri::State<'_, AudioRecorder>) -> bool {
     state.is_recording()
+}
+
+#[tauri::command]
+pub fn list_audio_input_devices() -> Result<Vec<String>, String> {
+    let host = cpal::default_host();
+    let devices = host
+        .input_devices()
+        .map_err(|e| format!("Failed to list input devices: {}", e))?;
+    let mut names = vec!["System Default".to_string()];
+    for device in devices {
+        names.push(device_name(&device));
+    }
+    Ok(names)
+}
+
+#[tauri::command]
+pub fn list_audio_output_devices() -> Result<Vec<String>, String> {
+    // Use rodio's re-exported cpal so device names match what TTS playback uses
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+    let host = rodio::cpal::default_host();
+    let devices = host
+        .output_devices()
+        .map_err(|e| format!("Failed to list output devices: {}", e))?;
+    let mut names = vec!["System Default".to_string()];
+    for device in devices {
+        if let Ok(name) = device.name() {
+            names.push(name);
+        }
+    }
+    Ok(names)
 }
 
 #[cfg(test)]

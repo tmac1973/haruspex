@@ -37,28 +37,6 @@
 	let downloadError = $state<string | null>(null);
 	let modelsDir = $state('');
 	const serverState = $derived(getServerState());
-	let showLogs = $state(false);
-	let logLines = $state<string[]>([]);
-	let logInterval: ReturnType<typeof setInterval> | null = null;
-
-	async function toggleLogs() {
-		showLogs = !showLogs;
-		if (showLogs) {
-			await refreshLogs();
-			logInterval = setInterval(refreshLogs, 2000);
-		} else if (logInterval) {
-			clearInterval(logInterval);
-			logInterval = null;
-		}
-	}
-
-	async function refreshLogs() {
-		try {
-			logLines = await invoke<string[]>('get_server_logs');
-		} catch {
-			// ignore
-		}
-	}
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);
 	let ttsVoice = $state(getSettings().ttsVoice);
@@ -139,9 +117,42 @@
 		applyTheme(mode);
 	}
 
+	let outputDevices = $state<string[]>(['System Default']);
+	let inputDevices = $state<string[]>(['System Default']);
+	let audioOutputDevice = $state(getSettings().audioOutputDevice || 'System Default');
+	let audioInputDevice = $state(getSettings().audioInputDevice || 'System Default');
+
+	async function refreshOutputDevices() {
+		try {
+			outputDevices = await invoke<string[]>('list_audio_output_devices');
+		} catch {
+			// ignore
+		}
+	}
+
+	async function refreshInputDevices() {
+		try {
+			inputDevices = await invoke<string[]>('list_audio_input_devices');
+		} catch {
+			// ignore
+		}
+	}
+
+	function setOutputDevice(device: string) {
+		audioOutputDevice = device;
+		updateSettings({ audioOutputDevice: device === 'System Default' ? '' : device });
+	}
+
+	function setInputDevice(device: string) {
+		audioInputDevice = device;
+		updateSettings({ audioInputDevice: device === 'System Default' ? '' : device });
+	}
+
 	onMount(async () => {
 		await refreshModels();
 		modelsDir = await invoke<string>('get_models_dir');
+		refreshOutputDevices();
+		refreshInputDevices();
 	});
 
 	async function refreshModels() {
@@ -210,6 +221,8 @@
 		if (modelPath) {
 			await stopServer();
 			await startServer(modelPath, getSettings().contextSize, getThinkingModeArgs());
+			// Re-initialize TTS alongside
+			invoke('tts_initialize').catch(() => {});
 		}
 	}
 
@@ -333,6 +346,41 @@
 			</div>
 		</label>
 		<p class="hint">Click the speaker icon on any assistant message to hear it read aloud.</p>
+	</section>
+
+	<section>
+		<h2>Audio Devices</h2>
+		<div class="device-select">
+			<label for="output-device">Audio output (TTS playback):</label>
+			<div class="device-row">
+				<select
+					id="output-device"
+					value={audioOutputDevice}
+					onchange={(e) => setOutputDevice((e.target as HTMLSelectElement).value)}
+				>
+					{#each outputDevices as device (device)}
+						<option value={device}>{device}</option>
+					{/each}
+				</select>
+				<button class="btn btn-small" onclick={refreshOutputDevices}>Refresh</button>
+			</div>
+		</div>
+		<div class="device-select">
+			<label for="input-device">Audio input (microphone):</label>
+			<div class="device-row">
+				<select
+					id="input-device"
+					value={audioInputDevice}
+					onchange={(e) => setInputDevice((e.target as HTMLSelectElement).value)}
+				>
+					{#each inputDevices as device (device)}
+						<option value={device}>{device}</option>
+					{/each}
+				</select>
+				<button class="btn btn-small" onclick={refreshInputDevices}>Refresh</button>
+			</div>
+		</div>
+		<p class="hint">Select audio devices or use "System Default" to follow OS settings.</p>
 	</section>
 
 	<section>
@@ -505,18 +553,6 @@
 				<button class="btn btn-danger" onclick={() => stopServer()}>Stop Server</button>
 			{/if}
 		</div>
-		<button class="btn" style="margin-top: 12px" onclick={toggleLogs}>
-			{showLogs ? 'Hide Logs' : 'Show Server Logs'}
-		</button>
-		{#if showLogs}
-			<div class="log-viewer">
-				{#each logLines as line, i (i)}
-					<div class="log-line">{line}</div>
-				{:else}
-					<div class="log-line log-empty">No log output yet.</div>
-				{/each}
-			</div>
-		{/if}
 	</section>
 </div>
 
@@ -541,7 +577,7 @@
 	.settings {
 		max-width: 640px;
 		margin: 0 auto;
-		padding: 24px;
+		padding: 24px 24px 64px;
 		height: calc(100vh - 45px - 50px);
 		overflow-y: auto;
 	}
@@ -555,6 +591,7 @@
 	section:last-child {
 		border-bottom: none;
 		margin-bottom: 0;
+		padding-bottom: 64px;
 	}
 
 	.back-btn {
@@ -856,6 +893,39 @@
 		color: var(--text-primary);
 	}
 
+	.device-select {
+		margin-bottom: 12px;
+	}
+
+	.device-select label {
+		display: block;
+		font-size: 0.85rem;
+		font-weight: 500;
+		margin-bottom: 6px;
+	}
+
+	.device-row {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
+
+	.device-row select {
+		flex: 1;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		font-size: 0.9rem;
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
+		color-scheme: light dark;
+	}
+
+	.device-row select option {
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
+	}
+
 	.theme-options {
 		display: flex;
 		gap: 8px;
@@ -929,29 +999,6 @@
 		display: flex;
 		gap: 8px;
 		margin-top: 12px;
-	}
-
-	.log-viewer {
-		margin-top: 12px;
-		max-height: 300px;
-		overflow-y: auto;
-		background: var(--code-bg);
-		border-radius: 6px;
-		padding: 8px 12px;
-		font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-		font-size: 0.7rem;
-		line-height: 1.5;
-	}
-
-	.log-line {
-		color: #d4d4d4;
-		white-space: pre-wrap;
-		word-break: break-all;
-	}
-
-	.log-empty {
-		color: var(--text-secondary);
-		font-style: italic;
 	}
 
 	.info-row {

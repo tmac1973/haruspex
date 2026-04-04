@@ -130,11 +130,22 @@
 							{#if hardware.gpu_available}
 								{hardware.gpu_name || hardware.gpu_api || 'Available'}
 								<span class="badge good">{hardware.gpu_api}</span>
+								{#if hardware.gpu_integrated}
+									<span class="badge warn">Integrated</span>
+								{/if}
 							{:else}
 								<span class="badge neutral">CPU only (slower but works)</span>
 							{/if}
 						</span>
 					</div>
+					{#if hardware.gpu_vram_mb}
+						<div class="hw-row">
+							<span class="hw-label">VRAM</span>
+							<span class="hw-value">
+								{formatBytes(hardware.gpu_vram_mb * 1048576)}
+							</span>
+						</div>
+					{/if}
 					<div class="hw-row">
 						<span class="hw-label">RAM</span>
 						<span class="hw-value">
@@ -143,6 +154,13 @@
 							)}
 						</span>
 					</div>
+					{#if hardware.gpu_integrated}
+						<p class="hw-warn">
+							Integrated graphics detected. A smaller model has been recommended for
+							better performance. Discrete GPUs with 8+ GB VRAM are recommended for
+							the full-size model.
+						</p>
+					{/if}
 				</div>
 
 				<div class="model-select">
@@ -396,10 +414,37 @@
 		border: 1px solid var(--border);
 	}
 
+	.badge.warn {
+		background: #fef3c7;
+		color: #92400e;
+	}
+
+	.hw-warn {
+		font-size: 0.8rem;
+		color: #b45309;
+		background: #fffbeb;
+		border: 1px solid #fde68a;
+		border-radius: 6px;
+		padding: 10px 14px;
+		margin-top: 12px;
+		line-height: 1.5;
+	}
+
 	@media (prefers-color-scheme: dark) {
 		.badge.good {
 			background: #14532d;
 			color: #86efac;
+		}
+
+		.badge.warn {
+			background: #78350f;
+			color: #fde68a;
+		}
+
+		.hw-warn {
+			color: #fcd34d;
+			background: #451a03;
+			border-color: #78350f;
 		}
 	}
 

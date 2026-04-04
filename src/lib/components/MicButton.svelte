@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { getSettings } from '$lib/stores/settings';
 
 	interface Props {
 		onTranscription: (text: string) => void;
@@ -62,7 +63,8 @@
 		if (disabled || processing) return;
 		error = null;
 		try {
-			await invoke('start_recording');
+			const deviceName = getSettings().audioInputDevice || undefined;
+			await invoke('start_recording', { deviceName });
 			recording = true;
 		} catch (e) {
 			error = `Mic error: ${e}`;

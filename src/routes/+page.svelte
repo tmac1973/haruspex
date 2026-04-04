@@ -15,6 +15,8 @@
 		getErrorMessage,
 		getSearchSteps,
 		getSourceUrls,
+		getExhaustiveResearch,
+		setExhaustiveResearch,
 		createConversation,
 		setActiveConversation,
 		deleteConversation,
@@ -67,6 +69,7 @@
 	const serverState = $derived(getServerState());
 
 	const serverReady = $derived(serverState.status === 'ready');
+	const exhaustiveResearch = $derived(getExhaustiveResearch());
 
 	$effect(() => {
 		// Auto-scroll when streaming content changes
@@ -271,6 +274,30 @@
 					disabled={!serverReady && !activeConversation}
 					rows="1"
 				></textarea>
+				<button
+					class="research-toggle"
+					class:active={exhaustiveResearch}
+					onclick={() => setExhaustiveResearch(!exhaustiveResearch)}
+					title={exhaustiveResearch ? 'Deep research ON — will search more sources' : 'Deep research OFF — normal search'}
+				>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<circle cx="11" cy="11" r="8"></circle>
+						<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+						{#if exhaustiveResearch}
+							<line x1="11" y1="8" x2="11" y2="14"></line>
+							<line x1="8" y1="11" x2="14" y2="11"></line>
+						{/if}
+					</svg>
+				</button>
 				<MicButton
 					onTranscription={async (text) => {
 						inputText = '';
@@ -632,5 +659,31 @@
 	.send-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.research-toggle {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		border: 1px solid var(--border);
+		background: var(--bg-secondary);
+		color: var(--text-secondary);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: all 0.15s;
+	}
+
+	.research-toggle:hover {
+		color: var(--text-primary);
+		border-color: var(--text-secondary);
+	}
+
+	.research-toggle.active {
+		background: color-mix(in srgb, var(--accent) 15%, transparent);
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 </style>

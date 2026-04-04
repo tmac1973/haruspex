@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "haruspex"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "cpal 0.17.1",
  "futures-util",

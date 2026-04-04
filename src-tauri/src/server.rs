@@ -121,11 +121,28 @@ impl LlamaServer {
         }
     }
 
+    fn strip_ansi(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                for esc_c in chars.by_ref() {
+                    if esc_c.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                result.push(c);
+            }
+        }
+        result
+    }
+
     fn push_log(inner: &mut ServerInner, line: &str) {
         if inner.log_buffer.len() >= LOG_RING_BUFFER_SIZE {
             inner.log_buffer.pop_front();
         }
-        inner.log_buffer.push_back(line.to_string());
+        inner.log_buffer.push_back(Self::strip_ansi(line));
     }
 
     fn detect_gpu_error(line: &str) -> bool {

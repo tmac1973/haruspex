@@ -1,5 +1,6 @@
 use log::{error, info, warn};
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -11,6 +12,7 @@ use tokio::time::sleep;
 const WHISPER_PORT: u16 = 8766;
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(30);
+const LOG_RING_BUFFER_SIZE: usize = 1000;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub enum WhisperStatus {
@@ -23,6 +25,32 @@ pub enum WhisperStatus {
 pub struct WhisperServer {
     child: Mutex<Option<CommandChild>>,
     status: Arc<Mutex<WhisperStatus>>,
+    log_buffer: Arc<Mutex<VecDeque<String>>>,
+}
+
+/// Strip ANSI escape sequences (e.g. color codes) from a string.
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            for esc_c in chars.by_ref() {
+                if esc_c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+fn push_log(buffer: &mut VecDeque<String>, line: &str) {
+    if buffer.len() >= LOG_RING_BUFFER_SIZE {
+        buffer.pop_front();
+    }
+    buffer.push_back(strip_ansi(line));
 }
 
 impl WhisperServer {
@@ -30,6 +58,7 @@ impl WhisperServer {
         Self {
             child: Mutex::new(None),
             status: Arc::new(Mutex::new(WhisperStatus::Stopped)),
+            log_buffer: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_RING_BUFFER_SIZE))),
         }
     }
 
@@ -181,17 +210,33 @@ impl WhisperServer {
 
         // Spawn stderr reader
         let status_clone = Arc::clone(&self.status);
+        let log_buffer_clone = Arc::clone(&self.log_buffer);
         tauri::async_runtime::spawn(async move {
             use tauri_plugin_shell::process::CommandEvent;
             while let Some(event) = rx.recv().await {
                 match event {
                     CommandEvent::Stderr(line) => {
                         let line_str = String::from_utf8_lossy(&line);
-                        info!("whisper-server: {}", line_str.trim());
+                        let trimmed = line_str.trim();
+                        info!("whisper-server: {}", trimmed);
+                        let mut buf = log_buffer_clone.lock().await;
+                        push_log(&mut buf, trimmed);
+                    }
+                    CommandEvent::Stdout(line) => {
+                        let line_str = String::from_utf8_lossy(&line);
+                        let trimmed = line_str.trim();
+                        if !trimmed.is_empty() {
+                            info!("whisper-server: {}", trimmed);
+                            let mut buf = log_buffer_clone.lock().await;
+                            push_log(&mut buf, trimmed);
+                        }
                     }
                     CommandEvent::Terminated(payload) => {
                         let code = payload.code.unwrap_or(-1);
                         warn!("whisper-server exited with code: {}", code);
+                        let msg = format!("[terminated] code={}", code);
+                        let mut buf = log_buffer_clone.lock().await;
+                        push_log(&mut buf, &msg);
                         let mut status = status_clone.lock().await;
                         if *status != WhisperStatus::Stopped {
                             *status = WhisperStatus::Error(format!("Exited with code {}", code));
@@ -257,6 +302,11 @@ impl WhisperServer {
 
     pub async fn get_status(&self) -> WhisperStatus {
         self.status.lock().await.clone()
+    }
+
+    pub async fn get_logs(&self) -> Vec<String> {
+        let buffer = self.log_buffer.lock().await;
+        buffer.iter().cloned().collect()
     }
 
     pub async fn transcribe(&self, audio_data: Vec<u8>) -> Result<String, String> {
@@ -330,6 +380,13 @@ pub async fn get_whisper_status(
     state: tauri::State<'_, WhisperServer>,
 ) -> Result<WhisperStatus, ()> {
     Ok(state.get_status().await)
+}
+
+#[tauri::command]
+pub async fn get_whisper_logs(
+    state: tauri::State<'_, WhisperServer>,
+) -> Result<Vec<String>, ()> {
+    Ok(state.get_logs().await)
 }
 
 #[tauri::command]

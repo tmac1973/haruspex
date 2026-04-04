@@ -32,8 +32,10 @@
 
 		playing = true;
 		try {
-			const voice = getSettings().ttsVoice || undefined;
-			await invoke('tts_synthesize_and_play', { text, voice });
+			const settings = getSettings();
+			const voice = settings.ttsVoice || undefined;
+			const outputDevice = settings.audioOutputDevice || undefined;
+			await invoke('tts_synthesize_and_play', { text, voice, outputDevice });
 			const check = setInterval(async () => {
 				const still = await invoke<boolean>('tts_is_playing');
 				if (!still) {

@@ -31,7 +31,7 @@ export interface AgentLoopOptions {
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
-	const { messages, maxIterations = 5, signal } = options;
+	const { messages, maxIterations = 8, signal } = options;
 	let iteration = 0;
 	let usedTools = false;
 
@@ -52,28 +52,37 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			signal
 		);
 
-		const toolCalls = resolveToolCalls(response);
+		let toolCalls: ResolvedToolCall[] = [];
+		try {
+			toolCalls = resolveToolCalls(response);
+		} catch {
+			// Tool call parsing failed (e.g., truncated JSON from max_tokens)
+			// Fall through with empty toolCalls so the truncation handler below catches it
+		}
+
+		// If the model was cut off mid-response (hit max_tokens) after using tools,
+		// continue the loop so it can finish generating tool calls or content.
+		if (toolCalls.length === 0 && usedTools && response.finish_reason === 'length') {
+			messages.push({
+				role: 'assistant',
+				content: response.content || ''
+			});
+			messages.push({
+				role: 'user',
+				content: 'Continue.'
+			});
+			continue;
+		}
 
 		if (toolCalls.length === 0) {
-			// After tool use, strip thinking-only responses and get a real answer
-			const hasRealContent =
-				response.content && response.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-
-			if (usedTools && hasRealContent) {
-				if (response.usage) options.onUsageUpdate?.(response.usage);
-				options.onStreamChunk({
-					delta: { content: response.content! },
-					finish_reason: 'stop'
-				});
-				options.onComplete();
-			} else if (usedTools) {
-				// Model returned only thinking or empty — stream a fresh response without tools
+			if (usedTools) {
+				// After tool use, always stream the final answer.
+				// The non-streaming response may be truncated or incomplete — don't use it.
 				const stream = chatCompletionStream(
 					{
 						messages,
 						temperature: sampling.temperature,
-						top_p: sampling.top_p,
-						max_tokens: 4096
+						top_p: sampling.top_p
 					},
 					signal
 				);
@@ -88,8 +97,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 						messages,
 						tools: AGENT_TOOLS,
 						temperature: sampling.temperature,
-						top_p: sampling.top_p,
-						max_tokens: 4096
+						top_p: sampling.top_p
 					},
 					signal
 				);
@@ -132,18 +140,22 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		}
 	}
 
-	// Max iterations reached — request final answer without tools
+	// Max iterations reached — nudge the model to answer and stream without tools
+	if (usedTools) {
+		messages.push({
+			role: 'user',
+			content:
+				'Now please provide your complete answer based on everything you have researched. Do not search for anything else.'
+		});
+	}
 	const sampling2 = getSamplingParams();
-	const response = await chatCompletion(
-		{ messages, temperature: sampling2.temperature, top_p: sampling2.top_p, max_tokens: 4096 },
+	const stream = chatCompletionStream(
+		{ messages, temperature: sampling2.temperature, top_p: sampling2.top_p },
 		signal
 	);
-	if (response.usage) options.onUsageUpdate?.(response.usage);
-	if (response.content) {
-		options.onStreamChunk({
-			delta: { content: response.content },
-			finish_reason: 'stop'
-		});
+	for await (const chunk of stream) {
+		if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
+		options.onStreamChunk(chunk);
 	}
 	options.onComplete();
 }

@@ -8,6 +8,8 @@ export interface HardwareInfo {
 	gpu_available: boolean;
 	gpu_name: string | null;
 	gpu_api: string | null;
+	gpu_vram_mb: number | null;
+	gpu_integrated: boolean;
 	total_ram_mb: number;
 	available_ram_mb: number;
 	recommended_quant: string;
@@ -31,7 +33,7 @@ export interface DownloadProgress {
 
 let step = $state<SetupStep>('welcome');
 let hardware = $state<HardwareInfo | null>(null);
-let selectedModel = $state('granite-4.0-micro-Q4_K_M');
+let selectedModel = $state('Qwen3.5-9B-Q4_K_M');
 let downloadProgress = $state<DownloadProgress | null>(null);
 let downloadError = $state<string | null>(null);
 let testResult = $state<TestResult>('pending');
@@ -188,7 +190,7 @@ export async function runTestQuery(): Promise<void> {
 					}
 				],
 				stream: false,
-				max_tokens: 100
+				max_tokens: 200
 			}),
 			signal: controller.signal
 		});
@@ -202,9 +204,13 @@ export async function runTestQuery(): Promise<void> {
 		}
 
 		const data = await response.json();
-		testResponse = data.choices?.[0]?.message?.content || '';
-		testResult = testResponse ? 'success' : 'error';
-		if (!testResponse) {
+		const message = data.choices?.[0]?.message;
+		// Models with thinking mode may put the answer in content and reasoning
+		// in reasoning_content — either field being non-empty means the model works.
+		testResponse = message?.content || '';
+		const hasOutput = testResponse || message?.reasoning_content;
+		testResult = hasOutput ? 'success' : 'error';
+		if (!hasOutput) {
 			testStatusMessage = 'Model returned an empty response.';
 		}
 	} catch (e) {
@@ -216,7 +222,7 @@ export async function runTestQuery(): Promise<void> {
 export function resetSetup(): void {
 	step = 'welcome';
 	hardware = null;
-	selectedModel = 'granite-4.0-micro-Q4_K_M';
+	selectedModel = 'Qwen3.5-9B-Q4_K_M';
 	downloadProgress = null;
 	downloadError = null;
 	testResult = 'pending';

@@ -15,6 +15,9 @@ export interface AppSettings {
 	ttsReadTablesByColumn: boolean;
 	thinkingMode: boolean;
 	searchRecency: 'any' | 'day' | 'week' | 'month' | 'year';
+	audioOutputDevice: string;
+	audioInputDevice: string;
+	dismissedGpuWarning: boolean;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -29,7 +32,10 @@ const defaults: AppSettings = {
 	contextSize: 32768,
 	ttsReadTablesByColumn: true,
 	thinkingMode: false,
-	searchRecency: 'any' as const
+	searchRecency: 'any' as const,
+	audioOutputDevice: '',
+	audioInputDevice: '',
+	dismissedGpuWarning: false
 };
 
 function load(): AppSettings {

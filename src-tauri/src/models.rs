@@ -36,6 +36,8 @@ pub struct HardwareInfo {
     pub gpu_available: bool,
     pub gpu_name: Option<String>,
     pub gpu_api: Option<String>,
+    pub gpu_vram_mb: Option<u64>,
+    pub gpu_integrated: bool,
     pub total_ram_mb: u64,
     pub available_ram_mb: u64,
     pub recommended_quant: String,
@@ -44,6 +46,31 @@ pub struct HardwareInfo {
 
 fn model_registry() -> Vec<ModelInfo> {
     vec![
+        // Qwen 3.5 4B — lighter model for low-end hardware
+        ModelInfo {
+            id: "Qwen3.5-4B-Q4_K_M".to_string(),
+            filename: "Qwen3.5-4B-Q4_K_M.gguf".to_string(),
+            url:
+                "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf"
+                    .to_string(),
+            sha256: String::new(),
+            size_bytes: 2_741_000_000,
+            description: "Qwen 3.5 4B Q4 — for integrated graphics or low VRAM (~2.7 GB)"
+                .to_string(),
+            downloaded: false,
+        },
+        ModelInfo {
+            id: "Qwen3.5-4B-Q6_K".to_string(),
+            filename: "Qwen3.5-4B-Q6_K.gguf".to_string(),
+            url:
+                "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q6_K.gguf"
+                    .to_string(),
+            sha256: String::new(),
+            size_bytes: 3_526_000_000,
+            description: "Qwen 3.5 4B Q6 — better quality 4B, needs 4+ GB VRAM (~3.5 GB)"
+                .to_string(),
+            downloaded: false,
+        },
         // Qwen 3.5 9B — best quality, native tool calling
         ModelInfo {
             id: "Qwen3.5-9B-Q4_K_M".to_string(),
@@ -74,7 +101,18 @@ fn model_registry() -> Vec<ModelInfo> {
                 .to_string(),
             sha256: String::new(),
             size_bytes: 7_460_000_000,
-            description: "Qwen 3.5 9B Q6 — best quality, needs 10+ GB VRAM (~7.5 GB)".to_string(),
+            description: "Qwen 3.5 9B Q6 — high quality, needs 10+ GB VRAM (~7.5 GB)".to_string(),
+            downloaded: false,
+        },
+        ModelInfo {
+            id: "Qwen3.5-9B-Q8_0".to_string(),
+            filename: "Qwen3.5-9B-Q8_0.gguf".to_string(),
+            url:
+                "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q8_0.gguf"
+                    .to_string(),
+            sha256: String::new(),
+            size_bytes: 9_528_000_000,
+            description: "Qwen 3.5 9B Q8 — best quality, needs 16+ GB VRAM (~9.5 GB)".to_string(),
             downloaded: false,
         },
     ]
@@ -384,6 +422,14 @@ async fn validate_gguf(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+struct GpuInfo {
+    available: bool,
+    name: Option<String>,
+    api: Option<String>,
+    vram_mb: Option<u64>,
+    integrated: bool,
+}
+
 pub fn detect_hardware() -> HardwareInfo {
     use sysinfo::System;
 
@@ -394,32 +440,50 @@ pub fn detect_hardware() -> HardwareInfo {
     let available_ram_mb = sys.available_memory() / 1_048_576;
 
     // GPU detection
-    let (gpu_available, gpu_name, gpu_api) = detect_gpu();
+    let gpu = detect_gpu();
 
-    let recommended_quant = if available_ram_mb < 8192 {
+    // Use VRAM if detected, otherwise fall back to available system RAM
+    let effective_vram = gpu.vram_mb.unwrap_or(available_ram_mb);
+
+    // For integrated GPUs, recommend the smaller 4B model since inference
+    // will be slow and VRAM is shared with system memory.
+    let recommended_quant = if gpu.integrated {
+        if effective_vram < 4096 {
+            "Qwen3.5-4B-Q4_K_M"
+        } else {
+            "Qwen3.5-4B-Q6_K"
+        }
+    } else if effective_vram < 6144 {
+        "Qwen3.5-4B-Q6_K"
+    } else if effective_vram < 8192 {
         "Qwen3.5-9B-Q4_K_M"
-    } else if available_ram_mb < 12288 {
+    } else if effective_vram < 12288 {
         "Qwen3.5-9B-Q5_K_M"
-    } else {
+    } else if effective_vram < 16384 {
         "Qwen3.5-9B-Q6_K"
+    } else {
+        "Qwen3.5-9B-Q8_0"
     };
 
-    // Context size recommendation based on available memory
-    // Qwen 3.5 9B Q4 uses ~5.7GB model + KV cache scales with context
-    let recommended_context_size = if available_ram_mb < 8192 {
+    // Context size recommendation based on effective memory
+    let recommended_context_size = if effective_vram < 6144 {
+        8192 // 8K for integrated/low VRAM
+    } else if effective_vram < 8192 {
         16384 // 16K for tight VRAM
-    } else if available_ram_mb < 12288 {
+    } else if effective_vram < 12288 {
         32768 // 32K for 8-12GB
-    } else if available_ram_mb < 24576 {
+    } else if effective_vram < 24576 {
         65536 // 64K for 12-24GB
     } else {
         131072 // 128K for 24GB+
     };
 
     HardwareInfo {
-        gpu_available,
-        gpu_name,
-        gpu_api,
+        gpu_available: gpu.available,
+        gpu_name: gpu.name,
+        gpu_api: gpu.api,
+        gpu_vram_mb: gpu.vram_mb,
+        gpu_integrated: gpu.integrated,
         total_ram_mb,
         available_ram_mb,
         recommended_quant: recommended_quant.to_string(),
@@ -427,9 +491,25 @@ pub fn detect_hardware() -> HardwareInfo {
     }
 }
 
+/// Check if a GPU name looks like an integrated graphics adapter.
+fn is_integrated_gpu(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    // Intel integrated (HD, UHD, Iris, Arc iGPU)
+    if lower.contains("intel") {
+        return !lower.contains("arc a")
+            && !lower.contains("arc b");
+    }
+    // AMD APU integrated (Vega, Radeon Graphics without a discrete model number)
+    if (lower.contains("amd") || lower.contains("radeon"))
+        && (lower.contains("vega") || lower.contains("radeon graphics"))
+    {
+        return true;
+    }
+    false
+}
+
 #[cfg(target_os = "linux")]
-fn detect_gpu() -> (bool, Option<String>, Option<String>) {
-    // Check for Vulkan runtime
+fn detect_gpu() -> GpuInfo {
     let vulkan_available = Path::new("/usr/lib/libvulkan.so").exists()
         || Path::new("/usr/lib/x86_64-linux-gnu/libvulkan.so").exists()
         || Path::new("/usr/lib64/libvulkan.so").exists()
@@ -437,12 +517,29 @@ fn detect_gpu() -> (bool, Option<String>, Option<String>) {
         || Path::new("/usr/lib/x86_64-linux-gnu/libvulkan.so.1").exists()
         || Path::new("/usr/lib64/libvulkan.so.1").exists();
 
-    if vulkan_available {
-        // Try to get GPU name from /proc or lspci
-        let gpu_name = get_linux_gpu_name();
-        (true, gpu_name, Some("Vulkan".to_string()))
-    } else {
-        (false, None, None)
+    if !vulkan_available {
+        return GpuInfo {
+            available: false,
+            name: None,
+            api: None,
+            vram_mb: None,
+            integrated: false,
+        };
+    }
+
+    let gpu_name = get_linux_gpu_name();
+    let vram_mb = get_linux_vram_mb();
+    let integrated = gpu_name
+        .as_deref()
+        .map(is_integrated_gpu)
+        .unwrap_or(false);
+
+    GpuInfo {
+        available: true,
+        name: gpu_name,
+        api: Some("Vulkan".to_string()),
+        vram_mb,
+        integrated,
     }
 }
 
@@ -459,39 +556,116 @@ fn get_linux_gpu_name() -> Option<String> {
         }
     }
 
-    // Fallback: try lspci
+    // Fallback: try lspci — prefer discrete GPU lines
     if let Ok(output) = std::process::Command::new("lspci").output() {
         let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut first_vga = None;
         for line in stdout.lines() {
             if line.contains("VGA") || line.contains("3D") || line.contains("Display") {
                 if let Some(name) = line.split(": ").nth(1) {
-                    return Some(name.to_string());
+                    // Prefer 3D controller or non-Intel VGA (discrete GPU)
+                    if line.contains("3D") || !name.to_lowercase().contains("intel") {
+                        return Some(name.to_string());
+                    }
+                    if first_vga.is_none() {
+                        first_vga = Some(name.to_string());
+                    }
                 }
             }
         }
+        return first_vga;
     }
 
     None
 }
 
+#[cfg(target_os = "linux")]
+fn get_linux_vram_mb() -> Option<u64> {
+    // Try reading VRAM from DRM memory info
+    for i in 0..4 {
+        let path = format!("/sys/class/drm/card{}/device/mem_info_vram_total", i);
+        if let Ok(contents) = std::fs::read_to_string(&path) {
+            if let Ok(bytes) = contents.trim().parse::<u64>() {
+                if bytes > 0 {
+                    return Some(bytes / 1_048_576);
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(target_os = "macos")]
-fn detect_gpu() -> (bool, Option<String>, Option<String>) {
-    // Metal is always available on supported macOS hardware
-    (
-        true,
-        Some("Apple GPU".to_string()),
-        Some("Metal".to_string()),
-    )
+fn detect_gpu() -> GpuInfo {
+    // Metal is always available on supported macOS hardware.
+    // Apple Silicon shares unified memory, not traditional VRAM.
+    GpuInfo {
+        available: true,
+        name: Some("Apple GPU".to_string()),
+        api: Some("Metal".to_string()),
+        vram_mb: None,
+        integrated: false, // Apple Silicon is fast enough, don't penalize
+    }
 }
 
 #[cfg(target_os = "windows")]
-fn detect_gpu() -> (bool, Option<String>, Option<String>) {
+fn detect_gpu() -> GpuInfo {
     let vulkan_available = Path::new("C:\\Windows\\System32\\vulkan-1.dll").exists();
-    if vulkan_available {
-        (true, None, Some("Vulkan".to_string()))
-    } else {
-        (false, None, None)
+    if !vulkan_available {
+        return GpuInfo {
+            available: false,
+            name: None,
+            api: None,
+            vram_mb: None,
+            integrated: false,
+        };
     }
+
+    let (gpu_name, vram_mb) = get_windows_gpu_info();
+    let integrated = gpu_name
+        .as_deref()
+        .map(is_integrated_gpu)
+        .unwrap_or(false);
+
+    GpuInfo {
+        available: true,
+        name: gpu_name,
+        api: Some("Vulkan".to_string()),
+        vram_mb,
+        integrated,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn get_windows_gpu_info() -> (Option<String>, Option<u64>) {
+    // Use WMIC to query GPU name and VRAM
+    if let Ok(output) = std::process::Command::new("wmic")
+        .args(["path", "win32_VideoController", "get", "Name,AdapterRAM", "/format:csv"])
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut best_name = None;
+        let mut best_vram: u64 = 0;
+        for line in stdout.lines().skip(1) {
+            let fields: Vec<&str> = line.split(',').collect();
+            // CSV format: Node,AdapterRAM,Name
+            if fields.len() >= 3 {
+                let vram = fields[1].trim().parse::<u64>().unwrap_or(0);
+                let name = fields[2].trim().to_string();
+                if !name.is_empty() && vram >= best_vram {
+                    best_vram = vram;
+                    best_name = Some(name);
+                }
+            }
+        }
+        let vram_mb = if best_vram > 0 {
+            Some(best_vram / 1_048_576)
+        } else {
+            None
+        };
+        return (best_name, vram_mb);
+    }
+    (None, None)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -712,12 +886,15 @@ mod tests {
     #[test]
     fn model_registry_has_expected_entries() {
         let models = model_registry();
-        assert_eq!(models.len(), 3);
+        assert_eq!(models.len(), 6);
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        assert!(ids.contains(&"Qwen3.5-4B-Q4_K_M"));
+        assert!(ids.contains(&"Qwen3.5-4B-Q6_K"));
         assert!(ids.contains(&"Qwen3.5-9B-Q4_K_M"));
         assert!(ids.contains(&"Qwen3.5-9B-Q5_K_M"));
         assert!(ids.contains(&"Qwen3.5-9B-Q6_K"));
+        assert!(ids.contains(&"Qwen3.5-9B-Q8_0"));
     }
 
     #[test]
@@ -767,7 +944,14 @@ mod tests {
     #[test]
     fn recommended_quant_based_on_ram() {
         let info = detect_hardware();
-        let valid_quants = ["Qwen3.5-9B-Q4_K_M", "Qwen3.5-9B-Q5_K_M", "Qwen3.5-9B-Q6_K"];
+        let valid_quants = [
+            "Qwen3.5-4B-Q4_K_M",
+            "Qwen3.5-4B-Q6_K",
+            "Qwen3.5-9B-Q4_K_M",
+            "Qwen3.5-9B-Q5_K_M",
+            "Qwen3.5-9B-Q6_K",
+            "Qwen3.5-9B-Q8_0",
+        ];
         assert!(
             valid_quants.contains(&info.recommended_quant.as_str()),
             "Unexpected quant: {}",

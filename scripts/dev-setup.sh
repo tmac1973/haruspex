@@ -85,15 +85,16 @@ if [ "$SKIP_BUILD" = false ]; then
         cp bin/llama-server "$LLAMA_SERVER"
         chmod +x "$LLAMA_SERVER"
 
-        # Copy shared libraries
+        # Copy shared libraries to libs/ subdirectory
+        mkdir -p "$BINARIES_DIR/libs"
         find . -name "*.so*" -type f | while read lib; do
             base=$(basename "$lib")
-            cp "$lib" "$BINARIES_DIR/$base"
+            cp "$lib" "$BINARIES_DIR/libs/$base"
             # Create soname symlinks
             soname=$(echo "$base" | sed 's/\.[0-9]*\.[0-9]*$//')
-            [ "$soname" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/$soname"
+            [ "$soname" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/libs/$soname"
             short=$(echo "$base" | sed 's/\.so\..*/.so/')
-            [ "$short" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/$short"
+            [ "$short" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/libs/$short"
         done
 
         echo "   Built: $LLAMA_SERVER"
@@ -132,14 +133,15 @@ if [ "$SKIP_BUILD" = false ]; then
         cp bin/whisper-server "$WHISPER_SERVER"
         chmod +x "$WHISPER_SERVER"
 
-        # Copy shared libraries
+        # Copy shared libraries to libs/ subdirectory
+        mkdir -p "$BINARIES_DIR/libs"
         find . -name "*.so*" -type f | while read lib; do
             base=$(basename "$lib")
-            cp "$lib" "$BINARIES_DIR/$base"
+            cp "$lib" "$BINARIES_DIR/libs/$base"
             soname=$(echo "$base" | sed 's/\.[0-9]*\.[0-9]*$//')
-            [ "$soname" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/$soname"
+            [ "$soname" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/libs/$soname"
             short=$(echo "$base" | sed 's/\.so\..*/.so/')
-            [ "$short" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/$short"
+            [ "$short" != "$base" ] && ln -sf "$base" "$BINARIES_DIR/libs/$short"
         done
 
         echo "   Built: $WHISPER_SERVER"
@@ -169,6 +171,29 @@ if [ "$SKIP_BUILD" = false ]; then
 
         echo "   Built: $KOKO"
         cd "$PROJECT_ROOT"
+    fi
+
+    # Bundle espeak-ng-data if missing (required for text phonemization at runtime)
+    ESPEAK_DEST="$BINARIES_DIR/espeak-ng-data"
+    if [ ! -f "$ESPEAK_DEST/phontab" ]; then
+        ESPEAK_BUILD_DATA=$(find /tmp/Kokoros/target/release/build -path "*/share/espeak-ng-data" -type d 2>/dev/null | head -1)
+        ESPEAK_SRC=""
+        if [ -n "$ESPEAK_BUILD_DATA" ] && [ -d "$ESPEAK_BUILD_DATA" ]; then
+            ESPEAK_SRC="$ESPEAK_BUILD_DATA"
+        elif [ -d /usr/share/espeak-ng-data ]; then
+            ESPEAK_SRC="/usr/share/espeak-ng-data"
+        fi
+        if [ -n "$ESPEAK_SRC" ]; then
+            echo "   Bundling espeak-ng-data from $ESPEAK_SRC..."
+            rm -rf "$ESPEAK_DEST"
+            mkdir -p "$ESPEAK_DEST"
+            find "$ESPEAK_SRC" -maxdepth 1 -type f -exec cp {} "$ESPEAK_DEST/" \;
+            if [ -d "$ESPEAK_SRC/lang" ]; then
+                cp -r "$ESPEAK_SRC/lang" "$ESPEAK_DEST/lang"
+            fi
+        else
+            echo "   WARN: espeak-ng-data not found — TTS may not work correctly"
+        fi
     fi
     echo
 fi

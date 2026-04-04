@@ -2,6 +2,8 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
 	import ContextIndicator from '$lib/components/ContextIndicator.svelte';
+	import LogViewer from '$lib/components/LogViewer.svelte';
+	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { initServerStore, startServer } from '$lib/stores/server.svelte';
 	import { applyTheme, getSettings, getThinkingModeArgs } from '$lib/stores/settings';
@@ -11,6 +13,8 @@
 	import { onMount } from 'svelte';
 
 	let { children } = $props();
+	let showLogs = $state(false);
+	let showGpuWarning = $state(false);
 
 	onMount(async () => {
 		applyTheme();
@@ -41,9 +45,15 @@
 				if (modelPath) {
 					startServer(modelPath, getSettings().contextSize, getThinkingModeArgs());
 				}
+				// Eagerly start TTS in the background (non-blocking)
+				invoke('tts_initialize').catch((e) => console.warn('TTS init failed:', e));
 			}
 		} catch {
 			// Tauri commands not available (e.g., in browser dev mode)
+		}
+
+		if (!getSettings().dismissedGpuWarning) {
+			showGpuWarning = true;
 		}
 	});
 </script>
@@ -57,6 +67,21 @@
 	<div class="header-right">
 		<ServerStatusBadge />
 		<ContextIndicator />
+		<button class="header-icon-btn" title="Sidecar Logs" onclick={() => (showLogs = !showLogs)}>
+			<svg
+				width="18"
+				height="18"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			>
+				<polyline points="4 17 10 11 4 5"></polyline>
+				<line x1="12" y1="19" x2="20" y2="19"></line>
+			</svg>
+		</button>
 		<a href="/settings" class="settings-link" title="Settings">
 			<svg
 				width="18"
@@ -80,6 +105,12 @@
 <main>
 	{@render children()}
 </main>
+
+<LogViewer open={showLogs} onclose={() => (showLogs = false)} />
+
+{#if showGpuWarning}
+	<GpuWarningDialog onclose={() => (showGpuWarning = false)} />
+{/if}
 
 <style>
 	:global(:root) {
@@ -158,6 +189,22 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
+	}
+
+	.header-icon-btn {
+		background: none;
+		border: none;
+		color: var(--text-secondary);
+		display: flex;
+		align-items: center;
+		padding: 4px;
+		border-radius: 4px;
+		cursor: pointer;
+		transition: color 0.15s;
+	}
+
+	.header-icon-btn:hover {
+		color: var(--text-primary);
 	}
 
 	.settings-link {

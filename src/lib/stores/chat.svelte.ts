@@ -5,6 +5,12 @@ import { getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
 import { getContextUsage, updateContextUsage, resetContextUsage } from '$lib/stores/context.svelte';
 import { invoke } from '@tauri-apps/api/core';
 
+const REVIEW_PATTERNS = /\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
+
+function looksLikeReviewQuery(content: string): boolean {
+	return REVIEW_PATTERNS.test(content);
+}
+
 function buildSystemPrompt(): ChatMessage {
 	const today = new Date().toLocaleDateString('en-US', {
 		weekday: 'long',
@@ -33,8 +39,9 @@ WHEN NOT TO SEARCH:
 SEARCH BEHAVIOR:
 - When searching, ONLY call the tool. Do NOT write any answer before receiving results.
 - Use the user's exact terminology in your search query.
-- Optionally use fetch_url on 1-3 relevant results for detail.
-- Always cite sources. Never fabricate URLs.
+- Use fetch_url on 2-4 of the most relevant results to read the full content before answering.
+- Only cite sources you actually fetched and read. Do not cite URLs you only saw in search snippets.
+- For product reviews, comparisons, or "best of" questions: include community sources like Reddit alongside review sites. Many review sites are paid advertising — Reddit has real user opinions worth including.
 
 Be concise, accurate, and helpful. When in doubt, search.
 
@@ -80,6 +87,7 @@ let streamingContent = $state('');
 let errorMessage = $state<string | null>(null);
 let searchSteps = $state<SearchStep[]>([]);
 let sourceUrls = $state<string[]>([]);
+let exhaustiveResearch = $state(false);
 let dbAvailable = false;
 
 let abortController: AbortController | null = null;
@@ -207,6 +215,14 @@ export function getSourceUrls(): string[] {
 
 export function getIsCompacting(): boolean {
 	return isCompacting;
+}
+
+export function getExhaustiveResearch(): boolean {
+	return exhaustiveResearch;
+}
+
+export function setExhaustiveResearch(value: boolean): void {
+	exhaustiveResearch = value;
 }
 
 async function compactIfNeeded(): Promise<void> {
@@ -390,8 +406,36 @@ export async function sendMessage(content: string): Promise<void> {
 		const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
 		const messagesForApi: ChatMessage[] = [buildSystemPrompt(), ...historyMessages];
 
+		// Augment the last user message with search hints based on context.
+		const lastMsg = messagesForApi[messagesForApi.length - 1];
+		if (lastMsg?.role === 'user') {
+			const hints: string[] = [];
+
+			// For product review/recommendation queries, hint to search Reddit.
+			// Local models ignore system prompt guidance but reliably follow user message text.
+			if (looksLikeReviewQuery(lastMsg.content)) {
+				hints.push('Include Reddit as a source.');
+			}
+
+			// Exhaustive research mode: instruct the model to be thorough.
+			if (exhaustiveResearch) {
+				hints.push(
+					'Research this thoroughly. Perform multiple searches from different angles. ' +
+						'Read at least 4-6 sources before answering. Include diverse viewpoints.'
+				);
+			}
+
+			if (hints.length > 0) {
+				messagesForApi[messagesForApi.length - 1] = {
+					...lastMsg,
+					content: lastMsg.content + '\n\n(' + hints.join(' ') + ')'
+				};
+			}
+		}
+
 		await runAgentLoop({
 			messages: messagesForApi,
+			maxIterations: exhaustiveResearch ? 25 : 10,
 			signal: abortController.signal,
 			onUsageUpdate: (u: Usage) => {
 				updateContextUsage(u, getSettings().contextSize);
