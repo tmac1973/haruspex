@@ -134,6 +134,10 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # linuxdeploy's bundled strip is too old for modern distros (.relr.dyn)
+          NO_STRIP: ${{ runner.os == 'Linux' && '1' || '' }}
+          # linuxdeploy needs to find sidecar shared libs during dependency scanning
+          LD_LIBRARY_PATH: ${{ runner.os == 'Linux' && 'src-tauri/binaries/libs' || '' }}
           # Code signing disabled — add secrets to enable:
           # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
           # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID, TAURI_PRIVATE_KEY
