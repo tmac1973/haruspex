@@ -102,12 +102,8 @@
 		<div class="modal">
 			<div class="modal-header">
 				<div class="tabs">
-					{#each (['llm', 'tts', 'whisper'] as const) as tab (tab)}
-						<button
-							class="tab"
-							class:active={activeTab === tab}
-							onclick={() => switchTab(tab)}
-						>
+					{#each ['llm', 'tts', 'whisper'] as const as tab (tab)}
+						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
 							{tabLabels[tab]}
 						</button>
 					{/each}

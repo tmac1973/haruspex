@@ -20,10 +20,12 @@
 	<div class="dialog">
 		<h2>GPU Usage Notice</h2>
 		<p>
-			Haruspex uses your GPU for AI inference. While it is running, other GPU-intensive
-			applications such as games may experience reduced performance.
+			Haruspex uses your GPU for AI inference. While it is running, other GPU-intensive applications
+			such as games may experience reduced performance.
 		</p>
-		<p>For the best experience, close Haruspex before launching games or other GPU-heavy programs.</p>
+		<p>
+			For the best experience, close Haruspex before launching games or other GPU-heavy programs.
+		</p>
 		<div class="footer">
 			<label class="checkbox-row">
 				<input type="checkbox" bind:checked={dontShowAgain} />

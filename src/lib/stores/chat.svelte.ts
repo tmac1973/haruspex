@@ -5,7 +5,8 @@ import { getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
 import { getContextUsage, updateContextUsage, resetContextUsage } from '$lib/stores/context.svelte';
 import { invoke } from '@tauri-apps/api/core';
 
-const REVIEW_PATTERNS = /\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
+const REVIEW_PATTERNS =
+	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
 
 function looksLikeReviewQuery(content: string): boolean {
 	return REVIEW_PATTERNS.test(content);

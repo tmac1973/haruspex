@@ -156,9 +156,8 @@
 					</div>
 					{#if hardware.gpu_integrated}
 						<p class="hw-warn">
-							Integrated graphics detected. A smaller model has been recommended for
-							better performance. Discrete GPUs with 8+ GB VRAM are recommended for
-							the full-size model.
+							Integrated graphics detected. A smaller model has been recommended for better
+							performance. Discrete GPUs with 8+ GB VRAM are recommended for the full-size model.
 						</p>
 					{/if}
 				</div>

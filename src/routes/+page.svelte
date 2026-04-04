@@ -278,7 +278,9 @@
 					class="research-toggle"
 					class:active={exhaustiveResearch}
 					onclick={() => setExhaustiveResearch(!exhaustiveResearch)}
-					title={exhaustiveResearch ? 'Deep research ON — will search more sources' : 'Deep research OFF — normal search'}
+					title={exhaustiveResearch
+						? 'Deep research ON — will search more sources'
+						: 'Deep research OFF — normal search'}
 				>
 					<svg
 						width="18"
