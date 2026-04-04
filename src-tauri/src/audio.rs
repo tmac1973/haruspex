@@ -33,7 +33,6 @@ fn find_input_device_by_name(name: &str) -> Result<cpal::Device, String> {
         .ok_or_else(|| "No default input device".to_string())
 }
 
-
 pub struct AudioRecorder {
     is_recording: Arc<AtomicBool>,
     samples: Arc<Mutex<Vec<f32>>>,

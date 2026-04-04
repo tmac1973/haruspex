@@ -62,9 +62,8 @@ fn model_registry() -> Vec<ModelInfo> {
         ModelInfo {
             id: "Qwen3.5-4B-Q6_K".to_string(),
             filename: "Qwen3.5-4B-Q6_K.gguf".to_string(),
-            url:
-                "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q6_K.gguf"
-                    .to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q6_K.gguf"
+                .to_string(),
             sha256: String::new(),
             size_bytes: 3_526_000_000,
             description: "Qwen 3.5 4B Q6 — better quality 4B, needs 4+ GB VRAM (~3.5 GB)"
@@ -107,9 +106,8 @@ fn model_registry() -> Vec<ModelInfo> {
         ModelInfo {
             id: "Qwen3.5-9B-Q8_0".to_string(),
             filename: "Qwen3.5-9B-Q8_0.gguf".to_string(),
-            url:
-                "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q8_0.gguf"
-                    .to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q8_0.gguf"
+                .to_string(),
             sha256: String::new(),
             size_bytes: 9_528_000_000,
             description: "Qwen 3.5 9B Q8 — best quality, needs 16+ GB VRAM (~9.5 GB)".to_string(),
@@ -496,8 +494,7 @@ fn is_integrated_gpu(name: &str) -> bool {
     let lower = name.to_lowercase();
     // Intel integrated (HD, UHD, Iris, Arc iGPU)
     if lower.contains("intel") {
-        return !lower.contains("arc a")
-            && !lower.contains("arc b");
+        return !lower.contains("arc a") && !lower.contains("arc b");
     }
     // AMD APU integrated (Vega, Radeon Graphics without a discrete model number)
     if (lower.contains("amd") || lower.contains("radeon"))
@@ -529,10 +526,7 @@ fn detect_gpu() -> GpuInfo {
 
     let gpu_name = get_linux_gpu_name();
     let vram_mb = get_linux_vram_mb();
-    let integrated = gpu_name
-        .as_deref()
-        .map(is_integrated_gpu)
-        .unwrap_or(false);
+    let integrated = gpu_name.as_deref().map(is_integrated_gpu).unwrap_or(false);
 
     GpuInfo {
         available: true,
@@ -622,10 +616,7 @@ fn detect_gpu() -> GpuInfo {
     }
 
     let (gpu_name, vram_mb) = get_windows_gpu_info();
-    let integrated = gpu_name
-        .as_deref()
-        .map(is_integrated_gpu)
-        .unwrap_or(false);
+    let integrated = gpu_name.as_deref().map(is_integrated_gpu).unwrap_or(false);
 
     GpuInfo {
         available: true,
@@ -640,7 +631,13 @@ fn detect_gpu() -> GpuInfo {
 fn get_windows_gpu_info() -> (Option<String>, Option<u64>) {
     // Use WMIC to query GPU name and VRAM
     if let Ok(output) = std::process::Command::new("wmic")
-        .args(["path", "win32_VideoController", "get", "Name,AdapterRAM", "/format:csv"])
+        .args([
+            "path",
+            "win32_VideoController",
+            "get",
+            "Name,AdapterRAM",
+            "/format:csv",
+        ])
         .output()
     {
         let stdout = String::from_utf8_lossy(&output.stdout);

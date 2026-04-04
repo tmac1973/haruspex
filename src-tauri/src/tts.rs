@@ -424,18 +424,16 @@ impl TtsEngine {
                 use rodio::cpal::traits::{DeviceTrait, HostTrait};
                 let host = rodio::cpal::default_host();
                 let found = host.output_devices().ok().and_then(|devices| {
-                    devices.into_iter().find(|d| {
-                        d.name().unwrap_or_default() == device_name
-                    })
+                    devices
+                        .into_iter()
+                        .find(|d| d.name().unwrap_or_default() == device_name)
                 });
                 match found {
-                    Some(device) => OutputStreamBuilder::from_device(device)
-                        .and_then(|b| b.open_stream()),
+                    Some(device) => {
+                        OutputStreamBuilder::from_device(device).and_then(|b| b.open_stream())
+                    }
                     None => {
-                        warn!(
-                            "Output device '{}' not found, using default",
-                            device_name
-                        );
+                        warn!("Output device '{}' not found, using default", device_name);
                         OutputStreamBuilder::open_default_stream()
                     }
                 }

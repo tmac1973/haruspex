@@ -383,9 +383,7 @@ pub async fn get_whisper_status(
 }
 
 #[tauri::command]
-pub async fn get_whisper_logs(
-    state: tauri::State<'_, WhisperServer>,
-) -> Result<Vec<String>, ()> {
+pub async fn get_whisper_logs(state: tauri::State<'_, WhisperServer>) -> Result<Vec<String>, ()> {
     Ok(state.get_logs().await)
 }
 

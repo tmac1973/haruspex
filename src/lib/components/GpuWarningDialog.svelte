@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import { updateSettings } from '$lib/stores/settings';
 
 	interface Props {
 		onclose: () => void;

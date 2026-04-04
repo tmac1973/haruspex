@@ -97,7 +97,6 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="backdrop" onmousedown={handleBackdropMousedown}>
 		<div class="modal">
@@ -116,7 +115,7 @@
 				<button class="close-btn" onclick={onclose} title="Close">&times;</button>
 			</div>
 			<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
-				{#each logLines as line, i (i)}
+				{#each logLines as line, i (`${activeTab}-${i}`)}
 					<div class="log-line">{line}</div>
 				{:else}
 					<div class="log-line log-empty">No log output yet.</div>
