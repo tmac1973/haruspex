@@ -240,6 +240,24 @@ else
     cp target/release/koko${EXT} "$KOKO_BIN"
     chmod +x "$KOKO_BIN"
 
+    # Bundle koko's dynamically-linked shared libraries (e.g. libsonic from espeak-ng)
+    mkdir -p "$BINARIES_DIR/libs"
+    if command -v ldd >/dev/null 2>&1; then
+        ldd "$KOKO_BIN" 2>/dev/null | grep -v "linux-vdso\|ld-linux\|libc\.so\|libm\.so\|libdl\|libpthread\|librt\|libgcc_s\|libstdc++" | \
+            awk '/=>/ {print $3}' | while read lib; do
+            libname=$(basename "$lib")
+            # Only copy libs not already bundled and not standard system libs
+            if [ -f "$lib" ] && [ ! -f "$BINARIES_DIR/libs/$libname" ]; then
+                case "$libname" in
+                    libsonic*|libpcaudio*|libespeak*)
+                        cp "$lib" "$BINARIES_DIR/libs/"
+                        echo "   Bundled koko dep: $libname"
+                        ;;
+                esac
+            fi
+        done
+    fi
+
     # Bundle espeak-ng-data (required for text phonemization at runtime).
     # espeak-rs-sys bakes the build-time path into the binary, so we must
     # ship the data and set ESPEAK_DATA_PATH at launch.
