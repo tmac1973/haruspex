@@ -127,6 +127,10 @@ jobs:
           chmod +x src-tauri/binaries/*-${{ matrix.target }}*
           mkdir -p src-tauri/binaries/libs
           touch src-tauri/binaries/libs/.placeholder
+          mkdir -p src-tauri/binaries/espeak-ng-data/lang/placeholder
+          touch src-tauri/binaries/espeak-ng-data/.placeholder
+          touch src-tauri/binaries/espeak-ng-data/lang/.placeholder
+          touch src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder
 
       - run: npm ci
 

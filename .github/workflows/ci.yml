@@ -45,9 +45,13 @@ jobs:
             echo '#!/bin/sh' > "src-tauri/binaries/${name}-${TARGET}"
             chmod +x "src-tauri/binaries/${name}-${TARGET}"
           done
-          # Create libs dir with placeholder for resources glob
+          # Create dirs with placeholders for resources globs
           mkdir -p src-tauri/binaries/libs
           touch src-tauri/binaries/libs/.placeholder
+          mkdir -p src-tauri/binaries/espeak-ng-data/lang/placeholder
+          touch src-tauri/binaries/espeak-ng-data/.placeholder
+          touch src-tauri/binaries/espeak-ng-data/lang/.placeholder
+          touch src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder
 
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
