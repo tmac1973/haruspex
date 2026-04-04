@@ -11,7 +11,7 @@ use db::Database;
 use models::ModelManager;
 use proxy::ProxyState;
 use server::LlamaServer;
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 use tts::TtsEngine;
 use whisper::WhisperServer;
 
@@ -77,6 +77,18 @@ pub fn run() {
             db::db_clear_all_conversations,
             db::db_replace_messages,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                let llama = app.state::<LlamaServer>();
+                let whisper = app.state::<WhisperServer>();
+                let tts = app.state::<TtsEngine>();
+                tauri::async_runtime::block_on(async {
+                    let _ = llama.stop().await;
+                    let _ = whisper.stop().await;
+                    let _ = tts.stop().await;
+                });
+            }
+        });
 }
