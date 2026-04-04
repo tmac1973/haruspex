@@ -279,9 +279,15 @@ async fn search_qwant(query: &str, recency: &str) -> Result<Vec<SearchResult>, S
         .and_then(|i| i.as_array())
     {
         for item in items.iter().take(8) {
-            let title = item.get("title").and_then(|t| t.as_str()).unwrap_or_default();
+            let title = item
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or_default();
             let url = item.get("url").and_then(|u| u.as_str()).unwrap_or_default();
-            let snippet = item.get("desc").and_then(|d| d.as_str()).unwrap_or_default();
+            let snippet = item
+                .get("desc")
+                .and_then(|d| d.as_str())
+                .unwrap_or_default();
 
             if !title.is_empty() && !url.is_empty() {
                 results.push(SearchResult {
@@ -346,10 +352,8 @@ async fn search_bing(query: &str, recency: &str) -> Result<Vec<SearchResult>, St
 
 fn parse_bing_html(html: &str) -> Result<Vec<SearchResult>, String> {
     let document = Html::parse_document(html);
-    let result_selector =
-        Selector::parse("li.b_algo").map_err(|_| "Failed to parse selector")?;
-    let title_selector =
-        Selector::parse("h2 a").map_err(|_| "Failed to parse title selector")?;
+    let result_selector = Selector::parse("li.b_algo").map_err(|_| "Failed to parse selector")?;
+    let title_selector = Selector::parse("h2 a").map_err(|_| "Failed to parse title selector")?;
     let snippet_selector =
         Selector::parse(".b_caption p").map_err(|_| "Failed to parse snippet selector")?;
 
@@ -409,7 +413,10 @@ async fn search_auto(
 
     for engine in &ordered {
         state.rate_limit_engine(engine);
-        info!("Auto-search trying {} for: {} (recency: {})", engine, query, recency);
+        info!(
+            "Auto-search trying {} for: {} (recency: {})",
+            engine, query, recency
+        );
 
         let result = match *engine {
             "qwant" => search_qwant(query, recency).await,
@@ -424,7 +431,10 @@ async fn search_auto(
                 return Ok(results);
             }
             Ok(_) => {
-                warn!("Auto-search: {} returned empty results, trying next", engine);
+                warn!(
+                    "Auto-search: {} returned empty results, trying next",
+                    engine
+                );
                 last_error = format!("{} returned no results", engine);
             }
             Err(e) => {
@@ -435,7 +445,10 @@ async fn search_auto(
         }
     }
 
-    Err(format!("All search engines failed. Last error: {}", last_error))
+    Err(format!(
+        "All search engines failed. Last error: {}",
+        last_error
+    ))
 }
 
 // URL fetching with content extraction
