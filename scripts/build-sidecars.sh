@@ -240,6 +240,32 @@ else
     cp target/release/koko${EXT} "$KOKO_BIN"
     chmod +x "$KOKO_BIN"
 
+    # Bundle espeak-ng-data (required for text phonemization at runtime).
+    # espeak-rs-sys bakes the build-time path into the binary, so we must
+    # ship the data and set ESPEAK_DATA_PATH at launch.
+    # We need top-level files + the lang/ subdirectory (~13.5 MB total).
+    ESPEAK_BUILD_DATA=$(find target/release/build -path "*/espeak-ng-data" -type d 2>/dev/null | head -1)
+    ESPEAK_DEST="$BINARIES_DIR/espeak-ng-data"
+    ESPEAK_SRC=""
+    if [ -n "$ESPEAK_BUILD_DATA" ] && [ -d "$ESPEAK_BUILD_DATA" ]; then
+        ESPEAK_SRC="$ESPEAK_BUILD_DATA"
+    elif [ -d /usr/share/espeak-ng-data ]; then
+        ESPEAK_SRC="/usr/share/espeak-ng-data"
+    fi
+    if [ -n "$ESPEAK_SRC" ]; then
+        echo "   Bundling espeak-ng-data from $ESPEAK_SRC..."
+        rm -rf "$ESPEAK_DEST"
+        mkdir -p "$ESPEAK_DEST"
+        # Copy top-level files (dict files, phontab, intonations)
+        find "$ESPEAK_SRC" -maxdepth 1 -type f -exec cp {} "$ESPEAK_DEST/" \;
+        # Copy lang/ subdirectory (needed for language identification)
+        if [ -d "$ESPEAK_SRC/lang" ]; then
+            cp -r "$ESPEAK_SRC/lang" "$ESPEAK_DEST/lang"
+        fi
+    else
+        echo "   WARN: espeak-ng-data not found — TTS may not work correctly"
+    fi
+
     echo "   Built: $KOKO_BIN"
 fi
 echo

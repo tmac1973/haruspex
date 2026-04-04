@@ -12,6 +12,8 @@ const MAX_FETCH_LENGTH: usize = 4000;
 const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(2);
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const FETCH_CACHE_TTL: Duration = Duration::from_secs(600); // 10 minutes
+const ENGINE_COOLDOWN: Duration = Duration::from_secs(300); // 5 min cooldown after failure
+const AUTO_ENGINES: &[&str] = &["qwant", "duckduckgo", "bing"];
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SearchResult {
@@ -26,7 +28,8 @@ struct CacheEntry<T> {
 }
 
 pub struct ProxyState {
-    last_search_time: Mutex<Option<Instant>>,
+    last_search_time: Mutex<HashMap<String, Instant>>,
+    engine_failures: Mutex<HashMap<String, Instant>>,
     search_cache: Mutex<HashMap<String, CacheEntry<Vec<SearchResult>>>>,
     fetch_cache: Mutex<HashMap<String, CacheEntry<String>>>,
 }
@@ -34,22 +37,35 @@ pub struct ProxyState {
 impl ProxyState {
     pub fn new() -> Self {
         Self {
-            last_search_time: Mutex::new(None),
+            last_search_time: Mutex::new(HashMap::new()),
+            engine_failures: Mutex::new(HashMap::new()),
             search_cache: Mutex::new(HashMap::new()),
             fetch_cache: Mutex::new(HashMap::new()),
         }
     }
 
-    fn rate_limit(&self) {
-        let mut last = self.last_search_time.lock().unwrap();
-        if let Some(last_time) = *last {
+    fn rate_limit_engine(&self, engine: &str) {
+        let mut last_times = self.last_search_time.lock().unwrap();
+        if let Some(last_time) = last_times.get(engine) {
             let elapsed = last_time.elapsed();
             if elapsed < RATE_LIMIT_INTERVAL {
-                let wait = RATE_LIMIT_INTERVAL - elapsed;
-                std::thread::sleep(wait);
+                std::thread::sleep(RATE_LIMIT_INTERVAL - elapsed);
             }
         }
-        *last = Some(Instant::now());
+        last_times.insert(engine.to_string(), Instant::now());
+    }
+
+    fn record_failure(&self, engine: &str) {
+        let mut failures = self.engine_failures.lock().unwrap();
+        failures.insert(engine.to_string(), Instant::now());
+    }
+
+    fn is_engine_healthy(&self, engine: &str) -> bool {
+        let failures = self.engine_failures.lock().unwrap();
+        match failures.get(engine) {
+            Some(failed_at) => failed_at.elapsed() >= ENGINE_COOLDOWN,
+            None => true,
+        }
     }
 
     fn get_cached_search(&self, query: &str) -> Option<Vec<SearchResult>> {
@@ -216,6 +232,210 @@ fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
     }
 
     Ok(results)
+}
+
+// Qwant JSON API search (no key required)
+
+async fn search_qwant(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(FETCH_TIMEOUT)
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let mut params = vec![
+        ("q", query),
+        ("count", "8"),
+        ("locale", "en_US"),
+        ("offset", "0"),
+    ];
+
+    match recency {
+        "day" => params.push(("freshness", "day")),
+        "week" => params.push(("freshness", "week")),
+        "month" => params.push(("freshness", "month")),
+        _ => {}
+    }
+
+    let resp = client
+        .get("https://api.qwant.com/v3/search/web")
+        .header("User-Agent", USER_AGENT)
+        .query(&params)
+        .send()
+        .await
+        .map_err(|e| format!("Qwant search failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Qwant error: {}", resp.status()));
+    }
+
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Qwant response: {}", e))?;
+
+    let mut results = Vec::new();
+    if let Some(items) = data
+        .pointer("/data/result/items")
+        .and_then(|i| i.as_array())
+    {
+        for item in items.iter().take(8) {
+            let title = item.get("title").and_then(|t| t.as_str()).unwrap_or_default();
+            let url = item.get("url").and_then(|u| u.as_str()).unwrap_or_default();
+            let snippet = item.get("desc").and_then(|d| d.as_str()).unwrap_or_default();
+
+            if !title.is_empty() && !url.is_empty() {
+                results.push(SearchResult {
+                    title: title.to_string(),
+                    url: url.to_string(),
+                    snippet: snippet.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+// Bing HTML search
+
+async fn search_bing(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(FETCH_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .cookie_store(true)
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let filters = match recency {
+        "day" => "&filters=ex1%3a%22ez1%22",
+        "week" => "&filters=ex1%3a%22ez2%22",
+        "month" => "&filters=ex1%3a%22ez3%22",
+        _ => "",
+    };
+
+    let url = format!(
+        "https://www.bing.com/search?q={}&count=8{}",
+        urlencoding::encode(query),
+        filters
+    );
+
+    let resp = client
+        .get(&url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| format!("Bing search failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Bing error: {}", resp.status()));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read Bing response: {}", e))?;
+
+    if html.contains("/captcha/") || html.contains("unusual traffic") {
+        warn!("Bing returned a bot detection page");
+        return Err("Bing bot detection triggered — temporarily unavailable".to_string());
+    }
+
+    parse_bing_html(&html)
+}
+
+fn parse_bing_html(html: &str) -> Result<Vec<SearchResult>, String> {
+    let document = Html::parse_document(html);
+    let result_selector =
+        Selector::parse("li.b_algo").map_err(|_| "Failed to parse selector")?;
+    let title_selector =
+        Selector::parse("h2 a").map_err(|_| "Failed to parse title selector")?;
+    let snippet_selector =
+        Selector::parse(".b_caption p").map_err(|_| "Failed to parse snippet selector")?;
+
+    let mut results = Vec::new();
+
+    for element in document.select(&result_selector) {
+        let title_el = element.select(&title_selector).next();
+        let title = title_el
+            .map(|e| e.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+        let url = title_el
+            .and_then(|e| e.value().attr("href"))
+            .unwrap_or_default()
+            .to_string();
+        let snippet = element
+            .select(&snippet_selector)
+            .next()
+            .map(|e| e.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+
+        if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+            results.push(SearchResult {
+                title,
+                url,
+                snippet,
+            });
+        }
+
+        if results.len() >= 8 {
+            break;
+        }
+    }
+
+    Ok(results)
+}
+
+// Auto-rotation search across multiple engines
+
+async fn search_auto(
+    state: &ProxyState,
+    query: &str,
+    recency: &str,
+) -> Result<Vec<SearchResult>, String> {
+    let mut healthy: Vec<&str> = Vec::new();
+    let mut unhealthy: Vec<&str> = Vec::new();
+
+    for engine in AUTO_ENGINES {
+        if state.is_engine_healthy(engine) {
+            healthy.push(engine);
+        } else {
+            unhealthy.push(engine);
+        }
+    }
+
+    let ordered: Vec<&str> = healthy.into_iter().chain(unhealthy).collect();
+    let mut last_error = String::new();
+
+    for engine in &ordered {
+        state.rate_limit_engine(engine);
+        info!("Auto-search trying {} for: {} (recency: {})", engine, query, recency);
+
+        let result = match *engine {
+            "qwant" => search_qwant(query, recency).await,
+            "duckduckgo" => search_duckduckgo(query, recency).await,
+            "bing" => search_bing(query, recency).await,
+            _ => unreachable!(),
+        };
+
+        match result {
+            Ok(results) if !results.is_empty() => {
+                info!("Auto-search succeeded with {}", engine);
+                return Ok(results);
+            }
+            Ok(_) => {
+                warn!("Auto-search: {} returned empty results, trying next", engine);
+                last_error = format!("{} returned no results", engine);
+            }
+            Err(e) => {
+                warn!("Auto-search: {} failed: {}, trying next", engine, e);
+                state.record_failure(engine);
+                last_error = e;
+            }
+        }
+    }
+
+    Err(format!("All search engines failed. Last error: {}", last_error))
 }
 
 // URL fetching with content extraction
@@ -531,8 +751,12 @@ pub async fn proxy_search(
             );
             search_searxng(&query, url, recency).await?
         }
+        "auto" => {
+            info!("Auto-searching for: {} (recency: {})", query, recency);
+            search_auto(&state, &query, recency).await?
+        }
         _ => {
-            state.rate_limit();
+            state.rate_limit_engine("duckduckgo");
             info!("Searching DDG for: {} (recency: {})", query, recency);
             search_duckduckgo(&query, recency).await?
         }
@@ -681,5 +905,42 @@ mod tests {
         let cached = state.get_cached_fetch("https://example.com");
         assert!(cached.is_some());
         assert_eq!(cached.unwrap(), "cached content");
+    }
+
+    #[test]
+    fn parse_bing_empty_html() {
+        let result = parse_bing_html("<html><body>No results</body></html>");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_bing_malformed_html() {
+        let result = parse_bing_html("<not valid html at all <<<>>>");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn engine_failure_tracking() {
+        let state = ProxyState::new();
+        assert!(state.is_engine_healthy("qwant"));
+        state.record_failure("qwant");
+        assert!(!state.is_engine_healthy("qwant"));
+        // Other engines unaffected
+        assert!(state.is_engine_healthy("duckduckgo"));
+        assert!(state.is_engine_healthy("bing"));
+    }
+
+    #[test]
+    fn per_engine_rate_limit() {
+        let state = ProxyState::new();
+        // First call should not block
+        state.rate_limit_engine("qwant");
+        // Different engine should also not block
+        state.rate_limit_engine("bing");
+        // Verify both tracked independently
+        let times = state.last_search_time.lock().unwrap();
+        assert!(times.contains_key("qwant"));
+        assert!(times.contains_key("bing"));
     }
 }

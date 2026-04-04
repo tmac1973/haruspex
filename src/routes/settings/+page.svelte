@@ -389,6 +389,7 @@
 				value={searchProvider}
 				onchange={(e) => setSearchProvider((e.target as HTMLSelectElement).value as SearchProvider)}
 			>
+				<option value="auto">Auto (rotates free engines)</option>
 				<option value="duckduckgo">DuckDuckGo (no key needed)</option>
 				<option value="brave">Brave Search (API key required)</option>
 				<option value="searxng">SearXNG (self-hosted)</option>

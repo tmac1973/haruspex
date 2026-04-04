@@ -2,7 +2,7 @@
 
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type SearchProvider = 'duckduckgo' | 'brave' | 'searxng';
+export type SearchProvider = 'auto' | 'duckduckgo' | 'brave' | 'searxng';
 
 export interface AppSettings {
 	responseFormat: ResponseFormat;
@@ -23,7 +23,7 @@ const defaults: AppSettings = {
 	responseFormat: 'standard',
 	theme: 'system',
 	ttsVoice: 'af_heart',
-	searchProvider: 'duckduckgo',
+	searchProvider: 'auto',
 	braveApiKey: '',
 	searxngUrl: 'http://localhost:8080',
 	contextSize: 32768,

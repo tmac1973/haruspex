@@ -119,6 +119,18 @@ impl TtsEngine {
             }
         }
 
+        // espeak-rs-sys bakes the build-time path into the binary for espeak-ng-data.
+        // Set ESPEAK_DATA_PATH to our bundled copy so phonemization works.
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            let espeak_data = resource_dir.join("binaries").join("espeak-ng-data");
+            if espeak_data.exists() {
+                sidecar = sidecar.env(
+                    "ESPEAK_DATA_PATH",
+                    espeak_data.to_string_lossy().to_string(),
+                );
+            }
+        }
+
         let (mut rx, child) = sidecar
             .spawn()
             .map_err(|e| format!("Failed to spawn koko: {}", e))?;

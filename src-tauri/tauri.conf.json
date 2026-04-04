@@ -32,7 +32,10 @@
       "binaries/koko"
     ],
     "resources": [
-      "binaries/libs/*"
+      "binaries/libs/*",
+      "binaries/espeak-ng-data/*",
+      "binaries/espeak-ng-data/lang/*",
+      "binaries/espeak-ng-data/lang/*/*"
     ],
     "icon": [
       "icons/32x32.png",

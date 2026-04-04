@@ -393,6 +393,7 @@
 		padding: 0 4px;
 		opacity: 0;
 		transition: opacity 0.15s;
+		flex-shrink: 0;
 	}
 
 	.conversation-item:hover .delete-btn {

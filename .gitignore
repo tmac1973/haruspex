@@ -24,6 +24,7 @@ src-tauri/binaries/whisper-server-*
 src-tauri/binaries/koko-*
 src-tauri/binaries/*.so*
 src-tauri/binaries/libs/
+src-tauri/binaries/espeak-ng-data/
 
 # Environment files
 .env
