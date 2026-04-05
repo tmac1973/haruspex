@@ -14,8 +14,19 @@ TAURI_ARGS ?=
 sidecars: ## Build sidecar binaries (llama-server, whisper-server, koko)
 	./scripts/build-sidecars.sh --target $(TARGET)
 
+.PHONY: ensure-resource-dirs
+ensure-resource-dirs:
+	@mkdir -p src-tauri/binaries/libs
+	@touch src-tauri/binaries/libs/.placeholder
+	@if [ ! -f src-tauri/binaries/espeak-ng-data/phontab ]; then \
+		mkdir -p src-tauri/binaries/espeak-ng-data/lang/placeholder; \
+		touch src-tauri/binaries/espeak-ng-data/.placeholder; \
+		touch src-tauri/binaries/espeak-ng-data/lang/.placeholder; \
+		touch src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder; \
+	fi
+
 .PHONY: app
-app: ## Build the Tauri app (requires sidecars)
+app: ensure-resource-dirs ## Build the Tauri app (requires sidecars)
 	npm ci
 ifeq ($(OS),Windows_NT)
 	source scripts/msvc-path-fix.sh && npm run tauri build -- --bundles nsis,msi $(TAURI_ARGS)

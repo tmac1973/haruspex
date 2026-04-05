@@ -176,7 +176,11 @@ if [ "$SKIP_BUILD" = false ]; then
     # Bundle espeak-ng-data if missing (required for text phonemization at runtime)
     ESPEAK_DEST="$BINARIES_DIR/espeak-ng-data"
     if [ ! -f "$ESPEAK_DEST/phontab" ]; then
-        ESPEAK_BUILD_DATA=$(find /tmp/Kokoros/target/release/build -path "*/share/espeak-ng-data" -type d 2>/dev/null | head -1)
+        # Search without relying on forward-slash paths so it works on Windows too
+        ESPEAK_BUILD_DATA=$(find /tmp/Kokoros/target/release/build -type d -name "espeak-ng-data" 2>/dev/null | grep -i "share" | head -1)
+        if [ -z "$ESPEAK_BUILD_DATA" ]; then
+            ESPEAK_BUILD_DATA=$(find /tmp/Kokoros/target/release/build -type d -name "espeak-ng-data" 2>/dev/null | head -1)
+        fi
         ESPEAK_SRC=""
         if [ -n "$ESPEAK_BUILD_DATA" ] && [ -d "$ESPEAK_BUILD_DATA" ]; then
             ESPEAK_SRC="$ESPEAK_BUILD_DATA"
@@ -192,7 +196,12 @@ if [ "$SKIP_BUILD" = false ]; then
                 cp -r "$ESPEAK_SRC/lang" "$ESPEAK_DEST/lang"
             fi
         else
-            echo "   WARN: espeak-ng-data not found — TTS may not work correctly"
+            echo "   WARN: espeak-ng-data not found — TTS phonemization may fail at runtime"
+            echo "   Creating placeholder files so the Tauri resource globs don't break the build"
+            mkdir -p "$ESPEAK_DEST/lang/placeholder"
+            touch "$ESPEAK_DEST/.placeholder"
+            touch "$ESPEAK_DEST/lang/.placeholder"
+            touch "$ESPEAK_DEST/lang/placeholder/.placeholder"
         fi
     fi
     echo

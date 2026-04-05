@@ -262,7 +262,11 @@ else
     # espeak-rs-sys bakes the build-time path into the binary, so we must
     # ship the data and set ESPEAK_DATA_PATH at launch.
     # We need top-level files + the lang/ subdirectory (~13.5 MB total).
-    ESPEAK_BUILD_DATA=$(find target/release/build -path "*/espeak-ng-data" -type d 2>/dev/null | head -1)
+    # The espeak-rs-sys build output is under target/release/build/espeak-rs-sys-*/out/share/espeak-ng-data
+    ESPEAK_BUILD_DATA=$(find target/release/build -type d -name "espeak-ng-data" 2>/dev/null | grep -i "share" | head -1)
+    if [ -z "$ESPEAK_BUILD_DATA" ]; then
+        ESPEAK_BUILD_DATA=$(find target/release/build -type d -name "espeak-ng-data" 2>/dev/null | head -1)
+    fi
     ESPEAK_DEST="$BINARIES_DIR/espeak-ng-data"
     ESPEAK_SRC=""
     if [ -n "$ESPEAK_BUILD_DATA" ] && [ -d "$ESPEAK_BUILD_DATA" ]; then
@@ -281,7 +285,12 @@ else
             cp -r "$ESPEAK_SRC/lang" "$ESPEAK_DEST/lang"
         fi
     else
-        echo "   WARN: espeak-ng-data not found — TTS may not work correctly"
+        echo "   WARN: espeak-ng-data not found — TTS phonemization may fail at runtime"
+        echo "   Creating placeholder files so the Tauri resource globs don't break the build"
+        mkdir -p "$ESPEAK_DEST/lang/placeholder"
+        touch "$ESPEAK_DEST/.placeholder"
+        touch "$ESPEAK_DEST/lang/.placeholder"
+        touch "$ESPEAK_DEST/lang/placeholder/.placeholder"
     fi
 
     echo "   Built: $KOKO_BIN"
