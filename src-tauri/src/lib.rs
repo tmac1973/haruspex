@@ -85,6 +85,7 @@ pub fn run() {
             fs_tools::fs_read_text,
             fs_tools::fs_write_text,
             fs_tools::fs_edit_text,
+            fs_tools::fs_read_pdf,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

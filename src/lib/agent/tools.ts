@@ -99,6 +99,24 @@ const FS_TOOLS: ToolDefinition[] = [
 	{
 		type: 'function',
 		function: {
+			name: 'fs_read_pdf',
+			description:
+				'Extract text content from a PDF file in the working directory. Returns the text from all pages. If the PDF is a scanned document without a text layer, this will fail — use fs_read_image on each page image instead (not yet supported for inline PDF pages).',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path to the PDF within the working directory.'
+					}
+				},
+				required: ['path']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'fs_edit_text',
 			description:
 				'Edit a text file by replacing exactly one occurrence of old_str with new_str. The old_str must appear exactly once in the file — include enough surrounding context to make it unique. Use this for small targeted changes; for large rewrites use fs_write_text with overwrite.',

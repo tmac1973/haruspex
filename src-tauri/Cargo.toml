@@ -36,3 +36,4 @@ rusqlite = { version = "0.39.0", features = ["bundled"] }
 cpal = "0.17.1"
 rodio = "0.21.1"
 hound = "3.5.1"
+pdf-extract = "0.9"

@@ -72,6 +72,14 @@ async function executeFsReadText(workdir: string, relPath: string): Promise<stri
 	}
 }
 
+async function executeFsReadPdf(workdir: string, relPath: string): Promise<string> {
+	try {
+		return await invoke<string>('fs_read_pdf', { workdir, relPath });
+	} catch (e) {
+		return JSON.stringify({ error: `fs_read_pdf failed: ${e}` });
+	}
+}
+
 async function executeFsWriteText(
 	workdir: string,
 	relPath: string,
@@ -118,6 +126,9 @@ export async function executeTool(
 		case 'fs_read_text':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsReadText(workingDir, args.path as string);
+		case 'fs_read_pdf':
+			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
+			return executeFsReadPdf(workingDir, args.path as string);
 		case 'fs_write_text':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsWriteText(

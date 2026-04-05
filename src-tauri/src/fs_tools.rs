@@ -5,6 +5,7 @@ use tokio::fs;
 // Size limits — see plan phase-09 "Size / safety limits"
 const MAX_TEXT_READ_BYTES: u64 = 1_048_576; // 1 MB
 const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
+const MAX_PDF_READ_BYTES: u64 = 50 * 1_048_576; // 50 MB
 const MAX_DIR_ENTRIES: usize = 500;
 
 #[derive(Serialize)]
@@ -239,6 +240,60 @@ pub async fn fs_write_text(
         .await
         .map_err(|e| format!("Failed to write file: {}", e))?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn fs_read_pdf(workdir: String, rel_path: String) -> Result<String, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    let metadata = fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_PDF_READ_BYTES {
+        return Err(format!(
+            "PDF too large ({} bytes). Maximum is {} bytes.",
+            metadata.len(),
+            MAX_PDF_READ_BYTES
+        ));
+    }
+
+    // pdf-extract is blocking; run it on a blocking thread to not block the
+    // tokio runtime.
+    let resolved_clone = resolved.clone();
+    let text = tokio::task::spawn_blocking(move || {
+        pdf_extract::extract_text(&resolved_clone)
+            .map_err(|e| format!("Failed to extract PDF text: {}", e))
+    })
+    .await
+    .map_err(|e| format!("PDF extraction task failed: {}", e))??;
+
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err(
+            "PDF has no extractable text (it may be a scanned document without OCR). \
+             Image-based PDF support via vision is not yet implemented."
+                .to_string(),
+        );
+    }
+
+    // Cap the extracted text to avoid blowing up the context
+    const MAX_PDF_TEXT_CHARS: usize = 500_000;
+    if trimmed.len() > MAX_PDF_TEXT_CHARS {
+        return Ok(format!(
+            "{}\n\n[... truncated: {} characters total, showing first {}]",
+            &trimmed[..MAX_PDF_TEXT_CHARS],
+            trimmed.len(),
+            MAX_PDF_TEXT_CHARS
+        ));
+    }
+
+    Ok(trimmed.to_string())
 }
 
 #[tauri::command]
