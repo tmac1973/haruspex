@@ -8,13 +8,21 @@ committed — treat as brainstorming to revisit during planning sessions.
 
 ## Filesystem & documents
 
-### PDF generation (`fs_write_pdf`)
-Phase 9 intentionally skipped this — we chose "text formats + docx + xlsx"
-for writes. Adding PDF creation later:
-- Use `printpdf` (pure Rust, actively maintained) for simple PDFs
-- Accept markdown-ish input similar to `fs_write_docx`
-- Support headings, paragraphs, lists, simple tables
-- No native deps beyond what's already bundled
+### ~~PDF generation (`fs_write_pdf`)~~ — DONE
+Added late in phase 9 using printpdf 0.9. US Letter, markdown-style
+headings, word wrap, pagination. See commit `5294efa`.
+
+### Richer PDF generation
+The initial `fs_write_pdf` handles text, headings, and pagination but
+does not support:
+- Tables (needed for structured reports — invoices, comparisons)
+- Bullet/numbered lists with indentation
+- Embedded images (logos, charts, photos)
+- Custom fonts beyond Helvetica built-in
+- Footers / page numbers
+- Links and table of contents
+Would require extending `build_pdf` with a real layout engine. Consider
+if users start asking for invoices, letterheads, or multi-column layouts.
 
 ### File deletion and moving
 Phase 9 is create + edit only. If real use cases come up where the model
