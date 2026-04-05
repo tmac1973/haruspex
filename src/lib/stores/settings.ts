@@ -13,7 +13,6 @@ export interface AppSettings {
 	searxngUrl: string;
 	contextSize: number;
 	ttsReadTablesByColumn: boolean;
-	thinkingMode: boolean;
 	searchRecency: 'any' | 'day' | 'week' | 'month' | 'year';
 	audioOutputDevice: string;
 	audioInputDevice: string;
@@ -31,7 +30,6 @@ const defaults: AppSettings = {
 	searxngUrl: 'http://localhost:8080',
 	contextSize: 32768,
 	ttsReadTablesByColumn: true,
-	thinkingMode: false,
 	searchRecency: 'any' as const,
 	audioOutputDevice: '',
 	audioInputDevice: '',
@@ -80,21 +78,17 @@ export function applyTheme(theme?: ThemeMode): void {
 	}
 }
 
-export function getThinkingModeArgs(): string[] {
-	if (settings.thinkingMode) {
-		return ['--reasoning', 'on'];
-	}
-	return ['--reasoning', 'off'];
-}
-
 /**
- * Returns chat_template_kwargs for the current thinking mode setting.
- * Qwen 3 (and similar models) support enable_thinking as a template kwarg
- * to actually disable reasoning blocks at the prompt level — the server's
- * --reasoning flag only controls response parsing.
+ * Returns chat_template_kwargs to disable thinking at the Jinja template
+ * level. Qwen 3 supports enable_thinking as a template kwarg — with this
+ * set to false, the model emits the /no_think control token and skips
+ * reasoning blocks entirely. Thinking mode is always off because:
+ *  - It causes tool call format breakage (Qwen emits non-standard XML)
+ *  - It consumes tokens that should go to the answer
+ *  - It offers no benefit for chat + web research
  */
 export function getChatTemplateKwargs(): Record<string, unknown> {
-	return { enable_thinking: settings.thinkingMode };
+	return { enable_thinking: false };
 }
 
 export interface SamplingParams {
@@ -103,9 +97,6 @@ export interface SamplingParams {
 }
 
 export function getSamplingParams(): SamplingParams {
-	if (settings.thinkingMode) {
-		return { temperature: 1.0, top_p: 0.95 };
-	}
 	return { temperature: 0.7, top_p: 0.8 };
 }
 

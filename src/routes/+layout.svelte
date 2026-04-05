@@ -6,7 +6,7 @@
 	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { initServerStore, startServer } from '$lib/stores/server.svelte';
-	import { applyTheme, getSettings, getThinkingModeArgs } from '$lib/stores/settings';
+	import { applyTheme, getSettings } from '$lib/stores/settings';
 	import { invoke } from '@tauri-apps/api/core';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -43,7 +43,7 @@
 				// Auto-start server with available model
 				const modelPath = await invoke<string | null>('get_active_model_path');
 				if (modelPath) {
-					startServer(modelPath, getSettings().contextSize, getThinkingModeArgs());
+					startServer(modelPath, getSettings().contextSize);
 				}
 				// Eagerly start TTS in the background (non-blocking)
 				invoke('tts_initialize').catch((e) => console.warn('TTS init failed:', e));
