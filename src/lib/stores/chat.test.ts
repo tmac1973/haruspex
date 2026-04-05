@@ -12,6 +12,16 @@ vi.mock('$lib/api', () => ({
 			this.name = 'ApiError';
 			this.statusCode = statusCode;
 		}
+	},
+	messageText: (content: unknown) => {
+		if (typeof content === 'string') return content;
+		if (Array.isArray(content)) {
+			return content
+				.filter((p: { type: string }) => p.type === 'text')
+				.map((p: { text: string }) => p.text)
+				.join('\n');
+		}
+		return '';
 	}
 }));
 

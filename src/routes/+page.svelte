@@ -4,6 +4,7 @@
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
 	import SourceChip from '$lib/components/SourceChip.svelte';
 	import MicButton from '$lib/components/MicButton.svelte';
+	import WorkingDirButton from '$lib/components/WorkingDirButton.svelte';
 	import { renderMarkdown } from '$lib/markdown';
 	import {
 		getConversations,
@@ -274,6 +275,7 @@
 					disabled={!serverReady && !activeConversation}
 					rows="1"
 				></textarea>
+				<WorkingDirButton />
 				<button
 					class="research-toggle"
 					class:active={exhaustiveResearch}

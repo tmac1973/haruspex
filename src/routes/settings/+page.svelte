@@ -27,6 +27,7 @@
 		downloaded: number;
 		total: number;
 		speed_bps: number;
+		stage: string;
 	}
 
 	let models = $state<ModelInfo[]>([]);
@@ -170,7 +171,7 @@
 
 	async function downloadModel(modelId: string) {
 		downloading = modelId;
-		downloadProgress = { downloaded: 0, total: 0, speed_bps: 0 };
+		downloadProgress = { downloaded: 0, total: 0, speed_bps: 0, stage: 'Starting...' };
 		downloadError = null;
 
 		const unlisten = await listen<DownloadProgress>('download-progress', (event) => {

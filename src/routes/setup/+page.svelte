@@ -191,6 +191,7 @@
 			<h1>Downloading model</h1>
 			{#if progress}
 				<div class="progress-info">
+					<div class="progress-stage">{progress.stage}</div>
 					<div class="progress-bar-container">
 						<div
 							class="progress-bar-fill"
@@ -478,6 +479,13 @@
 	/* Progress */
 	.progress-info {
 		margin: 24px 0;
+	}
+
+	.progress-stage {
+		font-size: 0.9rem;
+		color: var(--text-primary);
+		margin-bottom: 8px;
+		font-weight: 500;
 	}
 
 	.progress-bar-container {

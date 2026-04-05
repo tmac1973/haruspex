@@ -1,5 +1,7 @@
+mod app_log;
 mod audio;
 mod db;
+mod fs_tools;
 mod models;
 mod proxy;
 mod server;
@@ -17,19 +19,24 @@ use whisper::WhisperServer;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install our in-memory logger first so any logging during setup is
+    // captured for the Log Viewer. The Tauri log plugin in debug builds
+    // would clash with this, so we replace it.
+    app_log::init();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
             app.manage(ModelManager::new(app.handle()));
             app.manage(Database::new(app.handle()).expect("Failed to initialize database"));
+
+            // Initialize PDFium for high-quality PDF text extraction.
+            // Falls back to pdf-extract if the bundled libpdfium is missing.
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                fs_tools::init_pdfium(&resource_dir);
+            }
+
             Ok(())
         })
         .manage(LlamaServer::new())
@@ -80,6 +87,19 @@ pub fn run() {
             db::db_delete_conversation,
             db::db_clear_all_conversations,
             db::db_replace_messages,
+            fs_tools::fs_list_dir,
+            fs_tools::fs_read_text,
+            fs_tools::fs_write_text,
+            fs_tools::fs_edit_text,
+            fs_tools::fs_read_pdf,
+            fs_tools::fs_read_docx,
+            fs_tools::fs_read_xlsx,
+            fs_tools::fs_read_image,
+            fs_tools::fs_read_pdf_bytes,
+            fs_tools::fs_write_docx,
+            fs_tools::fs_write_xlsx,
+            fs_tools::fs_write_pdf,
+            app_log::get_app_logs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

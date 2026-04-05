@@ -16,7 +16,7 @@ describe('executeTool', () => {
 		vi.mocked(invoke).mockResolvedValue(mockResults);
 
 		const { executeTool } = await import('$lib/agent/search');
-		const result = await executeTool('web_search', { query: 'test query' });
+		const result = await executeTool('web_search', { query: 'test query' }, null);
 
 		expect(invoke).toHaveBeenCalledWith(
 			'proxy_search',
@@ -29,7 +29,7 @@ describe('executeTool', () => {
 		vi.mocked(invoke).mockResolvedValue('page content');
 
 		const { executeTool } = await import('$lib/agent/search');
-		const result = await executeTool('fetch_url', { url: 'https://example.com' });
+		const result = await executeTool('fetch_url', { url: 'https://example.com' }, null);
 
 		expect(invoke).toHaveBeenCalledWith('proxy_fetch', { url: 'https://example.com' });
 		expect(result).toBe('page content');
@@ -37,7 +37,7 @@ describe('executeTool', () => {
 
 	it('returns error for unknown tool', async () => {
 		const { executeTool } = await import('$lib/agent/search');
-		const result = await executeTool('unknown_tool', {});
+		const result = await executeTool('unknown_tool', {}, null);
 		const parsed = JSON.parse(result);
 		expect(parsed.error).toContain('Unknown tool');
 	});

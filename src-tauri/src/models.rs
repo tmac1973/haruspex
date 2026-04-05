@@ -22,6 +22,15 @@ pub struct ModelInfo {
     pub size_bytes: u64,
     pub description: String,
     pub downloaded: bool,
+    /// Optional multimodal projector filename (e.g. "mmproj-F16.gguf").
+    /// When present, it is downloaded alongside the main weights and passed
+    /// to llama-server via --mmproj to enable vision support.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mmproj_filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mmproj_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mmproj_size_bytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -29,6 +38,9 @@ pub struct DownloadProgress {
     pub downloaded: u64,
     pub total: u64,
     pub speed_bps: u64,
+    /// Human-readable label for the current download stage
+    /// (e.g. "Downloading model", "Downloading vision projector").
+    pub stage: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -42,6 +54,22 @@ pub struct HardwareInfo {
     pub available_ram_mb: u64,
     pub recommended_quant: String,
     pub recommended_context_size: u32,
+}
+
+// mmproj file sizes verified from HuggingFace API (F16 variant)
+const QWEN_4B_MMPROJ_URL: &str =
+    "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/mmproj-F16.gguf";
+const QWEN_4B_MMPROJ_SIZE: u64 = 672_000_000; // ~641 MB
+const QWEN_9B_MMPROJ_URL: &str =
+    "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/mmproj-F16.gguf";
+const QWEN_9B_MMPROJ_SIZE: u64 = 918_000_000; // ~876 MB
+
+fn qwen_4b_mmproj_filename() -> String {
+    "Qwen3.5-4B-mmproj-F16.gguf".to_string()
+}
+
+fn qwen_9b_mmproj_filename() -> String {
+    "Qwen3.5-9B-mmproj-F16.gguf".to_string()
 }
 
 fn model_registry() -> Vec<ModelInfo> {
@@ -58,6 +86,9 @@ fn model_registry() -> Vec<ModelInfo> {
             description: "Qwen 3.5 4B Q4 — for integrated graphics or low VRAM (~2.7 GB)"
                 .to_string(),
             downloaded: false,
+            mmproj_filename: Some(qwen_4b_mmproj_filename()),
+            mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
         },
         ModelInfo {
             id: "Qwen3.5-4B-Q6_K".to_string(),
@@ -69,6 +100,9 @@ fn model_registry() -> Vec<ModelInfo> {
             description: "Qwen 3.5 4B Q6 — better quality 4B, needs 4+ GB VRAM (~3.5 GB)"
                 .to_string(),
             downloaded: false,
+            mmproj_filename: Some(qwen_4b_mmproj_filename()),
+            mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
         },
         // Qwen 3.5 9B — best quality, native tool calling
         ModelInfo {
@@ -81,6 +115,9 @@ fn model_registry() -> Vec<ModelInfo> {
             size_bytes: 5_680_000_000,
             description: "Qwen 3.5 9B Q4 — recommended for 8GB VRAM (~5.7 GB)".to_string(),
             downloaded: false,
+            mmproj_filename: Some(qwen_9b_mmproj_filename()),
+            mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q5_K_M".to_string(),
@@ -92,6 +129,9 @@ fn model_registry() -> Vec<ModelInfo> {
             size_bytes: 6_580_000_000,
             description: "Qwen 3.5 9B Q5 — higher quality, tight on 8GB VRAM (~6.6 GB)".to_string(),
             downloaded: false,
+            mmproj_filename: Some(qwen_9b_mmproj_filename()),
+            mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q6_K".to_string(),
@@ -102,6 +142,9 @@ fn model_registry() -> Vec<ModelInfo> {
             size_bytes: 7_460_000_000,
             description: "Qwen 3.5 9B Q6 — high quality, needs 10+ GB VRAM (~7.5 GB)".to_string(),
             downloaded: false,
+            mmproj_filename: Some(qwen_9b_mmproj_filename()),
+            mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q8_0".to_string(),
@@ -112,6 +155,9 @@ fn model_registry() -> Vec<ModelInfo> {
             size_bytes: 9_528_000_000,
             description: "Qwen 3.5 9B Q8 — best quality, needs 16+ GB VRAM (~9.5 GB)".to_string(),
             downloaded: false,
+            mmproj_filename: Some(qwen_9b_mmproj_filename()),
+            mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
         },
     ]
 }
@@ -177,7 +223,11 @@ impl ModelManager {
         if let Ok(entries) = std::fs::read_dir(&self.models_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if name.ends_with(".gguf") && !name.ends_with(".partial") {
+                // Skip partial downloads and mmproj files (they are not standalone models)
+                if name.ends_with(".gguf")
+                    && !name.ends_with(".partial")
+                    && !name.contains("mmproj")
+                {
                     return Some(entry.path());
                 }
             }
@@ -185,25 +235,43 @@ impl ModelManager {
         None
     }
 
-    pub async fn download_model(&self, app: &AppHandle, model_id: &str) -> Result<PathBuf, String> {
+    /// Given a path to a downloaded model weights file, return the path to
+    /// its multimodal projector file if one exists on disk. Returns None if
+    /// the model has no mmproj or the mmproj file is not present.
+    pub fn find_mmproj_for_model(&self, model_path: &Path) -> Option<PathBuf> {
+        let model_filename = model_path.file_name()?.to_string_lossy().to_string();
         let registry = model_registry();
-        let model = registry
-            .iter()
-            .find(|m| m.id == model_id)
-            .ok_or_else(|| format!("Unknown model: {}", model_id))?;
+        let entry = registry.iter().find(|m| m.filename == model_filename)?;
+        let mmproj_filename = entry.mmproj_filename.as_ref()?;
+        let mmproj_path = self.models_dir.join(mmproj_filename);
+        if mmproj_path.exists() {
+            Some(mmproj_path)
+        } else {
+            None
+        }
+    }
 
+    /// Download a single file with resume support and progress events.
+    /// `stage_label` is included in the progress event so the UI can show
+    /// "Downloading model" vs "Downloading vision projector".
+    async fn download_file(
+        &self,
+        app: &AppHandle,
+        url: &str,
+        filename: &str,
+        expected_size: u64,
+        stage_label: &str,
+    ) -> Result<PathBuf, String> {
         self.ensure_models_dir().await?;
+        let final_path = self.models_dir.join(filename);
+        let partial_path = self.models_dir.join(format!("{}.partial", filename));
 
-        let final_path = self.models_dir.join(&model.filename);
-        let partial_path = self.models_dir.join(format!("{}.partial", model.filename));
-
-        // Reset cancel flag
-        {
-            let mut cancel = self.cancel_flag.lock().await;
-            *cancel = false;
+        // Skip if already downloaded
+        if final_path.exists() {
+            info!("{} already downloaded: {}", stage_label, filename);
+            return Ok(final_path);
         }
 
-        // Check if partial download exists for resume
         let existing_size = if partial_path.exists() {
             fs::metadata(&partial_path)
                 .await
@@ -214,13 +282,12 @@ impl ModelManager {
         };
 
         info!(
-            "Downloading model {} (resume from {} bytes)",
-            model_id, existing_size
+            "{}: {} (resume from {} bytes)",
+            stage_label, filename, existing_size
         );
 
         let client = reqwest::Client::new();
-        let mut request = client.get(&model.url);
-
+        let mut request = client.get(url);
         if existing_size > 0 {
             request = request.header("Range", format!("bytes={}-", existing_size));
         }
@@ -238,13 +305,12 @@ impl ModelManager {
         }
 
         let total_size = if existing_size > 0 {
-            // For range requests, content-length is remaining bytes
             existing_size
                 + response
                     .content_length()
-                    .unwrap_or(model.size_bytes - existing_size)
+                    .unwrap_or(expected_size.saturating_sub(existing_size))
         } else {
-            response.content_length().unwrap_or(model.size_bytes)
+            response.content_length().unwrap_or(expected_size)
         };
 
         let mut file = tokio::fs::OpenOptions::new()
@@ -262,7 +328,6 @@ impl ModelManager {
         let mut stream = response.bytes_stream();
 
         while let Some(chunk_result) = StreamExt::next(&mut stream).await {
-            // Check cancellation
             {
                 let cancel = self.cancel_flag.lock().await;
                 if *cancel {
@@ -279,7 +344,6 @@ impl ModelManager {
 
             downloaded += chunk.len() as u64;
 
-            // Emit progress every 100ms
             let now = std::time::Instant::now();
             if now.duration_since(last_progress_time).as_millis() >= 100 {
                 let elapsed = now.duration_since(start_time).as_secs_f64();
@@ -295,6 +359,7 @@ impl ModelManager {
                         downloaded,
                         total: total_size,
                         speed_bps,
+                        stage: stage_label.to_string(),
                     },
                 );
                 last_progress_time = now;
@@ -306,7 +371,6 @@ impl ModelManager {
             .map_err(|e| format!("Flush error: {}", e))?;
         drop(file);
 
-        // Final progress event
         let elapsed = start_time.elapsed().as_secs_f64();
         let _ = app.emit(
             "download-progress",
@@ -318,25 +382,69 @@ impl ModelManager {
                 } else {
                     0
                 },
+                stage: stage_label.to_string(),
             },
         );
 
-        // Verify SHA256 if we have a hash
-        if !model.sha256.is_empty() {
-            info!("Verifying SHA256...");
-            let hash = compute_sha256(&partial_path).await?;
-            if hash != model.sha256 {
-                fs::remove_file(&partial_path).await.ok();
-                return Err("Download verification failed: SHA256 mismatch".to_string());
-            }
-        }
-
-        // Rename partial to final
         fs::rename(&partial_path, &final_path)
             .await
             .map_err(|e| format!("Failed to finalize download: {}", e))?;
 
-        info!("Model download complete: {}", model.filename);
+        info!("{} download complete: {}", stage_label, filename);
+        Ok(final_path)
+    }
+
+    pub async fn download_model(&self, app: &AppHandle, model_id: &str) -> Result<PathBuf, String> {
+        let registry = model_registry();
+        let model = registry
+            .iter()
+            .find(|m| m.id == model_id)
+            .ok_or_else(|| format!("Unknown model: {}", model_id))?
+            .clone();
+
+        // Reset cancel flag
+        {
+            let mut cancel = self.cancel_flag.lock().await;
+            *cancel = false;
+        }
+
+        // Download main weights
+        let final_path = self
+            .download_file(
+                app,
+                &model.url,
+                &model.filename,
+                model.size_bytes,
+                "Downloading model",
+            )
+            .await?;
+
+        // Verify SHA256 if we have a hash
+        if !model.sha256.is_empty() {
+            info!("Verifying SHA256...");
+            let hash = compute_sha256(&final_path).await?;
+            if hash != model.sha256 {
+                fs::remove_file(&final_path).await.ok();
+                return Err("Download verification failed: SHA256 mismatch".to_string());
+            }
+        }
+
+        // Download mmproj (vision projector) if the model has one
+        if let (Some(mmproj_url), Some(mmproj_filename), Some(mmproj_size)) = (
+            model.mmproj_url.as_ref(),
+            model.mmproj_filename.as_ref(),
+            model.mmproj_size_bytes,
+        ) {
+            self.download_file(
+                app,
+                mmproj_url,
+                mmproj_filename,
+                mmproj_size,
+                "Downloading vision projector",
+            )
+            .await?;
+        }
+
         Ok(final_path)
     }
 
@@ -379,6 +487,9 @@ impl ModelManager {
             size_bytes: fs::metadata(&dest).await.map(|m| m.len()).unwrap_or(0),
             description: "Imported model".to_string(),
             downloaded: true,
+            mmproj_filename: None,
+            mmproj_url: None,
+            mmproj_size_bytes: None,
         })
     }
 
@@ -910,6 +1021,7 @@ pub async fn download_whisper_model(
                     downloaded,
                     total: total_size,
                     speed_bps,
+                    stage: "Downloading speech model".to_string(),
                 },
             );
             last_progress_time = now;

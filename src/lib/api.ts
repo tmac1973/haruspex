@@ -1,10 +1,35 @@
 // llama-server OpenAI-compatible API client wrapper
 
+/**
+ * A message content can be a plain string (most common) or an array of
+ * content parts. Content arrays are used when a user message includes
+ * images alongside text (multimodal). Assistant, system, and tool messages
+ * are always plain strings.
+ */
+export type MessageContentPart =
+	| { type: 'text'; text: string }
+	| { type: 'image_url'; image_url: { url: string } };
+
+export type MessageContent = string | MessageContentPart[];
+
 export interface ChatMessage {
 	role: 'system' | 'user' | 'assistant' | 'tool';
-	content: string;
+	content: MessageContent;
 	tool_calls?: ToolCall[];
 	tool_call_id?: string;
+}
+
+/**
+ * Extract the plain text portion of a message's content. If the content
+ * is already a string, returns it directly. If it's a parts array, joins
+ * all text parts (skipping images).
+ */
+export function messageText(content: MessageContent): string {
+	if (typeof content === 'string') return content;
+	return content
+		.filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+		.map((p) => p.text)
+		.join('\n');
 }
 
 export interface ToolCall {

@@ -1,4 +1,4 @@
-import { type ChatMessage, type Usage, ApiError } from '$lib/api';
+import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
 import { getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
@@ -12,13 +12,36 @@ function looksLikeReviewQuery(content: string): boolean {
 	return REVIEW_PATTERNS.test(content);
 }
 
-function buildSystemPrompt(): ChatMessage {
+function buildSystemPrompt(workingDir: string | null): ChatMessage {
 	const today = new Date().toLocaleDateString('en-US', {
 		weekday: 'long',
 		year: 'numeric',
 		month: 'long',
 		day: 'numeric'
 	});
+
+	const fsSection = workingDir
+		? `
+
+FILESYSTEM ACCESS:
+- A working directory is active: ${workingDir}
+- You have filesystem tools to read and write files in this directory.
+- Use fs_list_dir first (with path ".") to see what files are available before reading specific files.
+- Use fs_read_text for text files (txt, md, csv, json, sh, yml, etc.).
+- Use fs_read_pdf for simple text-based PDFs — fast and efficient. For form PDFs (tax forms like W-2, 1040, invoices, receipts, applications), scanned documents, or any PDF where fs_read_pdf produced garbled or incomplete output, use fs_read_pdf_pages instead. fs_read_pdf_pages renders each page as an image so you can read it visually — this handles form layouts, checkboxes, and custom fonts correctly.
+- CRITICAL: When using fs_read_pdf_pages on multiple PDFs, process them ONE AT A TIME. Load the first PDF with fs_read_pdf_pages, describe/summarize its contents in your next response, then in the FOLLOWING turn call fs_read_pdf_pages for the next PDF. Loading multiple PDFs as images in the same turn exhausts the vision model's context and crashes inference.
+- Use fs_read_docx for Microsoft Word (.docx) files.
+- Use fs_read_xlsx for Excel spreadsheets (.xlsx) — returns CSV-formatted text. Specify the sheet name if the workbook has multiple sheets.
+- Use fs_read_image for image files (png, jpg, webp). After calling it, the image becomes part of your context and you can see it with your vision capability — describe it or answer questions about it in your next response.
+- Only use filesystem tools when the user explicitly asks you to work with files. Do not proactively read files.
+- You can create text files with fs_write_text (including bash scripts, markdown, csv, json).
+- Use fs_write_docx to create a Word document from markdown-style content (# for headings).
+- Use fs_write_pdf to create a PDF from markdown-style content (# for headings). Use for printable reports; use fs_write_docx when the user wants an editable doc.
+- Use fs_write_xlsx to create an Excel spreadsheet from structured sheet data.
+- Use fs_edit_text for small targeted changes — it replaces exactly one occurrence of old_str with new_str.
+- You cannot delete or move files. If the user wants to remove a file, tell them to do it manually.
+- When creating bash or shell scripts, include a shebang line (#!/bin/bash or #!/usr/bin/env bash) and remind the user they must chmod +x and run the script themselves — you cannot execute scripts.`
+		: '';
 
 	return {
 		role: 'system',
@@ -42,7 +65,7 @@ SEARCH BEHAVIOR:
 - Use the user's exact terminology in your search query.
 - Use fetch_url on 2-4 of the most relevant results to read the full content before answering.
 - Only cite sources you actually fetched and read. Do not cite URLs you only saw in search snippets.
-- For product reviews, comparisons, or "best of" questions: include community sources like Reddit alongside review sites. Many review sites are paid advertising — Reddit has real user opinions worth including.
+- For product reviews, comparisons, or "best of" questions: include community sources like Reddit alongside review sites. Many review sites are paid advertising — Reddit has real user opinions worth including.${fsSection}
 
 Be concise, accurate, and helpful. When in doubt, search.
 
@@ -56,6 +79,13 @@ export interface Conversation {
 	messages: ChatMessage[];
 	createdAt: number;
 	updatedAt: number;
+	/**
+	 * Optional working directory for filesystem operations. When set, the
+	 * agent loop exposes filesystem tools to the model and all file operations
+	 * are sandboxed to this directory. Not persisted to the database — resets
+	 * when the app restarts. User picks it fresh per conversation.
+	 */
+	workingDir: string | null;
 }
 
 interface DbMessage {
@@ -103,13 +133,35 @@ function generateTitle(content: string): string {
 
 // Database persistence helpers
 
+// Marker prefix for multimodal content arrays stored in the DB.
+// When a message's content is a parts array (e.g., text + images), we
+// serialize it as JSON with this prefix so we can detect and rehydrate
+// it on load. Plain string content is stored as-is.
+const MULTIMODAL_PREFIX = '\x00MM\x00';
+
+function serializeContent(content: ChatMessage['content']): string {
+	if (typeof content === 'string') return content;
+	return MULTIMODAL_PREFIX + JSON.stringify(content);
+}
+
+function deserializeContent(raw: string): ChatMessage['content'] {
+	if (raw.startsWith(MULTIMODAL_PREFIX)) {
+		try {
+			return JSON.parse(raw.slice(MULTIMODAL_PREFIX.length));
+		} catch {
+			return raw;
+		}
+	}
+	return raw;
+}
+
 async function dbSaveMessage(conversationId: string, msg: ChatMessage): Promise<void> {
 	if (!dbAvailable) return;
 	try {
 		await invoke('db_save_message', {
 			conversationId,
 			role: msg.role,
-			content: msg.content || '',
+			content: serializeContent(msg.content),
 			toolCalls: msg.tool_calls ? JSON.stringify(msg.tool_calls) : null,
 			toolCallId: msg.tool_call_id || null
 		});
@@ -130,7 +182,7 @@ async function dbCreateConversation(id: string, title: string): Promise<void> {
 function dbMessageToChatMessage(msg: DbMessage): ChatMessage {
 	const chatMsg: ChatMessage = {
 		role: msg.role as ChatMessage['role'],
-		content: msg.content
+		content: deserializeContent(msg.content)
 	};
 	if (msg.tool_calls) {
 		try {
@@ -157,7 +209,8 @@ export async function initChatStore(): Promise<void> {
 			title: s.title,
 			messages: [], // loaded lazily
 			createdAt: s.created_at,
-			updatedAt: s.updated_at
+			updatedAt: s.updated_at,
+			workingDir: null
 		}));
 
 		if (conversations.length > 0) {
@@ -192,6 +245,22 @@ export function getActiveConversationId(): string | null {
 
 export function getActiveConversation(): Conversation | undefined {
 	return conversations.find((c) => c.id === activeConversationId);
+}
+
+/** Get the working directory for the active conversation, or null if none set. */
+export function getWorkingDir(): string | null {
+	return getActiveConversation()?.workingDir ?? null;
+}
+
+/** Set the working directory for the active conversation. Creates a new conversation if needed. */
+export function setWorkingDir(path: string | null): void {
+	if (!activeConversationId) {
+		createConversation();
+	}
+	const conv = getActiveConversation();
+	if (conv) {
+		conv.workingDir = path;
+	}
 }
 
 export function getIsGenerating(): boolean {
@@ -259,7 +328,7 @@ async function compactIfNeeded(): Promise<void> {
 					conversationId: conversation.id,
 					messages: newMessages.map((m) => ({
 						role: m.role,
-						content: m.content,
+						content: serializeContent(m.content),
 						tool_calls: m.tool_calls ? JSON.stringify(m.tool_calls) : null,
 						tool_call_id: m.tool_call_id || null
 					}))
@@ -281,7 +350,8 @@ export function createConversation(): string {
 		title: 'New chat',
 		messages: [],
 		createdAt: now,
-		updatedAt: now
+		updatedAt: now,
+		workingDir: null
 	});
 	activeConversationId = id;
 	errorMessage = null;
@@ -402,19 +472,25 @@ export async function sendMessage(content: string): Promise<void> {
 	abortController = new AbortController();
 
 	try {
+		const currentWorkingDir = conversation.workingDir;
+
 		// Strip tool-related messages from previous turns to keep context clean.
 		// The agent loop adds its own tool messages for the current turn.
 		const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
-		const messagesForApi: ChatMessage[] = [buildSystemPrompt(), ...historyMessages];
+		const messagesForApi: ChatMessage[] = [
+			buildSystemPrompt(currentWorkingDir),
+			...historyMessages
+		];
 
 		// Augment the last user message with search hints based on context.
 		const lastMsg = messagesForApi[messagesForApi.length - 1];
 		if (lastMsg?.role === 'user') {
 			const hints: string[] = [];
+			const lastText = messageText(lastMsg.content);
 
 			// For product review/recommendation queries, hint to search Reddit.
 			// Local models ignore system prompt guidance but reliably follow user message text.
-			if (looksLikeReviewQuery(lastMsg.content)) {
+			if (looksLikeReviewQuery(lastText)) {
 				hints.push('Include Reddit as a source.');
 			}
 
@@ -427,25 +503,78 @@ export async function sendMessage(content: string): Promise<void> {
 			}
 
 			if (hints.length > 0) {
-				messagesForApi[messagesForApi.length - 1] = {
-					...lastMsg,
-					content: lastMsg.content + '\n\n(' + hints.join(' ') + ')'
-				};
+				// Append the hint to the text portion of the message. If the message
+				// is a plain string, concatenate. If it's a content array, append
+				// to the last text part (or add a new one).
+				const suffix = '\n\n(' + hints.join(' ') + ')';
+				if (typeof lastMsg.content === 'string') {
+					messagesForApi[messagesForApi.length - 1] = {
+						...lastMsg,
+						content: lastMsg.content + suffix
+					};
+				} else {
+					const parts = [...lastMsg.content];
+					const lastTextIdx = parts.findIndex((p) => p.type === 'text');
+					if (lastTextIdx >= 0) {
+						const textPart = parts[lastTextIdx] as { type: 'text'; text: string };
+						parts[lastTextIdx] = { type: 'text', text: textPart.text + suffix };
+					} else {
+						parts.push({ type: 'text', text: suffix.trim() });
+					}
+					messagesForApi[messagesForApi.length - 1] = {
+						...lastMsg,
+						content: parts
+					};
+				}
 			}
 		}
 
 		await runAgentLoop({
 			messages: messagesForApi,
+			workingDir: currentWorkingDir,
 			maxIterations: exhaustiveResearch ? 25 : 10,
 			signal: abortController.signal,
 			onUsageUpdate: (u: Usage) => {
 				updateContextUsage(u, getSettings().contextSize);
 			},
 			onToolStart: (call) => {
-				const query =
-					call.name === 'web_search'
-						? (call.arguments.query as string)
-						: (call.arguments.url as string);
+				// Extract a human-readable label for each tool based on its args
+				let query = '';
+				switch (call.name) {
+					case 'web_search':
+						query = (call.arguments.query as string) || '';
+						break;
+					case 'fetch_url':
+						query = (call.arguments.url as string) || '';
+						break;
+					case 'fs_list_dir':
+						query = (call.arguments.path as string) || '.';
+						break;
+					case 'fs_read_text':
+					case 'fs_read_pdf':
+					case 'fs_read_pdf_pages':
+					case 'fs_read_docx':
+					case 'fs_read_image':
+					case 'fs_edit_text':
+						query = (call.arguments.path as string) || '';
+						break;
+					case 'fs_read_xlsx': {
+						const path = (call.arguments.path as string) || '';
+						const sheet = call.arguments.sheet as string | undefined;
+						query = sheet ? `${path} (${sheet})` : path;
+						break;
+					}
+					case 'fs_write_text':
+					case 'fs_write_docx':
+					case 'fs_write_pdf':
+						query = (call.arguments.path as string) || '';
+						break;
+					case 'fs_write_xlsx':
+						query = (call.arguments.path as string) || '';
+						break;
+					default:
+						query = JSON.stringify(call.arguments).slice(0, 60);
+				}
 				searchSteps = [
 					...searchSteps,
 					{

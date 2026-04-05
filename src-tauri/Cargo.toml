@@ -18,9 +18,8 @@ tauri-build = { version = "2.5.6", features = [] }
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-log = "0.4"
+log = { version = "0.4", features = ["std"] }
 tauri = { version = "2.10.3", features = [] }
-tauri-plugin-log = "2"
 tauri-plugin-shell = "2.3.5"
 reqwest = { version = "0.13.2", default-features = false, features = ["cookies", "json", "multipart", "query", "rustls", "stream"] }
 tokio = { version = "1.50.0", features = ["time", "rt", "fs", "sync", "macros"] }
@@ -36,3 +35,11 @@ rusqlite = { version = "0.39.0", features = ["bundled"] }
 cpal = "0.17.1"
 rodio = "0.21.1"
 hound = "3.5.1"
+pdf-extract = "0.9"
+pdfium-render = "0.9"
+printpdf = "0.9"
+calamine = "0.30"
+zip = "4.6"
+image = "0.25"
+base64 = "0.22"
+rust_xlsxwriter = "0.90"
