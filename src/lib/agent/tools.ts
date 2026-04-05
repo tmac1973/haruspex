@@ -99,6 +99,46 @@ const FS_TOOLS: ToolDefinition[] = [
 	{
 		type: 'function',
 		function: {
+			name: 'fs_read_docx',
+			description:
+				'Extract text content from a Microsoft Word (.docx) file in the working directory. Returns plain text with paragraph breaks preserved.',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path to the .docx file within the working directory.'
+					}
+				},
+				required: ['path']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'fs_read_xlsx',
+			description:
+				'Read data from an Excel spreadsheet (.xlsx) file in the working directory. Returns the data as CSV-formatted text. If the workbook has multiple sheets, specify one by name — otherwise the first sheet is returned and available sheet names are listed in the output header.',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path to the .xlsx file within the working directory.'
+					},
+					sheet: {
+						type: 'string',
+						description: 'Optional sheet name. If omitted, the first sheet is read.'
+					}
+				},
+				required: ['path']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'fs_read_pdf',
 			description:
 				'Extract text content from a PDF file in the working directory. Returns the text from all pages. If the PDF is a scanned document without a text layer, this will fail — use fs_read_image on each page image instead (not yet supported for inline PDF pages).',

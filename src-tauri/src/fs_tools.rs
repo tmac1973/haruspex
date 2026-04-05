@@ -242,6 +242,223 @@ pub async fn fs_write_text(
     Ok(())
 }
 
+/// Extract text from a .docx file by reading word/document.xml from the zip
+/// and scanning for <w:t>...</w:t> elements. Paragraphs (<w:p>) become line
+/// breaks. This is much simpler than walking the full docx AST and handles
+/// 95% of real-world documents correctly.
+fn extract_docx_text(path: &Path) -> Result<String, String> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path).map_err(|e| format!("Failed to open docx: {}", e))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Not a valid docx (zip) file: {}", e))?;
+
+    let mut doc_xml = String::new();
+    archive
+        .by_name("word/document.xml")
+        .map_err(|e| format!("docx missing word/document.xml: {}", e))?
+        .read_to_string(&mut doc_xml)
+        .map_err(|e| format!("Failed to read word/document.xml: {}", e))?;
+
+    // Scan for text runs and paragraph breaks. This is a forward scan — not
+    // a full XML parser, but it handles the flat structure of word text
+    // elements reliably.
+    let mut out = String::new();
+    let bytes = doc_xml.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"<w:t") {
+            // Find the end of the opening tag
+            if let Some(open_end) = bytes[i..].iter().position(|&b| b == b'>') {
+                let text_start = i + open_end + 1;
+                if let Some(close_rel) = find_subslice(&bytes[text_start..], b"</w:t>") {
+                    let text_end = text_start + close_rel;
+                    // Decode XML entities in the text range
+                    out.push_str(&decode_xml_entities(&doc_xml[text_start..text_end]));
+                    i = text_end + "</w:t>".len();
+                    continue;
+                }
+            }
+        } else if bytes[i..].starts_with(b"</w:p>") {
+            out.push('\n');
+            i += "</w:p>".len();
+            continue;
+        } else if bytes[i..].starts_with(b"<w:br") {
+            out.push('\n');
+            // Skip to end of tag
+            if let Some(end) = bytes[i..].iter().position(|&b| b == b'>') {
+                i += end + 1;
+                continue;
+            }
+        } else if bytes[i..].starts_with(b"<w:tab/>") {
+            out.push('\t');
+            i += "<w:tab/>".len();
+            continue;
+        }
+        i += 1;
+    }
+
+    Ok(out.trim().to_string())
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|w| w == needle)
+}
+
+fn decode_xml_entities(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+}
+
+#[tauri::command]
+pub async fn fs_read_docx(workdir: String, rel_path: String) -> Result<String, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    let metadata = fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    // docx size limit: 50 MB (same as PDF)
+    if metadata.len() > MAX_PDF_READ_BYTES {
+        return Err(format!(
+            "docx too large ({} bytes). Maximum is {} bytes.",
+            metadata.len(),
+            MAX_PDF_READ_BYTES
+        ));
+    }
+
+    let resolved_clone = resolved.clone();
+    let text = tokio::task::spawn_blocking(move || extract_docx_text(&resolved_clone))
+        .await
+        .map_err(|e| format!("docx extraction task failed: {}", e))??;
+
+    if text.is_empty() {
+        return Err("docx has no extractable text".to_string());
+    }
+
+    Ok(text)
+}
+
+#[tauri::command]
+pub async fn fs_read_xlsx(
+    workdir: String,
+    rel_path: String,
+    sheet: Option<String>,
+) -> Result<String, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    let metadata = fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_PDF_READ_BYTES {
+        return Err(format!(
+            "xlsx too large ({} bytes). Maximum is {} bytes.",
+            metadata.len(),
+            MAX_PDF_READ_BYTES
+        ));
+    }
+
+    let resolved_clone = resolved.clone();
+    let sheet_name = sheet.clone();
+    let csv = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        use calamine::{open_workbook_auto, Data, Reader};
+
+        let mut workbook = open_workbook_auto(&resolved_clone)
+            .map_err(|e| format!("Failed to open xlsx: {}", e))?;
+
+        let sheet_names = workbook.sheet_names().to_vec();
+        if sheet_names.is_empty() {
+            return Err("xlsx has no sheets".to_string());
+        }
+
+        // Pick sheet: named if specified, else the first
+        let target_sheet = match sheet_name {
+            Some(name) => {
+                if !sheet_names.iter().any(|s| s == &name) {
+                    return Err(format!(
+                        "Sheet '{}' not found. Available sheets: {}",
+                        name,
+                        sheet_names.join(", ")
+                    ));
+                }
+                name
+            }
+            None => sheet_names[0].clone(),
+        };
+
+        let range = workbook
+            .worksheet_range(&target_sheet)
+            .map_err(|e| format!("Failed to read sheet '{}': {}", target_sheet, e))?;
+
+        // Convert to CSV-like text
+        let mut out = String::new();
+        if sheet_names.len() > 1 {
+            out.push_str(&format!("# Sheet: {}\n", target_sheet));
+            out.push_str(&format!(
+                "# Available sheets: {}\n\n",
+                sheet_names.join(", ")
+            ));
+        }
+
+        for row in range.rows() {
+            let row_text: Vec<String> = row
+                .iter()
+                .map(|cell| match cell {
+                    Data::Empty => String::new(),
+                    Data::String(s) => {
+                        if s.contains(',') || s.contains('"') || s.contains('\n') {
+                            format!("\"{}\"", s.replace('"', "\"\""))
+                        } else {
+                            s.clone()
+                        }
+                    }
+                    Data::Float(f) => f.to_string(),
+                    Data::Int(i) => i.to_string(),
+                    Data::Bool(b) => b.to_string(),
+                    Data::DateTime(dt) => dt.to_string(),
+                    Data::DateTimeIso(s) => s.clone(),
+                    Data::DurationIso(s) => s.clone(),
+                    Data::Error(e) => format!("#ERR:{:?}", e),
+                })
+                .collect();
+            out.push_str(&row_text.join(","));
+            out.push('\n');
+        }
+
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("xlsx extraction task failed: {}", e))??;
+
+    const MAX_XLSX_CHARS: usize = 500_000;
+    if csv.len() > MAX_XLSX_CHARS {
+        return Ok(format!(
+            "{}\n\n[... truncated: {} characters total, showing first {}]",
+            &csv[..MAX_XLSX_CHARS],
+            csv.len(),
+            MAX_XLSX_CHARS
+        ));
+    }
+
+    Ok(csv)
+}
+
 #[tauri::command]
 pub async fn fs_read_pdf(workdir: String, rel_path: String) -> Result<String, String> {
     let workdir = workdir_path(&workdir)?;

@@ -80,6 +80,26 @@ async function executeFsReadPdf(workdir: string, relPath: string): Promise<strin
 	}
 }
 
+async function executeFsReadDocx(workdir: string, relPath: string): Promise<string> {
+	try {
+		return await invoke<string>('fs_read_docx', { workdir, relPath });
+	} catch (e) {
+		return JSON.stringify({ error: `fs_read_docx failed: ${e}` });
+	}
+}
+
+async function executeFsReadXlsx(
+	workdir: string,
+	relPath: string,
+	sheet?: string
+): Promise<string> {
+	try {
+		return await invoke<string>('fs_read_xlsx', { workdir, relPath, sheet });
+	} catch (e) {
+		return JSON.stringify({ error: `fs_read_xlsx failed: ${e}` });
+	}
+}
+
 async function executeFsWriteText(
 	workdir: string,
 	relPath: string,
@@ -129,6 +149,12 @@ export async function executeTool(
 		case 'fs_read_pdf':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsReadPdf(workingDir, args.path as string);
+		case 'fs_read_docx':
+			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
+			return executeFsReadDocx(workingDir, args.path as string);
+		case 'fs_read_xlsx':
+			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
+			return executeFsReadXlsx(workingDir, args.path as string, args.sheet as string | undefined);
 		case 'fs_write_text':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsWriteText(
