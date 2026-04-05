@@ -56,6 +56,13 @@ export interface Conversation {
 	messages: ChatMessage[];
 	createdAt: number;
 	updatedAt: number;
+	/**
+	 * Optional working directory for filesystem operations. When set, the
+	 * agent loop exposes filesystem tools to the model and all file operations
+	 * are sandboxed to this directory. Not persisted to the database — resets
+	 * when the app restarts. User picks it fresh per conversation.
+	 */
+	workingDir: string | null;
 }
 
 interface DbMessage {
@@ -179,7 +186,8 @@ export async function initChatStore(): Promise<void> {
 			title: s.title,
 			messages: [], // loaded lazily
 			createdAt: s.created_at,
-			updatedAt: s.updated_at
+			updatedAt: s.updated_at,
+			workingDir: null
 		}));
 
 		if (conversations.length > 0) {
@@ -214,6 +222,22 @@ export function getActiveConversationId(): string | null {
 
 export function getActiveConversation(): Conversation | undefined {
 	return conversations.find((c) => c.id === activeConversationId);
+}
+
+/** Get the working directory for the active conversation, or null if none set. */
+export function getWorkingDir(): string | null {
+	return getActiveConversation()?.workingDir ?? null;
+}
+
+/** Set the working directory for the active conversation. Creates a new conversation if needed. */
+export function setWorkingDir(path: string | null): void {
+	if (!activeConversationId) {
+		createConversation();
+	}
+	const conv = getActiveConversation();
+	if (conv) {
+		conv.workingDir = path;
+	}
 }
 
 export function getIsGenerating(): boolean {
@@ -303,7 +327,8 @@ export function createConversation(): string {
 		title: 'New chat',
 		messages: [],
 		createdAt: now,
-		updatedAt: now
+		updatedAt: now,
+		workingDir: null
 	});
 	activeConversationId = id;
 	errorMessage = null;
