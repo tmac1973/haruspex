@@ -1,6 +1,78 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use tokio::fs;
+
+/// Tracks whether pdfium has been successfully bound to its shared library.
+/// Set once at app startup via init_pdfium(). If pdfium is available we use
+/// it for PDF text extraction (high quality, handles forms and custom fonts
+/// correctly). If not, we fall back to the pure-Rust pdf-extract crate.
+static PDFIUM_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
+/// Initialize pdfium by loading libpdfium from the resource dir. Should be
+/// called once at app startup. Safe to call multiple times.
+pub fn init_pdfium(resource_dir: &Path) {
+    if PDFIUM_AVAILABLE.get().is_some() {
+        return;
+    }
+
+    let libs_dir = resource_dir.join("binaries").join("libs");
+    let lib_name = pdfium_render::prelude::Pdfium::pdfium_platform_library_name_at_path(&libs_dir);
+
+    match pdfium_render::prelude::Pdfium::bind_to_library(&lib_name) {
+        Ok(bindings) => {
+            // Pdfium::new() takes ownership of the bindings and calls
+            // FPDF_InitLibrary. After this, text extraction uses the
+            // global bindings.
+            let _ = pdfium_render::prelude::Pdfium::new(bindings);
+            log::info!("PDFium initialized from {}", lib_name.display());
+            let _ = PDFIUM_AVAILABLE.set(true);
+        }
+        Err(e) => {
+            log::warn!(
+                "PDFium not available ({}); PDF extraction will use fallback",
+                e
+            );
+            let _ = PDFIUM_AVAILABLE.set(false);
+        }
+    }
+}
+
+fn pdfium_available() -> bool {
+    *PDFIUM_AVAILABLE.get().unwrap_or(&false)
+}
+
+/// Extract text from a PDF using PDFium. Handles position-aware reading
+/// order, form fields, and custom fonts correctly — unlike pdf-extract.
+/// Returns Err if pdfium is unavailable or extraction fails.
+fn extract_pdf_with_pdfium(path: &Path) -> Result<String, String> {
+    use pdfium_render::prelude::*;
+
+    if !pdfium_available() {
+        return Err("pdfium unavailable".to_string());
+    }
+
+    // Pdfium is a unit struct that uses the previously-initialized global bindings.
+    let pdfium = Pdfium {};
+    let document = pdfium
+        .load_pdf_from_file(path, None)
+        .map_err(|e| format!("Failed to open PDF: {}", e))?;
+
+    let mut out = String::new();
+    for (idx, page) in document.pages().iter().enumerate() {
+        let page_text = page
+            .text()
+            .map_err(|e| format!("Failed to read page {}: {}", idx + 1, e))?;
+        let text = page_text.all();
+        if document.pages().len() > 1 {
+            out.push_str(&format!("--- Page {} ---\n", idx + 1));
+        }
+        out.push_str(&text);
+        out.push_str("\n\n");
+    }
+
+    Ok(out)
+}
 
 // Size limits — see plan phase-09 "Size / safety limits"
 const MAX_TEXT_READ_BYTES: u64 = 1_048_576; // 1 MB
@@ -764,10 +836,17 @@ pub async fn fs_read_pdf(workdir: String, rel_path: String) -> Result<String, St
         ));
     }
 
-    // pdf-extract is blocking; run it on a blocking thread to not block the
-    // tokio runtime.
+    // Try pdfium first — it's the same library Chrome uses, handles forms
+    // and custom fonts correctly. Fall back to pdf-extract if pdfium isn't
+    // available (missing native lib).
     let resolved_clone = resolved.clone();
-    let text = tokio::task::spawn_blocking(move || {
+    let text = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        if pdfium_available() {
+            match extract_pdf_with_pdfium(&resolved_clone) {
+                Ok(t) => return Ok(t),
+                Err(e) => log::warn!("pdfium extraction failed: {}; falling back", e),
+            }
+        }
         pdf_extract::extract_text(&resolved_clone)
             .map_err(|e| format!("Failed to extract PDF text: {}", e))
     })
@@ -778,7 +857,7 @@ pub async fn fs_read_pdf(workdir: String, rel_path: String) -> Result<String, St
     if trimmed.is_empty() {
         return Err(
             "PDF has no extractable text (it may be a scanned document without OCR). \
-             Image-based PDF support via vision is not yet implemented."
+             Try fs_read_pdf_pages to read it visually."
                 .to_string(),
         );
     }

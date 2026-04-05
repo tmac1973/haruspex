@@ -77,10 +77,7 @@ fn chrono_now() -> String {
 
     // Days from 1970-01-01 → Y/M/D
     let (y, mo, d) = days_to_ymd(days as i64);
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        y, mo, d, h, m, s
-    )
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, mo, d, h, m, s)
 }
 
 fn days_to_ymd(days: i64) -> (i32, u32, u32) {

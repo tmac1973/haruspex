@@ -30,6 +30,13 @@ pub fn run() {
         .setup(|app| {
             app.manage(ModelManager::new(app.handle()));
             app.manage(Database::new(app.handle()).expect("Failed to initialize database"));
+
+            // Initialize PDFium for high-quality PDF text extraction.
+            // Falls back to pdf-extract if the bundled libpdfium is missing.
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                fs_tools::init_pdfium(&resource_dir);
+            }
+
             Ok(())
         })
         .manage(LlamaServer::new())

@@ -198,6 +198,43 @@ if [ "$SKIP_BUILD" = false ]; then
     echo
 fi
 
+# ---- Download PDFium library ----
+# Needed by the main app for high-quality PDF text extraction.
+if [ "$SKIP_BUILD" = false ]; then
+    PDFIUM_VERSION="${PDFIUM_VERSION:-chromium/7763}"
+    case "$TARGET_TRIPLE" in
+        x86_64-unknown-linux-gnu)  PDFIUM_ASSET="pdfium-linux-x64.tgz"   ; PDFIUM_LIB="libpdfium.so"     ;;
+        aarch64-unknown-linux-gnu) PDFIUM_ASSET="pdfium-linux-arm64.tgz" ; PDFIUM_LIB="libpdfium.so"     ;;
+        x86_64-apple-darwin)       PDFIUM_ASSET="pdfium-mac-x64.tgz"     ; PDFIUM_LIB="libpdfium.dylib"  ;;
+        aarch64-apple-darwin)      PDFIUM_ASSET="pdfium-mac-arm64.tgz"   ; PDFIUM_LIB="libpdfium.dylib"  ;;
+        x86_64-pc-windows-msvc)    PDFIUM_ASSET="pdfium-win-x64.tgz"     ; PDFIUM_LIB="pdfium.dll"       ;;
+        *) PDFIUM_ASSET="" ;;
+    esac
+    if [ -n "$PDFIUM_ASSET" ]; then
+        mkdir -p "$BINARIES_DIR/libs"
+        if [ ! -f "$BINARIES_DIR/libs/$PDFIUM_LIB" ]; then
+            echo ">> Downloading PDFium library..."
+            TMP_DIR=$(mktemp -d)
+            if curl -fsSL -o "$TMP_DIR/pdfium.tgz" \
+                "https://github.com/bblanchon/pdfium-binaries/releases/download/$PDFIUM_VERSION/$PDFIUM_ASSET"; then
+                tar -xzf "$TMP_DIR/pdfium.tgz" -C "$TMP_DIR"
+                if [ -f "$TMP_DIR/lib/$PDFIUM_LIB" ]; then
+                    cp "$TMP_DIR/lib/$PDFIUM_LIB" "$BINARIES_DIR/libs/"
+                elif [ -f "$TMP_DIR/bin/$PDFIUM_LIB" ]; then
+                    cp "$TMP_DIR/bin/$PDFIUM_LIB" "$BINARIES_DIR/libs/"
+                fi
+                echo "   Installed: $PDFIUM_LIB"
+            else
+                echo "   WARN: failed to download PDFium — PDF extraction will use fallback"
+            fi
+            rm -rf "$TMP_DIR"
+        else
+            echo ">> PDFium already installed."
+        fi
+        echo
+    fi
+fi
+
 # ---- Symlink libs for dev mode ----
 echo ">> Symlinking shared libraries for dev mode..."
 "$SCRIPT_DIR/link-sidecar-libs.sh"
