@@ -29,6 +29,7 @@ export interface DownloadProgress {
 	downloaded: number;
 	total: number;
 	speed_bps: number;
+	stage: string;
 }
 
 let step = $state<SetupStep>('welcome');
@@ -88,7 +89,7 @@ export async function detectHardware(): Promise<void> {
 }
 
 export async function startDownload(): Promise<void> {
-	downloadProgress = { downloaded: 0, total: 0, speed_bps: 0 };
+	downloadProgress = { downloaded: 0, total: 0, speed_bps: 0, stage: 'Starting...' };
 	downloadError = null;
 
 	const unlisten = await listen<DownloadProgress>('download-progress', (event) => {

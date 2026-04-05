@@ -284,9 +284,23 @@ impl LlamaServer {
     async fn spawn_and_monitor(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
         self.set_status(ServerStatus::Starting, app).await;
 
+        // If the model has a multimodal projector, append --mmproj to the args
+        // so llama-server loads vision support.
+        let mmproj_path = {
+            use tauri::Manager;
+            app.try_state::<crate::models::ModelManager>()
+                .and_then(|mgr| mgr.find_mmproj_for_model(std::path::Path::new(model_path)))
+        };
+
         let args = {
             let inner = self.inner.lock().await;
-            inner.config.build_args(model_path)
+            let mut args = inner.config.build_args(model_path);
+            if let Some(path) = mmproj_path.as_ref() {
+                args.push("--mmproj".to_string());
+                args.push(path.to_string_lossy().to_string());
+                info!("Vision projector enabled: {}", path.display());
+            }
+            args
         };
 
         info!("Starting llama-server with args: {:?}", args);
@@ -428,9 +442,25 @@ impl LlamaServer {
                         if should_fallback {
                             warn!("Attempting CPU fallback (--n-gpu-layers 0)");
 
+                            let mmproj_path = {
+                                use tauri::Manager;
+                                app.try_state::<crate::models::ModelManager>().and_then(
+                                    |mgr| {
+                                        mgr.find_mmproj_for_model(std::path::Path::new(
+                                            &model_path,
+                                        ))
+                                    },
+                                )
+                            };
+
                             let args = {
                                 let state = inner.lock().await;
-                                state.config.build_args(&model_path)
+                                let mut args = state.config.build_args(&model_path);
+                                if let Some(path) = mmproj_path.as_ref() {
+                                    args.push("--mmproj".to_string());
+                                    args.push(path.to_string_lossy().to_string());
+                                }
+                                args
                             };
 
                             let sidecar_result = app
