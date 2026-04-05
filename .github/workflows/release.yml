@@ -126,6 +126,19 @@ jobs:
         shell: bash
         run: ./scripts/build-sidecars.sh --target ${{ matrix.target }}
 
+      - name: Ensure resource directories exist
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries/libs
+          touch src-tauri/binaries/libs/.placeholder
+          # espeak-ng-data may not exist if koko bundling didn't find espeak data
+          if [ ! -f src-tauri/binaries/espeak-ng-data/phontab ]; then
+            mkdir -p src-tauri/binaries/espeak-ng-data/lang/placeholder
+            touch src-tauri/binaries/espeak-ng-data/.placeholder
+            touch src-tauri/binaries/espeak-ng-data/lang/.placeholder
+            touch src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder
+          fi
+
       - name: Build app
         shell: bash
         run: |
