@@ -6,7 +6,7 @@ import {
 	type Usage
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
-import { AGENT_TOOLS } from '$lib/agent/tools';
+import { getAgentTools } from '$lib/agent/tools';
 import { executeTool } from '$lib/agent/search';
 import { getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
 
@@ -20,6 +20,7 @@ export interface SearchStep {
 
 export interface AgentLoopOptions {
 	messages: ChatMessage[];
+	workingDir?: string | null;
 	onToolStart: (call: ResolvedToolCall) => void;
 	onToolEnd: (call: ResolvedToolCall, result: string) => void;
 	onStreamChunk: (chunk: StreamChunk) => void;
@@ -31,7 +32,8 @@ export interface AgentLoopOptions {
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
-	const { messages, maxIterations = 8, signal } = options;
+	const { messages, maxIterations = 8, signal, workingDir = null } = options;
+	const tools = getAgentTools(workingDir !== null);
 	let iteration = 0;
 	let usedTools = false;
 
@@ -45,7 +47,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		const response = await chatCompletion(
 			{
 				messages,
-				tools: AGENT_TOOLS,
+				tools,
 				temperature: sampling.temperature,
 				top_p: sampling.top_p,
 				max_tokens: 4096,
@@ -98,7 +100,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				const stream = chatCompletionStream(
 					{
 						messages,
-						tools: AGENT_TOOLS,
+						tools,
 						temperature: sampling.temperature,
 						top_p: sampling.top_p,
 						chat_template_kwargs: templateKwargs
@@ -133,7 +135,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 			options.onToolStart(call);
-			const result = await executeTool(call.name, call.arguments, signal);
+			const result = await executeTool(call.name, call.arguments, workingDir, signal);
 			options.onToolEnd(call, result);
 
 			messages.push({

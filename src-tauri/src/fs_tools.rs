@@ -1,4 +1,25 @@
+use serde::Serialize;
 use std::path::{Path, PathBuf};
+use tokio::fs;
+
+// Size limits — see plan phase-09 "Size / safety limits"
+const MAX_TEXT_READ_BYTES: u64 = 1_048_576; // 1 MB
+const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
+const MAX_DIR_ENTRIES: usize = 500;
+
+#[derive(Serialize)]
+pub struct DirEntry {
+    pub name: String,
+    pub is_dir: bool,
+    pub size: u64,
+}
+
+#[derive(Serialize)]
+pub struct DirListing {
+    pub path: String,
+    pub entries: Vec<DirEntry>,
+    pub truncated: bool,
+}
 
 /// Resolve a relative path within a working directory, ensuring the result
 /// does not escape the working directory via `..`, absolute paths, or
@@ -12,7 +33,6 @@ use std::path::{Path, PathBuf};
 ///   - `workdir` itself cannot be canonicalized
 ///   - The resolved path escapes the working directory
 ///   - The path is otherwise malformed
-#[allow(dead_code)] // used starting in step 5
 pub fn resolve_in_workdir(workdir: &Path, rel_path: &str) -> Result<PathBuf, String> {
     if rel_path.is_empty() || rel_path == "." {
         return workdir
@@ -69,6 +89,206 @@ fn resolve_nonexistent(candidate: &Path) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|e| format!("Parent directory does not exist: {}", e))?;
     Ok(parent_canonical.join(file_name))
+}
+
+// --- Tauri commands ---
+
+fn workdir_path(workdir: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(workdir);
+    if !path.is_dir() {
+        return Err(format!("Working directory does not exist: {}", workdir));
+    }
+    Ok(path)
+}
+
+#[tauri::command]
+pub async fn fs_list_dir(workdir: String, rel_path: String) -> Result<DirListing, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_dir() {
+        return Err(format!("Not a directory: {}", rel_path));
+    }
+
+    let mut entries = Vec::new();
+    let mut truncated = false;
+    let mut read_dir = fs::read_dir(&resolved)
+        .await
+        .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+    while let Some(entry) = read_dir
+        .next_entry()
+        .await
+        .map_err(|e| format!("Failed to read entry: {}", e))?
+    {
+        if entries.len() >= MAX_DIR_ENTRIES {
+            truncated = true;
+            break;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Skip hidden files and common noise
+        if name.starts_with('.') {
+            continue;
+        }
+        let metadata = match entry.metadata().await {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        entries.push(DirEntry {
+            name,
+            is_dir: metadata.is_dir(),
+            size: metadata.len(),
+        });
+    }
+
+    // Sort: directories first, then alphabetical
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    let display_path = resolved
+        .strip_prefix(workdir.canonicalize().unwrap_or(workdir.clone()))
+        .unwrap_or(&resolved)
+        .to_string_lossy()
+        .to_string();
+
+    Ok(DirListing {
+        path: if display_path.is_empty() {
+            ".".to_string()
+        } else {
+            display_path
+        },
+        entries,
+        truncated,
+    })
+}
+
+#[tauri::command]
+pub async fn fs_read_text(workdir: String, rel_path: String) -> Result<String, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    let metadata = fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_TEXT_READ_BYTES {
+        return Err(format!(
+            "File too large ({} bytes). Maximum text read is {} bytes. Read it in chunks or use a format-specific tool.",
+            metadata.len(),
+            MAX_TEXT_READ_BYTES
+        ));
+    }
+
+    let bytes = fs::read(&resolved)
+        .await
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    // Reject binary files — if there's a NUL byte in the first 8 KB, treat as binary
+    let sample_len = bytes.len().min(8192);
+    if bytes[..sample_len].contains(&0) {
+        return Err("File appears to be binary. Use a format-specific tool (fs_read_pdf, fs_read_image, etc.)".to_string());
+    }
+
+    String::from_utf8(bytes).map_err(|e| format!("File is not valid UTF-8: {}", e))
+}
+
+#[tauri::command]
+pub async fn fs_write_text(
+    workdir: String,
+    rel_path: String,
+    content: String,
+    overwrite: Option<bool>,
+) -> Result<(), String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if content.len() > MAX_WRITE_BYTES {
+        return Err(format!(
+            "Content too large ({} bytes). Maximum write is {} bytes.",
+            content.len(),
+            MAX_WRITE_BYTES
+        ));
+    }
+
+    let allow_overwrite = overwrite.unwrap_or(true);
+    if !allow_overwrite && resolved.exists() {
+        return Err(format!(
+            "File already exists: {}. Set overwrite=true to replace it.",
+            rel_path
+        ));
+    }
+
+    // Create parent directories if needed (still within workdir — the
+    // sandbox check already verified the full path is inside)
+    if let Some(parent) = resolved.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
+        }
+    }
+
+    fs::write(&resolved, content)
+        .await
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fs_edit_text(
+    workdir: String,
+    rel_path: String,
+    old_str: String,
+    new_str: String,
+) -> Result<(), String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    let metadata = fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_TEXT_READ_BYTES {
+        return Err(format!(
+            "File too large to edit ({} bytes). Maximum is {} bytes.",
+            metadata.len(),
+            MAX_TEXT_READ_BYTES
+        ));
+    }
+
+    let content = fs::read_to_string(&resolved)
+        .await
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    // Find all occurrences. old_str must appear exactly once to prevent
+    // ambiguous edits.
+    let occurrences = content.matches(&old_str).count();
+    if occurrences == 0 {
+        return Err(format!("old_str not found in {}", rel_path));
+    }
+    if occurrences > 1 {
+        return Err(format!(
+            "old_str appears {} times in {}. It must be unique — include more surrounding context.",
+            occurrences, rel_path
+        ));
+    }
+
+    let new_content = content.replacen(&old_str, &new_str, 1);
+    fs::write(&resolved, new_content)
+        .await
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+    Ok(())
 }
 
 #[cfg(test)]

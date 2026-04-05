@@ -12,13 +12,28 @@ function looksLikeReviewQuery(content: string): boolean {
 	return REVIEW_PATTERNS.test(content);
 }
 
-function buildSystemPrompt(): ChatMessage {
+function buildSystemPrompt(workingDir: string | null): ChatMessage {
 	const today = new Date().toLocaleDateString('en-US', {
 		weekday: 'long',
 		year: 'numeric',
 		month: 'long',
 		day: 'numeric'
 	});
+
+	const fsSection = workingDir
+		? `
+
+FILESYSTEM ACCESS:
+- A working directory is active: ${workingDir}
+- You have filesystem tools to read and write files in this directory.
+- Use fs_list_dir first (with path ".") to see what files are available before reading specific files.
+- Use fs_read_text for text files (txt, md, csv, json, sh, yml, etc.).
+- Only use filesystem tools when the user explicitly asks you to work with files. Do not proactively read files.
+- You can create text files with fs_write_text (including bash scripts, markdown, csv, json).
+- Use fs_edit_text for small targeted changes — it replaces exactly one occurrence of old_str with new_str.
+- You cannot delete or move files. If the user wants to remove a file, tell them to do it manually.
+- When creating bash or shell scripts, include a shebang line (#!/bin/bash or #!/usr/bin/env bash) and remind the user they must chmod +x and run the script themselves — you cannot execute scripts.`
+		: '';
 
 	return {
 		role: 'system',
@@ -42,7 +57,7 @@ SEARCH BEHAVIOR:
 - Use the user's exact terminology in your search query.
 - Use fetch_url on 2-4 of the most relevant results to read the full content before answering.
 - Only cite sources you actually fetched and read. Do not cite URLs you only saw in search snippets.
-- For product reviews, comparisons, or "best of" questions: include community sources like Reddit alongside review sites. Many review sites are paid advertising — Reddit has real user opinions worth including.
+- For product reviews, comparisons, or "best of" questions: include community sources like Reddit alongside review sites. Many review sites are paid advertising — Reddit has real user opinions worth including.${fsSection}
 
 Be concise, accurate, and helpful. When in doubt, search.
 
@@ -449,10 +464,15 @@ export async function sendMessage(content: string): Promise<void> {
 	abortController = new AbortController();
 
 	try {
+		const currentWorkingDir = conversation.workingDir;
+
 		// Strip tool-related messages from previous turns to keep context clean.
 		// The agent loop adds its own tool messages for the current turn.
 		const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
-		const messagesForApi: ChatMessage[] = [buildSystemPrompt(), ...historyMessages];
+		const messagesForApi: ChatMessage[] = [
+			buildSystemPrompt(currentWorkingDir),
+			...historyMessages
+		];
 
 		// Augment the last user message with search hints based on context.
 		const lastMsg = messagesForApi[messagesForApi.length - 1];
@@ -503,6 +523,7 @@ export async function sendMessage(content: string): Promise<void> {
 
 		await runAgentLoop({
 			messages: messagesForApi,
+			workingDir: currentWorkingDir,
 			maxIterations: exhaustiveResearch ? 25 : 10,
 			signal: abortController.signal,
 			onUsageUpdate: (u: Usage) => {

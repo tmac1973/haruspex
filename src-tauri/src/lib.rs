@@ -81,6 +81,10 @@ pub fn run() {
             db::db_delete_conversation,
             db::db_clear_all_conversations,
             db::db_replace_messages,
+            fs_tools::fs_list_dir,
+            fs_tools::fs_read_text,
+            fs_tools::fs_write_text,
+            fs_tools::fs_edit_text,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
