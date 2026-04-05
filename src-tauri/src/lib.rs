@@ -1,5 +1,6 @@
 mod audio;
 mod db;
+mod fs_tools;
 mod models;
 mod proxy;
 mod server;
