@@ -709,17 +709,38 @@ fn build_pdf(lines: &[&str]) -> Result<Vec<u8>, String> {
 
     let top_y_mm = page_height_mm - margin_mm;
     let bottom_y_mm = margin_mm;
+    let margin_pt = margin_mm * mm_to_pt;
 
     let mut all_pages: Vec<PdfPage> = Vec::new();
     let mut current_ops: Vec<Op> = Vec::new();
     let mut cursor_y_mm = top_y_mm;
 
-    // Start the first page
-    current_ops.push(Op::SaveGraphicsState);
-    current_ops.push(Op::StartTextSection);
-    current_ops.push(Op::SetTextCursor {
-        pos: Point::new(Mm(margin_mm), Mm(cursor_y_mm)),
-    });
+    // Helper: emit page-start ops. `Op::SetTextCursor` serializes to the PDF
+    // `Td` operator which is RELATIVE, so we can't use it for absolute
+    // positioning. `Op::SetTextMatrix(Translate(x, y))` serializes to `Tm`
+    // which is absolute in page coordinates (origin at bottom-left).
+    fn start_page_ops(ops: &mut Vec<printpdf::Op>) {
+        use printpdf::*;
+        ops.push(Op::SaveGraphicsState);
+        ops.push(Op::StartTextSection);
+        // Black fill so text is visible (default is actually black but be explicit)
+        ops.push(Op::SetFillColor {
+            col: Color::Rgb(Rgb {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                icc_profile: None,
+            }),
+        });
+    }
+
+    fn finish_page_ops(ops: &mut Vec<printpdf::Op>) {
+        use printpdf::*;
+        ops.push(Op::EndTextSection);
+        ops.push(Op::RestoreGraphicsState);
+    }
+
+    start_page_ops(&mut current_ops);
 
     let mut last_font: Option<(f32, bool)> = None;
 
@@ -737,19 +758,14 @@ fn build_pdf(lines: &[&str]) -> Result<Vec<u8>, String> {
         for wrapped_line in wrapped {
             // Page break check
             if cursor_y_mm - line_height_mm < bottom_y_mm {
-                current_ops.push(Op::EndTextSection);
-                current_ops.push(Op::RestoreGraphicsState);
+                finish_page_ops(&mut current_ops);
                 all_pages.push(PdfPage::new(
                     Mm(page_width_mm),
                     Mm(page_height_mm),
                     std::mem::take(&mut current_ops),
                 ));
                 cursor_y_mm = top_y_mm;
-                current_ops.push(Op::SaveGraphicsState);
-                current_ops.push(Op::StartTextSection);
-                current_ops.push(Op::SetTextCursor {
-                    pos: Point::new(Mm(margin_mm), Mm(cursor_y_mm)),
-                });
+                start_page_ops(&mut current_ops);
                 last_font = None;
             }
 
@@ -767,29 +783,27 @@ fn build_pdf(lines: &[&str]) -> Result<Vec<u8>, String> {
                 current_ops.push(Op::SetLineHeight {
                     lh: Pt(font_pt * 1.2),
                 });
-                current_ops.push(Op::SetTextCursor {
-                    pos: Point::new(Mm(margin_mm), Mm(cursor_y_mm)),
-                });
                 last_font = Some((font_pt, is_bold));
             }
+
+            // Absolute text position via Tm. We subtract the font size so the
+            // baseline sits at the top of the line slot (text in PDF is drawn
+            // from the baseline upward).
+            let baseline_pt = (cursor_y_mm - line_height_mm) * mm_to_pt + (font_pt * 0.2);
+            current_ops.push(Op::SetTextMatrix {
+                matrix: TextMatrix::Translate(Pt(margin_pt), Pt(baseline_pt)),
+            });
 
             current_ops.push(Op::ShowText {
                 items: vec![TextItem::Text(wrapped_line)],
             });
             cursor_y_mm -= line_height_mm;
-
-            if cursor_y_mm > bottom_y_mm {
-                current_ops.push(Op::SetTextCursor {
-                    pos: Point::new(Mm(margin_mm), Mm(cursor_y_mm)),
-                });
-            }
         }
 
         cursor_y_mm -= spacing_after_pt / mm_to_pt;
     }
 
-    current_ops.push(Op::EndTextSection);
-    current_ops.push(Op::RestoreGraphicsState);
+    finish_page_ops(&mut current_ops);
     all_pages.push(PdfPage::new(
         Mm(page_width_mm),
         Mm(page_height_mm),
