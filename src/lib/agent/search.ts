@@ -145,6 +145,24 @@ async function executeFsReadImage(
 	}
 }
 
+async function executeFsReadPdfPages(
+	workdir: string,
+	relPath: string,
+	pendingImages: Array<{ path: string; dataUrl: string }>
+): Promise<string> {
+	try {
+		// Dynamic import so PDF.js (and its worker) is only loaded when actually used
+		const { renderPdfPages } = await import('$lib/agent/pdf-render');
+		const pages = await renderPdfPages(workdir, relPath);
+		for (let i = 0; i < pages.length; i++) {
+			pendingImages.push({ path: `${relPath}#page${i + 1}`, dataUrl: pages[i] });
+		}
+		return `Rendered ${pages.length} page${pages.length === 1 ? '' : 's'} of ${relPath} as images. You can now see the pages in your next response — read form fields, labels, values, and layout directly.`;
+	} catch (e) {
+		return JSON.stringify({ error: `fs_read_pdf_pages failed: ${e}` });
+	}
+}
+
 async function executeFsWriteText(
 	workdir: string,
 	relPath: string,
@@ -210,6 +228,10 @@ export async function executeTool(
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			if (!pendingImages) return JSON.stringify({ error: 'Images not supported in this context' });
 			return executeFsReadImage(workingDir, args.path as string, pendingImages);
+		case 'fs_read_pdf_pages':
+			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
+			if (!pendingImages) return JSON.stringify({ error: 'Images not supported in this context' });
+			return executeFsReadPdfPages(workingDir, args.path as string, pendingImages);
 		case 'fs_write_text':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsWriteText(

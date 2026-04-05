@@ -28,7 +28,7 @@ FILESYSTEM ACCESS:
 - You have filesystem tools to read and write files in this directory.
 - Use fs_list_dir first (with path ".") to see what files are available before reading specific files.
 - Use fs_read_text for text files (txt, md, csv, json, sh, yml, etc.).
-- Use fs_read_pdf for PDF files — it extracts all text content. If a PDF has no text layer (scanned document), this will error.
+- Use fs_read_pdf for simple text-based PDFs — fast and efficient. For form PDFs (tax forms like W-2, 1040, invoices, receipts, applications), scanned documents, or any PDF where fs_read_pdf produced garbled or incomplete output, use fs_read_pdf_pages instead. fs_read_pdf_pages renders each page as an image so you can read it visually — this handles form layouts, checkboxes, and custom fonts correctly.
 - Use fs_read_docx for Microsoft Word (.docx) files.
 - Use fs_read_xlsx for Excel spreadsheets (.xlsx) — returns CSV-formatted text. Specify the sheet name if the workbook has multiple sheets.
 - Use fs_read_image for image files (png, jpg, webp). After calling it, the image becomes part of your context and you can see it with your vision capability — describe it or answer questions about it in your next response.
@@ -550,6 +550,7 @@ export async function sendMessage(content: string): Promise<void> {
 						break;
 					case 'fs_read_text':
 					case 'fs_read_pdf':
+					case 'fs_read_pdf_pages':
 					case 'fs_read_docx':
 					case 'fs_read_image':
 					case 'fs_edit_text':

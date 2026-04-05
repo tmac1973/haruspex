@@ -502,6 +502,43 @@ pub async fn fs_write_xlsx(
     Ok(())
 }
 
+/// Return the raw bytes of a PDF file as base64, for rendering via PDF.js
+/// in the frontend. Sandboxed like all fs commands.
+#[tauri::command]
+pub async fn fs_read_pdf_bytes(workdir: String, rel_path: String) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    let metadata = fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_PDF_READ_BYTES {
+        return Err(format!(
+            "PDF too large ({} bytes). Maximum is {} bytes.",
+            metadata.len(),
+            MAX_PDF_READ_BYTES
+        ));
+    }
+
+    let bytes = fs::read(&resolved)
+        .await
+        .map_err(|e| format!("Failed to read PDF: {}", e))?;
+
+    // Verify it looks like a PDF (starts with %PDF)
+    if bytes.len() < 4 || &bytes[..4] != b"%PDF" {
+        return Err("File does not appear to be a valid PDF".to_string());
+    }
+
+    Ok(B64.encode(&bytes))
+}
+
 #[tauri::command]
 pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, String> {
     let workdir = workdir_path(&workdir)?;

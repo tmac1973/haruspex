@@ -28,6 +28,8 @@
 				return `Reading: ${query}`;
 			case 'fs_read_pdf':
 				return `Reading PDF: ${query}`;
+			case 'fs_read_pdf_pages':
+				return `Rendering PDF pages: ${query}`;
 			case 'fs_read_docx':
 				return `Reading docx: ${query}`;
 			case 'fs_read_xlsx':

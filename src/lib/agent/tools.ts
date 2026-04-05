@@ -159,7 +159,25 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_read_pdf',
 			description:
-				'Extract text content from a PDF file in the working directory. Returns the text from all pages. If the PDF is a scanned document without a text layer, this will fail — use fs_read_image on each page image instead (not yet supported for inline PDF pages).',
+				'Extract text content from a PDF file in the working directory. Fast but only works for PDFs with a proper text layer. For form PDFs (W-2, 1040, IRS forms, etc.), scanned documents, or when text extraction produces garbled output, use fs_read_pdf_pages instead to read the PDF visually.',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path to the PDF within the working directory.'
+					}
+				},
+				required: ['path']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'fs_read_pdf_pages',
+			description:
+				'Render each page of a PDF as an image so you can see it with your vision capability. Use this for form PDFs (tax forms, applications, receipts, etc.), scanned documents, or any PDF where fs_read_pdf gave garbled or incomplete output. Much slower than fs_read_pdf but handles complex layouts correctly. After calling this, the pages appear as images in your context and you can read form fields, labels, values, etc. directly.',
 			parameters: {
 				type: 'object',
 				properties: {
