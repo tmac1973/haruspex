@@ -536,10 +536,41 @@ export async function sendMessage(content: string): Promise<void> {
 				updateContextUsage(u, getSettings().contextSize);
 			},
 			onToolStart: (call) => {
-				const query =
-					call.name === 'web_search'
-						? (call.arguments.query as string)
-						: (call.arguments.url as string);
+				// Extract a human-readable label for each tool based on its args
+				let query = '';
+				switch (call.name) {
+					case 'web_search':
+						query = (call.arguments.query as string) || '';
+						break;
+					case 'fetch_url':
+						query = (call.arguments.url as string) || '';
+						break;
+					case 'fs_list_dir':
+						query = (call.arguments.path as string) || '.';
+						break;
+					case 'fs_read_text':
+					case 'fs_read_pdf':
+					case 'fs_read_docx':
+					case 'fs_read_image':
+					case 'fs_edit_text':
+						query = (call.arguments.path as string) || '';
+						break;
+					case 'fs_read_xlsx': {
+						const path = (call.arguments.path as string) || '';
+						const sheet = call.arguments.sheet as string | undefined;
+						query = sheet ? `${path} (${sheet})` : path;
+						break;
+					}
+					case 'fs_write_text':
+					case 'fs_write_docx':
+						query = (call.arguments.path as string) || '';
+						break;
+					case 'fs_write_xlsx':
+						query = (call.arguments.path as string) || '';
+						break;
+					default:
+						query = JSON.stringify(call.arguments).slice(0, 60);
+				}
 				searchSteps = [
 					...searchSteps,
 					{
