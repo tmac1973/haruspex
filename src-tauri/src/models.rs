@@ -440,37 +440,50 @@ pub fn detect_hardware() -> HardwareInfo {
     // GPU detection
     let gpu = detect_gpu();
 
-    // Use VRAM if detected, otherwise fall back to available system RAM
-    let effective_vram = gpu.vram_mb.unwrap_or(available_ram_mb);
-
-    // For integrated GPUs, recommend the smaller 4B model since inference
-    // will be slow and VRAM is shared with system memory.
+    // Recommendation logic:
+    // - Integrated GPU → always 4B (slow inference, shared memory)
+    // - Unknown GPU name AND no VRAM detected → conservative 4B (safer default)
+    // - Known discrete GPU with VRAM → scale by VRAM
+    // - Known discrete GPU with unknown VRAM → scale by system RAM as proxy
     let recommended_quant = if gpu.integrated {
-        if effective_vram < 4096 {
+        if gpu.vram_mb.unwrap_or(available_ram_mb) < 4096 {
             "Qwen3.5-4B-Q4_K_M"
         } else {
             "Qwen3.5-4B-Q6_K"
         }
-    } else if effective_vram < 6144 {
+    } else if gpu.name.is_none() && gpu.vram_mb.is_none() {
+        // Detection failed entirely — default to the smaller model to avoid
+        // recommending a large model on a system that can't actually run it.
         "Qwen3.5-4B-Q6_K"
-    } else if effective_vram < 8192 {
-        "Qwen3.5-9B-Q4_K_M"
-    } else if effective_vram < 12288 {
-        "Qwen3.5-9B-Q5_K_M"
-    } else if effective_vram < 16384 {
-        "Qwen3.5-9B-Q6_K"
     } else {
-        "Qwen3.5-9B-Q8_0"
+        let effective_vram = gpu.vram_mb.unwrap_or(available_ram_mb);
+        if effective_vram < 6144 {
+            "Qwen3.5-4B-Q6_K"
+        } else if effective_vram < 8192 {
+            "Qwen3.5-9B-Q4_K_M"
+        } else if effective_vram < 12288 {
+            "Qwen3.5-9B-Q5_K_M"
+        } else if effective_vram < 16384 {
+            "Qwen3.5-9B-Q6_K"
+        } else {
+            "Qwen3.5-9B-Q8_0"
+        }
     };
 
-    // Context size recommendation based on effective memory
-    let recommended_context_size = if effective_vram < 6144 {
+    // Context size recommendation based on effective memory.
+    // Integrated GPUs and unknown hardware get the smallest context.
+    let ctx_vram = if gpu.integrated || (gpu.name.is_none() && gpu.vram_mb.is_none()) {
+        4096 // force smallest tier
+    } else {
+        gpu.vram_mb.unwrap_or(available_ram_mb)
+    };
+    let recommended_context_size = if ctx_vram < 6144 {
         8192 // 8K for integrated/low VRAM
-    } else if effective_vram < 8192 {
+    } else if ctx_vram < 8192 {
         16384 // 16K for tight VRAM
-    } else if effective_vram < 12288 {
+    } else if ctx_vram < 12288 {
         32768 // 32K for 8-12GB
-    } else if effective_vram < 24576 {
+    } else if ctx_vram < 24576 {
         65536 // 64K for 12-24GB
     } else {
         131072 // 128K for 24GB+
@@ -629,40 +642,80 @@ fn detect_gpu() -> GpuInfo {
 
 #[cfg(target_os = "windows")]
 fn get_windows_gpu_info() -> (Option<String>, Option<u64>) {
-    // Use WMIC to query GPU name and VRAM
-    if let Ok(output) = std::process::Command::new("wmic")
-        .args([
-            "path",
-            "win32_VideoController",
-            "get",
-            "Name,AdapterRAM",
-            "/format:csv",
-        ])
-        .output()
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut best_name = None;
-        let mut best_vram: u64 = 0;
-        for line in stdout.lines().skip(1) {
-            let fields: Vec<&str> = line.split(',').collect();
-            // CSV format: Node,AdapterRAM,Name
-            if fields.len() >= 3 {
-                let vram = fields[1].trim().parse::<u64>().unwrap_or(0);
-                let name = fields[2].trim().to_string();
-                if !name.is_empty() && vram >= best_vram {
-                    best_vram = vram;
-                    best_name = Some(name);
-                }
-            }
-        }
-        let vram_mb = if best_vram > 0 {
-            Some(best_vram / 1_048_576)
-        } else {
-            None
-        };
-        return (best_name, vram_mb);
+    // Use PowerShell's Get-CimInstance — wmic is deprecated/removed in Win11 24H2+.
+    // We output as JSON for reliable parsing. AdapterRAM from WMI is a 32-bit value
+    // that caps at 4 GB, so we treat it as unreliable and only use it as a floor.
+    let ps_script = "Get-CimInstance Win32_VideoController | \
+        Select-Object Name, AdapterRAM | \
+        ConvertTo-Json -Compress";
+
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+        .output();
+
+    let Ok(output) = output else {
+        log::warn!("Failed to run powershell for GPU detection");
+        return (None, None);
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() {
+        return (None, None);
     }
-    (None, None)
+
+    // Parse JSON — could be a single object or an array
+    let json: serde_json::Value = match serde_json::from_str(trimmed) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("Failed to parse GPU info JSON: {}", e);
+            return (None, None);
+        }
+    };
+
+    let controllers: Vec<&serde_json::Value> = if json.is_array() {
+        json.as_array()
+            .map(|a| a.iter().collect())
+            .unwrap_or_default()
+    } else {
+        vec![&json]
+    };
+
+    // Pick the controller with the highest AdapterRAM, preferring non-Microsoft
+    // virtual adapters. Fall back to the first one with a name.
+    let mut best_name: Option<String> = None;
+    let mut best_vram: u64 = 0;
+    for controller in &controllers {
+        let name = controller
+            .get("Name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if name.is_empty() || name.to_lowercase().contains("basic display") {
+            continue;
+        }
+        let vram = controller
+            .get("AdapterRAM")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        // Prefer the controller with the most reported VRAM, but always at least
+        // record a name if we haven't found one yet.
+        if best_name.is_none() || vram > best_vram {
+            best_name = Some(name);
+            best_vram = vram;
+        }
+    }
+
+    // WMI AdapterRAM caps at ~4 GB due to 32-bit field. Only return VRAM if it
+    // looks plausible (> 0 and <= 4 GB — anything higher is unreliable anyway).
+    let vram_mb = if best_vram > 0 && best_vram <= 4_294_967_295 {
+        Some(best_vram / 1_048_576)
+    } else {
+        None
+    };
+
+    (best_name, vram_mb)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
