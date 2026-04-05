@@ -40,6 +40,8 @@
 				return `Writing: ${query}`;
 			case 'fs_write_docx':
 				return `Writing docx: ${query}`;
+			case 'fs_write_pdf':
+				return `Writing pdf: ${query}`;
 			case 'fs_write_xlsx':
 				return `Writing xlsx: ${query}`;
 			case 'fs_edit_text':

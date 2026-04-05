@@ -98,6 +98,7 @@ pub fn run() {
             fs_tools::fs_read_pdf_bytes,
             fs_tools::fs_write_docx,
             fs_tools::fs_write_xlsx,
+            fs_tools::fs_write_pdf,
             app_log::get_app_logs,
         ])
         .build(tauri::generate_context!())

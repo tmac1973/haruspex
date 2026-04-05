@@ -618,6 +618,225 @@ fn escape_xml(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+/// Build a simple PDF from markdown-ish text. Each non-empty line
+/// becomes a paragraph. Lines starting with `# `, `## `, or `### ` are
+/// rendered as headings. Long lines are word-wrapped to fit the page
+/// width, and content flows across multiple pages when needed.
+fn build_pdf(lines: &[&str]) -> Result<Vec<u8>, String> {
+    use printpdf::*;
+
+    let mut doc = PdfDocument::new("Document");
+
+    // US Letter: 215.9 mm × 279.4 mm. Keep a 20 mm margin on all sides.
+    let page_width_mm = 215.9_f32;
+    let page_height_mm = 279.4_f32;
+    let margin_mm = 20.0_f32;
+    let content_width_mm = page_width_mm - (margin_mm * 2.0);
+
+    // Font sizes (points)
+    let body_pt = 11.0_f32;
+    let h1_pt = 20.0_f32;
+    let h2_pt = 16.0_f32;
+    let h3_pt = 13.0_f32;
+
+    // Approximate character width in points for Helvetica at given size.
+    fn char_width_pt(font_pt: f32) -> f32 {
+        font_pt * 0.55
+    }
+
+    // Convert mm to Pt (1 mm ≈ 2.8346 pt)
+    let mm_to_pt = 2.834_645_7_f32;
+    let content_width_pt = content_width_mm * mm_to_pt;
+
+    fn wrap_text(text: &str, font_pt: f32, max_width_pt: f32) -> Vec<String> {
+        let cw = char_width_pt(font_pt);
+        let max_chars = (max_width_pt / cw).floor() as usize;
+        if max_chars == 0 {
+            return vec![text.to_string()];
+        }
+        let mut out = Vec::new();
+        let mut current = String::new();
+        for word in text.split_whitespace() {
+            if word.len() > max_chars {
+                if !current.is_empty() {
+                    out.push(std::mem::take(&mut current));
+                }
+                let mut w = word;
+                while w.len() > max_chars {
+                    let (head, tail) = w.split_at(max_chars);
+                    out.push(head.to_string());
+                    w = tail;
+                }
+                current.push_str(w);
+                continue;
+            }
+            let candidate_len = if current.is_empty() {
+                word.len()
+            } else {
+                current.len() + 1 + word.len()
+            };
+            if candidate_len > max_chars {
+                out.push(std::mem::take(&mut current));
+                current.push_str(word);
+            } else {
+                if !current.is_empty() {
+                    current.push(' ');
+                }
+                current.push_str(word);
+            }
+        }
+        if !current.is_empty() {
+            out.push(current);
+        }
+        if out.is_empty() {
+            out.push(String::new());
+        }
+        out
+    }
+
+    fn classify(line: &str, h1: f32, h2: f32, h3: f32, body: f32) -> (String, f32, f32, bool) {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("# ") {
+            (rest.to_string(), h1, h1 * 0.5, true)
+        } else if let Some(rest) = trimmed.strip_prefix("## ") {
+            (rest.to_string(), h2, h2 * 0.5, true)
+        } else if let Some(rest) = trimmed.strip_prefix("### ") {
+            (rest.to_string(), h3, h3 * 0.5, true)
+        } else {
+            (line.to_string(), body, body * 0.4, false)
+        }
+    }
+
+    let top_y_mm = page_height_mm - margin_mm;
+    let bottom_y_mm = margin_mm;
+
+    let mut all_pages: Vec<PdfPage> = Vec::new();
+    let mut current_ops: Vec<Op> = Vec::new();
+    let mut cursor_y_mm = top_y_mm;
+
+    // Start the first page
+    current_ops.push(Op::SaveGraphicsState);
+    current_ops.push(Op::StartTextSection);
+    current_ops.push(Op::SetTextCursor {
+        pos: Point::new(Mm(margin_mm), Mm(cursor_y_mm)),
+    });
+
+    let mut last_font: Option<(f32, bool)> = None;
+
+    for line in lines {
+        if line.trim().is_empty() {
+            cursor_y_mm -= 4.0;
+            continue;
+        }
+
+        let (text, font_pt, spacing_after_pt, is_bold) =
+            classify(line, h1_pt, h2_pt, h3_pt, body_pt);
+        let wrapped = wrap_text(&text, font_pt, content_width_pt);
+        let line_height_mm = (font_pt * 1.2) / mm_to_pt;
+
+        for wrapped_line in wrapped {
+            // Page break check
+            if cursor_y_mm - line_height_mm < bottom_y_mm {
+                current_ops.push(Op::EndTextSection);
+                current_ops.push(Op::RestoreGraphicsState);
+                all_pages.push(PdfPage::new(
+                    Mm(page_width_mm),
+                    Mm(page_height_mm),
+                    std::mem::take(&mut current_ops),
+                ));
+                cursor_y_mm = top_y_mm;
+                current_ops.push(Op::SaveGraphicsState);
+                current_ops.push(Op::StartTextSection);
+                current_ops.push(Op::SetTextCursor {
+                    pos: Point::new(Mm(margin_mm), Mm(cursor_y_mm)),
+                });
+                last_font = None;
+            }
+
+            // Update font if changed or at start of page
+            if last_font != Some((font_pt, is_bold)) {
+                let font = if is_bold {
+                    PdfFontHandle::Builtin(BuiltinFont::HelveticaBold)
+                } else {
+                    PdfFontHandle::Builtin(BuiltinFont::Helvetica)
+                };
+                current_ops.push(Op::SetFont {
+                    font,
+                    size: Pt(font_pt),
+                });
+                current_ops.push(Op::SetLineHeight {
+                    lh: Pt(font_pt * 1.2),
+                });
+                current_ops.push(Op::SetTextCursor {
+                    pos: Point::new(Mm(margin_mm), Mm(cursor_y_mm)),
+                });
+                last_font = Some((font_pt, is_bold));
+            }
+
+            current_ops.push(Op::ShowText {
+                items: vec![TextItem::Text(wrapped_line)],
+            });
+            cursor_y_mm -= line_height_mm;
+
+            if cursor_y_mm > bottom_y_mm {
+                current_ops.push(Op::SetTextCursor {
+                    pos: Point::new(Mm(margin_mm), Mm(cursor_y_mm)),
+                });
+            }
+        }
+
+        cursor_y_mm -= spacing_after_pt / mm_to_pt;
+    }
+
+    current_ops.push(Op::EndTextSection);
+    current_ops.push(Op::RestoreGraphicsState);
+    all_pages.push(PdfPage::new(
+        Mm(page_width_mm),
+        Mm(page_height_mm),
+        current_ops,
+    ));
+
+    let bytes = doc
+        .with_pages(all_pages)
+        .save(&PdfSaveOptions::default(), &mut Vec::new());
+
+    Ok(bytes)
+}
+
+#[tauri::command]
+pub async fn fs_write_pdf(
+    workdir: String,
+    rel_path: String,
+    content: String,
+) -> Result<(), String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if content.len() > MAX_WRITE_BYTES {
+        return Err(format!("Content too large ({} bytes)", content.len()));
+    }
+
+    let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let lines: Vec<&str> = content.lines().collect();
+        build_pdf(&lines)
+    })
+    .await
+    .map_err(|e| format!("PDF build task failed: {}", e))??;
+
+    if let Some(parent) = resolved.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
+        }
+    }
+
+    fs::write(&resolved, bytes)
+        .await
+        .map_err(|e| format!("Failed to write PDF: {}", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn fs_write_docx(
     workdir: String,

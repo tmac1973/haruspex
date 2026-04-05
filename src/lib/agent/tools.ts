@@ -216,6 +216,29 @@ const FS_TOOLS: ToolDefinition[] = [
 	{
 		type: 'function',
 		function: {
+			name: 'fs_write_pdf',
+			description:
+				'Create a PDF file in the working directory from text content. The content is split into paragraphs on newlines. Lines starting with # become Heading 1, ## become Heading 2, ### become Heading 3. Long lines are word-wrapped automatically and content flows across pages (US Letter, 20mm margins, Helvetica). Use this for printable reports and documents; use fs_write_docx when the user wants an editable Word document.',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path for the new .pdf file.'
+					},
+					content: {
+						type: 'string',
+						description:
+							'Text content for the document. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings.'
+					}
+				},
+				required: ['path', 'content']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'fs_write_xlsx',
 			description:
 				'Create an Excel spreadsheet (.xlsx) file in the working directory. Provide one or more sheets, each with a name and a 2D array of rows. Numeric strings are written as numbers; everything else is written as text.',

@@ -113,6 +113,19 @@ async function executeFsWriteDocx(
 	}
 }
 
+async function executeFsWritePdf(
+	workdir: string,
+	relPath: string,
+	content: string
+): Promise<string> {
+	try {
+		await invoke('fs_write_pdf', { workdir, relPath, content });
+		return `Wrote pdf: ${relPath}`;
+	} catch (e) {
+		return JSON.stringify({ error: `fs_write_pdf failed: ${e}` });
+	}
+}
+
 interface XlsxSheet {
 	name: string;
 	rows: string[][];
@@ -260,6 +273,9 @@ export async function executeTool(
 		case 'fs_write_docx':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsWriteDocx(workingDir, args.path as string, args.content as string);
+		case 'fs_write_pdf':
+			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
+			return executeFsWritePdf(workingDir, args.path as string, args.content as string);
 		case 'fs_write_xlsx':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsWriteXlsx(workingDir, args.path as string, args.sheets as XlsxSheet[]);
