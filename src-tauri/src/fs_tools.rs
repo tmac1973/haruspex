@@ -42,9 +42,14 @@ fn pdfium_available() -> bool {
     *PDFIUM_AVAILABLE.get().unwrap_or(&false)
 }
 
-/// Extract text from a PDF using PDFium. Handles position-aware reading
-/// order, form fields, and custom fonts correctly — unlike pdf-extract.
-/// Returns Err if pdfium is unavailable or extraction fails.
+/// Extract text from a PDF using PDFium with position-aware layout
+/// reconstruction. PDFium's built-in `text.all()` returns characters in
+/// document order, which is NOT reading order for form PDFs (tax forms,
+/// invoices, etc.) — the text stream can be generated top-to-bottom in
+/// arbitrary order. We walk every character with its bounding box, group
+/// by vertical row (Y coordinate), then sort left-to-right within each
+/// row. This reconstructs the visual reading order and matches what
+/// `pdftotext -layout` produces.
 fn extract_pdf_with_pdfium(path: &Path) -> Result<String, String> {
     use pdfium_render::prelude::*;
 
@@ -52,26 +57,155 @@ fn extract_pdf_with_pdfium(path: &Path) -> Result<String, String> {
         return Err("pdfium unavailable".to_string());
     }
 
-    // Pdfium is a unit struct that uses the previously-initialized global bindings.
     let pdfium = Pdfium {};
     let document = pdfium
         .load_pdf_from_file(path, None)
         .map_err(|e| format!("Failed to open PDF: {}", e))?;
 
     let mut out = String::new();
+    let total_pages = document.pages().len();
+
     for (idx, page) in document.pages().iter().enumerate() {
         let page_text = page
             .text()
             .map_err(|e| format!("Failed to read page {}: {}", idx + 1, e))?;
-        let text = page_text.all();
-        if document.pages().len() > 1 {
+
+        if total_pages > 1 {
             out.push_str(&format!("--- Page {} ---\n", idx + 1));
         }
-        out.push_str(&text);
+
+        let reconstructed = reconstruct_page_layout(&page_text);
+        out.push_str(&reconstructed);
         out.push_str("\n\n");
     }
 
     Ok(out)
+}
+
+/// A single character with its position on the page.
+#[derive(Debug, Clone)]
+struct PositionedChar {
+    ch: char,
+    left: f32,
+    right: f32,
+    /// Vertical center of the char (PDF y-axis: bigger = higher on page)
+    y: f32,
+    height: f32,
+}
+
+/// Reconstruct visual reading order from a PdfPageText by grouping
+/// characters into rows by Y coordinate and sorting left-to-right
+/// within each row.
+fn reconstruct_page_layout(page_text: &pdfium_render::prelude::PdfPageText) -> String {
+    // Collect all positioned characters
+    let mut chars: Vec<PositionedChar> = Vec::new();
+    for pdf_char in page_text.chars().iter() {
+        let ch = match pdf_char.unicode_char() {
+            Some(c) => c,
+            None => continue,
+        };
+        // Skip newlines/control characters — we'll insert our own
+        if ch == '\n' || ch == '\r' {
+            continue;
+        }
+        let bounds = match pdf_char.loose_bounds() {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let top = bounds.top().value;
+        let bottom = bounds.bottom().value;
+        let left = bounds.left().value;
+        let right = bounds.right().value;
+        let height = (top - bottom).abs();
+        let y = (top + bottom) / 2.0;
+        chars.push(PositionedChar {
+            ch,
+            left,
+            right,
+            y,
+            height: if height > 0.0 { height } else { 10.0 },
+        });
+    }
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    // Sort by Y (descending: PDF y-axis has origin at bottom-left), then X
+    chars.sort_by(|a, b| {
+        b.y.partial_cmp(&a.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(
+                a.left
+                    .partial_cmp(&b.left)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
+    });
+
+    // Compute a line-height threshold from the median character height
+    let mut heights: Vec<f32> = chars.iter().map(|c| c.height).collect();
+    heights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median_height = heights[heights.len() / 2];
+    // Two characters are in the same row if their Y centers are within
+    // half the median character height.
+    let row_threshold = (median_height * 0.5).max(2.0);
+
+    // Group into rows. We scan Y-sorted characters and start a new row
+    // whenever the Y jump exceeds row_threshold.
+    let mut rows: Vec<Vec<PositionedChar>> = Vec::new();
+    let mut current_row: Vec<PositionedChar> = Vec::new();
+    let mut current_y = chars[0].y;
+
+    for c in chars {
+        if (current_y - c.y).abs() > row_threshold {
+            if !current_row.is_empty() {
+                rows.push(std::mem::take(&mut current_row));
+            }
+            current_y = c.y;
+        }
+        current_row.push(c);
+    }
+    if !current_row.is_empty() {
+        rows.push(current_row);
+    }
+
+    // Sort each row left-to-right, then emit with spacing based on
+    // horizontal gaps so form columns stay separated
+    let mut out = String::new();
+    for row in rows {
+        let mut row = row;
+        row.sort_by(|a, b| {
+            a.left
+                .partial_cmp(&b.left)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut last_right = f32::NEG_INFINITY;
+        let mut last_height = median_height;
+        for c in row {
+            let gap = c.left - last_right;
+            if last_right > f32::NEG_INFINITY {
+                // Large gaps become multiple spaces (preserves column
+                // structure for tabular data). Small gaps become a single
+                // space. Very small or zero gaps mean adjacent characters
+                // in the same word — no space.
+                let avg_char_width = last_height * 0.3;
+                if gap > avg_char_width * 2.0 {
+                    // Column break — use multiple spaces proportional to gap
+                    let spaces = ((gap / avg_char_width).min(12.0) as usize).max(2);
+                    out.push_str(&" ".repeat(spaces));
+                } else if gap > avg_char_width * 0.3 {
+                    out.push(' ');
+                }
+            }
+            out.push(c.ch);
+            last_right = c.right;
+            last_height = c.height;
+        }
+        out.push('\n');
+    }
+
+    out
 }
 
 // Size limits — see plan phase-09 "Size / safety limits"
