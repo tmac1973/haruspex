@@ -20,15 +20,17 @@ Haruspex uses your GPU for inference. While it is running, other GPU-intensive a
 
 - **Private by design** — all inference runs on your hardware, nothing is sent to the cloud
 - **Web research** — searches the web and reads pages to answer questions about current events
+- **Local file access (opt-in)** — select a working directory to let the model read and write files. Supports txt, md, csv, json, PDF, docx, xlsx, and images. The model can read documents, analyze images with its vision capability, and create reports, scripts, or spreadsheets as output.
 - **Voice input** — speak your questions via the built-in microphone button (powered by [whisper.cpp](https://github.com/ggml-org/whisper.cpp))
 - **Voice output** — listen to responses read aloud with natural-sounding voices (powered by [Kokoros](https://github.com/lucasjinreal/Kokoros))
 - **Audio device selection** — choose specific input/output audio devices in settings
+- **Vision** — analyze images using the model's built-in vision capability (via the mmproj projector bundled with Qwen 3.5)
 - **GPU accelerated** — Vulkan (Linux/Windows) and Metal (macOS) for fast inference
 - **First-run wizard** — detects your hardware, downloads a model, and gets you chatting in minutes
 - **Sidecar log viewer** — inspect LLM, TTS, and Whisper server logs from the toolbar for easy troubleshooting
 - **Dark mode** — system-aware theme with manual override
 - **Persistent conversations** — SQLite-backed chat history survives restarts
-- **Configurable** — context size, thinking mode, search provider, voice selection, response formatting
+- **Configurable** — context size, search provider, voice selection, response formatting
 
 ## Tech Stack
 

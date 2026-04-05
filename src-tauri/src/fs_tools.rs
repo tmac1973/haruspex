@@ -52,9 +52,7 @@ pub fn resolve_in_workdir(workdir: &Path, rel_path: &str) -> Result<PathBuf, Str
     let rel = Path::new(rel_path);
     if rel.is_absolute() {
         // Allow absolute paths only if they already point inside the workdir.
-        let canonical = rel
-            .canonicalize()
-            .or_else(|_| resolve_nonexistent(rel))?;
+        let canonical = rel.canonicalize().or_else(|_| resolve_nonexistent(rel))?;
         if !canonical.starts_with(&workdir_canonical) {
             return Err("path escapes working directory".to_string());
         }
@@ -304,9 +302,7 @@ fn extract_docx_text(path: &Path) -> Result<String, String> {
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|w| w == needle)
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 fn decode_xml_entities(s: &str) -> String {
@@ -331,7 +327,8 @@ fn build_docx(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         // [Content_Types].xml
         zip.start_file("[Content_Types].xml", options)
@@ -385,7 +382,8 @@ fn build_docx(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
 
         zip.start_file("word/document.xml", options)
             .map_err(|e| e.to_string())?;
-        zip.write_all(body_xml.as_bytes()).map_err(|e| e.to_string())?;
+        zip.write_all(body_xml.as_bytes())
+            .map_err(|e| e.to_string())?;
 
         zip.finish().map_err(|e| e.to_string())?;
     }
@@ -429,10 +427,7 @@ pub async fn fs_write_docx(
 
     // Split content into paragraphs on newlines, drop empty lines
     let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        let paragraphs: Vec<&str> = content
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .collect();
+        let paragraphs: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
         build_docx(&paragraphs)
     })
     .await
@@ -534,8 +529,8 @@ pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, 
         use image::ImageFormat;
         use std::io::Cursor;
 
-        let img = image::open(&resolved_clone)
-            .map_err(|e| format!("Failed to decode image: {}", e))?;
+        let img =
+            image::open(&resolved_clone).map_err(|e| format!("Failed to decode image: {}", e))?;
 
         // Resize if larger than MAX_IMAGE_DIMENSION on the longest side
         let (w, h) = (img.width(), img.height());

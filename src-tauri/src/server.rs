@@ -444,13 +444,10 @@ impl LlamaServer {
 
                             let mmproj_path = {
                                 use tauri::Manager;
-                                app.try_state::<crate::models::ModelManager>().and_then(
-                                    |mgr| {
-                                        mgr.find_mmproj_for_model(std::path::Path::new(
-                                            &model_path,
-                                        ))
-                                    },
-                                )
+                                app.try_state::<crate::models::ModelManager>()
+                                    .and_then(|mgr| {
+                                        mgr.find_mmproj_for_model(std::path::Path::new(&model_path))
+                                    })
                             };
 
                             let args = {
