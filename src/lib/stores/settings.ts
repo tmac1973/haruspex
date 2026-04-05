@@ -87,6 +87,16 @@ export function getThinkingModeArgs(): string[] {
 	return ['--reasoning', 'off'];
 }
 
+/**
+ * Returns chat_template_kwargs for the current thinking mode setting.
+ * Qwen 3 (and similar models) support enable_thinking as a template kwarg
+ * to actually disable reasoning blocks at the prompt level — the server's
+ * --reasoning flag only controls response parsing.
+ */
+export function getChatTemplateKwargs(): Record<string, unknown> {
+	return { enable_thinking: settings.thinkingMode };
+}
+
 export interface SamplingParams {
 	temperature: number;
 	top_p: number;

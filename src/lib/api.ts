@@ -42,6 +42,7 @@ export interface ChatCompletionOptions {
 	temperature?: number;
 	top_p?: number;
 	max_tokens?: number;
+	chat_template_kwargs?: Record<string, unknown>;
 }
 
 export interface Usage {
@@ -102,6 +103,9 @@ function buildRequestBody(options: ChatCompletionOptions): Record<string, unknow
 	}
 	if (options.max_tokens !== undefined) {
 		body.max_tokens = options.max_tokens;
+	}
+	if (options.chat_template_kwargs !== undefined) {
+		body.chat_template_kwargs = options.chat_template_kwargs;
 	}
 
 	return body;

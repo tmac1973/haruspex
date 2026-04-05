@@ -8,7 +8,7 @@ import {
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { AGENT_TOOLS } from '$lib/agent/tools';
 import { executeTool } from '$lib/agent/search';
-import { getSamplingParams } from '$lib/stores/settings';
+import { getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
 
 export interface SearchStep {
 	id: string;
@@ -41,13 +41,15 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 
 		// Non-streaming request to check for tool calls
 		const sampling = getSamplingParams();
+		const templateKwargs = getChatTemplateKwargs();
 		const response = await chatCompletion(
 			{
 				messages,
 				tools: AGENT_TOOLS,
 				temperature: sampling.temperature,
 				top_p: sampling.top_p,
-				max_tokens: 4096
+				max_tokens: 4096,
+				chat_template_kwargs: templateKwargs
 			},
 			signal
 		);
@@ -82,7 +84,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 					{
 						messages,
 						temperature: sampling.temperature,
-						top_p: sampling.top_p
+						top_p: sampling.top_p,
+						chat_template_kwargs: templateKwargs
 					},
 					signal
 				);
@@ -97,7 +100,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 						messages,
 						tools: AGENT_TOOLS,
 						temperature: sampling.temperature,
-						top_p: sampling.top_p
+						top_p: sampling.top_p,
+						chat_template_kwargs: templateKwargs
 					},
 					signal
 				);
@@ -150,7 +154,12 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	}
 	const sampling2 = getSamplingParams();
 	const stream = chatCompletionStream(
-		{ messages, temperature: sampling2.temperature, top_p: sampling2.top_p },
+		{
+			messages,
+			temperature: sampling2.temperature,
+			top_p: sampling2.top_p,
+			chat_template_kwargs: getChatTemplateKwargs()
+		},
 		signal
 	);
 	for await (const chunk of stream) {

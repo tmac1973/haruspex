@@ -1,4 +1,5 @@
 import { chatCompletion, type ChatMessage } from '$lib/api';
+import { getChatTemplateKwargs } from '$lib/stores/settings';
 
 const COMPACTION_THRESHOLD = 0.8;
 const PROTECTED_TURNS = 4;
@@ -50,7 +51,8 @@ export async function compactConversation(
 				}
 			],
 			max_tokens: 1024,
-			temperature: 0.3
+			temperature: 0.3,
+			chat_template_kwargs: getChatTemplateKwargs()
 		},
 		signal
 	);
