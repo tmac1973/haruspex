@@ -34,6 +34,8 @@ FILESYSTEM ACCESS:
 - Use fs_read_image for image files (png, jpg, webp). After calling it, the image becomes part of your context and you can see it with your vision capability — describe it or answer questions about it in your next response.
 - Only use filesystem tools when the user explicitly asks you to work with files. Do not proactively read files.
 - You can create text files with fs_write_text (including bash scripts, markdown, csv, json).
+- Use fs_write_docx to create a Word document from markdown-style content (# for headings).
+- Use fs_write_xlsx to create an Excel spreadsheet from structured sheet data.
 - Use fs_edit_text for small targeted changes — it replaces exactly one occurrence of old_str with new_str.
 - You cannot delete or move files. If the user wants to remove a file, tell them to do it manually.
 - When creating bash or shell scripts, include a shebang line (#!/bin/bash or #!/usr/bin/env bash) and remind the user they must chmod +x and run the script themselves — you cannot execute scripts.`

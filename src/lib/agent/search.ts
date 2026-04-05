@@ -100,6 +100,37 @@ async function executeFsReadXlsx(
 	}
 }
 
+async function executeFsWriteDocx(
+	workdir: string,
+	relPath: string,
+	content: string
+): Promise<string> {
+	try {
+		await invoke('fs_write_docx', { workdir, relPath, content });
+		return `Wrote docx: ${relPath}`;
+	} catch (e) {
+		return JSON.stringify({ error: `fs_write_docx failed: ${e}` });
+	}
+}
+
+interface XlsxSheet {
+	name: string;
+	rows: string[][];
+}
+
+async function executeFsWriteXlsx(
+	workdir: string,
+	relPath: string,
+	sheets: XlsxSheet[]
+): Promise<string> {
+	try {
+		await invoke('fs_write_xlsx', { workdir, relPath, sheets });
+		return `Wrote xlsx: ${relPath} (${sheets.length} sheet${sheets.length === 1 ? '' : 's'})`;
+	} catch (e) {
+		return JSON.stringify({ error: `fs_write_xlsx failed: ${e}` });
+	}
+}
+
 async function executeFsReadImage(
 	workdir: string,
 	relPath: string,
@@ -187,6 +218,12 @@ export async function executeTool(
 				args.content as string,
 				args.overwrite as boolean | undefined
 			);
+		case 'fs_write_docx':
+			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
+			return executeFsWriteDocx(workingDir, args.path as string, args.content as string);
+		case 'fs_write_xlsx':
+			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
+			return executeFsWriteXlsx(workingDir, args.path as string, args.sheets as XlsxSheet[]);
 		case 'fs_edit_text':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsEditText(

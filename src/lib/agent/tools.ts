@@ -175,6 +175,67 @@ const FS_TOOLS: ToolDefinition[] = [
 	{
 		type: 'function',
 		function: {
+			name: 'fs_write_docx',
+			description:
+				'Create a Microsoft Word (.docx) file in the working directory from text content. The content is split into paragraphs on newlines. Lines starting with # become Heading 1, ## become Heading 2, ### become Heading 3. Everything else is regular body text.',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path for the new .docx file.'
+					},
+					content: {
+						type: 'string',
+						description:
+							'Text content for the document. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings.'
+					}
+				},
+				required: ['path', 'content']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'fs_write_xlsx',
+			description:
+				'Create an Excel spreadsheet (.xlsx) file in the working directory. Provide one or more sheets, each with a name and a 2D array of rows. Numeric strings are written as numbers; everything else is written as text.',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path for the new .xlsx file.'
+					},
+					sheets: {
+						type: 'array',
+						description: 'Array of sheet objects. Each sheet needs a name and rows.',
+						items: {
+							type: 'object',
+							properties: {
+								name: { type: 'string', description: 'Sheet name (tab label)' },
+								rows: {
+									type: 'array',
+									description:
+										'2D array: array of rows, each row is an array of cell values (strings).',
+									items: {
+										type: 'array',
+										items: { type: 'string' }
+									}
+								}
+							},
+							required: ['name', 'rows']
+						}
+					}
+				},
+				required: ['path', 'sheets']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'fs_edit_text',
 			description:
 				'Edit a text file by replacing exactly one occurrence of old_str with new_str. The old_str must appear exactly once in the file — include enough surrounding context to make it unique. Use this for small targeted changes; for large rewrites use fs_write_text with overwrite.',

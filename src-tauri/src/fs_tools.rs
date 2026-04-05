@@ -320,6 +320,193 @@ fn decode_xml_entities(s: &str) -> String {
 /// Read an image file and return it as a base64 data URL, resized if
 /// larger than MAX_IMAGE_DIMENSION on the longest side. The returned URL
 /// can be passed directly as an image_url content part to the vision model.
+/// Build a minimal valid .docx file from a list of paragraphs. Each
+/// paragraph string becomes a <w:p> with a single <w:t> run. Basic
+/// formatting (bold, italic) is not supported in this first pass —
+/// the content parameter is plain text with newline-separated paragraphs.
+fn build_docx(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+
+    let mut buf = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+        // [Content_Types].xml
+        zip.start_file("[Content_Types].xml", options)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#,
+        )
+        .map_err(|e| e.to_string())?;
+
+        // _rels/.rels
+        zip.start_file("_rels/.rels", options)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>"#,
+        )
+        .map_err(|e| e.to_string())?;
+
+        // word/document.xml
+        let mut body_xml = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:body>"#,
+        );
+        for para in paragraphs {
+            // Treat a heading if the line starts with # (simple markdown-ish)
+            let (text, heading_level) = parse_heading(para);
+            let escaped = escape_xml(text);
+            if let Some(level) = heading_level {
+                body_xml.push_str(&format!(
+                    r#"<w:p><w:pPr><w:pStyle w:val="Heading{}"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="{}"/></w:rPr><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
+                    level,
+                    32 - level * 2,
+                    escaped
+                ));
+            } else {
+                body_xml.push_str(&format!(
+                    r#"<w:p><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
+                    escaped
+                ));
+            }
+        }
+        body_xml.push_str("</w:body></w:document>");
+
+        zip.start_file("word/document.xml", options)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(body_xml.as_bytes()).map_err(|e| e.to_string())?;
+
+        zip.finish().map_err(|e| e.to_string())?;
+    }
+
+    Ok(buf)
+}
+
+fn parse_heading(line: &str) -> (&str, Option<usize>) {
+    let trimmed = line.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("# ") {
+        (rest, Some(1))
+    } else if let Some(rest) = trimmed.strip_prefix("## ") {
+        (rest, Some(2))
+    } else if let Some(rest) = trimmed.strip_prefix("### ") {
+        (rest, Some(3))
+    } else {
+        (line, None)
+    }
+}
+
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+#[tauri::command]
+pub async fn fs_write_docx(
+    workdir: String,
+    rel_path: String,
+    content: String,
+) -> Result<(), String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if content.len() > MAX_WRITE_BYTES {
+        return Err(format!("Content too large ({} bytes)", content.len()));
+    }
+
+    // Split content into paragraphs on newlines, drop empty lines
+    let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let paragraphs: Vec<&str> = content
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        build_docx(&paragraphs)
+    })
+    .await
+    .map_err(|e| format!("docx build task failed: {}", e))??;
+
+    if let Some(parent) = resolved.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
+        }
+    }
+
+    fs::write(&resolved, bytes)
+        .await
+        .map_err(|e| format!("Failed to write docx: {}", e))?;
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+pub struct XlsxSheet {
+    pub name: String,
+    pub rows: Vec<Vec<String>>,
+}
+
+#[tauri::command]
+pub async fn fs_write_xlsx(
+    workdir: String,
+    rel_path: String,
+    sheets: Vec<XlsxSheet>,
+) -> Result<(), String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if sheets.is_empty() {
+        return Err("At least one sheet is required".to_string());
+    }
+
+    let resolved_str = resolved.to_string_lossy().to_string();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        use rust_xlsxwriter::Workbook;
+
+        let mut workbook = Workbook::new();
+        for sheet_data in &sheets {
+            let worksheet = workbook.add_worksheet();
+            worksheet
+                .set_name(&sheet_data.name)
+                .map_err(|e| format!("Failed to set sheet name: {}", e))?;
+            for (row_idx, row) in sheet_data.rows.iter().enumerate() {
+                for (col_idx, cell) in row.iter().enumerate() {
+                    // Try to parse as number first, else write as string
+                    if let Ok(n) = cell.parse::<f64>() {
+                        worksheet
+                            .write_number(row_idx as u32, col_idx as u16, n)
+                            .map_err(|e| format!("Failed to write cell: {}", e))?;
+                    } else {
+                        worksheet
+                            .write_string(row_idx as u32, col_idx as u16, cell)
+                            .map_err(|e| format!("Failed to write cell: {}", e))?;
+                    }
+                }
+            }
+        }
+        workbook
+            .save(&resolved_str)
+            .map_err(|e| format!("Failed to save xlsx: {}", e))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("xlsx write task failed: {}", e))??;
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, String> {
     let workdir = workdir_path(&workdir)?;
