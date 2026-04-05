@@ -2,7 +2,7 @@
 	import { renderMarkdown, stripMarkdownForTTS } from '$lib/markdown';
 	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
 	import { getSettings } from '$lib/stores/settings';
-	import type { ChatMessage } from '$lib/api';
+	import { messageText, type ChatMessage, type MessageContentPart } from '$lib/api';
 
 	interface Props {
 		message: ChatMessage;
@@ -11,9 +11,21 @@
 
 	let { message, isStreaming = false }: Props = $props();
 
-	let renderedContent = $derived(message.content ? renderMarkdown(message.content) : '');
+	// Extract plain text from the message (handles both string and content array)
+	let textContent = $derived(messageText(message.content));
+	// Extract any image URLs from multimodal content for display
+	let imageUrls = $derived(
+		typeof message.content === 'string'
+			? []
+			: (message.content as MessageContentPart[])
+					.filter(
+						(p): p is { type: 'image_url'; image_url: { url: string } } => p.type === 'image_url'
+					)
+					.map((p) => p.image_url.url)
+	);
+	let renderedContent = $derived(textContent ? renderMarkdown(textContent) : '');
 	let plainText = $derived(
-		message.content ? stripMarkdownForTTS(message.content, getSettings().ttsReadTablesByColumn) : ''
+		textContent ? stripMarkdownForTTS(textContent, getSettings().ttsReadTablesByColumn) : ''
 	);
 </script>
 
@@ -23,7 +35,16 @@
 	</div>
 	<div class="message-content">
 		{#if message.role === 'user'}
-			<p>{message.content}</p>
+			{#if imageUrls.length > 0}
+				<div class="message-images">
+					{#each imageUrls as url, i (i)}
+						<img src={url} alt="Attached" class="message-image" />
+					{/each}
+				</div>
+			{/if}
+			{#if textContent}
+				<p>{textContent}</p>
+			{/if}
 		{:else}
 			{@html renderedContent}
 			{#if isStreaming}
@@ -55,6 +76,21 @@
 
 	[data-role='user'] .message-label {
 		color: var(--accent);
+	}
+
+	.message-images {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-bottom: 8px;
+	}
+
+	.message-image {
+		max-width: 240px;
+		max-height: 240px;
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		object-fit: cover;
 	}
 
 	.message-content {

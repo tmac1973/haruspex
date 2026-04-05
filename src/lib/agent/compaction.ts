@@ -1,4 +1,4 @@
-import { chatCompletion, type ChatMessage } from '$lib/api';
+import { chatCompletion, messageText, type ChatMessage } from '$lib/api';
 import { getChatTemplateKwargs } from '$lib/stores/settings';
 
 const COMPACTION_THRESHOLD = 0.8;
@@ -32,7 +32,9 @@ export async function compactConversation(
 		.map((m) => {
 			const role = m.role === 'user' ? 'User' : 'Assistant';
 			// Strip think blocks from assistant messages for cleaner summary
-			const content = m.content.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+			const content = messageText(m.content)
+				.replace(/<think>[\s\S]*?<\/think>\s*/g, '')
+				.trim();
 			return `${role}: ${content}`;
 		})
 		.join('\n\n');

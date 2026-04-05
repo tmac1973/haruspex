@@ -1,4 +1,4 @@
-import { type ChatMessage, type Usage, ApiError } from '$lib/api';
+import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
 import { getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
@@ -103,13 +103,35 @@ function generateTitle(content: string): string {
 
 // Database persistence helpers
 
+// Marker prefix for multimodal content arrays stored in the DB.
+// When a message's content is a parts array (e.g., text + images), we
+// serialize it as JSON with this prefix so we can detect and rehydrate
+// it on load. Plain string content is stored as-is.
+const MULTIMODAL_PREFIX = '\x00MM\x00';
+
+function serializeContent(content: ChatMessage['content']): string {
+	if (typeof content === 'string') return content;
+	return MULTIMODAL_PREFIX + JSON.stringify(content);
+}
+
+function deserializeContent(raw: string): ChatMessage['content'] {
+	if (raw.startsWith(MULTIMODAL_PREFIX)) {
+		try {
+			return JSON.parse(raw.slice(MULTIMODAL_PREFIX.length));
+		} catch {
+			return raw;
+		}
+	}
+	return raw;
+}
+
 async function dbSaveMessage(conversationId: string, msg: ChatMessage): Promise<void> {
 	if (!dbAvailable) return;
 	try {
 		await invoke('db_save_message', {
 			conversationId,
 			role: msg.role,
-			content: msg.content || '',
+			content: serializeContent(msg.content),
 			toolCalls: msg.tool_calls ? JSON.stringify(msg.tool_calls) : null,
 			toolCallId: msg.tool_call_id || null
 		});
@@ -130,7 +152,7 @@ async function dbCreateConversation(id: string, title: string): Promise<void> {
 function dbMessageToChatMessage(msg: DbMessage): ChatMessage {
 	const chatMsg: ChatMessage = {
 		role: msg.role as ChatMessage['role'],
-		content: msg.content
+		content: deserializeContent(msg.content)
 	};
 	if (msg.tool_calls) {
 		try {
@@ -259,7 +281,7 @@ async function compactIfNeeded(): Promise<void> {
 					conversationId: conversation.id,
 					messages: newMessages.map((m) => ({
 						role: m.role,
-						content: m.content,
+						content: serializeContent(m.content),
 						tool_calls: m.tool_calls ? JSON.stringify(m.tool_calls) : null,
 						tool_call_id: m.tool_call_id || null
 					}))
@@ -411,10 +433,11 @@ export async function sendMessage(content: string): Promise<void> {
 		const lastMsg = messagesForApi[messagesForApi.length - 1];
 		if (lastMsg?.role === 'user') {
 			const hints: string[] = [];
+			const lastText = messageText(lastMsg.content);
 
 			// For product review/recommendation queries, hint to search Reddit.
 			// Local models ignore system prompt guidance but reliably follow user message text.
-			if (looksLikeReviewQuery(lastMsg.content)) {
+			if (looksLikeReviewQuery(lastText)) {
 				hints.push('Include Reddit as a source.');
 			}
 
@@ -427,10 +450,29 @@ export async function sendMessage(content: string): Promise<void> {
 			}
 
 			if (hints.length > 0) {
-				messagesForApi[messagesForApi.length - 1] = {
-					...lastMsg,
-					content: lastMsg.content + '\n\n(' + hints.join(' ') + ')'
-				};
+				// Append the hint to the text portion of the message. If the message
+				// is a plain string, concatenate. If it's a content array, append
+				// to the last text part (or add a new one).
+				const suffix = '\n\n(' + hints.join(' ') + ')';
+				if (typeof lastMsg.content === 'string') {
+					messagesForApi[messagesForApi.length - 1] = {
+						...lastMsg,
+						content: lastMsg.content + suffix
+					};
+				} else {
+					const parts = [...lastMsg.content];
+					const lastTextIdx = parts.findIndex((p) => p.type === 'text');
+					if (lastTextIdx >= 0) {
+						const textPart = parts[lastTextIdx] as { type: 'text'; text: string };
+						parts[lastTextIdx] = { type: 'text', text: textPart.text + suffix };
+					} else {
+						parts.push({ type: 'text', text: suffix.trim() });
+					}
+					messagesForApi[messagesForApi.length - 1] = {
+						...lastMsg,
+						content: parts
+					};
+				}
 			}
 		}
 
