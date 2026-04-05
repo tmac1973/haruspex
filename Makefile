@@ -1,3 +1,10 @@
+# On Windows, force Make to use Git Bash for all recipes so that source,
+# POSIX paths, and sh-style syntax work. 8.3 short path avoids the space
+# in "Program Files" which Make's CreateProcess can't handle.
+ifeq ($(OS),Windows_NT)
+SHELL := C:/PROGRA~1/Git/bin/bash.exe
+endif
+
 TARGET := $(shell rustc --print host-tuple)
 TAURI_ARGS ?=
 
@@ -11,7 +18,7 @@ sidecars: ## Build sidecar binaries (llama-server, whisper-server, koko)
 app: ## Build the Tauri app (requires sidecars)
 	npm ci
 ifeq ($(OS),Windows_NT)
-	npm run tauri build -- --bundles nsis,msi $(TAURI_ARGS)
+	source scripts/msvc-path-fix.sh && npm run tauri build -- --bundles nsis,msi $(TAURI_ARGS)
 else ifeq ($(shell uname),Darwin)
 	npm run tauri build -- $(TAURI_ARGS)
 else
