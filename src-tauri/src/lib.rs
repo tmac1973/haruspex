@@ -1,3 +1,4 @@
+mod app_log;
 mod audio;
 mod db;
 mod fs_tools;
@@ -18,17 +19,15 @@ use whisper::WhisperServer;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install our in-memory logger first so any logging during setup is
+    // captured for the Log Viewer. The Tauri log plugin in debug builds
+    // would clash with this, so we replace it.
+    app_log::init();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
             app.manage(ModelManager::new(app.handle()));
             app.manage(Database::new(app.handle()).expect("Failed to initialize database"));
             Ok(())
@@ -92,6 +91,7 @@ pub fn run() {
             fs_tools::fs_read_pdf_bytes,
             fs_tools::fs_write_docx,
             fs_tools::fs_write_xlsx,
+            app_log::get_app_logs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

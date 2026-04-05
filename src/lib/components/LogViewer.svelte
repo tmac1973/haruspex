@@ -2,7 +2,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
 
-	type SidecarTab = 'llm' | 'tts' | 'whisper';
+	type LogTab = 'app' | 'llm' | 'tts' | 'whisper';
 
 	interface Props {
 		open: boolean;
@@ -10,19 +10,21 @@
 	}
 
 	let { open, onclose }: Props = $props();
-	let activeTab = $state<SidecarTab>('llm');
+	let activeTab = $state<LogTab>('app');
 	let logLines = $state<string[]>([]);
 	let logContainer: HTMLDivElement | undefined = $state();
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let wasAtBottom = true;
 
-	const tabCommands: Record<SidecarTab, string> = {
+	const tabCommands: Record<LogTab, string> = {
+		app: 'get_app_logs',
 		llm: 'get_server_logs',
 		tts: 'get_tts_logs',
 		whisper: 'get_whisper_logs'
 	};
 
-	const tabLabels: Record<SidecarTab, string> = {
+	const tabLabels: Record<LogTab, string> = {
+		app: 'App',
 		llm: 'LLM',
 		tts: 'TTS',
 		whisper: 'Whisper'
@@ -62,7 +64,7 @@
 			logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 30;
 	}
 
-	function switchTab(tab: SidecarTab) {
+	function switchTab(tab: LogTab) {
 		activeTab = tab;
 		logLines = [];
 		wasAtBottom = true;
@@ -78,6 +80,21 @@
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			onclose();
+		}
+	}
+
+	let copyState = $state<'idle' | 'copied'>('idle');
+
+	async function copyAllLogs() {
+		const text = logLines.join('\n');
+		try {
+			await navigator.clipboard.writeText(text);
+			copyState = 'copied';
+			setTimeout(() => {
+				copyState = 'idle';
+			}, 1500);
+		} catch (e) {
+			console.error('Failed to copy logs:', e);
 		}
 	}
 
@@ -102,13 +119,22 @@
 		<div class="modal">
 			<div class="modal-header">
 				<div class="tabs">
-					{#each ['llm', 'tts', 'whisper'] as const as tab (tab)}
+					{#each ['app', 'llm', 'tts', 'whisper'] as const as tab (tab)}
 						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
 							{tabLabels[tab]}
 						</button>
 					{/each}
 				</div>
-				<button class="close-btn" onclick={onclose} title="Close">&times;</button>
+				<div class="header-actions">
+					<button
+						class="copy-btn"
+						onclick={copyAllLogs}
+						title="Copy current log tab to clipboard for bug reports"
+					>
+						{copyState === 'copied' ? 'Copied!' : 'Copy all'}
+					</button>
+					<button class="close-btn" onclick={onclose} title="Close">&times;</button>
+				</div>
 			</div>
 			<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
 				{#each logLines as line, i (`${activeTab}-${i}`)}
@@ -177,6 +203,28 @@
 		color: var(--accent);
 		border-color: var(--accent);
 		background: color-mix(in srgb, var(--accent) 10%, transparent);
+	}
+
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.copy-btn {
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 5px 12px;
+		cursor: pointer;
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+
+	.copy-btn:hover {
+		color: var(--text-primary);
+		border-color: var(--text-secondary);
 	}
 
 	.close-btn {
