@@ -1,4 +1,3 @@
-SHELL := bash
 TARGET := $(shell rustc --print host-tuple)
 TAURI_ARGS ?=
 

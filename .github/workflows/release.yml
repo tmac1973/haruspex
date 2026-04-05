@@ -124,11 +124,20 @@ jobs:
 
       - name: Build sidecars
         shell: bash
-        run: make sidecars
+        run: ./scripts/build-sidecars.sh --target ${{ matrix.target }}
 
       - name: Build app
         shell: bash
-        run: make app TAURI_ARGS="${{ matrix.tauri_args }}"
+        run: |
+          npm ci
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries" \
+              npm run tauri build -- --bundles appimage,deb,rpm ${{ matrix.tauri_args }}
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            npm run tauri build -- --bundles nsis,msi ${{ matrix.tauri_args }}
+          else
+            npm run tauri build -- ${{ matrix.tauri_args }}
+          fi
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v2
