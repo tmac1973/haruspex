@@ -11,13 +11,16 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-// These numbers balance quality against llama.cpp's KV cache and image
-// batching limits. Each rendered page becomes ~500-800 image tokens at
-// 1024px — well below the 1900-token batch that crashed the server with
-// "find_slot: non-consecutive token position" errors.
-const MAX_PAGES = 5; // Cap pages per call to avoid KV cache overflow
-const RENDER_SCALE = 1.5;
-const MAX_DIMENSION = 1024;
+// Rendering parameters tuned for form PDFs where small text legibility
+// matters (tax forms, invoices, receipts). 1536px gives enough resolution
+// for the vision model to read 8-10pt form text reliably. MAX_PAGES is
+// kept tight since each high-res page takes ~1200-1600 image tokens.
+// The one-PDF-per-turn enforcement in search.ts prevents multiple calls
+// from stacking images and crashing llama-server.
+const MAX_PAGES = 3;
+const RENDER_SCALE = 2.0;
+const MAX_DIMENSION = 1536;
+const JPEG_QUALITY = 0.92;
 
 function base64ToBytes(b64: string): Uint8Array {
 	const bin = atob(b64);
@@ -65,8 +68,9 @@ export async function renderPdfPages(workdir: string, relPath: string): Promise<
 
 		await page.render({ canvasContext: ctx, viewport, canvas }).promise;
 
-		// JPEG at 0.85 quality — smaller payload than PNG for vision model input
-		const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+		// High-quality JPEG — lower quality blurs small digits and punctuation
+		// (a decimal point can shift with aggressive chroma subsampling).
+		const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
 		pages.push(dataUrl);
 
 		page.cleanup();

@@ -7,7 +7,7 @@ const MAX_TEXT_READ_BYTES: u64 = 1_048_576; // 1 MB
 const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
 const MAX_PDF_READ_BYTES: u64 = 50 * 1_048_576; // 50 MB
 const MAX_IMAGE_BYTES: u64 = 20 * 1_048_576; // 20 MB source file
-const MAX_IMAGE_DIMENSION: u32 = 1280; // resize dimension for vision model
+const MAX_IMAGE_DIMENSION: u32 = 1536; // resize dimension for vision model
 const MAX_DIR_ENTRIES: usize = 500;
 
 #[derive(Serialize)]
@@ -563,7 +563,6 @@ pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, 
     let resolved_clone = resolved.clone();
     let data_url = tokio::task::spawn_blocking(move || -> Result<String, String> {
         use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-        use image::ImageFormat;
         use std::io::Cursor;
 
         let img =
@@ -581,11 +580,14 @@ pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, 
             img
         };
 
-        // Encode as JPEG for smaller payload (acceptable for vision input)
+        // Encode as high-quality JPEG — low quality blurs small text/digits
+        // (a decimal point can shift with aggressive chroma subsampling).
         let mut bytes = Vec::new();
+        let mut cursor = Cursor::new(&mut bytes);
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 92);
         let rgb = resized.to_rgb8();
         image::DynamicImage::ImageRgb8(rgb)
-            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Jpeg)
+            .write_with_encoder(encoder)
             .map_err(|e| format!("Failed to encode image: {}", e))?;
 
         let encoded = B64.encode(&bytes);
