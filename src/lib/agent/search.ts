@@ -100,6 +100,20 @@ async function executeFsReadXlsx(
 	}
 }
 
+async function executeFsReadImage(
+	workdir: string,
+	relPath: string,
+	pendingImages: Array<{ path: string; dataUrl: string }>
+): Promise<string> {
+	try {
+		const dataUrl = await invoke<string>('fs_read_image', { workdir, relPath });
+		pendingImages.push({ path: relPath, dataUrl });
+		return `Image loaded: ${relPath}. You can now see it — describe or analyze it in your next response.`;
+	} catch (e) {
+		return JSON.stringify({ error: `fs_read_image failed: ${e}` });
+	}
+}
+
 async function executeFsWriteText(
 	workdir: string,
 	relPath: string,
@@ -128,11 +142,17 @@ async function executeFsEditText(
 	}
 }
 
+export interface PendingImage {
+	path: string;
+	dataUrl: string;
+}
+
 export async function executeTool(
 	name: string,
 	args: Record<string, unknown>,
 	workingDir: string | null,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	pendingImages?: PendingImage[]
 ): Promise<string> {
 	void signal;
 	switch (name) {
@@ -155,6 +175,10 @@ export async function executeTool(
 		case 'fs_read_xlsx':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsReadXlsx(workingDir, args.path as string, args.sheet as string | undefined);
+		case 'fs_read_image':
+			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
+			if (!pendingImages) return JSON.stringify({ error: 'Images not supported in this context' });
+			return executeFsReadImage(workingDir, args.path as string, pendingImages);
 		case 'fs_write_text':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsWriteText(

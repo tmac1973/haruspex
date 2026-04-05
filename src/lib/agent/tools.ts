@@ -99,6 +99,24 @@ const FS_TOOLS: ToolDefinition[] = [
 	{
 		type: 'function',
 		function: {
+			name: 'fs_read_image',
+			description:
+				'Load an image file (png, jpg, webp, etc.) from the working directory so you can see it with your vision capability. After calling this, the image is added to the conversation and you can describe it or answer questions about it in your next response. Use this for any image file the user asks you to analyze.',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path to the image file within the working directory.'
+					}
+				},
+				required: ['path']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'fs_read_docx',
 			description:
 				'Extract text content from a Microsoft Word (.docx) file in the working directory. Returns plain text with paragraph breaks preserved.',

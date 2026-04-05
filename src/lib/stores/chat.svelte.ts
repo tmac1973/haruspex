@@ -31,6 +31,7 @@ FILESYSTEM ACCESS:
 - Use fs_read_pdf for PDF files — it extracts all text content. If a PDF has no text layer (scanned document), this will error.
 - Use fs_read_docx for Microsoft Word (.docx) files.
 - Use fs_read_xlsx for Excel spreadsheets (.xlsx) — returns CSV-formatted text. Specify the sheet name if the workbook has multiple sheets.
+- Use fs_read_image for image files (png, jpg, webp). After calling it, the image becomes part of your context and you can see it with your vision capability — describe it or answer questions about it in your next response.
 - Only use filesystem tools when the user explicitly asks you to work with files. Do not proactively read files.
 - You can create text files with fs_write_text (including bash scripts, markdown, csv, json).
 - Use fs_edit_text for small targeted changes — it replaces exactly one occurrence of old_str with new_str.

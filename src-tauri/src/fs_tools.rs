@@ -6,6 +6,8 @@ use tokio::fs;
 const MAX_TEXT_READ_BYTES: u64 = 1_048_576; // 1 MB
 const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
 const MAX_PDF_READ_BYTES: u64 = 50 * 1_048_576; // 50 MB
+const MAX_IMAGE_BYTES: u64 = 20 * 1_048_576; // 20 MB source file
+const MAX_IMAGE_DIMENSION: u32 = 1280; // resize dimension for vision model
 const MAX_DIR_ENTRIES: usize = 500;
 
 #[derive(Serialize)]
@@ -313,6 +315,67 @@ fn decode_xml_entities(s: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
+}
+
+/// Read an image file and return it as a base64 data URL, resized if
+/// larger than MAX_IMAGE_DIMENSION on the longest side. The returned URL
+/// can be passed directly as an image_url content part to the vision model.
+#[tauri::command]
+pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    let metadata = fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "Image too large ({} bytes). Maximum source image is {} bytes.",
+            metadata.len(),
+            MAX_IMAGE_BYTES
+        ));
+    }
+
+    let resolved_clone = resolved.clone();
+    let data_url = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+        use image::ImageFormat;
+        use std::io::Cursor;
+
+        let img = image::open(&resolved_clone)
+            .map_err(|e| format!("Failed to decode image: {}", e))?;
+
+        // Resize if larger than MAX_IMAGE_DIMENSION on the longest side
+        let (w, h) = (img.width(), img.height());
+        let max_side = w.max(h);
+        let resized = if max_side > MAX_IMAGE_DIMENSION {
+            let scale = MAX_IMAGE_DIMENSION as f32 / max_side as f32;
+            let new_w = (w as f32 * scale) as u32;
+            let new_h = (h as f32 * scale) as u32;
+            img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3)
+        } else {
+            img
+        };
+
+        // Encode as JPEG for smaller payload (acceptable for vision input)
+        let mut bytes = Vec::new();
+        let rgb = resized.to_rgb8();
+        image::DynamicImage::ImageRgb8(rgb)
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Jpeg)
+            .map_err(|e| format!("Failed to encode image: {}", e))?;
+
+        let encoded = B64.encode(&bytes);
+        Ok(format!("data:image/jpeg;base64,{}", encoded))
+    })
+    .await
+    .map_err(|e| format!("image task failed: {}", e))??;
+
+    Ok(data_url)
 }
 
 #[tauri::command]

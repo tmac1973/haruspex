@@ -7,7 +7,7 @@ import {
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { getAgentTools } from '$lib/agent/tools';
-import { executeTool } from '$lib/agent/search';
+import { executeTool, type PendingImage } from '$lib/agent/search';
 import { getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
 
 export interface SearchStep {
@@ -31,15 +31,52 @@ export interface AgentLoopOptions {
 	maxIterations?: number;
 }
 
+/**
+ * Inject pending images into the most recent user message's content array.
+ * Images are loaded via fs_read_image and buffered here until the next model
+ * request, where they become part of the user context for vision analysis.
+ */
+function injectPendingImages(messages: ChatMessage[], pending: PendingImage[]): void {
+	if (pending.length === 0) return;
+	// Find the most recent user message (scan from the end)
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (messages[i].role === 'user') {
+			const msg = messages[i];
+			const existingParts =
+				typeof msg.content === 'string'
+					? [{ type: 'text' as const, text: msg.content }]
+					: [...msg.content];
+			const imageParts = pending.map((p) => ({
+				type: 'image_url' as const,
+				image_url: { url: p.dataUrl }
+			}));
+			messages[i] = {
+				...msg,
+				content: [...existingParts, ...imageParts]
+			};
+			return;
+		}
+	}
+}
+
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	const { messages, maxIterations = 8, signal, workingDir = null } = options;
 	const tools = getAgentTools(workingDir !== null);
+	const pendingImages: PendingImage[] = [];
 	let iteration = 0;
 	let usedTools = false;
 
 	while (iteration < maxIterations) {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 		iteration++;
+
+		// If images were loaded on the previous iteration, attach them to the
+		// most recent user message before sending. This is how multimodal
+		// requests reach the vision model.
+		if (pendingImages.length > 0) {
+			injectPendingImages(messages, pendingImages);
+			pendingImages.length = 0;
+		}
 
 		// Non-streaming request to check for tool calls
 		const sampling = getSamplingParams();
@@ -135,7 +172,13 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 			options.onToolStart(call);
-			const result = await executeTool(call.name, call.arguments, workingDir, signal);
+			const result = await executeTool(
+				call.name,
+				call.arguments,
+				workingDir,
+				signal,
+				pendingImages
+			);
 			options.onToolEnd(call, result);
 
 			messages.push({
