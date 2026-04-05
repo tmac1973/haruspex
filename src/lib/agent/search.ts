@@ -196,6 +196,13 @@ export interface PendingImage {
 	dataUrl: string;
 }
 
+// Max images per turn. Each ~1024px image is ~500-800 image tokens for
+// Qwen3.5-9B vision; batching more than this at once risks blowing out the
+// KV cache and crashing llama-server with "find_slot: non-consecutive token
+// position" errors. The model should respond about loaded images before
+// loading more.
+const MAX_PENDING_IMAGES = 6;
+
 export async function executeTool(
 	name: string,
 	args: Record<string, unknown>,
@@ -227,10 +234,20 @@ export async function executeTool(
 		case 'fs_read_image':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			if (!pendingImages) return JSON.stringify({ error: 'Images not supported in this context' });
+			if (pendingImages.length >= MAX_PENDING_IMAGES) {
+				return JSON.stringify({
+					error: `Too many images pending (${pendingImages.length}). Respond about the images you've already loaded before loading more — loading too many images in one turn exhausts the model context and crashes inference.`
+				});
+			}
 			return executeFsReadImage(workingDir, args.path as string, pendingImages);
 		case 'fs_read_pdf_pages':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			if (!pendingImages) return JSON.stringify({ error: 'Images not supported in this context' });
+			if (pendingImages.length > 0) {
+				return JSON.stringify({
+					error: `You already have ${pendingImages.length} image(s) pending. Respond about them first, then call fs_read_pdf_pages for the next PDF. Loading multiple PDFs as images in one turn crashes the inference server.`
+				});
+			}
 			return executeFsReadPdfPages(workingDir, args.path as string, pendingImages);
 		case 'fs_write_text':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });

@@ -11,9 +11,13 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-const MAX_PAGES = 20; // Don't blow up the context with huge PDFs
-const RENDER_SCALE = 2.0; // 2x for readable text at the vision model's resolution
-const MAX_DIMENSION = 1600; // Cap long side to match image tool
+// These numbers balance quality against llama.cpp's KV cache and image
+// batching limits. Each rendered page becomes ~500-800 image tokens at
+// 1024px — well below the 1900-token batch that crashed the server with
+// "find_slot: non-consecutive token position" errors.
+const MAX_PAGES = 5; // Cap pages per call to avoid KV cache overflow
+const RENDER_SCALE = 1.5;
+const MAX_DIMENSION = 1024;
 
 function base64ToBytes(b64: string): Uint8Array {
 	const bin = atob(b64);

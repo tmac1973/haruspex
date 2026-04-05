@@ -29,6 +29,7 @@ FILESYSTEM ACCESS:
 - Use fs_list_dir first (with path ".") to see what files are available before reading specific files.
 - Use fs_read_text for text files (txt, md, csv, json, sh, yml, etc.).
 - Use fs_read_pdf for simple text-based PDFs — fast and efficient. For form PDFs (tax forms like W-2, 1040, invoices, receipts, applications), scanned documents, or any PDF where fs_read_pdf produced garbled or incomplete output, use fs_read_pdf_pages instead. fs_read_pdf_pages renders each page as an image so you can read it visually — this handles form layouts, checkboxes, and custom fonts correctly.
+- CRITICAL: When using fs_read_pdf_pages on multiple PDFs, process them ONE AT A TIME. Load the first PDF with fs_read_pdf_pages, describe/summarize its contents in your next response, then in the FOLLOWING turn call fs_read_pdf_pages for the next PDF. Loading multiple PDFs as images in the same turn exhausts the vision model's context and crashes inference.
 - Use fs_read_docx for Microsoft Word (.docx) files.
 - Use fs_read_xlsx for Excel spreadsheets (.xlsx) — returns CSV-formatted text. Specify the sheet name if the workbook has multiple sheets.
 - Use fs_read_image for image files (png, jpg, webp). After calling it, the image becomes part of your context and you can see it with your vision capability — describe it or answer questions about it in your next response.

@@ -177,7 +177,7 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_read_pdf_pages',
 			description:
-				'Render each page of a PDF as an image so you can see it with your vision capability. Use this for form PDFs (tax forms, applications, receipts, etc.), scanned documents, or any PDF where fs_read_pdf gave garbled or incomplete output. Much slower than fs_read_pdf but handles complex layouts correctly. After calling this, the pages appear as images in your context and you can read form fields, labels, values, etc. directly.',
+				'Render pages of a PDF as images so you can see them with your vision capability. Use this for form PDFs (tax forms, applications, receipts, etc.), scanned documents, or any PDF where fs_read_pdf gave garbled or incomplete output. IMPORTANT: only call this for ONE PDF at a time and respond about it before calling it for another PDF — loading images from multiple PDFs in the same turn can exhaust the model context. Only the first 5 pages of a PDF are rendered; for longer PDFs, tell the user to split it or ask about specific pages.',
 			parameters: {
 				type: 'object',
 				properties: {

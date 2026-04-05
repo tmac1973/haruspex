@@ -519,6 +519,105 @@ impl LlamaServer {
                             return;
                         }
 
+                        // Crashed mid-operation: if the server was Ready and this
+                        // wasn't a clean stop, attempt one auto-restart. This
+                        // recovers from in-request crashes (e.g. image batch
+                        // overflow during vision processing) without requiring
+                        // the user to manually restart.
+                        let should_auto_restart = {
+                            let state = inner.lock().await;
+                            matches!(state.status, ServerStatus::Ready)
+                        };
+
+                        if should_auto_restart {
+                            warn!("llama-server crashed while Ready — attempting auto-restart");
+                            {
+                                let mut state = inner.lock().await;
+                                state.status = ServerStatus::Starting;
+                                let _ = app.emit("server-status-changed", &state.status);
+                            }
+
+                            let mmproj_path = {
+                                use tauri::Manager;
+                                app.try_state::<crate::models::ModelManager>()
+                                    .and_then(|mgr| {
+                                        mgr.find_mmproj_for_model(std::path::Path::new(&model_path))
+                                    })
+                            };
+
+                            let args = {
+                                let state = inner.lock().await;
+                                let mut args = state.config.build_args(&model_path);
+                                if let Some(path) = mmproj_path.as_ref() {
+                                    args.push("--mmproj".to_string());
+                                    args.push(path.to_string_lossy().to_string());
+                                }
+                                args
+                            };
+
+                            let sidecar_result = app
+                                .shell()
+                                .sidecar("llama-server")
+                                .map(|cmd| {
+                                    let mut cmd = cmd.args(&args);
+
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        let mut parts = Self::get_library_paths(&app);
+                                        let existing =
+                                            std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                                        if !existing.is_empty() {
+                                            parts.push(existing);
+                                        }
+                                        cmd = cmd.env("LD_LIBRARY_PATH", parts.join(":"));
+                                    }
+
+                                    #[cfg(target_os = "macos")]
+                                    {
+                                        let mut parts = Self::get_library_paths(&app);
+                                        let existing =
+                                            std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
+                                        if !existing.is_empty() {
+                                            parts.push(existing);
+                                        }
+                                        cmd = cmd.env("DYLD_LIBRARY_PATH", parts.join(":"));
+                                    }
+
+                                    cmd
+                                })
+                                .and_then(|cmd| cmd.spawn());
+
+                            match sidecar_result {
+                                Ok((new_rx, new_child)) => {
+                                    {
+                                        let mut state = inner.lock().await;
+                                        state.child = Some(new_child);
+                                    }
+                                    Self::spawn_output_reader(
+                                        inner.clone(),
+                                        app.clone(),
+                                        model_path,
+                                        new_rx,
+                                        generation,
+                                    );
+                                    // Restart the health poller for the new process
+                                    Self::spawn_health_poller(
+                                        inner.clone(),
+                                        app.clone(),
+                                        generation,
+                                    );
+                                }
+                                Err(e) => {
+                                    error!("Auto-restart failed: {}", e);
+                                    let mut state = inner.lock().await;
+                                    state.status =
+                                        ServerStatus::Error(format!("Auto-restart failed: {}", e));
+                                    let _ = app.emit("server-status-changed", &state.status);
+                                }
+                            }
+                            return;
+                        }
+
                         // Not a fallback situation — report error
                         let mut state = inner.lock().await;
                         if state.status != ServerStatus::Stopped {
