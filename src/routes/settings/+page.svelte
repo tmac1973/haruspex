@@ -440,13 +440,13 @@
 
 		{#if searchProvider === 'auto' && !braveApiKey}
 			<div class="provider-nudge">
-				Free public search engines are unreliable — they get rate-limited and
-				their HTML changes break scrapers. For stable results, configure
+				Free public search engines are unreliable — they get rate-limited and their HTML changes
+				break scrapers. For stable results, configure
 				<strong>Brave Search</strong> (free key, 2,000 queries/month at
 				<a href="https://brave.com/search/api/" target="_blank" rel="noopener"
 					>brave.com/search/api</a
-				>) or a self-hosted <strong>SearXNG</strong> instance. Deep research
-				with Auto will use slower pacing to compensate.
+				>) or a self-hosted <strong>SearXNG</strong> instance. Deep research with Auto will use slower
+				pacing to compensate.
 			</div>
 		{/if}
 

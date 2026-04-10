@@ -62,9 +62,8 @@
 	<div class="search-steps" onclick={() => (expanded = !expanded)}>
 		{#if slowMode}
 			<div class="slow-notice">
-				⏳ Deep research is using slow pacing — public search engines need to be
-				rate-limited to avoid bot detection. For faster results, configure
-				Brave Search or SearXNG in Settings.
+				⏳ Deep research is using slow pacing — public search engines need to be rate-limited to
+				avoid bot detection. For faster results, configure Brave Search or SearXNG in Settings.
 			</div>
 		{/if}
 		{#each steps as step (step.id)}
