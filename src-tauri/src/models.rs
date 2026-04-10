@@ -753,36 +753,39 @@ fn detect_gpu() -> GpuInfo {
 
 #[cfg(target_os = "windows")]
 fn get_windows_gpu_info() -> (Option<String>, Option<u64>) {
-    // Use PowerShell's Get-CimInstance — wmic is deprecated/removed in Win11 24H2+.
-    // We output as JSON for reliable parsing. AdapterRAM from WMI is a 32-bit value
-    // that caps at 4 GB, so we treat it as unreliable and only use it as a floor.
+    // Two-step approach:
+    //
+    // 1. Get GPU name via PowerShell/WMI (Get-CimInstance Win32_VideoController).
+    //    WMI's AdapterRAM is a 32-bit uint that caps at 4 GB — useless for modern
+    //    GPUs. An RX 6700 XT (12 GB) reports 4 GB via WMI.
+    //
+    // 2. Get VRAM from the Windows registry. Every GPU driver writes a 64-bit
+    //    qwMemorySize value at:
+    //    HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\000N\HardwareInformation.qwMemorySize
+    //    This is the reliable source — it's what dxdiag uses.
+
+    // Step 1: GPU name via PowerShell
+    let gpu_name = get_windows_gpu_name();
+
+    // Step 2: VRAM from registry
+    let vram_mb = get_windows_vram_from_registry();
+
+    (gpu_name, vram_mb)
+}
+
+#[cfg(target_os = "windows")]
+fn get_windows_gpu_name() -> Option<String> {
     let ps_script = "Get-CimInstance Win32_VideoController | \
-        Select-Object Name, AdapterRAM | \
+        Select-Object Name | \
         ConvertTo-Json -Compress";
 
     let output = std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
-        .output();
-
-    let Ok(output) = output else {
-        log::warn!("Failed to run powershell for GPU detection");
-        return (None, None);
-    };
+        .output()
+        .ok()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() {
-        return (None, None);
-    }
-
-    // Parse JSON — could be a single object or an array
-    let json: serde_json::Value = match serde_json::from_str(trimmed) {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!("Failed to parse GPU info JSON: {}", e);
-            return (None, None);
-        }
-    };
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
 
     let controllers: Vec<&serde_json::Value> = if json.is_array() {
         json.as_array()
@@ -792,10 +795,6 @@ fn get_windows_gpu_info() -> (Option<String>, Option<u64>) {
         vec![&json]
     };
 
-    // Pick the controller with the highest AdapterRAM, preferring non-Microsoft
-    // virtual adapters. Fall back to the first one with a name.
-    let mut best_name: Option<String> = None;
-    let mut best_vram: u64 = 0;
     for controller in &controllers {
         let name = controller
             .get("Name")
@@ -803,30 +802,45 @@ fn get_windows_gpu_info() -> (Option<String>, Option<u64>) {
             .unwrap_or("")
             .trim()
             .to_string();
-        if name.is_empty() || name.to_lowercase().contains("basic display") {
-            continue;
-        }
-        let vram = controller
-            .get("AdapterRAM")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        // Prefer the controller with the most reported VRAM, but always at least
-        // record a name if we haven't found one yet.
-        if best_name.is_none() || vram > best_vram {
-            best_name = Some(name);
-            best_vram = vram;
+        if !name.is_empty() && !name.to_lowercase().contains("basic display") {
+            return Some(name);
         }
     }
+    None
+}
 
-    // WMI AdapterRAM caps at ~4 GB due to 32-bit field. Only return VRAM if it
-    // looks plausible (> 0 and <= 4 GB — anything higher is unreliable anyway).
-    let vram_mb = if best_vram > 0 && best_vram <= 4_294_967_295 {
-        Some(best_vram / 1_048_576)
+#[cfg(target_os = "windows")]
+fn get_windows_vram_from_registry() -> Option<u64> {
+    // The GPU driver class GUID is always {4d36e968-e325-11ce-bfc1-08002be10318}.
+    // Subkeys 0000, 0001, etc. correspond to each GPU. We scan them all and pick
+    // the highest VRAM value (to prefer discrete over integrated when both exist).
+    //
+    // PowerShell reads the registry QWord value as a proper 64-bit integer.
+    let ps_script = r#"
+$classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}'
+$maxVram = 0
+Get-ChildItem $classPath -ErrorAction SilentlyContinue | ForEach-Object {
+    $val = Get-ItemProperty -Path $_.PSPath -Name 'HardwareInformation.qwMemorySize' -ErrorAction SilentlyContinue
+    if ($val) {
+        $bytes = $val.'HardwareInformation.qwMemorySize'
+        if ($bytes -gt $maxVram) { $maxVram = $bytes }
+    }
+}
+Write-Output $maxVram
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let bytes: u64 = stdout.trim().parse().ok()?;
+    if bytes > 0 {
+        Some(bytes / 1_048_576)
     } else {
         None
-    };
-
-    (best_name, vram_mb)
+    }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
