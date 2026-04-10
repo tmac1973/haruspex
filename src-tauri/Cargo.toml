@@ -1,6 +1,6 @@
 [package]
 name = "haruspex"
-version = "0.1.13"
+version = "0.1.14"
 description = "Private local AI with web research capability"
 authors = ["you"]
 license = "MIT"
