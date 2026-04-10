@@ -70,7 +70,10 @@ if [ "$SKIP_BUILD" = false ]; then
         cd "$LLAMA_BUILD_DIR"
 
         # Try Vulkan first, fall back to CPU
-        CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release"
+        # Disable LLAMA_CURL — we handle HTTP in the app, not via llama-server's
+        # built-in downloader. With LLAMA_CURL on, llama-server links against
+        # libcurl → OpenSSL DLLs that we don't bundle.
+        CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF"
         if pkg-config --exists vulkan 2>/dev/null || [ -f /usr/include/vulkan/vulkan.h ]; then
             echo "   Vulkan headers found, building with GPU support..."
             CMAKE_ARGS="$CMAKE_ARGS -DGGML_VULKAN=ON"

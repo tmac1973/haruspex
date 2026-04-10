@@ -92,13 +92,17 @@ else
     mkdir -p "$BUILD_DIR/llama"
     cd "$BUILD_DIR/llama"
 
+    # Disable LLAMA_CURL — llama-server's built-in model download isn't used
+    # (our app handles HTTP via Rust/reqwest). With LLAMA_CURL on, llama-server
+    # links against libcurl which on Windows pulls in OpenSSL DLLs
+    # (libcrypto-3-x64.dll, libssl-3-x64.dll) that we don't bundle.
     echo "   Configuring with flags: $CMAKE_GPU_FLAGS"
-    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1; then
+    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF $CMAKE_GPU_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags ($CMAKE_GPU_FLAGS), retrying CPU-only..."
         rm -rf "$BUILD_DIR/llama"
         mkdir -p "$BUILD_DIR/llama"
         cd "$BUILD_DIR/llama"
-        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release 2>&1
+        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF 2>&1
     fi
 
     echo "   Building..."
