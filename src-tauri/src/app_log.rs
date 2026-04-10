@@ -22,6 +22,29 @@ struct AppLogger {
     level: LevelFilter,
 }
 
+/// Message prefixes that indicate the line is sidecar stdout/stderr
+/// being passed through the `log` crate. These already appear in their
+/// own dedicated log viewer tabs (LLM / Whisper / TTS), so we filter them
+/// out of the App log tab to keep it focused on the main app's own
+/// activity (PDF extraction, file tools, agent loop, errors, etc.).
+///
+/// Note: this only affects the in-memory buffer that the App tab reads.
+/// The lines are still printed to stderr for dev / terminal users, and
+/// they still flow into the per-sidecar ring buffers in server.rs /
+/// whisper.rs / tts.rs.
+const SIDECAR_PASSTHROUGH_PREFIXES: &[&str] = &[
+    "llama-server:",
+    "llama-server stderr:",
+    "whisper-server:",
+    "koko:",
+];
+
+fn is_sidecar_passthrough(message: &str) -> bool {
+    SIDECAR_PASSTHROUGH_PREFIXES
+        .iter()
+        .any(|prefix| message.starts_with(prefix))
+}
+
 impl Log for AppLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= self.level
@@ -41,12 +64,21 @@ impl Log for AppLogger {
             Level::Trace => "TRACE",
         };
         let target = record.target();
-        let line = format!("[{}] [{}] [{}] {}", ts, level_tag, target, record.args());
+        let message = format!("{}", record.args());
+        let line = format!("[{}] [{}] [{}] {}", ts, level_tag, target, message);
 
-        // Mirror to stderr for dev / terminal launches
+        // Mirror to stderr for dev / terminal launches (always — terminal
+        // users want to see everything in one stream)
         eprintln!("{}", line);
 
-        // Push into the ring buffer for the UI
+        // Push into the ring buffer for the App log viewer tab — but skip
+        // sidecar passthrough lines since they're already shown in their
+        // own dedicated tabs. This keeps the App tab focused on what's
+        // actually happening in the Rust app itself.
+        if is_sidecar_passthrough(&message) {
+            return;
+        }
+
         if let Ok(mut buf) = buffer().lock() {
             if buf.len() >= RING_CAPACITY {
                 buf.pop_front();
@@ -140,5 +172,37 @@ mod tests {
     fn days_to_ymd_2024_01_01() {
         // 2024-01-01 is day 19723
         assert_eq!(days_to_ymd(19723), (2024, 1, 1));
+    }
+
+    #[test]
+    fn sidecar_passthrough_filter_catches_all_three_sidecars() {
+        assert!(is_sidecar_passthrough(
+            "llama-server: srv  log_server: model loaded"
+        ));
+        assert!(is_sidecar_passthrough(
+            "llama-server stderr: srv update_slots: kv cache rm"
+        ));
+        assert!(is_sidecar_passthrough(
+            "whisper-server: whisper_init_from_file_no_state"
+        ));
+        assert!(is_sidecar_passthrough("koko: starting kokoros"));
+    }
+
+    #[test]
+    fn sidecar_passthrough_filter_does_not_catch_app_messages() {
+        assert!(!is_sidecar_passthrough(
+            "Starting llama-server with args: [...]"
+        ));
+        assert!(!is_sidecar_passthrough("PDFium initialized from /path"));
+        assert!(!is_sidecar_passthrough(
+            "Auto-search rotation order for 'foo': [...]"
+        ));
+        assert!(!is_sidecar_passthrough(
+            "find_mmproj_for_model returned None"
+        ));
+        // Edge case: a message that mentions a sidecar name but isn't passthrough
+        assert!(!is_sidecar_passthrough(
+            "Spawning llama-server child process"
+        ));
     }
 }
