@@ -92,10 +92,6 @@ else
     mkdir -p "$BUILD_DIR/llama"
     cd "$BUILD_DIR/llama"
 
-    # Disable LLAMA_CURL — llama-server's built-in model download isn't used
-    # (our app handles HTTP via Rust/reqwest). With LLAMA_CURL on, llama-server
-    # links against libcurl which on Windows pulls in OpenSSL DLLs
-    # (libcrypto-3-x64.dll, libssl-3-x64.dll) that we don't bundle.
     echo "   Configuring with flags: $CMAKE_GPU_FLAGS"
     if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF $CMAKE_GPU_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags ($CMAKE_GPU_FLAGS), retrying CPU-only..."
@@ -347,6 +343,36 @@ case "$TARGET" in
         else
             echo "   WARN: Could not find MSVC runtime DLLs to bundle"
         fi
+
+        # Bundle OpenSSL DLLs if any sidecar links against them.
+        # llama.cpp and some transitive deps may pull in libcurl → OpenSSL.
+        # These DLLs are typically found alongside the sidecar build output
+        # or in common Windows locations.
+        echo ">> Bundling OpenSSL DLLs (if needed)..."
+        for ssl_dll in libcrypto-3-x64.dll libssl-3-x64.dll; do
+            if [ -f "$BINARIES_DIR/libs/$ssl_dll" ]; then
+                continue
+            fi
+            # Search common locations: sidecar build output, system, Git, Strawberry Perl
+            SSL_SRC=""
+            for search_dir in \
+                "$BUILD_DIR/llama/bin/Release" \
+                "$BUILD_DIR/llama/bin" \
+                "C:/Program Files/OpenSSL-Win64" \
+                "C:/Program Files/OpenSSL-Win64/bin" \
+                "C:/Program Files/Git/mingw64/bin" \
+                "C:/Strawberry/c/bin" \
+                "C:/Windows/System32"; do
+                if [ -f "$search_dir/$ssl_dll" ]; then
+                    SSL_SRC="$search_dir/$ssl_dll"
+                    break
+                fi
+            done
+            if [ -n "$SSL_SRC" ]; then
+                cp "$SSL_SRC" "$BINARIES_DIR/libs/"
+                echo "   Copied: $ssl_dll (from $SSL_SRC)"
+            fi
+        done
         echo
         ;;
 esac
