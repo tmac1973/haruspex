@@ -773,16 +773,27 @@ fn get_windows_gpu_info() -> (Option<String>, Option<u64>) {
     (gpu_name, vram_mb)
 }
 
+/// Run a PowerShell script without flashing a console window.
+/// CREATE_NO_WINDOW (0x08000000) suppresses the brief powershell.exe popup
+/// that would otherwise appear during GPU detection.
+#[cfg(target_os = "windows")]
+fn run_powershell(script: &str) -> Option<std::process::Output> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()
+}
+
 #[cfg(target_os = "windows")]
 fn get_windows_gpu_name() -> Option<String> {
     let ps_script = "Get-CimInstance Win32_VideoController | \
         Select-Object Name | \
         ConvertTo-Json -Compress";
 
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
-        .output()
-        .ok()?;
+    let output = run_powershell(ps_script)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
@@ -829,10 +840,7 @@ Get-ChildItem $classPath -ErrorAction SilentlyContinue | ForEach-Object {
 Write-Output $maxVram
 "#;
 
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
-        .output()
-        .ok()?;
+    let output = run_powershell(ps_script)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let bytes: u64 = stdout.trim().parse().ok()?;

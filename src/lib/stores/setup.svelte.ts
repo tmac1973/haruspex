@@ -144,12 +144,20 @@ export async function runTestQuery(): Promise<void> {
 			return;
 		}
 
-		testStatusMessage = 'Starting the AI model (this may take a minute)...';
-		await invoke('start_server', { modelPath });
+		// Only start the server if it isn't already running. start_server
+		// always stops-and-restarts, which on slow integrated graphics means
+		// 1-2 minutes of model loading per retry — that turned every retry
+		// into another wait + timeout cycle.
+		let initialStatus = await invoke<{ type: string; message?: string }>('get_server_status');
+		if (initialStatus.type !== 'Ready') {
+			testStatusMessage = 'Starting the AI model (this may take a minute)...';
+			await invoke('start_server', { modelPath });
+		}
 
-		// Poll for ready status with visible countdown
-		let ready = false;
-		for (let i = 0; i < 120; i++) {
+		// Poll for ready status with visible countdown. Use a generous
+		// timeout (5 minutes) since prompt eval on slow iGPUs is glacial.
+		let ready = initialStatus.type === 'Ready';
+		for (let i = 0; i < 600 && !ready; i++) {
 			await new Promise((r) => setTimeout(r, 500));
 			const status = await invoke<{ type: string; message?: string }>('get_server_status');
 
@@ -176,43 +184,110 @@ export async function runTestQuery(): Promise<void> {
 
 		testStatusMessage = 'Model loaded! Sending test message...';
 
+		// Use a STREAMING request so the test works on slow integrated GPUs
+		// where generating 200 tokens can easily take several minutes. With
+		// streaming we see the first token as soon as the model starts
+		// emitting, and we reset an idle-timeout watchdog on each chunk —
+		// so the test only fails if the model truly stops producing output.
+		//
+		// The first chunk can take a long time on slow hardware: prompt
+		// eval (processing the system prompt + warming up KV cache) runs
+		// before any token is generated. On an Intel UHD iGPU this can be
+		// 60-180 seconds. We use a generous 5-minute initial timeout that
+		// applies until first byte, then a 30s idle timeout once tokens
+		// start flowing.
 		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), 30000);
+		const FIRST_CHUNK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for first byte
+		const IDLE_TIMEOUT_MS = 30 * 1000; // 30s between chunks once flowing
+		let firstChunkSeen = false;
+		let idleTimer = setTimeout(() => controller.abort(), FIRST_CHUNK_TIMEOUT_MS);
+		const resetIdleTimer = () => {
+			clearTimeout(idleTimer);
+			const ms = firstChunkSeen ? IDLE_TIMEOUT_MS : FIRST_CHUNK_TIMEOUT_MS;
+			idleTimer = setTimeout(() => controller.abort(), ms);
+		};
 
-		const response = await fetch('http://127.0.0.1:8765/v1/chat/completions', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				model: 'default',
-				messages: [
-					{
-						role: 'user',
-						content: 'Hello! Can you introduce yourself in one sentence?'
+		try {
+			const response = await fetch('http://127.0.0.1:8765/v1/chat/completions', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					model: 'default',
+					messages: [
+						{
+							role: 'user',
+							content: 'Hello! Can you introduce yourself in one sentence?'
+						}
+					],
+					stream: true,
+					stream_options: { include_usage: true },
+					max_tokens: 200
+				}),
+				signal: controller.signal
+			});
+
+			if (!response.ok) {
+				clearTimeout(idleTimer);
+				testStatusMessage = `Server returned error ${response.status}`;
+				testResult = 'error';
+				return;
+			}
+
+			// Read SSE chunks. As soon as we see ANY content (text or
+			// reasoning), we know the model is working — even if it never
+			// finishes generating in time. The idle timer resets on each
+			// chunk so a slow-but-steady model passes.
+			const reader = response.body!.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let collected = '';
+			let firstTokenSeen = false;
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				firstChunkSeen = true;
+				resetIdleTimer();
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() || '';
+				for (const line of lines) {
+					const trimmed = line.trim();
+					if (!trimmed.startsWith('data: ')) continue;
+					const data = trimmed.slice(6);
+					if (data === '[DONE]') continue;
+					try {
+						const parsed = JSON.parse(data);
+						const delta = parsed.choices?.[0]?.delta;
+						const text = delta?.content || delta?.reasoning_content || '';
+						if (text) {
+							collected += text;
+							if (!firstTokenSeen) {
+								firstTokenSeen = true;
+								testStatusMessage = 'Model is responding...';
+							}
+						}
+					} catch {
+						// ignore malformed chunks
 					}
-				],
-				stream: false,
-				max_tokens: 200
-			}),
-			signal: controller.signal
-		});
+				}
+			}
+			clearTimeout(idleTimer);
 
-		clearTimeout(timeout);
-
-		if (!response.ok) {
-			testStatusMessage = `Server returned error ${response.status}`;
+			testResponse = collected;
+			testResult = collected ? 'success' : 'error';
+			if (!collected) {
+				testStatusMessage = 'Model returned an empty response.';
+			}
+		} catch (e) {
+			clearTimeout(idleTimer);
+			if (e instanceof DOMException && e.name === 'AbortError') {
+				testStatusMessage =
+					'The model is responding very slowly. This is normal for integrated graphics — you can skip the test and try chatting normally.';
+			} else {
+				testStatusMessage = `Error: ${e instanceof Error ? e.message : String(e)}`;
+			}
 			testResult = 'error';
-			return;
-		}
-
-		const data = await response.json();
-		const message = data.choices?.[0]?.message;
-		// Models with thinking mode may put the answer in content and reasoning
-		// in reasoning_content — either field being non-empty means the model works.
-		testResponse = message?.content || '';
-		const hasOutput = testResponse || message?.reasoning_content;
-		testResult = hasOutput ? 'success' : 'error';
-		if (!hasOutput) {
-			testStatusMessage = 'Model returned an empty response.';
 		}
 	} catch (e) {
 		testStatusMessage = `Error: ${e instanceof Error ? e.message : String(e)}`;
