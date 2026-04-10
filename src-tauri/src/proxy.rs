@@ -13,6 +13,7 @@ const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(2);
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const FETCH_CACHE_TTL: Duration = Duration::from_secs(600); // 10 minutes
 const ENGINE_COOLDOWN: Duration = Duration::from_secs(300); // 5 min cooldown after failure
+
 // Slow-mode pacing — used by deep research with auto rotation when no
 // reliable provider (Brave / SearXNG) is configured. Slower per-engine
 // pacing reduces bot-detection trips, and shorter cooldowns let engines
@@ -341,7 +342,12 @@ async fn search_mojeek(query: &str, recency: &str) -> Result<Vec<SearchResult>, 
     if results.is_empty() {
         let snippet = diagnostic_snippet(
             &html,
-            &["results-standard", "class=\"results", "id=\"results", "<main"],
+            &[
+                "results-standard",
+                "class=\"results",
+                "id=\"results",
+                "<main",
+            ],
             3000,
         );
         warn!(
