@@ -32,6 +32,10 @@ pub struct ProxyState {
     engine_failures: Mutex<HashMap<String, Instant>>,
     search_cache: Mutex<HashMap<String, CacheEntry<Vec<SearchResult>>>>,
     fetch_cache: Mutex<HashMap<String, CacheEntry<String>>>,
+    /// Index of the next engine to try first in auto-rotation. Incremented
+    /// after each successful search so we round-robin through the engines
+    /// instead of always starting with the same one.
+    auto_rotation_cursor: Mutex<usize>,
 }
 
 impl ProxyState {
@@ -41,7 +45,22 @@ impl ProxyState {
             engine_failures: Mutex::new(HashMap::new()),
             search_cache: Mutex::new(HashMap::new()),
             fetch_cache: Mutex::new(HashMap::new()),
+            auto_rotation_cursor: Mutex::new(0),
         }
+    }
+
+    /// Get the rotation order: starts at the cursor and wraps around so
+    /// every engine is tried once. Does NOT advance the cursor — call
+    /// advance_rotation_cursor() after a successful search.
+    fn rotation_order(&self) -> Vec<&'static str> {
+        let cursor = *self.auto_rotation_cursor.lock().unwrap();
+        let n = AUTO_ENGINES.len();
+        (0..n).map(|i| AUTO_ENGINES[(cursor + i) % n]).collect()
+    }
+
+    fn advance_rotation_cursor(&self) {
+        let mut cursor = self.auto_rotation_cursor.lock().unwrap();
+        *cursor = (*cursor + 1) % AUTO_ENGINES.len();
     }
 
     fn rate_limit_engine(&self, engine: &str) {
@@ -397,18 +416,24 @@ async fn search_auto(
     query: &str,
     recency: &str,
 ) -> Result<Vec<SearchResult>, String> {
+    // Build the try order: start at the rotation cursor (round-robin) so
+    // we don't always hit the same engine first, then partition into
+    // healthy/unhealthy so cooled-down engines come last as fallbacks.
+    let rotation = state.rotation_order();
     let mut healthy: Vec<&str> = Vec::new();
     let mut unhealthy: Vec<&str> = Vec::new();
 
-    for engine in AUTO_ENGINES {
+    for engine in &rotation {
         if state.is_engine_healthy(engine) {
-            healthy.push(engine);
+            healthy.push(*engine);
         } else {
-            unhealthy.push(engine);
+            unhealthy.push(*engine);
         }
     }
 
     let ordered: Vec<&str> = healthy.into_iter().chain(unhealthy).collect();
+    info!("Auto-search rotation order for '{}': {:?}", query, ordered);
+
     let mut last_error = String::new();
 
     for engine in &ordered {
@@ -427,7 +452,15 @@ async fn search_auto(
 
         match result {
             Ok(results) if !results.is_empty() => {
-                info!("Auto-search succeeded with {}", engine);
+                info!(
+                    "Auto-search succeeded with {} ({} results)",
+                    engine,
+                    results.len()
+                );
+                // Advance the cursor so the NEXT search starts with a
+                // different engine first. This is what makes it actually
+                // rotate instead of always hitting the same one.
+                state.advance_rotation_cursor();
                 return Ok(results);
             }
             Ok(_) => {
@@ -445,6 +478,9 @@ async fn search_auto(
         }
     }
 
+    // All engines failed — still advance the cursor so the next attempt
+    // starts somewhere new.
+    state.advance_rotation_cursor();
     Err(format!(
         "All search engines failed. Last error: {}",
         last_error
@@ -955,5 +991,64 @@ mod tests {
         let times = state.last_search_time.lock().unwrap();
         assert!(times.contains_key("qwant"));
         assert!(times.contains_key("bing"));
+    }
+
+    #[test]
+    fn rotation_starts_at_first_engine() {
+        let state = ProxyState::new();
+        let order = state.rotation_order();
+        assert_eq!(order, vec!["qwant", "duckduckgo", "bing"]);
+    }
+
+    #[test]
+    fn rotation_advances_after_success() {
+        let state = ProxyState::new();
+        // First search starts with qwant
+        assert_eq!(state.rotation_order()[0], "qwant");
+
+        // After advancing, the next one starts with duckduckgo
+        state.advance_rotation_cursor();
+        assert_eq!(state.rotation_order(), vec!["duckduckgo", "bing", "qwant"]);
+
+        // And then bing
+        state.advance_rotation_cursor();
+        assert_eq!(state.rotation_order(), vec!["bing", "qwant", "duckduckgo"]);
+
+        // And wraps back around to qwant
+        state.advance_rotation_cursor();
+        assert_eq!(state.rotation_order(), vec!["qwant", "duckduckgo", "bing"]);
+    }
+
+    #[test]
+    fn rotation_full_cycle_uses_each_engine() {
+        let state = ProxyState::new();
+        // Track which engine appears first across N consecutive searches.
+        // After 3 advances we should have seen each engine in position 0
+        // exactly once.
+        let mut firsts = std::collections::HashSet::new();
+        for _ in 0..3 {
+            firsts.insert(state.rotation_order()[0]);
+            state.advance_rotation_cursor();
+        }
+        assert_eq!(firsts.len(), 3);
+        assert!(firsts.contains("qwant"));
+        assert!(firsts.contains("duckduckgo"));
+        assert!(firsts.contains("bing"));
+    }
+
+    #[test]
+    fn rotation_includes_all_engines() {
+        // Every rotation order returned should be a permutation of all engines.
+        let state = ProxyState::new();
+        for _ in 0..6 {
+            let order = state.rotation_order();
+            assert_eq!(order.len(), AUTO_ENGINES.len());
+            let mut sorted = order.clone();
+            sorted.sort();
+            let mut expected: Vec<&str> = AUTO_ENGINES.to_vec();
+            expected.sort();
+            assert_eq!(sorted, expected);
+            state.advance_rotation_cursor();
+        }
     }
 }
