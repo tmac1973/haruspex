@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getSettings } from '$lib/stores/settings';
 
 export type SetupStep = 'welcome' | 'hardware' | 'download' | 'test' | 'done';
 export type TestResult = 'pending' | 'running' | 'success' | 'error';
@@ -151,7 +152,10 @@ export async function runTestQuery(): Promise<void> {
 		let initialStatus = await invoke<{ type: string; message?: string }>('get_server_status');
 		if (initialStatus.type !== 'Ready') {
 			testStatusMessage = 'Starting the AI model (this may take a minute)...';
-			await invoke('start_server', { modelPath });
+			await invoke('start_server', {
+				modelPath,
+				ctxSize: getSettings().contextSize
+			});
 		}
 
 		// Poll for ready status with visible countdown. Use a generous

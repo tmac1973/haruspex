@@ -3,13 +3,15 @@
 
 	interface Props {
 		steps: SearchStep[];
+		slowMode?: boolean;
 	}
 
-	let { steps }: Props = $props();
+	let { steps, slowMode = false }: Props = $props();
 	let expanded = $state(false);
 
 	function stepIcon(toolName: string): string {
 		if (toolName === 'web_search') return '\u{1F50D}'; // magnifying glass
+		if (toolName === 'research_url') return '\u{1F9D0}'; // face with monocle
 		if (toolName.startsWith('fs_write')) return '\u{1F4DD}'; // memo
 		if (toolName.startsWith('fs_list')) return '\u{1F4C2}'; // open folder
 		if (toolName.startsWith('fs_edit')) return '\u270F\uFE0F'; // pencil
@@ -22,6 +24,8 @@
 				return `Searching: "${query}"`;
 			case 'fetch_url':
 				return `Reading: ${query}`;
+			case 'research_url':
+				return `Researching: ${query}`;
 			case 'fs_list_dir':
 				return `Listing: ${query}`;
 			case 'fs_read_text':
@@ -56,6 +60,13 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="search-steps" onclick={() => (expanded = !expanded)}>
+		{#if slowMode}
+			<div class="slow-notice">
+				⏳ Deep research is using slow pacing — public search engines need to be
+				rate-limited to avoid bot detection. For faster results, configure
+				Brave Search or SearXNG in Settings.
+			</div>
+		{/if}
 		{#each steps as step (step.id)}
 			<div class="step" data-status={step.status}>
 				<span class="step-icon">{stepIcon(step.toolName)}</span>
@@ -91,6 +102,17 @@
 		border-bottom: 1px solid var(--border);
 		cursor: pointer;
 		font-size: 0.85rem;
+	}
+
+	.slow-notice {
+		margin-bottom: 8px;
+		padding: 8px 10px;
+		font-size: 0.78rem;
+		line-height: 1.4;
+		color: var(--text-primary);
+		background: var(--bg-secondary);
+		border-left: 3px solid var(--accent);
+		border-radius: 4px;
 	}
 
 	.step {

@@ -27,6 +27,7 @@
 		cancelGeneration
 	} from '$lib/stores/chat.svelte';
 	import { getServerState } from '$lib/stores/server.svelte';
+	import { getSettings } from '$lib/stores/settings';
 	import { onMount, tick } from 'svelte';
 
 	let inputText = $state('');
@@ -71,6 +72,17 @@
 
 	const serverReady = $derived(serverState.status === 'ready');
 	const exhaustiveResearch = $derived(getExhaustiveResearch());
+
+	// Slow-mode notice fires when deep research is on, the user is using
+	// auto-rotation across free public engines, and they don't have a Brave
+	// API key configured. In that combination the search proxy paces itself
+	// to avoid bot-detection trips, which makes deep research noticeably
+	// slower — the user should know why.
+	const searchProviderSlowMode = $derived(
+		exhaustiveResearch &&
+			getSettings().searchProvider === 'auto' &&
+			!getSettings().braveApiKey
+	);
 
 	$effect(() => {
 		// Auto-scroll when streaming content changes
@@ -220,7 +232,7 @@
 				{/each}
 
 				{#if searchSteps.length > 0}
-					<SearchStepComponent steps={searchSteps} />
+					<SearchStepComponent steps={searchSteps} slowMode={searchProviderSlowMode} />
 				{/if}
 
 				{#if isGenerating && streamingContent}

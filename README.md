@@ -19,8 +19,8 @@ Haruspex uses your GPU for inference. While it is running, other GPU-intensive a
 ## Features
 
 - **Private by design** — all inference runs on your hardware, nothing is sent to the cloud
-- **Web research** — searches the web and reads pages to answer questions about current events
-- **Deep research mode** — optional toggle that tells the model to search more aggressively across multiple sources for thorough answers
+- **Web research** — searches the web and reads pages to answer questions about current events. Two URL-reading modes: `fetch_url` returns the raw page text, `research_url` runs the page through a focused sub-agent that extracts only the parts relevant to a specific question, returning concise findings instead of the full page.
+- **Deep research mode** — optional toggle for thorough multi-source synthesis. Allows up to 25 tool-call iterations per turn, forces the model to use the context-light `research_url` tool for every page (so a single research turn can fan out across many more sources without running out of context), and runs in-loop trimming of older tool results when context fills up. Each sub-agent processes one URL sequentially through the same llama-server slot — the win comes from context isolation, not parallelism.
 - **Local file access (opt-in)** — pick a working directory to let the model read and write files within it. See [Local files](#local-files) below for the full list of supported formats and tools. Sandboxed to the chosen directory; the model cannot touch anything outside it.
 - **Vision** — analyze images and form PDFs using the model's built-in vision capability (via the mmproj projector bundled with Qwen 3.5)
 - **Voice input** — speak your questions via the built-in microphone button (powered by [whisper.cpp](https://github.com/ggml-org/whisper.cpp))
@@ -74,7 +74,7 @@ Working directory selection is per-conversation and not persisted across app res
 | PDF creation                    | [printpdf](https://crates.io/crates/printpdf) (pure Rust)                                                                                                                       |
 | docx / xlsx                     | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes |
 | Database                        | SQLite (via rusqlite)                                                                                                                                                           |
-| Web search                      | Auto-rotation (Qwant / DuckDuckGo / Bing), Brave Search, or SearXNG                                                                                                             |
+| Web search                      | Auto-rotation (Brave HTML / DuckDuckGo / Mojeek), Brave Search API, or SearXNG                                                                                                  |
 
 ## Installing
 
@@ -261,12 +261,16 @@ make release-local
 
 ## Search providers
 
-| Provider       | Setup                    | Notes                                                                                                        |
-| -------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Auto (default) | None                     | Rotates between Qwant, DuckDuckGo, and Bing with automatic failover and health tracking to avoid rate limits |
-| DuckDuckGo     | None                     | Single engine, may get rate limited                                                                          |
-| Brave Search   | API key in Settings      | 2,000 free queries/month, most reliable                                                                      |
-| SearXNG        | Instance URL in Settings | Unlimited (self-hosted)                                                                                      |
+| Provider          | Setup                    | Notes                                                                                                                          |
+| ----------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Auto (default)    | None                     | Rotates between Brave HTML scrape, DuckDuckGo, and Mojeek with round-robin scheduling, per-engine health tracking, and failover |
+| DuckDuckGo        | None                     | Single engine, may get rate limited                                                                                            |
+| Brave Search API  | API key in Settings      | 2,000 free queries/month, most reliable                                                                                        |
+| SearXNG           | Instance URL in Settings | Unlimited (self-hosted)                                                                                                        |
+
+When deep research mode is on _and_ the Auto provider is selected _and_ no Brave API key is configured, the search proxy automatically switches to **slow mode** — longer per-engine pacing (~6s vs 2s) and shorter cooldowns after a failure (~45s vs 5min) so engines can recover within the same research turn. A small notice appears above the search-steps panel explaining the slow pacing and pointing the user to Settings. Configuring a Brave API key or a SearXNG instance bypasses slow mode entirely and runs at full speed.
+
+Bing and Qwant were previously in the Auto rotation but were removed: as of April 2026 both serve fully client-rendered SPAs gated by JavaScript bot challenges (Bing uses Cloudflare Turnstile, Qwant uses DataDome), so plain-HTTP scraping returns no results. They could be revived only with a headless browser or a paid API.
 
 ## License
 

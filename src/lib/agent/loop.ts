@@ -1,6 +1,8 @@
 import {
+	ApiError,
 	chatCompletion,
 	chatCompletionStream,
+	messageText,
 	type ChatMessage,
 	type StreamChunk,
 	type Usage
@@ -9,6 +11,17 @@ import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { getAgentTools } from '$lib/agent/tools';
 import { executeTool, type PendingImage } from '$lib/agent/search';
 import { getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
+
+// Trim older tool results when context usage crosses this fraction.
+// Lower than the conversation-level compaction threshold (0.8) so we act
+// before a single deep-research turn can blow context.
+const IN_LOOP_TRIM_THRESHOLD = 0.7;
+// Always preserve this many of the most recent tool messages — the model
+// needs the freshest results to actually answer the question.
+const PRESERVE_RECENT_TOOL_MESSAGES = 3;
+// Final synthesis token cap. If the model hits this, we surface a length
+// finish_reason instead of silently truncating to a fragment.
+const FINAL_SYNTHESIS_MAX_TOKENS = 4096;
 
 export interface SearchStep {
 	id: string;
@@ -29,6 +42,53 @@ export interface AgentLoopOptions {
 	onUsageUpdate?: (usage: Usage) => void;
 	signal?: AbortSignal;
 	maxIterations?: number;
+	/**
+	 * Configured server context size. Used for in-loop trimming of older
+	 * tool results when a single research turn would otherwise blow context.
+	 */
+	contextSize?: number;
+	/**
+	 * When true, the loop runs in deep-research mode: fetch_url is removed
+	 * from the tool list so the model must use research_url for every page.
+	 */
+	deepResearch?: boolean;
+}
+
+/**
+ * Replace older tool-message content with a short stub when prompt tokens
+ * have crossed the in-loop trim threshold. This is the in-turn analogue of
+ * conversation compaction: rather than summarizing user/assistant turns,
+ * we drop the bulky page text from old fetch_url / web_search results that
+ * the model has already had a chance to reason about.
+ *
+ * The most recent PRESERVE_RECENT_TOOL_MESSAGES tool messages are kept
+ * intact so the model still has fresh source material to draft from.
+ *
+ * Returns true if any messages were trimmed.
+ */
+function trimOldToolMessages(messages: ChatMessage[]): boolean {
+	// Find indices of all tool messages, in order
+	const toolIndices: number[] = [];
+	for (let i = 0; i < messages.length; i++) {
+		if (messages[i].role === 'tool') toolIndices.push(i);
+	}
+
+	if (toolIndices.length <= PRESERVE_RECENT_TOOL_MESSAGES) return false;
+
+	// Trim everything except the most recent N tool messages
+	const trimUpTo = toolIndices.length - PRESERVE_RECENT_TOOL_MESSAGES;
+	let trimmed = false;
+	for (let k = 0; k < trimUpTo; k++) {
+		const idx = toolIndices[k];
+		const msg = messages[idx];
+		const text = messageText(msg.content);
+		// Skip if already a stub
+		if (text.startsWith('[Trimmed:')) continue;
+		const stub = `[Trimmed: ${text.length} chars dropped to free context. Earlier tool result is no longer in scope — refer to more recent results or call the tool again if needed.]`;
+		messages[idx] = { ...msg, content: stub };
+		trimmed = true;
+	}
+	return trimmed;
 }
 
 /**
@@ -60,8 +120,15 @@ function injectPendingImages(messages: ChatMessage[], pending: PendingImage[]): 
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
-	const { messages, maxIterations = 8, signal, workingDir = null } = options;
-	const tools = getAgentTools(workingDir !== null);
+	const {
+		messages,
+		maxIterations = 8,
+		signal,
+		workingDir = null,
+		contextSize = 0,
+		deepResearch = false
+	} = options;
+	const tools = getAgentTools(workingDir !== null, deepResearch);
 	const pendingImages: PendingImage[] = [];
 	let iteration = 0;
 	let usedTools = false;
@@ -92,6 +159,21 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			},
 			signal
 		);
+
+		// Surface usage to the UI immediately so the context indicator
+		// reflects what just happened, not just the final stream.
+		if (response.usage) options.onUsageUpdate?.(response.usage);
+
+		// In-loop trim: if this turn's accumulated tool messages are pushing
+		// us toward the server's context wall, drop the bulky content from
+		// older tool results before the next iteration sends them again.
+		if (
+			contextSize > 0 &&
+			response.usage &&
+			response.usage.prompt_tokens / contextSize >= IN_LOOP_TRIM_THRESHOLD
+		) {
+			trimOldToolMessages(messages);
+		}
 
 		let toolCalls: ResolvedToolCall[] = [];
 		try {
@@ -124,15 +206,27 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 						messages,
 						temperature: sampling.temperature,
 						top_p: sampling.top_p,
+						max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
 						chat_template_kwargs: templateKwargs
 					},
 					signal
 				);
+				let lastFinish: string | null = null;
 				for await (const chunk of stream) {
 					if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
+					if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 					options.onStreamChunk(chunk);
 				}
 				options.onComplete();
+				if (lastFinish === 'length') {
+					options.onError(
+						new ApiError(
+							'The model ran out of tokens before finishing its answer. ' +
+								'Try a less context-heavy question, disable deep research, ' +
+								'or increase the context size in Settings.'
+						)
+					);
+				}
 			} else {
 				const stream = chatCompletionStream(
 					{
@@ -140,15 +234,26 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 						tools,
 						temperature: sampling.temperature,
 						top_p: sampling.top_p,
+						max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
 						chat_template_kwargs: templateKwargs
 					},
 					signal
 				);
+				let lastFinish: string | null = null;
 				for await (const chunk of stream) {
 					if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
+					if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 					options.onStreamChunk(chunk);
 				}
 				options.onComplete();
+				if (lastFinish === 'length') {
+					options.onError(
+						new ApiError(
+							'The model ran out of tokens before finishing its answer. ' +
+								'Try a shorter question or increase the context size in Settings.'
+						)
+					);
+				}
 			}
 			return;
 		}
@@ -177,7 +282,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				call.arguments,
 				workingDir,
 				signal,
-				pendingImages
+				pendingImages,
+				deepResearch
 			);
 			options.onToolEnd(call, result);
 
@@ -203,13 +309,25 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			messages,
 			temperature: sampling2.temperature,
 			top_p: sampling2.top_p,
+			max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
 			chat_template_kwargs: getChatTemplateKwargs()
 		},
 		signal
 	);
+	let lastFinish: string | null = null;
 	for await (const chunk of stream) {
 		if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
+		if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 		options.onStreamChunk(chunk);
 	}
 	options.onComplete();
+	if (lastFinish === 'length') {
+		options.onError(
+			new ApiError(
+				'Reached the iteration limit and the final answer was truncated before completing. ' +
+					'The research turn used too many fetched pages to fit in the context window. ' +
+					'Try a more focused question, disable deep research, or increase the context size in Settings.'
+			)
+		);
+	}
 }

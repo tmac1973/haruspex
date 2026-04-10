@@ -21,13 +21,33 @@ const WEB_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fetch_url',
 			description:
-				'Fetch and extract the text content from a web page URL. Use this to read full articles or pages found via web_search.',
+				'Fetch and extract the raw text content from a web page URL. Use this when you need to see the full page text yourself — for example, structured data, code samples, or content where you cannot describe in advance what is relevant. For research questions where you only need the parts of a page that answer a specific question, prefer research_url instead — it is much cheaper on context.',
 			parameters: {
 				type: 'object',
 				properties: {
 					url: { type: 'string', description: 'The URL to fetch' }
 				},
 				required: ['url']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'research_url',
+			description:
+				'Read a web page through a focused research assistant that extracts only the information relevant to a specific question or focus, and returns concise findings instead of the full page text. Strongly preferred over fetch_url when researching a topic across multiple sources, because it dramatically reduces how much context each page consumes — letting you fan out across many more sources before running out of room. Each call processes one URL. The focus parameter tells the assistant what to look for; be specific (e.g. "pricing tiers and free plan limits", "criticisms or downsides", "verbatim quotes about deployment latency") rather than vague.',
+			parameters: {
+				type: 'object',
+				properties: {
+					url: { type: 'string', description: 'The URL to research' },
+					focus: {
+						type: 'string',
+						description:
+							'What information to look for on this page. Be specific — this is the question the research assistant will try to answer using only this single page.'
+					}
+				},
+				required: ['url', 'focus']
 			}
 		}
 	}
@@ -303,15 +323,28 @@ const FS_TOOLS: ToolDefinition[] = [
 ];
 
 /**
- * Get the tools to expose to the agent for this request. Filesystem tools
- * are only included when a working directory is active — otherwise the
- * model cannot invoke them at all.
+ * Get the tools to expose to the agent for this request.
+ *
+ * - Filesystem tools are only included when a working directory is active.
+ * - In deep-research mode, fetch_url is removed from the tool list so the
+ *   model is forced to use research_url for every source. This guarantees
+ *   each page goes through the sub-agent compression path, which is the
+ *   only way deep research can fan out across many sources without
+ *   blowing the main context window. Outside deep-research mode both
+ *   tools remain available so normal chat can grab raw page text when
+ *   that's actually what's wanted.
  */
-export function getAgentTools(hasWorkingDir: boolean): ToolDefinition[] {
+export function getAgentTools(
+	hasWorkingDir: boolean,
+	deepResearch: boolean = false
+): ToolDefinition[] {
+	const webTools = deepResearch
+		? WEB_TOOLS.filter((t) => t.function.name !== 'fetch_url')
+		: WEB_TOOLS;
 	if (hasWorkingDir) {
-		return [...WEB_TOOLS, ...FS_TOOLS];
+		return [...webTools, ...FS_TOOLS];
 	}
-	return WEB_TOOLS;
+	return webTools;
 }
 
 /** @deprecated Use getAgentTools(hasWorkingDir) instead. */

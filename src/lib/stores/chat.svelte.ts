@@ -433,6 +433,12 @@ function extractUrlsFromSteps(steps: SearchStep[]): string[] {
 			} catch {
 				// ignore
 			}
+		} else if (step.toolName === 'fetch_url' && step.query) {
+			urls.push(step.query);
+		} else if (step.toolName === 'research_url' && step.query) {
+			// research_url query is "URL — focus"; strip the focus suffix
+			const dash = step.query.indexOf(' — ');
+			urls.push(dash >= 0 ? step.query.slice(0, dash) : step.query);
 		}
 	}
 	return [...new Set(urls)];
@@ -494,11 +500,19 @@ export async function sendMessage(content: string): Promise<void> {
 				hints.push('Include Reddit as a source.');
 			}
 
-			// Exhaustive research mode: instruct the model to be thorough.
+			// Exhaustive research mode: instruct the model to be thorough AND
+			// to use the focused research_url tool for each source instead of
+			// raw fetch_url. The whole point of deep research is fanning out
+			// across many pages, which only works if each page is compressed
+			// to relevant findings before it lands in the main context.
 			if (exhaustiveResearch) {
 				hints.push(
 					'Research this thoroughly. Perform multiple searches from different angles. ' +
-						'Read at least 4-6 sources before answering. Include diverse viewpoints.'
+						'Read at least 4-6 sources before answering. Include diverse viewpoints. ' +
+						'For every source you read, use research_url (not fetch_url) and pass a ' +
+						'specific focus describing what you are looking for on that page — for ' +
+						'example "pricing tiers and free plan limits", "criticisms or downsides", ' +
+						'or "verbatim claims about deployment latency". Each call processes one URL.'
 				);
 			}
 
@@ -533,6 +547,8 @@ export async function sendMessage(content: string): Promise<void> {
 			messages: messagesForApi,
 			workingDir: currentWorkingDir,
 			maxIterations: exhaustiveResearch ? 25 : 10,
+			contextSize: getSettings().contextSize,
+			deepResearch: exhaustiveResearch,
 			signal: abortController.signal,
 			onUsageUpdate: (u: Usage) => {
 				updateContextUsage(u, getSettings().contextSize);
@@ -547,6 +563,12 @@ export async function sendMessage(content: string): Promise<void> {
 					case 'fetch_url':
 						query = (call.arguments.url as string) || '';
 						break;
+					case 'research_url': {
+						const url = (call.arguments.url as string) || '';
+						const focus = (call.arguments.focus as string) || '';
+						query = focus ? `${url} — ${focus}` : url;
+						break;
+					}
 					case 'fs_list_dir':
 						query = (call.arguments.path as string) || '.';
 						break;

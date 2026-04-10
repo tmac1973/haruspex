@@ -1,5 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
-import { getSettings } from '$lib/stores/settings';
+import { chatCompletion, type ChatMessage } from '$lib/api';
+import { getSettings, getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
+
+// Sub-agent token cap. Generous on purpose: a treasure-trove page should be
+// able to return rich findings without artificial truncation. The model will
+// hit EOS naturally well before this for most pages, but having headroom
+// avoids cutting off the one source that has all the answers.
+const RESEARCH_AGENT_MAX_TOKENS = 3072;
 
 export interface SearchResult {
 	title: string;
@@ -7,7 +14,10 @@ export interface SearchResult {
 	snippet: string;
 }
 
-export async function executeWebSearch(query: string): Promise<string> {
+export async function executeWebSearch(
+	query: string,
+	deepResearch: boolean = false
+): Promise<string> {
 	try {
 		const settings = getSettings();
 		const results = await invoke<SearchResult[]>('proxy_search', {
@@ -15,7 +25,8 @@ export async function executeWebSearch(query: string): Promise<string> {
 			provider: settings.searchProvider,
 			apiKey: settings.braveApiKey || null,
 			instanceUrl: settings.searxngUrl || null,
-			recency: settings.searchRecency || null
+			recency: settings.searchRecency || null,
+			deepResearch
 		});
 		return JSON.stringify(results);
 	} catch (e) {
@@ -25,9 +36,85 @@ export async function executeWebSearch(query: string): Promise<string> {
 
 export async function executeFetchUrl(url: string): Promise<string> {
 	try {
-		return await invoke<string>('proxy_fetch', { url });
+		return await invoke<string>('proxy_fetch', { url, caller: 'fetch_url' });
 	} catch (e) {
 		return `Failed to fetch URL: ${e}`;
+	}
+}
+
+/**
+ * Run a single-URL research sub-agent. Fetches the page, then dispatches
+ * an isolated chatCompletion call (no tools, no chat history) that asks
+ * a focused extractor prompt to pull out only the parts of the page that
+ * answer the model's `focus`. Returns just the findings — typically far
+ * smaller than the raw page text — so the main agent loop can fan out
+ * across many sources without saturating its own context window.
+ *
+ * Sub-agents run sequentially through the existing llama-server slot.
+ * On llama.cpp, parallel slots provide little benefit for token
+ * generation (continuous batching helps prefill, but decode is
+ * memory-bandwidth bound and per-request rate degrades), so the gain
+ * here is from context isolation, not concurrent compute.
+ */
+export async function executeResearchUrl(
+	url: string,
+	focus: string,
+	signal?: AbortSignal
+): Promise<string> {
+	// Fetch the raw page content first. If the fetch failed, surface the
+	// error verbatim — there's no point spinning up a sub-agent on nothing.
+	let pageContent: string;
+	try {
+		pageContent = await invoke<string>('proxy_fetch', { url, caller: 'research_url' });
+	} catch (e) {
+		return `Failed to fetch URL: ${e}`;
+	}
+	if (!pageContent || pageContent.startsWith('Failed to fetch')) {
+		return pageContent || `Failed to fetch URL: ${url}`;
+	}
+
+	const systemPrompt =
+		'You are a focused research assistant. You will be given the text of a single web page and a specific focus question. Your job is to extract from the page only the information that is relevant to the focus question, and return it as concise findings.\n\n' +
+		'Rules:\n' +
+		'- Quote specific facts, numbers, names, and dates verbatim from the page.\n' +
+		'- Use bullet points organized by sub-topic when helpful.\n' +
+		'- Do not summarize parts of the page that are not relevant to the focus.\n' +
+		'- Do not invent or extrapolate — every claim must be supported by the page text.\n' +
+		'- If the page contains no information relevant to the focus, reply with exactly: "No relevant information found on this page."\n' +
+		'- Do not add preamble, meta-commentary, or closing remarks. Output only the findings.';
+
+	const userPrompt =
+		`Focus: ${focus}\n\n` +
+		`Page URL: ${url}\n\n` +
+		`Page content:\n${pageContent}\n\n` +
+		`Extract from the page above only the information relevant to the focus.`;
+
+	const messages: ChatMessage[] = [
+		{ role: 'system', content: systemPrompt },
+		{ role: 'user', content: userPrompt }
+	];
+
+	try {
+		const sampling = getSamplingParams();
+		const response = await chatCompletion(
+			{
+				messages,
+				temperature: sampling.temperature,
+				top_p: sampling.top_p,
+				max_tokens: RESEARCH_AGENT_MAX_TOKENS,
+				chat_template_kwargs: getChatTemplateKwargs()
+			},
+			signal
+		);
+		const findings = response.content?.trim();
+		if (!findings) {
+			return `Sub-agent returned no findings for ${url}.`;
+		}
+		// Tag the result with the URL so the main agent can cite it.
+		return `Source: ${url}\nFocus: ${focus}\n\n${findings}`;
+	} catch (e) {
+		if (e instanceof DOMException && e.name === 'AbortError') throw e;
+		return `Research sub-agent failed for ${url}: ${e}`;
 	}
 }
 
@@ -221,14 +308,16 @@ export async function executeTool(
 	args: Record<string, unknown>,
 	workingDir: string | null,
 	signal?: AbortSignal,
-	pendingImages?: PendingImage[]
+	pendingImages?: PendingImage[],
+	deepResearch: boolean = false
 ): Promise<string> {
-	void signal;
 	switch (name) {
 		case 'web_search':
-			return executeWebSearch(args.query as string);
+			return executeWebSearch(args.query as string, deepResearch);
 		case 'fetch_url':
 			return executeFetchUrl(args.url as string);
+		case 'research_url':
+			return executeResearchUrl(args.url as string, args.focus as string, signal);
 		case 'fs_list_dir':
 			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
 			return executeFsListDir(workingDir, (args.path as string) ?? '.');

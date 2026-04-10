@@ -13,7 +13,25 @@ const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(2);
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const FETCH_CACHE_TTL: Duration = Duration::from_secs(600); // 10 minutes
 const ENGINE_COOLDOWN: Duration = Duration::from_secs(300); // 5 min cooldown after failure
-const AUTO_ENGINES: &[&str] = &["qwant", "duckduckgo", "bing"];
+// Slow-mode pacing — used by deep research with auto rotation when no
+// reliable provider (Brave / SearXNG) is configured. Slower per-engine
+// pacing reduces bot-detection trips, and shorter cooldowns let engines
+// recover within the same research turn instead of taking the whole turn
+// out of commission.
+const RATE_LIMIT_INTERVAL_SLOW: Duration = Duration::from_secs(6);
+const ENGINE_COOLDOWN_SLOW: Duration = Duration::from_secs(45);
+// Note: Bing and Qwant were previously in this list but have been removed.
+// As of April 2026:
+//   - Bing serves a JavaScript shell + Cloudflare Turnstile bot challenge
+//     for all `/search?q=...` requests; no result HTML exists in the
+//     initial response.
+//   - api.qwant.com is gated by DataDome (commercial JS-execution bot
+//     detection), and the www.qwant.com HTML page is a Next.js SPA shell
+//     with empty preloaded data — results are fetched client-side.
+// Both have no plain-HTTP scraping path; resurrecting either would require
+// a headless browser (Playwright/Puppeteer) or a paid API.
+// See git history for the previous search_bing / search_qwant implementations.
+const AUTO_ENGINES: &[&str] = &["brave_html", "duckduckgo", "mojeek"];
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SearchResult {
@@ -63,12 +81,12 @@ impl ProxyState {
         *cursor = (*cursor + 1) % AUTO_ENGINES.len();
     }
 
-    fn rate_limit_engine(&self, engine: &str) {
+    fn rate_limit_engine(&self, engine: &str, interval: Duration) {
         let mut last_times = self.last_search_time.lock().unwrap();
         if let Some(last_time) = last_times.get(engine) {
             let elapsed = last_time.elapsed();
-            if elapsed < RATE_LIMIT_INTERVAL {
-                std::thread::sleep(RATE_LIMIT_INTERVAL - elapsed);
+            if elapsed < interval {
+                std::thread::sleep(interval - elapsed);
             }
         }
         last_times.insert(engine.to_string(), Instant::now());
@@ -79,10 +97,10 @@ impl ProxyState {
         failures.insert(engine.to_string(), Instant::now());
     }
 
-    fn is_engine_healthy(&self, engine: &str) -> bool {
+    fn is_engine_healthy(&self, engine: &str, cooldown: Duration) -> bool {
         let failures = self.engine_failures.lock().unwrap();
         match failures.get(engine) {
-            Some(failed_at) => failed_at.elapsed() >= ENGINE_COOLDOWN,
+            Some(failed_at) => failed_at.elapsed() >= cooldown,
             None => true,
         }
     }
@@ -130,6 +148,29 @@ impl ProxyState {
             },
         );
     }
+}
+
+/// Build a diagnostic snippet of an HTML page for empty-result logging.
+/// Tries to anchor on the first occurrence of any of the provided needles
+/// (likely results-container substrings) and returns ~`window` chars
+/// starting from a bit before that anchor. If no needle matches, falls
+/// back to the first `window` chars of the page so we still see something.
+/// This is what makes the empty-result log line actually actionable when
+/// a search engine restructures its markup — we get the relevant body
+/// instead of just the head metadata.
+fn diagnostic_snippet(html: &str, needles: &[&str], window: usize) -> String {
+    for needle in needles {
+        if let Some(pos) = html.find(needle) {
+            let start = pos.saturating_sub(200);
+            // Walk forward from `start` until we hit a char boundary
+            let mut s = start;
+            while s < html.len() && !html.is_char_boundary(s) {
+                s += 1;
+            }
+            return html[s..].chars().take(window).collect();
+        }
+    }
+    html.chars().take(window).collect()
 }
 
 // DuckDuckGo HTML search
@@ -253,95 +294,29 @@ fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
     Ok(results)
 }
 
-// Qwant JSON API search (no key required)
+// Mojeek HTML search — small independent index, scrape-friendly, no API key.
+// Useful as a fallback when DDG/Qwant are rate-limited or broken.
 
-async fn search_qwant(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
-
-    let mut params = vec![
-        ("q", query),
-        ("count", "8"),
-        ("locale", "en_US"),
-        ("offset", "0"),
-    ];
-
-    match recency {
-        "day" => params.push(("freshness", "day")),
-        "week" => params.push(("freshness", "week")),
-        "month" => params.push(("freshness", "month")),
-        _ => {}
-    }
-
-    let resp = client
-        .get("https://api.qwant.com/v3/search/web")
-        .header("User-Agent", USER_AGENT)
-        .query(&params)
-        .send()
-        .await
-        .map_err(|e| format!("Qwant search failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Qwant error: {}", resp.status()));
-    }
-
-    let data: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Qwant response: {}", e))?;
-
-    let mut results = Vec::new();
-    if let Some(items) = data
-        .pointer("/data/result/items")
-        .and_then(|i| i.as_array())
-    {
-        for item in items.iter().take(8) {
-            let title = item
-                .get("title")
-                .and_then(|t| t.as_str())
-                .unwrap_or_default();
-            let url = item.get("url").and_then(|u| u.as_str()).unwrap_or_default();
-            let snippet = item
-                .get("desc")
-                .and_then(|d| d.as_str())
-                .unwrap_or_default();
-
-            if !title.is_empty() && !url.is_empty() {
-                results.push(SearchResult {
-                    title: title.to_string(),
-                    url: url.to_string(),
-                    snippet: snippet.to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(results)
-}
-
-// Bing HTML search
-
-async fn search_bing(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
+async fn search_mojeek(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .redirect(reqwest::redirect::Policy::limited(5))
-        .cookie_store(true)
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    let filters = match recency {
-        "day" => "&filters=ex1%3a%22ez1%22",
-        "week" => "&filters=ex1%3a%22ez2%22",
-        "month" => "&filters=ex1%3a%22ez3%22",
+    // Mojeek freshness: si=day|week|month|year (their "since" parameter)
+    let since = match recency {
+        "day" => "&si=day",
+        "week" => "&si=week",
+        "month" => "&si=month",
+        "year" => "&si=year",
         _ => "",
     };
 
     let url = format!(
-        "https://www.bing.com/search?q={}&count=8{}",
+        "https://www.mojeek.com/search?q={}{}",
         urlencoding::encode(query),
-        filters
+        since
     );
 
     let resp = client
@@ -350,36 +325,58 @@ async fn search_bing(query: &str, recency: &str) -> Result<Vec<SearchResult>, St
         .header("Accept-Language", "en-US,en;q=0.9")
         .send()
         .await
-        .map_err(|e| format!("Bing search failed: {}", e))?;
+        .map_err(|e| format!("Mojeek search failed: {}", e))?;
 
     if !resp.status().is_success() {
-        return Err(format!("Bing error: {}", resp.status()));
+        return Err(format!("Mojeek error: {}", resp.status()));
     }
 
     let html = resp
         .text()
         .await
-        .map_err(|e| format!("Failed to read Bing response: {}", e))?;
+        .map_err(|e| format!("Failed to read Mojeek response: {}", e))?;
 
-    if html.contains("/captcha/") || html.contains("unusual traffic") {
-        warn!("Bing returned a bot detection page");
-        return Err("Bing bot detection triggered — temporarily unavailable".to_string());
+    let results = parse_mojeek_html(&html)?;
+
+    if results.is_empty() {
+        let snippet = diagnostic_snippet(
+            &html,
+            &["results-standard", "class=\"results", "id=\"results", "<main"],
+            3000,
+        );
+        warn!(
+            "Mojeek parser found 0 results — anchored snippet of response: {}",
+            snippet
+        );
     }
 
-    parse_bing_html(&html)
+    Ok(results)
 }
 
-fn parse_bing_html(html: &str) -> Result<Vec<SearchResult>, String> {
+fn parse_mojeek_html(html: &str) -> Result<Vec<SearchResult>, String> {
     let document = Html::parse_document(html);
-    let result_selector = Selector::parse("li.b_algo").map_err(|_| "Failed to parse selector")?;
-    let title_selector = Selector::parse("h2 a").map_err(|_| "Failed to parse title selector")?;
+
+    // Mojeek's organic results historically live in `ul.results-standard > li`
+    // with an `<a class="ob">` for the title link and a `<p class="s">` for
+    // the snippet. Be tolerant of small markup changes by falling back to
+    // any `li > h2 a` inside the results list.
+    let result_selector = Selector::parse("ul.results-standard > li, ol.results-standard > li")
+        .map_err(|_| "Failed to parse mojeek result selector")?;
+    let title_selector_primary =
+        Selector::parse("a.ob").map_err(|_| "Failed to parse mojeek title selector")?;
+    let title_selector_fallback =
+        Selector::parse("h2 a").map_err(|_| "Failed to parse mojeek h2 selector")?;
     let snippet_selector =
-        Selector::parse(".b_caption p").map_err(|_| "Failed to parse snippet selector")?;
+        Selector::parse("p.s").map_err(|_| "Failed to parse mojeek snippet selector")?;
 
     let mut results = Vec::new();
 
     for element in document.select(&result_selector) {
-        let title_el = element.select(&title_selector).next();
+        let title_el = element
+            .select(&title_selector_primary)
+            .next()
+            .or_else(|| element.select(&title_selector_fallback).next());
+
         let title = title_el
             .map(|e| e.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
@@ -409,13 +406,160 @@ fn parse_bing_html(html: &str) -> Result<Vec<SearchResult>, String> {
     Ok(results)
 }
 
+// Brave HTML search — scrapes search.brave.com directly without an API key.
+// This is distinct from the explicit `brave` provider which uses the paid
+// Brave Search API. Brave's HTML page returns server-rendered results with
+// no Cloudflare/Turnstile/DataDome challenge as of April 2026, so plain
+// HTTP scraping works. The markup uses Svelte build hashes in classnames,
+// so we anchor on stable data attributes (`data-type="web"`) and unhashed
+// class prefixes (`search-snippet-title`, `generic-snippet`) instead.
+
+async fn search_brave_html(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(FETCH_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    // Brave time filter: tf=pd (past day), pw (week), pm (month), py (year)
+    let tf = match recency {
+        "day" => "&tf=pd",
+        "week" => "&tf=pw",
+        "month" => "&tf=pm",
+        "year" => "&tf=py",
+        _ => "",
+    };
+
+    let url = format!(
+        "https://search.brave.com/search?q={}&source=web{}",
+        urlencoding::encode(query),
+        tf
+    );
+
+    let resp = client
+        .get(&url)
+        .header("User-Agent", USER_AGENT)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| format!("Brave HTML search failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Brave HTML error: {}", resp.status()));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read Brave HTML response: {}", e))?;
+
+    let results = parse_brave_html(&html)?;
+
+    if results.is_empty() {
+        let snippet = diagnostic_snippet(
+            &html,
+            &[
+                "data-type=\"web\"",
+                "search-snippet-title",
+                "generic-snippet",
+                "result-wrapper",
+            ],
+            3000,
+        );
+        warn!(
+            "Brave HTML parser found 0 results — anchored snippet of response: {}",
+            snippet
+        );
+    }
+
+    Ok(results)
+}
+
+fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> {
+    let document = Html::parse_document(html);
+    // Anchor on the stable data attribute that survives Svelte rebuilds.
+    let result_selector = Selector::parse(r#"div[data-type="web"]"#)
+        .map_err(|_| "Failed to parse brave result selector")?;
+    // First http(s) link inside the result is the canonical destination.
+    let link_selector =
+        Selector::parse(r#"a[href^="http"]"#).map_err(|_| "Failed to parse brave link selector")?;
+    // Title div has a stable unhashed class prefix.
+    let title_selector = Selector::parse(r#"div[class*="search-snippet-title"]"#)
+        .map_err(|_| "Failed to parse brave title selector")?;
+    // Snippet body lives inside .generic-snippet (unhashed prefix).
+    let snippet_selector = Selector::parse(r#"div[class*="generic-snippet"]"#)
+        .map_err(|_| "Failed to parse brave snippet selector")?;
+
+    let mut results = Vec::new();
+
+    for element in document.select(&result_selector) {
+        let link = element.select(&link_selector).next();
+        let url = link
+            .and_then(|e| e.value().attr("href"))
+            .unwrap_or_default()
+            .to_string();
+
+        // Title: prefer the explicit search-snippet-title div; fall back to
+        // the link's own text content if the title div is missing or empty
+        // (e.g. for some result types Brave reuses the wrapper for).
+        let title = element
+            .select(&title_selector)
+            .next()
+            .map(|e| e.text().collect::<String>().trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(|| link.map(|e| e.text().collect::<String>().trim().to_string()))
+            .unwrap_or_default();
+
+        let snippet = element
+            .select(&snippet_selector)
+            .next()
+            .map(|e| {
+                e.text()
+                    .collect::<String>()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
+
+        if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+            results.push(SearchResult {
+                title,
+                url,
+                snippet,
+            });
+        }
+
+        if results.len() >= 8 {
+            break;
+        }
+    }
+
+    Ok(results)
+}
+
 // Auto-rotation search across multiple engines
 
 async fn search_auto(
     state: &ProxyState,
     query: &str,
     recency: &str,
+    slow_mode: bool,
 ) -> Result<Vec<SearchResult>, String> {
+    // Pick pacing constants based on slow mode. Slow mode is only enabled
+    // for deep research turns when no reliable provider is configured;
+    // it slows pacing down enough to avoid bot-detection trips and uses a
+    // shorter cooldown so engines can recover within the same research turn.
+    let (rate_interval, cooldown) = if slow_mode {
+        (RATE_LIMIT_INTERVAL_SLOW, ENGINE_COOLDOWN_SLOW)
+    } else {
+        (RATE_LIMIT_INTERVAL, ENGINE_COOLDOWN)
+    };
+
     // Build the try order: start at the rotation cursor (round-robin) so
     // we don't always hit the same engine first, then partition into
     // healthy/unhealthy so cooled-down engines come last as fallbacks.
@@ -424,7 +568,7 @@ async fn search_auto(
     let mut unhealthy: Vec<&str> = Vec::new();
 
     for engine in &rotation {
-        if state.is_engine_healthy(engine) {
+        if state.is_engine_healthy(engine, cooldown) {
             healthy.push(*engine);
         } else {
             unhealthy.push(*engine);
@@ -432,21 +576,24 @@ async fn search_auto(
     }
 
     let ordered: Vec<&str> = healthy.into_iter().chain(unhealthy).collect();
-    info!("Auto-search rotation order for '{}': {:?}", query, ordered);
+    info!(
+        "Auto-search rotation order for '{}' (slow_mode={}): {:?}",
+        query, slow_mode, ordered
+    );
 
     let mut last_error = String::new();
 
     for engine in &ordered {
-        state.rate_limit_engine(engine);
+        state.rate_limit_engine(engine, rate_interval);
         info!(
             "Auto-search trying {} for: {} (recency: {})",
             engine, query, recency
         );
 
         let result = match *engine {
-            "qwant" => search_qwant(query, recency).await,
+            "brave_html" => search_brave_html(query, recency).await,
             "duckduckgo" => search_duckduckgo(query, recency).await,
-            "bing" => search_bing(query, recency).await,
+            "mojeek" => search_mojeek(query, recency).await,
             _ => unreachable!(),
         };
 
@@ -772,6 +919,7 @@ pub async fn proxy_search(
     api_key: Option<String>,
     instance_url: Option<String>,
     recency: Option<String>,
+    deep_research: Option<bool>,
 ) -> Result<Vec<SearchResult>, String> {
     // Check cache
     let cache_key = format!("{}:{}", query, recency.as_deref().unwrap_or("any"));
@@ -782,6 +930,7 @@ pub async fn proxy_search(
 
     let provider = provider.as_deref().unwrap_or("duckduckgo");
     let recency = recency.as_deref().unwrap_or("any");
+    let deep_research = deep_research.unwrap_or(false);
 
     let results = match provider {
         "brave" => {
@@ -801,11 +950,14 @@ pub async fn proxy_search(
             search_searxng(&query, url, recency).await?
         }
         "auto" => {
-            info!("Auto-searching for: {} (recency: {})", query, recency);
-            search_auto(&state, &query, recency).await?
+            info!(
+                "Auto-searching for: {} (recency: {}, deep_research: {})",
+                query, recency, deep_research
+            );
+            search_auto(&state, &query, recency, deep_research).await?
         }
         _ => {
-            state.rate_limit_engine("duckduckgo");
+            state.rate_limit_engine("duckduckgo", RATE_LIMIT_INTERVAL);
             info!("Searching DDG for: {} (recency: {})", query, recency);
             search_duckduckgo(&query, recency).await?
         }
@@ -823,14 +975,20 @@ pub async fn proxy_search(
 pub async fn proxy_fetch(
     state: tauri::State<'_, ProxyState>,
     url: String,
+    caller: Option<String>,
 ) -> Result<String, String> {
+    // Tag for the log line so we can distinguish fetch_url calls (raw page
+    // text returned to the main agent) from research_url calls (page goes
+    // through a sub-agent extractor before its findings reach the main agent).
+    let caller_tag = caller.as_deref().unwrap_or("fetch_url");
+
     // Check cache
     if let Some(cached) = state.get_cached_fetch(&url) {
-        info!("Fetch cache hit for: {}", url);
+        info!("Fetch cache hit ({}) for: {}", caller_tag, url);
         return Ok(cached);
     }
 
-    info!("Fetching URL: {}", url);
+    info!("Fetching URL ({}): {}", caller_tag, url);
     let content = fetch_and_extract(&url).await?;
 
     state.cache_fetch(&url, &content);
@@ -957,83 +1115,113 @@ mod tests {
     }
 
     #[test]
-    fn parse_bing_empty_html() {
-        let result = parse_bing_html("<html><body>No results</body></html>");
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+    fn parse_brave_html_extracts_minimal_result() {
+        // Minimal markup matching the structure search.brave.com serves:
+        // outer wrapper with data-type="web", a result-content div containing
+        // the destination link, and a generic-snippet div with the body text.
+        let html = r##"
+            <html><body>
+            <div class="snippet svelte-abc" data-pos="1" data-type="web">
+              <div class="result-wrapper svelte-xyz">
+                <div class="result-content svelte-xyz">
+                  <a href="https://example.com/page" class="svelte-l1 l1">
+                    <div class="title search-snippet-title svelte-l1" title="Example Page">Example Page</div>
+                  </a>
+                  <div class="generic-snippet svelte-gs">
+                    <div class="content svelte-gs">An example snippet body.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            </body></html>
+        "##;
+        let results = parse_brave_html(html).expect("parse ok");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Example Page");
+        assert_eq!(results[0].url, "https://example.com/page");
+        assert_eq!(results[0].snippet, "An example snippet body.");
     }
 
     #[test]
-    fn parse_bing_malformed_html() {
-        let result = parse_bing_html("<not valid html at all <<<>>>");
-        assert!(result.is_ok());
+    fn parse_brave_html_handles_empty_input() {
+        let results = parse_brave_html("<html><body>nothing here</body></html>").expect("parse ok");
+        assert!(results.is_empty());
     }
 
     #[test]
     fn engine_failure_tracking() {
         let state = ProxyState::new();
-        assert!(state.is_engine_healthy("qwant"));
-        state.record_failure("qwant");
-        assert!(!state.is_engine_healthy("qwant"));
+        assert!(state.is_engine_healthy("brave_html", ENGINE_COOLDOWN));
+        state.record_failure("brave_html");
+        assert!(!state.is_engine_healthy("brave_html", ENGINE_COOLDOWN));
         // Other engines unaffected
-        assert!(state.is_engine_healthy("duckduckgo"));
-        assert!(state.is_engine_healthy("bing"));
+        assert!(state.is_engine_healthy("duckduckgo", ENGINE_COOLDOWN));
+        assert!(state.is_engine_healthy("mojeek", ENGINE_COOLDOWN));
     }
 
     #[test]
     fn per_engine_rate_limit() {
         let state = ProxyState::new();
         // First call should not block
-        state.rate_limit_engine("qwant");
+        state.rate_limit_engine("brave_html", RATE_LIMIT_INTERVAL);
         // Different engine should also not block
-        state.rate_limit_engine("bing");
+        state.rate_limit_engine("mojeek", RATE_LIMIT_INTERVAL);
         // Verify both tracked independently
         let times = state.last_search_time.lock().unwrap();
-        assert!(times.contains_key("qwant"));
-        assert!(times.contains_key("bing"));
+        assert!(times.contains_key("brave_html"));
+        assert!(times.contains_key("mojeek"));
     }
 
     #[test]
     fn rotation_starts_at_first_engine() {
         let state = ProxyState::new();
         let order = state.rotation_order();
-        assert_eq!(order, vec!["qwant", "duckduckgo", "bing"]);
+        assert_eq!(order, vec!["brave_html", "duckduckgo", "mojeek"]);
     }
 
     #[test]
     fn rotation_advances_after_success() {
         let state = ProxyState::new();
-        // First search starts with qwant
-        assert_eq!(state.rotation_order()[0], "qwant");
+        // First search starts with brave_html
+        assert_eq!(state.rotation_order()[0], "brave_html");
 
         // After advancing, the next one starts with duckduckgo
         state.advance_rotation_cursor();
-        assert_eq!(state.rotation_order(), vec!["duckduckgo", "bing", "qwant"]);
+        assert_eq!(
+            state.rotation_order(),
+            vec!["duckduckgo", "mojeek", "brave_html"]
+        );
 
-        // And then bing
+        // And then mojeek
         state.advance_rotation_cursor();
-        assert_eq!(state.rotation_order(), vec!["bing", "qwant", "duckduckgo"]);
+        assert_eq!(
+            state.rotation_order(),
+            vec!["mojeek", "brave_html", "duckduckgo"]
+        );
 
-        // And wraps back around to qwant
+        // And wraps back around to brave_html
         state.advance_rotation_cursor();
-        assert_eq!(state.rotation_order(), vec!["qwant", "duckduckgo", "bing"]);
+        assert_eq!(
+            state.rotation_order(),
+            vec!["brave_html", "duckduckgo", "mojeek"]
+        );
     }
 
     #[test]
     fn rotation_full_cycle_uses_each_engine() {
         let state = ProxyState::new();
         // Track which engine appears first across N consecutive searches.
-        // After 3 advances we should have seen each engine in position 0
-        // exactly once.
+        // After AUTO_ENGINES.len() advances we should have seen each engine
+        // in position 0 exactly once.
         let mut firsts = std::collections::HashSet::new();
-        for _ in 0..3 {
+        for _ in 0..AUTO_ENGINES.len() {
             firsts.insert(state.rotation_order()[0]);
             state.advance_rotation_cursor();
         }
-        assert_eq!(firsts.len(), 3);
-        assert!(firsts.contains("qwant"));
-        assert!(firsts.contains("duckduckgo"));
-        assert!(firsts.contains("bing"));
+        assert_eq!(firsts.len(), AUTO_ENGINES.len());
+        for engine in AUTO_ENGINES {
+            assert!(firsts.contains(*engine));
+        }
     }
 
     #[test]
