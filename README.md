@@ -70,6 +70,8 @@ The typical "find an image and embed it in a slide deck" workflow is: `image_sea
 
 **What the model cannot do**: delete files, move files, execute scripts, or touch anything outside the working directory. These are intentional restrictions — if you want the model to delete or run something, you do it manually after reviewing what it created.
 
+**File overwrite protection**: write tools refuse to silently clobber an existing file. If the model tries to write to a filename that already exists (from a previous turn or user action), Haruspex pauses and shows you a modal with three options: **Overwrite** (replace the existing file), **Keep both** (auto-append a counter to the new file's name — `report.pdf` becomes `report-2.pdf`), or **Cancel** (stop and hand control back to the chat so you can tell the model what to do differently). Files the model writes and then iterates on within the same turn (write → read → correct → write) are handled implicitly and don't trigger the prompt — the protection is only for pre-existing files, not for in-turn rework.
+
 Working directory selection is per-conversation and not persisted across app restarts. Each new conversation starts with no working directory; opt in when you need it.
 
 ## Remote inference server

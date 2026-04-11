@@ -108,6 +108,8 @@ pub fn run() {
             fs_tools::fs_write_pptx,
             fs_tools::fs_write_odp,
             fs_tools::fs_download_url,
+            fs_tools::fs_path_exists,
+            fs_tools::fs_find_available_path,
             app_log::get_app_logs,
         ])
         .build(tauri::generate_context!())

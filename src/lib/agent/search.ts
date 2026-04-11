@@ -29,6 +29,105 @@ const r = (s: string): ToolExecOutput => ({ result: s });
 // chat UI reads the bytes back via fs_read_image and renders a data URL.
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|ico|tiff?)$/i;
 
+/**
+ * Outcome of pre-write conflict resolution. `null` means the user
+ * canceled and the caller should NOT invoke the underlying write
+ * command — instead, return an error string to the model telling it
+ * to stop and ask the user.
+ */
+interface ResolvedWritePath {
+	finalPath: string;
+	overwrite: boolean;
+}
+
+/**
+ * Check whether a write to `relPath` would clobber an existing file,
+ * and if so, show the file-conflict modal to let the user pick. Called
+ * by every executeFsWrite_/executeFsDownloadUrl wrapper before the
+ * actual tool invocation.
+ *
+ * Fast paths:
+ *   - If `relPath` is in `filesWrittenThisTurn`, the model is iterating
+ *     on a file it created earlier in the same turn (write → read →
+ *     correct → write). Allow the overwrite silently — the modal would
+ *     be disruptive for this common iteration loop.
+ *   - Else, call `fs_path_exists`. If the file doesn't exist, proceed
+ *     with `overwrite=false` (which is harmless since there's nothing
+ *     to clobber, but kept explicit for the Rust-side safety net).
+ *
+ * Slow path (file exists AND not in the per-turn set):
+ *   - Call `askFileConflict(relPath)` which shows the modal and awaits
+ *     the user's click.
+ *   - 'overwrite' → return the original path with overwrite=true
+ *   - 'counter'   → call `fs_find_available_path` for the next unused
+ *                   name and return that with overwrite=false
+ *   - 'cancel'    → return null, caller surfaces a "user canceled"
+ *                   error string to the model
+ */
+async function resolveWritePathInteractive(
+	workdir: string,
+	relPath: string,
+	filesWrittenThisTurn: Set<string>
+): Promise<ResolvedWritePath | null> {
+	// Iteration case: we wrote this file earlier in this same turn.
+	// Implicit overwrite — no modal, no friction.
+	if (filesWrittenThisTurn.has(relPath)) {
+		return { finalPath: relPath, overwrite: true };
+	}
+
+	// Does the file exist on disk right now?
+	let exists = false;
+	try {
+		exists = await invoke<boolean>('fs_path_exists', { workdir, relPath });
+	} catch {
+		// If the existence check itself errors, fall through as if the
+		// file doesn't exist — the Rust-side refuse_if_exists will catch
+		// any actual conflict that reaches the write command.
+		exists = false;
+	}
+	if (!exists) {
+		return { finalPath: relPath, overwrite: false };
+	}
+
+	// Pre-existing file, not written by us this turn. Ask the user.
+	// Lazy-imported to avoid a module graph cycle with any future file
+	// that imports search.ts from the store layer.
+	const { askFileConflict } = await import('$lib/stores/fileConflict.svelte');
+	const choice = await askFileConflict(relPath);
+	if (choice === 'cancel') {
+		return null;
+	}
+	if (choice === 'overwrite') {
+		return { finalPath: relPath, overwrite: true };
+	}
+	// 'counter' — find an unused name like "report-2.pdf".
+	try {
+		const newPath = await invoke<string>('fs_find_available_path', {
+			workdir,
+			relPath
+		});
+		return { finalPath: newPath, overwrite: false };
+	} catch (e) {
+		// If the counter helper itself fails, fall back to overwrite so
+		// the user's intent ("don't lose either file") is at least
+		// approximately respected — but this shouldn't happen in practice.
+		console.error('fs_find_available_path failed:', e);
+		return { finalPath: relPath, overwrite: true };
+	}
+}
+
+/**
+ * Shared error result for the "user canceled the write" path. Kept as
+ * a helper so the message stays consistent across every wrapper.
+ */
+function userCanceledWriteError(relPath: string, toolName: string): ToolExecOutput {
+	return r(
+		JSON.stringify({
+			error: `User canceled the ${toolName} write. The file "${relPath}" already exists in the working directory and the user chose to stop instead of overwriting or renaming. Do NOT retry automatically — stop what you were doing, briefly explain to the user that the file already exists, and ask them how they'd like to proceed (pick a different filename, overwrite the existing file, or skip the write entirely).`
+		})
+	);
+}
+
 export interface SearchResult {
 	title: string;
 	url: string;
@@ -211,26 +310,44 @@ async function executeFsReadXlsx(
 async function executeFsWriteDocx(
 	workdir: string,
 	relPath: string,
-	content: string
-): Promise<string> {
+	content: string,
+	filesWrittenThisTurn: Set<string>
+): Promise<ToolExecOutput> {
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	if (!resolved) return userCanceledWriteError(relPath, 'fs_write_docx');
 	try {
-		await invoke('fs_write_docx', { workdir, relPath, content });
-		return `Wrote docx: ${relPath}`;
+		await invoke('fs_write_docx', {
+			workdir,
+			relPath: resolved.finalPath,
+			content,
+			overwrite: resolved.overwrite
+		});
+		filesWrittenThisTurn.add(resolved.finalPath);
+		return r(`Wrote docx: ${resolved.finalPath}`);
 	} catch (e) {
-		return JSON.stringify({ error: `fs_write_docx failed: ${e}` });
+		return r(JSON.stringify({ error: `fs_write_docx failed: ${e}` }));
 	}
 }
 
 async function executeFsWritePdf(
 	workdir: string,
 	relPath: string,
-	content: string
-): Promise<string> {
+	content: string,
+	filesWrittenThisTurn: Set<string>
+): Promise<ToolExecOutput> {
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	if (!resolved) return userCanceledWriteError(relPath, 'fs_write_pdf');
 	try {
-		await invoke('fs_write_pdf', { workdir, relPath, content });
-		return `Wrote pdf: ${relPath}`;
+		await invoke('fs_write_pdf', {
+			workdir,
+			relPath: resolved.finalPath,
+			content,
+			overwrite: resolved.overwrite
+		});
+		filesWrittenThisTurn.add(resolved.finalPath);
+		return r(`Wrote pdf: ${resolved.finalPath}`);
 	} catch (e) {
-		return JSON.stringify({ error: `fs_write_pdf failed: ${e}` });
+		return r(JSON.stringify({ error: `fs_write_pdf failed: ${e}` }));
 	}
 }
 
@@ -242,40 +359,71 @@ interface XlsxSheet {
 async function executeFsWriteXlsx(
 	workdir: string,
 	relPath: string,
-	sheets: XlsxSheet[]
-): Promise<string> {
+	sheets: XlsxSheet[],
+	filesWrittenThisTurn: Set<string>
+): Promise<ToolExecOutput> {
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	if (!resolved) return userCanceledWriteError(relPath, 'fs_write_xlsx');
 	try {
-		await invoke('fs_write_xlsx', { workdir, relPath, sheets });
-		return `Wrote xlsx: ${relPath} (${sheets.length} sheet${sheets.length === 1 ? '' : 's'})`;
+		await invoke('fs_write_xlsx', {
+			workdir,
+			relPath: resolved.finalPath,
+			sheets,
+			overwrite: resolved.overwrite
+		});
+		filesWrittenThisTurn.add(resolved.finalPath);
+		return r(
+			`Wrote xlsx: ${resolved.finalPath} (${sheets.length} sheet${sheets.length === 1 ? '' : 's'})`
+		);
 	} catch (e) {
-		return JSON.stringify({ error: `fs_write_xlsx failed: ${e}` });
+		return r(JSON.stringify({ error: `fs_write_xlsx failed: ${e}` }));
 	}
 }
 
 async function executeFsWriteOdt(
 	workdir: string,
 	relPath: string,
-	content: string
-): Promise<string> {
+	content: string,
+	filesWrittenThisTurn: Set<string>
+): Promise<ToolExecOutput> {
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	if (!resolved) return userCanceledWriteError(relPath, 'fs_write_odt');
 	try {
-		await invoke('fs_write_odt', { workdir, relPath, content });
-		return `Wrote odt: ${relPath}`;
+		await invoke('fs_write_odt', {
+			workdir,
+			relPath: resolved.finalPath,
+			content,
+			overwrite: resolved.overwrite
+		});
+		filesWrittenThisTurn.add(resolved.finalPath);
+		return r(`Wrote odt: ${resolved.finalPath}`);
 	} catch (e) {
-		return JSON.stringify({ error: `fs_write_odt failed: ${e}` });
+		return r(JSON.stringify({ error: `fs_write_odt failed: ${e}` }));
 	}
 }
 
 async function executeFsWriteOds(
 	workdir: string,
 	relPath: string,
-	sheets: XlsxSheet[]
-): Promise<string> {
+	sheets: XlsxSheet[],
+	filesWrittenThisTurn: Set<string>
+): Promise<ToolExecOutput> {
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	if (!resolved) return userCanceledWriteError(relPath, 'fs_write_ods');
 	try {
 		// ODS reuses the XlsxSheet shape — same { name, rows } structure
-		await invoke('fs_write_ods', { workdir, relPath, sheets });
-		return `Wrote ods: ${relPath} (${sheets.length} sheet${sheets.length === 1 ? '' : 's'})`;
+		await invoke('fs_write_ods', {
+			workdir,
+			relPath: resolved.finalPath,
+			sheets,
+			overwrite: resolved.overwrite
+		});
+		filesWrittenThisTurn.add(resolved.finalPath);
+		return r(
+			`Wrote ods: ${resolved.finalPath} (${sheets.length} sheet${sheets.length === 1 ? '' : 's'})`
+		);
 	} catch (e) {
-		return JSON.stringify({ error: `fs_write_ods failed: ${e}` });
+		return r(JSON.stringify({ error: `fs_write_ods failed: ${e}` }));
 	}
 }
 
@@ -338,18 +486,30 @@ async function executeImageSearch(query: string, maxResults?: number): Promise<s
 async function executeFsDownloadUrl(
 	workdir: string,
 	url: string,
-	relPath: string
+	relPath: string,
+	filesWrittenThisTurn: Set<string>
 ): Promise<ToolExecOutput> {
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	if (!resolved) return userCanceledWriteError(relPath, 'fs_download_url');
 	try {
-		const message = await invoke<string>('fs_download_url', { workdir, url, relPath });
+		const message = await invoke<string>('fs_download_url', {
+			workdir,
+			url,
+			relPath: resolved.finalPath,
+			overwrite: resolved.overwrite
+		});
+		filesWrittenThisTurn.add(resolved.finalPath);
 		// If the downloaded file is an image, load it back as a data URL
 		// so the chat UI can show a thumbnail inline under the tool step.
 		// The model only sees the short text `message` — the data URL is
 		// a side-channel attachment that doesn't count against its context.
 		let thumbDataUrl: string | undefined;
-		if (IMAGE_EXT_RE.test(relPath)) {
+		if (IMAGE_EXT_RE.test(resolved.finalPath)) {
 			try {
-				thumbDataUrl = await invoke<string>('fs_read_image', { workdir, relPath });
+				thumbDataUrl = await invoke<string>('fs_read_image', {
+					workdir,
+					relPath: resolved.finalPath
+				});
 			} catch {
 				// Thumbnail is best-effort — a failure here shouldn't make
 				// the download itself look like it failed.
@@ -372,27 +532,49 @@ interface PptxSlide {
 async function executeFsWritePptx(
 	workdir: string,
 	relPath: string,
-	slides: PptxSlide[]
-): Promise<string> {
+	slides: PptxSlide[],
+	filesWrittenThisTurn: Set<string>
+): Promise<ToolExecOutput> {
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	if (!resolved) return userCanceledWriteError(relPath, 'fs_write_pptx');
 	try {
-		await invoke('fs_write_pptx', { workdir, relPath, slides });
-		return `Wrote pptx: ${relPath} (${slides.length} slide${slides.length === 1 ? '' : 's'})`;
+		await invoke('fs_write_pptx', {
+			workdir,
+			relPath: resolved.finalPath,
+			slides,
+			overwrite: resolved.overwrite
+		});
+		filesWrittenThisTurn.add(resolved.finalPath);
+		return r(
+			`Wrote pptx: ${resolved.finalPath} (${slides.length} slide${slides.length === 1 ? '' : 's'})`
+		);
 	} catch (e) {
-		return JSON.stringify({ error: `fs_write_pptx failed: ${e}` });
+		return r(JSON.stringify({ error: `fs_write_pptx failed: ${e}` }));
 	}
 }
 
 async function executeFsWriteOdp(
 	workdir: string,
 	relPath: string,
-	slides: PptxSlide[]
-): Promise<string> {
+	slides: PptxSlide[],
+	filesWrittenThisTurn: Set<string>
+): Promise<ToolExecOutput> {
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	if (!resolved) return userCanceledWriteError(relPath, 'fs_write_odp');
 	try {
 		// ODP reuses the PptxSlide shape — same { title, bullets } structure
-		await invoke('fs_write_odp', { workdir, relPath, slides });
-		return `Wrote odp: ${relPath} (${slides.length} slide${slides.length === 1 ? '' : 's'})`;
+		await invoke('fs_write_odp', {
+			workdir,
+			relPath: resolved.finalPath,
+			slides,
+			overwrite: resolved.overwrite
+		});
+		filesWrittenThisTurn.add(resolved.finalPath);
+		return r(
+			`Wrote odp: ${resolved.finalPath} (${slides.length} slide${slides.length === 1 ? '' : 's'})`
+		);
 	} catch (e) {
-		return JSON.stringify({ error: `fs_write_odp failed: ${e}` });
+		return r(JSON.stringify({ error: `fs_write_odp failed: ${e}` }));
 	}
 }
 
@@ -440,13 +622,21 @@ async function executeFsWriteText(
 	workdir: string,
 	relPath: string,
 	content: string,
-	overwrite?: boolean
-): Promise<string> {
+	filesWrittenThisTurn: Set<string>
+): Promise<ToolExecOutput> {
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	if (!resolved) return userCanceledWriteError(relPath, 'fs_write_text');
 	try {
-		await invoke('fs_write_text', { workdir, relPath, content, overwrite });
-		return `Wrote ${content.length} bytes to ${relPath}`;
+		await invoke('fs_write_text', {
+			workdir,
+			relPath: resolved.finalPath,
+			content,
+			overwrite: resolved.overwrite
+		});
+		filesWrittenThisTurn.add(resolved.finalPath);
+		return r(`Wrote ${content.length} bytes to ${resolved.finalPath}`);
 	} catch (e) {
-		return JSON.stringify({ error: `fs_write_text failed: ${e}` });
+		return r(JSON.stringify({ error: `fs_write_text failed: ${e}` }));
 	}
 }
 
@@ -482,7 +672,8 @@ export async function executeTool(
 	workingDir: string | null,
 	signal?: AbortSignal,
 	pendingImages?: PendingImage[],
-	deepResearch: boolean = false
+	deepResearch: boolean = false,
+	filesWrittenThisTurn: Set<string> = new Set()
 ): Promise<ToolExecOutput> {
 	switch (name) {
 		case 'web_search':
@@ -540,46 +731,76 @@ export async function executeTool(
 			return r(await executeFsReadPdfPages(workingDir, args.path as string, pendingImages));
 		case 'fs_write_text':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
-			return r(
-				await executeFsWriteText(
-					workingDir,
-					args.path as string,
-					args.content as string,
-					args.overwrite as boolean | undefined
-				)
+			return executeFsWriteText(
+				workingDir,
+				args.path as string,
+				args.content as string,
+				filesWrittenThisTurn
 			);
 		case 'fs_write_docx':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
-			return r(await executeFsWriteDocx(workingDir, args.path as string, args.content as string));
+			return executeFsWriteDocx(
+				workingDir,
+				args.path as string,
+				args.content as string,
+				filesWrittenThisTurn
+			);
 		case 'fs_write_pdf':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
-			return r(await executeFsWritePdf(workingDir, args.path as string, args.content as string));
+			return executeFsWritePdf(
+				workingDir,
+				args.path as string,
+				args.content as string,
+				filesWrittenThisTurn
+			);
 		case 'fs_write_xlsx':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
-			return r(
-				await executeFsWriteXlsx(workingDir, args.path as string, args.sheets as XlsxSheet[])
+			return executeFsWriteXlsx(
+				workingDir,
+				args.path as string,
+				args.sheets as XlsxSheet[],
+				filesWrittenThisTurn
 			);
 		case 'fs_write_odt':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
-			return r(await executeFsWriteOdt(workingDir, args.path as string, args.content as string));
+			return executeFsWriteOdt(
+				workingDir,
+				args.path as string,
+				args.content as string,
+				filesWrittenThisTurn
+			);
 		case 'fs_write_ods':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
-			return r(
-				await executeFsWriteOds(workingDir, args.path as string, args.sheets as XlsxSheet[])
+			return executeFsWriteOds(
+				workingDir,
+				args.path as string,
+				args.sheets as XlsxSheet[],
+				filesWrittenThisTurn
 			);
 		case 'fs_write_pptx':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
-			return r(
-				await executeFsWritePptx(workingDir, args.path as string, args.slides as PptxSlide[])
+			return executeFsWritePptx(
+				workingDir,
+				args.path as string,
+				args.slides as PptxSlide[],
+				filesWrittenThisTurn
 			);
 		case 'fs_write_odp':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
-			return r(
-				await executeFsWriteOdp(workingDir, args.path as string, args.slides as PptxSlide[])
+			return executeFsWriteOdp(
+				workingDir,
+				args.path as string,
+				args.slides as PptxSlide[],
+				filesWrittenThisTurn
 			);
 		case 'fs_download_url':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
-			return executeFsDownloadUrl(workingDir, args.url as string, args.path as string);
+			return executeFsDownloadUrl(
+				workingDir,
+				args.url as string,
+				args.path as string,
+				filesWrittenThisTurn
+			);
 		case 'fs_edit_text':
 			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
 			return r(

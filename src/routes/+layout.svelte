@@ -2,6 +2,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
 	import ContextIndicator from '$lib/components/ContextIndicator.svelte';
+	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
@@ -140,6 +141,8 @@
 {#if showGpuWarning}
 	<GpuWarningDialog onclose={() => (showGpuWarning = false)} />
 {/if}
+
+<FileConflictModal />
 
 <style>
 	:global(:root) {

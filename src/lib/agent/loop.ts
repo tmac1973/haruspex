@@ -181,6 +181,13 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	} = options;
 	const tools = getAgentTools(workingDir !== null, deepResearch, visionSupported);
 	const pendingImages: PendingImage[] = [];
+	// Per-turn set of files successfully written by any fs_write_* /
+	// fs_download_url call. Consumed by `resolveWritePathInteractive`
+	// in search.ts to distinguish "we're iterating on a file we just
+	// created" (allow implicit overwrite) from "the user's own existing
+	// file is in our way" (prompt via the file-conflict modal).
+	// Created fresh per runAgentLoop call so it can't leak across turns.
+	const filesWrittenThisTurn: Set<string> = new Set();
 	let iteration = 0;
 	let usedTools = false;
 	// Tracks whether any fs_write_* tool has actually been executed during
@@ -439,7 +446,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				workingDir,
 				signal,
 				pendingImages,
-				deepResearch
+				deepResearch,
+				filesWrittenThisTurn
 			);
 			options.onToolEnd(call, output.result, output.thumbDataUrl);
 

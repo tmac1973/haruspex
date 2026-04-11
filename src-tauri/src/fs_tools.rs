@@ -406,6 +406,105 @@ pub async fn fs_read_text(workdir: String, rel_path: String) -> Result<String, S
     String::from_utf8(bytes).map_err(|e| format!("File is not valid UTF-8: {}", e))
 }
 
+/// Defense-in-depth overwrite guard shared by every fs_write_* command.
+///
+/// The frontend is the primary enforcer here: it shows an interactive
+/// "file exists, what do you want to do" modal before the tool call and
+/// only invokes the write command with `overwrite=true` after the user
+/// explicitly confirms. This Rust-side check is a safety net for the
+/// case where the frontend path doesn't fire (a bug, a future refactor,
+/// a new caller forgetting to wire it up). Kept deliberately simple —
+/// no ambient "files written this turn" tracking on the Rust side; the
+/// frontend handles that via its own per-turn Set.
+///
+/// When the file exists and `overwrite` is missing or false, returns a
+/// structured error string the agent loop surfaces to the model as a
+/// tool result. The message is phrased so the model understands it's
+/// expected to stop and ask the user rather than silently retry with a
+/// different name.
+fn refuse_if_exists(
+    resolved: &Path,
+    overwrite: Option<bool>,
+    rel_path: &str,
+) -> Result<(), String> {
+    if overwrite.unwrap_or(false) {
+        return Ok(());
+    }
+    if resolved.exists() {
+        return Err(format!(
+            "File already exists: {}. The user must confirm overwriting before you can replace it — stop and ask the user how they'd like to proceed (overwrite, use a different filename, or skip the write).",
+            rel_path
+        ));
+    }
+    Ok(())
+}
+
+/// Return whether a path inside the working directory currently exists.
+/// Sandboxed via `resolve_in_workdir` like every other fs tool. Used by
+/// the frontend to decide whether to show the file-conflict modal
+/// before calling the actual write command — keeps the existence check
+/// and the write as separate operations so the modal can show first
+/// and the write can be skipped on cancel.
+#[tauri::command]
+pub async fn fs_path_exists(workdir: String, rel_path: String) -> Result<bool, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+    Ok(resolved.exists())
+}
+
+/// Given a desired relative path like "report.pdf", return the first
+/// path in the sequence ["report.pdf", "report-2.pdf", "report-3.pdf",
+/// ...] that doesn't currently exist in the working directory. If the
+/// original path is already free, returns it unchanged. Used by the
+/// file-conflict modal's "Keep both" option.
+///
+/// Cap: tries up to 1000 variants before giving up — if you've got
+/// 1000 reports on the same filename, you have bigger problems than
+/// this helper can solve.
+#[tauri::command]
+pub async fn fs_find_available_path(workdir: String, rel_path: String) -> Result<String, String> {
+    let workdir = workdir_path(&workdir)?;
+
+    // Quick path: the original name is free.
+    let original = resolve_in_workdir(&workdir, &rel_path)?;
+    if !original.exists() {
+        return Ok(rel_path);
+    }
+
+    // Split "report.pdf" into ("report", ".pdf") so we can insert the
+    // counter before the extension. Extension-less files get the
+    // counter appended at the end.
+    let path = std::path::Path::new(&rel_path);
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&rel_path);
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|e| format!(".{}", e))
+        .unwrap_or_default();
+    // Parent directory as a string, with trailing slash if present.
+    let parent_prefix = path
+        .parent()
+        .and_then(|p| p.to_str())
+        .filter(|p| !p.is_empty())
+        .map(|p| format!("{}/", p))
+        .unwrap_or_default();
+
+    for n in 2..=1000 {
+        let candidate = format!("{}{}-{}{}", parent_prefix, stem, n, ext);
+        let resolved = resolve_in_workdir(&workdir, &candidate)?;
+        if !resolved.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "Couldn't find an available filename after trying {} variants of {}",
+        999, rel_path
+    ))
+}
+
 #[tauri::command]
 pub async fn fs_write_text(
     workdir: String,
@@ -424,13 +523,12 @@ pub async fn fs_write_text(
         ));
     }
 
-    let allow_overwrite = overwrite.unwrap_or(true);
-    if !allow_overwrite && resolved.exists() {
-        return Err(format!(
-            "File already exists: {}. Set overwrite=true to replace it.",
-            rel_path
-        ));
-    }
+    // Refuse to clobber an existing file unless the caller explicitly
+    // confirmed overwrite. The old behavior here was .unwrap_or(true)
+    // which silently replaced; the new default is .unwrap_or(false)
+    // through the shared refuse_if_exists helper, matching every other
+    // fs_write_* command.
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
     // Create parent directories if needed (still within workdir — the
     // sandbox check already verified the full path is inside)
@@ -512,6 +610,7 @@ pub async fn fs_download_url(
     workdir: String,
     url: String,
     rel_path: String,
+    overwrite: Option<bool>,
 ) -> Result<String, String> {
     use tokio::io::AsyncWriteExt;
 
@@ -523,6 +622,9 @@ pub async fn fs_download_url(
 
     // Extension-level safety net.
     reject_executable_extension(&rel_path)?;
+
+    // Conflict guard — refuse to overwrite unless explicitly confirmed.
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
@@ -2831,6 +2933,7 @@ pub async fn fs_write_pdf(
     workdir: String,
     rel_path: String,
     content: String,
+    overwrite: Option<bool>,
 ) -> Result<(), String> {
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
@@ -2838,6 +2941,8 @@ pub async fn fs_write_pdf(
     if content.len() > MAX_WRITE_BYTES {
         return Err(format!("Content too large ({} bytes)", content.len()));
     }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
     let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let lines: Vec<&str> = content.lines().collect();
@@ -2865,6 +2970,7 @@ pub async fn fs_write_docx(
     workdir: String,
     rel_path: String,
     content: String,
+    overwrite: Option<bool>,
 ) -> Result<(), String> {
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
@@ -2872,6 +2978,8 @@ pub async fn fs_write_docx(
     if content.len() > MAX_WRITE_BYTES {
         return Err(format!("Content too large ({} bytes)", content.len()));
     }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
     // Split content into paragraphs on newlines, drop empty lines
     let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
@@ -2900,6 +3008,7 @@ pub async fn fs_write_odt(
     workdir: String,
     rel_path: String,
     content: String,
+    overwrite: Option<bool>,
 ) -> Result<(), String> {
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
@@ -2907,6 +3016,8 @@ pub async fn fs_write_odt(
     if content.len() > MAX_WRITE_BYTES {
         return Err(format!("Content too large ({} bytes)", content.len()));
     }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
     // Same markdown-ish line model as fs_write_docx: split on newlines,
     // drop empties, pass through build_odt for the zip+ODF packaging.
@@ -2942,6 +3053,7 @@ pub async fn fs_write_xlsx(
     workdir: String,
     rel_path: String,
     sheets: Vec<XlsxSheet>,
+    overwrite: Option<bool>,
 ) -> Result<(), String> {
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
@@ -2949,6 +3061,8 @@ pub async fn fs_write_xlsx(
     if sheets.is_empty() {
         return Err("At least one sheet is required".to_string());
     }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
     let resolved_str = resolved.to_string_lossy().to_string();
     tokio::task::spawn_blocking(move || -> Result<(), String> {
@@ -2991,6 +3105,7 @@ pub async fn fs_write_ods(
     workdir: String,
     rel_path: String,
     sheets: Vec<XlsxSheet>,
+    overwrite: Option<bool>,
 ) -> Result<(), String> {
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
@@ -2998,6 +3113,8 @@ pub async fn fs_write_ods(
     if sheets.is_empty() {
         return Err("At least one sheet is required".to_string());
     }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
     // Reuse XlsxSheet since the data shape (name + rows of strings) is
     // identical for both xlsx and ods. Hand-rolled zip+ODF packaging
@@ -3026,6 +3143,7 @@ pub async fn fs_write_pptx(
     workdir: String,
     rel_path: String,
     slides: Vec<PptxSlide>,
+    overwrite: Option<bool>,
 ) -> Result<(), String> {
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
@@ -3033,6 +3151,8 @@ pub async fn fs_write_pptx(
     if slides.is_empty() {
         return Err("At least one slide is required".to_string());
     }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
     // Pre-load every referenced image while we still have the workdir
     // and the async runtime. The build function itself does no I/O.
@@ -3063,6 +3183,7 @@ pub async fn fs_write_odp(
     workdir: String,
     rel_path: String,
     slides: Vec<PptxSlide>,
+    overwrite: Option<bool>,
 ) -> Result<(), String> {
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
@@ -3070,6 +3191,8 @@ pub async fn fs_write_odp(
     if slides.is_empty() {
         return Err("At least one slide is required".to_string());
     }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
     // ODP reuses the same PptxSlide struct since the data shape (title
     // + bullet list + optional image) is format-agnostic. Hand-rolled
@@ -4385,6 +4508,130 @@ mod tests {
         assert!(result.starts_with(dir.canonicalize().unwrap()));
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn refuse_if_exists_blocks_existing_file_when_overwrite_false() {
+        let dir = make_temp_dir("refuse_block");
+        fs::write(dir.join("report.pdf"), b"old").unwrap();
+        let resolved = resolve_in_workdir(&dir, "report.pdf").unwrap();
+
+        // Default: no explicit overwrite → refuse.
+        assert!(refuse_if_exists(&resolved, None, "report.pdf").is_err());
+        // Explicit overwrite=false → also refuse.
+        assert!(refuse_if_exists(&resolved, Some(false), "report.pdf").is_err());
+        // Explicit overwrite=true → allow.
+        assert!(refuse_if_exists(&resolved, Some(true), "report.pdf").is_ok());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn refuse_if_exists_allows_nonexistent_file() {
+        let dir = make_temp_dir("refuse_allow");
+        let resolved = resolve_in_workdir(&dir, "new.pdf").unwrap();
+        // Doesn't exist → allowed regardless of overwrite value.
+        assert!(refuse_if_exists(&resolved, None, "new.pdf").is_ok());
+        assert!(refuse_if_exists(&resolved, Some(false), "new.pdf").is_ok());
+        assert!(refuse_if_exists(&resolved, Some(true), "new.pdf").is_ok());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Shared workdir setup for the fs_find_available_path tests — we
+    /// build a temp dir, synchronously seed it with existing files, and
+    /// return the path. Each test does its own fs_find_available_path
+    /// call (which is async) via a fresh tokio runtime.
+    fn with_seeded_workdir<F>(name: &str, seed: &[&str], f: F)
+    where
+        F: FnOnce(PathBuf),
+    {
+        let dir = make_temp_dir(name);
+        for seed_name in seed {
+            fs::write(dir.join(seed_name), b"").unwrap();
+        }
+        f(dir.clone());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn fs_find_available_path_returns_original_when_unused() {
+        with_seeded_workdir("find_unused", &[], |dir| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = rt
+                .block_on(fs_find_available_path(
+                    dir.to_string_lossy().to_string(),
+                    "report.pdf".to_string(),
+                ))
+                .unwrap();
+            assert_eq!(result, "report.pdf");
+        });
+    }
+
+    #[test]
+    fn fs_find_available_path_single_conflict_returns_counter_2() {
+        with_seeded_workdir("find_single", &["report.pdf"], |dir| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = rt
+                .block_on(fs_find_available_path(
+                    dir.to_string_lossy().to_string(),
+                    "report.pdf".to_string(),
+                ))
+                .unwrap();
+            assert_eq!(result, "report-2.pdf");
+        });
+    }
+
+    #[test]
+    fn fs_find_available_path_chain_of_conflicts_increments() {
+        with_seeded_workdir(
+            "find_chain",
+            &["report.pdf", "report-2.pdf", "report-3.pdf", "report-4.pdf"],
+            |dir| {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let result = rt
+                    .block_on(fs_find_available_path(
+                        dir.to_string_lossy().to_string(),
+                        "report.pdf".to_string(),
+                    ))
+                    .unwrap();
+                assert_eq!(result, "report-5.pdf");
+            },
+        );
+    }
+
+    #[test]
+    fn fs_find_available_path_handles_extensionless_files() {
+        with_seeded_workdir("find_noext", &["Makefile"], |dir| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = rt
+                .block_on(fs_find_available_path(
+                    dir.to_string_lossy().to_string(),
+                    "Makefile".to_string(),
+                ))
+                .unwrap();
+            assert_eq!(result, "Makefile-2");
+        });
+    }
+
+    #[test]
+    fn fs_path_exists_distinguishes_present_and_absent() {
+        with_seeded_workdir("path_exists", &["present.txt"], |dir| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let present = rt
+                .block_on(fs_path_exists(
+                    dir.to_string_lossy().to_string(),
+                    "present.txt".to_string(),
+                ))
+                .unwrap();
+            assert!(present);
+            let absent = rt
+                .block_on(fs_path_exists(
+                    dir.to_string_lossy().to_string(),
+                    "absent.txt".to_string(),
+                ))
+                .unwrap();
+            assert!(!absent);
+        });
     }
 
     #[test]
