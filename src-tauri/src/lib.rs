@@ -62,6 +62,8 @@ pub fn run() {
             models::download_whisper_model,
             proxy::proxy_search,
             proxy::proxy_fetch,
+            proxy::proxy_image_search,
+            proxy::proxy_fetch_url_images,
             audio::start_recording,
             audio::stop_recording,
             audio::is_recording,
@@ -99,6 +101,11 @@ pub fn run() {
             fs_tools::fs_write_docx,
             fs_tools::fs_write_xlsx,
             fs_tools::fs_write_pdf,
+            fs_tools::fs_write_odt,
+            fs_tools::fs_write_ods,
+            fs_tools::fs_write_pptx,
+            fs_tools::fs_write_odp,
+            fs_tools::fs_download_url,
             app_log::get_app_logs,
         ])
         .build(tauri::generate_context!())

@@ -2,7 +2,13 @@ import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
 import { getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
-import { getContextUsage, updateContextUsage, resetContextUsage } from '$lib/stores/context.svelte';
+import { stripToolCallArtifacts } from '$lib/markdown';
+import {
+	getContextUsage,
+	updateContextUsage,
+	resetContextUsage,
+	setContextUsage
+} from '$lib/stores/context.svelte';
 import { invoke } from '@tauri-apps/api/core';
 
 const REVIEW_PATTERNS =
@@ -10,6 +16,17 @@ const REVIEW_PATTERNS =
 
 function looksLikeReviewQuery(content: string): boolean {
 	return REVIEW_PATTERNS.test(content);
+}
+
+// Matches user requests that imply a file output (as opposed to a chat
+// answer). Hits on explicit file-type mentions like "PDF", "docx", etc.
+// Used in `sendMessage` to attach an extra per-turn reminder that the
+// model must call the appropriate fs_write_* tool during the same turn.
+const FILE_OUTPUT_PATTERNS =
+	/\b(pdf|docx|xlsx|odt|ods|odp|pptx|spreadsheet|word\s+doc(?:ument)?|excel\s+(?:file|spreadsheet|sheet)|open\s*document|libreoffice|presentation|powerpoint|slide\s*deck)\b/i;
+
+function looksLikeFileOutputRequest(content: string): boolean {
+	return FILE_OUTPUT_PATTERNS.test(content);
 }
 
 function buildSystemPrompt(workingDir: string | null): ChatMessage {
@@ -36,11 +53,25 @@ FILESYSTEM ACCESS:
 - Only use filesystem tools when the user explicitly asks you to work with files. Do not proactively read files.
 - You can create text files with fs_write_text (including bash scripts, markdown, csv, json).
 - Use fs_write_docx to create a Word document from markdown-style content (# for headings).
+- Use fs_write_odt to create an OpenDocument Text file — the native format of LibreOffice Writer. Only use this when the user specifically asks for an ODT / OpenDocument / LibreOffice-native file; otherwise fs_write_docx is the default (LibreOffice opens .docx fine).
 - Use fs_write_pdf to create a PDF from markdown-style content (# for headings). Use for printable reports; use fs_write_docx when the user wants an editable doc.
 - Use fs_write_xlsx to create an Excel spreadsheet from structured sheet data.
+- Use fs_write_ods to create an OpenDocument Spreadsheet — the native format of LibreOffice Calc. Only use this when the user specifically asks for an ODS / OpenDocument / LibreOffice-native spreadsheet; otherwise fs_write_xlsx is the default.
+- Use fs_write_pptx to create a PowerPoint presentation when the user asks for a slide deck, briefing, or presentation. Each slide has a short title plus one of: a bullet list (content layout, default), or a big centered title for a section divider (layout: "section", optional subtitle). Bullets can be nested — pass an object { text: "...", level: 1 } for a sub-bullet (levels 0-2). You can attach one image per slide via image: "relative/path.png" (png/jpg/gif from the working directory); bullets shift to the left half when an image is present. Keep titles to ~8 words and bullets to ~10 words each; aim for 3-6 top-level bullets per slide. Longer text overflows.
+- To source images for a presentation or report you have two tools: image_search queries Wikimedia Commons (all results are freely-licensed — safe for generic or stock-style imagery); fetch_url_images scans a specific web page for its embedded <img> URLs (use this when the user wants a product photo from a manufacturer's own site, a chart from a review, etc.). Either way, call fs_download_url with the chosen URL and a relative path inside the working directory to actually save the bytes. Then reference the local path in fs_write_pptx via the slide's image field. Typical motherboard-deck flow: web_search for the product → fetch_url_images on the manufacturer product page → pick a likely product shot by alt text → fs_download_url to images/mobo-hero.png → fs_write_pptx with image: "images/mobo-hero.png". Note that fetch_url_images results are usually copyrighted — use them when the user specifically asks for vendor content; prefer image_search when they just want "a picture of X".
+- Use fs_write_odp to create an OpenDocument Presentation (LibreOffice Impress native format) with the same slide API (layouts, nested bullets, images). Only use this when the user specifically asks for an ODP / OpenDocument / LibreOffice-native presentation; otherwise fs_write_pptx is the default.
 - Use fs_edit_text for small targeted changes — it replaces exactly one occurrence of old_str with new_str.
 - You cannot delete or move files. If the user wants to remove a file, tell them to do it manually.
-- When creating bash or shell scripts, include a shebang line (#!/bin/bash or #!/usr/bin/env bash) and remind the user they must chmod +x and run the script themselves — you cannot execute scripts.`
+- When creating bash or shell scripts, include a shebang line (#!/bin/bash or #!/usr/bin/env bash) and remind the user they must chmod +x and run the script themselves — you cannot execute scripts.
+- CRITICAL — FILE-OUTPUT REQUESTS: When the user asks you to create a file (PDF, docx, xlsx, or a text file) — e.g. "create a PDF report on X", "write a summary to a file", "export this as a docx" — the file-write is the FINAL action of THIS turn, not a follow-up. Do your research, synthesize the content, and call the appropriate fs_write_* tool with the complete content IN THE SAME TURN. Then respond briefly in chat with the file path. Do NOT end the turn by dumping the report as a chat message and waiting for the user to ask again — that wastes a whole round trip and risks running out of context on the retry. If a PDF was requested, you MUST call fs_write_pdf before finishing.
+- PRESENTATION WITH IMAGES WORKFLOW: When the user asks for a slide deck that includes images, you are expected to handle the full pipeline in a single turn. Work in this exact order and DO NOT re-research facts after you've started downloading:
+  Step 1. Quick research pass: 3–6 web_search / fetch_url calls max to gather the facts you need for each slide. Once you have enough information to populate every slide, STOP researching.
+  Step 2. For each image you need: try image_search first (keyless Wikimedia Commons, safe licensing). If Commons returns nothing useful for a specific product or topic, pick one of the pages from step 1 and call fetch_url_images on it to get the image URLs actually present on that page. Look for large images with descriptive alt text.
+  Step 3. For each chosen image: call fs_download_url with a short local path like "images/slide-2.png". One image per slide is plenty; you don't need one for every slide.
+  Step 4. Finally, call fs_write_pptx (or fs_write_odp) with ALL slides at once. Reference downloaded images via the slide's "image" field.
+  Step 5. If you cannot find usable images after a reasonable effort (image_search returned nothing AND fetch_url_images didn't yield a clear candidate), WRITE THE PRESENTATION WITHOUT IMAGES anyway. A finished text-only deck is vastly more useful to the user than no deck. You can tell them in your confirmation message that images weren't available for certain slides.
+  Step 6. Do NOT announce what you're about to do and then stop. Phrases like "Now I'll create the presentation:" followed by no tool call are a failure. Either call the write tool or don't mention it.
+  Step 7. Do NOT re-research in a follow-up turn when the user points out the file is missing. If you see in the conversation that a file was supposed to be created and wasn't, your first action in the new turn must be to call fs_write_pptx / fs_write_odp with the content from the previous research.`
 		: '';
 
 	return {
@@ -86,6 +117,12 @@ export interface Conversation {
 	 * when the app restarts. User picks it fresh per conversation.
 	 */
 	workingDir: string | null;
+	/**
+	 * Last known token usage for this conversation, saved so the context
+	 * indicator can be restored when switching tabs. Not persisted to the
+	 * database — reconstructed on the next generation.
+	 */
+	contextUsage: { promptTokens: number; completionTokens: number } | null;
 }
 
 interface DbMessage {
@@ -204,13 +241,15 @@ export async function initChatStore(): Promise<void> {
 		const summaries = await invoke<DbConversationSummary[]>('db_list_conversations');
 		dbAvailable = true;
 
+		const defaultDir = getSettings().defaultWorkingDir || null;
 		conversations = summaries.map((s) => ({
 			id: s.id,
 			title: s.title,
 			messages: [], // loaded lazily
 			createdAt: s.created_at,
 			updatedAt: s.updated_at,
-			workingDir: null
+			workingDir: defaultDir,
+			contextUsage: null
 		}));
 
 		if (conversations.length > 0) {
@@ -319,6 +358,7 @@ async function compactIfNeeded(): Promise<void> {
 		const newMessages: ChatMessage[] = [summaryMsg, ...kept];
 
 		conversation.messages = newMessages;
+		conversation.contextUsage = null;
 		resetContextUsage();
 
 		// Persist to DB
@@ -351,7 +391,8 @@ export function createConversation(): string {
 		messages: [],
 		createdAt: now,
 		updatedAt: now,
-		workingDir: null
+		workingDir: getSettings().defaultWorkingDir || null,
+		contextUsage: null
 	});
 	activeConversationId = id;
 	errorMessage = null;
@@ -360,19 +401,30 @@ export function createConversation(): string {
 	return id;
 }
 
+function restoreContextUsageFor(id: string | null): void {
+	const conv = conversations.find((c) => c.id === id);
+	if (conv?.contextUsage) {
+		setContextUsage(conv.contextUsage.promptTokens, conv.contextUsage.completionTokens);
+	} else {
+		resetContextUsage();
+	}
+}
+
 export async function setActiveConversation(id: string): Promise<void> {
 	if (conversations.some((c) => c.id === id)) {
 		activeConversationId = id;
 		errorMessage = null;
-		resetContextUsage();
+		restoreContextUsageFor(id);
 		await loadConversationMessages(id);
 	}
 }
 
 export async function deleteConversation(id: string): Promise<void> {
+	const wasActive = activeConversationId === id;
 	conversations = conversations.filter((c) => c.id !== id);
-	if (activeConversationId === id) {
+	if (wasActive) {
 		activeConversationId = conversations.length > 0 ? conversations[0].id : null;
+		restoreContextUsageFor(activeConversationId);
 	}
 	if (dbAvailable) {
 		try {
@@ -480,6 +532,12 @@ export async function sendMessage(content: string): Promise<void> {
 	try {
 		const currentWorkingDir = conversation.workingDir;
 
+		// Does this turn look like a "please create a file" request? The
+		// agent loop uses this to detect the "I wrote the PDF" hallucination
+		// and retry when the model claims a file write without actually
+		// calling fs_write_*. Only meaningful when a working directory is set.
+		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
+
 		// Strip tool-related messages from previous turns to keep context clean.
 		// The agent loop adds its own tool messages for the current turn.
 		const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
@@ -498,6 +556,23 @@ export async function sendMessage(content: string): Promise<void> {
 			// Local models ignore system prompt guidance but reliably follow user message text.
 			if (looksLikeReviewQuery(lastText)) {
 				hints.push('Include Reddit as a source.');
+			}
+
+			// File-output reminder: when the user explicitly asked for a PDF,
+			// docx, xlsx, etc., nudge the model to call the file-writing tool
+			// during this turn instead of dumping the content as a chat reply
+			// and waiting for a follow-up. Only fires when a working directory
+			// is set (otherwise the write tools don't exist in the tool list).
+			if (currentWorkingDir && looksLikeFileOutputRequest(lastText)) {
+				hints.push(
+					'You must create the requested file DURING THIS TURN. Do your research, ' +
+						'synthesize the content, and then call fs_write_pdf / fs_write_docx / ' +
+						'fs_write_xlsx (whichever matches the request) with the full content as ' +
+						'your final action. Do NOT paste the report as a chat message and ' +
+						'expect the user to ask again in a follow-up — that wastes a round trip ' +
+						'and risks running out of context on the retry. After the write tool ' +
+						'succeeds, respond with a brief confirmation and the file path.'
+				);
 			}
 
 			// Exhaustive research mode: instruct the model to be thorough AND
@@ -549,18 +624,25 @@ export async function sendMessage(content: string): Promise<void> {
 			maxIterations: exhaustiveResearch ? 25 : 10,
 			contextSize: getSettings().contextSize,
 			deepResearch: exhaustiveResearch,
+			expectsFileOutput,
 			signal: abortController.signal,
 			onUsageUpdate: (u: Usage) => {
 				updateContextUsage(u, getSettings().contextSize);
+				conversation.contextUsage = {
+					promptTokens: u.prompt_tokens,
+					completionTokens: u.completion_tokens
+				};
 			},
 			onToolStart: (call) => {
 				// Extract a human-readable label for each tool based on its args
 				let query = '';
 				switch (call.name) {
 					case 'web_search':
+					case 'image_search':
 						query = (call.arguments.query as string) || '';
 						break;
 					case 'fetch_url':
+					case 'fetch_url_images':
 						query = (call.arguments.url as string) || '';
 						break;
 					case 'research_url': {
@@ -589,11 +671,21 @@ export async function sendMessage(content: string): Promise<void> {
 					case 'fs_write_text':
 					case 'fs_write_docx':
 					case 'fs_write_pdf':
+					case 'fs_write_odt':
 						query = (call.arguments.path as string) || '';
 						break;
 					case 'fs_write_xlsx':
+					case 'fs_write_ods':
+					case 'fs_write_pptx':
+					case 'fs_write_odp':
 						query = (call.arguments.path as string) || '';
 						break;
+					case 'fs_download_url': {
+						const path = (call.arguments.path as string) || '';
+						const url = (call.arguments.url as string) || '';
+						query = path ? `${path} (${url})` : url;
+						break;
+					}
 					default:
 						query = JSON.stringify(call.arguments).slice(0, 60);
 				}
@@ -607,9 +699,9 @@ export async function sendMessage(content: string): Promise<void> {
 					}
 				];
 			},
-			onToolEnd: (call, result) => {
+			onToolEnd: (call, result, thumbDataUrl) => {
 				searchSteps = searchSteps.map((s) =>
-					s.id === call.id ? { ...s, status: 'done' as const, result } : s
+					s.id === call.id ? { ...s, status: 'done' as const, result, thumbDataUrl } : s
 				);
 			},
 			onStreamChunk: (chunk) => {
@@ -629,16 +721,72 @@ export async function sendMessage(content: string): Promise<void> {
 				}
 			},
 			onComplete: () => {
-				const finalContent = streamingContent;
-				if (finalContent) {
+				// Strip any <tool_call> artifacts before committing. Qwen 9B
+				// sometimes emits tool_call XML as chat content when it
+				// degrades after long tool chains; if we save that to the DB
+				// the next turn's history gets poisoned and the model keeps
+				// emitting more of the same. Render-time sanitization is a
+				// safety net; this is the authoritative cleanup.
+				const finalContent = stripToolCallArtifacts(streamingContent).trim();
+				// Shared commit helper — used for both the normal path and
+				// the synthesized-fallback path so deep-research auto-
+				// disable and DB persistence stay in one place.
+				const commit = (content: string) => {
 					const assistantMsg: ChatMessage = {
 						role: 'assistant',
-						content: finalContent
+						content
 					};
 					conversation.messages.push(assistantMsg);
 					dbSaveMessage(conversation.id, assistantMsg);
+					// Auto-disable deep research after a successful turn so
+					// follow-up messages don't accidentally re-run expensive
+					// multi-search research just because the toggle was left
+					// on. The user can re-enable it per turn when they want
+					// another deep research pass.
+					if (exhaustiveResearch) {
+						exhaustiveResearch = false;
+					}
+				};
+
+				if (finalContent) {
+					commit(finalContent);
 				} else {
-					errorMessage = 'Model returned an empty response. Try rephrasing.';
+					// Empty final content. Before slapping up a generic
+					// "empty response" error, check what the turn actually
+					// accomplished:
+					//   1. A successful fs_write_* → a file landed on disk
+					//      and the model just forgot to narrate it. Synth
+					//      a "Done" message so the user sees the file path.
+					//   2. Other tool steps completed → research happened
+					//      but the model didn't produce a final answer.
+					//      Show a guiding message, not a scary error.
+					//   3. Nothing happened → genuine no-op, original error.
+					const successfulWrite = searchSteps.find(
+						(s) =>
+							s.toolName.startsWith('fs_write_') &&
+							s.status === 'done' &&
+							!(s.result || '').includes('"error"')
+					);
+					const anyToolCompleted = searchSteps.some((s) => s.status === 'done');
+
+					if (successfulWrite) {
+						commit(`Done. File written: ${successfulWrite.query}`);
+					} else if (anyToolCompleted) {
+						// Research ran but no final synthesis arrived. Likely
+						// causes: the model got stuck in an image-discovery
+						// loop, hit a degraded state after many tool calls,
+						// or emitted tool_call XML that all got stripped.
+						// Give the user actionable next steps instead of
+						// just "try rephrasing".
+						errorMessage =
+							'Research completed but the model did not produce a final answer or ' +
+							"file. This usually means it couldn't finish what it started — often " +
+							"because it was looking for images it couldn't find. Try a follow-up " +
+							'like "write the presentation with what you have so far, no images" ' +
+							'or a more focused question.';
+					} else {
+						errorMessage = 'Model returned an empty response. Try rephrasing.';
+					}
 				}
 				sourceUrls = extractUrlsFromSteps(searchSteps);
 			},

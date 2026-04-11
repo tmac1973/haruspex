@@ -52,8 +52,20 @@ When you select a working directory from the folder icon in the chat input, Haru
 - Plain text files — markdown, CSV, JSON, bash scripts, etc. (`fs_write_text`)
 - Targeted find-and-replace edits to existing text files (`fs_edit_text`)
 - Microsoft Word (.docx) documents from markdown-style input (`fs_write_docx`)
+- OpenDocument Text (.odt) — LibreOffice Writer native format (`fs_write_odt`)
 - Excel (.xlsx) spreadsheets with multiple sheets (`fs_write_xlsx`)
+- OpenDocument Spreadsheet (.ods) — LibreOffice Calc native format (`fs_write_ods`)
+- PowerPoint (.pptx) presentations — title + bullet-list slides with support for section-divider slides (big centered title), nested bullets up to 2 levels deep, and optional per-slide images from the working directory (`fs_write_pptx`) — **experimental, see [Known issues](#known-issues)**
+- OpenDocument Presentation (.odp) — LibreOffice Impress native format with the same slide API (`fs_write_odp`) — **experimental, see [Known issues](#known-issues)**
 - PDFs from markdown-style input (`fs_write_pdf`)
+
+**What the model can download**:
+
+- Any HTTP(S) binary into the sandboxed working directory (`fs_download_url`) — images, PDFs, fonts, archives, office documents, media files, data files. SSRF protection (private / localhost IPs blocked), 50 MB size ceiling, and executable formats (exe/msi/dll/app/pkg/dmg/deb/rpm/appimage/jar/bat/ps1/vbs etc.) are blocked to prevent staging payloads.
+- Freely-licensed images from Wikimedia Commons via keyless API (`image_search`) — returns URL, thumbnail, dimensions, MIME, license, and attribution. Safe to embed in generated documents with credit. **Experimental — see [Known issues](#known-issues).**
+- Image URLs discovered on any web page (`fetch_url_images`) — scans `<img>`, `<meta property="og:image">`, and `<link rel="image_src">` to find manufacturer product shots, review-site hero images, etc. **Note: images found this way are typically copyrighted** and are the user's responsibility to use appropriately; prefer `image_search` for generic stock imagery. **Experimental — see [Known issues](#known-issues).**
+
+The typical "find an image and embed it in a slide deck" workflow is: `image_search` (or `web_search` + `fetch_url_images`) → `fs_download_url` → `fs_write_pptx` with the local path in the slide's `image` field. Downloaded images also appear inline as thumbnails in the chat UI alongside the tool step, so you can see what was pulled.
 
 **What the model cannot do**: delete files, move files, execute scripts, or touch anything outside the working directory. These are intentional restrictions — if you want the model to delete or run something, you do it manually after reviewing what it created.
 
@@ -73,6 +85,8 @@ Working directory selection is per-conversation and not persisted across app res
 | PDF rendering (vision fallback) | [PDF.js](https://mozilla.github.io/pdf.js/) running in the Tauri webview                                                                                                        |
 | PDF creation                    | [printpdf](https://crates.io/crates/printpdf) (pure Rust)                                                                                                                       |
 | docx / xlsx                     | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes |
+| odt / ods / odp                 | Hand-rolled zip+XML following the OASIS OpenDocument spec (no crate dependency — shares the `zip` crate already used for docx/pptx)                                            |
+| pptx                            | Hand-rolled zip+XML following the OOXML PresentationML spec — content + section slide layouts, nested bullets (up to 2 levels), and embedded images (png/jpg/gif)              |
 | Database                        | SQLite (via rusqlite)                                                                                                                                                           |
 | Web search                      | Auto-rotation (Brave HTML / DuckDuckGo / Mojeek), Brave Search API, or SearXNG                                                                                                  |
 
@@ -271,6 +285,29 @@ make release-local
 When deep research mode is on _and_ the Auto provider is selected _and_ no Brave API key is configured, the search proxy automatically switches to **slow mode** — longer per-engine pacing (~6s vs 2s) and shorter cooldowns after a failure (~45s vs 5min) so engines can recover within the same research turn. A small notice appears above the search-steps panel explaining the slow pacing and pointing the user to Settings. Configuring a Brave API key or a SearXNG instance bypasses slow mode entirely and runs at full speed.
 
 Bing and Qwant were previously in the Auto rotation but were removed: as of April 2026 both serve fully client-rendered SPAs gated by JavaScript bot challenges (Bing uses Cloudflare Turnstile, Qwant uses DataDome), so plain-HTTP scraping returns no results. They could be revived only with a headless browser or a paid API.
+
+## Known issues
+
+### File-creation prompts usually need a follow-up
+
+When you ask the model to create a file in a single prompt — e.g. _"Create a PDF report on X and include Y and Z"_ — it will typically do the research and write a detailed answer to the chat, but **not** actually call `fs_write_pdf`. You'll see a report in the chat window and then have to follow up with something like _"now write that to a PDF please"_ before the file actually lands on disk. Sometimes the model will even claim _"I've created the PDF at /path/..."_ on the first turn when no file was actually written.
+
+This is a model-behavior issue with small local models (Qwen 3.5 9B / 4B): after a multi-step research turn, the model strongly prefers ending with a natural-language synthesis instead of a final tool call, even when the user explicitly asked for a file. Haruspex already does several things to mitigate this — the `fs_write_pdf` tool description is written in imperative "this is not a chat response" language, file-output requests get a per-turn reminder appended to the user message telling the model the write is its final action, and the agent loop has a recovery pass that detects "turn ended, no write happened" and pushes a corrective nudge back to the model. These help but don't fully eliminate the need for a follow-up prompt.
+
+**Workaround:** if the model didn't create the file on the first try, just ask again: _"write that to a PDF"_ or _"now create the PDF file"_. The second turn almost always succeeds because the report content is already in the conversation history and the model only needs to emit a single tool call rather than both researching and writing in the same turn.
+
+A proper fix would likely require either a larger/smarter model or a fundamentally different agent-loop design where file-write is enforced as a separate, mandatory stage after synthesis.
+
+### Presentation creation and image search are experimental
+
+The presentation tools (`fs_write_pptx`, `fs_write_odp`) and the image discovery tools (`image_search`, `fetch_url_images`) work end-to-end but are best treated as experimental features rather than finished workflows. Specifically:
+
+- **Single-turn "research + create presentation with images" prompts are unreliable.** Asking the model to do a full research pass, discover images, download them, and write a presentation all in one turn frequently fails because the model runs out of tool-use fidelity partway through. You'll often see the model do the research, then either (a) describe what the presentation would contain without actually creating it, (b) re-research in a follow-up turn instead of going straight to the write tool, or (c) get stuck trying to find images that don't exist on Wikimedia Commons and give up.
+- **Image discovery for specific products is a gap.** `image_search` hits Wikimedia Commons, which has excellent coverage of landmarks, animals, historical subjects, and generic categories but very little for specific consumer tech products (a given motherboard model, a specific router, a particular GPU). `fetch_url_images` can scrape manufacturer product pages in principle, but the model needs to correctly identify a page that has the image before scraping it, and small local models aren't reliably good at that chain of reasoning.
+- **Most reliable workflow today is two or three turns.** Split the work: ask for the research first (*"research premium and budget X870 motherboards"*), review what the model found, then in a separate turn ask for the presentation explicitly and without images (*"create an ODP presentation with a title slide and one slide per motherboard, no images"*). Multi-turn prompts succeed much more often than single-turn mega-prompts because each turn's context stays small and the tool-use decisions stay simple.
+- **Presentation formatting is minimal.** Slides are limited to a title plus a bullet list (up to 2 levels of nesting) plus an optional single image. No tables, no custom layouts beyond title/content/section, no speaker notes, no charts. This is intentional to keep the renderer simple and the model's job manageable, but it does mean the generated decks are visually plain.
+
+These tools will stay in the app and continue to be maintained — the limitations above are all on the model-behavior side, not the code side, and will improve as local models get better at tool use. They're flagged as experimental so you know what to expect when you reach for them.
 
 ## License
 

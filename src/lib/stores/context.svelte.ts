@@ -32,6 +32,15 @@ export function resetContextUsage(): void {
 	};
 }
 
+/** Restore saved token counts (e.g., when switching back to a previous chat tab). */
+export function setContextUsage(promptTokens: number, completionTokens: number): void {
+	usage = {
+		promptTokens,
+		completionTokens,
+		contextSize: usage.contextSize
+	};
+}
+
 export function getContextPercentage(): number {
 	if (usage.contextSize === 0) return 0;
 	return (usage.promptTokens / usage.contextSize) * 100;

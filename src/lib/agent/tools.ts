@@ -50,6 +50,49 @@ const WEB_TOOLS: ToolDefinition[] = [
 				required: ['url', 'focus']
 			}
 		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'image_search',
+			description:
+				'Search Wikimedia Commons for freely-licensed images matching a query. Returns a list of { title, url, thumb_url, width, height, mime, license, attribution, description_url }. All results are public domain or openly licensed (CC family) — safe to download and embed in a generated document or slide deck with attribution. Use this for "find me a picture of X" workflows where license safety matters, or when the user asks for stock-photo-style imagery (landmarks, animals, generic category shots). For a specific manufacturer product photo that only exists on the vendor\'s own website, use web_search + fetch_url_images instead.',
+			parameters: {
+				type: 'object',
+				properties: {
+					query: {
+						type: 'string',
+						description:
+							'What to search for. Plain English works ("Eiffel Tower at night", "red panda", "vintage motorcycle").'
+					},
+					max_results: {
+						type: 'integer',
+						minimum: 1,
+						maximum: 20,
+						description: 'How many results to return. Defaults to 5. Cap is 20.'
+					}
+				},
+				required: ['query']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'fetch_url_images',
+			description:
+				'Fetch a web page and return a list of image URLs found on it — the `<img src>` elements plus <meta property="og:image"> and <link rel="image_src"> references. Relative URLs are resolved to absolute. Returns up to 50 results as { src, alt, width?, height? } objects. Use this for "find the product shot on the manufacturer\'s page" workflows: first web_search to find the right page, then fetch_url_images on that page to discover the image URLs, then fs_download_url to save one to the working directory. LICENSING NOTE: images found this way are usually copyrighted (manufacturer press assets, stock photos, user uploads on review sites). Unlike image_search which returns only Wikimedia Commons results with clear licenses, anything returned by fetch_url_images is the user\'s responsibility to use appropriately. Prefer image_search for generic/stock imagery and only use fetch_url_images when the user specifically wants content from a particular site.',
+			parameters: {
+				type: 'object',
+				properties: {
+					url: {
+						type: 'string',
+						description: 'The URL of the page to scan for images.'
+					}
+				},
+				required: ['url']
+			}
+		}
 	}
 ];
 
@@ -238,7 +281,7 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_write_pdf',
 			description:
-				'Create a PDF file in the working directory from text content. The content is split into paragraphs on newlines. Lines starting with # become Heading 1, ## become Heading 2, ### become Heading 3. Long lines are word-wrapped automatically and content flows across pages (US Letter, 20mm margins, Helvetica). Use this for printable reports and documents; use fs_write_docx when the user wants an editable Word document.',
+				'Create a printable PDF report. Write the content as a real document — flowing prose organized by section headings, the way a human analyst would write a report. This is NOT a chat response; the general "response format" preference DOES NOT apply here. Follow these rules instead.\n\nSTRUCTURE:\n- Section headings MUST use `#`, `##`, `###` prefixes. NEVER write section titles as `**Bold Text**` on their own line — those are inline emphasis, not headings, and they look broken.\n- A long report should have multiple `##` sections and sub-sections. Do not force page breaks; content flows across pages automatically. Do not use `---` as a page break — it does nothing useful.\n\nPROSE OVER BULLETS:\n- Write analysis, comparisons, overviews, and explanations as NARRATIVE PARAGRAPHS separated by blank lines. This is the default — aim for most of the document to be paragraphs.\n- `- item` bullet lists are allowed ONLY when the content is a genuine list of 3+ short, parallel items (e.g. "supported protocols", "installation steps", "pricing tiers"). A single sentence is a paragraph, not a bullet. A two-item "list" is also a paragraph.\n- Nested bullets: indent sub-items with exactly 2 spaces per level.\n\nTABLES:\n- Tables ARE supported and render as properly aligned columns in a monospace font. Use a standard GFM table when you have genuinely tabular data (comparison matrices, spec sheets, pricing tiers):\n  `| Header 1 | Header 2 | Header 3 |`\n  `| :--- | :--- | :--- |`\n  `| cell | cell | cell |`\n- Keep cell content short (1–4 words per cell). Long prose belongs in paragraphs, not table cells.\n- Limit to 4–5 columns max; anything wider gets cramped.\n\nINLINE FORMATTING:\n- `**bold**`, `*italic*`, `` `code` ``, `[text](url)` all render.\n- Images and block quotes do NOT render — do not include them.\n\nPage layout (US Letter, 20mm margins, Helvetica body, Courier tables) and word-wrapping are automatic. Use `fs_write_docx` instead when the user wants an editable Word document.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -249,7 +292,7 @@ const FS_TOOLS: ToolDefinition[] = [
 					content: {
 						type: 'string',
 						description:
-							'Text content for the document. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings.'
+							'Report content as markdown-style text. Headings use `#`/`##`/`###` (never `**Bold**` alone). Body is flowing paragraphs separated by blank lines. `- item` bullets ONLY for lists of 3+ related items. Markdown tables render as real tables — use them for genuinely tabular data with short cell contents. Do not use `---` for page breaks; page flow is automatic.'
 					}
 				},
 				required: ['path', 'content']
@@ -291,6 +334,234 @@ const FS_TOOLS: ToolDefinition[] = [
 					}
 				},
 				required: ['path', 'sheets']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'fs_write_odt',
+			description:
+				'Create an OpenDocument Text (.odt) file — the native format of LibreOffice Writer. Same rules as fs_write_docx: headings use `#`, `##`, `###` prefixes; body is flowing paragraphs separated by blank lines. Use this when the user specifically asks for an ODT / OpenDocument / LibreOffice-native file; otherwise fs_write_docx is a safer default (LibreOffice opens .docx fine).',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path for the new .odt file.'
+					},
+					content: {
+						type: 'string',
+						description:
+							'Text content. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings.'
+					}
+				},
+				required: ['path', 'content']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'fs_write_ods',
+			description:
+				'Create an OpenDocument Spreadsheet (.ods) file — the native format of LibreOffice Calc. Same sheet/row data shape as fs_write_xlsx (one or more sheets, each with a name and a 2D array of rows). Numeric strings become numeric cells; everything else is text. Use this when the user specifically asks for an ODS / OpenDocument / LibreOffice-native spreadsheet; otherwise fs_write_xlsx is a safer default (LibreOffice opens .xlsx fine).',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path for the new .ods file.'
+					},
+					sheets: {
+						type: 'array',
+						description: 'Array of sheet objects. Each sheet needs a name and rows.',
+						items: {
+							type: 'object',
+							properties: {
+								name: { type: 'string', description: 'Sheet name (tab label)' },
+								rows: {
+									type: 'array',
+									description:
+										'2D array: array of rows, each row is an array of cell values (strings).',
+									items: {
+										type: 'array',
+										items: { type: 'string' }
+									}
+								}
+							},
+							required: ['name', 'rows']
+						}
+					}
+				},
+				required: ['path', 'sheets']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'fs_write_pptx',
+			description:
+				'Create a PowerPoint presentation (.pptx). Each slide has a short title plus one of: a bullet list (content layout, default) or a big centered title for a section divider (section layout). Bullets support nesting up to 2 levels deep. Optional per-slide image from the working directory is rendered on the right half of content slides. Keep titles to ~8 words max and bullets to ~10 words each; 3–6 bullets per slide is ideal. Longer text will overflow.',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path for the new .pptx file.'
+					},
+					slides: {
+						type: 'array',
+						description: 'Array of slide objects.',
+						items: {
+							type: 'object',
+							properties: {
+								title: {
+									type: 'string',
+									description: 'Short slide title (~8 words max).'
+								},
+								layout: {
+									type: 'string',
+									enum: ['content', 'section'],
+									description:
+										'"content" (default): title + bullets (+ optional image). "section": big centered title used as a divider between groups of content slides; put the section headline in `title` and an optional short tagline in `subtitle`. Section slides have no bullets.'
+								},
+								subtitle: {
+									type: 'string',
+									description:
+										'Optional short tagline shown below the main title on section slides. Ignored on content slides.'
+								},
+								bullets: {
+									type: 'array',
+									description:
+										'Bullet points for content slides. Each entry is either a plain string (level 0) or an object { "text": "...", "level": 0|1|2 } for nested bullets. Use sub-levels sparingly — levels beyond 2 are clamped. Pass an empty array for a title-only content slide.',
+									items: {
+										oneOf: [
+											{ type: 'string' },
+											{
+												type: 'object',
+												properties: {
+													text: { type: 'string' },
+													level: {
+														type: 'integer',
+														minimum: 0,
+														maximum: 2,
+														description:
+															'Indent depth. 0 = top level, 1 = sub-bullet, 2 = sub-sub-bullet.'
+													}
+												},
+												required: ['text']
+											}
+										]
+									}
+								},
+								image: {
+									type: 'string',
+									description:
+										'Optional relative path (inside the working directory) to an image file to embed on this slide. Supported formats: png, jpg, jpeg, gif. When set, bullets occupy the left half of the slide and the image the right half. Only applies to content layout.'
+								}
+							},
+							required: ['title']
+						}
+					}
+				},
+				required: ['path', 'slides']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'fs_write_odp',
+			description:
+				'Create an OpenDocument Presentation (.odp) — the native presentation format of LibreOffice Impress. Same constrained API as fs_write_pptx: each slide has a title plus either bullets (content layout) or a big centered title (section layout), supports nested bullets (up to 2 levels) and optional per-slide images. Only use this when the user specifically asks for an ODP / OpenDocument / LibreOffice-native presentation; otherwise fs_write_pptx is the default (LibreOffice Impress opens .pptx fine).',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: {
+						type: 'string',
+						description: 'Relative path for the new .odp file.'
+					},
+					slides: {
+						type: 'array',
+						description: 'Array of slide objects.',
+						items: {
+							type: 'object',
+							properties: {
+								title: {
+									type: 'string',
+									description: 'Short slide title (~8 words max).'
+								},
+								layout: {
+									type: 'string',
+									enum: ['content', 'section'],
+									description:
+										'"content" (default): title + bullets (+ optional image). "section": big centered title used as a divider; put the section headline in `title` and an optional short tagline in `subtitle`.'
+								},
+								subtitle: {
+									type: 'string',
+									description:
+										'Optional short tagline shown below the main title on section slides.'
+								},
+								bullets: {
+									type: 'array',
+									description:
+										'Bullet points for content slides. Each entry is either a plain string (level 0) or an object { "text": "...", "level": 0|1|2 } for nested bullets.',
+									items: {
+										oneOf: [
+											{ type: 'string' },
+											{
+												type: 'object',
+												properties: {
+													text: { type: 'string' },
+													level: {
+														type: 'integer',
+														minimum: 0,
+														maximum: 2,
+														description:
+															'Indent depth. 0 = top level, 1 = sub-bullet, 2 = sub-sub-bullet.'
+													}
+												},
+												required: ['text']
+											}
+										]
+									}
+								},
+								image: {
+									type: 'string',
+									description:
+										'Optional relative path to an image file inside the working directory (png/jpg/jpeg/gif). When set, bullets occupy the left half of a content slide and the image the right half.'
+								}
+							},
+							required: ['title']
+						}
+					}
+				},
+				required: ['path', 'slides']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'fs_download_url',
+			description:
+				'Download a file from a URL into the working directory. Works for any HTTP(S) URL — images (to embed in a presentation), PDFs, fonts, archives, office documents, media files, data files. The bytes are written to `path` relative to the working directory; the server sandbox prevents escapes. Executable formats (exe, msi, dll, app, pkg, dmg, deb, rpm, appimage, jar, bat, ps1, vbs, etc.) are blocked as a safety measure. Private/local URLs are blocked as SSRF protection. 50 MB size ceiling. Typical presentation flow: image_search or fetch_url_images → pick a URL → fs_download_url to save it locally → fs_write_pptx with `image: "the/saved/path.png"` on the slide.',
+			parameters: {
+				type: 'object',
+				properties: {
+					url: {
+						type: 'string',
+						description: 'The HTTP(S) URL to download.'
+					},
+					path: {
+						type: 'string',
+						description:
+							'Relative path (inside the working directory) where the downloaded file should be written. Include the file extension — it determines whether the download is allowed (e.g. images/hero.png is fine, installer.exe is blocked).'
+					}
+				},
+				required: ['url', 'path']
 			}
 		}
 	},

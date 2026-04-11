@@ -11,7 +11,9 @@
 
 	function stepIcon(toolName: string): string {
 		if (toolName === 'web_search') return '\u{1F50D}'; // magnifying glass
+		if (toolName === 'image_search') return '\u{1F5BC}\uFE0F'; // framed picture
 		if (toolName === 'research_url') return '\u{1F9D0}'; // face with monocle
+		if (toolName === 'fs_download_url') return '\u{2B07}\uFE0F'; // down arrow
 		if (toolName.startsWith('fs_write')) return '\u{1F4DD}'; // memo
 		if (toolName.startsWith('fs_list')) return '\u{1F4C2}'; // open folder
 		if (toolName.startsWith('fs_edit')) return '\u270F\uFE0F'; // pencil
@@ -48,8 +50,22 @@
 				return `Writing pdf: ${query}`;
 			case 'fs_write_xlsx':
 				return `Writing xlsx: ${query}`;
+			case 'fs_write_odt':
+				return `Writing odt: ${query}`;
+			case 'fs_write_ods':
+				return `Writing ods: ${query}`;
+			case 'fs_write_pptx':
+				return `Writing pptx: ${query}`;
+			case 'fs_write_odp':
+				return `Writing odp: ${query}`;
 			case 'fs_edit_text':
 				return `Editing: ${query}`;
+			case 'image_search':
+				return `Searching images: "${query}"`;
+			case 'fetch_url_images':
+				return `Scanning page for images: ${query}`;
+			case 'fs_download_url':
+				return `Downloading: ${query}`;
 			default:
 				return `${toolName}: ${query}`;
 		}
@@ -78,6 +94,13 @@
 					{/if}
 				</span>
 			</div>
+			{#if step.thumbDataUrl}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="step-thumb" onclick={(e) => e.stopPropagation()}>
+					<img src={step.thumbDataUrl} alt={step.query} />
+				</div>
+			{/if}
 		{/each}
 
 		{#if expanded}
@@ -141,6 +164,20 @@
 	.step-status {
 		flex-shrink: 0;
 		color: #22c55e;
+	}
+
+	.step-thumb {
+		margin: 4px 0 8px 26px; /* align under the step-label */
+		cursor: default;
+	}
+
+	.step-thumb img {
+		max-width: 240px;
+		max-height: 180px;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		display: block;
+		object-fit: contain;
 	}
 
 	.spinner {

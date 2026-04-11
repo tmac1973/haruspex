@@ -28,7 +28,7 @@
 	} from '$lib/stores/chat.svelte';
 	import { getServerState } from '$lib/stores/server.svelte';
 	import { getSettings } from '$lib/stores/settings';
-	import { onMount, tick } from 'svelte';
+	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
 	let inputText = $state('');
 	let messagesContainer: HTMLDivElement | undefined = $state();
@@ -147,8 +147,54 @@
 		return () => window.removeEventListener('keydown', handleGlobalKeydown);
 	});
 
+	// Throttle streaming markdown rendering.
+	//
+	// Re-parsing the full accumulated stream buffer on every chunk (through
+	// marked + highlight.js + the table fixer) is O(N) in content length and
+	// gets called 10-30x/s during fast streaming. For long research reports
+	// that's enough to peg the main thread and freeze the UI. Instead of
+	// rendering on every chunk we flush at most once every STREAM_RENDER_MS,
+	// which caps the parse cost to a few frames per second. The first chunk
+	// still renders immediately so there's no perceptible lag at the start,
+	// and the final flush happens via the normal onComplete → streamingContent
+	// = '' path so the last state is always current.
+	const STREAM_RENDER_MS = 150;
+	let throttledStreamingContent = $state('');
+	let streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
+
+	$effect(() => {
+		// Track streamingContent reactively; everything else is untracked.
+		const current = streamingContent;
+		untrack(() => {
+			if (!current) {
+				// Stream ended — drop the preview and cancel any pending flush.
+				throttledStreamingContent = '';
+				if (streamRenderTimer !== null) {
+					clearTimeout(streamRenderTimer);
+					streamRenderTimer = null;
+				}
+			} else if (!throttledStreamingContent) {
+				// First chunk: render immediately so the cursor shows up fast.
+				throttledStreamingContent = current;
+			} else if (streamRenderTimer === null) {
+				// Subsequent chunks: coalesce into one render per window.
+				streamRenderTimer = setTimeout(() => {
+					throttledStreamingContent = getStreamingContent();
+					streamRenderTimer = null;
+				}, STREAM_RENDER_MS);
+			}
+		});
+	});
+
+	onDestroy(() => {
+		if (streamRenderTimer !== null) {
+			clearTimeout(streamRenderTimer);
+			streamRenderTimer = null;
+		}
+	});
+
 	const renderedStreamingContent = $derived(
-		streamingContent ? renderMarkdown(streamingContent) : ''
+		throttledStreamingContent ? renderMarkdown(throttledStreamingContent) : ''
 	);
 </script>
 
@@ -390,7 +436,7 @@
 	.conversation-list {
 		flex: 1;
 		overflow-y: auto;
-		padding: 4px;
+		padding: 4px 8px 4px 4px;
 	}
 
 	.conversation-item {
@@ -432,6 +478,7 @@
 		color: var(--text-secondary);
 		font-size: 1rem;
 		padding: 0 4px;
+		margin-right: 2px;
 		opacity: 0;
 		transition: opacity 0.15s;
 		flex-shrink: 0;

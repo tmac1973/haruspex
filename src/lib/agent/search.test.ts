@@ -16,32 +16,33 @@ describe('executeTool', () => {
 		vi.mocked(invoke).mockResolvedValue(mockResults);
 
 		const { executeTool } = await import('$lib/agent/search');
-		const result = await executeTool('web_search', { query: 'test query' }, null);
+		const output = await executeTool('web_search', { query: 'test query' }, null);
 
 		expect(invoke).toHaveBeenCalledWith(
 			'proxy_search',
 			expect.objectContaining({ query: 'test query' })
 		);
-		expect(JSON.parse(result)).toEqual(mockResults);
+		expect(JSON.parse(output.result)).toEqual(mockResults);
+		expect(output.thumbDataUrl).toBeUndefined();
 	});
 
 	it('routes fetch_url to proxy_fetch invoke', async () => {
 		vi.mocked(invoke).mockResolvedValue('page content');
 
 		const { executeTool } = await import('$lib/agent/search');
-		const result = await executeTool('fetch_url', { url: 'https://example.com' }, null);
+		const output = await executeTool('fetch_url', { url: 'https://example.com' }, null);
 
 		expect(invoke).toHaveBeenCalledWith('proxy_fetch', {
 			url: 'https://example.com',
 			caller: 'fetch_url'
 		});
-		expect(result).toBe('page content');
+		expect(output.result).toBe('page content');
 	});
 
 	it('returns error for unknown tool', async () => {
 		const { executeTool } = await import('$lib/agent/search');
-		const result = await executeTool('unknown_tool', {}, null);
-		const parsed = JSON.parse(result);
+		const output = await executeTool('unknown_tool', {}, null);
+		const parsed = JSON.parse(output.result);
 		expect(parsed.error).toContain('Unknown tool');
 	});
 });

@@ -71,6 +71,15 @@ impl ServerConfig {
             "q8_0".to_string(),
             "--cache-type-v".to_string(),
             "q8_0".to_string(),
+            // Haruspex only runs one conversation through llama-server at a
+            // time, so we don't benefit from multiple parallel slots. Forcing
+            // --parallel 1 gives the single slot the full KV budget and
+            // eliminates the "failed to find free space in the KV cache /
+            // purging slot N" warnings that show up in stderr whenever stale
+            // slots from earlier turns get evicted to make room for a new
+            // batch.
+            "--parallel".to_string(),
+            "1".to_string(),
             "--jinja".to_string(),
             "--host".to_string(),
             "127.0.0.1".to_string(),
@@ -788,6 +797,13 @@ mod tests {
         assert!(args.contains(&"on".to_string()));
         assert!(args.contains(&"--cache-type-k".to_string()));
         assert!(args.contains(&"q8_0".to_string()));
+        // Parallel must be pinned to 1 — Haruspex only runs one conversation
+        // through llama-server at a time and the KV cache gets fragmented by
+        // stale slots otherwise, producing "failed to find free space"
+        // warnings in stderr.
+        assert!(args.contains(&"--parallel".to_string()));
+        let parallel_idx = args.iter().position(|a| a == "--parallel").unwrap();
+        assert_eq!(args[parallel_idx + 1], "1");
         assert!(args.contains(&"--jinja".to_string()));
         assert!(args.contains(&"--host".to_string()));
         assert!(args.contains(&"127.0.0.1".to_string()));

@@ -8,6 +8,27 @@ import { getSettings, getSamplingParams, getChatTemplateKwargs } from '$lib/stor
 // avoids cutting off the one source that has all the answers.
 const RESEARCH_AGENT_MAX_TOKENS = 3072;
 
+/**
+ * Result of a single tool invocation. `result` is the string the agent
+ * loop sends back to the model as the tool message content. Optional
+ * attachments are side-channel data for the chat UI — currently just an
+ * inline thumbnail data URL for image-producing tools (fs_read_image,
+ * fs_download_url on an image extension). Anything else the model sees
+ * belongs in `result`.
+ */
+export interface ToolExecOutput {
+	result: string;
+	thumbDataUrl?: string;
+}
+
+// Small helper to wrap a plain-string result so the switch arms stay
+// readable. 99% of tools don't produce attachments.
+const r = (s: string): ToolExecOutput => ({ result: s });
+
+// Regex for file extensions we can preview as a thumbnail inline. The
+// chat UI reads the bytes back via fs_read_image and renders a data URL.
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|ico|tiff?)$/i;
+
 export interface SearchResult {
 	title: string;
 	url: string;
@@ -231,17 +252,169 @@ async function executeFsWriteXlsx(
 	}
 }
 
+async function executeFsWriteOdt(
+	workdir: string,
+	relPath: string,
+	content: string
+): Promise<string> {
+	try {
+		await invoke('fs_write_odt', { workdir, relPath, content });
+		return `Wrote odt: ${relPath}`;
+	} catch (e) {
+		return JSON.stringify({ error: `fs_write_odt failed: ${e}` });
+	}
+}
+
+async function executeFsWriteOds(
+	workdir: string,
+	relPath: string,
+	sheets: XlsxSheet[]
+): Promise<string> {
+	try {
+		// ODS reuses the XlsxSheet shape — same { name, rows } structure
+		await invoke('fs_write_ods', { workdir, relPath, sheets });
+		return `Wrote ods: ${relPath} (${sheets.length} sheet${sheets.length === 1 ? '' : 's'})`;
+	} catch (e) {
+		return JSON.stringify({ error: `fs_write_ods failed: ${e}` });
+	}
+}
+
+// A bullet can be either a plain string (level 0) or an object with an
+// explicit level. Matches the Rust `PptxBullet` untagged serde enum.
+type PptxBulletInput = string | { text: string; level?: number };
+
+interface ImageSearchResult {
+	title: string;
+	url: string;
+	thumb_url: string;
+	width: number;
+	height: number;
+	mime: string;
+	license: string;
+	attribution: string;
+	description_url: string;
+}
+
+interface PageImage {
+	src: string;
+	alt: string;
+	width: number | null;
+	height: number | null;
+}
+
+async function executeFetchUrlImages(url: string): Promise<string> {
+	try {
+		const images = await invoke<PageImage[]>('proxy_fetch_url_images', { url });
+		if (images.length === 0) {
+			return JSON.stringify({
+				images: [],
+				note: `No images found on ${url}. The page may be client-rendered or blocked.`
+			});
+		}
+		return JSON.stringify({ images });
+	} catch (e) {
+		return JSON.stringify({ error: `fetch_url_images failed: ${e}` });
+	}
+}
+
+async function executeImageSearch(query: string, maxResults?: number): Promise<string> {
+	try {
+		const results = await invoke<ImageSearchResult[]>('proxy_image_search', {
+			query,
+			maxResults: maxResults ?? null
+		});
+		if (results.length === 0) {
+			return JSON.stringify({
+				results: [],
+				note: `No Wikimedia Commons images found for "${query}". Try a broader or different query.`
+			});
+		}
+		return JSON.stringify({ results });
+	} catch (e) {
+		return JSON.stringify({ error: `image_search failed: ${e}` });
+	}
+}
+
+async function executeFsDownloadUrl(
+	workdir: string,
+	url: string,
+	relPath: string
+): Promise<ToolExecOutput> {
+	try {
+		const message = await invoke<string>('fs_download_url', { workdir, url, relPath });
+		// If the downloaded file is an image, load it back as a data URL
+		// so the chat UI can show a thumbnail inline under the tool step.
+		// The model only sees the short text `message` — the data URL is
+		// a side-channel attachment that doesn't count against its context.
+		let thumbDataUrl: string | undefined;
+		if (IMAGE_EXT_RE.test(relPath)) {
+			try {
+				thumbDataUrl = await invoke<string>('fs_read_image', { workdir, relPath });
+			} catch {
+				// Thumbnail is best-effort — a failure here shouldn't make
+				// the download itself look like it failed.
+			}
+		}
+		return { result: message, thumbDataUrl };
+	} catch (e) {
+		return r(JSON.stringify({ error: `fs_download_url failed: ${e}` }));
+	}
+}
+
+interface PptxSlide {
+	title: string;
+	bullets?: PptxBulletInput[];
+	subtitle?: string;
+	image?: string;
+	layout?: 'content' | 'section';
+}
+
+async function executeFsWritePptx(
+	workdir: string,
+	relPath: string,
+	slides: PptxSlide[]
+): Promise<string> {
+	try {
+		await invoke('fs_write_pptx', { workdir, relPath, slides });
+		return `Wrote pptx: ${relPath} (${slides.length} slide${slides.length === 1 ? '' : 's'})`;
+	} catch (e) {
+		return JSON.stringify({ error: `fs_write_pptx failed: ${e}` });
+	}
+}
+
+async function executeFsWriteOdp(
+	workdir: string,
+	relPath: string,
+	slides: PptxSlide[]
+): Promise<string> {
+	try {
+		// ODP reuses the PptxSlide shape — same { title, bullets } structure
+		await invoke('fs_write_odp', { workdir, relPath, slides });
+		return `Wrote odp: ${relPath} (${slides.length} slide${slides.length === 1 ? '' : 's'})`;
+	} catch (e) {
+		return JSON.stringify({ error: `fs_write_odp failed: ${e}` });
+	}
+}
+
 async function executeFsReadImage(
 	workdir: string,
 	relPath: string,
 	pendingImages: Array<{ path: string; dataUrl: string }>
-): Promise<string> {
+): Promise<ToolExecOutput> {
 	try {
 		const dataUrl = await invoke<string>('fs_read_image', { workdir, relPath });
+		// Two destinations for the same bytes:
+		//   - `pendingImages`: queued for the next model turn so the
+		//     vision model can actually see the image.
+		//   - `thumbDataUrl`: attachment for the chat UI so the user
+		//     also gets an inline preview under the tool step.
 		pendingImages.push({ path: relPath, dataUrl });
-		return `Image loaded: ${relPath}. You can now see it — describe or analyze it in your next response.`;
+		return {
+			result: `Image loaded: ${relPath}. You can now see it — describe or analyze it in your next response.`,
+			thumbDataUrl: dataUrl
+		};
 	} catch (e) {
-		return JSON.stringify({ error: `fs_read_image failed: ${e}` });
+		return r(JSON.stringify({ error: `fs_read_image failed: ${e}` }));
 	}
 }
 
@@ -310,73 +483,114 @@ export async function executeTool(
 	signal?: AbortSignal,
 	pendingImages?: PendingImage[],
 	deepResearch: boolean = false
-): Promise<string> {
+): Promise<ToolExecOutput> {
 	switch (name) {
 		case 'web_search':
-			return executeWebSearch(args.query as string, deepResearch);
+			return r(await executeWebSearch(args.query as string, deepResearch));
 		case 'fetch_url':
-			return executeFetchUrl(args.url as string);
+			return r(await executeFetchUrl(args.url as string));
 		case 'research_url':
-			return executeResearchUrl(args.url as string, args.focus as string, signal);
+			return r(await executeResearchUrl(args.url as string, args.focus as string, signal));
+		case 'image_search':
+			return r(
+				await executeImageSearch(args.query as string, args.max_results as number | undefined)
+			);
+		case 'fetch_url_images':
+			return r(await executeFetchUrlImages(args.url as string));
 		case 'fs_list_dir':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsListDir(workingDir, (args.path as string) ?? '.');
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(await executeFsListDir(workingDir, (args.path as string) ?? '.'));
 		case 'fs_read_text':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsReadText(workingDir, args.path as string);
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(await executeFsReadText(workingDir, args.path as string));
 		case 'fs_read_pdf':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsReadPdf(workingDir, args.path as string);
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(await executeFsReadPdf(workingDir, args.path as string));
 		case 'fs_read_docx':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsReadDocx(workingDir, args.path as string);
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(await executeFsReadDocx(workingDir, args.path as string));
 		case 'fs_read_xlsx':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsReadXlsx(workingDir, args.path as string, args.sheet as string | undefined);
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(
+				await executeFsReadXlsx(workingDir, args.path as string, args.sheet as string | undefined)
+			);
 		case 'fs_read_image':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			if (!pendingImages) return JSON.stringify({ error: 'Images not supported in this context' });
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			if (!pendingImages)
+				return r(JSON.stringify({ error: 'Images not supported in this context' }));
 			if (pendingImages.length >= MAX_PENDING_IMAGES) {
-				return JSON.stringify({
-					error: `Too many images pending (${pendingImages.length}). Respond about the images you've already loaded before loading more — loading too many images in one turn exhausts the model context and crashes inference.`
-				});
+				return r(
+					JSON.stringify({
+						error: `Too many images pending (${pendingImages.length}). Respond about the images you've already loaded before loading more — loading too many images in one turn exhausts the model context and crashes inference.`
+					})
+				);
 			}
 			return executeFsReadImage(workingDir, args.path as string, pendingImages);
 		case 'fs_read_pdf_pages':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			if (!pendingImages) return JSON.stringify({ error: 'Images not supported in this context' });
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			if (!pendingImages)
+				return r(JSON.stringify({ error: 'Images not supported in this context' }));
 			if (pendingImages.length > 0) {
-				return JSON.stringify({
-					error: `You already have ${pendingImages.length} image(s) pending. Respond about them first, then call fs_read_pdf_pages for the next PDF. Loading multiple PDFs as images in one turn crashes the inference server.`
-				});
+				return r(
+					JSON.stringify({
+						error: `You already have ${pendingImages.length} image(s) pending. Respond about them first, then call fs_read_pdf_pages for the next PDF. Loading multiple PDFs as images in one turn crashes the inference server.`
+					})
+				);
 			}
-			return executeFsReadPdfPages(workingDir, args.path as string, pendingImages);
+			return r(await executeFsReadPdfPages(workingDir, args.path as string, pendingImages));
 		case 'fs_write_text':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsWriteText(
-				workingDir,
-				args.path as string,
-				args.content as string,
-				args.overwrite as boolean | undefined
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(
+				await executeFsWriteText(
+					workingDir,
+					args.path as string,
+					args.content as string,
+					args.overwrite as boolean | undefined
+				)
 			);
 		case 'fs_write_docx':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsWriteDocx(workingDir, args.path as string, args.content as string);
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(await executeFsWriteDocx(workingDir, args.path as string, args.content as string));
 		case 'fs_write_pdf':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsWritePdf(workingDir, args.path as string, args.content as string);
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(await executeFsWritePdf(workingDir, args.path as string, args.content as string));
 		case 'fs_write_xlsx':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsWriteXlsx(workingDir, args.path as string, args.sheets as XlsxSheet[]);
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(
+				await executeFsWriteXlsx(workingDir, args.path as string, args.sheets as XlsxSheet[])
+			);
+		case 'fs_write_odt':
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(await executeFsWriteOdt(workingDir, args.path as string, args.content as string));
+		case 'fs_write_ods':
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(
+				await executeFsWriteOds(workingDir, args.path as string, args.sheets as XlsxSheet[])
+			);
+		case 'fs_write_pptx':
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(
+				await executeFsWritePptx(workingDir, args.path as string, args.slides as PptxSlide[])
+			);
+		case 'fs_write_odp':
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(
+				await executeFsWriteOdp(workingDir, args.path as string, args.slides as PptxSlide[])
+			);
+		case 'fs_download_url':
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return executeFsDownloadUrl(workingDir, args.url as string, args.path as string);
 		case 'fs_edit_text':
-			if (!workingDir) return JSON.stringify({ error: 'No working directory set' });
-			return executeFsEditText(
-				workingDir,
-				args.path as string,
-				args.old_str as string,
-				args.new_str as string
+			if (!workingDir) return r(JSON.stringify({ error: 'No working directory set' }));
+			return r(
+				await executeFsEditText(
+					workingDir,
+					args.path as string,
+					args.old_str as string,
+					args.new_str as string
+				)
 			);
 		default:
-			return JSON.stringify({ error: `Unknown tool: ${name}` });
+			return r(JSON.stringify({ error: `Unknown tool: ${name}` }));
 	}
 }

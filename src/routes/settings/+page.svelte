@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
+	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { startServer, stopServer, getServerState } from '$lib/stores/server.svelte';
@@ -64,6 +65,28 @@
 	let braveApiKey = $state(getSettings().braveApiKey);
 	let searxngUrl = $state(getSettings().searxngUrl);
 	let contextSize = $state(getSettings().contextSize);
+	let defaultWorkingDir = $state(getSettings().defaultWorkingDir);
+
+	async function pickDefaultWorkingDir() {
+		try {
+			const selected = await openDialog({
+				directory: true,
+				multiple: false,
+				title: 'Select default working directory'
+			});
+			if (typeof selected === 'string') {
+				defaultWorkingDir = selected;
+				updateSettings({ defaultWorkingDir: selected });
+			}
+		} catch (e) {
+			console.error('Failed to pick directory:', e);
+		}
+	}
+
+	function clearDefaultWorkingDir() {
+		defaultWorkingDir = '';
+		updateSettings({ defaultWorkingDir: '' });
+	}
 
 	function setTtsVoice(voice: string) {
 		ttsVoice = voice;
@@ -516,6 +539,25 @@
 				Restart the server for the new context size to take effect.
 			</p>
 		{/if}
+	</section>
+
+	<section>
+		<h2>Default Working Directory</h2>
+		<p class="hint">
+			When set, new chats automatically start with this working directory, enabling filesystem tools
+			without having to pick a folder each time. You can still change or clear it per chat with the
+			folder button in the input row.
+		</p>
+		<div class="workingdir-row">
+			{#if defaultWorkingDir}
+				<code class="workingdir-path" title={defaultWorkingDir}>{defaultWorkingDir}</code>
+				<button class="btn" onclick={pickDefaultWorkingDir}>Change</button>
+				<button class="btn btn-danger" onclick={clearDefaultWorkingDir}>Clear</button>
+			{:else}
+				<span class="workingdir-empty">No default set</span>
+				<button class="btn btn-primary" onclick={pickDefaultWorkingDir}>Choose Folder</button>
+			{/if}
+		</div>
 	</section>
 
 	<section>
@@ -996,6 +1038,33 @@
 		font-size: 0.8rem;
 		color: var(--text-secondary);
 		margin-top: 2px;
+	}
+
+	.workingdir-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.workingdir-path {
+		flex: 1;
+		min-width: 0;
+		padding: 8px 12px;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		font-size: 0.8rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.workingdir-empty {
+		flex: 1;
+		color: var(--text-secondary);
+		font-size: 0.85rem;
+		font-style: italic;
 	}
 
 	.server-actions {

@@ -56,6 +56,92 @@ function escapeHtml(text: string): string {
 		.replace(/"/g, '&quot;');
 }
 
+/**
+ * Local models occasionally emit GFM tables with a malformed separator row —
+ * e.g. `| :--- | :--- | :--- | :--- :--- |` (4 cells for a 5-column header,
+ * because two `:---` tokens got crammed into one cell with a missing pipe).
+ * Marked is strict about table structure and falls back to rendering the
+ * whole block as plain text when this happens. This preprocessor detects
+ * that case and rewrites the separator row to match the header column count.
+ */
+function fixMalformedTables(text: string): string {
+	const lines = text.split('\n');
+	for (let i = 0; i < lines.length - 1; i++) {
+		const header = lines[i].trim();
+		const sep = lines[i + 1].trim();
+
+		// Header must be pipe-delimited on both sides with ≥2 columns
+		if (!header.startsWith('|') || !header.endsWith('|')) continue;
+		const headerCells = header.slice(1, -1).split('|').length;
+		if (headerCells < 2) continue;
+
+		// Candidate separator: only `:`, `-`, `|`, whitespace — and contains a dash
+		if (!/^[\s|:-]+$/.test(sep) || !/-/.test(sep)) continue;
+
+		// Strict separator shape that marked would accept
+		const wellFormed = /^\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|$/.test(sep);
+
+		// Extract the alignment tokens present (to decide the rebuilt shape)
+		const alignTokens = sep.match(/:?-{2,}:?/g) || [];
+
+		if (wellFormed && alignTokens.length === headerCells) continue;
+
+		// Rebuild: use the first alignment seen, or default to left-aligned
+		const align = alignTokens[0] || ':---';
+		lines[i + 1] = '| ' + Array(headerCells).fill(align).join(' | ') + ' |';
+	}
+	return lines.join('\n');
+}
+
+/**
+ * Remove `<tool_call>` XML artifacts from model chat content.
+ *
+ * Local models (especially Qwen 9B after a long tool-calling chain)
+ * sometimes emit a tool call as raw text content instead of through the
+ * structured `tool_calls` field in the API response. When the JSON
+ * inside is malformed or truncated, the agent loop's parser swallows
+ * the error and the text ends up in the final synthesis, polluting the
+ * rendered output and the saved conversation history.
+ *
+ * This helper strips three shapes in order:
+ *   1. Complete `<tool_call>...</tool_call>` blocks
+ *   2. Stray closing `</tool_call>` tags with no matching opener
+ *   3. Stray opening `<tool_call>` tags with no matching closer
+ *
+ * Used at both commit time (onComplete in the chat store) and render
+ * time (via renderMarkdown) so the artifacts never reach the DOM and
+ * never get sent back to the model as history on the next turn.
+ */
+export function stripToolCallArtifacts(text: string): string {
+	let out = text.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '');
+	out = out.replace(/<\/tool_call>/g, '');
+	out = out.replace(/<tool_call>/g, '');
+	return out;
+}
+
+/**
+ * Render-time content sanitizer. On top of `stripToolCallArtifacts`,
+ * hides any trailing unclosed HTML-like tag (e.g. `</`, `</t`, `<div`)
+ * at the end of the input.
+ *
+ * This addresses a specific streaming UX bug: when the model emits a
+ * `</tool_call>` tag character-by-character, marked's HTML parser sees
+ * a growing partial tag (`</` → `</t` → `</to` → …) and flickers it
+ * in and out of the DOM as each chunk arrives. Stripping the trailing
+ * partial tag until a closing `>` arrives keeps the stream visually
+ * stable. Legitimate HTML in the middle of the content is untouched;
+ * only a tag at the very end without its closing `>` gets hidden.
+ */
+function sanitizeForRender(text: string): string {
+	let out = stripToolCallArtifacts(text);
+	// Matches `<`, `</`, `<tag`, `</tag`, etc. at the very end of the
+	// string. Requires at least a `<` and no `>` after it. The tag-name
+	// character class excludes space so plain text like `5 < 10` isn't
+	// matched.
+	out = out.replace(/<\/?[a-zA-Z0-9_-]*$/, '');
+	return out;
+}
+
 function convertThinkingBlocks(text: string): string {
 	return text.replace(/<think>([\s\S]*?)<\/think>/g, (_match, content: string) => {
 		const trimmed = content.trim();
@@ -107,7 +193,7 @@ function convertTableToColumnFirst(tableHtml: string): string {
 }
 
 export function stripMarkdownForTTS(text: string, readTablesByColumn = true): string {
-	const html = marked.parse(convertThinkingBlocks(text)) as string;
+	const html = marked.parse(fixMalformedTables(convertThinkingBlocks(text))) as string;
 
 	// Remove thinking blocks
 	let cleaned = html.replace(/<details[\s\S]*?<\/details>/g, '');
@@ -151,6 +237,8 @@ export function stripMarkdownForTTS(text: string, readTablesByColumn = true): st
 }
 
 export function renderMarkdown(text: string): string {
-	const withThinking = convertThinkingBlocks(text);
-	return marked.parse(withThinking) as string;
+	const sanitized = sanitizeForRender(text);
+	const withThinking = convertThinkingBlocks(sanitized);
+	const withFixedTables = fixMalformedTables(withThinking);
+	return marked.parse(withFixedTables) as string;
 }

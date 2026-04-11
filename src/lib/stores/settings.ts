@@ -17,6 +17,7 @@ export interface AppSettings {
 	audioOutputDevice: string;
 	audioInputDevice: string;
 	dismissedGpuWarning: boolean;
+	defaultWorkingDir: string;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -33,7 +34,8 @@ const defaults: AppSettings = {
 	searchRecency: 'any' as const,
 	audioOutputDevice: '',
 	audioInputDevice: '',
-	dismissedGpuWarning: false
+	dismissedGpuWarning: false,
+	defaultWorkingDir: ''
 };
 
 function load(): AppSettings {

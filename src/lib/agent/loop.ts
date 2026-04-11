@@ -11,6 +11,7 @@ import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { getAgentTools } from '$lib/agent/tools';
 import { executeTool, type PendingImage } from '$lib/agent/search';
 import { getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
+import { stripToolCallArtifacts } from '$lib/markdown';
 
 // Trim older tool results when context usage crosses this fraction.
 // Lower than the conversation-level compaction threshold (0.8) so we act
@@ -19,9 +20,18 @@ const IN_LOOP_TRIM_THRESHOLD = 0.7;
 // Always preserve this many of the most recent tool messages — the model
 // needs the freshest results to actually answer the question.
 const PRESERVE_RECENT_TOOL_MESSAGES = 3;
-// Final synthesis token cap. If the model hits this, we surface a length
-// finish_reason instead of silently truncating to a fragment.
-const FINAL_SYNTHESIS_MAX_TOKENS = 4096;
+// Per-call output token cap. Used for both agent-loop iterations (where
+// the model may emit a large `fs_write_pdf` tool call containing an entire
+// report as its content argument) and the final streaming synthesis.
+//
+// Why 8192, not the original 4096: deep-research PDF reports easily reach
+// 2000+ words, and the tool-call JSON serialization adds escaping overhead
+// on top of that. At 4096 the model would truncate mid-call, the JSON
+// parser would reject the result, and the loop would bail out. 8192 gives
+// ~2x headroom and still leaves plenty of context budget for input at the
+// default 32k context size.
+const AGENT_LOOP_MAX_TOKENS = 8192;
+const FINAL_SYNTHESIS_MAX_TOKENS = 8192;
 
 export interface SearchStep {
 	id: string;
@@ -29,13 +39,20 @@ export interface SearchStep {
 	query: string;
 	status: 'running' | 'done';
 	result?: string;
+	/**
+	 * Optional data URL for an inline thumbnail to render under this step
+	 * in the chat UI. Populated by tools that produce viewable images —
+	 * currently fs_read_image (for images loaded from the workdir) and
+	 * fs_download_url when the downloaded file has an image extension.
+	 */
+	thumbDataUrl?: string;
 }
 
 export interface AgentLoopOptions {
 	messages: ChatMessage[];
 	workingDir?: string | null;
 	onToolStart: (call: ResolvedToolCall) => void;
-	onToolEnd: (call: ResolvedToolCall, result: string) => void;
+	onToolEnd: (call: ResolvedToolCall, result: string, thumbDataUrl?: string) => void;
 	onStreamChunk: (chunk: StreamChunk) => void;
 	onComplete: () => void;
 	onError: (error: Error) => void;
@@ -52,6 +69,29 @@ export interface AgentLoopOptions {
 	 * from the tool list so the model must use research_url for every page.
 	 */
 	deepResearch?: boolean;
+	/**
+	 * When true, the current user turn asked for a file output (PDF, docx,
+	 * etc.) and a working directory is set. Enables a safety check: if the
+	 * turn is about to end without any fs_write_* tool having been called,
+	 * and the model's final response claims it wrote a file, we nudge the
+	 * model to actually call the write tool. Small local models sometimes
+	 * emit a plausible-sounding "I wrote the PDF to /path/foo.pdf" message
+	 * with no underlying tool call — this flag lets us catch that.
+	 */
+	expectsFileOutput?: boolean;
+}
+
+/**
+ * Returns true if the model's response appears to be asking the user a
+ * clarifying question rather than ending the turn with an answer. Used as
+ * a guard on the file-write hallucination recovery so we don't interrupt
+ * legitimate "which sections should I include?" style replies.
+ */
+function looksLikeClarifyingQuestion(content: string): boolean {
+	const trimmed = content.trim();
+	if (trimmed.length === 0) return false;
+	// Ends with a question mark — the clearest signal.
+	return /\?\s*$/.test(trimmed);
 }
 
 /**
@@ -126,12 +166,23 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		signal,
 		workingDir = null,
 		contextSize = 0,
-		deepResearch = false
+		deepResearch = false,
+		expectsFileOutput = false
 	} = options;
 	const tools = getAgentTools(workingDir !== null, deepResearch);
 	const pendingImages: PendingImage[] = [];
 	let iteration = 0;
 	let usedTools = false;
+	// Tracks whether any fs_write_* tool has actually been executed during
+	// this turn. Used with `expectsFileOutput` below to catch the "I wrote
+	// the PDF to /path" hallucination where the model claims a file write
+	// without making the tool call.
+	let fileWrittenThisTurn = false;
+	// Bound how many times we can push the "you didn't actually write the
+	// file" recovery nudge in a single turn. Prevents infinite loops if
+	// the model is stuck and can't be coaxed into calling the write tool.
+	let fileWriteRetries = 0;
+	const MAX_FILE_WRITE_RETRIES = 2;
 
 	while (iteration < maxIterations) {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -154,7 +205,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				tools,
 				temperature: sampling.temperature,
 				top_p: sampling.top_p,
-				max_tokens: 4096,
+				max_tokens: AGENT_LOOP_MAX_TOKENS,
 				chat_template_kwargs: templateKwargs
 			},
 			signal
@@ -193,6 +244,101 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			messages.push({
 				role: 'user',
 				content: 'Continue.'
+			});
+			continue;
+		}
+
+		// Malformed tool_call recovery: even with a clean `stop` finish
+		// reason, the model can emit a `<tool_call>` XML fragment in its
+		// chat content that fails to parse — usually because the JSON
+		// arguments are broken or the closing tag is missing. The parser
+		// fallback swallows the error and returns `[]`, so without this
+		// branch we'd fall through to "stream the final answer" and
+		// re-stream the same garbage state. Instead, push a corrective
+		// nudge and let the loop retry. The clean content (minus the
+		// busted tool_call) goes through `stripToolCallArtifacts` so the
+		// assistant message doesn't poison the history.
+		if (
+			toolCalls.length === 0 &&
+			usedTools &&
+			response.content &&
+			/<tool_call>/.test(response.content)
+		) {
+			messages.push({
+				role: 'assistant',
+				content: stripToolCallArtifacts(response.content)
+			});
+			messages.push({
+				role: 'user',
+				content:
+					'Your previous message contained a malformed or incomplete tool call — ' +
+					"I couldn't parse it. If you meant to call a tool, retry with valid JSON " +
+					'arguments and a properly closed <tool_call>...</tool_call> block. If you ' +
+					'meant to write a final answer, write it as plain prose without any ' +
+					'<tool_call> tags.'
+			});
+			continue;
+		}
+
+		// Detect degraded model output: after using tools, smaller models
+		// sometimes emit a bare URL or a naked tool-name fragment as their
+		// "answer" instead of either a structured tool_call or real prose.
+		// Treat this as a failed synthesis attempt — break out so the
+		// post-loop handler nudges the model to answer from what it has,
+		// without tools, instead of letting the streaming branch echo the
+		// same URL back as the final answer.
+		if (toolCalls.length === 0 && usedTools) {
+			const raw = (response.content || '').trim();
+			const isBareUrl = /^https?:\/\/\S+$/.test(raw);
+			const looksLikeNakedToolCall = /^(fetch_url|web_search|research_url|fs_[a-z_]+)\s*[:=(]/.test(
+				raw
+			);
+			if (raw.length > 0 && (isBareUrl || looksLikeNakedToolCall)) {
+				break;
+			}
+		}
+
+		// File-write hallucination recovery. The user asked for a file
+		// output, a working directory is set (so the write tools exist),
+		// and the turn is about to end — but no fs_write_* tool has been
+		// called. Whatever the model is saying (claiming it wrote the
+		// file, summarizing what the file *would* contain, or just trailing
+		// off), we need to force it to actually call the write tool.
+		//
+		// Guards:
+		//   - `toolCalls.length === 0`: the model already committed to
+		//     ending the turn (otherwise tool execution below keeps us in
+		//     the loop).
+		//   - `!looksLikeClarifyingQuestion(...)`: if the response ends
+		//     with a question mark, the model is asking for clarification
+		//     ("which sections should I include?"), not hallucinating;
+		//     let that through as a normal answer.
+		//   - `fileWriteRetries < MAX_FILE_WRITE_RETRIES`: bound the number
+		//     of corrective nudges so a persistently confused model can't
+		//     burn the entire iteration budget on the recovery loop.
+		if (
+			toolCalls.length === 0 &&
+			expectsFileOutput &&
+			!fileWrittenThisTurn &&
+			fileWriteRetries < MAX_FILE_WRITE_RETRIES &&
+			!looksLikeClarifyingQuestion(response.content || '')
+		) {
+			fileWriteRetries++;
+			messages.push({
+				role: 'assistant',
+				content: response.content || ''
+			});
+			messages.push({
+				role: 'user',
+				content:
+					'STOP. You have not actually created any file yet — no fs_write_* tool call ' +
+					'was made, and the file you are describing does not exist on disk. You MUST ' +
+					'now emit a real fs_write_pdf tool call (or fs_write_docx / fs_write_xlsx / ' +
+					'fs_write_text, whichever matches the original request) with the complete ' +
+					'report as the `content` argument. Use a short relative path like ' +
+					'"report.pdf". Do NOT reply with more text describing the file — your NEXT ' +
+					'output must be a tool_calls block invoking the write tool. After the tool ' +
+					'runs successfully, then respond briefly confirming the file path.'
 			});
 			continue;
 		}
@@ -277,7 +423,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 			options.onToolStart(call);
-			const result = await executeTool(
+			const output = await executeTool(
 				call.name,
 				call.arguments,
 				workingDir,
@@ -285,12 +431,21 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				pendingImages,
 				deepResearch
 			);
-			options.onToolEnd(call, result);
+			options.onToolEnd(call, output.result, output.thumbDataUrl);
+
+			// Track successful file-write calls so the hallucination check
+			// above knows a real write happened. `result` is a JSON error
+			// object on failure (see search.ts's executeFsWritePdf) and a
+			// human-readable success string otherwise, so a non-error result
+			// is how we know the file actually landed.
+			if (call.name.startsWith('fs_write_') && !output.result.includes('"error"')) {
+				fileWrittenThisTurn = true;
+			}
 
 			messages.push({
 				role: 'tool',
 				tool_call_id: call.id,
-				content: result
+				content: output.result
 			});
 		}
 	}
