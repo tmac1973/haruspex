@@ -70,7 +70,11 @@
 	const sourceUrls = $derived(getSourceUrls());
 	const serverState = $derived(getServerState());
 
-	const serverReady = $derived(serverState.status === 'ready');
+	// Chat is usable whenever a backend is ready to take requests. That
+	// means either the local sidecar reached the 'ready' state or the
+	// user is in remote-inference mode (which assumes the remote server
+	// is up — we don't health-check on every keystroke).
+	const serverReady = $derived(serverState.status === 'ready' || serverState.status === 'remote');
 	const exhaustiveResearch = $derived(getExhaustiveResearch());
 
 	// Slow-mode notice fires when deep research is on, the user is using

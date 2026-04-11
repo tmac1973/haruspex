@@ -19,6 +19,13 @@
 		importModel,
 		runTestQuery
 	} from '$lib/stores/setup.svelte';
+	import {
+		getSettings,
+		updateInferenceBackend,
+		type InferenceBackendConfig
+	} from '$lib/stores/settings';
+	import { enterRemoteMode } from '$lib/stores/server.svelte';
+	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
 
 	const step = $derived(getStep());
 	const hardware = $derived(getHardware());
@@ -87,6 +94,51 @@
 	function goToChat() {
 		goto('/');
 	}
+
+	// Remote-inference setup state. A local mirror of the settings
+	// inferenceBackend config that the shared <InferenceBackendForm />
+	// mutates in place. We commit to settings and finish the wizard
+	// via finishRemoteSetup() once the user's tested their connection.
+	let remoteConfig = $state<InferenceBackendConfig>({
+		...getSettings().inferenceBackend,
+		mode: 'remote'
+	});
+
+	function onRemoteConfigChange(next: InferenceBackendConfig) {
+		remoteConfig = next;
+	}
+
+	function goToRemote() {
+		setStep('remote');
+	}
+
+	function backToWelcome() {
+		setStep('welcome');
+	}
+
+	const remoteReady = $derived(
+		remoteConfig.remoteBaseUrl.length > 0 &&
+			remoteConfig.remoteModelId.length > 0 &&
+			remoteConfig.remoteBackendKind !== null
+	);
+
+	function finishRemoteSetup() {
+		// Persist the config + flip mode to remote. The layout's next
+		// startup pass will see `mode === 'remote'` and skip the local
+		// sidecar entirely. We also update the server store here so the
+		// status badge switches over without needing a reload.
+		updateInferenceBackend({ ...remoteConfig, mode: 'remote' });
+		const label = (() => {
+			try {
+				const u = new URL(remoteConfig.remoteBaseUrl);
+				return u.port ? `${u.hostname}:${u.port}` : u.hostname;
+			} catch {
+				return remoteConfig.remoteBaseUrl;
+			}
+		})();
+		enterRemoteMode(label);
+		goto('/');
+	}
 </script>
 
 <div class="wizard">
@@ -117,7 +169,48 @@
 					</div>
 				</div>
 			</div>
-			<button class="primary-btn" onclick={goToHardware}>Get Started</button>
+			<p class="wizard-choice-intro">How do you want to run the model?</p>
+			<div class="wizard-choice">
+				<button class="choice-btn primary" onclick={goToHardware}>
+					<span class="choice-icon">&#128229;</span>
+					<div class="choice-text">
+						<strong>Download a model</strong>
+						<span>
+							Recommended. Haruspex detects your GPU, picks a model that fits, and manages
+							everything for you.
+						</span>
+					</div>
+				</button>
+				<button class="choice-btn" onclick={goToRemote}>
+					<span class="choice-icon">&#128268;</span>
+					<div class="choice-text">
+						<strong>Connect to an existing server</strong>
+						<span>
+							Advanced. Point Haruspex at an inference server you already run (LM Studio, Ollama,
+							llama.cpp, llama-toolchest, etc.). No model download required.
+						</span>
+					</div>
+				</button>
+			</div>
+		</div>
+	{:else if step === 'remote'}
+		<div class="wizard-step wide">
+			<h1>Connect to an inference server</h1>
+			<p class="subtitle">
+				Haruspex will route chat requests to your server instead of running its own
+				<code>llama-server</code>.
+			</p>
+			<InferenceBackendForm config={remoteConfig} onConfigChange={onRemoteConfigChange} />
+			<div class="wizard-actions">
+				<button class="secondary-btn" onclick={backToWelcome}>Back</button>
+				<button class="primary-btn" disabled={!remoteReady} onclick={finishRemoteSetup}>
+					Start chatting
+				</button>
+			</div>
+			<p class="hint">
+				You can change the backend later from Settings. To download a local model instead, go back
+				and pick "Download a model".
+			</p>
 		</div>
 	{:else if step === 'hardware'}
 		<div class="wizard-step">
@@ -283,6 +376,90 @@
 		max-width: 520px;
 		width: 100%;
 		text-align: center;
+	}
+
+	.wizard-step.wide {
+		max-width: 640px;
+		text-align: left;
+	}
+
+	.wizard-step.wide h1,
+	.wizard-step.wide .subtitle {
+		text-align: left;
+	}
+
+	.wizard-step.wide .hint {
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+		margin-top: 16px;
+	}
+
+	.wizard-choice-intro {
+		color: var(--text-secondary);
+		font-size: 0.95rem;
+		margin: 8px 0 12px;
+	}
+
+	.wizard-choice {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		text-align: left;
+		margin-bottom: 8px;
+	}
+
+	.choice-btn {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		padding: 14px 18px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		cursor: pointer;
+		text-align: left;
+		transition: border-color 0.15s;
+	}
+
+	.choice-btn:hover {
+		border-color: var(--accent);
+	}
+
+	.choice-btn.primary {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 8%, transparent);
+	}
+
+	.choice-icon {
+		font-size: 1.6rem;
+		flex-shrink: 0;
+		line-height: 1.2;
+	}
+
+	.choice-text strong {
+		display: block;
+		font-size: 0.95rem;
+		margin-bottom: 4px;
+	}
+
+	.choice-text span {
+		display: block;
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+		line-height: 1.4;
+	}
+
+	.wizard-actions {
+		display: flex;
+		gap: 12px;
+		justify-content: space-between;
+		margin-top: 16px;
+	}
+
+	.wizard-actions .primary-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	h1 {

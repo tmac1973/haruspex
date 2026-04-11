@@ -1,7 +1,7 @@
 import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
-import { getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
+import { getActiveContextSize, getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
 import {
 	getContextUsage,
@@ -618,16 +618,33 @@ export async function sendMessage(content: string): Promise<void> {
 			}
 		}
 
+		// Use the active context size — in remote mode this reads from
+		// the probed/manual `remoteContextSize`, in local mode it falls
+		// back to the standard `contextSize` setting. Compaction and the
+		// context-usage indicator both need the real ceiling of the
+		// currently-active backend, not the local-sidecar setting.
+		const activeCtxSize = getActiveContextSize();
+
+		// Vision is assumed available in local mode (the default Qwen
+		// 3.5 build is multimodal) and probe-or-override-driven in
+		// remote mode. When false, the agent loop filters vision-
+		// dependent fs_* tools out of the tool list so the model can't
+		// attempt image loads against a text-only backend.
+		const backend = getSettings().inferenceBackend;
+		const visionSupported =
+			backend.mode === 'remote' ? backend.remoteVisionSupported !== false : true;
+
 		await runAgentLoop({
 			messages: messagesForApi,
 			workingDir: currentWorkingDir,
 			maxIterations: exhaustiveResearch ? 25 : 10,
-			contextSize: getSettings().contextSize,
+			contextSize: activeCtxSize,
 			deepResearch: exhaustiveResearch,
 			expectsFileOutput,
+			visionSupported,
 			signal: abortController.signal,
 			onUsageUpdate: (u: Usage) => {
-				updateContextUsage(u, getSettings().contextSize);
+				updateContextUsage(u, activeCtxSize);
 				conversation.contextUsage = {
 					promptTokens: u.prompt_tokens,
 					completionTokens: u.completion_tokens

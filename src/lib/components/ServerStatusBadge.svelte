@@ -13,6 +13,8 @@
 			Starting…
 		{:else if state.status === 'error'}
 			Error{state.errorMessage ? `: ${state.errorMessage}` : ''}
+		{:else if state.status === 'remote'}
+			Remote{state.remoteLabel ? ` · ${state.remoteLabel}` : ''}
 		{:else}
 			Stopped
 		{/if}
@@ -54,6 +56,11 @@
 
 	[data-status='stopped'] .dot {
 		background: #9ca3af;
+	}
+
+	[data-status='remote'] .dot {
+		background: #3b82f6;
+		box-shadow: 0 0 4px #3b82f680;
 	}
 
 	.label {

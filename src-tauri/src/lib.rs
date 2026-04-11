@@ -2,6 +2,7 @@ mod app_log;
 mod audio;
 mod db;
 mod fs_tools;
+mod inference;
 mod models;
 mod proxy;
 mod server;
@@ -64,6 +65,7 @@ pub fn run() {
             proxy::proxy_fetch,
             proxy::proxy_image_search,
             proxy::proxy_fetch_url_images,
+            inference::probe_inference_server,
             audio::start_recording,
             audio::stop_recording,
             audio::is_recording,

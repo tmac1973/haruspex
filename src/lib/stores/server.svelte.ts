@@ -1,7 +1,16 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-export type ServerStatusType = 'stopped' | 'starting' | 'ready' | 'error';
+/**
+ * Server status visible to the UI. The first four mirror the Rust-side
+ * llama-server lifecycle (see Rust `ServerStatus` enum); `'remote'` is
+ * a frontend-only synthetic state meaning "we're not running a local
+ * sidecar right now — chat requests go to the configured remote URL".
+ * It's set when the user flips the inference backend to remote mode
+ * and cleared when they flip back (at which point the real local
+ * lifecycle resumes from `'stopped'` → `'starting'` → `'ready'`).
+ */
+export type ServerStatusType = 'stopped' | 'starting' | 'ready' | 'error' | 'remote';
 
 // Matches the Rust enum serialization: #[serde(tag = "type", content = "message")]
 type RustServerStatus =
@@ -14,6 +23,13 @@ export interface ServerState {
 	status: ServerStatusType;
 	errorMessage?: string;
 	port: number;
+	/**
+	 * Display label shown next to the status indicator. For local mode
+	 * this is the default port; for remote mode it's set to the short
+	 * form of the configured base URL so the user can tell at a glance
+	 * where their chat requests are going.
+	 */
+	remoteLabel?: string;
 }
 
 // Svelte 5 runes-based state
@@ -74,6 +90,32 @@ export async function stopServer(): Promise<void> {
 		serverState.errorMessage = undefined;
 	} catch (e) {
 		serverState.errorMessage = String(e);
+	}
+}
+
+/**
+ * Transition the UI into remote-inference mode. Does NOT talk to the
+ * Rust side — the actual `stop_server` invocation is the caller's
+ * responsibility (it's done separately because the caller usually
+ * wants to wait for stop to finish before flipping the status label).
+ * Callers: the Settings page mode-toggle handler and the first-run
+ * wizard's "Connect to remote" branch.
+ */
+export function enterRemoteMode(label: string): void {
+	serverState.status = 'remote';
+	serverState.errorMessage = undefined;
+	serverState.remoteLabel = label;
+}
+
+/**
+ * Leave remote-inference mode without starting anything. Resets the
+ * status to 'stopped' so the caller can then invoke startServer() for
+ * the local sidecar if appropriate.
+ */
+export function exitRemoteMode(): void {
+	serverState.remoteLabel = undefined;
+	if (serverState.status === 'remote') {
+		serverState.status = 'stopped';
 	}
 }
 

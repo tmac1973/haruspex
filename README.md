@@ -27,7 +27,8 @@ Haruspex uses your GPU for inference. While it is running, other GPU-intensive a
 - **Voice output** — listen to responses read aloud with natural-sounding voices (powered by [Kokoros](https://github.com/lucasjinreal/Kokoros))
 - **Audio device selection** — choose specific input/output audio devices in settings
 - **GPU accelerated** — Vulkan (Linux/Windows) and Metal (macOS) for fast inference
-- **First-run wizard** — detects your hardware (GPU type, VRAM, integrated vs discrete), downloads a model appropriate for your system, and gets you chatting in minutes
+- **First-run wizard** — detects your hardware (GPU type, VRAM, integrated vs discrete), downloads a model appropriate for your system, and gets you chatting in minutes. Alternatively, choose "Connect to an existing server" on the welcome screen to point Haruspex at an inference server you already run (see [Remote inference server](#remote-inference-server)).
+- **Remote inference server (optional)** — instead of downloading a model, connect Haruspex to an existing self-hosted OpenAI-compatible server. Tested backends: [llama-toolchest](https://github.com/tmac1973/llama-toolchest), stock llama.cpp `llama-server`, LM Studio, Lemonade, Ollama, vLLM, TGI, llamafile. Haruspex auto-detects which backend it's talking to, lists available models, pulls context size + vision capability from the backend when possible, and falls back to manual entry when not. Local sidecar doesn't spawn in remote mode — nothing competes for your VRAM. Configure in Settings → Inference backend or at first-run. See [Remote inference server](#remote-inference-server) below.
 - **Log viewer** — toolbar modal with tabs for the main app and each sidecar (LLM, TTS, Whisper). Copy-all button makes bug reports trivial.
 - **Dark mode** — system-aware theme with manual override
 - **Persistent conversations** — SQLite-backed chat history survives restarts
@@ -70,6 +71,34 @@ The typical "find an image and embed it in a slide deck" workflow is: `image_sea
 **What the model cannot do**: delete files, move files, execute scripts, or touch anything outside the working directory. These are intentional restrictions — if you want the model to delete or run something, you do it manually after reviewing what it created.
 
 Working directory selection is per-conversation and not persisted across app restarts. Each new conversation starts with no working directory; opt in when you need it.
+
+## Remote inference server
+
+Haruspex normally manages its own `llama-server` sidecar with a downloaded model — that's the default setup and what you get by following the welcome wizard's "Download a model" path. If you already run an OpenAI-compatible inference server you can point Haruspex at it instead: in that case Haruspex's local sidecar does not spawn, no model is downloaded, and every chat request routes to your configured URL. This is exposed as an advanced option in two places:
+
+1. **First-run wizard** — pick "Connect to an existing server" instead of "Download a model" on the welcome screen. You get an inline form that probes your server, lists its models, and drops you straight into the chat when you click "Start chatting".
+2. **Settings → Inference backend** — switch between Local and Remote at any time. Toggling to Remote stops the local sidecar immediately (no VRAM consumption); toggling back to Local spawns it again with your previously-selected model.
+
+**Detection.** Haruspex auto-detects which backend it's talking to by walking a four-step probe chain against the base URL you enter:
+
+| Detection order | Endpoint probed | Matches |
+|---|---|---|
+| 1 | `GET /api/service/status` | [llama-toolchest](https://github.com/tmac1973/llama-toolchest) — rich per-model metadata via the management API |
+| 2 | `GET /props` | Stock llama.cpp `llama-server` — exposes `n_ctx` and loaded-model info |
+| 3 | `GET /v1/models` | Generic OpenAI-compat (LM Studio, Lemonade, Ollama OpenAI endpoint, vLLM, TGI, llamafile, koboldcpp, text-generation-webui, ...) |
+| 4 | `GET /api/tags` | Ollama native — only as a fallback when Ollama's OpenAI-compat endpoint is disabled |
+
+The richest backend that responds wins. Each detection step times out at 6 seconds so a fully-unreachable host fails fast.
+
+**What gets populated.** For each detected backend, Haruspex pulls as much metadata as the backend exposes:
+
+- **Model list** — always. Every backend has at least one way to enumerate models; the Settings page model dropdown is populated from the probe response.
+- **Context size** — detected from `/api/models/{id}/info` (llama-toolchest) or `/props.default_generation_settings.n_ctx` (llama-server). Generic OpenAI-compat backends don't expose this in a standard way, so you'll see an editable "Context size" field to enter it manually. This value drives when Haruspex compacts long conversations — setting it correctly matters so compaction fires before the real ceiling.
+- **Vision capability** — detected from llama-toolchest's per-model info when available. For other backends, leave Haruspex's default (text-only) or flip the manual override if you know your model supports images. When vision is disabled, the filesystem tools `fs_read_image` and `fs_read_pdf_pages` are filtered out of the agent's tool list so the model can't try to load an image against a text-only backend.
+
+**Auth.** Every probe and chat request can send an optional `Authorization: Bearer <key>` header. Leave the API Key field blank for self-hosted servers that don't require auth; fill it in for anything that does. Keys are stored in the same local settings blob as everything else (not a system keyring — Haruspex is offline-first and single-user, the data directory is the same trust level).
+
+**Auth caveat.** Public cloud providers like OpenAI, Anthropic, and OpenRouter are NOT the focus of this feature — Haruspex's whole design is "runs entirely on your hardware". The remote-server option is specifically for self-hosted inference: your own llama.cpp deployment, your own llama-toolchest, an LM Studio instance on another machine on your LAN, etc. Cloud providers will technically work if you point at their `/v1` endpoint and supply an API key (OpenAI-compat probe path), but that's not a tested or supported configuration and comes with all the privacy implications you'd expect.
 
 ## Tech Stack
 

@@ -5,7 +5,7 @@
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
-	import { initServerStore, startServer } from '$lib/stores/server.svelte';
+	import { enterRemoteMode, initServerStore, startServer } from '$lib/stores/server.svelte';
 	import { applyTheme, getSettings } from '$lib/stores/settings';
 	import { invoke } from '@tauri-apps/api/core';
 	import { goto } from '$app/navigation';
@@ -34,19 +34,33 @@
 			}
 		});
 
-		// First-run detection: redirect to setup if no model found
+		// First-run detection + initial backend setup. Three paths:
+		//   1. Remote-inference mode active → skip the local sidecar
+		//      entirely, show a "remote" status label in the UI, and
+		//      skip the setup-redirect too (the user already has a
+		//      working backend, no model download needed).
+		//   2. Local mode + model present → normal startup: spawn the
+		//      llama-server sidecar with the configured context size.
+		//   3. Local mode + no model → first-run setup wizard.
 		try {
-			const hasModel = await invoke<boolean>('has_any_model');
-			if (!hasModel && !page.url.pathname.startsWith('/setup')) {
-				goto('/setup');
-			} else if (hasModel && !page.url.pathname.startsWith('/setup')) {
-				// Auto-start server with available model
-				const modelPath = await invoke<string | null>('get_active_model_path');
-				if (modelPath) {
-					startServer(modelPath, getSettings().contextSize);
-				}
-				// Eagerly start TTS in the background (non-blocking)
+			const backend = getSettings().inferenceBackend;
+			if (backend.mode === 'remote' && backend.remoteBaseUrl) {
+				enterRemoteMode(shortRemoteLabel(backend.remoteBaseUrl));
+				// TTS is still local (not affected by the inference backend).
 				invoke('tts_initialize').catch((e) => console.warn('TTS init failed:', e));
+			} else {
+				const hasModel = await invoke<boolean>('has_any_model');
+				if (!hasModel && !page.url.pathname.startsWith('/setup')) {
+					goto('/setup');
+				} else if (hasModel && !page.url.pathname.startsWith('/setup')) {
+					// Auto-start server with available model
+					const modelPath = await invoke<string | null>('get_active_model_path');
+					if (modelPath) {
+						startServer(modelPath, getSettings().contextSize);
+					}
+					// Eagerly start TTS in the background (non-blocking)
+					invoke('tts_initialize').catch((e) => console.warn('TTS init failed:', e));
+				}
 			}
 		} catch {
 			// Tauri commands not available (e.g., in browser dev mode)
@@ -56,6 +70,21 @@
 			showGpuWarning = true;
 		}
 	});
+
+	/**
+	 * Extract a compact `host:port` label from a base URL for display in
+	 * the server status indicator. Strips scheme and path so "https://lm.example.com:1234/v1"
+	 * becomes "lm.example.com:1234". Keeps the UI small and informative
+	 * without leaking the full URL into the header.
+	 */
+	function shortRemoteLabel(baseUrl: string): string {
+		try {
+			const u = new URL(baseUrl);
+			return u.port ? `${u.hostname}:${u.port}` : u.hostname;
+		} catch {
+			return baseUrl;
+		}
+	}
 </script>
 
 <svelte:head>

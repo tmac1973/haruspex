@@ -605,15 +605,29 @@ const FS_TOOLS: ToolDefinition[] = [
  *   tools remain available so normal chat can grab raw page text when
  *   that's actually what's wanted.
  */
+/**
+ * Set of filesystem tool names that require the model to have vision
+ * capability. These load image bytes into the next turn's user message
+ * via `pendingImages`, and sending an image to a text-only model gets
+ * rejected server-side (or silently ignored). When the active backend
+ * is known to be text-only, we filter them out of the tool list so the
+ * model never attempts the call in the first place.
+ */
+const VISION_DEPENDENT_TOOLS = new Set(['fs_read_image', 'fs_read_pdf_pages']);
+
 export function getAgentTools(
 	hasWorkingDir: boolean,
-	deepResearch: boolean = false
+	deepResearch: boolean = false,
+	visionSupported: boolean = true
 ): ToolDefinition[] {
 	const webTools = deepResearch
 		? WEB_TOOLS.filter((t) => t.function.name !== 'fetch_url')
 		: WEB_TOOLS;
 	if (hasWorkingDir) {
-		return [...webTools, ...FS_TOOLS];
+		const fsTools = visionSupported
+			? FS_TOOLS
+			: FS_TOOLS.filter((t) => !VISION_DEPENDENT_TOOLS.has(t.function.name));
+		return [...webTools, ...fsTools];
 	}
 	return webTools;
 }

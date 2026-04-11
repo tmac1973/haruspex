@@ -1,4 +1,5 @@
 // llama-server OpenAI-compatible API client wrapper
+import { getSettings } from '$lib/stores/settings';
 
 /**
  * A message content can be a plain string (most common) or an array of
@@ -105,10 +106,49 @@ function getBaseUrl(port: number = DEFAULT_PORT): string {
 	return `http://127.0.0.1:${port}`;
 }
 
-function buildRequestBody(options: ChatCompletionOptions): Record<string, unknown> {
+/**
+ * Resolves the chat-completions endpoint + auth headers + model name
+ * from the active inference backend config at request time. In local
+ * mode it returns the managed sidecar URL unchanged (and a placeholder
+ * model name, which llama-server ignores since it only serves one).
+ * In remote mode it returns the user's configured base URL, Bearer
+ * token, and selected model ID.
+ *
+ * This is the single choke point for routing chat requests — the agent
+ * loop, chat store, and streaming helpers all go through it, so adding
+ * a new backend mode later means only touching this function.
+ */
+function resolveChatEndpoint(port?: number): {
+	url: string;
+	headers: Record<string, string>;
+	model: string;
+} {
+	const backend = getSettings().inferenceBackend;
+	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+	if (backend.mode === 'remote' && backend.remoteBaseUrl) {
+		if (backend.remoteApiKey && backend.remoteApiKey.trim().length > 0) {
+			headers['Authorization'] = `Bearer ${backend.remoteApiKey.trim()}`;
+		}
+		return {
+			url: `${backend.remoteBaseUrl.replace(/\/+$/, '')}/v1/chat/completions`,
+			headers,
+			model: backend.remoteModelId || 'default'
+		};
+	}
+	return {
+		url: `${getBaseUrl(port)}/v1/chat/completions`,
+		headers,
+		model: 'default'
+	};
+}
+
+function buildRequestBody(
+	options: ChatCompletionOptions,
+	modelName: string = 'default'
+): Record<string, unknown> {
 	const isStream = options.stream ?? true;
 	const body: Record<string, unknown> = {
-		model: 'default',
+		model: modelName,
 		messages: options.messages,
 		stream: isStream
 	};
@@ -190,14 +230,14 @@ export async function* chatCompletionStream(
 	signal?: AbortSignal,
 	port?: number
 ): AsyncGenerator<StreamChunk> {
-	const url = `${getBaseUrl(port)}/v1/chat/completions`;
-	const body = buildRequestBody({ ...options, stream: true });
+	const endpoint = resolveChatEndpoint(port);
+	const body = buildRequestBody({ ...options, stream: true }, endpoint.model);
 
 	let response: Response;
 	try {
-		response = await fetch(url, {
+		response = await fetch(endpoint.url, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: endpoint.headers,
 			body: JSON.stringify(body),
 			signal
 		});
@@ -225,14 +265,14 @@ export async function chatCompletion(
 	signal?: AbortSignal,
 	port?: number
 ): Promise<ChatCompletionResponse> {
-	const url = `${getBaseUrl(port)}/v1/chat/completions`;
-	const body = buildRequestBody({ ...options, stream: false });
+	const endpoint = resolveChatEndpoint(port);
+	const body = buildRequestBody({ ...options, stream: false }, endpoint.model);
 
 	let response: Response;
 	try {
-		response = await fetch(url, {
+		response = await fetch(endpoint.url, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: endpoint.headers,
 			body: JSON.stringify(body),
 			signal
 		});

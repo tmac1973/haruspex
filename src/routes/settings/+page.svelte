@@ -4,16 +4,26 @@
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { startServer, stopServer, getServerState } from '$lib/stores/server.svelte';
+	import {
+		startServer,
+		stopServer,
+		getServerState,
+		enterRemoteMode,
+		exitRemoteMode
+	} from '$lib/stores/server.svelte';
 	import {
 		getSettings,
 		updateSettings,
+		updateInferenceBackend,
 		applyTheme,
 		type ResponseFormat,
 		type ThemeMode,
 		type SearchProvider,
-		type AppSettings
+		type AppSettings,
+		type InferenceBackendConfig,
+		type InferenceMode
 	} from '$lib/stores/settings';
+	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
 
 	interface ModelInfo {
 		id: string;
@@ -66,6 +76,67 @@
 	let searxngUrl = $state(getSettings().searxngUrl);
 	let contextSize = $state(getSettings().contextSize);
 	let defaultWorkingDir = $state(getSettings().defaultWorkingDir);
+
+	// Local mirror of the inference backend config. We pass the live
+	// value into InferenceBackendForm and commit updates via its
+	// onConfigChange callback. The `mode` field drives a bunch of
+	// conditionals below (hiding local-only sections, showing the
+	// remote form, switching the sidecar on/off).
+	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
+
+	const remoteMode = $derived(inferenceBackend.mode === 'remote');
+
+	async function setInferenceMode(mode: InferenceMode) {
+		if (mode === inferenceBackend.mode) return;
+		inferenceBackend = { ...inferenceBackend, mode };
+		updateInferenceBackend({ mode });
+		if (mode === 'remote') {
+			// Stop the local llama-server sidecar — no point burning
+			// VRAM on a model we're not going to query. Then flip the
+			// server-store status to the synthetic 'remote' state so
+			// the badge in the header updates.
+			try {
+				await stopServer();
+			} catch (e) {
+				console.warn('stopServer on remote toggle failed:', e);
+			}
+			const label = shortRemoteLabel(inferenceBackend.remoteBaseUrl);
+			enterRemoteMode(label);
+		} else {
+			// Flipping back to local: leave the synthetic 'remote' state
+			// and spin the local sidecar up with the currently-selected
+			// model + configured context size. If no model is downloaded
+			// yet, the layout's first-run redirect will kick in instead.
+			exitRemoteMode();
+			try {
+				const modelPath = await invoke<string | null>('get_active_model_path');
+				if (modelPath) {
+					await startServer(modelPath, getSettings().contextSize);
+				}
+			} catch (e) {
+				console.warn('startServer on local toggle failed:', e);
+			}
+		}
+	}
+
+	function onInferenceConfigChange(next: InferenceBackendConfig) {
+		inferenceBackend = next;
+		updateInferenceBackend(next);
+		// If we're already in remote mode, keep the header label in sync
+		// with the (possibly just-changed) base URL.
+		if (next.mode === 'remote') {
+			enterRemoteMode(shortRemoteLabel(next.remoteBaseUrl));
+		}
+	}
+
+	function shortRemoteLabel(baseUrl: string): string {
+		try {
+			const u = new URL(baseUrl);
+			return u.port ? `${u.hostname}:${u.port}` : u.hostname;
+		} catch {
+			return baseUrl;
+		}
+	}
 
 	async function pickDefaultWorkingDir() {
 		try {
@@ -257,74 +328,119 @@
 
 <div class="settings">
 	<section>
-		<h2>Models</h2>
-		<p class="hint">Models are stored in: <code>{modelsDir}</code></p>
-
-		<div class="model-list">
-			{#each models as model (model.id)}
-				<div class="model-card" class:active={activeModelFilename() === model.filename}>
-					<div class="model-info">
-						<div class="model-name">
-							{model.id}
-							{#if activeModelFilename() === model.filename}
-								<span class="active-badge">active</span>
-							{/if}
-						</div>
-						<div class="model-desc">{model.description}</div>
-						<div class="model-size">{formatBytes(model.size_bytes)}</div>
-					</div>
-					<div class="model-actions">
-						{#if model.downloaded}
-							{#if activeModelFilename() !== model.filename}
-								<button class="btn btn-primary" onclick={() => switchModel(model.filename)}>
-									Use
-								</button>
-							{/if}
-							<button
-								class="btn btn-danger"
-								onclick={() => removeModel(model.filename)}
-								title="Delete model file"
-							>
-								Delete
-							</button>
-						{:else if downloading === model.id}
-							{#if downloadProgress}
-								<div class="download-inline">
-									<div class="progress-mini">
-										<div
-											class="progress-fill"
-											style="width: {downloadProgress.total > 0
-												? (downloadProgress.downloaded / downloadProgress.total) * 100
-												: 0}%"
-										></div>
-									</div>
-									<span class="progress-text">
-										{formatBytes(downloadProgress.downloaded)} / {formatBytes(
-											downloadProgress.total
-										)}
-										&middot; {formatSpeed(downloadProgress.speed_bps)}
-									</span>
-									<button class="btn btn-small" onclick={cancelDownload}>Cancel</button>
-								</div>
-							{/if}
-						{:else}
-							<button
-								class="btn btn-primary"
-								onclick={() => downloadModel(model.id)}
-								disabled={downloading !== null}
-							>
-								Download
-							</button>
-						{/if}
-					</div>
+		<h2>Inference backend</h2>
+		<p class="hint">
+			Haruspex normally manages its own llama-server sidecar with a downloaded model. If you already
+			run an inference server (LM Studio, Lemonade, Ollama, llama.cpp, llama-toolchest, vLLM, TGI,
+			etc.) you can point Haruspex at it instead — the local sidecar will shut down and chat
+			requests will route to your server.
+		</p>
+		<div class="backend-mode-row">
+			<label class="backend-mode-option" class:selected={!remoteMode}>
+				<input
+					type="radio"
+					name="inference-mode"
+					value="local"
+					checked={!remoteMode}
+					onchange={() => setInferenceMode('local')}
+				/>
+				<div>
+					<strong>Local (Haruspex-managed)</strong>
+					<span>llama-server sidecar with a model managed by Haruspex. Recommended.</span>
 				</div>
-			{/each}
+			</label>
+			<label class="backend-mode-option" class:selected={remoteMode}>
+				<input
+					type="radio"
+					name="inference-mode"
+					value="remote"
+					checked={remoteMode}
+					onchange={() => setInferenceMode('remote')}
+				/>
+				<div>
+					<strong>Remote server (advanced)</strong>
+					<span>Point at an existing OpenAI-compatible inference server.</span>
+				</div>
+			</label>
 		</div>
-
-		{#if downloadError}
-			<div class="error-box">{downloadError}</div>
+		{#if remoteMode}
+			<div class="remote-form-wrapper">
+				<InferenceBackendForm config={inferenceBackend} onConfigChange={onInferenceConfigChange} />
+			</div>
 		{/if}
 	</section>
+
+	{#if !remoteMode}
+		<section>
+			<h2>Models</h2>
+			<p class="hint">Models are stored in: <code>{modelsDir}</code></p>
+
+			<div class="model-list">
+				{#each models as model (model.id)}
+					<div class="model-card" class:active={activeModelFilename() === model.filename}>
+						<div class="model-info">
+							<div class="model-name">
+								{model.id}
+								{#if activeModelFilename() === model.filename}
+									<span class="active-badge">active</span>
+								{/if}
+							</div>
+							<div class="model-desc">{model.description}</div>
+							<div class="model-size">{formatBytes(model.size_bytes)}</div>
+						</div>
+						<div class="model-actions">
+							{#if model.downloaded}
+								{#if activeModelFilename() !== model.filename}
+									<button class="btn btn-primary" onclick={() => switchModel(model.filename)}>
+										Use
+									</button>
+								{/if}
+								<button
+									class="btn btn-danger"
+									onclick={() => removeModel(model.filename)}
+									title="Delete model file"
+								>
+									Delete
+								</button>
+							{:else if downloading === model.id}
+								{#if downloadProgress}
+									<div class="download-inline">
+										<div class="progress-mini">
+											<div
+												class="progress-fill"
+												style="width: {downloadProgress.total > 0
+													? (downloadProgress.downloaded / downloadProgress.total) * 100
+													: 0}%"
+											></div>
+										</div>
+										<span class="progress-text">
+											{formatBytes(downloadProgress.downloaded)} / {formatBytes(
+												downloadProgress.total
+											)}
+											&middot; {formatSpeed(downloadProgress.speed_bps)}
+										</span>
+										<button class="btn btn-small" onclick={cancelDownload}>Cancel</button>
+									</div>
+								{/if}
+							{:else}
+								<button
+									class="btn btn-primary"
+									onclick={() => downloadModel(model.id)}
+									disabled={downloading !== null}
+								>
+									Download
+								</button>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+
+			{#if downloadError}
+				<div class="error-box">{downloadError}</div>
+			{/if}
+		</section>
+	{/if}
 
 	<section>
 		<h2>Theme</h2>
@@ -516,30 +632,32 @@
 		</div>
 	</section>
 
-	<section>
-		<h2>Context Size</h2>
-		<p class="hint">
-			Larger context allows longer conversations but uses more VRAM. Requires server restart to take
-			effect.
-		</p>
-		<div class="context-options">
-			{#each [{ value: 8192, label: '8K', desc: 'Low VRAM' }, { value: 16384, label: '16K', desc: 'Standard' }, { value: 32768, label: '32K', desc: 'Recommended' }, { value: 65536, label: '64K', desc: '16+ GB VRAM' }, { value: 131072, label: '128K', desc: 'Maximum' }] as opt (opt.value)}
-				<button
-					class="ctx-btn"
-					class:selected={contextSize === opt.value}
-					onclick={() => setContextSize(opt.value)}
-				>
-					<strong>{opt.label}</strong>
-					<span>{opt.desc}</span>
-				</button>
-			{/each}
-		</div>
-		{#if contextSize !== getSettings().contextSize}
-			<p class="hint" style="color: var(--accent)">
-				Restart the server for the new context size to take effect.
+	{#if !remoteMode}
+		<section>
+			<h2>Context Size</h2>
+			<p class="hint">
+				Larger context allows longer conversations but uses more VRAM. Requires server restart to
+				take effect.
 			</p>
-		{/if}
-	</section>
+			<div class="context-options">
+				{#each [{ value: 8192, label: '8K', desc: 'Low VRAM' }, { value: 16384, label: '16K', desc: 'Standard' }, { value: 32768, label: '32K', desc: 'Recommended' }, { value: 65536, label: '64K', desc: '16+ GB VRAM' }, { value: 131072, label: '128K', desc: 'Maximum' }] as opt (opt.value)}
+					<button
+						class="ctx-btn"
+						class:selected={contextSize === opt.value}
+						onclick={() => setContextSize(opt.value)}
+					>
+						<strong>{opt.label}</strong>
+						<span>{opt.desc}</span>
+					</button>
+				{/each}
+			</div>
+			{#if contextSize !== getSettings().contextSize}
+				<p class="hint" style="color: var(--accent)">
+					Restart the server for the new context size to take effect.
+				</p>
+			{/if}
+		</section>
+	{/if}
 
 	<section>
 		<h2>Default Working Directory</h2>
@@ -560,29 +678,31 @@
 		</div>
 	</section>
 
-	<section>
-		<h2>Server</h2>
-		<div class="info-row">
-			<span>Status</span>
-			<span class="status-value" data-status={serverState.status}>{serverState.status}</span>
-		</div>
-		<div class="info-row">
-			<span>Port</span>
-			<span>8765</span>
-		</div>
-		<div class="server-actions">
-			{#if serverState.status === 'ready' || serverState.status === 'error'}
-				<button class="btn btn-primary" onclick={restartServer}>Restart Server</button>
-			{:else if serverState.status === 'stopped'}
-				<button class="btn btn-primary" onclick={restartServer}>Start Server</button>
-			{:else}
-				<button class="btn" disabled>Starting...</button>
-			{/if}
-			{#if serverState.status === 'ready' || serverState.status === 'starting'}
-				<button class="btn btn-danger" onclick={() => stopServer()}>Stop Server</button>
-			{/if}
-		</div>
-	</section>
+	{#if !remoteMode}
+		<section>
+			<h2>Server</h2>
+			<div class="info-row">
+				<span>Status</span>
+				<span class="status-value" data-status={serverState.status}>{serverState.status}</span>
+			</div>
+			<div class="info-row">
+				<span>Port</span>
+				<span>8765</span>
+			</div>
+			<div class="server-actions">
+				{#if serverState.status === 'ready' || serverState.status === 'error'}
+					<button class="btn btn-primary" onclick={restartServer}>Restart Server</button>
+				{:else if serverState.status === 'stopped'}
+					<button class="btn btn-primary" onclick={restartServer}>Start Server</button>
+				{:else}
+					<button class="btn" disabled>Starting...</button>
+				{/if}
+				{#if serverState.status === 'ready' || serverState.status === 'starting'}
+					<button class="btn btn-danger" onclick={() => stopServer()}>Stop Server</button>
+				{/if}
+			</div>
+		</section>
+	{/if}
 </div>
 
 <style>
@@ -1038,6 +1158,58 @@
 		font-size: 0.8rem;
 		color: var(--text-secondary);
 		margin-top: 2px;
+	}
+
+	.backend-mode-row {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-bottom: 12px;
+	}
+
+	.backend-mode-option {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		padding: 10px 14px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		cursor: pointer;
+		transition: border-color 0.15s;
+	}
+
+	.backend-mode-option:hover {
+		border-color: var(--text-secondary);
+	}
+
+	.backend-mode-option.selected {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 5%, transparent);
+	}
+
+	.backend-mode-option input[type='radio'] {
+		margin-top: 3px;
+		accent-color: var(--accent);
+	}
+
+	.backend-mode-option strong {
+		display: block;
+		font-size: 0.9rem;
+	}
+
+	.backend-mode-option span {
+		display: block;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
+	}
+
+	.remote-form-wrapper {
+		margin-top: 4px;
+		padding: 12px 14px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--bg-secondary);
 	}
 
 	.workingdir-row {

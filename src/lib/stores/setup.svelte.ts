@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getSettings } from '$lib/stores/settings';
 
-export type SetupStep = 'welcome' | 'hardware' | 'download' | 'test' | 'done';
+export type SetupStep = 'welcome' | 'hardware' | 'download' | 'test' | 'remote' | 'done';
 export type TestResult = 'pending' | 'running' | 'success' | 'error';
 
 export interface HardwareInfo {

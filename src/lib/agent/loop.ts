@@ -79,6 +79,15 @@ export interface AgentLoopOptions {
 	 * with no underlying tool call — this flag lets us catch that.
 	 */
 	expectsFileOutput?: boolean;
+	/**
+	 * Whether the active backend's model supports vision (image input).
+	 * Defaults to true to preserve existing behavior for the local Qwen
+	 * 3.5 setup. When false, vision-dependent filesystem tools
+	 * (fs_read_image, fs_read_pdf_pages) are filtered out of the tool
+	 * list so the model never attempts to load an image in the first
+	 * place. Probed at configure-time for remote backends.
+	 */
+	visionSupported?: boolean;
 }
 
 /**
@@ -167,9 +176,10 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		workingDir = null,
 		contextSize = 0,
 		deepResearch = false,
-		expectsFileOutput = false
+		expectsFileOutput = false,
+		visionSupported = true
 	} = options;
-	const tools = getAgentTools(workingDir !== null, deepResearch);
+	const tools = getAgentTools(workingDir !== null, deepResearch, visionSupported);
 	const pendingImages: PendingImage[] = [];
 	let iteration = 0;
 	let usedTools = false;
