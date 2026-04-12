@@ -116,6 +116,12 @@ export function stripToolCallArtifacts(text: string): string {
 	let out = text.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '');
 	out = out.replace(/<\/tool_call>/g, '');
 	out = out.replace(/<tool_call>/g, '');
+	// Also strip <function=name>...<parameter=...>... blocks that
+	// some remote inference servers emit instead of native tool_calls
+	// JSON. Matches the `extractFunctionStyleToolCalls` grammar in
+	// parser.ts: a function block runs from <function=...> until the
+	// next <function=...>, a </function>, or end of string.
+	out = out.replace(/<function=[a-zA-Z_][\w]*\s*>[\s\S]*?(?:<\/function>|(?=<function=)|$)/g, '');
 	return out;
 }
 

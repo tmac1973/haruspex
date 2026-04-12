@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
 	extractToolCalls,
+	extractFunctionStyleToolCalls,
+	hasFunctionStyleToolCalls,
 	hasToolCalls,
 	stripToolCallXml,
 	resolveToolCalls
@@ -133,5 +135,94 @@ describe('resolveToolCalls', () => {
 			finish_reason: 'stop'
 		};
 		expect(resolveToolCalls(response)).toHaveLength(0);
+	});
+
+	it('falls back to <function=name><parameter=key> format', () => {
+		// The exact shape Qwen3 emitted via a misconfigured remote
+		// inference server: tool-call tokens leaked into text content
+		// instead of being normalized into tool_calls JSON.
+		const response: ChatCompletionResponse = {
+			content:
+				'<function=email_summarize_message> <parameter=accountId> abc-123 <parameter=messageId> 22893',
+			finish_reason: 'stop'
+		};
+		const calls = resolveToolCalls(response);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].name).toBe('email_summarize_message');
+		expect(calls[0].arguments).toEqual({ accountId: 'abc-123', messageId: 22893 });
+	});
+});
+
+describe('extractFunctionStyleToolCalls', () => {
+	it('extracts a single call with string and int params', () => {
+		const content =
+			'<function=email_summarize_message> <parameter=accountId> 13873deb-0055-400f <parameter=messageId> 22893';
+		const calls = extractFunctionStyleToolCalls(content);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].name).toBe('email_summarize_message');
+		expect(calls[0].arguments).toEqual({
+			accountId: '13873deb-0055-400f',
+			messageId: 22893
+		});
+	});
+
+	it('handles explicit </function> and </parameter> closers', () => {
+		const content = `<function=web_search>
+<parameter=query>current weather</parameter>
+</function>`;
+		const calls = extractFunctionStyleToolCalls(content);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].name).toBe('web_search');
+		expect(calls[0].arguments).toEqual({ query: 'current weather' });
+	});
+
+	it('extracts multiple calls in one response', () => {
+		const content =
+			'<function=web_search> <parameter=query> first query ' +
+			'<function=fetch_url> <parameter=url> https://example.com/path';
+		const calls = extractFunctionStyleToolCalls(content);
+		expect(calls).toHaveLength(2);
+		expect(calls[0].name).toBe('web_search');
+		expect(calls[0].arguments).toEqual({ query: 'first query' });
+		expect(calls[1].name).toBe('fetch_url');
+		expect(calls[1].arguments).toEqual({ url: 'https://example.com/path' });
+	});
+
+	it('coerces booleans, floats, and JSON objects', () => {
+		const content =
+			'<function=demo>' +
+			' <parameter=flag> true' +
+			' <parameter=ratio> 0.75' +
+			' <parameter=nested> {"a":1,"b":[2,3]}';
+		const calls = extractFunctionStyleToolCalls(content);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].arguments).toEqual({
+			flag: true,
+			ratio: 0.75,
+			nested: { a: 1, b: [2, 3] }
+		});
+	});
+
+	it('strips matching surrounding quotes', () => {
+		const content = '<function=web_search> <parameter=query> "exact phrase here"';
+		const calls = extractFunctionStyleToolCalls(content);
+		expect(calls[0].arguments).toEqual({ query: 'exact phrase here' });
+	});
+
+	it('returns empty array when no function-style tags', () => {
+		expect(extractFunctionStyleToolCalls('plain text')).toHaveLength(0);
+		expect(extractFunctionStyleToolCalls('')).toHaveLength(0);
+	});
+});
+
+describe('hasFunctionStyleToolCalls', () => {
+	it('detects the prefix', () => {
+		expect(hasFunctionStyleToolCalls('<function=email_list_recent>')).toBe(true);
+		expect(hasFunctionStyleToolCalls('prefix <function=x> suffix')).toBe(true);
+	});
+
+	it('rejects unrelated text', () => {
+		expect(hasFunctionStyleToolCalls('just text')).toBe(false);
+		expect(hasFunctionStyleToolCalls('<tool_call>{}</tool_call>')).toBe(false);
 	});
 });

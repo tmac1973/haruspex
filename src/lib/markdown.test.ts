@@ -130,6 +130,23 @@ describe('renderMarkdown', () => {
 		expect(stripToolCallArtifacts(input)).toBe(input);
 	});
 
+	it('stripToolCallArtifacts removes <function=...><parameter=...> blocks', () => {
+		// The exact leak pattern seen from a misconfigured remote
+		// inference server running Qwen3: tool-call tokens rendered
+		// into text content instead of the OpenAI tool_calls array.
+		const input =
+			'before <function=email_summarize_message>' +
+			' <parameter=accountId> abc' +
+			' <parameter=messageId> 22893' +
+			'</function> after';
+		expect(stripToolCallArtifacts(input)).toBe('before  after');
+	});
+
+	it('stripToolCallArtifacts strips function block that runs to end of string', () => {
+		const input = 'here is my plan <function=web_search> <parameter=query> something';
+		expect(stripToolCallArtifacts(input)).toBe('here is my plan ');
+	});
+
 	it('renderMarkdown strips tool_call XML from rendered output', () => {
 		// The exact degradation pattern: model emits tool_call XML in
 		// final synthesis content instead of through tool_calls field.

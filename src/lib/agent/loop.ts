@@ -279,7 +279,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			toolCalls.length === 0 &&
 			usedTools &&
 			response.content &&
-			/<tool_call>/.test(response.content)
+			(/<tool_call>/.test(response.content) || /<function=/.test(response.content))
 		) {
 			messages.push({
 				role: 'assistant',

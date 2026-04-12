@@ -7,7 +7,7 @@
 //! state-management bugs we'd otherwise have to chase (stale tokens,
 //! half-closed sockets, unrelated clients draining our rate budget).
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use async_imap::types::Fetch;
 use futures_util::stream::StreamExt;
@@ -47,13 +47,27 @@ type ImapSession = async_imap::Session<TlsStream<TcpStream>>;
 /// Build a rustls client config from the `webpki-roots` bundle. We
 /// reuse this across connections rather than rebuilding it every
 /// time — the CA load is cheap but pointlessly repetitive.
+///
+/// Also handles the rustls 0.23 CryptoProvider ambiguity: the crate
+/// refuses to pick a default provider when multiple are compiled in
+/// (Haruspex's tree pulls rustls in via reqwest, tokio-rustls, and
+/// our direct dep). We install the `ring` provider the first time
+/// this function is called. `install_default` is idempotent in the
+/// sense that a second call returns `Err` but leaves the previously
+/// installed provider in place, so we discard the result.
 fn tls_config() -> Arc<ClientConfig> {
-    let mut roots = RootCertStore::empty();
-    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let cfg = ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    Arc::new(cfg)
+    static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
+    CONFIG
+        .get_or_init(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            let mut roots = RootCertStore::empty();
+            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            let cfg = ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            Arc::new(cfg)
+        })
+        .clone()
 }
 
 /// Open a TLS connection to the account's configured IMAP host and
