@@ -229,9 +229,21 @@ sudo pacman -S base-devel cmake pkg-config \
 
 #### Windows
 
+On a fresh Windows 11 install, run the bundled PowerShell setup script from a regular PowerShell window — it installs Git, Node.js LTS, the Rust MSVC toolchain, Visual Studio 2022 Build Tools with the C++ workload, CMake, the Vulkan SDK, and the WebView2 runtime via `winget`, skipping anything already present:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\windows-setup.ps1
+```
+
+After it finishes, **open a new terminal** so PATH updates take effect. Sidecar builds and model downloads happen from Git Bash (installed by the Git step above) via the existing `./scripts/dev-setup.sh`, which auto-detects the `x86_64-pc-windows-msvc` target.
+
+If you'd rather install the prerequisites yourself:
+
 - [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload)
 - [CMake](https://cmake.org/download/)
 - [Vulkan SDK](https://vulkan.lunarg.com/)
+- [Git for Windows](https://git-scm.com/download/win) (includes Git Bash, which runs `dev-setup.sh` and `build-sidecars.sh` natively on Windows)
 
 #### macOS
 

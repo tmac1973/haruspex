@@ -321,8 +321,7 @@ On Tue, Apr 7, 2026 at 10:14 AM Bob <bob@example.com> wrote:\r\n\
 
     #[test]
     fn parses_plain_message() {
-        let msg =
-            parse_rfc5322(SAMPLE_PLAIN, "acc-1".into(), "Work".into(), "42".into()).unwrap();
+        let msg = parse_rfc5322(SAMPLE_PLAIN, "acc-1".into(), "Work".into(), "42".into()).unwrap();
         assert_eq!(msg.subject, "Hello");
         assert_eq!(msg.from_name, "Alice Example");
         assert_eq!(msg.from_email, "alice@example.com");
@@ -351,8 +350,7 @@ On Tue, Apr 7, 2026 at 10:14 AM Bob <bob@example.com> wrote:\r\n\
 
     #[test]
     fn strips_quote_in_parsed_message() {
-        let msg =
-            parse_rfc5322(SAMPLE_QUOTED, "acc".into(), "label".into(), "9".into()).unwrap();
+        let msg = parse_rfc5322(SAMPLE_QUOTED, "acc".into(), "label".into(), "9".into()).unwrap();
         let body = strip_quoted_replies(&msg.body);
         assert!(body.contains("Sure, works for me"));
         assert!(!body.contains("are you free"));
