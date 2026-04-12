@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '$lib/api';
+import { hasEnabledEmailAccount } from '$lib/stores/settings';
 
 const WEB_TOOLS: ToolDefinition[] = [
 	{
@@ -593,6 +594,102 @@ const FS_TOOLS: ToolDefinition[] = [
 	}
 ];
 
+const EMAIL_TOOLS: ToolDefinition[] = [
+	{
+		type: 'function',
+		function: {
+			name: 'email_list_recent',
+			description:
+				'List recent email messages from the user\'s configured email accounts. Returns metadata only (subject, sender, date, short snippet) — no message bodies. Strongly prefer this as the first email tool call: the user almost always wants "recent email" or "email from X", not a specific message body. After seeing the listing, call email_summarize_message on the messages you want to understand, or email_read_full only when verbatim body text is actually needed. Do not call this unless the user explicitly asked about email — never proactively check the inbox.',
+			parameters: {
+				type: 'object',
+				properties: {
+					account_id: {
+						type: 'string',
+						description:
+							'Optional — the id of a specific account to query. Omit to query all enabled accounts. The id value matches the `accountId` field returned in previous listings.'
+					},
+					hours: {
+						type: 'integer',
+						minimum: 1,
+						description:
+							'Only return messages from the last N hours. Use this for "recent" / "today" / "in the last few hours" requests.'
+					},
+					since_date: {
+						type: 'string',
+						description:
+							'Alternative date floor in IMAP SINCE format (e.g. "10-Apr-2026"). Mutually exclusive with hours; if both are set, hours wins.'
+					},
+					from: {
+						type: 'string',
+						description:
+							'Substring filter on the sender. Matched case-insensitively against the From header. Example: "alice" or "example.com".'
+					},
+					subject_contains: {
+						type: 'string',
+						description: 'Substring filter on the Subject header. Case-insensitive.'
+					},
+					max_results: {
+						type: 'integer',
+						minimum: 1,
+						maximum: 50,
+						description: 'Upper bound on results. Default 20. Hard cap 50.'
+					}
+				}
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'email_summarize_message',
+			description:
+				'Run a focused sub-agent that reads one full email body and returns a short 2-4 sentence summary covering who sent it, what it\'s about, and any action items. This is the default way to "read" an email — it compresses the body through a separate chat completion so the full message never enters your main context. Use it once per message you want to understand from a listing. For messages where you need the exact verbatim text (contracts, quotes, code snippets the user wants copy-pasted), use email_read_full instead. Each call processes a single message.',
+			parameters: {
+				type: 'object',
+				properties: {
+					account_id: {
+						type: 'string',
+						description: 'The id of the account the message belongs to (from the listing).'
+					},
+					message_id: {
+						type: 'string',
+						description: 'The id of the specific message to summarize (from the listing).'
+					},
+					focus: {
+						type: 'string',
+						description:
+							'Optional — a specific question to bias the summary toward ("what action does the sender want?", "is there a deadline mentioned?"). Leave blank for a general summary.'
+					}
+				},
+				required: ['account_id', 'message_id']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'email_read_full',
+			description:
+				'Escape hatch: fetch the full body of a single message verbatim. Use this only when a summary is not enough — the user asked to see the exact text, you need to quote a specific sentence, or the summarizer missed a detail. Prefer email_summarize_message for routine reads; full bodies are expensive on context. Each call processes a single message.',
+			parameters: {
+				type: 'object',
+				properties: {
+					account_id: {
+						type: 'string',
+						description: 'The id of the account the message belongs to (from the listing).'
+					},
+					message_id: {
+						type: 'string',
+						description: 'The id of the specific message to read (from the listing).'
+					}
+				},
+				required: ['account_id', 'message_id']
+			}
+		}
+	}
+];
+
 /**
  * Get the tools to expose to the agent for this request.
  *
@@ -623,13 +720,21 @@ export function getAgentTools(
 	const webTools = deepResearch
 		? WEB_TOOLS.filter((t) => t.function.name !== 'fetch_url')
 		: WEB_TOOLS;
+	const tools: ToolDefinition[] = [...webTools];
 	if (hasWorkingDir) {
 		const fsTools = visionSupported
 			? FS_TOOLS
 			: FS_TOOLS.filter((t) => !VISION_DEPENDENT_TOOLS.has(t.function.name));
-		return [...webTools, ...fsTools];
+		tools.push(...fsTools);
 	}
-	return webTools;
+	// Email tools are completely hidden until the user has enabled at
+	// least one account in Settings. The model never sees descriptions
+	// for an integration that isn't usable — it can't accidentally call
+	// them, and we don't waste prompt tokens on them.
+	if (hasEnabledEmailAccount()) {
+		tools.push(...EMAIL_TOOLS);
+	}
+	return tools;
 }
 
 /** @deprecated Use getAgentTools(hasWorkingDir) instead. */

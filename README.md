@@ -29,6 +29,7 @@ Haruspex uses your GPU for inference. While it is running, other GPU-intensive a
 - **GPU accelerated** — Vulkan (Linux/Windows) and Metal (macOS) for fast inference
 - **First-run wizard** — detects your hardware (GPU type, VRAM, integrated vs discrete), downloads a model appropriate for your system, and gets you chatting in minutes. Alternatively, choose "Connect to an existing server" on the welcome screen to point Haruspex at an inference server you already run (see [Remote inference server](#remote-inference-server)).
 - **Remote inference server (optional)** — instead of downloading a model, connect Haruspex to an existing self-hosted OpenAI-compatible server. Tested backends: [llama-toolchest](https://github.com/tmac1973/llama-toolchest), stock llama.cpp `llama-server`, LM Studio, Lemonade, Ollama, vLLM, TGI, llamafile. Haruspex auto-detects which backend it's talking to, lists available models, pulls context size + vision capability from the backend when possible, and falls back to manual entry when not. Local sidecar doesn't spawn in remote mode — nothing competes for your VRAM. Configure in Settings → Inference backend or at first-run. See [Remote inference server](#remote-inference-server) below.
+- **Email integration (optional, read-only)** — connect one or more IMAP email accounts (Gmail, Fastmail, iCloud, Yahoo, or any custom IMAP host) with an app password. When enabled, the model gets three tools: a cheap listing, a sub-agent summarizer that compresses each message through a separate chat completion (same pattern as `research_url`), and an escape-hatch full-body reader. Invisible to the model until at least one account is enabled. Credentials never leave your device. See [Email integration](#email-integration) below.
 - **Log viewer** — toolbar modal with tabs for the main app and each sidecar (LLM, TTS, Whisper). Copy-all button makes bug reports trivial.
 - **Dark mode** — system-aware theme with manual override
 - **Persistent conversations** — SQLite-backed chat history survives restarts
@@ -101,6 +102,43 @@ The richest backend that responds wins. Each detection step times out at 6 secon
 **Auth.** Every probe and chat request can send an optional `Authorization: Bearer <key>` header. Leave the API Key field blank for self-hosted servers that don't require auth; fill it in for anything that does. Keys are stored in the same local settings blob as everything else (not a system keyring — Haruspex is offline-first and single-user, the data directory is the same trust level).
 
 **Auth caveat.** Public cloud providers like OpenAI, Anthropic, and OpenRouter are NOT the focus of this feature — Haruspex's whole design is "runs entirely on your hardware". The remote-server option is specifically for self-hosted inference: your own llama.cpp deployment, your own llama-toolchest, an LM Studio instance on another machine on your LAN, etc. Cloud providers will technically work if you point at their `/v1` endpoint and supply an API key (OpenAI-compat probe path), but that's not a tested or supported configuration and comes with all the privacy implications you'd expect.
+
+## Email integration
+
+Haruspex can optionally connect to your email over IMAP so the model can summarize recent messages, find email from a specific person, or read the full body of a single message on request. The integration is **off by default**, **read-only**, and **multi-provider** — it works with any mainstream IMAP host, not just Gmail. Each configured account is opt-in and can be disabled independently.
+
+**Supported providers (10.1).** Every preset requires 2-factor authentication on the provider account plus an **app password** (a 16-character token the provider generates specifically for Haruspex — not your login password).
+
+| Provider | IMAP host | Where to get an app password |
+|---|---|---|
+| Gmail | `imap.gmail.com:993` | <https://myaccount.google.com/apppasswords> |
+| Fastmail | `imap.fastmail.com:993` | <https://app.fastmail.com/settings/security/tokens> |
+| iCloud Mail | `imap.mail.me.com:993` | <https://account.apple.com/account/manage> |
+| Yahoo Mail | `imap.mail.yahoo.com:993` | <https://login.yahoo.com/account/security> |
+| Custom | user-provided | whatever your provider says |
+
+Microsoft 365 / Outlook.com is **not** supported in 10.1 — Microsoft disabled basic authentication for consumer and enterprise accounts, so there's no app-password path and OAuth is required. Support for Outlook (and an OAuth flow that replaces the app-password path on Gmail for users who want it) is planned for a later phase.
+
+**Setup.** Open `Settings → Integrations → Email`, click "Add email account", pick your provider from the dropdown, paste your email address + app password, and click "Test connection". On success, flip the account's "Enabled" toggle and the email tools become available to the model automatically.
+
+**How the model uses email.** Haruspex exposes three tools to the agent when at least one account is enabled:
+
+- `email_list_recent` — cheap listing (subject + sender + date + short snippet, no bodies). Always the first call.
+- `email_summarize_message` — runs a **sub-agent** that reads one full message body through a separate chat completion and returns a 2-4 sentence summary. This is how the main model covers a dozen messages without blowing its context window: the full body never reaches the main agent, only the compressed summary. Mirrors how `research_url` already compresses web pages.
+- `email_read_full` — escape hatch that returns the full normalized body verbatim. The model is told to prefer the summarizer and only reach for this when the user explicitly asked for verbatim text.
+
+All three tools are **hidden from the model entirely** unless at least one email account is enabled. Turning the integration off removes the tool descriptions from the prompt — the model can't accidentally call what it can't see.
+
+**Privacy + security posture.**
+
+- Credentials (app passwords) are stored in the same local settings blob as the Brave API key and the remote inference key — same trust level, no cloud sync, no telemetry.
+- The only external endpoints the integration talks to are the IMAP host(s) of the accounts you configured. No third-party proxy, no "email summary service" in the middle.
+- Message bodies flow through whatever LLM backend you have configured (local `llama-server` by default, or a remote server if you set one up in the Inference backend section). In local mode your email never leaves the machine. In remote-inference mode the content goes to the remote server — same tradeoff documented in the "Remote inference server" section above.
+- `BODY.PEEK[]` is used for every fetch, so reading a message never marks it as seen in your inbox.
+- The system prompt explicitly tells the model to call email tools **only when the user has asked about email** — it will not proactively check for new messages.
+- No sending. Phase 10.1 is read-only; there is no path from a model decision to an email actually going out. Sending arrives in a later phase with its own confirmation UX and per-account opt-in.
+
+Planning doc: `plan/phase-10-email-integration.md`.
 
 ## Tech Stack
 

@@ -45,6 +45,51 @@ export interface InferenceBackendConfig {
 	remoteBackendKind: InferenceBackendKind;
 }
 
+/**
+ * Email provider presets we ship built-in. "custom" is the escape
+ * hatch — the user types their own IMAP/SMTP hostnames.
+ */
+export type EmailProviderId = 'gmail' | 'fastmail' | 'icloud' | 'yahoo' | 'custom';
+export type EmailTlsMode = 'implicit' | 'starttls';
+
+/**
+ * A single configured email account. Field names match the
+ * camelCase-serialized `EmailAccount` struct on the Rust side, so
+ * the entire object roundtrips through `invoke` without translation.
+ *
+ * Credentials (password) are stored in the settings blob alongside
+ * the existing Brave / inference API keys — same trust level, same
+ * lifecycle. Keyring integration is deferred to a later cross-cutting
+ * change.
+ *
+ * `sendEnabled` is present from day 1 so Phase 10.2 sending can be
+ * opted into per-account without a settings migration. In Phase 10.1
+ * it has no effect.
+ */
+export interface EmailAccount {
+	id: string;
+	label: string;
+	enabled: boolean;
+	sendEnabled: boolean;
+	provider: EmailProviderId;
+	emailAddress: string;
+	password: string;
+	imapHost: string;
+	imapPort: number;
+	imapTls: EmailTlsMode;
+	smtpHost: string;
+	smtpPort: number;
+	smtpTls: EmailTlsMode;
+}
+
+export interface EmailIntegrationConfig {
+	accounts: EmailAccount[];
+}
+
+export interface IntegrationsConfig {
+	email: EmailIntegrationConfig;
+}
+
 export interface AppSettings {
 	responseFormat: ResponseFormat;
 	theme: ThemeMode;
@@ -60,6 +105,7 @@ export interface AppSettings {
 	dismissedGpuWarning: boolean;
 	defaultWorkingDir: string;
 	inferenceBackend: InferenceBackendConfig;
+	integrations: IntegrationsConfig;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -72,6 +118,10 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	remoteContextSize: null,
 	remoteVisionSupported: null,
 	remoteBackendKind: null
+};
+
+const defaultIntegrations: IntegrationsConfig = {
+	email: { accounts: [] }
 };
 
 const defaults: AppSettings = {
@@ -88,7 +138,8 @@ const defaults: AppSettings = {
 	audioInputDevice: '',
 	dismissedGpuWarning: false,
 	defaultWorkingDir: '',
-	inferenceBackend: defaultInferenceBackend
+	inferenceBackend: defaultInferenceBackend,
+	integrations: defaultIntegrations
 };
 
 function load(): AppSettings {
@@ -103,7 +154,20 @@ function load(): AppSettings {
 				...defaultInferenceBackend,
 				...(parsed.inferenceBackend ?? {})
 			};
-			return { ...defaults, ...parsed, inferenceBackend: mergedInference };
+			// Deep-merge integrations so upgrading users keep their
+			// other settings when new integration types are added.
+			const parsedIntegrations = (parsed.integrations ?? {}) as Partial<IntegrationsConfig>;
+			const mergedIntegrations: IntegrationsConfig = {
+				email: {
+					accounts: parsedIntegrations.email?.accounts ?? []
+				}
+			};
+			return {
+				...defaults,
+				...parsed,
+				inferenceBackend: mergedInference,
+				integrations: mergedIntegrations
+			};
 		}
 	} catch {
 		// ignore
@@ -128,6 +192,30 @@ export function getSettings(): AppSettings {
 export function updateSettings(partial: Partial<AppSettings>): void {
 	settings = { ...settings, ...partial };
 	save(settings);
+}
+
+/**
+ * Replace the full list of email accounts. The Settings UI edits a
+ * working copy and calls this once on save.
+ */
+export function setEmailAccounts(accounts: EmailAccount[]): void {
+	settings = {
+		...settings,
+		integrations: {
+			...settings.integrations,
+			email: { accounts }
+		}
+	};
+	save(settings);
+}
+
+/**
+ * Whether the email integration should be considered "active" for the
+ * purposes of tool visibility. True iff there is at least one account
+ * that the user has toggled `enabled`.
+ */
+export function hasEnabledEmailAccount(): boolean {
+	return settings.integrations.email.accounts.some((a) => a.enabled);
 }
 
 /**

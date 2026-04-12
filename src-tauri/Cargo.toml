@@ -43,3 +43,13 @@ zip = "4.6"
 image = "0.25"
 base64 = "0.22"
 rust_xlsxwriter = "0.90"
+
+# Email integration (Phase 10). async-imap handles IMAP over TLS,
+# mail-parser handles RFC 5322 / MIME decoding. lettre is stubbed in
+# 10.1 for SMTP sending in Phase 10.2.
+async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+mail-parser = "0.11"
+tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
+webpki-roots = "0.26"
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }

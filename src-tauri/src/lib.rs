@@ -3,6 +3,7 @@ mod audio;
 mod db;
 mod fs_tools;
 mod inference;
+mod integrations;
 mod models;
 mod proxy;
 mod server;
@@ -110,6 +111,11 @@ pub fn run() {
             fs_tools::fs_download_url,
             fs_tools::fs_path_exists,
             fs_tools::fs_find_available_path,
+            integrations::email::commands::email_list_providers,
+            integrations::email::commands::email_test_connection,
+            integrations::email::commands::email_list_recent,
+            integrations::email::commands::email_read_full,
+            integrations::email::commands::email_prepare_summary,
             app_log::get_app_logs,
         ])
         .build(tauri::generate_context!())

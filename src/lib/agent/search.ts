@@ -238,6 +238,226 @@ export async function executeResearchUrl(
 	}
 }
 
+// --- Email integration dispatch ---
+
+/** Upper bound on sub-agent output tokens when summarizing one email. */
+const EMAIL_SUMMARY_MAX_TOKENS = 400;
+
+interface EmailListing {
+	accountId: string;
+	messageId: string;
+	subject: string;
+	fromName: string;
+	fromEmail: string;
+	date: string;
+	snippet: string;
+	hasAttachments: boolean;
+}
+
+interface NormalizedEmailMessage {
+	accountId: string;
+	messageId: string;
+	subject: string;
+	fromName: string;
+	fromEmail: string;
+	to: string[];
+	date: string;
+	body: string;
+	hasAttachments: boolean;
+}
+
+interface EmailSummarizerInput {
+	subject: string;
+	fromName: string;
+	fromEmail: string;
+	date: string;
+	body: string;
+}
+
+/**
+ * Resolve an `accountId` reference from a tool-call argument to a
+ * concrete stored `EmailAccount`. When `accountId` is undefined or
+ * empty, returns every enabled account (used by `email_list_recent`
+ * for the multi-account fan-out case).
+ */
+function resolveEmailAccounts(
+	accountId?: string
+): Array<import('$lib/stores/settings').EmailAccount> {
+	const all = getSettings().integrations.email.accounts.filter((a) => a.enabled);
+	if (!accountId) return all;
+	return all.filter((a) => a.id === accountId);
+}
+
+export async function executeEmailListRecent(args: Record<string, unknown>): Promise<string> {
+	const accountId = args.account_id as string | undefined;
+	const accounts = resolveEmailAccounts(accountId);
+	if (accounts.length === 0) {
+		return JSON.stringify({
+			error: accountId
+				? `No enabled email account with id ${accountId}.`
+				: 'No email accounts are enabled. Ask the user to add one in Settings → Integrations.'
+		});
+	}
+
+	// Fan out across accounts. In practice there are usually 1-3.
+	const all: EmailListing[] = [];
+	for (const account of accounts) {
+		try {
+			const listings = await invoke<EmailListing[]>('email_list_recent', {
+				account,
+				hours: (args.hours as number | undefined) ?? null,
+				sinceDate: (args.since_date as string | undefined) ?? null,
+				from: (args.from as string | undefined) ?? null,
+				subjectContains: (args.subject_contains as string | undefined) ?? null,
+				maxResults: (args.max_results as number | undefined) ?? null
+			});
+			all.push(...listings);
+		} catch (e) {
+			// One broken account shouldn't kill the rest — capture the
+			// error as a synthetic listing so the model can see that the
+			// account had a problem without abandoning the whole call.
+			all.push({
+				accountId: account.id,
+				messageId: `error-${account.id}`,
+				subject: `[error fetching ${account.label}]`,
+				fromName: '',
+				fromEmail: '',
+				date: '',
+				snippet: String(e),
+				hasAttachments: false
+			});
+		}
+	}
+
+	// Sort all accounts' results together by date descending.
+	all.sort((a, b) => b.date.localeCompare(a.date));
+
+	const maxResults = (args.max_results as number | undefined) ?? 20;
+	const trimmed = all.slice(0, maxResults);
+	return JSON.stringify(trimmed);
+}
+
+export async function executeEmailReadFull(args: Record<string, unknown>): Promise<string> {
+	const accountId = args.account_id as string;
+	const messageId = args.message_id as string;
+	const [account] = resolveEmailAccounts(accountId);
+	if (!account) {
+		return JSON.stringify({ error: `No enabled email account with id ${accountId}.` });
+	}
+	try {
+		const msg = await invoke<NormalizedEmailMessage>('email_read_full', {
+			account,
+			messageId
+		});
+		return JSON.stringify(msg);
+	} catch (e) {
+		return JSON.stringify({ error: `email_read_full failed: ${e}` });
+	}
+}
+
+/**
+ * Sub-agent compression for a single email message. Fetches the
+ * prepared summarizer input from the backend (which already does
+ * quoted-reply stripping and truncation), then calls the local or
+ * remote inference backend with a focused system prompt. The
+ * returned string is the compressed summary — the full body never
+ * enters the caller's context.
+ *
+ * Mirrors `executeResearchUrl` — both exist to save main-agent
+ * context tokens at the cost of one extra chat completion per input.
+ */
+export async function executeEmailSummarizeMessage(
+	args: Record<string, unknown>,
+	signal?: AbortSignal
+): Promise<string> {
+	const accountId = args.account_id as string;
+	const messageId = args.message_id as string;
+	const focus = (args.focus as string | undefined) ?? '';
+
+	const [account] = resolveEmailAccounts(accountId);
+	if (!account) {
+		return JSON.stringify({ error: `No enabled email account with id ${accountId}.` });
+	}
+
+	// Step 1: fetch + prep on the Rust side.
+	let input: EmailSummarizerInput;
+	try {
+		input = await invoke<EmailSummarizerInput>('email_prepare_summary', {
+			account,
+			messageId
+		});
+	} catch (e) {
+		return JSON.stringify({ error: `email_prepare_summary failed: ${e}` });
+	}
+
+	if (!input.body.trim()) {
+		return `Message has no body content. From ${input.fromName || input.fromEmail}, subject ${input.subject}.`;
+	}
+
+	// Step 2: focused sub-agent chat completion. Same pattern as
+	// executeResearchUrl — short system prompt, one user turn, no
+	// tools, bounded output budget.
+	const systemPrompt =
+		'You are an email summarizer. Given ONE email message, produce a short, factual summary for a busy reader.\n\n' +
+		'Rules:\n' +
+		'- 2-4 sentences, plain prose, no markdown.\n' +
+		'- Cover who sent it, what it is about, and any action the sender is asking for.\n' +
+		'- Name any concrete dates, amounts, or deadlines mentioned in the body.\n' +
+		'- Do NOT refuse to summarize marketing or promotional content — note the category and the key offer.\n' +
+		'- Do NOT add preamble, meta-commentary, or closing remarks. Output only the summary text.';
+
+	const focusLine = focus ? `Focus: ${focus}\n\n` : '';
+	const userPrompt =
+		`${focusLine}From: ${input.fromName} <${input.fromEmail}>\n` +
+		`Date: ${input.date}\n` +
+		`Subject: ${input.subject}\n\n` +
+		`Body:\n${input.body}`;
+
+	const messages: ChatMessage[] = [
+		{ role: 'system', content: systemPrompt },
+		{ role: 'user', content: userPrompt }
+	];
+
+	try {
+		const sampling = getSamplingParams();
+		const response = await chatCompletion(
+			{
+				messages,
+				temperature: sampling.temperature,
+				top_p: sampling.top_p,
+				max_tokens: EMAIL_SUMMARY_MAX_TOKENS,
+				chat_template_kwargs: getChatTemplateKwargs()
+			},
+			signal
+		);
+		const summary = response.content?.trim();
+		if (!summary) {
+			// Fallback: if the sub-agent returned nothing, surface a
+			// minimal placeholder so the main agent still has something
+			// to cite instead of an empty blob.
+			return JSON.stringify({
+				accountId: input.fromEmail ? account.id : '',
+				messageId,
+				subject: input.subject,
+				from: `${input.fromName} <${input.fromEmail}>`,
+				date: input.date,
+				summary: `[summarizer returned nothing — body preview: ${input.body.slice(0, 200)}]`
+			});
+		}
+		return JSON.stringify({
+			accountId: account.id,
+			messageId,
+			subject: input.subject,
+			from: `${input.fromName} <${input.fromEmail}>`,
+			date: input.date,
+			summary
+		});
+	} catch (e) {
+		if (e instanceof DOMException && e.name === 'AbortError') throw e;
+		return JSON.stringify({ error: `email_summarize_message sub-agent failed: ${e}` });
+	}
+}
+
 // --- Filesystem tool dispatch ---
 
 interface DirListing {
@@ -811,6 +1031,12 @@ export async function executeTool(
 					args.new_str as string
 				)
 			);
+		case 'email_list_recent':
+			return r(await executeEmailListRecent(args));
+		case 'email_summarize_message':
+			return r(await executeEmailSummarizeMessage(args, signal));
+		case 'email_read_full':
+			return r(await executeEmailReadFull(args));
 		default:
 			return r(JSON.stringify({ error: `Unknown tool: ${name}` }));
 	}

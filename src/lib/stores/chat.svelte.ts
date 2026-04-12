@@ -1,7 +1,12 @@
 import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
-import { getActiveContextSize, getResponseFormatPrompt, getSettings } from '$lib/stores/settings';
+import {
+	getActiveContextSize,
+	getResponseFormatPrompt,
+	getSettings,
+	hasEnabledEmailAccount
+} from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
 import {
 	getContextUsage,
@@ -75,6 +80,19 @@ FILESYSTEM ACCESS:
   Step 7. Do NOT re-research in a follow-up turn when the user points out the file is missing. If you see in the conversation that a file was supposed to be created and wasn't, your first action in the new turn must be to call fs_write_pptx / fs_write_odp with the content from the previous research.`
 		: '';
 
+	const emailSection = hasEnabledEmailAccount()
+		? `
+
+EMAIL INTEGRATION:
+- The user has connected at least one email account. You have three email tools: email_list_recent, email_summarize_message, email_read_full.
+- Only call email_* tools when the user has explicitly asked about email ("summarize my inbox", "any emails from X today?", "read the email from Y"). Never proactively check email.
+- Respect the scope the user asked for. "Recent email" means the last few hours unless they specify otherwise. Pass an appropriate hours value (e.g. 4 for "recent") to email_list_recent.
+- After listing, prefer email_summarize_message over email_read_full. The summarizer compresses each message body through a separate chat completion so the full body never enters your context — this is how you can cover a dozen messages without running out of tokens. Call it once per message you want to understand.
+- Use email_read_full ONLY when the user explicitly asked to see verbatim text, you need to quote a specific phrase, or the summarizer left something ambiguous.
+- When digesting multiple messages, group by sender or topic if it helps readability, include the date for each, and never fabricate content you didn't see in a tool result.
+- The accountId and messageId fields in listings are opaque identifiers — pass them back verbatim to the follow-up tools, do not modify or invent them.`
+		: '';
+
 	return {
 		role: 'system',
 		content: `You are Haruspex, a helpful, private AI assistant running entirely on the user's computer. Nothing the user says ever leaves their device.
@@ -97,7 +115,7 @@ SEARCH BEHAVIOR:
 - Use the user's exact terminology in your search query.
 - Use fetch_url on 2-4 of the most relevant results to read the full content before answering.
 - Only cite sources you actually fetched and read. Do not cite URLs you only saw in search snippets.
-- For product reviews, comparisons, or "best of" questions: include community sources like Reddit alongside review sites. Many review sites are paid advertising — Reddit has real user opinions worth including.${fsSection}
+- For product reviews, comparisons, or "best of" questions: include community sources like Reddit alongside review sites. Many review sites are paid advertising — Reddit has real user opinions worth including.${fsSection}${emailSection}
 
 Be concise, accurate, and helpful. When in doubt, search.
 

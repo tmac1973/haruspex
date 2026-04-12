@@ -15,15 +15,20 @@
 		getSettings,
 		updateSettings,
 		updateInferenceBackend,
+		setEmailAccounts,
 		applyTheme,
 		type ResponseFormat,
 		type ThemeMode,
 		type SearchProvider,
 		type AppSettings,
 		type InferenceBackendConfig,
-		type InferenceMode
+		type InferenceMode,
+		type EmailAccount,
+		type EmailProviderId,
+		type EmailTlsMode
 	} from '$lib/stores/settings';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
+	import EmailAccountForm from '$lib/components/EmailAccountForm.svelte';
 
 	interface ModelInfo {
 		id: string;
@@ -138,6 +143,74 @@
 		}
 	}
 
+	// --- Email integration state ---
+	interface EmailProviderPreset {
+		id: string;
+		label: string;
+		imap_host: string;
+		imap_port: number;
+		imap_tls: EmailTlsMode;
+		smtp_host: string;
+		smtp_port: number;
+		smtp_tls: EmailTlsMode;
+		app_password_url: string;
+		requires_2fa: boolean;
+	}
+
+	let emailAccounts = $state<EmailAccount[]>(
+		structuredClone(getSettings().integrations.email.accounts)
+	);
+	let emailPresets = $state<EmailProviderPreset[]>([]);
+
+	async function loadEmailPresets() {
+		try {
+			emailPresets = await invoke<EmailProviderPreset[]>('email_list_providers');
+		} catch (e) {
+			console.error('email_list_providers failed:', e);
+		}
+	}
+
+	function newBlankAccount(): EmailAccount {
+		// Generate a stable id using the browser's crypto.randomUUID()
+		// when available, falling back to a timestamp-plus-random pair
+		// for older environments that tauri-webview might present.
+		const id =
+			typeof crypto !== 'undefined' && 'randomUUID' in crypto
+				? crypto.randomUUID()
+				: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const preset = emailPresets.find((p) => p.id === 'gmail');
+		return {
+			id,
+			label: 'New account',
+			enabled: false,
+			sendEnabled: false,
+			provider: 'gmail' as EmailProviderId,
+			emailAddress: '',
+			password: '',
+			imapHost: preset?.imap_host ?? 'imap.gmail.com',
+			imapPort: preset?.imap_port ?? 993,
+			imapTls: preset?.imap_tls ?? 'implicit',
+			smtpHost: preset?.smtp_host ?? 'smtp.gmail.com',
+			smtpPort: preset?.smtp_port ?? 465,
+			smtpTls: preset?.smtp_tls ?? 'implicit'
+		};
+	}
+
+	function addEmailAccount() {
+		emailAccounts = [...emailAccounts, newBlankAccount()];
+		setEmailAccounts(emailAccounts);
+	}
+
+	function updateEmailAccount(id: string, next: EmailAccount) {
+		emailAccounts = emailAccounts.map((a) => (a.id === id ? next : a));
+		setEmailAccounts(emailAccounts);
+	}
+
+	function deleteEmailAccount(id: string) {
+		emailAccounts = emailAccounts.filter((a) => a.id !== id);
+		setEmailAccounts(emailAccounts);
+	}
+
 	async function pickDefaultWorkingDir() {
 		try {
 			const selected = await openDialog({
@@ -241,6 +314,7 @@
 		modelsDir = await invoke<string>('get_models_dir');
 		refreshOutputDevices();
 		refreshInputDevices();
+		await loadEmailPresets();
 	});
 
 	async function refreshModels() {
@@ -678,6 +752,37 @@
 		</div>
 	</section>
 
+	<section>
+		<h2>Integrations</h2>
+		<p class="section-help">
+			Optional connections to outside services. Disabled by default. Email tools become available to
+			the model as soon as at least one account is enabled.
+		</p>
+
+		<h3 class="subhead">Email (read-only)</h3>
+		<p class="section-help small">
+			Multi-provider IMAP access for reading recent email and summarizing it. Supports Gmail,
+			Fastmail, iCloud, Yahoo, and any IMAP host you can reach. Every preset requires 2FA to be
+			enabled on the provider and an app password (not your login password). Sending email arrives
+			in a later phase.
+		</p>
+
+		{#if emailAccounts.length === 0}
+			<p class="section-help small">No email accounts configured.</p>
+		{/if}
+
+		{#each emailAccounts as account (account.id)}
+			<EmailAccountForm
+				{account}
+				presets={emailPresets}
+				onChange={(next) => updateEmailAccount(account.id, next)}
+				onDelete={() => deleteEmailAccount(account.id)}
+			/>
+		{/each}
+
+		<button class="btn" onclick={addEmailAccount}>Add email account</button>
+	</section>
+
 	{#if !remoteMode}
 		<section>
 			<h2>Server</h2>
@@ -741,6 +846,21 @@
 		border-bottom: none;
 		margin-bottom: 0;
 		padding-bottom: 64px;
+	}
+
+	.subhead {
+		margin: 16px 0 4px;
+		font-size: 1rem;
+	}
+
+	.section-help {
+		color: var(--text-secondary, var(--text-muted));
+		font-size: 0.9rem;
+		margin: 0 0 12px;
+	}
+
+	.section-help.small {
+		font-size: 0.85rem;
 	}
 
 	.back-btn {
