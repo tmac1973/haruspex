@@ -30,9 +30,17 @@ pub const MAX_BODY_CHARS: usize = 40_000;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailListing {
-    /// Account this message came from. The frontend uses this to
-    /// label multi-account digests.
+    /// Account this message came from. The opaque UUID that
+    /// `email_summarize_message` / `email_read_full` should receive
+    /// back verbatim.
     pub account_id: String,
+
+    /// Human-readable label for the account ("Work Gmail",
+    /// "Personal"). Included in every listing so the model can
+    /// match user intent like "summarize my work email" without
+    /// needing a separate accounts lookup call. When the user has
+    /// only one account enabled, the model can ignore this field.
+    pub account_label: String,
 
     /// IMAP UID for this message within its INBOX. We store it as a
     /// decimal string because UIDs are u32 but some providers treat
@@ -64,6 +72,7 @@ pub struct EmailListing {
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedMessage {
     pub account_id: String,
+    pub account_label: String,
     pub message_id: String,
     pub subject: String,
     pub from_name: String,
@@ -185,11 +194,13 @@ pub fn strip_quoted_replies(body: &str) -> String {
 }
 
 /// Core conversion: bytes from a FETCH BODY.PEEK[] call → a
-/// `NormalizedMessage`. The caller supplies `account_id` and
-/// `message_id` because those aren't part of the RFC 5322 envelope.
+/// `NormalizedMessage`. The caller supplies `account_id`,
+/// `account_label`, and `message_id` because those aren't part of
+/// the RFC 5322 envelope.
 pub fn parse_rfc5322(
     bytes: &[u8],
     account_id: String,
+    account_label: String,
     message_id: String,
 ) -> Result<NormalizedMessage, String> {
     let parsed = MessageParser::default()
@@ -246,6 +257,7 @@ pub fn parse_rfc5322(
 
     Ok(NormalizedMessage {
         account_id,
+        account_label,
         message_id,
         subject: clean(&subject),
         from_name: clean(&from_name),
@@ -261,11 +273,13 @@ pub fn parse_rfc5322(
 pub fn parse_to_listing(
     bytes: &[u8],
     account_id: String,
+    account_label: String,
     message_id: String,
 ) -> Result<EmailListing, String> {
-    let msg = parse_rfc5322(bytes, account_id, message_id)?;
+    let msg = parse_rfc5322(bytes, account_id, account_label, message_id)?;
     Ok(EmailListing {
         account_id: msg.account_id,
+        account_label: msg.account_label,
         message_id: msg.message_id,
         subject: msg.subject,
         from_name: msg.from_name,
@@ -307,7 +321,8 @@ On Tue, Apr 7, 2026 at 10:14 AM Bob <bob@example.com> wrote:\r\n\
 
     #[test]
     fn parses_plain_message() {
-        let msg = parse_rfc5322(SAMPLE_PLAIN, "acc-1".into(), "42".into()).unwrap();
+        let msg =
+            parse_rfc5322(SAMPLE_PLAIN, "acc-1".into(), "Work".into(), "42".into()).unwrap();
         assert_eq!(msg.subject, "Hello");
         assert_eq!(msg.from_name, "Alice Example");
         assert_eq!(msg.from_email, "alice@example.com");
@@ -319,7 +334,8 @@ On Tue, Apr 7, 2026 at 10:14 AM Bob <bob@example.com> wrote:\r\n\
 
     #[test]
     fn falls_back_to_html_when_no_plain() {
-        let msg = parse_rfc5322(SAMPLE_HTML_ONLY, "acc".into(), "1".into()).unwrap();
+        let msg =
+            parse_rfc5322(SAMPLE_HTML_ONLY, "acc".into(), "label".into(), "1".into()).unwrap();
         assert!(msg.body.contains("Hello"));
         assert!(msg.body.contains("world"));
         // No raw tags in the extracted body.
@@ -335,7 +351,8 @@ On Tue, Apr 7, 2026 at 10:14 AM Bob <bob@example.com> wrote:\r\n\
 
     #[test]
     fn strips_quote_in_parsed_message() {
-        let msg = parse_rfc5322(SAMPLE_QUOTED, "acc".into(), "9".into()).unwrap();
+        let msg =
+            parse_rfc5322(SAMPLE_QUOTED, "acc".into(), "label".into(), "9".into()).unwrap();
         let body = strip_quoted_replies(&msg.body);
         assert!(body.contains("Sure, works for me"));
         assert!(!body.contains("are you free"));
@@ -353,7 +370,9 @@ On Tue, Apr 7, 2026 at 10:14 AM Bob <bob@example.com> wrote:\r\n\
 
     #[test]
     fn parse_to_listing_populates_snippet() {
-        let listing = parse_to_listing(SAMPLE_PLAIN, "acc".into(), "42".into()).unwrap();
+        let listing =
+            parse_to_listing(SAMPLE_PLAIN, "acc".into(), "Work".into(), "42".into()).unwrap();
+        assert_eq!(listing.account_label, "Work");
         assert!(listing.snippet.contains("simple plaintext"));
         assert_eq!(listing.from_email, "alice@example.com");
     }

@@ -77,7 +77,12 @@ pub async fn email_list_recent(
         since_date,
         from,
         subject_contains,
-        max_results: max_results.unwrap_or(20),
+        // Default to 25 — enough headroom for the model to see a
+        // typical inbox-day's worth of messages (most of which are
+        // promotional noise it filters before summarizing). The
+        // schema description in tools.ts tells the model to only
+        // summarize 3-5 of these, so a larger listing is fine.
+        max_results: max_results.unwrap_or(25),
     };
     imap_client::list_recent(&account, &filters).await
 }

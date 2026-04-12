@@ -65,6 +65,7 @@ mod tests {
     fn msg_with_body(body: &str) -> NormalizedMessage {
         NormalizedMessage {
             account_id: "acc".into(),
+            account_label: "label".into(),
             message_id: "1".into(),
             subject: "s".into(),
             from_name: "F".into(),

@@ -600,14 +600,14 @@ const EMAIL_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'email_list_recent',
 			description:
-				'List recent email messages from the user\'s configured email accounts. Returns metadata only (subject, sender, date, short snippet) — no message bodies. Strongly prefer this as the first email tool call: the user almost always wants "recent email" or "email from X", not a specific message body. After seeing the listing, call email_summarize_message on the messages you want to understand, or email_read_full only when verbatim body text is actually needed. Do not call this unless the user explicitly asked about email — never proactively check the inbox.',
+				'List recent email messages from the user\'s configured email accounts. Returns metadata only (subject, sender, date, short snippet) — no message bodies. Strongly prefer this as the first email tool call: the user almost always wants "recent email" or "email from X", not a specific message body. After seeing the listing, call email_summarize_message on the 3-5 messages that look most important (by sender importance, urgency, or relevance to the user\'s question) — do NOT try to summarize every message in the listing. Skip newsletters, automated notifications, and marketing unless the user specifically asked about them. Do not call this tool unless the user explicitly asked about email — never proactively check the inbox.',
 			parameters: {
 				type: 'object',
 				properties: {
 					account_id: {
 						type: 'string',
 						description:
-							'Optional — the id of a specific account to query. Omit to query all enabled accounts. The id value matches the `accountId` field returned in previous listings.'
+							'Optional — target a specific account instead of querying every enabled one. Accepts EITHER the `accountId` UUID from a previous listing OR the human-readable account label (e.g. "Work Gmail", "Personal") exactly as the user sees it in Settings. Label matching is case-insensitive. Omit this field entirely to query all enabled accounts and merge the results by date — that\'s the right default for generic requests like "summarize my email". Only pass a selector when the user explicitly names an account.'
 					},
 					hours: {
 						type: 'integer',
@@ -633,7 +633,8 @@ const EMAIL_TOOLS: ToolDefinition[] = [
 						type: 'integer',
 						minimum: 1,
 						maximum: 50,
-						description: 'Upper bound on results. Default 20. Hard cap 50.'
+						description:
+							'Upper bound on results. Default 25 — plenty of headroom for a typical inbox-day where most messages are newsletters and automated notifications. For multi-day windows ("this week") you may raise this to 50. The size of the listing is NOT the size of the digest: you are expected to filter the listing down to 3-5 actually-important messages and only summarize those. A larger listing helps you see the noise you can safely skip, not messages you need to summarize.'
 					}
 				}
 			}
@@ -650,7 +651,8 @@ const EMAIL_TOOLS: ToolDefinition[] = [
 				properties: {
 					account_id: {
 						type: 'string',
-						description: 'The id of the account the message belongs to (from the listing).'
+						description:
+							'Account selector for the message. Pass back the `accountId` UUID from the listing verbatim — that is always the safe choice. Case-insensitive label matching ("Work Gmail", "Personal") is also accepted if the model is routing by user-facing name.'
 					},
 					message_id: {
 						type: 'string',
@@ -677,7 +679,8 @@ const EMAIL_TOOLS: ToolDefinition[] = [
 				properties: {
 					account_id: {
 						type: 'string',
-						description: 'The id of the account the message belongs to (from the listing).'
+						description:
+							'Account selector for the message. Pass back the `accountId` UUID from the listing verbatim — that is always the safe choice. Case-insensitive label matching ("Work Gmail", "Personal") is also accepted.'
 					},
 					message_id: {
 						type: 'string',

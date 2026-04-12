@@ -296,7 +296,12 @@ pub async fn list_recent(
         let Some(bytes) = fetch_bytes(&fetch) else {
             continue;
         };
-        match parse_to_listing(&bytes, account.id.clone(), uid.to_string()) {
+        match parse_to_listing(
+            &bytes,
+            account.id.clone(),
+            account.label.clone(),
+            uid.to_string(),
+        ) {
             Ok(l) => listings.push(l),
             Err(e) => log::warn!("mail-parser rejected UID {uid}: {e}"),
         }
@@ -343,7 +348,12 @@ pub async fn fetch_full(
     let _ = session.logout().await;
 
     let bytes = bytes.ok_or_else(|| format!("No message body returned for UID {uid}"))?;
-    parse_rfc5322(&bytes, account.id.clone(), message_id.to_string())
+    parse_rfc5322(
+        &bytes,
+        account.id.clone(),
+        account.label.clone(),
+        message_id.to_string(),
+    )
 }
 
 #[cfg(test)]

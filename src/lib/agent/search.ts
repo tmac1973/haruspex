@@ -245,6 +245,7 @@ const EMAIL_SUMMARY_MAX_TOKENS = 400;
 
 interface EmailListing {
 	accountId: string;
+	accountLabel: string;
 	messageId: string;
 	subject: string;
 	fromName: string;
@@ -256,6 +257,7 @@ interface EmailListing {
 
 interface NormalizedEmailMessage {
 	accountId: string;
+	accountLabel: string;
 	messageId: string;
 	subject: string;
 	fromName: string;
@@ -275,17 +277,31 @@ interface EmailSummarizerInput {
 }
 
 /**
- * Resolve an `accountId` reference from a tool-call argument to a
- * concrete stored `EmailAccount`. When `accountId` is undefined or
- * empty, returns every enabled account (used by `email_list_recent`
- * for the multi-account fan-out case).
+ * Resolve an account selector from a tool-call argument to a concrete
+ * stored `EmailAccount` list. The selector (`account_id` in the tool
+ * schema) is tolerant:
+ *
+ * - An exact UUID match wins (this is what previous listings return
+ *   as the `accountId` field, so round-tripping through the model
+ *   always works).
+ * - Falling back, a case-insensitive match on the user-facing label
+ *   ("Work Gmail", "Personal") — lets the model translate user
+ *   intent like "summarize my work email" directly into a call.
+ * - Empty / undefined selector returns all enabled accounts (the
+ *   multi-account fan-out case for `email_list_recent`).
+ *
+ * Always filters to enabled accounts — a disabled account is treated
+ * as if it doesn't exist.
  */
 function resolveEmailAccounts(
-	accountId?: string
+	selector?: string
 ): Array<import('$lib/stores/settings').EmailAccount> {
 	const all = getSettings().integrations.email.accounts.filter((a) => a.enabled);
-	if (!accountId) return all;
-	return all.filter((a) => a.id === accountId);
+	if (!selector) return all;
+	const byId = all.filter((a) => a.id === selector);
+	if (byId.length > 0) return byId;
+	const needle = selector.trim().toLowerCase();
+	return all.filter((a) => a.label.trim().toLowerCase() === needle);
 }
 
 export async function executeEmailListRecent(args: Record<string, unknown>): Promise<string> {
@@ -318,6 +334,7 @@ export async function executeEmailListRecent(args: Record<string, unknown>): Pro
 			// account had a problem without abandoning the whole call.
 			all.push({
 				accountId: account.id,
+				accountLabel: account.label,
 				messageId: `error-${account.id}`,
 				subject: `[error fetching ${account.label}]`,
 				fromName: '',

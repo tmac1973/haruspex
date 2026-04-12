@@ -86,11 +86,15 @@ FILESYSTEM ACCESS:
 EMAIL INTEGRATION:
 - The user has connected at least one email account. You have three email tools: email_list_recent, email_summarize_message, email_read_full.
 - Only call email_* tools when the user has explicitly asked about email ("summarize my inbox", "any emails from X today?", "read the email from Y"). Never proactively check email.
-- Respect the scope the user asked for. "Recent email" means the last few hours unless they specify otherwise. Pass an appropriate hours value (e.g. 4 for "recent") to email_list_recent.
-- After listing, prefer email_summarize_message over email_read_full. The summarizer compresses each message body through a separate chat completion so the full body never enters your context — this is how you can cover a dozen messages without running out of tokens. Call it once per message you want to understand.
-- Use email_read_full ONLY when the user explicitly asked to see verbatim text, you need to quote a specific phrase, or the summarizer left something ambiguous.
-- When digesting multiple messages, group by sender or topic if it helps readability, include the date for each, and never fabricate content you didn't see in a tool result.
-- The accountId and messageId fields in listings are opaque identifiers — pass them back verbatim to the follow-up tools, do not modify or invent them.`
+- Respect the scope the user asked for. "Recent email" means the last few hours unless they specify otherwise. Pass an appropriate hours value (e.g. 4 for "recent", 24 for "today", 168 for "this week") to email_list_recent.
+- MULTI-ACCOUNT: the user may have more than one email account enabled. Each listing includes an accountLabel ("Work Gmail", "Personal") alongside the opaque accountId. For generic requests ("summarize my email"), OMIT the account_id parameter — email_list_recent will fan out across every enabled account and merge results by date. Only pass account_id when the user explicitly names an account; in that case you can use either the label from a previous listing or the exact label the user said. When presenting a multi-account digest, group messages by accountLabel (one heading per account) so the user can see which account each message came from. Do not fabricate accountLabels — only use values you have seen in an actual listing response.
+- The default max_results of 25 is right for most single-day requests ("recent", "today"). For "this week" or similar multi-day windows you may raise it to 50. The listing size is NOT the digest size: you are expected to filter the listing down to 3-5 important messages and only summarize those. A bigger listing helps you see the noise you can skip, not more work you need to do.
+- After listing, pick the 3-5 most important messages and call email_summarize_message on those. Importance signals: personal senders over automated systems, unread / starred / urgent-looking subjects, anything from known-important domains, anything directly addressed to the user rather than a list. Skip newsletters, promotions, automated notifications, receipts, and calendar invites unless the user specifically asked about them.
+- Do NOT call email_summarize_message on every message in the listing. That's slow and wasteful, and the digest is more useful when you've filtered out the noise yourself.
+- Use email_read_full ONLY when the user explicitly asked to see verbatim text, you need to quote a specific phrase, or a previous summary left something ambiguous. It's the escape hatch, not the default.
+- When producing the final digest: start with a one-sentence overview ("You got 12 messages this week; here are the 4 that matter."), then one short bullet per summarized message with sender + subject + 1-sentence takeaway. Mention in a closing sentence that you skipped N promotional / automated messages if there were any.
+- The accountId and messageId fields in listings are opaque identifiers — pass them back verbatim to the follow-up tools, do not modify or invent them.
+- CRITICAL CALL FORMAT: call email_summarize_message the same way you call any other tool — emit a proper tool_calls JSON (same format you used for email_list_recent). Do NOT describe the call in prose, do NOT emit it as a code block, do NOT paraphrase the arguments. If your first attempt didn't execute, try the exact same format that worked for email_list_recent.`
 		: '';
 
 	return {
@@ -789,37 +793,78 @@ export async function sendMessage(content: string): Promise<void> {
 				} else {
 					// Empty final content. Before slapping up a generic
 					// "empty response" error, check what the turn actually
-					// accomplished:
-					//   1. A successful fs_write_* → a file landed on disk
-					//      and the model just forgot to narrate it. Synth
-					//      a "Done" message so the user sees the file path.
-					//   2. Other tool steps completed → research happened
-					//      but the model didn't produce a final answer.
-					//      Show a guiding message, not a scary error.
-					//   3. Nothing happened → genuine no-op, original error.
+					// accomplished and craft a message that reflects what
+					// the model was doing so the user gets a useful nudge
+					// instead of a scary dead end.
 					const successfulWrite = searchSteps.find(
 						(s) =>
 							s.toolName.startsWith('fs_write_') &&
 							s.status === 'done' &&
 							!(s.result || '').includes('"error"')
 					);
-					const anyToolCompleted = searchSteps.some((s) => s.status === 'done');
+					const doneSteps = searchSteps.filter((s) => s.status === 'done');
+					const anyToolCompleted = doneSteps.length > 0;
+					const emailListed = doneSteps.some((s) => s.toolName === 'email_list_recent');
+					const emailSummarized = doneSteps.some((s) => s.toolName === 'email_summarize_message');
+					const imageSearched = doneSteps.some(
+						(s) => s.toolName === 'image_search' || s.toolName === 'fetch_url_images'
+					);
+					const webResearched = doneSteps.some(
+						(s) =>
+							s.toolName === 'web_search' ||
+							s.toolName === 'fetch_url' ||
+							s.toolName === 'research_url'
+					);
+
+					// Diagnostic: log the pre-strip streaming content so we can
+					// see what the model actually emitted when the final synthesis
+					// came back empty. Lives in the browser console (dev mode) and
+					// the app log tab (production) via the console-capture shim.
+					if (streamingContent) {
+						console.warn(
+							'[empty-final-content] streamingContent length=',
+							streamingContent.length,
+							'first 500 chars:',
+							streamingContent.slice(0, 500)
+						);
+					}
 
 					if (successfulWrite) {
 						commit(`Done. File written: ${successfulWrite.query}`);
-					} else if (anyToolCompleted) {
-						// Research ran but no final synthesis arrived. Likely
-						// causes: the model got stuck in an image-discovery
-						// loop, hit a degraded state after many tool calls,
-						// or emitted tool_call XML that all got stripped.
-						// Give the user actionable next steps instead of
-						// just "try rephrasing".
+					} else if (emailListed && !emailSummarized) {
+						// Email listing ran but the model never got a
+						// summarize_message call to execute. This is the most
+						// common email failure mode: model misformats the
+						// follow-up tool call, retry nudges don't stick, loop
+						// exits without final synthesis.
 						errorMessage =
-							'Research completed but the model did not produce a final answer or ' +
-							"file. This usually means it couldn't finish what it started — often " +
-							"because it was looking for images it couldn't find. Try a follow-up " +
-							'like "write the presentation with what you have so far, no images" ' +
-							'or a more focused question.';
+							'Fetched your email listing but could not produce a summary. ' +
+							'The model struggled to emit a valid follow-up tool call. ' +
+							'Try a narrower request like "summarize my email from the last 4 hours" ' +
+							'or "summarize the 3 most recent emails from alice@example.com" — ' +
+							'giving the model a smaller, more focused set is more reliable ' +
+							'than asking it to digest a week of messages at once.';
+					} else if (emailListed) {
+						errorMessage =
+							'Email digest run completed but the final summary did not arrive. ' +
+							'Try a more focused request ("summarize the 3 most recent", "what did ' +
+							'alice send this week?") so the model has less to synthesize.';
+					} else if (imageSearched) {
+						errorMessage =
+							'Research completed but the model did not produce a final answer ' +
+							'or file. The image-discovery step may have stalled — try a ' +
+							'follow-up like "write the presentation with what you have so far, ' +
+							'no images" to force the model to finish.';
+					} else if (webResearched) {
+						errorMessage =
+							'Web research completed but the final answer did not arrive. ' +
+							'This usually means the model got stuck after many tool calls. ' +
+							'Try a more focused question, disable deep research if enabled, ' +
+							'or break the question into smaller pieces.';
+					} else if (anyToolCompleted) {
+						errorMessage =
+							'Tools ran but the model did not produce a final answer. ' +
+							'Try rephrasing or a more focused question.';
 					} else {
 						errorMessage = 'Model returned an empty response. Try rephrasing.';
 					}
