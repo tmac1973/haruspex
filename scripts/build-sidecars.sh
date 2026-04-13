@@ -92,13 +92,16 @@ else
     mkdir -p "$BUILD_DIR/llama"
     cd "$BUILD_DIR/llama"
 
+    # GGML_NATIVE=OFF disables -march=native so the binary is portable across
+    # CPUs — otherwise CI runners with AVX-512 produce binaries that SIGILL on
+    # older (e.g. Zen 3) user hardware.
     echo "   Configuring with flags: $CMAKE_GPU_FLAGS"
-    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF $CMAKE_GPU_FLAGS 2>&1; then
+    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF $CMAKE_GPU_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags ($CMAKE_GPU_FLAGS), retrying CPU-only..."
         rm -rf "$BUILD_DIR/llama"
         mkdir -p "$BUILD_DIR/llama"
         cd "$BUILD_DIR/llama"
-        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF 2>&1
+        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF 2>&1
     fi
 
     echo "   Building..."
@@ -159,12 +162,12 @@ else
     cd "$BUILD_DIR/whisper"
 
     echo "   Configuring..."
-    if ! cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release $CMAKE_GPU_FLAGS 2>&1; then
+    if ! cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF $CMAKE_GPU_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags, retrying CPU-only..."
         rm -rf "$BUILD_DIR/whisper"
         mkdir -p "$BUILD_DIR/whisper"
         cd "$BUILD_DIR/whisper"
-        cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release 2>&1
+        cmake "$WHISPER_SRC" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF 2>&1
     fi
 
     echo "   Building..."
