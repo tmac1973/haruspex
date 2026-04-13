@@ -39,7 +39,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Update Cargo.lock for new haruspex version
         working-directory: src-tauri
-        run: cargo update --workspace --offline
+        # Touch just the haruspex package entry; --workspace would drag in
+        # every transitive dep bump and inflate the lockfile diff.
+        run: cargo update --package haruspex
       - name: Commit lockfile bump if needed
         run: |
           if git diff --quiet src-tauri/Cargo.lock; then
