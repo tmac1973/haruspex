@@ -5,6 +5,7 @@
 			"release-type": "node",
 			"package-name": "haruspex",
 			"changelog-path": "CHANGELOG.md",
+			"include-component-in-tag": false,
 			"include-v-in-tag": true,
 			"draft": true,
 			"prerelease": false,
