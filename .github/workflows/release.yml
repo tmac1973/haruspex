@@ -1,69 +1,11 @@
 name: Release
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g., 0.1.0)'
-        required: true
-        type: string
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  bump-version:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Bump version
-        run: |
-          VERSION="${{ inputs.version }}"
-          # Update version in all files (npm version errors if already at target)
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          # Only commit if there are changes
-          if git diff --quiet; then
-            echo "Version already at $VERSION, skipping commit"
-          else
-            git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
-            git commit -m "chore: bump version to $VERSION"
-            git push
-          fi
-          git tag -f "v$VERSION"
-          git push origin "v$VERSION" --force
-
-  create-release:
-    needs: bump-version
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      release_id: ${{ steps.create.outputs.id }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ inputs.version }}
-      - id: create
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ inputs.version }}
-          draft: true
-          generate_release_notes: true
-
   build:
-    needs: [bump-version, create-release]
     permissions:
       contents: write
     strategy:
@@ -84,8 +26,6 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ inputs.version }}
 
       - uses: actions/setup-node@v4
         with:
@@ -155,7 +95,7 @@ jobs:
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version }}
+          tag_name: ${{ github.ref_name }}
           draft: true
           files: |
             src-tauri/target/release/bundle/appimage/*.AppImage

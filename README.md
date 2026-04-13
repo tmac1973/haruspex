@@ -338,13 +338,15 @@ Use `make reset-data` to wipe this directory for a fresh start (Linux/macOS).
 
 ## Building a release
 
-Releases are built via GitHub Actions:
+Releases are automated via [release-please](https://github.com/googleapis/release-please):
 
-1. Go to Actions > "Release" > "Run workflow"
-2. Enter the version number (e.g., `0.1.0`)
-3. Click "Run workflow"
+1. Commits on `main` must use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, `feat!:` for breaking, etc).
+2. release-please watches `main` and keeps an open PR titled "chore(main): release X.Y.Z" that bumps the version in every file, updates `CHANGELOG.md`, and accumulates notes from each new conventional commit.
+3. Merge that PR when you're ready to cut a release. That creates the `vX.Y.Z` tag and a **draft** GitHub release prefilled with the changelog.
+4. The tag push triggers the `Release` workflow, which builds sidecars + app for all platforms and attaches the installers (Linux AppImage/deb/rpm, Windows NSIS/MSI, macOS DMG) to the draft.
+5. Review the draft release on GitHub and click **Publish** when satisfied.
 
-This bumps the version, creates a git tag, builds sidecars and the app for all platforms (Linux AppImage/deb/rpm, Windows NSIS/MSI, macOS DMG), and creates a draft GitHub release.
+To skip a release, just don't merge the PR — it'll keep updating with each new commit until you do.
 
 To build locally:
 
