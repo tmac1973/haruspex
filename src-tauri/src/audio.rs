@@ -1,4 +1,5 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::SampleFormat as CpalSampleFormat;
 use hound::{SampleFormat, WavSpec, WavWriter};
 use log::{error, info, warn};
 use std::io::Cursor;
@@ -37,6 +38,7 @@ pub struct AudioRecorder {
     is_recording: Arc<AtomicBool>,
     samples: Arc<Mutex<Vec<f32>>>,
     stream: Mutex<Option<cpal::Stream>>,
+    native_rate: Mutex<u32>,
 }
 
 impl AudioRecorder {
@@ -45,6 +47,7 @@ impl AudioRecorder {
             is_recording: Arc::new(AtomicBool::new(false)),
             samples: Arc::new(Mutex::new(Vec::new())),
             stream: Mutex::new(None),
+            native_rate: Mutex::new(WHISPER_SAMPLE_RATE),
         }
     }
 
@@ -66,37 +69,63 @@ impl AudioRecorder {
 
         info!("Recording from: {}", device_name(&device));
 
-        // Request 16kHz mono f32 for whisper compatibility
-        let config = cpal::StreamConfig {
-            channels: 1,
-            sample_rate: WHISPER_SAMPLE_RATE,
-            buffer_size: cpal::BufferSize::Default,
-        };
+        // Use the device's native config — Windows WASAPI rejects forced 16kHz mono.
+        // We downmix to mono in the callback and resample to 16kHz at stop_recording.
+        let supported = device
+            .default_input_config()
+            .map_err(|e| format!("No supported input config: {}", e))?;
+        let sample_format = supported.sample_format();
+        let native_rate = supported.sample_rate();
+        let channels = supported.channels() as usize;
+        let config: cpal::StreamConfig = supported.into();
+
+        info!(
+            "Input config: {} Hz, {} ch, {:?}",
+            native_rate, channels, sample_format
+        );
 
         // Clear previous samples
         {
             let mut samples = self.samples.lock().unwrap();
             samples.clear();
         }
+        *self.native_rate.lock().unwrap() = native_rate;
 
-        let samples = self.samples.clone();
-        let is_recording = self.is_recording.clone();
+        let err_fn = |err: cpal::StreamError| error!("Audio input error: {}", err);
 
-        let stream = device
-            .build_input_stream(
-                &config,
-                move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    if is_recording.load(Ordering::SeqCst) {
+        macro_rules! build_stream {
+            ($t:ty, $to_f32:expr) => {{
+                let samples = self.samples.clone();
+                let is_recording = self.is_recording.clone();
+                device.build_input_stream(
+                    &config,
+                    move |data: &[$t], _: &cpal::InputCallbackInfo| {
+                        if !is_recording.load(Ordering::SeqCst) {
+                            return;
+                        }
                         let mut buf = samples.lock().unwrap();
-                        buf.extend_from_slice(data);
-                    }
-                },
-                move |err| {
-                    error!("Audio input error: {}", err);
-                },
-                None,
-            )
-            .map_err(|e| format!("Failed to build audio stream: {}", e))?;
+                        if channels <= 1 {
+                            buf.extend(data.iter().map(|s| $to_f32(*s)));
+                        } else {
+                            for frame in data.chunks_exact(channels) {
+                                let sum: f32 = frame.iter().map(|s| $to_f32(*s)).sum();
+                                buf.push(sum / channels as f32);
+                            }
+                        }
+                    },
+                    err_fn,
+                    None,
+                )
+            }};
+        }
+
+        let stream = match sample_format {
+            CpalSampleFormat::F32 => build_stream!(f32, |s: f32| s),
+            CpalSampleFormat::I16 => build_stream!(i16, |s: i16| s as f32 / 32768.0),
+            CpalSampleFormat::U16 => build_stream!(u16, |s: u16| (s as f32 - 32768.0) / 32768.0),
+            other => return Err(format!("Unsupported sample format: {:?}", other)),
+        }
+        .map_err(|e| format!("Failed to build audio stream: {}", e))?;
 
         stream
             .play()
@@ -123,24 +152,44 @@ impl AudioRecorder {
             let mut buf = self.samples.lock().unwrap();
             std::mem::take(&mut *buf)
         };
+        let native_rate = *self.native_rate.lock().unwrap();
 
         info!(
-            "Recording stopped: {} samples ({:.1}s)",
+            "Recording stopped: {} samples ({:.1}s @ {} Hz)",
             samples.len(),
-            samples.len() as f32 / WHISPER_SAMPLE_RATE as f32
+            samples.len() as f32 / native_rate as f32,
+            native_rate
         );
 
         if samples.is_empty() {
             return Err("No audio recorded".to_string());
         }
 
-        // Encode as WAV
-        encode_wav(&samples, WHISPER_SAMPLE_RATE)
+        let resampled = resample_linear(&samples, native_rate, WHISPER_SAMPLE_RATE);
+        encode_wav(&resampled, WHISPER_SAMPLE_RATE)
     }
 
     pub fn is_recording(&self) -> bool {
         self.is_recording.load(Ordering::SeqCst)
     }
+}
+
+fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if from_rate == to_rate || input.len() < 2 {
+        return input.to_vec();
+    }
+    let ratio = from_rate as f64 / to_rate as f64;
+    let out_len = ((input.len() as f64) / ratio).floor() as usize;
+    let mut out = Vec::with_capacity(out_len);
+    for i in 0..out_len {
+        let src_pos = i as f64 * ratio;
+        let idx = src_pos.floor() as usize;
+        let frac = (src_pos - idx as f64) as f32;
+        let a = input[idx];
+        let b = if idx + 1 < input.len() { input[idx + 1] } else { a };
+        out.push(a + (b - a) * frac);
+    }
+    out
 }
 
 fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> {
