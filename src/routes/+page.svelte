@@ -439,8 +439,27 @@
 
 	.conversation-list {
 		flex: 1;
+		overflow-x: hidden;
 		overflow-y: auto;
+		scrollbar-gutter: stable;
 		padding: 4px 8px 4px 4px;
+	}
+
+	.conversation-list::-webkit-scrollbar {
+		width: 10px;
+	}
+
+	.conversation-list::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	.conversation-list::-webkit-scrollbar-thumb {
+		background: var(--border);
+		border-radius: 5px;
+	}
+
+	.conversation-list::-webkit-scrollbar-thumb:hover {
+		background: var(--text-secondary);
 	}
 
 	.conversation-item {
