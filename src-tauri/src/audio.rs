@@ -186,7 +186,11 @@ fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
         let idx = src_pos.floor() as usize;
         let frac = (src_pos - idx as f64) as f32;
         let a = input[idx];
-        let b = if idx + 1 < input.len() { input[idx + 1] } else { a };
+        let b = if idx + 1 < input.len() {
+            input[idx + 1]
+        } else {
+            a
+        };
         out.push(a + (b - a) * frac);
     }
     out
