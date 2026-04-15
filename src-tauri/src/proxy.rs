@@ -9,6 +9,11 @@ use std::time::{Duration, Instant};
 pub(crate) const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_FETCH_LENGTH: usize = 4000;
+
+/// Prefix the TS side uses to recognize a paywall signal from a fetched
+/// page. Kept in sync with `RUST_PAYWALL_SENTINEL` in
+/// `src/lib/agent/paywall.ts` — change both or neither.
+const PAYWALL_SENTINEL: &str = "[[HARUSPEX_PAYWALL_SIGNAL]]";
 const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(2);
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const FETCH_CACHE_TTL: Duration = Duration::from_secs(600); // 10 minutes
@@ -679,7 +684,67 @@ async fn fetch_and_extract(url: &str) -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to read response: {}", e))?;
 
+    // Before stripping to plain text, check whether the raw HTML carries
+    // a standardized paywall marker. When a page self-declares as gated,
+    // return a sentinel instead of the extracted body — the model can't
+    // usefully cite a preview, and the TS layer will reject the URL as a
+    // citation source. See the comment on PAYWALL_SENTINEL.
+    if let Some(reason) = detect_paywall_signal(&html) {
+        return Ok(format!("{} {}", PAYWALL_SENTINEL, reason));
+    }
+
     Ok(extract_text(&html))
+}
+
+/// Inspect the raw HTML of a fetched page for standardized paywall
+/// declarations. Host-agnostic: we never match a specific publisher.
+/// Signals checked (in order):
+///
+///   1. Schema.org JSON-LD `"isAccessibleForFree": false`. This is the
+///      field Google News / Search expect when indexing gated content;
+///      most publishers emit it to keep their articles indexable even
+///      when behind a paywall.
+///   2. OpenGraph / Facebook News meta `article:content_tier = locked`.
+///      A parallel convention used by social platforms for the same
+///      purpose. Less universal than Schema.org but catches a few sites
+///      that omit the JSON-LD.
+///
+/// Returns `Some(reason)` when a marker is found, `None` otherwise.
+/// Reason string is used downstream to explain why a URL was rejected.
+fn detect_paywall_signal(html: &str) -> Option<&'static str> {
+    let lowered = html.to_lowercase();
+
+    // Compact form collapses all whitespace so JSON keys/values and
+    // attribute spacing don't have to match a specific layout.
+    let compact: String = lowered.chars().filter(|c| !c.is_whitespace()).collect();
+
+    if compact.contains("\"isaccessibleforfree\":false") {
+        return Some("Schema.org isAccessibleForFree=false");
+    }
+
+    // OG meta attribute order is arbitrary (`property` before `content`
+    // or vice versa). Rather than match the whole tag literally, walk
+    // every `<meta ...>` tag and flag it only when BOTH the tier key
+    // and a "locked" value live inside the same tag's angle brackets.
+    // Restricting to tag boundaries prevents prose that happens to
+    // mention both strings from tripping the detector.
+    let mut cursor = 0;
+    while let Some(rel) = lowered[cursor..].find("<meta") {
+        let start = cursor + rel;
+        let tag_end = lowered[start..]
+            .find('>')
+            .map(|e| start + e + 1)
+            .unwrap_or(lowered.len());
+        let tag = &lowered[start..tag_end];
+        if tag.contains("article:content_tier")
+            && (tag.contains("\"locked\"") || tag.contains("'locked'"))
+        {
+            return Some("OpenGraph article:content_tier=locked");
+        }
+        cursor = tag_end;
+    }
+
+    None
 }
 
 pub(crate) fn validate_url(url: &str) -> Result<(), String> {
@@ -1604,6 +1669,75 @@ mod tests {
         let text = extract_text(&html);
         assert!(text.len() <= MAX_FETCH_LENGTH + 10); // +10 for "..."
         assert!(text.ends_with("..."));
+    }
+
+    #[test]
+    fn detect_paywall_signal_schema_org_is_accessible_for_free() {
+        let html = r#"<html><head>
+            <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"NewsArticle","isAccessibleForFree":false}
+            </script></head><body><p>Short preview.</p></body></html>"#;
+        let result = detect_paywall_signal(html);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("isAccessibleForFree"));
+    }
+
+    #[test]
+    fn detect_paywall_signal_schema_org_spaced() {
+        // JSON-LD with spacing and mixed-case, as emitted by some CMS.
+        let html = r#"<script type="application/ld+json">
+            {
+                "@type": "NewsArticle",
+                "isAccessibleForFree": false
+            }
+        </script>"#;
+        assert!(detect_paywall_signal(html).is_some());
+    }
+
+    #[test]
+    fn detect_paywall_signal_og_content_tier_locked() {
+        let html = r#"<html><head>
+            <meta property="article:content_tier" content="locked">
+        </head><body>Preview</body></html>"#;
+        let result = detect_paywall_signal(html);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("content_tier"));
+    }
+
+    #[test]
+    fn detect_paywall_signal_og_content_tier_reversed_attributes() {
+        // Attribute order is arbitrary for OG meta tags.
+        let html = r#"<meta content="locked" property="article:content_tier">"#;
+        assert!(detect_paywall_signal(html).is_some());
+    }
+
+    #[test]
+    fn detect_paywall_signal_free_article_not_flagged() {
+        let html = r#"<html><head>
+            <script type="application/ld+json">
+            {"@type":"NewsArticle","isAccessibleForFree":true}
+            </script>
+            <meta property="article:content_tier" content="free">
+        </head><body>Full article body.</body></html>"#;
+        assert!(detect_paywall_signal(html).is_none());
+    }
+
+    #[test]
+    fn detect_paywall_signal_plain_article_not_flagged() {
+        let html = r#"<html><body><article>
+            <p>A perfectly normal free article with no paywall metadata.</p>
+        </article></body></html>"#;
+        assert!(detect_paywall_signal(html).is_none());
+    }
+
+    #[test]
+    fn detect_paywall_signal_content_tier_key_without_locked_value_not_flagged() {
+        // A page that mentions the key name in prose or a different
+        // config block should not be flagged — the "locked" value has
+        // to live within the attribute window.
+        let html = r#"<p>The article:content_tier metadata convention is interesting.</p>
+            <p>Some systems mark content as "locked" elsewhere on the page.</p>"#;
+        assert!(detect_paywall_signal(html).is_none());
     }
 
     #[test]

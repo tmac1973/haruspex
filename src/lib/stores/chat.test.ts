@@ -167,7 +167,22 @@ describe('chat store', () => {
 				{ id: 'call_1', name: 'web_search', arguments: { query: 'test query' } },
 				JSON.stringify([{ title: 'Result', url: 'https://example.com', snippet: 'text' }])
 			);
-			options.onStreamChunk({ delta: { content: 'Answer based on search' }, finish_reason: null });
+			options.onToolStart({
+				id: 'call_2',
+				name: 'fetch_url',
+				arguments: { url: 'https://example.com' }
+			});
+			options.onToolEnd(
+				{ id: 'call_2', name: 'fetch_url', arguments: { url: 'https://example.com' } },
+				'Page body text.'
+			);
+			// The model emits a real markdown-link citation — that's how the
+			// store learns the URL was actually cited and belongs in the chip
+			// row. A plain-text answer with no links yields an empty chip row.
+			options.onStreamChunk({
+				delta: { content: 'Answer [source](https://example.com) based on search' },
+				finish_reason: null
+			});
 			options.onComplete();
 		});
 
@@ -176,9 +191,11 @@ describe('chat store', () => {
 		await sendMessage('Search for something');
 
 		const steps = getSearchSteps();
-		expect(steps).toHaveLength(1);
+		expect(steps).toHaveLength(2);
 		expect(steps[0].toolName).toBe('web_search');
 		expect(steps[0].status).toBe('done');
+		expect(steps[1].toolName).toBe('fetch_url');
+		expect(steps[1].status).toBe('done');
 
 		const urls = getSourceUrls();
 		expect(urls).toContain('https://example.com');

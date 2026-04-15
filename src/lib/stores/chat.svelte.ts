@@ -7,7 +7,7 @@ import {
 	getSettings,
 	hasEnabledEmailAccount
 } from '$lib/stores/settings';
-import { stripToolCallArtifacts } from '$lib/markdown';
+import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
 import {
 	getContextUsage,
 	updateContextUsage,
@@ -119,7 +119,18 @@ SEARCH BEHAVIOR:
 - Use the user's exact terminology in your search query.
 - Use fetch_url on 2-4 of the most relevant results to read the full content before answering.
 - Only cite sources you actually fetched and read. Do not cite URLs you only saw in search snippets.
-- For product reviews, comparisons, or "best of" questions: include community sources like Reddit alongside review sites. Many review sites are paid advertising — Reddit has real user opinions worth including.${fsSection}${emailSection}
+- For product reviews, comparisons, or "best of" questions: include community sources like Reddit alongside review sites. Many review sites are paid advertising — Reddit has real user opinions worth including.
+
+INLINE CITATIONS:
+- Every fetch_url / research_url result starts with a "[Source: <url>]" header identifying the URL the content came from.
+- When you state a specific fact, quote, number, date, or claim drawn from the web, cite it inline as a markdown link in exactly this form: [source](URL). The anchor text must be the literal lowercase word "source". Example: "...the device ships with 16 GB of RAM [source](https://example.com/product-page)."
+- CRITICAL: each [source](URL) must point to the specific page where THAT EXACT claim appeared — not just any page you opened. If the claim came from page A, cite page A; if the next claim came from page B, cite page B. Reusing the same URL for multiple unrelated facts is a bug, not a citation.
+- Strongly prefer URLs you actually fetched (copy them from the "[Source: <url>]" headers). Those are the claims you've verified. Only fall back to a URL you saw in a web_search snippet when no fetched source covers the point — and be more tentative about such claims in your prose.
+- Never invent a URL. Never cite a URL from an earlier turn.
+- The renderer will convert your [source](URL) links into numbered references [1], [2], [3] matching a source list shown below your reply, so you don't need to pick a number yourself.
+- If a single sentence draws from multiple sources, add one link per source, one after the other: "[source](url1) [source](url2)".
+- DO NOT append a "Sources", "References", or "Bibliography" section at the end of your answer. The numbered chip row below your reply already shows every URL you cited. Writing your own reference list is redundant and confusing.
+- Citations are mandatory for factual claims sourced from the web. Opinions, synthesis, and general framing do not need citations.${fsSection}${emailSection}
 
 Be concise, accurate, and helpful. When in doubt, search.
 
@@ -342,7 +353,29 @@ export function getSearchSteps(): SearchStep[] {
 }
 
 export function getSourceUrls(): string[] {
+	// During generation, derive the chip row from the citations actually
+	// present in the streaming answer so chip numbering and inline [N]
+	// numbering stay in lockstep as the model writes. Between turns we
+	// fall back to whatever was committed at the end of the last turn.
+	if (isGenerating && streamingContent) {
+		const fetched = extractUrlsFromSteps(searchSteps);
+		const { citedUrls } = processCitations(streamingContent, fetched);
+		return citedUrls;
+	}
 	return sourceUrls;
+}
+
+/**
+ * Render the currently-streaming assistant message with citation
+ * renumbering applied. Extracted from the page component so the page
+ * doesn't need to know about processCitations or the shape of
+ * searchSteps — it just asks the store for HTML to drop into the DOM.
+ */
+export function renderStreamingHtml(text: string): string {
+	if (!text) return '';
+	const fetched = extractUrlsFromSteps(searchSteps);
+	const { content } = processCitations(text, fetched);
+	return renderMarkdown(content);
 }
 
 export function getIsCompacting(): boolean {
@@ -495,28 +528,32 @@ export function cancelGeneration(): void {
 }
 
 function extractUrlsFromSteps(steps: SearchStep[]): string[] {
+	// Only include URLs the model actually fetched and read. Bare web_search
+	// result URLs are excluded because the model can't cite a page it didn't
+	// open. Keeping this list narrow also keeps the inline [N] citations
+	// numbered the same way as the source chips at the bottom of the reply.
 	const urls: string[] = [];
 	for (const step of steps) {
-		if (step.toolName === 'web_search' && step.result) {
-			try {
-				const results = JSON.parse(step.result);
-				if (Array.isArray(results)) {
-					for (const r of results) {
-						if (r.url) urls.push(r.url);
-					}
-				}
-			} catch {
-				// ignore
-			}
-		} else if (step.toolName === 'fetch_url' && step.query) {
+		if (step.toolName === 'fetch_url' && step.query) {
+			if (step.status === 'done' && isFetchFailure(step.result)) continue;
 			urls.push(step.query);
 		} else if (step.toolName === 'research_url' && step.query) {
+			if (step.status === 'done' && isFetchFailure(step.result)) continue;
 			// research_url query is "URL — focus"; strip the focus suffix
 			const dash = step.query.indexOf(' — ');
 			urls.push(dash >= 0 ? step.query.slice(0, dash) : step.query);
 		}
 	}
 	return [...new Set(urls)];
+}
+
+function isFetchFailure(result: string | undefined): boolean {
+	if (!result) return false;
+	return (
+		result.startsWith('Failed to fetch') ||
+		result.startsWith('Research sub-agent failed') ||
+		result.startsWith('Paywalled:')
+	);
 }
 
 export async function sendMessage(content: string): Promise<void> {
@@ -767,7 +804,17 @@ export async function sendMessage(content: string): Promise<void> {
 				// the next turn's history gets poisoned and the model keeps
 				// emitting more of the same. Render-time sanitization is a
 				// safety net; this is the authoritative cleanup.
-				const finalContent = stripToolCallArtifacts(streamingContent).trim();
+				//
+				// Then renumber inline citations so the saved content has
+				// [1], [2], ... anchor text that matches the chip row. The
+				// model emits each citation as a real markdown link to the
+				// URL it fetched, and we renumber based on appearance order.
+				const fetched = extractUrlsFromSteps(searchSteps);
+				const processed = processCitations(
+					stripToolCallArtifacts(streamingContent).trim(),
+					fetched
+				);
+				const finalContent = processed.content;
 				// Shared commit helper — used for both the normal path and
 				// the synthesized-fallback path so deep-research auto-
 				// disable and DB persistence stay in one place.
@@ -869,7 +916,11 @@ export async function sendMessage(content: string): Promise<void> {
 						errorMessage = 'Model returned an empty response. Try rephrasing.';
 					}
 				}
-				sourceUrls = extractUrlsFromSteps(searchSteps);
+				// Final chip row = exactly the URLs the model cited inline,
+				// so clicking [3] in the answer opens the third chip. If the
+				// model cited nothing (e.g., pure synthesis / no web lookup)
+				// the chip row stays empty.
+				sourceUrls = processed.citedUrls;
 			},
 			onError: (error) => {
 				if (error instanceof ApiError) {
@@ -882,12 +933,18 @@ export async function sendMessage(content: string): Promise<void> {
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'AbortError') {
 			if (streamingContent) {
+				// Bake citations into the partial message on abort too so
+				// the saved history isn't left with bare markdown links and
+				// an inconsistent chip row.
+				const fetched = extractUrlsFromSteps(searchSteps);
+				const { content, citedUrls } = processCitations(streamingContent, fetched);
 				const partialMsg: ChatMessage = {
 					role: 'assistant',
-					content: streamingContent
+					content
 				};
 				conversation.messages.push(partialMsg);
 				dbSaveMessage(conversation.id, partialMsg);
+				sourceUrls = citedUrls;
 			}
 		} else if (e instanceof ApiError) {
 			errorMessage = e.message;

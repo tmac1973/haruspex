@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { chatCompletion, type ChatMessage } from '$lib/api';
+import { detectPaywall } from '$lib/agent/paywall';
 import { getSettings, getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
 
 // Sub-agent token cap. Generous on purpose: a treasure-trove page should be
@@ -154,9 +155,28 @@ export async function executeWebSearch(
 	}
 }
 
+/**
+ * Build the string the model sees when we reject a URL as paywalled.
+ * Kept as a helper so `fetch_url` and `research_url` produce the same
+ * prefix — the agent loop and source-extraction code both key off the
+ * literal "Paywalled:" start to skip source numbering for the URL.
+ */
+function paywallErrorMessage(url: string, reason: string): string {
+	return (
+		`Paywalled: ${url} — ${reason}. Do NOT cite any facts from this URL; ` +
+		`whatever text you might see would be a teaser or login gate, not the ` +
+		`real article. Search for an alternative source that is freely readable.`
+	);
+}
+
 export async function executeFetchUrl(url: string): Promise<string> {
 	try {
-		return await invoke<string>('proxy_fetch', { url, caller: 'fetch_url' });
+		const content = await invoke<string>('proxy_fetch', { url, caller: 'fetch_url' });
+		const paywall = detectPaywall(url, content);
+		if (paywall.paywalled) {
+			return paywallErrorMessage(url, paywall.reason || 'page is paywalled');
+		}
+		return content;
 	} catch (e) {
 		return `Failed to fetch URL: ${e}`;
 	}
@@ -191,6 +211,16 @@ export async function executeResearchUrl(
 	}
 	if (!pageContent || pageContent.startsWith('Failed to fetch')) {
 		return pageContent || `Failed to fetch URL: ${url}`;
+	}
+
+	// Paywall check: the Rust fetcher flags pages that carry a standard
+	// Schema.org / OpenGraph paywall marker via a sentinel prefix, and
+	// this call additionally catches short gated stubs that don't emit
+	// the metadata. Either way, skip the sub-agent — it can't extract
+	// real findings from a login wall and will happily fabricate them.
+	const paywall = detectPaywall(url, pageContent);
+	if (paywall.paywalled) {
+		return paywallErrorMessage(url, paywall.reason || 'page is paywalled');
 	}
 
 	const systemPrompt =

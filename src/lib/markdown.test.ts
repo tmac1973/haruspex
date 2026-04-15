@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { renderMarkdown, stripMarkdownForTTS, stripToolCallArtifacts } from '$lib/markdown';
+import {
+	processCitations,
+	renderMarkdown,
+	stripMarkdownForTTS,
+	stripToolCallArtifacts
+} from '$lib/markdown';
 
 describe('renderMarkdown', () => {
 	it('renders paragraphs', () => {
@@ -233,5 +238,151 @@ describe('renderMarkdown', () => {
 		expect(result).toContain('Before code');
 		expect(result).toContain('After code');
 		expect(result).not.toContain('const x');
+	});
+});
+
+describe('processCitations', () => {
+	const fetched = ['https://alpha.example', 'https://beta.example', 'https://gamma.example'];
+
+	it('numbers cited URLs in appearance order, not fetch order', () => {
+		// beta appears before alpha in the prose — it should get [1].
+		const text =
+			'First point [source](https://beta.example) and then [source](https://alpha.example).';
+		const { content, citedUrls } = processCitations(text, fetched);
+		expect(citedUrls).toEqual(['https://beta.example', 'https://alpha.example']);
+		expect(content).toBe(
+			'First point [\\[1\\]](https://beta.example) and then [\\[2\\]](https://alpha.example).'
+		);
+	});
+
+	it('reuses the same number when a URL is cited more than once', () => {
+		const text =
+			'[source](https://alpha.example) then [source](https://beta.example) then [ref](https://alpha.example) again.';
+		const { content, citedUrls } = processCitations(text, fetched);
+		expect(citedUrls).toEqual(['https://alpha.example', 'https://beta.example']);
+		expect(content).toContain('[\\[1\\]](https://alpha.example)');
+		expect(content).toContain('[\\[2\\]](https://beta.example)');
+		// The second alpha reference also becomes [1].
+		expect(content.match(/\\\[1\\\]/g)?.length).toBe(2);
+	});
+
+	it('numbers citation-anchored links even when the URL was not fetched', () => {
+		// The model sometimes cites a URL it only saw in a search snippet.
+		// Those links still lead somewhere useful, so they get a citation
+		// slot alongside the verified ones.
+		const text =
+			'Fetched [source](https://alpha.example) and snippet [source](https://random.example).';
+		const { content, citedUrls } = processCitations(text, fetched);
+		expect(citedUrls).toEqual(['https://alpha.example', 'https://random.example']);
+		expect(content).toContain('[\\[1\\]](https://alpha.example)');
+		expect(content).toContain('[\\[2\\]](https://random.example)');
+	});
+
+	it('keeps prose hyperlinks with non-citation anchor text untouched', () => {
+		const text =
+			'Verified [source](https://alpha.example) — also see [Wikipedia](https://en.wikipedia.org/wiki/X).';
+		const { content, citedUrls } = processCitations(text, fetched);
+		expect(citedUrls).toEqual(['https://alpha.example']);
+		// Wikipedia link is prose, not a citation, so it stays intact.
+		expect(content).toContain('[Wikipedia](https://en.wikipedia.org/wiki/X)');
+		expect(content).toContain('[\\[1\\]](https://alpha.example)');
+	});
+
+	it('strips citation links whose URL is a breadcrumb display path', () => {
+		// Models sometimes copy the snippet breadcrumb form as the URL,
+		// e.g. "https://site.com › page › sub". Marked parses only up to
+		// the first space, leaving broken link + trailing text in the
+		// rendered output. The cleanup pass drops the whole citation.
+		const text =
+			'NHS list hit 7.75M [source](https://nhscampaign.org › issues › staff-shortages-copy-2). Meanwhile...';
+		const { content, citedUrls } = processCitations(text, fetched);
+		expect(content).toBe('NHS list hit 7.75M. Meanwhile...');
+		expect(citedUrls).toEqual([]);
+	});
+
+	it('strips citation links with ellipsis-truncated breadcrumb URLs', () => {
+		const text = 'A claim [source](https://example.com › ... › article-slug...). Done.';
+		const { content } = processCitations(text, fetched);
+		expect(content).toBe('A claim. Done.');
+	});
+
+	it('strips a model-written Sources section of [N] stubs', () => {
+		const text = [
+			'Main answer body with [source](https://alpha.example) inline.',
+			'',
+			'Sources',
+			'',
+			'[5]',
+			'[3]',
+			'[1]',
+			'',
+			'In short: the real conclusion.'
+		].join('\n');
+		const { content } = processCitations(text, fetched);
+		expect(content).not.toMatch(/^Sources\s*$/m);
+		expect(content).not.toMatch(/^\s*\[5\]\s*$/m);
+		expect(content).not.toMatch(/^\s*\[3\]\s*$/m);
+		expect(content).toContain('In short: the real conclusion.');
+		expect(content).toContain('[\\[1\\]](https://alpha.example)');
+	});
+
+	it('keeps a "Sources" heading that introduces real prose', () => {
+		// If the heading is followed by prose rather than [N] stubs,
+		// the stripper leaves it alone — the user may have asked about
+		// sources as a topic.
+		const text = [
+			'Answer body.',
+			'',
+			'Sources',
+			'',
+			'Our main sources of funding come from three sectors.'
+		].join('\n');
+		const { content } = processCitations(text, fetched);
+		expect(content).toContain('Sources');
+		expect(content).toContain('three sectors');
+	});
+
+	it('keeps clean URLs with query strings and fragments intact', () => {
+		const text = 'Fact [source](https://alpha.example/page?a=1&b=2#section).';
+		const { content, citedUrls } = processCitations(text, [
+			'https://alpha.example/page?a=1&b=2#section'
+		]);
+		expect(citedUrls).toEqual(['https://alpha.example/page?a=1&b=2#section']);
+		expect(content).toContain('https://alpha.example/page?a=1&b=2#section');
+	});
+
+	it('numbers citation-anchored links even when no URLs were fetched', () => {
+		// With an empty fetched list, the anchor-text heuristic is the
+		// only signal we have — but it's enough to keep the citation
+		// clickable and numbered.
+		const text = 'Claim [source](https://random.example) end.';
+		const { content, citedUrls } = processCitations(text, []);
+		expect(content).toBe('Claim [\\[1\\]](https://random.example) end.');
+		expect(citedUrls).toEqual(['https://random.example']);
+	});
+
+	it('is idempotent — a second pass is a no-op', () => {
+		const text = 'Citing [source](https://alpha.example).';
+		const first = processCitations(text, fetched);
+		const second = processCitations(first.content, fetched);
+		expect(second.content).toBe(first.content);
+		expect(second.citedUrls).toEqual(first.citedUrls);
+	});
+
+	it('returns the input unchanged when no citations are present', () => {
+		const text = 'Just prose with no links.';
+		const { content, citedUrls } = processCitations(text, fetched);
+		expect(content).toBe(text);
+		expect(citedUrls).toEqual([]);
+	});
+
+	it('produces clickable anchors when rendered through renderMarkdown', () => {
+		const { content } = processCitations(
+			'See [source](https://alpha.example) for details.',
+			fetched
+		);
+		const html = renderMarkdown(content);
+		expect(html).toContain('href="https://alpha.example"');
+		expect(html).toContain('[1]');
 	});
 });

@@ -200,6 +200,15 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	// the model is stuck and can't be coaxed into calling the write tool.
 	let fileWriteRetries = 0;
 	const MAX_FILE_WRITE_RETRIES = 2;
+	// Per-turn diversity tracking. When the model uses web_search but
+	// only fetches one page, its answers often degenerate into citing the
+	// same URL for every claim — small local models tend to slap [source]
+	// on everything once they decide they're "done researching". We nudge
+	// at most once per turn to avoid infinite loops when the model just
+	// doesn't want to fetch more.
+	let webSearchUsed = false;
+	const fetchedUrlsThisTurn: Set<string> = new Set();
+	let diversityNudged = false;
 
 	while (iteration < maxIterations) {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -361,6 +370,44 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		}
 
 		if (toolCalls.length === 0) {
+			// Diversity gate: the model wants to stop fetching, but it ran a
+			// web_search and only opened at most one page. That's a pattern
+			// that reliably produces answers where every inline citation
+			// collapses to the same URL — the model slaps "[source]" on
+			// every sentence whether or not the underlying claim came from
+			// that specific page. Push one nudge to broaden the research
+			// before the final synthesis. Capped at a single retry per turn
+			// so a model that stubbornly refuses to fetch more doesn't burn
+			// the whole iteration budget on the recovery loop.
+			if (
+				usedTools &&
+				webSearchUsed &&
+				fetchedUrlsThisTurn.size <= 1 &&
+				!diversityNudged &&
+				toolCalls.length === 0
+			) {
+				diversityNudged = true;
+				const fetchedCount = fetchedUrlsThisTurn.size;
+				messages.push({
+					role: 'assistant',
+					content: response.content || ''
+				});
+				messages.push({
+					role: 'user',
+					content:
+						`Stop. You have opened ${fetchedCount === 0 ? 'no pages' : 'only one page'} ` +
+						'this turn. A complete answer to this kind of question needs 2–3 distinct ' +
+						'sources covering different angles (e.g. an official body, an academic / ' +
+						'think-tank source, and a journalistic or community account). Before writing ' +
+						'your answer, call fetch_url on two or three additional URLs from the prior ' +
+						'web_search results — pick ones that plausibly cover the sub-points your ' +
+						'answer will make. Only then produce the final answer. Each [source](URL) ' +
+						'citation in your final answer must point to the specific page where that ' +
+						'exact claim appeared — do not reuse the same URL across unrelated claims.'
+				});
+				continue;
+			}
+
 			if (usedTools) {
 				// After tool use, always stream the final answer.
 				// The non-streaming response may be truncated or incomplete — don't use it.
@@ -460,10 +507,33 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				fileWrittenThisTurn = true;
 			}
 
+			// Prepend a "[Source: <url>]" header to successful page fetches
+			// so the model doesn't have to parse its own tool-call history
+			// to remember which URL produced which content. The URL here is
+			// what the model should pass as the target of inline markdown
+			// citations — see the INLINE CITATIONS section of the system
+			// prompt. Skipped on fetch failures and paywall rejections so
+			// a gated page can't masquerade as a citable source.
+			let toolContent = output.result;
+			if (call.name === 'web_search') {
+				webSearchUsed = true;
+			}
+			if (call.name === 'fetch_url' || call.name === 'research_url') {
+				const url = call.arguments.url as string | undefined;
+				const fetchFailed =
+					toolContent.startsWith('Failed to fetch') ||
+					toolContent.startsWith('Research sub-agent failed') ||
+					toolContent.startsWith('Paywalled:');
+				if (url && !fetchFailed) {
+					fetchedUrlsThisTurn.add(url);
+					toolContent = `[Source: ${url}]\n\n${toolContent}`;
+				}
+			}
+
 			messages.push({
 				role: 'tool',
 				tool_call_id: call.id,
-				content: output.result
+				content: toolContent
 			});
 		}
 	}

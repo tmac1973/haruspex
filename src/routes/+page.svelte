@@ -5,7 +5,7 @@
 	import SourceChip from '$lib/components/SourceChip.svelte';
 	import MicButton from '$lib/components/MicButton.svelte';
 	import WorkingDirButton from '$lib/components/WorkingDirButton.svelte';
-	import { renderMarkdown } from '$lib/markdown';
+	import { messageText } from '$lib/api';
 	import {
 		getConversations,
 		getActiveConversation,
@@ -17,6 +17,7 @@
 		getSearchSteps,
 		getSourceUrls,
 		getExhaustiveResearch,
+		renderStreamingHtml,
 		setExhaustiveResearch,
 		createConversation,
 		setActiveConversation,
@@ -197,8 +198,27 @@
 		}
 	});
 
-	const renderedStreamingContent = $derived(
-		throttledStreamingContent ? renderMarkdown(throttledStreamingContent) : ''
+	const renderedStreamingContent = $derived(renderStreamingHtml(throttledStreamingContent));
+
+	// Single-source diversity warning: when the just-completed assistant
+	// message has several inline [N] citations but they all collapse to
+	// the same URL, the model likely tagged every claim with the same
+	// "[source]" marker regardless of where the claim actually came from.
+	// The banner tells the reader to be skeptical about specifics without
+	// second-guessing the whole answer.
+	const lastAssistantContent = $derived.by(() => {
+		const msgs = activeConversation?.messages;
+		if (!msgs) return '';
+		for (let i = msgs.length - 1; i >= 0; i--) {
+			if (msgs[i].role === 'assistant') return messageText(msgs[i].content);
+		}
+		return '';
+	});
+	const inlineCitationCount = $derived(
+		(lastAssistantContent.match(/\[\\\[\d+\\\]\]/g) || []).length
+	);
+	const showDiversityWarning = $derived(
+		!isGenerating && sourceUrls.length === 1 && inlineCitationCount >= 3
 	);
 </script>
 
@@ -297,6 +317,12 @@
 
 				{#if isCompacting}
 					<div class="compacting-indicator">Compacting conversation history...</div>
+				{/if}
+
+				{#if showDiversityWarning}
+					<div class="diversity-warning">
+						Model cited one source for multiple claims — treat specifics skeptically.
+					</div>
 				{/if}
 
 				{#if sourceUrls.length > 0 && !isGenerating}
@@ -649,6 +675,17 @@
 		color: var(--text-secondary);
 		font-size: 0.85rem;
 		font-style: italic;
+	}
+
+	.diversity-warning {
+		margin: 4px 16px 0;
+		padding: 6px 10px;
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--text-secondary);
+		border-radius: 4px;
+		color: var(--text-secondary);
+		font-size: 0.78rem;
+		line-height: 1.4;
 	}
 
 	.scroll-btn {
