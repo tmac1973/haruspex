@@ -17,6 +17,9 @@ Private local AI desktop app — Tauri 2.x + SvelteKit 5 + llama.cpp sidecar.
 # First time: builds all sidecars and downloads models
 ./scripts/dev-setup.sh
 
+# Install git hooks (pre-commit formatting check)
+./scripts/install-hooks.sh
+
 # Run the app
 GDK_BACKEND=x11 npm run tauri dev
 
