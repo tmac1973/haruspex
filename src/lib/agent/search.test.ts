@@ -6,6 +6,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 import { invoke } from '@tauri-apps/api/core';
 
+const defaultCtx = {
+	workingDir: null,
+	pendingImages: [],
+	deepResearch: false,
+	filesWrittenThisTurn: new Set<string>()
+};
+
 describe('executeTool', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -15,8 +22,8 @@ describe('executeTool', () => {
 		const mockResults = [{ title: 'Result 1', url: 'https://example.com', snippet: 'A result' }];
 		vi.mocked(invoke).mockResolvedValue(mockResults);
 
-		const { executeTool } = await import('$lib/agent/search');
-		const output = await executeTool('web_search', { query: 'test query' }, null);
+		const { executeTool } = await import('$lib/agent/tools');
+		const output = await executeTool('web_search', { query: 'test query' }, defaultCtx);
 
 		expect(invoke).toHaveBeenCalledWith(
 			'proxy_search',
@@ -29,8 +36,8 @@ describe('executeTool', () => {
 	it('routes fetch_url to proxy_fetch invoke', async () => {
 		vi.mocked(invoke).mockResolvedValue('page content');
 
-		const { executeTool } = await import('$lib/agent/search');
-		const output = await executeTool('fetch_url', { url: 'https://example.com' }, null);
+		const { executeTool } = await import('$lib/agent/tools');
+		const output = await executeTool('fetch_url', { url: 'https://example.com' }, defaultCtx);
 
 		expect(invoke).toHaveBeenCalledWith('proxy_fetch', {
 			url: 'https://example.com',
@@ -40,8 +47,8 @@ describe('executeTool', () => {
 	});
 
 	it('returns error for unknown tool', async () => {
-		const { executeTool } = await import('$lib/agent/search');
-		const output = await executeTool('unknown_tool', {}, null);
+		const { executeTool } = await import('$lib/agent/tools');
+		const output = await executeTool('unknown_tool', {}, defaultCtx);
 		const parsed = JSON.parse(output.result);
 		expect(parsed.error).toContain('Unknown tool');
 	});

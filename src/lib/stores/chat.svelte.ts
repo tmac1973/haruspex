@@ -1,5 +1,6 @@
 import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
+import { getDisplayLabel } from '$lib/agent/tools';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
 import {
 	getActiveContextSize,
@@ -657,67 +658,12 @@ export async function sendMessage(content: string): Promise<void> {
 				};
 			},
 			onToolStart: (call) => {
-				// Extract a human-readable label for each tool based on its args
-				let query = '';
-				switch (call.name) {
-					case 'web_search':
-					case 'image_search':
-						query = (call.arguments.query as string) || '';
-						break;
-					case 'fetch_url':
-					case 'fetch_url_images':
-						query = (call.arguments.url as string) || '';
-						break;
-					case 'research_url': {
-						const url = (call.arguments.url as string) || '';
-						const focus = (call.arguments.focus as string) || '';
-						query = focus ? `${url} — ${focus}` : url;
-						break;
-					}
-					case 'fs_list_dir':
-						query = (call.arguments.path as string) || '.';
-						break;
-					case 'fs_read_text':
-					case 'fs_read_pdf':
-					case 'fs_read_pdf_pages':
-					case 'fs_read_docx':
-					case 'fs_read_image':
-					case 'fs_edit_text':
-						query = (call.arguments.path as string) || '';
-						break;
-					case 'fs_read_xlsx': {
-						const path = (call.arguments.path as string) || '';
-						const sheet = call.arguments.sheet as string | undefined;
-						query = sheet ? `${path} (${sheet})` : path;
-						break;
-					}
-					case 'fs_write_text':
-					case 'fs_write_docx':
-					case 'fs_write_pdf':
-					case 'fs_write_odt':
-						query = (call.arguments.path as string) || '';
-						break;
-					case 'fs_write_xlsx':
-					case 'fs_write_ods':
-					case 'fs_write_pptx':
-					case 'fs_write_odp':
-						query = (call.arguments.path as string) || '';
-						break;
-					case 'fs_download_url': {
-						const path = (call.arguments.path as string) || '';
-						const url = (call.arguments.url as string) || '';
-						query = path ? `${path} (${url})` : url;
-						break;
-					}
-					default:
-						query = JSON.stringify(call.arguments).slice(0, 60);
-				}
 				searchSteps = [
 					...searchSteps,
 					{
 						id: call.id,
 						toolName: call.name,
-						query,
+						query: getDisplayLabel(call.name, call.arguments),
 						status: 'running'
 					}
 				];

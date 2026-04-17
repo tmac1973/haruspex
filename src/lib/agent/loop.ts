@@ -8,8 +8,7 @@ import {
 	type Usage
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
-import { getAgentTools } from '$lib/agent/tools';
-import { executeTool, type PendingImage } from '$lib/agent/search';
+import { getToolSchemas, executeTool, type PendingImage } from '$lib/agent/tools';
 import { getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
 
@@ -179,7 +178,11 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		expectsFileOutput = false,
 		visionSupported = true
 	} = options;
-	const tools = getAgentTools(workingDir !== null, deepResearch, visionSupported);
+	const tools = getToolSchemas({
+		hasWorkingDir: workingDir !== null,
+		deepResearch,
+		visionSupported
+	});
 	const pendingImages: PendingImage[] = [];
 	// Per-turn set of files successfully written by any fs_write_* /
 	// fs_download_url call. Consumed by `resolveWritePathInteractive`
@@ -487,15 +490,13 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 			options.onToolStart(call);
-			const output = await executeTool(
-				call.name,
-				call.arguments,
+			const output = await executeTool(call.name, call.arguments, {
 				workingDir,
 				signal,
 				pendingImages,
 				deepResearch,
 				filesWrittenThisTurn
-			);
+			});
 			options.onToolEnd(call, output.result, output.thumbDataUrl);
 
 			// Track successful file-write calls so the hallucination check
