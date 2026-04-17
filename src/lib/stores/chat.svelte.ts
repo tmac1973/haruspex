@@ -2,7 +2,11 @@ import { type ChatMessage, type Usage, ApiError } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 import { getDisplayLabel } from '$lib/agent/tools';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
-import { buildSystemPrompt, looksLikeFileOutputRequest, injectMessageHints } from '$lib/agent/system-prompt';
+import {
+	buildSystemPrompt,
+	looksLikeFileOutputRequest,
+	injectMessageHints
+} from '$lib/agent/system-prompt';
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
@@ -313,13 +317,8 @@ export async function sendMessage(content: string): Promise<void> {
 		const currentWorkingDir = conversation.workingDir;
 		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
 
-		const historyMessages = conversation.messages.filter(
-			(m) => m.role !== 'tool' && !m.tool_calls
-		);
-		let messagesForApi: ChatMessage[] = [
-			buildSystemPrompt(currentWorkingDir),
-			...historyMessages
-		];
+		const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
+		let messagesForApi: ChatMessage[] = [buildSystemPrompt(currentWorkingDir), ...historyMessages];
 
 		messagesForApi = injectMessageHints(messagesForApi, {
 			workingDir: currentWorkingDir,

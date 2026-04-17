@@ -1,8 +1,5 @@
 import { type ChatMessage, messageText } from '$lib/api';
-import {
-	getResponseFormatPrompt,
-	hasEnabledEmailAccount
-} from '$lib/stores/settings';
+import { getResponseFormatPrompt, hasEnabledEmailAccount } from '$lib/stores/settings';
 
 const REVIEW_PATTERNS =
 	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;

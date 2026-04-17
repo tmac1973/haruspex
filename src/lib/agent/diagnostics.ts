@@ -1,8 +1,6 @@
 import type { SearchStep } from '$lib/agent/loop';
 
-export type Diagnosis =
-	| { type: 'commit'; content: string }
-	| { type: 'error'; message: string };
+export type Diagnosis = { type: 'commit'; content: string } | { type: 'error'; message: string };
 
 /**
  * Given an empty final response and the tool steps that ran, return
@@ -28,9 +26,7 @@ export function diagnoseEmptyResponse(
 	);
 	const webResearched = doneSteps.some(
 		(s) =>
-			s.toolName === 'web_search' ||
-			s.toolName === 'fetch_url' ||
-			s.toolName === 'research_url'
+			s.toolName === 'web_search' || s.toolName === 'fetch_url' || s.toolName === 'research_url'
 	);
 
 	if (streamingContent) {
