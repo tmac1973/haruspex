@@ -37,7 +37,7 @@ const WEB_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'research_url',
 			description:
-				'Read a web page through a focused research assistant that extracts only the information relevant to a specific question or focus, and returns concise findings instead of the full page text. Strongly preferred over fetch_url when researching a topic across multiple sources, because it dramatically reduces how much context each page consumes — letting you fan out across many more sources before running out of room. Each call processes one URL. The focus parameter tells the assistant what to look for; be specific (e.g. "pricing tiers and free plan limits", "criticisms or downsides", "verbatim quotes about deployment latency") rather than vague.',
+				'Read a web page through a focused research assistant that extracts only the information relevant to a specific question. Returns concise findings instead of the full page text. Preferred over fetch_url when researching across multiple sources — dramatically reduces context usage per page.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -57,7 +57,7 @@ const WEB_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'image_search',
 			description:
-				'Search Wikimedia Commons for freely-licensed images matching a query. Returns a list of { title, url, thumb_url, width, height, mime, license, attribution, description_url }. All results are public domain or openly licensed (CC family) — safe to download and embed in a generated document or slide deck with attribution. Use this for "find me a picture of X" workflows where license safety matters, or when the user asks for stock-photo-style imagery (landmarks, animals, generic category shots). For a specific manufacturer product photo that only exists on the vendor\'s own website, use web_search + fetch_url_images instead.',
+				'Search Wikimedia Commons for freely-licensed images. Returns image metadata including url, thumbnail, dimensions, and license. All results are openly licensed — safe to embed in documents or presentations.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -82,7 +82,7 @@ const WEB_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fetch_url_images',
 			description:
-				'Fetch a web page and return a list of image URLs found on it — the `<img src>` elements plus <meta property="og:image"> and <link rel="image_src"> references. Relative URLs are resolved to absolute. Returns up to 50 results as { src, alt, width?, height? } objects. Use this for "find the product shot on the manufacturer\'s page" workflows: first web_search to find the right page, then fetch_url_images on that page to discover the image URLs, then fs_download_url to save one to the working directory. LICENSING NOTE: images found this way are usually copyrighted (manufacturer press assets, stock photos, user uploads on review sites). Unlike image_search which returns only Wikimedia Commons results with clear licenses, anything returned by fetch_url_images is the user\'s responsibility to use appropriately. Prefer image_search for generic/stock imagery and only use fetch_url_images when the user specifically wants content from a particular site.',
+				'Fetch a web page and return a list of image URLs found on it (img tags, og:image, etc.). Returns up to 50 results as { src, alt, width?, height? } objects. Use this to find images on a specific page, e.g. product photos from a manufacturer site.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -241,7 +241,7 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_read_pdf_pages',
 			description:
-				'Render pages of a PDF as images so you can see them with your vision capability. Use this for form PDFs (tax forms, applications, receipts, etc.), scanned documents, or any PDF where fs_read_pdf gave garbled or incomplete output. IMPORTANT: only call this for ONE PDF at a time and respond about it before calling it for another PDF — loading images from multiple PDFs in the same turn can exhaust the model context. Only the first 5 pages of a PDF are rendered; for longer PDFs, tell the user to split it or ask about specific pages.',
+				'Render PDF pages as images for visual reading. Use this for form PDFs, scanned documents, or when fs_read_pdf gives garbled output. Process one PDF at a time — respond before loading the next. Renders up to 5 pages.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -282,7 +282,7 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_write_pdf',
 			description:
-				'Create a printable PDF report. Write the content as a real document — flowing prose organized by section headings, the way a human analyst would write a report. This is NOT a chat response; the general "response format" preference DOES NOT apply here. Follow these rules instead.\n\nSTRUCTURE:\n- Section headings MUST use `#`, `##`, `###` prefixes. NEVER write section titles as `**Bold Text**` on their own line — those are inline emphasis, not headings, and they look broken.\n- A long report should have multiple `##` sections and sub-sections. Do not force page breaks; content flows across pages automatically. Do not use `---` as a page break — it does nothing useful.\n\nPROSE OVER BULLETS:\n- Write analysis, comparisons, overviews, and explanations as NARRATIVE PARAGRAPHS separated by blank lines. This is the default — aim for most of the document to be paragraphs.\n- `- item` bullet lists are allowed ONLY when the content is a genuine list of 3+ short, parallel items (e.g. "supported protocols", "installation steps", "pricing tiers"). A single sentence is a paragraph, not a bullet. A two-item "list" is also a paragraph.\n- Nested bullets: indent sub-items with exactly 2 spaces per level.\n\nTABLES:\n- Tables ARE supported and render as properly aligned columns in a monospace font. Use a standard GFM table when you have genuinely tabular data (comparison matrices, spec sheets, pricing tiers):\n  `| Header 1 | Header 2 | Header 3 |`\n  `| :--- | :--- | :--- |`\n  `| cell | cell | cell |`\n- Keep cell content short (1–4 words per cell). Long prose belongs in paragraphs, not table cells.\n- Limit to 4–5 columns max; anything wider gets cramped.\n\nINLINE FORMATTING:\n- `**bold**`, `*italic*`, `` `code` ``, `[text](url)` all render.\n- Images and block quotes do NOT render — do not include them.\n\nPage layout (US Letter, 20mm margins, Helvetica body, Courier tables) and word-wrapping are automatic. Use `fs_write_docx` instead when the user wants an editable Word document.',
+				'Create a PDF report from markdown content. Use # / ## / ### for headings. Supports bold, italic, code, bullet lists, and markdown tables. Write flowing prose organized by sections — prefer paragraphs over bullet lists.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -343,7 +343,7 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_write_odt',
 			description:
-				'Create an OpenDocument Text (.odt) file — the native format of LibreOffice Writer. Same rules as fs_write_docx: headings use `#`, `##`, `###` prefixes; body is flowing paragraphs separated by blank lines. Use this when the user specifically asks for an ODT / OpenDocument / LibreOffice-native file; otherwise fs_write_docx is a safer default (LibreOffice opens .docx fine).',
+				'Create an OpenDocument Text (.odt) file for LibreOffice Writer. Same API as fs_write_docx. Only use when the user asks for ODT specifically.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -366,7 +366,7 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_write_ods',
 			description:
-				'Create an OpenDocument Spreadsheet (.ods) file — the native format of LibreOffice Calc. Same sheet/row data shape as fs_write_xlsx (one or more sheets, each with a name and a 2D array of rows). Numeric strings become numeric cells; everything else is text. Use this when the user specifically asks for an ODS / OpenDocument / LibreOffice-native spreadsheet; otherwise fs_write_xlsx is a safer default (LibreOffice opens .xlsx fine).',
+				'Create an OpenDocument Spreadsheet (.ods) for LibreOffice Calc. Same API as fs_write_xlsx. Only use when the user asks for ODS specifically.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -404,7 +404,7 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_write_pptx',
 			description:
-				'Create a PowerPoint presentation (.pptx). Each slide has a short title plus one of: a bullet list (content layout, default) or a big centered title for a section divider (section layout). Bullets support nesting up to 2 levels deep. Optional per-slide image from the working directory is rendered on the right half of content slides. Keep titles to ~8 words max and bullets to ~10 words each; 3–6 bullets per slide is ideal. Longer text will overflow.',
+				'Create a PowerPoint presentation. Each slide has a title and optional bullets (strings or {text, level} for nesting). Use layout "section" for divider slides. Optional per-slide image path from the working directory.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -476,7 +476,7 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_write_odp',
 			description:
-				'Create an OpenDocument Presentation (.odp) — the native presentation format of LibreOffice Impress. Same constrained API as fs_write_pptx: each slide has a title plus either bullets (content layout) or a big centered title (section layout), supports nested bullets (up to 2 levels) and optional per-slide images. Only use this when the user specifically asks for an ODP / OpenDocument / LibreOffice-native presentation; otherwise fs_write_pptx is the default (LibreOffice Impress opens .pptx fine).',
+				'Create an OpenDocument Presentation (.odp) for LibreOffice Impress. Same API as fs_write_pptx. Only use when the user asks for ODP specifically.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -548,7 +548,7 @@ const FS_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'fs_download_url',
 			description:
-				'Download a file from a URL into the working directory. Works for any HTTP(S) URL — images (to embed in a presentation), PDFs, fonts, archives, office documents, media files, data files. The bytes are written to `path` relative to the working directory; the server sandbox prevents escapes. Executable formats (exe, msi, dll, app, pkg, dmg, deb, rpm, appimage, jar, bat, ps1, vbs, etc.) are blocked as a safety measure. Private/local URLs are blocked as SSRF protection. 50 MB size ceiling. Typical presentation flow: image_search or fetch_url_images → pick a URL → fs_download_url to save it locally → fs_write_pptx with `image: "the/saved/path.png"` on the slide.',
+				'Download a file from a URL into the working directory. 50 MB limit. Executable formats are blocked.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -600,14 +600,14 @@ const EMAIL_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'email_list_recent',
 			description:
-				'List recent email messages from the user\'s configured email accounts. Returns metadata only (subject, sender, date, short snippet) — no message bodies. Strongly prefer this as the first email tool call: the user almost always wants "recent email" or "email from X", not a specific message body. After seeing the listing, call email_summarize_message on the 3-5 messages that look most important (by sender importance, urgency, or relevance to the user\'s question) — do NOT try to summarize every message in the listing. Skip newsletters, automated notifications, and marketing unless the user specifically asked about them. Do not call this tool unless the user explicitly asked about email — never proactively check the inbox.',
+				'List recent email messages. Returns metadata only (subject, sender, date, snippet) — no bodies. Omit account_id to query all enabled accounts.',
 			parameters: {
 				type: 'object',
 				properties: {
 					account_id: {
 						type: 'string',
 						description:
-							'Optional — target a specific account instead of querying every enabled one. Accepts EITHER the `accountId` UUID from a previous listing OR the human-readable account label (e.g. "Work Gmail", "Personal") exactly as the user sees it in Settings. Label matching is case-insensitive. Omit this field entirely to query all enabled accounts and merge the results by date — that\'s the right default for generic requests like "summarize my email". Only pass a selector when the user explicitly names an account.'
+							'Optional — target a specific account by accountId UUID or label. Omit to query all enabled accounts.'
 					},
 					hours: {
 						type: 'integer',
@@ -634,7 +634,7 @@ const EMAIL_TOOLS: ToolDefinition[] = [
 						minimum: 1,
 						maximum: 50,
 						description:
-							'Upper bound on results. Default 25 — plenty of headroom for a typical inbox-day where most messages are newsletters and automated notifications. For multi-day windows ("this week") you may raise this to 50. The size of the listing is NOT the size of the digest: you are expected to filter the listing down to 3-5 actually-important messages and only summarize those. A larger listing helps you see the noise you can safely skip, not messages you need to summarize.'
+							'Upper bound on results. Default 25. Raise to 50 for multi-day windows.'
 					}
 				}
 			}
@@ -645,14 +645,14 @@ const EMAIL_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'email_summarize_message',
 			description:
-				'Run a focused sub-agent that reads one full email body and returns a short 2-4 sentence summary covering who sent it, what it\'s about, and any action items. This is the default way to "read" an email — it compresses the body through a separate chat completion so the full message never enters your main context. Use it once per message you want to understand from a listing. For messages where you need the exact verbatim text (contracts, quotes, code snippets the user wants copy-pasted), use email_read_full instead. Each call processes a single message.',
+				'Summarize a single email message via a focused sub-agent. Returns a 2-4 sentence summary covering sender, topic, and action items.',
 			parameters: {
 				type: 'object',
 				properties: {
 					account_id: {
 						type: 'string',
 						description:
-							'Account selector for the message. Pass back the `accountId` UUID from the listing verbatim — that is always the safe choice. Case-insensitive label matching ("Work Gmail", "Personal") is also accepted if the model is routing by user-facing name.'
+							'Account selector — pass the accountId from the listing.'
 					},
 					message_id: {
 						type: 'string',
@@ -673,14 +673,14 @@ const EMAIL_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'email_read_full',
 			description:
-				'Escape hatch: fetch the full body of a single message verbatim. Use this only when a summary is not enough — the user asked to see the exact text, you need to quote a specific sentence, or the summarizer missed a detail. Prefer email_summarize_message for routine reads; full bodies are expensive on context. Each call processes a single message.',
+				'Fetch the full body of a single message verbatim. Use only when the user needs exact text or the summary was insufficient.',
 			parameters: {
 				type: 'object',
 				properties: {
 					account_id: {
 						type: 'string',
 						description:
-							'Account selector for the message. Pass back the `accountId` UUID from the listing verbatim — that is always the safe choice. Case-insensitive label matching ("Work Gmail", "Personal") is also accepted.'
+							'Account selector — pass the accountId from the listing.'
 					},
 					message_id: {
 						type: 'string',
@@ -739,6 +739,3 @@ export function getAgentTools(
 	}
 	return tools;
 }
-
-/** @deprecated Use getAgentTools(hasWorkingDir) instead. */
-export const AGENT_TOOLS: ToolDefinition[] = WEB_TOOLS;
