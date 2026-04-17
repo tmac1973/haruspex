@@ -55,9 +55,9 @@ SEARCH RULES:
 - For reviews or "best of" questions, include Reddit alongside review sites.
 
 CITATIONS:
-- Cite facts from the web inline as [source](URL). Use the URL from the [Source: <url>] header on each fetched page.
-- Each [source](URL) must point to the page where that specific claim appeared.
-- Do NOT append a Sources or References section — the UI renders citations automatically.${fsSection}${emailSection}
+- When you state a fact from the web, cite it inline as [source](URL) where the anchor text is the literal word "source". Example: "It has 16 GB of RAM [source](https://example.com/page)."
+- Use the URL from the [Source: <url>] header on each fetched page. Each citation must point to the page where that specific claim appeared.
+- Do NOT append a Sources or References section — the UI converts your links into numbered references automatically.${fsSection}${emailSection}
 
 Be concise, accurate, and helpful. When in doubt, search.
 
