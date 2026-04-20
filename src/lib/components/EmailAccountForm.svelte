@@ -285,7 +285,7 @@
 
 	.field label {
 		font-size: 0.85rem;
-		color: var(--text-muted);
+		color: var(--text-secondary);
 	}
 
 	.field input,
@@ -293,8 +293,14 @@
 		padding: 0.4rem 0.5rem;
 		border: 1px solid var(--border);
 		border-radius: 4px;
-		background: var(--bg);
-		color: var(--text);
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		color-scheme: light dark;
+	}
+
+	.field select option {
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
 	}
 
 	.field-row {
@@ -318,12 +324,12 @@
 		cursor: pointer;
 		padding: 0.25rem 0;
 		font-size: 0.9rem;
-		color: var(--text-muted);
+		color: var(--text-secondary);
 	}
 
 	.hint {
 		font-size: 0.8rem;
-		color: var(--text-muted);
+		color: var(--text-secondary);
 		margin: 0.25rem 0 0;
 	}
 
@@ -342,8 +348,8 @@
 		padding: 0.4rem 0.9rem;
 		border: 1px solid var(--border);
 		border-radius: 4px;
-		background: var(--bg);
-		color: var(--text);
+		background: var(--bg-primary);
+		color: var(--text-primary);
 		cursor: pointer;
 	}
 
@@ -357,7 +363,7 @@
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		background: transparent;
-		color: var(--text-muted);
+		color: var(--text-secondary);
 		cursor: pointer;
 		font-size: 0.85rem;
 	}
