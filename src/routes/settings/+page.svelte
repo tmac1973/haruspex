@@ -15,6 +15,7 @@
 		getSettings,
 		updateSettings,
 		updateInferenceBackend,
+		updateProxy,
 		setEmailAccounts,
 		applyTheme,
 		type ResponseFormat,
@@ -25,7 +26,8 @@
 		type InferenceMode,
 		type EmailAccount,
 		type EmailProviderId,
-		type EmailTlsMode
+		type EmailTlsMode,
+		type ProxyMode
 	} from '$lib/stores/settings';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
 	import EmailAccountForm from '$lib/components/EmailAccountForm.svelte';
@@ -81,6 +83,10 @@
 	let searxngUrl = $state(getSettings().searxngUrl);
 	let contextSize = $state(getSettings().contextSize);
 	let defaultWorkingDir = $state(getSettings().defaultWorkingDir);
+
+	let proxyMode = $state<ProxyMode>(getSettings().proxy.mode);
+	let proxyUrl = $state(getSettings().proxy.url);
+	let proxyBypass = $state(getSettings().proxy.bypass);
 
 	// Local mirror of the inference backend config. We pass the live
 	// value into InferenceBackendForm and commit updates via its
@@ -261,6 +267,21 @@
 		searchRecency = value as AppSettings['searchRecency'];
 		updateSettings({ searchRecency: searchRecency });
 	}
+
+	function setProxyMode(mode: ProxyMode) {
+		proxyMode = mode;
+		updateProxy({ mode });
+	}
+
+	function saveProxyUrl() {
+		updateProxy({ url: proxyUrl.trim() });
+	}
+
+	function saveProxyBypass() {
+		updateProxy({ bypass: proxyBypass });
+	}
+
+	const proxyBypassPlaceholder = 'example.com\n192.168.1.5\n10.0.0.0/8';
 
 	function setContextSize(size: number) {
 		contextSize = size;
@@ -706,6 +727,76 @@
 		</div>
 	</section>
 
+	<section>
+		<h2>Network Proxy</h2>
+		<p class="hint">
+			Route outbound web traffic (search, URL fetch, image search) through an HTTP/HTTPS proxy.
+			Leave set to <strong>None</strong> to connect directly.
+		</p>
+		<div class="proxy-modes">
+			<label class="proxy-mode" class:selected={proxyMode === 'none'}>
+				<input
+					type="radio"
+					name="proxy-mode"
+					value="none"
+					checked={proxyMode === 'none'}
+					onchange={() => setProxyMode('none')}
+				/>
+				<div>
+					<strong>None</strong>
+					<span>Direct connection</span>
+				</div>
+			</label>
+			<label class="proxy-mode" class:selected={proxyMode === 'manual'}>
+				<input
+					type="radio"
+					name="proxy-mode"
+					value="manual"
+					checked={proxyMode === 'manual'}
+					onchange={() => setProxyMode('manual')}
+				/>
+				<div>
+					<strong>Manual</strong>
+					<span>Route all traffic through a proxy URL</span>
+				</div>
+			</label>
+		</div>
+
+		{#if proxyMode === 'manual'}
+			<div class="search-field">
+				<label for="proxy-url">Proxy URL:</label>
+				<input
+					id="proxy-url"
+					type="text"
+					bind:value={proxyUrl}
+					onblur={saveProxyUrl}
+					placeholder="http://host:port or http://user:pass@host:port"
+				/>
+				<p class="hint">
+					Used for both HTTP and HTTPS destinations. Include <code>user:pass@</code> in the URL for proxies
+					that require authentication.
+				</p>
+			</div>
+
+			<div class="search-field">
+				<label for="proxy-bypass">No proxy for:</label>
+				<textarea
+					id="proxy-bypass"
+					rows="4"
+					bind:value={proxyBypass}
+					onblur={saveProxyBypass}
+					placeholder={proxyBypassPlaceholder}
+				></textarea>
+				<p class="hint">
+					One entry per line (or comma-separated). Each entry can be a hostname (matches the host
+					and any subdomain), an individual IP address, or a CIDR subnet (e.g. <code
+						>10.0.0.0/8</code
+					>, <code>2001:db8::/32</code>).
+				</p>
+			</div>
+		{/if}
+	</section>
+
 	{#if !remoteMode}
 		<section>
 			<h2>Context Size</h2>
@@ -1067,7 +1158,8 @@
 	}
 
 	.search-provider select,
-	.search-field input {
+	.search-field input,
+	.search-field textarea {
 		width: 100%;
 		padding: 8px 12px;
 		border: 1px solid var(--border);
@@ -1076,6 +1168,56 @@
 		background-color: var(--bg-primary);
 		color: var(--text-primary);
 		color-scheme: light dark;
+	}
+
+	.search-field textarea {
+		font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+		resize: vertical;
+		min-height: 80px;
+	}
+
+	.proxy-modes {
+		display: flex;
+		gap: 8px;
+		margin-bottom: 12px;
+	}
+
+	.proxy-mode {
+		flex: 1;
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		padding: 10px 14px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		cursor: pointer;
+		transition: border-color 0.15s;
+	}
+
+	.proxy-mode:hover {
+		border-color: var(--text-secondary);
+	}
+
+	.proxy-mode.selected {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 5%, transparent);
+	}
+
+	.proxy-mode input[type='radio'] {
+		margin-top: 3px;
+		accent-color: var(--accent);
+	}
+
+	.proxy-mode strong {
+		display: block;
+		font-size: 0.9rem;
+	}
+
+	.proxy-mode span {
+		display: block;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
 	}
 
 	.search-provider select option {

@@ -27,6 +27,18 @@
 	let plainText = $derived(
 		textContent ? stripMarkdownForTTS(textContent, getSettings().ttsReadTablesByColumn) : ''
 	);
+
+	let copyLabel = $state('Copy');
+	async function copyToClipboard() {
+		try {
+			await navigator.clipboard.writeText(textContent);
+			copyLabel = 'Copied!';
+			setTimeout(() => (copyLabel = 'Copy'), 1500);
+		} catch {
+			copyLabel = 'Failed';
+			setTimeout(() => (copyLabel = 'Copy'), 1500);
+		}
+	}
 </script>
 
 <div class="message" data-role={message.role}>
@@ -55,6 +67,9 @@
 	{#if message.role === 'assistant' && message.content && !isStreaming}
 		<div class="message-footer">
 			<SpeakerButton text={plainText} />
+			<button class="icon-btn" title="Copy to clipboard" onclick={copyToClipboard}>
+				{copyLabel === 'Copied!' ? '\u2705' : '\u{1F4CB}'}
+			</button>
 		</div>
 	{/if}
 </div>
@@ -217,7 +232,23 @@
 	.message-footer {
 		padding: 2px 16px 8px;
 		display: flex;
+		align-items: center;
 		gap: 8px;
+	}
+
+	.icon-btn {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 0.9rem;
+		padding: 4px;
+		border-radius: 4px;
+		color: var(--text-secondary);
+		line-height: 1;
+	}
+
+	.icon-btn:hover {
+		background: var(--bg-secondary);
 	}
 
 	.cursor {

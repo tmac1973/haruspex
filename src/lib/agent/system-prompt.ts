@@ -54,10 +54,13 @@ SEARCH RULES:
 - Only cite sources you actually fetched. Do not cite URLs from search snippets alone.
 - For reviews or "best of" questions, include Reddit alongside review sites.
 
-CITATIONS:
-- Cite facts from the web inline as [source](URL). Use the URL from the [Source: <url>] header on each fetched page.
-- Each [source](URL) must point to the page where that specific claim appeared.
-- Do NOT append a Sources or References section — the UI renders citations automatically.${fsSection}${emailSection}
+INLINE CITATIONS:
+- Every fetch_url / research_url result starts with a "[Source: <url>]" header identifying which URL the content came from.
+- Cite facts from the web inline as [source](URL). The anchor text must be the literal word "source". Example: "...the device ships with 16 GB of RAM [source](https://example.com/product-page)."
+- Each [source](URL) must point to the specific page where that claim appeared. Copy the URL from the "[Source: <url>]" header.
+- Never invent a URL. Never cite a URL from an earlier turn.
+- The UI converts your [source](URL) links into numbered references [1], [2], [3] automatically — do NOT append a Sources or References section at the end.
+- Citations are mandatory for factual claims sourced from the web.${fsSection}${emailSection}
 
 Be concise, accurate, and helpful. When in doubt, search.
 

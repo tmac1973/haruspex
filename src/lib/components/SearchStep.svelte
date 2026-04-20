@@ -9,6 +9,20 @@
 	let { steps, slowMode = false }: Props = $props();
 	let expanded = $state(false);
 
+	let copyStates: Record<string, string> = $state({});
+
+	async function copyResult(stepId: string, text: string, event: MouseEvent) {
+		event.stopPropagation();
+		try {
+			await navigator.clipboard.writeText(text);
+			copyStates[stepId] = 'Copied!';
+			setTimeout(() => (copyStates[stepId] = ''), 1500);
+		} catch {
+			copyStates[stepId] = 'Failed';
+			setTimeout(() => (copyStates[stepId] = ''), 1500);
+		}
+	}
+
 	function stepIcon(toolName: string): string {
 		if (toolName === 'web_search') return '\u{1F50D}'; // magnifying glass
 		if (toolName === 'image_search') return '\u{1F5BC}\uFE0F'; // framed picture
@@ -104,11 +118,18 @@
 		{/each}
 
 		{#if expanded}
-			<div class="step-details">
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="step-details" onclick={(e) => e.stopPropagation()}>
 				{#each steps as step (step.id)}
 					{#if step.result}
 						<div class="detail-block">
-							<div class="detail-label">{step.toolName}: {step.query}</div>
+							<div class="detail-header">
+								<div class="detail-label">{step.toolName}: {step.query}</div>
+								<button class="copy-btn" onclick={(e) => copyResult(step.id, step.result ?? '', e)}>
+									{copyStates[step.id] || 'Copy'}
+								</button>
+							</div>
 							<pre>{step.result}</pre>
 						</div>
 					{/if}
@@ -206,11 +227,31 @@
 		margin-bottom: 8px;
 	}
 
+	.detail-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 4px;
+	}
+
 	.detail-label {
 		font-weight: 500;
 		font-size: 0.75rem;
-		margin-bottom: 4px;
 		color: var(--text-secondary);
+	}
+
+	.copy-btn {
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 2px 8px;
+		font-size: 0.7rem;
+		cursor: pointer;
+		color: var(--text-secondary);
+	}
+
+	.copy-btn:hover {
+		background: var(--bg-primary);
 	}
 
 	.detail-block pre {

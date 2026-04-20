@@ -36,6 +36,10 @@ export interface Conversation {
 	updatedAt: number;
 	workingDir: string | null;
 	contextUsage: { promptTokens: number; completionTokens: number } | null;
+	/** Search steps from the last generation in this conversation. Not persisted to DB. */
+	searchSteps: SearchStep[];
+	/** Cited source URLs from the last generation. Not persisted to DB. */
+	sourceUrls: string[];
 }
 
 let conversations = $state<Conversation[]>([]);
@@ -44,8 +48,6 @@ let isGenerating = $state(false);
 let isCompacting = $state(false);
 let streamingContent = $state('');
 let errorMessage = $state<string | null>(null);
-let searchSteps = $state<SearchStep[]>([]);
-let sourceUrls = $state<string[]>([]);
 let exhaustiveResearch = $state(false);
 
 let abortController: AbortController | null = null;
@@ -71,7 +73,9 @@ export async function initChatStore(): Promise<void> {
 		createdAt: s.created_at,
 		updatedAt: s.updated_at,
 		workingDir: defaultDir,
-		contextUsage: null
+		contextUsage: null,
+		searchSteps: [],
+		sourceUrls: []
 	}));
 
 	if (conversations.length > 0) {
@@ -125,21 +129,24 @@ export function getErrorMessage(): string | null {
 }
 
 export function getSearchSteps(): SearchStep[] {
-	return searchSteps;
+	return getActiveConversation()?.searchSteps ?? [];
 }
 
 export function getSourceUrls(): string[] {
+	const conv = getActiveConversation();
+	if (!conv) return [];
 	if (isGenerating && streamingContent) {
-		const fetched = extractUrlsFromSteps(searchSteps);
+		const fetched = extractUrlsFromSteps(conv.searchSteps);
 		const { citedUrls } = processCitations(streamingContent, fetched);
 		return citedUrls;
 	}
-	return sourceUrls;
+	return conv.sourceUrls;
 }
 
 export function renderStreamingHtml(text: string): string {
 	if (!text) return '';
-	const fetched = extractUrlsFromSteps(searchSteps);
+	const conv = getActiveConversation();
+	const fetched = extractUrlsFromSteps(conv?.searchSteps ?? []);
 	const { content } = processCitations(text, fetched);
 	return renderMarkdown(content);
 }
@@ -198,7 +205,9 @@ export function createConversation(): string {
 		createdAt: now,
 		updatedAt: now,
 		workingDir: getSettings().defaultWorkingDir || null,
-		contextUsage: null
+		contextUsage: null,
+		searchSteps: [],
+		sourceUrls: []
 	});
 	activeConversationId = id;
 	errorMessage = null;
@@ -309,8 +318,8 @@ export async function sendMessage(content: string): Promise<void> {
 	isGenerating = true;
 	streamingContent = '';
 	errorMessage = null;
-	searchSteps = [];
-	sourceUrls = [];
+	conversation.searchSteps = [];
+	conversation.sourceUrls = [];
 	abortController = new AbortController();
 
 	try {
@@ -348,8 +357,8 @@ export async function sendMessage(content: string): Promise<void> {
 				};
 			},
 			onToolStart: (call) => {
-				searchSteps = [
-					...searchSteps,
+				conversation.searchSteps = [
+					...conversation.searchSteps,
 					{
 						id: call.id,
 						toolName: call.name,
@@ -359,7 +368,7 @@ export async function sendMessage(content: string): Promise<void> {
 				];
 			},
 			onToolEnd: (call, result, thumbDataUrl) => {
-				searchSteps = searchSteps.map((s) =>
+				conversation.searchSteps = conversation.searchSteps.map((s) =>
 					s.id === call.id ? { ...s, status: 'done' as const, result, thumbDataUrl } : s
 				);
 			},
@@ -378,7 +387,7 @@ export async function sendMessage(content: string): Promise<void> {
 				}
 			},
 			onComplete: () => {
-				const fetched = extractUrlsFromSteps(searchSteps);
+				const fetched = extractUrlsFromSteps(conversation.searchSteps);
 				const processed = processCitations(
 					stripToolCallArtifacts(streamingContent).trim(),
 					fetched
@@ -397,14 +406,14 @@ export async function sendMessage(content: string): Promise<void> {
 				if (finalContent) {
 					commit(finalContent);
 				} else {
-					const diagnosis = diagnoseEmptyResponse(searchSteps, streamingContent);
+					const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
 					if (diagnosis.type === 'commit') {
 						commit(diagnosis.content);
 					} else {
 						errorMessage = diagnosis.message;
 					}
 				}
-				sourceUrls = processed.citedUrls;
+				conversation.sourceUrls = processed.citedUrls;
 			},
 			onError: (error) => {
 				if (error instanceof ApiError) {
@@ -417,12 +426,12 @@ export async function sendMessage(content: string): Promise<void> {
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'AbortError') {
 			if (streamingContent) {
-				const fetched = extractUrlsFromSteps(searchSteps);
+				const fetched = extractUrlsFromSteps(conversation.searchSteps);
 				const { content, citedUrls } = processCitations(streamingContent, fetched);
 				const partialMsg: ChatMessage = { role: 'assistant', content };
 				conversation.messages.push(partialMsg);
 				dbSaveMessage(conversation.id, partialMsg);
-				sourceUrls = citedUrls;
+				conversation.sourceUrls = citedUrls;
 			}
 		} else if (e instanceof ApiError) {
 			errorMessage = e.message;

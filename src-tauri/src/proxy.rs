@@ -1,6 +1,6 @@
 use log::{info, warn};
 use scraper::{Html, Selector};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Mutex;
@@ -44,6 +44,95 @@ pub struct SearchResult {
     pub title: String,
     pub url: String,
     pub snippet: String,
+}
+
+/// User-configured HTTP proxy. Mirrors the `ProxyConfig` TS type and is
+/// passed in as an optional argument on every egress command. `mode` is
+/// either "none" or "manual" — any other value is treated as none so a
+/// typo can't accidentally force traffic through an invalid URL. Bypass
+/// entries are parsed per request; we don't cache them because the user
+/// can edit them between calls and there's no hot path here.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ProxyConfig {
+    #[serde(default)]
+    pub mode: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub bypass: String,
+}
+
+enum BypassEntry {
+    Cidr(ipnet::IpNet),
+    Ip(IpAddr),
+    /// Lowercased, leading "." stripped. Matches the host itself or any
+    /// subdomain (Firefox-style).
+    Host(String),
+}
+
+fn parse_bypass_list(raw: &str) -> Vec<BypassEntry> {
+    raw.split([',', ';', '\n', '\r', ' ', '\t'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            if let Ok(net) = s.parse::<ipnet::IpNet>() {
+                BypassEntry::Cidr(net)
+            } else if let Ok(ip) = s.parse::<IpAddr>() {
+                BypassEntry::Ip(ip)
+            } else {
+                BypassEntry::Host(s.trim_start_matches('.').to_lowercase())
+            }
+        })
+        .collect()
+}
+
+fn should_bypass(target: &reqwest::Url, entries: &[BypassEntry]) -> bool {
+    let Some(host) = target.host_str() else {
+        return false;
+    };
+    // url::Url returns IPv6 hosts wrapped in brackets (`[::1]`); strip
+    // them before parsing so literal IPv6 destinations match.
+    let host_bare = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = host_bare.parse::<IpAddr>() {
+        return entries.iter().any(|e| match e {
+            BypassEntry::Cidr(net) => net.contains(&ip),
+            BypassEntry::Ip(entry) => entry == &ip,
+            BypassEntry::Host(_) => false,
+        });
+    }
+    let host_lc = host.to_lowercase();
+    entries.iter().any(|e| match e {
+        BypassEntry::Host(h) => host_lc == *h || host_lc.ends_with(&format!(".{}", h)),
+        _ => false,
+    })
+}
+
+/// Apply the user's proxy config to a reqwest ClientBuilder. Returns the
+/// builder unchanged when the proxy is disabled or the URL is blank; bails
+/// with an error if the URL is set but unparseable.
+fn apply_proxy(
+    builder: reqwest::ClientBuilder,
+    proxy: Option<&ProxyConfig>,
+) -> Result<reqwest::ClientBuilder, String> {
+    let Some(cfg) = proxy else { return Ok(builder) };
+    if cfg.mode != "manual" {
+        return Ok(builder);
+    }
+    let trimmed = cfg.url.trim();
+    if trimmed.is_empty() {
+        return Ok(builder);
+    }
+    let proxy_url = reqwest::Url::parse(trimmed)
+        .map_err(|e| format!("Invalid proxy URL '{}': {}", trimmed, e))?;
+    let bypass = parse_bypass_list(&cfg.bypass);
+    let rp = reqwest::Proxy::custom(move |target| {
+        if should_bypass(target, &bypass) {
+            None
+        } else {
+            Some(proxy_url.clone())
+        }
+    });
+    Ok(builder.proxy(rp))
 }
 
 struct CacheEntry<T> {
@@ -181,13 +270,20 @@ fn diagnostic_snippet(html: &str, needles: &[&str], window: usize) -> String {
 
 // DuckDuckGo HTML search
 
-async fn search_duckduckgo(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .cookie_store(true)
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+async fn search_duckduckgo(
+    query: &str,
+    recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, String> {
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .cookie_store(true),
+        proxy,
+    )?
+    .build()
+    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     // DDG date filter: df=d (day), df=w (week), df=m (month), df=y (year)
     let df = match recency {
@@ -303,12 +399,19 @@ fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
 // Mojeek HTML search — small independent index, scrape-friendly, no API key.
 // Useful as a fallback when DDG/Qwant are rate-limited or broken.
 
-async fn search_mojeek(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+async fn search_mojeek(
+    query: &str,
+    recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, String> {
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5)),
+        proxy,
+    )?
+    .build()
+    .map_err(|e| format!("HTTP client error: {}", e))?;
 
     // Mojeek freshness: si=day|week|month|year (their "since" parameter)
     let since = match recency {
@@ -425,12 +528,19 @@ fn parse_mojeek_html(html: &str) -> Result<Vec<SearchResult>, String> {
 // so we anchor on stable data attributes (`data-type="web"`) and unhashed
 // class prefixes (`search-snippet-title`, `generic-snippet`) instead.
 
-async fn search_brave_html(query: &str, recency: &str) -> Result<Vec<SearchResult>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+async fn search_brave_html(
+    query: &str,
+    recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, String> {
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5)),
+        proxy,
+    )?
+    .build()
+    .map_err(|e| format!("HTTP client error: {}", e))?;
 
     // Brave time filter: tf=pd (past day), pw (week), pm (month), py (year)
     let tf = match recency {
@@ -560,6 +670,7 @@ async fn search_auto(
     query: &str,
     recency: &str,
     slow_mode: bool,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<SearchResult>, String> {
     // Pick pacing constants based on slow mode. Slow mode is only enabled
     // for deep research turns when no reliable provider is configured;
@@ -602,9 +713,9 @@ async fn search_auto(
         );
 
         let result = match *engine {
-            "brave_html" => search_brave_html(query, recency).await,
-            "duckduckgo" => search_duckduckgo(query, recency).await,
-            "mojeek" => search_mojeek(query, recency).await,
+            "brave_html" => search_brave_html(query, recency, proxy).await,
+            "duckduckgo" => search_duckduckgo(query, recency, proxy).await,
+            "mojeek" => search_mojeek(query, recency, proxy).await,
             _ => unreachable!(),
         };
 
@@ -647,15 +758,18 @@ async fn search_auto(
 
 // URL fetching with content extraction
 
-async fn fetch_and_extract(url: &str) -> Result<String, String> {
+async fn fetch_and_extract(url: &str, proxy: Option<&ProxyConfig>) -> Result<String, String> {
     // Validate URL
     validate_url(url)?;
 
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5)),
+        proxy,
+    )?
+    .build()
+    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     let response = client
         .get(url)
@@ -846,9 +960,9 @@ async fn search_brave(
     query: &str,
     api_key: &str,
     recency: &str,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<SearchResult>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
+    let client = apply_proxy(reqwest::Client::builder().timeout(FETCH_TIMEOUT), proxy)?
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
@@ -923,9 +1037,9 @@ async fn search_searxng(
     query: &str,
     instance_url: &str,
     recency: &str,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<SearchResult>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
+    let client = apply_proxy(reqwest::Client::builder().timeout(FETCH_TIMEOUT), proxy)?
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
@@ -983,6 +1097,7 @@ async fn search_searxng(
 // Tauri commands
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn proxy_search(
     state: tauri::State<'_, ProxyState>,
     query: String,
@@ -991,6 +1106,7 @@ pub async fn proxy_search(
     instance_url: Option<String>,
     recency: Option<String>,
     deep_research: Option<bool>,
+    proxy: Option<ProxyConfig>,
 ) -> Result<Vec<SearchResult>, String> {
     // Check cache
     let cache_key = format!("{}:{}", query, recency.as_deref().unwrap_or("any"));
@@ -1002,6 +1118,7 @@ pub async fn proxy_search(
     let provider = provider.as_deref().unwrap_or("duckduckgo");
     let recency = recency.as_deref().unwrap_or("any");
     let deep_research = deep_research.unwrap_or(false);
+    let proxy_ref = proxy.as_ref();
 
     let results = match provider {
         "brave" => {
@@ -1010,7 +1127,7 @@ pub async fn proxy_search(
                 return Err("Brave Search API key not configured".to_string());
             }
             info!("Searching Brave for: {} (recency: {})", query, recency);
-            search_brave(&query, key, recency).await?
+            search_brave(&query, key, recency, proxy_ref).await?
         }
         "searxng" => {
             let url = instance_url.as_deref().unwrap_or("http://localhost:8080");
@@ -1018,19 +1135,19 @@ pub async fn proxy_search(
                 "Searching SearXNG ({}) for: {} (recency: {})",
                 url, query, recency
             );
-            search_searxng(&query, url, recency).await?
+            search_searxng(&query, url, recency, proxy_ref).await?
         }
         "auto" => {
             info!(
                 "Auto-searching for: {} (recency: {}, deep_research: {})",
                 query, recency, deep_research
             );
-            search_auto(&state, &query, recency, deep_research).await?
+            search_auto(&state, &query, recency, deep_research, proxy_ref).await?
         }
         _ => {
             state.rate_limit_engine("duckduckgo", RATE_LIMIT_INTERVAL);
             info!("Searching DDG for: {} (recency: {})", query, recency);
-            search_duckduckgo(&query, recency).await?
+            search_duckduckgo(&query, recency, proxy_ref).await?
         }
     };
 
@@ -1047,6 +1164,7 @@ pub async fn proxy_fetch(
     state: tauri::State<'_, ProxyState>,
     url: String,
     caller: Option<String>,
+    proxy: Option<ProxyConfig>,
 ) -> Result<String, String> {
     // Tag for the log line so we can distinguish fetch_url calls (raw page
     // text returned to the main agent) from research_url calls (page goes
@@ -1060,7 +1178,7 @@ pub async fn proxy_fetch(
     }
 
     info!("Fetching URL ({}): {}", caller_tag, url);
-    let content = fetch_and_extract(&url).await?;
+    let content = fetch_and_extract(&url, proxy.as_ref()).await?;
 
     state.cache_fetch(&url, &content);
     Ok(content)
@@ -1097,15 +1215,21 @@ pub struct PageImage {
 /// them in a generated presentation. See the tool description for the
 /// licensing caveat (results are NOT guaranteed to be free-to-use).
 #[tauri::command]
-pub async fn proxy_fetch_url_images(url: String) -> Result<Vec<PageImage>, String> {
+pub async fn proxy_fetch_url_images(
+    url: String,
+    proxy: Option<ProxyConfig>,
+) -> Result<Vec<PageImage>, String> {
     validate_url(&url)?;
     info!("fetch_url_images: {}", url);
 
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5)),
+        proxy.as_ref(),
+    )?
+    .build()
+    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     let response = client
         .get(&url)
@@ -1291,17 +1415,21 @@ pub struct ImageSearchResult {
 pub async fn proxy_image_search(
     query: String,
     max_results: Option<usize>,
+    proxy: Option<ProxyConfig>,
 ) -> Result<Vec<ImageSearchResult>, String> {
     use serde_json::Value;
 
     let limit = max_results.unwrap_or(5).clamp(1, 20);
     info!("image_search (commons) q={:?} limit={}", query, limit);
 
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5)),
+        proxy.as_ref(),
+    )?
+    .build()
+    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     // Step 1: search for file titles in the File: namespace.
     let search_url = format!(
@@ -1478,6 +1606,93 @@ fn parse_commons_imageinfo(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn bypass(list: &str) -> Vec<BypassEntry> {
+        parse_bypass_list(list)
+    }
+
+    fn url(s: &str) -> reqwest::Url {
+        reqwest::Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn bypass_host_matches_exact_and_subdomain() {
+        let entries = bypass("example.com");
+        assert!(should_bypass(&url("https://example.com/"), &entries));
+        assert!(should_bypass(&url("https://api.example.com/x"), &entries));
+        assert!(!should_bypass(&url("https://otherexample.com/"), &entries));
+        assert!(!should_bypass(&url("https://example.org/"), &entries));
+    }
+
+    #[test]
+    fn bypass_ignores_leading_dot_on_host_entry() {
+        let entries = bypass(".example.com");
+        assert!(should_bypass(&url("https://example.com/"), &entries));
+        assert!(should_bypass(&url("https://www.example.com/"), &entries));
+    }
+
+    #[test]
+    fn bypass_matches_ipv4_literal_and_cidr() {
+        let entries = bypass("192.168.1.5, 10.0.0.0/8");
+        assert!(should_bypass(&url("http://192.168.1.5/"), &entries));
+        assert!(should_bypass(&url("http://10.99.99.99/"), &entries));
+        assert!(!should_bypass(&url("http://192.168.1.6/"), &entries));
+        assert!(!should_bypass(&url("http://11.0.0.1/"), &entries));
+    }
+
+    #[test]
+    fn bypass_matches_ipv6_cidr() {
+        let entries = bypass("2001:db8::/32");
+        assert!(should_bypass(&url("http://[2001:db8:1::abcd]/"), &entries));
+        assert!(!should_bypass(&url("http://[2001:db9::abcd]/"), &entries));
+    }
+
+    #[test]
+    fn bypass_accepts_newline_and_comma_separators() {
+        let entries = bypass("example.com,\n  192.168.0.0/16 ; foo.org\n");
+        assert!(should_bypass(&url("https://example.com/"), &entries));
+        assert!(should_bypass(&url("https://foo.org/"), &entries));
+        assert!(should_bypass(&url("http://192.168.5.5/"), &entries));
+    }
+
+    #[test]
+    fn bypass_empty_list_never_matches() {
+        let entries = bypass("");
+        assert!(!should_bypass(&url("https://example.com/"), &entries));
+    }
+
+    #[test]
+    fn apply_proxy_noop_when_mode_is_none() {
+        let cfg = ProxyConfig {
+            mode: "none".to_string(),
+            url: "http://proxy.example:8080".to_string(),
+            bypass: String::new(),
+        };
+        // Just verifies apply_proxy accepts the config and returns Ok;
+        // we can't inspect whether a proxy was attached to the builder,
+        // but this confirms the "none" branch doesn't error on a set URL.
+        assert!(apply_proxy(reqwest::Client::builder(), Some(&cfg)).is_ok());
+    }
+
+    #[test]
+    fn apply_proxy_errors_on_invalid_url() {
+        let cfg = ProxyConfig {
+            mode: "manual".to_string(),
+            url: "not a url".to_string(),
+            bypass: String::new(),
+        };
+        assert!(apply_proxy(reqwest::Client::builder(), Some(&cfg)).is_err());
+    }
+
+    #[test]
+    fn apply_proxy_ignores_blank_manual_url() {
+        let cfg = ProxyConfig {
+            mode: "manual".to_string(),
+            url: "   ".to_string(),
+            bypass: String::new(),
+        };
+        assert!(apply_proxy(reqwest::Client::builder(), Some(&cfg)).is_ok());
+    }
 
     #[test]
     fn validate_url_accepts_https() {
