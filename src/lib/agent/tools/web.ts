@@ -70,7 +70,8 @@ registerTool({
 				apiKey: settings.braveApiKey || null,
 				instanceUrl: settings.searxngUrl || null,
 				recency: settings.searchRecency || null,
-				deepResearch: ctx.deepResearch
+				deepResearch: ctx.deepResearch,
+				proxy: settings.proxy
 			});
 			return toolResult(JSON.stringify(results));
 		} catch (e) {
@@ -100,7 +101,11 @@ registerTool({
 	async execute(args) {
 		const url = args.url as string;
 		try {
-			const content = await invoke<string>('proxy_fetch', { url, caller: 'fetch_url' });
+			const content = await invoke<string>('proxy_fetch', {
+				url,
+				caller: 'fetch_url',
+				proxy: getSettings().proxy
+			});
 			const paywall = detectPaywall(url, content);
 			if (paywall.paywalled) {
 				return toolResult(paywallErrorMessage(url, paywall.reason || 'page is paywalled'));
@@ -145,7 +150,11 @@ registerTool({
 
 		let pageContent: string;
 		try {
-			pageContent = await invoke<string>('proxy_fetch', { url, caller: 'research_url' });
+			pageContent = await invoke<string>('proxy_fetch', {
+				url,
+				caller: 'research_url',
+				proxy: getSettings().proxy
+			});
 		} catch (e) {
 			return toolResult(`Failed to fetch URL: ${e}`);
 		}
@@ -237,7 +246,8 @@ registerTool({
 		try {
 			const results = await invoke<ImageSearchResult[]>('proxy_image_search', {
 				query,
-				maxResults: maxResults ?? null
+				maxResults: maxResults ?? null,
+				proxy: getSettings().proxy
 			});
 			if (results.length === 0) {
 				return toolResult(
@@ -278,7 +288,10 @@ registerTool({
 	async execute(args) {
 		const url = args.url as string;
 		try {
-			const images = await invoke<PageImage[]>('proxy_fetch_url_images', { url });
+			const images = await invoke<PageImage[]>('proxy_fetch_url_images', {
+				url,
+				proxy: getSettings().proxy
+			});
 			if (images.length === 0) {
 				return toolResult(
 					JSON.stringify({

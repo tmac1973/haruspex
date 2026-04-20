@@ -90,6 +90,27 @@ export interface IntegrationsConfig {
 	email: EmailIntegrationConfig;
 }
 
+/**
+ * Network proxy for outbound web traffic (search, URL fetch, image search).
+ * `mode: 'none'` bypasses the proxy entirely; `mode: 'manual'` routes every
+ * egress request through `url` unless the target matches an entry in
+ * `bypass`. The bypass list is free-form text — one entry per line or
+ * comma-separated — where each entry is one of:
+ *   - a hostname (e.g. `example.com`) which matches the host and any subdomain
+ *   - an IP literal (e.g. `192.168.1.5`) — exact match
+ *   - a CIDR block (e.g. `10.0.0.0/8`, `2001:db8::/32`) — subnet match
+ *
+ * Stored alongside other settings in localStorage; the Rust backend
+ * re-parses `bypass` per request (no hot path).
+ */
+export type ProxyMode = 'none' | 'manual';
+
+export interface ProxyConfig {
+	mode: ProxyMode;
+	url: string;
+	bypass: string;
+}
+
 export interface AppSettings {
 	responseFormat: ResponseFormat;
 	theme: ThemeMode;
@@ -106,6 +127,7 @@ export interface AppSettings {
 	defaultWorkingDir: string;
 	inferenceBackend: InferenceBackendConfig;
 	integrations: IntegrationsConfig;
+	proxy: ProxyConfig;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -124,6 +146,12 @@ const defaultIntegrations: IntegrationsConfig = {
 	email: { accounts: [] }
 };
 
+const defaultProxy: ProxyConfig = {
+	mode: 'none',
+	url: '',
+	bypass: ''
+};
+
 const defaults: AppSettings = {
 	responseFormat: 'standard',
 	theme: 'system',
@@ -139,7 +167,8 @@ const defaults: AppSettings = {
 	dismissedGpuWarning: false,
 	defaultWorkingDir: '',
 	inferenceBackend: defaultInferenceBackend,
-	integrations: defaultIntegrations
+	integrations: defaultIntegrations,
+	proxy: defaultProxy
 };
 
 function load(): AppSettings {
@@ -162,11 +191,16 @@ function load(): AppSettings {
 					accounts: parsedIntegrations.email?.accounts ?? []
 				}
 			};
+			const mergedProxy: ProxyConfig = {
+				...defaultProxy,
+				...(parsed.proxy ?? {})
+			};
 			return {
 				...defaults,
 				...parsed,
 				inferenceBackend: mergedInference,
-				integrations: mergedIntegrations
+				integrations: mergedIntegrations,
+				proxy: mergedProxy
 			};
 		}
 	} catch {
@@ -227,6 +261,18 @@ export function updateInferenceBackend(partial: Partial<InferenceBackendConfig>)
 	settings = {
 		...settings,
 		inferenceBackend: { ...current, ...partial }
+	};
+	save(settings);
+}
+
+/**
+ * Merge a partial update into the proxy sub-object.
+ */
+export function updateProxy(partial: Partial<ProxyConfig>): void {
+	const current = settings.proxy;
+	settings = {
+		...settings,
+		proxy: { ...current, ...partial }
 	};
 	save(settings);
 }

@@ -39,10 +39,10 @@ describe('executeTool', () => {
 		const { executeTool } = await import('$lib/agent/tools');
 		const output = await executeTool('fetch_url', { url: 'https://example.com' }, defaultCtx);
 
-		expect(invoke).toHaveBeenCalledWith('proxy_fetch', {
-			url: 'https://example.com',
-			caller: 'fetch_url'
-		});
+		expect(invoke).toHaveBeenCalledWith(
+			'proxy_fetch',
+			expect.objectContaining({ url: 'https://example.com', caller: 'fetch_url' })
+		);
 		expect(output.result).toBe('page content');
 	});
 
