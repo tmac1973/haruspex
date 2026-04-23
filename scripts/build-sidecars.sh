@@ -40,6 +40,10 @@ NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_
 # ship with openssl@3 in Homebrew, which cmake happily auto-detects and links
 # llama-server against; without this, end users hit "Library not loaded" for
 # /opt/homebrew/opt/openssl@3/lib/libssl.3.dylib.
+#
+# Every install_name_tool call invalidates the Mach-O's code signature, so
+# each modified file must be re-signed ad-hoc or the kernel kills the
+# process at page-in time with SIGKILL ("cs_invalid_page").
 bundle_external_dylibs_macos() {
     local binary="$1"
     local libs_dir="$BINARIES_DIR/libs"
@@ -47,9 +51,10 @@ bundle_external_dylibs_macos() {
 
     # Use files for the work queue because the otool pipeline below runs in
     # a subshell — shell arrays wouldn't survive.
-    local todo seen
+    local todo seen touched
     todo=$(mktemp)
     seen=$(mktemp)
+    touched=$(mktemp)
     echo "$binary" > "$todo"
     # Also process dylibs already copied from the llama.cpp/whisper.cpp build
     # output — they can pull in homebrew deps of their own.
@@ -88,23 +93,39 @@ bundle_external_dylibs_macos() {
                     install_name_tool -add_rpath "@loader_path" "$libs_dir/$name" 2>/dev/null || true
                     echo "   Bundled: $name (from $dep)"
                     echo "$libs_dir/$name" >> "$todo"
+                    echo "$libs_dir/$name" >> "$touched"
                 fi
             fi
 
-            install_name_tool -change "$dep" "@rpath/$name" "$current" 2>/dev/null || true
+            if install_name_tool -change "$dep" "@rpath/$name" "$current" 2>/dev/null; then
+                echo "$current" >> "$touched"
+            fi
         done < <(otool -L "$current" 2>/dev/null | awk 'NR>1{print $1}')
     done
-
-    rm -f "$todo" "$seen"
 
     # Bake rpaths into the main binary so dyld finds bundled dylibs even when
     # DYLD_LIBRARY_PATH isn't set (more robust than relying on the env var,
     # which hardened-runtime / SIP can strip).
     for rp in "@executable_path/../Resources/binaries/libs" "@loader_path"; do
         if ! otool -l "$binary" 2>/dev/null | grep -qF "path $rp "; then
-            install_name_tool -add_rpath "$rp" "$binary" 2>/dev/null || true
+            if install_name_tool -add_rpath "$rp" "$binary" 2>/dev/null; then
+                echo "$binary" >> "$touched"
+            fi
         fi
     done
+
+    # Re-sign every file we mutated. install_name_tool rewrites Mach-O load
+    # commands in place, which invalidates the ad-hoc signature; without this
+    # the kernel rejects the dylib at page-in and kills the sidecar.
+    if [ -s "$touched" ]; then
+        sort -u "$touched" | while read -r f; do
+            [ -f "$f" ] || continue
+            codesign --force --sign - "$f" 2>/dev/null || \
+                echo "   WARN: failed to re-sign $f"
+        done
+    fi
+
+    rm -f "$todo" "$seen" "$touched"
 }
 
 echo "========================================"
