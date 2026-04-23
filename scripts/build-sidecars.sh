@@ -34,6 +34,79 @@ case "$TARGET" in
 esac
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")
 
+# Bundle any Homebrew/local dylibs a macOS binary depends on, recursively,
+# and rewrite their install names to @rpath/... so the bundled app can find
+# them without the user having Homebrew installed. GitHub's macOS runners
+# ship with openssl@3 in Homebrew, which cmake happily auto-detects and links
+# llama-server against; without this, end users hit "Library not loaded" for
+# /opt/homebrew/opt/openssl@3/lib/libssl.3.dylib.
+bundle_external_dylibs_macos() {
+    local binary="$1"
+    local libs_dir="$BINARIES_DIR/libs"
+    mkdir -p "$libs_dir"
+
+    # Use files for the work queue because the otool pipeline below runs in
+    # a subshell — shell arrays wouldn't survive.
+    local todo seen
+    todo=$(mktemp)
+    seen=$(mktemp)
+    echo "$binary" > "$todo"
+    # Also process dylibs already copied from the llama.cpp/whisper.cpp build
+    # output — they can pull in homebrew deps of their own.
+    find "$libs_dir" -maxdepth 1 -name "*.dylib" -type f >> "$todo" 2>/dev/null || true
+
+    while [ -s "$todo" ]; do
+        local current
+        current=$(sed -n '1p' "$todo")
+        sed -i '' '1d' "$todo"
+
+        grep -qxF "$current" "$seen" && continue
+        echo "$current" >> "$seen"
+
+        # A dylib's first otool -L line is its own install name — skip it.
+        local selfid
+        selfid=$(otool -D "$current" 2>/dev/null | awk 'NR==2{print;exit}')
+
+        while read -r dep; do
+            [ -z "$dep" ] && continue
+            [ "$dep" = "$selfid" ] && continue
+            case "$dep" in
+                /opt/homebrew/*|/usr/local/*) ;;
+                *) continue ;;
+            esac
+
+            local name
+            name=$(basename "$dep")
+
+            if [ ! -f "$libs_dir/$name" ]; then
+                if cp -L "$dep" "$libs_dir/$name" 2>/dev/null; then
+                    chmod u+w "$libs_dir/$name"
+                    install_name_tool -id "@rpath/$name" "$libs_dir/$name" 2>/dev/null || true
+                    # @loader_path lets a dylib find sibling dylibs (e.g.
+                    # libssl finding libcrypto) without relying on the main
+                    # binary's rpath alone.
+                    install_name_tool -add_rpath "@loader_path" "$libs_dir/$name" 2>/dev/null || true
+                    echo "   Bundled: $name (from $dep)"
+                    echo "$libs_dir/$name" >> "$todo"
+                fi
+            fi
+
+            install_name_tool -change "$dep" "@rpath/$name" "$current" 2>/dev/null || true
+        done < <(otool -L "$current" 2>/dev/null | awk 'NR>1{print $1}')
+    done
+
+    rm -f "$todo" "$seen"
+
+    # Bake rpaths into the main binary so dyld finds bundled dylibs even when
+    # DYLD_LIBRARY_PATH isn't set (more robust than relying on the env var,
+    # which hardened-runtime / SIP can strip).
+    for rp in "@executable_path/../Resources/binaries/libs" "@loader_path"; do
+        if ! otool -l "$binary" 2>/dev/null | grep -qF "path $rp "; then
+            install_name_tool -add_rpath "$rp" "$binary" 2>/dev/null || true
+        fi
+    done
+}
+
 echo "========================================"
 echo "  Building Haruspex Sidecars"
 echo "  Target: $TARGET"
@@ -374,6 +447,22 @@ case "$TARGET" in
             if [ -n "$SSL_SRC" ]; then
                 cp "$SSL_SRC" "$BINARIES_DIR/libs/"
                 echo "   Copied: $ssl_dll (from $SSL_SRC)"
+            fi
+        done
+        echo
+        ;;
+esac
+
+# ---- Bundle external dylibs (macOS) ----
+# Done after all sidecars are built so the function can see every dylib that
+# landed in binaries/libs/ from each build.
+case "$TARGET" in
+    *-apple-darwin)
+        echo ">> Bundling external (Homebrew) dylibs for macOS..."
+        for sidecar_name in llama-server whisper-server koko; do
+            sidecar_path="$BINARIES_DIR/${sidecar_name}-${TARGET}"
+            if [ -f "$sidecar_path" ]; then
+                bundle_external_dylibs_macos "$sidecar_path"
             fi
         done
         echo
