@@ -8,6 +8,7 @@ import {
 	injectMessageHints
 } from '$lib/agent/system-prompt';
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
+import { beginTurn, logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
 import {
@@ -48,6 +49,12 @@ let isGenerating = $state(false);
 let isCompacting = $state(false);
 let streamingContent = $state('');
 let errorMessage = $state<string | null>(null);
+// Turn id of the agent run that produced the current error, if any. The
+// chat UI uses this to render a "copy debug log for this failure" button
+// that filters the debug-log ring buffer down to a single turn's worth
+// of entries — much easier to share than the full interleaved buffer.
+let errorTurnId = $state<number | null>(null);
+let currentTurnId: number | null = null;
 let exhaustiveResearch = $state(false);
 
 let abortController: AbortController | null = null;
@@ -126,6 +133,10 @@ export function getStreamingContent(): string {
 
 export function getErrorMessage(): string | null {
 	return errorMessage;
+}
+
+export function getErrorTurnId(): number | null {
+	return errorTurnId;
 }
 
 export function getSearchSteps(): SearchStep[] {
@@ -211,6 +222,7 @@ export function createConversation(): string {
 	});
 	activeConversationId = id;
 	errorMessage = null;
+	errorTurnId = null;
 	resetContextUsage();
 	dbCreateConversation(id, 'New chat');
 	return id;
@@ -229,6 +241,7 @@ export async function setActiveConversation(id: string): Promise<void> {
 	if (conversations.some((c) => c.id === id)) {
 		activeConversationId = id;
 		errorMessage = null;
+		errorTurnId = null;
 		restoreContextUsageFor(id);
 		await loadConversationMessages(id);
 	}
@@ -257,6 +270,7 @@ export async function clearAllConversations(): Promise<void> {
 	conversations = [];
 	activeConversationId = null;
 	errorMessage = null;
+	errorTurnId = null;
 	await dbClearAll();
 }
 
@@ -318,6 +332,8 @@ export async function sendMessage(content: string): Promise<void> {
 	isGenerating = true;
 	streamingContent = '';
 	errorMessage = null;
+	errorTurnId = null;
+	currentTurnId = beginTurn();
 	conversation.searchSteps = [];
 	conversation.sourceUrls = [];
 	abortController = new AbortController();
@@ -404,13 +420,24 @@ export async function sendMessage(content: string): Promise<void> {
 				};
 
 				if (finalContent) {
+					logDebug('chat', 'onComplete commit', {
+						rawStreamingLen: streamingContent.length,
+						finalContentLen: finalContent.length,
+						citedUrls: processed.citedUrls
+					});
 					commit(finalContent);
 				} else {
 					const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
+					logDebug('chat', `onComplete empty → diagnosis ${diagnosis.type}`, {
+						rawStreamingLen: streamingContent.length,
+						rawStreamingPreview: streamingContent.slice(0, 2000),
+						diagnosis
+					});
 					if (diagnosis.type === 'commit') {
 						commit(diagnosis.content);
 					} else {
 						errorMessage = diagnosis.message;
+						errorTurnId = currentTurnId;
 					}
 				}
 				conversation.sourceUrls = processed.citedUrls;
@@ -421,6 +448,7 @@ export async function sendMessage(content: string): Promise<void> {
 				} else {
 					errorMessage = 'An unexpected error occurred.';
 				}
+				errorTurnId = currentTurnId;
 			}
 		});
 	} catch (e) {
@@ -435,8 +463,10 @@ export async function sendMessage(content: string): Promise<void> {
 			}
 		} else if (e instanceof ApiError) {
 			errorMessage = e.message;
+			errorTurnId = currentTurnId;
 		} else {
 			errorMessage = 'An unexpected error occurred.';
+			errorTurnId = currentTurnId;
 		}
 	} finally {
 		isGenerating = false;

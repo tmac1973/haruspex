@@ -11,6 +11,7 @@ import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { getToolSchemas, executeTool, type PendingImage } from '$lib/agent/tools';
 import { getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
+import { logDebug } from '$lib/debug-log';
 
 // Trim older tool results when context usage crosses this fraction.
 // Lower than the conversation-level compaction threshold (0.8) so we act
@@ -213,9 +214,22 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	const fetchedUrlsThisTurn: Set<string> = new Set();
 	let diversityNudged = false;
 
+	logDebug('agent', 'runAgentLoop start', {
+		maxIterations,
+		workingDir,
+		contextSize,
+		deepResearch,
+		expectsFileOutput,
+		visionSupported,
+		toolNames: tools.map((t) => t.function.name),
+		messageCount: messages.length,
+		messages
+	});
+
 	while (iteration < maxIterations) {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 		iteration++;
+		logDebug('agent', `iteration ${iteration} start`, { messageCount: messages.length });
 
 		// If images were loaded on the previous iteration, attach them to the
 		// most recent user message before sending. This is how multimodal
@@ -256,16 +270,25 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		}
 
 		let toolCalls: ResolvedToolCall[] = [];
+		let parseError: unknown = null;
 		try {
 			toolCalls = resolveToolCalls(response);
-		} catch {
+		} catch (e) {
+			parseError = e;
 			// Tool call parsing failed (e.g., truncated JSON from max_tokens)
 			// Fall through with empty toolCalls so the truncation handler below catches it
 		}
+		logDebug('agent', `iteration ${iteration} parsed`, {
+			toolCallCount: toolCalls.length,
+			finish_reason: response.finish_reason,
+			content_len: response.content ? response.content.length : 0,
+			parseError: parseError ? String(parseError) : null
+		});
 
 		// If the model was cut off mid-response (hit max_tokens) after using tools,
 		// continue the loop so it can finish generating tool calls or content.
 		if (toolCalls.length === 0 && usedTools && response.finish_reason === 'length') {
+			logDebug('agent', `iteration ${iteration} branch=continue-on-length nudge`);
 			messages.push({
 				role: 'assistant',
 				content: response.content || ''
@@ -293,6 +316,9 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			response.content &&
 			(/<tool_call>/.test(response.content) || /<function=/.test(response.content))
 		) {
+			logDebug('agent', `iteration ${iteration} branch=malformed-tool-call recovery`, {
+				rawContent: response.content
+			});
 			messages.push({
 				role: 'assistant',
 				content: stripToolCallArtifacts(response.content)
@@ -323,6 +349,11 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				raw
 			);
 			if (raw.length > 0 && (isBareUrl || looksLikeNakedToolCall)) {
+				logDebug('agent', `iteration ${iteration} branch=degraded-output break`, {
+					raw,
+					isBareUrl,
+					looksLikeNakedToolCall
+				});
 				break;
 			}
 		}
@@ -353,6 +384,13 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			!looksLikeClarifyingQuestion(response.content || '')
 		) {
 			fileWriteRetries++;
+			logDebug(
+				'agent',
+				`iteration ${iteration} branch=file-write-hallucination retry ${fileWriteRetries}`,
+				{
+					assistantContent: response.content
+				}
+			);
 			messages.push({
 				role: 'assistant',
 				content: response.content || ''
@@ -391,6 +429,9 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			) {
 				diversityNudged = true;
 				const fetchedCount = fetchedUrlsThisTurn.size;
+				logDebug('agent', `iteration ${iteration} branch=diversity-nudge`, {
+					fetchedCount
+				});
 				messages.push({
 					role: 'assistant',
 					content: response.content || ''
@@ -412,8 +453,48 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			}
 
 			if (usedTools) {
-				// After tool use, always stream the final answer.
-				// The non-streaming response may be truncated or incomplete — don't use it.
+				// If this iteration's non-streaming check call already came back
+				// with a clean, substantive answer, surface it directly through
+				// the stream callbacks and skip the redundant re-stream.
+				//
+				// The loop used to *always* re-stream here, on the theory that
+				// the non-streaming response might be truncated. But truncation
+				// shows up as `finish_reason === 'length'`, which we can detect
+				// — so we only fall back to a fresh stream when there's actually
+				// a reason to. Re-streaming unconditionally costs a full prompt
+				// evaluation and, worse, the re-stream has to drop `tools` from
+				// the request (otherwise the model would just call another tool
+				// instead of answering). A model trained to tool-call, given no
+				// tools and a long conversation full of tool exchanges, sometimes
+				// regresses to emitting `<tool_call>...</tool_call>` XML as plain
+				// content. After `stripToolCallArtifacts` removes the XML the
+				// answer is empty and the user sees "Web research completed but
+				// the final answer did not arrive" — even though the previous
+				// non-streaming iteration had a complete cited answer in hand.
+				if (
+					response.finish_reason === 'stop' &&
+					response.content &&
+					response.content.trim().length > 0
+				) {
+					logDebug(
+						'agent',
+						`iteration ${iteration} branch=final-synthesis (commit non-stream response, skip re-stream)`,
+						{ contentLen: response.content.length }
+					);
+					options.onStreamChunk({
+						delta: { content: response.content },
+						finish_reason: 'stop'
+					});
+					options.onComplete();
+					return;
+				}
+
+				logDebug('agent', `iteration ${iteration} branch=final-synthesis (post-tools re-stream)`, {
+					reason:
+						response.finish_reason === 'length'
+							? 'non-stream truncated (length)'
+							: 'non-stream had no usable content'
+				});
 				const stream = chatCompletionStream(
 					{
 						messages,
@@ -425,11 +506,20 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 					signal
 				);
 				let lastFinish: string | null = null;
+				let totalChunks = 0;
+				let totalContent = 0;
 				for await (const chunk of stream) {
+					totalChunks++;
+					if (chunk.delta.content) totalContent += chunk.delta.content.length;
 					if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
 					if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 					options.onStreamChunk(chunk);
 				}
+				logDebug('agent', `final synthesis (post-tools) ended`, {
+					chunks: totalChunks,
+					contentLen: totalContent,
+					lastFinish
+				});
 				options.onComplete();
 				if (lastFinish === 'length') {
 					options.onError(
@@ -441,6 +531,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 					);
 				}
 			} else {
+				logDebug('agent', `iteration ${iteration} branch=final-synthesis (no-tools)`);
 				const stream = chatCompletionStream(
 					{
 						messages,
@@ -453,11 +544,20 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 					signal
 				);
 				let lastFinish: string | null = null;
+				let totalChunks = 0;
+				let totalContent = 0;
 				for await (const chunk of stream) {
+					totalChunks++;
+					if (chunk.delta.content) totalContent += chunk.delta.content.length;
 					if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
 					if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 					options.onStreamChunk(chunk);
 				}
+				logDebug('agent', `final synthesis (no-tools) ended`, {
+					chunks: totalChunks,
+					contentLen: totalContent,
+					lastFinish
+				});
 				options.onComplete();
 				if (lastFinish === 'length') {
 					options.onError(
@@ -489,6 +589,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		for (const call of toolCalls) {
 			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
+			logDebug('agent', `tool start: ${call.name}`, { args: call.arguments });
 			options.onToolStart(call);
 			const output = await executeTool(call.name, call.arguments, {
 				workingDir,
@@ -496,6 +597,11 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				pendingImages,
 				deepResearch,
 				filesWrittenThisTurn
+			});
+			logDebug('agent', `tool end: ${call.name}`, {
+				resultLen: output.result.length,
+				resultPreview: output.result.slice(0, 1000),
+				hasThumbnail: !!output.thumbDataUrl
 			});
 			options.onToolEnd(call, output.result, output.thumbDataUrl);
 
@@ -540,6 +646,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	}
 
 	// Max iterations reached — nudge the model to answer and stream without tools
+	logDebug('agent', `branch=max-iterations reached`, { iteration, maxIterations, usedTools });
 	if (usedTools) {
 		messages.push({
 			role: 'user',
@@ -559,11 +666,20 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		signal
 	);
 	let lastFinish: string | null = null;
+	let totalChunks = 0;
+	let totalContent = 0;
 	for await (const chunk of stream) {
+		totalChunks++;
+		if (chunk.delta.content) totalContent += chunk.delta.content.length;
 		if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
 		if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 		options.onStreamChunk(chunk);
 	}
+	logDebug('agent', `final synthesis (max-iterations) ended`, {
+		chunks: totalChunks,
+		contentLen: totalContent,
+		lastFinish
+	});
 	options.onComplete();
 	if (lastFinish === 'length') {
 		options.onError(

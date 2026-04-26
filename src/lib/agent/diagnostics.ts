@@ -1,4 +1,5 @@
 import type { SearchStep } from '$lib/agent/loop';
+import { logDebug } from '$lib/debug-log';
 
 export type Diagnosis = { type: 'commit'; content: string } | { type: 'error'; message: string };
 
@@ -37,6 +38,17 @@ export function diagnoseEmptyResponse(
 			streamingContent.slice(0, 500)
 		);
 	}
+
+	logDebug('diagnose', 'diagnoseEmptyResponse called', {
+		streamingContentLen: streamingContent.length,
+		streamingContentPreview: streamingContent.slice(0, 2000),
+		toolsRun: doneSteps.map((s) => s.toolName),
+		successfulWrite: !!successfulWrite,
+		emailListed,
+		emailSummarized,
+		imageSearched,
+		webResearched
+	});
 
 	if (successfulWrite) {
 		return { type: 'commit', content: `Done. File written: ${successfulWrite.query}` };

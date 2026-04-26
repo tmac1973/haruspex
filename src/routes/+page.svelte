@@ -14,6 +14,7 @@
 		getIsCompacting,
 		getStreamingContent,
 		getErrorMessage,
+		getErrorTurnId,
 		getSearchSteps,
 		getSourceUrls,
 		getExhaustiveResearch,
@@ -29,6 +30,7 @@
 	} from '$lib/stores/chat.svelte';
 	import { getServerState } from '$lib/stores/server.svelte';
 	import { getSettings } from '$lib/stores/settings';
+	import { getDebugLogsForTurn } from '$lib/debug-log';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
 	let inputText = $state('');
@@ -60,6 +62,26 @@
 		}
 	}
 
+	let copyDebugLogState = $state<'idle' | 'copied' | 'failed'>('idle');
+
+	async function copyDebugLogForError() {
+		if (errorTurnId == null) return;
+		const lines = getDebugLogsForTurn(errorTurnId);
+		if (lines.length === 0) {
+			copyDebugLogState = 'failed';
+			setTimeout(() => (copyDebugLogState = 'idle'), 1500);
+			return;
+		}
+		try {
+			await navigator.clipboard.writeText(lines.join('\n'));
+			copyDebugLogState = 'copied';
+			setTimeout(() => (copyDebugLogState = 'idle'), 1500);
+		} catch {
+			copyDebugLogState = 'failed';
+			setTimeout(() => (copyDebugLogState = 'idle'), 1500);
+		}
+	}
+
 	const conversations = $derived(getConversations());
 	const activeConversation = $derived(getActiveConversation());
 	const activeId = $derived(getActiveConversationId());
@@ -67,6 +89,7 @@
 	const isCompacting = $derived(getIsCompacting());
 	const streamingContent = $derived(getStreamingContent());
 	const errorMessage = $derived(getErrorMessage());
+	const errorTurnId = $derived(getErrorTurnId());
 	const searchSteps = $derived(getSearchSteps());
 	const sourceUrls = $derived(getSourceUrls());
 	const serverState = $derived(getServerState());
@@ -332,6 +355,21 @@
 				{#if errorMessage}
 					<div class="error-message">
 						<p>{errorMessage}</p>
+						{#if errorTurnId != null}
+							<button
+								class="copy-debug-btn"
+								onclick={copyDebugLogForError}
+								title="Copy the debug log for just this failed turn"
+							>
+								{#if copyDebugLogState === 'copied'}
+									Copied!
+								{:else if copyDebugLogState === 'failed'}
+									Nothing to copy
+								{:else}
+									Copy debug log
+								{/if}
+							</button>
+						{/if}
 					</div>
 				{/if}
 			{:else}
@@ -668,6 +706,21 @@
 
 	.error-message p {
 		margin: 0;
+	}
+
+	.copy-debug-btn {
+		margin-top: 8px;
+		background: transparent;
+		color: var(--error-text);
+		border: 1px solid var(--error-border);
+		border-radius: 4px;
+		padding: 3px 10px;
+		font-size: 0.75rem;
+		cursor: pointer;
+	}
+
+	.copy-debug-btn:hover {
+		background: color-mix(in srgb, var(--error-text) 10%, transparent);
 	}
 
 	.compacting-indicator {
