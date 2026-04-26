@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
+	import { getDebugLogs } from '$lib/debug-log';
 
-	type LogTab = 'app' | 'llm' | 'tts' | 'whisper';
+	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'debug';
 
 	interface Props {
 		open: boolean;
@@ -16,7 +17,7 @@
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let wasAtBottom = true;
 
-	const tabCommands: Record<LogTab, string> = {
+	const tabCommands: Record<Exclude<LogTab, 'debug'>, string> = {
 		app: 'get_app_logs',
 		llm: 'get_server_logs',
 		tts: 'get_tts_logs',
@@ -27,12 +28,18 @@
 		app: 'App',
 		llm: 'LLM',
 		tts: 'TTS',
-		whisper: 'Whisper'
+		whisper: 'Whisper',
+		debug: 'Debug'
 	};
 
 	async function fetchLogs() {
 		try {
-			logLines = await invoke<string[]>(tabCommands[activeTab]);
+			if (activeTab === 'debug') {
+				// Frontend-side ring buffer; no Tauri round-trip needed.
+				logLines = getDebugLogs();
+			} else {
+				logLines = await invoke<string[]>(tabCommands[activeTab]);
+			}
 			if (wasAtBottom && logContainer) {
 				requestAnimationFrame(() => {
 					if (logContainer) {
@@ -119,7 +126,7 @@
 		<div class="modal">
 			<div class="modal-header">
 				<div class="tabs">
-					{#each ['app', 'llm', 'tts', 'whisper'] as const as tab (tab)}
+					{#each ['app', 'llm', 'tts', 'whisper', 'debug'] as const as tab (tab)}
 						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
 							{tabLabels[tab]}
 						</button>

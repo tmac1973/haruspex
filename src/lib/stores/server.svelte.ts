@@ -40,6 +40,13 @@ let serverState = $state<ServerState>({
 });
 
 function parseStatusEvent(payload: RustServerStatus): void {
+	// When the UI is in remote-inference mode the local llama-server sidecar
+	// is intentionally not running, so Rust will keep reporting `Stopped`.
+	// Ignore those updates — the user only leaves remote mode through the
+	// explicit `exitRemoteMode()` path. Without this guard, an unawaited
+	// `initServerStore()` racing against the layout's settings check would
+	// flip the badge from 'remote' back to 'stopped' shortly after startup.
+	if (serverState.status === 'remote' && payload.type === 'Stopped') return;
 	serverState.status = payload.type.toLowerCase() as ServerStatusType;
 	serverState.errorMessage = payload.type === 'Error' ? payload.message : undefined;
 }

@@ -1,5 +1,8 @@
 // llama-server OpenAI-compatible API client wrapper
 import { getSettings } from '$lib/stores/settings';
+import { logDebug } from '$lib/debug-log';
+
+let nextRequestId = 1;
 
 /**
  * A message content can be a plain string (most common) or an array of
@@ -232,6 +235,8 @@ export async function* chatCompletionStream(
 ): AsyncGenerator<StreamChunk> {
 	const endpoint = resolveChatEndpoint(port);
 	const body = buildRequestBody({ ...options, stream: true }, endpoint.model);
+	const reqId = nextRequestId++;
+	logDebug('api', `stream request #${reqId} → ${endpoint.url}`, body);
 
 	let response: Response;
 	try {
@@ -243,21 +248,47 @@ export async function* chatCompletionStream(
 		});
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'AbortError') {
+			logDebug('api', `stream request #${reqId} aborted before response`);
 			throw e;
 		}
+		logDebug('api', `stream request #${reqId} fetch failed`, { error: String(e) });
 		throw new ApiError('Failed to connect to the AI model. Is it still loading?', undefined);
 	}
 
 	if (!response.ok) {
 		const text = await response.text().catch(() => 'Unknown error');
+		logDebug('api', `stream request #${reqId} HTTP ${response.status}`, { body: text });
 		throw new ApiError(`Server error: ${text}`, response.status);
 	}
 
 	if (!response.body) {
+		logDebug('api', `stream request #${reqId} no response body`);
 		throw new ApiError('No response body received');
 	}
 
-	yield* parseSSE(response);
+	let chunkCount = 0;
+	let contentLen = 0;
+	let toolCallChunks = 0;
+	let lastFinish: string | null = null;
+	let lastUsage: Usage | undefined;
+	try {
+		for await (const chunk of parseSSE(response)) {
+			chunkCount++;
+			if (chunk.delta.content) contentLen += chunk.delta.content.length;
+			if (chunk.delta.tool_calls && chunk.delta.tool_calls.length > 0) toolCallChunks++;
+			if (chunk.finish_reason) lastFinish = chunk.finish_reason;
+			if (chunk.usage) lastUsage = chunk.usage;
+			yield chunk;
+		}
+	} finally {
+		logDebug('api', `stream request #${reqId} ended`, {
+			chunks: chunkCount,
+			contentLen,
+			toolCallChunks,
+			finish_reason: lastFinish,
+			usage: lastUsage
+		});
+	}
 }
 
 export async function chatCompletion(
@@ -267,6 +298,8 @@ export async function chatCompletion(
 ): Promise<ChatCompletionResponse> {
 	const endpoint = resolveChatEndpoint(port);
 	const body = buildRequestBody({ ...options, stream: false }, endpoint.model);
+	const reqId = nextRequestId++;
+	logDebug('api', `non-stream request #${reqId} → ${endpoint.url}`, body);
 
 	let response: Response;
 	try {
@@ -278,13 +311,16 @@ export async function chatCompletion(
 		});
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'AbortError') {
+			logDebug('api', `non-stream request #${reqId} aborted before response`);
 			throw e;
 		}
+		logDebug('api', `non-stream request #${reqId} fetch failed`, { error: String(e) });
 		throw new ApiError('Failed to connect to the AI model. Is it still loading?');
 	}
 
 	if (!response.ok) {
 		const text = await response.text().catch(() => 'Unknown error');
+		logDebug('api', `non-stream request #${reqId} HTTP ${response.status}`, { body: text });
 		throw new ApiError(`Server error: ${text}`, response.status);
 	}
 
@@ -292,6 +328,7 @@ export async function chatCompletion(
 	const choice = data.choices?.[0];
 
 	if (!choice) {
+		logDebug('api', `non-stream request #${reqId} no choices in response`, data);
 		throw new ApiError('No response from model');
 	}
 
@@ -305,6 +342,16 @@ export async function chatCompletion(
 			: reasoning && !content
 				? `<think>${reasoning}</think>`
 				: content;
+
+	logDebug('api', `non-stream request #${reqId} response`, {
+		finish_reason: choice.finish_reason,
+		content_len: content ? content.length : 0,
+		has_reasoning: !!reasoning,
+		tool_call_count: choice.message?.tool_calls?.length ?? 0,
+		tool_calls: choice.message?.tool_calls,
+		content,
+		usage: data.usage
+	});
 
 	return {
 		content: fullContent,

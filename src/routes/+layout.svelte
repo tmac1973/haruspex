@@ -9,6 +9,7 @@
 	import { enterRemoteMode, initServerStore, startServer } from '$lib/stores/server.svelte';
 	import { applyTheme, getSettings } from '$lib/stores/settings';
 	import { invoke } from '@tauri-apps/api/core';
+	import { open as openExternal } from '@tauri-apps/plugin-shell';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
@@ -22,17 +23,29 @@
 		initServerStore();
 		initChatStore();
 
-		// Intercept clicks on external links and open in system browser
+		// Intercept clicks on external links and open in the system browser
+		// rather than letting the webview navigate to them (which would replace
+		// the Haruspex UI). Errors are logged so a future shell-plugin
+		// regression is visible — silently swallowing left a click that did
+		// nothing at all when the previous `window.open` fallback no-op'd
+		// inside the webview.
 		document.addEventListener('click', (e) => {
 			const anchor = (e.target as HTMLElement).closest('a');
 			if (!anchor) return;
 			const href = anchor.getAttribute('href');
 			if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
 				e.preventDefault();
-				invoke('plugin:shell|open', { path: href }).catch(() => {
-					window.open(href, '_blank');
-				});
+				openExternal(href).catch((err) => console.error('shell open failed:', href, err));
 			}
+		});
+
+		// Suppress the webview's right-click context menu on links. WebKitGTK's
+		// default "Open Link" item navigates the current frame, which replaces
+		// the Haruspex UI with the linked page. Killing the menu on anchors
+		// removes the footgun; non-link right-clicks still get the default menu.
+		document.addEventListener('contextmenu', (e) => {
+			const anchor = (e.target as HTMLElement).closest('a');
+			if (anchor) e.preventDefault();
 		});
 
 		// First-run detection + initial backend setup. Three paths:

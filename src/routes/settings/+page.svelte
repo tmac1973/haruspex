@@ -31,6 +31,7 @@
 	} from '$lib/stores/settings';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
 	import EmailAccountForm from '$lib/components/EmailAccountForm.svelte';
+	import { clearDebugLogs } from '$lib/debug-log';
 
 	interface ModelInfo {
 		id: string;
@@ -248,6 +249,16 @@
 	function toggleTableReading() {
 		ttsReadTablesByColumn = !ttsReadTablesByColumn;
 		updateSettings({ ttsReadTablesByColumn });
+	}
+
+	let debugClearLabel = $state('Clear debug log');
+
+	function clearDebugLog() {
+		clearDebugLogs();
+		debugClearLabel = 'Cleared';
+		setTimeout(() => {
+			debugClearLabel = 'Clear debug log';
+		}, 1500);
 	}
 
 	function setSearchProvider(provider: SearchProvider) {
@@ -872,6 +883,18 @@
 		{/each}
 
 		<button class="btn" onclick={addEmailAccount}>Add email account</button>
+	</section>
+
+	<section>
+		<h2>Debug</h2>
+		<p class="section-help">
+			Every chat turn streams full request payloads, model responses, tool calls, and recovery
+			branches into an in-memory ring buffer (5000 entries). Open the Log Viewer's "Debug" tab to
+			see the full buffer; when a turn fails, use the "Copy debug log" button on the error message
+			to grab just that turn's entries. The buffer lives only in memory and resets on every app
+			restart.
+		</p>
+		<button class="btn" onclick={clearDebugLog}>{debugClearLabel}</button>
 	</section>
 
 	{#if !remoteMode}
