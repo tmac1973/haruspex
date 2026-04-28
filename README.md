@@ -1,6 +1,8 @@
 # Haruspex
 
-A cross-platform desktop AI assistant that runs entirely on your computer. No cloud, no accounts, no telemetry. Your conversations never leave your device.
+A cross-platform desktop AI web researcher that runs entirely on your computer. No cloud, no accounts, no telemetry. Your conversations never leave your device.
+
+Haruspex is intended to be used instead of a traditional search engine. Ask Haruspex a question and it will search the web and compile an answer. Turn on "deep research mode" to have it do a more thorough job. Enable a working directory and ask it to create a pdf, spreadsheet, or word document out of it's results. 
 
 Haruspex wraps a local LLM (via [llama.cpp](https://github.com/ggml-org/llama.cpp)) with web research capabilities, speech-to-text, and text-to-speech — all running locally.
 
