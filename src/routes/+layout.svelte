@@ -9,6 +9,8 @@
 	import { enterRemoteMode, initServerStore, startServer } from '$lib/stores/server.svelte';
 	import { applyTheme, getSettings } from '$lib/stores/settings';
 	import { invoke } from '@tauri-apps/api/core';
+	import { getVersion } from '@tauri-apps/api/app';
+	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { open as openExternal } from '@tauri-apps/plugin-shell';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -17,11 +19,19 @@
 	let { children } = $props();
 	let showLogs = $state(false);
 	let showGpuWarning = $state(false);
+	let version = $state('');
 
 	onMount(async () => {
 		applyTheme();
 		initServerStore();
 		initChatStore();
+
+		try {
+			version = await getVersion();
+			await getCurrentWindow().setTitle(`Haruspex ${version}`);
+		} catch {
+			// Tauri commands not available (e.g., in browser dev mode)
+		}
 
 		// Intercept clicks on external links and open in the system browser
 		// rather than letting the webview navigate to them (which would replace
@@ -106,7 +116,9 @@
 </svelte:head>
 
 <header>
-	<h1>Haruspex</h1>
+	<h1>
+		Haruspex{#if version}<span class="version">{version}</span>{/if}
+	</h1>
 	<div class="header-right">
 		<ServerStatusBadge />
 		<ContextIndicator />
@@ -228,6 +240,13 @@
 		font-size: 1.1rem;
 		margin: 0;
 		font-weight: 600;
+	}
+
+	.version {
+		margin-left: 0.4em;
+		font-size: 0.8rem;
+		font-weight: 400;
+		color: var(--text-secondary);
 	}
 
 	.header-right {
