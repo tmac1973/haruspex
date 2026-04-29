@@ -30,6 +30,15 @@ export interface ServerState {
 	 * where their chat requests are going.
 	 */
 	remoteLabel?: string;
+	/**
+	 * Set when llama-server failed to load on the GPU and was respawned
+	 * with `--n-gpu-layers 0`. Drives the "Running on CPU" banner in the
+	 * chat UI. Carries the first GPU-error stderr line (typically the
+	 * VRAM allocation failure that preceded the abort) so the user has
+	 * an actionable reason to look at, not just "performance is bad".
+	 * Cleared the next time `startServer` is called.
+	 */
+	cpuFallback?: { reason: string };
 }
 
 // Svelte 5 runes-based state
@@ -65,9 +74,32 @@ export async function initServerStore(): Promise<void> {
 		// Server command may not be available yet
 	}
 
+	// Sync CPU-fallback state. Important when the user reloads the
+	// frontend (or the layout mounts late) after the Rust side already
+	// flipped to fallback during startup — the live event would have
+	// fired before this listener was attached, so we need to ask.
+	try {
+		const fallback = await invoke<{ reason: string } | null>('get_cpu_fallback_state');
+		serverState.cpuFallback = fallback ?? undefined;
+	} catch {
+		// Command may not be available on older Rust builds
+	}
+
 	// Listen for status changes
 	await listen<RustServerStatus>('server-status-changed', (event) => {
 		parseStatusEvent(event.payload);
+	});
+
+	// Listen for CPU-fallback transitions emitted by the Rust side.
+	// `gpu-fallback-active` fires once per failed-GPU-start, after the
+	// CPU respawn has been launched; `gpu-fallback-cleared` fires on
+	// every fresh `start_server` call (so a manual restart hides the
+	// banner whether or not the new attempt ends up on GPU).
+	await listen<{ reason: string }>('gpu-fallback-active', (event) => {
+		serverState.cpuFallback = { reason: event.payload.reason };
+	});
+	await listen('gpu-fallback-cleared', () => {
+		serverState.cpuFallback = undefined;
 	});
 }
 
@@ -78,6 +110,11 @@ export async function startServer(
 ): Promise<void> {
 	serverState.status = 'starting';
 	serverState.errorMessage = undefined;
+	// Clear the CPU-fallback banner up front. Rust also emits
+	// `gpu-fallback-cleared`, but doing it locally first means the
+	// banner disappears the moment the user clicks "Restart on GPU"
+	// instead of waiting for the IPC round-trip.
+	serverState.cpuFallback = undefined;
 	try {
 		await invoke('start_server', {
 			modelPath,

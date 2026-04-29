@@ -28,9 +28,10 @@
 		sendMessage,
 		cancelGeneration
 	} from '$lib/stores/chat.svelte';
-	import { getServerState } from '$lib/stores/server.svelte';
+	import { getServerState, startServer, stopServer } from '$lib/stores/server.svelte';
 	import { getSettings } from '$lib/stores/settings';
 	import { getDebugLogsForTurn } from '$lib/debug-log';
+	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
 	let inputText = $state('');
@@ -243,6 +244,54 @@
 	const showDiversityWarning = $derived(
 		!isGenerating && sourceUrls.length === 1 && inlineCitationCount >= 3
 	);
+
+	// CPU-fallback banner state. Hidden in remote mode (the message
+	// "running on CPU" doesn't apply when chat is going to a remote
+	// server) and once the user explicitly dismisses the current notice.
+	//
+	// Dismissal is keyed on the *reason* string so that:
+	//   - Re-running the exact same failing start (same VRAM error)
+	//     stays dismissed — the user already saw it and chose to keep
+	//     working on CPU.
+	//   - A different GPU error in the same session re-shows the banner
+	//     since it carries new information.
+	//   - A successful restart clears `cpuFallback` entirely; the effect
+	//     below resets `dismissedReason` so any subsequent fallback in
+	//     the session shows the banner again from scratch.
+	let dismissedReason = $state<string | null>(null);
+	$effect(() => {
+		if (!serverState.cpuFallback) {
+			dismissedReason = null;
+		}
+	});
+	const showCpuFallbackBanner = $derived(
+		serverState.status !== 'remote' &&
+			!!serverState.cpuFallback &&
+			serverState.cpuFallback.reason !== dismissedReason
+	);
+	let restartingOnGpu = $state(false);
+
+	function dismissCpuFallback() {
+		dismissedReason = serverState.cpuFallback?.reason ?? null;
+	}
+
+	async function restartOnGpu() {
+		if (restartingOnGpu || isGenerating) return;
+		restartingOnGpu = true;
+		try {
+			const modelPath = await invoke<string | null>('get_active_model_path');
+			if (!modelPath) {
+				console.warn('No active model — cannot restart on GPU');
+				return;
+			}
+			await stopServer();
+			await startServer(modelPath, getSettings().contextSize);
+		} catch (e) {
+			console.error('Restart on GPU failed:', e);
+		} finally {
+			restartingOnGpu = false;
+		}
+	}
 </script>
 
 <div class="chat-layout">
@@ -314,6 +363,34 @@
 	</aside>
 
 	<div class="chat-main">
+		{#if showCpuFallbackBanner}
+			<div class="cpu-fallback-banner" role="alert">
+				<div class="cpu-fallback-text">
+					<strong>Running on CPU</strong> — the GPU couldn't load the model, so output will be much
+					slower than usual. Free some VRAM (close other GPU apps) and retry.
+					<details class="cpu-fallback-details">
+						<summary>Show error</summary>
+						<code>{serverState.cpuFallback?.reason}</code>
+					</details>
+				</div>
+				<div class="cpu-fallback-actions">
+					<button
+						class="cpu-fallback-retry"
+						onclick={restartOnGpu}
+						disabled={restartingOnGpu || isGenerating}
+					>
+						{restartingOnGpu ? 'Restarting…' : 'Restart on GPU'}
+					</button>
+					<button
+						class="cpu-fallback-dismiss"
+						onclick={dismissCpuFallback}
+						title="Hide this notice for the rest of the session"
+					>
+						Dismiss
+					</button>
+				</div>
+			</div>
+		{/if}
 		<div class="messages" bind:this={messagesContainer} onscroll={handleScroll}>
 			{#if activeConversation && activeConversation.messages.length > 0}
 				{#each activeConversation.messages as msg, i (i)}
@@ -739,6 +816,91 @@
 		color: var(--text-secondary);
 		font-size: 0.78rem;
 		line-height: 1.4;
+	}
+
+	.cpu-fallback-banner {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		margin: 8px 16px 0;
+		padding: 10px 14px;
+		border: 1px solid var(--border);
+		border-left: 3px solid #c69300;
+		border-radius: 6px;
+		background: color-mix(in srgb, #c69300 6%, var(--bg-primary));
+		color: var(--text-primary);
+		font-size: 0.82rem;
+		line-height: 1.45;
+	}
+
+	.cpu-fallback-text {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.cpu-fallback-details {
+		margin-top: 6px;
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+	}
+
+	.cpu-fallback-details summary {
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.cpu-fallback-details code {
+		display: block;
+		margin-top: 4px;
+		padding: 6px 8px;
+		background: var(--code-bg, var(--bg-secondary));
+		border-radius: 4px;
+		font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+		font-size: 0.72rem;
+		white-space: pre-wrap;
+		word-break: break-all;
+	}
+
+	.cpu-fallback-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
+	.cpu-fallback-retry {
+		padding: 6px 14px;
+		background: var(--bg-primary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		cursor: pointer;
+		color: var(--text-primary);
+		font-size: 0.78rem;
+		font-weight: 500;
+	}
+
+	.cpu-fallback-retry:hover:not(:disabled) {
+		border-color: #c69300;
+	}
+
+	.cpu-fallback-retry:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.cpu-fallback-dismiss {
+		padding: 4px 14px;
+		background: none;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		cursor: pointer;
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+	}
+
+	.cpu-fallback-dismiss:hover {
+		color: var(--text-primary);
+		border-color: var(--border);
 	}
 
 	.scroll-btn {

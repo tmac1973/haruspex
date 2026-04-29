@@ -35,6 +35,19 @@ pub enum ServerStatus {
     Error(String),
 }
 
+/// Surfaced to the UI when the CPU-fallback respawn succeeds. The banner
+/// in the chat header reads `reason` so the user can see *why* their
+/// 5080 isn't being used (typically VRAM exhaustion at mmproj load), and
+/// the "Restart on GPU" action calls stop+start to retry.
+#[derive(Clone, Debug, Serialize)]
+pub struct GpuFallbackState {
+    /// First GPU-related error line captured from llama-server stderr —
+    /// usually the most informative root-cause line (e.g. the
+    /// `Device memory allocation of size X failed` log that precedes the
+    /// abort). ANSI codes are stripped before storage.
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct ServerConfig {
     pub port: u16,
@@ -100,6 +113,15 @@ struct ServerInner {
     log_buffer: VecDeque<String>,
     gpu_fallback_attempted: bool,
     gpu_error_detected: bool,
+    /// First GPU-error stderr line captured during the current start
+    /// attempt. Kept across the in-process fallback respawn so the UI
+    /// banner can show the root cause; cleared on the next manual
+    /// `start()` call (so a successful retry hides the banner).
+    gpu_error_reason: Option<String>,
+    /// True once a CPU-fallback respawn has actually been launched.
+    /// Drives the "Running on CPU" banner. Cleared on the next manual
+    /// `start()` call.
+    cpu_fallback_active: bool,
     generation: u64, // incremented on each start, used to ignore stale events
 }
 
@@ -117,6 +139,8 @@ impl LlamaServer {
                 log_buffer: VecDeque::with_capacity(LOG_RING_BUFFER_SIZE),
                 gpu_fallback_attempted: false,
                 gpu_error_detected: false,
+                gpu_error_reason: None,
+                cpu_fallback_active: false,
                 generation: 0,
             })),
         }
@@ -187,7 +211,15 @@ impl LlamaServer {
             inner.config = config;
             inner.gpu_fallback_attempted = false;
             inner.gpu_error_detected = false;
+            inner.gpu_error_reason = None;
+            inner.cpu_fallback_active = false;
         }
+        // Banner clears as soon as a fresh start begins, regardless of
+        // whether this attempt ultimately ends up on GPU or falls back
+        // again. The frontend store wipes its own copy on `startServer()`,
+        // but we also emit the cleared state so any other listener (or a
+        // late `get_cpu_fallback_state` poll) sees the truth.
+        let _ = app.emit("gpu-fallback-cleared", ());
 
         self.spawn_and_monitor(app, model_path).await
     }
@@ -409,6 +441,18 @@ impl LlamaServer {
                         if Self::detect_gpu_error(&line_str) && !state.gpu_fallback_attempted {
                             warn!("GPU error detected, will attempt CPU fallback on exit");
                             state.gpu_error_detected = true;
+                            // Keep the *first* matching line — it's almost
+                            // always the most informative root cause (e.g.
+                            // `Device memory allocation of size X failed`).
+                            // Subsequent lines are downstream effects (assert
+                            // aborts, buffer alloc retries) that read worse
+                            // out of context.
+                            if state.gpu_error_reason.is_none() {
+                                let cleaned = Self::strip_ansi(&line_str).trim().to_string();
+                                if !cleaned.is_empty() {
+                                    state.gpu_error_reason = Some(cleaned);
+                                }
+                            }
                         }
                     }
                     CommandEvent::Terminated(payload) => {
@@ -503,10 +547,23 @@ impl LlamaServer {
 
                             match sidecar_result {
                                 Ok((new_rx, new_child)) => {
-                                    {
+                                    let fallback_state = {
                                         let mut state = inner.lock().await;
                                         state.child = Some(new_child);
-                                    }
+                                        state.cpu_fallback_active = true;
+                                        // Reason was captured from the
+                                        // pre-abort stderr; if for some
+                                        // reason none was matched, fall back
+                                        // to a generic message so the banner
+                                        // still has something to display.
+                                        let reason =
+                                            state.gpu_error_reason.clone().unwrap_or_else(|| {
+                                                "GPU initialization failed — running on CPU."
+                                                    .to_string()
+                                            });
+                                        GpuFallbackState { reason }
+                                    };
+                                    let _ = app.emit("gpu-fallback-active", &fallback_state);
                                     // Spawn a new reader for the fallback process
                                     Self::spawn_output_reader(
                                         inner.clone(),
@@ -731,6 +788,18 @@ impl LlamaServer {
         let inner = self.inner.lock().await;
         inner.log_buffer.iter().cloned().collect()
     }
+
+    pub async fn get_cpu_fallback_state(&self) -> Option<GpuFallbackState> {
+        let inner = self.inner.lock().await;
+        if !inner.cpu_fallback_active {
+            return None;
+        }
+        let reason = inner
+            .gpu_error_reason
+            .clone()
+            .unwrap_or_else(|| "GPU initialization failed — running on CPU.".to_string());
+        Some(GpuFallbackState { reason })
+    }
 }
 
 // Tauri commands
@@ -764,6 +833,13 @@ pub async fn get_server_status(state: tauri::State<'_, LlamaServer>) -> Result<S
 #[tauri::command]
 pub async fn get_server_logs(state: tauri::State<'_, LlamaServer>) -> Result<Vec<String>, ()> {
     Ok(state.get_logs().await)
+}
+
+#[tauri::command]
+pub async fn get_cpu_fallback_state(
+    state: tauri::State<'_, LlamaServer>,
+) -> Result<Option<GpuFallbackState>, ()> {
+    Ok(state.get_cpu_fallback_state().await)
 }
 
 #[cfg(test)]
@@ -882,6 +958,8 @@ mod tests {
             log_buffer: VecDeque::with_capacity(LOG_RING_BUFFER_SIZE),
             gpu_fallback_attempted: false,
             gpu_error_detected: false,
+            gpu_error_reason: None,
+            cpu_fallback_active: false,
             generation: 0,
         };
 

@@ -51,6 +51,7 @@ pub fn run() {
             server::stop_server,
             server::get_server_status,
             server::get_server_logs,
+            server::get_cpu_fallback_state,
             models::list_models,
             models::download_model,
             models::cancel_download,
