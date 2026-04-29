@@ -452,43 +452,50 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				continue;
 			}
 
-			if (usedTools) {
-				// If this iteration's non-streaming check call already came back
-				// with a clean, substantive answer, surface it directly through
-				// the stream callbacks and skip the redundant re-stream.
-				//
-				// The loop used to *always* re-stream here, on the theory that
-				// the non-streaming response might be truncated. But truncation
-				// shows up as `finish_reason === 'length'`, which we can detect
-				// — so we only fall back to a fresh stream when there's actually
-				// a reason to. Re-streaming unconditionally costs a full prompt
-				// evaluation and, worse, the re-stream has to drop `tools` from
-				// the request (otherwise the model would just call another tool
-				// instead of answering). A model trained to tool-call, given no
-				// tools and a long conversation full of tool exchanges, sometimes
-				// regresses to emitting `<tool_call>...</tool_call>` XML as plain
-				// content. After `stripToolCallArtifacts` removes the XML the
-				// answer is empty and the user sees "Web research completed but
-				// the final answer did not arrive" — even though the previous
-				// non-streaming iteration had a complete cited answer in hand.
-				if (
-					response.finish_reason === 'stop' &&
-					response.content &&
-					response.content.trim().length > 0
-				) {
-					logDebug(
-						'agent',
-						`iteration ${iteration} branch=final-synthesis (commit non-stream response, skip re-stream)`,
-						{ contentLen: response.content.length }
-					);
-					options.onStreamChunk({
-						delta: { content: response.content },
-						finish_reason: 'stop'
-					});
-					options.onComplete();
-					return;
-				}
+			// If this iteration's non-streaming check call already came back
+			// with a clean, substantive answer, surface it directly through
+			// the stream callbacks and skip the redundant re-stream.
+			//
+			// The loop used to *always* re-stream here, on the theory that
+			// the non-streaming response might be truncated. But truncation
+			// shows up as `finish_reason === 'length'`, which we can detect
+			// — so we only fall back to a fresh stream when there's actually
+			// a reason to. Re-streaming unconditionally costs a full prompt
+			// evaluation and, worse, can flip the answer entirely:
+			//   - Post-tools, the re-stream drops `tools` from the request
+			//     (otherwise the model would just call another tool instead
+			//     of answering). A model trained to tool-call, given no tools
+			//     and a long conversation full of tool exchanges, sometimes
+			//     regresses to emitting `<tool_call>...</tool_call>` XML as
+			//     plain content; after `stripToolCallArtifacts` removes it
+			//     the answer is empty.
+			//   - Pre-tools (a normal follow-up where the non-stream answer
+			//     was complete), the re-stream is sent *with* tools, and at
+			//     temperature > 0 the model can roll differently the second
+			//     time — deciding to call a tool instead of producing the
+			//     content it just generated. The re-stream returns
+			//     `finish_reason: "tool_calls"` with empty content, the
+			//     final-synthesis path doesn't actually execute those calls,
+			//     and the user sees "Model returned an empty response."
+			if (
+				response.finish_reason === 'stop' &&
+				response.content &&
+				response.content.trim().length > 0
+			) {
+				logDebug(
+					'agent',
+					`iteration ${iteration} branch=final-synthesis (commit non-stream response, skip re-stream)`,
+					{ contentLen: response.content.length, usedTools }
+				);
+				options.onStreamChunk({
+					delta: { content: response.content },
+					finish_reason: 'stop'
+				});
+				options.onComplete();
+				return;
+			}
 
+			if (usedTools) {
 				logDebug('agent', `iteration ${iteration} branch=final-synthesis (post-tools re-stream)`, {
 					reason:
 						response.finish_reason === 'length'
