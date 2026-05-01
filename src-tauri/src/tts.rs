@@ -1,5 +1,6 @@
 use log::{error, info, warn};
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -56,6 +57,44 @@ fn push_log(buffer: &mut VecDeque<String>, line: &str) {
     buffer.push_back(strip_ansi(line));
 }
 
+/// Pick a path to pass koko via `--model` / `--data`.
+///
+/// Preference order:
+///   1. `<resource_dir>/<subdir>/<filename>` if it exists. This is the
+///      bundled location — populated in dev (the files live under
+///      src-tauri/) and in prod when tauri.conf.json's bundle.resources
+///      ships them.
+///   2. `<app_data_dir>/tts/<subdir>/<filename>` as a writable fallback.
+///      Returned even if the file doesn't exist yet, because koko will
+///      auto-download missing models to whatever path it's given — the
+///      important property is that the parent directory is writable, so
+///      the download doesn't blow up against a read-only AppImage mount.
+///
+/// Returns None only if neither directory could be resolved (extremely
+/// unusual — would indicate a Tauri config problem).
+fn resolve_koko_path(
+    resource_dir: &Option<PathBuf>,
+    app_data_dir: &Option<PathBuf>,
+    subdir: &str,
+    filename: &str,
+) -> Option<PathBuf> {
+    if let Some(rd) = resource_dir {
+        let bundled = rd.join(subdir).join(filename);
+        if bundled.exists() {
+            return Some(bundled);
+        }
+    }
+    if let Some(ad) = app_data_dir {
+        let writable_dir = ad.join("tts").join(subdir);
+        if let Err(e) = std::fs::create_dir_all(&writable_dir) {
+            warn!("Failed to create koko model dir {:?}: {}", writable_dir, e);
+            return None;
+        }
+        return Some(writable_dir.join(filename));
+    }
+    None
+}
+
 impl TtsEngine {
     pub fn new() -> Self {
         Self {
@@ -85,17 +124,45 @@ impl TtsEngine {
 
         info!("Starting Kokoro TTS server on port {}", TTS_PORT);
 
+        // Resolve model + voices paths. Preferred location is the bundled
+        // resource_dir (works in dev where the files live under
+        // src-tauri/{checkpoints,data}/, and in prod when tauri.conf.json's
+        // bundle.resources ships them). Falls back to a writable path under
+        // app_data_dir/tts/ so koko's built-in download won't hit a
+        // read-only AppImage mount if the bundle was built without the
+        // models.
+        let resource_dir = app.path().resource_dir().ok();
+        let app_data_dir = app.path().app_data_dir().ok();
+        let model_path = resolve_koko_path(
+            &resource_dir,
+            &app_data_dir,
+            "checkpoints",
+            "kokoro-v1.0.onnx",
+        );
+        let data_path = resolve_koko_path(&resource_dir, &app_data_dir, "data", "voices-v1.0.bin");
+
+        let mut args: Vec<String> = Vec::new();
+        if let Some(p) = &model_path {
+            args.push("--model".into());
+            args.push(p.to_string_lossy().into_owned());
+        }
+        if let Some(p) = &data_path {
+            args.push("--data".into());
+            args.push(p.to_string_lossy().into_owned());
+        }
+        args.extend([
+            "openai".into(),
+            "--ip".into(),
+            "127.0.0.1".into(),
+            "--port".into(),
+            TTS_PORT.to_string(),
+        ]);
+
         let mut sidecar = app
             .shell()
             .sidecar("koko")
             .map_err(|e| format!("Failed to create koko sidecar: {}", e))?
-            .args([
-                "openai",
-                "--ip",
-                "127.0.0.1",
-                "--port",
-                &TTS_PORT.to_string(),
-            ]);
+            .args(&args);
 
         {
             let mut lib_paths = Vec::new();

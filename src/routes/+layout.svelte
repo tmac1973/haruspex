@@ -11,7 +11,6 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
-	import { open as openExternal } from '@tauri-apps/plugin-shell';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
@@ -35,17 +34,20 @@
 
 		// Intercept clicks on external links and open in the system browser
 		// rather than letting the webview navigate to them (which would replace
-		// the Haruspex UI). Errors are logged so a future shell-plugin
-		// regression is visible — silently swallowing left a click that did
-		// nothing at all when the previous `window.open` fallback no-op'd
-		// inside the webview.
+		// the Haruspex UI). Routed through our own `open_url` command rather
+		// than tauri-plugin-shell so the spawn happens in Rust where we can
+		// strip AppImage-bundled paths out of LD_LIBRARY_PATH for the child
+		// — without that, AppImage builds inherited the bundled lib path
+		// into the spawned browser and links did nothing.
 		document.addEventListener('click', (e) => {
 			const anchor = (e.target as HTMLElement).closest('a');
 			if (!anchor) return;
 			const href = anchor.getAttribute('href');
 			if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
 				e.preventDefault();
-				openExternal(href).catch((err) => console.error('shell open failed:', href, err));
+				invoke('open_url', { url: href }).catch((err) =>
+					console.error('open_url failed:', href, err)
+				);
 			}
 		});
 

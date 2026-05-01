@@ -4,6 +4,7 @@ mod db;
 mod fs_tools;
 mod inference;
 mod integrations;
+mod links;
 mod models;
 mod proxy;
 mod server;
@@ -118,6 +119,7 @@ pub fn run() {
             integrations::email::commands::email_read_full,
             integrations::email::commands::email_prepare_summary,
             app_log::get_app_logs,
+            links::open_url,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -17,9 +17,9 @@
 
 	async function openUrl(url: string) {
 		try {
-			await invoke('plugin:shell|open', { path: url });
-		} catch {
-			window.open(url, '_blank');
+			await invoke('open_url', { url });
+		} catch (err) {
+			console.error('open_url failed:', url, err);
 		}
 	}
 </script>
