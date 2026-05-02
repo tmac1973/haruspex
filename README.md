@@ -1,5 +1,9 @@
 # Haruspex
 
+Click this screenshot to watch the explainer video:
+
+[![Watch the video](https://img.youtube.com/vi/q59X6fkGMsQ/maxresdefault.jpg)](https://youtu.be/q59X6fkGMsQ)
+
 A cross-platform desktop AI web researcher that runs entirely on your computer. No cloud, no accounts, no telemetry. Your conversations never leave your device.
 
 Haruspex is intended to be used instead of a traditional search engine. Ask Haruspex a question and it will search the web and compile an answer. Turn on "deep research mode" to have it do a more thorough job. Enable a working directory and ask it to create a pdf, spreadsheet, or word document out of it's results. 
