@@ -41,6 +41,13 @@ export function setContextUsage(promptTokens: number, completionTokens: number):
 	};
 }
 
+/** Update just the context size, preserving token counts. Used when the
+ *  active inference backend changes (e.g. remote→local) so the indicator
+ *  reflects the new ceiling without waiting for the next prompt. */
+export function setContextSize(contextSize: number): void {
+	usage = { ...usage, contextSize };
+}
+
 export function getContextPercentage(): number {
 	if (usage.contextSize === 0) return 0;
 	return (usage.promptTokens / usage.contextSize) * 100;

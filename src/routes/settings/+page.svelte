@@ -18,6 +18,7 @@
 		updateProxy,
 		setEmailAccounts,
 		applyTheme,
+		getActiveContextSize,
 		type ResponseFormat,
 		type ThemeMode,
 		type SearchProvider,
@@ -29,6 +30,7 @@
 		type EmailTlsMode,
 		type ProxyMode
 	} from '$lib/stores/settings';
+	import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
 	import EmailAccountForm from '$lib/components/EmailAccountForm.svelte';
 	import { clearDebugLogs } from '$lib/debug-log';
@@ -102,6 +104,9 @@
 		if (mode === inferenceBackend.mode) return;
 		inferenceBackend = { ...inferenceBackend, mode };
 		updateInferenceBackend({ mode });
+		// Refresh the header context indicator immediately so it reflects
+		// the new backend's ceiling instead of the previous one's stale value.
+		setIndicatorContextSize(getActiveContextSize());
 		if (mode === 'remote') {
 			// Stop the local llama-server sidecar — no point burning
 			// VRAM on a model we're not going to query. Then flip the
