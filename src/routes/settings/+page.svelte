@@ -256,6 +256,13 @@
 		updateSettings({ ttsReadTablesByColumn });
 	}
 
+	let keepRecentToolResults = $state(getSettings().keepRecentToolResults);
+
+	function toggleKeepRecentToolResults() {
+		keepRecentToolResults = !keepRecentToolResults;
+		updateSettings({ keepRecentToolResults });
+	}
+
 	let debugClearLabel = $state('Clear debug log');
 
 	function clearDebugLog() {
@@ -839,6 +846,25 @@
 			{/if}
 		</section>
 	{/if}
+
+	<section>
+		<h2>Agent</h2>
+		<label class="toggle-row">
+			<input
+				type="checkbox"
+				checked={keepRecentToolResults}
+				onchange={toggleKeepRecentToolResults}
+			/>
+			<div>
+				<strong>Keep tool results from the previous turn in context</strong>
+				<span>
+					Lets followup questions reference raw research details (page contents, search results)
+					from the most recent turn. Increases context usage — older tool results are still
+					discarded, and conversation summarization may kick in sooner.
+				</span>
+			</div>
+		</label>
+	</section>
 
 	<section>
 		<h2>Default Working Directory</h2>
