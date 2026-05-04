@@ -41,6 +41,13 @@ export interface Conversation {
 	searchSteps: SearchStep[];
 	/** Cited source URLs from the last generation. Not persisted to DB. */
 	sourceUrls: string[];
+	/**
+	 * Tool-call + tool-result messages from the most recent completed turn.
+	 * Optionally spliced back into the next turn's prompt when the
+	 * `keepRecentToolResults` setting is enabled, so followup questions can
+	 * reference raw research details. In-memory only — not persisted to DB.
+	 */
+	lastTurnTools?: ChatMessage[];
 }
 
 let conversations = $state<Conversation[]>([]);
@@ -198,6 +205,10 @@ async function compactIfNeeded(): Promise<void> {
 
 		conversation.messages = newMessages;
 		conversation.contextUsage = null;
+		// The turn `lastTurnTools` belonged to has just been summarized away;
+		// keeping the raw tool messages would re-inflate the same context we
+		// just compacted.
+		conversation.lastTurnTools = undefined;
 		resetContextUsage();
 
 		await dbReplaceMessages(conversation.id, newMessages);
@@ -345,10 +356,34 @@ export async function sendMessage(content: string): Promise<void> {
 		const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
 		let messagesForApi: ChatMessage[] = [buildSystemPrompt(currentWorkingDir), ...historyMessages];
 
+		// If the user opted in, splice the previous turn's tool_calls + tool
+		// messages back into the prompt so the model can reference its own
+		// research on followup questions. Insertion point is just before the
+		// most recent assistant prose (the prior turn's final answer), so the
+		// canonical sequence becomes:
+		//   ...older history, user_{N-1}, [tool_calls + results], asst_{N-1}, user_N
+		// preserving the OpenAI tool-call/result pairing.
+		const keepRecentTools = getSettings().keepRecentToolResults;
+		if (keepRecentTools && conversation.lastTurnTools && conversation.lastTurnTools.length > 0) {
+			// Just-pushed user is at the end; the prior assistant prose sits at
+			// length - 2. If the shape doesn't match (e.g. very first turn),
+			// skip the splice rather than risk a malformed prompt.
+			const insertIdx = messagesForApi.length - 2;
+			if (insertIdx >= 0 && messagesForApi[insertIdx].role === 'assistant') {
+				messagesForApi = [
+					...messagesForApi.slice(0, insertIdx),
+					...conversation.lastTurnTools,
+					...messagesForApi.slice(insertIdx)
+				];
+			}
+		}
+
 		messagesForApi = injectMessageHints(messagesForApi, {
 			workingDir: currentWorkingDir,
 			exhaustiveResearch
 		});
+
+		const baseMessageCount = messagesForApi.length;
 
 		const activeCtxSize = getActiveContextSize();
 
@@ -451,6 +486,21 @@ export async function sendMessage(content: string): Promise<void> {
 				errorTurnId = currentTurnId;
 			}
 		});
+
+		// Capture any tool-call / tool-result messages the loop appended so
+		// the next turn can optionally splice them back in. We slice from
+		// the pre-loop length and filter to just the messages that need to
+		// stay paired (assistant tool_calls + their tool results) — recovery
+		// nudges like "Continue." aren't useful on the next turn.
+		if (keepRecentTools) {
+			const appended = messagesForApi.slice(baseMessageCount);
+			const toolPairs = appended.filter(
+				(m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls)
+			);
+			conversation.lastTurnTools = toolPairs.length > 0 ? toolPairs : undefined;
+		} else {
+			conversation.lastTurnTools = undefined;
+		}
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'AbortError') {
 			if (streamingContent) {

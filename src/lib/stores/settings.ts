@@ -125,6 +125,7 @@ export interface AppSettings {
 	audioInputDevice: string;
 	dismissedGpuWarning: boolean;
 	defaultWorkingDir: string;
+	keepRecentToolResults: boolean;
 	inferenceBackend: InferenceBackendConfig;
 	integrations: IntegrationsConfig;
 	proxy: ProxyConfig;
@@ -166,6 +167,7 @@ const defaults: AppSettings = {
 	audioInputDevice: '',
 	dismissedGpuWarning: false,
 	defaultWorkingDir: '',
+	keepRecentToolResults: true,
 	inferenceBackend: defaultInferenceBackend,
 	integrations: defaultIntegrations,
 	proxy: defaultProxy
