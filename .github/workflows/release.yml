@@ -150,7 +150,8 @@ jobs:
             build-essential pkg-config cmake clang libclang-dev \
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev \
             libvulkan-dev glslc libsonic-dev libpcaudio-dev libssl-dev \
-            libfuse2t64
+            libfuse2t64 \
+            file patchelf desktop-file-utils librsvg2-bin libglib2.0-bin
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
@@ -186,6 +187,10 @@ jobs:
         run: |
           npm ci
           if [ "$RUNNER_OS" = "Linux" ]; then
+            # APPIMAGE_EXTRACT_AND_RUN: GitHub Actions containers don't expose
+            # /dev/fuse, so AppImage tools (linuxdeploy + plugins) can't mount
+            # via FUSE. This makes them extract to a tempdir and exec instead.
+            APPIMAGE_EXTRACT_AND_RUN=1 \
             NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries" \
               npm run tauri build -- --bundles appimage,deb,rpm ${{ matrix.tauri_args }}
           elif [ "$RUNNER_OS" = "Windows" ]; then
