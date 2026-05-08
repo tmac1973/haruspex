@@ -95,20 +95,34 @@ jobs:
     strategy:
       matrix:
         include:
+          # Linux build runs inside ubuntu:25.10 to bundle a webkit2gtk-4.1
+          # new enough for Mesa >= ~25 (the 24.04 default ~2.44 hits an EGL
+          # init bug against modern Mesa on AMD/Intel — only NVIDIA's
+          # proprietary EGL avoided the broken code path).
           - platform: ubuntu-24.04
+            container: ubuntu:25.10
             target: x86_64-unknown-linux-gnu
             tauri_args: ''
           - platform: windows-latest
+            container: ''
             target: x86_64-pc-windows-msvc
             tauri_args: ''
           - platform: macos-latest
+            container: ''
             target: aarch64-apple-darwin
             tauri_args: '--target aarch64-apple-darwin'
           - platform: macos-15
+            container: ''
             target: x86_64-apple-darwin
             tauri_args: '--target x86_64-apple-darwin'
     runs-on: ${{ matrix.platform }}
+    container: ${{ matrix.container }}
     steps:
+      - name: Bootstrap container (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          apt-get update
+          apt-get install -y git ca-certificates curl sudo
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -131,10 +145,11 @@ jobs:
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev \
-            libvulkan-dev glslc libsonic-dev libpcaudio-dev libssl-dev pkg-config \
+          apt-get update
+          apt-get install -y \
+            build-essential pkg-config cmake \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev \
+            libvulkan-dev glslc libsonic-dev libpcaudio-dev libssl-dev \
             libfuse2t64
 
       - name: Install macOS dependencies
