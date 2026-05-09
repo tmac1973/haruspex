@@ -216,52 +216,25 @@ async fn try_llama_toolchest(
         return None;
     }
 
-    // Step 2: loaded models — the router-facing list (what's actually
-    // usable for chat requests right now).
+    // Step 2: pull the router-facing list. After the toolchest API
+    // consistency fix this enumerates exactly the models that
+    // /v1/chat/completions will serve — every enabled model, with its
+    // current VRAM-load state. Disabled-but-downloaded models are
+    // intentionally excluded; managing enable/disable is the job of the
+    // toolchest UI, not haruspex.
     let loaded_url = format!("{}/api/service/loaded-models", base);
     let loaded_json = fetch_json(client, &loaded_url, api_key).await?;
     let loaded = parse_toolchest_model_list(&loaded_json);
 
-    // Step 3: also list ALL models so the user can see unloaded ones and
-    // potentially activate them from the Settings UI. Optional — if this
-    // fails we still return whatever we got from loaded-models.
-    let all_url = format!("{}/api/models/", base);
-    let all_json = fetch_json(client, &all_url, api_key).await;
-    let all_listed: Vec<ToolchestModelEntry> = all_json
-        .as_ref()
-        .map(parse_toolchest_model_list)
-        .unwrap_or_default();
-
-    // Step 4: merge loaded + all, preferring loaded status when known.
-    let mut model_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut entries: std::collections::HashMap<String, ToolchestModelEntry> =
-        std::collections::HashMap::new();
-    for m in all_listed {
-        model_ids.insert(m.id.clone());
-        entries.insert(m.id.clone(), m);
-    }
-    for m in &loaded {
-        model_ids.insert(m.id.clone());
-        entries
-            .entry(m.id.clone())
-            .and_modify(|e| e.loaded = true)
-            .or_insert_with(|| m.clone());
-    }
-
-    // Step 5: for each model, fetch capabilities via /api/models/{id}/info.
+    // Step 3: enrich each entry with capabilities via /api/models/{id}/info.
     // We do this sequentially because toolchest is typically small-scale
     // and the probe latency is dominated by the per-request handshake
     // rather than wall time; parallelism via join_all would add ~100 lines
     // of scaffolding for a marginal speedup.
     let mut models: Vec<NormalizedModel> = Vec::new();
     let mut default_context_size: Option<u32> = None;
-    for id in &model_ids {
-        let entry = entries.get(id).cloned().unwrap_or(ToolchestModelEntry {
-            id: id.clone(),
-            name: id.clone(),
-            loaded: false,
-        });
-        let info_url = format!("{}/api/models/{}/info", base, id);
+    for entry in &loaded {
+        let info_url = format!("{}/api/models/{}/info", base, entry.id);
         let info = fetch_json(client, &info_url, api_key).await;
         let (ctx_size, vision) = info
             .as_ref()
@@ -275,7 +248,7 @@ async fn try_llama_toolchest(
 
         models.push(NormalizedModel {
             id: entry.id.clone(),
-            display_name: entry.name,
+            display_name: entry.name.clone(),
             context_size: ctx_size,
             vision_supported: vision,
             loaded: Some(entry.loaded),
@@ -289,9 +262,9 @@ async fn try_llama_toolchest(
         models,
         default_context_size,
         notes: format!(
-            "llama-toolchest ({} loaded of {} total)",
+            "llama-toolchest ({} loaded of {} enabled)",
             loaded_count,
-            model_ids.len()
+            loaded.len()
         ),
     })
 }
@@ -424,7 +397,8 @@ struct ToolchestModelEntry {
 
 /// Parse a toolchest model list response. Handles both `{"models": [...]}`
 /// and a bare `[...]` shape since we don't have the exact schema nailed
-/// down — be tolerant. Fields probed: `id`, `name`, `loaded`, `status`.
+/// down — be tolerant. Fields probed: `id`, `public_name`, `name`,
+/// `loaded`, `status`.
 fn parse_toolchest_model_list(v: &serde_json::Value) -> Vec<ToolchestModelEntry> {
     let arr = v
         .get("models")
@@ -440,9 +414,15 @@ fn parse_toolchest_model_list(v: &serde_json::Value) -> Vec<ToolchestModelEntry>
                 .or_else(|| item.get("model_id").and_then(|x| x.as_str()))
                 .or_else(|| item.get("name").and_then(|x| x.as_str()))?
                 .to_string();
+            // `public_name` is toolchest's short OpenAI-style ID (e.g.
+            // "unsloth-Qwen3.6-35B-A3B.UD_Q8_K_XL") and is what /v1/models
+            // advertises — much friendlier in a model picker than the long
+            // registry ID. Fall back through name/display_name/id for other
+            // backends.
             let name = item
-                .get("name")
+                .get("public_name")
                 .and_then(|x| x.as_str())
+                .or_else(|| item.get("name").and_then(|x| x.as_str()))
                 .or_else(|| item.get("display_name").and_then(|x| x.as_str()))
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| id.clone());
@@ -664,6 +644,28 @@ mod tests {
         assert_eq!(models[0].name, "Qwen 7B");
         assert!(models[0].loaded);
         assert!(!models[1].loaded);
+    }
+
+    #[test]
+    fn parse_toolchest_model_list_prefers_public_name() {
+        // The post-API-consistency-fix shape from /api/service/loaded-models:
+        // entries carry a `public_name` field with the OpenAI-style short ID.
+        // Display should prefer it over the long registry-style `id` so the
+        // model picker is readable.
+        let json = serde_json::json!({
+            "models": [
+                {
+                    "id": "unsloth--Qwen3.6-35B-A3B-GGUF--Qwen3.6-35B-A3B-UD-Q8_K_XL",
+                    "public_name": "unsloth-Qwen3.6-35B-A3B.UD_Q8_K_XL",
+                    "registry_id": "unsloth--Qwen3.6-35B-A3B-GGUF--Qwen3.6-35B-A3B-UD-Q8_K_XL",
+                    "status": "unloaded"
+                }
+            ]
+        });
+        let models = parse_toolchest_model_list(&json);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].name, "unsloth-Qwen3.6-35B-A3B.UD_Q8_K_XL");
+        assert!(!models[0].loaded);
     }
 
     #[test]
