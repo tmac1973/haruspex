@@ -48,6 +48,20 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # release-please is configured with `draft: true`, which makes the
+      # GitHub Release a draft. GitHub does not create the underlying git
+      # tag for a draft release until it's published — but the action still
+      # reports release_created=true. Without this step, the build job below
+      # tries to checkout a tag that doesn't exist and fails immediately.
+      - name: Create tag for draft release
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/git/refs \
+            -f ref="refs/tags/${{ steps.release.outputs.tag_name }}" \
+            -f sha="${{ steps.release.outputs.sha }}"
+
   sync-cargo-lock:
     # When release-please opens or updates a release PR, the Cargo.toml bump
     # leaves src-tauri/Cargo.lock stale. Sync it on the PR branch so merging
