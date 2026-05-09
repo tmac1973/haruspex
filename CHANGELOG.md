@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.29](https://github.com/tmac1973/haruspex/compare/v0.1.28...v0.1.29) (2026-05-09)
+
+
+### Bug Fixes
+
+* **inference:** show only enabled toolchest models in the picker ([54a4a58](https://github.com/tmac1973/haruspex/commit/54a4a588b642d34b3012315370e53f34a0f39e06))
+* **inference:** show only enabled toolchest models in the picker ([3b1581b](https://github.com/tmac1973/haruspex/commit/3b1581bce64ecdf583002a0b130cba9bc7a4565d))
+
 ## [0.1.28](https://github.com/tmac1973/haruspex/compare/v0.1.27...v0.1.28) (2026-05-04)
 
 
