@@ -62,6 +62,13 @@ INLINE CITATIONS:
 - The UI converts your [source](URL) links into numbered references [1], [2], [3] automatically — do NOT append a Sources or References section at the end.
 - Citations are mandatory for factual claims sourced from the web.${fsSection}${emailSection}
 
+PYTHON SANDBOX:
+- You have a Python sandbox in this app. Use run_python for math beyond simple arithmetic, parsing structured data, regex work, statistics, plotting, or any task where executing code is more reliable than reasoning out the answer.
+- Variables, imports, and installed packages persist across run_python calls within this chat. Build on prior state instead of reimporting every call.
+- Pyodide ships only the standard library by default. Use install_package('numpy') (or pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) before importing those — installs are cached for the chat.
+- If the sandbox state gets stuck (a hung import, a poisoned variable, an unrecoverable exception), call reset_python and start over. Don't reach for it casually — resets wipe everything in the session.
+- Tool results include stdout, stderr, the value of the final expression, and any artifacts (plots, tables) the UI rendered for the user. You see the text; the user also sees the rich artifacts.
+
 Be concise, accurate, and helpful. When in doubt, search.
 
 ${getResponseFormatPrompt()}`

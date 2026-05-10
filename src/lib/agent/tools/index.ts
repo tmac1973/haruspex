@@ -3,6 +3,7 @@ import './web';
 import './fs-read';
 import './fs-write';
 import './email';
+import './sandbox';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel } from './registry';
