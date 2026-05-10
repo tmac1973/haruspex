@@ -2,7 +2,7 @@
 # Haruspex Development Environment Setup
 # Downloads and builds all sidecar binaries and models needed for dev.
 #
-# Usage: ./scripts/dev-setup.sh [--skip-models] [--skip-build]
+# Usage: ./scripts/dev-setup.sh [--skip-models] [--skip-build] [--skip-pyodide]
 
 set -e
 
@@ -16,11 +16,13 @@ TTS_CACHE="$HOME/.cache/k"
 
 SKIP_MODELS=false
 SKIP_BUILD=false
+SKIP_PYODIDE=false
 
 for arg in "$@"; do
     case $arg in
         --skip-models) SKIP_MODELS=true ;;
         --skip-build) SKIP_BUILD=true ;;
+        --skip-pyodide) SKIP_PYODIDE=true ;;
     esac
 done
 
@@ -245,6 +247,14 @@ if [ -n "$PDFIUM_ASSET" ]; then
     else
         echo ">> PDFium already installed."
     fi
+    echo
+fi
+
+# ---- Download Pyodide runtime (Python sandbox) ----
+# Phase 11 — needed by the in-browser Python code-execution tool.
+# Idempotent and self-contained; safe to re-run.
+if [ "$SKIP_PYODIDE" = false ]; then
+    "$SCRIPT_DIR/fetch-pyodide.sh"
     echo
 fi
 
