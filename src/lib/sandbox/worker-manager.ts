@@ -24,6 +24,15 @@ export type WorkerFactory = () => Worker;
 const defaultWorkerFactory: WorkerFactory = () =>
 	new Worker(new URL('./python.worker.ts', import.meta.url), { type: 'module' });
 
+// Tauri serves COOP `same-origin` + COEP `credentialless` (see
+// tauri.conf.json and vite.config.ts), but as of haruspex 0.1.30 the
+// WebKitGTK build shipped with Tauri on Linux does not flip
+// crossOriginIsolated to true even with the headers honored — likely a
+// process-model gate that's not enabled by default. The cooperative
+// interrupt path activates wherever crossOriginIsolated does work
+// (probably macOS/Windows), and degrades to terminate-and-respawn
+// elsewhere. The feature is functional either way; the only loss is
+// session state on a timeout.
 const defaultIsolated = (): boolean =>
 	typeof globalThis !== 'undefined' &&
 	typeof (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === 'boolean' &&
