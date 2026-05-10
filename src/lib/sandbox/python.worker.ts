@@ -1,0 +1,180 @@
+/// <reference lib="webworker" />
+
+import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
+
+// Minimal subset of the Pyodide API we use. Full types ship inside the
+// Pyodide tarball but it lives in static/ which is gitignored, so we
+// declare just what we need locally to keep typecheck working on a
+// fresh clone before fetch-pyodide.sh has run.
+interface PyodideAPI {
+	runPythonAsync(code: string): Promise<unknown>;
+	setStdout(opts: { batched: (s: string) => void }): void;
+	setStderr(opts: { batched: (s: string) => void }): void;
+	setInterruptBuffer(buffer: Uint8Array): void;
+	loadPackagesFromImports(code: string): Promise<void>;
+	pyimport(name: string): {
+		install: (packages: string | string[]) => Promise<void>;
+	};
+}
+
+declare const self: DedicatedWorkerGlobalScope;
+
+let pyodide: PyodideAPI | null = null;
+let initStarted = false;
+let pendingInterruptBuffer: SharedArrayBuffer | null = null;
+let currentRunId = '';
+let currentStdout = '';
+let currentStderr = '';
+
+function post(msg: WorkerToMain) {
+	self.postMessage(msg);
+}
+
+async function init(): Promise<void> {
+	if (initStarted) return;
+	initStarted = true;
+	try {
+		// Loaded from the app's static dir at runtime. The URL is absolute
+		// against the dev server / Tauri custom protocol, so neither TS nor
+		// Vite can resolve it at build time.
+		// @ts-expect-error - runtime module, served from static/pyodide/
+		const mod = (await import(/* @vite-ignore */ '/pyodide/pyodide.mjs')) as {
+			loadPyodide: (opts: { indexURL: string }) => Promise<PyodideAPI>;
+		};
+		pyodide = await mod.loadPyodide({ indexURL: '/pyodide/' });
+		pyodide.setStdout({
+			batched: (s) => {
+				currentStdout += s;
+				if (currentRunId) post({ kind: 'stdout', id: currentRunId, data: s });
+			}
+		});
+		pyodide.setStderr({
+			batched: (s) => {
+				currentStderr += s;
+				if (currentRunId) post({ kind: 'stderr', id: currentRunId, data: s });
+			}
+		});
+		if (pendingInterruptBuffer) {
+			pyodide.setInterruptBuffer(new Uint8Array(pendingInterruptBuffer));
+			pendingInterruptBuffer = null;
+		}
+		post({ kind: 'ready' });
+	} catch (err) {
+		post({ kind: 'load_error', error: err instanceof Error ? err.message : String(err) });
+	}
+}
+
+function applyInterruptBuffer(buffer: SharedArrayBuffer): void {
+	if (pyodide) {
+		pyodide.setInterruptBuffer(new Uint8Array(buffer));
+	} else {
+		pendingInterruptBuffer = buffer;
+	}
+}
+
+function emptyResult(durationMs: number, error: string | null = null): ToolResult {
+	const result: ToolResult = {
+		stdout: currentStdout,
+		stderr: currentStderr,
+		result: '',
+		error,
+		artifacts: 0,
+		notes: [],
+		duration_ms: durationMs
+	};
+	currentStdout = '';
+	currentStderr = '';
+	return result;
+}
+
+async function handleRun(id: string, code: string): Promise<void> {
+	if (!pyodide) {
+		post({
+			kind: 'done',
+			id,
+			result: emptyResult(0, 'Pyodide is not loaded')
+		});
+		return;
+	}
+	currentRunId = id;
+	currentStdout = '';
+	currentStderr = '';
+	const t0 = performance.now();
+	try {
+		await pyodide.loadPackagesFromImports(code);
+		const value = await pyodide.runPythonAsync(code);
+		const result = emptyResult(Math.round(performance.now() - t0));
+		result.result = value === undefined || value === null ? '' : String(value);
+		post({ kind: 'done', id, result });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		post({
+			kind: 'done',
+			id,
+			result: emptyResult(Math.round(performance.now() - t0), message)
+		});
+	} finally {
+		currentRunId = '';
+	}
+}
+
+async function handleInstall(id: string, packageName: string): Promise<void> {
+	if (!pyodide) {
+		post({
+			kind: 'done',
+			id,
+			result: emptyResult(0, 'Pyodide is not loaded')
+		});
+		return;
+	}
+	const t0 = performance.now();
+	post({ kind: 'install_progress', id, package: packageName, phase: 'resolving' });
+	try {
+		const micropip = pyodide.pyimport('micropip');
+		post({ kind: 'install_progress', id, package: packageName, phase: 'downloading' });
+		await micropip.install(packageName);
+		post({ kind: 'install_progress', id, package: packageName, phase: 'installing' });
+		const result = emptyResult(Math.round(performance.now() - t0));
+		result.result = `installed ${packageName}`;
+		post({ kind: 'done', id, result });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		post({
+			kind: 'done',
+			id,
+			result: emptyResult(Math.round(performance.now() - t0), message)
+		});
+	}
+}
+
+self.addEventListener('message', (e: MessageEvent<MainToWorker>) => {
+	const msg = e.data;
+	switch (msg.kind) {
+		case 'set_interrupt_buffer':
+			applyInterruptBuffer(msg.buffer);
+			break;
+		case 'run':
+			void handleRun(msg.id, msg.code);
+			break;
+		case 'install':
+			void handleInstall(msg.id, msg.package);
+			break;
+		case 'reset':
+			// Full reset is implemented by the manager via terminate-and-respawn.
+			// Acknowledging here keeps the protocol symmetric in case we add an
+			// in-process reset later.
+			post({ kind: 'done', id: msg.id, result: emptyResult(0) });
+			break;
+		case 'interrupt':
+			// Cooperative interrupt is delivered through the SharedArrayBuffer;
+			// this message is reserved for future use (e.g. cancelling network
+			// fetches that don't see the bytecode interrupt).
+			break;
+		case 'fetch_response':
+		case 'save_response':
+			// Bridges resolved by their own pending-promise tables in 11.5/11.5b.
+			break;
+	}
+});
+
+void init();
