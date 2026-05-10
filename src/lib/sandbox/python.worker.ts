@@ -1,25 +1,11 @@
 /// <reference lib="webworker" />
 
+import { loadPyodide, type PyodideInterface } from 'pyodide';
 import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
-
-// Minimal subset of the Pyodide API we use. Full types ship inside the
-// Pyodide tarball but it lives in static/ which is gitignored, so we
-// declare just what we need locally to keep typecheck working on a
-// fresh clone before fetch-pyodide.sh has run.
-interface PyodideAPI {
-	runPythonAsync(code: string): Promise<unknown>;
-	setStdout(opts: { batched: (s: string) => void }): void;
-	setStderr(opts: { batched: (s: string) => void }): void;
-	setInterruptBuffer(buffer: Uint8Array): void;
-	loadPackagesFromImports(code: string): Promise<void>;
-	pyimport(name: string): {
-		install: (packages: string | string[]) => Promise<void>;
-	};
-}
 
 declare const self: DedicatedWorkerGlobalScope;
 
-let pyodide: PyodideAPI | null = null;
+let pyodide: PyodideInterface | null = null;
 let initStarted = false;
 let pendingInterruptBuffer: SharedArrayBuffer | null = null;
 let currentRunId = '';
@@ -34,14 +20,10 @@ async function init(): Promise<void> {
 	if (initStarted) return;
 	initStarted = true;
 	try {
-		// Loaded from the app's static dir at runtime. The URL is absolute
-		// against the dev server / Tauri custom protocol, so neither TS nor
-		// Vite can resolve it at build time.
-		// @ts-expect-error - runtime module, served from static/pyodide/
-		const mod = (await import(/* @vite-ignore */ '/pyodide/pyodide.mjs')) as {
-			loadPyodide: (opts: { indexURL: string }) => Promise<PyodideAPI>;
-		};
-		pyodide = await mod.loadPyodide({ indexURL: '/pyodide/' });
+		// loadPyodide comes from the npm package; the .wasm / stdlib zip
+		// it pulls down at runtime live in static/pyodide/ (downloaded by
+		// scripts/fetch-pyodide.sh, served at /pyodide/).
+		pyodide = await loadPyodide({ indexURL: '/pyodide/' });
 		pyodide.setStdout({
 			batched: (s) => {
 				currentStdout += s;
