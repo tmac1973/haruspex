@@ -398,6 +398,10 @@ The presentation tools (`fs_write_pptx`, `fs_write_odp`) and the image discovery
 
 These tools will stay in the app and continue to be maintained — the limitations above are all on the model-behavior side, not the code side, and will improve as local models get better at tool use. They're flagged as experimental so you know what to expect when you reach for them.
 
+## Credits
+
+The Haruspex application icon is derived from a photograph of the **Piacenza Bronze Liver** by **Lokilech**, sourced from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Piacenza_Bronzeleber.jpg) and used under the [Creative Commons Attribution-ShareAlike 3.0 Unported](https://creativecommons.org/licenses/by-sa/3.0/) license. The original was background-removed, padded to square, and resized; the derived icon files in `src-tauri/icons/` are themselves licensed under CC BY-SA 3.0. See [`NOTICE.md`](./NOTICE.md) for full details.
+
 ## License
 
-MIT
+MIT (source code). See [`NOTICE.md`](./NOTICE.md) for the icon's separate CC BY-SA 3.0 license.
