@@ -68,6 +68,85 @@ async def _haruspex_save_py(filename, content):
 _haruspex_mod.save = _haruspex_save_py
 _sys.modules['haruspex'] = _haruspex_mod
 
+# ----------------------------------------------------------------------
+# builtins.open patch — make native Python file writes reach the user's
+# working directory.
+#
+# Pyodide's filesystem is in-memory MEMFS. Python's open(), plt.savefig,
+# pd.to_csv, np.save, PIL Image.save — all write into MEMFS only by
+# default, so files appear to "exist" from the model's POV but never
+# touch the host disk. We can't bridge async-to-sync to give Python a
+# real-time host FS (no SharedArrayBuffer on Linux/WebKitGTK), so we
+# defer: every write-mode open against a user-facing path goes through
+# the original open as normal (MEMFS), AND we record the path. After
+# the user's code returns, we read each recorded path from MEMFS and
+# flush it to the host via haruspex.save.
+#
+# Read-after-write within the same run still works (MEMFS retains the
+# file). Cross-run reads still need the FS tools.
+# ----------------------------------------------------------------------
+
+import builtins as _builtins
+
+_haruspex_original_open = _builtins.open
+_haruspex_pending_save_paths = set()
+
+# Paths inside these prefixes are treated as Pyodide-internal scratch
+# (config caches, system libs, /tmp) and NOT flushed to host. Anything
+# else — bare filenames, /home/pyodide/foo.png, /home/tim/test/x.csv —
+# is considered a user-facing save target.
+_haruspex_save_excluded_prefixes = (
+    '/lib/', '/usr/', '/dev/', '/proc/', '/sys/', '/etc/',
+    '/tmp/', '/var/',
+    '/home/pyodide/.',
+)
+
+def _haruspex_should_save(path_str):
+    return not any(path_str.startswith(p) for p in _haruspex_save_excluded_prefixes)
+
+def _haruspex_patched_open(filename, mode='r', *args, **kwargs):
+    if isinstance(mode, str) and any(c in mode for c in 'wxa'):
+        path_str = str(filename)
+        if _haruspex_should_save(path_str):
+            _haruspex_pending_save_paths.add(path_str)
+    return _haruspex_original_open(filename, mode, *args, **kwargs)
+
+_builtins.open = _haruspex_patched_open
+
+async def _haruspex_drain_pending_saves():
+    """Flush each recorded write-mode open to host disk via haruspex.save.
+    Per-file failures are printed to stderr so the model can react on the
+    next turn; one bad save doesn't abort the rest."""
+    import os as _os
+    import sys as _sys
+    failed = []
+    paths = list(_haruspex_pending_save_paths)
+    _haruspex_pending_save_paths.clear()
+    for path in paths:
+        try:
+            with _haruspex_original_open(path, 'rb') as _f:
+                content = _f.read()
+        except Exception as e:
+            failed.append((path, 'could not read from sandbox FS: ' + str(e)))
+            continue
+        # Try the user's path verbatim; if it escapes the workdir
+        # (matplotlib often hands us /home/pyodide/foo.png absolute),
+        # fall back to the basename so the file lands in the workdir.
+        try:
+            await _haruspex_save_py(path, content)
+        except Exception as e:
+            msg = str(e)
+            if 'escapes working directory' in msg or 'absolute' in msg:
+                try:
+                    await _haruspex_save_py(_os.path.basename(path), content)
+                except Exception as e2:
+                    failed.append((path, str(e2)))
+            else:
+                failed.append((path, msg))
+    for fname, err in failed:
+        print('WARNING: could not save ' + repr(fname) + ' to working directory: ' + err,
+              file=_sys.stderr)
+
 def _haruspex_install_matplotlib_hook():
     try:
         import matplotlib as _mpl
@@ -296,6 +375,17 @@ async function handleRun(id: string, code: string): Promise<void> {
 		// dictionary lookup if matplotlib is loaded.
 		await pyodide.runPythonAsync('_haruspex_install_matplotlib_hook()');
 		const value = await pyodide.runPythonAsync(code);
+		// Flush any native file writes that landed in MEMFS during the run
+		// to the host working dir. Errors per file are surfaced via stderr
+		// inside the drain function; only catastrophic failures bubble up.
+		try {
+			await pyodide.runPythonAsync('await _haruspex_drain_pending_saves()');
+		} catch (drainErr) {
+			currentStderr +=
+				'\n[haruspex] drain failed: ' +
+				(drainErr instanceof Error ? drainErr.message : String(drainErr)) +
+				'\n';
+		}
 		const result = emptyResult(Math.round(performance.now() - t0));
 		// Pass the value back to Python so it can detect rich representations
 		// (DataFrame _repr_html_, anything with _repr_html_) and emit
