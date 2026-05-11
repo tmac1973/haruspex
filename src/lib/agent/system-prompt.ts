@@ -1,5 +1,9 @@
 import { type ChatMessage, messageText } from '$lib/api';
-import { getResponseFormatPrompt, hasEnabledEmailAccount } from '$lib/stores/settings';
+import {
+	getResponseFormatPrompt,
+	getSettings,
+	hasEnabledEmailAccount
+} from '$lib/stores/settings';
 
 const REVIEW_PATTERNS =
 	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
@@ -42,6 +46,13 @@ EMAIL INTEGRATION:
 - Use email_read_full only when the user needs verbatim text.`
 		: '';
 
+	const sandboxFsSection =
+		workingDir && getSettings().sandboxEnabled
+			? `
+- Reading files from the working dir: the Python sandbox CANNOT read files from the working directory directly — its filesystem is in-memory and separate. To use a working-dir file in run_python, FIRST call the matching fs_read_* tool (fs_read_text for text/CSV/JSON, fs_read_pdf for PDFs, fs_read_xlsx for spreadsheets, fs_read_image for images, fs_read_docx for Word) in a separate tool call, then pass the returned content as a string variable into your next run_python call. For CSV: text = fs_read_text('orders.csv'); then in run_python: pd.read_csv(io.StringIO(text)).
+- Writing files from run_python: standard Python file I/O (open(path, 'w'), plt.savefig, pd.to_csv, np.save, etc.) is automatically flushed to the working directory after your code finishes — just use natural Python idioms.`
+			: '';
+
 	return {
 		role: 'system',
 		content: `You are Haruspex, a helpful, private AI assistant running on the user's computer.
@@ -60,14 +71,18 @@ INLINE CITATIONS:
 - Each [source](URL) must point to the specific page where that claim appeared. Copy the URL from the "[Source: <url>]" header.
 - Never invent a URL. Never cite a URL from an earlier turn.
 - The UI converts your [source](URL) links into numbered references [1], [2], [3] automatically — do NOT append a Sources or References section at the end.
-- Citations are mandatory for factual claims sourced from the web.${fsSection}${emailSection}
+- Citations are mandatory for factual claims sourced from the web.${fsSection}${emailSection}${
+	getSettings().sandboxEnabled
+		? `
 
 PYTHON SANDBOX:
 - You have a Python sandbox in this app. Use run_python for math beyond simple arithmetic, parsing structured data, regex work, statistics, plotting, or any task where executing code is more reliable than reasoning out the answer.
 - Variables, imports, and installed packages persist across run_python calls within this chat. Build on prior state instead of reimporting every call.
 - Pyodide ships only the standard library by default. Use install_package('numpy') (or pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) before importing those — installs are cached for the chat.
 - If the sandbox state gets stuck (a hung import, a poisoned variable, an unrecoverable exception), call reset_python and start over. Don't reach for it casually — resets wipe everything in the session.
-- Tool results include stdout, stderr, the value of the final expression, and any artifacts (plots, tables) the UI rendered for the user. You see the text; the user also sees the rich artifacts.
+- Tool results include stdout, stderr, the value of the final expression, and any artifacts (plots, tables) the UI rendered for the user. You see the text; the user also sees the rich artifacts.${sandboxFsSection}`
+		: ''
+}
 
 Be concise, accurate, and helpful. When in doubt, search.
 

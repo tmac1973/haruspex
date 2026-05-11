@@ -38,7 +38,7 @@ registerTool({
 		function: {
 			name: 'run_python',
 			description:
-				'Execute Python code in a persistent sandbox running in this app. Variables, imports, and installed packages persist across calls within the current chat. Use this for math, data analysis, parsing, plotting, or any computation that benefits from real code execution. Top-level await is supported. The final expression value is returned alongside any captured stdout/stderr. Common pre-installable packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow) need install_package first. Files written via standard Python I/O (open, plt.savefig, pd.to_csv, np.save, etc.) are flushed to the user\'s working directory after your code finishes.',
+				'Execute Python code in a persistent sandbox running in this app. Variables, imports, and installed packages persist across calls within the current chat. Use this for math, data analysis, parsing, plotting, or any computation that benefits from real code execution. Top-level await is supported. The final expression value is returned alongside any captured stdout/stderr. Common pre-installable packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow) need install_package first.',
 			parameters: {
 				type: 'object',
 				properties: {
