@@ -112,18 +112,40 @@ async function init(): Promise<void> {
 			pyodide.setInterruptBuffer(new Uint8Array(pendingInterruptBuffer));
 			pendingInterruptBuffer = null;
 		}
-		pyodide.globals.set('_haruspex_emit_image', (mime: string, bytes: Uint8Array) => {
+		// Pyodide's auto-conversion of Python bytes to JS yields a Uint8Array
+		// that may be a view into WASM memory — postMessage refuses to
+		// structured-clone such views (DataCloneError). Copy into a fresh
+		// JS-owned Uint8Array before posting. Same defensive String() on
+		// the mime so a Python str doesn't leak through as a PyProxy.
+		pyodide.globals.set('_haruspex_emit_image', (mime: unknown, bytes: unknown) => {
 			if (!currentRunId) return;
+			let safeBytes: Uint8Array;
+			if (bytes instanceof Uint8Array) {
+				safeBytes = new Uint8Array(bytes);
+			} else if (
+				bytes &&
+				typeof bytes === 'object' &&
+				'toJs' in bytes &&
+				typeof (bytes as { toJs: () => unknown }).toJs === 'function'
+			) {
+				const converted = (bytes as { toJs: () => unknown }).toJs();
+				safeBytes =
+					converted instanceof Uint8Array
+						? new Uint8Array(converted)
+						: new Uint8Array(converted as ArrayBufferLike);
+			} else {
+				return;
+			}
 			post({
 				kind: 'artifact',
 				id: currentRunId,
-				mime,
-				payload: { kind: 'bytes', bytes }
+				mime: String(mime),
+				payload: { kind: 'bytes', bytes: safeBytes }
 			});
 		});
 		pyodide.globals.set(
 			'_haruspex_emit_html',
-			(html: string, shown: number | null, total: number | null) => {
+			(html: unknown, shown: number | null, total: number | null) => {
 				if (!currentRunId) return;
 				const truncated =
 					shown !== null && total !== null && shown !== undefined && total !== undefined
@@ -133,7 +155,7 @@ async function init(): Promise<void> {
 					kind: 'artifact',
 					id: currentRunId,
 					mime: 'text/html',
-					payload: { kind: 'text', text: html },
+					payload: { kind: 'text', text: String(html) },
 					truncated
 				});
 			}
