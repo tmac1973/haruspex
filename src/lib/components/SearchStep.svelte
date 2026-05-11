@@ -1,5 +1,9 @@
 <script lang="ts">
 	import type { SearchStep } from '$lib/agent/loop';
+	import hljs from 'highlight.js/lib/core';
+	import python from 'highlight.js/lib/languages/python';
+
+	hljs.registerLanguage('python', python);
 
 	interface Props {
 		steps: SearchStep[];
@@ -10,6 +14,23 @@
 	let expanded = $state(false);
 
 	let copyStates: Record<string, string> = $state({});
+
+	function highlightPython(code: string): string {
+		try {
+			return hljs.highlight(code, { language: 'python' }).value;
+		} catch {
+			return code.replace(/[&<>"']/g, (c) => {
+				const map: Record<string, string> = {
+					'&': '&amp;',
+					'<': '&lt;',
+					'>': '&gt;',
+					'"': '&quot;',
+					"'": '&#39;'
+				};
+				return map[c];
+			});
+		}
+	}
 
 	async function copyResult(stepId: string, text: string, event: MouseEvent) {
 		event.stopPropagation();
@@ -108,6 +129,13 @@
 					{/if}
 				</span>
 			</div>
+			{#if step.toolName === 'run_python' && typeof step.args?.code === 'string'}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="step-code" onclick={(e) => e.stopPropagation()}>
+					<pre><code class="language-python">{@html highlightPython(step.args.code as string)}</code></pre>
+				</div>
+			{/if}
 			{#if step.thumbDataUrl}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -223,6 +251,28 @@
 		border: 1px solid var(--border);
 		display: block;
 		object-fit: contain;
+	}
+
+	.step-code {
+		margin: 4px 0 8px 26px;
+		cursor: default;
+	}
+
+	.step-code pre {
+		margin: 0;
+		padding: 10px 12px;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		overflow: auto;
+		max-height: 320px;
+		font-size: 0.82rem;
+		line-height: 1.45;
+	}
+
+	.step-code code {
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		white-space: pre;
 	}
 
 	.step-artifacts {

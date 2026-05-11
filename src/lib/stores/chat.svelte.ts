@@ -548,7 +548,8 @@ export async function sendMessage(content: string): Promise<void> {
 						id: call.id,
 						toolName: call.name,
 						query: getDisplayLabel(call.name, call.arguments),
-						status: 'running'
+						status: 'running',
+						args: call.arguments
 					}
 				];
 			},

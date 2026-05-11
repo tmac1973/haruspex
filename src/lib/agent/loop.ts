@@ -52,6 +52,13 @@ export interface SearchStep {
 	 * inline beneath the tool step. Renderable but not echoed to the model.
 	 */
 	artifacts?: Artifact[];
+	/**
+	 * Full tool-call arguments. Stashed at onToolStart so renderers can
+	 * present richer detail than the one-line `query` label — currently
+	 * used by SearchStep to show a syntax-highlighted code block under
+	 * each run_python step.
+	 */
+	args?: Record<string, unknown>;
 }
 
 export interface AgentLoopOptions {
