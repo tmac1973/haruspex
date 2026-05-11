@@ -4,18 +4,18 @@
 //! the chat's working directory recursively, compares against the manager's
 //! `known_files` (path + mtime from the previous sync), and returns:
 //!   - `to_sync`: new or modified files whose bytes should be written into
-//!                MEMFS at their absolute path
+//!     MEMFS at their absolute path
 //!   - `deleted`: paths that were in `known_files` but no longer exist on
-//!                disk (worker unlinks them from MEMFS)
+//!     disk (worker unlinks them from MEMFS)
 //!   - `skipped`: files that exceeded the size caps (worker prints a stderr
-//!                note pointing the model at fs_read_*)
+//!     note pointing the model at fs_read_*)
 //!
 //! Two size caps apply:
 //!   - `per_file_cap_bytes`: any single file larger than this is skipped
-//!                           entirely (model uses fs_read_* for it)
-//!   - `per_run_cap_bytes`:  once cumulative transfer exceeds this, the
-//!                           remaining files are skipped (will retry next
-//!                           run unless the user does fs_read_* directly)
+//!     entirely (model uses fs_read_* for it)
+//!   - `per_run_cap_bytes`: once cumulative transfer exceeds this, the
+//!     remaining files are skipped (will retry next run unless the user
+//!     does fs_read_* directly)
 //!
 //! The worker also gets `workdir_abs` so it can chdir Python's cwd into the
 //! working dir, making the model's relative paths (`pd.read_csv('foo.csv')`)
