@@ -231,6 +231,13 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	let webSearchUsed = false;
 	const fetchedUrlsThisTurn: Set<string> = new Set();
 	let diversityNudged = false;
+	// Count consecutive `run_python` failures (result starts with
+	// "Error:"). Reset on any successful run_python. Once the count hits
+	// RUN_PYTHON_FAILURE_NUDGE_THRESHOLD we append a generic "step back
+	// and re-evaluate" hint to the tool result, giving the model a chance
+	// to break out of resubmitting near-identical failing code.
+	let consecutiveRunPythonFailures = 0;
+	const RUN_PYTHON_FAILURE_NUDGE_THRESHOLD = 3;
 
 	logDebug('agent', 'runAgentLoop start', {
 		maxIterations,
@@ -660,6 +667,20 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				if (url && !fetchFailed) {
 					fetchedUrlsThisTurn.add(url);
 					toolContent = `[Source: ${url}]\n\n${toolContent}`;
+				}
+			}
+
+			if (call.name === 'run_python') {
+				if (output.result.startsWith('Error:')) {
+					consecutiveRunPythonFailures++;
+					if (consecutiveRunPythonFailures >= RUN_PYTHON_FAILURE_NUDGE_THRESHOLD) {
+						toolContent +=
+							`\n\n[Haruspex hint] This is your ${consecutiveRunPythonFailures}th consecutive run_python failure in this turn. ` +
+							`Stop and re-evaluate before retrying — do not just resubmit a variation of the same code. ` +
+							`Verify your assumptions about the inputs you are working with, or try a fundamentally different approach.`;
+					}
+				} else {
+					consecutiveRunPythonFailures = 0;
 				}
 			}
 
