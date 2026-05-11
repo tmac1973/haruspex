@@ -255,7 +255,7 @@
 	}
 
 	.step-code {
-		margin: 4px 0 8px 26px;
+		margin: 4px 16px 8px 26px;
 		cursor: default;
 	}
 
@@ -277,7 +277,7 @@
 	}
 
 	.step-artifacts {
-		margin: 4px 0 8px 26px;
+		margin: 4px 16px 8px 26px;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
