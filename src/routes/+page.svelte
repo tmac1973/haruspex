@@ -422,6 +422,15 @@
 					<div class="compacting-indicator">Compacting conversation history...</div>
 				{/if}
 
+				{#if activeConversation?.isRestoringSession}
+					<div class="compacting-indicator">Restoring Python sandbox session…</div>
+				{:else if activeConversation?.sessionRestoreSkipped}
+					<div class="compacting-indicator">
+						Python sandbox state was not restored (too many prior code runs). The model starts
+						fresh.
+					</div>
+				{/if}
+
 				{#if showDiversityWarning}
 					<div class="diversity-warning">
 						Model cited one source for multiple claims — treat specifics skeptically.
