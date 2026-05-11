@@ -24,16 +24,21 @@ async function init(): Promise<void> {
 		// it pulls down at runtime live in static/pyodide/ (downloaded by
 		// scripts/fetch-pyodide.sh, served at /pyodide/).
 		pyodide = await loadPyodide({ indexURL: '/pyodide/' });
+		// Pyodide's batched callback delivers one line at a time WITHOUT
+		// the trailing newline, so re-append it before forwarding. Without
+		// this, `print('a'); print('b')` shows up as 'ab' instead of 'a\nb'.
 		pyodide.setStdout({
 			batched: (s) => {
-				currentStdout += s;
-				if (currentRunId) post({ kind: 'stdout', id: currentRunId, data: s });
+				const line = s + '\n';
+				currentStdout += line;
+				if (currentRunId) post({ kind: 'stdout', id: currentRunId, data: line });
 			}
 		});
 		pyodide.setStderr({
 			batched: (s) => {
-				currentStderr += s;
-				if (currentRunId) post({ kind: 'stderr', id: currentRunId, data: s });
+				const line = s + '\n';
+				currentStderr += line;
+				if (currentRunId) post({ kind: 'stderr', id: currentRunId, data: line });
 			}
 		});
 		if (pendingInterruptBuffer) {
