@@ -348,7 +348,7 @@
 	}
 
 	.detail-block {
-		margin-bottom: 8px;
+		margin: 0 16px 8px 0;
 	}
 
 	.detail-header {

@@ -151,7 +151,7 @@
 	}
 
 	.message-content :global(.code-block) {
-		margin: 0.75em 0;
+		margin: 0.75em 16px 0.75em 0;
 		border-radius: 6px;
 		overflow: hidden;
 		border: 1px solid var(--border);

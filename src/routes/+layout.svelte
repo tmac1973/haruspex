@@ -9,6 +9,7 @@
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { enterRemoteMode, initServerStore, startServer } from '$lib/stores/server.svelte';
 	import { applyTheme, getSettings } from '$lib/stores/settings';
+	import { checkForUpdate, type UpdateInfo } from '$lib/updates';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -20,6 +21,7 @@
 	let showLogs = $state(false);
 	let showGpuWarning = $state(false);
 	let version = $state('');
+	let update = $state<UpdateInfo | null>(null);
 
 	onMount(async () => {
 		applyTheme();
@@ -31,6 +33,12 @@
 			await getCurrentWindow().setTitle(`Haruspex ${version}`);
 		} catch {
 			// Tauri commands not available (e.g., in browser dev mode)
+		}
+
+		if (version) {
+			checkForUpdate(version).then((info) => {
+				update = info;
+			});
 		}
 
 		// Intercept clicks on external links and open in the system browser
@@ -121,6 +129,15 @@
 <header>
 	<h1>
 		Haruspex{#if version}<span class="version">{version}</span>{/if}
+		{#if update}
+			<a
+				class="update-link"
+				href={update.url}
+				title="Version {update.version} is available on GitHub"
+			>
+				New version available
+			</a>
+		{/if}
 	</h1>
 	<div class="header-right">
 		<ServerStatusBadge />
@@ -251,6 +268,22 @@
 		font-size: 0.8rem;
 		font-weight: 400;
 		color: var(--text-secondary);
+	}
+
+	.update-link {
+		margin-left: 0.6em;
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--accent);
+		text-decoration: none;
+		padding: 2px 8px;
+		border: 1px solid var(--accent);
+		border-radius: 10px;
+		cursor: pointer;
+	}
+
+	.update-link:hover {
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
 	}
 
 	.header-right {
