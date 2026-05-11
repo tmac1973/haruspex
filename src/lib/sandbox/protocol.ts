@@ -64,5 +64,5 @@ export type WorkerToMain =
 			id: string;
 			request_id: string;
 			filename: string;
-			content: ArrayBuffer | string;
+			content: Uint8Array | ArrayBuffer | string;
 	  };

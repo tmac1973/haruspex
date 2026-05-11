@@ -1,4 +1,6 @@
+import { invoke } from '@tauri-apps/api/core';
 import type { Artifact, MainToWorker, ToolResult, WorkerToMain } from './protocol';
+import { getWorkingDir } from '$lib/stores/chat.svelte';
 
 export interface RunOptions {
 	timeoutMs?: number;
@@ -187,10 +189,12 @@ export class WorkerManager {
 				p.artifacts.push(toArtifact(msg));
 				return;
 			}
+			case 'save_request':
+				void this.handleSaveRequest(msg);
+				return;
 			case 'install_progress':
 			case 'fetch_request':
-			case 'save_request':
-				// Wired up in later phases (11.5, 11.5b).
+				// Wired up in a later phase (11.5 — network egress).
 				return;
 		}
 	}
@@ -295,6 +299,49 @@ export class WorkerManager {
 			if (p.terminateFallback) clearTimeout(p.terminateFallback);
 			p.reject(new Error('sandbox reset'));
 		});
+	}
+
+	private async handleSaveRequest(msg: {
+		id: string;
+		request_id: string;
+		filename: string;
+		content: Uint8Array | ArrayBuffer | string;
+	}): Promise<void> {
+		const respond = (resp: {
+			ok: boolean;
+			path?: string;
+			bytes?: number;
+			error?: string;
+		}): void => {
+			if (!this.worker) return;
+			this.worker.postMessage({
+				kind: 'save_response',
+				id: msg.id,
+				request_id: msg.request_id,
+				...resp
+			});
+		};
+		try {
+			let bytes: number[];
+			if (typeof msg.content === 'string') {
+				bytes = Array.from(new TextEncoder().encode(msg.content));
+			} else if (msg.content instanceof Uint8Array) {
+				bytes = Array.from(msg.content);
+			} else if (msg.content instanceof ArrayBuffer) {
+				bytes = Array.from(new Uint8Array(msg.content));
+			} else {
+				respond({ ok: false, error: 'haruspex.save: unsupported content type' });
+				return;
+			}
+			const result = await invoke<{ path: string; bytes: number }>('sandbox_save', {
+				workdir: getWorkingDir(),
+				relPath: msg.filename,
+				content: bytes
+			});
+			respond({ ok: true, path: result.path, bytes: result.bytes });
+		} catch (err) {
+			respond({ ok: false, error: err instanceof Error ? err.message : String(err) });
+		}
 	}
 
 	terminate(): void {

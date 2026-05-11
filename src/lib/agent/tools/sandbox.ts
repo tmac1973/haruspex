@@ -35,7 +35,7 @@ registerTool({
 		function: {
 			name: 'run_python',
 			description:
-				'Execute Python code in a persistent sandbox running in this app. Variables, imports, and installed packages persist across calls within the current chat. Use this for math, data analysis, parsing, plotting, or any computation that benefits from real code execution. Top-level await is supported. The final expression value is returned alongside any captured stdout/stderr. Common pre-installable packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow) need install_package first.',
+				"Execute Python code in a persistent sandbox running in this app. Variables, imports, and installed packages persist across calls within the current chat. Use this for math, data analysis, parsing, plotting, or any computation that benefits from real code execution. Top-level await is supported. The final expression value is returned alongside any captured stdout/stderr. Common pre-installable packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow) need install_package first. To save large outputs (PNG plots, full DataFrame HTML, generated images) to the user's working directory, use 'await haruspex.save(filename, content)' inside your code — content can be str or bytes; the bytes never round-trip through your context.",
 			parameters: {
 				type: 'object',
 				properties: {

@@ -12,6 +12,15 @@ let currentRunId = '';
 let currentStdout = '';
 let currentStderr = '';
 
+// Tracks Promises returned from _haruspex_save so the matching
+// save_response message can resolve/reject the right call. Keyed by
+// the request_id we mint when the Python coroutine asks to save.
+interface PendingSave {
+	resolve: (result: { path: string; bytes: number }) => void;
+	reject: (err: Error) => void;
+}
+const pendingSaves = new Map<string, PendingSave>();
+
 // Python-side helpers: install matplotlib's plt.show capture lazily (only if
 // matplotlib is importable), and inspect the value of a run's last expression
 // for a rich representation (DataFrame HTML, anything with _repr_html_). The
@@ -19,6 +28,45 @@ let currentStderr = '';
 // registered below to surface artifacts to the worker → main protocol.
 const HARUSPEX_INIT_PY = `
 import io as _io
+import sys as _sys
+import types as _types
+
+# Install the 'haruspex' module so user code can do:
+#   import haruspex
+#   await haruspex.save('plot.png', png_bytes)
+# The actual write happens in Rust via the JS-side _haruspex_save bridge,
+# which returns a Promise the Python coroutine awaits.
+_haruspex_mod = _types.ModuleType('haruspex')
+_haruspex_mod.__doc__ = 'Haruspex sandbox bridge — write files to the active chat working dir.'
+
+async def _haruspex_save_py(filename, content):
+    """Save a file into the active chat's working directory.
+
+    Args:
+        filename: Path relative to the working dir. Absolute paths and
+                  '..' traversal are rejected.
+        content:  str (UTF-8 encoded) or bytes/bytearray.
+
+    Returns:
+        dict with 'path' (absolute path written) and 'bytes' (count).
+
+    Raises:
+        TypeError if content is the wrong type.
+        OSError if the save fails (no working dir, path escape, write error).
+    """
+    if isinstance(content, str):
+        content = content.encode('utf-8')
+    elif not isinstance(content, (bytes, bytearray)):
+        raise TypeError(
+            'haruspex.save: content must be str or bytes, got ' + type(content).__name__
+        )
+    result = await _haruspex_save(filename, content)
+    if hasattr(result, 'to_py'):
+        result = result.to_py()
+    return result
+
+_haruspex_mod.save = _haruspex_save_py
+_sys.modules['haruspex'] = _haruspex_mod
 
 def _haruspex_install_matplotlib_hook():
     try:
@@ -141,6 +189,43 @@ async function init(): Promise<void> {
 				id: currentRunId,
 				mime: String(mime),
 				payload: { kind: 'bytes', bytes: safeBytes }
+			});
+		});
+		pyodide.globals.set('_haruspex_save', (filename: unknown, content: unknown) => {
+			const requestId = crypto.randomUUID();
+			let payload: Uint8Array | string;
+			if (typeof content === 'string') {
+				payload = content;
+			} else if (content instanceof Uint8Array) {
+				// Detach from any underlying WASM buffer so postMessage can
+				// structured-clone it (same fix as the artifact emit path).
+				payload = new Uint8Array(content);
+			} else if (
+				content &&
+				typeof content === 'object' &&
+				'toJs' in content &&
+				typeof (content as { toJs: () => unknown }).toJs === 'function'
+			) {
+				const converted = (content as { toJs: () => unknown }).toJs();
+				if (converted instanceof Uint8Array) {
+					payload = new Uint8Array(converted);
+				} else if (typeof converted === 'string') {
+					payload = converted;
+				} else {
+					return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
+				}
+			} else {
+				return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
+			}
+			return new Promise<{ path: string; bytes: number }>((resolve, reject) => {
+				pendingSaves.set(requestId, { resolve, reject });
+				post({
+					kind: 'save_request',
+					id: currentRunId,
+					request_id: requestId,
+					filename: String(filename),
+					content: payload
+				});
 			});
 		});
 		pyodide.globals.set(
@@ -292,9 +377,19 @@ self.addEventListener('message', (e: MessageEvent<MainToWorker>) => {
 			// this message is reserved for future use (e.g. cancelling network
 			// fetches that don't see the bytecode interrupt).
 			break;
+		case 'save_response': {
+			const pending = pendingSaves.get(msg.request_id);
+			if (!pending) break;
+			pendingSaves.delete(msg.request_id);
+			if (msg.ok) {
+				pending.resolve({ path: msg.path ?? '', bytes: msg.bytes ?? 0 });
+			} else {
+				pending.reject(new Error(msg.error ?? 'haruspex.save failed'));
+			}
+			break;
+		}
 		case 'fetch_response':
-		case 'save_response':
-			// Bridges resolved by their own pending-promise tables in 11.5/11.5b.
+			// Bridges resolved by their own pending-promise tables in 11.5.
 			break;
 	}
 });
