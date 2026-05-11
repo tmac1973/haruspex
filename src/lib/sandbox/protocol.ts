@@ -20,6 +20,7 @@ export interface ToolResult {
 
 export type MainToWorker =
 	| { kind: 'set_interrupt_buffer'; buffer: SharedArrayBuffer }
+	| { kind: 'proxy_mode'; mode: string }
 	| { kind: 'run'; id: string; code: string }
 	| { kind: 'install'; id: string; package: string }
 	| { kind: 'reset'; id: string }
@@ -48,6 +49,7 @@ export type MainToWorker =
 export type WorkerToMain =
 	| { kind: 'ready' }
 	| { kind: 'load_error'; error: string }
+	| { kind: 'get_proxy_mode' }
 	| { kind: 'stdout'; id: string; data: string }
 	| { kind: 'stderr'; id: string; data: string }
 	| {

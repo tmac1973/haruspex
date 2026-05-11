@@ -161,6 +161,14 @@ export class WorkerManager {
 				this.readyError = msg.error;
 				this.readyWaiters.splice(0).forEach((fn) => fn());
 				return;
+			case 'get_proxy_mode':
+				if (this.worker) {
+					this.worker.postMessage({
+						kind: 'proxy_mode',
+						mode: getSettings().proxy?.mode ?? 'none'
+					});
+				}
+				return;
 			case 'stdout': {
 				const p = this.pending.get(msg.id);
 				p?.onStdout?.(msg.data);
