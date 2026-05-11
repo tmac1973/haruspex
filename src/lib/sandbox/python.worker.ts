@@ -174,6 +174,26 @@ if not _haruspex_skip_http_patch:
         print('WARNING: pyodide-http patch failed: ' + str(_patch_err), file=_sys_for_warn.stderr)
         print('  → urllib/requests/httpx will not work; use pyodide.http.pyfetch directly.',
               file=_sys_for_warn.stderr)
+else:
+    # Proxy is configured. Replace urllib.request.urlopen with a stub that
+    # raises a SPECIFIC error naming pyfetch as the fix. The default
+    # "URLError: unknown url type: https" is too generic for the model to
+    # interpret as "use the other API"; it tends to abandon Python entirely
+    # and fall back to web_search, which then hallucinates from
+    # documentation pages.
+    import urllib.request as _urllib_request
+
+    def _haruspex_urlopen_proxy_block(*args, **kwargs):
+        raise OSError(
+            "urllib.request.urlopen is disabled in this sandbox because an "
+            "app proxy is configured (urllib uses synchronous XMLHttpRequest "
+            "which can't be routed through the proxy). Use "
+            "'await pyodide.http.pyfetch(url)' instead — it goes through "
+            "the proxy correctly. Same goes for requests / httpx / "
+            "Path.read_text on URLs."
+        )
+
+    _urllib_request.urlopen = _haruspex_urlopen_proxy_block
 
 # ----------------------------------------------------------------------
 # builtins.open patch — make native Python file writes reach the user's
