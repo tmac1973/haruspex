@@ -212,6 +212,9 @@ export class WorkerManager {
 			case 'save_request':
 				void this.handleSaveRequest(msg);
 				return;
+			case 'delete_request':
+				void this.handleDeleteRequest(msg);
+				return;
 			case 'fetch_request':
 				void this.handleFetchRequest(msg);
 				return;
@@ -454,6 +457,35 @@ export class WorkerManager {
 				content: bytes
 			});
 			respond({ ok: true, path: result.path, bytes: result.bytes });
+		} catch (err) {
+			respond({ ok: false, error: err instanceof Error ? err.message : String(err) });
+		}
+	}
+
+	private async handleDeleteRequest(msg: {
+		id: string;
+		request_id: string;
+		filename: string;
+	}): Promise<void> {
+		const respond = (resp: { ok: boolean; path?: string; error?: string }): void => {
+			if (!this.worker) return;
+			this.worker.postMessage({
+				kind: 'delete_response',
+				id: msg.id,
+				request_id: msg.request_id,
+				...resp
+			});
+		};
+		try {
+			const result = await invoke<{ path: string }>('sandbox_delete_in_workdir', {
+				workdir: getWorkingDir(),
+				relPath: msg.filename
+			});
+			// The file no longer exists on host; drop our cached mtime
+			// entry so the next pre-run sync doesn't think it's "deleted"
+			// (it already is) and try to re-mirror nothing.
+			this.syncedFiles.delete(msg.filename);
+			respond({ ok: true, path: result.path });
 		} catch (err) {
 			respond({ ok: false, error: err instanceof Error ? err.message : String(err) });
 		}

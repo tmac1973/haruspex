@@ -65,3 +65,50 @@ pub async fn sandbox_save(
         bytes: bytes_written,
     })
 }
+
+#[derive(Serialize)]
+pub struct SandboxDeleteResult {
+    pub path: String,
+}
+
+/// Backs `haruspex.delete(filename)` from the Python sandbox. Used by the
+/// post-run drain to propagate Python-side `os.remove(...)` / file moves
+/// back to the host: anything that was in the pre-run workdir snapshot
+/// but is missing from MEMFS after the run gets deleted here too. Path
+/// validation matches `sandbox_save` — relative to the workdir, no `..`,
+/// no symlink escapes. A missing target file is treated as a no-op
+/// (Python already removed it from MEMFS; if host never had it, fine).
+#[tauri::command]
+pub async fn sandbox_delete_in_workdir(
+    workdir: Option<String>,
+    rel_path: String,
+) -> Result<SandboxDeleteResult, String> {
+    let workdir = workdir
+        .ok_or_else(|| "No working directory set for this chat — cannot delete.".to_string())?;
+
+    let workdir_path = PathBuf::from(&workdir);
+    let resolved = resolve_in_workdir(&workdir_path, &rel_path)?;
+
+    match fs::metadata(&resolved).await {
+        Ok(meta) if meta.is_dir() => {
+            return Err(format!(
+                "Refusing to delete directory via sandbox bridge: {}",
+                resolved.to_string_lossy()
+            ));
+        }
+        Ok(_) => {
+            fs::remove_file(&resolved)
+                .await
+                .map_err(|e| format!("Failed to delete file: {}", e))?;
+        }
+        Err(_) => {
+            // Target doesn't exist on host. Nothing to do — the Python
+            // delete already took effect in MEMFS, and host was already
+            // in the post-delete state. Treat as success.
+        }
+    }
+
+    Ok(SandboxDeleteResult {
+        path: resolved.to_string_lossy().to_string(),
+    })
+}
