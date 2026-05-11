@@ -99,6 +99,15 @@ export class WorkerManager {
 	private pending = new Map<string, PendingRun>();
 	private interruptBuffer: SharedArrayBuffer | null = null;
 	private readonly isIsolated: () => boolean;
+	/**
+	 * Maps working-directory-relative path → mtime (seconds since epoch)
+	 * for every file we've synced into this worker's MEMFS. Passed to the
+	 * Rust `sandbox_sync_workdir` command on each pre-run sync so it can
+	 * skip files that haven't changed and detect deletions. Cleared on
+	 * worker respawn (chat switch / reset / timeout escalation).
+	 */
+	private syncedFiles = new Map<string, number>();
+	private pendingSyncs = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
 
 	constructor(
 		private readonly factory: WorkerFactory = defaultWorkerFactory,
@@ -206,6 +215,14 @@ export class WorkerManager {
 			case 'fetch_request':
 				void this.handleFetchRequest(msg);
 				return;
+			case 'sync_workdir_ack': {
+				const pending = this.pendingSyncs.get(msg.sync_id);
+				if (!pending) return;
+				this.pendingSyncs.delete(msg.sync_id);
+				if (msg.error) pending.reject(new Error(msg.error));
+				else pending.resolve();
+				return;
+			}
 			case 'install_progress':
 				return;
 		}
@@ -244,7 +261,23 @@ export class WorkerManager {
 				onStderr: opts.onStderr
 			});
 			void this.waitForReady()
-				.then(() => this.send(msg))
+				.then(async () => {
+					// Pre-run working-dir sync. Only happens for actual code runs
+					// (not install_package / reset_python), and only when a
+					// working dir is set. Failures here don't block the run —
+					// we log and proceed so the user can still execute pure-
+					// compute Python even if the filesystem bridge is down.
+					if (msg.kind === 'run') {
+						try {
+							await this.syncWorkdir();
+						} catch (err) {
+							logDebug('sandbox', 'pre-run workdir sync failed (non-fatal)', {
+								error: err instanceof Error ? err.message : String(err)
+							});
+						}
+					}
+					this.send(msg);
+				})
 				.catch((err: Error) => {
 					if (this.pending.get(id)) {
 						clearTimeout(timer);
@@ -252,6 +285,70 @@ export class WorkerManager {
 						reject(err);
 					}
 				});
+		});
+	}
+
+	private static readonly SYNC_PER_FILE_CAP_BYTES = 50 * 1024 * 1024;
+	private static readonly SYNC_PER_RUN_CAP_BYTES = 200 * 1024 * 1024;
+
+	/**
+	 * Mirror the active chat's working directory into the worker's MEMFS
+	 * so the model's `pd.read_csv('orders.csv')` / `open('x.txt').read()`
+	 * / etc. resolve against real bytes. Change-detection via mtime keeps
+	 * subsequent runs cheap. Returns when the worker has acked the writes.
+	 */
+	private async syncWorkdir(): Promise<void> {
+		const workdir = getWorkingDir();
+		if (!workdir) return;
+		const knownFiles = Array.from(this.syncedFiles.entries()).map(([path, mtime]) => ({
+			path,
+			mtime
+		}));
+		const result = await invoke<{
+			to_sync: Array<{ path: string; abs_path: string; bytes: number[]; mtime: number }>;
+			deleted: string[];
+			skipped: Array<{ path: string; reason: string }>;
+			workdir_abs: string;
+		}>('sandbox_sync_workdir', {
+			workdir,
+			knownFiles,
+			perFileCapBytes: WorkerManager.SYNC_PER_FILE_CAP_BYTES,
+			perRunCapBytes: WorkerManager.SYNC_PER_RUN_CAP_BYTES
+		});
+		if (result.to_sync.length === 0 && result.deleted.length === 0 && result.skipped.length === 0) {
+			// Still need to chdir on first run; do a no-op sync that just
+			// posts the workdir_abs.
+			if (this.syncedFiles.size > 0) return; // already chdir'd in a prior sync
+		}
+		const syncId = crypto.randomUUID();
+		const ackPromise = new Promise<void>((resolve, reject) => {
+			this.pendingSyncs.set(syncId, { resolve, reject });
+		});
+		this.send({
+			kind: 'sync_workdir_files',
+			sync_id: syncId,
+			workdir_abs: result.workdir_abs,
+			to_sync: result.to_sync.map((f) => ({
+				path: f.path,
+				abs_path: f.abs_path,
+				bytes: new Uint8Array(f.bytes),
+				mtime: f.mtime
+			})),
+			deleted: result.deleted,
+			skipped: result.skipped
+		});
+		await ackPromise;
+		for (const f of result.to_sync) {
+			this.syncedFiles.set(f.path, f.mtime);
+		}
+		for (const path of result.deleted) {
+			this.syncedFiles.delete(path);
+		}
+		logDebug('sandbox', 'workdir sync done', {
+			synced: result.to_sync.length,
+			deleted: result.deleted.length,
+			skipped: result.skipped.length,
+			totalKnown: this.syncedFiles.size
 		});
 	}
 
@@ -311,6 +408,12 @@ export class WorkerManager {
 			if (p.terminateFallback) clearTimeout(p.terminateFallback);
 			p.reject(new Error('sandbox reset'));
 		});
+		// MEMFS is gone with the worker — drop our sync state so the next
+		// run does a full fresh sync of the working dir.
+		this.syncedFiles.clear();
+		const pendingSyncs = Array.from(this.pendingSyncs.values());
+		this.pendingSyncs.clear();
+		pendingSyncs.forEach((s) => s.reject(new Error('sandbox reset during sync')));
 	}
 
 	private async handleSaveRequest(msg: {

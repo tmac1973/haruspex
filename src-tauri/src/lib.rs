@@ -9,6 +9,7 @@ mod models;
 mod proxy;
 mod sandbox_fetch;
 mod sandbox_save;
+mod sandbox_sync;
 mod server;
 mod tts;
 mod whisper;
@@ -117,6 +118,7 @@ pub fn run() {
             fs_tools::fs_find_available_path,
             sandbox_fetch::sandbox_fetch,
             sandbox_save::sandbox_save,
+            sandbox_sync::sandbox_sync_workdir,
             integrations::email::commands::email_list_providers,
             integrations::email::commands::email_test_connection,
             integrations::email::commands::email_list_recent,

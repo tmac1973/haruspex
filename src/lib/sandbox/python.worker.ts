@@ -5,6 +5,13 @@ import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
 
+interface PyodideFS {
+	writeFile(path: string, data: Uint8Array | string): void;
+	unlink(path: string): void;
+	mkdirTree(path: string): void;
+	analyzePath(path: string): { exists: boolean };
+}
+
 let pyodide: PyodideInterface | null = null;
 let initStarted = false;
 let pendingInterruptBuffer: SharedArrayBuffer | null = null;
@@ -242,37 +249,7 @@ def _haruspex_patched_open(filename, mode='r', *args, **kwargs):
         path_str = str(filename)
         if _haruspex_should_save(path_str):
             _haruspex_pending_save_paths.add(path_str)
-    try:
-        return _haruspex_original_open(filename, mode, *args, **kwargs)
-    except FileNotFoundError as _err:
-        # Enrich read-side failures on user-facing paths so the model knows
-        # to use the fs_read_* tools instead of expecting MEMFS to mirror
-        # the host disk. Write-mode failures don't trigger this branch
-        # because we already capture writes; if a write fails it's some
-        # other reason worth surfacing as-is.
-        if not isinstance(mode, str) or any(c in mode for c in 'wxa'):
-            raise
-        path_str = str(filename)
-        if not _haruspex_should_save(path_str):
-            raise
-        if _haruspex_working_dir_set:
-            raise FileNotFoundError(
-                str(_err) + " — the sandbox uses an in-memory filesystem that does not "
-                "see files in the user's working directory. To read this file, call "
-                "fs_read_text(path) (or fs_read_pdf / fs_read_xlsx / fs_read_image / "
-                "fs_read_docx for non-text formats) in a separate tool call FIRST, "
-                "then pass the returned content as a string variable into your next "
-                "run_python call. Example: fs_read_text returns the CSV text, then "
-                "use io.StringIO and pd.read_csv on that string."
-            ) from _err
-        raise FileNotFoundError(
-            str(_err) + " — the sandbox uses an in-memory filesystem that does not "
-            "see files on the user's actual disk, and the user has not set a working "
-            "directory yet (so the fs_read_* tools are unavailable). Ask the user to "
-            "select a working directory (folder icon in the chat input), then read the "
-            "file via fs_read_text (or fs_read_pdf / fs_read_xlsx / etc.) and pass the "
-            "content into run_python as a string."
-        ) from _err
+    return _haruspex_original_open(filename, mode, *args, **kwargs)
 
 _builtins.open = _haruspex_patched_open
 
@@ -585,6 +562,74 @@ function emptyResult(durationMs: number, error: string | null = null): ToolResul
 	return result;
 }
 
+async function handleSyncWorkdir(msg: {
+	sync_id: string;
+	workdir_abs: string;
+	to_sync: Array<{ path: string; abs_path: string; bytes: Uint8Array; mtime: number }>;
+	deleted: string[];
+	skipped: Array<{ path: string; reason: string }>;
+}): Promise<void> {
+	if (!pyodide) {
+		post({ kind: 'sync_workdir_ack', sync_id: msg.sync_id, error: 'pyodide not loaded' });
+		return;
+	}
+	try {
+		// pyodide.FS exposes Emscripten's filesystem API. We use it directly
+		// instead of going through Python — much faster and avoids spinning
+		// up runPythonAsync for what is essentially memcpy work.
+		const fs = (pyodide as unknown as { FS: PyodideFS }).FS;
+		// Make sure the workdir parent directory exists so chdir succeeds.
+		try {
+			fs.mkdirTree(msg.workdir_abs);
+		} catch {
+			// already exists, fine
+		}
+		for (const file of msg.to_sync) {
+			// Defensive copy: Pyodide's structured-clone gives us a fresh
+			// Uint8Array but writeFile is happier with a plain one.
+			const bytes =
+				file.bytes instanceof Uint8Array ? new Uint8Array(file.bytes) : new Uint8Array(0);
+			const lastSlash = file.abs_path.lastIndexOf('/');
+			if (lastSlash > 0) {
+				try {
+					fs.mkdirTree(file.abs_path.slice(0, lastSlash));
+				} catch {
+					// dir already exists
+				}
+			}
+			try {
+				fs.writeFile(file.abs_path, bytes);
+			} catch (err) {
+				currentStderr +=
+					'[haruspex.sync] failed to write ' + file.path + ': ' + String(err) + '\n';
+			}
+		}
+		for (const path of msg.deleted) {
+			const abs = msg.workdir_abs + '/' + path;
+			try {
+				if (fs.analyzePath(abs).exists) fs.unlink(abs);
+			} catch {
+				// best effort
+			}
+		}
+		for (const sk of msg.skipped) {
+			currentStderr += '[haruspex.sync] skipped ' + sk.path + ': ' + sk.reason + '\n';
+		}
+		// Chdir Python into the workdir so the model's relative paths
+		// resolve to the synced files.
+		await pyodide.runPythonAsync(
+			'import os as _os; _os.chdir(' + JSON.stringify(msg.workdir_abs) + ')'
+		);
+		post({ kind: 'sync_workdir_ack', sync_id: msg.sync_id });
+	} catch (err) {
+		post({
+			kind: 'sync_workdir_ack',
+			sync_id: msg.sync_id,
+			error: err instanceof Error ? err.message : String(err)
+		});
+	}
+}
+
 async function handleRun(id: string, code: string): Promise<void> {
 	if (!pyodide) {
 		post({
@@ -686,6 +731,9 @@ self.addEventListener('message', (e: MessageEvent<MainToWorker>) => {
 				proxyModeWaiter = null;
 				w({ mode: msg.mode, workingDirSet: msg.workingDirSet });
 			}
+			break;
+		case 'sync_workdir_files':
+			void handleSyncWorkdir(msg);
 			break;
 		case 'run':
 			void handleRun(msg.id, msg.code);

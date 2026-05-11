@@ -49,8 +49,7 @@ EMAIL INTEGRATION:
 	const sandboxFsSection =
 		workingDir && getSettings().sandboxEnabled
 			? `
-- Reading files from the working dir: the Python sandbox CANNOT read files from the working directory directly — its filesystem is in-memory and separate. To use a working-dir file in run_python, FIRST call the matching fs_read_* tool (fs_read_text for text/CSV/JSON, fs_read_pdf for PDFs, fs_read_xlsx for spreadsheets, fs_read_image for images, fs_read_docx for Word) in a separate tool call, then pass the returned content as a string variable into your next run_python call. For CSV: text = fs_read_text('orders.csv'); then in run_python: pd.read_csv(io.StringIO(text)).
-- Writing files from run_python: standard Python file I/O (open(path, 'w'), plt.savefig, pd.to_csv, np.save, etc.) is automatically flushed to the working directory after your code finishes — just use natural Python idioms.`
+- Working dir files: the user's working directory is mirrored into the sandbox before each run, and your writes are flushed back after. Natural Python file I/O — pd.read_csv('orders.csv'), open('notes.txt').read(), plt.savefig('plot.png'), pd.to_csv('out.csv'), etc. — just works. Both relative paths (resolved against the working dir) and absolute paths into the working dir resolve to the right bytes. Files larger than ~50 MB are not mirrored automatically; for those use fs_read_* / fs_write_* instead.`
 			: '';
 
 	return {

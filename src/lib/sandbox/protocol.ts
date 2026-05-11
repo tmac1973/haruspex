@@ -18,9 +18,29 @@ export interface ToolResult {
 	duration_ms: number;
 }
 
+export interface SyncFile {
+	path: string;
+	abs_path: string;
+	bytes: Uint8Array;
+	mtime: number;
+}
+
+export interface SyncSkipped {
+	path: string;
+	reason: string;
+}
+
 export type MainToWorker =
 	| { kind: 'set_interrupt_buffer'; buffer: SharedArrayBuffer }
 	| { kind: 'proxy_mode'; mode: string; workingDirSet: boolean }
+	| {
+			kind: 'sync_workdir_files';
+			sync_id: string;
+			workdir_abs: string;
+			to_sync: SyncFile[];
+			deleted: string[];
+			skipped: SyncSkipped[];
+	  }
 	| { kind: 'run'; id: string; code: string }
 	| { kind: 'install'; id: string; package: string }
 	| { kind: 'reset'; id: string }
@@ -50,6 +70,7 @@ export type WorkerToMain =
 	| { kind: 'ready' }
 	| { kind: 'load_error'; error: string }
 	| { kind: 'get_proxy_mode' }
+	| { kind: 'sync_workdir_ack'; sync_id: string; error?: string }
 	| { kind: 'stdout'; id: string; data: string }
 	| { kind: 'stderr'; id: string; data: string }
 	| {
