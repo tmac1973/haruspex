@@ -7,6 +7,7 @@ mod integrations;
 mod links;
 mod models;
 mod proxy;
+mod sandbox_fetch;
 mod sandbox_save;
 mod server;
 mod tts;
@@ -114,6 +115,7 @@ pub fn run() {
             fs_tools::fs_download_url,
             fs_tools::fs_path_exists,
             fs_tools::fs_find_available_path,
+            sandbox_fetch::sandbox_fetch,
             sandbox_save::sandbox_save,
             integrations::email::commands::email_list_providers,
             integrations::email::commands::email_test_connection,

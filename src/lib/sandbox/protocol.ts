@@ -30,8 +30,10 @@ export type MainToWorker =
 			request_id: string;
 			ok: boolean;
 			status: number;
-			body: ArrayBuffer;
 			headers: Record<string, string>;
+			body: Uint8Array;
+			url: string;
+			error?: string;
 	  }
 	| {
 			kind: 'save_response';
@@ -58,7 +60,17 @@ export type WorkerToMain =
 	  }
 	| { kind: 'install_progress'; id: string; package: string; phase: InstallPhase }
 	| { kind: 'done'; id: string; result: ToolResult }
-	| { kind: 'fetch_request'; id: string; request_id: string; url: string; init: RequestInit }
+	| {
+			kind: 'fetch_request';
+			id: string;
+			request_id: string;
+			url: string;
+			init: {
+				method?: string;
+				headers?: Record<string, string>;
+				body?: Uint8Array;
+			};
+	  }
 	| {
 			kind: 'save_request';
 			id: string;

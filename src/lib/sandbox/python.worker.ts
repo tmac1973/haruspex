@@ -21,6 +21,17 @@ interface PendingSave {
 }
 const pendingSaves = new Map<string, PendingSave>();
 
+interface PendingFetch {
+	resolve: (result: {
+		status: number;
+		headers: Record<string, string>;
+		body: Uint8Array;
+		url: string;
+	}) => void;
+	reject: (err: Error) => void;
+}
+const pendingFetches = new Map<string, PendingFetch>();
+
 // Python-side helpers: install matplotlib's plt.show capture lazily (only if
 // matplotlib is importable), and inspect the value of a run's last expression
 // for a rich representation (DataFrame HTML, anything with _repr_html_). The
@@ -67,6 +78,76 @@ async def _haruspex_save_py(filename, content):
 
 _haruspex_mod.save = _haruspex_save_py
 _sys.modules['haruspex'] = _haruspex_mod
+
+# ----------------------------------------------------------------------
+# pyodide.http.pyfetch override — route through the app's reqwest+proxy
+# stack so model-authored 'await pyodide.http.pyfetch(url)' calls honor
+# the user's app-level proxy setting (the WebView's fetch doesn't see it).
+# ----------------------------------------------------------------------
+
+class _SandboxFetchResponse:
+    """Thin stand-in for pyodide.http.FetchResponse covering the common
+    methods (.bytes / .string / .text / .json / .memoryview / .ok /
+    .raise_for_status). The body is delivered up front as bytes; the
+    async accessors are stubs that return immediately."""
+    def __init__(self, status, headers, body, url):
+        self.status = int(status)
+        self.headers = dict(headers or {})
+        self.url = str(url or '')
+        self._body = bytes(body) if not isinstance(body, bytes) else body
+        self.ok = 200 <= self.status < 300
+        self.status_text = ''
+
+    async def bytes(self):
+        return self._body
+
+    async def string(self):
+        return self._body.decode('utf-8')
+
+    async def text(self):
+        return await self.string()
+
+    async def json(self):
+        import json as _json
+        return _json.loads(self._body.decode('utf-8'))
+
+    async def memoryview(self):
+        return memoryview(self._body)
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise OSError('HTTP ' + str(self.status) + ' for ' + self.url)
+
+async def _haruspex_pyfetch(url, **kwargs):
+    method = kwargs.get('method', 'GET')
+    headers = kwargs.get('headers', None) or {}
+    body = kwargs.get('body', None)
+    if isinstance(body, str):
+        body = body.encode('utf-8')
+    # Coerce headers to a plain dict (might be passed as JS Headers etc.)
+    if hasattr(headers, 'to_py'):
+        headers = headers.to_py()
+    if not isinstance(headers, dict):
+        headers = dict(headers)
+    response = await _haruspex_fetch(url, method, headers, body)
+    if hasattr(response, 'to_py'):
+        response = response.to_py()
+    return _SandboxFetchResponse(
+        status=response['status'],
+        headers=response['headers'],
+        body=response['body'],
+        url=response.get('url', url),
+    )
+
+# Install the override. Importing pyodide.http here is cheap (it's part
+# of the runtime, not a package download).
+try:
+    import pyodide.http as _pyodide_http
+    _pyodide_http.pyfetch = _haruspex_pyfetch
+except ImportError:
+    # pyodide.http should always be available in Pyodide; if it isn't,
+    # something weird happened and we just leave pyfetch unpatched.
+    pass
 
 # ----------------------------------------------------------------------
 # builtins.open patch — make native Python file writes reach the user's
@@ -270,6 +351,58 @@ async function init(): Promise<void> {
 				payload: { kind: 'bytes', bytes: safeBytes }
 			});
 		});
+		pyodide.globals.set(
+			'_haruspex_fetch',
+			(url: unknown, method: unknown, headers: unknown, body: unknown) => {
+				const requestId = crypto.randomUUID();
+				let bodyBytes: Uint8Array | undefined;
+				if (body == null) {
+					bodyBytes = undefined;
+				} else if (body instanceof Uint8Array) {
+					bodyBytes = new Uint8Array(body);
+				} else if (typeof body === 'string') {
+					bodyBytes = new TextEncoder().encode(body);
+				} else if (
+					typeof body === 'object' &&
+					body !== null &&
+					'toJs' in body &&
+					typeof (body as { toJs: () => unknown }).toJs === 'function'
+				) {
+					const c = (body as { toJs: () => unknown }).toJs();
+					if (c instanceof Uint8Array) bodyBytes = new Uint8Array(c);
+					else if (typeof c === 'string') bodyBytes = new TextEncoder().encode(c);
+				}
+				const headersObj: Record<string, string> = {};
+				if (headers && typeof headers === 'object') {
+					const src =
+						'toJs' in headers && typeof (headers as { toJs: () => unknown }).toJs === 'function'
+							? ((headers as { toJs: () => unknown }).toJs() as Record<string, unknown>)
+							: (headers as Record<string, unknown>);
+					for (const [k, v] of Object.entries(src)) {
+						if (v != null) headersObj[String(k)] = String(v);
+					}
+				}
+				return new Promise<{
+					status: number;
+					headers: Record<string, string>;
+					body: Uint8Array;
+					url: string;
+				}>((resolve, reject) => {
+					pendingFetches.set(requestId, { resolve, reject });
+					post({
+						kind: 'fetch_request',
+						id: currentRunId,
+						request_id: requestId,
+						url: String(url),
+						init: {
+							method: typeof method === 'string' ? method : undefined,
+							headers: headersObj,
+							body: bodyBytes
+						}
+					});
+				});
+			}
+		);
 		pyodide.globals.set('_haruspex_save', (filename: unknown, content: unknown) => {
 			const requestId = crypto.randomUUID();
 			let payload: Uint8Array | string;
@@ -478,9 +611,22 @@ self.addEventListener('message', (e: MessageEvent<MainToWorker>) => {
 			}
 			break;
 		}
-		case 'fetch_response':
-			// Bridges resolved by their own pending-promise tables in 11.5.
+		case 'fetch_response': {
+			const pending = pendingFetches.get(msg.request_id);
+			if (!pending) break;
+			pendingFetches.delete(msg.request_id);
+			if (msg.error) {
+				pending.reject(new Error(msg.error));
+			} else {
+				pending.resolve({
+					status: msg.status,
+					headers: msg.headers,
+					body: msg.body,
+					url: msg.url
+				});
+			}
 			break;
+		}
 	}
 });
 

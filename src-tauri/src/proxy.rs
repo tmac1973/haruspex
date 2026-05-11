@@ -110,7 +110,7 @@ fn should_bypass(target: &reqwest::Url, entries: &[BypassEntry]) -> bool {
 /// Apply the user's proxy config to a reqwest ClientBuilder. Returns the
 /// builder unchanged when the proxy is disabled or the URL is blank; bails
 /// with an error if the URL is set but unparseable.
-fn apply_proxy(
+pub(crate) fn apply_proxy(
     builder: reqwest::ClientBuilder,
     proxy: Option<&ProxyConfig>,
 ) -> Result<reqwest::ClientBuilder, String> {

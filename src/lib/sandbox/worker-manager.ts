@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Artifact, MainToWorker, ToolResult, WorkerToMain } from './protocol';
 import { getWorkingDir } from '$lib/stores/chat.svelte';
+import { getSettings } from '$lib/stores/settings';
 
 export interface RunOptions {
 	timeoutMs?: number;
@@ -192,9 +193,10 @@ export class WorkerManager {
 			case 'save_request':
 				void this.handleSaveRequest(msg);
 				return;
-			case 'install_progress':
 			case 'fetch_request':
-				// Wired up in a later phase (11.5 — network egress).
+				void this.handleFetchRequest(msg);
+				return;
+			case 'install_progress':
 				return;
 		}
 	}
@@ -341,6 +343,63 @@ export class WorkerManager {
 			respond({ ok: true, path: result.path, bytes: result.bytes });
 		} catch (err) {
 			respond({ ok: false, error: err instanceof Error ? err.message : String(err) });
+		}
+	}
+
+	private async handleFetchRequest(msg: {
+		id: string;
+		request_id: string;
+		url: string;
+		init: { method?: string; headers?: Record<string, string>; body?: Uint8Array };
+	}): Promise<void> {
+		const respond = (resp: {
+			ok: boolean;
+			status: number;
+			headers: Record<string, string>;
+			body: Uint8Array;
+			url: string;
+			error?: string;
+		}): void => {
+			if (!this.worker) return;
+			this.worker.postMessage({
+				kind: 'fetch_response',
+				id: msg.id,
+				request_id: msg.request_id,
+				...resp
+			});
+		};
+		try {
+			const bodyBytes = msg.init.body ? Array.from(msg.init.body) : undefined;
+			const result = await invoke<{
+				status: number;
+				headers: Record<string, string>;
+				body: number[];
+				url: string;
+			}>('sandbox_fetch', {
+				url: msg.url,
+				init: {
+					method: msg.init.method,
+					headers: msg.init.headers,
+					body: bodyBytes
+				},
+				proxy: getSettings().proxy
+			});
+			respond({
+				ok: result.status >= 200 && result.status < 300,
+				status: result.status,
+				headers: result.headers,
+				body: new Uint8Array(result.body),
+				url: result.url
+			});
+		} catch (err) {
+			respond({
+				ok: false,
+				status: 0,
+				headers: {},
+				body: new Uint8Array(),
+				url: msg.url,
+				error: err instanceof Error ? err.message : String(err)
+			});
 		}
 	}
 
