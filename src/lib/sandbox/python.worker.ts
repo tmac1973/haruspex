@@ -78,10 +78,19 @@ async function init(): Promise<void> {
 	if (initStarted) return;
 	initStarted = true;
 	try {
-		// loadPyodide comes from the npm package; the .wasm / stdlib zip
-		// it pulls down at runtime live in static/pyodide/ (downloaded by
-		// scripts/fetch-pyodide.sh, served at /pyodide/).
-		pyodide = await loadPyodide({ indexURL: '/pyodide/' });
+		// loadPyodide comes from the npm package; everything it pulls at
+		// runtime (core .wasm, stdlib zip, lock file, packages installed
+		// via micropip) lives at the Pyodide CDN. The version path here
+		// must match the npm package version (see package.json).
+		// Network is required on first run; the browser caches all of
+		// this for subsequent runs.
+		pyodide = await loadPyodide({
+			indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.29.4/full/'
+		});
+		// micropip ships as a loadable package, not part of the stdlib —
+		// pre-load it so install_package() can pyimport it without an
+		// extra round trip on first use.
+		await pyodide.loadPackage('micropip');
 		// Pyodide's batched callback delivers one line at a time WITHOUT
 		// the trailing newline, so re-append it before forwarding. Without
 		// this, `print('a'); print('b')` shows up as 'ab' instead of 'a\nb'.
