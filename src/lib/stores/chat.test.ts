@@ -186,16 +186,24 @@ describe('chat store', () => {
 			options.onComplete();
 		});
 
-		const { sendMessage, getSearchSteps, getSourceUrls } = await import('$lib/stores/chat.svelte');
+		const { sendMessage, getSearchSteps, getSourceUrls, getActiveConversation } = await import(
+			'$lib/stores/chat.svelte'
+		);
 
 		await sendMessage('Search for something');
 
-		const steps = getSearchSteps();
-		expect(steps).toHaveLength(2);
-		expect(steps[0].toolName).toBe('web_search');
-		expect(steps[0].status).toBe('done');
-		expect(steps[1].toolName).toBe('fetch_url');
-		expect(steps[1].status).toBe('done');
+		// Live searchSteps is cleared at commit time — completed steps now
+		// live on the assistant message they belong to via messageSteps.
+		expect(getSearchSteps()).toHaveLength(0);
+
+		const conv = getActiveConversation()!;
+		const assistantIdx = conv.messages.findIndex((m) => m.role === 'assistant');
+		const persisted = conv.messageSteps[assistantIdx];
+		expect(persisted).toHaveLength(2);
+		expect(persisted[0].toolName).toBe('web_search');
+		expect(persisted[0].status).toBe('done');
+		expect(persisted[1].toolName).toBe('fetch_url');
+		expect(persisted[1].status).toBe('done');
 
 		const urls = getSourceUrls();
 		expect(urls).toContain('https://example.com');

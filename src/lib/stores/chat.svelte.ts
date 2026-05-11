@@ -462,7 +462,7 @@ export async function sendMessage(content: string): Promise<void> {
 					const assistantMsg: ChatMessage = { role: 'assistant', content: text };
 					// Snapshot the live search steps onto the assistant message's
 					// position so the UI can keep rendering plots/tables under
-					// this message after the next turn clears `searchSteps`.
+					// this message after the live `searchSteps` is cleared.
 					const stepsForThisTurn = conversation.searchSteps.filter(
 						(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
 					);
@@ -471,6 +471,10 @@ export async function sendMessage(content: string): Promise<void> {
 					}
 					conversation.messages.push(assistantMsg);
 					dbSaveMessage(conversation.id, assistantMsg);
+					// Clear the live indicator now that the steps live on the
+					// committed message. Without this both render simultaneously
+					// (live + persisted) and the user sees doubled artifacts.
+					conversation.searchSteps = [];
 					if (exhaustiveResearch) {
 						exhaustiveResearch = false;
 					}
@@ -537,6 +541,7 @@ export async function sendMessage(content: string): Promise<void> {
 				}
 				conversation.messages.push(partialMsg);
 				dbSaveMessage(conversation.id, partialMsg);
+				conversation.searchSteps = [];
 				conversation.sourceUrls = citedUrls;
 			}
 		} else if (e instanceof ApiError) {
