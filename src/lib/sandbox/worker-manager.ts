@@ -1,4 +1,4 @@
-import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
+import type { Artifact, MainToWorker, ToolResult, WorkerToMain } from './protocol';
 
 export interface RunOptions {
 	timeoutMs?: number;
@@ -12,6 +12,7 @@ interface PendingRun {
 	timer: ReturnType<typeof setTimeout> | null;
 	terminateFallback: ReturnType<typeof setTimeout> | null;
 	interrupted: boolean;
+	artifacts: Artifact[];
 	onStdout?: (chunk: string) => void;
 	onStderr?: (chunk: string) => void;
 }
@@ -33,6 +34,43 @@ const defaultWorkerFactory: WorkerFactory = () =>
 // (probably macOS/Windows), and degrades to terminate-and-respawn
 // elsewhere. The feature is functional either way; the only loss is
 // session state on a timeout.
+/**
+ * Convert an artifact protocol message into the Artifact union the rest of the
+ * app consumes. Image bytes become a data URL so consumers can drop them
+ * straight into <img src=...> without further processing; HTML stays as a
+ * string for the renderer to inject.
+ */
+function toArtifact(msg: {
+	mime: string;
+	payload: { kind: 'bytes'; bytes: Uint8Array } | { kind: 'text'; text: string };
+	alt?: string;
+	truncated?: { shown: number; total: number };
+}): Artifact {
+	if (msg.payload.kind === 'bytes') {
+		const b64 = base64Encode(msg.payload.bytes);
+		return {
+			kind: 'image',
+			mime: msg.mime,
+			dataUrl: `data:${msg.mime};base64,${b64}`,
+			alt: msg.alt
+		};
+	}
+	return {
+		kind: 'html',
+		html: msg.payload.text,
+		truncated: msg.truncated
+	};
+}
+
+function base64Encode(bytes: Uint8Array): string {
+	let bin = '';
+	const chunk = 0x8000;
+	for (let i = 0; i < bytes.length; i += chunk) {
+		bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+	}
+	return btoa(bin);
+}
+
 const defaultIsolated = (): boolean =>
 	typeof globalThis !== 'undefined' &&
 	typeof (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === 'boolean' &&
@@ -135,14 +173,24 @@ export class WorkerManager {
 				if (p.timer) clearTimeout(p.timer);
 				if (p.terminateFallback) clearTimeout(p.terminateFallback);
 				this.pending.delete(msg.id);
-				p.resolve(msg.result);
+				const result = {
+					...msg.result,
+					artifacts: p.artifacts.length,
+					artifactsList: p.artifacts
+				};
+				p.resolve(result);
+				return;
+			}
+			case 'artifact': {
+				const p = this.pending.get(msg.id);
+				if (!p) return;
+				p.artifacts.push(toArtifact(msg));
 				return;
 			}
 			case 'install_progress':
-			case 'artifact':
 			case 'fetch_request':
 			case 'save_request':
-				// Wired up in later phases (11.4, 11.5, 11.5b).
+				// Wired up in later phases (11.5, 11.5b).
 				return;
 		}
 	}
@@ -175,6 +223,7 @@ export class WorkerManager {
 				timer,
 				terminateFallback: null,
 				interrupted: false,
+				artifacts: [],
 				onStdout: opts.onStdout,
 				onStderr: opts.onStderr
 			});

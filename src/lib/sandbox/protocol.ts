@@ -3,12 +3,17 @@
 
 export type InstallPhase = 'resolving' | 'downloading' | 'installing';
 
+export type Artifact =
+	| { kind: 'image'; mime: string; dataUrl: string; alt?: string }
+	| { kind: 'html'; html: string; truncated?: { shown: number; total: number } };
+
 export interface ToolResult {
 	stdout: string;
 	stderr: string;
 	result: string;
 	error: string | null;
 	artifacts: number;
+	artifactsList: Artifact[];
 	notes: string[];
 	duration_ms: number;
 }
@@ -47,7 +52,7 @@ export type WorkerToMain =
 			kind: 'artifact';
 			id: string;
 			mime: string;
-			bytes: Uint8Array;
+			payload: { kind: 'bytes'; bytes: Uint8Array } | { kind: 'text'; text: string };
 			alt?: string;
 			truncated?: { shown: number; total: number };
 	  }

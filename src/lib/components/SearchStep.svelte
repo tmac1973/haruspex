@@ -115,6 +115,30 @@
 					<img src={step.thumbDataUrl} alt={step.query} />
 				</div>
 			{/if}
+			{#if step.artifacts && step.artifacts.length > 0}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="step-artifacts" onclick={(e) => e.stopPropagation()}>
+					{#each step.artifacts as artifact, i (i)}
+						{#if artifact.kind === 'image'}
+							<img class="artifact-image" src={artifact.dataUrl} alt={artifact.alt ?? 'plot'} />
+						{:else}
+							<div class="artifact-html">
+								{#if artifact.truncated}
+									<div class="artifact-truncation-note">
+										Showing {artifact.truncated.shown} of {artifact.truncated.total} rows
+									</div>
+								{/if}
+								<!-- Trusted: HTML comes from local Pyodide (DataFrame _repr_html_, etc.),
+								     not from any user-typed code path. Revisit if user-authored Python ever
+								     becomes a thing. -->
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+								{@html artifact.html}
+							</div>
+						{/if}
+					{/each}
+				</div>
+			{/if}
 		{/each}
 
 		{#if expanded}
@@ -199,6 +223,55 @@
 		border: 1px solid var(--border);
 		display: block;
 		object-fit: contain;
+	}
+
+	.step-artifacts {
+		margin: 4px 0 8px 26px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		cursor: default;
+	}
+
+	.artifact-image {
+		max-width: 100%;
+		max-height: 480px;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		display: block;
+		object-fit: contain;
+		background: white;
+	}
+
+	.artifact-html {
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 8px 12px;
+		overflow: auto;
+		max-height: 480px;
+		background: var(--surface, transparent);
+		font-size: 0.9em;
+	}
+
+	.artifact-html :global(table) {
+		border-collapse: collapse;
+		font-size: 0.85em;
+	}
+	.artifact-html :global(th),
+	.artifact-html :global(td) {
+		border: 1px solid var(--border);
+		padding: 2px 8px;
+		text-align: right;
+	}
+	.artifact-html :global(th) {
+		background: rgba(127, 127, 127, 0.1);
+		font-weight: 600;
+	}
+
+	.artifact-truncation-note {
+		font-size: 0.8em;
+		color: var(--text-muted, #888);
+		margin-bottom: 4px;
 	}
 
 	.spinner {

@@ -26,4 +26,5 @@ export function __setManagerForTesting(next: WorkerManager | null): void {
 	manager = next;
 }
 
-export type { ToolResult, RunOptions };
+export type { Artifact, ToolResult } from './protocol';
+export type { RunOptions };

@@ -56,7 +56,7 @@ registerTool({
 		}
 		try {
 			const r = await runPython(code);
-			return toolResult(formatResult(r));
+			return { result: formatResult(r), artifacts: r.artifactsList };
 		} catch (e) {
 			return toolResult(toolError(`Sandbox error: ${e instanceof Error ? e.message : String(e)}`));
 		}

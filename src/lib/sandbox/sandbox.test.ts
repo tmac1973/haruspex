@@ -76,6 +76,7 @@ function makeOkResult(overrides: Partial<ToolResult> = {}): ToolResult {
 		result: '',
 		error: null,
 		artifacts: 0,
+		artifactsList: [],
 		notes: [],
 		duration_ms: 1,
 		...overrides
@@ -303,6 +304,41 @@ describe('WorkerManager', () => {
 		expect(w.terminated).toBe(true);
 		await rejection;
 		vi.useRealTimers();
+	});
+
+	it('accumulates streamed artifacts and attaches them to the run result', async () => {
+		const promise = manager.runPython('plt.show()');
+		await flush(() => (lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false));
+		const w = lastWorker as unknown as MockWorker;
+		const { id } = findRunMessage(w);
+		const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // fake PNG header
+		w.deliver({
+			kind: 'artifact',
+			id,
+			mime: 'image/png',
+			payload: { kind: 'bytes', bytes: png }
+		});
+		w.deliver({
+			kind: 'artifact',
+			id,
+			mime: 'text/html',
+			payload: { kind: 'text', text: '<table><tr><td>1</td></tr></table>' },
+			truncated: { shown: 200, total: 5000 }
+		});
+		w.deliver({ kind: 'done', id, result: makeOkResult() });
+		const result = await promise;
+		expect(result.artifacts).toBe(2);
+		expect(result.artifactsList).toHaveLength(2);
+		expect(result.artifactsList[0]).toMatchObject({
+			kind: 'image',
+			mime: 'image/png',
+			dataUrl: expect.stringMatching(/^data:image\/png;base64,/)
+		});
+		expect(result.artifactsList[1]).toMatchObject({
+			kind: 'html',
+			html: '<table><tr><td>1</td></tr></table>',
+			truncated: { shown: 200, total: 5000 }
+		});
 	});
 
 	it('surfaces a load_error from the worker as a runPython rejection', async () => {

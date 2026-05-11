@@ -23,6 +23,7 @@ function ok(overrides: Partial<ToolResult> = {}): ToolResult {
 		result: '',
 		error: null,
 		artifacts: 0,
+		artifactsList: [],
 		notes: [],
 		duration_ms: 5,
 		...overrides
