@@ -165,7 +165,8 @@ export class WorkerManager {
 				if (this.worker) {
 					this.worker.postMessage({
 						kind: 'proxy_mode',
-						mode: getSettings().proxy?.mode ?? 'none'
+						mode: getSettings().proxy?.mode ?? 'none',
+						workingDirSet: !!getWorkingDir()
 					});
 				}
 				return;

@@ -20,7 +20,7 @@ export interface ToolResult {
 
 export type MainToWorker =
 	| { kind: 'set_interrupt_buffer'; buffer: SharedArrayBuffer }
-	| { kind: 'proxy_mode'; mode: string }
+	| { kind: 'proxy_mode'; mode: string; workingDirSet: boolean }
 	| { kind: 'run'; id: string; code: string }
 	| { kind: 'install'; id: string; package: string }
 	| { kind: 'reset'; id: string }

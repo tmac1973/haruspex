@@ -33,7 +33,7 @@ interface PendingFetch {
 const pendingFetches = new Map<string, PendingFetch>();
 
 // Resolved by the manager's reply to our 'get_proxy_mode' query during init.
-let proxyModeWaiter: ((mode: string) => void) | null = null;
+let proxyModeWaiter: ((cfg: { mode: string; workingDirSet: boolean }) => void) | null = null;
 
 // Python-side helpers: install matplotlib's plt.show capture lazily (only if
 // matplotlib is importable), and inspect the value of a run's last expression
@@ -242,7 +242,37 @@ def _haruspex_patched_open(filename, mode='r', *args, **kwargs):
         path_str = str(filename)
         if _haruspex_should_save(path_str):
             _haruspex_pending_save_paths.add(path_str)
-    return _haruspex_original_open(filename, mode, *args, **kwargs)
+    try:
+        return _haruspex_original_open(filename, mode, *args, **kwargs)
+    except FileNotFoundError as _err:
+        # Enrich read-side failures on user-facing paths so the model knows
+        # to use the fs_read_* tools instead of expecting MEMFS to mirror
+        # the host disk. Write-mode failures don't trigger this branch
+        # because we already capture writes; if a write fails it's some
+        # other reason worth surfacing as-is.
+        if not isinstance(mode, str) or any(c in mode for c in 'wxa'):
+            raise
+        path_str = str(filename)
+        if not _haruspex_should_save(path_str):
+            raise
+        if _haruspex_working_dir_set:
+            raise FileNotFoundError(
+                str(_err) + " — the sandbox uses an in-memory filesystem that does not "
+                "see files in the user's working directory. To read this file, call "
+                "fs_read_text(path) (or fs_read_pdf / fs_read_xlsx / fs_read_image / "
+                "fs_read_docx for non-text formats) in a separate tool call FIRST, "
+                "then pass the returned content as a string variable into your next "
+                "run_python call. Example: fs_read_text returns the CSV text, then "
+                "use io.StringIO and pd.read_csv on that string."
+            ) from _err
+        raise FileNotFoundError(
+            str(_err) + " — the sandbox uses an in-memory filesystem that does not "
+            "see files on the user's actual disk, and the user has not set a working "
+            "directory yet (so the fs_read_* tools are unavailable). Ask the user to "
+            "select a working directory (folder icon in the chat input), then read the "
+            "file via fs_read_text (or fs_read_pdf / fs_read_xlsx / etc.) and pass the "
+            "content into run_python as a string."
+        ) from _err
 
 _builtins.open = _haruspex_patched_open
 
@@ -516,11 +546,14 @@ async function init(): Promise<void> {
 		// hood and that bypasses our pyfetch override (and therefore the
 		// proxy). Forcing the model to use pyodide.http.pyfetch directly is
 		// the only path that respects the proxy.
-		const proxyMode = await new Promise<string>((resolve) => {
-			proxyModeWaiter = resolve;
-			post({ kind: 'get_proxy_mode' });
-		});
-		pyodide.globals.set('_haruspex_skip_http_patch', proxyMode === 'manual');
+		const runtimeCfg = await new Promise<{ mode: string; workingDirSet: boolean }>(
+			(resolve) => {
+				proxyModeWaiter = resolve;
+				post({ kind: 'get_proxy_mode' });
+			}
+		);
+		pyodide.globals.set('_haruspex_skip_http_patch', runtimeCfg.mode === 'manual');
+		pyodide.globals.set('_haruspex_working_dir_set', runtimeCfg.workingDirSet);
 		await pyodide.runPythonAsync(HARUSPEX_INIT_PY);
 		post({ kind: 'ready' });
 	} catch (err) {
@@ -651,7 +684,7 @@ self.addEventListener('message', (e: MessageEvent<MainToWorker>) => {
 			if (proxyModeWaiter) {
 				const w = proxyModeWaiter;
 				proxyModeWaiter = null;
-				w(msg.mode);
+				w({ mode: msg.mode, workingDirSet: msg.workingDirSet });
 			}
 			break;
 		case 'run':
