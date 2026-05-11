@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { Artifact, MainToWorker, ToolResult, WorkerToMain } from './protocol';
 import { getWorkingDir } from '$lib/stores/chat.svelte';
 import { getSettings } from '$lib/stores/settings';
+import { logDebug } from '$lib/debug-log';
 
 export interface RunOptions {
 	timeoutMs?: number;
@@ -370,6 +371,13 @@ export class WorkerManager {
 		};
 		try {
 			const bodyBytes = msg.init.body ? Array.from(msg.init.body) : undefined;
+			const proxy = getSettings().proxy;
+			logDebug('sandbox', 'sandbox_fetch invoke', {
+				url: msg.url,
+				method: msg.init.method ?? 'GET',
+				proxyMode: proxy?.mode ?? '(none)',
+				proxyUrl: proxy?.url || '(empty)'
+			});
 			const result = await invoke<{
 				status: number;
 				headers: Record<string, string>;
@@ -382,7 +390,13 @@ export class WorkerManager {
 					headers: msg.init.headers,
 					body: bodyBytes
 				},
-				proxy: getSettings().proxy
+				proxy
+			});
+			logDebug('sandbox', 'sandbox_fetch response', {
+				url: msg.url,
+				status: result.status,
+				finalUrl: result.url,
+				bodyLen: result.body.length
 			});
 			respond({
 				ok: result.status >= 200 && result.status < 300,
