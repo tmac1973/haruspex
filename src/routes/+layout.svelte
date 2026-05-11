@@ -3,6 +3,7 @@
 	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
 	import ContextIndicator from '$lib/components/ContextIndicator.svelte';
 	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
+	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
@@ -170,6 +171,7 @@
 {/if}
 
 <FileConflictModal />
+<SandboxApprovalModal />
 
 <style>
 	:global(:root) {

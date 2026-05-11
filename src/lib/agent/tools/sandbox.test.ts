@@ -4,10 +4,19 @@ import type { ToolResult } from '$lib/sandbox/sandbox';
 const mocks = vi.hoisted(() => ({
 	runPython: vi.fn(),
 	installPackage: vi.fn(),
-	resetSandbox: vi.fn()
+	resetSandbox: vi.fn(),
+	askApproval: vi.fn().mockResolvedValue('allow_chat' as const)
 }));
 
-vi.mock('$lib/sandbox/sandbox', () => mocks);
+vi.mock('$lib/sandbox/sandbox', () => ({
+	runPython: mocks.runPython,
+	installPackage: mocks.installPackage,
+	resetSandbox: mocks.resetSandbox
+}));
+
+vi.mock('$lib/stores/sandboxApproval.svelte', () => ({
+	askApproval: mocks.askApproval
+}));
 
 const ctx = {
 	workingDir: null,
@@ -35,6 +44,8 @@ describe('sandbox tools', () => {
 		mocks.runPython.mockReset();
 		mocks.installPackage.mockReset();
 		mocks.resetSandbox.mockReset();
+		mocks.askApproval.mockReset();
+		mocks.askApproval.mockResolvedValue('allow_chat');
 	});
 
 	it('routes run_python to runPython and formats stdout + result', async () => {
@@ -100,6 +111,14 @@ describe('sandbox tools', () => {
 		const out = await executeTool('install_package', { package: '' }, ctx);
 		expect(JSON.parse(out.result)).toHaveProperty('error');
 		expect(mocks.installPackage).not.toHaveBeenCalled();
+	});
+
+	it('returns "User denied code execution" and skips runPython on deny', async () => {
+		mocks.askApproval.mockResolvedValueOnce('deny');
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool('run_python', { code: '1+1' }, ctx);
+		expect(JSON.parse(out.result)).toEqual({ error: 'User denied code execution.' });
+		expect(mocks.runPython).not.toHaveBeenCalled();
 	});
 
 	it('exposes sandbox tool schemas via getToolSchemas regardless of working dir', async () => {

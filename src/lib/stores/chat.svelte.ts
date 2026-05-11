@@ -51,6 +51,13 @@ export interface Conversation {
 	/** Cited source URLs from the last generation. Not persisted to DB. */
 	sourceUrls: string[];
 	/**
+	 * True once the user has approved Python sandbox code execution for
+	 * this chat (in once-per-chat mode). In-memory only — re-prompts on
+	 * app restart, on chat reload from DB, and when sandbox approval
+	 * mode is set to every-run.
+	 */
+	sandboxApproved: boolean;
+	/**
 	 * Tool-call + tool-result messages from the most recent completed turn.
 	 * Optionally spliced back into the next turn's prompt when the
 	 * `keepRecentToolResults` setting is enabled, so followup questions can
@@ -99,7 +106,8 @@ export async function initChatStore(): Promise<void> {
 		contextUsage: null,
 		searchSteps: [],
 		messageSteps: {},
-		sourceUrls: []
+		sourceUrls: [],
+		sandboxApproved: false
 	}));
 
 	if (conversations.length > 0) {
@@ -240,7 +248,8 @@ export function createConversation(): string {
 		contextUsage: null,
 		searchSteps: [],
 		messageSteps: {},
-		sourceUrls: []
+		sourceUrls: [],
+		sandboxApproved: false
 	});
 	activeConversationId = id;
 	errorMessage = null;

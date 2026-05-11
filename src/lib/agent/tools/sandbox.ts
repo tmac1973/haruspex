@@ -1,6 +1,9 @@
 import { runPython, installPackage, resetSandbox, type ToolResult } from '$lib/sandbox/sandbox';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
+import { getSettings } from '$lib/stores/settings';
+import { getActiveConversation } from '$lib/stores/chat.svelte';
+import { askApproval } from '$lib/stores/sandboxApproval.svelte';
 
 function formatResult(r: ToolResult): string {
 	const lines: string[] = [];
@@ -53,6 +56,27 @@ registerTool({
 		const code = args.code;
 		if (typeof code !== 'string' || !code.trim()) {
 			return toolResult(toolError('Missing or empty `code` argument'));
+		}
+		const mode = getSettings().sandboxApproval;
+		const conv = getActiveConversation();
+		// 'off' bypasses; 'once-per-chat' bypasses if the user has already
+		// approved this chat. 'every-run' always prompts.
+		const needsPrompt =
+			mode === 'every-run' || (mode === 'once-per-chat' && !conv?.sandboxApproved);
+		if (needsPrompt) {
+			try {
+				const choice = await askApproval({ code, mode });
+				if (choice === 'deny') {
+					return toolResult(toolError('User denied code execution.'));
+				}
+				if (choice === 'allow_chat' && conv) {
+					conv.sandboxApproved = true;
+				}
+			} catch (e) {
+				return toolResult(
+					toolError(`Approval prompt failed: ${e instanceof Error ? e.message : String(e)}`)
+				);
+			}
 		}
 		try {
 			const r = await runPython(code);

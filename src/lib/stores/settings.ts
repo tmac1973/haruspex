@@ -126,6 +126,15 @@ export interface AppSettings {
 	dismissedGpuWarning: boolean;
 	defaultWorkingDir: string;
 	keepRecentToolResults: boolean;
+	/**
+	 * Controls when the user is prompted before the Python sandbox runs
+	 * model-authored code. 'off' runs every code call without asking
+	 * (only meaningful for users who fully trust the model on this
+	 * machine); 'once-per-chat' prompts on the first run_python in a
+	 * chat and remembers the answer for that chat; 'every-run' prompts
+	 * every single time.
+	 */
+	sandboxApproval: 'off' | 'once-per-chat' | 'every-run';
 	inferenceBackend: InferenceBackendConfig;
 	integrations: IntegrationsConfig;
 	proxy: ProxyConfig;
@@ -168,6 +177,7 @@ const defaults: AppSettings = {
 	dismissedGpuWarning: false,
 	defaultWorkingDir: '',
 	keepRecentToolResults: true,
+	sandboxApproval: 'once-per-chat',
 	inferenceBackend: defaultInferenceBackend,
 	integrations: defaultIntegrations,
 	proxy: defaultProxy
