@@ -3,6 +3,7 @@
 	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
 	import ContextIndicator from '$lib/components/ContextIndicator.svelte';
 	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
+	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
@@ -170,6 +171,7 @@
 {/if}
 
 <FileConflictModal />
+<SandboxApprovalModal />
 
 <style>
 	:global(:root) {
@@ -289,5 +291,126 @@
 	main {
 		flex: 1;
 		overflow: hidden;
+	}
+
+	/* Minimal highlight.js theme — applies to both the chat-message
+	   markdown code blocks and the new sandbox tool-step code preview.
+	   Inherits the surrounding text color for unmatched tokens, so it
+	   degrades cleanly on either light or dark theme. */
+	:global(.hljs-comment),
+	:global(.hljs-quote) {
+		color: #6a737d;
+		font-style: italic;
+	}
+	:global(.hljs-keyword),
+	:global(.hljs-selector-tag),
+	:global(.hljs-literal),
+	:global(.hljs-built_in) {
+		color: #d73a49;
+	}
+	:global(.hljs-string),
+	:global(.hljs-meta-string),
+	:global(.hljs-doctag) {
+		color: #032f62;
+	}
+	:global(.hljs-number),
+	:global(.hljs-symbol),
+	:global(.hljs-bullet) {
+		color: #005cc5;
+	}
+	:global(.hljs-function),
+	:global(.hljs-title),
+	:global(.hljs-section) {
+		color: #6f42c1;
+	}
+	:global(.hljs-name),
+	:global(.hljs-attribute),
+	:global(.hljs-attr) {
+		color: #22863a;
+	}
+	:global(.hljs-variable),
+	:global(.hljs-template-variable),
+	:global(.hljs-type),
+	:global(.hljs-class .hljs-title) {
+		color: #e36209;
+	}
+	:global(.hljs-meta) {
+		color: #6a737d;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:global(:root:not([data-theme='light']) .hljs-comment),
+		:global(:root:not([data-theme='light']) .hljs-quote) {
+			color: #8b949e;
+		}
+		:global(:root:not([data-theme='light']) .hljs-keyword),
+		:global(:root:not([data-theme='light']) .hljs-selector-tag),
+		:global(:root:not([data-theme='light']) .hljs-literal),
+		:global(:root:not([data-theme='light']) .hljs-built_in) {
+			color: #ff7b72;
+		}
+		:global(:root:not([data-theme='light']) .hljs-string),
+		:global(:root:not([data-theme='light']) .hljs-meta-string),
+		:global(:root:not([data-theme='light']) .hljs-doctag) {
+			color: #a5d6ff;
+		}
+		:global(:root:not([data-theme='light']) .hljs-number),
+		:global(:root:not([data-theme='light']) .hljs-symbol),
+		:global(:root:not([data-theme='light']) .hljs-bullet) {
+			color: #79c0ff;
+		}
+		:global(:root:not([data-theme='light']) .hljs-function),
+		:global(:root:not([data-theme='light']) .hljs-title),
+		:global(:root:not([data-theme='light']) .hljs-section) {
+			color: #d2a8ff;
+		}
+		:global(:root:not([data-theme='light']) .hljs-name),
+		:global(:root:not([data-theme='light']) .hljs-attribute),
+		:global(:root:not([data-theme='light']) .hljs-attr) {
+			color: #7ee787;
+		}
+		:global(:root:not([data-theme='light']) .hljs-variable),
+		:global(:root:not([data-theme='light']) .hljs-template-variable),
+		:global(:root:not([data-theme='light']) .hljs-type),
+		:global(:root:not([data-theme='light']) .hljs-class .hljs-title) {
+			color: #ffa657;
+		}
+	}
+
+	:global(:root[data-theme='dark'] .hljs-comment),
+	:global(:root[data-theme='dark'] .hljs-quote) {
+		color: #8b949e;
+	}
+	:global(:root[data-theme='dark'] .hljs-keyword),
+	:global(:root[data-theme='dark'] .hljs-selector-tag),
+	:global(:root[data-theme='dark'] .hljs-literal),
+	:global(:root[data-theme='dark'] .hljs-built_in) {
+		color: #ff7b72;
+	}
+	:global(:root[data-theme='dark'] .hljs-string),
+	:global(:root[data-theme='dark'] .hljs-meta-string),
+	:global(:root[data-theme='dark'] .hljs-doctag) {
+		color: #a5d6ff;
+	}
+	:global(:root[data-theme='dark'] .hljs-number),
+	:global(:root[data-theme='dark'] .hljs-symbol),
+	:global(:root[data-theme='dark'] .hljs-bullet) {
+		color: #79c0ff;
+	}
+	:global(:root[data-theme='dark'] .hljs-function),
+	:global(:root[data-theme='dark'] .hljs-title),
+	:global(:root[data-theme='dark'] .hljs-section) {
+		color: #d2a8ff;
+	}
+	:global(:root[data-theme='dark'] .hljs-name),
+	:global(:root[data-theme='dark'] .hljs-attribute),
+	:global(:root[data-theme='dark'] .hljs-attr) {
+		color: #7ee787;
+	}
+	:global(:root[data-theme='dark'] .hljs-variable),
+	:global(:root[data-theme='dark'] .hljs-template-variable),
+	:global(:root[data-theme='dark'] .hljs-type),
+	:global(:root[data-theme='dark'] .hljs-class .hljs-title) {
+		color: #ffa657;
 	}
 </style>

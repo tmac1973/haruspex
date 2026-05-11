@@ -26,6 +26,9 @@ src-tauri/binaries/*.so*
 src-tauri/binaries/libs/
 src-tauri/binaries/espeak-ng-data/
 
+# Pyodide runtime (downloaded by scripts/fetch-pyodide.sh, ~14 MB)
+static/pyodide/
+
 # Environment files
 .env
 .env.*

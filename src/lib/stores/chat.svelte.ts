@@ -11,6 +11,7 @@ import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
+import { runPython, installPackage, resetSandbox } from '$lib/sandbox/sandbox';
 import {
 	getContextUsage,
 	updateContextUsage,
@@ -39,8 +40,38 @@ export interface Conversation {
 	contextUsage: { promptTokens: number; completionTokens: number } | null;
 	/** Search steps from the last generation in this conversation. Not persisted to DB. */
 	searchSteps: SearchStep[];
+	/**
+	 * Completed search steps from past turns, indexed by the position of the
+	 * assistant message they belong to in `messages`. Lets the UI keep
+	 * rendering rich artifacts (plots, tables) under the message that
+	 * produced them after the live `searchSteps` is cleared at the start
+	 * of the next turn. In-memory only — not persisted to DB, so plots
+	 * vanish on app restart or chat reload (acceptable for v1).
+	 */
+	messageSteps: Record<number, SearchStep[]>;
 	/** Cited source URLs from the last generation. Not persisted to DB. */
 	sourceUrls: string[];
+	/**
+	 * True once the user has approved Python sandbox code execution for
+	 * this chat (in once-per-chat mode). In-memory only — re-prompts on
+	 * app restart, on chat reload from DB, and when sandbox approval
+	 * mode is set to every-run.
+	 */
+	sandboxApproved: boolean;
+	/**
+	 * True while we're rebuilding the chat's Python sandbox state by
+	 * replaying its prior install_package / run_python / reset_python
+	 * tool calls against a fresh worker. Drives a small "Restoring
+	 * Python session…" indicator in the input area.
+	 */
+	isRestoringSession: boolean;
+	/**
+	 * Set when a chat had too many prior code calls to replay (>50)
+	 * and we skipped restoration. Future code runs in this chat will
+	 * start with a fresh sandbox; whatever variables/imports the model
+	 * had are gone.
+	 */
+	sessionRestoreSkipped: boolean;
 	/**
 	 * Tool-call + tool-result messages from the most recent completed turn.
 	 * Optionally spliced back into the next turn's prompt when the
@@ -89,7 +120,11 @@ export async function initChatStore(): Promise<void> {
 		workingDir: defaultDir,
 		contextUsage: null,
 		searchSteps: [],
-		sourceUrls: []
+		messageSteps: {},
+		sourceUrls: [],
+		sandboxApproved: false,
+		isRestoringSession: false,
+		sessionRestoreSkipped: false
 	}));
 
 	if (conversations.length > 0) {
@@ -229,7 +264,11 @@ export function createConversation(): string {
 		workingDir: getSettings().defaultWorkingDir || null,
 		contextUsage: null,
 		searchSteps: [],
-		sourceUrls: []
+		messageSteps: {},
+		sourceUrls: [],
+		sandboxApproved: false,
+		isRestoringSession: false,
+		sessionRestoreSkipped: false
 	});
 	activeConversationId = id;
 	errorMessage = null;
@@ -255,6 +294,101 @@ export async function setActiveConversation(id: string): Promise<void> {
 		errorTurnId = null;
 		restoreContextUsageFor(id);
 		await loadConversationMessages(id);
+		// Fire-and-forget; the replay updates conv.isRestoringSession so
+		// the UI can show a small indicator while it runs.
+		void restoreSandboxSession(id);
+	}
+}
+
+/**
+ * Maximum number of prior sandbox tool calls we'll replay when restoring
+ * a chat's Python session. Above this, we skip replay (the user gets a
+ * fresh sandbox, plus a `sessionRestoreSkipped` flag so the chat UI can
+ * surface that state). Catches the pathological case of a chat with
+ * hundreds of code runs that would block the UI for 30+ seconds.
+ */
+const SESSION_REPLAY_CAP = 50;
+
+interface SandboxCallToReplay {
+	name: 'run_python' | 'install_package' | 'reset_python';
+	args: { code?: string; package?: string };
+}
+
+function collectSandboxCalls(messages: ChatMessage[]): SandboxCallToReplay[] {
+	const out: SandboxCallToReplay[] = [];
+	for (const msg of messages) {
+		if (msg.role !== 'assistant' || !msg.tool_calls) continue;
+		for (const call of msg.tool_calls) {
+			const name = call.function?.name;
+			if (name !== 'run_python' && name !== 'install_package' && name !== 'reset_python') continue;
+			let args: { code?: string; package?: string } = {};
+			try {
+				args = JSON.parse(call.function.arguments ?? '{}');
+			} catch {
+				continue;
+			}
+			out.push({ name, args });
+		}
+	}
+	return out;
+}
+
+/**
+ * Walk a chat's message history, find every prior install_package /
+ * run_python / reset_python tool call, and replay them sequentially
+ * against a fresh sandbox worker so the model picks up where it left
+ * off. Per-call errors are swallowed (the chat history already records
+ * what the model saw at the time; the goal is to rebuild state, not
+ * surface failures). The active-chat guard aborts replay if the user
+ * switches to another chat mid-flight.
+ */
+async function restoreSandboxSession(id: string): Promise<void> {
+	const conv = conversations.find((c) => c.id === id);
+	if (!conv) return;
+	if (!getSettings().sandboxEnabled) return;
+	const calls = collectSandboxCalls(conv.messages);
+	if (calls.length === 0) return;
+	if (calls.length > SESSION_REPLAY_CAP) {
+		conv.sessionRestoreSkipped = true;
+		logDebug('sandbox', 'session restore skipped — too many prior calls', {
+			chatId: id,
+			callCount: calls.length,
+			cap: SESSION_REPLAY_CAP
+		});
+		return;
+	}
+	conv.isRestoringSession = true;
+	conv.sessionRestoreSkipped = false;
+	logDebug('sandbox', 'session restore start', { chatId: id, callCount: calls.length });
+	try {
+		// Reset the worker so replay starts clean. Other chats that had
+		// active sandbox state lose it — by design, single-worker model.
+		await resetSandbox();
+		for (const call of calls) {
+			if (activeConversationId !== id) {
+				logDebug('sandbox', 'session restore aborted — chat switched', { fromChatId: id });
+				return;
+			}
+			try {
+				if (call.name === 'install_package' && call.args.package) {
+					await installPackage(call.args.package);
+				} else if (call.name === 'run_python' && call.args.code) {
+					await runPython(call.args.code);
+				} else if (call.name === 'reset_python') {
+					await resetSandbox();
+				}
+			} catch (err) {
+				logDebug('sandbox', `session restore: ${call.name} failed (skipping)`, {
+					error: err instanceof Error ? err.message : String(err)
+				});
+			}
+		}
+		// Successful restore implies the user previously approved code in
+		// this chat, so don't re-prompt on the next code call.
+		conv.sandboxApproved = true;
+		logDebug('sandbox', 'session restore complete', { chatId: id });
+	} finally {
+		conv.isRestoringSession = false;
 	}
 }
 
@@ -414,13 +548,14 @@ export async function sendMessage(content: string): Promise<void> {
 						id: call.id,
 						toolName: call.name,
 						query: getDisplayLabel(call.name, call.arguments),
-						status: 'running'
+						status: 'running',
+						args: call.arguments
 					}
 				];
 			},
-			onToolEnd: (call, result, thumbDataUrl) => {
+			onToolEnd: (call, result, thumbDataUrl, artifacts) => {
 				conversation.searchSteps = conversation.searchSteps.map((s) =>
-					s.id === call.id ? { ...s, status: 'done' as const, result, thumbDataUrl } : s
+					s.id === call.id ? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts } : s
 				);
 			},
 			onStreamChunk: (chunk) => {
@@ -447,8 +582,21 @@ export async function sendMessage(content: string): Promise<void> {
 
 				const commit = (text: string) => {
 					const assistantMsg: ChatMessage = { role: 'assistant', content: text };
+					// Snapshot the live search steps onto the assistant message's
+					// position so the UI can keep rendering plots/tables under
+					// this message after the live `searchSteps` is cleared.
+					const stepsForThisTurn = conversation.searchSteps.filter(
+						(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
+					);
+					if (stepsForThisTurn.length > 0) {
+						conversation.messageSteps[conversation.messages.length] = stepsForThisTurn;
+					}
 					conversation.messages.push(assistantMsg);
 					dbSaveMessage(conversation.id, assistantMsg);
+					// Clear the live indicator now that the steps live on the
+					// committed message. Without this both render simultaneously
+					// (live + persisted) and the user sees doubled artifacts.
+					conversation.searchSteps = [];
 					if (exhaustiveResearch) {
 						exhaustiveResearch = false;
 					}
@@ -507,8 +655,15 @@ export async function sendMessage(content: string): Promise<void> {
 				const fetched = extractUrlsFromSteps(conversation.searchSteps);
 				const { content, citedUrls } = processCitations(streamingContent, fetched);
 				const partialMsg: ChatMessage = { role: 'assistant', content };
+				const stepsForThisTurn = conversation.searchSteps.filter(
+					(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
+				);
+				if (stepsForThisTurn.length > 0) {
+					conversation.messageSteps[conversation.messages.length] = stepsForThisTurn;
+				}
 				conversation.messages.push(partialMsg);
 				dbSaveMessage(conversation.id, partialMsg);
+				conversation.searchSteps = [];
 				conversation.sourceUrls = citedUrls;
 			}
 		} else if (e instanceof ApiError) {

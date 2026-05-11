@@ -395,6 +395,9 @@
 			{#if activeConversation && activeConversation.messages.length > 0}
 				{#each activeConversation.messages as msg, i (i)}
 					{#if msg.role !== 'system'}
+						{#if msg.role === 'assistant' && activeConversation.messageSteps[i]?.length}
+							<SearchStepComponent steps={activeConversation.messageSteps[i]} />
+						{/if}
 						<ChatMessage message={msg} />
 					{/if}
 				{/each}
@@ -417,6 +420,15 @@
 
 				{#if isCompacting}
 					<div class="compacting-indicator">Compacting conversation history...</div>
+				{/if}
+
+				{#if activeConversation?.isRestoringSession}
+					<div class="compacting-indicator">Restoring Python sandbox session…</div>
+				{:else if activeConversation?.sessionRestoreSkipped}
+					<div class="compacting-indicator">
+						Python sandbox state was not restored (too many prior code runs). The model starts
+						fresh.
+					</div>
 				{/if}
 
 				{#if showDiversityWarning}

@@ -241,6 +241,33 @@ describe('renderMarkdown', () => {
 	});
 });
 
+describe('renderMarkdown image stripping', () => {
+	it('drops image refs whose src is a relative path', () => {
+		const html = renderMarkdown('Here it is:\n\n![plot](sine_wave.png)\n\nDone.');
+		expect(html).not.toContain('<img');
+		expect(html).not.toContain('sine_wave.png');
+		expect(html).toContain('Here it is');
+		expect(html).toContain('Done.');
+	});
+
+	it('drops image refs whose src is an absolute non-http path', () => {
+		const html = renderMarkdown('![local](/home/tim/foo.png)');
+		expect(html).not.toContain('<img');
+	});
+
+	it('keeps image refs with http(s) URLs', () => {
+		const html = renderMarkdown('![logo](https://example.com/logo.png)');
+		expect(html).toContain('<img');
+		expect(html).toContain('https://example.com/logo.png');
+	});
+
+	it('keeps image refs with data URIs', () => {
+		const html = renderMarkdown('![inline](data:image/png;base64,iVBORw0KGgo=)');
+		expect(html).toContain('<img');
+		expect(html).toContain('data:image/png;base64');
+	});
+});
+
 describe('processCitations', () => {
 	const fetched = ['https://alpha.example', 'https://beta.example', 'https://gamma.example'];
 

@@ -1,7 +1,7 @@
 import type { ToolDefinition } from '$lib/api';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from './types';
 import { toolResult, toolError } from './types';
-import { hasEnabledEmailAccount } from '$lib/stores/settings';
+import { hasEnabledEmailAccount, getSettings } from '$lib/stores/settings';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -25,6 +25,7 @@ export function getToolSchemas(opts: {
 }): ToolDefinition[] {
 	const { hasWorkingDir, deepResearch = false, visionSupported = true } = opts;
 	const hasEmail = hasEnabledEmailAccount();
+	const sandboxEnabled = getSettings().sandboxEnabled;
 	const schemas: ToolDefinition[] = [];
 
 	for (const reg of tools.values()) {
@@ -32,6 +33,7 @@ export function getToolSchemas(opts: {
 
 		if (reg.category === 'fs' && !hasWorkingDir) continue;
 		if (reg.category === 'email' && !hasEmail) continue;
+		if (reg.category === 'sandbox' && !sandboxEnabled) continue;
 		if (deepResearch && name === 'fetch_url') continue;
 		if (!visionSupported && reg.requiresVision) continue;
 

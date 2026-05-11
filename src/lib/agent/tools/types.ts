@@ -1,4 +1,7 @@
 import type { ToolDefinition } from '$lib/api';
+import type { Artifact } from '$lib/sandbox/sandbox';
+
+export type { Artifact };
 
 export interface PendingImage {
 	path: string;
@@ -8,12 +11,16 @@ export interface PendingImage {
 /**
  * Result of a single tool invocation. `result` is the string the agent
  * loop sends back to the model as the tool message content. Optional
- * `thumbDataUrl` is a side-channel attachment for the chat UI (e.g.
- * an inline thumbnail for image-producing tools).
+ * `thumbDataUrl` is the legacy single-image side channel (used by
+ * fs_read_image, fs_download_url). `artifacts` is the multi-artifact
+ * channel used by the Python sandbox to surface plots, tables, and
+ * other rich outputs the model produced — they're rendered in the
+ * chat UI but never echoed back to the model.
  */
 export interface ToolExecOutput {
 	result: string;
 	thumbDataUrl?: string;
+	artifacts?: Artifact[];
 }
 
 /**
@@ -36,7 +43,7 @@ export interface ToolRegistration {
 	schema: ToolDefinition;
 	execute: (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolExecOutput>;
 	displayLabel: (args: Record<string, unknown>) => string;
-	category: 'web' | 'fs' | 'email';
+	category: 'web' | 'fs' | 'email' | 'sandbox';
 	requiresVision?: boolean;
 }
 

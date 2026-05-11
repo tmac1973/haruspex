@@ -1,5 +1,9 @@
 <script lang="ts">
 	import type { SearchStep } from '$lib/agent/loop';
+	import hljs from 'highlight.js/lib/core';
+	import python from 'highlight.js/lib/languages/python';
+
+	hljs.registerLanguage('python', python);
 
 	interface Props {
 		steps: SearchStep[];
@@ -10,6 +14,23 @@
 	let expanded = $state(false);
 
 	let copyStates: Record<string, string> = $state({});
+
+	function highlightPython(code: string): string {
+		try {
+			return hljs.highlight(code, { language: 'python' }).value;
+		} catch {
+			return code.replace(/[&<>"']/g, (c) => {
+				const map: Record<string, string> = {
+					'&': '&amp;',
+					'<': '&lt;',
+					'>': '&gt;',
+					'"': '&quot;',
+					"'": '&#39;'
+				};
+				return map[c];
+			});
+		}
+	}
 
 	async function copyResult(stepId: string, text: string, event: MouseEvent) {
 		event.stopPropagation();
@@ -108,11 +129,43 @@
 					{/if}
 				</span>
 			</div>
+			{#if step.toolName === 'run_python' && typeof step.args?.code === 'string'}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="step-code" onclick={(e) => e.stopPropagation()}>
+					<pre><code class="language-python">{@html highlightPython(step.args.code as string)}</code
+						></pre>
+				</div>
+			{/if}
 			{#if step.thumbDataUrl}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="step-thumb" onclick={(e) => e.stopPropagation()}>
 					<img src={step.thumbDataUrl} alt={step.query} />
+				</div>
+			{/if}
+			{#if step.artifacts && step.artifacts.length > 0}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="step-artifacts" onclick={(e) => e.stopPropagation()}>
+					{#each step.artifacts as artifact, i (i)}
+						{#if artifact.kind === 'image'}
+							<img class="artifact-image" src={artifact.dataUrl} alt={artifact.alt ?? 'plot'} />
+						{:else}
+							<div class="artifact-html">
+								{#if artifact.truncated}
+									<div class="artifact-truncation-note">
+										Showing {artifact.truncated.shown} of {artifact.truncated.total} rows
+									</div>
+								{/if}
+								<!-- Trusted: HTML comes from local Pyodide (DataFrame _repr_html_, etc.),
+								     not from any user-typed code path. Revisit if user-authored Python ever
+								     becomes a thing. -->
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+								{@html artifact.html}
+							</div>
+						{/if}
+					{/each}
 				</div>
 			{/if}
 		{/each}
@@ -199,6 +252,77 @@
 		border: 1px solid var(--border);
 		display: block;
 		object-fit: contain;
+	}
+
+	.step-code {
+		margin: 4px 0 8px 26px;
+		cursor: default;
+	}
+
+	.step-code pre {
+		margin: 0;
+		padding: 10px 12px;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		overflow: auto;
+		max-height: 320px;
+		font-size: 0.82rem;
+		line-height: 1.45;
+	}
+
+	.step-code code {
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		white-space: pre;
+	}
+
+	.step-artifacts {
+		margin: 4px 0 8px 26px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		cursor: default;
+	}
+
+	.artifact-image {
+		max-width: 100%;
+		max-height: 480px;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		display: block;
+		object-fit: contain;
+		background: white;
+	}
+
+	.artifact-html {
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 8px 12px;
+		overflow: auto;
+		max-height: 480px;
+		background: var(--surface, transparent);
+		font-size: 0.9em;
+	}
+
+	.artifact-html :global(table) {
+		border-collapse: collapse;
+		font-size: 0.85em;
+	}
+	.artifact-html :global(th),
+	.artifact-html :global(td) {
+		border: 1px solid var(--border);
+		padding: 2px 8px;
+		text-align: right;
+	}
+	.artifact-html :global(th) {
+		background: rgba(127, 127, 127, 0.1);
+		font-weight: 600;
+	}
+
+	.artifact-truncation-note {
+		font-size: 0.8em;
+		color: var(--text-muted, #888);
+		margin-bottom: 4px;
 	}
 
 	.spinner {

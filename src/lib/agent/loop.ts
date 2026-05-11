@@ -8,7 +8,7 @@ import {
 	type Usage
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
-import { getToolSchemas, executeTool, type PendingImage } from '$lib/agent/tools';
+import { getToolSchemas, executeTool, type PendingImage, type Artifact } from '$lib/agent/tools';
 import { getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
 import { logDebug } from '$lib/debug-log';
@@ -46,13 +46,31 @@ export interface SearchStep {
 	 * fs_download_url when the downloaded file has an image extension.
 	 */
 	thumbDataUrl?: string;
+	/**
+	 * Multi-artifact channel — currently used by the Python sandbox to
+	 * surface plots (image artifacts) and DataFrame tables (HTML artifacts)
+	 * inline beneath the tool step. Renderable but not echoed to the model.
+	 */
+	artifacts?: Artifact[];
+	/**
+	 * Full tool-call arguments. Stashed at onToolStart so renderers can
+	 * present richer detail than the one-line `query` label — currently
+	 * used by SearchStep to show a syntax-highlighted code block under
+	 * each run_python step.
+	 */
+	args?: Record<string, unknown>;
 }
 
 export interface AgentLoopOptions {
 	messages: ChatMessage[];
 	workingDir?: string | null;
 	onToolStart: (call: ResolvedToolCall) => void;
-	onToolEnd: (call: ResolvedToolCall, result: string, thumbDataUrl?: string) => void;
+	onToolEnd: (
+		call: ResolvedToolCall,
+		result: string,
+		thumbDataUrl?: string,
+		artifacts?: Artifact[]
+	) => void;
 	onStreamChunk: (chunk: StreamChunk) => void;
 	onComplete: () => void;
 	onError: (error: Error) => void;
@@ -608,9 +626,10 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			logDebug('agent', `tool end: ${call.name}`, {
 				resultLen: output.result.length,
 				resultPreview: output.result.slice(0, 1000),
-				hasThumbnail: !!output.thumbDataUrl
+				hasThumbnail: !!output.thumbDataUrl,
+				artifactCount: output.artifacts?.length ?? 0
 			});
-			options.onToolEnd(call, output.result, output.thumbDataUrl);
+			options.onToolEnd(call, output.result, output.thumbDataUrl, output.artifacts);
 
 			// Track successful file-write calls so the hallucination check
 			// above knows a real write happened. `result` is a JSON error

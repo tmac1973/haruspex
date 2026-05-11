@@ -145,6 +145,17 @@ function sanitizeForRender(text: string): string {
 	// character class excludes space so plain text like `5 < 10` isn't
 	// matched.
 	out = out.replace(/<\/?[a-zA-Z0-9_-]*$/, '');
+	// Drop markdown image refs whose src isn't a real URL — the model
+	// often writes `![plot](sine_wave.png)` after using the Python
+	// sandbox to plot something, expecting the rendered chat to embed
+	// the file. Such relative paths never resolve from the WebView's
+	// origin and produce a broken-image icon. Real http(s)/data sources
+	// (web search results, base64 images) are left alone.
+	out = out.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, _alt, src) => {
+		const trimmed = String(src).trim();
+		if (/^(https?:|data:)/i.test(trimmed)) return match;
+		return '';
+	});
 	return out;
 }
 

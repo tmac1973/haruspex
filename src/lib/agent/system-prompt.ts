@@ -1,5 +1,5 @@
 import { type ChatMessage, messageText } from '$lib/api';
-import { getResponseFormatPrompt, hasEnabledEmailAccount } from '$lib/stores/settings';
+import { getResponseFormatPrompt, getSettings, hasEnabledEmailAccount } from '$lib/stores/settings';
 
 const REVIEW_PATTERNS =
 	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
@@ -42,6 +42,12 @@ EMAIL INTEGRATION:
 - Use email_read_full only when the user needs verbatim text.`
 		: '';
 
+	const sandboxFsSection =
+		workingDir && getSettings().sandboxEnabled
+			? `
+- Working dir files: the user's working directory is mirrored into the sandbox before each run, and your writes are flushed back after. Natural Python file I/O — pd.read_csv('orders.csv'), open('notes.txt').read(), plt.savefig('plot.png'), pd.to_csv('out.csv'), etc. — just works. Both relative paths (resolved against the working dir) and absolute paths into the working dir resolve to the right bytes. Files larger than ~50 MB are not mirrored automatically; for those use fs_read_* / fs_write_* instead.`
+			: '';
+
 	return {
 		role: 'system',
 		content: `You are Haruspex, a helpful, private AI assistant running on the user's computer.
@@ -60,7 +66,18 @@ INLINE CITATIONS:
 - Each [source](URL) must point to the specific page where that claim appeared. Copy the URL from the "[Source: <url>]" header.
 - Never invent a URL. Never cite a URL from an earlier turn.
 - The UI converts your [source](URL) links into numbered references [1], [2], [3] automatically — do NOT append a Sources or References section at the end.
-- Citations are mandatory for factual claims sourced from the web.${fsSection}${emailSection}
+- Citations are mandatory for factual claims sourced from the web.${fsSection}${emailSection}${
+			getSettings().sandboxEnabled
+				? `
+
+PYTHON SANDBOX:
+- You have a Python sandbox in this app. Use run_python for math beyond simple arithmetic, parsing structured data, regex work, statistics, plotting, or any task where executing code is more reliable than reasoning out the answer.
+- Variables, imports, and installed packages persist across run_python calls within this chat. Build on prior state instead of reimporting every call.
+- Pyodide ships only the standard library by default. Use install_package('numpy') (or pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) before importing those — installs are cached for the chat.
+- If the sandbox state gets stuck (a hung import, a poisoned variable, an unrecoverable exception), call reset_python and start over. Don't reach for it casually — resets wipe everything in the session.
+- Tool results include stdout, stderr, the value of the final expression, and any artifacts (plots, tables) the UI rendered for the user. You see the text; the user also sees the rich artifacts.${sandboxFsSection}`
+				: ''
+		}
 
 Be concise, accurate, and helpful. When in doubt, search.
 
