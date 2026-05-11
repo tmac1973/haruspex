@@ -149,6 +149,25 @@ except ImportError:
     # something weird happened and we just leave pyfetch unpatched.
     pass
 
+# Wire urllib / requests / httpx to route through pyfetch via the
+# pyodide-http helper package. Without this, model code that reaches
+# for the standard urllib.request.urlopen (or third-party requests)
+# fails with "urllib.error.URLError: unknown url type: https" because
+# the WASM environment has no real socket layer. With pyodide-http's
+# patch_all(), urllib.request and (if installed) requests/httpx all
+# delegate to pyfetch — and since we've already overridden pyfetch
+# above, the user's app proxy applies to urllib too.
+try:
+    import micropip as _micropip_for_http_patch
+    await _micropip_for_http_patch.install('pyodide-http')
+    import pyodide_http
+    pyodide_http.patch_all()
+except Exception as _patch_err:
+    import sys as _sys_for_warn
+    print('WARNING: pyodide-http patch failed: ' + str(_patch_err), file=_sys_for_warn.stderr)
+    print('  → urllib/requests/httpx will not work; use pyodide.http.pyfetch directly.',
+          file=_sys_for_warn.stderr)
+
 # ----------------------------------------------------------------------
 # builtins.open patch — make native Python file writes reach the user's
 # working directory.
