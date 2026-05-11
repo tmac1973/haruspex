@@ -188,9 +188,17 @@ else:
             "urllib.request.urlopen is disabled in this sandbox because an "
             "app proxy is configured (urllib uses synchronous XMLHttpRequest "
             "which can't be routed through the proxy). Use "
-            "'await pyodide.http.pyfetch(url)' instead — it goes through "
-            "the proxy correctly. Same goes for requests / httpx / "
-            "Path.read_text on URLs."
+            "pyodide.http.pyfetch instead — it routes through the proxy "
+            "correctly. Top-level await works in this sandbox; the exact "
+            "pattern is:\n"
+            "\n"
+            "    import pyodide.http, json\n"
+            "    response = await pyodide.http.pyfetch('https://api.example.com/x')\n"
+            "    data = json.loads(await response.string())\n"
+            "    print(data)\n"
+            "\n"
+            "Do NOT use asyncio.run() — there's already an event loop running. "
+            "Just await the call directly at the top level."
         )
 
     _urllib_request.urlopen = _haruspex_urlopen_proxy_block
