@@ -29,6 +29,32 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn().mockRejectedValue(new Error('not available'))
 }));
 
+const sandboxMocks = vi.hoisted(() => ({
+	runPython: vi.fn().mockResolvedValue({
+		stdout: '',
+		stderr: '',
+		result: '',
+		error: null,
+		artifacts: 0,
+		artifactsList: [],
+		notes: [],
+		duration_ms: 1
+	}),
+	installPackage: vi.fn().mockResolvedValue({
+		stdout: '',
+		stderr: '',
+		result: '',
+		error: null,
+		artifacts: 0,
+		artifactsList: [],
+		notes: [],
+		duration_ms: 1
+	}),
+	resetSandbox: vi.fn().mockResolvedValue(undefined)
+}));
+
+vi.mock('$lib/sandbox/sandbox', () => sandboxMocks);
+
 describe('chat store', () => {
 	beforeEach(() => {
 		vi.resetModules();
@@ -207,5 +233,127 @@ describe('chat store', () => {
 
 		const urls = getSourceUrls();
 		expect(urls).toContain('https://example.com');
+	});
+
+	describe('sandbox session restore', () => {
+		beforeEach(() => {
+			sandboxMocks.runPython.mockClear();
+			sandboxMocks.installPackage.mockClear();
+			sandboxMocks.resetSandbox.mockClear();
+		});
+
+		// Helpers to wait for the fire-and-forget restore to settle.
+		async function flush(): Promise<void> {
+			for (let i = 0; i < 30; i++) await Promise.resolve();
+		}
+
+		it('replays prior install_package and run_python calls in order on chat switch', async () => {
+			const { createConversation, setActiveConversation, getActiveConversation } = await import(
+				'$lib/stores/chat.svelte'
+			);
+			const a = createConversation();
+			const b = createConversation();
+
+			// Seed conversation A with a couple of prior sandbox tool calls.
+			const convA = (await import('$lib/stores/chat.svelte'))
+				.getConversations()
+				.find((c) => c.id === a)!;
+			convA.messages.push({
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{
+						id: '1',
+						type: 'function',
+						function: { name: 'install_package', arguments: '{"package":"numpy"}' }
+					}
+				]
+			});
+			convA.messages.push({
+				role: 'tool',
+				tool_call_id: '1',
+				content: 'installed numpy'
+			});
+			convA.messages.push({
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{
+						id: '2',
+						type: 'function',
+						function: { name: 'run_python', arguments: '{"code":"import numpy"}' }
+					}
+				]
+			});
+			convA.messages.push({
+				role: 'tool',
+				tool_call_id: '2',
+				content: 'ok'
+			});
+
+			// Switch away then back to A — restore should fire.
+			await setActiveConversation(b);
+			sandboxMocks.installPackage.mockClear();
+			sandboxMocks.runPython.mockClear();
+			sandboxMocks.resetSandbox.mockClear();
+
+			await setActiveConversation(a);
+			await flush();
+
+			expect(sandboxMocks.resetSandbox).toHaveBeenCalled();
+			expect(sandboxMocks.installPackage).toHaveBeenCalledWith('numpy');
+			expect(sandboxMocks.runPython).toHaveBeenCalledWith('import numpy');
+			// Successful restore implies prior approval — sandboxApproved set.
+			expect(getActiveConversation()?.sandboxApproved).toBe(true);
+			expect(getActiveConversation()?.isRestoringSession).toBe(false);
+		});
+
+		it('does nothing when the chat has no prior sandbox tool calls', async () => {
+			const { createConversation, setActiveConversation } = await import(
+				'$lib/stores/chat.svelte'
+			);
+			const a = createConversation();
+			const b = createConversation();
+			await setActiveConversation(b);
+			sandboxMocks.installPackage.mockClear();
+			sandboxMocks.runPython.mockClear();
+			sandboxMocks.resetSandbox.mockClear();
+			await setActiveConversation(a);
+			await flush();
+			expect(sandboxMocks.installPackage).not.toHaveBeenCalled();
+			expect(sandboxMocks.runPython).not.toHaveBeenCalled();
+			expect(sandboxMocks.resetSandbox).not.toHaveBeenCalled();
+		});
+
+		it('skips replay and flags sessionRestoreSkipped when over the cap', async () => {
+			const { createConversation, setActiveConversation, getActiveConversation } = await import(
+				'$lib/stores/chat.svelte'
+			);
+			const a = createConversation();
+			const b = createConversation();
+			const convA = (await import('$lib/stores/chat.svelte'))
+				.getConversations()
+				.find((c) => c.id === a)!;
+			// Push 51 fake run_python calls (cap is 50).
+			for (let i = 0; i < 51; i++) {
+				convA.messages.push({
+					role: 'assistant',
+					content: '',
+					tool_calls: [
+						{
+							id: `call_${i}`,
+							type: 'function',
+							function: { name: 'run_python', arguments: '{"code":"1+1"}' }
+						}
+					]
+				});
+			}
+			await setActiveConversation(b);
+			sandboxMocks.runPython.mockClear();
+			await setActiveConversation(a);
+			await flush();
+			expect(sandboxMocks.runPython).not.toHaveBeenCalled();
+			expect(getActiveConversation()?.sessionRestoreSkipped).toBe(true);
+		});
 	});
 });
