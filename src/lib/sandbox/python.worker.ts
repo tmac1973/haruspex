@@ -209,6 +209,41 @@ else:
     _urllib_request.urlopen = _haruspex_urlopen_proxy_block
 
 # ----------------------------------------------------------------------
+# Doc-creation wheels — install fpdf2 + python-pptx (and their non-Pyodide
+# pure-Python deps) from the bundled static/pyodide/wheels/ directory so
+# the model can produce PDFs and PowerPoints offline. The Pyodide-built
+# deps (Pillow, lxml, typing_extensions) were already pulled JS-side via
+# loadPackage. We pass deps=False so micropip won't try to re-resolve
+# them against PyPI (which would fail for offline users).
+# A failure here is non-fatal: the sandbox still boots, the model just
+# gets an ImportError if it reaches for fpdf / pptx. The warning tells
+# the user what to do (re-run dev-setup.sh).
+# ----------------------------------------------------------------------
+
+try:
+    import micropip as _micropip_for_doc_wheels
+    _doc_wheels = [
+        'fpdf2-2.8.7-py3-none-any.whl',
+        'defusedxml-0.7.1-py2.py3-none-any.whl',
+        'fonttools-4.62.1-py3-none-any.whl',
+        'python_pptx-1.0.2-py3-none-any.whl',
+        'xlsxwriter-3.2.9-py3-none-any.whl',
+    ]
+    _wheel_urls = [_haruspex_doc_wheels_url + _w for _w in _doc_wheels]
+    await _micropip_for_doc_wheels.install(_wheel_urls, deps=False)
+except Exception as _doc_install_err:
+    import sys as _sys_for_doc_warn
+    print(
+        'WARNING: bundled doc-creation wheels failed to install: '
+        + str(_doc_install_err),
+        file=_sys_for_doc_warn.stderr,
+    )
+    print(
+        '  -> fpdf / python-pptx will not import. Re-run ./scripts/fetch-pyodide.sh',
+        file=_sys_for_doc_warn.stderr,
+    )
+
+# ----------------------------------------------------------------------
 # builtins.open patch — make native Python file writes reach the user's
 # working directory.
 #
@@ -358,6 +393,19 @@ async function init(): Promise<void> {
 		// pre-load it so install_package() can pyimport it without an
 		// extra round trip on first use.
 		await pyodide.loadPackage('micropip');
+		// Doc-creation deps that ARE in the Pyodide lockfile (Pillow for
+		// fpdf2 + python-pptx; lxml + typing_extensions for python-pptx).
+		// Eager-load so the pure-Python wheels we install below can be
+		// imported without loadPackagesFromImports having to re-fetch deps
+		// on every first `import fpdf` / `import pptx`.
+		await pyodide.loadPackage(['Pillow', 'lxml', 'typing_extensions']);
+		// Same-origin URL to the wheels bundled by scripts/fetch-pyodide.sh
+		// into static/pyodide/wheels/. SvelteKit serves static/ at the
+		// origin root; this works under `npm run dev` and Tauri prod alike.
+		pyodide.globals.set(
+			'_haruspex_doc_wheels_url',
+			new URL('/pyodide/wheels/', self.location.origin).href
+		);
 		// Pyodide's batched callback delivers one line at a time WITHOUT
 		// the trailing newline, so re-append it before forwarding. Without
 		// this, `print('a'); print('b')` shows up as 'ab' instead of 'a\nb'.

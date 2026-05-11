@@ -74,6 +74,7 @@ PYTHON SANDBOX:
 - You have a Python sandbox in this app. Use run_python for math beyond simple arithmetic, parsing structured data, regex work, statistics, plotting, or any task where executing code is more reliable than reasoning out the answer.
 - Variables, imports, and installed packages persist across run_python calls within this chat. Build on prior state instead of reimporting every call.
 - Pyodide ships only the standard library by default. Use install_package('numpy') (or pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) before importing those — installs are cached for the chat.
+- fpdf2 (\`import fpdf\`) and python-pptx (\`from pptx import Presentation\`) are pre-installed in the sandbox. Use them — not any fs_write_* tool — to create PDFs and PowerPoint decks, especially when the document should include matplotlib charts. Pattern: render the chart with matplotlib, savefig to a PNG path in the working dir, then embed via \`pdf.image(path)\` or \`slide.shapes.add_picture(path, ...)\`, and finally \`pdf.output('report.pdf')\` / \`prs.save('deck.pptx')\` — those files land in the working dir automatically.
 - If the sandbox state gets stuck (a hung import, a poisoned variable, an unrecoverable exception), call reset_python and start over. Don't reach for it casually — resets wipe everything in the session.
 - Tool results include stdout, stderr, the value of the final expression, and any artifacts (plots, tables) the UI rendered for the user. You see the text; the user also sees the rich artifacts.${sandboxFsSection}`
 				: ''
@@ -110,12 +111,13 @@ export function injectMessageHints(
 	if (opts.workingDir && looksLikeFileOutputRequest(lastText)) {
 		hints.push(
 			'You must create the requested file DURING THIS TURN. Do your research, ' +
-				'synthesize the content, and then call fs_write_pdf / fs_write_docx / ' +
-				'fs_write_xlsx (whichever matches the request) with the full content as ' +
-				'your final action. Do NOT paste the report as a chat message and ' +
-				'expect the user to ask again in a follow-up — that wastes a round trip ' +
-				'and risks running out of context on the retry. After the write tool ' +
-				'succeeds, respond with a brief confirmation and the file path.'
+				'synthesize the content, then write the file: PDFs via run_python with ' +
+				'fpdf2, PowerPoints via run_python with python-pptx, and other formats ' +
+				'(docx, xlsx, odt, ods, odp) via the matching fs_write_* tool. Do NOT ' +
+				'paste the report as a chat message and expect the user to ask again ' +
+				'in a follow-up — that wastes a round trip and risks running out of ' +
+				'context on the retry. After the write succeeds, respond with a brief ' +
+				'confirmation and the file path.'
 		);
 	}
 

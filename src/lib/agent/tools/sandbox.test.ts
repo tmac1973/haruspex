@@ -135,4 +135,15 @@ describe('sandbox tools', () => {
 		expect(names).toContain('reset_python');
 		expect(names).toContain('install_package');
 	});
+
+	it('does not expose fs_write_pdf or fs_write_pptx — superseded by Python sandbox (fpdf2 / python-pptx)', async () => {
+		const { getToolSchemas } = await import('$lib/agent/tools');
+		const schemas = getToolSchemas({ hasWorkingDir: true });
+		const names = schemas.map((s) => s.function.name);
+		expect(names).not.toContain('fs_write_pdf');
+		expect(names).not.toContain('fs_write_pptx');
+		// Sibling fs_write_* tools that should still be available.
+		expect(names).toContain('fs_write_docx');
+		expect(names).toContain('fs_write_xlsx');
+	});
 });

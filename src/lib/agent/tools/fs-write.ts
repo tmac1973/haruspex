@@ -1,8 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
-import type { ToolExecOutput } from './types';
+import type { ToolExecOutput, ToolRegistration } from './types';
 import { IMAGE_EXT_RE } from './fs-read';
+
+/**
+ * Stub for tools we want to keep type-checked and easy to re-enable, but
+ * not currently expose to the model. The Rust commands and TS execute
+ * blocks remain valid; flipping `disabledTool` back to `registerTool` is
+ * the only change needed to restore them.
+ */
+function disabledTool(reg: ToolRegistration): void {
+	void reg; // intentionally not registered
+}
 
 /**
  * Outcome of pre-write conflict resolution. `null` means the user
@@ -218,7 +228,11 @@ registerTool({
 	}
 });
 
-registerTool({
+// DISABLED: replaced by run_python + fpdf2 (pre-bundled in the Python
+// sandbox). Lets the model embed matplotlib charts directly into PDFs.
+// Re-enable by changing `disabledTool` to `registerTool`; the Rust
+// command in src-tauri/src/fs_tools.rs (build_pdf) is unchanged.
+disabledTool({
 	category: 'fs',
 	schema: {
 		type: 'function',
@@ -376,7 +390,11 @@ registerTool({
 	}
 });
 
-registerTool({
+// DISABLED: replaced by run_python + python-pptx (pre-bundled in the
+// Python sandbox). Lets the model embed matplotlib charts directly into
+// slides. Re-enable by changing `disabledTool` to `registerTool`; the
+// Rust command in src-tauri/src/fs_tools.rs (build_pptx) is unchanged.
+disabledTool({
 	category: 'fs',
 	schema: {
 		type: 'function',
