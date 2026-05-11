@@ -39,6 +39,15 @@ export interface Conversation {
 	contextUsage: { promptTokens: number; completionTokens: number } | null;
 	/** Search steps from the last generation in this conversation. Not persisted to DB. */
 	searchSteps: SearchStep[];
+	/**
+	 * Completed search steps from past turns, indexed by the position of the
+	 * assistant message they belong to in `messages`. Lets the UI keep
+	 * rendering rich artifacts (plots, tables) under the message that
+	 * produced them after the live `searchSteps` is cleared at the start
+	 * of the next turn. In-memory only — not persisted to DB, so plots
+	 * vanish on app restart or chat reload (acceptable for v1).
+	 */
+	messageSteps: Record<number, SearchStep[]>;
 	/** Cited source URLs from the last generation. Not persisted to DB. */
 	sourceUrls: string[];
 	/**
@@ -89,6 +98,7 @@ export async function initChatStore(): Promise<void> {
 		workingDir: defaultDir,
 		contextUsage: null,
 		searchSteps: [],
+		messageSteps: {},
 		sourceUrls: []
 	}));
 
@@ -229,6 +239,7 @@ export function createConversation(): string {
 		workingDir: getSettings().defaultWorkingDir || null,
 		contextUsage: null,
 		searchSteps: [],
+		messageSteps: {},
 		sourceUrls: []
 	});
 	activeConversationId = id;
@@ -449,6 +460,15 @@ export async function sendMessage(content: string): Promise<void> {
 
 				const commit = (text: string) => {
 					const assistantMsg: ChatMessage = { role: 'assistant', content: text };
+					// Snapshot the live search steps onto the assistant message's
+					// position so the UI can keep rendering plots/tables under
+					// this message after the next turn clears `searchSteps`.
+					const stepsForThisTurn = conversation.searchSteps.filter(
+						(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
+					);
+					if (stepsForThisTurn.length > 0) {
+						conversation.messageSteps[conversation.messages.length] = stepsForThisTurn;
+					}
 					conversation.messages.push(assistantMsg);
 					dbSaveMessage(conversation.id, assistantMsg);
 					if (exhaustiveResearch) {
@@ -509,6 +529,12 @@ export async function sendMessage(content: string): Promise<void> {
 				const fetched = extractUrlsFromSteps(conversation.searchSteps);
 				const { content, citedUrls } = processCitations(streamingContent, fetched);
 				const partialMsg: ChatMessage = { role: 'assistant', content };
+				const stepsForThisTurn = conversation.searchSteps.filter(
+					(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
+				);
+				if (stepsForThisTurn.length > 0) {
+					conversation.messageSteps[conversation.messages.length] = stepsForThisTurn;
+				}
 				conversation.messages.push(partialMsg);
 				dbSaveMessage(conversation.id, partialMsg);
 				conversation.sourceUrls = citedUrls;

@@ -395,6 +395,9 @@
 			{#if activeConversation && activeConversation.messages.length > 0}
 				{#each activeConversation.messages as msg, i (i)}
 					{#if msg.role !== 'system'}
+						{#if msg.role === 'assistant' && activeConversation.messageSteps[i]?.length}
+							<SearchStepComponent steps={activeConversation.messageSteps[i]} />
+						{/if}
 						<ChatMessage message={msg} />
 					{/if}
 				{/each}
