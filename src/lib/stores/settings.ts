@@ -127,6 +127,13 @@ export interface AppSettings {
 	defaultWorkingDir: string;
 	keepRecentToolResults: boolean;
 	/**
+	 * Master switch for the Python code sandbox. When false, run_python
+	 * / install_package / reset_python are filtered out of the model's
+	 * tool list entirely, the same way fs tools are when no working
+	 * directory is set.
+	 */
+	sandboxEnabled: boolean;
+	/**
 	 * Controls when the user is prompted before the Python sandbox runs
 	 * model-authored code. 'off' runs every code call without asking
 	 * (only meaningful for users who fully trust the model on this
@@ -135,6 +142,13 @@ export interface AppSettings {
 	 * every single time.
 	 */
 	sandboxApproval: 'off' | 'once-per-chat' | 'every-run';
+	/**
+	 * Wall-clock timeout for a single sandbox tool call (run_python /
+	 * install_package). Capped 5-300 seconds in the UI; the manager
+	 * enforces interrupt-then-terminate escalation when crossOriginIsolated
+	 * is true (otherwise just terminate).
+	 */
+	sandboxTimeoutSeconds: number;
 	inferenceBackend: InferenceBackendConfig;
 	integrations: IntegrationsConfig;
 	proxy: ProxyConfig;
@@ -177,7 +191,9 @@ const defaults: AppSettings = {
 	dismissedGpuWarning: false,
 	defaultWorkingDir: '',
 	keepRecentToolResults: true,
+	sandboxEnabled: true,
 	sandboxApproval: 'once-per-chat',
+	sandboxTimeoutSeconds: 30,
 	inferenceBackend: defaultInferenceBackend,
 	integrations: defaultIntegrations,
 	proxy: defaultProxy

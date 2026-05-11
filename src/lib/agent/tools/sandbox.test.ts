@@ -52,7 +52,10 @@ describe('sandbox tools', () => {
 		mocks.runPython.mockResolvedValue(ok({ stdout: 'hello\n', result: '4' }));
 		const { executeTool } = await import('$lib/agent/tools');
 		const out = await executeTool('run_python', { code: 'print("hello"); 2+2' }, ctx);
-		expect(mocks.runPython).toHaveBeenCalledWith('print("hello"); 2+2');
+		expect(mocks.runPython).toHaveBeenCalledWith(
+			'print("hello"); 2+2',
+			expect.objectContaining({ timeoutMs: expect.any(Number) })
+		);
 		expect(out.result).toContain('Stdout:');
 		expect(out.result).toContain('hello');
 		expect(out.result).toContain('Result: 4');
@@ -102,7 +105,10 @@ describe('sandbox tools', () => {
 		mocks.installPackage.mockResolvedValue(ok({ result: 'installed numpy' }));
 		const { executeTool } = await import('$lib/agent/tools');
 		const out = await executeTool('install_package', { package: 'numpy' }, ctx);
-		expect(mocks.installPackage).toHaveBeenCalledWith('numpy');
+		expect(mocks.installPackage).toHaveBeenCalledWith(
+			'numpy',
+			expect.objectContaining({ timeoutMs: expect.any(Number) })
+		);
 		expect(out.result).toContain('installed numpy');
 	});
 

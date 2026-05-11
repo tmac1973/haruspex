@@ -263,6 +263,24 @@
 		updateSettings({ keepRecentToolResults });
 	}
 
+	let sandboxEnabled = $state(getSettings().sandboxEnabled);
+	let sandboxApproval = $state(getSettings().sandboxApproval);
+	let sandboxTimeoutSeconds = $state(getSettings().sandboxTimeoutSeconds);
+
+	function toggleSandboxEnabled() {
+		sandboxEnabled = !sandboxEnabled;
+		updateSettings({ sandboxEnabled });
+	}
+	function setSandboxApproval(mode: 'off' | 'once-per-chat' | 'every-run') {
+		sandboxApproval = mode;
+		updateSettings({ sandboxApproval: mode });
+	}
+	function setSandboxTimeout(seconds: number) {
+		const clamped = Math.max(5, Math.min(300, Math.round(seconds)));
+		sandboxTimeoutSeconds = clamped;
+		updateSettings({ sandboxTimeoutSeconds: clamped });
+	}
+
 	let debugClearLabel = $state('Clear debug log');
 
 	function clearDebugLog() {
@@ -864,6 +882,61 @@
 				</span>
 			</div>
 		</label>
+	</section>
+
+	<section>
+		<h2>Python Sandbox</h2>
+		<label class="toggle-row">
+			<input type="checkbox" checked={sandboxEnabled} onchange={toggleSandboxEnabled} />
+			<div>
+				<strong>Enable Python sandbox</strong>
+				<span>
+					When on, the model can call run_python / install_package / reset_python to execute Python
+					code in an in-app Pyodide sandbox. Off hides those tools entirely.
+				</span>
+			</div>
+		</label>
+
+		{#if sandboxEnabled}
+			<div class="search-provider">
+				<label for="sandbox-approval">Approval prompt:</label>
+				<select
+					id="sandbox-approval"
+					value={sandboxApproval}
+					onchange={(e) =>
+						setSandboxApproval(
+							(e.target as HTMLSelectElement).value as 'off' | 'once-per-chat' | 'every-run'
+						)}
+				>
+					<option value="off">Off — run code without asking</option>
+					<option value="once-per-chat">Once per chat (recommended)</option>
+					<option value="every-run">Every run — review each script</option>
+				</select>
+			</div>
+			<p class="hint">
+				Code runs locally in your browser's WebView, isolated from the host filesystem except where
+				it explicitly writes (those writes flush to your working directory after the script
+				finishes). The prompt is your gate; "off" only makes sense if you fully trust the model on
+				this machine.
+			</p>
+
+			<div class="search-provider">
+				<label for="sandbox-timeout">Execution timeout (seconds):</label>
+				<input
+					id="sandbox-timeout"
+					type="number"
+					min="5"
+					max="300"
+					step="5"
+					value={sandboxTimeoutSeconds}
+					onchange={(e) => setSandboxTimeout(Number((e.target as HTMLInputElement).value))}
+				/>
+			</div>
+			<p class="hint">
+				How long a single run_python or install_package call may take before it's terminated. 5–300
+				seconds. The default 30s is generous for most code; raise it for long installs or simulations.
+			</p>
+		{/if}
 	</section>
 
 	<section>
