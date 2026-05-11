@@ -934,7 +934,8 @@
 			</div>
 			<p class="hint">
 				How long a single run_python or install_package call may take before it's terminated. 5–300
-				seconds. The default 30s is generous for most code; raise it for long installs or simulations.
+				seconds. The default 30s is generous for most code; raise it for long installs or
+				simulations.
 			</p>
 		{/if}
 	</section>

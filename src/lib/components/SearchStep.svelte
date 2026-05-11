@@ -133,7 +133,8 @@
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="step-code" onclick={(e) => e.stopPropagation()}>
-					<pre><code class="language-python">{@html highlightPython(step.args.code as string)}</code></pre>
+					<pre><code class="language-python">{@html highlightPython(step.args.code as string)}</code
+						></pre>
 				</div>
 			{/if}
 			{#if step.thumbDataUrl}

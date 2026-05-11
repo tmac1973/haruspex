@@ -100,7 +100,7 @@ describe('WorkerManager', () => {
 		expect(manager.hasWorker).toBe(false);
 		const promise = manager.runPython('1+1');
 		expect(manager.hasWorker).toBe(true);
-		await flush(() => (lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false));
+		await flush(() => lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false);
 		const w = lastWorker as unknown as MockWorker;
 		const { id } = findRunMessage(w);
 		w.deliver({ kind: 'done', id, result: makeOkResult({ result: '2' }) });
@@ -133,7 +133,7 @@ describe('WorkerManager', () => {
 	it('streams stdout chunks to the onStdout callback', async () => {
 		const chunks: string[] = [];
 		const promise = manager.runPython('print(1)', { onStdout: (c) => chunks.push(c) });
-		await flush(() => (lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false));
+		await flush(() => lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false);
 		const w = lastWorker as unknown as MockWorker;
 		const { id } = findRunMessage(w);
 		w.deliver({ kind: 'stdout', id, data: 'one ' });
@@ -189,8 +189,8 @@ describe('WorkerManager', () => {
 			{ isIsolated: () => true }
 		);
 		const promise = manager.runPython('1+1');
-		await flush(() =>
-			(lastWorker?.postedMessages.some((m) => m.kind === 'set_interrupt_buffer') ?? false)
+		await flush(
+			() => lastWorker?.postedMessages.some((m) => m.kind === 'set_interrupt_buffer') ?? false
 		);
 		const w = lastWorker as unknown as MockWorker;
 		const setBuf = w.postedMessages.find((m) => m.kind === 'set_interrupt_buffer') as
@@ -216,7 +216,7 @@ describe('WorkerManager', () => {
 			{ isIsolated: () => false }
 		);
 		const promise = manager.runPython('1+1');
-		await flush(() => (lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false));
+		await flush(() => lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false);
 		const w = lastWorker as unknown as MockWorker;
 		expect(w.postedMessages.some((m) => m.kind === 'set_interrupt_buffer')).toBe(false);
 		const { id } = findRunMessage(w);
@@ -308,7 +308,7 @@ describe('WorkerManager', () => {
 
 	it('accumulates streamed artifacts and attaches them to the run result', async () => {
 		const promise = manager.runPython('plt.show()');
-		await flush(() => (lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false));
+		await flush(() => lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false);
 		const w = lastWorker as unknown as MockWorker;
 		const { id } = findRunMessage(w);
 		const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // fake PNG header

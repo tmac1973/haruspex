@@ -523,12 +523,10 @@ async function init(): Promise<void> {
 		// hood and that bypasses our pyfetch override (and therefore the
 		// proxy). Forcing the model to use pyodide.http.pyfetch directly is
 		// the only path that respects the proxy.
-		const runtimeCfg = await new Promise<{ mode: string; workingDirSet: boolean }>(
-			(resolve) => {
-				proxyModeWaiter = resolve;
-				post({ kind: 'get_proxy_mode' });
-			}
-		);
+		const runtimeCfg = await new Promise<{ mode: string; workingDirSet: boolean }>((resolve) => {
+			proxyModeWaiter = resolve;
+			post({ kind: 'get_proxy_mode' });
+		});
 		pyodide.globals.set('_haruspex_skip_http_patch', runtimeCfg.mode === 'manual');
 		pyodide.globals.set('_haruspex_working_dir_set', runtimeCfg.workingDirSet);
 		await pyodide.runPythonAsync(HARUSPEX_INIT_PY);
@@ -600,8 +598,7 @@ async function handleSyncWorkdir(msg: {
 			try {
 				fs.writeFile(file.abs_path, bytes);
 			} catch (err) {
-				currentStderr +=
-					'[haruspex.sync] failed to write ' + file.path + ': ' + String(err) + '\n';
+				currentStderr += '[haruspex.sync] failed to write ' + file.path + ': ' + String(err) + '\n';
 			}
 		}
 		for (const path of msg.deleted) {

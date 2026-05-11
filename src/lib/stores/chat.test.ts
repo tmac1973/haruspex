@@ -212,9 +212,8 @@ describe('chat store', () => {
 			options.onComplete();
 		});
 
-		const { sendMessage, getSearchSteps, getSourceUrls, getActiveConversation } = await import(
-			'$lib/stores/chat.svelte'
-		);
+		const { sendMessage, getSearchSteps, getSourceUrls, getActiveConversation } =
+			await import('$lib/stores/chat.svelte');
 
 		await sendMessage('Search for something');
 
@@ -248,9 +247,8 @@ describe('chat store', () => {
 		}
 
 		it('replays prior install_package and run_python calls in order on chat switch', async () => {
-			const { createConversation, setActiveConversation, getActiveConversation } = await import(
-				'$lib/stores/chat.svelte'
-			);
+			const { createConversation, setActiveConversation, getActiveConversation } =
+				await import('$lib/stores/chat.svelte');
 			const a = createConversation();
 			const b = createConversation();
 
@@ -309,9 +307,7 @@ describe('chat store', () => {
 		});
 
 		it('does nothing when the chat has no prior sandbox tool calls', async () => {
-			const { createConversation, setActiveConversation } = await import(
-				'$lib/stores/chat.svelte'
-			);
+			const { createConversation, setActiveConversation } = await import('$lib/stores/chat.svelte');
 			const a = createConversation();
 			const b = createConversation();
 			await setActiveConversation(b);
@@ -326,9 +322,8 @@ describe('chat store', () => {
 		});
 
 		it('skips replay and flags sessionRestoreSkipped when over the cap', async () => {
-			const { createConversation, setActiveConversation, getActiveConversation } = await import(
-				'$lib/stores/chat.svelte'
-			);
+			const { createConversation, setActiveConversation, getActiveConversation } =
+				await import('$lib/stores/chat.svelte');
 			const a = createConversation();
 			const b = createConversation();
 			const convA = (await import('$lib/stores/chat.svelte'))

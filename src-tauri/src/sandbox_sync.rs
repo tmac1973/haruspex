@@ -76,7 +76,10 @@ pub async fn sandbox_sync_workdir(
     walk_dir(&workdir_canonical, &workdir_canonical, &mut all_files)
         .map_err(|e| format!("Failed to walk workdir: {}", e))?;
 
-    let known: HashMap<String, f64> = known_files.into_iter().map(|kf| (kf.path, kf.mtime)).collect();
+    let known: HashMap<String, f64> = known_files
+        .into_iter()
+        .map(|kf| (kf.path, kf.mtime))
+        .collect();
 
     let mut to_sync = Vec::new();
     let mut skipped = Vec::new();
