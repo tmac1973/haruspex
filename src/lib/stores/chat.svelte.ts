@@ -36,7 +36,6 @@ export interface Conversation {
 	messages: ChatMessage[];
 	createdAt: number;
 	updatedAt: number;
-	workingDir: string | null;
 	contextUsage: { promptTokens: number; completionTokens: number } | null;
 	/** Search steps from the last generation in this conversation. Not persisted to DB. */
 	searchSteps: SearchStep[];
@@ -81,8 +80,38 @@ export interface Conversation {
 	lastTurnTools?: ChatMessage[];
 }
 
+const WORKING_DIR_KEY = 'haruspex-working-dir';
+
+function loadWorkingDir(): string | null {
+	try {
+		const raw = localStorage.getItem(WORKING_DIR_KEY);
+		if (raw !== null) return raw || null;
+		// One-time migration from the legacy per-settings defaultWorkingDir.
+		const legacy = localStorage.getItem('haruspex-settings');
+		if (legacy) {
+			const parsed = JSON.parse(legacy);
+			if (typeof parsed.defaultWorkingDir === 'string' && parsed.defaultWorkingDir) {
+				localStorage.setItem(WORKING_DIR_KEY, parsed.defaultWorkingDir);
+				return parsed.defaultWorkingDir;
+			}
+		}
+	} catch {
+		// ignore
+	}
+	return null;
+}
+
+function saveWorkingDir(path: string | null): void {
+	try {
+		localStorage.setItem(WORKING_DIR_KEY, path ?? '');
+	} catch {
+		// ignore
+	}
+}
+
 let conversations = $state<Conversation[]>([]);
 let activeConversationId = $state<string | null>(null);
+let workingDir = $state<string | null>(loadWorkingDir());
 let isGenerating = $state(false);
 let isCompacting = $state(false);
 let streamingContent = $state('');
@@ -110,14 +139,12 @@ function generateTitle(content: string): string {
 export async function initChatStore(): Promise<void> {
 	const db = await initDb();
 
-	const defaultDir = getSettings().defaultWorkingDir || null;
 	conversations = db.summaries.map((s: DbConversationSummary) => ({
 		id: s.id,
 		title: s.title,
 		messages: [],
 		createdAt: s.created_at,
 		updatedAt: s.updated_at,
-		workingDir: defaultDir,
 		contextUsage: null,
 		searchSteps: [],
 		messageSteps: {},
@@ -152,17 +179,13 @@ export function getActiveConversation(): Conversation | undefined {
 }
 
 export function getWorkingDir(): string | null {
-	return getActiveConversation()?.workingDir ?? null;
+	return workingDir;
 }
 
 export function setWorkingDir(path: string | null): void {
-	if (!activeConversationId) {
-		createConversation();
-	}
-	const conv = getActiveConversation();
-	if (!conv) return;
-	const previous = conv.workingDir;
-	conv.workingDir = path;
+	const previous = workingDir;
+	workingDir = path;
+	saveWorkingDir(path);
 	// Switching to a different workdir means the worker's MEMFS + the
 	// manager's syncedFiles cache are pinned to the OLD workdir's
 	// absolute paths. Leaving them in place leaks ghost files and means
@@ -269,7 +292,6 @@ export function createConversation(): string {
 		messages: [],
 		createdAt: now,
 		updatedAt: now,
-		workingDir: getSettings().defaultWorkingDir || null,
 		contextUsage: null,
 		searchSteps: [],
 		messageSteps: {},
@@ -492,7 +514,7 @@ export async function sendMessage(content: string): Promise<void> {
 	abortController = new AbortController();
 
 	try {
-		const currentWorkingDir = conversation.workingDir;
+		const currentWorkingDir = workingDir;
 		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
 
 		const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);

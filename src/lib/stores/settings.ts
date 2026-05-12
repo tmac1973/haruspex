@@ -124,7 +124,6 @@ export interface AppSettings {
 	audioOutputDevice: string;
 	audioInputDevice: string;
 	dismissedGpuWarning: boolean;
-	defaultWorkingDir: string;
 	keepRecentToolResults: boolean;
 	/**
 	 * Master switch for the Python code sandbox. When false, run_python
@@ -189,7 +188,6 @@ const defaults: AppSettings = {
 	audioOutputDevice: '',
 	audioInputDevice: '',
 	dismissedGpuWarning: false,
-	defaultWorkingDir: '',
 	keepRecentToolResults: true,
 	sandboxEnabled: false,
 	sandboxApproval: 'once-per-chat',
