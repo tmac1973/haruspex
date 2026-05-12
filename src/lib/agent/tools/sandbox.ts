@@ -38,7 +38,7 @@ registerTool({
 		function: {
 			name: 'run_python',
 			description:
-				'Execute Python code in a persistent sandbox running in this app. Variables, imports, and installed packages persist across calls within the current chat. Use this for math, data analysis, parsing, plotting, or any computation that benefits from real code execution. Top-level await is supported. The final expression value is returned alongside any captured stdout/stderr. Common pre-installable packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow) need install_package first.',
+				'Execute Python code in a persistent sandbox running in this app. Variables, imports, and installed packages persist across calls within the current chat. Use this for math, data analysis, parsing, plotting, document creation (PDFs via fpdf2, PowerPoints via python-pptx — both pre-installed), or any computation that benefits from real code execution. Top-level await is supported. The final expression value is returned alongside any captured stdout/stderr. Common pre-installable packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow) need install_package first.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -117,7 +117,7 @@ registerTool({
 		function: {
 			name: 'install_package',
 			description:
-				'Install a Python package into the sandbox via micropip. Pre-built Pyodide packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) work out of the box. Pure-Python wheels from PyPI also work; packages with C extensions that have not been pre-built for Pyodide will fail. Installs persist for the current chat session.',
+				'Install a Python package into the sandbox via micropip. Pre-built Pyodide packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) work out of the box. Pure-Python wheels from PyPI also work; packages with C extensions that have not been pre-built for Pyodide will fail. fpdf2 and python-pptx are already pre-installed in this sandbox — do not reinstall them. Installs persist for the current chat session.',
 			parameters: {
 				type: 'object',
 				properties: {

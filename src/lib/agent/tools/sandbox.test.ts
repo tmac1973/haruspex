@@ -129,10 +129,45 @@ describe('sandbox tools', () => {
 
 	it('exposes sandbox tool schemas via getToolSchemas regardless of working dir', async () => {
 		const { getToolSchemas } = await import('$lib/agent/tools');
-		const schemas = getToolSchemas({ hasWorkingDir: false });
+		const { updateSettings } = await import('$lib/stores/settings');
+		updateSettings({ sandboxEnabled: true });
+		try {
+			const schemas = getToolSchemas({ hasWorkingDir: false });
+			const names = schemas.map((s) => s.function.name);
+			expect(names).toContain('run_python');
+			expect(names).toContain('reset_python');
+			expect(names).toContain('install_package');
+		} finally {
+			updateSettings({ sandboxEnabled: false });
+		}
+	});
+
+	it('hides fs_write_pdf / fs_write_pptx when the Python sandbox is enabled', async () => {
+		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { updateSettings } = await import('$lib/stores/settings');
+		updateSettings({ sandboxEnabled: true });
+		try {
+			const schemas = getToolSchemas({ hasWorkingDir: true });
+			const names = schemas.map((s) => s.function.name);
+			expect(names).not.toContain('fs_write_pdf');
+			expect(names).not.toContain('fs_write_pptx');
+			// Sibling fs_write_* tools stay available either way.
+			expect(names).toContain('fs_write_docx');
+			expect(names).toContain('fs_write_xlsx');
+		} finally {
+			updateSettings({ sandboxEnabled: false });
+		}
+	});
+
+	it('exposes fs_write_pdf / fs_write_pptx as fallbacks when the Python sandbox is disabled', async () => {
+		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { updateSettings } = await import('$lib/stores/settings');
+		updateSettings({ sandboxEnabled: false });
+		const schemas = getToolSchemas({ hasWorkingDir: true });
 		const names = schemas.map((s) => s.function.name);
-		expect(names).toContain('run_python');
-		expect(names).toContain('reset_python');
-		expect(names).toContain('install_package');
+		expect(names).toContain('fs_write_pdf');
+		expect(names).toContain('fs_write_pptx');
+		// run_python is itself sandbox-gated, so it should NOT appear here.
+		expect(names).not.toContain('run_python');
 	});
 });

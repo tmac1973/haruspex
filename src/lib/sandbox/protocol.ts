@@ -64,6 +64,14 @@ export type MainToWorker =
 			path?: string;
 			bytes?: number;
 			error?: string;
+	  }
+	| {
+			kind: 'delete_response';
+			id: string;
+			request_id: string;
+			ok: boolean;
+			path?: string;
+			error?: string;
 	  };
 
 export type WorkerToMain =
@@ -100,4 +108,10 @@ export type WorkerToMain =
 			request_id: string;
 			filename: string;
 			content: Uint8Array | ArrayBuffer | string;
+	  }
+	| {
+			kind: 'delete_request';
+			id: string;
+			request_id: string;
+			filename: string;
 	  };

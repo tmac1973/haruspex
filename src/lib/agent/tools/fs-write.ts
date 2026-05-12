@@ -218,6 +218,10 @@ registerTool({
 	}
 });
 
+// Legacy markdown→PDF path. When the Python sandbox is enabled this
+// tool is filtered out in getToolSchemas so the model uses fpdf2 via
+// run_python (which can embed matplotlib charts). When sandbox is off,
+// this is the only PDF creation path.
 registerTool({
 	category: 'fs',
 	schema: {
@@ -376,6 +380,10 @@ registerTool({
 	}
 });
 
+// Legacy hand-rolled OOXML PPTX path. Same arrangement as fs_write_pdf:
+// filtered out when the Python sandbox is on (model uses python-pptx via
+// run_python instead, which can embed matplotlib charts), available as
+// the only PPTX path when sandbox is off.
 registerTool({
 	category: 'fs',
 	schema: {

@@ -11,9 +11,35 @@
 	}
 
 	let { steps, slowMode = false }: Props = $props();
-	let expanded = $state(false);
 
 	let copyStates: Record<string, string> = $state({});
+	// Per-step user override for run_python code-block visibility. Absent
+	// entry → use the default (collapsed if the run errored, expanded
+	// otherwise) so the user doesn't have to scroll past 4 failing tries
+	// before reaching the one that worked.
+	let codeCollapsed: Record<string, boolean> = $state({});
+	// Per-step accordion state for tool-result details. Click a step row
+	// to toggle just that step's log open/closed.
+	let detailsExpanded: Record<string, boolean> = $state({});
+
+	function toggleDetails(step: SearchStep) {
+		if (!step.result) return; // nothing to show yet
+		detailsExpanded[step.id] = !detailsExpanded[step.id];
+	}
+
+	function stepErrored(step: SearchStep): boolean {
+		return step.status === 'done' && !!step.result?.startsWith('Error:');
+	}
+
+	function isCodeCollapsed(step: SearchStep): boolean {
+		if (step.id in codeCollapsed) return codeCollapsed[step.id];
+		return stepErrored(step);
+	}
+
+	function toggleCode(step: SearchStep, event: MouseEvent) {
+		event.stopPropagation();
+		codeCollapsed[step.id] = !isCodeCollapsed(step);
+	}
 
 	function highlightPython(code: string): string {
 		try {
@@ -108,9 +134,7 @@
 </script>
 
 {#if steps.length > 0}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="search-steps" onclick={() => (expanded = !expanded)}>
+	<div class="search-steps">
 		{#if slowMode}
 			<div class="slow-notice">
 				⏳ Deep research is using slow pacing — public search engines need to be rate-limited to
@@ -118,9 +142,21 @@
 			</div>
 		{/if}
 		{#each steps as step (step.id)}
-			<div class="step" data-status={step.status}>
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="step"
+				class:has-details={!!step.result}
+				class:expanded={detailsExpanded[step.id]}
+				data-status={step.status}
+				onclick={() => toggleDetails(step)}
+				title={step.result ? (detailsExpanded[step.id] ? 'Hide log' : 'Show log') : ''}
+			>
 				<span class="step-icon">{stepIcon(step.toolName)}</span>
 				<span class="step-label">{stepLabel(step.toolName, step.query)}</span>
+				<span class="step-chevron">
+					{#if step.result}{detailsExpanded[step.id] ? '▾' : '▸'}{/if}
+				</span>
 				<span class="step-status">
 					{#if step.status === 'running'}
 						<span class="spinner"></span>
@@ -130,12 +166,31 @@
 				</span>
 			</div>
 			{#if step.toolName === 'run_python' && typeof step.args?.code === 'string'}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="step-code" onclick={(e) => e.stopPropagation()}>
-					<pre><code class="language-python">{@html highlightPython(step.args.code as string)}</code
-						></pre>
+				<div class="code-controls">
+					<button
+						class="code-toggle"
+						class:errored={stepErrored(step)}
+						onclick={(e) => toggleCode(step, e)}
+						title={isCodeCollapsed(step) ? 'Show code' : 'Hide code'}
+					>
+						{isCodeCollapsed(step) ? '▸' : '▾'} code
+					</button>
+					<button
+						class="copy-btn"
+						onclick={(e) => copyResult(`${step.id}:code`, step.args!.code as string, e)}
+					>
+						{copyStates[`${step.id}:code`] || 'Copy'}
+					</button>
 				</div>
+				{#if !isCodeCollapsed(step)}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="step-code" onclick={(e) => e.stopPropagation()}>
+						<pre><code class="language-python"
+								>{@html highlightPython(step.args.code as string)}</code
+							></pre>
+					</div>
+				{/if}
 			{/if}
 			{#if step.thumbDataUrl}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -168,27 +223,20 @@
 					{/each}
 				</div>
 			{/if}
+			{#if detailsExpanded[step.id] && step.result}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="detail-block" onclick={(e) => e.stopPropagation()}>
+					<div class="detail-header">
+						<div class="detail-label">{step.toolName}: {step.query}</div>
+						<button class="copy-btn" onclick={(e) => copyResult(step.id, step.result ?? '', e)}>
+							{copyStates[step.id] || 'Copy'}
+						</button>
+					</div>
+					<pre>{step.result}</pre>
+				</div>
+			{/if}
 		{/each}
-
-		{#if expanded}
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="step-details" onclick={(e) => e.stopPropagation()}>
-				{#each steps as step (step.id)}
-					{#if step.result}
-						<div class="detail-block">
-							<div class="detail-header">
-								<div class="detail-label">{step.toolName}: {step.query}</div>
-								<button class="copy-btn" onclick={(e) => copyResult(step.id, step.result ?? '', e)}>
-									{copyStates[step.id] || 'Copy'}
-								</button>
-							</div>
-							<pre>{step.result}</pre>
-						</div>
-					{/if}
-				{/each}
-			</div>
-		{/if}
 	</div>
 {/if}
 
@@ -196,7 +244,6 @@
 	.search-steps {
 		padding: 8px 16px;
 		border-bottom: 1px solid var(--border);
-		cursor: pointer;
 		font-size: 0.85rem;
 	}
 
@@ -215,12 +262,26 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 4px 0;
+		padding: 4px 4px;
+		margin: 0 -4px;
+		border-radius: 4px;
 		color: var(--text-secondary);
 	}
 
 	.step[data-status='done'] {
 		color: var(--text-primary);
+	}
+
+	.step.has-details {
+		cursor: pointer;
+	}
+
+	.step.has-details:hover {
+		background: var(--bg-secondary);
+	}
+
+	.step.expanded {
+		background: var(--bg-secondary);
 	}
 
 	.step-icon {
@@ -233,6 +294,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.step-chevron {
+		flex-shrink: 0;
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		min-width: 10px;
 	}
 
 	.step-status {
@@ -252,6 +320,32 @@
 		border: 1px solid var(--border);
 		display: block;
 		object-fit: contain;
+	}
+
+	.code-controls {
+		margin: 0 16px 4px 26px;
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+
+	.code-toggle {
+		padding: 2px 8px;
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+		font-family: inherit;
+		cursor: pointer;
+	}
+
+	.code-toggle:hover {
+		background: var(--bg-secondary);
+	}
+
+	.code-toggle.errored {
+		color: var(--error, #c33);
 	}
 
 	.step-code {
@@ -341,14 +435,8 @@
 		}
 	}
 
-	.step-details {
-		margin-top: 8px;
-		border-top: 1px solid var(--border);
-		padding-top: 8px;
-	}
-
 	.detail-block {
-		margin: 0 16px 8px 0;
+		margin: 4px 16px 8px 26px;
 	}
 
 	.detail-header {

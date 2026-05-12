@@ -28,6 +28,12 @@ interface PendingSave {
 }
 const pendingSaves = new Map<string, PendingSave>();
 
+interface PendingDelete {
+	resolve: (result: { path: string }) => void;
+	reject: (err: Error) => void;
+}
+const pendingDeletes = new Map<string, PendingDelete>();
+
 interface PendingFetch {
 	resolve: (result: {
 		status: number;
@@ -87,6 +93,26 @@ async def _haruspex_save_py(filename, content):
     return result
 
 _haruspex_mod.save = _haruspex_save_py
+
+async def _haruspex_delete_py(filename):
+    """Delete a file in the active chat's working directory.
+
+    Used by the post-run drain to propagate Python deletions (os.remove,
+    pathlib.unlink, etc.) back to the host. Same path-safety rules as
+    haruspex.save — relative to the workdir, no '..' escapes.
+
+    Args:
+        filename: Path relative to the working dir.
+
+    Returns:
+        dict with 'path' (absolute path of the deleted file).
+    """
+    result = await _haruspex_delete(filename)
+    if hasattr(result, 'to_py'):
+        result = result.to_py()
+    return result
+
+_haruspex_mod.delete = _haruspex_delete_py
 _sys.modules['haruspex'] = _haruspex_mod
 
 # ----------------------------------------------------------------------
@@ -209,18 +235,63 @@ else:
     _urllib_request.urlopen = _haruspex_urlopen_proxy_block
 
 # ----------------------------------------------------------------------
-# builtins.open patch — make native Python file writes reach the user's
-# working directory.
+# Doc-creation wheels — install fpdf2 + python-pptx (and their non-Pyodide
+# pure-Python deps) from the bundled static/pyodide/wheels/ directory so
+# the model can produce PDFs and PowerPoints offline. The Pyodide-built
+# deps (Pillow, lxml, typing_extensions) were already pulled JS-side via
+# loadPackage. We pass deps=False so micropip won't try to re-resolve
+# them against PyPI (which would fail for offline users).
+# A failure here is non-fatal: the sandbox still boots, the model just
+# gets an ImportError if it reaches for fpdf / pptx. The warning tells
+# the user what to do (re-run dev-setup.sh).
+# ----------------------------------------------------------------------
+
+try:
+    import micropip as _micropip_for_doc_wheels
+    _doc_wheels = [
+        'fpdf2-2.8.7-py3-none-any.whl',
+        'defusedxml-0.7.1-py2.py3-none-any.whl',
+        'fonttools-4.62.1-py3-none-any.whl',
+        'python_pptx-1.0.2-py3-none-any.whl',
+        'xlsxwriter-3.2.9-py3-none-any.whl',
+    ]
+    _wheel_urls = [_haruspex_doc_wheels_url + _w for _w in _doc_wheels]
+    await _micropip_for_doc_wheels.install(_wheel_urls, deps=False)
+except Exception as _doc_install_err:
+    import sys as _sys_for_doc_warn
+    print(
+        'WARNING: bundled doc-creation wheels failed to install: '
+        + str(_doc_install_err),
+        file=_sys_for_doc_warn.stderr,
+    )
+    print(
+        '  -> fpdf / python-pptx will not import. Re-run ./scripts/fetch-pyodide.sh',
+        file=_sys_for_doc_warn.stderr,
+    )
+
+# ----------------------------------------------------------------------
+# MEMFS → host flush — mirror file changes back to the user's working dir.
 #
 # Pyodide's filesystem is in-memory MEMFS. Python's open(), plt.savefig,
 # pd.to_csv, np.save, PIL Image.save — all write into MEMFS only by
 # default, so files appear to "exist" from the model's POV but never
 # touch the host disk. We can't bridge async-to-sync to give Python a
 # real-time host FS (no SharedArrayBuffer on Linux/WebKitGTK), so we
-# defer: every write-mode open against a user-facing path goes through
-# the original open as normal (MEMFS), AND we record the path. After
-# the user's code returns, we read each recorded path from MEMFS and
-# flush it to the host via haruspex.save.
+# defer the flush to the end of each run.
+#
+# Two complementary mechanisms cover the cases:
+#
+# (1) Walk-and-diff: before user code runs, snapshot every file in the
+#     workdir + its mtime. After the run, walk the workdir again and
+#     flush any file that's new or whose mtime changed. Catches writes
+#     made via ANY primitive — zipfile.ZipFile (python-pptx, python-docx,
+#     openpyxl), io.FileIO, raw os.write — not just Python-level open().
+#
+# (2) builtins.open patch: catches write-mode opens against paths OUTSIDE
+#     the workdir (matplotlib's /home/pyodide/plot.png default, or any
+#     path the model picks explicitly). Those get saved into the workdir
+#     by basename. Inside-the-workdir opens are caught by (1) too; we
+#     dedupe in the drain.
 #
 # Read-after-write within the same run still works (MEMFS retains the
 # file). Cross-run reads still need the FS tools.
@@ -230,6 +301,7 @@ import builtins as _builtins
 
 _haruspex_original_open = _builtins.open
 _haruspex_pending_save_paths = set()
+_haruspex_workdir_snapshot = {}  # abs_path -> mtime, refreshed per run
 
 # Paths inside these prefixes are treated as Pyodide-internal scratch
 # (config caches, system libs, /tmp) and NOT flushed to host. Anything
@@ -253,38 +325,119 @@ def _haruspex_patched_open(filename, mode='r', *args, **kwargs):
 
 _builtins.open = _haruspex_patched_open
 
+def _haruspex_snapshot_workdir():
+    """Record {abs_path: mtime} for every file currently in the workdir.
+    Called before each user run so the post-run drain can detect new /
+    modified files regardless of how they were written."""
+    import os as _os
+    _haruspex_workdir_snapshot.clear()
+    if not _haruspex_working_dir_set:
+        return
+    try:
+        cwd = _os.getcwd()
+    except Exception:
+        return
+    for _root, _dirs, _files in _os.walk(cwd):
+        for _f in _files:
+            _path = _os.path.join(_root, _f)
+            try:
+                _haruspex_workdir_snapshot[_path] = _os.stat(_path).st_mtime
+            except Exception:
+                pass
+
+async def _haruspex_flush_one(abs_path, save_as, failed):
+    """Read abs_path from MEMFS and write it to host via haruspex.save,
+    addressing it as save_as (relative to the workdir). On error, record
+    (abs_path, message) into the failed list."""
+    try:
+        with _haruspex_original_open(abs_path, 'rb') as _f:
+            _content = _f.read()
+    except Exception as _e:
+        failed.append((abs_path, 'could not read from sandbox FS: ' + str(_e)))
+        return
+    try:
+        await _haruspex_save_py(save_as, _content)
+    except Exception as _e:
+        failed.append((abs_path, str(_e)))
+
 async def _haruspex_drain_pending_saves():
-    """Flush each recorded write-mode open to host disk via haruspex.save.
-    Per-file failures are printed to stderr so the model can react on the
-    next turn; one bad save doesn't abort the rest."""
+    """Mirror MEMFS changes back to host. See the header comment above for
+    the two-phase design. Also propagates Python-side deletions back to
+    host so os.remove() / pathlib.unlink() inside the run actually take
+    effect on disk. Per-file failures are printed to stderr so the model
+    can react on the next turn; one bad save doesn't abort the rest.
+    """
     import os as _os
     import sys as _sys
     failed = []
-    paths = list(_haruspex_pending_save_paths)
-    _haruspex_pending_save_paths.clear()
-    for path in paths:
-        try:
-            with _haruspex_original_open(path, 'rb') as _f:
-                content = _f.read()
-        except Exception as e:
-            failed.append((path, 'could not read from sandbox FS: ' + str(e)))
-            continue
-        # Try the user's path verbatim; if it escapes the workdir
-        # (matplotlib often hands us /home/pyodide/foo.png absolute),
-        # fall back to the basename so the file lands in the workdir.
-        try:
-            await _haruspex_save_py(path, content)
-        except Exception as e:
-            msg = str(e)
-            if 'escapes working directory' in msg or 'absolute' in msg:
+    flushed = set()
+    present = set()
+    try:
+        cwd = _os.getcwd()
+    except Exception:
+        cwd = None
+    # Phase 1: walk the workdir and flush anything new / modified vs. the
+    # pre-run snapshot. Catches zipfile-based writes (python-pptx, docx,
+    # openpyxl) and any other write that bypasses builtins.open.
+    if _haruspex_working_dir_set and cwd:
+        for _root, _dirs, _files in _os.walk(cwd):
+            for _fname in _files:
+                # LibreOffice/Office lock files come and go on the host
+                # side; ignore so we don't fight the desktop app.
+                if _fname.startswith('.~lock.'):
+                    continue
+                _path = _os.path.join(_root, _fname)
+                present.add(_path)
                 try:
-                    await _haruspex_save_py(_os.path.basename(path), content)
-                except Exception as e2:
-                    failed.append((path, str(e2)))
-            else:
-                failed.append((path, msg))
-    for fname, err in failed:
-        print('WARNING: could not save ' + repr(fname) + ' to working directory: ' + err,
+                    _mtime = _os.stat(_path).st_mtime
+                except Exception:
+                    continue
+                _prev = _haruspex_workdir_snapshot.get(_path)
+                if _prev is not None and _mtime <= _prev:
+                    continue
+                _rel = _os.path.relpath(_path, cwd)
+                await _haruspex_flush_one(_path, _rel, failed)
+                flushed.add(_path)
+    # Phase 1b: anything that was in the pre-run snapshot but is NOT in
+    # MEMFS now was removed by the user's code (os.remove / pathlib
+    # unlink / shutil moves). Propagate the deletion to host so the
+    # workdir actually reflects the model's intent — otherwise the host
+    # file stays and the next pre-run sync re-mirrors it back into MEMFS,
+    # silently undoing the deletion.
+    if _haruspex_working_dir_set and cwd:
+        for _snap_path in list(_haruspex_workdir_snapshot.keys()):
+            if _snap_path in present:
+                continue
+            _rel = _os.path.relpath(_snap_path, cwd)
+            # Path escapes workdir → can't address via haruspex.delete.
+            # Shouldn't happen since the snapshot only contains workdir
+            # files, but be defensive.
+            if _rel.startswith('..'):
+                continue
+            try:
+                await _haruspex_delete_py(_rel)
+            except Exception as _e:
+                failed.append((_snap_path, 'could not delete on host: ' + str(_e)))
+    # Phase 2: paths recorded by the builtins.open patch that fall
+    # OUTSIDE the workdir (matplotlib's /home/pyodide/plot.png, etc.).
+    # Save those by basename so they land in the workdir. Skip ones
+    # already covered by phase 1.
+    _paths = list(_haruspex_pending_save_paths)
+    _haruspex_pending_save_paths.clear()
+    for _path in _paths:
+        _abs = _path if _os.path.isabs(_path) else (
+            _os.path.join(cwd, _path) if cwd else _path
+        )
+        if _abs in flushed:
+            continue
+        if cwd and (_abs == cwd or _abs.startswith(cwd + _os.sep)):
+            # Inside workdir — phase 1 owns this; either it was flushed
+            # or it wasn't actually written (mode='a' on a file that no
+            # code touched). Either way, nothing to do.
+            continue
+        await _haruspex_flush_one(_path, _os.path.basename(_path), failed)
+    for _fname, _err in failed:
+        print('WARNING: could not save ' + repr(_fname) + ' to working directory: ' + _err,
               file=_sys.stderr)
 
 def _haruspex_install_matplotlib_hook():
@@ -358,6 +511,19 @@ async function init(): Promise<void> {
 		// pre-load it so install_package() can pyimport it without an
 		// extra round trip on first use.
 		await pyodide.loadPackage('micropip');
+		// Doc-creation deps that ARE in the Pyodide lockfile (Pillow for
+		// fpdf2 + python-pptx; lxml + typing_extensions for python-pptx).
+		// Eager-load so the pure-Python wheels we install below can be
+		// imported without loadPackagesFromImports having to re-fetch deps
+		// on every first `import fpdf` / `import pptx`.
+		await pyodide.loadPackage(['Pillow', 'lxml', 'typing_extensions']);
+		// Same-origin URL to the wheels bundled by scripts/fetch-pyodide.sh
+		// into static/pyodide/wheels/. SvelteKit serves static/ at the
+		// origin root; this works under `npm run dev` and Tauri prod alike.
+		pyodide.globals.set(
+			'_haruspex_doc_wheels_url',
+			new URL('/pyodide/wheels/', self.location.origin).href
+		);
 		// Pyodide's batched callback delivers one line at a time WITHOUT
 		// the trailing newline, so re-append it before forwarding. Without
 		// this, `print('a'); print('b')` shows up as 'ab' instead of 'a\nb'.
@@ -462,6 +628,18 @@ async function init(): Promise<void> {
 				});
 			}
 		);
+		pyodide.globals.set('_haruspex_delete', (filename: unknown) => {
+			const requestId = crypto.randomUUID();
+			return new Promise<{ path: string }>((resolve, reject) => {
+				pendingDeletes.set(requestId, { resolve, reject });
+				post({
+					kind: 'delete_request',
+					id: currentRunId,
+					request_id: requestId,
+					filename: String(filename)
+				});
+			});
+		});
 		pyodide.globals.set('_haruspex_save', (filename: unknown, content: unknown) => {
 			const requestId = crypto.randomUUID();
 			let payload: Uint8Array | string;
@@ -644,8 +822,13 @@ async function handleRun(id: string, code: string): Promise<void> {
 		await pyodide.loadPackagesFromImports(code);
 		// Re-install the matplotlib show-capture hook each run; idempotent
 		// in Python (guarded by a sentinel attribute), so the cost is one
-		// dictionary lookup if matplotlib is loaded.
-		await pyodide.runPythonAsync('_haruspex_install_matplotlib_hook()');
+		// dictionary lookup if matplotlib is loaded. Snapshot the workdir
+		// alongside so the post-run drain can detect any new/modified
+		// files — including writes from libraries that bypass
+		// builtins.open (zipfile-based: python-pptx, python-docx, etc.).
+		await pyodide.runPythonAsync(
+			'_haruspex_install_matplotlib_hook(); _haruspex_snapshot_workdir()'
+		);
 		const value = await pyodide.runPythonAsync(code);
 		// Flush any native file writes that landed in MEMFS during the run
 		// to the host working dir. Errors per file are surfaced via stderr
@@ -757,6 +940,17 @@ self.addEventListener('message', (e: MessageEvent<MainToWorker>) => {
 				pending.resolve({ path: msg.path ?? '', bytes: msg.bytes ?? 0 });
 			} else {
 				pending.reject(new Error(msg.error ?? 'haruspex.save failed'));
+			}
+			break;
+		}
+		case 'delete_response': {
+			const pending = pendingDeletes.get(msg.request_id);
+			if (!pending) break;
+			pendingDeletes.delete(msg.request_id);
+			if (msg.ok) {
+				pending.resolve({ path: msg.path ?? '' });
+			} else {
+				pending.reject(new Error(msg.error ?? 'haruspex.delete failed'));
 			}
 			break;
 		}

@@ -160,8 +160,16 @@ export function setWorkingDir(path: string | null): void {
 		createConversation();
 	}
 	const conv = getActiveConversation();
-	if (conv) {
-		conv.workingDir = path;
+	if (!conv) return;
+	const previous = conv.workingDir;
+	conv.workingDir = path;
+	// Switching to a different workdir means the worker's MEMFS + the
+	// manager's syncedFiles cache are pinned to the OLD workdir's
+	// absolute paths. Leaving them in place leaks ghost files and means
+	// Python's cwd doesn't follow the change. Respawning forces the next
+	// run_python to do a fresh sync against the new workdir.
+	if (previous !== path) {
+		void resetSandbox();
 	}
 }
 
