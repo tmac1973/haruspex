@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.32](https://github.com/tmac1973/haruspex/compare/v0.1.31...v0.1.32) (2026-05-12)
+
+
+### Bug Fixes
+
+* **build:** emit web workers as ES modules ([ba6b099](https://github.com/tmac1973/haruspex/commit/ba6b099b2d318926ac925ef6879b63e44a46bb99))
+* **build:** emit web workers as ES modules ([576a9b6](https://github.com/tmac1973/haruspex/commit/576a9b6bbe4c8dd11a6ecd8cb3d813aea1748248))
+
 ## [0.1.31](https://github.com/tmac1973/haruspex/compare/v0.1.30...v0.1.31) (2026-05-12)
 
 
