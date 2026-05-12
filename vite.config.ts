@@ -24,5 +24,14 @@ export default defineConfig({
 	server: {
 		port: 1420,
 		strictPort: true
+	},
+	// The Python sandbox worker (python.worker.ts) loads pyodide, which Rollup
+	// splits into multiple chunks. Vite's default worker format is `iife`,
+	// which can't represent a multi-chunk bundle and fails the build with
+	// "UMD and IIFE output formats are not supported for code-splitting".
+	// The worker is already declared as `{ type: 'module' }` at the call site,
+	// so emitting it as ES keeps runtime + build aligned.
+	worker: {
+		format: 'es'
 	}
 });
