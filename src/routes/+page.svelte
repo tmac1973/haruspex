@@ -398,7 +398,10 @@
 						{#if msg.role === 'assistant' && activeConversation.messageSteps[i]?.length}
 							<SearchStepComponent steps={activeConversation.messageSteps[i]} />
 						{/if}
-						<ChatMessage message={msg} />
+						<ChatMessage
+							message={msg}
+							tokensPerSecond={activeConversation.messageStats?.[i]?.tokensPerSecond}
+						/>
 					{/if}
 				{/each}
 

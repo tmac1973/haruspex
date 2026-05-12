@@ -7,9 +7,16 @@
 	interface Props {
 		message: ChatMessage;
 		isStreaming?: boolean;
+		tokensPerSecond?: number;
 	}
 
-	let { message, isStreaming = false }: Props = $props();
+	let { message, isStreaming = false, tokensPerSecond }: Props = $props();
+
+	let tokRateLabel = $derived(
+		typeof tokensPerSecond === 'number' && tokensPerSecond > 0
+			? `${tokensPerSecond < 10 ? tokensPerSecond.toFixed(1) : Math.round(tokensPerSecond)} tok/s`
+			: ''
+	);
 
 	// Extract plain text from the message (handles both string and content array)
 	let textContent = $derived(messageText(message.content));
@@ -66,6 +73,9 @@
 	</div>
 	{#if message.role === 'assistant' && message.content && !isStreaming}
 		<div class="message-footer">
+			{#if tokRateLabel}
+				<span class="tok-rate" title="Generation speed for this response">{tokRateLabel}</span>
+			{/if}
 			<SpeakerButton text={plainText} />
 			<button class="icon-btn" title="Copy to clipboard" onclick={copyToClipboard}>
 				{copyLabel === 'Copied!' ? '\u2705' : '\u{1F4CB}'}
@@ -249,6 +259,12 @@
 
 	.icon-btn:hover {
 		background: var(--bg-secondary);
+	}
+
+	.tok-rate {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.cursor {

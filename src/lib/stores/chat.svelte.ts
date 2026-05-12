@@ -48,6 +48,13 @@ export interface Conversation {
 	 * vanish on app restart or chat reload (acceptable for v1).
 	 */
 	messageSteps: Record<number, SearchStep[]>;
+	/**
+	 * Per-assistant-message generation stats (tok/s, completion tokens,
+	 * wall-clock duration of the visible stream), keyed by the position
+	 * of the assistant message in `messages`. In-memory only — vanishes
+	 * on app restart or chat reload.
+	 */
+	messageStats: Record<number, MessageStats>;
 	/** Cited source URLs from the last generation. Not persisted to DB. */
 	sourceUrls: string[];
 	/**
@@ -78,6 +85,12 @@ export interface Conversation {
 	 * reference raw research details. In-memory only — not persisted to DB.
 	 */
 	lastTurnTools?: ChatMessage[];
+}
+
+export interface MessageStats {
+	tokensPerSecond: number;
+	completionTokens: number;
+	durationMs: number;
 }
 
 const WORKING_DIR_KEY = 'haruspex-working-dir';
@@ -148,6 +161,7 @@ export async function initChatStore(): Promise<void> {
 		contextUsage: null,
 		searchSteps: [],
 		messageSteps: {},
+		messageStats: {},
 		sourceUrls: [],
 		sandboxApproved: false,
 		isRestoringSession: false,
@@ -295,6 +309,7 @@ export function createConversation(): string {
 		contextUsage: null,
 		searchSteps: [],
 		messageSteps: {},
+		messageStats: {},
 		sourceUrls: [],
 		sandboxApproved: false,
 		isRestoringSession: false,
@@ -513,6 +528,22 @@ export async function sendMessage(content: string): Promise<void> {
 	conversation.sourceUrls = [];
 	abortController = new AbortController();
 
+	// Tok/s timing: the agent loop emits per-call timing via onCallStats.
+	// Latch the most recent one — it corresponds to the model call whose
+	// output is being committed. Earlier tool-decision calls get
+	// overwritten by the final synthesis call, which is what we want.
+	let lastCallStats: { durationMs: number; completionTokens: number } | null = null;
+	function computeStats(): MessageStats | null {
+		if (!lastCallStats || lastCallStats.completionTokens <= 0 || lastCallStats.durationMs <= 0) {
+			return null;
+		}
+		return {
+			tokensPerSecond: lastCallStats.completionTokens / (lastCallStats.durationMs / 1000),
+			completionTokens: lastCallStats.completionTokens,
+			durationMs: lastCallStats.durationMs
+		};
+	}
+
 	try {
 		const currentWorkingDir = workingDir;
 		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
@@ -571,6 +602,9 @@ export async function sendMessage(content: string): Promise<void> {
 					completionTokens: u.completion_tokens
 				};
 			},
+			onCallStats: (stats) => {
+				lastCallStats = stats;
+			},
 			onToolStart: (call) => {
 				conversation.searchSteps = [
 					...conversation.searchSteps,
@@ -612,6 +646,7 @@ export async function sendMessage(content: string): Promise<void> {
 
 				const commit = (text: string) => {
 					const assistantMsg: ChatMessage = { role: 'assistant', content: text };
+					const messageIndex = conversation.messages.length;
 					// Snapshot the live search steps onto the assistant message's
 					// position so the UI can keep rendering plots/tables under
 					// this message after the live `searchSteps` is cleared.
@@ -619,7 +654,11 @@ export async function sendMessage(content: string): Promise<void> {
 						(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
 					);
 					if (stepsForThisTurn.length > 0) {
-						conversation.messageSteps[conversation.messages.length] = stepsForThisTurn;
+						conversation.messageSteps[messageIndex] = stepsForThisTurn;
+					}
+					const stats = computeStats();
+					if (stats) {
+						conversation.messageStats[messageIndex] = stats;
 					}
 					conversation.messages.push(assistantMsg);
 					dbSaveMessage(conversation.id, assistantMsg);
@@ -685,11 +724,16 @@ export async function sendMessage(content: string): Promise<void> {
 				const fetched = extractUrlsFromSteps(conversation.searchSteps);
 				const { content, citedUrls } = processCitations(streamingContent, fetched);
 				const partialMsg: ChatMessage = { role: 'assistant', content };
+				const messageIndex = conversation.messages.length;
 				const stepsForThisTurn = conversation.searchSteps.filter(
 					(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
 				);
 				if (stepsForThisTurn.length > 0) {
-					conversation.messageSteps[conversation.messages.length] = stepsForThisTurn;
+					conversation.messageSteps[messageIndex] = stepsForThisTurn;
+				}
+				const stats = computeStats();
+				if (stats) {
+					conversation.messageStats[messageIndex] = stats;
 				}
 				conversation.messages.push(partialMsg);
 				dbSaveMessage(conversation.id, partialMsg);
