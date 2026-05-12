@@ -75,6 +75,13 @@ export interface AgentLoopOptions {
 	onComplete: () => void;
 	onError: (error: Error) => void;
 	onUsageUpdate?: (usage: Usage) => void;
+	/**
+	 * Wall-clock duration + completion-token count of each model call this
+	 * turn made. Used to compute a tok/s indicator for the assistant
+	 * message. The last invocation before onComplete corresponds to the
+	 * call whose content was committed.
+	 */
+	onCallStats?: (stats: { durationMs: number; completionTokens: number }) => void;
 	signal?: AbortSignal;
 	maxIterations?: number;
 	/**
@@ -267,6 +274,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		// Non-streaming request to check for tool calls
 		const sampling = getSamplingParams();
 		const templateKwargs = getChatTemplateKwargs();
+		const callStartMs = Date.now();
 		const response = await chatCompletion(
 			{
 				messages,
@@ -278,10 +286,17 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			},
 			signal
 		);
+		const callDurationMs = Date.now() - callStartMs;
 
 		// Surface usage to the UI immediately so the context indicator
 		// reflects what just happened, not just the final stream.
-		if (response.usage) options.onUsageUpdate?.(response.usage);
+		if (response.usage) {
+			options.onUsageUpdate?.(response.usage);
+			options.onCallStats?.({
+				durationMs: callDurationMs,
+				completionTokens: response.usage.completion_tokens
+			});
+		}
 
 		// In-loop trim: if this turn's accumulated tool messages are pushing
 		// us toward the server's context wall, drop the bulky content from
@@ -540,12 +555,23 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				let lastFinish: string | null = null;
 				let totalChunks = 0;
 				let totalContent = 0;
+				let streamUsage: Usage | null = null;
+				const streamStartMs = Date.now();
 				for await (const chunk of stream) {
 					totalChunks++;
 					if (chunk.delta.content) totalContent += chunk.delta.content.length;
-					if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
+					if (chunk.usage) {
+						options.onUsageUpdate?.(chunk.usage);
+						streamUsage = chunk.usage;
+					}
 					if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 					options.onStreamChunk(chunk);
+				}
+				if (streamUsage) {
+					options.onCallStats?.({
+						durationMs: Math.max(1, Date.now() - streamStartMs),
+						completionTokens: streamUsage.completion_tokens
+					});
 				}
 				logDebug('agent', `final synthesis (post-tools) ended`, {
 					chunks: totalChunks,
@@ -578,12 +604,23 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				let lastFinish: string | null = null;
 				let totalChunks = 0;
 				let totalContent = 0;
+				let streamUsage: Usage | null = null;
+				const streamStartMs = Date.now();
 				for await (const chunk of stream) {
 					totalChunks++;
 					if (chunk.delta.content) totalContent += chunk.delta.content.length;
-					if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
+					if (chunk.usage) {
+						options.onUsageUpdate?.(chunk.usage);
+						streamUsage = chunk.usage;
+					}
 					if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 					options.onStreamChunk(chunk);
+				}
+				if (streamUsage) {
+					options.onCallStats?.({
+						durationMs: Math.max(1, Date.now() - streamStartMs),
+						completionTokens: streamUsage.completion_tokens
+					});
 				}
 				logDebug('agent', `final synthesis (no-tools) ended`, {
 					chunks: totalChunks,
@@ -715,12 +752,23 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	let lastFinish: string | null = null;
 	let totalChunks = 0;
 	let totalContent = 0;
+	let streamUsage: Usage | null = null;
+	const streamStartMs = Date.now();
 	for await (const chunk of stream) {
 		totalChunks++;
 		if (chunk.delta.content) totalContent += chunk.delta.content.length;
-		if (chunk.usage) options.onUsageUpdate?.(chunk.usage);
+		if (chunk.usage) {
+			options.onUsageUpdate?.(chunk.usage);
+			streamUsage = chunk.usage;
+		}
 		if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 		options.onStreamChunk(chunk);
+	}
+	if (streamUsage) {
+		options.onCallStats?.({
+			durationMs: Math.max(1, Date.now() - streamStartMs),
+			completionTokens: streamUsage.completion_tokens
+		});
 	}
 	logDebug('agent', `final synthesis (max-iterations) ended`, {
 		chunks: totalChunks,
