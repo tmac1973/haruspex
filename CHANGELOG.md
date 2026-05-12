@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.1.31](https://github.com/tmac1973/haruspex/compare/v0.1.30...v0.1.31) (2026-05-12)
+
+
+### Features
+
+* **agent:** nudge after 3 consecutive run_python failures ([0acda1a](https://github.com/tmac1973/haruspex/commit/0acda1aa6841635bc4f5771a8c4390ce9ba4bba0))
+* global working dir + per-message tok/s indicator ([65a18e6](https://github.com/tmac1973/haruspex/commit/65a18e69a725f2a8acd06a7a36c3724420feb7a5))
+* replace default Tauri icon with Piacenza Bronze Liver ([c74ca77](https://github.com/tmac1973/haruspex/commit/c74ca7768db455c9b5c69e2b45b6880702fe3a86))
+* **sandbox:** bidirectional working-dir ↔ MEMFS sync before each run ([3d0e9b4](https://github.com/tmac1973/haruspex/commit/3d0e9b4201949a8fc7c6e5a90c0367863cdf535e))
+* **sandbox:** expose run_python / reset_python / install_package ([bdf624a](https://github.com/tmac1973/haruspex/commit/bdf624a8d1278d7b34cdaa7caffa79f581721d40))
+* **sandbox:** gate legacy fs_write_pdf/pptx on sandbox setting; default off ([c084ea2](https://github.com/tmac1973/haruspex/commit/c084ea250d042945a3e08c7f32824708c78083d7))
+* **sandbox:** haruspex.save Python bridge for binary writes ([2febdd9](https://github.com/tmac1973/haruspex/commit/2febdd93b39400d9a8bcb8235604fdb57a79e831))
+* **sandbox:** mirror memfs ↔ host writes, deletes, and workdir changes ([959df16](https://github.com/tmac1973/haruspex/commit/959df169955d04f044ef4e54802da0fb664a1aab))
+* **sandbox:** patch builtins.open so native Python writes reach disk ([130a68c](https://github.com/tmac1973/haruspex/commit/130a68ca70c7292cfc3fe8347c39c0f2b45119b0))
+* **sandbox:** pdf/pptx via fpdf2 + python-pptx in pyodide sandbox ([02dbbba](https://github.com/tmac1973/haruspex/commit/02dbbba164b6ed454ac7a1874a4c28ba5036643b))
+* **sandbox:** pdf/pptx via python-pptx + fpdf2, behind sandbox toggle ([e3da620](https://github.com/tmac1973/haruspex/commit/e3da620d3d49dc63066cce81ca61b6aeb7c2a507))
+* **sandbox:** per-chat approval modal before run_python ([55635cc](https://github.com/tmac1973/haruspex/commit/55635ccee5800812db5a8fcf1acc908496705c3d))
+* **sandbox:** restore Python session on chat switch via tool-call replay ([579815d](https://github.com/tmac1973/haruspex/commit/579815d4567d24986aceb0d7bf7e75fb877e6e68))
+* **sandbox:** rich artifacts — matplotlib plots + DataFrame tables ([fdada71](https://github.com/tmac1973/haruspex/commit/fdada71507edbe9b4b89d4c499b383406b61237b))
+* **sandbox:** route pyodide.http.pyfetch through Rust + app proxy ([c7f06c7](https://github.com/tmac1973/haruspex/commit/c7f06c731a89b7d28a90c2de1d5ef4c2732ca568))
+* **sandbox:** settings panel — enable toggle, approval mode, timeout ([5d73b9f](https://github.com/tmac1973/haruspex/commit/5d73b9f719ed418f76a9f6e8f08c21ce1180539e))
+* **sandbox:** syntax-highlight run_python code in tool-step view + global hljs theme ([75c5420](https://github.com/tmac1973/haruspex/commit/75c5420b70fea67016d734a0b42f9dec6228ad24))
+* **sandbox:** system-prompt file-I/O guidance, gated on sandbox + workdir ([b6a6a43](https://github.com/tmac1973/haruspex/commit/b6a6a43eb8685fb4b6c7ae9b0eac050efe914d21))
+* **sandbox:** worker scaffolding + cooperative interrupt ([99a5fea](https://github.com/tmac1973/haruspex/commit/99a5fea4d32447bb73b18cd63f2f6f39eafaf7c0))
+* **ui:** per-step log accordion + collapsible failed code blocks ([16611ba](https://github.com/tmac1973/haruspex/commit/16611bac80812c3b441ee1517fda32f1c8c94bd7))
+* **ui:** show "new version available" link and indent code/log boxes ([98cb72e](https://github.com/tmac1973/haruspex/commit/98cb72ee3c84b50e8a74d1eb1785e2f3f5e89f50))
+* **ui:** show per-message tokens-per-second indicator ([f0dc987](https://github.com/tmac1973/haruspex/commit/f0dc9875f4c6850a3738f15afb8dc83c2f8a00c5))
+* **workdir:** make working directory a global persisted state ([4b0e7a6](https://github.com/tmac1973/haruspex/commit/4b0e7a6d5487ddaa19cd20ee5e795dc61a44b941))
+
+
+### Bug Fixes
+
+* **markdown:** drop unresolvable image refs from rendered chat content ([bf74d6c](https://github.com/tmac1973/haruspex/commit/bf74d6cfd3bd8502a6de0b82f95cb8fd29629aea))
+* **sandbox:** clear live searchSteps on commit to avoid doubled artifacts ([2e50ab2](https://github.com/tmac1973/haruspex/commit/2e50ab2a19b0218179b7b4bcb269cf511e7ac873))
+* **sandbox:** collapse pyfetch-pattern error to single line — \n breaks Python parser ([235bc24](https://github.com/tmac1973/haruspex/commit/235bc24d476e8dda3c7d36fd3ef3ac5e68bf43ae))
+* **sandbox:** copy artifact bytes into JS-owned buffer before postMessage ([cadc6d2](https://github.com/tmac1973/haruspex/commit/cadc6d2f507e8da9d6723cba83a89f8d74642bb0))
+* **sandbox:** include full pyfetch await pattern in the urllib-blocked error ([1159c7d](https://github.com/tmac1973/haruspex/commit/1159c7d70159445e549d29b66218e7e645b5849a))
+* **sandbox:** load packages from Pyodide CDN, preload micropip ([e258184](https://github.com/tmac1973/haruspex/commit/e25818411e87a4c6ec21e87d81e21d8e4e7174d6))
+* **sandbox:** load pyodide via npm package instead of /public import ([f2ee2e8](https://github.com/tmac1973/haruspex/commit/f2ee2e8b21159f63fc08de966e94a31660492ddd))
+* **sandbox:** patch urllib/requests/httpx via pyodide-http so native HTTP works ([192e86e](https://github.com/tmac1973/haruspex/commit/192e86e3b9a324771c5ff7016ad958cdea8c5517))
+* **sandbox:** persist completed search steps under their assistant message ([5599e34](https://github.com/tmac1973/haruspex/commit/5599e34b118e5c2374868f3c0e18f12fc7ba681a))
+* **sandbox:** point read-side FileNotFoundError at fs_read_* tools ([688f5e3](https://github.com/tmac1973/haruspex/commit/688f5e380dde78a0659c933c180a8a483d617808))
+* **sandbox:** point urllib at pyfetch with a specific error when proxy on ([e32a726](https://github.com/tmac1973/haruspex/commit/e32a726e8d81ee3e724400bfe939cbb3739da270))
+* **sandbox:** re-append newline to batched Pyodide stdout/stderr ([42e5221](https://github.com/tmac1973/haruspex/commit/42e5221bc9107da70d73f361142214c80e459e09))
+* **sandbox:** skip pyodide-http patch when an app proxy is configured ([1f21d7b](https://github.com/tmac1973/haruspex/commit/1f21d7b57f21a72bd6c78ac549fc8c20b3e44223))
+
 ## [0.1.30](https://github.com/tmac1973/haruspex/compare/v0.1.29...v0.1.30) (2026-05-09)
 
 
