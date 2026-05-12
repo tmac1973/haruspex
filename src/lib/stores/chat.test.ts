@@ -235,10 +235,14 @@ describe('chat store', () => {
 	});
 
 	describe('sandbox session restore', () => {
-		beforeEach(() => {
+		beforeEach(async () => {
 			sandboxMocks.runPython.mockClear();
 			sandboxMocks.installPackage.mockClear();
 			sandboxMocks.resetSandbox.mockClear();
+			// Restore replays sandbox tool calls — gated on the sandbox
+			// setting being on. Default is off, so flip it for this block.
+			const { updateSettings } = await import('$lib/stores/settings');
+			updateSettings({ sandboxEnabled: true });
 		});
 
 		// Helpers to wait for the fire-and-forget restore to settle.

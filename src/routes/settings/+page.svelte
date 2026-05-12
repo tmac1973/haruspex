@@ -885,14 +885,28 @@
 	</section>
 
 	<section>
-		<h2>Python Sandbox</h2>
-		<label class="toggle-row">
+		<h2>
+			Python Sandbox <span class="experimental-badge">experimental</span>
+		</h2>
+		<label
+			class="toggle-row"
+			title={'When on, the model can run Python code locally in a Pyodide WebAssembly ' +
+				'sandbox (run_python / install_package / reset_python). Pre-installed packages ' +
+				'include numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, fpdf2, ' +
+				'and python-pptx — so the model can analyze data, plot charts, and build PDFs / ' +
+				'PowerPoint decks programmatically. Files written from Python land in your ' +
+				'working directory. With the sandbox ON, the legacy fs_write_pdf / fs_write_pptx ' +
+				'tools are hidden in favor of the richer Python path. Experimental: behavior, ' +
+				'defaults, and UI are still in flux.'}
+		>
 			<input type="checkbox" checked={sandboxEnabled} onchange={toggleSandboxEnabled} />
 			<div>
 				<strong>Enable Python sandbox</strong>
 				<span>
 					When on, the model can call run_python / install_package / reset_python to execute Python
-					code in an in-app Pyodide sandbox. Off hides those tools entirely.
+					code in an in-app Pyodide sandbox, and uses fpdf2 / python-pptx for PDFs and PowerPoints
+					(replacing fs_write_pdf / fs_write_pptx). Off hides those tools entirely and falls back to
+					the legacy markdown→PDF / hand-rolled-PPTX writers.
 				</span>
 			</div>
 		</label>
@@ -1177,6 +1191,19 @@
 		background: var(--accent);
 		color: white;
 		text-transform: uppercase;
+	}
+
+	.experimental-badge {
+		font-size: 0.65rem;
+		font-weight: 500;
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: var(--bg-secondary);
+		color: var(--text-secondary);
+		border: 1px solid var(--border);
+		text-transform: uppercase;
+		vertical-align: middle;
+		margin-left: 6px;
 	}
 
 	.model-desc {

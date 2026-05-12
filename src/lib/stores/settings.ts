@@ -191,7 +191,7 @@ const defaults: AppSettings = {
 	dismissedGpuWarning: false,
 	defaultWorkingDir: '',
 	keepRecentToolResults: true,
-	sandboxEnabled: true,
+	sandboxEnabled: false,
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 30,
 	inferenceBackend: defaultInferenceBackend,

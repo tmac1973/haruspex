@@ -109,15 +109,20 @@ export function injectMessageHints(
 	}
 
 	if (opts.workingDir && looksLikeFileOutputRequest(lastText)) {
+		const writeGuidance = getSettings().sandboxEnabled
+			? 'PDFs via run_python with fpdf2, PowerPoints via run_python with ' +
+				'python-pptx, and other formats (docx, xlsx, odt, ods, odp) via the ' +
+				'matching fs_write_* tool'
+			: 'use the matching fs_write_* tool (fs_write_pdf / fs_write_pptx / ' +
+				'fs_write_docx / fs_write_xlsx / fs_write_odt / fs_write_ods / fs_write_odp)';
 		hints.push(
 			'You must create the requested file DURING THIS TURN. Do your research, ' +
-				'synthesize the content, then write the file: PDFs via run_python with ' +
-				'fpdf2, PowerPoints via run_python with python-pptx, and other formats ' +
-				'(docx, xlsx, odt, ods, odp) via the matching fs_write_* tool. Do NOT ' +
-				'paste the report as a chat message and expect the user to ask again ' +
-				'in a follow-up — that wastes a round trip and risks running out of ' +
-				'context on the retry. After the write succeeds, respond with a brief ' +
-				'confirmation and the file path.'
+				'synthesize the content, then write the file: ' +
+				writeGuidance +
+				'. Do NOT paste the report as a chat message and expect the user ' +
+				'to ask again in a follow-up — that wastes a round trip and risks ' +
+				'running out of context on the retry. After the write succeeds, ' +
+				'respond with a brief confirmation and the file path.'
 		);
 	}
 
