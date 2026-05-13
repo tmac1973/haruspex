@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.33](https://github.com/tmac1973/haruspex/compare/v0.1.32...v0.1.33) (2026-05-13)
+
+
+### Features
+
+* **ui:** show remote model in header badge + reasoning toggle ([4e3c9b6](https://github.com/tmac1973/haruspex/commit/4e3c9b62a0be720facfb4c81eea5d19119b7c70e))
+* **ui:** show remote model name in header badge and add reasoning toggle ([d86b54f](https://github.com/tmac1973/haruspex/commit/d86b54fb5f2dea5a4c19ed10cef40a6762be2ea2))
+
 ## [0.1.32](https://github.com/tmac1973/haruspex/compare/v0.1.31...v0.1.32) (2026-05-12)
 
 
