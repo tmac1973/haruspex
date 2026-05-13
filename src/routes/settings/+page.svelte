@@ -846,10 +846,9 @@
 			<div>
 				<strong>Reasoning mode</strong>
 				<span>
-					Let the model emit a <code>&lt;think&gt;</code> reasoning block before its answer.
-					Improves quality on code-heavy and multi-step tasks (Python sandbox, tool planning,
-					debugging) at the cost of more tokens per turn. Turn off for lighter chat to save
-					context.
+					Let the model emit a <code>&lt;think&gt;</code> reasoning block before its answer. Improves
+					quality on code-heavy and multi-step tasks (Python sandbox, tool planning, debugging) at the
+					cost of more tokens per turn. Turn off for lighter chat to save context.
 				</span>
 			</div>
 		</label>
