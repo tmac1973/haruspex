@@ -80,7 +80,7 @@
 		try {
 			const backend = getSettings().inferenceBackend;
 			if (backend.mode === 'remote' && backend.remoteBaseUrl) {
-				enterRemoteMode(shortRemoteLabel(backend.remoteBaseUrl));
+				enterRemoteMode(backend.remoteBaseUrl, backend.remoteModelId);
 				// TTS is still local (not affected by the inference backend).
 				invoke('tts_initialize').catch((e) => console.warn('TTS init failed:', e));
 			} else {
@@ -106,20 +106,6 @@
 		}
 	});
 
-	/**
-	 * Extract a compact `host:port` label from a base URL for display in
-	 * the server status indicator. Strips scheme and path so "https://lm.example.com:1234/v1"
-	 * becomes "lm.example.com:1234". Keeps the UI small and informative
-	 * without leaking the full URL into the header.
-	 */
-	function shortRemoteLabel(baseUrl: string): string {
-		try {
-			const u = new URL(baseUrl);
-			return u.port ? `${u.hostname}:${u.port}` : u.hostname;
-		} catch {
-			return baseUrl;
-		}
-	}
 </script>
 
 <svelte:head>

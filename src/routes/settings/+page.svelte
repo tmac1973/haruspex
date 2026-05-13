@@ -115,8 +115,7 @@
 			} catch (e) {
 				console.warn('stopServer on remote toggle failed:', e);
 			}
-			const label = shortRemoteLabel(inferenceBackend.remoteBaseUrl);
-			enterRemoteMode(label);
+			enterRemoteMode(inferenceBackend.remoteBaseUrl, inferenceBackend.remoteModelId);
 		} else {
 			// Flipping back to local: leave the synthetic 'remote' state
 			// and spin the local sidecar up with the currently-selected
@@ -138,18 +137,9 @@
 		inferenceBackend = next;
 		updateInferenceBackend(next);
 		// If we're already in remote mode, keep the header label in sync
-		// with the (possibly just-changed) base URL.
+		// with the (possibly just-changed) base URL or model id.
 		if (next.mode === 'remote') {
-			enterRemoteMode(shortRemoteLabel(next.remoteBaseUrl));
-		}
-	}
-
-	function shortRemoteLabel(baseUrl: string): string {
-		try {
-			const u = new URL(baseUrl);
-			return u.port ? `${u.hostname}:${u.port}` : u.hostname;
-		} catch {
-			return baseUrl;
+			enterRemoteMode(next.remoteBaseUrl, next.remoteModelId);
 		}
 	}
 
@@ -238,6 +228,13 @@
 	function toggleKeepRecentToolResults() {
 		keepRecentToolResults = !keepRecentToolResults;
 		updateSettings({ keepRecentToolResults });
+	}
+
+	let thinkingEnabled = $state(getSettings().thinkingEnabled);
+
+	function toggleThinkingEnabled() {
+		thinkingEnabled = !thinkingEnabled;
+		updateSettings({ thinkingEnabled });
 	}
 
 	let sandboxEnabled = $state(getSettings().sandboxEnabled);
@@ -844,6 +841,18 @@
 
 	<section>
 		<h2>Agent</h2>
+		<label class="toggle-row">
+			<input type="checkbox" checked={thinkingEnabled} onchange={toggleThinkingEnabled} />
+			<div>
+				<strong>Reasoning mode</strong>
+				<span>
+					Let the model emit a <code>&lt;think&gt;</code> reasoning block before its answer.
+					Improves quality on code-heavy and multi-step tasks (Python sandbox, tool planning,
+					debugging) at the cost of more tokens per turn. Turn off for lighter chat to save
+					context.
+				</span>
+			</div>
+		</label>
 		<label class="toggle-row">
 			<input
 				type="checkbox"

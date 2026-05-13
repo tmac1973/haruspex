@@ -148,6 +148,16 @@ export interface AppSettings {
 	 * is true (otherwise just terminate).
 	 */
 	sandboxTimeoutSeconds: number;
+	/**
+	 * Whether to enable Qwen 3's reasoning/thinking mode. When on, the
+	 * model emits a <think> block before its answer, which helps with
+	 * code-heavy tasks (planning Python sandbox calls, debugging
+	 * tracebacks) at the cost of more tokens per turn. Defaults to on
+	 * because the reasoning quality improvement is large for the kinds
+	 * of tasks Haruspex is used for; users can flip it off in Settings
+	 * to save context on lighter chat workloads.
+	 */
+	thinkingEnabled: boolean;
 	inferenceBackend: InferenceBackendConfig;
 	integrations: IntegrationsConfig;
 	proxy: ProxyConfig;
@@ -192,6 +202,7 @@ const defaults: AppSettings = {
 	sandboxEnabled: false,
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 30,
+	thinkingEnabled: true,
 	inferenceBackend: defaultInferenceBackend,
 	integrations: defaultIntegrations,
 	proxy: defaultProxy
@@ -339,16 +350,14 @@ export function applyTheme(theme?: ThemeMode): void {
 }
 
 /**
- * Returns chat_template_kwargs to disable thinking at the Jinja template
- * level. Qwen 3 supports enable_thinking as a template kwarg — with this
- * set to false, the model emits the /no_think control token and skips
- * reasoning blocks entirely. Thinking mode is always off because:
- *  - It causes tool call format breakage (Qwen emits non-standard XML)
- *  - It consumes tokens that should go to the answer
- *  - It offers no benefit for chat + web research
+ * Returns chat_template_kwargs forwarded to the Qwen 3 Jinja template.
+ * `enable_thinking` toggles the model's reasoning/<think> block — driven
+ * by the `thinkingEnabled` user setting (default on). Off skips the
+ * reasoning block to save tokens; on improves quality on code-heavy
+ * and multi-step tasks.
  */
 export function getChatTemplateKwargs(): Record<string, unknown> {
-	return { enable_thinking: false };
+	return { enable_thinking: settings.thinkingEnabled };
 }
 
 export interface SamplingParams {

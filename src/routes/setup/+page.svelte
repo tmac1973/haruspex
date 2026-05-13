@@ -128,15 +128,7 @@
 		// sidecar entirely. We also update the server store here so the
 		// status badge switches over without needing a reload.
 		updateInferenceBackend({ ...remoteConfig, mode: 'remote' });
-		const label = (() => {
-			try {
-				const u = new URL(remoteConfig.remoteBaseUrl);
-				return u.port ? `${u.hostname}:${u.port}` : u.hostname;
-			} catch {
-				return remoteConfig.remoteBaseUrl;
-			}
-		})();
-		enterRemoteMode(label);
+		enterRemoteMode(remoteConfig.remoteBaseUrl, remoteConfig.remoteModelId);
 		goto('/');
 	}
 </script>
