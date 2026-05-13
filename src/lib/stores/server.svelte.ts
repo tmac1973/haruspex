@@ -144,11 +144,31 @@ export async function stopServer(): Promise<void> {
  * wants to wait for stop to finish before flipping the status label).
  * Callers: the Settings page mode-toggle handler and the first-run
  * wizard's "Connect to remote" branch.
+ *
+ * The label combines the configured model id with a compact host:port
+ * derived from `baseUrl`. We render both because the user's two natural
+ * questions in remote mode are "which model am I talking to?" (the
+ * model id, otherwise only visible inside Settings) and "where is it
+ * hosted?" (the URL).
  */
-export function enterRemoteMode(label: string): void {
+export function enterRemoteMode(baseUrl: string, modelId: string): void {
 	serverState.status = 'remote';
 	serverState.errorMessage = undefined;
-	serverState.remoteLabel = label;
+	serverState.remoteLabel = buildRemoteLabel(baseUrl, modelId);
+}
+
+function buildRemoteLabel(baseUrl: string, modelId: string): string {
+	let host = baseUrl;
+	try {
+		const u = new URL(baseUrl);
+		host = u.port ? `${u.hostname}:${u.port}` : u.hostname;
+	} catch {
+		// Fall back to the raw string if it isn't a parseable URL.
+	}
+	const model = modelId.trim();
+	if (!model) return host;
+	if (!host) return model;
+	return `${model} @ ${host}`;
 }
 
 /**
