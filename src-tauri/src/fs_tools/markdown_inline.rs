@@ -238,7 +238,8 @@ pub(super) enum DocumentBlock {
 /// Horizontal alignment for embedded images. Defaults to Left, matching the
 /// pre-options default and standard markdown rendering.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[allow(dead_code)] pub enum ImageAlignment {
+#[allow(dead_code)]
+pub enum ImageAlignment {
     #[default]
     Left,
     Center,
@@ -249,7 +250,8 @@ pub(super) enum DocumentBlock {
 /// `parse_image_options_from_title`. Defaults mean "no override" — every
 /// builder applies its existing auto-fit / left-align behavior.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-#[allow(dead_code)] pub struct ImageOptions {
+#[allow(dead_code)]
+pub struct ImageOptions {
     pub alignment: ImageAlignment,
     /// Display width as a fraction (0.05..=1.0) of the document's content
     /// width. `None` means use natural size, scaled down to fit if needed.
