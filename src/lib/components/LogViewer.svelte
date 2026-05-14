@@ -16,6 +16,53 @@
 	let logContainer: HTMLDivElement | undefined = $state();
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let wasAtBottom = true;
+	let humanReadable = $state(false);
+
+	const STRUCTURED_TABS: ReadonlySet<LogTab> = new Set(['debug', 'tools']);
+	const PREFIX_RE = /^\[([^\]]+)\](?:\s+\[turn (\d+)\])?\s+\[([^\]]+)\]\s+/;
+
+	interface ParsedLine {
+		timestamp?: string;
+		turn?: string;
+		category?: string;
+		message?: string;
+		pretty?: string;
+	}
+
+	function parseLine(raw: string): ParsedLine {
+		const m = raw.match(PREFIX_RE);
+		if (!m) return {};
+		const rest = raw.slice(m[0].length);
+		// The structured logger appends JSON-serialized data after the
+		// message text. Walk forward to the first { or [ that successfully
+		// parses to the end of the line — message text may itself contain
+		// stray brackets, so the first one isn't always the right anchor.
+		for (let i = 0; i < rest.length; i++) {
+			const ch = rest[i];
+			if (ch !== '{' && ch !== '[') continue;
+			try {
+				const parsed = JSON.parse(rest.slice(i));
+				return {
+					timestamp: m[1],
+					turn: m[2],
+					category: m[3],
+					message: rest.slice(0, i).trimEnd(),
+					pretty: JSON.stringify(parsed, null, 2)
+				};
+			} catch {
+				// keep scanning
+			}
+		}
+		return { timestamp: m[1], turn: m[2], category: m[3], message: rest };
+	}
+
+	function formatTimestamp(iso: string): string {
+		// `2026-05-13T12:34:56.789Z` → `12:34:56.789`
+		const t = iso.indexOf('T');
+		const z = iso.lastIndexOf('Z');
+		if (t < 0) return iso;
+		return iso.slice(t + 1, z > t ? z : undefined);
+	}
 
 	const tabCommands: Record<Exclude<LogTab, 'debug' | 'tools'>, string> = {
 		app: 'get_app_logs',
@@ -139,6 +186,16 @@
 					{/each}
 				</div>
 				<div class="header-actions">
+					{#if STRUCTURED_TABS.has(activeTab)}
+						<button
+							class="toggle-btn"
+							class:active={humanReadable}
+							onclick={() => (humanReadable = !humanReadable)}
+							title="Toggle pretty formatting (raw is best for copy/paste)"
+						>
+							{humanReadable ? 'Pretty' : 'Raw'}
+						</button>
+					{/if}
 					<button
 						class="copy-btn"
 						onclick={copyAllLogs}
@@ -150,11 +207,36 @@
 				</div>
 			</div>
 			<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
-				{#each logLines as line, i (`${activeTab}-${i}`)}
-					<div class="log-line">{line}</div>
+				{#if humanReadable && STRUCTURED_TABS.has(activeTab)}
+					{#each logLines as line, i (`${activeTab}-${i}`)}
+						{@const parsed = parseLine(line)}
+						{#if parsed.timestamp}
+							<div class="log-entry">
+								<div class="entry-header">
+									<span class="ts">{formatTimestamp(parsed.timestamp)}</span>
+									{#if parsed.turn}<span class="turn">turn {parsed.turn}</span>{/if}
+									<span class="cat">{parsed.category}</span>
+								</div>
+								{#if parsed.message}
+									<div class="entry-message">{parsed.message}</div>
+								{/if}
+								{#if parsed.pretty}
+									<pre class="entry-data">{parsed.pretty}</pre>
+								{/if}
+							</div>
+						{:else}
+							<div class="log-entry"><div class="entry-message">{line}</div></div>
+						{/if}
+					{:else}
+						<div class="log-line log-empty">No log output yet.</div>
+					{/each}
 				{:else}
-					<div class="log-line log-empty">No log output yet.</div>
-				{/each}
+					{#each logLines as line, i (`${activeTab}-${i}`)}
+						<div class="log-line">{line}</div>
+					{:else}
+						<div class="log-line log-empty">No log output yet.</div>
+					{/each}
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -224,7 +306,8 @@
 		gap: 6px;
 	}
 
-	.copy-btn {
+	.copy-btn,
+	.toggle-btn {
 		background: var(--bg-secondary);
 		border: 1px solid var(--border);
 		border-radius: 6px;
@@ -235,9 +318,16 @@
 		font-weight: 500;
 	}
 
-	.copy-btn:hover {
+	.copy-btn:hover,
+	.toggle-btn:hover {
 		color: var(--text-primary);
 		border-color: var(--text-secondary);
+	}
+
+	.toggle-btn.active {
+		color: var(--accent);
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
 	}
 
 	.close-btn {
@@ -275,5 +365,55 @@
 	.log-empty {
 		color: var(--text-secondary);
 		font-style: italic;
+	}
+
+	.log-entry {
+		padding: 8px 0;
+		border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+	}
+
+	.log-entry:last-child {
+		border-bottom: none;
+	}
+
+	.entry-header {
+		display: flex;
+		gap: 8px;
+		align-items: baseline;
+		margin-bottom: 4px;
+		font-size: 0.7rem;
+	}
+
+	.entry-header .ts {
+		color: var(--text-secondary);
+	}
+
+	.entry-header .turn {
+		color: var(--accent);
+	}
+
+	.entry-header .cat {
+		color: #4ec9b0;
+		font-weight: 600;
+	}
+
+	.entry-message {
+		color: #d4d4d4;
+		white-space: pre-wrap;
+		word-break: break-word;
+		margin-bottom: 4px;
+	}
+
+	.entry-data {
+		margin: 0;
+		padding: 6px 8px;
+		background: color-mix(in srgb, #000 25%, var(--code-bg));
+		border-radius: 4px;
+		color: #ce9178;
+		font-family: inherit;
+		font-size: inherit;
+		white-space: pre-wrap;
+		word-break: break-word;
+		overflow-x: auto;
 	}
 </style>
