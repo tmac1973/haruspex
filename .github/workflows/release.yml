@@ -196,6 +196,33 @@ jobs:
             touch src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder
           fi
 
+      - name: Download ruff sidecar
+        shell: bash
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
+        run: |
+          RUFF_VERSION="$(cat RUFF_VERSION | tr -d '[:space:]')"
+          case "$TARGET_TRIPLE" in
+            x86_64-unknown-linux-gnu)  RUFF_ASSET="ruff-x86_64-unknown-linux-gnu.tar.gz"   ; RUFF_EXE="ruff"     ; RUFF_EXT=""     ;;
+            aarch64-unknown-linux-gnu) RUFF_ASSET="ruff-aarch64-unknown-linux-gnu.tar.gz"  ; RUFF_EXE="ruff"     ; RUFF_EXT=""     ;;
+            x86_64-apple-darwin)       RUFF_ASSET="ruff-x86_64-apple-darwin.tar.gz"        ; RUFF_EXE="ruff"     ; RUFF_EXT=""     ;;
+            aarch64-apple-darwin)      RUFF_ASSET="ruff-aarch64-apple-darwin.tar.gz"       ; RUFF_EXE="ruff"     ; RUFF_EXT=""     ;;
+            x86_64-pc-windows-msvc)    RUFF_ASSET="ruff-x86_64-pc-windows-msvc.zip"        ; RUFF_EXE="ruff.exe" ; RUFF_EXT=".exe" ;;
+            *) echo "Unknown target $TARGET_TRIPLE — skipping ruff download"; exit 0 ;;
+          esac
+          DEST="src-tauri/binaries/ruff-${TARGET_TRIPLE}${RUFF_EXT}"
+          TMP=$(mktemp -d)
+          curl -fsSL -o "$TMP/ruff.archive" \
+            "https://github.com/astral-sh/ruff/releases/download/$RUFF_VERSION/$RUFF_ASSET"
+          case "$RUFF_ASSET" in
+            *.tar.gz) tar -xzf "$TMP/ruff.archive" -C "$TMP" ;;
+            *.zip)    unzip -q "$TMP/ruff.archive" -d "$TMP" ;;
+          esac
+          FOUND=$(find "$TMP" -type f -name "$RUFF_EXE" | head -1)
+          cp "$FOUND" "$DEST"
+          chmod +x "$DEST"
+          rm -rf "$TMP"
+
       - name: Build app
         shell: bash
         run: |
