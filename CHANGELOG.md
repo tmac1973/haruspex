@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.34](https://github.com/tmac1973/haruspex/compare/v0.1.33...v0.1.34) (2026-05-14)
+
+
+### Features
+
+* **agent:** image embedding, python lint, sampling tweaks ([d328f43](https://github.com/tmac1973/haruspex/commit/d328f43e7594f7720078b0fb7499b3bd5807bb9c))
+* **agent:** image embedding, python lint, sampling tweaks ([395515a](https://github.com/tmac1973/haruspex/commit/395515a3c130e8e4f72ba4b455797d8c4884a133))
+* **ui:** add pretty/raw toggle to debug and tools log viewers ([e5af341](https://github.com/tmac1973/haruspex/commit/e5af3412e0a624eeca5388a714d1428d07baae46))
+* **ui:** pretty/raw toggle for debug and tools log viewers ([abdb62d](https://github.com/tmac1973/haruspex/commit/abdb62d44d5f574b21598ea23231281c9111bcd3))
+
 ## [0.1.33](https://github.com/tmac1973/haruspex/compare/v0.1.32...v0.1.33) (2026-05-13)
 
 
