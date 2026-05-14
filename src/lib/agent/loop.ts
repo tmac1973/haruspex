@@ -12,6 +12,7 @@ import { getToolSchemas, executeTool, type PendingImage, type Artifact } from '$
 import { getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
 import { logDebug } from '$lib/debug-log';
+import { NudgeState } from './loop/nudges';
 
 // Trim older tool results when context usage crosses this fraction.
 // Lower than the conversation-level compaction threshold (0.8) so we act
@@ -265,32 +266,10 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 	const filesWrittenThisTurn: Set<string> = new Set();
 	let iteration = 0;
 	let usedTools = false;
-	// Tracks whether any fs_write_* tool has actually been executed during
-	// this turn. Used with `expectsFileOutput` below to catch the "I wrote
-	// the PDF to /path" hallucination where the model claims a file write
-	// without making the tool call.
-	let fileWrittenThisTurn = false;
-	// Bound how many times we can push the "you didn't actually write the
-	// file" recovery nudge in a single turn. Prevents infinite loops if
-	// the model is stuck and can't be coaxed into calling the write tool.
-	let fileWriteRetries = 0;
-	const MAX_FILE_WRITE_RETRIES = 2;
-	// Per-turn diversity tracking. When the model uses web_search but
-	// only fetches one page, its answers often degenerate into citing the
-	// same URL for every claim — small local models tend to slap [source]
-	// on everything once they decide they're "done researching". We nudge
-	// at most once per turn to avoid infinite loops when the model just
-	// doesn't want to fetch more.
-	let webSearchUsed = false;
-	const fetchedUrlsThisTurn: Set<string> = new Set();
-	let diversityNudged = false;
-	// Count consecutive `run_python` failures (result starts with
-	// "Error:"). Reset on any successful run_python. Once the count hits
-	// RUN_PYTHON_FAILURE_NUDGE_THRESHOLD we append a generic "step back
-	// and re-evaluate" hint to the tool result, giving the model a chance
-	// to break out of resubmitting near-identical failing code.
-	let consecutiveRunPythonFailures = 0;
-	const RUN_PYTHON_FAILURE_NUDGE_THRESHOLD = 3;
+	// Per-turn nudge bookkeeping: file-write hallucination retry, web-
+	// search diversity gate, and run_python failure-streak hint. See
+	// loop/nudges.ts for the conditions and thresholds.
+	const nudges = new NudgeState();
 
 	logDebug('agent', 'runAgentLoop start', {
 		maxIterations,
@@ -466,15 +445,13 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		//     burn the entire iteration budget on the recovery loop.
 		if (
 			toolCalls.length === 0 &&
-			expectsFileOutput &&
-			!fileWrittenThisTurn &&
-			fileWriteRetries < MAX_FILE_WRITE_RETRIES &&
+			nudges.needsFileWriteNudge(expectsFileOutput) &&
 			!looksLikeClarifyingQuestion(response.content || '')
 		) {
-			fileWriteRetries++;
+			nudges.consumeFileWriteNudge();
 			logDebug(
 				'agent',
-				`iteration ${iteration} branch=file-write-hallucination retry ${fileWriteRetries}`,
+				`iteration ${iteration} branch=file-write-hallucination retry ${nudges.fileWriteRetryCount}`,
 				{
 					assistantContent: response.content
 				}
@@ -508,15 +485,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			// before the final synthesis. Capped at a single retry per turn
 			// so a model that stubbornly refuses to fetch more doesn't burn
 			// the whole iteration budget on the recovery loop.
-			if (
-				usedTools &&
-				webSearchUsed &&
-				fetchedUrlsThisTurn.size <= 1 &&
-				!diversityNudged &&
-				toolCalls.length === 0
-			) {
-				diversityNudged = true;
-				const fetchedCount = fetchedUrlsThisTurn.size;
+			if (toolCalls.length === 0 && nudges.needsDiversityNudge(usedTools)) {
+				const fetchedCount = nudges.consumeDiversityNudge();
 				logDebug('agent', `iteration ${iteration} branch=diversity-nudge`, {
 					fetchedCount
 				});
@@ -733,7 +703,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			// human-readable success string otherwise, so a non-error result
 			// is how we know the file actually landed.
 			if (call.name.startsWith('fs_write_') && !output.result.includes('"error"')) {
-				fileWrittenThisTurn = true;
+				nudges.markFileWritten();
 			}
 
 			// Prepend a "[Source: <url>]" header to successful page fetches
@@ -745,7 +715,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 			// a gated page can't masquerade as a citable source.
 			let toolContent = output.result;
 			if (call.name === 'web_search') {
-				webSearchUsed = true;
+				nudges.markWebSearchUsed();
 			}
 			if (call.name === 'fetch_url' || call.name === 'research_url') {
 				const url = call.arguments.url as string | undefined;
@@ -754,23 +724,13 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 					toolContent.startsWith('Research sub-agent failed') ||
 					toolContent.startsWith('Paywalled:');
 				if (url && !fetchFailed) {
-					fetchedUrlsThisTurn.add(url);
+					nudges.recordFetchedUrl(url);
 					toolContent = `[Source: ${url}]\n\n${toolContent}`;
 				}
 			}
 
 			if (call.name === 'run_python') {
-				if (output.result.startsWith('Error:')) {
-					consecutiveRunPythonFailures++;
-					if (consecutiveRunPythonFailures >= RUN_PYTHON_FAILURE_NUDGE_THRESHOLD) {
-						toolContent +=
-							`\n\n[Haruspex hint] This is your ${consecutiveRunPythonFailures}th consecutive run_python failure in this turn. ` +
-							`Stop and re-evaluate before retrying — do not just resubmit a variation of the same code. ` +
-							`Verify your assumptions about the inputs you are working with, or try a fundamentally different approach.`;
-					}
-				} else {
-					consecutiveRunPythonFailures = 0;
-				}
+				toolContent = nudges.maybeAppendRunPythonHint(toolContent);
 			}
 
 			messages.push({
