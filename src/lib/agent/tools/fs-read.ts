@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
+import { toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
+import { toolError, toolResult } from './types';
 
 // Max images per turn. Each ~1024px image is ~500-800 image tokens for
 // Qwen3.5-9B vision; batching more than this at once risks blowing out
@@ -43,7 +44,7 @@ async function fsRead(
 	try {
 		return await invoke<string>(command, { workdir, relPath, ...extra });
 	} catch (e) {
-		return toolError(`${command} failed: ${e}`);
+		return toolInvokeError(command, e);
 	}
 }
 
@@ -78,7 +79,7 @@ registerTool({
 			});
 			return toolResult(formatDirListing(listing));
 		} catch (e) {
-			return toolResult(toolError(`fs_list_dir failed: ${e}`));
+			return toolResult(toolInvokeError('fs_list_dir', e));
 		}
 	}
 });
@@ -178,7 +179,7 @@ registerTool({
 				`Rendered ${pages.length} page${pages.length === 1 ? '' : 's'} of ${args.path} as images. You can now see the pages in your next response — read form fields, labels, values, and layout directly.`
 			);
 		} catch (e) {
-			return toolResult(toolError(`fs_read_pdf_pages failed: ${e}`));
+			return toolResult(toolInvokeError('fs_read_pdf_pages', e));
 		}
 	}
 });
@@ -288,7 +289,7 @@ registerTool({
 				thumbDataUrl: dataUrl
 			};
 		} catch (e) {
-			return toolResult(toolError(`fs_read_image failed: ${e}`));
+			return toolResult(toolInvokeError('fs_read_image', e));
 		}
 	}
 });

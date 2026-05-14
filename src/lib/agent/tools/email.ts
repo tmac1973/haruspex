@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import { chatCompletion, type ChatMessage } from '$lib/api';
-import { getSettings, getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
+import { type ChatMessage } from '$lib/api';
+import { getSettings } from '$lib/stores/settings';
+import { runSubAgent, toolInvokeError } from './_helpers';
 import type { EmailAccount } from '$lib/stores/settings';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
@@ -198,7 +199,7 @@ registerTool({
 				messageId
 			});
 		} catch (e) {
-			return toolResult(toolError(`email_prepare_summary failed: ${e}`));
+			return toolResult(toolInvokeError('email_prepare_summary', e));
 		}
 
 		if (!input.body.trim()) {
@@ -229,32 +230,9 @@ registerTool({
 		];
 
 		try {
-			const sampling = getSamplingParams();
-			const response = await chatCompletion(
-				{
-					messages,
-					temperature: sampling.temperature,
-					top_p: sampling.top_p,
-					top_k: sampling.top_k,
-					presence_penalty: sampling.presence_penalty,
-					max_tokens: EMAIL_SUMMARY_MAX_TOKENS,
-					chat_template_kwargs: getChatTemplateKwargs()
-				},
-				ctx.signal
-			);
-			const summary = response.content?.trim();
-			if (!summary) {
-				return toolResult(
-					JSON.stringify({
-						accountId: account.id,
-						messageId,
-						subject: input.subject,
-						from: `${input.fromName} <${input.fromEmail}>`,
-						date: input.date,
-						summary: `[summarizer returned nothing — body preview: ${input.body.slice(0, 200)}]`
-					})
-				);
-			}
+			const summary = await runSubAgent(messages, EMAIL_SUMMARY_MAX_TOKENS, ctx.signal);
+			const finalSummary =
+				summary || `[summarizer returned nothing — body preview: ${input.body.slice(0, 200)}]`;
 			return toolResult(
 				JSON.stringify({
 					accountId: account.id,
@@ -262,12 +240,12 @@ registerTool({
 					subject: input.subject,
 					from: `${input.fromName} <${input.fromEmail}>`,
 					date: input.date,
-					summary
+					summary: finalSummary
 				})
 			);
 		} catch (e) {
 			if (e instanceof DOMException && e.name === 'AbortError') throw e;
-			return toolResult(toolError(`email_summarize_message sub-agent failed: ${e}`));
+			return toolResult(toolInvokeError('email_summarize_message sub-agent', e));
 		}
 	}
 });
@@ -311,7 +289,7 @@ registerTool({
 			});
 			return toolResult(JSON.stringify(msg));
 		} catch (e) {
-			return toolResult(toolError(`email_read_full failed: ${e}`));
+			return toolResult(toolInvokeError('email_read_full', e));
 		}
 	}
 });

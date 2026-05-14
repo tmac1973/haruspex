@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
+import { labelArg, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
-import type { ToolExecOutput } from './types';
+import { toolError, toolResult } from './types';
+import type { ToolContext, ToolExecOutput } from './types';
 import { IMAGE_EXT_RE } from './fs-read';
 import { lintPythonIfApplicable } from './python-lint';
 
@@ -86,9 +87,48 @@ async function fsWriteWithConflictCheck(
 		const diag = await lintPythonIfApplicable(workdir, resolved.finalPath);
 		return toolResult(`Wrote: ${resolved.finalPath}${diag}`);
 	} catch (e) {
-		return toolResult(toolError(`${command} failed: ${e}`));
+		return toolResult(toolInvokeError(command, e));
 	}
 }
+
+/**
+ * Factory for the `execute` handler shared by every `fs_write_*` tool:
+ * resolves any file-conflict, forwards `{ workdir, relPath, ...payload,
+ * overwrite }` to the named Rust command, and tracks the resulting
+ * file in `ctx.filesWrittenThisTurn`. Each tool registration boils
+ * down to one line.
+ */
+function writeExecutor(
+	command: string,
+	payload: (args: Record<string, unknown>) => Record<string, unknown>
+) {
+	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> =>
+		fsWriteWithConflictCheck(
+			command,
+			ctx.workingDir!,
+			args.path as string,
+			payload(args),
+			ctx.filesWrittenThisTurn
+		);
+}
+
+// Shared sheet schema used by both xlsx and ods.
+const SHEETS_SCHEMA = {
+	type: 'array' as const,
+	description: 'Array of sheet objects. Each sheet needs a name and rows.',
+	items: {
+		type: 'object' as const,
+		properties: {
+			name: { type: 'string' as const, description: 'Sheet name (tab label)' },
+			rows: {
+				type: 'array' as const,
+				description: '2D array: array of rows, each row is an array of cell values.',
+				items: { type: 'array' as const, items: { type: 'string' as const } }
+			}
+		},
+		required: ['name', 'rows']
+	}
+};
 
 // Shared slide schema used by both pptx and odp
 const SLIDE_SCHEMA = {
@@ -174,16 +214,8 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
-	async execute(args, ctx) {
-		return fsWriteWithConflictCheck(
-			'fs_write_text',
-			ctx.workingDir!,
-			args.path as string,
-			{ content: args.content },
-			ctx.filesWrittenThisTurn
-		);
-	}
+	displayLabel: labelArg('path'),
+	execute: writeExecutor('fs_write_text', (args) => ({ content: args.content }))
 });
 
 registerTool({
@@ -208,16 +240,8 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
-	async execute(args, ctx) {
-		return fsWriteWithConflictCheck(
-			'fs_write_docx',
-			ctx.workingDir!,
-			args.path as string,
-			{ content: args.content },
-			ctx.filesWrittenThisTurn
-		);
-	}
+	displayLabel: labelArg('path'),
+	execute: writeExecutor('fs_write_docx', (args) => ({ content: args.content }))
 });
 
 // Markdown→PDF tool. Always exposed (the Python toggle no longer hides
@@ -245,16 +269,8 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
-	async execute(args, ctx) {
-		return fsWriteWithConflictCheck(
-			'fs_write_pdf',
-			ctx.workingDir!,
-			args.path as string,
-			{ content: args.content },
-			ctx.filesWrittenThisTurn
-		);
-	}
+	displayLabel: labelArg('path'),
+	execute: writeExecutor('fs_write_pdf', (args) => ({ content: args.content }))
 });
 
 registerTool({
@@ -269,37 +285,14 @@ registerTool({
 				type: 'object',
 				properties: {
 					path: { type: 'string', description: 'Relative path for the new .xlsx file.' },
-					sheets: {
-						type: 'array',
-						description: 'Array of sheet objects. Each sheet needs a name and rows.',
-						items: {
-							type: 'object',
-							properties: {
-								name: { type: 'string', description: 'Sheet name (tab label)' },
-								rows: {
-									type: 'array',
-									description: '2D array: array of rows, each row is an array of cell values.',
-									items: { type: 'array', items: { type: 'string' } }
-								}
-							},
-							required: ['name', 'rows']
-						}
-					}
+					sheets: SHEETS_SCHEMA
 				},
 				required: ['path', 'sheets']
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
-	async execute(args, ctx) {
-		return fsWriteWithConflictCheck(
-			'fs_write_xlsx',
-			ctx.workingDir!,
-			args.path as string,
-			{ sheets: args.sheets },
-			ctx.filesWrittenThisTurn
-		);
-	}
+	displayLabel: labelArg('path'),
+	execute: writeExecutor('fs_write_xlsx', (args) => ({ sheets: args.sheets }))
 });
 
 registerTool({
@@ -324,16 +317,8 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
-	async execute(args, ctx) {
-		return fsWriteWithConflictCheck(
-			'fs_write_odt',
-			ctx.workingDir!,
-			args.path as string,
-			{ content: args.content },
-			ctx.filesWrittenThisTurn
-		);
-	}
+	displayLabel: labelArg('path'),
+	execute: writeExecutor('fs_write_odt', (args) => ({ content: args.content }))
 });
 
 registerTool({
@@ -348,37 +333,14 @@ registerTool({
 				type: 'object',
 				properties: {
 					path: { type: 'string', description: 'Relative path for the new .ods file.' },
-					sheets: {
-						type: 'array',
-						description: 'Array of sheet objects. Each sheet needs a name and rows.',
-						items: {
-							type: 'object',
-							properties: {
-								name: { type: 'string', description: 'Sheet name (tab label)' },
-								rows: {
-									type: 'array',
-									description: '2D array: array of rows, each row is an array of cell values.',
-									items: { type: 'array', items: { type: 'string' } }
-								}
-							},
-							required: ['name', 'rows']
-						}
-					}
+					sheets: SHEETS_SCHEMA
 				},
 				required: ['path', 'sheets']
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
-	async execute(args, ctx) {
-		return fsWriteWithConflictCheck(
-			'fs_write_ods',
-			ctx.workingDir!,
-			args.path as string,
-			{ sheets: args.sheets },
-			ctx.filesWrittenThisTurn
-		);
-	}
+	displayLabel: labelArg('path'),
+	execute: writeExecutor('fs_write_ods', (args) => ({ sheets: args.sheets }))
 });
 
 // Legacy hand-rolled OOXML PPTX path. Same arrangement as fs_write_pdf:
@@ -403,16 +365,8 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
-	async execute(args, ctx) {
-		return fsWriteWithConflictCheck(
-			'fs_write_pptx',
-			ctx.workingDir!,
-			args.path as string,
-			{ slides: args.slides },
-			ctx.filesWrittenThisTurn
-		);
-	}
+	displayLabel: labelArg('path'),
+	execute: writeExecutor('fs_write_pptx', (args) => ({ slides: args.slides }))
 });
 
 registerTool({
@@ -433,16 +387,8 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
-	async execute(args, ctx) {
-		return fsWriteWithConflictCheck(
-			'fs_write_odp',
-			ctx.workingDir!,
-			args.path as string,
-			{ slides: args.slides },
-			ctx.filesWrittenThisTurn
-		);
-	}
+	displayLabel: labelArg('path'),
+	execute: writeExecutor('fs_write_odp', (args) => ({ slides: args.slides }))
 });
 
 registerTool({
@@ -502,7 +448,7 @@ registerTool({
 			}
 			return { result: message, thumbDataUrl };
 		} catch (e) {
-			return toolResult(toolError(`fs_download_url failed: ${e}`));
+			return toolResult(toolInvokeError('fs_download_url', e));
 		}
 	}
 });
@@ -535,7 +481,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
+	displayLabel: labelArg('path'),
 	async execute(args, ctx) {
 		try {
 			await invoke('fs_edit_text', {
@@ -547,7 +493,7 @@ registerTool({
 			const diag = await lintPythonIfApplicable(ctx.workingDir, args.path as string);
 			return toolResult(`Edited ${args.path}${diag}`);
 		} catch (e) {
-			return toolResult(toolError(`fs_edit_text failed: ${e}`));
+			return toolResult(toolInvokeError('fs_edit_text', e));
 		}
 	}
 });
