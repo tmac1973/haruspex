@@ -10,11 +10,107 @@ use super::markdown_inline::{
     preprocess_lines, runs_to_words, wrap_styled_words, DocumentBlock, ImageAlignment, InlineRun,
 };
 use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
+use std::collections::HashMap;
 use tokio::fs;
 
 const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
 
-///     pre-loaded into `images` (paths point into the workdir)
+/// Font family selector — Helvetica for normal prose, Courier for
+/// monospace tables where column alignment via space padding matters.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum FontFamily {
+    Helvetica,
+    Courier,
+}
+
+/// Approximate character width in points for Helvetica at given size.
+/// Used for line-fit estimates during word wrap.
+fn char_width_pt(font_pt: f32) -> f32 {
+    font_pt * 0.55
+}
+
+/// Classify a raw line into (rendered_text, font_size_pt, leading_pt,
+/// is_heading). Headings get larger sizes and looser leading; body
+/// lines get standard.
+fn classify(line: &str, h1: f32, h2: f32, h3: f32, body: f32) -> (String, f32, f32, bool) {
+    let trimmed = line.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("# ") {
+        (rest.to_string(), h1, h1 * 0.5, true)
+    } else if let Some(rest) = trimmed.strip_prefix("## ") {
+        (rest.to_string(), h2, h2 * 0.5, true)
+    } else if let Some(rest) = trimmed.strip_prefix("### ") {
+        (rest.to_string(), h3, h3 * 0.5, true)
+    } else {
+        (line.to_string(), body, body * 0.4, false)
+    }
+}
+
+fn pick_font(family: FontFamily, bold: bool, italic: bool) -> printpdf::BuiltinFont {
+    use printpdf::BuiltinFont::*;
+    match (family, bold, italic) {
+        (FontFamily::Helvetica, true, true) => HelveticaBoldOblique,
+        (FontFamily::Helvetica, true, false) => HelveticaBold,
+        (FontFamily::Helvetica, false, true) => HelveticaOblique,
+        (FontFamily::Helvetica, false, false) => Helvetica,
+        (FontFamily::Courier, true, true) => CourierBoldOblique,
+        (FontFamily::Courier, true, false) => CourierBold,
+        (FontFamily::Courier, false, true) => CourierOblique,
+        (FontFamily::Courier, false, false) => Courier,
+    }
+}
+
+/// Emit page-start ops. `Op::SetTextCursor` serializes to the PDF
+/// `Td` operator which is RELATIVE, so we can't use it for absolute
+/// positioning. `Op::SetTextMatrix(Translate(x, y))` serializes to
+/// `Tm` which is absolute in page coordinates (origin at bottom-left).
+fn start_page_ops(ops: &mut Vec<printpdf::Op>) {
+    use printpdf::*;
+    ops.push(Op::SaveGraphicsState);
+    ops.push(Op::StartTextSection);
+    // Black fill so text is visible (default is actually black but be explicit).
+    ops.push(Op::SetFillColor {
+        col: Color::Rgb(Rgb {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            icc_profile: None,
+        }),
+    });
+}
+
+fn finish_page_ops(ops: &mut Vec<printpdf::Op>) {
+    use printpdf::*;
+    ops.push(Op::EndTextSection);
+    ops.push(Op::RestoreGraphicsState);
+}
+
+/// Register each unique referenced image with the PDF document once
+/// up front. Returns a map keyed by the workdir-relative path so the
+/// rendering loop can look up the document's XObjectId and natural
+/// pixel dimensions when it embeds an image.
+fn register_images(
+    doc: &mut printpdf::PdfDocument,
+    images: &HashMap<String, LoadedImage>,
+) -> Result<HashMap<String, (printpdf::XObjectId, u32, u32)>, String> {
+    use printpdf::*;
+    let mut registered: HashMap<String, (XObjectId, u32, u32)> = HashMap::new();
+    for (path, img) in images {
+        let mut warnings = Vec::new();
+        let raw = RawImage::decode_from_bytes(&img.bytes, &mut warnings)
+            .map_err(|e| format!("Failed to decode image {}: {}", path, e))?;
+        let (w, h) = (raw.width as u32, raw.height as u32);
+        let id = doc.add_image(&raw);
+        registered.insert(path.clone(), (id, w, h));
+    }
+    Ok(registered)
+}
+
+/// Build a simple PDF from markdown-ish text. Supports:
+///   - `#`, `##`, `###` headings (rendered bold, larger)
+///   - `**bold**`, `*italic*`, `` `code` ``, `[text](url)` inline markdown
+///   - `-` / `*` / `+` bullet lists (converted to `•`)
+///   - `![alt](path)` on a line by itself — embeds the referenced image
+///     pre-loaded into `images` (paths point into the workdir).
 ///
 /// Content is word-wrapped to fit the page and flows across multiple pages.
 pub(super) fn build_pdf(
@@ -24,21 +120,7 @@ pub(super) fn build_pdf(
     use printpdf::*;
 
     let mut doc = PdfDocument::new("Document");
-
-    // Register each unique referenced image with the PDF document once,
-    // up front, so the rendering loop only has to do lookups and emit
-    // `Op::UseXobject` ops. We track natural pixel dimensions alongside
-    // each XObjectId so the renderer can preserve aspect ratio.
-    let mut registered_images: std::collections::HashMap<String, (XObjectId, u32, u32)> =
-        std::collections::HashMap::new();
-    for (path, img) in images {
-        let mut warnings = Vec::new();
-        let raw = RawImage::decode_from_bytes(&img.bytes, &mut warnings)
-            .map_err(|e| format!("Failed to decode image {}: {}", path, e))?;
-        let (w, h) = (raw.width as u32, raw.height as u32);
-        let id = doc.add_image(&raw);
-        registered_images.insert(path.clone(), (id, w, h));
-    }
+    let registered_images = register_images(&mut doc, images)?;
 
     // US Letter: 215.9 mm × 279.4 mm. Keep a 20 mm margin on all sides.
     let page_width_mm = 215.9_f32;
@@ -52,49 +134,9 @@ pub(super) fn build_pdf(
     let h2_pt = 16.0_f32;
     let h3_pt = 13.0_f32;
 
-    // Approximate character width in points for Helvetica at given size.
-    fn char_width_pt(font_pt: f32) -> f32 {
-        font_pt * 0.55
-    }
-
     // Convert mm to Pt (1 mm ≈ 2.8346 pt)
     let mm_to_pt = 2.834_645_7_f32;
     let content_width_pt = content_width_mm * mm_to_pt;
-
-    fn classify(line: &str, h1: f32, h2: f32, h3: f32, body: f32) -> (String, f32, f32, bool) {
-        let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_prefix("# ") {
-            (rest.to_string(), h1, h1 * 0.5, true)
-        } else if let Some(rest) = trimmed.strip_prefix("## ") {
-            (rest.to_string(), h2, h2 * 0.5, true)
-        } else if let Some(rest) = trimmed.strip_prefix("### ") {
-            (rest.to_string(), h3, h3 * 0.5, true)
-        } else {
-            (line.to_string(), body, body * 0.4, false)
-        }
-    }
-
-    /// Font family selector — Helvetica for normal prose, Courier for
-    /// monospace tables where column alignment via space padding matters.
-    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-    enum FontFamily {
-        Helvetica,
-        Courier,
-    }
-
-    fn pick_font(family: FontFamily, bold: bool, italic: bool) -> printpdf::BuiltinFont {
-        use printpdf::BuiltinFont::*;
-        match (family, bold, italic) {
-            (FontFamily::Helvetica, true, true) => HelveticaBoldOblique,
-            (FontFamily::Helvetica, true, false) => HelveticaBold,
-            (FontFamily::Helvetica, false, true) => HelveticaOblique,
-            (FontFamily::Helvetica, false, false) => Helvetica,
-            (FontFamily::Courier, true, true) => CourierBoldOblique,
-            (FontFamily::Courier, true, false) => CourierBold,
-            (FontFamily::Courier, false, true) => CourierOblique,
-            (FontFamily::Courier, false, false) => Courier,
-        }
-    }
 
     let top_y_mm = page_height_mm - margin_mm;
     let bottom_y_mm = margin_mm;
@@ -103,31 +145,6 @@ pub(super) fn build_pdf(
     let mut all_pages: Vec<PdfPage> = Vec::new();
     let mut current_ops: Vec<Op> = Vec::new();
     let mut cursor_y_mm = top_y_mm;
-
-    // Helper: emit page-start ops. `Op::SetTextCursor` serializes to the PDF
-    // `Td` operator which is RELATIVE, so we can't use it for absolute
-    // positioning. `Op::SetTextMatrix(Translate(x, y))` serializes to `Tm`
-    // which is absolute in page coordinates (origin at bottom-left).
-    fn start_page_ops(ops: &mut Vec<printpdf::Op>) {
-        use printpdf::*;
-        ops.push(Op::SaveGraphicsState);
-        ops.push(Op::StartTextSection);
-        // Black fill so text is visible (default is actually black but be explicit)
-        ops.push(Op::SetFillColor {
-            col: Color::Rgb(Rgb {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                icc_profile: None,
-            }),
-        });
-    }
-
-    fn finish_page_ops(ops: &mut Vec<printpdf::Op>) {
-        use printpdf::*;
-        ops.push(Op::EndTextSection);
-        ops.push(Op::RestoreGraphicsState);
-    }
 
     start_page_ops(&mut current_ops);
 
