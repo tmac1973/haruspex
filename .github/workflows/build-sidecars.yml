@@ -21,6 +21,14 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # Some runner images ship a `cargo` shim in /usr/local/bin that's
+      # actually rustup-init; without this, that shim wins over the real
+      # cargo dtolnay installs at ~/.cargo/bin and `cargo build` fails
+      # with `unexpected argument 'build' found` from rustup-init.
+      - name: Ensure cargo on PATH
+        shell: bash
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: sidecars-${{ matrix.target }}
