@@ -1,5 +1,4 @@
 use log::{error, info, warn};
-use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -10,16 +9,16 @@ use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
-const TTS_PORT: u16 = 3001;
-const LOG_RING_BUFFER_SIZE: usize = 1000;
+use crate::sidecar_utils::{
+    http_client, kill_process_on_port, new_log_buffer, ports, push_log, timing, LogBuffer,
+    SidecarStatus,
+};
 
-#[derive(Clone, Debug, PartialEq)]
-enum TtsStatus {
-    Stopped,
-    Starting,
-    Ready,
-    Error(String),
-}
+const TTS_PORT: u16 = ports::TTS;
+
+/// Lifecycle state of the koko TTS sidecar. Aliased onto the shared
+/// `SidecarStatus` so all three sidecars share one wire shape.
+type TtsStatus = SidecarStatus;
 
 // TtsEngine is Send + Sync because it only contains Send+Sync types.
 // Audio playback happens on a dedicated thread (not stored in the struct).
@@ -28,33 +27,7 @@ pub struct TtsEngine {
     status: Arc<Mutex<TtsStatus>>,
     playing: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
-    log_buffer: Arc<Mutex<VecDeque<String>>>,
-}
-
-/// Strip ANSI escape sequences (e.g. color codes) from a string.
-fn strip_ansi(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip until we hit a letter (the terminator of the escape sequence)
-            for esc_c in chars.by_ref() {
-                if esc_c.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-
-fn push_log(buffer: &mut VecDeque<String>, line: &str) {
-    if buffer.len() >= LOG_RING_BUFFER_SIZE {
-        buffer.pop_front();
-    }
-    buffer.push_back(strip_ansi(line));
+    log_buffer: LogBuffer,
 }
 
 /// Pick a path to pass koko via `--model` / `--data`.
@@ -102,7 +75,7 @@ impl TtsEngine {
             status: Arc::new(Mutex::new(TtsStatus::Stopped)),
             playing: Arc::new(AtomicBool::new(false)),
             stop_flag: Arc::new(AtomicBool::new(false)),
-            log_buffer: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_RING_BUFFER_SIZE))),
+            log_buffer: new_log_buffer(),
         }
     }
 
@@ -115,7 +88,7 @@ impl TtsEngine {
         }
 
         self.stop().await?;
-        Self::kill_process_on_port(TTS_PORT).await;
+        kill_process_on_port(TTS_PORT, "koko").await;
 
         {
             let mut status = self.status.lock().await;
@@ -282,12 +255,15 @@ impl TtsEngine {
             }
         });
 
+        // Health-poll fallback. koko's root `/` endpoint may return 4xx
+        // depending on version, so we accept *any* response (not just
+        // 2xx) as "process is up". The primary readiness signal is the
+        // "listening" stdout sniff in the reader above — this just
+        // covers the case where koko buffers stdout past the moment it
+        // starts accepting connections.
         let status_for_health = Arc::clone(&self.status);
         tauri::async_runtime::spawn(async move {
-            let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(2))
-                .build()
-                .unwrap();
+            let client = http_client(timing::SHORT_HTTP_TIMEOUT);
 
             for _ in 0..60 {
                 {
@@ -296,7 +272,7 @@ impl TtsEngine {
                         return;
                     }
                 }
-                sleep(Duration::from_millis(500)).await;
+                sleep(timing::HEALTH_POLL_INTERVAL).await;
 
                 if let Ok(resp) = client
                     .get(format!("http://127.0.0.1:{}/", TTS_PORT))
@@ -337,63 +313,6 @@ impl TtsEngine {
         Ok(())
     }
 
-    async fn kill_process_on_port(port: u16) {
-        if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
-            warn!("Port {} occupied, killing existing process", port);
-            #[cfg(unix)]
-            {
-                if let Ok(output) = std::process::Command::new("lsof")
-                    .args(["-t", "-i", &format!(":{}", port)])
-                    .output()
-                {
-                    let pids = String::from_utf8_lossy(&output.stdout);
-                    for pid_str in pids.trim().lines() {
-                        if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                            info!("Killing process {} on port {}", pid, port);
-                            unsafe {
-                                libc::kill(pid, libc::SIGTERM);
-                            }
-                        }
-                    }
-                }
-                for _ in 0..20 {
-                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
-                        return;
-                    }
-                    sleep(Duration::from_millis(100)).await;
-                }
-            }
-
-            #[cfg(windows)]
-            {
-                if let Ok(output) = std::process::Command::new("netstat")
-                    .args(["-ano"])
-                    .output()
-                {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    for line in stdout.lines() {
-                        if line.contains(&format!(":{}", port)) && line.contains("LISTENING") {
-                            if let Some(pid_str) = line.split_whitespace().last() {
-                                if let Ok(pid) = pid_str.parse::<u32>() {
-                                    info!("Killing process {} on port {}", pid, port);
-                                    let _ = std::process::Command::new("taskkill")
-                                        .args(["/F", "/PID", &pid.to_string()])
-                                        .output();
-                                }
-                            }
-                        }
-                    }
-                }
-                for _ in 0..20 {
-                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
-                        return;
-                    }
-                    sleep(Duration::from_millis(100)).await;
-                }
-            }
-        }
-    }
-
     pub async fn is_ready(&self) -> bool {
         *self.status.lock().await == TtsStatus::Ready
     }
@@ -426,10 +345,7 @@ impl TtsEngine {
             &text[..text.len().min(100)]
         );
 
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(120))
-            .build()
-            .map_err(|e| format!("HTTP client error: {}", e))?;
+        let client = http_client(Duration::from_secs(120));
 
         let body = serde_json::json!({
             "model": "tts-1",

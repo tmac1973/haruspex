@@ -1,56 +1,29 @@
 use log::{error, info, warn};
-use serde::Serialize;
-use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
-use tokio::time::sleep;
 
-const WHISPER_PORT: u16 = 8766;
-const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
+use crate::sidecar_utils::{
+    http_client, kill_process_on_port, new_log_buffer, poll_health, ports, push_log, LogBuffer,
+    SidecarStatus,
+};
+
+const WHISPER_PORT: u16 = ports::WHISPER;
 const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(30);
-const LOG_RING_BUFFER_SIZE: usize = 1000;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
-pub enum WhisperStatus {
-    Stopped,
-    Starting,
-    Ready,
-    Error(String),
-}
+/// Lifecycle state of the whisper-server sidecar. Kept as a type alias
+/// onto `SidecarStatus` so the Tauri command surface (and frontend
+/// `MicButton`) sees the same `{ type, message }` wire shape as the
+/// other two sidecars.
+pub type WhisperStatus = SidecarStatus;
 
 pub struct WhisperServer {
     child: Mutex<Option<CommandChild>>,
     status: Arc<Mutex<WhisperStatus>>,
-    log_buffer: Arc<Mutex<VecDeque<String>>>,
-}
-
-/// Strip ANSI escape sequences (e.g. color codes) from a string.
-fn strip_ansi(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            for esc_c in chars.by_ref() {
-                if esc_c.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-
-fn push_log(buffer: &mut VecDeque<String>, line: &str) {
-    if buffer.len() >= LOG_RING_BUFFER_SIZE {
-        buffer.pop_front();
-    }
-    buffer.push_back(strip_ansi(line));
+    log_buffer: LogBuffer,
 }
 
 impl WhisperServer {
@@ -58,71 +31,13 @@ impl WhisperServer {
         Self {
             child: Mutex::new(None),
             status: Arc::new(Mutex::new(WhisperStatus::Stopped)),
-            log_buffer: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_RING_BUFFER_SIZE))),
-        }
-    }
-
-    async fn kill_process_on_port(port: u16) {
-        if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
-            warn!("Port {} occupied, killing existing process", port);
-            #[cfg(unix)]
-            {
-                if let Ok(output) = std::process::Command::new("lsof")
-                    .args(["-t", "-i", &format!(":{}", port)])
-                    .output()
-                {
-                    let pids = String::from_utf8_lossy(&output.stdout);
-                    for pid_str in pids.trim().lines() {
-                        if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                            info!("Killing process {} on port {}", pid, port);
-                            unsafe {
-                                libc::kill(pid, libc::SIGTERM);
-                            }
-                        }
-                    }
-                }
-                for _ in 0..20 {
-                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
-                        return;
-                    }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-            }
-
-            #[cfg(windows)]
-            {
-                if let Ok(output) = std::process::Command::new("netstat")
-                    .args(["-ano"])
-                    .output()
-                {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    for line in stdout.lines() {
-                        if line.contains(&format!(":{}", port)) && line.contains("LISTENING") {
-                            if let Some(pid_str) = line.split_whitespace().last() {
-                                if let Ok(pid) = pid_str.parse::<u32>() {
-                                    info!("Killing process {} on port {}", pid, port);
-                                    let _ = std::process::Command::new("taskkill")
-                                        .args(["/F", "/PID", &pid.to_string()])
-                                        .output();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                for _ in 0..20 {
-                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
-                        return;
-                    }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-            }
+            log_buffer: new_log_buffer(),
         }
     }
 
     pub async fn start(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
         self.stop().await?;
-        Self::kill_process_on_port(WHISPER_PORT).await;
+        kill_process_on_port(WHISPER_PORT, "whisper-server").await;
 
         {
             let mut status = self.status.lock().await;
@@ -247,39 +162,24 @@ impl WhisperServer {
             }
         });
 
-        // Health poll
+        // Health poll: drive the status from Starting → Ready (or Error
+        // on timeout). Bails out early if another path (e.g. an explicit
+        // stop()) moves the status away from Starting first.
         let status_for_health = Arc::clone(&self.status);
         tauri::async_runtime::spawn(async move {
-            let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(2))
-                .build()
-                .unwrap();
-
             let url = format!("http://127.0.0.1:{}/health", WHISPER_PORT);
-            let max_attempts =
-                (HEALTH_POLL_TIMEOUT.as_millis() / HEALTH_POLL_INTERVAL.as_millis()) as usize;
-
-            for _ in 0..max_attempts {
-                {
-                    let status = status_for_health.lock().await;
-                    if *status != WhisperStatus::Starting {
-                        return;
-                    }
-                }
-                sleep(HEALTH_POLL_INTERVAL).await;
-
-                if let Ok(resp) = client.get(&url).send().await {
-                    if resp.status().is_success() {
-                        info!("whisper-server health check passed");
-                        let mut status = status_for_health.lock().await;
-                        *status = WhisperStatus::Ready;
-                        return;
-                    }
-                }
-            }
-
+            let status_check = Arc::clone(&status_for_health);
+            let ok = poll_health(&url, "whisper-server", HEALTH_POLL_TIMEOUT, move || {
+                let s = Arc::clone(&status_check);
+                async move { *s.lock().await == WhisperStatus::Starting }
+            })
+            .await;
             let mut status = status_for_health.lock().await;
-            if *status == WhisperStatus::Starting {
+            if ok {
+                if *status == WhisperStatus::Starting {
+                    *status = WhisperStatus::Ready;
+                }
+            } else if *status == WhisperStatus::Starting {
                 error!("whisper-server health check timed out");
                 *status = WhisperStatus::Error("Health check timed out".to_string());
             }
@@ -316,10 +216,7 @@ impl WhisperServer {
         }
         drop(status);
 
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| format!("HTTP client error: {}", e))?;
+        let client = http_client(Duration::from_secs(30));
 
         let part = reqwest::multipart::Part::bytes(audio_data)
             .file_name("recording.wav")

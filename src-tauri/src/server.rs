@@ -8,11 +8,13 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
-use tokio::time::sleep;
 
-const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
+use crate::sidecar_utils::{
+    self, kill_process_on_port, ports, push_log, strip_ansi, wait_for_port_release, SidecarStatus,
+    LOG_RING_BUFFER_SIZE,
+};
+
 const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(60);
-const LOG_RING_BUFFER_SIZE: usize = 1000;
 
 // GPU error patterns that trigger CPU fallback
 const GPU_ERROR_PATTERNS: &[&str] = &[
@@ -26,14 +28,9 @@ const GPU_ERROR_PATTERNS: &[&str] = &[
     "out of memory",
 ];
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
-#[serde(tag = "type", content = "message")]
-pub enum ServerStatus {
-    Stopped,
-    Starting,
-    Ready,
-    Error(String),
-}
+/// Lifecycle state of the llama-server sidecar. Type alias onto
+/// `SidecarStatus` so all three sidecars share one wire shape.
+pub type ServerStatus = SidecarStatus;
 
 /// Surfaced to the UI when the CPU-fallback respawn succeeds. The banner
 /// in the chat header reads `reason` so the user can see *why* their
@@ -60,7 +57,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            port: 8765,
+            port: ports::LLAMA,
             ctx_size: 16384,
             n_gpu_layers: 99,
             flash_attn: true,
@@ -154,30 +151,6 @@ impl LlamaServer {
         }
     }
 
-    fn strip_ansi(s: &str) -> String {
-        let mut result = String::with_capacity(s.len());
-        let mut chars = s.chars();
-        while let Some(c) = chars.next() {
-            if c == '\x1b' {
-                for esc_c in chars.by_ref() {
-                    if esc_c.is_ascii_alphabetic() {
-                        break;
-                    }
-                }
-            } else {
-                result.push(c);
-            }
-        }
-        result
-    }
-
-    fn push_log(inner: &mut ServerInner, line: &str) {
-        if inner.log_buffer.len() >= LOG_RING_BUFFER_SIZE {
-            inner.log_buffer.pop_front();
-        }
-        inner.log_buffer.push_back(Self::strip_ansi(line));
-    }
-
     fn detect_gpu_error(line: &str) -> bool {
         let lower = line.to_lowercase();
         GPU_ERROR_PATTERNS
@@ -198,7 +171,7 @@ impl LlamaServer {
         let config = config.unwrap_or_default();
 
         // Kill any orphaned process on the port (e.g., from a previous hot-reload)
-        Self::kill_process_on_port(config.port).await;
+        kill_process_on_port(config.port, "llama-server").await;
 
         if !Path::new(model_path).exists() {
             let msg = format!("Model file not found: {}", model_path);
@@ -222,73 +195,6 @@ impl LlamaServer {
         let _ = app.emit("gpu-fallback-cleared", ());
 
         self.spawn_and_monitor(app, model_path).await
-    }
-
-    async fn kill_process_on_port(port: u16) {
-        if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
-            warn!(
-                "Port {} is occupied, attempting to kill the existing process",
-                port
-            );
-
-            #[cfg(unix)]
-            {
-                // Use lsof to find and kill the process
-                if let Ok(output) = std::process::Command::new("lsof")
-                    .args(["-t", "-i", &format!(":{}", port)])
-                    .output()
-                {
-                    let pids = String::from_utf8_lossy(&output.stdout);
-                    for pid_str in pids.trim().lines() {
-                        if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                            info!("Killing orphaned process {} on port {}", pid, port);
-                            unsafe {
-                                libc::kill(pid, libc::SIGTERM);
-                            }
-                        }
-                    }
-                }
-
-                // Wait for port to be released
-                for _ in 0..20 {
-                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
-                        return;
-                    }
-                    sleep(Duration::from_millis(100)).await;
-                }
-                warn!("Failed to free port {}", port);
-            }
-
-            #[cfg(windows)]
-            {
-                if let Ok(output) = std::process::Command::new("netstat")
-                    .args(["-ano"])
-                    .output()
-                {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    for line in stdout.lines() {
-                        if line.contains(&format!(":{}", port)) && line.contains("LISTENING") {
-                            if let Some(pid_str) = line.split_whitespace().last() {
-                                if let Ok(pid) = pid_str.parse::<u32>() {
-                                    info!("Killing process {} on port {}", pid, port);
-                                    let _ = std::process::Command::new("taskkill")
-                                        .args(["/F", "/PID", &pid.to_string()])
-                                        .output();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                for _ in 0..20 {
-                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
-                        return;
-                    }
-                    sleep(Duration::from_millis(100)).await;
-                }
-                warn!("Failed to free port {}", port);
-            }
-        }
     }
 
     fn get_library_paths(app: &AppHandle) -> Vec<String> {
@@ -430,13 +336,13 @@ impl LlamaServer {
                         let line_str = String::from_utf8_lossy(&line).to_string();
                         info!("llama-server: {}", line_str);
                         let mut state = inner.lock().await;
-                        Self::push_log(&mut state, &line_str);
+                        push_log(&mut state.log_buffer, &line_str);
                     }
                     CommandEvent::Stderr(line) => {
                         let line_str = String::from_utf8_lossy(&line).to_string();
                         warn!("llama-server stderr: {}", line_str);
                         let mut state = inner.lock().await;
-                        Self::push_log(&mut state, &format!("[stderr] {}", line_str));
+                        push_log(&mut state.log_buffer, &format!("[stderr] {}", line_str));
 
                         if Self::detect_gpu_error(&line_str) && !state.gpu_fallback_attempted {
                             warn!("GPU error detected, will attempt CPU fallback on exit");
@@ -448,7 +354,7 @@ impl LlamaServer {
                             // aborts, buffer alloc retries) that read worse
                             // out of context.
                             if state.gpu_error_reason.is_none() {
-                                let cleaned = Self::strip_ansi(&line_str).trim().to_string();
+                                let cleaned = strip_ansi(&line_str).trim().to_string();
                                 if !cleaned.is_empty() {
                                     state.gpu_error_reason = Some(cleaned);
                                 }
@@ -695,7 +601,7 @@ impl LlamaServer {
                     CommandEvent::Error(err) => {
                         error!("llama-server error: {}", err);
                         let mut state = inner.lock().await;
-                        Self::push_log(&mut state, &format!("[error] {}", err));
+                        push_log(&mut state.log_buffer, &format!("[error] {}", err));
                     }
                     _ => {}
                 }
@@ -709,43 +615,32 @@ impl LlamaServer {
                 let state = inner.lock().await;
                 state.config.port
             };
-
-            let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(2))
-                .build()
-                .unwrap();
-
             let url = format!("http://127.0.0.1:{}/health", port);
-            let max_attempts =
-                (HEALTH_POLL_TIMEOUT.as_millis() / HEALTH_POLL_INTERVAL.as_millis()) as usize;
 
-            for _ in 0..max_attempts {
-                {
-                    let state = inner.lock().await;
-                    if state.generation != generation || state.status != ServerStatus::Starting {
-                        return;
+            // keep_going: bail if this poller's generation is stale (a
+            // newer start() has taken over) or if the status has moved
+            // off Starting (e.g. an explicit stop or an early error).
+            let inner_for_keep = Arc::clone(&inner);
+            let ok =
+                sidecar_utils::poll_health(&url, "llama-server", HEALTH_POLL_TIMEOUT, move || {
+                    let s = Arc::clone(&inner_for_keep);
+                    async move {
+                        let state = s.lock().await;
+                        state.generation == generation && state.status == ServerStatus::Starting
                     }
-                }
+                })
+                .await;
 
-                sleep(HEALTH_POLL_INTERVAL).await;
-
-                match client.get(&url).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        info!("llama-server health check passed");
-                        let mut state = inner.lock().await;
-                        if state.status == ServerStatus::Starting {
-                            state.status = ServerStatus::Ready;
-                            let _ = app.emit("server-status-changed", &ServerStatus::Ready);
-                        }
-                        return;
-                    }
-                    _ => continue,
-                }
-            }
-
-            // Timed out
             let mut state = inner.lock().await;
-            if state.status == ServerStatus::Starting {
+            if state.generation != generation {
+                return; // stale poller; another start() has taken over
+            }
+            if ok {
+                if state.status == ServerStatus::Starting {
+                    state.status = ServerStatus::Ready;
+                    let _ = app.emit("server-status-changed", &ServerStatus::Ready);
+                }
+            } else if state.status == ServerStatus::Starting {
                 let msg = "Health check timed out after 60 seconds".to_string();
                 error!("{}", msg);
                 state.status = ServerStatus::Error(msg.clone());
@@ -768,14 +663,7 @@ impl LlamaServer {
             port
         };
 
-        // Wait for the port to be released
-        for _ in 0..20 {
-            if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
-                return Ok(()); // Port is free
-            }
-            sleep(Duration::from_millis(100)).await;
-        }
-        warn!("Port {} still in use after stop", port);
+        wait_for_port_release(port).await;
         Ok(())
     }
 
@@ -964,7 +852,7 @@ mod tests {
         };
 
         for i in 0..LOG_RING_BUFFER_SIZE + 100 {
-            LlamaServer::push_log(&mut inner, &format!("line {}", i));
+            push_log(&mut inner.log_buffer, &format!("line {}", i));
         }
 
         assert_eq!(inner.log_buffer.len(), LOG_RING_BUFFER_SIZE);

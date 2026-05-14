@@ -13,14 +13,18 @@
 	let downloading = $state(false);
 	let error = $state<string | null>(null);
 
-	type WhisperStatusResponse = 'Stopped' | 'Starting' | 'Ready' | { Error: string };
+	type WhisperStatusResponse =
+		| { type: 'Stopped' }
+		| { type: 'Starting' }
+		| { type: 'Ready' }
+		| { type: 'Error'; message: string };
 
 	function isReady(s: WhisperStatusResponse): boolean {
-		return s === 'Ready';
+		return s.type === 'Ready';
 	}
 
 	function isError(s: WhisperStatusResponse): boolean {
-		return typeof s === 'object' && 'Error' in s;
+		return s.type === 'Error';
 	}
 
 	async function ensureWhisperReady(): Promise<boolean> {

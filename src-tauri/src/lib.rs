@@ -12,6 +12,7 @@ mod sandbox_fetch;
 mod sandbox_save;
 mod sandbox_sync;
 mod server;
+mod sidecar_utils;
 mod tts;
 mod whisper;
 
