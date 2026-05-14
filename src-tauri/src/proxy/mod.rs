@@ -275,15 +275,13 @@ pub async fn proxy_fetch(
     Ok(content)
 }
 
-/// A single `<img>` reference discovered on a fetched web page. Width
-
 #[cfg(test)]
 mod tests {
     use super::bypass::{parse_bypass_list, should_bypass, BypassEntry};
     use super::extract::{extract_text, is_private_ip};
     use super::images::{extract_page_images, parse_commons_imageinfo};
     use super::paywall::detect_paywall_signal;
-    use super::search::{parse_brave_html, parse_ddg_html, parse_mojeek_html};
+    use super::search::{parse_brave_html, parse_ddg_html};
     use super::*;
 
     fn bypass(list: &str) -> Vec<BypassEntry> {

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { toolInvokeError } from './_helpers';
+import { labelArg, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 
@@ -104,7 +104,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
+	displayLabel: labelArg('path'),
 	async execute(args, ctx) {
 		return toolResult(await fsRead('fs_read_text', ctx.workingDir!, args.path as string));
 	}
@@ -130,7 +130,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
+	displayLabel: labelArg('path'),
 	async execute(args, ctx) {
 		return toolResult(await fsRead('fs_read_pdf', ctx.workingDir!, args.path as string));
 	}
@@ -157,7 +157,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
+	displayLabel: labelArg('path'),
 	async execute(args, ctx) {
 		if (ctx.pendingImages.length > 0) {
 			return toolResult(
@@ -204,7 +204,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
+	displayLabel: labelArg('path'),
 	async execute(args, ctx) {
 		return toolResult(await fsRead('fs_read_docx', ctx.workingDir!, args.path as string));
 	}
@@ -269,7 +269,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.path as string) || '',
+	displayLabel: labelArg('path'),
 	async execute(args, ctx) {
 		if (ctx.pendingImages.length >= MAX_PENDING_IMAGES) {
 			return toolResult(

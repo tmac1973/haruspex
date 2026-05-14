@@ -13,6 +13,15 @@ export default ts.config(
 				...globals.browser,
 				...globals.node
 			}
+		},
+		rules: {
+			complexity: ['warn', 15],
+			'max-depth': ['warn', 4],
+			'max-lines-per-function': [
+				'warn',
+				{ max: 80, skipBlankLines: true, skipComments: true }
+			],
+			'max-lines': ['warn', { max: 400, skipBlankLines: true, skipComments: true }]
 		}
 	},
 	{
@@ -29,6 +38,22 @@ export default ts.config(
 			'svelte/no-at-html-tags': 'off',
 			// We use simple goto() navigation without the resolve pattern
 			'svelte/no-navigation-without-resolve': 'off'
+		}
+	},
+	{
+		// Svelte component files combine script + markup + style; the
+		// `max-lines` threshold targeted at TS modules doesn't translate.
+		files: ['**/*.svelte'],
+		rules: {
+			'max-lines': 'off'
+		}
+	},
+	{
+		// Test files: `describe`/`it` callbacks are naturally long and the
+		// length-per-function rule isn't a useful signal there.
+		files: ['**/*.test.ts', '**/*.test.js'],
+		rules: {
+			'max-lines-per-function': 'off'
 		}
 	},
 	{

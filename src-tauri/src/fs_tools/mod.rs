@@ -17,32 +17,17 @@ pub use pdf_read::init_pdfium;
 #[cfg(test)]
 mod tests {
     use super::docx::build_docx;
-    use super::images::{
-        extract_markdown_image_paths, image_pixel_dimensions, load_markdown_images, px_to_emu,
-        LoadedImage, MAX_DOC_IMAGE_WIDTH_EMU,
-    };
+    use super::images::LoadedImage;
     use super::markdown_inline::{
-        ascii_fold_for_pdf, escape_xml, format_table_as_monoblock, is_horizontal_rule,
-        is_table_separator, normalize_list_marker, pad_right, parse_heading, parse_inline_markdown,
-        parse_standalone_image_line, preprocess_lines, runs_to_words, strip_inline_markdown,
-        wrap_styled_words, wrap_to_width, DocumentBlock, ImageAlignment, ImageOptions, InlineRun,
+        ascii_fold_for_pdf, format_table_as_monoblock, is_horizontal_rule, is_table_separator,
+        normalize_list_marker, pad_right, parse_inline_markdown, parse_standalone_image_line,
+        preprocess_lines, strip_inline_markdown, wrap_to_width, DocumentBlock, ImageAlignment,
+        ImageOptions,
     };
     use super::odp::build_odp;
     use super::odt::build_odt;
-    use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
     use super::pdf_write::build_pdf;
     use super::pptx::{build_pptx, PptxBullet, PptxLayout, PptxSlide};
-    use super::xlsx::XlsxSheet;
-    use super::*;
-    use std::fs;
-    use std::path::PathBuf;
-
-    fn make_temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_fs_test_{}", name));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
 
     #[test]
     fn parse_inline_markdown_bold_italic() {

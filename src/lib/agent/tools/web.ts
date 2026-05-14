@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { type ChatMessage } from '$lib/api';
 import { detectPaywall } from '$lib/agent/paywall';
 import { getSettings } from '$lib/stores/settings';
-import { proxyFetch, runSubAgent, toolInvokeError } from './_helpers';
+import { labelArg, proxyFetch, runSubAgent, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolResult } from './types';
 
@@ -60,7 +60,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.query as string) || '',
+	displayLabel: labelArg('query'),
 	async execute(args, ctx) {
 		const query = args.query as string;
 		try {
@@ -98,7 +98,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.url as string) || '',
+	displayLabel: labelArg('url'),
 	async execute(args) {
 		const url = args.url as string;
 		try {
@@ -221,7 +221,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.query as string) || '',
+	displayLabel: labelArg('query'),
 	async execute(args) {
 		const query = args.query as string;
 		const maxResults = args.max_results as number | undefined;
@@ -266,7 +266,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.url as string) || '',
+	displayLabel: labelArg('url'),
 	async execute(args) {
 		const url = args.url as string;
 		try {
