@@ -1,0 +1,389 @@
+//! Spreadsheet read/write: XLSX (via rust_xlsxwriter) and ODS (hand-rolled
+//! ODF zip). Both formats share the `XlsxSheet` wire shape — a name plus a
+//! 2D Vec<Vec<String>> — because the Tauri command surface treats them as
+//! interchangeable except for the output format.
+
+use super::markdown_inline::escape_xml;
+use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
+use tokio::fs;
+
+const MAX_XLSX_READ_BYTES: u64 = 50 * 1_048_576; // 50 MB, same as PDF
+
+#[derive(serde::Deserialize)]
+pub struct XlsxSheet {
+    pub name: String,
+    pub rows: Vec<Vec<String>>,
+}
+
+/// Build a minimal OpenDocument Spreadsheet (.ods) file from a slice of
+/// sheets. Each `XlsxSheet` becomes a `<table:table>` with rows and cells.
+/// Numeric strings are emitted as `office:value-type="float"` (same
+/// number-vs-text detection as the xlsx writer); everything else is a
+/// `string` cell. Same ODF first-entry-stored-mimetype requirement as
+/// `build_odt`.
+pub(super) fn build_ods(sheets: &[XlsxSheet]) -> Result<Vec<u8>, String> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+
+    let mut buf = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let stored =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let deflated =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+        zip.start_file("mimetype", stored)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(b"application/vnd.oasis.opendocument.spreadsheet")
+            .map_err(|e| e.to_string())?;
+
+        zip.start_file("META-INF/manifest.xml", deflated)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
+<manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>
+<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+<manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
+<manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
+</manifest:manifest>"#,
+        )
+        .map_err(|e| e.to_string())?;
+
+        zip.start_file("meta.xml", deflated)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" office:version="1.2">
+<office:meta><meta:generator>Haruspex</meta:generator></office:meta>
+</office:document-meta>"#,
+        )
+        .map_err(|e| e.to_string())?;
+
+        zip.start_file("styles.xml", deflated)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" office:version="1.2">
+<office:styles/>
+</office:document-styles>"#,
+        )
+        .map_err(|e| e.to_string())?;
+
+        let mut body_xml = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" office:version="1.2">
+<office:body><office:spreadsheet>"#,
+        );
+        for sheet in sheets {
+            let num_cols = sheet.rows.iter().map(|r| r.len()).max().unwrap_or(0).max(1);
+            body_xml.push_str(&format!(
+                r#"<table:table table:name="{}"><table:table-column table:number-columns-repeated="{}"/>"#,
+                escape_xml(&sheet.name),
+                num_cols
+            ));
+            for row in &sheet.rows {
+                body_xml.push_str("<table:table-row>");
+                for cell in row {
+                    if let Ok(n) = cell.parse::<f64>() {
+                        body_xml.push_str(&format!(
+                            r#"<table:table-cell office:value-type="float" office:value="{}"><text:p>{}</text:p></table:table-cell>"#,
+                            n,
+                            escape_xml(cell)
+                        ));
+                    } else {
+                        body_xml.push_str(&format!(
+                            r#"<table:table-cell office:value-type="string"><text:p>{}</text:p></table:table-cell>"#,
+                            escape_xml(cell)
+                        ));
+                    }
+                }
+                body_xml.push_str("</table:table-row>");
+            }
+            body_xml.push_str("</table:table>");
+        }
+        body_xml.push_str("</office:spreadsheet></office:body></office:document-content>");
+
+        zip.start_file("content.xml", deflated)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(body_xml.as_bytes())
+            .map_err(|e| e.to_string())?;
+
+        zip.finish().map_err(|e| e.to_string())?;
+    }
+
+    Ok(buf)
+}
+
+#[tauri::command]
+pub async fn fs_write_xlsx(
+    workdir: String,
+    rel_path: String,
+    sheets: Vec<XlsxSheet>,
+    overwrite: Option<bool>,
+) -> Result<(), String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if sheets.is_empty() {
+        return Err("At least one sheet is required".to_string());
+    }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
+
+    let resolved_str = resolved.to_string_lossy().to_string();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        use rust_xlsxwriter::Workbook;
+
+        let mut workbook = Workbook::new();
+        for sheet_data in &sheets {
+            let worksheet = workbook.add_worksheet();
+            worksheet
+                .set_name(&sheet_data.name)
+                .map_err(|e| format!("Failed to set sheet name: {}", e))?;
+            for (row_idx, row) in sheet_data.rows.iter().enumerate() {
+                for (col_idx, cell) in row.iter().enumerate() {
+                    if let Ok(n) = cell.parse::<f64>() {
+                        worksheet
+                            .write_number(row_idx as u32, col_idx as u16, n)
+                            .map_err(|e| format!("Failed to write cell: {}", e))?;
+                    } else {
+                        worksheet
+                            .write_string(row_idx as u32, col_idx as u16, cell)
+                            .map_err(|e| format!("Failed to write cell: {}", e))?;
+                    }
+                }
+            }
+        }
+        workbook
+            .save(&resolved_str)
+            .map_err(|e| format!("Failed to save xlsx: {}", e))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("xlsx write task failed: {}", e))??;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fs_write_ods(
+    workdir: String,
+    rel_path: String,
+    sheets: Vec<XlsxSheet>,
+    overwrite: Option<bool>,
+) -> Result<(), String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if sheets.is_empty() {
+        return Err("At least one sheet is required".to_string());
+    }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
+
+    let bytes =
+        tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> { build_ods(&sheets) })
+            .await
+            .map_err(|e| format!("ods build task failed: {}", e))??;
+
+    if let Some(parent) = resolved.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
+        }
+    }
+
+    fs::write(&resolved, bytes)
+        .await
+        .map_err(|e| format!("Failed to write ods: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fs_read_xlsx(
+    workdir: String,
+    rel_path: String,
+    sheet: Option<String>,
+) -> Result<String, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    let metadata = fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_XLSX_READ_BYTES {
+        return Err(format!(
+            "xlsx too large ({} bytes). Maximum is {} bytes.",
+            metadata.len(),
+            MAX_XLSX_READ_BYTES
+        ));
+    }
+
+    let resolved_clone = resolved.clone();
+    let sheet_name = sheet.clone();
+    let csv = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        use calamine::{open_workbook_auto, Data, Reader};
+
+        let mut workbook = open_workbook_auto(&resolved_clone)
+            .map_err(|e| format!("Failed to open xlsx: {}", e))?;
+
+        let sheet_names = workbook.sheet_names().to_vec();
+        if sheet_names.is_empty() {
+            return Err("xlsx has no sheets".to_string());
+        }
+
+        let target_sheet = match sheet_name {
+            Some(name) => {
+                if !sheet_names.iter().any(|s| s == &name) {
+                    return Err(format!(
+                        "Sheet '{}' not found. Available sheets: {}",
+                        name,
+                        sheet_names.join(", ")
+                    ));
+                }
+                name
+            }
+            None => sheet_names[0].clone(),
+        };
+
+        let range = workbook
+            .worksheet_range(&target_sheet)
+            .map_err(|e| format!("Failed to read sheet '{}': {}", target_sheet, e))?;
+
+        let mut out = String::new();
+        if sheet_names.len() > 1 {
+            out.push_str(&format!("# Sheet: {}\n", target_sheet));
+            out.push_str(&format!(
+                "# Available sheets: {}\n\n",
+                sheet_names.join(", ")
+            ));
+        }
+
+        for row in range.rows() {
+            let row_text: Vec<String> = row
+                .iter()
+                .map(|cell| match cell {
+                    Data::Empty => String::new(),
+                    Data::String(s) => {
+                        if s.contains(',') || s.contains('"') || s.contains('\n') {
+                            format!("\"{}\"", s.replace('"', "\"\""))
+                        } else {
+                            s.clone()
+                        }
+                    }
+                    Data::Float(f) => f.to_string(),
+                    Data::Int(i) => i.to_string(),
+                    Data::Bool(b) => b.to_string(),
+                    Data::DateTime(dt) => dt.to_string(),
+                    Data::DateTimeIso(s) => s.clone(),
+                    Data::DurationIso(s) => s.clone(),
+                    Data::Error(e) => format!("#ERR:{:?}", e),
+                })
+                .collect();
+            out.push_str(&row_text.join(","));
+            out.push('\n');
+        }
+
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("xlsx extraction task failed: {}", e))??;
+
+    const MAX_XLSX_CHARS: usize = 500_000;
+    if csv.len() > MAX_XLSX_CHARS {
+        return Ok(format!(
+            "{}\n\n[... truncated: {} characters total, showing first {}]",
+            &csv[..MAX_XLSX_CHARS],
+            csv.len(),
+            MAX_XLSX_CHARS
+        ));
+    }
+
+    Ok(csv)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    fn assert_odf_mimetype(bytes: &[u8], expected_mime: &str) {
+        let cursor = std::io::Cursor::new(bytes);
+        let mut zip = zip::ZipArchive::new(cursor).expect("valid zip");
+        let mut first = zip.by_index(0).expect("at least one entry");
+        assert_eq!(first.name(), "mimetype", "first entry must be mimetype");
+        assert_eq!(
+            first.compression(),
+            zip::CompressionMethod::Stored,
+            "mimetype must be stored uncompressed"
+        );
+        let mut content = String::new();
+        first.read_to_string(&mut content).unwrap();
+        assert_eq!(content, expected_mime);
+    }
+
+    fn read_zip_entry(bytes: &[u8], name: &str) -> String {
+        let cursor = std::io::Cursor::new(bytes);
+        let mut zip = zip::ZipArchive::new(cursor).expect("valid zip");
+        let mut entry = zip
+            .by_name(name)
+            .unwrap_or_else(|_| panic!("{} missing", name));
+        let mut content = String::new();
+        entry.read_to_string(&mut content).unwrap();
+        content
+    }
+
+    #[test]
+    fn build_ods_produces_valid_odf_zip() {
+        let sheets = vec![XlsxSheet {
+            name: "Report".to_string(),
+            rows: vec![
+                vec!["Name".to_string(), "Count".to_string()],
+                vec!["alpha".to_string(), "42".to_string()],
+                vec!["beta".to_string(), "3.14".to_string()],
+            ],
+        }];
+        let bytes = build_ods(&sheets).unwrap();
+        assert_odf_mimetype(&bytes, "application/vnd.oasis.opendocument.spreadsheet");
+
+        let content = read_zip_entry(&bytes, "content.xml");
+        assert!(content.contains(r#"table:name="Report""#));
+        assert!(content.contains(r#"office:value-type="float""#));
+        assert!(content.contains(r#"office:value="42""#));
+        assert!(content.contains(r#"office:value="3.14""#));
+        assert!(content.contains(r#"office:value-type="string""#));
+        assert!(content.contains("<text:p>Name</text:p>"));
+        assert!(content.contains("<text:p>alpha</text:p>"));
+    }
+
+    #[test]
+    fn build_ods_handles_multiple_sheets_and_ragged_rows() {
+        let sheets = vec![
+            XlsxSheet {
+                name: "A".to_string(),
+                rows: vec![
+                    vec!["x".to_string(), "y".to_string(), "z".to_string()],
+                    vec!["1".to_string(), "2".to_string()],
+                ],
+            },
+            XlsxSheet {
+                name: "B".to_string(),
+                rows: vec![vec!["only".to_string()]],
+            },
+        ];
+        let bytes = build_ods(&sheets).unwrap();
+        let content = read_zip_entry(&bytes, "content.xml");
+        assert!(content.contains(r#"table:name="A""#));
+        assert!(content.contains(r#"table:name="B""#));
+        assert!(content.contains(r#"table:number-columns-repeated="3""#));
+        assert!(content.contains(r#"table:number-columns-repeated="1""#));
+    }
+}

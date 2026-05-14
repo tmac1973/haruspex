@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ChatMessage } from '$lib/api';
+import { logDebug } from '$lib/debug-log';
 
 interface DbMessage {
 	role: string;
@@ -74,7 +75,11 @@ export async function initDb(): Promise<{
 		const summaries = await invoke<DbConversationSummary[]>('db_list_conversations');
 		available = true;
 		return { available: true, summaries };
-	} catch {
+	} catch (e) {
+		// DB unavailable is non-fatal — the app falls back to in-memory
+		// state. Still log so a corrupt DB or schema-mismatch isn't
+		// totally invisible.
+		logDebug('db', 'initDb failed', { error: String(e) });
 		available = false;
 		return { available: false, summaries: [] };
 	}
@@ -90,8 +95,8 @@ export async function dbSaveMessage(conversationId: string, msg: ChatMessage): P
 			toolCalls: msg.tool_calls ? JSON.stringify(msg.tool_calls) : null,
 			toolCallId: msg.tool_call_id || null
 		});
-	} catch {
-		// DB write failure is non-fatal
+	} catch (e) {
+		logDebug('db', 'dbSaveMessage failed', { conversationId, error: String(e) });
 	}
 }
 
@@ -99,8 +104,8 @@ export async function dbCreateConversation(id: string, title: string): Promise<v
 	if (!available) return;
 	try {
 		await invoke('db_create_conversation', { id, title });
-	} catch {
-		// non-fatal
+	} catch (e) {
+		logDebug('db', 'dbCreateConversation failed', { id, error: String(e) });
 	}
 }
 
@@ -108,8 +113,8 @@ export async function dbRenameConversation(id: string, title: string): Promise<v
 	if (!available) return;
 	try {
 		await invoke('db_rename_conversation', { id, title });
-	} catch {
-		// non-fatal
+	} catch (e) {
+		logDebug('db', 'dbRenameConversation failed', { id, error: String(e) });
 	}
 }
 
@@ -117,8 +122,8 @@ export async function dbDeleteConversation(id: string): Promise<void> {
 	if (!available) return;
 	try {
 		await invoke('db_delete_conversation', { id });
-	} catch {
-		// non-fatal
+	} catch (e) {
+		logDebug('db', 'dbDeleteConversation failed', { id, error: String(e) });
 	}
 }
 
@@ -126,8 +131,8 @@ export async function dbClearAll(): Promise<void> {
 	if (!available) return;
 	try {
 		await invoke('db_clear_all_conversations');
-	} catch {
-		// non-fatal
+	} catch (e) {
+		logDebug('db', 'dbClearAll failed', { error: String(e) });
 	}
 }
 
@@ -136,7 +141,8 @@ export async function dbLoadMessages(id: string): Promise<ChatMessage[]> {
 	try {
 		const full = await invoke<DbConversation>('db_get_conversation', { id });
 		return full.messages.map(dbMessageToChatMessage);
-	} catch {
+	} catch (e) {
+		logDebug('db', 'dbLoadMessages failed', { id, error: String(e) });
 		return [];
 	}
 }
@@ -156,7 +162,7 @@ export async function dbReplaceMessages(
 				tool_call_id: m.tool_call_id || null
 			}))
 		});
-	} catch {
-		// non-fatal
+	} catch (e) {
+		logDebug('db', 'dbReplaceMessages failed', { conversationId, error: String(e) });
 	}
 }

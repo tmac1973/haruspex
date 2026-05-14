@@ -1,9 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import { chatCompletion, type ChatMessage } from '$lib/api';
+import { type ChatMessage } from '$lib/api';
 import { detectPaywall } from '$lib/agent/paywall';
-import { getSettings, getSamplingParams, getChatTemplateKwargs } from '$lib/stores/settings';
+import { getSettings } from '$lib/stores/settings';
+import { labelArg, proxyFetch, runSubAgent, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
+import { toolResult } from './types';
 
 const RESEARCH_AGENT_MAX_TOKENS = 3072;
 
@@ -59,7 +60,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.query as string) || '',
+	displayLabel: labelArg('query'),
 	async execute(args, ctx) {
 		const query = args.query as string;
 		try {
@@ -75,7 +76,7 @@ registerTool({
 			});
 			return toolResult(JSON.stringify(results));
 		} catch (e) {
-			return toolResult(toolError(`Search failed: ${e}`));
+			return toolResult(toolInvokeError('web_search', e));
 		}
 	}
 });
@@ -97,15 +98,11 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.url as string) || '',
+	displayLabel: labelArg('url'),
 	async execute(args) {
 		const url = args.url as string;
 		try {
-			const content = await invoke<string>('proxy_fetch', {
-				url,
-				caller: 'fetch_url',
-				proxy: getSettings().proxy
-			});
+			const content = await proxyFetch(url, 'fetch_url');
 			const paywall = detectPaywall(url, content);
 			if (paywall.paywalled) {
 				return toolResult(paywallErrorMessage(url, paywall.reason || 'page is paywalled'));
@@ -150,11 +147,7 @@ registerTool({
 
 		let pageContent: string;
 		try {
-			pageContent = await invoke<string>('proxy_fetch', {
-				url,
-				caller: 'research_url',
-				proxy: getSettings().proxy
-			});
+			pageContent = await proxyFetch(url, 'research_url');
 		} catch (e) {
 			return toolResult(`Failed to fetch URL: ${e}`);
 		}
@@ -189,27 +182,14 @@ registerTool({
 		];
 
 		try {
-			const sampling = getSamplingParams();
-			const response = await chatCompletion(
-				{
-					messages,
-					temperature: sampling.temperature,
-					top_p: sampling.top_p,
-					top_k: sampling.top_k,
-					presence_penalty: sampling.presence_penalty,
-					max_tokens: RESEARCH_AGENT_MAX_TOKENS,
-					chat_template_kwargs: getChatTemplateKwargs()
-				},
-				ctx.signal
-			);
-			const findings = response.content?.trim();
+			const findings = await runSubAgent(messages, RESEARCH_AGENT_MAX_TOKENS, ctx.signal);
 			if (!findings) {
 				return toolResult(`Sub-agent returned no findings for ${url}.`);
 			}
 			return toolResult(`Source: ${url}\nFocus: ${focus}\n\n${findings}`);
 		} catch (e) {
 			if (e instanceof DOMException && e.name === 'AbortError') throw e;
-			return toolResult(`Research sub-agent failed for ${url}: ${e}`);
+			return toolResult(toolInvokeError(`research_url sub-agent for ${url}`, e));
 		}
 	}
 });
@@ -241,7 +221,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.query as string) || '',
+	displayLabel: labelArg('query'),
 	async execute(args) {
 		const query = args.query as string;
 		const maxResults = args.max_results as number | undefined;
@@ -261,7 +241,7 @@ registerTool({
 			}
 			return toolResult(JSON.stringify({ results }));
 		} catch (e) {
-			return toolResult(toolError(`image_search failed: ${e}`));
+			return toolResult(toolInvokeError('image_search', e));
 		}
 	}
 });
@@ -286,7 +266,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => (args.url as string) || '',
+	displayLabel: labelArg('url'),
 	async execute(args) {
 		const url = args.url as string;
 		try {
@@ -304,7 +284,7 @@ registerTool({
 			}
 			return toolResult(JSON.stringify({ images }));
 		} catch (e) {
-			return toolResult(toolError(`fetch_url_images failed: ${e}`));
+			return toolResult(toolInvokeError('fetch_url_images', e));
 		}
 	}
 });

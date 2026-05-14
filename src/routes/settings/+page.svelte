@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import { listen } from '@tauri-apps/api/event';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import {
@@ -15,7 +14,6 @@
 		updateSettings,
 		updateInferenceBackend,
 		updateProxy,
-		setEmailAccounts,
 		applyTheme,
 		getActiveContextSize,
 		setActiveLocalModel,
@@ -25,38 +23,14 @@
 		type AppSettings,
 		type InferenceBackendConfig,
 		type InferenceMode,
-		type EmailAccount,
-		type EmailProviderId,
-		type EmailTlsMode,
 		type ProxyMode
 	} from '$lib/stores/settings';
 	import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
-	import EmailAccountForm from '$lib/components/EmailAccountForm.svelte';
+	import EmailSection from '$lib/components/settings/EmailSection.svelte';
+	import ModelsSection from '$lib/components/settings/ModelsSection.svelte';
 	import { clearDebugLogs } from '$lib/debug-log';
 
-	interface ModelInfo {
-		id: string;
-		filename: string;
-		url: string;
-		size_bytes: number;
-		description: string;
-		downloaded: boolean;
-	}
-
-	interface DownloadProgress {
-		downloaded: number;
-		total: number;
-		speed_bps: number;
-		stage: string;
-	}
-
-	let models = $state<ModelInfo[]>([]);
-	let activeModelPath = $state<string | null>(null);
-	let downloading = $state<string | null>(null);
-	let downloadProgress = $state<DownloadProgress | null>(null);
-	let downloadError = $state<string | null>(null);
-	let modelsDir = $state('');
 	const serverState = $derived(getServerState());
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);
@@ -143,74 +117,6 @@
 		if (next.mode === 'remote') {
 			enterRemoteMode(next.remoteBaseUrl, next.remoteModelId);
 		}
-	}
-
-	// --- Email integration state ---
-	interface EmailProviderPreset {
-		id: string;
-		label: string;
-		imap_host: string;
-		imap_port: number;
-		imap_tls: EmailTlsMode;
-		smtp_host: string;
-		smtp_port: number;
-		smtp_tls: EmailTlsMode;
-		app_password_url: string;
-		requires_2fa: boolean;
-	}
-
-	let emailAccounts = $state<EmailAccount[]>(
-		structuredClone(getSettings().integrations.email.accounts)
-	);
-	let emailPresets = $state<EmailProviderPreset[]>([]);
-
-	async function loadEmailPresets() {
-		try {
-			emailPresets = await invoke<EmailProviderPreset[]>('email_list_providers');
-		} catch (e) {
-			console.error('email_list_providers failed:', e);
-		}
-	}
-
-	function newBlankAccount(): EmailAccount {
-		// Generate a stable id using the browser's crypto.randomUUID()
-		// when available, falling back to a timestamp-plus-random pair
-		// for older environments that tauri-webview might present.
-		const id =
-			typeof crypto !== 'undefined' && 'randomUUID' in crypto
-				? crypto.randomUUID()
-				: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-		const preset = emailPresets.find((p) => p.id === 'gmail');
-		return {
-			id,
-			label: 'New account',
-			enabled: false,
-			sendEnabled: false,
-			provider: 'gmail' as EmailProviderId,
-			emailAddress: '',
-			password: '',
-			imapHost: preset?.imap_host ?? 'imap.gmail.com',
-			imapPort: preset?.imap_port ?? 993,
-			imapTls: preset?.imap_tls ?? 'implicit',
-			smtpHost: preset?.smtp_host ?? 'smtp.gmail.com',
-			smtpPort: preset?.smtp_port ?? 465,
-			smtpTls: preset?.smtp_tls ?? 'implicit'
-		};
-	}
-
-	function addEmailAccount() {
-		emailAccounts = [...emailAccounts, newBlankAccount()];
-		setEmailAccounts(emailAccounts);
-	}
-
-	function updateEmailAccount(id: string, next: EmailAccount) {
-		emailAccounts = emailAccounts.map((a) => (a.id === id ? next : a));
-		setEmailAccounts(emailAccounts);
-	}
-
-	function deleteEmailAccount(id: string) {
-		emailAccounts = emailAccounts.filter((a) => a.id !== id);
-		setEmailAccounts(emailAccounts);
 	}
 
 	function setTtsVoice(voice: string) {
@@ -347,75 +253,10 @@
 		updateSettings({ audioInputDevice: device === 'System Default' ? '' : device });
 	}
 
-	onMount(async () => {
-		await refreshModels();
-		modelsDir = await invoke<string>('get_models_dir');
+	onMount(() => {
 		refreshOutputDevices();
 		refreshInputDevices();
-		await loadEmailPresets();
 	});
-
-	async function refreshModels() {
-		models = await invoke<ModelInfo[]>('list_models');
-		activeModelPath = await invoke<string | null>('get_active_model_path');
-	}
-
-	function formatBytes(bytes: number): string {
-		if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(0)} MB`;
-		return `${(bytes / 1073741824).toFixed(1)} GB`;
-	}
-
-	function formatSpeed(bps: number): string {
-		if (bps < 1048576) return `${(bps / 1024).toFixed(0)} KB/s`;
-		return `${(bps / 1048576).toFixed(1)} MB/s`;
-	}
-
-	function activeModelFilename(): string | null {
-		if (!activeModelPath) return null;
-		return activeModelPath.split('/').pop() || null;
-	}
-
-	async function downloadModel(modelId: string) {
-		downloading = modelId;
-		downloadProgress = { downloaded: 0, total: 0, speed_bps: 0, stage: 'Starting...' };
-		downloadError = null;
-
-		const unlisten = await listen<DownloadProgress>('download-progress', (event) => {
-			downloadProgress = event.payload;
-		});
-
-		try {
-			const modelPath = await invoke<string>('download_model', { modelId });
-			unlisten();
-			downloading = null;
-			downloadProgress = null;
-			await refreshModels();
-			// Auto-start server with the newly downloaded model
-			await switchModel(modelPath.split('/').pop()!);
-		} catch (e) {
-			unlisten();
-			downloading = null;
-			downloadProgress = null;
-			downloadError = String(e);
-		}
-	}
-
-	async function removeModel(filename: string) {
-		const isActive = activeModelFilename() === filename;
-		if (isActive) {
-			await stopServer();
-		}
-		await invoke('delete_model', { filename });
-		await refreshModels();
-	}
-
-	async function switchModel(filename: string) {
-		const path = `${modelsDir}/${filename}`;
-		setActiveLocalModel(path);
-		await stopServer();
-		await startServer(path, getSettings().contextSize);
-		activeModelPath = path;
-	}
 
 	async function restartServer() {
 		const modelPath = await invoke<string | null>('get_active_model_path');
@@ -426,12 +267,6 @@
 			// Re-initialize TTS alongside
 			invoke('tts_initialize').catch(() => {});
 		}
-	}
-
-	async function cancelDownload() {
-		await invoke('cancel_download');
-		downloading = null;
-		downloadProgress = null;
 	}
 </script>
 
@@ -485,75 +320,7 @@
 	</section>
 
 	{#if !remoteMode}
-		<section>
-			<h2>Models</h2>
-			<p class="hint">Models are stored in: <code>{modelsDir}</code></p>
-
-			<div class="model-list">
-				{#each models as model (model.id)}
-					<div class="model-card" class:active={activeModelFilename() === model.filename}>
-						<div class="model-info">
-							<div class="model-name">
-								{model.id}
-								{#if activeModelFilename() === model.filename}
-									<span class="active-badge">active</span>
-								{/if}
-							</div>
-							<div class="model-desc">{model.description}</div>
-							<div class="model-size">{formatBytes(model.size_bytes)}</div>
-						</div>
-						<div class="model-actions">
-							{#if model.downloaded}
-								{#if activeModelFilename() !== model.filename}
-									<button class="btn btn-primary" onclick={() => switchModel(model.filename)}>
-										Use
-									</button>
-								{/if}
-								<button
-									class="btn btn-danger"
-									onclick={() => removeModel(model.filename)}
-									title="Delete model file"
-								>
-									Delete
-								</button>
-							{:else if downloading === model.id}
-								{#if downloadProgress}
-									<div class="download-inline">
-										<div class="progress-mini">
-											<div
-												class="progress-fill"
-												style="width: {downloadProgress.total > 0
-													? (downloadProgress.downloaded / downloadProgress.total) * 100
-													: 0}%"
-											></div>
-										</div>
-										<span class="progress-text">
-											{formatBytes(downloadProgress.downloaded)} / {formatBytes(
-												downloadProgress.total
-											)}
-											&middot; {formatSpeed(downloadProgress.speed_bps)}
-										</span>
-										<button class="btn btn-small" onclick={cancelDownload}>Cancel</button>
-									</div>
-								{/if}
-							{:else}
-								<button
-									class="btn btn-primary"
-									onclick={() => downloadModel(model.id)}
-									disabled={downloading !== null}
-								>
-									Download
-								</button>
-							{/if}
-						</div>
-					</div>
-				{/each}
-			</div>
-
-			{#if downloadError}
-				<div class="error-box">{downloadError}</div>
-			{/if}
-		</section>
+		<ModelsSection />
 	{/if}
 
 	<section>
@@ -943,36 +710,7 @@
 		{/if}
 	</section>
 
-	<section>
-		<h2>Integrations</h2>
-		<p class="section-help">
-			Optional connections to outside services. Disabled by default. Email tools become available to
-			the model as soon as at least one account is enabled.
-		</p>
-
-		<h3 class="subhead">Email (read-only)</h3>
-		<p class="section-help small">
-			Multi-provider IMAP access for reading recent email and summarizing it. Supports Gmail,
-			Fastmail, iCloud, Yahoo, and any IMAP host you can reach. Every preset requires 2FA to be
-			enabled on the provider and an app password (not your login password). Sending email arrives
-			in a later phase.
-		</p>
-
-		{#if emailAccounts.length === 0}
-			<p class="section-help small">No email accounts configured.</p>
-		{/if}
-
-		{#each emailAccounts as account (account.id)}
-			<EmailAccountForm
-				{account}
-				presets={emailPresets}
-				onChange={(next) => updateEmailAccount(account.id, next)}
-				onDelete={() => deleteEmailAccount(account.id)}
-			/>
-		{/each}
-
-		<button class="btn" onclick={addEmailAccount}>Add email account</button>
-	</section>
+	<EmailSection />
 
 	<section>
 		<h2>Debug</h2>
@@ -1051,19 +789,10 @@
 		padding-bottom: 64px;
 	}
 
-	.subhead {
-		margin: 16px 0 4px;
-		font-size: 1rem;
-	}
-
 	.section-help {
 		color: var(--text-secondary, var(--text-muted));
 		font-size: 0.9rem;
 		margin: 0 0 12px;
-	}
-
-	.section-help.small {
-		font-size: 0.85rem;
 	}
 
 	.back-btn {
@@ -1119,50 +848,6 @@
 		text-decoration: underline;
 	}
 
-	.model-list {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.model-card {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 12px 16px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		background: var(--bg-primary);
-		gap: 12px;
-	}
-
-	.model-card.active {
-		border-color: var(--accent);
-	}
-
-	.model-info {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.model-name {
-		font-weight: 600;
-		font-size: 0.9rem;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.active-badge {
-		font-size: 0.65rem;
-		font-weight: 500;
-		padding: 1px 6px;
-		border-radius: 4px;
-		background: var(--accent);
-		color: white;
-		text-transform: uppercase;
-	}
-
 	.experimental-badge {
 		font-size: 0.65rem;
 		font-weight: 500;
@@ -1174,25 +859,6 @@
 		text-transform: uppercase;
 		vertical-align: middle;
 		margin-left: 6px;
-	}
-
-	.model-desc {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
-	.model-size {
-		font-size: 0.75rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
-	.model-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		flex-shrink: 0;
 	}
 
 	.btn {
@@ -1232,42 +898,6 @@
 	.btn-small {
 		padding: 3px 10px;
 		font-size: 0.75rem;
-	}
-
-	.download-inline {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-size: 0.75rem;
-		color: var(--text-secondary);
-	}
-
-	.progress-mini {
-		width: 80px;
-		height: 4px;
-		background: var(--bg-secondary);
-		border-radius: 2px;
-		overflow: hidden;
-	}
-
-	.progress-fill {
-		height: 100%;
-		background: var(--accent);
-		transition: width 0.3s ease;
-	}
-
-	.progress-text {
-		white-space: nowrap;
-	}
-
-	.error-box {
-		margin-top: 12px;
-		padding: 10px 14px;
-		background: var(--error-bg);
-		color: var(--error-text);
-		border: 1px solid var(--error-border);
-		border-radius: 6px;
-		font-size: 0.85rem;
 	}
 
 	.search-provider {

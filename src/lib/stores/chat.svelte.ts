@@ -496,29 +496,59 @@ function isFetchFailure(result: string | undefined): boolean {
 	);
 }
 
-export async function sendMessage(content: string): Promise<void> {
-	if (!content.trim() || isGenerating || isCompacting) return;
+/**
+ * Bookkeeping for a single in-flight turn. Held in a stable object so
+ * the runAgentLoop callback bundle can mutate it and `commitMessage`
+ * can read it back when building the persisted assistant message.
+ */
+interface TurnStats {
+	lastCallStats: { durationMs: number; completionTokens: number } | null;
+}
 
-	if (!activeConversationId) {
-		createConversation();
-	}
+function computeStats(stats: TurnStats): MessageStats | null {
+	const s = stats.lastCallStats;
+	if (!s || s.completionTokens <= 0 || s.durationMs <= 0) return null;
+	return {
+		tokensPerSecond: s.completionTokens / (s.durationMs / 1000),
+		completionTokens: s.completionTokens,
+		durationMs: s.durationMs
+	};
+}
 
-	const conversation = getActiveConversation();
-	if (!conversation) return;
+/**
+ * Validate the send precondition and ensure an active conversation
+ * exists. Returns the conversation when sending is allowed, `null` if
+ * the caller should silently no-op (empty input, already generating,
+ * mid-compaction, or no conversation could be created).
+ */
+function ensureSendableConversation(content: string): Conversation | null {
+	if (!content.trim() || isGenerating || isCompacting) return null;
+	if (!activeConversationId) createConversation();
+	return getActiveConversation() ?? null;
+}
 
-	await compactIfNeeded();
-
+/**
+ * Set the conversation title on the first turn, push the user message,
+ * and persist it. Mutates the conversation in place.
+ */
+function finalizeUserTurn(conversation: Conversation, content: string): void {
 	if (conversation.messages.length === 0) {
 		const title = generateTitle(content);
 		conversation.title = title;
 		dbRenameConversation(conversation.id, title);
 	}
-
 	const userMessage: ChatMessage = { role: 'user', content: content.trim() };
 	conversation.messages.push(userMessage);
 	conversation.updatedAt = Date.now();
 	dbSaveMessage(conversation.id, userMessage);
+}
 
+/**
+ * Reset per-turn UI state (streaming buffer, error indicators, search
+ * steps, abort controller) and start a fresh turn id. Returns the new
+ * abort controller's signal for convenience.
+ */
+function resetTurnState(conversation: Conversation): AbortSignal {
 	isGenerating = true;
 	streamingContent = '';
 	errorMessage = null;
@@ -527,58 +557,150 @@ export async function sendMessage(content: string): Promise<void> {
 	conversation.searchSteps = [];
 	conversation.sourceUrls = [];
 	abortController = new AbortController();
+	return abortController.signal;
+}
+
+/**
+ * Assemble the message array sent to the agent loop: system prompt
+ * + history (filtered to user/assistant prose) + optional spliced
+ * lastTurnTools + hint injection. Returns the messages plus the
+ * pre-loop length so the caller can later slice off the loop-appended
+ * tool pairs for `lastTurnTools`.
+ */
+function buildApiPrompt(
+	conversation: Conversation,
+	workingDir: string | null,
+	keepRecentTools: boolean
+): { messages: ChatMessage[]; baseMessageCount: number } {
+	const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
+	let messagesForApi: ChatMessage[] = [buildSystemPrompt(workingDir), ...historyMessages];
+
+	// If the user opted in, splice the previous turn's tool_calls + tool
+	// messages back into the prompt so the model can reference its own
+	// research on followup questions. Insertion point is just before the
+	// most recent assistant prose (the prior turn's final answer), so the
+	// canonical sequence becomes:
+	//   ...older history, user_{N-1}, [tool_calls + results], asst_{N-1}, user_N
+	// preserving the OpenAI tool-call/result pairing.
+	if (keepRecentTools && conversation.lastTurnTools && conversation.lastTurnTools.length > 0) {
+		// Just-pushed user is at the end; the prior assistant prose sits at
+		// length - 2. If the shape doesn't match (e.g. very first turn),
+		// skip the splice rather than risk a malformed prompt.
+		const insertIdx = messagesForApi.length - 2;
+		if (insertIdx >= 0 && messagesForApi[insertIdx].role === 'assistant') {
+			messagesForApi = [
+				...messagesForApi.slice(0, insertIdx),
+				...conversation.lastTurnTools,
+				...messagesForApi.slice(insertIdx)
+			];
+		}
+	}
+
+	messagesForApi = injectMessageHints(messagesForApi, {
+		workingDir,
+		exhaustiveResearch
+	});
+	return { messages: messagesForApi, baseMessageCount: messagesForApi.length };
+}
+
+/**
+ * Persist a completed assistant message to the conversation: snapshot
+ * the live search steps onto the message's index, attach per-message
+ * tok/s stats, push the message, save to db, and clear the live steps
+ * so the UI doesn't render the steps twice (live + persisted).
+ */
+function commitMessage(conversation: Conversation, content: string, stats: TurnStats): void {
+	const assistantMsg: ChatMessage = { role: 'assistant', content };
+	const messageIndex = conversation.messages.length;
+	const stepsForThisTurn = conversation.searchSteps.filter(
+		(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
+	);
+	if (stepsForThisTurn.length > 0) {
+		conversation.messageSteps[messageIndex] = stepsForThisTurn;
+	}
+	const messageStats = computeStats(stats);
+	if (messageStats) {
+		conversation.messageStats[messageIndex] = messageStats;
+	}
+	conversation.messages.push(assistantMsg);
+	dbSaveMessage(conversation.id, assistantMsg);
+	conversation.searchSteps = [];
+}
+
+/**
+ * After a successful runAgentLoop, capture any tool-call / tool-result
+ * messages the loop appended so the next turn can optionally splice
+ * them back in. We slice from the pre-loop length and filter to just
+ * the messages that need to stay paired (assistant tool_calls + their
+ * tool results) — recovery nudges like "Continue." aren't useful on
+ * the next turn.
+ */
+function captureToolPairsForNextTurn(
+	conversation: Conversation,
+	messagesForApi: ChatMessage[],
+	baseMessageCount: number,
+	keepRecentTools: boolean
+): void {
+	if (keepRecentTools) {
+		const appended = messagesForApi.slice(baseMessageCount);
+		const toolPairs = appended.filter(
+			(m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls)
+		);
+		conversation.lastTurnTools = toolPairs.length > 0 ? toolPairs : undefined;
+	} else {
+		conversation.lastTurnTools = undefined;
+	}
+}
+
+/**
+ * Persist whatever content streamed before an AbortError, then clear
+ * the live UI state. No-op if nothing streamed yet.
+ */
+function commitPartialOnAbort(conversation: Conversation, stats: TurnStats): void {
+	if (!streamingContent) return;
+	const fetched = extractUrlsFromSteps(conversation.searchSteps);
+	const { content, citedUrls } = processCitations(streamingContent, fetched);
+	commitMessage(conversation, content, stats);
+	conversation.sourceUrls = citedUrls;
+}
+
+/**
+ * Map a caught exception to the user-facing error banner. Aborts are
+ * handled separately by commitPartialOnAbort and skip this path.
+ */
+function handleTurnError(e: unknown): void {
+	if (e instanceof ApiError) {
+		errorMessage = e.message;
+	} else {
+		errorMessage = 'An unexpected error occurred.';
+	}
+	errorTurnId = currentTurnId;
+}
+
+export async function sendMessage(content: string): Promise<void> {
+	const conversation = ensureSendableConversation(content);
+	if (!conversation) return;
+
+	await compactIfNeeded();
+	finalizeUserTurn(conversation, content);
+	const signal = resetTurnState(conversation);
 
 	// Tok/s timing: the agent loop emits per-call timing via onCallStats.
 	// Latch the most recent one — it corresponds to the model call whose
 	// output is being committed. Earlier tool-decision calls get
 	// overwritten by the final synthesis call, which is what we want.
-	let lastCallStats: { durationMs: number; completionTokens: number } | null = null;
-	function computeStats(): MessageStats | null {
-		if (!lastCallStats || lastCallStats.completionTokens <= 0 || lastCallStats.durationMs <= 0) {
-			return null;
-		}
-		return {
-			tokensPerSecond: lastCallStats.completionTokens / (lastCallStats.durationMs / 1000),
-			completionTokens: lastCallStats.completionTokens,
-			durationMs: lastCallStats.durationMs
-		};
-	}
+	const turnStats: TurnStats = { lastCallStats: null };
 
 	try {
 		const currentWorkingDir = workingDir;
 		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
 
-		const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
-		let messagesForApi: ChatMessage[] = [buildSystemPrompt(currentWorkingDir), ...historyMessages];
-
-		// If the user opted in, splice the previous turn's tool_calls + tool
-		// messages back into the prompt so the model can reference its own
-		// research on followup questions. Insertion point is just before the
-		// most recent assistant prose (the prior turn's final answer), so the
-		// canonical sequence becomes:
-		//   ...older history, user_{N-1}, [tool_calls + results], asst_{N-1}, user_N
-		// preserving the OpenAI tool-call/result pairing.
 		const keepRecentTools = getSettings().keepRecentToolResults;
-		if (keepRecentTools && conversation.lastTurnTools && conversation.lastTurnTools.length > 0) {
-			// Just-pushed user is at the end; the prior assistant prose sits at
-			// length - 2. If the shape doesn't match (e.g. very first turn),
-			// skip the splice rather than risk a malformed prompt.
-			const insertIdx = messagesForApi.length - 2;
-			if (insertIdx >= 0 && messagesForApi[insertIdx].role === 'assistant') {
-				messagesForApi = [
-					...messagesForApi.slice(0, insertIdx),
-					...conversation.lastTurnTools,
-					...messagesForApi.slice(insertIdx)
-				];
-			}
-		}
-
-		messagesForApi = injectMessageHints(messagesForApi, {
-			workingDir: currentWorkingDir,
-			exhaustiveResearch
-		});
-
-		const baseMessageCount = messagesForApi.length;
+		const { messages: messagesForApi, baseMessageCount } = buildApiPrompt(
+			conversation,
+			currentWorkingDir,
+			keepRecentTools
+		);
 
 		const activeCtxSize = getActiveContextSize();
 
@@ -594,7 +716,7 @@ export async function sendMessage(content: string): Promise<void> {
 			deepResearch: exhaustiveResearch,
 			expectsFileOutput,
 			visionSupported,
-			signal: abortController.signal,
+			signal,
 			onUsageUpdate: (u: Usage) => {
 				updateContextUsage(u, activeCtxSize);
 				conversation.contextUsage = {
@@ -603,7 +725,7 @@ export async function sendMessage(content: string): Promise<void> {
 				};
 			},
 			onCallStats: (stats) => {
-				lastCallStats = stats;
+				turnStats.lastCallStats = stats;
 			},
 			onToolStart: (call) => {
 				conversation.searchSteps = [
@@ -644,40 +766,14 @@ export async function sendMessage(content: string): Promise<void> {
 				);
 				const finalContent = processed.content;
 
-				const commit = (text: string) => {
-					const assistantMsg: ChatMessage = { role: 'assistant', content: text };
-					const messageIndex = conversation.messages.length;
-					// Snapshot the live search steps onto the assistant message's
-					// position so the UI can keep rendering plots/tables under
-					// this message after the live `searchSteps` is cleared.
-					const stepsForThisTurn = conversation.searchSteps.filter(
-						(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
-					);
-					if (stepsForThisTurn.length > 0) {
-						conversation.messageSteps[messageIndex] = stepsForThisTurn;
-					}
-					const stats = computeStats();
-					if (stats) {
-						conversation.messageStats[messageIndex] = stats;
-					}
-					conversation.messages.push(assistantMsg);
-					dbSaveMessage(conversation.id, assistantMsg);
-					// Clear the live indicator now that the steps live on the
-					// committed message. Without this both render simultaneously
-					// (live + persisted) and the user sees doubled artifacts.
-					conversation.searchSteps = [];
-					if (exhaustiveResearch) {
-						exhaustiveResearch = false;
-					}
-				};
-
 				if (finalContent) {
 					logDebug('chat', 'onComplete commit', {
 						rawStreamingLen: streamingContent.length,
 						finalContentLen: finalContent.length,
 						citedUrls: processed.citedUrls
 					});
-					commit(finalContent);
+					commitMessage(conversation, finalContent, turnStats);
+					if (exhaustiveResearch) exhaustiveResearch = false;
 				} else {
 					const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
 					logDebug('chat', `onComplete empty → diagnosis ${diagnosis.type}`, {
@@ -686,7 +782,8 @@ export async function sendMessage(content: string): Promise<void> {
 						diagnosis
 					});
 					if (diagnosis.type === 'commit') {
-						commit(diagnosis.content);
+						commitMessage(conversation, diagnosis.content, turnStats);
+						if (exhaustiveResearch) exhaustiveResearch = false;
 					} else {
 						errorMessage = diagnosis.message;
 						errorTurnId = currentTurnId;
@@ -694,58 +791,15 @@ export async function sendMessage(content: string): Promise<void> {
 				}
 				conversation.sourceUrls = processed.citedUrls;
 			},
-			onError: (error) => {
-				if (error instanceof ApiError) {
-					errorMessage = error.message;
-				} else {
-					errorMessage = 'An unexpected error occurred.';
-				}
-				errorTurnId = currentTurnId;
-			}
+			onError: handleTurnError
 		});
 
-		// Capture any tool-call / tool-result messages the loop appended so
-		// the next turn can optionally splice them back in. We slice from
-		// the pre-loop length and filter to just the messages that need to
-		// stay paired (assistant tool_calls + their tool results) — recovery
-		// nudges like "Continue." aren't useful on the next turn.
-		if (keepRecentTools) {
-			const appended = messagesForApi.slice(baseMessageCount);
-			const toolPairs = appended.filter(
-				(m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls)
-			);
-			conversation.lastTurnTools = toolPairs.length > 0 ? toolPairs : undefined;
-		} else {
-			conversation.lastTurnTools = undefined;
-		}
+		captureToolPairsForNextTurn(conversation, messagesForApi, baseMessageCount, keepRecentTools);
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'AbortError') {
-			if (streamingContent) {
-				const fetched = extractUrlsFromSteps(conversation.searchSteps);
-				const { content, citedUrls } = processCitations(streamingContent, fetched);
-				const partialMsg: ChatMessage = { role: 'assistant', content };
-				const messageIndex = conversation.messages.length;
-				const stepsForThisTurn = conversation.searchSteps.filter(
-					(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
-				);
-				if (stepsForThisTurn.length > 0) {
-					conversation.messageSteps[messageIndex] = stepsForThisTurn;
-				}
-				const stats = computeStats();
-				if (stats) {
-					conversation.messageStats[messageIndex] = stats;
-				}
-				conversation.messages.push(partialMsg);
-				dbSaveMessage(conversation.id, partialMsg);
-				conversation.searchSteps = [];
-				conversation.sourceUrls = citedUrls;
-			}
-		} else if (e instanceof ApiError) {
-			errorMessage = e.message;
-			errorTurnId = currentTurnId;
+			commitPartialOnAbort(conversation, turnStats);
 		} else {
-			errorMessage = 'An unexpected error occurred.';
-			errorTurnId = currentTurnId;
+			handleTurnError(e);
 		}
 	} finally {
 		isGenerating = false;
