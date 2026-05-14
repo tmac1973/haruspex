@@ -19,7 +19,7 @@ The primary goals of this project are:
 ## Features
 
 - **Private by design** — all inference runs on your hardware, nothing is sent to the cloud
-- **Web research** — searches the web and reads pages to answer questions about current events, with an optional **deep research mode** for multi-source synthesis
+- **Web research** — searches the web and reads pages to answer questions about anything, with an optional **deep research mode** for multi-source synthesis
 - **Local file access (opt-in)** — pick a working directory and the model can read and write text, PDF, docx, xlsx, odt/ods/odp, pptx, and images, sandboxed to that directory ([details](#local-files))
 - **Python sandbox** — the model can write and execute Python in a sandboxed Pyodide environment running in the webview, with on-demand package installs (`install_package`) and HTTP via `pyfetch`; approval-gated with a per-call time limit
 - **Vision** — analyze images and form PDFs via the model's built-in mmproj projector
