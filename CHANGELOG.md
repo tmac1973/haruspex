@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.1.36](https://github.com/tmac1973/haruspex/compare/v0.1.35...v0.1.36) (2026-05-14)
+
+
+### Bug Fixes
+
+* **hooks:** make pre-commit work from GUI git clients ([732f90a](https://github.com/tmac1973/haruspex/commit/732f90a63feeb26db1161baa11ddedfdcb78d57a))
+
+
+### Code Refactoring
+
+* 12-phase codebase refactor ([ade0c52](https://github.com/tmac1973/haruspex/commit/ade0c525e63357ca008010f46496365ab3d1ae43))
+* **chat:** decompose sendMessage into named helpers ([4debe65](https://github.com/tmac1973/haruspex/commit/4debe65b87e8d70ea12292bd5d3222bf5db6430d))
+* extract shared Modal and ModalButton components ([cd20417](https://github.com/tmac1973/haruspex/commit/cd204171d54b16fa0e730415191d37c083d1212d))
+* extract sidecar_utils for shared infra ([46d90dd](https://github.com/tmac1973/haruspex/commit/46d90dd38d3311b221ef299699c205c12a376bbc))
+* **fs_tools:** complete module split — docx/odt/pptx/odp/pdf_write ([fb463cf](https://github.com/tmac1973/haruspex/commit/fb463cf3a4ae61e2bcbf385560506d68eeed8f79))
+* **fs_tools:** decompose build_pptx and slim build_pdf ([75f58b0](https://github.com/tmac1973/haruspex/commit/75f58b024b2044700cf5c5b8039eaf8a9aac7b3c))
+* **fs_tools:** extract path, images, markdown_inline modules ([7a83453](https://github.com/tmac1973/haruspex/commit/7a83453f8cc357fea48a9126675ffb4c0e7a8bf7))
+* **fs_tools:** extract text, pdf_read, download, xlsx modules ([faddd20](https://github.com/tmac1973/haruspex/commit/faddd201acac9710790bb0bf334d97285a6bbed7))
+* **loop:** extract NudgeState class ([faf1217](https://github.com/tmac1973/haruspex/commit/faf1217c9490dd500d2d4ce5518a40586c1732d4))
+* **loop:** extract runIteration + LoopContext + LoopState ([26bebdb](https://github.com/tmac1973/haruspex/commit/26bebdbabb5a92a903cdb543da1d717a585bcd87))
+* polish pass — eslint guardrails, error surfacing, helpers ([17c7661](https://github.com/tmac1973/haruspex/commit/17c7661526b3aab0e857563ea8d3ac0eed45fdc7))
+* **proxy:** split proxy.rs into module tree ([a865bed](https://github.com/tmac1973/haruspex/commit/a865bedae2f4460155baf0cd5df554878ac1234b))
+* **routes:** extract ConversationSidebar component ([6c0b4c1](https://github.com/tmac1973/haruspex/commit/6c0b4c11c20e02af338144606e4af5e55d4092e2))
+* **server:** extract log_classifier module ([daa2dbd](https://github.com/tmac1973/haruspex/commit/daa2dbd15eaddde588f59d610e45036205c8c10f))
+* **settings:** extract EmailSection and ModelsSection ([8435d07](https://github.com/tmac1973/haruspex/commit/8435d07432f0c626c84888c804227b52156d2846))
+* **tools:** extract _helpers + adopt writeExecutor / SHEETS_SCHEMA ([d2de0f9](https://github.com/tmac1973/haruspex/commit/d2de0f97282cafc399756d5a65f81012ab993429))
+
+
+### Documentation
+
+* add 2026-05-14 audits and 12-phase refactor plan ([f0b3bb1](https://github.com/tmac1973/haruspex/commit/f0b3bb1c4349fdb22a87acafc24728bc3500709d))
+* add maintenance.md post-refactor guide ([15c30da](https://github.com/tmac1973/haruspex/commit/15c30dad05ff7467ec82b87d35a2dcb67a82e876))
+* broaden web research feature description in README ([739225f](https://github.com/tmac1973/haruspex/commit/739225f2d7c9e7d3b3be77fbbe5c074fa2bef5ac))
+* trim and restructure README ([339754b](https://github.com/tmac1973/haruspex/commit/339754b591e3298084e75cf57d94b2cfa7e6c990))
+
 ## [0.1.35](https://github.com/tmac1973/haruspex/compare/v0.1.34...v0.1.35) (2026-05-14)
 
 
