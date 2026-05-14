@@ -4,205 +4,84 @@ Click this screenshot to watch the explainer video:
 
 [![Watch the video](https://img.youtube.com/vi/q59X6fkGMsQ/maxresdefault.jpg)](https://youtu.be/q59X6fkGMsQ)
 
-A cross-platform desktop AI web researcher that runs entirely on your computer. No cloud, no accounts, no telemetry. Your conversations never leave your device.
+A cross-platform desktop AI web researcher and agent that runs entirely on your computer. No cloud, no accounts, no telemetry — your conversations never leave your device.
 
-Haruspex is intended to be used instead of a traditional search engine. Ask Haruspex a question and it will search the web and compile an answer. Turn on "deep research mode" to have it do a more thorough job. Enable a working directory and ask it to create a pdf, spreadsheet, or word document out of it's results. 
+Haruspex excels at researching information. Ask it a question and it will search the web and compile an answer. Turn on deep research mode for a more thorough job. Enable a working directory and ask it to produce a PDF, spreadsheet, or Word document from its results. It will even write and execute python in the UI in pursuit of your goals. 
 
-Haruspex wraps a local LLM (via [llama.cpp](https://github.com/ggml-org/llama.cpp)) with web research capabilities, speech-to-text, and text-to-speech — all running locally.
+## Goals
 
-## Hardware Requirements
+The primary goals of this project are:
 
-**Recommended:** A discrete AMD or NVIDIA GPU with 8 GB or more of VRAM. This is what Haruspex is designed for and where it performs best.
-
-**Minimum:** Any system with a Vulkan-capable GPU and 8 GB of system RAM. Haruspex includes a smaller 4B parameter model for systems with limited VRAM.
-
-**Integrated graphics** (Intel HD/UHD/Iris, AMD Vega/Radeon Graphics) will work but inference will be significantly slower since these GPUs share system memory and have limited compute throughput. Recent AMD APUs with RDNA-class integrated graphics perform better than older Intel iGPUs, but still fall well short of a discrete card. The setup wizard detects integrated graphics automatically and recommends an appropriately sized model.
-
-**Apple Silicon** Macs use unified memory and Metal acceleration, so even the base M1 with 8 GB provides a good experience.
-
-Haruspex uses your GPU for inference. While it is running, other GPU-intensive applications like games may experience reduced performance. For the best experience, close Haruspex before launching games or other GPU-heavy programs.
+- **Privacy** - Conversations and inference stay local. Searches themselves hit the web but web proxies and SearXNG are supported to anonymize your web searches. 
+- **Open Source/Open Weight** - Use of open weight local models means no monthly bill.
+- **Minimal Hardware Requirements** - This project targets 8GB of Unified RAM/VRAM for LLM+Context. Currently the model used is Qwen-3.5-9B (though we do offer Qwen-3.5-4B if you are tight on memory). All project features are built with this target (and the inherit limitations of a small model) in mind. 
 
 ## Features
 
 - **Private by design** — all inference runs on your hardware, nothing is sent to the cloud
-- **Web research** — searches the web and reads pages to answer questions about current events. Two URL-reading modes: `fetch_url` returns the raw page text, `research_url` runs the page through a focused sub-agent that extracts only the parts relevant to a specific question, returning concise findings instead of the full page.
-- **Deep research mode** — optional toggle for thorough multi-source synthesis. Allows up to 25 tool-call iterations per turn, forces the model to use the context-light `research_url` tool for every page (so a single research turn can fan out across many more sources without running out of context), and runs in-loop trimming of older tool results when context fills up. Each sub-agent processes one URL sequentially through the same llama-server slot — the win comes from context isolation, not parallelism.
-- **Local file access (opt-in)** — pick a working directory to let the model read and write files within it. See [Local files](#local-files) below for the full list of supported formats and tools. Sandboxed to the chosen directory; the model cannot touch anything outside it.
-- **Vision** — analyze images and form PDFs using the model's built-in vision capability (via the mmproj projector bundled with Qwen 3.5)
-- **Voice input** — speak your questions via the built-in microphone button (powered by [whisper.cpp](https://github.com/ggml-org/whisper.cpp))
-- **Voice output** — listen to responses read aloud with natural-sounding voices (powered by [Kokoros](https://github.com/lucasjinreal/Kokoros))
-- **Audio device selection** — choose specific input/output audio devices in settings
-- **GPU accelerated** — Vulkan (Linux/Windows) and Metal (macOS) for fast inference
-- **First-run wizard** — detects your hardware (GPU type, VRAM, integrated vs discrete), downloads a model appropriate for your system, and gets you chatting in minutes. Alternatively, choose "Connect to an existing server" on the welcome screen to point Haruspex at an inference server you already run (see [Remote inference server](#remote-inference-server)).
-- **Remote inference server (optional)** — instead of downloading a model, connect Haruspex to an existing self-hosted OpenAI-compatible server. Tested backends: [llama-toolchest](https://github.com/tmac1973/llama-toolchest), stock llama.cpp `llama-server`, LM Studio, Lemonade, Ollama, vLLM, TGI, llamafile. Haruspex auto-detects which backend it's talking to, lists available models, pulls context size + vision capability from the backend when possible, and falls back to manual entry when not. Local sidecar doesn't spawn in remote mode — nothing competes for your VRAM. Configure in Settings → Inference backend or at first-run. See [Remote inference server](#remote-inference-server) below.
-- **Email integration (optional, read-only)** — connect one or more IMAP email accounts (Gmail, Fastmail, iCloud, Yahoo, or any custom IMAP host) with an app password. When enabled, the model gets three tools: a cheap listing, a sub-agent summarizer that compresses each message through a separate chat completion (same pattern as `research_url`), and an escape-hatch full-body reader. Invisible to the model until at least one account is enabled. Credentials never leave your device. See [Email integration](#email-integration) below.
-- **Log viewer** — toolbar modal with tabs for the main app and each sidecar (LLM, TTS, Whisper). Copy-all button makes bug reports trivial.
-- **Dark mode** — system-aware theme with manual override
+- **Web research** — searches the web and reads pages to answer questions about current events, with an optional **deep research mode** for multi-source synthesis
+- **Local file access (opt-in)** — pick a working directory and the model can read and write text, PDF, docx, xlsx, odt/ods/odp, pptx, and images, sandboxed to that directory ([details](#local-files))
+- **Python sandbox** — the model can write and execute Python in a sandboxed Pyodide environment running in the webview, with on-demand package installs (`install_package`) and HTTP via `pyfetch`; approval-gated with a per-call time limit
+- **Vision** — analyze images and form PDFs via the model's built-in mmproj projector
+- **Voice input / output** — speak your questions ([whisper.cpp](https://github.com/ggml-org/whisper.cpp)) and hear responses read aloud ([Kokoros](https://github.com/lucasjinreal/Kokoros))
+- **GPU accelerated** — Vulkan (Linux/Windows) and Metal (macOS)
+- **First-run wizard** — detects your hardware and downloads an appropriately sized model
+- **Remote inference (optional)** — connect to your own self-hosted OpenAI-compatible server instead of using the bundled sidecar ([details](#remote-inference-server))
+- **Email integration (optional, read-only)** — connect IMAP accounts (Gmail, Fastmail, iCloud, Yahoo, or custom) so the model can summarize and search recent messages ([details](#email-integration))
 - **Persistent conversations** — SQLite-backed chat history survives restarts
-- **Configurable** — context size, search provider, voice selection, response formatting
-
-## Local files
-
-When you select a working directory from the folder icon in the chat input, Haruspex exposes filesystem tools to the model — scoped strictly to that directory. Without a working directory set, the model has no filesystem access at all and doesn't even know those tools exist.
-
-**What the model can read**:
-
-- Plain text, markdown, CSV, JSON, shell scripts, YAML, TOML, etc. (`fs_read_text`)
-- PDFs — text extraction via PDFium with position-aware layout reconstruction, so form PDFs like tax forms and invoices come out in the correct reading order (`fs_read_pdf`)
-- PDFs as images — renders each page via PDF.js and feeds them to the vision model, for scanned documents or when text extraction isn't enough (`fs_read_pdf_pages`)
-- Microsoft Word (.docx) documents (`fs_read_docx`)
-- Excel (.xlsx) spreadsheets, returned as CSV text (`fs_read_xlsx`)
-- Images (PNG, JPEG, WebP) using the vision model (`fs_read_image`)
-- Directory listings (`fs_list_dir`)
-
-**What the model can write**:
-
-- Plain text files — markdown, CSV, JSON, bash scripts, etc. (`fs_write_text`)
-- Targeted find-and-replace edits to existing text files (`fs_edit_text`)
-- Microsoft Word (.docx) documents from markdown-style input (`fs_write_docx`)
-- OpenDocument Text (.odt) — LibreOffice Writer native format (`fs_write_odt`)
-- Excel (.xlsx) spreadsheets with multiple sheets (`fs_write_xlsx`)
-- OpenDocument Spreadsheet (.ods) — LibreOffice Calc native format (`fs_write_ods`)
-- PowerPoint (.pptx) presentations — title + bullet-list slides with support for section-divider slides (big centered title), nested bullets up to 2 levels deep, and optional per-slide images from the working directory (`fs_write_pptx`) — **experimental, see [Known issues](#known-issues)**
-- OpenDocument Presentation (.odp) — LibreOffice Impress native format with the same slide API (`fs_write_odp`) — **experimental, see [Known issues](#known-issues)**
-- PDFs from markdown-style input (`fs_write_pdf`)
-
-**What the model can download**:
-
-- Any HTTP(S) binary into the sandboxed working directory (`fs_download_url`) — images, PDFs, fonts, archives, office documents, media files, data files. SSRF protection (private / localhost IPs blocked), 50 MB size ceiling, and executable formats (exe/msi/dll/app/pkg/dmg/deb/rpm/appimage/jar/bat/ps1/vbs etc.) are blocked to prevent staging payloads.
-- Freely-licensed images from Wikimedia Commons via keyless API (`image_search`) — returns URL, thumbnail, dimensions, MIME, license, and attribution. Safe to embed in generated documents with credit. **Experimental — see [Known issues](#known-issues).**
-- Image URLs discovered on any web page (`fetch_url_images`) — scans `<img>`, `<meta property="og:image">`, and `<link rel="image_src">` to find manufacturer product shots, review-site hero images, etc. **Note: images found this way are typically copyrighted** and are the user's responsibility to use appropriately; prefer `image_search` for generic stock imagery. **Experimental — see [Known issues](#known-issues).**
-
-The typical "find an image and embed it in a slide deck" workflow is: `image_search` (or `web_search` + `fetch_url_images`) → `fs_download_url` → `fs_write_pptx` with the local path in the slide's `image` field. Downloaded images also appear inline as thumbnails in the chat UI alongside the tool step, so you can see what was pulled.
-
-**What the model cannot do**: delete files, move files, execute scripts, or touch anything outside the working directory. These are intentional restrictions — if you want the model to delete or run something, you do it manually after reviewing what it created.
-
-**File overwrite protection**: write tools refuse to silently clobber an existing file. If the model tries to write to a filename that already exists (from a previous turn or user action), Haruspex pauses and shows you a modal with three options: **Overwrite** (replace the existing file), **Keep both** (auto-append a counter to the new file's name — `report.pdf` becomes `report-2.pdf`), or **Cancel** (stop and hand control back to the chat so you can tell the model what to do differently). Files the model writes and then iterates on within the same turn (write → read → correct → write) are handled implicitly and don't trigger the prompt — the protection is only for pre-existing files, not for in-turn rework.
-
-Working directory selection is per-conversation and not persisted across app restarts. Each new conversation starts with no working directory; opt in when you need it.
-
-## Remote inference server
-
-Haruspex normally manages its own `llama-server` sidecar with a downloaded model — that's the default setup and what you get by following the welcome wizard's "Download a model" path. If you already run an OpenAI-compatible inference server you can point Haruspex at it instead: in that case Haruspex's local sidecar does not spawn, no model is downloaded, and every chat request routes to your configured URL. This is exposed as an advanced option in two places:
-
-1. **First-run wizard** — pick "Connect to an existing server" instead of "Download a model" on the welcome screen. You get an inline form that probes your server, lists its models, and drops you straight into the chat when you click "Start chatting".
-2. **Settings → Inference backend** — switch between Local and Remote at any time. Toggling to Remote stops the local sidecar immediately (no VRAM consumption); toggling back to Local spawns it again with your previously-selected model.
-
-**Detection.** Haruspex auto-detects which backend it's talking to by walking a four-step probe chain against the base URL you enter:
-
-| Detection order | Endpoint probed | Matches |
-|---|---|---|
-| 1 | `GET /api/service/status` | [llama-toolchest](https://github.com/tmac1973/llama-toolchest) — rich per-model metadata via the management API |
-| 2 | `GET /props` | Stock llama.cpp `llama-server` — exposes `n_ctx` and loaded-model info |
-| 3 | `GET /v1/models` | Generic OpenAI-compat (LM Studio, Lemonade, Ollama OpenAI endpoint, vLLM, TGI, llamafile, koboldcpp, text-generation-webui, ...) |
-| 4 | `GET /api/tags` | Ollama native — only as a fallback when Ollama's OpenAI-compat endpoint is disabled |
-
-The richest backend that responds wins. Each detection step times out at 6 seconds so a fully-unreachable host fails fast.
-
-**What gets populated.** For each detected backend, Haruspex pulls as much metadata as the backend exposes:
-
-- **Model list** — always. Every backend has at least one way to enumerate models; the Settings page model dropdown is populated from the probe response.
-- **Context size** — detected from `/api/models/{id}/info` (llama-toolchest) or `/props.default_generation_settings.n_ctx` (llama-server). Generic OpenAI-compat backends don't expose this in a standard way, so you'll see an editable "Context size" field to enter it manually. This value drives when Haruspex compacts long conversations — setting it correctly matters so compaction fires before the real ceiling.
-- **Vision capability** — detected from llama-toolchest's per-model info when available. For other backends, leave Haruspex's default (text-only) or flip the manual override if you know your model supports images. When vision is disabled, the filesystem tools `fs_read_image` and `fs_read_pdf_pages` are filtered out of the agent's tool list so the model can't try to load an image against a text-only backend.
-
-**Auth.** Every probe and chat request can send an optional `Authorization: Bearer <key>` header. Leave the API Key field blank for self-hosted servers that don't require auth; fill it in for anything that does. Keys are stored in the same local settings blob as everything else (not a system keyring — Haruspex is offline-first and single-user, the data directory is the same trust level).
-
-**Auth caveat.** Public cloud providers like OpenAI, Anthropic, and OpenRouter are NOT the focus of this feature — Haruspex's whole design is "runs entirely on your hardware". The remote-server option is specifically for self-hosted inference: your own llama.cpp deployment, your own llama-toolchest, an LM Studio instance on another machine on your LAN, etc. Cloud providers will technically work if you point at their `/v1` endpoint and supply an API key (OpenAI-compat probe path), but that's not a tested or supported configuration and comes with all the privacy implications you'd expect.
-
-## Email integration
-
-Haruspex can optionally connect to your email over IMAP so the model can summarize recent messages, find email from a specific person, or read the full body of a single message on request. The integration is **off by default**, **read-only**, and **multi-provider** — it works with any mainstream IMAP host, not just Gmail. Each configured account is opt-in and can be disabled independently.
-
-**Supported providers (10.1).** Every preset requires 2-factor authentication on the provider account plus an **app password** (a 16-character token the provider generates specifically for Haruspex — not your login password).
-
-| Provider | IMAP host | Where to get an app password |
-|---|---|---|
-| Gmail | `imap.gmail.com:993` | <https://myaccount.google.com/apppasswords> |
-| Fastmail | `imap.fastmail.com:993` | <https://app.fastmail.com/settings/security/tokens> |
-| iCloud Mail | `imap.mail.me.com:993` | <https://account.apple.com/account/manage> |
-| Yahoo Mail | `imap.mail.yahoo.com:993` | <https://login.yahoo.com/account/security> |
-| Custom | user-provided | whatever your provider says |
-
-Microsoft 365 / Outlook.com is **not** supported in 10.1 — Microsoft disabled basic authentication for consumer and enterprise accounts, so there's no app-password path and OAuth is required. Support for Outlook (and an OAuth flow that replaces the app-password path on Gmail for users who want it) is planned for a later phase.
-
-**Setup.** Open `Settings → Integrations → Email`, click "Add email account", pick your provider from the dropdown, paste your email address + app password, and click "Test connection". On success, flip the account's "Enabled" toggle and the email tools become available to the model automatically.
-
-**How the model uses email.** Haruspex exposes three tools to the agent when at least one account is enabled:
-
-- `email_list_recent` — cheap listing (subject + sender + date + short snippet, no bodies). Always the first call.
-- `email_summarize_message` — runs a **sub-agent** that reads one full message body through a separate chat completion and returns a 2-4 sentence summary. This is how the main model covers a dozen messages without blowing its context window: the full body never reaches the main agent, only the compressed summary. Mirrors how `research_url` already compresses web pages.
-- `email_read_full` — escape hatch that returns the full normalized body verbatim. The model is told to prefer the summarizer and only reach for this when the user explicitly asked for verbatim text.
-
-All three tools are **hidden from the model entirely** unless at least one email account is enabled. Turning the integration off removes the tool descriptions from the prompt — the model can't accidentally call what it can't see.
-
-**Privacy + security posture.**
-
-- Credentials (app passwords) are stored in the same local settings blob as the Brave API key and the remote inference key — same trust level, no cloud sync, no telemetry.
-- The only external endpoints the integration talks to are the IMAP host(s) of the accounts you configured. No third-party proxy, no "email summary service" in the middle.
-- Message bodies flow through whatever LLM backend you have configured (local `llama-server` by default, or a remote server if you set one up in the Inference backend section). In local mode your email never leaves the machine. In remote-inference mode the content goes to the remote server — same tradeoff documented in the "Remote inference server" section above.
-- `BODY.PEEK[]` is used for every fetch, so reading a message never marks it as seen in your inbox.
-- The system prompt explicitly tells the model to call email tools **only when the user has asked about email** — it will not proactively check for new messages.
-- No sending. Phase 10.1 is read-only; there is no path from a model decision to an email actually going out. Sending arrives in a later phase with its own confirmation UX and per-account opt-in.
-
-Planning doc: `plan/phase-10-email-integration.md`.
-
-## Tech Stack
-
-| Component                       | Technology                                                                                                                                                                      |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App framework                   | [Tauri 2.x](https://v2.tauri.app/) (Rust backend, system webview)                                                                                                               |
-| Frontend                        | [SvelteKit 5](https://svelte.dev/) (TypeScript, static SPA, Svelte 5 runes)                                                                                                     |
-| LLM inference                   | [llama.cpp](https://github.com/ggml-org/llama.cpp) sidecar (Vulkan/Metal, multimodal with mmproj)                                                                               |
-| Speech-to-text                  | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) sidecar (Vulkan/Metal)                                                                                                   |
-| Text-to-speech                  | [Kokoros](https://github.com/lucasjinreal/Kokoros) sidecar (CPU)                                                                                                                |
-| Default models                  | [Qwen 3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) and [Qwen 3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) (both vision-language)                          |
-| PDF text extraction             | [PDFium](https://github.com/bblanchon/pdfium-binaries) (same library Chrome uses) with custom position-aware layout reconstruction                                              |
-| PDF rendering (vision fallback) | [PDF.js](https://mozilla.github.io/pdf.js/) running in the Tauri webview                                                                                                        |
-| PDF creation                    | [printpdf](https://crates.io/crates/printpdf) (pure Rust)                                                                                                                       |
-| docx / xlsx                     | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes |
-| odt / ods / odp                 | Hand-rolled zip+XML following the OASIS OpenDocument spec (no crate dependency — shares the `zip` crate already used for docx/pptx)                                            |
-| pptx                            | Hand-rolled zip+XML following the OOXML PresentationML spec — content + section slide layouts, nested bullets (up to 2 levels), and embedded images (png/jpg/gif)              |
-| Database                        | SQLite (via rusqlite)                                                                                                                                                           |
-| Web search                      | Auto-rotation (Brave HTML / DuckDuckGo / Mojeek), Brave Search API, or SearXNG                                                                                                  |
+- **Log viewer** — toolbar modal with copyable per-sidecar logs for easy bug reports
+- **Dark mode** — system-aware with manual override
 
 ## Installing
 
 Download the latest release for your platform from the [Releases](https://github.com/tmac1973/haruspex/releases) page.
 
-### Runtime prerequisites
+> **Note on code signing:** Haruspex binaries are **not code-signed on macOS or Windows**. macOS Gatekeeper will refuse to open the app directly, and Windows SmartScreen will warn before running the installer. See the per-platform notes below for how to bypass these warnings.
 
-The release packages bundle everything needed. However, the system webview and a few shared libraries are required:
-
-#### Debian / Ubuntu
+### Debian / Ubuntu
 
 ```bash
 # The .deb package handles most dependencies automatically
 sudo apt install libwebkit2gtk-4.1-0 libayatana-appindicator3-1
 ```
 
-#### Fedora
+### Fedora
 
 ```bash
 # The .rpm package handles most dependencies automatically
 sudo dnf install webkit2gtk4.1 libappindicator-gtk3
 ```
 
-#### Arch / CachyOS
+### Arch / CachyOS
 
 ```bash
-# Install from the .AppImage — no package manager dependencies needed
-# Just make sure you have a working GPU driver (mesa/vulkan)
+# Use the .AppImage — no package manager dependencies needed
 chmod +x Haruspex_*.AppImage
 ./Haruspex_*.AppImage
 ```
 
-#### Windows
+### Windows
 
-Run the `.msi` or `.exe` installer. No additional dependencies required — the MSVC runtime is bundled.
+Run the `.msi` or `.exe` installer. The MSVC runtime is bundled — no additional dependencies required.
 
-#### macOS
+Because the installer is **not code-signed**, Windows SmartScreen will show a "Windows protected your PC" warning. Click **More info → Run anyway** to proceed.
 
-Open the `.dmg` and drag Haruspex to Applications. On first launch, right-click and choose "Open" to bypass Gatekeeper (the app is not code-signed).
+### macOS
+
+Open the `.dmg` and drag Haruspex to Applications. Because the app is **not code-signed**, on first launch right-click the app and choose **Open** to bypass Gatekeeper.
+
+## Hardware requirements
+
+**Recommended:** a discrete AMD or NVIDIA GPU with 8 GB+ of VRAM.
+
+**Minimum:** any system with a Vulkan-capable GPU and 8 GB of system RAM. Haruspex includes a smaller 4B-parameter model for systems with limited VRAM, and the first-run wizard picks an appropriate model automatically.
+
+**Integrated graphics** (Intel HD/UHD/Iris, AMD Vega/Radeon Graphics) will work but inference will be significantly slower. Recent AMD APUs perform better than older Intel iGPUs but still fall well short of a discrete card.
+
+**Apple Silicon** Macs use unified memory and Metal acceleration, so even the base M1 with 8 GB provides a good experience.
+
+> [!WARNING]
+> **Haruspex uses your GPU for inference.** While it is running, other GPU-intensive applications like games may experience reduced performance. Close Haruspex before launching games or other GPU-heavy programs.
 
 ## Development
 
@@ -235,21 +114,16 @@ sudo pacman -S base-devel cmake pkg-config \
 
 #### Windows
 
-On a fresh Windows 11 install, run the bundled PowerShell setup script from a regular PowerShell window — it installs Git, Node.js LTS, the Rust MSVC toolchain, Visual Studio 2022 Build Tools with the C++ workload, CMake, the Vulkan SDK, and the WebView2 runtime via `winget`, skipping anything already present:
+On a fresh Windows 11 install, run the bundled PowerShell setup script from a regular PowerShell window. It installs Git, Node.js LTS, the Rust MSVC toolchain, VS 2022 Build Tools, CMake, the Vulkan SDK, and the WebView2 runtime via `winget`, skipping anything already present:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\scripts\windows-setup.ps1
 ```
 
-After it finishes, **open a new terminal** so PATH updates take effect. Sidecar builds and model downloads happen from Git Bash (installed by the Git step above) via the existing `./scripts/dev-setup.sh`, which auto-detects the `x86_64-pc-windows-msvc` target.
+After it finishes, **open a new terminal** so PATH updates take effect. Sidecar builds run from Git Bash via `./scripts/dev-setup.sh`.
 
-If you'd rather install the prerequisites yourself:
-
-- [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload)
-- [CMake](https://cmake.org/download/)
-- [Vulkan SDK](https://vulkan.lunarg.com/)
-- [Git for Windows](https://git-scm.com/download/win) (includes Git Bash, which runs `dev-setup.sh` and `build-sidecars.sh` natively on Windows)
+If you'd rather install prerequisites yourself: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload), [CMake](https://cmake.org/download/), [Vulkan SDK](https://vulkan.lunarg.com/), [Git for Windows](https://git-scm.com/download/win).
 
 #### macOS
 
@@ -292,47 +166,7 @@ Run `make help` to see all targets:
 | `make clean-all`     | Remove sidecars + Rust/frontend build artifacts             |
 | `make reset-data`    | Remove all app data (models, db) for a fresh start          |
 
-### Project structure
-
-```
-haruspex/
-├── src/                    # SvelteKit frontend
-│   ├── lib/
-│   │   ├── agent/          # Tool-calling agent loop
-│   │   │   ├── loop.ts     # Main agent iteration logic
-│   │   │   ├── tools.ts    # Tool schema definitions
-│   │   │   ├── search.ts   # Tool dispatch (web + filesystem)
-│   │   │   ├── pdf-render.ts # PDF.js renderer for vision fallback
-│   │   │   └── parser.ts   # Tool call XML/JSON parsing
-│   │   ├── components/     # Svelte components (chat, log viewer, etc.)
-│   │   ├── stores/         # Reactive state (Svelte 5 runes)
-│   │   ├── api.ts          # llama-server API client
-│   │   └── markdown.ts     # Markdown rendering + TTS text prep
-│   └── routes/             # Pages (chat, setup wizard, settings)
-├── src-tauri/
-│   ├── src/
-│   │   ├── server.rs       # llama-server sidecar manager
-│   │   ├── whisper.rs      # whisper-server sidecar manager
-│   │   ├── tts.rs          # Kokoros TTS sidecar manager
-│   │   ├── audio.rs        # Microphone recording + device enumeration
-│   │   ├── proxy.rs        # Web search & URL fetching
-│   │   ├── models.rs       # Model download & management, mmproj support
-│   │   ├── fs_tools.rs     # Sandboxed filesystem tools + PDFium integration
-│   │   ├── app_log.rs      # In-memory log capture for the Log Viewer
-│   │   └── db.rs           # SQLite conversation persistence
-│   └── binaries/           # Sidecar binaries + bundled libs incl. libpdfium (gitignored)
-├── plan/                   # Phase plans and architecture notes
-├── scripts/
-│   ├── dev-setup.sh        # One-command dev environment setup
-│   ├── build-sidecars.sh   # Build sidecars + download libpdfium for a target triple
-│   ├── link-sidecar-libs.sh # Symlink shared libs for dev mode
-│   └── bump-version.sh     # Version bump across all files
-└── Makefile                # Dev and build targets
-```
-
 ### Data directory
-
-Haruspex stores models, database, and settings in:
 
 | Platform | Path                                              |
 | -------- | ------------------------------------------------- |
@@ -342,65 +176,132 @@ Haruspex stores models, database, and settings in:
 
 Use `make reset-data` to wipe this directory for a fresh start (Linux/macOS).
 
+## Local files
+
+When you select a working directory from the folder icon in the chat input, Haruspex exposes filesystem tools to the model — scoped strictly to that directory. Without a working directory set, the model has no filesystem access at all.
+
+**Read:** plain text / markdown / CSV / JSON / YAML / TOML (`fs_read_text`), PDFs via PDFium with position-aware layout (`fs_read_pdf`), PDFs as images via PDF.js for scanned docs (`fs_read_pdf_pages`), Word `.docx` (`fs_read_docx`), Excel `.xlsx` as CSV (`fs_read_xlsx`), images via the vision model (`fs_read_image`), directory listings (`fs_list_dir`).
+
+**Write:** plain text (`fs_write_text`), targeted find-and-replace edits (`fs_edit_text`), Word `.docx` and OpenDocument `.odt` (`fs_write_docx` / `fs_write_odt`), Excel `.xlsx` and OpenDocument `.ods` (`fs_write_xlsx` / `fs_write_ods`), PowerPoint `.pptx` and OpenDocument `.odp` (`fs_write_pptx` / `fs_write_odp` — **experimental**), PDFs from markdown-style input (`fs_write_pdf`).
+
+**Download:** any HTTP(S) binary into the sandbox (`fs_download_url`) with SSRF protection, a 50 MB ceiling, and executable formats blocked. Freely-licensed images from Wikimedia Commons (`image_search` — **experimental**). Image URLs discovered on web pages (`fetch_url_images` — **experimental**, typically copyrighted).
+
+**Cannot:** delete or move files, execute scripts, or touch anything outside the working directory.
+
+**Overwrite protection:** write tools refuse to silently clobber existing files. If a write target already exists from a previous turn or user action, Haruspex pauses and prompts you with Overwrite / Keep both / Cancel. In-turn rework (write → read → correct → write) is handled implicitly and does not trigger the prompt.
+
+Working directory selection is per-conversation and is not persisted across app restarts.
+
+## Remote inference server
+
+Haruspex normally manages its own `llama-server` sidecar with a downloaded model. If you already run an OpenAI-compatible inference server, you can point Haruspex at it instead — the local sidecar will not spawn and every chat request routes to your configured URL. This is exposed in two places:
+
+1. **First-run wizard** — pick "Connect to an existing server" instead of "Download a model".
+2. **Settings → Inference backend** — switch between Local and Remote at any time. Toggling to Remote stops the local sidecar immediately (no VRAM consumption); toggling back spawns it again with your previously-selected model.
+
+**Detection.** Haruspex probes the base URL you enter in this order, and the richest backend that responds wins:
+
+| Order | Endpoint                  | Matches                                                                                                |
+| ----- | ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 1     | `GET /api/service/status` | [llama-toolchest](https://github.com/tmac1973/llama-toolchest) — rich per-model metadata               |
+| 2     | `GET /props`              | Stock llama.cpp `llama-server` — exposes `n_ctx` and loaded-model info                                 |
+| 3     | `GET /v1/models`          | Generic OpenAI-compat (LM Studio, Lemonade, Ollama, vLLM, TGI, llamafile, koboldcpp, text-gen-webui …) |
+| 4     | `GET /api/tags`           | Ollama native fallback when its OpenAI-compat endpoint is disabled                                     |
+
+**What gets populated.** Model list is always pulled. Context size and vision capability are auto-detected when the backend exposes them (llama-toolchest and stock llama-server do; generic OpenAI-compat backends usually don't, so you'll see editable fields).
+
+**Auth.** Every probe and chat request can send an optional `Authorization: Bearer <key>` header. Leave blank for self-hosted servers that don't require auth. Public cloud providers (OpenAI, Anthropic, OpenRouter) will technically work via the `/v1` endpoint, but they're not a supported configuration — Haruspex's whole design is "runs entirely on your hardware".
+
+## Email integration
+
+Haruspex can optionally connect to your email over IMAP so the model can summarize recent messages, find email from a specific person, or read the full body of a single message on request. The integration is **off by default**, **read-only**, and **multi-provider**.
+
+Every preset requires 2-factor authentication on the provider account plus an **app password** (a 16-character token the provider generates specifically for Haruspex — not your login password).
+
+| Provider    | IMAP host                  | Where to get an app password                                  |
+| ----------- | -------------------------- | ------------------------------------------------------------- |
+| Gmail       | `imap.gmail.com:993`       | <https://myaccount.google.com/apppasswords>                   |
+| Fastmail    | `imap.fastmail.com:993`    | <https://app.fastmail.com/settings/security/tokens>           |
+| iCloud Mail | `imap.mail.me.com:993`     | <https://account.apple.com/account/manage>                    |
+| Yahoo Mail  | `imap.mail.yahoo.com:993`  | <https://login.yahoo.com/account/security>                    |
+| Custom      | user-provided              | whatever your provider says                                   |
+
+Microsoft 365 / Outlook.com is **not** supported — Microsoft disabled basic authentication for those accounts, so there's no app-password path. OAuth support is planned for a later phase.
+
+**Setup.** `Settings → Integrations → Email`, click "Add email account", pick a provider, paste your email + app password, click "Test connection", then flip the account's "Enabled" toggle.
+
+**Tools.** When at least one account is enabled, the model sees three new tools:
+
+- `email_list_recent` — cheap listing (subject + sender + date + snippet). Always the first call.
+- `email_summarize_message` — sub-agent that compresses one full message body through a separate chat completion. Mirrors how `research_url` already compresses web pages.
+- `email_read_full` — escape hatch that returns the full normalized body verbatim.
+
+All three are hidden from the model entirely unless at least one account is enabled. Credentials are stored in the same local settings blob as other secrets (no keyring). `BODY.PEEK[]` is used for every fetch, so reading a message never marks it as seen. There is no sending — this phase is strictly read-only.
+
+## Tech stack
+
+| Component                       | Technology                                                                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App framework                   | [Tauri 2.x](https://v2.tauri.app/) (Rust backend, system webview)                                                                                                               |
+| Frontend                        | [SvelteKit 5](https://svelte.dev/) (TypeScript, static SPA, Svelte 5 runes)                                                                                                     |
+| LLM inference                   | [llama.cpp](https://github.com/ggml-org/llama.cpp) sidecar (Vulkan/Metal, multimodal with mmproj)                                                                               |
+| Speech-to-text                  | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) sidecar (Vulkan/Metal)                                                                                                   |
+| Text-to-speech                  | [Kokoros](https://github.com/lucasjinreal/Kokoros) sidecar (CPU)                                                                                                                |
+| Default models                  | [Qwen 3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) and [Qwen 3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) (both vision-language)                          |
+| PDF text extraction             | [PDFium](https://github.com/bblanchon/pdfium-binaries) with custom position-aware layout reconstruction                                                                         |
+| PDF rendering (vision fallback) | [PDF.js](https://mozilla.github.io/pdf.js/) running in the Tauri webview                                                                                                        |
+| PDF creation                    | [printpdf](https://crates.io/crates/printpdf) (pure Rust)                                                                                                                       |
+| docx / xlsx                     | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes |
+| odt / ods / odp / pptx          | Hand-rolled zip+XML following the OASIS OpenDocument and OOXML specs                                                                                                            |
+| Database                        | SQLite (via rusqlite)                                                                                                                                                           |
+| Web search                      | Auto-rotation (Brave HTML / DuckDuckGo / Mojeek), Brave Search API, or SearXNG                                                                                                  |
+
+## Search providers
+
+| Provider         | Setup                    | Notes                                                                                                                          |
+| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Auto (default)   | None                     | Rotates between Brave HTML scrape, DuckDuckGo, and Mojeek with round-robin scheduling, per-engine health tracking, and failover |
+| DuckDuckGo       | None                     | Single engine, may get rate limited                                                                                            |
+| Brave Search API | API key in Settings      | 2,000 free queries/month, most reliable                                                                                        |
+| SearXNG          | Instance URL in Settings | Unlimited (self-hosted)                                                                                                        |
+
+When deep research mode is on, the Auto provider is selected, and no Brave API key is configured, the search proxy switches to **slow mode** (longer per-engine pacing, shorter cooldowns) so engines can recover within the same research turn. Configuring a Brave API key or a SearXNG instance bypasses slow mode entirely.
+
 ## Building a release
 
 Releases are automated via [release-please](https://github.com/googleapis/release-please):
 
 1. Commits on `main` must use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, `feat!:` for breaking, etc).
-2. release-please watches `main` and keeps an open PR titled "chore(main): release X.Y.Z" that bumps the version in every file, updates `CHANGELOG.md`, and accumulates notes from each new conventional commit.
-3. Merge that PR when you're ready to cut a release. That creates the `vX.Y.Z` tag and a **draft** GitHub release prefilled with the changelog.
-4. The tag push triggers the `Release` workflow, which builds sidecars + app for all platforms and attaches the installers (Linux AppImage/deb/rpm, Windows NSIS/MSI, macOS DMG) to the draft.
-5. Review the draft release on GitHub and click **Publish** when satisfied.
+2. release-please keeps an open PR titled "chore(main): release X.Y.Z" that bumps versions, updates `CHANGELOG.md`, and accumulates notes from each new commit.
+3. Merge that PR to cut a release. That creates the `vX.Y.Z` tag and a draft GitHub release prefilled with the changelog.
+4. The tag push triggers the `Release` workflow, which builds sidecars + app for all platforms and attaches installers (Linux AppImage/deb/rpm, Windows NSIS/MSI, macOS DMG) to the draft.
+5. Review the draft and click **Publish** when satisfied.
 
-To skip a release, just don't merge the PR — it'll keep updating with each new commit until you do.
-
-To build locally:
-
-```bash
-make release-local
-```
-
-**Bundled binaries**: The release includes three sidecar binaries (llama-server, whisper-server, koko) and one shared library (libpdfium) per platform. `scripts/build-sidecars.sh` handles all of this — it compiles the sidecars from source and downloads the appropriate libpdfium from [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries). No manual library management required.
-
-## Search providers
-
-| Provider          | Setup                    | Notes                                                                                                                          |
-| ----------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| Auto (default)    | None                     | Rotates between Brave HTML scrape, DuckDuckGo, and Mojeek with round-robin scheduling, per-engine health tracking, and failover |
-| DuckDuckGo        | None                     | Single engine, may get rate limited                                                                                            |
-| Brave Search API  | API key in Settings      | 2,000 free queries/month, most reliable                                                                                        |
-| SearXNG           | Instance URL in Settings | Unlimited (self-hosted)                                                                                                        |
-
-When deep research mode is on _and_ the Auto provider is selected _and_ no Brave API key is configured, the search proxy automatically switches to **slow mode** — longer per-engine pacing (~6s vs 2s) and shorter cooldowns after a failure (~45s vs 5min) so engines can recover within the same research turn. A small notice appears above the search-steps panel explaining the slow pacing and pointing the user to Settings. Configuring a Brave API key or a SearXNG instance bypasses slow mode entirely and runs at full speed.
-
-Bing and Qwant were previously in the Auto rotation but were removed: as of April 2026 both serve fully client-rendered SPAs gated by JavaScript bot challenges (Bing uses Cloudflare Turnstile, Qwant uses DataDome), so plain-HTTP scraping returns no results. They could be revived only with a headless browser or a paid API.
+To build locally: `make release-local`.
 
 ## Known issues
 
 ### File-creation prompts usually need a follow-up
 
-When you ask the model to create a file in a single prompt — e.g. _"Create a PDF report on X and include Y and Z"_ — it will typically do the research and write a detailed answer to the chat, but **not** actually call `fs_write_pdf`. You'll see a report in the chat window and then have to follow up with something like _"now write that to a PDF please"_ before the file actually lands on disk. Sometimes the model will even claim _"I've created the PDF at /path/..."_ on the first turn when no file was actually written.
+When you ask the model to create a file in a single prompt — e.g. *"Create a PDF report on X"* — it will typically do the research and write a detailed answer to the chat, but **not** actually call `fs_write_pdf`. Sometimes it will even claim it created the file when it didn't.
 
-This is a model-behavior issue with small local models (Qwen 3.5 9B / 4B): after a multi-step research turn, the model strongly prefers ending with a natural-language synthesis instead of a final tool call, even when the user explicitly asked for a file. Haruspex already does several things to mitigate this — the `fs_write_pdf` tool description is written in imperative "this is not a chat response" language, file-output requests get a per-turn reminder appended to the user message telling the model the write is its final action, and the agent loop has a recovery pass that detects "turn ended, no write happened" and pushes a corrective nudge back to the model. These help but don't fully eliminate the need for a follow-up prompt.
+This is a model-behavior issue with small local models: after a multi-step research turn, the model strongly prefers ending with a natural-language synthesis instead of a final tool call. Haruspex mitigates this with imperative tool descriptions, per-turn reminders, and a recovery pass that nudges the model when a turn ends without the expected write — but the mitigations aren't complete.
 
-**Workaround:** if the model didn't create the file on the first try, just ask again: _"write that to a PDF"_ or _"now create the PDF file"_. The second turn almost always succeeds because the report content is already in the conversation history and the model only needs to emit a single tool call rather than both researching and writing in the same turn.
-
-A proper fix would likely require either a larger/smarter model or a fundamentally different agent-loop design where file-write is enforced as a separate, mandatory stage after synthesis.
+**Workaround:** if the model didn't create the file on the first try, just ask again (*"write that to a PDF"*). The second turn almost always succeeds because the report content is already in the conversation history.
 
 ### Presentation creation and image search are experimental
 
-The presentation tools (`fs_write_pptx`, `fs_write_odp`) and the image discovery tools (`image_search`, `fetch_url_images`) work end-to-end but are best treated as experimental features rather than finished workflows. Specifically:
+The presentation tools (`fs_write_pptx`, `fs_write_odp`) and image discovery tools (`image_search`, `fetch_url_images`) work end-to-end but are best treated as experimental:
 
-- **Single-turn "research + create presentation with images" prompts are unreliable.** Asking the model to do a full research pass, discover images, download them, and write a presentation all in one turn frequently fails because the model runs out of tool-use fidelity partway through. You'll often see the model do the research, then either (a) describe what the presentation would contain without actually creating it, (b) re-research in a follow-up turn instead of going straight to the write tool, or (c) get stuck trying to find images that don't exist on Wikimedia Commons and give up.
-- **Image discovery for specific products is a gap.** `image_search` hits Wikimedia Commons, which has excellent coverage of landmarks, animals, historical subjects, and generic categories but very little for specific consumer tech products (a given motherboard model, a specific router, a particular GPU). `fetch_url_images` can scrape manufacturer product pages in principle, but the model needs to correctly identify a page that has the image before scraping it, and small local models aren't reliably good at that chain of reasoning.
-- **Most reliable workflow today is two or three turns.** Split the work: ask for the research first (*"research premium and budget X870 motherboards"*), review what the model found, then in a separate turn ask for the presentation explicitly and without images (*"create an ODP presentation with a title slide and one slide per motherboard, no images"*). Multi-turn prompts succeed much more often than single-turn mega-prompts because each turn's context stays small and the tool-use decisions stay simple.
-- **Presentation formatting is minimal.** Slides are limited to a title plus a bullet list (up to 2 levels of nesting) plus an optional single image. No tables, no custom layouts beyond title/content/section, no speaker notes, no charts. This is intentional to keep the renderer simple and the model's job manageable, but it does mean the generated decks are visually plain.
+- Single-turn "research + create presentation with images" prompts are unreliable. Split into two or three turns: research first, then ask for the presentation explicitly.
+- `image_search` hits Wikimedia Commons, which has great coverage of landmarks, animals, and generic subjects but very little for specific consumer-tech products.
+- Slides are limited to a title + bullet list (up to 2 levels of nesting) + an optional image. No tables, charts, speaker notes, or custom layouts.
 
-These tools will stay in the app and continue to be maintained — the limitations above are all on the model-behavior side, not the code side, and will improve as local models get better at tool use. They're flagged as experimental so you know what to expect when you reach for them.
+These limitations are model-behavior side and will improve as local models get better at tool use.
 
 ## Credits
 
-The Haruspex application icon is derived from a photograph of the **Piacenza Bronze Liver** by **Lokilech**, sourced from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Piacenza_Bronzeleber.jpg) and used under the [Creative Commons Attribution-ShareAlike 3.0 Unported](https://creativecommons.org/licenses/by-sa/3.0/) license. The original was background-removed, padded to square, and resized; the derived icon files in `src-tauri/icons/` are themselves licensed under CC BY-SA 3.0. See [`NOTICE.md`](./NOTICE.md) for full details.
+The Haruspex application icon is derived from a photograph of the **Piacenza Bronze Liver** by **Lokilech**, sourced from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Piacenza_Bronzeleber.jpg) and used under the [Creative Commons Attribution-ShareAlike 3.0 Unported](https://creativecommons.org/licenses/by-sa/3.0/) license. See [`NOTICE.md`](./NOTICE.md) for details.
 
 ## License
 
