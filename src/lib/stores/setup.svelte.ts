@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getSettings } from '$lib/stores/settings';
+import { getSettings, setActiveLocalModel } from '$lib/stores/settings';
 
 export type SetupStep = 'welcome' | 'hardware' | 'download' | 'test' | 'remote' | 'done';
 export type TestResult = 'pending' | 'running' | 'success' | 'error';
@@ -144,6 +144,7 @@ export async function runTestQuery(): Promise<void> {
 			testResult = 'error';
 			return;
 		}
+		setActiveLocalModel(modelPath);
 
 		// Only start the server if it isn't already running. start_server
 		// always stops-and-restarts, which on slow integrated graphics means

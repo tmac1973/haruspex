@@ -779,9 +779,47 @@ fn decode_xml_entities(s: &str) -> String {
 /// paragraph string becomes a <w:p> with a single <w:t> run. Basic
 /// formatting (bold, italic) is not supported in this first pass —
 /// the content parameter is plain text with newline-separated paragraphs.
-fn build_docx(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
+fn build_docx(
+    paragraphs: &[&str],
+    images: &std::collections::HashMap<String, LoadedImage>,
+) -> Result<Vec<u8>, String> {
+    use std::collections::BTreeSet;
     use std::io::Write;
     use zip::write::SimpleFileOptions;
+
+    // Walk paragraphs once to assign stable media indices to each unique
+    // image path. Duplicate paths share a single word/media/imageN.{ext}.
+    let mut ordered_image_paths: Vec<&String> = Vec::new();
+    let mut image_index: std::collections::HashMap<&String, usize> =
+        std::collections::HashMap::new();
+    for para in paragraphs {
+        if let Some((path, _)) = parse_standalone_image_line(para) {
+            if let Some(loaded_path) = images.keys().find(|k| **k == path) {
+                if !image_index.contains_key(loaded_path) {
+                    image_index.insert(loaded_path, ordered_image_paths.len() + 1);
+                    ordered_image_paths.push(loaded_path);
+                }
+            }
+        }
+    }
+    // Decode pixel dimensions for each image once. Each image's natural EMU
+    // size lives here; the per-paragraph rendering loop applies per-image
+    // ImageOptions (alignment, width%) on top of these natural dimensions.
+    let mut natural_emu: std::collections::HashMap<&String, (u64, u64)> =
+        std::collections::HashMap::new();
+    for path in &ordered_image_paths {
+        let img = images
+            .get(*path)
+            .ok_or_else(|| format!("Image {} missing from loaded map", path))?;
+        let (px_w, px_h) = image_pixel_dimensions(&img.bytes)?;
+        natural_emu.insert(*path, (px_to_emu(px_w), px_to_emu(px_h)));
+    }
+    let mut unique_exts: BTreeSet<&str> = BTreeSet::new();
+    for path in &ordered_image_paths {
+        if let Some(img) = images.get(*path) {
+            unique_exts.insert(img.extension.as_str());
+        }
+    }
 
     let mut buf = Vec::new();
     {
@@ -789,20 +827,32 @@ fn build_docx(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
         let options =
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-        // [Content_Types].xml
-        zip.start_file("[Content_Types].xml", options)
-            .map_err(|e| e.to_string())?;
-        zip.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        // [Content_Types].xml — adds Default entries for any image
+        // extensions actually used.
+        let mut content_types = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+"#,
+        );
+        for ext in &unique_exts {
+            content_types.push_str(&format!(
+                r#"<Default Extension="{}" ContentType="image/{}"/>
+"#,
+                ext, ext
+            ));
+        }
+        content_types.push_str(
+            r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
 </Types>"#,
-        )
-        .map_err(|e| e.to_string())?;
+        );
+        zip.start_file("[Content_Types].xml", options)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(content_types.as_bytes())
+            .map_err(|e| e.to_string())?;
 
-        // _rels/.rels
+        // _rels/.rels — package-level relationship to the main document.
         zip.start_file("_rels/.rels", options)
             .map_err(|e| e.to_string())?;
         zip.write_all(
@@ -813,14 +863,96 @@ fn build_docx(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
         )
         .map_err(|e| e.to_string())?;
 
-        // word/document.xml
+        // word/_rels/document.xml.rels — only emitted when there's at
+        // least one image to reference. Word tolerates a missing file
+        // when there are no images, and we'd rather not write empty
+        // <Relationships> XML.
+        if !ordered_image_paths.is_empty() {
+            let mut rels = String::from(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+"#,
+            );
+            for path in &ordered_image_paths {
+                let idx = image_index[*path];
+                let ext = &images[*path].extension;
+                rels.push_str(&format!(
+                    r#"<Relationship Id="rId{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image{}.{}"/>
+"#,
+                    idx, idx, ext
+                ));
+            }
+            rels.push_str("</Relationships>");
+            zip.start_file("word/_rels/document.xml.rels", options)
+                .map_err(|e| e.to_string())?;
+            zip.write_all(rels.as_bytes()).map_err(|e| e.to_string())?;
+        }
+
+        // word/media/imageN.{ext} — one per unique image.
+        for path in &ordered_image_paths {
+            let idx = image_index[*path];
+            let img = &images[*path];
+            zip.start_file(
+                format!("word/media/image{}.{}", idx, img.extension),
+                options,
+            )
+            .map_err(|e| e.to_string())?;
+            zip.write_all(&img.bytes).map_err(|e| e.to_string())?;
+        }
+
+        // word/document.xml — body XML. The root <w:document> needs every
+        // namespace prefix any drawing markup uses, so add wp/a/r/pic now
+        // even when there are no images (cheap, simpler than branching).
         let mut body_xml = String::from(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
 <w:body>"#,
         );
+        let mut drawing_id: u32 = 0;
         for para in paragraphs {
-            // Treat a heading if the line starts with # (simple markdown-ish)
+            if let Some((path, opts)) = parse_standalone_image_line(para) {
+                if let Some(&idx) = image_index.get(&path) {
+                    let (nat_w, nat_h) = natural_emu[&path];
+                    // Apply width% if specified, else auto-fit to content
+                    // width (capping at MAX_DOC_IMAGE_WIDTH_EMU). Aspect
+                    // ratio is always preserved.
+                    let target_w = match opts.width_fraction {
+                        Some(frac) => ((MAX_DOC_IMAGE_WIDTH_EMU as f32) * frac).round() as u64,
+                        None => nat_w.min(MAX_DOC_IMAGE_WIDTH_EMU),
+                    };
+                    let target_w = target_w.max(1);
+                    let target_h = ((nat_h as f64) * (target_w as f64) / (nat_w as f64)) as u64;
+                    let target_h = target_h.max(1);
+                    let jc = match opts.alignment {
+                        ImageAlignment::Center => "center",
+                        ImageAlignment::Right => "right",
+                        ImageAlignment::Left => "left",
+                    };
+                    drawing_id += 1;
+                    // Wrap the drawing in a paragraph with w:jc alignment
+                    // when not default-left. Word treats absent w:jc as
+                    // left-aligned, so we can skip the w:pPr block in that
+                    // case to keep the XML lean.
+                    let ppr = if opts.alignment == ImageAlignment::Left {
+                        String::new()
+                    } else {
+                        format!(r#"<w:pPr><w:jc w:val="{}"/></w:pPr>"#, jc)
+                    };
+                    body_xml.push_str(&format!(
+                        r#"<w:p>{ppr}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{w}" cy="{h}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Picture {id}"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="{id}" name="image{idx}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId{idx}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#,
+                        ppr = ppr,
+                        w = target_w,
+                        h = target_h,
+                        id = drawing_id,
+                        idx = idx,
+                    ));
+                    continue;
+                }
+                // Image referenced but not loaded — render the markdown
+                // verbatim as a paragraph so the user can see what went
+                // wrong instead of silently dropping content.
+            }
+            // Treat as a heading if the line starts with # (simple markdown-ish)
             let (text, heading_level) = parse_heading(para);
             let escaped = escape_xml(text);
             if let Some(level) = heading_level {
@@ -862,9 +994,47 @@ fn build_docx(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
 /// the format. This lets tools identify the document type from the raw
 /// zip header without decoding the full archive. LibreOffice won't open
 /// a file that violates this — it'll treat it as a generic zip.
-fn build_odt(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
+fn build_odt(
+    paragraphs: &[&str],
+    images: &std::collections::HashMap<String, LoadedImage>,
+) -> Result<Vec<u8>, String> {
+    use std::collections::BTreeSet;
     use std::io::Write;
     use zip::write::SimpleFileOptions;
+
+    // Walk paragraphs once to assign stable Pictures/imageN.{ext} indices
+    // to each unique image path referenced via standalone `![alt](path)`.
+    let mut ordered_image_paths: Vec<&String> = Vec::new();
+    let mut image_index: std::collections::HashMap<&String, usize> =
+        std::collections::HashMap::new();
+    for para in paragraphs {
+        if let Some((path, _)) = parse_standalone_image_line(para) {
+            if let Some(loaded_path) = images.keys().find(|k| **k == path) {
+                if !image_index.contains_key(loaded_path) {
+                    image_index.insert(loaded_path, ordered_image_paths.len() + 1);
+                    ordered_image_paths.push(loaded_path);
+                }
+            }
+        }
+    }
+    // Per-image natural sizes, in EMU. Width%/auto-fit and aspect-ratio
+    // scaling happen in the body loop so per-reference options can apply.
+    // ODF svg attributes need cm (1 cm = 360000 EMU).
+    let mut natural_emu: std::collections::HashMap<&String, (u64, u64)> =
+        std::collections::HashMap::new();
+    for path in &ordered_image_paths {
+        let img = images
+            .get(*path)
+            .ok_or_else(|| format!("Image {} missing from loaded map", path))?;
+        let (px_w, px_h) = image_pixel_dimensions(&img.bytes)?;
+        natural_emu.insert(*path, (px_to_emu(px_w), px_to_emu(px_h)));
+    }
+    let mut unique_exts: BTreeSet<&str> = BTreeSet::new();
+    for path in &ordered_image_paths {
+        if let Some(img) = images.get(*path) {
+            unique_exts.insert(img.extension.as_str());
+        }
+    }
 
     let mut buf = Vec::new();
     {
@@ -882,18 +1052,39 @@ fn build_odt(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
 
         // 2) META-INF/manifest.xml — lists every file in the package and
         //    its media type. The root `/` entry declares the document type.
-        zip.start_file("META-INF/manifest.xml", deflated)
-            .map_err(|e| e.to_string())?;
-        zip.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
+        //    Each embedded image needs its own file-entry, and so does the
+        //    Pictures/ directory entry that LibreOffice expects when any
+        //    Pictures/* file is present.
+        let mut manifest = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
 <manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="application/vnd.oasis.opendocument.text"/>
 <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
 <manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
 <manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
-</manifest:manifest>"#,
-        )
-        .map_err(|e| e.to_string())?;
+"#,
+        );
+        if !ordered_image_paths.is_empty() {
+            manifest.push_str(
+                r#"<manifest:file-entry manifest:full-path="Pictures/" manifest:media-type=""/>
+"#,
+            );
+        }
+        for path in &ordered_image_paths {
+            let idx = image_index[*path];
+            let ext = &images[*path].extension;
+            manifest.push_str(&format!(
+                r#"<manifest:file-entry manifest:full-path="Pictures/image{}.{}" manifest:media-type="image/{}"/>
+"#,
+                idx, ext, ext
+            ));
+        }
+        manifest.push_str("</manifest:manifest>");
+        let _ = unique_exts; // captured into manifest above; var kept for symmetry with DOCX path
+        zip.start_file("META-INF/manifest.xml", deflated)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(manifest.as_bytes())
+            .map_err(|e| e.to_string())?;
 
         // 3) meta.xml — minimal doc metadata. Optional but polite.
         zip.start_file("meta.xml", deflated)
@@ -924,14 +1115,63 @@ fn build_odt(paragraphs: &[&str]) -> Result<Vec<u8>, String> {
         )
         .map_err(|e| e.to_string())?;
 
-        // 5) content.xml — the document body.
+        // 6) Pictures/imageN.{ext} — embedded image binaries. ODF stores
+        //    these in a top-level Pictures/ directory referenced by
+        //    relative xlink:href from content.xml.
+        for path in &ordered_image_paths {
+            let idx = image_index[*path];
+            let img = &images[*path];
+            zip.start_file(format!("Pictures/image{}.{}", idx, img.extension), deflated)
+                .map_err(|e| e.to_string())?;
+            zip.write_all(&img.bytes).map_err(|e| e.to_string())?;
+        }
+
+        // 7) content.xml — the document body. The root element needs the
+        //    draw/svg/xlink namespaces since image paragraphs use them.
+        //    Declare automatic paragraph styles for image alignment up
+        //    front so the body loop can reference them by name.
         let mut body_xml = String::from(
             r#"<?xml version="1.0" encoding="UTF-8"?>
-<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.2">
-<office:automatic-styles/>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" office:version="1.2">
+<office:automatic-styles>
+<style:style style:name="ImageCenter" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>
+<style:style style:name="ImageRight" style:family="paragraph"><style:paragraph-properties fo:text-align="end"/></style:style>
+</office:automatic-styles>
 <office:body><office:text>"#,
         );
         for para in paragraphs {
+            if let Some((path, opts)) = parse_standalone_image_line(para) {
+                if let Some(&idx) = image_index.get(&path) {
+                    let (nat_w, nat_h) = natural_emu[&path];
+                    let target_w_emu = match opts.width_fraction {
+                        Some(frac) => ((MAX_DOC_IMAGE_WIDTH_EMU as f32) * frac).round() as u64,
+                        None => nat_w.min(MAX_DOC_IMAGE_WIDTH_EMU),
+                    };
+                    let target_w_emu = target_w_emu.max(1);
+                    let target_h_emu =
+                        ((nat_h as f64) * (target_w_emu as f64) / (nat_w.max(1) as f64)) as u64;
+                    let target_h_emu = target_h_emu.max(1);
+                    let cm_w = target_w_emu as f32 / 360000.0;
+                    let cm_h = target_h_emu as f32 / 360000.0;
+                    let style_attr = match opts.alignment {
+                        ImageAlignment::Center => r#" text:style-name="ImageCenter""#,
+                        ImageAlignment::Right => r#" text:style-name="ImageRight""#,
+                        ImageAlignment::Left => "",
+                    };
+                    let ext = &images[&path].extension;
+                    body_xml.push_str(&format!(
+                        r#"<text:p{style_attr}><draw:frame draw:name="image{idx}" text:anchor-type="paragraph" svg:width="{w:.3}cm" svg:height="{h:.3}cm"><draw:image xlink:href="Pictures/image{idx}.{ext}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame></text:p>"#,
+                        style_attr = style_attr,
+                        idx = idx,
+                        w = cm_w,
+                        h = cm_h,
+                        ext = ext,
+                    ));
+                    continue;
+                }
+                // Loaded-image lookup miss falls through to plain-text rendering
+                // of the markdown so the user can see what went wrong.
+            }
             let (text, heading_level) = parse_heading(para);
             let escaped = escape_xml(text);
             if let Some(level) = heading_level {
@@ -1209,6 +1449,126 @@ fn load_slide_images(
             .map_err(|e| format!("Failed to read image {}: {}", rel_path, e))?;
         let extension = normalize_image_extension(rel_path)?;
         out.insert(rel_path.clone(), LoadedImage { bytes, extension });
+    }
+    Ok(out)
+}
+
+/// Extract every `![alt](path)` image reference from a markdown-shaped
+/// document, in order of first appearance, deduplicated. The returned
+/// vector preserves source order so the document builders can assign
+/// stable media indices (`image1`, `image2`, …). Used by the PDF, DOCX,
+/// and ODT writers.
+///
+/// Matches the subset of CommonMark we actually want to support:
+///   - `![alt text](path)` — single line, no nested brackets
+///   - paths must end in a supported image extension (png/jpg/jpeg/gif)
+///   - URLs are intentionally NOT supported — only workdir-relative paths,
+///     because the writers load bytes from disk and the model shouldn't
+///     be smuggling network fetches into a document write
+pub fn extract_markdown_image_paths(content: &str) -> Vec<String> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+
+    let bytes = content.as_bytes();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] != b'!' || bytes[i + 1] != b'[' {
+            i += 1;
+            continue;
+        }
+        // Find the closing `]` of the alt block.
+        let alt_start = i + 2;
+        let Some(alt_end_rel) = bytes[alt_start..].iter().position(|&b| b == b']') else {
+            break;
+        };
+        let alt_end = alt_start + alt_end_rel;
+        // Must be immediately followed by `(`.
+        if alt_end + 1 >= bytes.len() || bytes[alt_end + 1] != b'(' {
+            i = alt_end + 1;
+            continue;
+        }
+        let path_start = alt_end + 2;
+        let Some(path_end_rel) = bytes[path_start..].iter().position(|&b| b == b')') else {
+            break;
+        };
+        let path_end = path_start + path_end_rel;
+        // The body of the parens may be either `path` or `path "title"` —
+        // the title field carries layout hints like `"center 50%"`. Split
+        // on the first whitespace so loading only sees the path.
+        let body = std::str::from_utf8(&bytes[path_start..path_end]).unwrap_or("");
+        let path = match body.find(char::is_whitespace) {
+            Some(idx) => body[..idx].trim().to_string(),
+            None => body.trim().to_string(),
+        };
+        i = path_end + 1;
+        if path.is_empty() {
+            continue;
+        }
+        // Reject obvious URLs — only workdir-relative paths are loadable.
+        let lower = path.to_ascii_lowercase();
+        if lower.starts_with("http://")
+            || lower.starts_with("https://")
+            || lower.starts_with("data:")
+        {
+            continue;
+        }
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        out.push(path);
+    }
+    out
+}
+
+/// Decode just enough of an image to learn its pixel dimensions. Used
+/// by the DOCX/ODT builders to compute display sizes in EMUs / cm.
+fn image_pixel_dimensions(bytes: &[u8]) -> Result<(u32, u32), String> {
+    use image::GenericImageView;
+    let img =
+        image::load_from_memory(bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
+    Ok(img.dimensions())
+}
+
+/// Convert pixel width at assumed 96 dpi to EMUs (914400 EMU per inch).
+/// 1 px @ 96 dpi = 914400 / 96 = 9525 EMU exactly.
+fn px_to_emu(px: u32) -> u64 {
+    px as u64 * 9525
+}
+
+/// Maximum displayed width for an embedded image in DOCX/ODT bodies,
+/// in EMUs. ≈ 6 inches = 5_486_400 EMU. Images wider than this are
+/// scaled down proportionally; smaller images render at natural size.
+const MAX_DOC_IMAGE_WIDTH_EMU: u64 = 5_486_400;
+
+/// Pre-load every image referenced by a markdown-shaped document body
+/// into the same `path -> LoadedImage` map shape that `load_slide_images`
+/// uses. Same constraints (extension allowlist, size cap). Missing files
+/// or unsupported extensions abort the write rather than silently dropping
+/// the image — the model gets a clear error so it can retry with a valid
+/// path.
+fn load_markdown_images(
+    workdir: &std::path::Path,
+    content: &str,
+) -> Result<std::collections::HashMap<String, LoadedImage>, String> {
+    use std::collections::HashMap;
+    let mut out: HashMap<String, LoadedImage> = HashMap::new();
+    for rel_path in extract_markdown_image_paths(content) {
+        let resolved = resolve_in_workdir(workdir, &rel_path)?;
+        let metadata = std::fs::metadata(&resolved)
+            .map_err(|e| format!("Failed to stat image {}: {}", rel_path, e))?;
+        if metadata.len() > MAX_PPTX_IMAGE_BYTES {
+            return Err(format!(
+                "Image {} is too large ({} bytes). Max is {} bytes.",
+                rel_path,
+                metadata.len(),
+                MAX_PPTX_IMAGE_BYTES
+            ));
+        }
+        let bytes = std::fs::read(&resolved)
+            .map_err(|e| format!("Failed to read image {}: {}", rel_path, e))?;
+        let extension = normalize_image_extension(&rel_path)?;
+        out.insert(rel_path, LoadedImage { bytes, extension });
     }
     Ok(out)
 }
@@ -2191,6 +2551,103 @@ struct MonoLine {
 enum DocumentBlock {
     Line(String),
     MonoBlock(Vec<MonoLine>),
+    /// Standalone embedded image. Carries the workdir-relative path the user
+    /// wrote in `![alt](path)` plus parsed `ImageOptions` from the title
+    /// field. Only lines that are *entirely* an image reference become Image
+    /// blocks — image syntax inside a paragraph is left as plain text and
+    /// rendered as the alt text. Image blocks always render on their own
+    /// with a small vertical gap above and below.
+    Image(String, ImageOptions),
+}
+
+/// Horizontal alignment for embedded images. Defaults to Left, matching the
+/// pre-options default and standard markdown rendering.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ImageAlignment {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+/// Parsed image-layout flags from the markdown title field. Built by
+/// `parse_image_options_from_title`. Defaults mean "no override" — every
+/// builder applies its existing auto-fit / left-align behavior.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ImageOptions {
+    pub alignment: ImageAlignment,
+    /// Display width as a fraction (0.05..=1.0) of the document's content
+    /// width. `None` means use natural size, scaled down to fit if needed.
+    pub width_fraction: Option<f32>,
+}
+
+/// Parse `"center 50%"`-style image options from the markdown title field.
+/// Tokens are whitespace-separated; `left|center|right` (and `centre`) set
+/// alignment, any token ending in `%` sets the width fraction. Unknown
+/// tokens are ignored so future flags can land without breaking docs.
+pub fn parse_image_options_from_title(title: &str) -> ImageOptions {
+    let mut out = ImageOptions::default();
+    for raw in title.split_whitespace() {
+        let token = raw.to_ascii_lowercase();
+        match token.as_str() {
+            "left" => out.alignment = ImageAlignment::Left,
+            "center" | "centre" => out.alignment = ImageAlignment::Center,
+            "right" => out.alignment = ImageAlignment::Right,
+            other if other.ends_with('%') => {
+                if let Ok(pct) = other.trim_end_matches('%').parse::<f32>() {
+                    // Clamp to a sane range: <5% is almost always a model
+                    // typo, >100% would overflow the content margin.
+                    let clamped = pct.clamp(5.0, 100.0);
+                    out.width_fraction = Some(clamped / 100.0);
+                }
+            }
+            _ => { /* ignore unknown tokens */ }
+        }
+    }
+    out
+}
+
+/// Parse an `![alt](path "title")` reference if the trimmed line consists of
+/// only that and nothing else. Returns the path and parsed options. The
+/// title is optional and quoted in CommonMark; we accept both `"..."` and
+/// `'...'`. Returns None for inline image refs embedded in other text — the
+/// preprocessor only promotes whole-line image refs to standalone blocks.
+fn parse_standalone_image_line(line: &str) -> Option<(String, ImageOptions)> {
+    let trimmed = line.trim();
+    let rest = trimmed.strip_prefix("![")?;
+    let alt_end = rest.find(']')?;
+    let after_alt = &rest[alt_end + 1..];
+    let inside = after_alt.strip_prefix('(')?;
+    let close = inside.rfind(')')?;
+    // Reject anything trailing after the closing `)`.
+    if !inside[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let body = &inside[..close];
+
+    // Split path from optional title on the first whitespace run.
+    let (path, title) = match body.find(char::is_whitespace) {
+        Some(i) => (body[..i].trim(), body[i + 1..].trim()),
+        None => (body.trim(), ""),
+    };
+    if path.is_empty() {
+        return None;
+    }
+
+    // Strip surrounding quotes from the title if present.
+    let title_unquoted = if title.len() >= 2
+        && ((title.starts_with('"') && title.ends_with('"'))
+            || (title.starts_with('\'') && title.ends_with('\'')))
+    {
+        &title[1..title.len() - 1]
+    } else {
+        title
+    };
+
+    Some((
+        path.to_string(),
+        parse_image_options_from_title(title_unquoted),
+    ))
 }
 
 /// Wrap `text` into lines that fit within `max_chars` characters, splitting
@@ -2374,6 +2831,14 @@ fn preprocess_lines(lines: &[&str]) -> Vec<DocumentBlock> {
     let mut out: Vec<DocumentBlock> = Vec::new();
     let mut i = 0;
     while i < lines.len() {
+        // Standalone image-reference line takes priority — these are
+        // promoted to Image blocks so the renderer can embed the bitmap
+        // instead of falling through to alt-text rendering.
+        if let Some((path, opts)) = parse_standalone_image_line(lines[i]) {
+            out.push(DocumentBlock::Image(path, opts));
+            i += 1;
+            continue;
+        }
         // Table detection: a header row followed by a separator row, then
         // zero or more data rows until the block ends.
         if i + 1 < lines.len() && is_table_row(lines[i]) && is_table_separator(lines[i + 1]) {
@@ -2621,12 +3086,32 @@ fn wrap_styled_words(words: &[StyledWord], max_chars: usize) -> Vec<Vec<StyledWo
 ///   - `#`, `##`, `###` headings (rendered bold, larger)
 ///   - `**bold**`, `*italic*`, `` `code` ``, `[text](url)` inline markdown
 ///   - `-` / `*` / `+` bullet lists (converted to `•`)
+///   - `![alt](path)` on a line by itself — embeds the referenced image
+///     pre-loaded into `images` (paths point into the workdir)
 ///
 /// Content is word-wrapped to fit the page and flows across multiple pages.
-fn build_pdf(lines: &[&str]) -> Result<Vec<u8>, String> {
+fn build_pdf(
+    lines: &[&str],
+    images: &std::collections::HashMap<String, LoadedImage>,
+) -> Result<Vec<u8>, String> {
     use printpdf::*;
 
     let mut doc = PdfDocument::new("Document");
+
+    // Register each unique referenced image with the PDF document once,
+    // up front, so the rendering loop only has to do lookups and emit
+    // `Op::UseXobject` ops. We track natural pixel dimensions alongside
+    // each XObjectId so the renderer can preserve aspect ratio.
+    let mut registered_images: std::collections::HashMap<String, (XObjectId, u32, u32)> =
+        std::collections::HashMap::new();
+    for (path, img) in images {
+        let mut warnings = Vec::new();
+        let raw = RawImage::decode_from_bytes(&img.bytes, &mut warnings)
+            .map_err(|e| format!("Failed to decode image {}: {}", path, e))?;
+        let (w, h) = (raw.width as u32, raw.height as u32);
+        let id = doc.add_image(&raw);
+        registered_images.insert(path.clone(), (id, w, h));
+    }
 
     // US Letter: 215.9 mm × 279.4 mm. Keep a 20 mm margin on all sides.
     let page_width_mm = 215.9_f32;
@@ -2911,6 +3396,125 @@ fn build_pdf(lines: &[&str]) -> Result<Vec<u8>, String> {
                 // Small visual gap after the table.
                 cursor_y_mm -= 3.0;
             }
+            DocumentBlock::Image(path, opts) => {
+                // Look up the pre-registered image. If it's missing (loading
+                // failed earlier or the model referenced a path we didn't
+                // load), render a one-line italic placeholder so the
+                // document still flows.
+                let Some(&(ref image_id, px_w, px_h)) = registered_images.get(path) else {
+                    let line_height_mm = (body_pt * 1.2) / mm_to_pt;
+                    if cursor_y_mm - line_height_mm < bottom_y_mm {
+                        page_break(
+                            &mut current_ops,
+                            &mut all_pages,
+                            &mut cursor_y_mm,
+                            &mut last_font,
+                        );
+                    }
+                    let font_pt_key = body_pt.to_bits();
+                    let key = (font_pt_key, FontFamily::Helvetica, false, true);
+                    if last_font != Some(key) {
+                        current_ops.push(Op::SetFont {
+                            font: PdfFontHandle::Builtin(pick_font(
+                                FontFamily::Helvetica,
+                                false,
+                                true,
+                            )),
+                            size: Pt(body_pt),
+                        });
+                        last_font = Some(key);
+                    }
+                    let baseline_pt = (cursor_y_mm - line_height_mm) * mm_to_pt + (body_pt * 0.2);
+                    current_ops.push(Op::SetTextMatrix {
+                        matrix: TextMatrix::Translate(Pt(margin_pt), Pt(baseline_pt)),
+                    });
+                    let placeholder = format!("[image: {}]", path);
+                    current_ops.push(Op::ShowText {
+                        items: vec![TextItem::Text(ascii_fold_for_pdf(&placeholder))],
+                    });
+                    cursor_y_mm -= line_height_mm;
+                    continue;
+                };
+
+                // Compute display size in points. Treat the bitmap's native
+                // pixel size as 96 dpi (a reasonable default for screenshots
+                // and matplotlib output). If the user specified width%, that
+                // becomes a fraction of the content width; otherwise fit
+                // to content width on overflow. Aspect ratio is preserved.
+                let dpi = 96.0_f32;
+                let natural_w_pt = (px_w as f32) * (72.0 / dpi);
+                let natural_h_pt = (px_h as f32) * (72.0 / dpi);
+                let (display_w_pt, display_h_pt) = match opts.width_fraction {
+                    Some(frac) => {
+                        let w = content_width_pt * frac;
+                        let h = if natural_w_pt > 0.0 {
+                            natural_h_pt * (w / natural_w_pt)
+                        } else {
+                            natural_h_pt
+                        };
+                        (w, h)
+                    }
+                    None => {
+                        let scale = (content_width_pt / natural_w_pt).min(1.0);
+                        (natural_w_pt * scale, natural_h_pt * scale)
+                    }
+                };
+                let display_h_mm = display_h_pt / mm_to_pt;
+                let translate_x_pt = match opts.alignment {
+                    ImageAlignment::Left => margin_pt,
+                    ImageAlignment::Center => margin_pt + (content_width_pt - display_w_pt) / 2.0,
+                    ImageAlignment::Right => margin_pt + (content_width_pt - display_w_pt),
+                };
+
+                // Force a page break if the image won't fit in the remaining
+                // vertical space. Don't try to shrink past natural size to fit
+                // — the page break preserves intent better than a tiny image.
+                if cursor_y_mm - display_h_mm < bottom_y_mm {
+                    page_break(
+                        &mut current_ops,
+                        &mut all_pages,
+                        &mut cursor_y_mm,
+                        &mut last_font,
+                    );
+                }
+
+                // Small vertical gap above the image so it doesn't kiss the
+                // line of text immediately above.
+                cursor_y_mm -= 2.0;
+
+                let y_baseline_pt = (cursor_y_mm - display_h_mm) * mm_to_pt;
+
+                // printpdf draws raster XObjects outside the text section. We
+                // close the section, emit the image op, then reopen it so the
+                // following text blocks render correctly. SetFont state is
+                // section-scoped, so reset our tracker.
+                current_ops.push(Op::EndTextSection);
+                // printpdf 0.9 applies a baseline px-to-pt transform at
+                // `dpi` *first*, then multiplies by `scale_x`/`scale_y`.
+                // With dpi=None (default 300), 1 px = 0.24 pt up front;
+                // a "scale 0.5" then meant "half of natural-at-300dpi",
+                // not "half of an inch worth of pixels". We tell printpdf
+                // to treat the bitmap as 96 dpi (a screenshot/matplotlib
+                // assumption that lines up with `natural_w_pt` below) and
+                // pass `scale_x` as the fraction of *that* baseline we
+                // want. The two together produce display_w_pt exactly.
+                current_ops.push(Op::UseXobject {
+                    id: image_id.clone(),
+                    transform: XObjectTransform {
+                        translate_x: Some(Pt(translate_x_pt)),
+                        translate_y: Some(Pt(y_baseline_pt)),
+                        rotate: None,
+                        scale_x: Some(display_w_pt / natural_w_pt),
+                        scale_y: Some(display_h_pt / natural_h_pt),
+                        dpi: Some(dpi),
+                    },
+                });
+                current_ops.push(Op::StartTextSection);
+                last_font = None;
+
+                cursor_y_mm -= display_h_mm;
+                cursor_y_mm -= 3.0;
+            }
         }
     }
 
@@ -2944,9 +3548,13 @@ pub async fn fs_write_pdf(
 
     refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
+    // Pre-load every `![alt](path)` image while we still have async runtime
+    // access. build_pdf itself does no I/O.
+    let images = load_markdown_images(&workdir, &content)?;
+
     let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let lines: Vec<&str> = content.lines().collect();
-        build_pdf(&lines)
+        build_pdf(&lines, &images)
     })
     .await
     .map_err(|e| format!("PDF build task failed: {}", e))??;
@@ -2981,10 +3589,12 @@ pub async fn fs_write_docx(
 
     refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
+    let images = load_markdown_images(&workdir, &content)?;
+
     // Split content into paragraphs on newlines, drop empty lines
     let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let paragraphs: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-        build_docx(&paragraphs)
+        build_docx(&paragraphs, &images)
     })
     .await
     .map_err(|e| format!("docx build task failed: {}", e))??;
@@ -3019,11 +3629,13 @@ pub async fn fs_write_odt(
 
     refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
+    let images = load_markdown_images(&workdir, &content)?;
+
     // Same markdown-ish line model as fs_write_docx: split on newlines,
     // drop empties, pass through build_odt for the zip+ODF packaging.
     let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let paragraphs: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-        build_odt(&paragraphs)
+        build_odt(&paragraphs, &images)
     })
     .await
     .map_err(|e| format!("odt build task failed: {}", e))??;
@@ -3763,7 +4375,11 @@ mod tests {
 
     #[test]
     fn build_odt_produces_valid_odf_zip() {
-        let bytes = build_odt(&["# Main Title", "## Subsection", "A paragraph."]).unwrap();
+        let bytes = build_odt(
+            &["# Main Title", "## Subsection", "A paragraph."],
+            &no_images(),
+        )
+        .unwrap();
         assert_odf_mimetype(&bytes, "application/vnd.oasis.opendocument.text");
 
         // Required files exist
@@ -3781,9 +4397,284 @@ mod tests {
         assert!(content.contains("<text:p>A paragraph.</text:p>"));
     }
 
+    /// Build a real PNG of the given dimensions for image-embedding tests.
+    /// `image::load_from_memory` has to be able to decode it, so we can't
+    /// use a bytestring placeholder — go through the `image` crate.
+    fn make_png(width: u32, height: u32) -> Vec<u8> {
+        let img = image::RgbImage::new(width, height);
+        let mut bytes: Vec<u8> = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        bytes
+    }
+
+    #[test]
+    fn extract_markdown_image_paths_handles_basic_cases() {
+        let content = "
+intro paragraph
+![alt](first.png)
+some prose
+![other](sub/dir/second.jpg)
+![first repeat](first.png)
+trailing
+";
+        let paths = extract_markdown_image_paths(content);
+        // Order: first appearance, dedup.
+        assert_eq!(
+            paths,
+            vec!["first.png".to_string(), "sub/dir/second.jpg".to_string()]
+        );
+    }
+
+    #[test]
+    fn extract_markdown_image_paths_rejects_urls_and_empty_paths() {
+        let content = "![empty-path]()
+![ok](inline.png)
+![web](https://example.com/img.png)
+![data](data:image/png;base64,xxx)
+![empty-alt](also-loaded.png)";
+        let paths = extract_markdown_image_paths(content);
+        // URL/data refs and empty-path refs drop out; empty alt text is fine.
+        assert_eq!(
+            paths,
+            vec!["inline.png".to_string(), "also-loaded.png".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_standalone_image_line_matches_only_whole_line_refs() {
+        assert_eq!(
+            parse_standalone_image_line("![alt](pic.png)"),
+            Some(("pic.png".to_string(), ImageOptions::default()))
+        );
+        assert_eq!(
+            parse_standalone_image_line("   ![alt](pic.png)   "),
+            Some(("pic.png".to_string(), ImageOptions::default()))
+        );
+        // Trailing prose disqualifies — image must be the entire line.
+        assert_eq!(parse_standalone_image_line("![alt](pic.png) caption"), None);
+        // Leading prose also disqualifies — only whole-line refs are blocks.
+        assert_eq!(parse_standalone_image_line("see ![alt](pic.png)"), None);
+        assert_eq!(parse_standalone_image_line("not an image"), None);
+        assert_eq!(parse_standalone_image_line("![alt]()"), None);
+    }
+
+    #[test]
+    fn parse_standalone_image_line_extracts_title_options() {
+        let (path, opts) = parse_standalone_image_line(r#"![alt](pic.png "center 50%")"#).unwrap();
+        assert_eq!(path, "pic.png");
+        assert_eq!(opts.alignment, ImageAlignment::Center);
+        assert!((opts.width_fraction.unwrap() - 0.5).abs() < 1e-6);
+
+        // Single-quoted title and reversed token order both work.
+        let (path, opts) =
+            parse_standalone_image_line(r#"![hero](img/hero.png '75% right')"#).unwrap();
+        assert_eq!(path, "img/hero.png");
+        assert_eq!(opts.alignment, ImageAlignment::Right);
+        assert!((opts.width_fraction.unwrap() - 0.75).abs() < 1e-6);
+
+        // Unknown tokens are ignored, valid ones still apply.
+        let (path, opts) =
+            parse_standalone_image_line(r#"![a](pic.png "shrink center bogus 30%")"#).unwrap();
+        assert_eq!(path, "pic.png");
+        assert_eq!(opts.alignment, ImageAlignment::Center);
+        assert!((opts.width_fraction.unwrap() - 0.3).abs() < 1e-6);
+
+        // Out-of-range width gets clamped to [5%, 100%].
+        let (_, opts) = parse_standalone_image_line(r#"![a](pic.png "200%")"#).unwrap();
+        assert!((opts.width_fraction.unwrap() - 1.0).abs() < 1e-6);
+        let (_, opts) = parse_standalone_image_line(r#"![a](pic.png "1%")"#).unwrap();
+        assert!((opts.width_fraction.unwrap() - 0.05).abs() < 1e-6);
+    }
+
+    #[test]
+    fn build_docx_embeds_referenced_image() {
+        let mut images = std::collections::HashMap::new();
+        let png = make_png(64, 32);
+        images.insert(
+            "hero.png".to_string(),
+            LoadedImage {
+                bytes: png.clone(),
+                extension: "png".to_string(),
+            },
+        );
+
+        let paragraphs = vec!["# Title", "intro", "![hero](hero.png)", "outro"];
+        let bytes = build_docx(&paragraphs, &images).unwrap();
+
+        // Image bytes land in word/media/image1.png.
+        let media = read_zip_entry_bytes(&bytes, "word/media/image1.png");
+        assert_eq!(media, png);
+
+        // Content_Types declares the png extension default.
+        let ct = read_zip_entry(&bytes, "[Content_Types].xml");
+        assert!(ct.contains(r#"<Default Extension="png" ContentType="image/png"/>"#));
+
+        // document.xml.rels has the image relationship.
+        let rels = read_zip_entry(&bytes, "word/_rels/document.xml.rels");
+        assert!(rels.contains(r#"Id="rId1""#));
+        assert!(rels.contains("media/image1.png"));
+
+        // document.xml contains a <w:drawing> with the expected r:embed ref.
+        let doc = read_zip_entry(&bytes, "word/document.xml");
+        assert!(doc.contains("<w:drawing>"));
+        assert!(doc.contains(r#"r:embed="rId1""#));
+        // Headings and prose still render normally alongside the image.
+        assert!(doc.contains("Title"));
+        assert!(doc.contains("intro"));
+        assert!(doc.contains("outro"));
+    }
+
+    #[test]
+    fn build_docx_without_images_skips_rels_file() {
+        let paragraphs = vec!["# Title", "just text"];
+        let bytes = build_docx(&paragraphs, &no_images()).unwrap();
+        // word/_rels/document.xml.rels should not be present when there
+        // are no images to reference.
+        let cursor = std::io::Cursor::new(&bytes);
+        let mut zip = zip::ZipArchive::new(cursor).expect("valid zip");
+        assert!(zip.by_name("word/_rels/document.xml.rels").is_err());
+    }
+
+    #[test]
+    fn build_odt_embeds_referenced_image() {
+        let mut images = std::collections::HashMap::new();
+        let png = make_png(48, 24);
+        images.insert(
+            "logo.png".to_string(),
+            LoadedImage {
+                bytes: png.clone(),
+                extension: "png".to_string(),
+            },
+        );
+
+        let paragraphs = vec!["# Heading", "![logo](logo.png)", "footer"];
+        let bytes = build_odt(&paragraphs, &images).unwrap();
+
+        // Image bytes land in Pictures/image1.png.
+        let media = read_zip_entry_bytes(&bytes, "Pictures/image1.png");
+        assert_eq!(media, png);
+
+        // Manifest lists the Pictures directory and the image file.
+        let manifest = read_zip_entry(&bytes, "META-INF/manifest.xml");
+        assert!(manifest.contains(r#"manifest:full-path="Pictures/""#));
+        assert!(manifest.contains(r#"manifest:full-path="Pictures/image1.png""#));
+        assert!(manifest.contains(r#"manifest:media-type="image/png""#));
+
+        // content.xml has a draw:frame referencing the picture.
+        let content = read_zip_entry(&bytes, "content.xml");
+        assert!(content.contains(r#"xlink:href="Pictures/image1.png""#));
+        assert!(content.contains("<draw:frame"));
+        // Heading and trailing paragraph still render.
+        assert!(content.contains("Heading"));
+        assert!(content.contains("footer"));
+    }
+
+    #[test]
+    fn build_docx_honors_image_alignment_and_width() {
+        let mut images = std::collections::HashMap::new();
+        images.insert(
+            "hero.png".to_string(),
+            LoadedImage {
+                bytes: make_png(100, 50),
+                extension: "png".to_string(),
+            },
+        );
+        let bytes = build_docx(
+            &["![hero](hero.png \"center 50%\")", "![hero](hero.png)"],
+            &images,
+        )
+        .unwrap();
+        let doc = read_zip_entry(&bytes, "word/document.xml");
+        // First reference is centered.
+        assert!(doc.contains(r#"<w:jc w:val="center"/>"#));
+        // The default-left second reference omits w:pPr/w:jc entirely. Two
+        // separate <w:drawing> blocks should appear regardless.
+        let drawings = doc.matches("<w:drawing>").count();
+        assert_eq!(drawings, 2);
+        // 50% of the 6 inch content width is ~2_743_200 EMU. Let the test
+        // be permissive: assert *some* cx value in the expected range
+        // appears.
+        let has_half_width = (2_500_000..3_000_000)
+            .step_by(1)
+            .any(|emu| doc.contains(&format!(r#"cx="{}""#, emu)));
+        // The exact computed cx is deterministic; verify the literal too.
+        assert!(
+            doc.contains(r#"cx="2743200""#) || has_half_width,
+            "expected ~50% content-width cx in docx, got:\n{}",
+            doc
+        );
+    }
+
+    #[test]
+    fn build_odt_honors_image_alignment_and_width() {
+        let mut images = std::collections::HashMap::new();
+        images.insert(
+            "hero.png".to_string(),
+            LoadedImage {
+                bytes: make_png(100, 50),
+                extension: "png".to_string(),
+            },
+        );
+        let bytes = build_odt(
+            &[
+                "![hero](hero.png \"right 75%\")",
+                "![hero](hero.png \"center\")",
+            ],
+            &images,
+        )
+        .unwrap();
+        let content = read_zip_entry(&bytes, "content.xml");
+        assert!(content.contains(r#"text:style-name="ImageRight""#));
+        assert!(content.contains(r#"text:style-name="ImageCenter""#));
+        // Style declarations should appear in automatic-styles.
+        assert!(content.contains(r#"style:name="ImageCenter""#));
+        assert!(content.contains(r#"style:name="ImageRight""#));
+        // 75% of 6" ≈ 11.43 cm. Match the cm decimal in the svg:width.
+        assert!(
+            content.contains(r#"svg:width="11.430cm""#)
+                || content.contains(r#"svg:width="11.43cm""#),
+            "expected ~11.43cm width in odt content, got:\n{}",
+            content
+        );
+    }
+
+    #[test]
+    fn build_pdf_embeds_referenced_image_without_panicking() {
+        // We can't easily decode the PDF stream here to confirm the image
+        // is positioned correctly, but we can at least verify the builder
+        // accepts a markdown body with an image reference and produces a
+        // non-empty PDF.
+        let mut images = std::collections::HashMap::new();
+        images.insert(
+            "chart.png".to_string(),
+            LoadedImage {
+                bytes: make_png(80, 60),
+                extension: "png".to_string(),
+            },
+        );
+        let bytes = build_pdf(
+            &[
+                "# Report",
+                "Some prose.",
+                "![chart](chart.png)",
+                "More prose.",
+            ],
+            &images,
+        )
+        .unwrap();
+        assert!(!bytes.is_empty());
+        // PDFs start with %PDF-
+        assert!(bytes.starts_with(b"%PDF-"));
+    }
+
     #[test]
     fn build_odt_escapes_xml_special_chars() {
-        let bytes = build_odt(&["Contains < and > and & and \"quoted\""]).unwrap();
+        let bytes = build_odt(&["Contains < and > and & and \"quoted\""], &no_images()).unwrap();
         let content = read_zip_entry(&bytes, "content.xml");
         assert!(content.contains("&lt;"));
         assert!(content.contains("&gt;"));

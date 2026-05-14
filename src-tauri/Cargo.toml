@@ -38,7 +38,7 @@ rodio = "0.21.1"
 hound = "3.5.1"
 pdf-extract = "0.9"
 pdfium-render = "0.9"
-printpdf = "0.9"
+printpdf = { version = "0.9", features = ["png", "jpeg", "gif"] }
 calamine = "0.30"
 zip = "4.6"
 image = "0.25"

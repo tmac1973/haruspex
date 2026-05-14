@@ -363,10 +363,112 @@ export function getChatTemplateKwargs(): Record<string, unknown> {
 export interface SamplingParams {
 	temperature: number;
 	top_p: number;
+	top_k: number;
+	presence_penalty: number;
 }
 
-export function getSamplingParams(): SamplingParams {
-	return { temperature: 0.7, top_p: 0.8 };
+interface SamplingProfile {
+	general: SamplingParams;
+	coding: SamplingParams;
+}
+
+interface ModelSamplingProfiles {
+	thinking: SamplingProfile;
+	nonThinking: SamplingProfile;
+}
+
+/**
+ * Recommended sampling parameters per model family. Values come straight
+ * from each model's published model card — keep them in sync if a model
+ * is upgraded. Add a new family by adding another entry here; the model
+ * family is derived from the active model identity at runtime by
+ * `modelFamilyFromId`. Unknown families fall back to `DEFAULT_FAMILY`.
+ *
+ * The two-axis layout (thinking × {general, coding}) mirrors how the
+ * Qwen 3.5 card itself groups its recommendations; the agent loop picks
+ * `coding` when the previous tool result indicates the model is in a
+ * code-editing context (a `<diagnostics>` block, or a tool call against
+ * a Python file).
+ */
+const SAMPLING_PROFILES: Record<string, ModelSamplingProfiles> = {
+	'qwen3.5': {
+		thinking: {
+			general: { temperature: 1.0, top_p: 0.95, top_k: 20, presence_penalty: 1.5 },
+			coding: { temperature: 0.6, top_p: 0.95, top_k: 20, presence_penalty: 0.0 }
+		},
+		nonThinking: {
+			general: { temperature: 0.7, top_p: 0.8, top_k: 20, presence_penalty: 1.5 },
+			// Qwen 3.5's card doesn't publish a non-thinking coding profile;
+			// mirror general so we still ship deterministic top_k and a sane
+			// presence_penalty when the user has thinking off.
+			coding: { temperature: 0.7, top_p: 0.8, top_k: 20, presence_penalty: 1.5 }
+		}
+	}
+};
+
+const DEFAULT_FAMILY = 'qwen3.5';
+
+/**
+ * Map a model identity (local GGUF filename or remote model ID) to a
+ * sampling-profile family. Falls back to `DEFAULT_FAMILY` for unknown
+ * IDs so a misconfigured remote endpoint still gets reasonable values.
+ */
+function modelFamilyFromId(id: string | null | undefined): string {
+	if (!id) return DEFAULT_FAMILY;
+	const lower = id.toLowerCase();
+	if (lower.includes('qwen3.5') || lower.includes('qwen-3.5')) return 'qwen3.5';
+	return DEFAULT_FAMILY;
+}
+
+/**
+ * Last-known active local model filename (e.g. "Qwen3.5-9B-Q4_K_M.gguf").
+ * Set by the layout when the local sidecar is started, so sampling
+ * resolution stays synchronous. Null until a model is loaded.
+ */
+let activeLocalModelFilename: string | null = null;
+
+/**
+ * Tell the settings layer which local GGUF is currently loaded. Called
+ * from places that invoke `get_active_model_path` immediately before
+ * starting the local sidecar. Safe to call with null to clear.
+ */
+export function setActiveLocalModel(filenameOrPath: string | null): void {
+	if (!filenameOrPath) {
+		activeLocalModelFilename = null;
+		return;
+	}
+	// Accept either a bare filename or a full path; strip the directory.
+	const slash = Math.max(filenameOrPath.lastIndexOf('/'), filenameOrPath.lastIndexOf('\\'));
+	activeLocalModelFilename = slash >= 0 ? filenameOrPath.slice(slash + 1) : filenameOrPath;
+}
+
+/**
+ * Identify the active model family — used by `getSamplingParams` to look
+ * up the right profile. In remote mode the family comes from the
+ * configured `remoteModelId`; in local mode it comes from the GGUF
+ * filename most recently registered via `setActiveLocalModel`.
+ */
+export function getActiveModelFamily(): string {
+	const inf = settings.inferenceBackend;
+	if (inf.mode === 'remote') return modelFamilyFromId(inf.remoteModelId);
+	return modelFamilyFromId(activeLocalModelFilename);
+}
+
+export interface SamplingOptions {
+	/**
+	 * True when the next completion is expected to involve writing or
+	 * fixing code (e.g. the previous tool result contained a
+	 * `<diagnostics>` block, or the model just ran Python). Selects the
+	 * model family's coding profile when available.
+	 */
+	codeContext?: boolean;
+}
+
+export function getSamplingParams(opts: SamplingOptions = {}): SamplingParams {
+	const family = getActiveModelFamily();
+	const profiles = SAMPLING_PROFILES[family] ?? SAMPLING_PROFILES[DEFAULT_FAMILY];
+	const mode = settings.thinkingEnabled ? profiles.thinking : profiles.nonThinking;
+	return opts.codeContext ? mode.coding : mode.general;
 }
 
 export function getResponseFormatPrompt(): string {

@@ -235,6 +235,8 @@ registerTool({
 					messages,
 					temperature: sampling.temperature,
 					top_p: sampling.top_p,
+					top_k: sampling.top_k,
+					presence_penalty: sampling.presence_penalty,
 					max_tokens: EMAIL_SUMMARY_MAX_TOKENS,
 					chat_template_kwargs: getChatTemplateKwargs()
 				},

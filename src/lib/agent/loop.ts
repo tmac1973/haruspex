@@ -116,6 +116,52 @@ export interface AgentLoopOptions {
 }
 
 /**
+ * Decide whether the next completion should use the active model's
+ * "coding" sampling profile (per the Qwen 3.5 recommendations: lower
+ * temperature, zero presence_penalty). The signal is local — we walk
+ * the most recent assistant/tool exchange:
+ *
+ *   - A tool result containing `<diagnostics file="*.py">` means we
+ *     just lint-errored Python and the model is about to fix it.
+ *   - An assistant tool call against `run_python`, or `fs_write_text` /
+ *     `fs_edit_text` on a .py path, means the model is actively writing
+ *     Python — the next iteration is overwhelmingly going to be more
+ *     Python.
+ *
+ * Any other exchange (web fetches, email, plain prose) returns false
+ * and we use the general profile. False positives are cheap (slightly
+ * flatter prose); false negatives mean the model is more likely to
+ * write buggy code, so we lean toward detection.
+ */
+export function isCodeContext(messages: ChatMessage[]): boolean {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role === 'tool') {
+			const text = messageText(msg.content);
+			if (/<diagnostics file="[^"]+\.py"/i.test(text)) return true;
+			continue;
+		}
+		if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+			for (const tc of msg.tool_calls) {
+				const name = tc.function?.name;
+				if (name === 'run_python') return true;
+				if (name === 'fs_edit_text' || name === 'fs_write_text') {
+					try {
+						const args = JSON.parse(tc.function.arguments) as { path?: string };
+						if (args.path && args.path.toLowerCase().endsWith('.py')) return true;
+					} catch {
+						// Unparseable arguments — treat as not-code-context.
+					}
+				}
+			}
+			return false;
+		}
+		if (msg.role === 'user') return false;
+	}
+	return false;
+}
+
+/**
  * Returns true if the model's response appears to be asking the user a
  * clarifying question rather than ending the turn with an answer. Used as
  * a guard on the file-write hallucination recovery so we don't interrupt
@@ -272,7 +318,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		}
 
 		// Non-streaming request to check for tool calls
-		const sampling = getSamplingParams();
+		const sampling = getSamplingParams({ codeContext: isCodeContext(messages) });
 		const templateKwargs = getChatTemplateKwargs();
 		const callStartMs = Date.now();
 		const response = await chatCompletion(
@@ -281,6 +327,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				tools,
 				temperature: sampling.temperature,
 				top_p: sampling.top_p,
+				top_k: sampling.top_k,
+				presence_penalty: sampling.presence_penalty,
 				max_tokens: AGENT_LOOP_MAX_TOKENS,
 				chat_template_kwargs: templateKwargs
 			},
@@ -547,6 +595,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 						messages,
 						temperature: sampling.temperature,
 						top_p: sampling.top_p,
+						top_k: sampling.top_k,
+						presence_penalty: sampling.presence_penalty,
 						max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
 						chat_template_kwargs: templateKwargs
 					},
@@ -596,6 +646,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 						tools,
 						temperature: sampling.temperature,
 						top_p: sampling.top_p,
+						top_k: sampling.top_k,
+						presence_penalty: sampling.presence_penalty,
 						max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
 						chat_template_kwargs: templateKwargs
 					},
@@ -738,12 +790,14 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				'Now please provide your complete answer based on everything you have researched. Do not search for anything else.'
 		});
 	}
-	const sampling2 = getSamplingParams();
+	const sampling2 = getSamplingParams({ codeContext: isCodeContext(messages) });
 	const stream = chatCompletionStream(
 		{
 			messages,
 			temperature: sampling2.temperature,
 			top_p: sampling2.top_p,
+			top_k: sampling2.top_k,
+			presence_penalty: sampling2.presence_penalty,
 			max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
 			chat_template_kwargs: getChatTemplateKwargs()
 		},

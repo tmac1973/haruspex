@@ -160,9 +160,17 @@ function sanitizeForRender(text: string): string {
 }
 
 function convertThinkingBlocks(text: string): string {
+	// If a message consists entirely of <think>...</think> with nothing
+	// after the closing tag (Qwen sometimes wraps its whole answer in
+	// thinking and emits EOS immediately), the thinking content IS the
+	// answer — promote it out of the block and render it as plain prose
+	// so the user doesn't see an empty assistant message.
+	const stripped = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+	const thinkingOnly = stripped.length === 0;
 	return text.replace(/<think>([\s\S]*?)<\/think>/g, (_match, content: string) => {
 		const trimmed = content.trim();
 		if (!trimmed) return '';
+		if (thinkingOnly) return `${trimmed}\n\n`;
 		return `<details class="thinking-block"><summary>Thinking...</summary>\n\n${trimmed}\n\n</details>\n\n`;
 	});
 }

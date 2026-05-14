@@ -74,7 +74,7 @@ PYTHON SANDBOX:
 - You have a Python sandbox in this app. Use run_python for math beyond simple arithmetic, parsing structured data, regex work, statistics, plotting, or any task where executing code is more reliable than reasoning out the answer.
 - Variables, imports, and installed packages persist across run_python calls within this chat. Build on prior state instead of reimporting every call.
 - Pyodide ships only the standard library by default. Use install_package('numpy') (or pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) before importing those — installs are cached for the chat.
-- fpdf2 (\`import fpdf\`) and python-pptx (\`from pptx import Presentation\`) are pre-installed in the sandbox. Use them — not any fs_write_* tool — to create PDFs and PowerPoint decks, especially when the document should include matplotlib charts. Pattern: render the chart with matplotlib, savefig to a PNG path in the working dir, then embed via \`pdf.image(path)\` or \`slide.shapes.add_picture(path, ...)\`, and finally \`pdf.output('report.pdf')\` / \`prs.save('deck.pptx')\` — those files land in the working dir automatically.
+- Do NOT use run_python to create PDFs, Word docs, PowerPoint decks, or spreadsheets. The dedicated fs_write_pdf / fs_write_pptx / fs_write_docx / fs_write_xlsx / fs_write_odt / fs_write_ods / fs_write_odp tools produce much better output than fpdf2 / python-pptx scripts. Use Python for the analysis or chart generation, save any plots as PNG files in the working directory with matplotlib's savefig, and then call the appropriate fs_write_* tool with the text/structured content (referencing the saved chart paths where the format supports embedded images).
 - If the sandbox state gets stuck (a hung import, a poisoned variable, an unrecoverable exception), call reset_python and start over. Don't reach for it casually — resets wipe everything in the session.
 - Tool results include stdout, stderr, the value of the final expression, and any artifacts (plots, tables) the UI rendered for the user. You see the text; the user also sees the rich artifacts.${sandboxFsSection}`
 				: ''
@@ -109,19 +109,16 @@ export function injectMessageHints(
 	}
 
 	if (opts.workingDir && looksLikeFileOutputRequest(lastText)) {
-		const writeGuidance = getSettings().sandboxEnabled
-			? 'PDFs via run_python with fpdf2, PowerPoints via run_python with ' +
-				'python-pptx, and other formats (docx, xlsx, odt, ods, odp) via the ' +
-				'matching fs_write_* tool'
-			: 'use the matching fs_write_* tool (fs_write_pdf / fs_write_pptx / ' +
-				'fs_write_docx / fs_write_xlsx / fs_write_odt / fs_write_ods / fs_write_odp)';
 		hints.push(
 			'You must create the requested file DURING THIS TURN. Do your research, ' +
-				'synthesize the content, then write the file: ' +
-				writeGuidance +
-				'. Do NOT paste the report as a chat message and expect the user ' +
-				'to ask again in a follow-up — that wastes a round trip and risks ' +
-				'running out of context on the retry. After the write succeeds, ' +
+				'synthesize the content, then write the file: use the matching ' +
+				'fs_write_* tool (fs_write_pdf / fs_write_pptx / fs_write_docx / ' +
+				'fs_write_xlsx / fs_write_odt / fs_write_ods / fs_write_odp). ' +
+				'Do NOT use run_python to generate the document — the dedicated ' +
+				'fs_write_* tools produce better output than fpdf2 / python-pptx ' +
+				'scripts. Do NOT paste the report as a chat message and expect the ' +
+				'user to ask again in a follow-up — that wastes a round trip and ' +
+				'risks running out of context on the retry. After the write succeeds, ' +
 				'respond with a brief confirmation and the file path.'
 		);
 	}

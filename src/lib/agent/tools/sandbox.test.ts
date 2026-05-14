@@ -142,24 +142,29 @@ describe('sandbox tools', () => {
 		}
 	});
 
-	it('hides fs_write_pdf / fs_write_pptx when the Python sandbox is enabled', async () => {
+	it('exposes fs_write_pdf / fs_write_pptx alongside run_python when the sandbox is enabled', async () => {
+		// Previously these were hidden to force the model through fpdf2 /
+		// python-pptx, but Qwen 3.5 9B repeatedly failed at that path
+		// (wrong fpdf API, latin-1 encoding errors, install thrash). The
+		// dedicated writers produce much better output and should always
+		// be the model's first choice for documents.
 		const { getToolSchemas } = await import('$lib/agent/tools');
 		const { updateSettings } = await import('$lib/stores/settings');
 		updateSettings({ sandboxEnabled: true });
 		try {
 			const schemas = getToolSchemas({ hasWorkingDir: true });
 			const names = schemas.map((s) => s.function.name);
-			expect(names).not.toContain('fs_write_pdf');
-			expect(names).not.toContain('fs_write_pptx');
-			// Sibling fs_write_* tools stay available either way.
+			expect(names).toContain('fs_write_pdf');
+			expect(names).toContain('fs_write_pptx');
 			expect(names).toContain('fs_write_docx');
 			expect(names).toContain('fs_write_xlsx');
+			expect(names).toContain('run_python');
 		} finally {
 			updateSettings({ sandboxEnabled: false });
 		}
 	});
 
-	it('exposes fs_write_pdf / fs_write_pptx as fallbacks when the Python sandbox is disabled', async () => {
+	it('exposes fs_write_pdf / fs_write_pptx when the Python sandbox is disabled', async () => {
 		const { getToolSchemas } = await import('$lib/agent/tools');
 		const { updateSettings } = await import('$lib/stores/settings');
 		updateSettings({ sandboxEnabled: false });

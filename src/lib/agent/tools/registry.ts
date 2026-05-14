@@ -36,12 +36,6 @@ export function getToolSchemas(opts: {
 		if (reg.category === 'sandbox' && !sandboxEnabled) continue;
 		if (deepResearch && name === 'fetch_url') continue;
 		if (!visionSupported && reg.requiresVision) continue;
-		// When the Python sandbox is on, the legacy markdown→PDF and
-		// hand-rolled-OOXML PPTX writers are hidden so the model uses the
-		// richer fpdf2 / python-pptx path via run_python (which can embed
-		// matplotlib charts directly). When sandbox is off, these stay
-		// available as the only path to those formats.
-		if (sandboxEnabled && (name === 'fs_write_pdf' || name === 'fs_write_pptx')) continue;
 
 		schemas.push(reg.schema);
 	}

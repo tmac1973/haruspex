@@ -29,7 +29,7 @@
 		cancelGeneration
 	} from '$lib/stores/chat.svelte';
 	import { getServerState, startServer, stopServer } from '$lib/stores/server.svelte';
-	import { getSettings } from '$lib/stores/settings';
+	import { getSettings, setActiveLocalModel } from '$lib/stores/settings';
 	import { getDebugLogsForTurn } from '$lib/debug-log';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
@@ -284,6 +284,7 @@
 				console.warn('No active model — cannot restart on GPU');
 				return;
 			}
+			setActiveLocalModel(modelPath);
 			await stopServer();
 			await startServer(modelPath, getSettings().contextSize);
 		} catch (e) {

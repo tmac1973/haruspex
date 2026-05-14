@@ -2175,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "haruspex"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "async-imap",
  "base64 0.22.1",
@@ -4334,6 +4334,7 @@ dependencies = [
  "base64 0.22.1",
  "flate2",
  "getrandom 0.3.4",
+ "image",
  "kuchiki",
  "lopdf 0.39.0",
  "rust-fontconfig",

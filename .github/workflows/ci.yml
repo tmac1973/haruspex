@@ -44,7 +44,7 @@ jobs:
         run: |
           TARGET=$(rustc --print host-tuple)
           mkdir -p src-tauri/binaries
-          for name in llama-server whisper-server koko; do
+          for name in llama-server whisper-server koko ruff; do
             echo '#!/bin/sh' > "src-tauri/binaries/${name}-${TARGET}"
             chmod +x "src-tauri/binaries/${name}-${TARGET}"
           done

@@ -21,6 +21,35 @@
         {
           "name": "binaries/koko",
           "sidecar": true
+        },
+        {
+          "name": "binaries/ruff",
+          "sidecar": true,
+          "args": [
+            "check",
+            "--output-format=json",
+            "--exit-zero",
+            "--isolated",
+            "--select=E9,F",
+            { "validator": "\\S+" }
+          ]
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/ruff",
+          "sidecar": true,
+          "args": [
+            "check",
+            "--output-format=json",
+            "--exit-zero",
+            "--isolated",
+            "--select=E9,F",
+            { "validator": "\\S+" }
+          ]
         }
       ]
     },

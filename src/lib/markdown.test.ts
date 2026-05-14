@@ -75,12 +75,32 @@ describe('renderMarkdown', () => {
 		expect(result).toContain('Thinking...');
 		expect(result).toContain('reason about this');
 		expect(result).toContain('The answer is 42');
+		// When real content follows the block, leave it collapsed.
+		expect(result).not.toMatch(/<details[^>]*\bopen\b/);
 	});
 
 	it('removes empty thinking blocks', () => {
 		const result = renderMarkdown('<think></think>\n\nJust the answer.');
 		expect(result).not.toContain('thinking-block');
 		expect(result).toContain('Just the answer');
+	});
+
+	it('promotes thinking content to the answer when message is thinking-only', () => {
+		// Qwen-3.5-with-reasoning failure mode: model wraps its entire
+		// summary in <think>...</think> and emits EOS, leaving an empty
+		// visible answer. Lift the content out so the user sees it as
+		// the answer without a thinking wrapper at all.
+		const result = renderMarkdown('<think>Done. F821 means undefined name.</think>');
+		expect(result).not.toContain('thinking-block');
+		expect(result).not.toContain('<details');
+		expect(result).toContain('F821 means undefined name');
+	});
+
+	it('promotes thinking content even when only trailing whitespace follows', () => {
+		// Whitespace-only tail still counts as thinking-only.
+		const result = renderMarkdown('<think>Reasoning here.</think>\n   \n');
+		expect(result).not.toContain('thinking-block');
+		expect(result).toContain('Reasoning here');
 	});
 
 	it('repairs table separator with missing pipe (crammed cells)', () => {
