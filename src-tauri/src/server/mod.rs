@@ -14,19 +14,10 @@ use crate::sidecar_utils::{
     LOG_RING_BUFFER_SIZE,
 };
 
-const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(60);
+mod log_classifier;
+use log_classifier::{classify, LogSignal};
 
-// GPU error patterns that trigger CPU fallback
-const GPU_ERROR_PATTERNS: &[&str] = &[
-    "vulkan",
-    "vk_",
-    "GGML_CUDA",
-    "metal",
-    "gpu",
-    "failed to initialize",
-    "no device found",
-    "out of memory",
-];
+const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Lifecycle state of the llama-server sidecar. Type alias onto
 /// `SidecarStatus` so all three sidecars share one wire shape.
@@ -149,14 +140,6 @@ impl LlamaServer {
             inner.status = status.clone();
             let _ = app.emit("server-status-changed", &status);
         }
-    }
-
-    fn detect_gpu_error(line: &str) -> bool {
-        let lower = line.to_lowercase();
-        GPU_ERROR_PATTERNS
-            .iter()
-            .any(|pattern| lower.contains(pattern))
-            && (lower.contains("error") || lower.contains("fail") || lower.contains("not found"))
     }
 
     pub async fn start(
@@ -344,7 +327,9 @@ impl LlamaServer {
                         let mut state = inner.lock().await;
                         push_log(&mut state.log_buffer, &format!("[stderr] {}", line_str));
 
-                        if Self::detect_gpu_error(&line_str) && !state.gpu_fallback_attempted {
+                        if classify(&line_str) == LogSignal::GpuError
+                            && !state.gpu_fallback_attempted
+                        {
                             warn!("GPU error detected, will attempt CPU fallback on exit");
                             state.gpu_error_detected = true;
                             // Keep the *first* matching line — it's almost
@@ -809,32 +794,6 @@ mod tests {
         assert!(args.contains(&"--verbose".to_string()));
         assert!(args.contains(&"--threads".to_string()));
         assert!(args.contains(&"4".to_string()));
-    }
-
-    #[test]
-    fn detect_gpu_error_vulkan() {
-        assert!(LlamaServer::detect_gpu_error(
-            "Vulkan error: failed to initialize device"
-        ));
-        assert!(LlamaServer::detect_gpu_error(
-            "vk_create_device: error creating device"
-        ));
-    }
-
-    #[test]
-    fn detect_gpu_error_metal() {
-        assert!(LlamaServer::detect_gpu_error(
-            "Metal: failed to create device"
-        ));
-    }
-
-    #[test]
-    fn detect_gpu_error_no_false_positives() {
-        assert!(!LlamaServer::detect_gpu_error("Model loaded successfully"));
-        assert!(!LlamaServer::detect_gpu_error(
-            "Using Vulkan backend with NVIDIA GPU"
-        ));
-        assert!(!LlamaServer::detect_gpu_error("GPU layers: 99"));
     }
 
     #[test]

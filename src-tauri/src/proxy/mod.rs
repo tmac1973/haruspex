@@ -13,9 +13,7 @@ use std::time::{Duration, Instant};
 pub(crate) use bypass::apply_proxy;
 use extract::fetch_and_extract;
 pub(crate) use extract::{validate_url, USER_AGENT};
-use search::{
-    search_auto, search_brave, search_duckduckgo, search_searxng,
-};
+use search::{search_auto, search_brave, search_duckduckgo, search_searxng};
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(test)]
@@ -283,8 +281,8 @@ pub async fn proxy_fetch(
 mod tests {
     use super::bypass::{parse_bypass_list, should_bypass, BypassEntry};
     use super::extract::{extract_text, is_private_ip};
-    use super::paywall::detect_paywall_signal;
     use super::images::{extract_page_images, parse_commons_imageinfo};
+    use super::paywall::detect_paywall_signal;
     use super::search::{parse_brave_html, parse_ddg_html, parse_mojeek_html};
     use super::*;
 

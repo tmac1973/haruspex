@@ -6,8 +6,8 @@
 use super::bypass::apply_proxy;
 use super::extract::{diagnostic_snippet, USER_AGENT};
 use super::{
-    ProxyConfig, ProxyState, SearchResult, ENGINE_COOLDOWN, ENGINE_COOLDOWN_SLOW,
-    FETCH_TIMEOUT, RATE_LIMIT_INTERVAL, RATE_LIMIT_INTERVAL_SLOW,
+    ProxyConfig, ProxyState, SearchResult, ENGINE_COOLDOWN, ENGINE_COOLDOWN_SLOW, FETCH_TIMEOUT,
+    RATE_LIMIT_INTERVAL, RATE_LIMIT_INTERVAL_SLOW,
 };
 use log::{info, warn};
 use scraper::{Html, Selector};
