@@ -5,6 +5,7 @@ mod fs_tools;
 mod inference;
 mod integrations;
 mod links;
+mod lint;
 mod models;
 mod proxy;
 mod sandbox_fetch;
@@ -116,6 +117,7 @@ pub fn run() {
             fs_tools::fs_download_url,
             fs_tools::fs_path_exists,
             fs_tools::fs_find_available_path,
+            lint::fs_lint_python,
             sandbox_fetch::sandbox_fetch,
             sandbox_save::sandbox_save,
             sandbox_save::sandbox_delete_in_workdir,

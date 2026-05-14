@@ -18,6 +18,7 @@
 		setEmailAccounts,
 		applyTheme,
 		getActiveContextSize,
+		setActiveLocalModel,
 		type ResponseFormat,
 		type ThemeMode,
 		type SearchProvider,
@@ -125,6 +126,7 @@
 			try {
 				const modelPath = await invoke<string | null>('get_active_model_path');
 				if (modelPath) {
+					setActiveLocalModel(modelPath);
 					await startServer(modelPath, getSettings().contextSize);
 				}
 			} catch (e) {
@@ -409,6 +411,7 @@
 
 	async function switchModel(filename: string) {
 		const path = `${modelsDir}/${filename}`;
+		setActiveLocalModel(path);
 		await stopServer();
 		await startServer(path, getSettings().contextSize);
 		activeModelPath = path;
@@ -417,6 +420,7 @@
 	async function restartServer() {
 		const modelPath = await invoke<string | null>('get_active_model_path');
 		if (modelPath) {
+			setActiveLocalModel(modelPath);
 			await stopServer();
 			await startServer(modelPath, getSettings().contextSize);
 			// Re-initialize TTS alongside

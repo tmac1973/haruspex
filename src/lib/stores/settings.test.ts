@@ -3,7 +3,10 @@ import {
 	getSettings,
 	updateInferenceBackend,
 	updateSettings,
-	getActiveContextSize
+	getActiveContextSize,
+	getSamplingParams,
+	getActiveModelFamily,
+	setActiveLocalModel
 } from '$lib/stores/settings';
 
 describe('inference backend settings', () => {
@@ -72,5 +75,90 @@ describe('inference backend settings', () => {
 		expect(inf.remoteApiKey).toBe('secret');
 		expect(inf.remoteModelId).toBe('qwen');
 		expect(inf.remoteContextSize).toBe(16384);
+	});
+});
+
+describe('sampling profile resolution', () => {
+	beforeEach(() => {
+		updateInferenceBackend({
+			mode: 'local',
+			remoteBaseUrl: '',
+			remoteApiKey: '',
+			remoteModelId: '',
+			remoteContextSize: null,
+			remoteVisionSupported: null,
+			remoteBackendKind: null
+		});
+		updateSettings({ thinkingEnabled: true });
+		setActiveLocalModel('Qwen3.5-9B-Q4_K_M.gguf');
+	});
+
+	it('resolves family from a local GGUF filename', () => {
+		setActiveLocalModel('Qwen3.5-9B-Q4_K_M.gguf');
+		expect(getActiveModelFamily()).toBe('qwen3.5');
+	});
+
+	it('strips directory components when given a full path', () => {
+		setActiveLocalModel('/home/user/.local/share/com.haruspex.app/models/Qwen3.5-4B-Q6_K.gguf');
+		expect(getActiveModelFamily()).toBe('qwen3.5');
+	});
+
+	it('falls back to default family for an unknown local model', () => {
+		setActiveLocalModel('Mystery-Model.gguf');
+		// Default is qwen3.5 — unknown families get sane params, not a crash.
+		expect(getActiveModelFamily()).toBe('qwen3.5');
+	});
+
+	it('resolves family from remoteModelId in remote mode', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://localhost:1234',
+			remoteModelId: 'Qwen3.5-9B-Instruct'
+		});
+		expect(getActiveModelFamily()).toBe('qwen3.5');
+	});
+
+	it('thinking mode + general task uses Qwen 3.5 thinking general profile', () => {
+		updateSettings({ thinkingEnabled: true });
+		const p = getSamplingParams();
+		expect(p).toEqual({
+			temperature: 1.0,
+			top_p: 0.95,
+			top_k: 20,
+			presence_penalty: 1.5
+		});
+	});
+
+	it('thinking mode + code context uses Qwen 3.5 coding profile', () => {
+		updateSettings({ thinkingEnabled: true });
+		const p = getSamplingParams({ codeContext: true });
+		expect(p).toEqual({
+			temperature: 0.6,
+			top_p: 0.95,
+			top_k: 20,
+			presence_penalty: 0.0
+		});
+	});
+
+	it('non-thinking mode + general task uses Qwen 3.5 non-thinking profile', () => {
+		updateSettings({ thinkingEnabled: false });
+		const p = getSamplingParams();
+		expect(p).toEqual({
+			temperature: 0.7,
+			top_p: 0.8,
+			top_k: 20,
+			presence_penalty: 1.5
+		});
+	});
+
+	it('non-thinking mode + code context mirrors general (Qwen 3.5 has no published coding/non-thinking profile)', () => {
+		updateSettings({ thinkingEnabled: false });
+		expect(getSamplingParams({ codeContext: true })).toEqual(getSamplingParams());
+	});
+
+	it('clears active local model when set to null', () => {
+		setActiveLocalModel(null);
+		// Still resolves to default family, not crash.
+		expect(getActiveModelFamily()).toBe('qwen3.5');
 	});
 });

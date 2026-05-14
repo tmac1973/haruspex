@@ -33,7 +33,8 @@
     "externalBin": [
       "binaries/llama-server",
       "binaries/whisper-server",
-      "binaries/koko"
+      "binaries/koko",
+      "binaries/ruff"
     ],
     "resources": [
       "binaries/libs/*",

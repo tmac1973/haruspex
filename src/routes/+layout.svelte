@@ -8,7 +8,7 @@
 	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { enterRemoteMode, initServerStore, startServer } from '$lib/stores/server.svelte';
-	import { applyTheme, getSettings } from '$lib/stores/settings';
+	import { applyTheme, getSettings, setActiveLocalModel } from '$lib/stores/settings';
 	import { checkForUpdate, type UpdateInfo } from '$lib/updates';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getVersion } from '@tauri-apps/api/app';
@@ -91,6 +91,7 @@
 					// Auto-start server with available model
 					const modelPath = await invoke<string | null>('get_active_model_path');
 					if (modelPath) {
+						setActiveLocalModel(modelPath);
 						startServer(modelPath, getSettings().contextSize);
 					}
 					// Eagerly start TTS in the background (non-blocking)

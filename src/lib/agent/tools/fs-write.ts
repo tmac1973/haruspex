@@ -3,6 +3,7 @@ import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
 import type { ToolExecOutput } from './types';
 import { IMAGE_EXT_RE } from './fs-read';
+import { lintPythonIfApplicable } from './python-lint';
 
 /**
  * Outcome of pre-write conflict resolution. `null` means the user
@@ -82,7 +83,8 @@ async function fsWriteWithConflictCheck(
 			overwrite: resolved.overwrite
 		});
 		filesWrittenThisTurn.add(resolved.finalPath);
-		return toolResult(`Wrote: ${resolved.finalPath}`);
+		const diag = await lintPythonIfApplicable(workdir, resolved.finalPath);
+		return toolResult(`Wrote: ${resolved.finalPath}${diag}`);
 	} catch (e) {
 		return toolResult(toolError(`${command} failed: ${e}`));
 	}
@@ -191,7 +193,7 @@ registerTool({
 		function: {
 			name: 'fs_write_docx',
 			description:
-				'Create a Microsoft Word (.docx) file in the working directory from text content. The content is split into paragraphs on newlines. Lines starting with # become Heading 1, ## become Heading 2, ### become Heading 3. Everything else is regular body text.',
+				'Create a Microsoft Word (.docx) file in the working directory from text content. The content is split into paragraphs on newlines. Lines starting with # become Heading 1, ## become Heading 2, ### become Heading 3. Embed images with `![alt](path)` on a line by itself; add an optional title to control alignment and width, e.g. `![alt](path "center 50%")`. Everything else is regular body text.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -199,7 +201,7 @@ registerTool({
 					content: {
 						type: 'string',
 						description:
-							'Text content for the document. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings.'
+							'Text content for the document. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings. Embed an image with `![alt](path)` on a line by itself — the path is workdir-relative and must end in .png / .jpg / .jpeg / .gif. Optional layout: `![alt](path "center 50%")` accepts `left|center|right` and/or a width percentage 5–100% in the title; unknown tokens are ignored.'
 					}
 				},
 				required: ['path', 'content']
@@ -218,10 +220,9 @@ registerTool({
 	}
 });
 
-// Legacy markdown→PDF path. When the Python sandbox is enabled this
-// tool is filtered out in getToolSchemas so the model uses fpdf2 via
-// run_python (which can embed matplotlib charts). When sandbox is off,
-// this is the only PDF creation path.
+// Markdown→PDF tool. Always exposed (the Python toggle no longer hides
+// it). Better choice than fpdf2-via-run_python for documents — see the
+// system prompt's Python sandbox section.
 registerTool({
 	category: 'fs',
 	schema: {
@@ -229,7 +230,7 @@ registerTool({
 		function: {
 			name: 'fs_write_pdf',
 			description:
-				'Create a PDF report from markdown content. Use # / ## / ### for headings. Supports bold, italic, code, bullet lists, and markdown tables. Write flowing prose organized by sections — prefer paragraphs over bullet lists.',
+				'Create a PDF report from markdown content. Use # / ## / ### for headings. Supports bold, italic, code, bullet lists, markdown tables, and embedded images via `![alt](path)` on a line by itself; add an optional title to control alignment and width, e.g. `![alt](path "center 50%")`. Write flowing prose organized by sections — prefer paragraphs over bullet lists.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -237,7 +238,7 @@ registerTool({
 					content: {
 						type: 'string',
 						description:
-							'Report content as markdown-style text. Headings use `#`/`##`/`###` (never `**Bold**` alone). Body is flowing paragraphs separated by blank lines. `- item` bullets ONLY for lists of 3+ related items. Markdown tables render as real tables — use them for genuinely tabular data with short cell contents. Do not use `---` for page breaks; page flow is automatic.'
+							'Report content as markdown-style text. Headings use `#`/`##`/`###` (never `**Bold**` alone). Body is flowing paragraphs separated by blank lines. `- item` bullets ONLY for lists of 3+ related items. Markdown tables render as real tables — use them for genuinely tabular data with short cell contents. Embed images with `![alt](path)` on a line by itself; the path is workdir-relative and must end in .png / .jpg / .jpeg / .gif. Optional layout: `![alt](path "center 50%")` accepts `left|center|right` and/or a width percentage 5–100% in the title; unknown tokens are ignored. Do not use `---` for page breaks; page flow is automatic.'
 					}
 				},
 				required: ['path', 'content']
@@ -308,7 +309,7 @@ registerTool({
 		function: {
 			name: 'fs_write_odt',
 			description:
-				'Create an OpenDocument Text (.odt) file for LibreOffice Writer. Same API as fs_write_docx. Only use when the user asks for ODT specifically.',
+				'Create an OpenDocument Text (.odt) file for LibreOffice Writer. Same API as fs_write_docx, including `![alt](path)` image embedding with optional `"center 50%"` title for alignment/width. Only use when the user asks for ODT specifically.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -316,7 +317,7 @@ registerTool({
 					content: {
 						type: 'string',
 						description:
-							'Text content. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings.'
+							'Text content. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings. Embed an image with `![alt](path)` on a line by itself — the path is workdir-relative and must end in .png / .jpg / .jpeg / .gif. Optional layout: `![alt](path "center 50%")` accepts `left|center|right` and/or a width percentage 5–100% in the title; unknown tokens are ignored.'
 					}
 				},
 				required: ['path', 'content']
@@ -543,7 +544,8 @@ registerTool({
 				oldStr: args.old_str as string,
 				newStr: args.new_str as string
 			});
-			return toolResult(`Edited ${args.path}`);
+			const diag = await lintPythonIfApplicable(ctx.workingDir, args.path as string);
+			return toolResult(`Edited ${args.path}${diag}`);
 		} catch (e) {
 			return toolResult(toolError(`fs_edit_text failed: ${e}`));
 		}

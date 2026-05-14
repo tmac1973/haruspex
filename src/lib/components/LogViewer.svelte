@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { getDebugLogs } from '$lib/debug-log';
 
-	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'debug';
+	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'debug' | 'tools';
 
 	interface Props {
 		open: boolean;
@@ -17,7 +17,7 @@
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let wasAtBottom = true;
 
-	const tabCommands: Record<Exclude<LogTab, 'debug'>, string> = {
+	const tabCommands: Record<Exclude<LogTab, 'debug' | 'tools'>, string> = {
 		app: 'get_app_logs',
 		llm: 'get_server_logs',
 		tts: 'get_tts_logs',
@@ -29,7 +29,8 @@
 		llm: 'LLM',
 		tts: 'TTS',
 		whisper: 'Whisper',
-		debug: 'Debug'
+		debug: 'Debug',
+		tools: 'Tools'
 	};
 
 	async function fetchLogs() {
@@ -37,6 +38,11 @@
 			if (activeTab === 'debug') {
 				// Frontend-side ring buffer; no Tauri round-trip needed.
 				logLines = getDebugLogs();
+			} else if (activeTab === 'tools') {
+				// Same buffer, narrowed to tool start/end lines so you can
+				// see exactly what arguments the model passed to each tool
+				// without scrolling past API and loop chatter.
+				logLines = getDebugLogs().filter((l) => /\[agent\] tool (start|end):/.test(l));
 			} else {
 				logLines = await invoke<string[]>(tabCommands[activeTab]);
 			}
@@ -126,7 +132,7 @@
 		<div class="modal">
 			<div class="modal-header">
 				<div class="tabs">
-					{#each ['app', 'llm', 'tts', 'whisper', 'debug'] as const as tab (tab)}
+					{#each ['app', 'llm', 'tts', 'whisper', 'debug', 'tools'] as const as tab (tab)}
 						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
 							{tabLabels[tab]}
 						</button>
