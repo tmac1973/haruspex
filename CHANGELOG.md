@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.37](https://github.com/tmac1973/haruspex/compare/v0.1.36...v0.1.37) (2026-05-15)
+
+
+### Bug Fixes
+
+* **models:** persist active model selection across reloads ([42a2799](https://github.com/tmac1973/haruspex/commit/42a279907b9fad76e3ab5757a68b54a1004a4685))
+* **models:** persist active model selection across reloads ([5274c31](https://github.com/tmac1973/haruspex/commit/5274c31c48b79f8343585567edd7a92fd5898d5e))
+
 ## [0.1.36](https://github.com/tmac1973/haruspex/compare/v0.1.35...v0.1.36) (2026-05-14)
 
 
