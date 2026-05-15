@@ -8,7 +8,12 @@
 	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { enterRemoteMode, initServerStore, startServer } from '$lib/stores/server.svelte';
-	import { applyTheme, getSettings, setActiveLocalModel } from '$lib/stores/settings';
+	import {
+		applyTheme,
+		getActiveLocalModelFilename,
+		getSettings,
+		setActiveLocalModel
+	} from '$lib/stores/settings';
 	import { checkForUpdate, type UpdateInfo } from '$lib/updates';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getVersion } from '@tauri-apps/api/app';
@@ -88,8 +93,13 @@
 				if (!hasModel && !page.url.pathname.startsWith('/setup')) {
 					goto('/setup');
 				} else if (hasModel && !page.url.pathname.startsWith('/setup')) {
-					// Auto-start server with available model
-					const modelPath = await invoke<string | null>('get_active_model_path');
+					// Auto-start server with available model. Prefer the
+					// model the user last activated (persisted in settings);
+					// the Rust side falls back to find_any_model when the
+					// preference is empty or no longer on disk.
+					const modelPath = await invoke<string | null>('get_active_model_path', {
+						preferredFilename: getActiveLocalModelFilename() || null
+					});
 					if (modelPath) {
 						setActiveLocalModel(modelPath);
 						startServer(modelPath, getSettings().contextSize);

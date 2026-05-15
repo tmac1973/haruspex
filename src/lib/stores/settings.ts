@@ -126,6 +126,14 @@ export interface AppSettings {
 	dismissedGpuWarning: boolean;
 	keepRecentToolResults: boolean;
 	/**
+	 * Filename (basename, e.g. "Qwen3.5-9B-Q4_K_M.gguf") of the model the
+	 * user most recently activated in Settings → Models. Persisted so the
+	 * choice survives app restarts and re-entering the Settings page;
+	 * `''` means "no preference recorded yet" — callers fall back to
+	 * whatever `find_any_model` returns from disk.
+	 */
+	activeLocalModelFilename: string;
+	/**
 	 * Master switch for the Python code sandbox. When false, run_python
 	 * / install_package / reset_python are filtered out of the model's
 	 * tool list entirely, the same way fs tools are when no working
@@ -199,6 +207,7 @@ const defaults: AppSettings = {
 	audioInputDevice: '',
 	dismissedGpuWarning: false,
 	keepRecentToolResults: true,
+	activeLocalModelFilename: '',
 	sandboxEnabled: false,
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 30,
@@ -423,23 +432,51 @@ function modelFamilyFromId(id: string | null | undefined): string {
 /**
  * Last-known active local model filename (e.g. "Qwen3.5-9B-Q4_K_M.gguf").
  * Set by the layout when the local sidecar is started, so sampling
- * resolution stays synchronous. Null until a model is loaded.
+ * resolution stays synchronous. Null until a model is loaded. Hydrated
+ * from persisted settings on module load so sampling-profile lookup
+ * works on the first render of a chat without waiting for the layout's
+ * IPC round-trip.
  */
-let activeLocalModelFilename: string | null = null;
+let activeLocalModelFilename: string | null = settings.activeLocalModelFilename || null;
 
 /**
  * Tell the settings layer which local GGUF is currently loaded. Called
  * from places that invoke `get_active_model_path` immediately before
- * starting the local sidecar. Safe to call with null to clear.
+ * starting the local sidecar, and from the Models settings card when
+ * the user clicks Use. Safe to call with null to clear.
+ *
+ * Persists the basename to localStorage as `activeLocalModelFilename`
+ * so the choice survives reloads — without this, the UI's "active"
+ * badge and the layout's auto-start fall back to whatever
+ * `find_any_model` returns from disk (effectively random), which is
+ * what users hit before this persisted.
  */
 export function setActiveLocalModel(filenameOrPath: string | null): void {
 	if (!filenameOrPath) {
 		activeLocalModelFilename = null;
+		if (settings.activeLocalModelFilename !== '') {
+			settings = { ...settings, activeLocalModelFilename: '' };
+			save(settings);
+		}
 		return;
 	}
 	// Accept either a bare filename or a full path; strip the directory.
 	const slash = Math.max(filenameOrPath.lastIndexOf('/'), filenameOrPath.lastIndexOf('\\'));
-	activeLocalModelFilename = slash >= 0 ? filenameOrPath.slice(slash + 1) : filenameOrPath;
+	const basename = slash >= 0 ? filenameOrPath.slice(slash + 1) : filenameOrPath;
+	activeLocalModelFilename = basename;
+	if (settings.activeLocalModelFilename !== basename) {
+		settings = { ...settings, activeLocalModelFilename: basename };
+		save(settings);
+	}
+}
+
+/**
+ * Persisted filename (basename) of the model the user last activated.
+ * Empty string if no choice has been recorded yet — callers should
+ * fall back to a disk scan in that case.
+ */
+export function getActiveLocalModelFilename(): string {
+	return settings.activeLocalModelFilename;
 }
 
 /**

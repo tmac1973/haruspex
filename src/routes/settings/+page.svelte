@@ -10,6 +10,7 @@
 		exitRemoteMode
 	} from '$lib/stores/server.svelte';
 	import {
+		getActiveLocalModelFilename,
 		getSettings,
 		updateSettings,
 		updateInferenceBackend,
@@ -98,7 +99,9 @@
 			// yet, the layout's first-run redirect will kick in instead.
 			exitRemoteMode();
 			try {
-				const modelPath = await invoke<string | null>('get_active_model_path');
+				const modelPath = await invoke<string | null>('get_active_model_path', {
+					preferredFilename: getActiveLocalModelFilename() || null
+				});
 				if (modelPath) {
 					setActiveLocalModel(modelPath);
 					await startServer(modelPath, getSettings().contextSize);
@@ -259,7 +262,9 @@
 	});
 
 	async function restartServer() {
-		const modelPath = await invoke<string | null>('get_active_model_path');
+		const modelPath = await invoke<string | null>('get_active_model_path', {
+			preferredFilename: getActiveLocalModelFilename() || null
+		});
 		if (modelPath) {
 			setActiveLocalModel(modelPath);
 			await stopServer();

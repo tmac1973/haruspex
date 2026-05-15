@@ -15,7 +15,11 @@
 	import { listen } from '@tauri-apps/api/event';
 	import { onMount } from 'svelte';
 	import { startServer, stopServer } from '$lib/stores/server.svelte';
-	import { getSettings, setActiveLocalModel } from '$lib/stores/settings';
+	import {
+		getActiveLocalModelFilename,
+		getSettings,
+		setActiveLocalModel
+	} from '$lib/stores/settings';
 
 	interface ModelInfo {
 		id: string;
@@ -42,7 +46,12 @@
 
 	async function refreshModels() {
 		models = await invoke<ModelInfo[]>('list_models');
-		activeModelPath = await invoke<string | null>('get_active_model_path');
+		// Pass the user's persisted choice so the "active" badge tracks
+		// what they actually picked, not whichever .gguf the OS happens
+		// to enumerate first from the models dir.
+		activeModelPath = await invoke<string | null>('get_active_model_path', {
+			preferredFilename: getActiveLocalModelFilename() || null
+		});
 	}
 
 	function formatBytes(bytes: number): string {

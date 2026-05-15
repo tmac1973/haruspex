@@ -906,7 +906,18 @@ pub async fn has_any_model(state: tauri::State<'_, ModelManager>) -> Result<bool
 #[tauri::command]
 pub async fn get_active_model_path(
     state: tauri::State<'_, ModelManager>,
+    preferred_filename: Option<String>,
 ) -> Result<Option<String>, ()> {
+    // Honor the caller's stored preference when the file is actually on
+    // disk; otherwise fall back to "any model" so first-run users (who
+    // have no preference recorded yet) and users who deleted their
+    // chosen model still get a working sidecar.
+    if let Some(name) = preferred_filename.as_deref().filter(|s| !s.is_empty()) {
+        let path = state.models_dir().join(name);
+        if path.exists() {
+            return Ok(Some(path.to_string_lossy().to_string()));
+        }
+    }
     Ok(state
         .find_any_model()
         .map(|p| p.to_string_lossy().to_string()))
