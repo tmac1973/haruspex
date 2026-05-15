@@ -1,6 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getSettings, setActiveLocalModel } from '$lib/stores/settings';
+import {
+	getActiveLocalModelFilename,
+	getSettings,
+	setActiveLocalModel
+} from '$lib/stores/settings';
 
 export type SetupStep = 'welcome' | 'hardware' | 'download' | 'test' | 'remote' | 'done';
 export type TestResult = 'pending' | 'running' | 'success' | 'error';
@@ -138,7 +142,9 @@ export async function runTestQuery(): Promise<void> {
 	testStatusMessage = 'Looking for model...';
 
 	try {
-		const modelPath = await invoke<string | null>('get_active_model_path');
+		const modelPath = await invoke<string | null>('get_active_model_path', {
+			preferredFilename: getActiveLocalModelFilename() || null
+		});
 		if (!modelPath) {
 			testStatusMessage = 'No model found.';
 			testResult = 'error';
