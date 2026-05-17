@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.38](https://github.com/tmac1973/haruspex/compare/v0.1.37...v0.1.38) (2026-05-17)
+
+
+### Documentation
+
+* **workspace:** add phase-13 plan for interactive Python+HTML tab ([35dcea9](https://github.com/tmac1973/haruspex/commit/35dcea9704af5cb0b4fa3a55bdb5c3bf63db9418))
+
 ## [0.1.37](https://github.com/tmac1973/haruspex/compare/v0.1.36...v0.1.37) (2026-05-15)
 
 
