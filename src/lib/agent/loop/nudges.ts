@@ -1,5 +1,5 @@
 /**
- * Per-turn recovery state for `runAgentLoop`. Tracks the three nudge
+ * Per-turn recovery state for `runAgentLoop`. Tracks the nudge
  * heuristics that catch common small-model failure modes:
  *
  *  1. **File-write hallucination**: the user asked for a file (PDF,
@@ -17,9 +17,17 @@
  *     re-evaluate" hint to the tool result so the model can break
  *     out of a tight-loop of near-identical failing code.
  *
- * NudgeState owns all three counters plus their consumed flags so
+ *  4. **Narrate-recovery**: after any nudge that demands a tool
+ *     call, smaller models often reply with text describing what
+ *     they will do next ("Let me fetch these...") and emit no
+ *     tool_calls block. The loop would then commit that narration
+ *     as the final answer. Arming this flag with armNarrateRecovery
+ *     after pushing a nudge gives runAgentLoop one shot to detect
+ *     narrate-mode and force the action.
+ *
+ * NudgeState owns all the counters plus their consumed flags so
  * runAgentLoop reads as `if (nudges.needsX()) {…}` instead of
- * inspecting six raw booleans scattered through 600 lines.
+ * inspecting raw booleans scattered through 600 lines.
  */
 
 export const MAX_FILE_WRITE_RETRIES = 2;
@@ -38,6 +46,12 @@ export class NudgeState {
 	private diversityNudged = false;
 	/** Consecutive `run_python` results that began with "Error:". */
 	private consecutiveRunPythonFailures = 0;
+	/**
+	 * Armed by armNarrateRecovery after any nudge that demanded a tool
+	 * call. Cleared by consumeNarrateRecovery on either the recovery
+	 * firing or the model self-correcting with real tool_calls.
+	 */
+	private pendingNarrateRecovery = false;
 
 	/** Record that an fs_write_* call landed on disk. */
 	markFileWritten(): void {
@@ -87,6 +101,29 @@ export class NudgeState {
 	consumeDiversityNudge(): number {
 		this.diversityNudged = true;
 		return this.fetchedUrls.size;
+	}
+
+	/**
+	 * Arm the narrate-recovery flag. Call this whenever a nudge pushes
+	 * a corrective user message that demands a tool call — if the next
+	 * iteration comes back with no tool_calls, the loop will force
+	 * action instead of committing the narration as a final answer.
+	 */
+	armNarrateRecovery(): void {
+		this.pendingNarrateRecovery = true;
+	}
+
+	/** Is narrate-recovery armed? */
+	needsNarrateRecovery(): boolean {
+		return this.pendingNarrateRecovery;
+	}
+
+	/**
+	 * Clear the narrate-recovery flag. Called both when the recovery
+	 * fires and when the model self-corrects by emitting tool_calls.
+	 */
+	consumeNarrateRecovery(): void {
+		this.pendingNarrateRecovery = false;
 	}
 
 	/**
