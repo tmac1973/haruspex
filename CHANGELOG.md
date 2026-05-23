@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.1.38](https://github.com/tmac1973/haruspex/compare/v0.1.37...v0.1.38) (2026-05-23)
+
+
+### Features
+
+* **feedback:** add in-app feedback button and diagnostics export ([49a2aa1](https://github.com/tmac1973/haruspex/commit/49a2aa1e0d3e206f1e7394534bb215050f3e403e))
+* **feedback:** in-app feedback button + diagnostics export ([6c7ad8e](https://github.com/tmac1973/haruspex/commit/6c7ad8e37aa38456f87882544e745c164d478218))
+* **settings:** add custom system prompt and make gear icon toggle ([89f76d8](https://github.com/tmac1973/haruspex/commit/89f76d8d3ff97da4798dcb9628102166d5937c3f))
+* **settings:** add custom system prompt and make gear icon toggle ([9d7861e](https://github.com/tmac1973/haruspex/commit/9d7861e892f5db7ed4387d8302c8c0e155b8b2ad))
+* **settings:** organize into left-rail categories and add per-tab log clear ([7f75d8c](https://github.com/tmac1973/haruspex/commit/7f75d8cc8e22e410851d068bf949d52ec42738a7))
+* **settings:** organize into left-rail categories and add per-tab log clear ([7e0dff1](https://github.com/tmac1973/haruspex/commit/7e0dff1cd542fff2ed303d0964cbfc1134b35a0f))
+
+
+### Bug Fixes
+
+* **agent:** recover when model narrates instead of acting after nudges ([2cde23c](https://github.com/tmac1973/haruspex/commit/2cde23cf23e0a0c0a60c3fc9e2866a8634320bb1))
+* **agent:** recover when model narrates instead of acting after nudges ([90fe2fb](https://github.com/tmac1973/haruspex/commit/90fe2fb2ca3e08e1828f6636eb22d7c056830efc))
+
+
+### Documentation
+
+* **workspace:** add phase-13 plan for interactive Python+HTML tab ([35dcea9](https://github.com/tmac1973/haruspex/commit/35dcea9704af5cb0b4fa3a55bdb5c3bf63db9418))
+
 ## [0.1.37](https://github.com/tmac1973/haruspex/compare/v0.1.36...v0.1.37) (2026-05-15)
 
 
