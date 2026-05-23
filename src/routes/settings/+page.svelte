@@ -148,6 +148,15 @@
 		updateSettings({ thinkingEnabled });
 	}
 
+	let customSystemPrompt = $state(getSettings().customSystemPrompt);
+
+	function saveCustomSystemPrompt() {
+		updateSettings({ customSystemPrompt });
+	}
+
+	const customSystemPromptPlaceholder =
+		'e.g. "Always answer in British English. Prefer Rust examples when explaining systems code."';
+
 	let sandboxEnabled = $state(getSettings().sandboxEnabled);
 	let sandboxApproval = $state(getSettings().sandboxApproval);
 	let sandboxTimeoutSeconds = $state(getSettings().sandboxTimeoutSeconds);
@@ -643,6 +652,21 @@
 				</span>
 			</div>
 		</label>
+		<div class="search-field" style="margin-top: 12px">
+			<label for="custom-system-prompt">Additional system prompt:</label>
+			<textarea
+				id="custom-system-prompt"
+				rows="6"
+				bind:value={customSystemPrompt}
+				onblur={saveCustomSystemPrompt}
+				placeholder={customSystemPromptPlaceholder}
+			></textarea>
+			<p class="hint">
+				Free-form instructions appended to the built-in system prompt. Use this to steer tone,
+				persona, preferred languages, or domain-specific rules. Applies to every new turn — clear
+				the box to revert to defaults.
+			</p>
+		</div>
 	</section>
 
 	<section>

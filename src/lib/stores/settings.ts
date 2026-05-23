@@ -166,6 +166,13 @@ export interface AppSettings {
 	 * to save context on lighter chat workloads.
 	 */
 	thinkingEnabled: boolean;
+	/**
+	 * Extra instructions appended to the built-in system prompt. Empty
+	 * string means "no addition". Free-form text edited in Settings; we
+	 * append it verbatim under a CUSTOM INSTRUCTIONS heading so it sits
+	 * after the built-in rules but before the response-format directive.
+	 */
+	customSystemPrompt: string;
 	inferenceBackend: InferenceBackendConfig;
 	integrations: IntegrationsConfig;
 	proxy: ProxyConfig;
@@ -212,6 +219,7 @@ const defaults: AppSettings = {
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 30,
 	thinkingEnabled: true,
+	customSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
 	integrations: defaultIntegrations,
 	proxy: defaultProxy
