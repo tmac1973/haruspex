@@ -1,6 +1,7 @@
 mod app_log;
 mod audio;
 mod db;
+mod feedback;
 mod fs_tools;
 mod inference;
 mod integrations;
@@ -134,6 +135,8 @@ pub fn run() {
             app_log::get_app_logs,
             app_log::clear_app_logs,
             links::open_url,
+            feedback::get_diagnostics,
+            feedback::save_diagnostics_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

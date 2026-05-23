@@ -1,0 +1,52 @@
+name: Feedback / Bug report
+description: Report a bug or share feedback about Haruspex
+title: '[Feedback] '
+labels: [feedback]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the feedback! Most of the fields below are pre-filled
+        from the running app. **Please skim them before submitting** — the
+        logs may contain file paths, model prompts, or other text from
+        your session. Edit or delete anything you don't want public.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What were you trying to do, and what went wrong (or what would you like to see)?
+      placeholder: I clicked X, expected Y, got Z.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Haruspex version
+      placeholder: e.g. 0.1.37
+
+  - type: textarea
+    id: system
+    attributes:
+      label: System
+      description: OS, architecture, and runtime info auto-detected by the app.
+      render: shell
+
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings snapshot
+      description: Relevant inference and agent settings. Secrets are redacted by the app.
+      render: json
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Recent logs (tail)
+      description: |
+        Last few KB of app + sidecar logs. If the URL was too long to fit
+        the full tail, you'll see a note here — use the "Save Full
+        Diagnostics" button in Settings → Feedback to export the complete
+        bundle and drag it onto this issue.
+      render: shell

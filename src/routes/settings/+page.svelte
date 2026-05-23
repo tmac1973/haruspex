@@ -7,8 +7,16 @@
 	import AudioSection from '$lib/components/settings/AudioSection.svelte';
 	import SearchSection from '$lib/components/settings/SearchSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
+	import FeedbackSection from '$lib/components/settings/FeedbackSection.svelte';
 
-	type Category = 'general' | 'inference' | 'agent' | 'audio' | 'search' | 'integrations';
+	type Category =
+		| 'general'
+		| 'inference'
+		| 'agent'
+		| 'audio'
+		| 'search'
+		| 'integrations'
+		| 'feedback';
 
 	interface CategoryDef {
 		id: Category;
@@ -21,7 +29,8 @@
 		{ id: 'agent', label: 'Agent' },
 		{ id: 'audio', label: 'Audio' },
 		{ id: 'search', label: 'Search' },
-		{ id: 'integrations', label: 'Integrations' }
+		{ id: 'integrations', label: 'Integrations' },
+		{ id: 'feedback', label: 'Feedback' }
 	];
 
 	const STORAGE_KEY = 'haruspex-settings-category';
@@ -86,6 +95,8 @@
 				<SearchSection />
 			{:else if activeCategory === 'integrations'}
 				<EmailSection />
+			{:else if activeCategory === 'feedback'}
+				<FeedbackSection />
 			{/if}
 		</div>
 	</div>
