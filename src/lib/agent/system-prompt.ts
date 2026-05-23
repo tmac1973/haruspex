@@ -81,7 +81,14 @@ PYTHON SANDBOX:
 		}
 
 Be concise, accurate, and helpful. When in doubt, search.
-
+${
+	getSettings().customSystemPrompt.trim()
+		? `
+CUSTOM INSTRUCTIONS (from the user):
+${getSettings().customSystemPrompt.trim()}
+`
+		: ''
+}
 ${getResponseFormatPrompt()}`
 	};
 }
