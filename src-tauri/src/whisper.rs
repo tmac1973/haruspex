@@ -209,6 +209,11 @@ impl WhisperServer {
         buffer.iter().cloned().collect()
     }
 
+    pub async fn clear_logs(&self) {
+        let mut buffer = self.log_buffer.lock().await;
+        buffer.clear();
+    }
+
     pub async fn transcribe(&self, audio_data: Vec<u8>) -> Result<String, String> {
         let status = self.status.lock().await;
         if *status != WhisperStatus::Ready {
@@ -282,6 +287,12 @@ pub async fn get_whisper_status(
 #[tauri::command]
 pub async fn get_whisper_logs(state: tauri::State<'_, WhisperServer>) -> Result<Vec<String>, ()> {
     Ok(state.get_logs().await)
+}
+
+#[tauri::command]
+pub async fn clear_whisper_logs(state: tauri::State<'_, WhisperServer>) -> Result<(), ()> {
+    state.clear_logs().await;
+    Ok(())
 }
 
 #[tauri::command]

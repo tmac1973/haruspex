@@ -322,6 +322,11 @@ impl TtsEngine {
         buffer.iter().cloned().collect()
     }
 
+    pub async fn clear_logs(&self) {
+        let mut buffer = self.log_buffer.lock().await;
+        buffer.clear();
+    }
+
     pub async fn synthesize_and_play(
         &self,
         text: &str,
@@ -511,6 +516,12 @@ pub async fn tts_is_initialized(state: tauri::State<'_, TtsEngine>) -> Result<bo
 #[tauri::command]
 pub async fn get_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<Vec<String>, ()> {
     Ok(state.get_logs().await)
+}
+
+#[tauri::command]
+pub async fn clear_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<(), ()> {
+    state.clear_logs().await;
+    Ok(())
 }
 
 #[tauri::command]

@@ -88,14 +88,8 @@
 </script>
 
 <section>
-	<h2>Integrations</h2>
+	<h2>Email (read-only)</h2>
 	<p class="section-help">
-		Optional connections to outside services. Disabled by default. Email tools become available to
-		the model as soon as at least one account is enabled.
-	</p>
-
-	<h3 class="subhead">Email (read-only)</h3>
-	<p class="section-help small">
 		Multi-provider IMAP access for reading recent email and summarizing it. Supports Gmail,
 		Fastmail, iCloud, Yahoo, and any IMAP host you can reach. Every preset requires 2FA to be
 		enabled on the provider and an app password (not your login password). Sending email arrives in
@@ -124,14 +118,8 @@
 	}
 
 	h2 {
-		margin: 0 0 12px 0;
-		font-size: 1.1rem;
-		color: var(--text-primary);
-	}
-
-	.subhead {
-		margin: 18px 0 6px 0;
-		font-size: 0.95rem;
+		font-size: 1rem;
+		margin: 0 0 8px 0;
 		color: var(--text-primary);
 	}
 

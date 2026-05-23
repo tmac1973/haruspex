@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
-	import { getDebugLogs } from '$lib/debug-log';
+	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
 
 	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'debug' | 'tools';
 
@@ -69,6 +69,13 @@
 		llm: 'get_server_logs',
 		tts: 'get_tts_logs',
 		whisper: 'get_whisper_logs'
+	};
+
+	const clearCommands: Record<Exclude<LogTab, 'debug' | 'tools'>, string> = {
+		app: 'clear_app_logs',
+		llm: 'clear_server_logs',
+		tts: 'clear_tts_logs',
+		whisper: 'clear_whisper_logs'
 	};
 
 	const tabLabels: Record<LogTab, string> = {
@@ -144,6 +151,26 @@
 	}
 
 	let copyState = $state<'idle' | 'copied'>('idle');
+	let clearState = $state<'idle' | 'cleared'>('idle');
+
+	async function clearCurrentLog() {
+		try {
+			if (activeTab === 'debug' || activeTab === 'tools') {
+				// Frontend ring buffer — both tabs read from it; clearing once
+				// empties them both.
+				clearDebugLogs();
+			} else {
+				await invoke(clearCommands[activeTab]);
+			}
+		} catch (e) {
+			console.error('Failed to clear logs:', e);
+		}
+		logLines = [];
+		clearState = 'cleared';
+		setTimeout(() => {
+			clearState = 'idle';
+		}, 1200);
+	}
 
 	async function copyAllLogs() {
 		const text = logLines.join('\n');
@@ -196,6 +223,13 @@
 							{humanReadable ? 'Pretty' : 'Raw'}
 						</button>
 					{/if}
+					<button
+						class="copy-btn"
+						onclick={clearCurrentLog}
+						title="Clear the in-memory log buffer for this tab"
+					>
+						{clearState === 'cleared' ? 'Cleared' : 'Clear'}
+					</button>
 					<button
 						class="copy-btn"
 						onclick={copyAllLogs}
