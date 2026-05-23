@@ -402,6 +402,36 @@ export async function runIteration(
 		}
 	}
 
+	// Narrate-recovery: a prior iteration pushed a nudge that demanded
+	// a tool call. The model came back with text but no tool_calls —
+	// classic "describe the plan instead of executing it" failure on
+	// smaller models. Force action before any other branch (including
+	// the no-tools final-synthesis path that would otherwise commit the
+	// narration as the final answer).
+	if (
+		toolCalls.length === 0 &&
+		nudges.needsNarrateRecovery() &&
+		!looksLikeClarifyingQuestion(response.content || '')
+	) {
+		nudges.consumeNarrateRecovery();
+		logDebug('agent', `iteration ${iteration} branch=narrate-recovery`, {
+			assistantContent: response.content
+		});
+		messages.push({
+			role: 'assistant',
+			content: response.content || ''
+		});
+		messages.push({
+			role: 'user',
+			content:
+				'STOP. Your previous response described what you would do next but did not ' +
+				'actually emit a tool_calls block. Do not reply with more text explaining ' +
+				'your plan — your NEXT output must be the tool_calls block that performs ' +
+				'the action you just described.'
+		});
+		return 'continue';
+	}
+
 	// File-write hallucination recovery.
 	if (
 		toolCalls.length === 0 &&
@@ -432,6 +462,7 @@ export async function runIteration(
 				'output must be a tool_calls block invoking the write tool. After the tool ' +
 				'runs successfully, then respond briefly confirming the file path.'
 		});
+		nudges.armNarrateRecovery();
 		return 'continue';
 	}
 
@@ -449,16 +480,18 @@ export async function runIteration(
 			messages.push({
 				role: 'user',
 				content:
-					`Stop. You have opened ${fetchedCount === 0 ? 'no pages' : 'only one page'} ` +
-					'this turn. A complete answer to this kind of question needs 2–3 distinct ' +
-					'sources covering different angles (e.g. an official body, an academic / ' +
-					'think-tank source, and a journalistic or community account). Before writing ' +
-					'your answer, call fetch_url on two or three additional URLs from the prior ' +
-					'web_search results — pick ones that plausibly cover the sub-points your ' +
-					'answer will make. Only then produce the final answer. Each [source](URL) ' +
-					'citation in your final answer must point to the specific page where that ' +
-					'exact claim appeared — do not reuse the same URL across unrelated claims.'
+					`STOP. You have opened ${fetchedCount === 0 ? 'no pages' : 'only one page'} ` +
+					'this turn. A complete answer needs 2–3 distinct sources covering different ' +
+					'angles (e.g. an official body, an academic / think-tank source, and a ' +
+					'journalistic or community account). You MUST now call fetch_url on two or ' +
+					'three additional URLs from the prior web_search results — pick ones that ' +
+					'plausibly cover the sub-points your answer will make. Do NOT reply with ' +
+					'text describing the URLs you plan to fetch — your NEXT output must be a ' +
+					'tool_calls block invoking fetch_url. After the fetches return, produce the ' +
+					'final answer with [source](URL) citations pointing to the specific page ' +
+					'where each claim appeared — do not reuse the same URL across unrelated claims.'
 			});
+			nudges.armNarrateRecovery();
 			return 'continue';
 		}
 
@@ -538,6 +571,9 @@ export async function runIteration(
 	}
 
 	state.usedTools = true;
+	// Model emitted real tool_calls — clear any pending narrate-recovery
+	// so we don't fire it spuriously on a later no-tool-calls iteration.
+	nudges.consumeNarrateRecovery();
 
 	// Append assistant message with tool calls (but NOT the content —
 	// the model should regenerate its answer after seeing tool results)
