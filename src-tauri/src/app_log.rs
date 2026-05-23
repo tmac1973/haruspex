@@ -153,6 +153,14 @@ pub async fn get_app_logs() -> Result<Vec<String>, ()> {
     Ok(get_logs())
 }
 
+#[tauri::command]
+pub async fn clear_app_logs() -> Result<(), ()> {
+    if let Ok(mut b) = buffer().lock() {
+        b.clear();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

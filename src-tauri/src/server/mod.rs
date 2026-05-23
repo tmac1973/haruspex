@@ -662,6 +662,11 @@ impl LlamaServer {
         inner.log_buffer.iter().cloned().collect()
     }
 
+    pub async fn clear_logs(&self) {
+        let mut inner = self.inner.lock().await;
+        inner.log_buffer.clear();
+    }
+
     pub async fn get_cpu_fallback_state(&self) -> Option<GpuFallbackState> {
         let inner = self.inner.lock().await;
         if !inner.cpu_fallback_active {
@@ -706,6 +711,12 @@ pub async fn get_server_status(state: tauri::State<'_, LlamaServer>) -> Result<S
 #[tauri::command]
 pub async fn get_server_logs(state: tauri::State<'_, LlamaServer>) -> Result<Vec<String>, ()> {
     Ok(state.get_logs().await)
+}
+
+#[tauri::command]
+pub async fn clear_server_logs(state: tauri::State<'_, LlamaServer>) -> Result<(), ()> {
+    state.clear_logs().await;
+    Ok(())
 }
 
 #[tauri::command]

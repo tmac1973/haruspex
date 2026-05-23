@@ -1,287 +1,56 @@
 <script lang="ts">
-	import { invoke } from '@tauri-apps/api/core';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import {
-		startServer,
-		stopServer,
-		getServerState,
-		enterRemoteMode,
-		exitRemoteMode
-	} from '$lib/stores/server.svelte';
-	import {
-		getActiveLocalModelFilename,
-		getSettings,
-		updateSettings,
-		updateInferenceBackend,
-		updateProxy,
-		applyTheme,
-		getActiveContextSize,
-		setActiveLocalModel,
-		type ResponseFormat,
-		type ThemeMode,
-		type SearchProvider,
-		type AppSettings,
-		type InferenceBackendConfig,
-		type InferenceMode,
-		type ProxyMode
-	} from '$lib/stores/settings';
-	import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
-	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
+	import GeneralSection from '$lib/components/settings/GeneralSection.svelte';
+	import InferenceSection from '$lib/components/settings/InferenceSection.svelte';
+	import AgentSection from '$lib/components/settings/AgentSection.svelte';
+	import AudioSection from '$lib/components/settings/AudioSection.svelte';
+	import SearchSection from '$lib/components/settings/SearchSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
-	import ModelsSection from '$lib/components/settings/ModelsSection.svelte';
-	import { clearDebugLogs } from '$lib/debug-log';
 
-	const serverState = $derived(getServerState());
-	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
-	let theme = $state<ThemeMode>(getSettings().theme);
-	let ttsVoice = $state(getSettings().ttsVoice);
+	type Category = 'general' | 'inference' | 'agent' | 'audio' | 'search' | 'integrations';
 
-	const voiceOptions = [
-		{ id: 'af_heart', name: 'Heart (Female)' },
-		{ id: 'af_sky', name: 'Sky (Female)' },
-		{ id: 'af_nicole', name: 'Nicole (Female)' },
-		{ id: 'af_bella', name: 'Bella (Female)' },
-		{ id: 'af_nova', name: 'Nova (Female)' },
-		{ id: 'af_sarah', name: 'Sarah (Female)' },
-		{ id: 'af_alloy', name: 'Alloy (Female)' },
-		{ id: 'af_river', name: 'River (Female)' },
-		{ id: 'am_adam', name: 'Adam (Male)' },
-		{ id: 'am_michael', name: 'Michael (Male)' },
-		{ id: 'am_echo', name: 'Echo (Male)' },
-		{ id: 'am_eric', name: 'Eric (Male)' },
-		{ id: 'am_liam', name: 'Liam (Male)' },
-		{ id: 'ef_dora', name: 'Dora (European Female)' },
-		{ id: 'em_alex', name: 'Alex (European Male)' }
+	interface CategoryDef {
+		id: Category;
+		label: string;
+	}
+
+	const categories: CategoryDef[] = [
+		{ id: 'general', label: 'General' },
+		{ id: 'inference', label: 'Inference' },
+		{ id: 'agent', label: 'Agent' },
+		{ id: 'audio', label: 'Audio' },
+		{ id: 'search', label: 'Search' },
+		{ id: 'integrations', label: 'Integrations' }
 	];
 
-	let searchProvider = $state<SearchProvider>(getSettings().searchProvider);
-	let searchRecency = $state(getSettings().searchRecency);
-	let braveApiKey = $state(getSettings().braveApiKey);
-	let searxngUrl = $state(getSettings().searxngUrl);
-	let contextSize = $state(getSettings().contextSize);
+	const STORAGE_KEY = 'haruspex-settings-category';
 
-	let proxyMode = $state<ProxyMode>(getSettings().proxy.mode);
-	let proxyUrl = $state(getSettings().proxy.url);
-	let proxyBypass = $state(getSettings().proxy.bypass);
-
-	// Local mirror of the inference backend config. We pass the live
-	// value into InferenceBackendForm and commit updates via its
-	// onConfigChange callback. The `mode` field drives a bunch of
-	// conditionals below (hiding local-only sections, showing the
-	// remote form, switching the sidecar on/off).
-	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
-
-	const remoteMode = $derived(inferenceBackend.mode === 'remote');
-
-	async function setInferenceMode(mode: InferenceMode) {
-		if (mode === inferenceBackend.mode) return;
-		inferenceBackend = { ...inferenceBackend, mode };
-		updateInferenceBackend({ mode });
-		// Refresh the header context indicator immediately so it reflects
-		// the new backend's ceiling instead of the previous one's stale value.
-		setIndicatorContextSize(getActiveContextSize());
-		if (mode === 'remote') {
-			// Stop the local llama-server sidecar — no point burning
-			// VRAM on a model we're not going to query. Then flip the
-			// server-store status to the synthetic 'remote' state so
-			// the badge in the header updates.
-			try {
-				await stopServer();
-			} catch (e) {
-				console.warn('stopServer on remote toggle failed:', e);
-			}
-			enterRemoteMode(inferenceBackend.remoteBaseUrl, inferenceBackend.remoteModelId);
-		} else {
-			// Flipping back to local: leave the synthetic 'remote' state
-			// and spin the local sidecar up with the currently-selected
-			// model + configured context size. If no model is downloaded
-			// yet, the layout's first-run redirect will kick in instead.
-			exitRemoteMode();
-			try {
-				const modelPath = await invoke<string | null>('get_active_model_path', {
-					preferredFilename: getActiveLocalModelFilename() || null
-				});
-				if (modelPath) {
-					setActiveLocalModel(modelPath);
-					await startServer(modelPath, getSettings().contextSize);
-				}
-			} catch (e) {
-				console.warn('startServer on local toggle failed:', e);
-			}
-		}
-	}
-
-	function onInferenceConfigChange(next: InferenceBackendConfig) {
-		inferenceBackend = next;
-		updateInferenceBackend(next);
-		// If we're already in remote mode, keep the header label in sync
-		// with the (possibly just-changed) base URL or model id.
-		if (next.mode === 'remote') {
-			enterRemoteMode(next.remoteBaseUrl, next.remoteModelId);
-		}
-	}
-
-	function setTtsVoice(voice: string) {
-		ttsVoice = voice;
-		updateSettings({ ttsVoice: voice });
-	}
-
-	let ttsReadTablesByColumn = $state(getSettings().ttsReadTablesByColumn);
-
-	function toggleTableReading() {
-		ttsReadTablesByColumn = !ttsReadTablesByColumn;
-		updateSettings({ ttsReadTablesByColumn });
-	}
-
-	let keepRecentToolResults = $state(getSettings().keepRecentToolResults);
-
-	function toggleKeepRecentToolResults() {
-		keepRecentToolResults = !keepRecentToolResults;
-		updateSettings({ keepRecentToolResults });
-	}
-
-	let thinkingEnabled = $state(getSettings().thinkingEnabled);
-
-	function toggleThinkingEnabled() {
-		thinkingEnabled = !thinkingEnabled;
-		updateSettings({ thinkingEnabled });
-	}
-
-	let customSystemPrompt = $state(getSettings().customSystemPrompt);
-
-	function saveCustomSystemPrompt() {
-		updateSettings({ customSystemPrompt });
-	}
-
-	const customSystemPromptPlaceholder =
-		'e.g. "Always answer in British English. Prefer Rust examples when explaining systems code."';
-
-	let sandboxEnabled = $state(getSettings().sandboxEnabled);
-	let sandboxApproval = $state(getSettings().sandboxApproval);
-	let sandboxTimeoutSeconds = $state(getSettings().sandboxTimeoutSeconds);
-
-	function toggleSandboxEnabled() {
-		sandboxEnabled = !sandboxEnabled;
-		updateSettings({ sandboxEnabled });
-	}
-	function setSandboxApproval(mode: 'off' | 'once-per-chat' | 'every-run') {
-		sandboxApproval = mode;
-		updateSettings({ sandboxApproval: mode });
-	}
-	function setSandboxTimeout(seconds: number) {
-		const clamped = Math.max(5, Math.min(300, Math.round(seconds)));
-		sandboxTimeoutSeconds = clamped;
-		updateSettings({ sandboxTimeoutSeconds: clamped });
-	}
-
-	let debugClearLabel = $state('Clear debug log');
-
-	function clearDebugLog() {
-		clearDebugLogs();
-		debugClearLabel = 'Cleared';
-		setTimeout(() => {
-			debugClearLabel = 'Clear debug log';
-		}, 1500);
-	}
-
-	function setSearchProvider(provider: SearchProvider) {
-		searchProvider = provider;
-		updateSettings({ searchProvider: provider });
-	}
-
-	function saveBraveKey() {
-		updateSettings({ braveApiKey: braveApiKey });
-	}
-
-	function saveSearxngUrl() {
-		updateSettings({ searxngUrl: searxngUrl });
-	}
-
-	function setSearchRecency(value: string) {
-		searchRecency = value as AppSettings['searchRecency'];
-		updateSettings({ searchRecency: searchRecency });
-	}
-
-	function setProxyMode(mode: ProxyMode) {
-		proxyMode = mode;
-		updateProxy({ mode });
-	}
-
-	function saveProxyUrl() {
-		updateProxy({ url: proxyUrl.trim() });
-	}
-
-	function saveProxyBypass() {
-		updateProxy({ bypass: proxyBypass });
-	}
-
-	const proxyBypassPlaceholder = 'example.com\n192.168.1.5\n10.0.0.0/8';
-
-	function setContextSize(size: number) {
-		contextSize = size;
-		updateSettings({ contextSize: size });
-	}
-
-	function setResponseFormat(format: ResponseFormat) {
-		responseFormat = format;
-		updateSettings({ responseFormat: format });
-	}
-
-	function setTheme(mode: ThemeMode) {
-		theme = mode;
-		updateSettings({ theme: mode });
-		applyTheme(mode);
-	}
-
-	let outputDevices = $state<string[]>(['System Default']);
-	let inputDevices = $state<string[]>(['System Default']);
-	let audioOutputDevice = $state(getSettings().audioOutputDevice || 'System Default');
-	let audioInputDevice = $state(getSettings().audioInputDevice || 'System Default');
-
-	async function refreshOutputDevices() {
-		try {
-			outputDevices = await invoke<string[]>('list_audio_output_devices');
-		} catch {
-			// ignore
-		}
-	}
-
-	async function refreshInputDevices() {
-		try {
-			inputDevices = await invoke<string[]>('list_audio_input_devices');
-		} catch {
-			// ignore
-		}
-	}
-
-	function setOutputDevice(device: string) {
-		audioOutputDevice = device;
-		updateSettings({ audioOutputDevice: device === 'System Default' ? '' : device });
-	}
-
-	function setInputDevice(device: string) {
-		audioInputDevice = device;
-		updateSettings({ audioInputDevice: device === 'System Default' ? '' : device });
-	}
+	let activeCategory = $state<Category>('general');
 
 	onMount(() => {
-		refreshOutputDevices();
-		refreshInputDevices();
+		try {
+			const saved = localStorage.getItem(STORAGE_KEY) as Category | null;
+			if (saved && categories.some((c) => c.id === saved)) {
+				activeCategory = saved;
+			}
+		} catch {
+			// localStorage may be unavailable in some webviews
+		}
 	});
 
-	async function restartServer() {
-		const modelPath = await invoke<string | null>('get_active_model_path', {
-			preferredFilename: getActiveLocalModelFilename() || null
-		});
-		if (modelPath) {
-			setActiveLocalModel(modelPath);
-			await stopServer();
-			await startServer(modelPath, getSettings().contextSize);
-			// Re-initialize TTS alongside
-			invoke('tts_initialize').catch(() => {});
+	function selectCategory(id: Category) {
+		activeCategory = id;
+		try {
+			localStorage.setItem(STORAGE_KEY, id);
+		} catch {
+			// ignore
 		}
 	}
+
+	const activeLabel = $derived(
+		categories.find((c) => c.id === activeCategory)?.label ?? 'Settings'
+	);
 </script>
 
 <div class="settings-header">
@@ -289,495 +58,37 @@
 	<h1>Settings</h1>
 </div>
 
-<div class="settings">
-	<section>
-		<h2>Inference backend</h2>
-		<p class="hint">
-			Haruspex normally manages its own llama-server sidecar with a downloaded model. If you already
-			run an inference server (LM Studio, Lemonade, Ollama, llama.cpp, llama-toolchest, vLLM, TGI,
-			etc.) you can point Haruspex at it instead — the local sidecar will shut down and chat
-			requests will route to your server.
-		</p>
-		<div class="backend-mode-row">
-			<label class="backend-mode-option" class:selected={!remoteMode}>
-				<input
-					type="radio"
-					name="inference-mode"
-					value="local"
-					checked={!remoteMode}
-					onchange={() => setInferenceMode('local')}
-				/>
-				<div>
-					<strong>Local (Haruspex-managed)</strong>
-					<span>llama-server sidecar with a model managed by Haruspex. Recommended.</span>
-				</div>
-			</label>
-			<label class="backend-mode-option" class:selected={remoteMode}>
-				<input
-					type="radio"
-					name="inference-mode"
-					value="remote"
-					checked={remoteMode}
-					onchange={() => setInferenceMode('remote')}
-				/>
-				<div>
-					<strong>Remote server (advanced)</strong>
-					<span>Point at an existing OpenAI-compatible inference server.</span>
-				</div>
-			</label>
-		</div>
-		{#if remoteMode}
-			<div class="remote-form-wrapper">
-				<InferenceBackendForm config={inferenceBackend} onConfigChange={onInferenceConfigChange} />
-			</div>
-		{/if}
-	</section>
-
-	{#if !remoteMode}
-		<ModelsSection />
-	{/if}
-
-	<section>
-		<h2>Theme</h2>
-		<div class="theme-options">
-			{#each [{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as opt (opt.value)}
-				<button
-					class="theme-btn"
-					class:selected={theme === opt.value}
-					onclick={() => setTheme(opt.value as ThemeMode)}
-				>
-					{opt.label}
-				</button>
-			{/each}
-		</div>
-	</section>
-
-	<section>
-		<h2>Voice</h2>
-		<div class="voice-select">
-			<label for="tts-voice">Text-to-speech voice:</label>
-			<select
-				id="tts-voice"
-				value={ttsVoice}
-				onchange={(e) => setTtsVoice((e.target as HTMLSelectElement).value)}
+<div class="settings-layout">
+	<nav class="rail" aria-label="Settings categories">
+		{#each categories as cat (cat.id)}
+			<button
+				class="rail-item"
+				class:active={activeCategory === cat.id}
+				onclick={() => selectCategory(cat.id)}
 			>
-				{#each voiceOptions as voice (voice.id)}
-					<option value={voice.id}>{voice.name}</option>
-				{/each}
-			</select>
-		</div>
-		<label class="toggle-row">
-			<input type="checkbox" checked={ttsReadTablesByColumn} onchange={toggleTableReading} />
-			<div>
-				<strong>Read tables by subject</strong>
-				<span>Read all data for each column subject, instead of row by row</span>
-			</div>
-		</label>
-		<p class="hint">Click the speaker icon on any assistant message to hear it read aloud.</p>
-	</section>
+				{cat.label}
+			</button>
+		{/each}
+	</nav>
 
-	<section>
-		<h2>Audio Devices</h2>
-		<div class="device-select">
-			<label for="output-device">Audio output (TTS playback):</label>
-			<div class="device-row">
-				<select
-					id="output-device"
-					value={audioOutputDevice}
-					onchange={(e) => setOutputDevice((e.target as HTMLSelectElement).value)}
-				>
-					{#each outputDevices as device (device)}
-						<option value={device}>{device}</option>
-					{/each}
-				</select>
-				<button class="btn btn-small" onclick={refreshOutputDevices}>Refresh</button>
-			</div>
-		</div>
-		<div class="device-select">
-			<label for="input-device">Audio input (microphone):</label>
-			<div class="device-row">
-				<select
-					id="input-device"
-					value={audioInputDevice}
-					onchange={(e) => setInputDevice((e.target as HTMLSelectElement).value)}
-				>
-					{#each inputDevices as device (device)}
-						<option value={device}>{device}</option>
-					{/each}
-				</select>
-				<button class="btn btn-small" onclick={refreshInputDevices}>Refresh</button>
-			</div>
-		</div>
-		<p class="hint">Select audio devices or use "System Default" to follow OS settings.</p>
-	</section>
-
-	<section>
-		<h2>Response Format</h2>
-		<div class="format-options">
-			<label class="format-option" class:selected={responseFormat === 'minimal'}>
-				<input
-					type="radio"
-					name="format"
-					value="minimal"
-					checked={responseFormat === 'minimal'}
-					onchange={() => setResponseFormat('minimal')}
-				/>
-				<div>
-					<strong>Minimal</strong>
-					<span>Plain text, no formatting or emojis</span>
-				</div>
-			</label>
-			<label class="format-option" class:selected={responseFormat === 'standard'}>
-				<input
-					type="radio"
-					name="format"
-					value="standard"
-					checked={responseFormat === 'standard'}
-					onchange={() => setResponseFormat('standard')}
-				/>
-				<div>
-					<strong>Standard</strong>
-					<span>Clean markdown (headings, lists, code blocks)</span>
-				</div>
-			</label>
-			<label class="format-option" class:selected={responseFormat === 'rich'}>
-				<input
-					type="radio"
-					name="format"
-					value="rich"
-					checked={responseFormat === 'rich'}
-					onchange={() => setResponseFormat('rich')}
-				/>
-				<div>
-					<strong>Rich</strong>
-					<span>Full markdown with tables and emojis</span>
-				</div>
-			</label>
-		</div>
-	</section>
-
-	<section>
-		<h2>Web Search</h2>
-		<div class="search-provider">
-			<label for="search-provider">Search provider:</label>
-			<select
-				id="search-provider"
-				value={searchProvider}
-				onchange={(e) => setSearchProvider((e.target as HTMLSelectElement).value as SearchProvider)}
-			>
-				<option value="auto">Auto (rotates free engines)</option>
-				<option value="duckduckgo">DuckDuckGo (no key needed)</option>
-				<option value="brave">Brave Search (API key required)</option>
-				<option value="searxng">SearXNG (self-hosted)</option>
-			</select>
-		</div>
-
-		{#if searchProvider === 'auto' && !braveApiKey}
-			<div class="provider-nudge">
-				Free public search engines are unreliable — they get rate-limited and their HTML changes
-				break scrapers. For stable results, configure
-				<strong>Brave Search</strong> (free key, 2,000 queries/month at
-				<a href="https://brave.com/search/api/" target="_blank" rel="noopener"
-					>brave.com/search/api</a
-				>) or a self-hosted <strong>SearXNG</strong> instance. Deep research with Auto will use slower
-				pacing to compensate.
-			</div>
-		{/if}
-
-		{#if searchProvider === 'brave'}
-			<div class="search-field">
-				<label for="brave-key">Brave API Key:</label>
-				<input
-					id="brave-key"
-					type="password"
-					bind:value={braveApiKey}
-					onblur={saveBraveKey}
-					placeholder="BSA..."
-				/>
-				<p class="hint">Get a free key at brave.com/search/api (2,000 queries/month)</p>
-			</div>
-		{/if}
-
-		{#if searchProvider === 'searxng'}
-			<div class="search-field">
-				<label for="searxng-url">SearXNG Instance URL:</label>
-				<input
-					id="searxng-url"
-					type="text"
-					bind:value={searxngUrl}
-					onblur={saveSearxngUrl}
-					placeholder="http://localhost:8080"
-				/>
-			</div>
-		{/if}
-
-		<div class="search-provider" style="margin-top: 12px">
-			<label for="search-recency">Result recency:</label>
-			<select
-				id="search-recency"
-				value={searchRecency}
-				onchange={(e) => setSearchRecency((e.target as HTMLSelectElement).value)}
-			>
-				<option value="any">Any time</option>
-				<option value="day">Past 24 hours</option>
-				<option value="week">Past week</option>
-				<option value="month">Past month</option>
-				<option value="year">Past year</option>
-			</select>
-		</div>
-	</section>
-
-	<section>
-		<h2>Network Proxy</h2>
-		<p class="hint">
-			Route outbound web traffic (search, URL fetch, image search) through an HTTP/HTTPS proxy.
-			Leave set to <strong>None</strong> to connect directly.
-		</p>
-		<div class="proxy-modes">
-			<label class="proxy-mode" class:selected={proxyMode === 'none'}>
-				<input
-					type="radio"
-					name="proxy-mode"
-					value="none"
-					checked={proxyMode === 'none'}
-					onchange={() => setProxyMode('none')}
-				/>
-				<div>
-					<strong>None</strong>
-					<span>Direct connection</span>
-				</div>
-			</label>
-			<label class="proxy-mode" class:selected={proxyMode === 'manual'}>
-				<input
-					type="radio"
-					name="proxy-mode"
-					value="manual"
-					checked={proxyMode === 'manual'}
-					onchange={() => setProxyMode('manual')}
-				/>
-				<div>
-					<strong>Manual</strong>
-					<span>Route all traffic through a proxy URL</span>
-				</div>
-			</label>
-		</div>
-
-		{#if proxyMode === 'manual'}
-			<div class="search-field">
-				<label for="proxy-url">Proxy URL:</label>
-				<input
-					id="proxy-url"
-					type="text"
-					bind:value={proxyUrl}
-					onblur={saveProxyUrl}
-					placeholder="http://host:port or http://user:pass@host:port"
-				/>
-				<p class="hint">
-					Used for both HTTP and HTTPS destinations. Include <code>user:pass@</code> in the URL for proxies
-					that require authentication.
-				</p>
-			</div>
-
-			<div class="search-field">
-				<label for="proxy-bypass">No proxy for:</label>
-				<textarea
-					id="proxy-bypass"
-					rows="4"
-					bind:value={proxyBypass}
-					onblur={saveProxyBypass}
-					placeholder={proxyBypassPlaceholder}
-				></textarea>
-				<p class="hint">
-					One entry per line (or comma-separated). Each entry can be a hostname (matches the host
-					and any subdomain), an individual IP address, or a CIDR subnet (e.g. <code
-						>10.0.0.0/8</code
-					>, <code>2001:db8::/32</code>).
-				</p>
-			</div>
-		{/if}
-	</section>
-
-	{#if !remoteMode}
-		<section>
-			<h2>Context Size</h2>
-			<p class="hint">
-				Larger context allows longer conversations but uses more VRAM. Requires server restart to
-				take effect.
-			</p>
-			<div class="context-options">
-				{#each [{ value: 8192, label: '8K', desc: 'Low VRAM' }, { value: 16384, label: '16K', desc: 'Standard' }, { value: 32768, label: '32K', desc: 'Recommended' }, { value: 65536, label: '64K', desc: '16+ GB VRAM' }, { value: 131072, label: '128K', desc: 'Maximum' }] as opt (opt.value)}
-					<button
-						class="ctx-btn"
-						class:selected={contextSize === opt.value}
-						onclick={() => setContextSize(opt.value)}
-					>
-						<strong>{opt.label}</strong>
-						<span>{opt.desc}</span>
-					</button>
-				{/each}
-			</div>
-			{#if contextSize !== getSettings().contextSize}
-				<p class="hint" style="color: var(--accent)">
-					Restart the server for the new context size to take effect.
-				</p>
+	<div class="pane">
+		<h2 class="pane-title">{activeLabel}</h2>
+		<div class="pane-content">
+			{#if activeCategory === 'general'}
+				<GeneralSection />
+			{:else if activeCategory === 'inference'}
+				<InferenceSection />
+			{:else if activeCategory === 'agent'}
+				<AgentSection />
+			{:else if activeCategory === 'audio'}
+				<AudioSection />
+			{:else if activeCategory === 'search'}
+				<SearchSection />
+			{:else if activeCategory === 'integrations'}
+				<EmailSection />
 			{/if}
-		</section>
-	{/if}
-
-	<section>
-		<h2>Agent</h2>
-		<label class="toggle-row">
-			<input type="checkbox" checked={thinkingEnabled} onchange={toggleThinkingEnabled} />
-			<div>
-				<strong>Reasoning mode</strong>
-				<span>
-					Let the model emit a <code>&lt;think&gt;</code> reasoning block before its answer. Improves
-					quality on code-heavy and multi-step tasks (Python sandbox, tool planning, debugging) at the
-					cost of more tokens per turn. Turn off for lighter chat to save context.
-				</span>
-			</div>
-		</label>
-		<label class="toggle-row">
-			<input
-				type="checkbox"
-				checked={keepRecentToolResults}
-				onchange={toggleKeepRecentToolResults}
-			/>
-			<div>
-				<strong>Keep tool results from the previous turn in context</strong>
-				<span>
-					Lets followup questions reference raw research details (page contents, search results)
-					from the most recent turn. Increases context usage — older tool results are still
-					discarded, and conversation summarization may kick in sooner.
-				</span>
-			</div>
-		</label>
-		<div class="search-field" style="margin-top: 12px">
-			<label for="custom-system-prompt">Additional system prompt:</label>
-			<textarea
-				id="custom-system-prompt"
-				rows="6"
-				bind:value={customSystemPrompt}
-				onblur={saveCustomSystemPrompt}
-				placeholder={customSystemPromptPlaceholder}
-			></textarea>
-			<p class="hint">
-				Free-form instructions appended to the built-in system prompt. Use this to steer tone,
-				persona, preferred languages, or domain-specific rules. Applies to every new turn — clear
-				the box to revert to defaults.
-			</p>
 		</div>
-	</section>
-
-	<section>
-		<h2>
-			Python Sandbox <span class="experimental-badge">experimental</span>
-		</h2>
-		<label
-			class="toggle-row"
-			title={'When on, the model can run Python code locally in a Pyodide WebAssembly ' +
-				'sandbox (run_python / install_package / reset_python). Pre-installed packages ' +
-				'include numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, fpdf2, ' +
-				'and python-pptx — so the model can analyze data, plot charts, and build PDFs / ' +
-				'PowerPoint decks programmatically. Files written from Python land in your ' +
-				'working directory. With the sandbox ON, the legacy fs_write_pdf / fs_write_pptx ' +
-				'tools are hidden in favor of the richer Python path. Experimental: behavior, ' +
-				'defaults, and UI are still in flux.'}
-		>
-			<input type="checkbox" checked={sandboxEnabled} onchange={toggleSandboxEnabled} />
-			<div>
-				<strong>Enable Python sandbox</strong>
-				<span>
-					When on, the model can call run_python / install_package / reset_python to execute Python
-					code in an in-app Pyodide sandbox, and uses fpdf2 / python-pptx for PDFs and PowerPoints
-					(replacing fs_write_pdf / fs_write_pptx). Off hides those tools entirely and falls back to
-					the legacy markdown→PDF / hand-rolled-PPTX writers.
-				</span>
-			</div>
-		</label>
-
-		{#if sandboxEnabled}
-			<div class="search-provider">
-				<label for="sandbox-approval">Approval prompt:</label>
-				<select
-					id="sandbox-approval"
-					value={sandboxApproval}
-					onchange={(e) =>
-						setSandboxApproval(
-							(e.target as HTMLSelectElement).value as 'off' | 'once-per-chat' | 'every-run'
-						)}
-				>
-					<option value="off">Off — run code without asking</option>
-					<option value="once-per-chat">Once per chat (recommended)</option>
-					<option value="every-run">Every run — review each script</option>
-				</select>
-			</div>
-			<p class="hint">
-				Code runs locally in your browser's WebView, isolated from the host filesystem except where
-				it explicitly writes (those writes flush to your working directory after the script
-				finishes). The prompt is your gate; "off" only makes sense if you fully trust the model on
-				this machine.
-			</p>
-
-			<div class="search-provider">
-				<label for="sandbox-timeout">Execution timeout (seconds):</label>
-				<input
-					id="sandbox-timeout"
-					type="number"
-					min="5"
-					max="300"
-					step="5"
-					value={sandboxTimeoutSeconds}
-					onchange={(e) => setSandboxTimeout(Number((e.target as HTMLInputElement).value))}
-				/>
-			</div>
-			<p class="hint">
-				How long a single run_python or install_package call may take before it's terminated. 5–300
-				seconds. The default 30s is generous for most code; raise it for long installs or
-				simulations.
-			</p>
-		{/if}
-	</section>
-
-	<EmailSection />
-
-	<section>
-		<h2>Debug</h2>
-		<p class="section-help">
-			Every chat turn streams full request payloads, model responses, tool calls, and recovery
-			branches into an in-memory ring buffer (5000 entries). Open the Log Viewer's "Debug" tab to
-			see the full buffer; when a turn fails, use the "Copy debug log" button on the error message
-			to grab just that turn's entries. The buffer lives only in memory and resets on every app
-			restart.
-		</p>
-		<button class="btn" onclick={clearDebugLog}>{debugClearLabel}</button>
-	</section>
-
-	{#if !remoteMode}
-		<section>
-			<h2>Server</h2>
-			<div class="info-row">
-				<span>Status</span>
-				<span class="status-value" data-status={serverState.status}>{serverState.status}</span>
-			</div>
-			<div class="info-row">
-				<span>Port</span>
-				<span>8765</span>
-			</div>
-			<div class="server-actions">
-				{#if serverState.status === 'ready' || serverState.status === 'error'}
-					<button class="btn btn-primary" onclick={restartServer}>Restart Server</button>
-				{:else if serverState.status === 'stopped'}
-					<button class="btn btn-primary" onclick={restartServer}>Start Server</button>
-				{:else}
-					<button class="btn" disabled>Starting...</button>
-				{/if}
-				{#if serverState.status === 'ready' || serverState.status === 'starting'}
-					<button class="btn btn-danger" onclick={() => stopServer()}>Stop Server</button>
-				{/if}
-			</div>
-		</section>
-	{/if}
+	</div>
 </div>
 
 <style>
@@ -798,32 +109,6 @@
 		font-size: 1.3rem;
 	}
 
-	.settings {
-		max-width: 640px;
-		margin: 0 auto;
-		padding: 24px 24px 64px;
-		height: calc(100vh - 45px - 50px);
-		overflow-y: auto;
-	}
-
-	section {
-		padding-bottom: 24px;
-		margin-bottom: 24px;
-		border-bottom: 1px solid var(--border);
-	}
-
-	section:last-child {
-		border-bottom: none;
-		margin-bottom: 0;
-		padding-bottom: 64px;
-	}
-
-	.section-help {
-		color: var(--text-secondary, var(--text-muted));
-		font-size: 0.9rem;
-		margin: 0 0 12px;
-	}
-
 	.back-btn {
 		background: none;
 		border: 1px solid var(--border);
@@ -838,450 +123,60 @@
 		background: var(--bg-secondary);
 	}
 
-	section {
-		margin-bottom: 32px;
+	.settings-layout {
+		display: flex;
+		gap: 24px;
+		height: calc(100vh - 45px - 50px);
+		align-items: stretch;
 	}
 
-	h2 {
-		font-size: 1rem;
-		margin: 0 0 8px 0;
+	.rail {
+		flex: 0 0 200px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 16px 8px 24px 16px;
+		border-right: 1px solid var(--border);
+		overflow-y: auto;
+	}
+
+	.rail-item {
+		text-align: left;
+		padding: 8px 12px;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		background: none;
 		color: var(--text-primary);
+		font-size: 0.9rem;
+		cursor: pointer;
 	}
 
-	.hint {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin: 0 0 16px 0;
-	}
-
-	.hint code {
+	.rail-item:hover {
 		background: var(--bg-secondary);
-		padding: 2px 6px;
-		border-radius: 3px;
-		font-size: 0.75rem;
 	}
 
-	.provider-nudge {
-		margin: 12px 0;
-		padding: 10px 12px;
-		font-size: 0.82rem;
-		line-height: 1.45;
-		color: var(--text-primary);
-		background: var(--bg-secondary);
-		border-left: 3px solid var(--accent);
-		border-radius: 4px;
-	}
-
-	.provider-nudge a {
+	.rail-item.active {
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
 		color: var(--accent);
-		text-decoration: underline;
-	}
-
-	.experimental-badge {
-		font-size: 0.65rem;
-		font-weight: 500;
-		padding: 1px 6px;
-		border-radius: 4px;
-		background: var(--bg-secondary);
-		color: var(--text-secondary);
-		border: 1px solid var(--border);
-		text-transform: uppercase;
-		vertical-align: middle;
-		margin-left: 6px;
-	}
-
-	.btn {
-		padding: 6px 14px;
-		border-radius: 6px;
-		font-size: 0.8rem;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-	}
-
-	.btn:hover:not(:disabled) {
-		opacity: 0.9;
-	}
-
-	.btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.btn-primary {
-		background: var(--accent);
-		color: white;
-		border-color: var(--accent);
-	}
-
-	.btn-danger {
-		color: var(--error-text);
-		border-color: var(--error-border);
-	}
-
-	.btn-danger:hover {
-		background: var(--error-bg);
-	}
-
-	.btn-small {
-		padding: 3px 10px;
-		font-size: 0.75rem;
-	}
-
-	.search-provider {
-		margin-bottom: 12px;
-	}
-
-	.search-provider label,
-	.search-field label {
-		display: block;
-		font-size: 0.85rem;
-		font-weight: 500;
-		margin-bottom: 6px;
-	}
-
-	.search-provider select,
-	.search-field input,
-	.search-field textarea {
-		width: 100%;
-		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		font-size: 0.9rem;
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
-		color-scheme: light dark;
-	}
-
-	.search-field textarea {
-		font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-		resize: vertical;
-		min-height: 80px;
-	}
-
-	.proxy-modes {
-		display: flex;
-		gap: 8px;
-		margin-bottom: 12px;
-	}
-
-	.proxy-mode {
-		flex: 1;
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		padding: 10px 14px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		cursor: pointer;
-		transition: border-color 0.15s;
-	}
-
-	.proxy-mode:hover {
-		border-color: var(--text-secondary);
-	}
-
-	.proxy-mode.selected {
-		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 5%, transparent);
-	}
-
-	.proxy-mode input[type='radio'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.proxy-mode strong {
-		display: block;
-		font-size: 0.9rem;
-	}
-
-	.proxy-mode span {
-		display: block;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
-	.search-provider select option {
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
-	}
-
-	.search-field {
-		margin-bottom: 12px;
-	}
-
-	.context-options {
-		display: flex;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-
-	.ctx-btn {
-		flex: 1;
-		min-width: 80px;
-		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		cursor: pointer;
-		text-align: center;
-	}
-
-	.ctx-btn:hover {
-		border-color: var(--text-secondary);
-	}
-
-	.ctx-btn.selected {
-		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 10%, transparent);
-	}
-
-	.ctx-btn strong {
-		display: block;
-		font-size: 0.95rem;
-	}
-
-	.ctx-btn span {
-		display: block;
-		font-size: 0.7rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
-	.toggle-row {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		padding: 8px 0;
-		cursor: pointer;
-	}
-
-	.toggle-row input[type='checkbox'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.toggle-row strong {
-		display: block;
-		font-size: 0.9rem;
-	}
-
-	.toggle-row span {
-		display: block;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
-	.voice-select {
-		margin-bottom: 8px;
-	}
-
-	.voice-select label {
-		display: block;
-		font-size: 0.85rem;
-		font-weight: 500;
-		margin-bottom: 6px;
-	}
-
-	.voice-select select {
-		width: 100%;
-		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		font-size: 0.9rem;
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
-		color-scheme: light dark;
-	}
-
-	.voice-select select option {
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
-	}
-
-	.device-select {
-		margin-bottom: 12px;
-	}
-
-	.device-select label {
-		display: block;
-		font-size: 0.85rem;
-		font-weight: 500;
-		margin-bottom: 6px;
-	}
-
-	.device-row {
-		display: flex;
-		gap: 8px;
-		align-items: center;
-	}
-
-	.device-row select {
-		flex: 1;
-		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		font-size: 0.9rem;
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
-		color-scheme: light dark;
-	}
-
-	.device-row select option {
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
-	}
-
-	.theme-options {
-		display: flex;
-		gap: 8px;
-	}
-
-	.theme-btn {
-		flex: 1;
-		padding: 8px 16px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		cursor: pointer;
-		font-size: 0.9rem;
-	}
-
-	.theme-btn:hover {
-		border-color: var(--text-secondary);
-	}
-
-	.theme-btn.selected {
-		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 10%, transparent);
 		font-weight: 500;
 	}
 
-	.format-options {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
+	.pane {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow-y: auto;
+		padding: 0 24px 64px;
 	}
 
-	.format-option {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		padding: 10px 14px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		cursor: pointer;
-		transition: border-color 0.15s;
-	}
-
-	.format-option:hover {
-		border-color: var(--text-secondary);
-	}
-
-	.format-option.selected {
-		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 5%, transparent);
-	}
-
-	.format-option input[type='radio'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.format-option strong {
-		display: block;
-		font-size: 0.9rem;
-	}
-
-	.format-option span {
-		display: block;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
-	.backend-mode-row {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		margin-bottom: 12px;
-	}
-
-	.backend-mode-option {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		padding: 10px 14px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		cursor: pointer;
-		transition: border-color 0.15s;
-	}
-
-	.backend-mode-option:hover {
-		border-color: var(--text-secondary);
-	}
-
-	.backend-mode-option.selected {
-		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 5%, transparent);
-	}
-
-	.backend-mode-option input[type='radio'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.backend-mode-option strong {
-		display: block;
-		font-size: 0.9rem;
-	}
-
-	.backend-mode-option span {
-		display: block;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
-	.remote-form-wrapper {
-		margin-top: 4px;
-		padding: 12px 14px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		background: var(--bg-secondary);
-	}
-
-	.server-actions {
-		display: flex;
-		gap: 8px;
-		margin-top: 12px;
-	}
-
-	.info-row {
-		display: flex;
-		justify-content: space-between;
-		padding: 8px 0;
+	.pane-title {
+		font-size: 1.15rem;
+		margin: 18px 0 16px 0;
+		padding-bottom: 12px;
 		border-bottom: 1px solid var(--border);
-		font-size: 0.9rem;
+		color: var(--text-primary);
 	}
 
-	.status-value[data-status='ready'] {
-		color: #22c55e;
-	}
-	.status-value[data-status='starting'] {
-		color: #eab308;
-	}
-	.status-value[data-status='error'] {
-		color: var(--error-text);
-	}
-	.status-value[data-status='stopped'] {
-		color: var(--text-secondary);
+	.pane-content {
+		max-width: 640px;
 	}
 </style>

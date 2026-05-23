@@ -57,6 +57,7 @@ pub fn run() {
             server::stop_server,
             server::get_server_status,
             server::get_server_logs,
+            server::clear_server_logs,
             server::get_cpu_fallback_state,
             models::list_models,
             models::download_model,
@@ -83,6 +84,7 @@ pub fn run() {
             whisper::stop_whisper,
             whisper::get_whisper_status,
             whisper::get_whisper_logs,
+            whisper::clear_whisper_logs,
             whisper::transcribe_audio,
             tts::tts_initialize,
             tts::tts_synthesize_and_play,
@@ -91,6 +93,7 @@ pub fn run() {
             tts::tts_list_voices,
             tts::tts_is_initialized,
             tts::get_tts_logs,
+            tts::clear_tts_logs,
             db::db_list_conversations,
             db::db_get_conversation,
             db::db_create_conversation,
@@ -129,6 +132,7 @@ pub fn run() {
             integrations::email::commands::email_read_full,
             integrations::email::commands::email_prepare_summary,
             app_log::get_app_logs,
+            app_log::clear_app_logs,
             links::open_url,
         ])
         .build(tauri::generate_context!())
