@@ -95,6 +95,11 @@ pub struct JobInput {
     pub auto_approve_tools: bool,
     pub schedule_kind: String,
     pub schedule_config: Option<String>,
+    /// Pre-computed unix ms when this job is next due. The frontend
+    /// (jobs store) owns the date math so we don't need chrono on the
+    /// Rust side. NULL for `manual` schedules.
+    #[serde(default)]
+    pub next_due_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -722,7 +727,7 @@ impl Database {
             "INSERT INTO jobs
                 (name, description, working_dir, auto_approve_tools,
                  schedule_kind, schedule_config, next_due_at, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?7)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
             params![
                 input.name,
                 input.description,
@@ -730,6 +735,7 @@ impl Database {
                 input.auto_approve_tools as i64,
                 input.schedule_kind,
                 input.schedule_config,
+                input.next_due_at,
                 now,
             ],
         )
@@ -858,8 +864,9 @@ impl Database {
                     auto_approve_tools = ?4,
                     schedule_kind = ?5,
                     schedule_config = ?6,
-                    updated_at = ?7
-                 WHERE id = ?8",
+                    next_due_at = ?7,
+                    updated_at = ?8
+                 WHERE id = ?9",
                 params![
                     input.name,
                     input.description,
@@ -867,6 +874,7 @@ impl Database {
                     input.auto_approve_tools as i64,
                     input.schedule_kind,
                     input.schedule_config,
+                    input.next_due_at,
                     now,
                     id,
                 ],
@@ -876,6 +884,58 @@ impl Database {
             return Err(format!("No job with id {}", id));
         }
         Ok(())
+    }
+
+    pub fn set_job_next_due_at(&self, job_id: i64, next_due_at: Option<i64>) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let affected = conn
+            .execute(
+                "UPDATE jobs SET next_due_at = ?1 WHERE id = ?2",
+                params![next_due_at, job_id],
+            )
+            .map_err(|e| format!("next_due_at update failed: {}", e))?;
+        if affected == 0 {
+            return Err(format!("No job with id {}", job_id));
+        }
+        Ok(())
+    }
+
+    pub fn list_due_jobs(&self, now_ms: i64) -> Result<Vec<JobSummary>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
+                        j.schedule_kind, j.schedule_config, j.next_due_at,
+                        j.created_at, j.updated_at,
+                        (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count
+                 FROM jobs j
+                 WHERE j.schedule_kind != 'manual'
+                   AND j.next_due_at IS NOT NULL
+                   AND j.next_due_at <= ?1
+                 ORDER BY j.next_due_at ASC",
+            )
+            .map_err(|e| format!("Due jobs query failed: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![now_ms], |row| {
+                Ok(JobSummary {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    working_dir: row.get(3)?,
+                    auto_approve_tools: row.get::<_, i64>(4)? != 0,
+                    schedule_kind: row.get(5)?,
+                    schedule_config: row.get(6)?,
+                    next_due_at: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                    step_count: row.get(10)?,
+                })
+            })
+            .map_err(|e| format!("Due jobs query failed: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Due jobs row read failed: {}", e))
     }
 
     pub fn delete_job(&self, id: i64) -> Result<(), String> {
@@ -1342,6 +1402,23 @@ pub fn db_recover_orphan_runs(state: tauri::State<'_, Database>) -> Result<i64, 
     state.recover_orphan_runs()
 }
 
+#[tauri::command]
+pub fn db_set_job_next_due_at(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    next_due_at: Option<i64>,
+) -> Result<(), String> {
+    state.set_job_next_due_at(job_id, next_due_at)
+}
+
+#[tauri::command]
+pub fn db_list_due_jobs(
+    state: tauri::State<'_, Database>,
+    now_ms: i64,
+) -> Result<Vec<JobSummary>, String> {
+    state.list_due_jobs(now_ms)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1563,6 +1640,7 @@ mod tests {
             auto_approve_tools: false,
             schedule_kind: "manual".to_string(),
             schedule_config: None,
+            next_due_at: None,
         }
     }
 
@@ -1668,6 +1746,7 @@ mod tests {
                 auto_approve_tools: true,
                 schedule_kind: "daily".to_string(),
                 schedule_config: Some(r#"{"time":"09:00"}"#.to_string()),
+                next_due_at: Some(1234567890),
             },
         )
         .unwrap();
@@ -1682,8 +1761,94 @@ mod tests {
             after.schedule_config.as_deref(),
             Some(r#"{"time":"09:00"}"#)
         );
+        assert_eq!(after.next_due_at, Some(1234567890));
         assert!(after.updated_at > before.updated_at);
         assert_eq!(after.created_at, before.created_at);
+    }
+
+    #[test]
+    fn set_job_next_due_at_updates_only_that_column() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("A")).unwrap();
+        let before = db.get_job(id).unwrap();
+
+        db.set_job_next_due_at(id, Some(42000)).unwrap();
+        let after = db.get_job(id).unwrap();
+        assert_eq!(after.next_due_at, Some(42000));
+        // Other fields are untouched.
+        assert_eq!(after.name, before.name);
+        assert_eq!(after.schedule_kind, before.schedule_kind);
+
+        db.set_job_next_due_at(id, None).unwrap();
+        let cleared = db.get_job(id).unwrap();
+        assert!(cleared.next_due_at.is_none());
+    }
+
+    #[test]
+    fn set_job_next_due_at_errors_for_missing_job() {
+        let db = test_db();
+        let result = db.set_job_next_due_at(9999, Some(1));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_due_jobs_returns_only_past_due_non_manual_rows() {
+        let db = test_db();
+
+        let mut due_now = sample_job_input("Past due");
+        due_now.schedule_kind = "interval".to_string();
+        due_now.schedule_config = Some(r#"{"minutes":5}"#.to_string());
+        due_now.next_due_at = Some(100);
+        let id_past = db.create_job(&due_now).unwrap();
+
+        let mut future = sample_job_input("Future");
+        future.schedule_kind = "daily".to_string();
+        future.schedule_config = Some(r#"{"time":"09:00"}"#.to_string());
+        future.next_due_at = Some(10_000);
+        let _id_future = db.create_job(&future).unwrap();
+
+        // Manual job with a (nonsense) next_due_at — must be excluded
+        // because the scheduler should never fire manual jobs.
+        let mut manual = sample_job_input("Manual");
+        manual.schedule_kind = "manual".to_string();
+        manual.next_due_at = Some(0);
+        db.create_job(&manual).unwrap();
+
+        // Scheduled but next_due_at is NULL — also excluded.
+        let mut null_due = sample_job_input("Null");
+        null_due.schedule_kind = "hourly".to_string();
+        null_due.next_due_at = None;
+        db.create_job(&null_due).unwrap();
+
+        let due = db.list_due_jobs(500).unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].id, id_past);
+    }
+
+    #[test]
+    fn list_due_jobs_orders_by_next_due_ascending() {
+        let db = test_db();
+        let mut a = sample_job_input("A");
+        a.schedule_kind = "interval".to_string();
+        a.schedule_config = Some(r#"{"minutes":1}"#.to_string());
+        a.next_due_at = Some(300);
+        let id_a = db.create_job(&a).unwrap();
+
+        let mut b = sample_job_input("B");
+        b.schedule_kind = "interval".to_string();
+        b.schedule_config = Some(r#"{"minutes":1}"#.to_string());
+        b.next_due_at = Some(100);
+        let id_b = db.create_job(&b).unwrap();
+
+        let mut c = sample_job_input("C");
+        c.schedule_kind = "interval".to_string();
+        c.schedule_config = Some(r#"{"minutes":1}"#.to_string());
+        c.next_due_at = Some(200);
+        let id_c = db.create_job(&c).unwrap();
+
+        let due = db.list_due_jobs(1_000).unwrap();
+        let ids: Vec<i64> = due.iter().map(|j| j.id).collect();
+        assert_eq!(ids, vec![id_b, id_c, id_a]);
     }
 
     #[test]
@@ -1773,6 +1938,7 @@ mod tests {
                 auto_approve_tools: false,
                 schedule_kind: "weekly".to_string(),
                 schedule_config: Some(json.clone()),
+                next_due_at: None,
             })
             .unwrap();
         let job = db.get_job(id).unwrap();

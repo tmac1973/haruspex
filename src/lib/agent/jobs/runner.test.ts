@@ -122,19 +122,25 @@ describe('jobs runner — guards', () => {
 		expect(runId).toBeNull();
 	});
 
-	it('refuses to enqueue while another run is in flight', async () => {
-		mocks.getJob.mockResolvedValueOnce(makeJob());
+	it('queues a second enqueue behind an in-flight run', async () => {
+		// Two getJob calls: one per enqueue. Both runs are for the same
+		// job id but the runner takes independent snapshots.
+		mocks.getJob.mockResolvedValueOnce(makeJob()).mockResolvedValueOnce(makeJob());
 		mocks.runEphemeralTurn.mockReturnValueOnce(new Promise(() => {}));
 
-		const { enqueue } = await freshRunner();
+		const { enqueue, getQueueDepth, getPendingQueue, getCurrentRun } = await freshRunner();
 		const first = await enqueue(1);
-		expect(first).toBe(100);
-
 		const second = await enqueue(1);
-		expect(second).toBeNull();
-		expect(mocks.getJob).toHaveBeenCalledTimes(1);
-		// Busy guard short-circuits before persisting a second run row.
-		expect(mocks.createJobRun).toHaveBeenCalledTimes(1);
+
+		expect(first).toBe(100);
+		expect(second).toBe(101);
+		expect(getCurrentRun()?.id).toBe(100);
+		expect(getQueueDepth()).toBe(1);
+		expect(getPendingQueue()).toEqual([
+			expect.objectContaining({ runId: 101, jobId: 1, trigger: 'manual' })
+		]);
+		// Both runs were persisted into job_runs as queued/running rows.
+		expect(mocks.createJobRun).toHaveBeenCalledTimes(2);
 	});
 
 	it('clearCurrentRun is a no-op while a run is in flight', async () => {
@@ -374,6 +380,82 @@ describe('jobs runner — multi-step pipelines', () => {
 		expect(getCurrentRun()?.steps[1].streaming).toBe('streaming-2');
 		// Step 1's streaming buffer is left as-is (output is the source of truth).
 		expect(getCurrentRun()?.steps[0].output).toBe('first');
+	});
+});
+
+describe('jobs runner — FIFO queue', () => {
+	it('drains the next queued run when the current one succeeds', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob()).mockResolvedValueOnce(makeJob());
+
+		// First run resolves on demand; second run hangs once admitted so we
+		// can observe the transition.
+		let resolveFirst!: (v: { finalText: string }) => void;
+		mocks.runEphemeralTurn
+			.mockReturnValueOnce(
+				new Promise((res) => {
+					resolveFirst = res;
+				})
+			)
+			.mockReturnValueOnce(new Promise(() => {}));
+
+		const { enqueue, getCurrentRun, getQueueDepth } = await freshRunner();
+		await enqueue(1);
+		await enqueue(1);
+		expect(getCurrentRun()?.id).toBe(100);
+		expect(getQueueDepth()).toBe(1);
+
+		resolveFirst({ finalText: 'done' });
+		// Microtask for the pipeline finally + microtask for drainNext.
+		await tick();
+		await tick();
+
+		expect(getCurrentRun()?.id).toBe(101);
+		expect(getCurrentRun()?.status).toBe('running');
+		expect(getQueueDepth()).toBe(0);
+	});
+
+	it('drains the next queued run when the current one fails', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob()).mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn
+			.mockRejectedValueOnce(new Error('first broke'))
+			.mockReturnValueOnce(new Promise(() => {}));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await enqueue(1);
+		await tick();
+		await tick();
+
+		// First run failed and got out of the way; second is now running.
+		expect(getCurrentRun()?.id).toBe(101);
+		expect(getCurrentRun()?.status).toBe('running');
+	});
+
+	it('leaves the terminal run visible when the queue is empty', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+		const { enqueue, getCurrentRun, getQueueDepth } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(getQueueDepth()).toBe(0);
+		// Subsequent ticks must not clobber it — drainNext is a no-op when
+		// pending is empty.
+		await tick();
+		expect(getCurrentRun()?.status).toBe('succeeded');
+	});
+
+	it('propagates trigger=scheduled into the queued entry', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob()).mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockReturnValueOnce(new Promise(() => {}));
+
+		const { enqueue, getPendingQueue } = await freshRunner();
+		await enqueue(1, 'manual');
+		await enqueue(1, 'scheduled');
+
+		expect(getPendingQueue()[0].trigger).toBe('scheduled');
 	});
 });
 

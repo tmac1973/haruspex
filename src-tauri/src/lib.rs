@@ -121,6 +121,8 @@ pub fn run() {
             db::db_list_job_runs,
             db::db_get_job_run,
             db::db_recover_orphan_runs,
+            db::db_set_job_next_due_at,
+            db::db_list_due_jobs,
             fs_tools::path::fs_list_dir,
             fs_tools::text::fs_read_text,
             fs_tools::text::fs_write_text,

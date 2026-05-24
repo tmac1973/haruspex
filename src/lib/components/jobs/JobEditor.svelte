@@ -9,6 +9,7 @@
 		replaceJobSteps,
 		scheduleToConfigJson,
 		configJsonToSchedule,
+		computeNextDueAt,
 		type Schedule,
 		type JobInput,
 		type JobStepInput
@@ -135,13 +136,19 @@
 		error = null;
 		saving = true;
 		try {
+			// `prevDue = null` on save means anchor the interval cadence on
+			// "now" rather than carrying over the previous due time. Editing
+			// a schedule is treated as a reset, which matches the user's
+			// mental model — "every 30 minutes starting now" rather than
+			// "the next fire was scheduled at X, keep that".
 			const input: JobInput = {
 				name: name.trim(),
 				description: description.trim() ? description.trim() : null,
 				working_dir: workingDir.trim(),
 				auto_approve_tools: autoApprove,
 				schedule_kind: schedule.kind,
-				schedule_config: scheduleToConfigJson(schedule)
+				schedule_config: scheduleToConfigJson(schedule),
+				next_due_at: computeNextDueAt(schedule, null)
 			};
 			const stepsToSave: JobStepInput[] = steps
 				.map((s) => ({ prompt: s.prompt.trim(), deep_research: s.deep_research }))

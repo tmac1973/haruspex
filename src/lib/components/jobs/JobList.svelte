@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getJobs, type JobSummary } from '$lib/stores/jobs.svelte';
-	import { enqueue, getCurrentRun } from '$lib/agent/jobs/runner.svelte';
+	import { enqueue, getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
 
 	interface Props {
 		selectedId: number | 'new' | null;
@@ -11,10 +11,12 @@
 	const { selectedId, onselect, onrun }: Props = $props();
 
 	const running = $derived(getCurrentRun()?.status === 'running');
+	const queueDepth = $derived(getQueueDepth());
 
 	async function handleRun(e: MouseEvent, jobId: number) {
 		e.stopPropagation();
-		if (running) return;
+		// Don't block on busy — queue it. The runner now FIFO-queues runs
+		// behind whatever is currently active.
 		const runId = await enqueue(jobId, 'manual');
 		if (runId !== null) onrun(jobId);
 	}
@@ -57,7 +59,21 @@
 
 <div class="job-list">
 	<div class="header">
-		<span class="title">Jobs</span>
+		<div class="header-left">
+			<span class="title">Jobs</span>
+			{#if running || queueDepth > 0}
+				<span
+					class="queue-badge"
+					title={running
+						? `1 running${queueDepth > 0 ? ` · ${queueDepth} queued` : ''}`
+						: `${queueDepth} queued`}
+				>
+					{#if running}1 running{/if}{#if running && queueDepth > 0}
+						·
+					{/if}{#if queueDepth > 0}{queueDepth} queued{/if}
+				</span>
+			{/if}
+		</div>
 		<button
 			type="button"
 			class="new-btn"
@@ -94,8 +110,8 @@
 					<button
 						type="button"
 						class="run-btn"
-						title={running ? 'Another job is running' : 'Run now'}
-						disabled={running || job.step_count === 0}
+						title={running ? 'Queue this run after the active one' : 'Run now'}
+						disabled={job.step_count === 0}
 						onclick={(e) => handleRun(e, job.id)}
 					>
 						▶
@@ -120,8 +136,28 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		gap: 8px;
 		padding: 10px 12px;
 		border-bottom: 1px solid var(--border);
+	}
+
+	.header-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.queue-badge {
+		font-size: 0.68rem;
+		padding: 1px 6px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--accent) 18%, transparent);
+		border: 1px solid var(--accent);
+		color: var(--accent);
+		white-space: nowrap;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
 	}
 
 	.title {

@@ -8,6 +8,7 @@
 	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
+	import { startScheduler } from '$lib/agent/jobs/scheduler.svelte';
 	import { enterRemoteMode, initServerStore, startServer } from '$lib/stores/server.svelte';
 	import {
 		applyTheme,
@@ -36,7 +37,10 @@
 		// Sweep any job runs left at 'queued' / 'running' by a previous
 		// session (hard close, crash). Fire-and-forget — the JobsTab loads
 		// run history on demand and will pick up the recovered statuses.
-		void recoverOrphanRuns();
+		// Start the job scheduler ticker after recovery has had a chance
+		// to clean up — we don't want the scheduler enqueuing while the
+		// runner thinks the DB has a stale 'running' row.
+		void recoverOrphanRuns().then(() => startScheduler());
 
 		try {
 			version = await getVersion();

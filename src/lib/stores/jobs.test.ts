@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import {
 	scheduleToConfigJson,
 	configJsonToSchedule,
+	computeNextDueAt,
 	type JobSummary,
 	type JobWithSteps,
 	type JobInput
@@ -20,7 +21,8 @@ const baseInput: JobInput = {
 	working_dir: '/tmp/work',
 	auto_approve_tools: false,
 	schedule_kind: 'manual',
-	schedule_config: null
+	schedule_config: null,
+	next_due_at: null
 };
 
 const summary = (id: number, name: string, overrides: Partial<JobSummary> = {}): JobSummary => ({
@@ -87,6 +89,79 @@ describe('jobs store schedule helpers', () => {
 		expect(configJsonToSchedule('daily', 'not-json')).toBeNull();
 		expect(configJsonToSchedule('weekly', '{"day":"mon"}')).toBeNull();
 		expect(configJsonToSchedule('interval', '{}')).toBeNull();
+	});
+});
+
+describe('computeNextDueAt', () => {
+	it('returns null for manual', () => {
+		expect(computeNextDueAt({ kind: 'manual' }, null)).toBeNull();
+	});
+
+	it('hourly rounds up to the next top of hour', () => {
+		// Tuesday 2026-03-10 14:23:45 local — anchor with a fixed Date
+		const now = new Date(2026, 2, 10, 14, 23, 45);
+		const next = computeNextDueAt({ kind: 'hourly' }, null, now);
+		expect(next).not.toBeNull();
+		// Hours align UTC and local — the next top-of-hour ms is divisible
+		// by 3,600,000 (no minutes/seconds/ms remainder).
+		expect((next as number) % 3_600_000).toBe(0);
+		expect(next as number).toBeGreaterThan(now.getTime());
+		// And it's the *next* hour, not the one after.
+		expect((next as number) - now.getTime()).toBeLessThanOrEqual(3_600_000);
+	});
+
+	it('daily picks today if HH:MM is still in the future, else tomorrow', () => {
+		const morning = new Date(2026, 2, 10, 8, 0, 0);
+		const nextToday = computeNextDueAt({ kind: 'daily', time: '17:30' }, null, morning);
+		const todayTarget = new Date(2026, 2, 10, 17, 30, 0).getTime();
+		expect(nextToday).toBe(todayTarget);
+
+		const evening = new Date(2026, 2, 10, 18, 0, 0);
+		const nextTomorrow = computeNextDueAt({ kind: 'daily', time: '17:30' }, null, evening);
+		const tomorrowTarget = new Date(2026, 2, 11, 17, 30, 0).getTime();
+		expect(nextTomorrow).toBe(tomorrowTarget);
+	});
+
+	it('weekly picks the next occurrence of the named weekday', () => {
+		// 2026-03-10 is a Tuesday.
+		const tue = new Date(2026, 2, 10, 12, 0, 0);
+		// Asking for Friday at 09:00 → Friday 2026-03-13 09:00.
+		const fri = computeNextDueAt({ kind: 'weekly', day: 'fri', time: '09:00' }, null, tue);
+		expect(fri).toBe(new Date(2026, 2, 13, 9, 0, 0).getTime());
+
+		// Asking for Tuesday at 09:00 on a Tuesday at noon → next Tuesday.
+		const nextTue = computeNextDueAt({ kind: 'weekly', day: 'tue', time: '09:00' }, null, tue);
+		expect(nextTue).toBe(new Date(2026, 2, 17, 9, 0, 0).getTime());
+
+		// Asking for Tuesday at 17:00 on a Tuesday at noon → today.
+		const todayLater = computeNextDueAt({ kind: 'weekly', day: 'tue', time: '17:00' }, null, tue);
+		expect(todayLater).toBe(new Date(2026, 2, 10, 17, 0, 0).getTime());
+	});
+
+	it('interval anchored on prevDue when provided', () => {
+		const now = new Date(2026, 2, 10, 12, 0, 0).getTime();
+		const prev = now - 2 * 60_000; // 2 minutes ago
+		const next = computeNextDueAt({ kind: 'interval', minutes: 5 }, prev, new Date(now));
+		// prev + 5min = 3 minutes in the future (still > now), so we use it directly.
+		expect(next).toBe(prev + 5 * 60_000);
+	});
+
+	it('interval anchored on now when prevDue is null', () => {
+		const now = new Date(2026, 2, 10, 12, 0, 0);
+		const next = computeNextDueAt({ kind: 'interval', minutes: 15 }, null, now);
+		expect(next).toBe(now.getTime() + 15 * 60_000);
+	});
+
+	it('interval skips ahead by missed intervals if we drifted behind', () => {
+		// prevDue was 25 minutes ago and the interval is 10 minutes — we're
+		// 2.5 intervals behind. Next should be the first future
+		// prev + N*interval that's after now (not a burst of catch-up).
+		const now = new Date(2026, 2, 10, 12, 0, 0).getTime();
+		const prev = now - 25 * 60_000;
+		const next = computeNextDueAt({ kind: 'interval', minutes: 10 }, prev, new Date(now));
+		// prev + 10 = -15m past, prev + 20 = -5m past, prev + 30 = +5m future ⇒ pick +5m.
+		expect(next).toBe(prev + 30 * 60_000);
+		expect(next as number).toBeGreaterThan(now);
 	});
 });
 
@@ -221,5 +296,40 @@ describe('jobs store CRUD', () => {
 		const { replaceJobSteps } = await import('$lib/stores/jobs.svelte');
 		const ok = await replaceJobSteps(5, [{ prompt: 'x', deep_research: false }]);
 		expect(ok).toBe(false);
+	});
+
+	it('listDueJobs forwards nowMs and returns the rows', async () => {
+		const rows = [summary(1, 'A')];
+		vi.mocked(invoke).mockResolvedValueOnce(rows);
+		const { listDueJobs } = await import('$lib/stores/jobs.svelte');
+		const result = await listDueJobs(12345);
+		expect(invoke).toHaveBeenCalledWith('db_list_due_jobs', { nowMs: 12345 });
+		expect(result).toEqual(rows);
+	});
+
+	it('listDueJobs returns [] on failure', async () => {
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('db down'));
+		const { listDueJobs } = await import('$lib/stores/jobs.svelte');
+		expect(await listDueJobs(0)).toEqual([]);
+	});
+
+	it('setJobNextDueAt forwards jobId + nextDueAt', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce(undefined);
+		const { setJobNextDueAt } = await import('$lib/stores/jobs.svelte');
+		await setJobNextDueAt(7, 99999);
+		expect(invoke).toHaveBeenCalledWith('db_set_job_next_due_at', {
+			jobId: 7,
+			nextDueAt: 99999
+		});
+	});
+
+	it('setJobNextDueAt passes null through', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce(undefined);
+		const { setJobNextDueAt } = await import('$lib/stores/jobs.svelte');
+		await setJobNextDueAt(7, null);
+		expect(invoke).toHaveBeenCalledWith('db_set_job_next_due_at', {
+			jobId: 7,
+			nextDueAt: null
+		});
 	});
 });

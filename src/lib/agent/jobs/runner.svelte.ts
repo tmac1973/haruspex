@@ -71,11 +71,44 @@ export interface RunState {
 	finishedAt: number | null;
 }
 
+/**
+ * Snapshot of everything the runner needs to execute a queued run.
+ * We capture this at enqueue time so subsequent edits to the underlying
+ * job don't change what an already-queued run does — matches the
+ * snapshotted prompts in `job_run_steps`.
+ */
+interface QueuedRun {
+	runId: number;
+	job: JobWithSteps;
+	trigger: RunTrigger;
+}
+
+export interface PendingQueueEntry {
+	runId: number;
+	jobId: number;
+	jobName: string;
+	trigger: RunTrigger;
+}
+
 let current = $state<RunState | null>(null);
+let pending = $state<QueuedRun[]>([]);
 let activeAbort: AbortController | null = null;
 
 export function getCurrentRun(): RunState | null {
 	return current;
+}
+
+export function getPendingQueue(): PendingQueueEntry[] {
+	return pending.map((q) => ({
+		runId: q.runId,
+		jobId: q.job.id,
+		jobName: q.job.name,
+		trigger: q.trigger
+	}));
+}
+
+export function getQueueDepth(): number {
+	return pending.length;
 }
 
 export function clearCurrentRun(): void {
@@ -89,11 +122,6 @@ export async function enqueue(
 	jobId: number,
 	trigger: RunTrigger = 'manual'
 ): Promise<number | null> {
-	if (current?.status === 'running') {
-		logDebug('jobs', 'runner busy; ignoring enqueue', { jobId, trigger });
-		return null;
-	}
-
 	const job = await getJob(jobId);
 	if (!job) {
 		logDebug('jobs', 'enqueue failed: job not found', { jobId, trigger });
@@ -118,6 +146,25 @@ export async function enqueue(
 		return null;
 	}
 
+	const queued: QueuedRun = { runId, job, trigger };
+
+	if (current?.status === 'running') {
+		pending.push(queued);
+		logDebug('jobs', 'queued behind active run', {
+			runId,
+			jobId,
+			trigger,
+			depth: pending.length
+		});
+		return runId;
+	}
+
+	startRun(queued);
+	return runId;
+}
+
+function startRun(queued: QueuedRun): void {
+	const { runId, job } = queued;
 	const abort = new AbortController();
 	activeAbort = abort;
 
@@ -147,7 +194,11 @@ export async function enqueue(
 	};
 
 	void runPipeline(job, abort, runId);
-	return runId;
+}
+
+function drainNext(): void {
+	const next = pending.shift();
+	if (next) startRun(next);
 }
 
 function patchStep(runId: number, stepIndex: number, patch: Partial<RunStepState>): void {
@@ -305,6 +356,14 @@ async function runPipeline(
 		finalizeRun(runId, job.id, 'succeeded', null);
 	} finally {
 		if (activeAbort === abort) activeAbort = null;
+		// If there's a queued run, transition immediately so the center
+		// pane swaps from the just-finished run straight into the next
+		// one. If the queue is empty, leave `current` on the terminal
+		// state so the user can read the result and dismiss it manually
+		// via the Close button (clearCurrentRun).
+		if (pending.length > 0) {
+			queueMicrotask(drainNext);
+		}
 	}
 }
 
