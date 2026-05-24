@@ -4,19 +4,18 @@
  * Two user-facing flows:
  *   - `openFeedbackIssue` — opens a pre-filled GitHub issue in the
  *     user's browser. Fields are populated from app state via the
- *     `get_diagnostics` Tauri command + frontend settings + the
- *     frontend debug-log ring buffer. The user reviews and submits in
- *     their own GitHub session — no token, no server.
- *   - `saveFullDiagnostics` — writes the untruncated bundle to a
- *     user-chosen file path so they can drag it onto the issue when
- *     the URL-budget version isn't enough.
+ *     `get_diagnostics` Tauri command + frontend settings. The user
+ *     reviews and submits in their own GitHub session — no token, no
+ *     server.
+ *   - `saveFullDiagnostics` — writes the untruncated bundle (including
+ *     all logs) to a user-chosen file path so they can drag it onto the
+ *     issue if the URL-prefilled fields aren't enough.
  *
- * The URL budget is the tricky part: GitHub's new-issue URL caps out
- * somewhere around 8 KB. Settings snapshot + system info + version are
- * all small; logs are the variable. We compute the budget left over
- * for the logs field and truncate to fit; if there's not enough room
- * for a useful tail (under MIN_LOG_BYTES), we replace the logs field
- * with a pointer to the "Save Full Diagnostics" button.
+ * Logs are intentionally NOT included in the issue URL — they're rarely
+ * useful at the truncation budget GitHub permits, and dragging the full
+ * bundle in is a better workflow when they're actually needed. Search
+ * statistics (session) are small enough to fit and are diagnostic for
+ * the search-rotation behavior, so those go in the URL.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -28,10 +27,56 @@ const REPO = 'tmac1973/haruspex';
 const ISSUE_URL_BASE = `https://github.com/${REPO}/issues/new`;
 const TEMPLATE = 'feedback.yml';
 
-/** Conservative cap — GitHub rejects somewhere around 8 KB. */
-const URL_BUDGET = 7000;
-/** Below this, the logs tail is too short to be useful; drop it and point at the file export. */
-const MIN_LOG_BYTES = 800;
+type FailureKey = 'http' | 'rate_limited' | 'parse' | 'empty' | 'network' | 'timeout' | 'other';
+const FAILURE_KEYS: FailureKey[] = [
+	'http',
+	'rate_limited',
+	'parse',
+	'empty',
+	'network',
+	'timeout',
+	'other'
+];
+
+interface SessionEngineStats {
+	engine: string;
+	attempts: number;
+	successes: number;
+	failures_by_kind: Partial<Record<FailureKey, number>>;
+	total_latency_ms: number;
+	max_latency_ms: number;
+	last_success_at: number | null;
+	last_failure_at: number | null;
+	first_choice_attempts: number;
+	fallback_attempts: number;
+	fallback_successes: number;
+}
+
+interface LifetimeEngineStats {
+	engine: string;
+	attempts: number;
+	successes: number;
+	fail_http: number;
+	fail_rate_limited: number;
+	fail_parse: number;
+	fail_empty: number;
+	fail_network: number;
+	fail_timeout: number;
+	fail_other: number;
+	total_latency_ms: number;
+	max_latency_ms: number;
+	last_success_at: number | null;
+	last_failure_at: number | null;
+	first_choice_attempts: number;
+	fallback_attempts: number;
+	fallback_successes: number;
+}
+
+interface SessionGlobals {
+	cache_hits: number;
+	total_queries: number;
+	all_engines_failed: number;
+}
 
 interface RustDiagnostics {
 	app_version: string;
@@ -42,6 +87,16 @@ interface RustDiagnostics {
 	llama_log: string[];
 	whisper_log: string[];
 	tts_log: string[];
+	search_stats: {
+		session: {
+			engines: SessionEngineStats[];
+			globals: SessionGlobals;
+		};
+		lifetime: {
+			engines: LifetimeEngineStats[];
+			globals: Record<string, number>;
+		};
+	};
 }
 
 export interface Diagnostics extends RustDiagnostics {
@@ -101,99 +156,198 @@ function buildSettingsSnapshot(): string {
 	return JSON.stringify(snapshot, null, 2);
 }
 
-/**
- * Interleave the four log sources into a single block prefixed by source.
- * Returns the FULL combined text; callers truncate from the front as
- * needed to keep the most recent lines.
- */
-function buildLogsBlock(d: Diagnostics): string {
-	const sections: string[] = [];
-	const add = (label: string, lines: string[]) => {
-		if (lines.length === 0) return;
-		sections.push(`--- ${label} (${lines.length} lines) ---\n${lines.join('\n')}`);
+interface UnifiedStatsRow {
+	engine: string;
+	attempts: number;
+	successes: number;
+	failures: Record<FailureKey, number>;
+	totalLatencyMs: number;
+	maxLatencyMs: number;
+	lastSuccessAt: number | null;
+	lastFailureAt: number | null;
+	firstChoiceAttempts: number;
+	fallbackAttempts: number;
+	fallbackSuccesses: number;
+}
+
+function fromSession(e: SessionEngineStats): UnifiedStatsRow {
+	return {
+		engine: e.engine,
+		attempts: e.attempts,
+		successes: e.successes,
+		failures: {
+			http: e.failures_by_kind.http ?? 0,
+			rate_limited: e.failures_by_kind.rate_limited ?? 0,
+			parse: e.failures_by_kind.parse ?? 0,
+			empty: e.failures_by_kind.empty ?? 0,
+			network: e.failures_by_kind.network ?? 0,
+			timeout: e.failures_by_kind.timeout ?? 0,
+			other: e.failures_by_kind.other ?? 0
+		},
+		totalLatencyMs: e.total_latency_ms,
+		maxLatencyMs: e.max_latency_ms,
+		lastSuccessAt: e.last_success_at,
+		lastFailureAt: e.last_failure_at,
+		firstChoiceAttempts: e.first_choice_attempts,
+		fallbackAttempts: e.fallback_attempts,
+		fallbackSuccesses: e.fallback_successes
 	};
-	add('app log', d.app_log);
-	add('debug log (agent loop)', d.debug_log);
-	add('llama-server', d.llama_log);
-	add('whisper-server', d.whisper_log);
-	add('koko (tts)', d.tts_log);
-	return sections.join('\n\n');
+}
+
+function fromLifetime(e: LifetimeEngineStats): UnifiedStatsRow {
+	return {
+		engine: e.engine,
+		attempts: e.attempts,
+		successes: e.successes,
+		failures: {
+			http: e.fail_http,
+			rate_limited: e.fail_rate_limited,
+			parse: e.fail_parse,
+			empty: e.fail_empty,
+			network: e.fail_network,
+			timeout: e.fail_timeout,
+			other: e.fail_other
+		},
+		totalLatencyMs: e.total_latency_ms,
+		maxLatencyMs: e.max_latency_ms,
+		lastSuccessAt: e.last_success_at,
+		lastFailureAt: e.last_failure_at,
+		firstChoiceAttempts: e.first_choice_attempts,
+		fallbackAttempts: e.fallback_attempts,
+		fallbackSuccesses: e.fallback_successes
+	};
+}
+
+function lifetimeGlobals(g: Record<string, number>): SessionGlobals {
+	return {
+		cache_hits: g.cache_hits ?? 0,
+		total_queries: g.total_queries ?? 0,
+		all_engines_failed: g.all_engines_failed ?? 0
+	};
+}
+
+function ageString(ts: number | null): string {
+	if (!ts) return 'never';
+	const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+	if (s < 60) return `${s}s`;
+	if (s < 3600) return `${Math.floor(s / 60)}m`;
+	if (s < 86400) return `${Math.floor(s / 3600)}h`;
+	return `${Math.floor(s / 86400)}d`;
+}
+
+function pad(s: string | number, w: number, right = false): string {
+	const str = String(s);
+	if (str.length >= w) return str;
+	const fill = ' '.repeat(w - str.length);
+	return right ? fill + str : str + fill;
 }
 
 /**
- * Keep only the last `maxBytes` of a string, preserving whole lines and
- * prefixing a "[truncated …]" marker so the reader knows what they're
- * looking at. Returns the input untouched when it already fits.
+ * Format a single scope (session or lifetime) of search stats as a
+ * compact monospace text block — fits readably in a GitHub issue's
+ * `render: shell` textarea.
  */
-function tailBytes(text: string, maxBytes: number): string {
-	if (text.length <= maxBytes) return text;
-	const slice = text.slice(text.length - maxBytes);
-	const firstNewline = slice.indexOf('\n');
-	const trimmed = firstNewline >= 0 ? slice.slice(firstNewline + 1) : slice;
-	return `[truncated — showing last ~${maxBytes} chars]\n${trimmed}`;
-}
+function formatStatsScope(rows: UnifiedStatsRow[], globals: SessionGlobals): string {
+	const out: string[] = [];
+	out.push(
+		`queries=${globals.total_queries} cache_hits=${globals.cache_hits} all_engines_failed=${globals.all_engines_failed}`
+	);
 
-interface FeedbackUrlResult {
-	url: string;
-	/** True if logs were dropped from the URL because they wouldn't fit. */
-	logsOmitted: boolean;
-}
-
-/**
- * Compose the pre-filled GitHub issue URL. The version / system /
- * settings fields go in full; the logs field gets whatever budget is
- * left after the rest of the URL is encoded. If that budget is below
- * MIN_LOG_BYTES, drop logs entirely and substitute a pointer to the
- * file-export flow.
- */
-export function buildFeedbackUrl(d: Diagnostics): FeedbackUrlResult {
-	const system = buildSystemBlock(d);
-	const settings = buildSettingsSnapshot();
-	const fullLogs = buildLogsBlock(d);
-
-	const fixedParams = new URLSearchParams({
-		template: TEMPLATE,
-		version: d.app_version,
-		system,
-		settings
-	});
-	const fixedLen = `${ISSUE_URL_BASE}?${fixedParams.toString()}`.length;
-
-	// Each extra byte of logs adds (roughly) 3 chars in URL-encoded form
-	// for control chars and newlines, so we budget pessimistically.
-	const remaining = URL_BUDGET - fixedLen - '&logs='.length;
-	const rawBudget = Math.floor(remaining / 3);
-
-	let logsField: string;
-	let logsOmitted = false;
-	if (rawBudget < MIN_LOG_BYTES) {
-		logsField =
-			'(Logs omitted — too large to fit in the URL. Click "Save Full Diagnostics" in Settings → Feedback and drag the file onto this issue.)';
-		logsOmitted = true;
-	} else {
-		logsField = tailBytes(fullLogs, rawBudget);
+	if (rows.length === 0) {
+		out.push('(no engine activity)');
+		return out.join('\n');
 	}
 
+	const engineColW = Math.max(8, ...rows.map((r) => r.engine.length));
+	out.push('');
+	out.push(
+		[
+			pad('engine', engineColW),
+			pad('att', 4, true),
+			pad('ok', 4, true),
+			pad('ok%', 6, true),
+			pad('mean', 6, true),
+			pad('max', 6, true),
+			pad('lastOK', 7),
+			'failures'
+		].join('  ')
+	);
+	for (const r of rows) {
+		const okPct = r.attempts > 0 ? `${((r.successes / r.attempts) * 100).toFixed(1)}%` : '—';
+		const meanMs = r.successes > 0 ? Math.round(r.totalLatencyMs / r.successes) : '—';
+		const failParts = FAILURE_KEYS.filter((k) => r.failures[k] > 0).map(
+			(k) => `${k}:${r.failures[k]}`
+		);
+		out.push(
+			[
+				pad(r.engine, engineColW),
+				pad(r.attempts, 4, true),
+				pad(r.successes, 4, true),
+				pad(okPct, 6, true),
+				pad(meanMs, 6, true),
+				pad(r.maxLatencyMs || '—', 6, true),
+				pad(ageString(r.lastSuccessAt), 7),
+				failParts.join(', ') || '—'
+			].join('  ')
+		);
+	}
+
+	// Auto-rotate breakdown only if any engine has auto-rotate activity.
+	const hasAuto = rows.some((r) => r.firstChoiceAttempts > 0 || r.fallbackAttempts > 0);
+	if (hasAuto) {
+		out.push('');
+		out.push('auto-rotate (first / fallback (recovered)):');
+		for (const r of rows) {
+			if (r.firstChoiceAttempts === 0 && r.fallbackAttempts === 0) continue;
+			const rec = r.fallbackAttempts > 0 ? ` (${r.fallbackSuccesses})` : '';
+			out.push(
+				`  ${pad(r.engine, engineColW)} ${pad(r.firstChoiceAttempts, 3, true)} / ${pad(
+					r.fallbackAttempts,
+					3,
+					true
+				)}${rec}`
+			);
+		}
+	}
+
+	return out.join('\n');
+}
+
+function buildSessionStatsBlock(d: Diagnostics): string {
+	const rows = d.search_stats.session.engines.map(fromSession);
+	return formatStatsScope(rows, d.search_stats.session.globals);
+}
+
+function buildLifetimeStatsBlock(d: Diagnostics): string {
+	const rows = d.search_stats.lifetime.engines.map(fromLifetime);
+	return formatStatsScope(rows, lifetimeGlobals(d.search_stats.lifetime.globals));
+}
+
+/**
+ * Compose the pre-filled GitHub issue URL. Includes version, system
+ * info, settings (with secrets stripped), and session search stats.
+ * Logs are intentionally omitted — they rarely fit and rarely help at
+ * the truncation budget; users can attach the full bundle separately.
+ */
+export function buildFeedbackUrl(d: Diagnostics): string {
 	const params = new URLSearchParams({
 		template: TEMPLATE,
 		version: d.app_version,
-		system,
-		settings,
-		logs: logsField
+		system: buildSystemBlock(d),
+		settings: buildSettingsSnapshot(),
+		stats: buildSessionStatsBlock(d)
 	});
-	return { url: `${ISSUE_URL_BASE}?${params.toString()}`, logsOmitted };
+	return `${ISSUE_URL_BASE}?${params.toString()}`;
 }
 
 /**
- * Gather diagnostics, build the pre-filled GitHub issue URL, and open it
- * in the user's browser. Returns whether the logs section had to be
- * dropped so the UI can surface a hint to use the file-export flow.
+ * Gather diagnostics, build the pre-filled GitHub issue URL, and open
+ * it in the user's browser.
  */
-export async function openFeedbackIssue(): Promise<{ logsOmitted: boolean }> {
+export async function openFeedbackIssue(): Promise<void> {
 	const diag = await gatherDiagnostics();
-	const { url, logsOmitted } = buildFeedbackUrl(diag);
+	const url = buildFeedbackUrl(diag);
 	await invoke('open_url', { url });
-	return { logsOmitted };
 }
 
 /**
@@ -216,6 +370,16 @@ export function buildFullBundle(d: Diagnostics): string {
 		`## Settings`,
 		'```json',
 		buildSettingsSnapshot(),
+		'```',
+		``,
+		`## Search stats — session (since app start)`,
+		'```',
+		buildSessionStatsBlock(d),
+		'```',
+		``,
+		`## Search stats — lifetime (persisted)`,
+		'```',
+		buildLifetimeStatsBlock(d),
 		'```',
 		``,
 		`## App log (${d.app_log.length} lines)`,

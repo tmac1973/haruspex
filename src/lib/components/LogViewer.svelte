@@ -3,16 +3,94 @@
 	import { onMount } from 'svelte';
 	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
 
-	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'debug' | 'tools';
+	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'debug' | 'tools' | 'stats';
 
 	interface Props {
 		open: boolean;
 		onclose: () => void;
 	}
 
+	// Stats payload shape returned by the Rust `get_search_stats` command.
+	type FailureKey = 'http' | 'rate_limited' | 'parse' | 'empty' | 'network' | 'timeout' | 'other';
+	const FAILURE_KEYS: FailureKey[] = [
+		'http',
+		'rate_limited',
+		'parse',
+		'empty',
+		'network',
+		'timeout',
+		'other'
+	];
+	const FAILURE_LABELS: Record<FailureKey, string> = {
+		http: 'HTTP',
+		rate_limited: 'RateLim',
+		parse: 'Parse',
+		empty: 'Empty',
+		network: 'Net',
+		timeout: 'Timeout',
+		other: 'Other'
+	};
+
+	interface SessionEngine {
+		engine: string;
+		attempts: number;
+		successes: number;
+		failures_by_kind: Partial<Record<FailureKey, number>>;
+		total_latency_ms: number;
+		max_latency_ms: number;
+		last_success_at: number | null;
+		last_failure_at: number | null;
+		first_choice_attempts: number;
+		fallback_attempts: number;
+		fallback_successes: number;
+	}
+	interface LifetimeEngine {
+		engine: string;
+		attempts: number;
+		successes: number;
+		fail_http: number;
+		fail_rate_limited: number;
+		fail_parse: number;
+		fail_empty: number;
+		fail_network: number;
+		fail_timeout: number;
+		fail_other: number;
+		total_latency_ms: number;
+		max_latency_ms: number;
+		last_success_at: number | null;
+		last_failure_at: number | null;
+		first_choice_attempts: number;
+		fallback_attempts: number;
+		fallback_successes: number;
+	}
+	interface SessionGlobals {
+		cache_hits: number;
+		total_queries: number;
+		all_engines_failed: number;
+	}
+	interface CombinedStats {
+		session: { engines: SessionEngine[]; globals: SessionGlobals };
+		lifetime: { engines: LifetimeEngine[]; globals: Record<string, number> };
+	}
+
+	interface UnifiedRow {
+		engine: string;
+		attempts: number;
+		successes: number;
+		failures: Record<FailureKey, number>;
+		total_latency_ms: number;
+		max_latency_ms: number;
+		last_success_at: number | null;
+		last_failure_at: number | null;
+		first_choice_attempts: number;
+		fallback_attempts: number;
+		fallback_successes: number;
+	}
+
 	let { open, onclose }: Props = $props();
 	let activeTab = $state<LogTab>('app');
 	let logLines = $state<string[]>([]);
+	let statsData = $state<CombinedStats | null>(null);
 	let logContainer: HTMLDivElement | undefined = $state();
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let wasAtBottom = true;
@@ -64,14 +142,14 @@
 		return iso.slice(t + 1, z > t ? z : undefined);
 	}
 
-	const tabCommands: Record<Exclude<LogTab, 'debug' | 'tools'>, string> = {
+	const tabCommands: Record<Exclude<LogTab, 'debug' | 'tools' | 'stats'>, string> = {
 		app: 'get_app_logs',
 		llm: 'get_server_logs',
 		tts: 'get_tts_logs',
 		whisper: 'get_whisper_logs'
 	};
 
-	const clearCommands: Record<Exclude<LogTab, 'debug' | 'tools'>, string> = {
+	const clearCommands: Record<Exclude<LogTab, 'debug' | 'tools' | 'stats'>, string> = {
 		app: 'clear_app_logs',
 		llm: 'clear_server_logs',
 		tts: 'clear_tts_logs',
@@ -84,11 +162,16 @@
 		tts: 'TTS',
 		whisper: 'Whisper',
 		debug: 'Debug',
-		tools: 'Tools'
+		tools: 'Tools',
+		stats: 'Stats'
 	};
 
 	async function fetchLogs() {
 		try {
+			if (activeTab === 'stats') {
+				statsData = await invoke<CombinedStats>('get_search_stats');
+				return;
+			}
 			if (activeTab === 'debug') {
 				// Frontend-side ring buffer; no Tauri round-trip needed.
 				logLines = getDebugLogs();
@@ -110,6 +193,82 @@
 		} catch {
 			// ignore
 		}
+	}
+
+	function normalizeSession(e: SessionEngine): UnifiedRow {
+		const failures: Record<FailureKey, number> = {
+			http: e.failures_by_kind.http ?? 0,
+			rate_limited: e.failures_by_kind.rate_limited ?? 0,
+			parse: e.failures_by_kind.parse ?? 0,
+			empty: e.failures_by_kind.empty ?? 0,
+			network: e.failures_by_kind.network ?? 0,
+			timeout: e.failures_by_kind.timeout ?? 0,
+			other: e.failures_by_kind.other ?? 0
+		};
+		return {
+			engine: e.engine,
+			attempts: e.attempts,
+			successes: e.successes,
+			failures,
+			total_latency_ms: e.total_latency_ms,
+			max_latency_ms: e.max_latency_ms,
+			last_success_at: e.last_success_at,
+			last_failure_at: e.last_failure_at,
+			first_choice_attempts: e.first_choice_attempts,
+			fallback_attempts: e.fallback_attempts,
+			fallback_successes: e.fallback_successes
+		};
+	}
+
+	function normalizeLifetime(e: LifetimeEngine): UnifiedRow {
+		return {
+			engine: e.engine,
+			attempts: e.attempts,
+			successes: e.successes,
+			failures: {
+				http: e.fail_http,
+				rate_limited: e.fail_rate_limited,
+				parse: e.fail_parse,
+				empty: e.fail_empty,
+				network: e.fail_network,
+				timeout: e.fail_timeout,
+				other: e.fail_other
+			},
+			total_latency_ms: e.total_latency_ms,
+			max_latency_ms: e.max_latency_ms,
+			last_success_at: e.last_success_at,
+			last_failure_at: e.last_failure_at,
+			first_choice_attempts: e.first_choice_attempts,
+			fallback_attempts: e.fallback_attempts,
+			fallback_successes: e.fallback_successes
+		};
+	}
+
+	function pct(num: number, denom: number): string {
+		if (denom <= 0) return '—';
+		return `${((num / denom) * 100).toFixed(1)}%`;
+	}
+
+	function meanMs(row: UnifiedRow): string {
+		if (row.successes <= 0) return '—';
+		return Math.round(row.total_latency_ms / row.successes).toString();
+	}
+
+	function age(ts: number | null): string {
+		if (!ts) return 'never';
+		const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+		if (s < 60) return `${s}s ago`;
+		if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+		if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+		return `${Math.floor(s / 86400)}d ago`;
+	}
+
+	function lifetimeGlobalsObj(g: Record<string, number>): SessionGlobals {
+		return {
+			cache_hits: g.cache_hits ?? 0,
+			total_queries: g.total_queries ?? 0,
+			all_engines_failed: g.all_engines_failed ?? 0
+		};
 	}
 
 	function startPolling() {
@@ -155,17 +314,24 @@
 
 	async function clearCurrentLog() {
 		try {
-			if (activeTab === 'debug' || activeTab === 'tools') {
+			if (activeTab === 'stats') {
+				if (!confirm('Reset all lifetime search statistics? Session stats are not affected.')) {
+					return;
+				}
+				await invoke('reset_lifetime_search_stats');
+				await fetchLogs();
+			} else if (activeTab === 'debug' || activeTab === 'tools') {
 				// Frontend ring buffer — both tabs read from it; clearing once
 				// empties them both.
 				clearDebugLogs();
+				logLines = [];
 			} else {
 				await invoke(clearCommands[activeTab]);
+				logLines = [];
 			}
 		} catch (e) {
 			console.error('Failed to clear logs:', e);
 		}
-		logLines = [];
 		clearState = 'cleared';
 		setTimeout(() => {
 			clearState = 'idle';
@@ -206,7 +372,7 @@
 		<div class="modal">
 			<div class="modal-header">
 				<div class="tabs">
-					{#each ['app', 'llm', 'tts', 'whisper', 'debug', 'tools'] as const as tab (tab)}
+					{#each ['app', 'llm', 'tts', 'whisper', 'debug', 'tools', 'stats'] as const as tab (tab)}
 						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
 							{tabLabels[tab]}
 						</button>
@@ -226,22 +392,141 @@
 					<button
 						class="copy-btn"
 						onclick={clearCurrentLog}
-						title="Clear the in-memory log buffer for this tab"
+						title={activeTab === 'stats'
+							? 'Reset lifetime search statistics (session stats are not affected)'
+							: 'Clear the in-memory log buffer for this tab'}
 					>
-						{clearState === 'cleared' ? 'Cleared' : 'Clear'}
+						{#if activeTab === 'stats'}
+							{clearState === 'cleared' ? 'Reset' : 'Reset lifetime'}
+						{:else}
+							{clearState === 'cleared' ? 'Cleared' : 'Clear'}
+						{/if}
 					</button>
-					<button
-						class="copy-btn"
-						onclick={copyAllLogs}
-						title="Copy current log tab to clipboard for bug reports"
-					>
-						{copyState === 'copied' ? 'Copied!' : 'Copy all'}
-					</button>
+					{#if activeTab !== 'stats'}
+						<button
+							class="copy-btn"
+							onclick={copyAllLogs}
+							title="Copy current log tab to clipboard for bug reports"
+						>
+							{copyState === 'copied' ? 'Copied!' : 'Copy all'}
+						</button>
+					{/if}
 					<button class="close-btn" onclick={onclose} title="Close">&times;</button>
 				</div>
 			</div>
 			<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
-				{#if humanReadable && STRUCTURED_TABS.has(activeTab)}
+				{#snippet engineTable(rows: UnifiedRow[], globals: SessionGlobals)}
+					{#if rows.length === 0}
+						<div class="stats-empty">No engine activity recorded yet.</div>
+					{:else}
+						<table class="stats-table">
+							<thead>
+								<tr>
+									<th>Engine</th>
+									<th>Att</th>
+									<th>OK</th>
+									<th>OK%</th>
+									<th>Mean ms</th>
+									<th>Max ms</th>
+									<th>Last OK</th>
+									<th>Last fail</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each rows as r (r.engine)}
+									<tr>
+										<td>{r.engine}</td>
+										<td>{r.attempts}</td>
+										<td>{r.successes}</td>
+										<td>{pct(r.successes, r.attempts)}</td>
+										<td>{meanMs(r)}</td>
+										<td>{r.max_latency_ms || '—'}</td>
+										<td>{age(r.last_success_at)}</td>
+										<td>{age(r.last_failure_at)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+
+						<table class="stats-table stats-sub">
+							<thead>
+								<tr>
+									<th>Failures by kind</th>
+									{#each FAILURE_KEYS as k (k)}
+										<th>{FAILURE_LABELS[k]}</th>
+									{/each}
+								</tr>
+							</thead>
+							<tbody>
+								{#each rows as r (r.engine)}
+									<tr>
+										<td>{r.engine}</td>
+										{#each FAILURE_KEYS as k (k)}
+											<td class:zero={r.failures[k] === 0}>{r.failures[k]}</td>
+										{/each}
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+
+						<table class="stats-table stats-sub">
+							<thead>
+								<tr>
+									<th>Auto-rotate</th>
+									<th>First choice</th>
+									<th>Fallback</th>
+									<th>Fallback recovery%</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each rows as r (r.engine)}
+									<tr>
+										<td>{r.engine}</td>
+										<td>{r.first_choice_attempts}</td>
+										<td>{r.fallback_attempts}</td>
+										<td>{pct(r.fallback_successes, r.fallback_attempts)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+
+					<div class="stats-globals">
+						<div>Total queries: <b>{globals.total_queries}</b></div>
+						<div>
+							Cache hits: <b>{globals.cache_hits}</b>
+							{#if globals.total_queries > 0}
+								<span class="muted">({pct(globals.cache_hits, globals.total_queries)})</span>
+							{/if}
+						</div>
+						<div>All-engines failures: <b>{globals.all_engines_failed}</b></div>
+					</div>
+				{/snippet}
+
+				{#if activeTab === 'stats'}
+					{#if statsData}
+						<div class="stats-scope">
+							<h3 class="stats-heading">
+								Session <span class="muted">(since app start)</span>
+							</h3>
+							{@render engineTable(
+								statsData.session.engines.map(normalizeSession),
+								statsData.session.globals
+							)}
+						</div>
+						<div class="stats-scope">
+							<h3 class="stats-heading">
+								Lifetime <span class="muted">(persisted, all-time)</span>
+							</h3>
+							{@render engineTable(
+								statsData.lifetime.engines.map(normalizeLifetime),
+								lifetimeGlobalsObj(statsData.lifetime.globals)
+							)}
+						</div>
+					{:else}
+						<div class="log-line log-empty">Loading stats…</div>
+					{/if}
+				{:else if humanReadable && STRUCTURED_TABS.has(activeTab)}
 					{#each logLines as line, i (`${activeTab}-${i}`)}
 						{@const parsed = parseLine(line)}
 						{#if parsed.timestamp}
@@ -449,5 +734,88 @@
 		white-space: pre-wrap;
 		word-break: break-word;
 		overflow-x: auto;
+	}
+
+	.stats-scope {
+		padding: 8px 0 16px 0;
+		border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+	}
+
+	.stats-scope:last-child {
+		border-bottom: none;
+	}
+
+	.stats-heading {
+		margin: 4px 0 8px 0;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--accent);
+	}
+
+	.stats-heading .muted {
+		color: var(--text-secondary);
+		font-weight: 400;
+		font-size: 0.75rem;
+		margin-left: 4px;
+	}
+
+	.stats-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.72rem;
+		margin-bottom: 10px;
+	}
+
+	.stats-table.stats-sub {
+		margin-top: -4px;
+	}
+
+	.stats-table th,
+	.stats-table td {
+		padding: 3px 8px;
+		text-align: right;
+		border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+	}
+
+	.stats-table th:first-child,
+	.stats-table td:first-child {
+		text-align: left;
+		color: #4ec9b0;
+		font-weight: 500;
+	}
+
+	.stats-table th {
+		color: var(--text-secondary);
+		font-weight: 500;
+		text-transform: none;
+	}
+
+	.stats-table td.zero {
+		color: var(--text-secondary);
+		opacity: 0.4;
+	}
+
+	.stats-empty {
+		color: var(--text-secondary);
+		font-style: italic;
+		padding: 4px 0 12px 0;
+	}
+
+	.stats-globals {
+		display: flex;
+		gap: 18px;
+		flex-wrap: wrap;
+		padding: 6px 0 0 0;
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+	}
+
+	.stats-globals b {
+		color: #d4d4d4;
+		font-weight: 600;
+	}
+
+	.stats-globals .muted {
+		opacity: 0.7;
 	}
 </style>

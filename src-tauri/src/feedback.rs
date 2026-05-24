@@ -14,9 +14,17 @@
 use serde::Serialize;
 
 use crate::app_log;
+use crate::db::{Database, LifetimeStatsSnapshot};
+use crate::proxy::stats::{SearchStats, SessionStatsSnapshot};
 use crate::server::LlamaServer;
 use crate::tts::TtsEngine;
 use crate::whisper::WhisperServer;
+
+#[derive(Serialize)]
+pub struct DiagnosticsSearchStats {
+    pub session: SessionStatsSnapshot,
+    pub lifetime: LifetimeStatsSnapshot,
+}
 
 #[derive(Serialize)]
 pub struct Diagnostics {
@@ -28,6 +36,7 @@ pub struct Diagnostics {
     pub llama_log: Vec<String>,
     pub whisper_log: Vec<String>,
     pub tts_log: Vec<String>,
+    pub search_stats: DiagnosticsSearchStats,
 }
 
 #[tauri::command]
@@ -35,7 +44,11 @@ pub async fn get_diagnostics(
     llama: tauri::State<'_, LlamaServer>,
     whisper: tauri::State<'_, WhisperServer>,
     tts: tauri::State<'_, TtsEngine>,
+    search_stats: tauri::State<'_, SearchStats>,
+    db: tauri::State<'_, Database>,
 ) -> Result<Diagnostics, ()> {
+    let session = search_stats.snapshot();
+    let lifetime = db.lifetime_stats_snapshot().unwrap_or_default();
     Ok(Diagnostics {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         os: std::env::consts::OS.to_string(),
@@ -47,6 +60,7 @@ pub async fn get_diagnostics(
         llama_log: llama.get_logs().await,
         whisper_log: whisper.get_logs().await,
         tts_log: tts.get_logs().await,
+        search_stats: DiagnosticsSearchStats { session, lifetime },
     })
 }
 
