@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.1.39](https://github.com/tmac1973/haruspex/compare/v0.1.38...v0.1.39) (2026-05-24)
+
+
+### Features
+
+* **inference:** app-level queue so chat + jobs don't head-of-line block ([901bdf5](https://github.com/tmac1973/haruspex/commit/901bdf54934ea3425eaac51554b68260ce45f88c))
+* **jobs:** add jobs CRUD + editor UI (phase 14 step 2) ([f764f1b](https://github.com/tmac1973/haruspex/commit/f764f1be9ff46b38f01d6d2eda40dd7de950655c))
+* **jobs:** crash recovery for orphaned runs (phase 14 step 6) ([21f43a5](https://github.com/tmac1973/haruspex/commit/21f43a5e910c9840718ede0cf51877a2e1883e5b))
+* **jobs:** manual single-step run via ephemeral agent loop (phase 14 step 3) ([221b168](https://github.com/tmac1973/haruspex/commit/221b168e96829a712c1b2c3666d15a4926935c8f))
+* **jobs:** multi-step pipelines with prior-output prepend (phase 14 step 4) ([56953a3](https://github.com/tmac1973/haruspex/commit/56953a319f782159290d11c0226e8bff4806e343))
+* **jobs:** persist runs + browsable history pane (phase 14 step 5) ([e16cf8f](https://github.com/tmac1973/haruspex/commit/e16cf8f429b3725c98d9ee3358766df7c8125e8c))
+* **jobs:** Phase 14 — Jobs tab (saved prompts, multi-step pipelines, in-app scheduling) ([6b2dd4c](https://github.com/tmac1973/haruspex/commit/6b2dd4c88d89f1028771bdbe31ad085fbc6ea773))
+* **jobs:** scheduler + FIFO queue (phase 14 step 7) ([42ba17f](https://github.com/tmac1973/haruspex/commit/42ba17f9e9559538541bcb77b0a643df7793ae1f))
+* **search:** track per-engine statistics with session + lifetime scopes ([c94562d](https://github.com/tmac1973/haruspex/commit/c94562da9f005a0da5fbc97d26d33f5d3445fdc9))
+
+
+### Bug Fixes
+
+* **agent:** cancel takes effect mid-tool, not just between tool calls ([7de9c22](https://github.com/tmac1973/haruspex/commit/7de9c22cf28961b347e17cd51f858cdc5570e52a))
+* **jobs:** clipped Run button + unreadable schedule dropdown ([1fc497a](https://github.com/tmac1973/haruspex/commit/1fc497a105471584c8d1ab253ba878fc9fed64ae))
+* **jobs:** Run button enables on first save; working dir is optional ([8b8f140](https://github.com/tmac1973/haruspex/commit/8b8f14023c7102372615d64f9c7fef33cb4549db))
+* **jobs:** Run button enables on first save; working dir is optional ([efadcf5](https://github.com/tmac1973/haruspex/commit/efadcf5fd9962f551da99bb9542704a299f7a335))
+* **tools:** catch more fs_write_xlsx scaffold patterns ([3458543](https://github.com/tmac1973/haruspex/commit/345854322e00b9931c07c4a7c2838cc246079d72))
+* **tools:** reject scaffold input across the other fs_write_* writers ([4984c43](https://github.com/tmac1973/haruspex/commit/4984c430df5863a3038e3eda49fdb4176908fab5))
+* **tools:** reject stub spreadsheet input + sharpen fs_write_xlsx description ([1aa75f2](https://github.com/tmac1973/haruspex/commit/1aa75f2b836265aafc953c5b83ca02f75e766585))
+
+
+### Code Refactoring
+
+* **ui:** add top-level tab shell and extract ChatView ([33ca986](https://github.com/tmac1973/haruspex/commit/33ca98669c4e5d7cbb547b669dd403f1fcfc72b3))
+
+
+### Documentation
+
+* **jobs:** add phase-14 plan for jobs tab ([0c76f5d](https://github.com/tmac1973/haruspex/commit/0c76f5df2458a2481f2cc158dbf5362ca4cca53d))
+* **jobs:** add tooltips across the job editor + scheduler warning ([34624a7](https://github.com/tmac1973/haruspex/commit/34624a7271c1b49f8861907d228c33a0a71facd2))
+* **jobs:** polish — prompt-size warning, tab badge, copy, maintenance.md (phase 14 step 8) ([f77569f](https://github.com/tmac1973/haruspex/commit/f77569f72389fb0e94f1d3fdd0a452f5deb49c8e))
+
 ## [0.1.38](https://github.com/tmac1973/haruspex/compare/v0.1.37...v0.1.38) (2026-05-23)
 
 
