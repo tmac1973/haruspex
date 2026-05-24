@@ -269,6 +269,26 @@
 				</div>
 			</label>
 		</div>
+
+		<div class="field">
+			<label class="toggle-row">
+				<input
+					type="checkbox"
+					checked={config.allowParallelInference}
+					onchange={(e) =>
+						commit({ allowParallelInference: (e.target as HTMLInputElement).checked })}
+				/>
+				<div>
+					<strong>Allow parallel inference</strong>
+					<span>
+						Skip the app's request queue and let chat + job turns run concurrently against this
+						server. Only enable if the server supports concurrent requests — e.g. vLLM, llama-server
+						launched with <code>-np N</code>, or hosted APIs. For single-slot servers leave this off
+						so a queued turn shows a "waiting" indicator instead of silently blocking.
+					</span>
+				</div>
+			</label>
+		</div>
 	{/if}
 </div>
 

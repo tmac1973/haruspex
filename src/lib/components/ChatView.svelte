@@ -10,6 +10,7 @@
 	import {
 		getActiveConversation,
 		getIsGenerating,
+		getIsWaitingForSlot,
 		getIsCompacting,
 		getStreamingContent,
 		getErrorMessage,
@@ -60,6 +61,7 @@
 
 	const activeConversation = $derived(getActiveConversation());
 	const isGenerating = $derived(getIsGenerating());
+	const isWaitingForSlot = $derived(getIsWaitingForSlot());
 	const isCompacting = $derived(getIsCompacting());
 	const streamingContent = $derived(getStreamingContent());
 	const errorMessage = $derived(getErrorMessage());
@@ -320,7 +322,9 @@
 					<SearchStepComponent steps={searchSteps} slowMode={searchProviderSlowMode} />
 				{/if}
 
-				{#if isGenerating && streamingContent}
+				{#if isWaitingForSlot}
+					<div class="compacting-indicator">Waiting for another inference request to finish…</div>
+				{:else if isGenerating && streamingContent}
 					<div class="message" data-role="assistant">
 						<div class="message-label">Haruspex</div>
 						<div class="message-content">

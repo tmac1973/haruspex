@@ -18,6 +18,7 @@ import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact } from '$lib/agent/tools';
 import type { SearchStep } from '$lib/agent/loop';
 import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
+import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps } from '$lib/stores/jobs.svelte';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
@@ -60,6 +61,12 @@ export interface RunState {
 	currentStepIndex: number;
 	status: RunStatus;
 	error: string | null;
+	/**
+	 * True while the active step is parked in the app's inference queue
+	 * (e.g. waiting behind a chat turn). UI renders a "waiting" hint so
+	 * the run doesn't look frozen.
+	 */
+	waitingForSlot: boolean;
 	startedAt: number;
 	finishedAt: number | null;
 }
@@ -134,6 +141,7 @@ export async function enqueue(
 		currentStepIndex: 0,
 		status: 'running',
 		error: null,
+		waitingForSlot: false,
 		startedAt: Date.now(),
 		finishedAt: null
 	};
@@ -219,16 +227,31 @@ async function runOneStep(
 	const wrap = job.auto_approve_tools ? runWithAutoApprove : passthrough;
 
 	try {
-		const { finalText } = await wrap(() =>
-			runEphemeralTurn({
-				userMessage: rendered,
-				workingDir: job.working_dir,
-				contextSize: getActiveContextSize(),
-				deepResearch: step.deep_research,
-				visionSupported,
+		if (current && current.id === runId) {
+			current = { ...current, waitingForSlot: true };
+		}
+		const { finalText } = await withInferenceSlot(
+			{
+				consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
 				signal: abort.signal,
-				...callbacks
-			})
+				onAdmitted: () => {
+					if (current && current.id === runId) {
+						current = { ...current, waitingForSlot: false };
+					}
+				}
+			},
+			() =>
+				wrap(() =>
+					runEphemeralTurn({
+						userMessage: rendered,
+						workingDir: job.working_dir,
+						contextSize: getActiveContextSize(),
+						deepResearch: step.deep_research,
+						visionSupported,
+						signal: abort.signal,
+						...callbacks
+					})
+				)
 		);
 		const finishedAt = Date.now();
 		patchStep(runId, stepIndex, {

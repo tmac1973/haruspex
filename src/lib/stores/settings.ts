@@ -43,6 +43,15 @@ export interface InferenceBackendConfig {
 	remoteVisionSupported: boolean | null;
 	/** Backend kind recorded from the last successful probe. */
 	remoteBackendKind: InferenceBackendKind;
+	/**
+	 * Remote-mode opt-in: skip the app's inference queue and let chat +
+	 * job turns run in parallel against the remote server. Only safe when
+	 * the server actually serves concurrent requests (vLLM, llama-server
+	 * launched with `-np N`, hosted APIs). For single-slot servers
+	 * leaving this off avoids HTTP-level head-of-line blocking with no
+	 * "queued" indicator. Local mode always serializes regardless.
+	 */
+	allowParallelInference: boolean;
 }
 
 /**
@@ -187,7 +196,8 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	remoteModelId: '',
 	remoteContextSize: null,
 	remoteVisionSupported: null,
-	remoteBackendKind: null
+	remoteBackendKind: null,
+	allowParallelInference: false
 };
 
 const defaultIntegrations: IntegrationsConfig = {

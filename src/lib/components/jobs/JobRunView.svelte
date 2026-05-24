@@ -97,7 +97,9 @@
 						<SearchStepView steps={step.searchSteps} />
 					{/if}
 
-					{#if isLiveStep(step) && step.streaming}
+					{#if isLiveStep(step) && run.waitingForSlot}
+						<p class="hint">Waiting for another inference request to finish…</p>
+					{:else if isLiveStep(step) && step.streaming}
 						<ChatMessage
 							message={{ role: 'assistant', content: step.streaming }}
 							isStreaming={true}

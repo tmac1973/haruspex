@@ -44,6 +44,19 @@ vi.mock('$lib/stores/approvalOverride', () => ({
 	isAutoApproveActive: () => false
 }));
 
+vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
+	// Tests for the queue itself live in inferenceQueue.test.ts; here we
+	// just want a pass-through so the runner's pipeline scheduling stays
+	// observable without the queue's await-ready microtask in the middle.
+	withInferenceSlot: async <T>(
+		opts: { onAdmitted?: () => void },
+		fn: () => Promise<T>
+	): Promise<T> => {
+		opts.onAdmitted?.();
+		return fn();
+	}
+}));
+
 function makeJob(overrides: Partial<JobWithSteps> = {}): JobWithSteps {
 	return {
 		id: 1,

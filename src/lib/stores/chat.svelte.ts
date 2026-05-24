@@ -1,5 +1,6 @@
 import { type ChatMessage, type Usage, ApiError } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
+import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { getDisplayLabel } from '$lib/agent/tools';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
 import {
@@ -126,6 +127,7 @@ let conversations = $state<Conversation[]>([]);
 let activeConversationId = $state<string | null>(null);
 let workingDir = $state<string | null>(loadWorkingDir());
 let isGenerating = $state(false);
+let isWaitingForSlot = $state(false);
 let isCompacting = $state(false);
 let streamingContent = $state('');
 let errorMessage = $state<string | null>(null);
@@ -212,6 +214,10 @@ export function setWorkingDir(path: string | null): void {
 
 export function getIsGenerating(): boolean {
 	return isGenerating;
+}
+
+export function getIsWaitingForSlot(): boolean {
+	return isWaitingForSlot;
 }
 
 export function getStreamingContent(): string {
@@ -708,91 +714,104 @@ export async function sendMessage(content: string): Promise<void> {
 		const visionSupported =
 			backend.mode === 'remote' ? backend.remoteVisionSupported !== false : true;
 
-		await runAgentLoop({
-			messages: messagesForApi,
-			workingDir: currentWorkingDir,
-			maxIterations: exhaustiveResearch ? 25 : 10,
-			contextSize: activeCtxSize,
-			deepResearch: exhaustiveResearch,
-			expectsFileOutput,
-			visionSupported,
-			signal,
-			onUsageUpdate: (u: Usage) => {
-				updateContextUsage(u, activeCtxSize);
-				conversation.contextUsage = {
-					promptTokens: u.prompt_tokens,
-					completionTokens: u.completion_tokens
-				};
-			},
-			onCallStats: (stats) => {
-				turnStats.lastCallStats = stats;
-			},
-			onToolStart: (call) => {
-				conversation.searchSteps = [
-					...conversation.searchSteps,
-					{
-						id: call.id,
-						toolName: call.name,
-						query: getDisplayLabel(call.name, call.arguments),
-						status: 'running',
-						args: call.arguments
-					}
-				];
-			},
-			onToolEnd: (call, result, thumbDataUrl, artifacts) => {
-				conversation.searchSteps = conversation.searchSteps.map((s) =>
-					s.id === call.id ? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts } : s
-				);
-			},
-			onStreamChunk: (chunk) => {
-				if (chunk.delta.reasoning_content) {
-					if (!streamingContent.includes('<think>')) {
-						streamingContent += '<think>';
-					}
-					streamingContent += chunk.delta.reasoning_content;
-				}
-				if (chunk.delta.content) {
-					if (streamingContent.includes('<think>') && !streamingContent.includes('</think>')) {
-						streamingContent += '</think>\n\n';
-					}
-					streamingContent += chunk.delta.content;
+		isWaitingForSlot = true;
+		await withInferenceSlot(
+			{
+				consumer: 'chat',
+				signal,
+				onAdmitted: () => {
+					isWaitingForSlot = false;
 				}
 			},
-			onComplete: () => {
-				const fetched = extractUrlsFromSteps(conversation.searchSteps);
-				const processed = processCitations(
-					stripToolCallArtifacts(streamingContent).trim(),
-					fetched
-				);
-				const finalContent = processed.content;
+			() =>
+				runAgentLoop({
+					messages: messagesForApi,
+					workingDir: currentWorkingDir,
+					maxIterations: exhaustiveResearch ? 25 : 10,
+					contextSize: activeCtxSize,
+					deepResearch: exhaustiveResearch,
+					expectsFileOutput,
+					visionSupported,
+					signal,
+					onUsageUpdate: (u: Usage) => {
+						updateContextUsage(u, activeCtxSize);
+						conversation.contextUsage = {
+							promptTokens: u.prompt_tokens,
+							completionTokens: u.completion_tokens
+						};
+					},
+					onCallStats: (stats) => {
+						turnStats.lastCallStats = stats;
+					},
+					onToolStart: (call) => {
+						conversation.searchSteps = [
+							...conversation.searchSteps,
+							{
+								id: call.id,
+								toolName: call.name,
+								query: getDisplayLabel(call.name, call.arguments),
+								status: 'running',
+								args: call.arguments
+							}
+						];
+					},
+					onToolEnd: (call, result, thumbDataUrl, artifacts) => {
+						conversation.searchSteps = conversation.searchSteps.map((s) =>
+							s.id === call.id
+								? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts }
+								: s
+						);
+					},
+					onStreamChunk: (chunk) => {
+						if (chunk.delta.reasoning_content) {
+							if (!streamingContent.includes('<think>')) {
+								streamingContent += '<think>';
+							}
+							streamingContent += chunk.delta.reasoning_content;
+						}
+						if (chunk.delta.content) {
+							if (streamingContent.includes('<think>') && !streamingContent.includes('</think>')) {
+								streamingContent += '</think>\n\n';
+							}
+							streamingContent += chunk.delta.content;
+						}
+					},
+					onComplete: () => {
+						const fetched = extractUrlsFromSteps(conversation.searchSteps);
+						const processed = processCitations(
+							stripToolCallArtifacts(streamingContent).trim(),
+							fetched
+						);
+						const finalContent = processed.content;
 
-				if (finalContent) {
-					logDebug('chat', 'onComplete commit', {
-						rawStreamingLen: streamingContent.length,
-						finalContentLen: finalContent.length,
-						citedUrls: processed.citedUrls
-					});
-					commitMessage(conversation, finalContent, turnStats);
-					if (exhaustiveResearch) exhaustiveResearch = false;
-				} else {
-					const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
-					logDebug('chat', `onComplete empty → diagnosis ${diagnosis.type}`, {
-						rawStreamingLen: streamingContent.length,
-						rawStreamingPreview: streamingContent.slice(0, 2000),
-						diagnosis
-					});
-					if (diagnosis.type === 'commit') {
-						commitMessage(conversation, diagnosis.content, turnStats);
-						if (exhaustiveResearch) exhaustiveResearch = false;
-					} else {
-						errorMessage = diagnosis.message;
-						errorTurnId = currentTurnId;
-					}
-				}
-				conversation.sourceUrls = processed.citedUrls;
-			},
-			onError: handleTurnError
-		});
+						if (finalContent) {
+							logDebug('chat', 'onComplete commit', {
+								rawStreamingLen: streamingContent.length,
+								finalContentLen: finalContent.length,
+								citedUrls: processed.citedUrls
+							});
+							commitMessage(conversation, finalContent, turnStats);
+							if (exhaustiveResearch) exhaustiveResearch = false;
+						} else {
+							const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
+							logDebug('chat', `onComplete empty → diagnosis ${diagnosis.type}`, {
+								rawStreamingLen: streamingContent.length,
+								rawStreamingPreview: streamingContent.slice(0, 2000),
+								diagnosis
+							});
+							if (diagnosis.type === 'commit') {
+								commitMessage(conversation, diagnosis.content, turnStats);
+								if (exhaustiveResearch) exhaustiveResearch = false;
+							} else {
+								errorMessage = diagnosis.message;
+								errorTurnId = currentTurnId;
+							}
+						}
+						conversation.sourceUrls = processed.citedUrls;
+					},
+					onError: handleTurnError
+				})
+		);
 
 		captureToolPairsForNextTurn(conversation, messagesForApi, baseMessageCount, keepRecentTools);
 	} catch (e) {
@@ -803,6 +822,7 @@ export async function sendMessage(content: string): Promise<void> {
 		}
 	} finally {
 		isGenerating = false;
+		isWaitingForSlot = false;
 		streamingContent = '';
 		abortController = null;
 		conversation.updatedAt = Date.now();
