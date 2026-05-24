@@ -53,12 +53,16 @@ async function freshRunner() {
 	return import('$lib/agent/jobs/runner.svelte');
 }
 
+function tick() {
+	return new Promise((r) => setTimeout(r, 0));
+}
+
 beforeEach(() => {
 	mocks.runEphemeralTurn.mockReset();
 	mocks.getJob.mockReset();
 });
 
-describe('jobs runner', () => {
+describe('jobs runner — guards', () => {
 	it('returns null when the job is not found', async () => {
 		mocks.getJob.mockResolvedValueOnce(null);
 		const { enqueue, getCurrentRun } = await freshRunner();
@@ -82,103 +86,8 @@ describe('jobs runner', () => {
 		expect(runId).toBeNull();
 	});
 
-	it('sets current to a running RunState then succeeded on completion', async () => {
-		mocks.getJob.mockResolvedValueOnce(makeJob());
-		let resolveTurn: ((v: { finalText: string }) => void) | null = null;
-		mocks.runEphemeralTurn.mockReturnValueOnce(
-			new Promise((res) => {
-				resolveTurn = res;
-			})
-		);
-
-		const { enqueue, getCurrentRun } = await freshRunner();
-		const runId = await enqueue(1);
-		expect(runId).toBe(1);
-
-		// Snapshot the running state synchronously after enqueue resolves.
-		const running = getCurrentRun();
-		expect(running).not.toBeNull();
-		expect(running?.status).toBe('running');
-		expect(running?.jobName).toBe('Test job');
-		expect(running?.stepPrompt).toBe('do step 1');
-
-		resolveTurn!({ finalText: 'all done' });
-		await new Promise((r) => setTimeout(r, 0));
-
-		const done = getCurrentRun();
-		expect(done?.status).toBe('succeeded');
-		expect(done?.finalText).toBe('all done');
-		expect(done?.finishedAt).not.toBeNull();
-	});
-
-	it('passes deepResearch from the first step into the ephemeral turn', async () => {
-		mocks.getJob.mockResolvedValueOnce(
-			makeJob({ steps: [{ id: 1, ordering: 0, prompt: 'research it', deep_research: true }] })
-		);
-		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'x' });
-
-		const { enqueue } = await freshRunner();
-		await enqueue(1);
-
-		const opts = mocks.runEphemeralTurn.mock.calls[0][0] as EphemeralTurnOptions;
-		expect(opts.deepResearch).toBe(true);
-		expect(opts.userMessage).toBe('research it');
-		expect(opts.workingDir).toBe('/tmp/work');
-	});
-
-	it('marks the run failed when the ephemeral turn rejects', async () => {
-		mocks.getJob.mockResolvedValueOnce(makeJob());
-		mocks.runEphemeralTurn.mockRejectedValueOnce(new Error('llama exploded'));
-
-		const { enqueue, getCurrentRun } = await freshRunner();
-		await enqueue(1);
-		await new Promise((r) => setTimeout(r, 0));
-
-		const state = getCurrentRun();
-		expect(state?.status).toBe('failed');
-		expect(state?.error).toBe('llama exploded');
-	});
-
-	it('marks the run cancelled when the ephemeral turn aborts', async () => {
-		mocks.getJob.mockResolvedValueOnce(makeJob());
-		mocks.runEphemeralTurn.mockRejectedValueOnce(new DOMException('Aborted', 'AbortError'));
-
-		const { enqueue, getCurrentRun } = await freshRunner();
-		await enqueue(1);
-		await new Promise((r) => setTimeout(r, 0));
-
-		const state = getCurrentRun();
-		expect(state?.status).toBe('cancelled');
-		expect(state?.error).toBe('Cancelled by user');
-	});
-
-	it('cancel() aborts the signal passed to the ephemeral turn', async () => {
-		mocks.getJob.mockResolvedValueOnce(makeJob());
-		let capturedSignal: AbortSignal | undefined;
-		mocks.runEphemeralTurn.mockImplementationOnce(
-			(opts: EphemeralTurnOptions) =>
-				new Promise((_, rej) => {
-					capturedSignal = opts.signal;
-					opts.signal?.addEventListener('abort', () =>
-						rej(new DOMException('Aborted', 'AbortError'))
-					);
-				})
-		);
-
-		const { enqueue, cancel, getCurrentRun } = await freshRunner();
-		const runId = await enqueue(1);
-		expect(runId).not.toBeNull();
-		expect(capturedSignal?.aborted).toBe(false);
-
-		cancel(runId!);
-		expect(capturedSignal?.aborted).toBe(true);
-		await new Promise((r) => setTimeout(r, 0));
-		expect(getCurrentRun()?.status).toBe('cancelled');
-	});
-
 	it('refuses to enqueue while another run is in flight', async () => {
 		mocks.getJob.mockResolvedValueOnce(makeJob());
-		// Never resolve the first turn so the runner stays busy.
 		mocks.runEphemeralTurn.mockReturnValueOnce(new Promise(() => {}));
 
 		const { enqueue } = await freshRunner();
@@ -187,8 +96,6 @@ describe('jobs runner', () => {
 
 		const second = await enqueue(1);
 		expect(second).toBeNull();
-		// getJob was only called for the first attempt because the busy guard
-		// short-circuits before fetching.
 		expect(mocks.getJob).toHaveBeenCalledTimes(1);
 	});
 
@@ -209,10 +116,224 @@ describe('jobs runner', () => {
 
 		const { enqueue, clearCurrentRun, getCurrentRun } = await freshRunner();
 		await enqueue(1);
-		await new Promise((r) => setTimeout(r, 0));
+		await tick();
 		expect(getCurrentRun()?.status).toBe('succeeded');
 
 		clearCurrentRun();
 		expect(getCurrentRun()).toBeNull();
+	});
+});
+
+describe('jobs runner — single step', () => {
+	it('initializes per-step state and transitions to succeeded', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		let resolveTurn: ((v: { finalText: string }) => void) | null = null;
+		mocks.runEphemeralTurn.mockReturnValueOnce(
+			new Promise((res) => {
+				resolveTurn = res;
+			})
+		);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		const runId = await enqueue(1);
+		expect(runId).toBe(1);
+
+		const running = getCurrentRun();
+		expect(running?.status).toBe('running');
+		expect(running?.jobName).toBe('Test job');
+		expect(running?.currentStepIndex).toBe(0);
+		expect(running?.steps).toHaveLength(1);
+		expect(running?.steps[0].status).toBe('running');
+		expect(running?.steps[0].promptAuthored).toBe('do step 1');
+		expect(running?.steps[0].promptRendered).toBe('do step 1');
+
+		resolveTurn!({ finalText: 'all done' });
+		await tick();
+
+		const done = getCurrentRun();
+		expect(done?.status).toBe('succeeded');
+		expect(done?.steps[0].status).toBe('succeeded');
+		expect(done?.steps[0].output).toBe('all done');
+		expect(done?.steps[0].finishedAt).not.toBeNull();
+		expect(done?.finishedAt).not.toBeNull();
+	});
+
+	it('passes deepResearch from the step into the ephemeral turn', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({ steps: [{ id: 1, ordering: 0, prompt: 'research it', deep_research: true }] })
+		);
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'x' });
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+
+		const opts = mocks.runEphemeralTurn.mock.calls[0][0] as EphemeralTurnOptions;
+		expect(opts.deepResearch).toBe(true);
+		expect(opts.userMessage).toBe('research it');
+		expect(opts.workingDir).toBe('/tmp/work');
+	});
+
+	it('marks the run failed when the ephemeral turn rejects', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockRejectedValueOnce(new Error('llama exploded'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const state = getCurrentRun();
+		expect(state?.status).toBe('failed');
+		expect(state?.steps[0].status).toBe('failed');
+		expect(state?.steps[0].error).toBe('llama exploded');
+		expect(state?.error).toBe('llama exploded');
+	});
+
+	it('marks the run cancelled when the ephemeral turn aborts', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockRejectedValueOnce(new DOMException('Aborted', 'AbortError'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const state = getCurrentRun();
+		expect(state?.status).toBe('cancelled');
+		expect(state?.steps[0].status).toBe('cancelled');
+		expect(state?.steps[0].error).toBe('Cancelled by user');
+	});
+});
+
+describe('jobs runner — multi-step pipelines', () => {
+	const twoStepJob = makeJob({
+		steps: [
+			{ id: 1, ordering: 0, prompt: 'gather headlines', deep_research: false },
+			{ id: 2, ordering: 1, prompt: 'render as PDF', deep_research: false }
+		]
+	});
+
+	it('runs all steps and prepends the prior output to step 2', async () => {
+		mocks.getJob.mockResolvedValueOnce(twoStepJob);
+		mocks.runEphemeralTurn
+			.mockResolvedValueOnce({ finalText: 'Headline A\nHeadline B' })
+			.mockResolvedValueOnce({ finalText: 'wrote pdf to /tmp/work/out.pdf' });
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		await tick();
+
+		const state = getCurrentRun();
+		expect(state?.status).toBe('succeeded');
+		expect(state?.steps).toHaveLength(2);
+		expect(state?.steps[0].status).toBe('succeeded');
+		expect(state?.steps[0].output).toBe('Headline A\nHeadline B');
+		expect(state?.steps[1].status).toBe('succeeded');
+		expect(state?.steps[1].output).toBe('wrote pdf to /tmp/work/out.pdf');
+
+		const step1Opts = mocks.runEphemeralTurn.mock.calls[0][0] as EphemeralTurnOptions;
+		const step2Opts = mocks.runEphemeralTurn.mock.calls[1][0] as EphemeralTurnOptions;
+		expect(step1Opts.userMessage).toBe('gather headlines');
+		expect(step2Opts.userMessage).toBe('Headline A\nHeadline B\n\nrender as PDF');
+		expect(state?.steps[1].promptRendered).toBe('Headline A\nHeadline B\n\nrender as PDF');
+		expect(state?.steps[1].promptAuthored).toBe('render as PDF');
+	});
+
+	it('halts on failure and leaves later steps pending', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				steps: [
+					{ id: 1, ordering: 0, prompt: 'step a', deep_research: false },
+					{ id: 2, ordering: 1, prompt: 'step b', deep_research: false },
+					{ id: 3, ordering: 2, prompt: 'step c', deep_research: false }
+				]
+			})
+		);
+		mocks.runEphemeralTurn
+			.mockResolvedValueOnce({ finalText: 'a-out' })
+			.mockRejectedValueOnce(new Error('step b broke'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		await tick();
+
+		const state = getCurrentRun();
+		expect(state?.status).toBe('failed');
+		expect(state?.error).toBe('step b broke');
+		expect(state?.steps[0].status).toBe('succeeded');
+		expect(state?.steps[1].status).toBe('failed');
+		expect(state?.steps[1].error).toBe('step b broke');
+		expect(state?.steps[2].status).toBe('pending');
+		expect(mocks.runEphemeralTurn).toHaveBeenCalledTimes(2);
+	});
+
+	it('cancel during step 2 marks step 2 cancelled and leaves step 3 pending', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				steps: [
+					{ id: 1, ordering: 0, prompt: 'step a', deep_research: false },
+					{ id: 2, ordering: 1, prompt: 'step b', deep_research: false },
+					{ id: 3, ordering: 2, prompt: 'step c', deep_research: false }
+				]
+			})
+		);
+		let step2Signal: AbortSignal | undefined;
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'a-out' }).mockImplementationOnce(
+			(opts: EphemeralTurnOptions) =>
+				new Promise((_, rej) => {
+					step2Signal = opts.signal;
+					opts.signal?.addEventListener('abort', () =>
+						rej(new DOMException('Aborted', 'AbortError'))
+					);
+				})
+		);
+
+		const { enqueue, cancel, getCurrentRun } = await freshRunner();
+		const runId = await enqueue(1);
+		// Let step 1 resolve and step 2 start.
+		await tick();
+		await tick();
+
+		expect(getCurrentRun()?.steps[1].status).toBe('running');
+		expect(step2Signal?.aborted).toBe(false);
+
+		cancel(runId!);
+		await tick();
+
+		const state = getCurrentRun();
+		expect(state?.status).toBe('cancelled');
+		expect(state?.steps[0].status).toBe('succeeded');
+		expect(state?.steps[1].status).toBe('cancelled');
+		expect(state?.steps[2].status).toBe('pending');
+	});
+
+	it('streams into the correct step via onAssistantDelta', async () => {
+		mocks.getJob.mockResolvedValueOnce(twoStepJob);
+		let step1Cb: ((s: string) => void) | undefined;
+		let step2Cb: ((s: string) => void) | undefined;
+		mocks.runEphemeralTurn
+			.mockImplementationOnce((opts: EphemeralTurnOptions) => {
+				step1Cb = opts.onAssistantDelta;
+				return Promise.resolve({ finalText: 'first' });
+			})
+			.mockImplementationOnce((opts: EphemeralTurnOptions) => {
+				step2Cb = opts.onAssistantDelta;
+				return new Promise(() => {}); // hang
+			});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		// Drive step 1 callback before its promise resolves.
+		step1Cb?.('streaming-1');
+		expect(getCurrentRun()?.steps[0].streaming).toBe('streaming-1');
+
+		// Let step 1 complete and step 2 start.
+		await tick();
+		await tick();
+
+		step2Cb?.('streaming-2');
+		expect(getCurrentRun()?.steps[1].streaming).toBe('streaming-2');
+		// Step 1's streaming buffer is left as-is (output is the source of truth).
+		expect(getCurrentRun()?.steps[0].output).toBe('first');
 	});
 });

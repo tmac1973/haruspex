@@ -1,7 +1,13 @@
 <script lang="ts">
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import SearchStepView from '$lib/components/SearchStep.svelte';
-	import { cancel, clearCurrentRun, getCurrentRun } from '$lib/agent/jobs/runner.svelte';
+	import {
+		cancel,
+		clearCurrentRun,
+		getCurrentRun,
+		type RunStepState,
+		type StepStatus
+	} from '$lib/agent/jobs/runner.svelte';
 
 	interface Props {
 		ondone: () => void;
@@ -11,7 +17,7 @@
 
 	const run = $derived(getCurrentRun());
 
-	function statusLabel(): string {
+	function runStatusLabel(): string {
 		if (!run) return '';
 		switch (run.status) {
 			case 'running':
@@ -25,8 +31,27 @@
 		}
 	}
 
-	function statusClass(): string {
+	function runStatusClass(): string {
 		return run ? `status status-${run.status}` : 'status';
+	}
+
+	function stepStatusLabel(status: StepStatus): string {
+		switch (status) {
+			case 'pending':
+				return 'Pending';
+			case 'running':
+				return 'Running';
+			case 'succeeded':
+				return 'Done';
+			case 'failed':
+				return 'Failed';
+			case 'cancelled':
+				return 'Cancelled';
+		}
+	}
+
+	function isLiveStep(step: RunStepState): boolean {
+		return step.status === 'running';
 	}
 
 	function close() {
@@ -40,7 +65,7 @@
 		<div class="header">
 			<div class="header-left">
 				<h3>{run.jobName}</h3>
-				<span class={statusClass()}>{statusLabel()}</span>
+				<span class={runStatusClass()}>{runStatusLabel()}</span>
 			</div>
 			<div class="header-right">
 				{#if run.status === 'running'}
@@ -51,24 +76,46 @@
 			</div>
 		</div>
 
-		<div class="step-card">
-			<div class="step-label">Step {run.stepIndex + 1} prompt</div>
-			<pre class="prompt">{run.stepPrompt}</pre>
+		<div class="steps">
+			{#each run.steps as step (step.index)}
+				<div class="step" data-status={step.status}>
+					<div class="step-head">
+						<span class="step-num">Step {step.index + 1}</span>
+						<span class="step-status status-{step.status}">{stepStatusLabel(step.status)}</span>
+						{#if step.deepResearch}
+							<span class="badge">Deep research</span>
+						{/if}
+					</div>
+					<pre class="prompt">{step.promptAuthored}</pre>
+					{#if step.index > 0 && step.status !== 'pending'}
+						<div class="prepend-note">
+							Prior step's output was prepended to this prompt at run time.
+						</div>
+					{/if}
+
+					{#if step.searchSteps.length > 0}
+						<SearchStepView steps={step.searchSteps} />
+					{/if}
+
+					{#if isLiveStep(step) && step.streaming}
+						<ChatMessage
+							message={{ role: 'assistant', content: step.streaming }}
+							isStreaming={true}
+						/>
+					{:else if step.output}
+						<ChatMessage message={{ role: 'assistant', content: step.output }} />
+					{:else if isLiveStep(step)}
+						<p class="hint">Waiting for first token…</p>
+					{/if}
+
+					{#if step.error}
+						<div class="error">{step.error}</div>
+					{/if}
+				</div>
+			{/each}
 		</div>
 
-		{#if run.searchSteps.length > 0}
-			<SearchStepView steps={run.searchSteps} />
-		{/if}
-
-		{#if run.status === 'running' && run.streaming}
-			<ChatMessage message={{ role: 'assistant', content: run.streaming }} isStreaming={true} />
-		{:else if run.finalText}
-			<ChatMessage message={{ role: 'assistant', content: run.finalText }} />
-		{:else if run.status === 'running'}
-			<p class="hint">Waiting for first token…</p>
-		{/if}
-
-		{#if run.error}
+		{#if run.error && run.steps.every((s) => s.status !== 'failed' && s.status !== 'cancelled')}
 			<div class="error">{run.error}</div>
 		{/if}
 	</div>
@@ -132,35 +179,82 @@
 		color: var(--error-text);
 	}
 
-	.step-card {
+	.steps {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.step {
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: var(--bg-secondary);
 		padding: 10px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
 	}
 
-	.step-label {
+	.step[data-status='pending'] {
+		opacity: 0.55;
+	}
+
+	.step-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.step-num {
 		font-size: 0.74rem;
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--text-secondary);
-		margin-bottom: 6px;
+	}
+
+	.step-status {
+		font-size: 0.7rem;
+		padding: 1px 6px;
+		border-radius: 999px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		border: 1px solid var(--border);
+		color: var(--text-secondary);
+	}
+
+	.step-status.status-pending {
+		color: var(--text-secondary);
+	}
+
+	.badge {
+		font-size: 0.7rem;
+		padding: 1px 6px;
+		border-radius: 999px;
+		border: 1px solid var(--accent);
+		color: var(--accent);
 	}
 
 	.prompt {
 		margin: 0;
 		font-family: inherit;
-		font-size: 0.88rem;
+		font-size: 0.85rem;
 		white-space: pre-wrap;
 		word-break: break-word;
 		color: var(--text-primary);
+	}
+
+	.prepend-note {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		font-style: italic;
 	}
 
 	.hint {
 		color: var(--text-secondary);
 		font-style: italic;
 		font-size: 0.85rem;
+		margin: 0;
 	}
 
 	.error {
