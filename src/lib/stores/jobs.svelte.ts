@@ -275,6 +275,10 @@ export async function setJobNextDueAt(jobId: number, nextDueAt: number | null): 
 export async function replaceJobSteps(jobId: number, steps: JobStepInput[]): Promise<boolean> {
 	try {
 		await invoke('db_replace_job_steps', { jobId, steps });
+		// The list summary includes step_count — without this refresh the
+		// just-created job stays at step_count=0 in the list until something
+		// else triggers loadJobs, which disables its Run button.
+		await loadJobs();
 		return true;
 	} catch (e) {
 		logDebug('jobs', 'replaceJobSteps failed', { jobId, error: String(e) });

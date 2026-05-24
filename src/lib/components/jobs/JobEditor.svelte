@@ -121,7 +121,6 @@
 
 	function validate(): string | null {
 		if (!name.trim()) return 'Name is required.';
-		if (!workingDir.trim()) return 'Working directory is required.';
 		const nonEmpty = steps.filter((s) => s.prompt.trim().length > 0);
 		if (nonEmpty.length === 0) return 'At least one step prompt is required.';
 		return null;
@@ -221,14 +220,14 @@
 
 		<div
 			class="field"
-			title="Absolute path to the folder this job operates in. Every step in the run sees this as its working directory — file reads, writes, Python sandbox cwd. Per-step overrides aren't supported yet."
+			title="Optional. Absolute path to a folder this job operates in. When set, every step sees it as the agent's working directory — file reads, writes, Python sandbox cwd. Leave blank for jobs that don't touch the filesystem (research, summarization, etc.) — the model just won't have fs_* tools available."
 		>
-			<span class="label">Working directory</span>
+			<span class="label">Working directory <span class="optional">(optional)</span></span>
 			<div class="workdir-row">
 				<input
 					type="text"
 					bind:value={workingDir}
-					placeholder="/path/to/folder"
+					placeholder="Leave blank if the job doesn't touch files"
 					class="workdir-input"
 				/>
 				<button
@@ -431,6 +430,11 @@
 	.label {
 		font-size: 0.82rem;
 		color: var(--text-secondary);
+	}
+
+	.optional {
+		font-weight: normal;
+		opacity: 0.7;
 	}
 
 	input[type='text'] {

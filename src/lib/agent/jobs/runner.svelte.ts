@@ -160,10 +160,6 @@ export async function enqueue(
 		logDebug('jobs', 'enqueue failed: no steps', { jobId });
 		return null;
 	}
-	if (!job.working_dir) {
-		logDebug('jobs', 'enqueue failed: no working dir', { jobId });
-		return null;
-	}
 
 	const runId = await createJobRun(
 		jobId,
@@ -336,7 +332,10 @@ async function runOneStep(
 				wrap(() =>
 					runEphemeralTurn({
 						userMessage: rendered,
-						workingDir: job.working_dir,
+						// Empty string from the DB means "no workdir for this job" —
+						// translate to null so the agent loop filters out fs_*
+						// tools entirely (same path as a chat with no workdir).
+						workingDir: job.working_dir ? job.working_dir : null,
 						contextSize,
 						deepResearch: step.deep_research,
 						visionSupported,
