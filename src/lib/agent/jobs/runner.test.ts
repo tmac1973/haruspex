@@ -115,11 +115,19 @@ describe('jobs runner — guards', () => {
 		expect(getCurrentRun()).toBeNull();
 	});
 
-	it('returns null when the job has no working dir', async () => {
+	it("allows a job with no working dir (fs_* tools just won't be exposed)", async () => {
 		mocks.getJob.mockResolvedValueOnce(makeJob({ working_dir: '' }));
-		const { enqueue } = await freshRunner();
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+		const { enqueue, getCurrentRun } = await freshRunner();
 		const runId = await enqueue(1);
-		expect(runId).toBeNull();
+		expect(runId).toBe(100);
+		await tick();
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		// Empty working_dir is translated to null on the runEphemeralTurn boundary.
+		const opts = mocks.runEphemeralTurn.mock.calls[0][0];
+		expect(opts.workingDir).toBeNull();
 	});
 
 	it('queues a second enqueue behind an in-flight run', async () => {

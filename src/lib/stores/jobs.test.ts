@@ -274,10 +274,12 @@ describe('jobs store CRUD', () => {
 		expect(result).toBeNull();
 	});
 
-	it('replaceJobSteps forwards jobId and steps', async () => {
-		vi.mocked(invoke).mockResolvedValueOnce(undefined);
+	it('replaceJobSteps forwards jobId + steps and refreshes the list', async () => {
+		vi.mocked(invoke)
+			.mockResolvedValueOnce(undefined) // db_replace_job_steps
+			.mockResolvedValueOnce([summary(5, 'After step replace', { step_count: 2 })]); // db_list_jobs
 
-		const { replaceJobSteps } = await import('$lib/stores/jobs.svelte');
+		const { replaceJobSteps, getJobs } = await import('$lib/stores/jobs.svelte');
 		const steps = [
 			{ prompt: 'step a', deep_research: false },
 			{ prompt: 'step b', deep_research: true }
@@ -285,10 +287,14 @@ describe('jobs store CRUD', () => {
 		const ok = await replaceJobSteps(5, steps);
 
 		expect(ok).toBe(true);
-		expect(invoke).toHaveBeenCalledWith('db_replace_job_steps', {
+		expect(invoke).toHaveBeenNthCalledWith(1, 'db_replace_job_steps', {
 			jobId: 5,
 			steps
 		});
+		expect(invoke).toHaveBeenNthCalledWith(2, 'db_list_jobs');
+		// The refresh updates the cached step_count so the Run button
+		// enables immediately after the very first save.
+		expect(getJobs()[0].step_count).toBe(2);
 	});
 
 	it('replaceJobSteps returns false on failure', async () => {
