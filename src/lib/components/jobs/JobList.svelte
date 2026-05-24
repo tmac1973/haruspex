@@ -155,6 +155,10 @@
 	.rows {
 		flex: 1;
 		overflow-y: auto;
+		/* Always reserve scrollbar gutter so the Run button on each row
+		   doesn't slide under the panel's right border the moment the list
+		   grows tall enough to scroll. */
+		scrollbar-gutter: stable;
 	}
 
 	.empty {
@@ -169,6 +173,7 @@
 		align-items: center;
 		gap: 8px;
 		width: 100%;
+		box-sizing: border-box;
 		padding: 8px 12px;
 		border-bottom: 1px solid var(--border);
 		background: transparent;

@@ -163,6 +163,11 @@
 		background: var(--bg-primary);
 		color: var(--text-primary);
 		font-size: 0.85rem;
+		/* Tells the native widget renderer (GTK on Linux, Quartz on macOS)
+		   to follow the user's color scheme — without this the closed
+		   select shows the OS default's light-on-white selection color
+		   even though our own colors are dark. */
+		color-scheme: light dark;
 	}
 
 	input[type='number'] {
