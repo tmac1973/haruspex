@@ -20,6 +20,7 @@ mod whisper;
 use audio::AudioRecorder;
 use db::Database;
 use models::ModelManager;
+use proxy::stats::SearchStats;
 use proxy::ProxyState;
 use server::LlamaServer;
 use tauri::{Manager, RunEvent};
@@ -50,6 +51,7 @@ pub fn run() {
         })
         .manage(LlamaServer::new())
         .manage(ProxyState::new())
+        .manage(SearchStats::new())
         .manage(AudioRecorder::new())
         .manage(WhisperServer::new())
         .manage(TtsEngine::new())
@@ -73,6 +75,8 @@ pub fn run() {
             models::download_whisper_model,
             proxy::proxy_search,
             proxy::proxy_fetch,
+            proxy::get_search_stats,
+            proxy::reset_lifetime_search_stats,
             proxy::images::proxy_image_search,
             proxy::images::proxy_fetch_url_images,
             inference::probe_inference_server,

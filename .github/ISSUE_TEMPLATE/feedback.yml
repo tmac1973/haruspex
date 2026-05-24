@@ -8,8 +8,13 @@ body:
       value: |
         Thanks for the feedback! Most of the fields below are pre-filled
         from the running app. **Please skim them before submitting** — the
-        logs may contain file paths, model prompts, or other text from
-        your session. Edit or delete anything you don't want public.
+        settings snapshot and search stats are personal-to-your-install
+        data; edit or delete anything you don't want public.
+
+        If logs from a specific sidecar (LLM, whisper, TTS) would help
+        diagnose the issue, click **Save Full Diagnostics** in
+        Settings → Feedback to export the full bundle and drag the
+        resulting `.md` file into this issue as an attachment.
 
   - type: textarea
     id: what-happened
@@ -41,12 +46,12 @@ body:
       render: json
 
   - type: textarea
-    id: logs
+    id: stats
     attributes:
-      label: Recent logs (tail)
+      label: Search stats (session)
       description: |
-        Last few KB of app + sidecar logs. If the URL was too long to fit
-        the full tail, you'll see a note here — use the "Save Full
-        Diagnostics" button in Settings → Feedback to export the complete
-        bundle and drag it onto this issue.
+        Per-engine web-search performance from this app run — attempts,
+        success rate, mean/max latency, and failure-mode breakdown. Helps
+        diagnose auto-rotate or scraper-related issues. Lifetime stats
+        and full logs are in the saved diagnostics bundle.
       render: shell

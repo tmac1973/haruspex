@@ -12,12 +12,11 @@
 	async function onSendFeedback() {
 		status = { kind: 'busy', message: 'Preparing feedback…' };
 		try {
-			const { logsOmitted } = await openFeedbackIssue();
+			await openFeedbackIssue();
 			status = {
 				kind: 'success',
-				message: logsOmitted
-					? 'Issue opened in your browser. Logs were too large for the URL — use "Save Full Diagnostics" and drag the file onto the issue.'
-					: 'Issue opened in your browser. Review the pre-filled fields, then click Submit on GitHub.'
+				message:
+					'Issue opened in your browser. Review the pre-filled fields, then click Submit on GitHub.'
 			};
 		} catch (err) {
 			status = {
@@ -49,9 +48,8 @@
 	<h2>Send Feedback</h2>
 	<p class="lede">
 		Opens a pre-filled GitHub issue in your browser. App version, system info, settings (with API
-		keys redacted), and a tail of recent logs are filled in automatically. <strong
-			>Review everything before submitting</strong
-		> — logs may contain file paths or text from your session.
+		keys redacted), and your current session's search statistics are filled in automatically.
+		<strong>Review everything before submitting</strong> — the snapshot is personal-to-your-install data.
 	</p>
 	<div class="actions">
 		<button class="btn primary" onclick={onSendFeedback} disabled={status.kind === 'busy'}>
@@ -62,9 +60,8 @@
 		</button>
 	</div>
 	<p class="hint">
-		If your logs are large, the URL-prefilled version may truncate them. Use <em
-			>Save Full Diagnostics</em
-		> to export the untruncated bundle, then drag the file onto the GitHub issue.
+		If logs would help diagnose your issue, use <em>Save Full Diagnostics</em> to export the full bundle
+		(logs + lifetime search stats), then drag the file onto the GitHub issue as an attachment.
 	</p>
 	{#if status.kind !== 'idle'}
 		<p class="status" class:error={status.kind === 'error'}>{status.message}</p>

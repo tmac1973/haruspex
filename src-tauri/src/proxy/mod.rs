@@ -3,6 +3,7 @@ mod extract;
 pub mod images;
 mod paywall;
 mod search;
+pub mod stats;
 
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,9 @@ pub(crate) use bypass::apply_proxy;
 use extract::fetch_and_extract;
 pub(crate) use extract::{validate_url, USER_AGENT};
 use search::{search_auto, search_brave, search_duckduckgo, search_searxng};
+use stats::{AutoPosition, RecordedOutcome, SearchFailure, SearchFailureKind, SearchStats};
+
+use crate::db::{Database, EngineStatDelta};
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(test)]
@@ -176,6 +180,96 @@ impl ProxyState {
     }
 }
 
+/// Which global counter to bump in `record_global_both`.
+#[derive(Clone, Copy)]
+pub(super) enum GlobalCounter {
+    Query,
+    CacheHit,
+    AllEnginesFailed,
+}
+
+impl GlobalCounter {
+    fn db_key(self) -> &'static str {
+        match self {
+            GlobalCounter::Query => "total_queries",
+            GlobalCounter::CacheHit => "cache_hits",
+            GlobalCounter::AllEnginesFailed => "all_engines_failed",
+        }
+    }
+}
+
+/// Update both the in-memory session counters and the lifetime SQLite row
+/// for a single engine attempt. Persistence failures are logged but don't
+/// propagate — a transient DB error shouldn't break the search itself.
+pub(super) fn record_outcome_both(
+    stats: &SearchStats,
+    db: &Database,
+    engine: &str,
+    outcome: &RecordedOutcome,
+) {
+    stats.record_outcome(engine, outcome);
+
+    let now = stats::now_ms();
+    let (success, latency_ms, failure_column) = match &outcome.result {
+        Ok(ms) => (true, *ms, None),
+        Err(kind) => (false, 0, Some(kind.db_column())),
+    };
+    let delta = EngineStatDelta {
+        attempt: true,
+        success,
+        latency_ms,
+        failure_column,
+        now_ms: now,
+        first_choice: matches!(outcome.position, Some(AutoPosition::First)),
+        fallback: matches!(outcome.position, Some(AutoPosition::Fallback)),
+        fallback_success: success && matches!(outcome.position, Some(AutoPosition::Fallback)),
+    };
+    if let Err(e) = db.update_engine_stat(engine, &delta) {
+        warn!("Failed to persist lifetime stats for {}: {}", engine, e);
+    }
+}
+
+/// Classify a single engine call's `Result` (success / empty / typed
+/// failure) into a `RecordedOutcome` and persist it through both stores.
+/// Empty results (Ok with no items) are recorded as a `Empty` failure
+/// for stats purposes even though the engine technically succeeded.
+pub(super) fn record_engine_result(
+    stats: &SearchStats,
+    db: &Database,
+    engine: &str,
+    result: &Result<Vec<SearchResult>, SearchFailure>,
+    elapsed_ms: u64,
+    position: Option<AutoPosition>,
+) {
+    let outcome = match result {
+        Ok(r) if r.is_empty() => RecordedOutcome {
+            result: Err(SearchFailureKind::Empty),
+            position,
+        },
+        Ok(_) => RecordedOutcome {
+            result: Ok(elapsed_ms),
+            position,
+        },
+        Err(f) => RecordedOutcome {
+            result: Err(f.kind),
+            position,
+        },
+    };
+    record_outcome_both(stats, db, engine, &outcome);
+}
+
+pub(super) fn record_global_both(stats: &SearchStats, db: &Database, counter: GlobalCounter) {
+    match counter {
+        GlobalCounter::Query => stats.record_query(),
+        GlobalCounter::CacheHit => stats.record_cache_hit(),
+        GlobalCounter::AllEnginesFailed => stats.record_all_engines_failed(),
+    }
+    let key = counter.db_key();
+    if let Err(e) = db.increment_global(key) {
+        warn!("Failed to persist global stat {}: {}", key, e);
+    }
+}
+
 /// Build a diagnostic snippet of an HTML page for empty-result logging.
 /// Tries to anchor on the first occurrence of any of the provided needles
 /// (likely results-container substrings) and returns ~`window` chars
@@ -191,6 +285,8 @@ impl ProxyState {
 #[allow(clippy::too_many_arguments)]
 pub async fn proxy_search(
     state: tauri::State<'_, ProxyState>,
+    stats: tauri::State<'_, SearchStats>,
+    db: tauri::State<'_, Database>,
     query: String,
     provider: Option<String>,
     api_key: Option<String>,
@@ -199,10 +295,13 @@ pub async fn proxy_search(
     deep_research: Option<bool>,
     proxy: Option<ProxyConfig>,
 ) -> Result<Vec<SearchResult>, String> {
+    record_global_both(&stats, &db, GlobalCounter::Query);
+
     // Check cache
     let cache_key = format!("{}:{}", query, recency.as_deref().unwrap_or("any"));
     if let Some(cached) = state.get_cached_search(&cache_key) {
         info!("Search cache hit for: {}", query);
+        record_global_both(&stats, &db, GlobalCounter::CacheHit);
         return Ok(cached);
     }
 
@@ -218,7 +317,11 @@ pub async fn proxy_search(
                 return Err("Brave Search API key not configured".to_string());
             }
             info!("Searching Brave for: {} (recency: {})", query, recency);
-            search_brave(&query, key, recency, proxy_ref).await?
+            let start = Instant::now();
+            let r = search_brave(&query, key, recency, proxy_ref).await;
+            let elapsed = start.elapsed().as_millis() as u64;
+            record_engine_result(&stats, &db, "brave", &r, elapsed, None);
+            r?
         }
         "searxng" => {
             let url = instance_url.as_deref().unwrap_or("http://localhost:8080");
@@ -226,19 +329,36 @@ pub async fn proxy_search(
                 "Searching SearXNG ({}) for: {} (recency: {})",
                 url, query, recency
             );
-            search_searxng(&query, url, recency, proxy_ref).await?
+            let start = Instant::now();
+            let r = search_searxng(&query, url, recency, proxy_ref).await;
+            let elapsed = start.elapsed().as_millis() as u64;
+            record_engine_result(&stats, &db, "searxng", &r, elapsed, None);
+            r?
         }
         "auto" => {
             info!(
                 "Auto-searching for: {} (recency: {}, deep_research: {})",
                 query, recency, deep_research
             );
-            search_auto(&state, &query, recency, deep_research, proxy_ref).await?
+            search_auto(
+                &state,
+                &stats,
+                &db,
+                &query,
+                recency,
+                deep_research,
+                proxy_ref,
+            )
+            .await?
         }
         _ => {
             state.rate_limit_engine("duckduckgo", RATE_LIMIT_INTERVAL);
             info!("Searching DDG for: {} (recency: {})", query, recency);
-            search_duckduckgo(&query, recency, proxy_ref).await?
+            let start = Instant::now();
+            let r = search_duckduckgo(&query, recency, proxy_ref).await;
+            let elapsed = start.elapsed().as_millis() as u64;
+            record_engine_result(&stats, &db, "duckduckgo", &r, elapsed, None);
+            r?
         }
     };
 
@@ -248,6 +368,27 @@ pub async fn proxy_search(
 
     state.cache_search(&cache_key, &results);
     Ok(results)
+}
+
+#[derive(Serialize)]
+pub struct CombinedSearchStats {
+    pub session: stats::SessionStatsSnapshot,
+    pub lifetime: crate::db::LifetimeStatsSnapshot,
+}
+
+#[tauri::command]
+pub fn get_search_stats(
+    stats: tauri::State<'_, SearchStats>,
+    db: tauri::State<'_, Database>,
+) -> Result<CombinedSearchStats, String> {
+    let session = stats.snapshot();
+    let lifetime = db.lifetime_stats_snapshot()?;
+    Ok(CombinedSearchStats { session, lifetime })
+}
+
+#[tauri::command]
+pub fn reset_lifetime_search_stats(db: tauri::State<'_, Database>) -> Result<(), String> {
+    db.reset_lifetime_stats()
 }
 
 #[tauri::command]

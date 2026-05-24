@@ -5,6 +5,7 @@
 
 use super::bypass::apply_proxy;
 use super::extract::{diagnostic_snippet, USER_AGENT};
+use super::stats::{SearchFailure, SearchFailureKind};
 use super::{
     ProxyConfig, ProxyState, SearchResult, ENGINE_COOLDOWN, ENGINE_COOLDOWN_SLOW, FETCH_TIMEOUT,
     RATE_LIMIT_INTERVAL, RATE_LIMIT_INTERVAL_SLOW,
@@ -12,20 +13,31 @@ use super::{
 use log::{info, warn};
 use scraper::{Html, Selector};
 
+/// Classify a reqwest error: timeouts go to Timeout, everything else
+/// (connect, DNS, TLS, broken pipe, response read) is Network.
+fn classify_reqwest_err(e: reqwest::Error, context: &str) -> SearchFailure {
+    if e.is_timeout() {
+        SearchFailure::new(SearchFailureKind::Timeout, format!("{}: {}", context, e))
+    } else {
+        SearchFailure::new(SearchFailureKind::Network, format!("{}: {}", context, e))
+    }
+}
+
 pub(super) async fn search_duckduckgo(
     query: &str,
     recency: &str,
     proxy: Option<&ProxyConfig>,
-) -> Result<Vec<SearchResult>, String> {
+) -> Result<Vec<SearchResult>, SearchFailure> {
     let client = apply_proxy(
         reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
             .redirect(reqwest::redirect::Policy::limited(5))
             .cookie_store(true),
         proxy,
-    )?
+    )
+    .map_err(SearchFailure::other)?
     .build()
-    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    .map_err(|e| SearchFailure::other(format!("Failed to create HTTP client: {}", e)))?;
 
     // DDG date filter: df=d (day), df=w (week), df=m (month), df=y (year)
     let df = match recency {
@@ -44,27 +56,31 @@ pub(super) async fn search_duckduckgo(
         .body(format!("q={}&b={}", urlencoding::encode(query), df))
         .send()
         .await
-        .map_err(|e| format!("Search request failed: {}", e))?;
+        .map_err(|e| classify_reqwest_err(e, "Search request failed"))?;
 
     if !response.status().is_success() {
-        return Err(format!("Search failed with status: {}", response.status()));
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("Search failed with status: {}", response.status()),
+        ));
     }
 
     let html = response
         .text()
         .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+        .map_err(|e| classify_reqwest_err(e, "Failed to read response"))?;
 
     // Detect bot/captcha page
     if html.contains("cc=botnet") || html.contains("anomaly.js") {
         warn!("DuckDuckGo returned a bot detection page — search temporarily unavailable");
-        return Err(
+        return Err(SearchFailure::new(
+            SearchFailureKind::RateLimited,
             "Web search is temporarily unavailable (rate limited). Try again in a few minutes."
                 .to_string(),
-        );
+        ));
     }
 
-    parse_ddg_html(&html)
+    parse_ddg_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))
 }
 
 pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
@@ -145,15 +161,16 @@ pub(super) async fn search_mojeek(
     query: &str,
     recency: &str,
     proxy: Option<&ProxyConfig>,
-) -> Result<Vec<SearchResult>, String> {
+) -> Result<Vec<SearchResult>, SearchFailure> {
     let client = apply_proxy(
         reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
             .redirect(reqwest::redirect::Policy::limited(5)),
         proxy,
-    )?
+    )
+    .map_err(SearchFailure::other)?
     .build()
-    .map_err(|e| format!("HTTP client error: {}", e))?;
+    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
 
     // Mojeek freshness: si=day|week|month|year (their "since" parameter)
     let since = match recency {
@@ -176,18 +193,22 @@ pub(super) async fn search_mojeek(
         .header("Accept-Language", "en-US,en;q=0.9")
         .send()
         .await
-        .map_err(|e| format!("Mojeek search failed: {}", e))?;
+        .map_err(|e| classify_reqwest_err(e, "Mojeek search failed"))?;
 
     if !resp.status().is_success() {
-        return Err(format!("Mojeek error: {}", resp.status()));
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("Mojeek error: {}", resp.status()),
+        ));
     }
 
     let html = resp
         .text()
         .await
-        .map_err(|e| format!("Failed to read Mojeek response: {}", e))?;
+        .map_err(|e| classify_reqwest_err(e, "Failed to read Mojeek response"))?;
 
-    let results = parse_mojeek_html(&html)?;
+    let results =
+        parse_mojeek_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
 
     if results.is_empty() {
         let snippet = diagnostic_snippet(
@@ -274,15 +295,16 @@ pub(super) async fn search_brave_html(
     query: &str,
     recency: &str,
     proxy: Option<&ProxyConfig>,
-) -> Result<Vec<SearchResult>, String> {
+) -> Result<Vec<SearchResult>, SearchFailure> {
     let client = apply_proxy(
         reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
             .redirect(reqwest::redirect::Policy::limited(5)),
         proxy,
-    )?
+    )
+    .map_err(SearchFailure::other)?
     .build()
-    .map_err(|e| format!("HTTP client error: {}", e))?;
+    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
 
     // Brave time filter: tf=pd (past day), pw (week), pm (month), py (year)
     let tf = match recency {
@@ -309,18 +331,22 @@ pub(super) async fn search_brave_html(
         .header("Accept-Language", "en-US,en;q=0.9")
         .send()
         .await
-        .map_err(|e| format!("Brave HTML search failed: {}", e))?;
+        .map_err(|e| classify_reqwest_err(e, "Brave HTML search failed"))?;
 
     if !resp.status().is_success() {
-        return Err(format!("Brave HTML error: {}", resp.status()));
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("Brave HTML error: {}", resp.status()),
+        ));
     }
 
     let html = resp
         .text()
         .await
-        .map_err(|e| format!("Failed to read Brave HTML response: {}", e))?;
+        .map_err(|e| classify_reqwest_err(e, "Failed to read Brave HTML response"))?;
 
-    let results = parse_brave_html(&html)?;
+    let results =
+        parse_brave_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
 
     if results.is_empty() {
         let snippet = diagnostic_snippet(
@@ -409,6 +435,8 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
 
 pub(super) async fn search_auto(
     state: &ProxyState,
+    stats: &super::SearchStats,
+    db: &crate::db::Database,
     query: &str,
     recency: &str,
     slow_mode: bool,
@@ -447,19 +475,29 @@ pub(super) async fn search_auto(
 
     let mut last_error = String::new();
 
-    for engine in &ordered {
+    for (idx, engine) in ordered.iter().enumerate() {
         state.rate_limit_engine(engine, rate_interval);
         info!(
             "Auto-search trying {} for: {} (recency: {})",
             engine, query, recency
         );
 
+        let position = if idx == 0 {
+            super::AutoPosition::First
+        } else {
+            super::AutoPosition::Fallback
+        };
+
+        let start = std::time::Instant::now();
         let result = match *engine {
             "brave_html" => search_brave_html(query, recency, proxy).await,
             "duckduckgo" => search_duckduckgo(query, recency, proxy).await,
             "mojeek" => search_mojeek(query, recency, proxy).await,
             _ => unreachable!(),
         };
+        let elapsed = start.elapsed().as_millis() as u64;
+
+        super::record_engine_result(stats, db, engine, &result, elapsed, Some(position));
 
         match result {
             Ok(results) if !results.is_empty() => {
@@ -484,7 +522,7 @@ pub(super) async fn search_auto(
             Err(e) => {
                 warn!("Auto-search: {} failed: {}, trying next", engine, e);
                 state.record_failure(engine);
-                last_error = e;
+                last_error = e.into();
             }
         }
     }
@@ -492,6 +530,7 @@ pub(super) async fn search_auto(
     // All engines failed — still advance the cursor so the next attempt
     // starts somewhere new.
     state.advance_rotation_cursor();
+    super::record_global_both(stats, db, super::GlobalCounter::AllEnginesFailed);
     Err(format!(
         "All search engines failed. Last error: {}",
         last_error
@@ -508,10 +547,11 @@ pub(super) async fn search_brave(
     api_key: &str,
     recency: &str,
     proxy: Option<&ProxyConfig>,
-) -> Result<Vec<SearchResult>, String> {
-    let client = apply_proxy(reqwest::Client::builder().timeout(FETCH_TIMEOUT), proxy)?
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    let client = apply_proxy(reqwest::Client::builder().timeout(FETCH_TIMEOUT), proxy)
+        .map_err(SearchFailure::other)?
         .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+        .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
 
     // Brave freshness: pd (past day), pw (past week), pm (past month), py (past year)
     let freshness = match recency {
@@ -535,18 +575,23 @@ pub(super) async fn search_brave(
         .query(&params)
         .send()
         .await
-        .map_err(|e| format!("Brave search failed: {}", e))?;
+        .map_err(|e| classify_reqwest_err(e, "Brave search failed"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Brave search error {}: {}", status, body));
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("Brave search error {}: {}", status, body),
+        ));
     }
 
-    let data: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Brave response: {}", e))?;
+    let data: serde_json::Value = resp.json().await.map_err(|e| {
+        SearchFailure::new(
+            SearchFailureKind::Parse,
+            format!("Failed to parse Brave response: {}", e),
+        )
+    })?;
 
     let mut results = Vec::new();
     if let Some(web_results) = data
@@ -585,10 +630,11 @@ pub(super) async fn search_searxng(
     instance_url: &str,
     recency: &str,
     proxy: Option<&ProxyConfig>,
-) -> Result<Vec<SearchResult>, String> {
-    let client = apply_proxy(reqwest::Client::builder().timeout(FETCH_TIMEOUT), proxy)?
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    let client = apply_proxy(reqwest::Client::builder().timeout(FETCH_TIMEOUT), proxy)
+        .map_err(SearchFailure::other)?
         .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+        .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
 
     let url = format!("{}/search", instance_url.trim_end_matches('/'));
 
@@ -604,16 +650,21 @@ pub(super) async fn search_searxng(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("SearXNG search failed: {}", e))?;
+        .map_err(|e| classify_reqwest_err(e, "SearXNG search failed"))?;
 
     if !resp.status().is_success() {
-        return Err(format!("SearXNG error: {}", resp.status()));
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("SearXNG error: {}", resp.status()),
+        ));
     }
 
-    let data: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse SearXNG response: {}", e))?;
+    let data: serde_json::Value = resp.json().await.map_err(|e| {
+        SearchFailure::new(
+            SearchFailureKind::Parse,
+            format!("Failed to parse SearXNG response: {}", e),
+        )
+    })?;
 
     let mut results = Vec::new();
     if let Some(items) = data.get("results").and_then(|r| r.as_array()) {
