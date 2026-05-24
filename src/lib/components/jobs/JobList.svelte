@@ -1,12 +1,23 @@
 <script lang="ts">
 	import { getJobs, type JobSummary } from '$lib/stores/jobs.svelte';
+	import { enqueue, getCurrentRun } from '$lib/agent/jobs/runner.svelte';
 
 	interface Props {
 		selectedId: number | 'new' | null;
 		onselect: (id: number | 'new') => void;
+		onrun: (jobId: number) => void;
 	}
 
-	const { selectedId, onselect }: Props = $props();
+	const { selectedId, onselect, onrun }: Props = $props();
+
+	const running = $derived(getCurrentRun()?.status === 'running');
+
+	async function handleRun(e: MouseEvent, jobId: number) {
+		e.stopPropagation();
+		if (running) return;
+		const runId = await enqueue(jobId, 'manual');
+		if (runId !== null) onrun(jobId);
+	}
 
 	const jobs = $derived(getJobs());
 
@@ -61,17 +72,35 @@
 			<div class="empty">No jobs yet.</div>
 		{:else}
 			{#each jobs as job (job.id)}
-				<button
-					type="button"
+				<div
 					class="row"
 					class:selected={selectedId === job.id}
+					role="button"
+					tabindex="0"
 					onclick={() => onselect(job.id)}
+					onkeydown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							onselect(job.id);
+						}
+					}}
 				>
-					<span class="name">{job.name}</span>
-					<span class="meta">
-						{scheduleSummary(job)} · {job.step_count} step{job.step_count === 1 ? '' : 's'}
-					</span>
-				</button>
+					<div class="row-main">
+						<span class="name">{job.name}</span>
+						<span class="meta">
+							{scheduleSummary(job)} · {job.step_count} step{job.step_count === 1 ? '' : 's'}
+						</span>
+					</div>
+					<button
+						type="button"
+						class="run-btn"
+						title={running ? 'Another job is running' : 'Run now'}
+						disabled={running || job.step_count === 0}
+						onclick={(e) => handleRun(e, job.id)}
+					>
+						▶
+					</button>
+				</div>
 			{/each}
 		{/if}
 	</div>
@@ -137,12 +166,10 @@
 
 	.row {
 		display: flex;
-		flex-direction: column;
-		gap: 2px;
+		align-items: center;
+		gap: 8px;
 		width: 100%;
-		text-align: left;
 		padding: 8px 12px;
-		border: none;
 		border-bottom: 1px solid var(--border);
 		background: transparent;
 		color: var(--text-primary);
@@ -157,6 +184,14 @@
 		background: color-mix(in srgb, var(--accent) 12%, transparent);
 	}
 
+	.row-main {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		flex: 1;
+		min-width: 0;
+	}
+
 	.name {
 		font-size: 0.9rem;
 		font-weight: 500;
@@ -165,5 +200,30 @@
 	.meta {
 		font-size: 0.75rem;
 		color: var(--text-secondary);
+	}
+
+	.run-btn {
+		width: 28px;
+		height: 28px;
+		border: 1px solid var(--border);
+		background: var(--bg-primary);
+		color: var(--accent);
+		border-radius: 4px;
+		font-size: 0.78rem;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.run-btn:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--accent) 15%, transparent);
+		border-color: var(--accent);
+	}
+
+	.run-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
 	}
 </style>

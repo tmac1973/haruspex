@@ -2,9 +2,13 @@
 	import { onMount } from 'svelte';
 	import JobList from '$lib/components/jobs/JobList.svelte';
 	import JobEditor from '$lib/components/jobs/JobEditor.svelte';
+	import JobRunView from '$lib/components/jobs/JobRunView.svelte';
 	import { isJobsLoaded, loadJobs } from '$lib/stores/jobs.svelte';
+	import { getCurrentRun } from '$lib/agent/jobs/runner.svelte';
 
 	let selectedId = $state<number | 'new' | null>(null);
+	const currentRun = $derived(getCurrentRun());
+	const showRunView = $derived(currentRun !== null);
 
 	onMount(() => {
 		if (!isJobsLoaded()) {
@@ -19,12 +23,18 @@
 	function clearSelection() {
 		selectedId = null;
 	}
+
+	function onRunStarted(jobId: number) {
+		selectedId = jobId;
+	}
 </script>
 
 <div class="jobs-tab">
-	<JobList {selectedId} onselect={selectJob} />
+	<JobList {selectedId} onselect={selectJob} onrun={onRunStarted} />
 	<div class="editor-pane">
-		{#if selectedId === null}
+		{#if showRunView}
+			<JobRunView ondone={() => undefined} />
+		{:else if selectedId === null}
 			<div class="empty-state">
 				<h2>No job selected</h2>
 				<p>Pick a job on the left, or create a new one.</p>

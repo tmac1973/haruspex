@@ -5,6 +5,7 @@ import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { IMAGE_EXT_RE } from './fs-read';
 import { lintPythonIfApplicable } from './python-lint';
+import { isAutoApproveActive } from '$lib/stores/approvalOverride';
 
 /**
  * Outcome of pre-write conflict resolution. `null` means the user
@@ -36,6 +37,13 @@ async function resolveWritePathInteractive(
 	}
 	if (!exists) {
 		return { finalPath: relPath, overwrite: false };
+	}
+
+	// Unattended runs (jobs) can't show a modal, so we treat existing-file
+	// conflicts as "overwrite". The job authoring UI surfaces this so the
+	// user knows what they're opting into.
+	if (isAutoApproveActive()) {
+		return { finalPath: relPath, overwrite: true };
 	}
 
 	const { askFileConflict } = await import('$lib/stores/fileConflict.svelte');
