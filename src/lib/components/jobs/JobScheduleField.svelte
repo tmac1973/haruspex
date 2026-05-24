@@ -52,14 +52,18 @@
 		if (schedule.kind === 'interval') return schedule.minutes;
 		return 30;
 	}
+
+	const SCHEDULE_TOOLTIP =
+		"When to run the job automatically. IMPORTANT: Haruspex must be open and running for the scheduler to fire — there's no background service. Schedules that come due while the app is closed are dropped, not retro-run on next launch. Use 'Manual only' if you only want to kick the job off yourself.";
 </script>
 
 <div class="schedule-field">
-	<label class="row">
+	<label class="row" title={SCHEDULE_TOOLTIP}>
 		<span class="label">Schedule</span>
 		<select
 			value={schedule.kind}
 			onchange={(e) => changeKind((e.currentTarget as HTMLSelectElement).value as ScheduleKind)}
+			title={SCHEDULE_TOOLTIP}
 		>
 			<option value="manual">Manual only</option>
 			<option value="hourly">Every hour</option>
@@ -69,8 +73,15 @@
 		</select>
 	</label>
 
+	{#if schedule.kind !== 'manual'}
+		<p class="schedule-warning">
+			⚠ Haruspex must be open and running for the scheduler to fire. Missed runs while the app is
+			closed are dropped — they don't catch up on next launch.
+		</p>
+	{/if}
+
 	{#if schedule.kind === 'daily'}
-		<label class="row sub">
+		<label class="row sub" title="Local time of day this job fires every day.">
 			<span class="label">At</span>
 			<input
 				type="time"
@@ -82,7 +93,7 @@
 	{/if}
 
 	{#if schedule.kind === 'weekly'}
-		<label class="row sub">
+		<label class="row sub" title="Day of the week this job fires.">
 			<span class="label">On</span>
 			<select
 				value={schedule.day}
@@ -98,7 +109,7 @@
 				{/each}
 			</select>
 		</label>
-		<label class="row sub">
+		<label class="row sub" title="Local time of day on the chosen weekday.">
 			<span class="label">At</span>
 			<input
 				type="time"
@@ -114,7 +125,10 @@
 	{/if}
 
 	{#if schedule.kind === 'interval'}
-		<label class="row sub">
+		<label
+			class="row sub"
+			title="The job fires this many minutes after its previous due time, regardless of how long the run itself took — cadence stays steady even if a run runs long."
+		>
 			<span class="label">Every</span>
 			<input
 				type="number"
@@ -177,5 +191,16 @@
 	.unit {
 		font-size: 0.82rem;
 		color: var(--text-secondary);
+	}
+
+	.schedule-warning {
+		margin: 2px 0 0 0;
+		padding: 6px 10px;
+		background: color-mix(in srgb, #f59e0b 12%, transparent);
+		border: 1px solid color-mix(in srgb, #f59e0b 40%, var(--border));
+		border-radius: 4px;
+		font-size: 0.78rem;
+		color: var(--text-primary);
+		line-height: 1.35;
 	}
 </style>

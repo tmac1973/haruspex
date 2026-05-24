@@ -196,17 +196,26 @@
 	{:else}
 		<h3>{jobId === 'new' ? 'New job' : 'Edit job'}</h3>
 
-		<label class="field">
+		<label
+			class="field"
+			title="User-visible label shown in the job list. No effect on what the model sees."
+		>
 			<span class="label">Name</span>
 			<input type="text" bind:value={name} placeholder="Morning headlines" />
 		</label>
 
-		<label class="field">
+		<label
+			class="field"
+			title="Optional note for yourself — not sent to the model. Use it to remember the why behind the job."
+		>
 			<span class="label">Description</span>
 			<input type="text" bind:value={description} placeholder="Optional" />
 		</label>
 
-		<div class="field">
+		<div
+			class="field"
+			title="Absolute path to the folder this job operates in. Every step in the run sees this as its working directory — file reads, writes, Python sandbox cwd. Per-step overrides aren't supported yet."
+		>
 			<span class="label">Working directory</span>
 			<div class="workdir-row">
 				<input
@@ -215,11 +224,21 @@
 					placeholder="/path/to/folder"
 					class="workdir-input"
 				/>
-				<button type="button" class="secondary" onclick={pickWorkingDir}>Browse…</button>
+				<button
+					type="button"
+					class="secondary"
+					onclick={pickWorkingDir}
+					title="Pick a folder using the system file dialog"
+				>
+					Browse…
+				</button>
 			</div>
 		</div>
 
-		<label class="field checkbox">
+		<label
+			class="field checkbox"
+			title="When ON, every tool call the model makes during a run is auto-allowed (file writes, sandbox code, overwriting existing files). When OFF, the run pauses on each prompt waiting for you to click — which defeats unattended/scheduled runs."
+		>
 			<input type="checkbox" bind:checked={autoApprove} />
 			<span>
 				Auto-approve tool calls during runs
@@ -233,7 +252,10 @@
 			<JobScheduleField {schedule} onchange={(s) => (schedule = s)} />
 		</div>
 
-		<div class="field steps">
+		<div
+			class="field steps"
+			title="Each step is one prompt that runs as a fresh conversation with the model — no history between steps. The previous step's final reply is automatically prepended to the next step's prompt, so step 2 can act on step 1's output. Use this to decompose multi-objective work that a small model struggles to do in one shot."
+		>
 			<div class="steps-header">
 				<span class="label">Steps</span>
 				<span class="hint">
@@ -311,11 +333,21 @@
 						placeholder={i === 0
 							? 'What should this step do?'
 							: 'Will receive the previous step’s output as context.'}
+						title={i === 0
+							? 'Plain instruction for this step. The model sees this verbatim as the user message in a fresh chat with full tool access (search, file ops, Python sandbox).'
+							: "Plain instruction. At run time the previous step's reply is automatically prepended, so you can write this assuming the prior output is already in front of the model (e.g. 'Turn the above headlines into a PDF')."}
 						rows="3"
 					></textarea>
 				</div>
 			{/each}
-			<button type="button" class="secondary add-step" onclick={addStep}>+ Add step</button>
+			<button
+				type="button"
+				class="secondary add-step"
+				onclick={addStep}
+				title="Add another step to the pipeline. Runs after the previous step completes."
+			>
+				+ Add step
+			</button>
 		</div>
 
 		{#if error}
@@ -325,16 +357,34 @@
 		<div class="actions">
 			<div class="actions-left">
 				{#if jobId !== 'new'}
-					<button type="button" class="danger" onclick={confirmDelete} disabled={saving}>
+					<button
+						type="button"
+						class="danger"
+						onclick={confirmDelete}
+						disabled={saving}
+						title="Delete this job and its entire run history. Cannot be undone."
+					>
 						Delete
 					</button>
 				{/if}
 			</div>
 			<div class="actions-right">
-				<button type="button" class="secondary" onclick={oncancel} disabled={saving}>
+				<button
+					type="button"
+					class="secondary"
+					onclick={oncancel}
+					disabled={saving}
+					title="Discard unsaved changes and return to the job list"
+				>
 					Cancel
 				</button>
-				<button type="button" class="primary" onclick={save} disabled={saving}>
+				<button
+					type="button"
+					class="primary"
+					onclick={save}
+					disabled={saving}
+					title="Save the job. Use the Run button in the job list to execute it manually."
+				>
 					{saving ? 'Saving…' : 'Save'}
 				</button>
 			</div>
