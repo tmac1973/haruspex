@@ -96,6 +96,50 @@ describe('fs_write_xlsx input validation', () => {
 		expect(out.result).toMatch(/Wrote: fib\.xlsx/);
 	});
 
+	it('rejects a row that crammed multi-row data into one row (cell count blowout)', async () => {
+		// 2-column header, then a single data row with 200 cells —
+		// the model trying to fit a 50-record table in one row.
+		const wide = Array.from({ length: 200 }, (_, i) => (i % 2 === 0 ? String(i + 1) : ''));
+		const out = await callXlsx({
+			path: 'out.xlsx',
+			sheets: [{ name: 'S', rows: [['n', 'F(n)'], wide] }]
+		});
+		expect(JSON.parse(out.result).error).toMatch(/cells but the header has/i);
+		expect(mocks.invoke).not.toHaveBeenCalled();
+	});
+
+	it('rejects a sheet where a named column is entirely blank in every data row', async () => {
+		// Header has "n" and "F(n)" but F(n) is empty on every row —
+		// a scaffold waiting to be filled in.
+		const rows: string[][] = [['n', 'F(n)']];
+		for (let i = 1; i <= 50; i++) rows.push([String(i), '']);
+		const out = await callXlsx({
+			path: 'out.xlsx',
+			sheets: [{ name: 'S', rows }]
+		});
+		expect(JSON.parse(out.result).error).toMatch(/"F\(n\)" is entirely blank/i);
+		expect(mocks.invoke).not.toHaveBeenCalled();
+	});
+
+	it('allows blank cells in some rows of a column as long as some have data', async () => {
+		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+		const out = await callXlsx({
+			path: 'sparse.xlsx',
+			sheets: [
+				{
+					name: 'S',
+					rows: [
+						['Name', 'Note'],
+						['Alice', 'first'],
+						['Bob', ''],
+						['Carol', 'third']
+					]
+				}
+			]
+		});
+		expect(out.result).toMatch(/Wrote/);
+	});
+
 	it('accepts formulas (cells starting with "=")', async () => {
 		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 
