@@ -123,20 +123,83 @@ function writeExecutor(
 // Shared sheet schema used by both xlsx and ods.
 const SHEETS_SCHEMA = {
 	type: 'array' as const,
-	description: 'Array of sheet objects. Each sheet needs a name and rows.',
+	description:
+		'Array of sheet objects. Each sheet has a name and rows. rows is a 2D array of LITERAL cell values — there is no templating, no variable substitution, no server-side expansion. Pass the actual data you want written. Numeric strings (e.g. "42", "3.14") auto-convert to numbers; strings starting with "=" become spreadsheet formulas (e.g. "=SUM(B2:B10)"); everything else is plain text. Row 1 is typically your header row.',
 	items: {
 		type: 'object' as const,
 		properties: {
 			name: { type: 'string' as const, description: 'Sheet name (tab label)' },
 			rows: {
 				type: 'array' as const,
-				description: '2D array: array of rows, each row is an array of cell values.',
+				description:
+					'2D array: array of rows, each row is an array of cell values as strings. Example: [["Name","Score"],["Alice","95"],["Bob","87"]]. The first inner array is the header row; subsequent arrays are data rows. Pass every row you want in the file — the tool does not generate rows for you.',
 				items: { type: 'array' as const, items: { type: 'string' as const } }
 			}
 		},
 		required: ['name', 'rows']
 	}
 };
+
+/**
+ * Reject obviously stub spreadsheet input — empty sheets, placeholder
+ * rows like ["/formula"], etc. Small local models sometimes write a
+ * "scaffold" call expecting the tool to fill in real data; without this
+ * guard the tool silently writes nonsense and reports success.
+ */
+function validateSheets(args: Record<string, unknown>): string | null {
+	const sheets = args.sheets;
+	if (!Array.isArray(sheets) || sheets.length === 0) {
+		return 'sheets must be a non-empty array.';
+	}
+	for (let i = 0; i < sheets.length; i++) {
+		const sheet = sheets[i] as { name?: unknown; rows?: unknown };
+		const rows = sheet.rows;
+		if (!Array.isArray(rows) || rows.length === 0) {
+			return `Sheet ${i + 1} has no rows. Pass the actual data — header row plus one row per record.`;
+		}
+		const dataRows = rows.slice(1);
+		const hasRealData = dataRows.some(
+			(r) =>
+				Array.isArray(r) && r.some((cell) => typeof cell === 'string' && cell.trim().length > 0)
+		);
+		if (!hasRealData) {
+			return (
+				`Sheet ${i + 1} contains only a header row (or rows with no real cell data). ` +
+				`Pass every data row you want written — the tool does not expand placeholders or templates.`
+			);
+		}
+		const looksLikePlaceholder = rows.some(
+			(r) =>
+				Array.isArray(r) &&
+				r.length === 1 &&
+				typeof r[0] === 'string' &&
+				/^\/[a-z_]+$/i.test(r[0].trim())
+		);
+		if (looksLikePlaceholder) {
+			return (
+				`Sheet ${i + 1} contains a placeholder-style row like ["/formula"] or ["/data"]. ` +
+				`This tool does not expand directives — pass the literal cell values you want written.`
+			);
+		}
+	}
+	return null;
+}
+
+function spreadsheetWriteExecutor(command: string) {
+	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const validationError = validateSheets(args);
+		if (validationError) {
+			return toolResult(toolError(validationError));
+		}
+		return fsWriteWithConflictCheck(
+			command,
+			ctx.workingDir!,
+			args.path as string,
+			{ sheets: args.sheets },
+			ctx.filesWrittenThisTurn
+		);
+	};
+}
 
 // Shared slide schema used by both pptx and odp
 const SLIDE_SCHEMA = {
@@ -288,7 +351,11 @@ registerTool({
 		function: {
 			name: 'fs_write_xlsx',
 			description:
-				'Create an Excel spreadsheet (.xlsx) file in the working directory. Provide one or more sheets, each with a name and a 2D array of rows. Numeric strings are written as numbers; everything else is written as text.',
+				'Create an Excel spreadsheet (.xlsx) file in the working directory. ' +
+				'Compute your data FIRST (e.g. via run_python), then pass the actual row arrays here. ' +
+				'There is no templating or server-side expansion — every row you want in the file must be in the `rows` argument. ' +
+				'Numeric strings auto-convert to numbers, strings starting with "=" become formulas, everything else is text. ' +
+				'Example: sheets=[{name:"Data",rows:[["N","F(N)"],["1","0"],["2","1"],["3","1"]]}].',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -300,7 +367,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_xlsx', (args) => ({ sheets: args.sheets }))
+	execute: spreadsheetWriteExecutor('fs_write_xlsx')
 });
 
 registerTool({
@@ -348,7 +415,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_ods', (args) => ({ sheets: args.sheets }))
+	execute: spreadsheetWriteExecutor('fs_write_ods')
 });
 
 // Legacy hand-rolled OOXML PPTX path. Same arrangement as fs_write_pdf:
