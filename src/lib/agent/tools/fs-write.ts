@@ -99,26 +99,12 @@ async function fsWriteWithConflictCheck(
 	}
 }
 
-/**
- * Factory for the `execute` handler shared by every `fs_write_*` tool:
- * resolves any file-conflict, forwards `{ workdir, relPath, ...payload,
- * overwrite }` to the named Rust command, and tracks the resulting
- * file in `ctx.filesWrittenThisTurn`. Each tool registration boils
- * down to one line.
- */
-function writeExecutor(
-	command: string,
-	payload: (args: Record<string, unknown>) => Record<string, unknown>
-) {
-	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> =>
-		fsWriteWithConflictCheck(
-			command,
-			ctx.workingDir!,
-			args.path as string,
-			payload(args),
-			ctx.filesWrittenThisTurn
-		);
-}
+// Per-tool executors below specialize on the input shape — text-content,
+// spreadsheet, slides — and each runs a shape-specific validator before
+// dispatching to fsWriteWithConflictCheck. The validators exist because
+// unattended runs (jobs) have no way to notice the tool wrote a stub
+// file and reported "Wrote: foo" — without them, scaffold/placeholder
+// inputs silently produce useless files.
 
 // Shared sheet schema used by both xlsx and ods.
 const SHEETS_SCHEMA = {
@@ -254,6 +240,116 @@ function spreadsheetWriteExecutor(command: string) {
 	};
 }
 
+/**
+ * Reject empty or whitespace-only content for the text-based writers
+ * (text/docx/odt/pdf). Without this guard the tool writes a zero-byte
+ * file and reports success, which an unattended job has no way to
+ * notice.
+ */
+function validateTextContent(args: Record<string, unknown>, label: string): string | null {
+	const content = args.content;
+	if (typeof content !== 'string' || content.trim().length === 0) {
+		return (
+			`${label} requires non-empty content. Compose the text (e.g. via run_python or directly) ` +
+			`and pass it as the content argument — the tool does not generate content for you.`
+		);
+	}
+	return null;
+}
+
+function textWriteExecutor(
+	command: string,
+	label: string,
+	payload: (args: Record<string, unknown>) => Record<string, unknown> = (args) => ({
+		content: args.content
+	})
+) {
+	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const err = validateTextContent(args, label);
+		if (err) return toolResult(toolError(err));
+		return fsWriteWithConflictCheck(
+			command,
+			ctx.workingDir!,
+			args.path as string,
+			payload(args),
+			ctx.filesWrittenThisTurn
+		);
+	};
+}
+
+/**
+ * Reject slide-deck inputs that are obvious scaffolds — zero slides,
+ * empty titles, content slides with no bullets and no image, or
+ * placeholder-style bullets.
+ */
+function validateSlides(args: Record<string, unknown>): string | null {
+	const slides = args.slides;
+	if (!Array.isArray(slides) || slides.length === 0) {
+		return 'slides must be a non-empty array. Pass every slide you want in the deck.';
+	}
+	for (let i = 0; i < slides.length; i++) {
+		const slide = slides[i] as {
+			title?: unknown;
+			layout?: unknown;
+			bullets?: unknown;
+			image?: unknown;
+			subtitle?: unknown;
+		};
+		const num = i + 1;
+		if (typeof slide.title !== 'string' || slide.title.trim().length === 0) {
+			return `Slide ${num} has no title. Every slide must have a non-empty title string.`;
+		}
+		const layout = slide.layout ?? 'content';
+		if (layout === 'section') continue;
+
+		const bullets = slide.bullets;
+		const hasBullets =
+			Array.isArray(bullets) &&
+			bullets.some((b) => {
+				if (typeof b === 'string') return b.trim().length > 0;
+				if (b && typeof b === 'object' && 'text' in b) {
+					const text = (b as { text: unknown }).text;
+					return typeof text === 'string' && text.trim().length > 0;
+				}
+				return false;
+			});
+		const hasImage = typeof slide.image === 'string' && slide.image.trim().length > 0;
+		if (!hasBullets && !hasImage) {
+			return (
+				`Slide ${num} ("${slide.title}") has no bullets and no image. Content slides need at least one bullet or an image — ` +
+				`compute the content first and pass it as bullets, or use layout:"section" for divider slides.`
+			);
+		}
+		if (Array.isArray(bullets)) {
+			const placeholder = bullets.some((b) => {
+				const text = typeof b === 'string' ? b : (b as { text?: unknown })?.text;
+				return typeof text === 'string' && /^\/[a-z_]+$/i.test(text.trim());
+			});
+			if (placeholder) {
+				return (
+					`Slide ${num} contains a placeholder-style bullet like "/content" or "/data". ` +
+					`Pass the literal bullet text — the tool does not expand directives.`
+				);
+			}
+		}
+	}
+	return null;
+}
+
+function slidesWriteExecutor(command: string) {
+	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const err = validateSlides(args);
+		if (err) return toolResult(toolError(err));
+		return fsWriteWithConflictCheck(
+			command,
+			ctx.workingDir!,
+			args.path as string,
+			{ slides: args.slides },
+			ctx.filesWrittenThisTurn
+		);
+	};
+}
+
 // Shared slide schema used by both pptx and odp
 const SLIDE_SCHEMA = {
 	type: 'array' as const,
@@ -339,7 +435,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_text', (args) => ({ content: args.content }))
+	execute: textWriteExecutor('fs_write_text', 'fs_write_text')
 });
 
 registerTool({
@@ -365,7 +461,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_docx', (args) => ({ content: args.content }))
+	execute: textWriteExecutor('fs_write_docx', 'fs_write_docx')
 });
 
 // Markdown→PDF tool. Always exposed (the Python toggle no longer hides
@@ -394,7 +490,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_pdf', (args) => ({ content: args.content }))
+	execute: textWriteExecutor('fs_write_pdf', 'fs_write_pdf')
 });
 
 registerTool({
@@ -446,7 +542,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_odt', (args) => ({ content: args.content }))
+	execute: textWriteExecutor('fs_write_odt', 'fs_write_odt')
 });
 
 registerTool({
@@ -494,7 +590,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_pptx', (args) => ({ slides: args.slides }))
+	execute: slidesWriteExecutor('fs_write_pptx')
 });
 
 registerTool({
@@ -516,7 +612,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_odp', (args) => ({ slides: args.slides }))
+	execute: slidesWriteExecutor('fs_write_odp')
 });
 
 registerTool({
