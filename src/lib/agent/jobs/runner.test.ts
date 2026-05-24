@@ -4,7 +4,12 @@ import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
 
 const mocks = vi.hoisted(() => ({
 	runEphemeralTurn: vi.fn(),
-	getJob: vi.fn()
+	getJob: vi.fn(),
+	createJobRun: vi.fn(),
+	markRunStarted: vi.fn(),
+	markRunFinished: vi.fn(),
+	markRunStepStarted: vi.fn(),
+	markRunStepFinished: vi.fn()
 }));
 
 vi.mock('$lib/agent/runEphemeralTurn', () => ({
@@ -13,6 +18,14 @@ vi.mock('$lib/agent/runEphemeralTurn', () => ({
 
 vi.mock('$lib/stores/jobs.svelte', () => ({
 	getJob: mocks.getJob
+}));
+
+vi.mock('$lib/stores/jobRuns.svelte', () => ({
+	createJobRun: mocks.createJobRun,
+	markRunStarted: mocks.markRunStarted,
+	markRunFinished: mocks.markRunFinished,
+	markRunStepStarted: mocks.markRunStepStarted,
+	markRunStepFinished: mocks.markRunStepFinished
 }));
 
 vi.mock('$lib/stores/settings', () => ({
@@ -60,6 +73,16 @@ function tick() {
 beforeEach(() => {
 	mocks.runEphemeralTurn.mockReset();
 	mocks.getJob.mockReset();
+	mocks.createJobRun.mockReset();
+	mocks.markRunStarted.mockReset().mockResolvedValue(undefined);
+	mocks.markRunFinished.mockReset().mockResolvedValue(undefined);
+	mocks.markRunStepStarted.mockReset().mockResolvedValue(undefined);
+	mocks.markRunStepFinished.mockReset().mockResolvedValue(undefined);
+	// Default: createJobRun assigns sequential ids starting at 100 so the
+	// runner-issued ids never collide with the test's job ids (which start
+	// at 1) — easier to spot a "did the runner use the persisted id?" bug.
+	let nextId = 100;
+	mocks.createJobRun.mockImplementation(async () => nextId++);
 });
 
 describe('jobs runner — guards', () => {
@@ -92,11 +115,13 @@ describe('jobs runner — guards', () => {
 
 		const { enqueue } = await freshRunner();
 		const first = await enqueue(1);
-		expect(first).toBe(1);
+		expect(first).toBe(100);
 
 		const second = await enqueue(1);
 		expect(second).toBeNull();
 		expect(mocks.getJob).toHaveBeenCalledTimes(1);
+		// Busy guard short-circuits before persisting a second run row.
+		expect(mocks.createJobRun).toHaveBeenCalledTimes(1);
 	});
 
 	it('clearCurrentRun is a no-op while a run is in flight', async () => {
@@ -136,9 +161,10 @@ describe('jobs runner — single step', () => {
 
 		const { enqueue, getCurrentRun } = await freshRunner();
 		const runId = await enqueue(1);
-		expect(runId).toBe(1);
+		expect(runId).toBe(100);
 
 		const running = getCurrentRun();
+		expect(running?.id).toBe(100);
 		expect(running?.status).toBe('running');
 		expect(running?.jobName).toBe('Test job');
 		expect(running?.currentStepIndex).toBe(0);
@@ -335,5 +361,128 @@ describe('jobs runner — multi-step pipelines', () => {
 		expect(getCurrentRun()?.steps[1].streaming).toBe('streaming-2');
 		// Step 1's streaming buffer is left as-is (output is the source of truth).
 		expect(getCurrentRun()?.steps[0].output).toBe('first');
+	});
+});
+
+describe('jobs runner — persistence wiring', () => {
+	it('creates a job_runs row with the authored step prompts on enqueue', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				steps: [
+					{ id: 1, ordering: 0, prompt: 'gather', deep_research: false },
+					{ id: 2, ordering: 1, prompt: 'render', deep_research: false }
+				]
+			})
+		);
+		mocks.runEphemeralTurn.mockReturnValueOnce(new Promise(() => {}));
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1, 'scheduled');
+
+		expect(mocks.createJobRun).toHaveBeenCalledWith(1, 'scheduled', ['gather', 'render']);
+	});
+
+	it('returns null when the run row cannot be persisted', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.createJobRun.mockReset().mockResolvedValueOnce(null);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		const runId = await enqueue(1);
+		expect(runId).toBeNull();
+		expect(getCurrentRun()).toBeNull();
+		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
+	});
+
+	it('marks the run started, each step started+finished, and the run finished on success', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				steps: [
+					{ id: 1, ordering: 0, prompt: 'a', deep_research: false },
+					{ id: 2, ordering: 1, prompt: 'b', deep_research: false }
+				]
+			})
+		);
+		mocks.runEphemeralTurn
+			.mockResolvedValueOnce({ finalText: 'a-out' })
+			.mockResolvedValueOnce({ finalText: 'b-out' });
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		await tick();
+
+		expect(mocks.markRunStarted).toHaveBeenCalledTimes(1);
+		expect(mocks.markRunStarted.mock.calls[0][0]).toBe(100);
+
+		expect(mocks.markRunStepStarted).toHaveBeenCalledTimes(2);
+		// Step 0 receives the authored prompt unchanged.
+		expect(mocks.markRunStepStarted.mock.calls[0].slice(0, 2)).toEqual([100, 0]);
+		expect(mocks.markRunStepStarted.mock.calls[0][3]).toBe('a');
+		// Step 1 receives the prepended rendered prompt.
+		expect(mocks.markRunStepStarted.mock.calls[1].slice(0, 2)).toEqual([100, 1]);
+		expect(mocks.markRunStepStarted.mock.calls[1][3]).toBe('a-out\n\nb');
+
+		expect(mocks.markRunStepFinished).toHaveBeenCalledTimes(2);
+		expect(mocks.markRunStepFinished.mock.calls[0].slice(0, 5)).toEqual([
+			100,
+			0,
+			'succeeded',
+			'a-out',
+			null
+		]);
+		expect(mocks.markRunStepFinished.mock.calls[1].slice(0, 5)).toEqual([
+			100,
+			1,
+			'succeeded',
+			'b-out',
+			null
+		]);
+
+		expect(mocks.markRunFinished).toHaveBeenCalledTimes(1);
+		expect(mocks.markRunFinished.mock.calls[0].slice(0, 3)).toEqual([100, 1, 'succeeded']);
+		expect(mocks.markRunFinished.mock.calls[0][4]).toBeNull();
+	});
+
+	it('persists step failure with the error message and a failed run', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				steps: [
+					{ id: 1, ordering: 0, prompt: 'a', deep_research: false },
+					{ id: 2, ordering: 1, prompt: 'b', deep_research: false }
+				]
+			})
+		);
+		mocks.runEphemeralTurn
+			.mockResolvedValueOnce({ finalText: 'a-out' })
+			.mockRejectedValueOnce(new Error('broke'));
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		await tick();
+
+		// Step 2 finished call: status=failed, output=null, error="broke"
+		const lastStepFinish =
+			mocks.markRunStepFinished.mock.calls[mocks.markRunStepFinished.mock.calls.length - 1];
+		expect(lastStepFinish.slice(0, 5)).toEqual([100, 1, 'failed', null, 'broke']);
+
+		expect(mocks.markRunFinished).toHaveBeenCalledTimes(1);
+		const finishCall = mocks.markRunFinished.mock.calls[0];
+		expect(finishCall[2]).toBe('failed');
+		expect(finishCall[4]).toBe('broke');
+	});
+
+	it('persists cancellation with status=cancelled on both step and run', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockRejectedValueOnce(new DOMException('Aborted', 'AbortError'));
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const stepFinish = mocks.markRunStepFinished.mock.calls[0];
+		expect(stepFinish[2]).toBe('cancelled');
+		expect(stepFinish[4]).toBe('Cancelled by user');
+		expect(mocks.markRunFinished.mock.calls[0][2]).toBe('cancelled');
 	});
 });

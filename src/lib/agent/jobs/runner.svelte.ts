@@ -1,10 +1,14 @@
 /**
  * Multi-step job runner.
  *
- * Scope for phase-14 step 4: walks all steps in a job, prepending the
- * previous step's output to each subsequent step's prompt. On first
- * failure the run halts; remaining steps stay `pending`. No queue, no DB
- * persistence yet (those land in steps 5 + 7 of the plan).
+ * Walks all steps in a job, prepending the previous step's output to each
+ * subsequent step's prompt. On first failure the run halts; remaining
+ * steps stay `pending`. Each transition is mirrored into `job_runs` /
+ * `job_run_steps` via the jobRuns store, so past runs are browsable in
+ * the right pane after the fact.
+ *
+ * No queue yet (lands in step 7). Crash recovery (orphaned `running`
+ * rows on app restart) lands in step 6.
  *
  * The UI subscribes to `getCurrentRun()` and reads `currentStepIndex`
  * to know which step is live.
@@ -18,6 +22,15 @@ import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps } from '$lib/stores/jobs.svelte';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { getDisplayLabel } from '$lib/agent/tools';
+import {
+	createJobRun,
+	markRunFinished,
+	markRunStarted,
+	markRunStepFinished,
+	markRunStepStarted,
+	type JobRunStatus,
+	type JobRunStepStatus
+} from '$lib/stores/jobRuns.svelte';
 import { logDebug } from '$lib/debug-log';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -39,7 +52,7 @@ export interface RunStepState {
 }
 
 export interface RunState {
-	/** Local id — not yet persisted, so a monotonic counter. */
+	/** Persisted job_runs.id from the DB. */
 	id: number;
 	jobId: number;
 	jobName: string;
@@ -52,7 +65,6 @@ export interface RunState {
 }
 
 let current = $state<RunState | null>(null);
-let nextRunId = 1;
 let activeAbort: AbortController | null = null;
 
 export function getCurrentRun(): RunState | null {
@@ -89,7 +101,16 @@ export async function enqueue(
 		return null;
 	}
 
-	const runId = nextRunId++;
+	const runId = await createJobRun(
+		jobId,
+		trigger,
+		job.steps.map((s) => s.prompt)
+	);
+	if (runId === null) {
+		logDebug('jobs', 'enqueue failed: could not persist run row', { jobId, trigger });
+		return null;
+	}
+
 	const abort = new AbortController();
 	activeAbort = abort;
 
@@ -182,15 +203,17 @@ async function runOneStep(
 	const backend = getSettings().inferenceBackend;
 	const visionSupported =
 		backend.mode === 'remote' ? backend.remoteVisionSupported !== false : true;
+	const startedAt = Date.now();
 
 	patchStep(runId, stepIndex, {
 		status: 'running',
 		promptRendered: rendered,
-		startedAt: Date.now()
+		startedAt
 	});
 	if (current && current.id === runId) {
 		current = { ...current, currentStepIndex: stepIndex };
 	}
+	void markRunStepStarted(runId, stepIndex, startedAt, rendered);
 
 	const callbacks = buildStreamCallbacks(runId, stepIndex);
 	const wrap = job.auto_approve_tools ? runWithAutoApprove : passthrough;
@@ -207,20 +230,25 @@ async function runOneStep(
 				...callbacks
 			})
 		);
+		const finishedAt = Date.now();
 		patchStep(runId, stepIndex, {
 			status: 'succeeded',
 			output: finalText,
-			finishedAt: Date.now()
+			finishedAt
 		});
+		void markRunStepFinished(runId, stepIndex, 'succeeded', finalText, null, finishedAt);
 		return { ok: true, output: finalText };
 	} catch (e) {
 		const aborted = e instanceof DOMException && e.name === 'AbortError';
 		const msg = aborted ? 'Cancelled by user' : e instanceof Error ? e.message : String(e);
+		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
+		const finishedAt = Date.now();
 		patchStep(runId, stepIndex, {
-			status: aborted ? 'cancelled' : 'failed',
+			status: stepStatus,
 			error: msg,
-			finishedAt: Date.now()
+			finishedAt
 		});
+		void markRunStepFinished(runId, stepIndex, stepStatus, null, msg, finishedAt);
 		return { ok: false, aborted, error: msg };
 	}
 }
@@ -230,6 +258,7 @@ async function runPipeline(
 	abort: AbortController,
 	runId: number
 ): Promise<void> {
+	void markRunStarted(runId, Date.now());
 	let priorOutput = '';
 	try {
 		for (let i = 0; i < job.steps.length; i++) {
@@ -238,23 +267,24 @@ async function runPipeline(
 			const rendered = renderPrompt(i, authored, priorOutput);
 			const result = await runOneStep(job, runId, i, rendered, abort);
 			if (!result.ok) {
-				finalizeRun(runId, {
-					status: result.aborted ? 'cancelled' : 'failed',
-					error: result.error
-				});
+				const status: RunStatus = result.aborted ? 'cancelled' : 'failed';
+				finalizeRun(runId, job.id, status, result.error);
 				return;
 			}
 			priorOutput = result.output;
 		}
-		finalizeRun(runId, { status: 'succeeded' });
+		finalizeRun(runId, job.id, 'succeeded', null);
 	} finally {
 		if (activeAbort === abort) activeAbort = null;
 	}
 }
 
-function finalizeRun(runId: number, patch: Partial<RunState>): void {
-	if (!current || current.id !== runId) return;
-	current = { ...current, ...patch, finishedAt: Date.now() };
+function finalizeRun(runId: number, jobId: number, status: RunStatus, error: string | null): void {
+	const finishedAt = Date.now();
+	if (current && current.id === runId) {
+		current = { ...current, status, error, finishedAt };
+	}
+	void markRunFinished(runId, jobId, status as JobRunStatus, finishedAt, error);
 }
 
 function passthrough<T>(fn: () => Promise<T>): Promise<T> {

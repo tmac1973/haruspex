@@ -3,12 +3,16 @@
 	import JobList from '$lib/components/jobs/JobList.svelte';
 	import JobEditor from '$lib/components/jobs/JobEditor.svelte';
 	import JobRunView from '$lib/components/jobs/JobRunView.svelte';
+	import JobRunHistory from '$lib/components/jobs/JobRunHistory.svelte';
+	import JobRunDetail from '$lib/components/jobs/JobRunDetail.svelte';
 	import { isJobsLoaded, loadJobs } from '$lib/stores/jobs.svelte';
 	import { getCurrentRun } from '$lib/agent/jobs/runner.svelte';
 
 	let selectedId = $state<number | 'new' | null>(null);
+	let selectedRunId = $state<number | null>(null);
 	const currentRun = $derived(getCurrentRun());
 	const showRunView = $derived(currentRun !== null);
+	const numericSelectedId = $derived(typeof selectedId === 'number' ? selectedId : null);
 
 	onMount(() => {
 		if (!isJobsLoaded()) {
@@ -18,22 +22,37 @@
 
 	function selectJob(id: number | 'new') {
 		selectedId = id;
+		selectedRunId = null;
 	}
 
 	function clearSelection() {
 		selectedId = null;
+		selectedRunId = null;
 	}
 
 	function onRunStarted(jobId: number) {
 		selectedId = jobId;
+		selectedRunId = null;
+	}
+
+	function selectRun(runId: number) {
+		selectedRunId = runId;
+	}
+
+	function closeRunDetail() {
+		selectedRunId = null;
 	}
 </script>
 
 <div class="jobs-tab">
 	<JobList {selectedId} onselect={selectJob} onrun={onRunStarted} />
-	<div class="editor-pane">
+	<div class="center-pane">
 		{#if showRunView}
 			<JobRunView ondone={() => undefined} />
+		{:else if selectedRunId !== null}
+			{#key selectedRunId}
+				<JobRunDetail runId={selectedRunId} onclose={closeRunDetail} />
+			{/key}
 		{:else if selectedId === null}
 			<div class="empty-state">
 				<h2>No job selected</h2>
@@ -50,6 +69,9 @@
 			{/key}
 		{/if}
 	</div>
+	{#if numericSelectedId !== null && !showRunView}
+		<JobRunHistory jobId={numericSelectedId} {selectedRunId} onselect={selectRun} />
+	{/if}
 </div>
 
 <style>
@@ -60,7 +82,7 @@
 		overflow: hidden;
 	}
 
-	.editor-pane {
+	.center-pane {
 		flex: 1;
 		min-width: 0;
 		display: flex;

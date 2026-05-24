@@ -97,6 +97,45 @@ pub struct JobInput {
     pub schedule_config: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct JobRunSummary {
+    pub id: i64,
+    pub job_id: i64,
+    pub status: String,
+    pub trigger: String,
+    pub queued_at: i64,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JobRunStep {
+    pub id: i64,
+    pub run_id: i64,
+    pub ordering: i64,
+    pub prompt_authored: String,
+    pub prompt_rendered: String,
+    pub status: String,
+    pub output: Option<String>,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JobRunWithSteps {
+    pub id: i64,
+    pub job_id: i64,
+    pub status: String,
+    pub trigger: String,
+    pub queued_at: i64,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    pub error: Option<String>,
+    pub steps: Vec<JobRunStep>,
+}
+
 /// Incremental change to a single engine's lifetime stats row.
 ///
 /// Caller is expected to set `attempt = true` for every recorded outcome and
@@ -874,6 +913,197 @@ impl Database {
         tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
         Ok(())
     }
+
+    pub fn create_job_run(
+        &self,
+        job_id: i64,
+        trigger: &str,
+        step_prompts: &[String],
+    ) -> Result<i64, String> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+
+        let now = chrono_now();
+        tx.execute(
+            "INSERT INTO job_runs (job_id, status, trigger, queued_at)
+             VALUES (?1, 'queued', ?2, ?3)",
+            params![job_id, trigger, now],
+        )
+        .map_err(|e| format!("Run insert failed: {}", e))?;
+        let run_id = tx.last_insert_rowid();
+
+        for (i, prompt) in step_prompts.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO job_run_steps
+                    (run_id, ordering, prompt_authored, prompt_rendered, status)
+                 VALUES (?1, ?2, ?3, ?3, 'pending')",
+                params![run_id, i as i64, prompt],
+            )
+            .map_err(|e| format!("Run step insert failed: {}", e))?;
+        }
+
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+        Ok(run_id)
+    }
+
+    pub fn mark_run_started(&self, run_id: i64, started_at: i64) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE job_runs SET status = 'running', started_at = ?1
+             WHERE id = ?2 AND status = 'queued'",
+            params![started_at, run_id],
+        )
+        .map_err(|e| format!("Run started update failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn mark_run_finished(
+        &self,
+        run_id: i64,
+        status: &str,
+        finished_at: i64,
+        error: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE job_runs SET status = ?1, finished_at = ?2, error = ?3
+             WHERE id = ?4",
+            params![status, finished_at, error, run_id],
+        )
+        .map_err(|e| format!("Run finish update failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn mark_run_step_started(
+        &self,
+        run_id: i64,
+        ordering: i64,
+        started_at: i64,
+        prompt_rendered: &str,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE job_run_steps
+                SET status = 'running', started_at = ?1, prompt_rendered = ?2
+                WHERE run_id = ?3 AND ordering = ?4",
+            params![started_at, prompt_rendered, run_id, ordering],
+        )
+        .map_err(|e| format!("Step started update failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn mark_run_step_finished(
+        &self,
+        run_id: i64,
+        ordering: i64,
+        status: &str,
+        output: Option<&str>,
+        error: Option<&str>,
+        finished_at: i64,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE job_run_steps
+                SET status = ?1, output = ?2, error = ?3, finished_at = ?4
+                WHERE run_id = ?5 AND ordering = ?6",
+            params![status, output, error, finished_at, run_id, ordering],
+        )
+        .map_err(|e| format!("Step finished update failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn list_job_runs(&self, job_id: i64) -> Result<Vec<JobRunSummary>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, job_id, status, trigger, queued_at, started_at, finished_at, error
+                 FROM job_runs WHERE job_id = ?1
+                 ORDER BY queued_at DESC",
+            )
+            .map_err(|e| format!("Runs query failed: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![job_id], |row| {
+                Ok(JobRunSummary {
+                    id: row.get(0)?,
+                    job_id: row.get(1)?,
+                    status: row.get(2)?,
+                    trigger: row.get(3)?,
+                    queued_at: row.get(4)?,
+                    started_at: row.get(5)?,
+                    finished_at: row.get(6)?,
+                    error: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Runs query failed: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Runs row read failed: {}", e))
+    }
+
+    pub fn get_job_run(&self, run_id: i64) -> Result<JobRunWithSteps, String> {
+        let conn = self.conn.lock().unwrap();
+        let (job_id, status, trigger, queued_at, started_at, finished_at, error) = conn
+            .query_row(
+                "SELECT job_id, status, trigger, queued_at, started_at, finished_at, error
+                 FROM job_runs WHERE id = ?1",
+                params![run_id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                },
+            )
+            .map_err(|e| format!("Run not found: {}", e))?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, run_id, ordering, prompt_authored, prompt_rendered,
+                        status, output, started_at, finished_at, error
+                 FROM job_run_steps WHERE run_id = ?1
+                 ORDER BY ordering ASC",
+            )
+            .map_err(|e| format!("Run steps query failed: {}", e))?;
+
+        let steps = stmt
+            .query_map(params![run_id], |row| {
+                Ok(JobRunStep {
+                    id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    ordering: row.get(2)?,
+                    prompt_authored: row.get(3)?,
+                    prompt_rendered: row.get(4)?,
+                    status: row.get(5)?,
+                    output: row.get(6)?,
+                    started_at: row.get(7)?,
+                    finished_at: row.get(8)?,
+                    error: row.get(9)?,
+                })
+            })
+            .map_err(|e| format!("Run steps query failed: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Run steps row read failed: {}", e))?;
+
+        Ok(JobRunWithSteps {
+            id: run_id,
+            job_id,
+            status,
+            trigger,
+            queued_at,
+            started_at,
+            finished_at,
+            error,
+            steps,
+        })
+    }
 }
 
 fn chrono_now() -> i64 {
@@ -991,6 +1221,83 @@ pub fn db_replace_job_steps(
     steps: Vec<JobStepInput>,
 ) -> Result<(), String> {
     state.replace_job_steps(job_id, &steps)
+}
+
+#[tauri::command]
+pub fn db_create_job_run(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    trigger: String,
+    step_prompts: Vec<String>,
+) -> Result<i64, String> {
+    state.create_job_run(job_id, &trigger, &step_prompts)
+}
+
+#[tauri::command]
+pub fn db_mark_run_started(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    started_at: i64,
+) -> Result<(), String> {
+    state.mark_run_started(run_id, started_at)
+}
+
+#[tauri::command]
+pub fn db_mark_run_finished(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    status: String,
+    finished_at: i64,
+    error: Option<String>,
+) -> Result<(), String> {
+    state.mark_run_finished(run_id, &status, finished_at, error.as_deref())
+}
+
+#[tauri::command]
+pub fn db_mark_run_step_started(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    ordering: i64,
+    started_at: i64,
+    prompt_rendered: String,
+) -> Result<(), String> {
+    state.mark_run_step_started(run_id, ordering, started_at, &prompt_rendered)
+}
+
+#[tauri::command]
+pub fn db_mark_run_step_finished(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    ordering: i64,
+    status: String,
+    output: Option<String>,
+    error: Option<String>,
+    finished_at: i64,
+) -> Result<(), String> {
+    state.mark_run_step_finished(
+        run_id,
+        ordering,
+        &status,
+        output.as_deref(),
+        error.as_deref(),
+        finished_at,
+    )
+}
+
+#[tauri::command]
+pub fn db_list_job_runs(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+) -> Result<Vec<JobRunSummary>, String> {
+    state.list_job_runs(job_id)
+}
+
+#[tauri::command]
+pub fn db_get_job_run(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+) -> Result<JobRunWithSteps, String> {
+    state.get_job_run(run_id)
 }
 
 #[cfg(test)]
@@ -1428,6 +1735,158 @@ mod tests {
             .unwrap();
         let job = db.get_job(id).unwrap();
         assert_eq!(job.schedule_config, Some(json));
+    }
+
+    fn job_with_steps(db: &Database, name: &str, prompts: &[&str]) -> i64 {
+        let job_id = db.create_job(&sample_job_input(name)).unwrap();
+        let steps: Vec<JobStepInput> = prompts.iter().map(|p| step(p)).collect();
+        db.replace_job_steps(job_id, &steps).unwrap();
+        job_id
+    }
+
+    #[test]
+    fn create_job_run_inserts_run_plus_pending_steps() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Pipelined", &["step a", "step b"]);
+
+        let run_id = db
+            .create_job_run(
+                job_id,
+                "manual",
+                &["step a".to_string(), "step b".to_string()],
+            )
+            .unwrap();
+
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.job_id, job_id);
+        assert_eq!(run.status, "queued");
+        assert_eq!(run.trigger, "manual");
+        assert!(run.started_at.is_none());
+        assert!(run.finished_at.is_none());
+        assert_eq!(run.steps.len(), 2);
+        for (i, s) in run.steps.iter().enumerate() {
+            assert_eq!(s.ordering, i as i64);
+            assert_eq!(s.status, "pending");
+            assert_eq!(s.prompt_authored, s.prompt_rendered);
+            assert!(s.output.is_none());
+            assert!(s.started_at.is_none());
+            assert!(s.finished_at.is_none());
+        }
+    }
+
+    #[test]
+    fn run_lifecycle_transitions_persist_correctly() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Two-step", &["a", "b"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string(), "b".to_string()])
+            .unwrap();
+
+        db.mark_run_started(run_id, 100).unwrap();
+        db.mark_run_step_started(run_id, 0, 100, "a").unwrap();
+        db.mark_run_step_finished(run_id, 0, "succeeded", Some("a-output"), None, 200)
+            .unwrap();
+        db.mark_run_step_started(run_id, 1, 200, "a-output\n\nb")
+            .unwrap();
+        db.mark_run_step_finished(run_id, 1, "succeeded", Some("b-output"), None, 300)
+            .unwrap();
+        db.mark_run_finished(run_id, "succeeded", 300, None)
+            .unwrap();
+
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.status, "succeeded");
+        assert_eq!(run.started_at, Some(100));
+        assert_eq!(run.finished_at, Some(300));
+        assert!(run.error.is_none());
+        assert_eq!(run.steps[0].status, "succeeded");
+        assert_eq!(run.steps[0].output.as_deref(), Some("a-output"));
+        assert_eq!(run.steps[1].status, "succeeded");
+        assert_eq!(run.steps[1].prompt_rendered, "a-output\n\nb");
+        assert_eq!(run.steps[1].output.as_deref(), Some("b-output"));
+    }
+
+    #[test]
+    fn failure_path_records_error_on_run_and_step() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Will fail", &["a", "b"]);
+        let run_id = db
+            .create_job_run(job_id, "scheduled", &["a".to_string(), "b".to_string()])
+            .unwrap();
+
+        db.mark_run_started(run_id, 10).unwrap();
+        db.mark_run_step_started(run_id, 0, 10, "a").unwrap();
+        db.mark_run_step_finished(run_id, 0, "succeeded", Some("ok"), None, 20)
+            .unwrap();
+        db.mark_run_step_started(run_id, 1, 20, "ok\n\nb").unwrap();
+        db.mark_run_step_finished(run_id, 1, "failed", None, Some("boom"), 30)
+            .unwrap();
+        db.mark_run_finished(run_id, "failed", 30, Some("boom"))
+            .unwrap();
+
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.status, "failed");
+        assert_eq!(run.trigger, "scheduled");
+        assert_eq!(run.error.as_deref(), Some("boom"));
+        assert_eq!(run.steps[1].status, "failed");
+        assert_eq!(run.steps[1].error.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn list_job_runs_orders_newest_first() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Many runs", &["a"]);
+
+        let r1 = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r2 = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r3 = db
+            .create_job_run(job_id, "scheduled", &["a".to_string()])
+            .unwrap();
+
+        let runs = db.list_job_runs(job_id).unwrap();
+        let ids: Vec<i64> = runs.iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![r3, r2, r1]);
+    }
+
+    #[test]
+    fn mark_run_started_does_not_overwrite_already_running() {
+        // If the runner double-fires (shouldn't happen, but be defensive)
+        // mark_run_started must not reset started_at on a row that's
+        // already moved past 'queued'.
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Idempotent", &["a"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        db.mark_run_started(run_id, 100).unwrap();
+        db.mark_run_started(run_id, 999).unwrap();
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.started_at, Some(100));
+    }
+
+    #[test]
+    fn delete_job_cascades_runs_and_run_steps() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Doomed pipeline", &["a", "b"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string(), "b".to_string()])
+            .unwrap();
+        db.mark_run_started(run_id, 1).unwrap();
+        db.mark_run_step_started(run_id, 0, 1, "a").unwrap();
+
+        db.delete_job(job_id).unwrap();
+
+        assert!(db.list_job_runs(job_id).unwrap().is_empty());
+        let conn = db.conn.lock().unwrap();
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM job_run_steps", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]
