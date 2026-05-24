@@ -286,6 +286,12 @@ async function runPipeline(
 	try {
 		for (let i = 0; i < job.steps.length; i++) {
 			if (!current || current.id !== runId) return;
+			// If the user cancelled between steps, finalize cleanly without
+			// flickering the next step to 'running' before bailing.
+			if (abort.signal.aborted) {
+				finalizeRun(runId, job.id, 'cancelled', 'Cancelled by user');
+				return;
+			}
 			const authored = job.steps[i].prompt;
 			const rendered = renderPrompt(i, authored, priorOutput);
 			const result = await runOneStep(job, runId, i, rendered, abort);

@@ -120,6 +120,7 @@ pub fn run() {
             db::db_mark_run_step_finished,
             db::db_list_job_runs,
             db::db_get_job_run,
+            db::db_recover_orphan_runs,
             fs_tools::path::fs_list_dir,
             fs_tools::text::fs_read_text,
             fs_tools::text::fs_write_text,

@@ -137,6 +137,25 @@ export async function markRunStepStarted(
 	}
 }
 
+/**
+ * Sweep run rows orphaned by the previous session — anything stuck at
+ * 'queued' or 'running' becomes 'interrupted'. Called once at app startup
+ * before any Jobs UI mounts so the user never sees a stale "running" row
+ * left behind by a hard close or crash. Idempotent.
+ */
+export async function recoverOrphanRuns(): Promise<number> {
+	try {
+		const swept = await invoke<number>('db_recover_orphan_runs');
+		if (swept > 0) {
+			logDebug('jobs', 'recoverOrphanRuns swept stale rows', { swept });
+		}
+		return swept;
+	} catch (e) {
+		logDebug('jobs', 'recoverOrphanRuns failed', { error: String(e) });
+		return 0;
+	}
+}
+
 export async function markRunStepFinished(
 	runId: number,
 	ordering: number,

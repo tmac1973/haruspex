@@ -161,4 +161,19 @@ describe('jobRuns store', () => {
 		const { getJobRun } = await import('$lib/stores/jobRuns.svelte');
 		expect(await getJobRun(999)).toBeNull();
 	});
+
+	it('recoverOrphanRuns invokes the command and returns the swept count', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce(3);
+		const { recoverOrphanRuns } = await import('$lib/stores/jobRuns.svelte');
+		const swept = await recoverOrphanRuns();
+		expect(invoke).toHaveBeenCalledWith('db_recover_orphan_runs');
+		expect(swept).toBe(3);
+	});
+
+	it('recoverOrphanRuns returns 0 and swallows errors', async () => {
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('db down'));
+		const { recoverOrphanRuns } = await import('$lib/stores/jobRuns.svelte');
+		const swept = await recoverOrphanRuns();
+		expect(swept).toBe(0);
+	});
 });

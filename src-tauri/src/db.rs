@@ -1104,6 +1104,43 @@ impl Database {
             steps,
         })
     }
+
+    /// Sweep run rows orphaned by a previous-session crash or hard close.
+    /// Runs left in 'queued' or 'running' are marked 'interrupted' and any
+    /// in-flight steps are marked the same. Idempotent — calling it on a
+    /// clean DB does nothing. Returns the number of runs swept.
+    pub fn recover_orphan_runs(&self) -> Result<i64, String> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+        let now = chrono_now();
+        let msg = "App was closed during this run.";
+
+        let swept = tx
+            .execute(
+                "UPDATE job_runs
+                    SET status = 'interrupted',
+                        finished_at = COALESCE(finished_at, ?1),
+                        error = COALESCE(error, ?2)
+                 WHERE status IN ('queued', 'running')",
+                params![now, msg],
+            )
+            .map_err(|e| format!("Run sweep failed: {}", e))? as i64;
+
+        tx.execute(
+            "UPDATE job_run_steps
+                SET status = 'cancelled',
+                    finished_at = COALESCE(finished_at, ?1),
+                    error = COALESCE(error, ?2)
+                WHERE status = 'running'",
+            params![now, msg],
+        )
+        .map_err(|e| format!("Step sweep failed: {}", e))?;
+
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+        Ok(swept)
+    }
 }
 
 fn chrono_now() -> i64 {
@@ -1298,6 +1335,11 @@ pub fn db_get_job_run(
     run_id: i64,
 ) -> Result<JobRunWithSteps, String> {
     state.get_job_run(run_id)
+}
+
+#[tauri::command]
+pub fn db_recover_orphan_runs(state: tauri::State<'_, Database>) -> Result<i64, String> {
+    state.recover_orphan_runs()
 }
 
 #[cfg(test)]
@@ -1887,6 +1929,105 @@ mod tests {
             .query_row("SELECT count(*) FROM job_run_steps", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn recover_orphan_runs_sweeps_running_and_queued() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Will be orphaned", &["a", "b"]);
+
+        // One run that got as far as starting step 0, then the app died.
+        let r1 = db
+            .create_job_run(job_id, "manual", &["a".to_string(), "b".to_string()])
+            .unwrap();
+        db.mark_run_started(r1, 100).unwrap();
+        db.mark_run_step_started(r1, 0, 100, "a").unwrap();
+
+        // One run that never even started (queued only).
+        let r2 = db
+            .create_job_run(job_id, "scheduled", &["a".to_string(), "b".to_string()])
+            .unwrap();
+
+        // One previously-completed run that must NOT be touched.
+        let r3 = db
+            .create_job_run(job_id, "manual", &["a".to_string(), "b".to_string()])
+            .unwrap();
+        db.mark_run_started(r3, 50).unwrap();
+        db.mark_run_step_started(r3, 0, 50, "a").unwrap();
+        db.mark_run_step_finished(r3, 0, "succeeded", Some("out"), None, 60)
+            .unwrap();
+        db.mark_run_step_started(r3, 1, 60, "out\n\nb").unwrap();
+        db.mark_run_step_finished(r3, 1, "succeeded", Some("done"), None, 70)
+            .unwrap();
+        db.mark_run_finished(r3, "succeeded", 70, None).unwrap();
+
+        let swept = db.recover_orphan_runs().unwrap();
+        assert_eq!(swept, 2);
+
+        let run1 = db.get_job_run(r1).unwrap();
+        assert_eq!(run1.status, "interrupted");
+        assert!(run1.finished_at.is_some());
+        assert!(run1.error.as_deref().unwrap_or("").contains("closed"));
+        // Step 0 was 'running' → swept to 'cancelled'. Step 1 was 'pending'
+        // → untouched.
+        assert_eq!(run1.steps[0].status, "cancelled");
+        assert!(run1.steps[0]
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("closed"));
+        assert_eq!(run1.steps[1].status, "pending");
+
+        let run2 = db.get_job_run(r2).unwrap();
+        assert_eq!(run2.status, "interrupted");
+        assert_eq!(run2.steps[0].status, "pending");
+
+        let run3 = db.get_job_run(r3).unwrap();
+        assert_eq!(run3.status, "succeeded");
+        assert_eq!(run3.finished_at, Some(70));
+    }
+
+    #[test]
+    fn recover_orphan_runs_is_idempotent() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Orphan", &["a"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        db.mark_run_started(run_id, 1).unwrap();
+
+        let first = db.recover_orphan_runs().unwrap();
+        let second = db.recover_orphan_runs().unwrap();
+        assert_eq!(first, 1);
+        assert_eq!(second, 0);
+
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.status, "interrupted");
+    }
+
+    #[test]
+    fn recover_orphan_runs_preserves_existing_finished_at() {
+        // Edge case: a run row that's stuck at 'running' but somehow has
+        // a finished_at already (shouldn't happen, but be defensive). The
+        // sweep must not stomp the existing timestamp.
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Edge", &["a"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE job_runs SET status = 'running', started_at = 10, finished_at = 999
+                 WHERE id = ?1",
+                params![run_id],
+            )
+            .unwrap();
+        }
+        db.recover_orphan_runs().unwrap();
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.status, "interrupted");
+        assert_eq!(run.finished_at, Some(999));
     }
 
     #[test]
