@@ -1,13 +1,44 @@
 <script lang="ts">
-	// Placeholder for the Jobs tab. The job list, editor, run view, and run
-	// history land in subsequent PRs (see plan/phase-14-jobs-tab.md).
+	import { onMount } from 'svelte';
+	import JobList from '$lib/components/jobs/JobList.svelte';
+	import JobEditor from '$lib/components/jobs/JobEditor.svelte';
+	import { isJobsLoaded, loadJobs } from '$lib/stores/jobs.svelte';
+
+	let selectedId = $state<number | 'new' | null>(null);
+
+	onMount(() => {
+		if (!isJobsLoaded()) {
+			loadJobs();
+		}
+	});
+
+	function selectJob(id: number | 'new') {
+		selectedId = id;
+	}
+
+	function clearSelection() {
+		selectedId = null;
+	}
 </script>
 
 <div class="jobs-tab">
-	<div class="empty-state">
-		<h2>Jobs</h2>
-		<p>Saved prompts and multi-step pipelines will live here.</p>
-		<p class="hint">Coming soon.</p>
+	<JobList {selectedId} onselect={selectJob} />
+	<div class="editor-pane">
+		{#if selectedId === null}
+			<div class="empty-state">
+				<h2>No job selected</h2>
+				<p>Pick a job on the left, or create a new one.</p>
+			</div>
+		{:else}
+			{#key selectedId}
+				<JobEditor
+					jobId={selectedId}
+					onsaved={(id) => (selectedId = id)}
+					ondeleted={clearSelection}
+					oncancel={clearSelection}
+				/>
+			{/key}
+		{/if}
 	</div>
 </div>
 
@@ -16,6 +47,14 @@
 		flex: 1;
 		min-height: 0;
 		display: flex;
+		overflow: hidden;
+	}
+
+	.editor-pane {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
 		overflow: hidden;
 	}
 
@@ -37,11 +76,6 @@
 	}
 
 	.empty-state p {
-		margin: 0 0 4px 0;
-	}
-
-	.hint {
-		font-size: 0.85rem;
-		font-style: italic;
+		margin: 0;
 	}
 </style>

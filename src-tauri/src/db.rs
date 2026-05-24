@@ -43,6 +43,60 @@ pub struct ConversationWithMessages {
     pub messages: Vec<DbMessage>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct JobStep {
+    pub id: i64,
+    pub ordering: i64,
+    pub prompt: String,
+    pub deep_research: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct JobStepInput {
+    pub prompt: String,
+    pub deep_research: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JobSummary {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub working_dir: String,
+    pub auto_approve_tools: bool,
+    pub schedule_kind: String,
+    pub schedule_config: Option<String>,
+    pub next_due_at: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub step_count: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JobWithSteps {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub working_dir: String,
+    pub auto_approve_tools: bool,
+    pub schedule_kind: String,
+    pub schedule_config: Option<String>,
+    pub next_due_at: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub steps: Vec<JobStep>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct JobInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub working_dir: String,
+    pub auto_approve_tools: bool,
+    pub schedule_kind: String,
+    pub schedule_config: Option<String>,
+}
+
 /// Incremental change to a single engine's lifetime stats row.
 ///
 /// Caller is expected to set `attempt = true` for every recorded outcome and
@@ -190,7 +244,64 @@ impl Database {
             CREATE TABLE IF NOT EXISTS search_stats_globals (
                 key TEXT PRIMARY KEY,
                 value INTEGER NOT NULL
-            );",
+            );
+
+            CREATE TABLE IF NOT EXISTS jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                working_dir TEXT NOT NULL,
+                auto_approve_tools INTEGER NOT NULL DEFAULT 0,
+                schedule_kind TEXT NOT NULL DEFAULT 'manual',
+                schedule_config TEXT,
+                next_due_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_jobs_next_due
+                ON jobs(next_due_at) WHERE next_due_at IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS job_steps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                ordering INTEGER NOT NULL,
+                prompt TEXT NOT NULL,
+                deep_research INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_job_steps_job
+                ON job_steps(job_id, ordering);
+
+            CREATE TABLE IF NOT EXISTS job_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                status TEXT NOT NULL,
+                trigger TEXT NOT NULL,
+                queued_at INTEGER NOT NULL,
+                started_at INTEGER,
+                finished_at INTEGER,
+                error TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_job_runs_job
+                ON job_runs(job_id, queued_at DESC);
+
+            CREATE TABLE IF NOT EXISTS job_run_steps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL REFERENCES job_runs(id) ON DELETE CASCADE,
+                ordering INTEGER NOT NULL,
+                prompt_authored TEXT NOT NULL,
+                prompt_rendered TEXT NOT NULL,
+                status TEXT NOT NULL,
+                output TEXT,
+                started_at INTEGER,
+                finished_at INTEGER,
+                error TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_job_run_steps_run
+                ON job_run_steps(run_id, ordering);",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
@@ -564,6 +675,205 @@ impl Database {
 
         Ok(())
     }
+
+    pub fn create_job(&self, input: &JobInput) -> Result<i64, String> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono_now();
+        conn.execute(
+            "INSERT INTO jobs
+                (name, description, working_dir, auto_approve_tools,
+                 schedule_kind, schedule_config, next_due_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?7)",
+            params![
+                input.name,
+                input.description,
+                input.working_dir,
+                input.auto_approve_tools as i64,
+                input.schedule_kind,
+                input.schedule_config,
+                now,
+            ],
+        )
+        .map_err(|e| format!("Job insert failed: {}", e))?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn list_jobs(&self) -> Result<Vec<JobSummary>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
+                        j.schedule_kind, j.schedule_config, j.next_due_at,
+                        j.created_at, j.updated_at,
+                        (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count
+                 FROM jobs j
+                 ORDER BY j.updated_at DESC",
+            )
+            .map_err(|e| format!("Jobs query failed: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(JobSummary {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    working_dir: row.get(3)?,
+                    auto_approve_tools: row.get::<_, i64>(4)? != 0,
+                    schedule_kind: row.get(5)?,
+                    schedule_config: row.get(6)?,
+                    next_due_at: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                    step_count: row.get(10)?,
+                })
+            })
+            .map_err(|e| format!("Jobs query failed: {}", e))?;
+
+        let mut jobs = Vec::new();
+        for row in rows {
+            jobs.push(row.map_err(|e| format!("Jobs row read failed: {}", e))?);
+        }
+        Ok(jobs)
+    }
+
+    pub fn get_job(&self, id: i64) -> Result<JobWithSteps, String> {
+        let conn = self.conn.lock().unwrap();
+
+        let (
+            name,
+            description,
+            working_dir,
+            auto_approve_tools,
+            schedule_kind,
+            schedule_config,
+            next_due_at,
+            created_at,
+            updated_at,
+        ) = conn
+            .query_row(
+                "SELECT name, description, working_dir, auto_approve_tools,
+                        schedule_kind, schedule_config, next_due_at,
+                        created_at, updated_at
+                 FROM jobs WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)? != 0,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<i64>>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                    ))
+                },
+            )
+            .map_err(|e| format!("Job not found: {}", e))?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, ordering, prompt, deep_research
+                 FROM job_steps WHERE job_id = ?1 ORDER BY ordering ASC",
+            )
+            .map_err(|e| format!("Steps query failed: {}", e))?;
+
+        let steps = stmt
+            .query_map(params![id], |row| {
+                Ok(JobStep {
+                    id: row.get(0)?,
+                    ordering: row.get(1)?,
+                    prompt: row.get(2)?,
+                    deep_research: row.get::<_, i64>(3)? != 0,
+                })
+            })
+            .map_err(|e| format!("Steps query failed: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Steps row read failed: {}", e))?;
+
+        Ok(JobWithSteps {
+            id,
+            name,
+            description,
+            working_dir,
+            auto_approve_tools,
+            schedule_kind,
+            schedule_config,
+            next_due_at,
+            created_at,
+            updated_at,
+            steps,
+        })
+    }
+
+    pub fn update_job(&self, id: i64, input: &JobInput) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono_now();
+        let affected = conn
+            .execute(
+                "UPDATE jobs SET
+                    name = ?1,
+                    description = ?2,
+                    working_dir = ?3,
+                    auto_approve_tools = ?4,
+                    schedule_kind = ?5,
+                    schedule_config = ?6,
+                    updated_at = ?7
+                 WHERE id = ?8",
+                params![
+                    input.name,
+                    input.description,
+                    input.working_dir,
+                    input.auto_approve_tools as i64,
+                    input.schedule_kind,
+                    input.schedule_config,
+                    now,
+                    id,
+                ],
+            )
+            .map_err(|e| format!("Job update failed: {}", e))?;
+        if affected == 0 {
+            return Err(format!("No job with id {}", id));
+        }
+        Ok(())
+    }
+
+    pub fn delete_job(&self, id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM jobs WHERE id = ?1", params![id])
+            .map_err(|e| format!("Job delete failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn replace_job_steps(&self, job_id: i64, steps: &[JobStepInput]) -> Result<(), String> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+
+        tx.execute("DELETE FROM job_steps WHERE job_id = ?1", params![job_id])
+            .map_err(|e| format!("Step delete failed: {}", e))?;
+
+        for (i, step) in steps.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO job_steps (job_id, ordering, prompt, deep_research)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![job_id, i as i64, step.prompt, step.deep_research as i64],
+            )
+            .map_err(|e| format!("Step insert failed: {}", e))?;
+        }
+
+        let now = chrono_now();
+        tx.execute(
+            "UPDATE jobs SET updated_at = ?1 WHERE id = ?2",
+            params![now, job_id],
+        )
+        .map_err(|e| format!("Job timestamp update failed: {}", e))?;
+
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+        Ok(())
+    }
 }
 
 fn chrono_now() -> i64 {
@@ -643,6 +953,44 @@ pub fn db_replace_messages(
     messages: Vec<MessageInput>,
 ) -> Result<(), String> {
     state.replace_messages(&conversation_id, &messages)
+}
+
+#[tauri::command]
+pub fn db_create_job(state: tauri::State<'_, Database>, input: JobInput) -> Result<i64, String> {
+    state.create_job(&input)
+}
+
+#[tauri::command]
+pub fn db_list_jobs(state: tauri::State<'_, Database>) -> Result<Vec<JobSummary>, String> {
+    state.list_jobs()
+}
+
+#[tauri::command]
+pub fn db_get_job(state: tauri::State<'_, Database>, id: i64) -> Result<JobWithSteps, String> {
+    state.get_job(id)
+}
+
+#[tauri::command]
+pub fn db_update_job(
+    state: tauri::State<'_, Database>,
+    id: i64,
+    input: JobInput,
+) -> Result<(), String> {
+    state.update_job(id, &input)
+}
+
+#[tauri::command]
+pub fn db_delete_job(state: tauri::State<'_, Database>, id: i64) -> Result<(), String> {
+    state.delete_job(id)
+}
+
+#[tauri::command]
+pub fn db_replace_job_steps(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    steps: Vec<JobStepInput>,
+) -> Result<(), String> {
+    state.replace_job_steps(job_id, &steps)
 }
 
 #[cfg(test)]
@@ -856,6 +1204,230 @@ mod tests {
         let snap = db.lifetime_stats_snapshot().unwrap();
         assert!(snap.engines.is_empty());
         assert!(snap.globals.is_empty());
+    }
+
+    fn sample_job_input(name: &str) -> JobInput {
+        JobInput {
+            name: name.to_string(),
+            description: Some("desc".to_string()),
+            working_dir: "/tmp/work".to_string(),
+            auto_approve_tools: false,
+            schedule_kind: "manual".to_string(),
+            schedule_config: None,
+        }
+    }
+
+    fn step(prompt: &str) -> JobStepInput {
+        JobStepInput {
+            prompt: prompt.to_string(),
+            deep_research: false,
+        }
+    }
+
+    fn deep_step(prompt: &str) -> JobStepInput {
+        JobStepInput {
+            prompt: prompt.to_string(),
+            deep_research: true,
+        }
+    }
+
+    #[test]
+    fn jobs_migration_creates_tables() {
+        let db = test_db();
+        let conn = db.conn.lock().unwrap();
+        for table in ["jobs", "job_steps", "job_runs", "job_run_steps"] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT count(*) FROM {}", table), [], |r| r.get(0))
+                .unwrap_or_else(|e| panic!("missing table {}: {}", table, e));
+            assert_eq!(count, 0);
+        }
+    }
+
+    #[test]
+    fn create_and_list_jobs() {
+        let db = test_db();
+        let id1 = db
+            .create_job(&sample_job_input("Morning headlines"))
+            .unwrap();
+        let id2 = db.create_job(&sample_job_input("Weekly digest")).unwrap();
+        assert_ne!(id1, id2);
+
+        let jobs = db.list_jobs().unwrap();
+        assert_eq!(jobs.len(), 2);
+        let names: Vec<&str> = jobs.iter().map(|j| j.name.as_str()).collect();
+        assert!(names.contains(&"Morning headlines"));
+        assert!(names.contains(&"Weekly digest"));
+        // newly created jobs report zero steps
+        assert!(jobs.iter().all(|j| j.step_count == 0));
+    }
+
+    #[test]
+    fn get_job_returns_ordered_steps() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Job A")).unwrap();
+        db.replace_job_steps(
+            id,
+            &[
+                step("first prompt"),
+                deep_step("second prompt"),
+                step("third prompt"),
+            ],
+        )
+        .unwrap();
+
+        let job = db.get_job(id).unwrap();
+        assert_eq!(job.steps.len(), 3);
+        assert_eq!(job.steps[0].ordering, 0);
+        assert_eq!(job.steps[0].prompt, "first prompt");
+        assert!(!job.steps[0].deep_research);
+        assert_eq!(job.steps[1].ordering, 1);
+        assert!(job.steps[1].deep_research);
+        assert_eq!(job.steps[2].prompt, "third prompt");
+        assert!(!job.steps[2].deep_research);
+    }
+
+    #[test]
+    fn replace_job_steps_overwrites_previous_set() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Job B")).unwrap();
+        db.replace_job_steps(id, &[step("a"), step("b"), step("c")])
+            .unwrap();
+        db.replace_job_steps(id, &[deep_step("only one")]).unwrap();
+
+        let job = db.get_job(id).unwrap();
+        assert_eq!(job.steps.len(), 1);
+        assert_eq!(job.steps[0].ordering, 0);
+        assert_eq!(job.steps[0].prompt, "only one");
+        assert!(job.steps[0].deep_research);
+    }
+
+    #[test]
+    fn update_job_changes_fields_and_bumps_timestamp() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Original")).unwrap();
+        let before = db.get_job(id).unwrap();
+
+        // Wait a millisecond so updated_at can actually advance
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        db.update_job(
+            id,
+            &JobInput {
+                name: "Renamed".to_string(),
+                description: None,
+                working_dir: "/tmp/other".to_string(),
+                auto_approve_tools: true,
+                schedule_kind: "daily".to_string(),
+                schedule_config: Some(r#"{"time":"09:00"}"#.to_string()),
+            },
+        )
+        .unwrap();
+
+        let after = db.get_job(id).unwrap();
+        assert_eq!(after.name, "Renamed");
+        assert_eq!(after.description, None);
+        assert_eq!(after.working_dir, "/tmp/other");
+        assert!(after.auto_approve_tools);
+        assert_eq!(after.schedule_kind, "daily");
+        assert_eq!(
+            after.schedule_config.as_deref(),
+            Some(r#"{"time":"09:00"}"#)
+        );
+        assert!(after.updated_at > before.updated_at);
+        assert_eq!(after.created_at, before.created_at);
+    }
+
+    #[test]
+    fn update_missing_job_errors() {
+        let db = test_db();
+        let result = db.update_job(9999, &sample_job_input("ghost"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn delete_job_cascades_to_steps() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Doomed")).unwrap();
+        db.replace_job_steps(id, &[step("x"), step("y")]).unwrap();
+
+        db.delete_job(id).unwrap();
+
+        assert_eq!(db.list_jobs().unwrap().len(), 0);
+        let conn = db.conn.lock().unwrap();
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM job_steps", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn delete_job_cascades_to_runs_and_run_steps() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Run-bearing")).unwrap();
+        // Insert a synthetic run + run step directly; the runner that
+        // populates these lands in a later phase, but FK cascade should
+        // already be in place.
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO job_runs (job_id, status, trigger, queued_at)
+                 VALUES (?1, 'succeeded', 'manual', 0)",
+                params![id],
+            )
+            .unwrap();
+            let run_id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO job_run_steps
+                    (run_id, ordering, prompt_authored, prompt_rendered, status)
+                 VALUES (?1, 0, 'p', 'p', 'succeeded')",
+                params![run_id],
+            )
+            .unwrap();
+        }
+
+        db.delete_job(id).unwrap();
+        let conn = db.conn.lock().unwrap();
+        let runs: i64 = conn
+            .query_row("SELECT count(*) FROM job_runs", [], |r| r.get(0))
+            .unwrap();
+        let run_steps: i64 = conn
+            .query_row("SELECT count(*) FROM job_run_steps", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(runs, 0);
+        assert_eq!(run_steps, 0);
+    }
+
+    #[test]
+    fn list_jobs_reports_step_count() {
+        let db = test_db();
+        let id_a = db.create_job(&sample_job_input("A")).unwrap();
+        let id_b = db.create_job(&sample_job_input("B")).unwrap();
+        db.replace_job_steps(id_a, &[step("s1"), step("s2")])
+            .unwrap();
+        db.replace_job_steps(id_b, &[step("only")]).unwrap();
+
+        let jobs = db.list_jobs().unwrap();
+        let by_id: HashMap<i64, &JobSummary> = jobs.iter().map(|j| (j.id, j)).collect();
+        assert_eq!(by_id[&id_a].step_count, 2);
+        assert_eq!(by_id[&id_b].step_count, 1);
+    }
+
+    #[test]
+    fn schedule_config_round_trips_as_opaque_json() {
+        let db = test_db();
+        let json = r#"{"day":"mon","time":"09:30"}"#.to_string();
+        let id = db
+            .create_job(&JobInput {
+                name: "Weekly".to_string(),
+                description: None,
+                working_dir: "/x".to_string(),
+                auto_approve_tools: false,
+                schedule_kind: "weekly".to_string(),
+                schedule_config: Some(json.clone()),
+            })
+            .unwrap();
+        let job = db.get_job(id).unwrap();
+        assert_eq!(job.schedule_config, Some(json));
     }
 
     #[test]
