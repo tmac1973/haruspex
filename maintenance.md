@@ -358,10 +358,116 @@ smell.
 | `stores/server.svelte.ts` / `whisper`/`tts` | Sidecar status + ports     |
 | `stores/setup.svelte.ts`| First-run wizard state                           |
 | `stores/fileConflict.svelte.ts` / `sandboxApproval` | Modal queues       |
+| `stores/jobs.svelte.ts` / `jobRuns.svelte.ts` | Job definitions + run history (SQLite) |
 
 A new persistent record goes through `db.ts`. A new piece of session-only
 state goes into a runes store. Settings go into the settings store. Don't
 mix.
+
+---
+
+## 11a. Jobs (Phase 14)
+
+The Jobs tab lets users author, schedule, and run multi-step prompt
+pipelines unattended. Each step runs as a fresh agent conversation; the
+previous step's final assistant text is auto-prepended to the next
+step's prompt. No conversation history carries between steps — plays to
+the 9B model's strength at single-objective prompts.
+
+### Schema
+
+Four tables, all in the app SQLite DB, all created by `db.rs`'s single
+migration block. Snapshots into `job_run_steps` rather than FK-ing
+`job_steps` so editing a job later doesn't rewrite past run history.
+
+| Table           | Purpose                                                       |
+| --------------- | ------------------------------------------------------------- |
+| `jobs`          | One row per saved job (name, working_dir, auto_approve, schedule, next_due_at) |
+| `job_steps`     | Ordered prompts that make up a job (job_id, ordering, prompt, deep_research)   |
+| `job_runs`      | One row per run attempt (status, trigger, queued/started/finished, error)      |
+| `job_run_steps` | Per-step record within a run (prompt_authored, prompt_rendered, status, output)|
+
+### Execution flow
+
+```
+JobsTab → JobList Run button → runner.enqueue(jobId)
+   │           │
+   │           ├─ getJob() — snapshots steps at enqueue time
+   │           ├─ createJobRun() — inserts job_runs row (status='queued')
+   │           └─ pending.push(snapshot)
+   │
+   └─ runPipeline (per run, in finally drains next from queue)
+         ├─ markRunStarted
+         ├─ for each step:
+         │    ├─ markRunStepStarted (with rendered prompt)
+         │    ├─ withInferenceSlot(() => runWithAutoApprove(() => runEphemeralTurn(...)))
+         │    └─ markRunStepFinished
+         └─ markRunFinished
+```
+
+`runEphemeralTurn` (`src/lib/agent/runEphemeralTurn.ts`) wraps
+`runAgentLoop` for the headless case — no chat store, no persisted
+conversation row, just system+user messages and a streaming callback.
+
+### Inference queue (`inferenceQueue.svelte.ts`)
+
+Both chat and jobs funnel `runAgentLoop` calls through this FIFO. The
+default capacity is 1; the remote-backend setting
+`allowParallelInference` makes capacity unbounded for servers that
+support concurrent requests (vLLM, llama.cpp `-np N`, hosted APIs).
+Each acquire is exposed as a `ticket` (with consumer identity) so the
+UI can render "waiting behind X" without subscribing to the queue.
+
+### Auto-approve plumbing (`approvalOverride.ts`)
+
+A non-reentrant module-level flag flipped by `runWithAutoApprove(fn)`.
+Two existing tool prompts consult it:
+
+- `sandbox.ts run_python` — skip `askApproval`, auto-allow.
+- `fs-write.ts overwrite conflict` — skip `askFileConflict`, auto-overwrite.
+
+Adding a new interactive tool prompt? Read `isAutoApproveActive()` and
+default to the unattended choice if true. Safe because the agent loop
+serializes tool calls within a turn and the runner serializes runs.
+
+### Scheduler (`scheduler.svelte.ts`)
+
+A single `setInterval(30_000)` ticker started from `+layout.svelte`'s
+onMount, after `recoverOrphanRuns`. Each tick:
+
+1. `listDueJobs(now)` — `WHERE schedule_kind != 'manual' AND next_due_at <= ?`
+2. For each due job: recompute `next_due_at` FIRST (via TS
+   `computeNextDueAt`), then `enqueue(jobId, 'scheduled')`. Recompute-
+   first avoids a double-fire if enqueue is slow.
+
+Date math lives in TS so we don't take a chrono dep. The `interval`
+branch skips ahead by missed periods when we've drifted behind (e.g.
+app was closed for a while) so the catch-up isn't a burst.
+
+The app must be open for the scheduler to fire — there is no headless
+mode. The job editor surfaces this in the schedule field's tooltip + an
+amber warning banner.
+
+### Crash recovery
+
+`recover_orphan_runs()` (Rust) sweeps any `job_runs` row at `queued` or
+`running` to `interrupted`, and any `job_run_steps` at `running` to
+`cancelled`. Called from `+layout.svelte` onMount before the scheduler
+starts. Idempotent. `COALESCE`s preserve existing timestamps.
+
+### What to read when modifying
+
+- Adding a schedule kind → `Schedule` union + `scheduleToConfigJson` +
+  `configJsonToSchedule` + `computeNextDueAt` (jobs.svelte.ts) +
+  `JobScheduleField.svelte`. The Rust side stores `schedule_config` as
+  opaque JSON, so no Rust change required.
+- Changing what a step can do → snapshot fields land in
+  `JobStepInput`/`JobStep` on both sides. `replace_job_steps` rewrites
+  the whole step list — there's no per-step UPDATE.
+- New per-job behavior flag (like `auto_approve_tools`) → schema column
+  + JobInput + JobSummary + JobWithSteps + form control + thread into
+  the runner. Lots of touch points; consider whether it can be a
+  setting instead.
 
 ---
 

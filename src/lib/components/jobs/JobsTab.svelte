@@ -55,8 +55,17 @@
 			{/key}
 		{:else if selectedId === null}
 			<div class="empty-state">
-				<h2>No job selected</h2>
-				<p>Pick a job on the left, or create a new one.</p>
+				<h2>Jobs</h2>
+				<p>
+					Save a prompt (or a chain of prompts) and run it on demand or on a schedule. Each step
+					runs in a fresh conversation against a working directory you choose — useful for recurring
+					tasks like "summarize today's headlines and write them to a PDF" or "clean up the unread
+					messages in this folder".
+				</p>
+				<p class="hint">
+					Pick a job on the left to edit or view its history — or click <strong>+ New</strong> to create
+					one.
+				</p>
 			</div>
 		{:else}
 			{#key selectedId}
@@ -108,6 +117,17 @@
 	}
 
 	.empty-state p {
-		margin: 0;
+		margin: 0 0 12px 0;
+		max-width: 520px;
+		line-height: 1.5;
+	}
+
+	.empty-state p:last-child {
+		margin-bottom: 0;
+	}
+
+	.empty-state .hint {
+		font-size: 0.85rem;
+		color: var(--text-secondary);
 	}
 </style>

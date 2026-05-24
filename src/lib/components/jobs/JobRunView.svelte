@@ -93,6 +93,10 @@
 						</div>
 					{/if}
 
+					{#if step.sizeWarning}
+						<div class="warning">⚠ {step.sizeWarning}</div>
+					{/if}
+
 					{#if step.searchSteps.length > 0}
 						<SearchStepView steps={step.searchSteps} />
 					{/if}
@@ -266,6 +270,16 @@
 		border: 1px solid var(--error-border);
 		border-radius: 4px;
 		font-size: 0.85rem;
+	}
+
+	.warning {
+		padding: 6px 10px;
+		background: color-mix(in srgb, #f59e0b 12%, transparent);
+		border: 1px solid color-mix(in srgb, #f59e0b 40%, var(--border));
+		border-radius: 4px;
+		font-size: 0.8rem;
+		line-height: 1.35;
+		color: var(--text-primary);
 	}
 
 	button {

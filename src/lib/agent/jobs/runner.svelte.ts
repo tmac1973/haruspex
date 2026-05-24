@@ -48,8 +48,37 @@ export interface RunStepState {
 	output: string;
 	error: string | null;
 	searchSteps: SearchStep[];
+	/**
+	 * Soft warning emitted when the rendered prompt is suspiciously large
+	 * relative to the active context budget (~80%). The step still runs;
+	 * the UI just shows the warning so the user knows why the model
+	 * truncated or returned poor output. Null when within budget.
+	 */
+	sizeWarning: string | null;
 	startedAt: number | null;
 	finishedAt: number | null;
+}
+
+/**
+ * Crude characters→tokens ratio. Llama-family BPEs land in the 3-4
+ * range; we use 4 because over-estimating budget hurts more than
+ * under-estimating (we'd rather warn too often than miss a too-big
+ * prompt).
+ */
+const CHARS_PER_TOKEN = 4;
+const PROMPT_BUDGET_FRACTION = 0.8;
+
+function estimateSizeWarning(rendered: string, contextSize: number): string | null {
+	if (contextSize <= 0) return null;
+	const estTokens = Math.ceil(rendered.length / CHARS_PER_TOKEN);
+	const budget = Math.floor(contextSize * PROMPT_BUDGET_FRACTION);
+	if (estTokens <= budget) return null;
+	return (
+		`Rendered prompt is roughly ${estTokens.toLocaleString()} tokens — ` +
+		`above ${Math.round(PROMPT_BUDGET_FRACTION * 100)}% of the ${contextSize.toLocaleString()}-token context. ` +
+		`The model may truncate, hallucinate, or run out of room for its reply. ` +
+		`Consider splitting this step further.`
+	);
 }
 
 export interface RunState {
@@ -182,6 +211,7 @@ function startRun(queued: QueuedRun): void {
 			output: '',
 			error: null,
 			searchSteps: [],
+			sizeWarning: null,
 			startedAt: null,
 			finishedAt: null
 		})),
@@ -264,9 +294,20 @@ async function runOneStep(
 		backend.mode === 'remote' ? backend.remoteVisionSupported !== false : true;
 	const startedAt = Date.now();
 
+	const contextSize = getActiveContextSize();
+	const sizeWarning = estimateSizeWarning(rendered, contextSize);
+	if (sizeWarning) {
+		logDebug('jobs', 'step prompt over budget', {
+			runId,
+			stepIndex,
+			length: rendered.length,
+			contextSize
+		});
+	}
 	patchStep(runId, stepIndex, {
 		status: 'running',
 		promptRendered: rendered,
+		sizeWarning,
 		startedAt
 	});
 	if (current && current.id === runId) {
@@ -296,7 +337,7 @@ async function runOneStep(
 					runEphemeralTurn({
 						userMessage: rendered,
 						workingDir: job.working_dir,
-						contextSize: getActiveContextSize(),
+						contextSize,
 						deepResearch: step.deep_research,
 						visionSupported,
 						signal: abort.signal,

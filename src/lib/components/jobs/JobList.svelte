@@ -85,7 +85,9 @@
 	</div>
 	<div class="rows">
 		{#if jobs.length === 0}
-			<div class="empty">No jobs yet.</div>
+			<div class="empty">
+				No jobs yet. Click <strong>+ New</strong> to create one.
+			</div>
 		{:else}
 			{#each jobs as job (job.id)}
 				<div
