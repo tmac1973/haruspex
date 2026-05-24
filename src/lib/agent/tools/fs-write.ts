@@ -5,6 +5,7 @@ import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { IMAGE_EXT_RE } from './fs-read';
 import { lintPythonIfApplicable } from './python-lint';
+import { isAutoApproveActive } from '$lib/stores/approvalOverride';
 
 /**
  * Outcome of pre-write conflict resolution. `null` means the user
@@ -36,6 +37,13 @@ async function resolveWritePathInteractive(
 	}
 	if (!exists) {
 		return { finalPath: relPath, overwrite: false };
+	}
+
+	// Unattended runs (jobs) can't show a modal, so we treat existing-file
+	// conflicts as "overwrite". The job authoring UI surfaces this so the
+	// user knows what they're opting into.
+	if (isAutoApproveActive()) {
+		return { finalPath: relPath, overwrite: true };
 	}
 
 	const { askFileConflict } = await import('$lib/stores/fileConflict.svelte');
@@ -91,44 +99,256 @@ async function fsWriteWithConflictCheck(
 	}
 }
 
-/**
- * Factory for the `execute` handler shared by every `fs_write_*` tool:
- * resolves any file-conflict, forwards `{ workdir, relPath, ...payload,
- * overwrite }` to the named Rust command, and tracks the resulting
- * file in `ctx.filesWrittenThisTurn`. Each tool registration boils
- * down to one line.
- */
-function writeExecutor(
-	command: string,
-	payload: (args: Record<string, unknown>) => Record<string, unknown>
-) {
-	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> =>
-		fsWriteWithConflictCheck(
-			command,
-			ctx.workingDir!,
-			args.path as string,
-			payload(args),
-			ctx.filesWrittenThisTurn
-		);
-}
+// Per-tool executors below specialize on the input shape — text-content,
+// spreadsheet, slides — and each runs a shape-specific validator before
+// dispatching to fsWriteWithConflictCheck. The validators exist because
+// unattended runs (jobs) have no way to notice the tool wrote a stub
+// file and reported "Wrote: foo" — without them, scaffold/placeholder
+// inputs silently produce useless files.
 
 // Shared sheet schema used by both xlsx and ods.
 const SHEETS_SCHEMA = {
 	type: 'array' as const,
-	description: 'Array of sheet objects. Each sheet needs a name and rows.',
+	description:
+		'Array of sheet objects. Each sheet has a name and rows. rows is a 2D array of LITERAL cell values — there is no templating, no variable substitution, no server-side expansion. Pass the actual data you want written. Numeric strings (e.g. "42", "3.14") auto-convert to numbers; strings starting with "=" become spreadsheet formulas (e.g. "=SUM(B2:B10)"); everything else is plain text. Row 1 is typically your header row.',
 	items: {
 		type: 'object' as const,
 		properties: {
 			name: { type: 'string' as const, description: 'Sheet name (tab label)' },
 			rows: {
 				type: 'array' as const,
-				description: '2D array: array of rows, each row is an array of cell values.',
+				description:
+					'2D array: array of rows, each row is an array of cell values as strings. Example: [["Name","Score"],["Alice","95"],["Bob","87"]]. The first inner array is the header row; subsequent arrays are data rows. Pass every row you want in the file — the tool does not generate rows for you.',
 				items: { type: 'array' as const, items: { type: 'string' as const } }
 			}
 		},
 		required: ['name', 'rows']
 	}
 };
+
+/**
+ * Reject obviously stub spreadsheet input — empty sheets, placeholder
+ * rows like ["/formula"], scaffolds where a whole column is blank,
+ * single rows that crammed multi-row data into one row, etc. Small
+ * local models sometimes write a "scaffold" call expecting the tool to
+ * fill in real data; without this guard the tool silently writes
+ * nonsense and reports success.
+ */
+function validateSheets(args: Record<string, unknown>): string | null {
+	const sheets = args.sheets;
+	if (!Array.isArray(sheets) || sheets.length === 0) {
+		return 'sheets must be a non-empty array.';
+	}
+	for (let i = 0; i < sheets.length; i++) {
+		const err = validateSheet(sheets[i], i + 1);
+		if (err) return err;
+	}
+	return null;
+}
+
+function isBlankCell(cell: unknown): boolean {
+	return typeof cell !== 'string' || cell.trim().length === 0;
+}
+
+function validateSheet(raw: unknown, sheetNum: number): string | null {
+	const sheet = raw as { name?: unknown; rows?: unknown };
+	const rows = sheet.rows;
+	if (!Array.isArray(rows) || rows.length === 0) {
+		return `Sheet ${sheetNum} has no rows. Pass the actual data — header row plus one row per record.`;
+	}
+
+	const header = rows[0];
+	const dataRows = rows.slice(1);
+
+	const hasRealData = dataRows.some(
+		(r) => Array.isArray(r) && r.some((cell) => !isBlankCell(cell))
+	);
+	if (!hasRealData) {
+		return (
+			`Sheet ${sheetNum} contains only a header row (or rows with no real cell data). ` +
+			`Pass every data row you want written — the tool does not expand placeholders or templates.`
+		);
+	}
+
+	const looksLikePlaceholder = rows.some(
+		(r) =>
+			Array.isArray(r) &&
+			r.length === 1 &&
+			typeof r[0] === 'string' &&
+			/^\/[a-z_]+$/i.test(r[0].trim())
+	);
+	if (looksLikePlaceholder) {
+		return (
+			`Sheet ${sheetNum} contains a placeholder-style row like ["/formula"] or ["/data"]. ` +
+			`This tool does not expand directives — pass the literal cell values you want written.`
+		);
+	}
+
+	if (Array.isArray(header) && header.length > 0) {
+		const headerCols = header.length;
+
+		// Column-count blowout. If header has N cols but a data row has
+		// way more cells, the model crammed multiple rows of data into
+		// one row (alternating value/blank/value/blank…). Reject so it
+		// emits one row per record instead.
+		for (let r = 0; r < dataRows.length; r++) {
+			const row = dataRows[r];
+			if (Array.isArray(row) && row.length > headerCols * 2 && row.length > headerCols + 4) {
+				return (
+					`Sheet ${sheetNum} data row ${r + 1} has ${row.length} cells but the header has ${headerCols}. ` +
+					`Each data row must have one cell per header column — emit one row per record, not all records crammed into a single row.`
+				);
+			}
+		}
+
+		// Entirely-blank column. If the model named a header column but
+		// every data row's cell for that column is blank, it's almost
+		// certainly a scaffold awaiting fill-in. Skip the check for
+		// columns whose header is itself blank (those are unlabeled
+		// optional columns).
+		for (let col = 0; col < headerCols; col++) {
+			if (isBlankCell(header[col])) continue;
+			const colHasData = dataRows.some(
+				(row) => Array.isArray(row) && col < row.length && !isBlankCell(row[col])
+			);
+			if (!colHasData) {
+				const headerName = String(header[col]).trim();
+				return (
+					`Sheet ${sheetNum} column "${headerName}" is entirely blank in every data row. ` +
+					`Compute the values for that column first (e.g. via run_python) and pass them as actual cell strings — the tool does not fill them in for you.`
+				);
+			}
+		}
+	}
+
+	return null;
+}
+
+function spreadsheetWriteExecutor(command: string) {
+	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const validationError = validateSheets(args);
+		if (validationError) {
+			return toolResult(toolError(validationError));
+		}
+		return fsWriteWithConflictCheck(
+			command,
+			ctx.workingDir!,
+			args.path as string,
+			{ sheets: args.sheets },
+			ctx.filesWrittenThisTurn
+		);
+	};
+}
+
+/**
+ * Reject empty or whitespace-only content for the text-based writers
+ * (text/docx/odt/pdf). Without this guard the tool writes a zero-byte
+ * file and reports success, which an unattended job has no way to
+ * notice.
+ */
+function validateTextContent(args: Record<string, unknown>, label: string): string | null {
+	const content = args.content;
+	if (typeof content !== 'string' || content.trim().length === 0) {
+		return (
+			`${label} requires non-empty content. Compose the text (e.g. via run_python or directly) ` +
+			`and pass it as the content argument — the tool does not generate content for you.`
+		);
+	}
+	return null;
+}
+
+function textWriteExecutor(
+	command: string,
+	label: string,
+	payload: (args: Record<string, unknown>) => Record<string, unknown> = (args) => ({
+		content: args.content
+	})
+) {
+	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const err = validateTextContent(args, label);
+		if (err) return toolResult(toolError(err));
+		return fsWriteWithConflictCheck(
+			command,
+			ctx.workingDir!,
+			args.path as string,
+			payload(args),
+			ctx.filesWrittenThisTurn
+		);
+	};
+}
+
+/**
+ * Reject slide-deck inputs that are obvious scaffolds — zero slides,
+ * empty titles, content slides with no bullets and no image, or
+ * placeholder-style bullets.
+ */
+function validateSlides(args: Record<string, unknown>): string | null {
+	const slides = args.slides;
+	if (!Array.isArray(slides) || slides.length === 0) {
+		return 'slides must be a non-empty array. Pass every slide you want in the deck.';
+	}
+	for (let i = 0; i < slides.length; i++) {
+		const slide = slides[i] as {
+			title?: unknown;
+			layout?: unknown;
+			bullets?: unknown;
+			image?: unknown;
+			subtitle?: unknown;
+		};
+		const num = i + 1;
+		if (typeof slide.title !== 'string' || slide.title.trim().length === 0) {
+			return `Slide ${num} has no title. Every slide must have a non-empty title string.`;
+		}
+		const layout = slide.layout ?? 'content';
+		if (layout === 'section') continue;
+
+		const bullets = slide.bullets;
+		const hasBullets =
+			Array.isArray(bullets) &&
+			bullets.some((b) => {
+				if (typeof b === 'string') return b.trim().length > 0;
+				if (b && typeof b === 'object' && 'text' in b) {
+					const text = (b as { text: unknown }).text;
+					return typeof text === 'string' && text.trim().length > 0;
+				}
+				return false;
+			});
+		const hasImage = typeof slide.image === 'string' && slide.image.trim().length > 0;
+		if (!hasBullets && !hasImage) {
+			return (
+				`Slide ${num} ("${slide.title}") has no bullets and no image. Content slides need at least one bullet or an image — ` +
+				`compute the content first and pass it as bullets, or use layout:"section" for divider slides.`
+			);
+		}
+		if (Array.isArray(bullets)) {
+			const placeholder = bullets.some((b) => {
+				const text = typeof b === 'string' ? b : (b as { text?: unknown })?.text;
+				return typeof text === 'string' && /^\/[a-z_]+$/i.test(text.trim());
+			});
+			if (placeholder) {
+				return (
+					`Slide ${num} contains a placeholder-style bullet like "/content" or "/data". ` +
+					`Pass the literal bullet text — the tool does not expand directives.`
+				);
+			}
+		}
+	}
+	return null;
+}
+
+function slidesWriteExecutor(command: string) {
+	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const err = validateSlides(args);
+		if (err) return toolResult(toolError(err));
+		return fsWriteWithConflictCheck(
+			command,
+			ctx.workingDir!,
+			args.path as string,
+			{ slides: args.slides },
+			ctx.filesWrittenThisTurn
+		);
+	};
+}
 
 // Shared slide schema used by both pptx and odp
 const SLIDE_SCHEMA = {
@@ -215,7 +435,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_text', (args) => ({ content: args.content }))
+	execute: textWriteExecutor('fs_write_text', 'fs_write_text')
 });
 
 registerTool({
@@ -241,7 +461,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_docx', (args) => ({ content: args.content }))
+	execute: textWriteExecutor('fs_write_docx', 'fs_write_docx')
 });
 
 // Markdown→PDF tool. Always exposed (the Python toggle no longer hides
@@ -270,7 +490,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_pdf', (args) => ({ content: args.content }))
+	execute: textWriteExecutor('fs_write_pdf', 'fs_write_pdf')
 });
 
 registerTool({
@@ -280,7 +500,11 @@ registerTool({
 		function: {
 			name: 'fs_write_xlsx',
 			description:
-				'Create an Excel spreadsheet (.xlsx) file in the working directory. Provide one or more sheets, each with a name and a 2D array of rows. Numeric strings are written as numbers; everything else is written as text.',
+				'Create an Excel spreadsheet (.xlsx) file in the working directory. ' +
+				'Compute your data FIRST (e.g. via run_python), then pass the actual row arrays here. ' +
+				'There is no templating or server-side expansion — every row you want in the file must be in the `rows` argument. ' +
+				'Numeric strings auto-convert to numbers, strings starting with "=" become formulas, everything else is text. ' +
+				'Example: sheets=[{name:"Data",rows:[["N","F(N)"],["1","0"],["2","1"],["3","1"]]}].',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -292,7 +516,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_xlsx', (args) => ({ sheets: args.sheets }))
+	execute: spreadsheetWriteExecutor('fs_write_xlsx')
 });
 
 registerTool({
@@ -318,7 +542,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_odt', (args) => ({ content: args.content }))
+	execute: textWriteExecutor('fs_write_odt', 'fs_write_odt')
 });
 
 registerTool({
@@ -340,7 +564,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_ods', (args) => ({ sheets: args.sheets }))
+	execute: spreadsheetWriteExecutor('fs_write_ods')
 });
 
 // Legacy hand-rolled OOXML PPTX path. Same arrangement as fs_write_pdf:
@@ -366,7 +590,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_pptx', (args) => ({ slides: args.slides }))
+	execute: slidesWriteExecutor('fs_write_pptx')
 });
 
 registerTool({
@@ -388,7 +612,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: writeExecutor('fs_write_odp', (args) => ({ slides: args.slides }))
+	execute: slidesWriteExecutor('fs_write_odp')
 });
 
 registerTool({

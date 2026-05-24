@@ -43,6 +43,104 @@ pub struct ConversationWithMessages {
     pub messages: Vec<DbMessage>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct JobStep {
+    pub id: i64,
+    pub ordering: i64,
+    pub prompt: String,
+    pub deep_research: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct JobStepInput {
+    pub prompt: String,
+    pub deep_research: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JobSummary {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub working_dir: String,
+    pub auto_approve_tools: bool,
+    pub schedule_kind: String,
+    pub schedule_config: Option<String>,
+    pub next_due_at: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub step_count: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JobWithSteps {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub working_dir: String,
+    pub auto_approve_tools: bool,
+    pub schedule_kind: String,
+    pub schedule_config: Option<String>,
+    pub next_due_at: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub steps: Vec<JobStep>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct JobInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub working_dir: String,
+    pub auto_approve_tools: bool,
+    pub schedule_kind: String,
+    pub schedule_config: Option<String>,
+    /// Pre-computed unix ms when this job is next due. The frontend
+    /// (jobs store) owns the date math so we don't need chrono on the
+    /// Rust side. NULL for `manual` schedules.
+    #[serde(default)]
+    pub next_due_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JobRunSummary {
+    pub id: i64,
+    pub job_id: i64,
+    pub status: String,
+    pub trigger: String,
+    pub queued_at: i64,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JobRunStep {
+    pub id: i64,
+    pub run_id: i64,
+    pub ordering: i64,
+    pub prompt_authored: String,
+    pub prompt_rendered: String,
+    pub status: String,
+    pub output: Option<String>,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JobRunWithSteps {
+    pub id: i64,
+    pub job_id: i64,
+    pub status: String,
+    pub trigger: String,
+    pub queued_at: i64,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    pub error: Option<String>,
+    pub steps: Vec<JobRunStep>,
+}
+
 /// Incremental change to a single engine's lifetime stats row.
 ///
 /// Caller is expected to set `attempt = true` for every recorded outcome and
@@ -190,7 +288,64 @@ impl Database {
             CREATE TABLE IF NOT EXISTS search_stats_globals (
                 key TEXT PRIMARY KEY,
                 value INTEGER NOT NULL
-            );",
+            );
+
+            CREATE TABLE IF NOT EXISTS jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                working_dir TEXT NOT NULL,
+                auto_approve_tools INTEGER NOT NULL DEFAULT 0,
+                schedule_kind TEXT NOT NULL DEFAULT 'manual',
+                schedule_config TEXT,
+                next_due_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_jobs_next_due
+                ON jobs(next_due_at) WHERE next_due_at IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS job_steps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                ordering INTEGER NOT NULL,
+                prompt TEXT NOT NULL,
+                deep_research INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_job_steps_job
+                ON job_steps(job_id, ordering);
+
+            CREATE TABLE IF NOT EXISTS job_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                status TEXT NOT NULL,
+                trigger TEXT NOT NULL,
+                queued_at INTEGER NOT NULL,
+                started_at INTEGER,
+                finished_at INTEGER,
+                error TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_job_runs_job
+                ON job_runs(job_id, queued_at DESC);
+
+            CREATE TABLE IF NOT EXISTS job_run_steps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL REFERENCES job_runs(id) ON DELETE CASCADE,
+                ordering INTEGER NOT NULL,
+                prompt_authored TEXT NOT NULL,
+                prompt_rendered TEXT NOT NULL,
+                status TEXT NOT NULL,
+                output TEXT,
+                started_at INTEGER,
+                finished_at INTEGER,
+                error TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_job_run_steps_run
+                ON job_run_steps(run_id, ordering);",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
@@ -564,6 +719,488 @@ impl Database {
 
         Ok(())
     }
+
+    pub fn create_job(&self, input: &JobInput) -> Result<i64, String> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono_now();
+        conn.execute(
+            "INSERT INTO jobs
+                (name, description, working_dir, auto_approve_tools,
+                 schedule_kind, schedule_config, next_due_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+            params![
+                input.name,
+                input.description,
+                input.working_dir,
+                input.auto_approve_tools as i64,
+                input.schedule_kind,
+                input.schedule_config,
+                input.next_due_at,
+                now,
+            ],
+        )
+        .map_err(|e| format!("Job insert failed: {}", e))?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn list_jobs(&self) -> Result<Vec<JobSummary>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
+                        j.schedule_kind, j.schedule_config, j.next_due_at,
+                        j.created_at, j.updated_at,
+                        (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count
+                 FROM jobs j
+                 ORDER BY j.updated_at DESC",
+            )
+            .map_err(|e| format!("Jobs query failed: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(JobSummary {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    working_dir: row.get(3)?,
+                    auto_approve_tools: row.get::<_, i64>(4)? != 0,
+                    schedule_kind: row.get(5)?,
+                    schedule_config: row.get(6)?,
+                    next_due_at: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                    step_count: row.get(10)?,
+                })
+            })
+            .map_err(|e| format!("Jobs query failed: {}", e))?;
+
+        let mut jobs = Vec::new();
+        for row in rows {
+            jobs.push(row.map_err(|e| format!("Jobs row read failed: {}", e))?);
+        }
+        Ok(jobs)
+    }
+
+    pub fn get_job(&self, id: i64) -> Result<JobWithSteps, String> {
+        let conn = self.conn.lock().unwrap();
+
+        let (
+            name,
+            description,
+            working_dir,
+            auto_approve_tools,
+            schedule_kind,
+            schedule_config,
+            next_due_at,
+            created_at,
+            updated_at,
+        ) = conn
+            .query_row(
+                "SELECT name, description, working_dir, auto_approve_tools,
+                        schedule_kind, schedule_config, next_due_at,
+                        created_at, updated_at
+                 FROM jobs WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)? != 0,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<i64>>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                    ))
+                },
+            )
+            .map_err(|e| format!("Job not found: {}", e))?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, ordering, prompt, deep_research
+                 FROM job_steps WHERE job_id = ?1 ORDER BY ordering ASC",
+            )
+            .map_err(|e| format!("Steps query failed: {}", e))?;
+
+        let steps = stmt
+            .query_map(params![id], |row| {
+                Ok(JobStep {
+                    id: row.get(0)?,
+                    ordering: row.get(1)?,
+                    prompt: row.get(2)?,
+                    deep_research: row.get::<_, i64>(3)? != 0,
+                })
+            })
+            .map_err(|e| format!("Steps query failed: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Steps row read failed: {}", e))?;
+
+        Ok(JobWithSteps {
+            id,
+            name,
+            description,
+            working_dir,
+            auto_approve_tools,
+            schedule_kind,
+            schedule_config,
+            next_due_at,
+            created_at,
+            updated_at,
+            steps,
+        })
+    }
+
+    pub fn update_job(&self, id: i64, input: &JobInput) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono_now();
+        let affected = conn
+            .execute(
+                "UPDATE jobs SET
+                    name = ?1,
+                    description = ?2,
+                    working_dir = ?3,
+                    auto_approve_tools = ?4,
+                    schedule_kind = ?5,
+                    schedule_config = ?6,
+                    next_due_at = ?7,
+                    updated_at = ?8
+                 WHERE id = ?9",
+                params![
+                    input.name,
+                    input.description,
+                    input.working_dir,
+                    input.auto_approve_tools as i64,
+                    input.schedule_kind,
+                    input.schedule_config,
+                    input.next_due_at,
+                    now,
+                    id,
+                ],
+            )
+            .map_err(|e| format!("Job update failed: {}", e))?;
+        if affected == 0 {
+            return Err(format!("No job with id {}", id));
+        }
+        Ok(())
+    }
+
+    pub fn set_job_next_due_at(&self, job_id: i64, next_due_at: Option<i64>) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let affected = conn
+            .execute(
+                "UPDATE jobs SET next_due_at = ?1 WHERE id = ?2",
+                params![next_due_at, job_id],
+            )
+            .map_err(|e| format!("next_due_at update failed: {}", e))?;
+        if affected == 0 {
+            return Err(format!("No job with id {}", job_id));
+        }
+        Ok(())
+    }
+
+    pub fn list_due_jobs(&self, now_ms: i64) -> Result<Vec<JobSummary>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
+                        j.schedule_kind, j.schedule_config, j.next_due_at,
+                        j.created_at, j.updated_at,
+                        (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count
+                 FROM jobs j
+                 WHERE j.schedule_kind != 'manual'
+                   AND j.next_due_at IS NOT NULL
+                   AND j.next_due_at <= ?1
+                 ORDER BY j.next_due_at ASC",
+            )
+            .map_err(|e| format!("Due jobs query failed: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![now_ms], |row| {
+                Ok(JobSummary {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    working_dir: row.get(3)?,
+                    auto_approve_tools: row.get::<_, i64>(4)? != 0,
+                    schedule_kind: row.get(5)?,
+                    schedule_config: row.get(6)?,
+                    next_due_at: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                    step_count: row.get(10)?,
+                })
+            })
+            .map_err(|e| format!("Due jobs query failed: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Due jobs row read failed: {}", e))
+    }
+
+    pub fn delete_job(&self, id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM jobs WHERE id = ?1", params![id])
+            .map_err(|e| format!("Job delete failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn replace_job_steps(&self, job_id: i64, steps: &[JobStepInput]) -> Result<(), String> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+
+        tx.execute("DELETE FROM job_steps WHERE job_id = ?1", params![job_id])
+            .map_err(|e| format!("Step delete failed: {}", e))?;
+
+        for (i, step) in steps.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO job_steps (job_id, ordering, prompt, deep_research)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![job_id, i as i64, step.prompt, step.deep_research as i64],
+            )
+            .map_err(|e| format!("Step insert failed: {}", e))?;
+        }
+
+        let now = chrono_now();
+        tx.execute(
+            "UPDATE jobs SET updated_at = ?1 WHERE id = ?2",
+            params![now, job_id],
+        )
+        .map_err(|e| format!("Job timestamp update failed: {}", e))?;
+
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn create_job_run(
+        &self,
+        job_id: i64,
+        trigger: &str,
+        step_prompts: &[String],
+    ) -> Result<i64, String> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+
+        let now = chrono_now();
+        tx.execute(
+            "INSERT INTO job_runs (job_id, status, trigger, queued_at)
+             VALUES (?1, 'queued', ?2, ?3)",
+            params![job_id, trigger, now],
+        )
+        .map_err(|e| format!("Run insert failed: {}", e))?;
+        let run_id = tx.last_insert_rowid();
+
+        for (i, prompt) in step_prompts.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO job_run_steps
+                    (run_id, ordering, prompt_authored, prompt_rendered, status)
+                 VALUES (?1, ?2, ?3, ?3, 'pending')",
+                params![run_id, i as i64, prompt],
+            )
+            .map_err(|e| format!("Run step insert failed: {}", e))?;
+        }
+
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+        Ok(run_id)
+    }
+
+    pub fn mark_run_started(&self, run_id: i64, started_at: i64) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE job_runs SET status = 'running', started_at = ?1
+             WHERE id = ?2 AND status = 'queued'",
+            params![started_at, run_id],
+        )
+        .map_err(|e| format!("Run started update failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn mark_run_finished(
+        &self,
+        run_id: i64,
+        status: &str,
+        finished_at: i64,
+        error: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE job_runs SET status = ?1, finished_at = ?2, error = ?3
+             WHERE id = ?4",
+            params![status, finished_at, error, run_id],
+        )
+        .map_err(|e| format!("Run finish update failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn mark_run_step_started(
+        &self,
+        run_id: i64,
+        ordering: i64,
+        started_at: i64,
+        prompt_rendered: &str,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE job_run_steps
+                SET status = 'running', started_at = ?1, prompt_rendered = ?2
+                WHERE run_id = ?3 AND ordering = ?4",
+            params![started_at, prompt_rendered, run_id, ordering],
+        )
+        .map_err(|e| format!("Step started update failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn mark_run_step_finished(
+        &self,
+        run_id: i64,
+        ordering: i64,
+        status: &str,
+        output: Option<&str>,
+        error: Option<&str>,
+        finished_at: i64,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE job_run_steps
+                SET status = ?1, output = ?2, error = ?3, finished_at = ?4
+                WHERE run_id = ?5 AND ordering = ?6",
+            params![status, output, error, finished_at, run_id, ordering],
+        )
+        .map_err(|e| format!("Step finished update failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn list_job_runs(&self, job_id: i64) -> Result<Vec<JobRunSummary>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, job_id, status, trigger, queued_at, started_at, finished_at, error
+                 FROM job_runs WHERE job_id = ?1
+                 ORDER BY queued_at DESC",
+            )
+            .map_err(|e| format!("Runs query failed: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![job_id], |row| {
+                Ok(JobRunSummary {
+                    id: row.get(0)?,
+                    job_id: row.get(1)?,
+                    status: row.get(2)?,
+                    trigger: row.get(3)?,
+                    queued_at: row.get(4)?,
+                    started_at: row.get(5)?,
+                    finished_at: row.get(6)?,
+                    error: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Runs query failed: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Runs row read failed: {}", e))
+    }
+
+    pub fn get_job_run(&self, run_id: i64) -> Result<JobRunWithSteps, String> {
+        let conn = self.conn.lock().unwrap();
+        let (job_id, status, trigger, queued_at, started_at, finished_at, error) = conn
+            .query_row(
+                "SELECT job_id, status, trigger, queued_at, started_at, finished_at, error
+                 FROM job_runs WHERE id = ?1",
+                params![run_id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                },
+            )
+            .map_err(|e| format!("Run not found: {}", e))?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, run_id, ordering, prompt_authored, prompt_rendered,
+                        status, output, started_at, finished_at, error
+                 FROM job_run_steps WHERE run_id = ?1
+                 ORDER BY ordering ASC",
+            )
+            .map_err(|e| format!("Run steps query failed: {}", e))?;
+
+        let steps = stmt
+            .query_map(params![run_id], |row| {
+                Ok(JobRunStep {
+                    id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    ordering: row.get(2)?,
+                    prompt_authored: row.get(3)?,
+                    prompt_rendered: row.get(4)?,
+                    status: row.get(5)?,
+                    output: row.get(6)?,
+                    started_at: row.get(7)?,
+                    finished_at: row.get(8)?,
+                    error: row.get(9)?,
+                })
+            })
+            .map_err(|e| format!("Run steps query failed: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Run steps row read failed: {}", e))?;
+
+        Ok(JobRunWithSteps {
+            id: run_id,
+            job_id,
+            status,
+            trigger,
+            queued_at,
+            started_at,
+            finished_at,
+            error,
+            steps,
+        })
+    }
+
+    /// Sweep run rows orphaned by a previous-session crash or hard close.
+    /// Runs left in 'queued' or 'running' are marked 'interrupted' and any
+    /// in-flight steps are marked the same. Idempotent — calling it on a
+    /// clean DB does nothing. Returns the number of runs swept.
+    pub fn recover_orphan_runs(&self) -> Result<i64, String> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+        let now = chrono_now();
+        let msg = "App was closed during this run.";
+
+        let swept = tx
+            .execute(
+                "UPDATE job_runs
+                    SET status = 'interrupted',
+                        finished_at = COALESCE(finished_at, ?1),
+                        error = COALESCE(error, ?2)
+                 WHERE status IN ('queued', 'running')",
+                params![now, msg],
+            )
+            .map_err(|e| format!("Run sweep failed: {}", e))? as i64;
+
+        tx.execute(
+            "UPDATE job_run_steps
+                SET status = 'cancelled',
+                    finished_at = COALESCE(finished_at, ?1),
+                    error = COALESCE(error, ?2)
+                WHERE status = 'running'",
+            params![now, msg],
+        )
+        .map_err(|e| format!("Step sweep failed: {}", e))?;
+
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+        Ok(swept)
+    }
 }
 
 fn chrono_now() -> i64 {
@@ -643,6 +1280,143 @@ pub fn db_replace_messages(
     messages: Vec<MessageInput>,
 ) -> Result<(), String> {
     state.replace_messages(&conversation_id, &messages)
+}
+
+#[tauri::command]
+pub fn db_create_job(state: tauri::State<'_, Database>, input: JobInput) -> Result<i64, String> {
+    state.create_job(&input)
+}
+
+#[tauri::command]
+pub fn db_list_jobs(state: tauri::State<'_, Database>) -> Result<Vec<JobSummary>, String> {
+    state.list_jobs()
+}
+
+#[tauri::command]
+pub fn db_get_job(state: tauri::State<'_, Database>, id: i64) -> Result<JobWithSteps, String> {
+    state.get_job(id)
+}
+
+#[tauri::command]
+pub fn db_update_job(
+    state: tauri::State<'_, Database>,
+    id: i64,
+    input: JobInput,
+) -> Result<(), String> {
+    state.update_job(id, &input)
+}
+
+#[tauri::command]
+pub fn db_delete_job(state: tauri::State<'_, Database>, id: i64) -> Result<(), String> {
+    state.delete_job(id)
+}
+
+#[tauri::command]
+pub fn db_replace_job_steps(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    steps: Vec<JobStepInput>,
+) -> Result<(), String> {
+    state.replace_job_steps(job_id, &steps)
+}
+
+#[tauri::command]
+pub fn db_create_job_run(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    trigger: String,
+    step_prompts: Vec<String>,
+) -> Result<i64, String> {
+    state.create_job_run(job_id, &trigger, &step_prompts)
+}
+
+#[tauri::command]
+pub fn db_mark_run_started(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    started_at: i64,
+) -> Result<(), String> {
+    state.mark_run_started(run_id, started_at)
+}
+
+#[tauri::command]
+pub fn db_mark_run_finished(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    status: String,
+    finished_at: i64,
+    error: Option<String>,
+) -> Result<(), String> {
+    state.mark_run_finished(run_id, &status, finished_at, error.as_deref())
+}
+
+#[tauri::command]
+pub fn db_mark_run_step_started(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    ordering: i64,
+    started_at: i64,
+    prompt_rendered: String,
+) -> Result<(), String> {
+    state.mark_run_step_started(run_id, ordering, started_at, &prompt_rendered)
+}
+
+#[tauri::command]
+pub fn db_mark_run_step_finished(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    ordering: i64,
+    status: String,
+    output: Option<String>,
+    error: Option<String>,
+    finished_at: i64,
+) -> Result<(), String> {
+    state.mark_run_step_finished(
+        run_id,
+        ordering,
+        &status,
+        output.as_deref(),
+        error.as_deref(),
+        finished_at,
+    )
+}
+
+#[tauri::command]
+pub fn db_list_job_runs(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+) -> Result<Vec<JobRunSummary>, String> {
+    state.list_job_runs(job_id)
+}
+
+#[tauri::command]
+pub fn db_get_job_run(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+) -> Result<JobRunWithSteps, String> {
+    state.get_job_run(run_id)
+}
+
+#[tauri::command]
+pub fn db_recover_orphan_runs(state: tauri::State<'_, Database>) -> Result<i64, String> {
+    state.recover_orphan_runs()
+}
+
+#[tauri::command]
+pub fn db_set_job_next_due_at(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    next_due_at: Option<i64>,
+) -> Result<(), String> {
+    state.set_job_next_due_at(job_id, next_due_at)
+}
+
+#[tauri::command]
+pub fn db_list_due_jobs(
+    state: tauri::State<'_, Database>,
+    now_ms: i64,
+) -> Result<Vec<JobSummary>, String> {
+    state.list_due_jobs(now_ms)
 }
 
 #[cfg(test)]
@@ -856,6 +1630,570 @@ mod tests {
         let snap = db.lifetime_stats_snapshot().unwrap();
         assert!(snap.engines.is_empty());
         assert!(snap.globals.is_empty());
+    }
+
+    fn sample_job_input(name: &str) -> JobInput {
+        JobInput {
+            name: name.to_string(),
+            description: Some("desc".to_string()),
+            working_dir: "/tmp/work".to_string(),
+            auto_approve_tools: false,
+            schedule_kind: "manual".to_string(),
+            schedule_config: None,
+            next_due_at: None,
+        }
+    }
+
+    fn step(prompt: &str) -> JobStepInput {
+        JobStepInput {
+            prompt: prompt.to_string(),
+            deep_research: false,
+        }
+    }
+
+    fn deep_step(prompt: &str) -> JobStepInput {
+        JobStepInput {
+            prompt: prompt.to_string(),
+            deep_research: true,
+        }
+    }
+
+    #[test]
+    fn jobs_migration_creates_tables() {
+        let db = test_db();
+        let conn = db.conn.lock().unwrap();
+        for table in ["jobs", "job_steps", "job_runs", "job_run_steps"] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT count(*) FROM {}", table), [], |r| r.get(0))
+                .unwrap_or_else(|e| panic!("missing table {}: {}", table, e));
+            assert_eq!(count, 0);
+        }
+    }
+
+    #[test]
+    fn create_and_list_jobs() {
+        let db = test_db();
+        let id1 = db
+            .create_job(&sample_job_input("Morning headlines"))
+            .unwrap();
+        let id2 = db.create_job(&sample_job_input("Weekly digest")).unwrap();
+        assert_ne!(id1, id2);
+
+        let jobs = db.list_jobs().unwrap();
+        assert_eq!(jobs.len(), 2);
+        let names: Vec<&str> = jobs.iter().map(|j| j.name.as_str()).collect();
+        assert!(names.contains(&"Morning headlines"));
+        assert!(names.contains(&"Weekly digest"));
+        // newly created jobs report zero steps
+        assert!(jobs.iter().all(|j| j.step_count == 0));
+    }
+
+    #[test]
+    fn get_job_returns_ordered_steps() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Job A")).unwrap();
+        db.replace_job_steps(
+            id,
+            &[
+                step("first prompt"),
+                deep_step("second prompt"),
+                step("third prompt"),
+            ],
+        )
+        .unwrap();
+
+        let job = db.get_job(id).unwrap();
+        assert_eq!(job.steps.len(), 3);
+        assert_eq!(job.steps[0].ordering, 0);
+        assert_eq!(job.steps[0].prompt, "first prompt");
+        assert!(!job.steps[0].deep_research);
+        assert_eq!(job.steps[1].ordering, 1);
+        assert!(job.steps[1].deep_research);
+        assert_eq!(job.steps[2].prompt, "third prompt");
+        assert!(!job.steps[2].deep_research);
+    }
+
+    #[test]
+    fn replace_job_steps_overwrites_previous_set() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Job B")).unwrap();
+        db.replace_job_steps(id, &[step("a"), step("b"), step("c")])
+            .unwrap();
+        db.replace_job_steps(id, &[deep_step("only one")]).unwrap();
+
+        let job = db.get_job(id).unwrap();
+        assert_eq!(job.steps.len(), 1);
+        assert_eq!(job.steps[0].ordering, 0);
+        assert_eq!(job.steps[0].prompt, "only one");
+        assert!(job.steps[0].deep_research);
+    }
+
+    #[test]
+    fn update_job_changes_fields_and_bumps_timestamp() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Original")).unwrap();
+        let before = db.get_job(id).unwrap();
+
+        // Wait a millisecond so updated_at can actually advance
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        db.update_job(
+            id,
+            &JobInput {
+                name: "Renamed".to_string(),
+                description: None,
+                working_dir: "/tmp/other".to_string(),
+                auto_approve_tools: true,
+                schedule_kind: "daily".to_string(),
+                schedule_config: Some(r#"{"time":"09:00"}"#.to_string()),
+                next_due_at: Some(1234567890),
+            },
+        )
+        .unwrap();
+
+        let after = db.get_job(id).unwrap();
+        assert_eq!(after.name, "Renamed");
+        assert_eq!(after.description, None);
+        assert_eq!(after.working_dir, "/tmp/other");
+        assert!(after.auto_approve_tools);
+        assert_eq!(after.schedule_kind, "daily");
+        assert_eq!(
+            after.schedule_config.as_deref(),
+            Some(r#"{"time":"09:00"}"#)
+        );
+        assert_eq!(after.next_due_at, Some(1234567890));
+        assert!(after.updated_at > before.updated_at);
+        assert_eq!(after.created_at, before.created_at);
+    }
+
+    #[test]
+    fn set_job_next_due_at_updates_only_that_column() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("A")).unwrap();
+        let before = db.get_job(id).unwrap();
+
+        db.set_job_next_due_at(id, Some(42000)).unwrap();
+        let after = db.get_job(id).unwrap();
+        assert_eq!(after.next_due_at, Some(42000));
+        // Other fields are untouched.
+        assert_eq!(after.name, before.name);
+        assert_eq!(after.schedule_kind, before.schedule_kind);
+
+        db.set_job_next_due_at(id, None).unwrap();
+        let cleared = db.get_job(id).unwrap();
+        assert!(cleared.next_due_at.is_none());
+    }
+
+    #[test]
+    fn set_job_next_due_at_errors_for_missing_job() {
+        let db = test_db();
+        let result = db.set_job_next_due_at(9999, Some(1));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_due_jobs_returns_only_past_due_non_manual_rows() {
+        let db = test_db();
+
+        let mut due_now = sample_job_input("Past due");
+        due_now.schedule_kind = "interval".to_string();
+        due_now.schedule_config = Some(r#"{"minutes":5}"#.to_string());
+        due_now.next_due_at = Some(100);
+        let id_past = db.create_job(&due_now).unwrap();
+
+        let mut future = sample_job_input("Future");
+        future.schedule_kind = "daily".to_string();
+        future.schedule_config = Some(r#"{"time":"09:00"}"#.to_string());
+        future.next_due_at = Some(10_000);
+        let _id_future = db.create_job(&future).unwrap();
+
+        // Manual job with a (nonsense) next_due_at — must be excluded
+        // because the scheduler should never fire manual jobs.
+        let mut manual = sample_job_input("Manual");
+        manual.schedule_kind = "manual".to_string();
+        manual.next_due_at = Some(0);
+        db.create_job(&manual).unwrap();
+
+        // Scheduled but next_due_at is NULL — also excluded.
+        let mut null_due = sample_job_input("Null");
+        null_due.schedule_kind = "hourly".to_string();
+        null_due.next_due_at = None;
+        db.create_job(&null_due).unwrap();
+
+        let due = db.list_due_jobs(500).unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].id, id_past);
+    }
+
+    #[test]
+    fn list_due_jobs_orders_by_next_due_ascending() {
+        let db = test_db();
+        let mut a = sample_job_input("A");
+        a.schedule_kind = "interval".to_string();
+        a.schedule_config = Some(r#"{"minutes":1}"#.to_string());
+        a.next_due_at = Some(300);
+        let id_a = db.create_job(&a).unwrap();
+
+        let mut b = sample_job_input("B");
+        b.schedule_kind = "interval".to_string();
+        b.schedule_config = Some(r#"{"minutes":1}"#.to_string());
+        b.next_due_at = Some(100);
+        let id_b = db.create_job(&b).unwrap();
+
+        let mut c = sample_job_input("C");
+        c.schedule_kind = "interval".to_string();
+        c.schedule_config = Some(r#"{"minutes":1}"#.to_string());
+        c.next_due_at = Some(200);
+        let id_c = db.create_job(&c).unwrap();
+
+        let due = db.list_due_jobs(1_000).unwrap();
+        let ids: Vec<i64> = due.iter().map(|j| j.id).collect();
+        assert_eq!(ids, vec![id_b, id_c, id_a]);
+    }
+
+    #[test]
+    fn update_missing_job_errors() {
+        let db = test_db();
+        let result = db.update_job(9999, &sample_job_input("ghost"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn delete_job_cascades_to_steps() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Doomed")).unwrap();
+        db.replace_job_steps(id, &[step("x"), step("y")]).unwrap();
+
+        db.delete_job(id).unwrap();
+
+        assert_eq!(db.list_jobs().unwrap().len(), 0);
+        let conn = db.conn.lock().unwrap();
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM job_steps", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn delete_job_cascades_to_runs_and_run_steps() {
+        let db = test_db();
+        let id = db.create_job(&sample_job_input("Run-bearing")).unwrap();
+        // Insert a synthetic run + run step directly; the runner that
+        // populates these lands in a later phase, but FK cascade should
+        // already be in place.
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO job_runs (job_id, status, trigger, queued_at)
+                 VALUES (?1, 'succeeded', 'manual', 0)",
+                params![id],
+            )
+            .unwrap();
+            let run_id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO job_run_steps
+                    (run_id, ordering, prompt_authored, prompt_rendered, status)
+                 VALUES (?1, 0, 'p', 'p', 'succeeded')",
+                params![run_id],
+            )
+            .unwrap();
+        }
+
+        db.delete_job(id).unwrap();
+        let conn = db.conn.lock().unwrap();
+        let runs: i64 = conn
+            .query_row("SELECT count(*) FROM job_runs", [], |r| r.get(0))
+            .unwrap();
+        let run_steps: i64 = conn
+            .query_row("SELECT count(*) FROM job_run_steps", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(runs, 0);
+        assert_eq!(run_steps, 0);
+    }
+
+    #[test]
+    fn list_jobs_reports_step_count() {
+        let db = test_db();
+        let id_a = db.create_job(&sample_job_input("A")).unwrap();
+        let id_b = db.create_job(&sample_job_input("B")).unwrap();
+        db.replace_job_steps(id_a, &[step("s1"), step("s2")])
+            .unwrap();
+        db.replace_job_steps(id_b, &[step("only")]).unwrap();
+
+        let jobs = db.list_jobs().unwrap();
+        let by_id: HashMap<i64, &JobSummary> = jobs.iter().map(|j| (j.id, j)).collect();
+        assert_eq!(by_id[&id_a].step_count, 2);
+        assert_eq!(by_id[&id_b].step_count, 1);
+    }
+
+    #[test]
+    fn schedule_config_round_trips_as_opaque_json() {
+        let db = test_db();
+        let json = r#"{"day":"mon","time":"09:30"}"#.to_string();
+        let id = db
+            .create_job(&JobInput {
+                name: "Weekly".to_string(),
+                description: None,
+                working_dir: "/x".to_string(),
+                auto_approve_tools: false,
+                schedule_kind: "weekly".to_string(),
+                schedule_config: Some(json.clone()),
+                next_due_at: None,
+            })
+            .unwrap();
+        let job = db.get_job(id).unwrap();
+        assert_eq!(job.schedule_config, Some(json));
+    }
+
+    fn job_with_steps(db: &Database, name: &str, prompts: &[&str]) -> i64 {
+        let job_id = db.create_job(&sample_job_input(name)).unwrap();
+        let steps: Vec<JobStepInput> = prompts.iter().map(|p| step(p)).collect();
+        db.replace_job_steps(job_id, &steps).unwrap();
+        job_id
+    }
+
+    #[test]
+    fn create_job_run_inserts_run_plus_pending_steps() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Pipelined", &["step a", "step b"]);
+
+        let run_id = db
+            .create_job_run(
+                job_id,
+                "manual",
+                &["step a".to_string(), "step b".to_string()],
+            )
+            .unwrap();
+
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.job_id, job_id);
+        assert_eq!(run.status, "queued");
+        assert_eq!(run.trigger, "manual");
+        assert!(run.started_at.is_none());
+        assert!(run.finished_at.is_none());
+        assert_eq!(run.steps.len(), 2);
+        for (i, s) in run.steps.iter().enumerate() {
+            assert_eq!(s.ordering, i as i64);
+            assert_eq!(s.status, "pending");
+            assert_eq!(s.prompt_authored, s.prompt_rendered);
+            assert!(s.output.is_none());
+            assert!(s.started_at.is_none());
+            assert!(s.finished_at.is_none());
+        }
+    }
+
+    #[test]
+    fn run_lifecycle_transitions_persist_correctly() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Two-step", &["a", "b"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string(), "b".to_string()])
+            .unwrap();
+
+        db.mark_run_started(run_id, 100).unwrap();
+        db.mark_run_step_started(run_id, 0, 100, "a").unwrap();
+        db.mark_run_step_finished(run_id, 0, "succeeded", Some("a-output"), None, 200)
+            .unwrap();
+        db.mark_run_step_started(run_id, 1, 200, "a-output\n\nb")
+            .unwrap();
+        db.mark_run_step_finished(run_id, 1, "succeeded", Some("b-output"), None, 300)
+            .unwrap();
+        db.mark_run_finished(run_id, "succeeded", 300, None)
+            .unwrap();
+
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.status, "succeeded");
+        assert_eq!(run.started_at, Some(100));
+        assert_eq!(run.finished_at, Some(300));
+        assert!(run.error.is_none());
+        assert_eq!(run.steps[0].status, "succeeded");
+        assert_eq!(run.steps[0].output.as_deref(), Some("a-output"));
+        assert_eq!(run.steps[1].status, "succeeded");
+        assert_eq!(run.steps[1].prompt_rendered, "a-output\n\nb");
+        assert_eq!(run.steps[1].output.as_deref(), Some("b-output"));
+    }
+
+    #[test]
+    fn failure_path_records_error_on_run_and_step() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Will fail", &["a", "b"]);
+        let run_id = db
+            .create_job_run(job_id, "scheduled", &["a".to_string(), "b".to_string()])
+            .unwrap();
+
+        db.mark_run_started(run_id, 10).unwrap();
+        db.mark_run_step_started(run_id, 0, 10, "a").unwrap();
+        db.mark_run_step_finished(run_id, 0, "succeeded", Some("ok"), None, 20)
+            .unwrap();
+        db.mark_run_step_started(run_id, 1, 20, "ok\n\nb").unwrap();
+        db.mark_run_step_finished(run_id, 1, "failed", None, Some("boom"), 30)
+            .unwrap();
+        db.mark_run_finished(run_id, "failed", 30, Some("boom"))
+            .unwrap();
+
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.status, "failed");
+        assert_eq!(run.trigger, "scheduled");
+        assert_eq!(run.error.as_deref(), Some("boom"));
+        assert_eq!(run.steps[1].status, "failed");
+        assert_eq!(run.steps[1].error.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn list_job_runs_orders_newest_first() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Many runs", &["a"]);
+
+        let r1 = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r2 = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r3 = db
+            .create_job_run(job_id, "scheduled", &["a".to_string()])
+            .unwrap();
+
+        let runs = db.list_job_runs(job_id).unwrap();
+        let ids: Vec<i64> = runs.iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![r3, r2, r1]);
+    }
+
+    #[test]
+    fn mark_run_started_does_not_overwrite_already_running() {
+        // If the runner double-fires (shouldn't happen, but be defensive)
+        // mark_run_started must not reset started_at on a row that's
+        // already moved past 'queued'.
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Idempotent", &["a"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        db.mark_run_started(run_id, 100).unwrap();
+        db.mark_run_started(run_id, 999).unwrap();
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.started_at, Some(100));
+    }
+
+    #[test]
+    fn delete_job_cascades_runs_and_run_steps() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Doomed pipeline", &["a", "b"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string(), "b".to_string()])
+            .unwrap();
+        db.mark_run_started(run_id, 1).unwrap();
+        db.mark_run_step_started(run_id, 0, 1, "a").unwrap();
+
+        db.delete_job(job_id).unwrap();
+
+        assert!(db.list_job_runs(job_id).unwrap().is_empty());
+        let conn = db.conn.lock().unwrap();
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM job_run_steps", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn recover_orphan_runs_sweeps_running_and_queued() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Will be orphaned", &["a", "b"]);
+
+        // One run that got as far as starting step 0, then the app died.
+        let r1 = db
+            .create_job_run(job_id, "manual", &["a".to_string(), "b".to_string()])
+            .unwrap();
+        db.mark_run_started(r1, 100).unwrap();
+        db.mark_run_step_started(r1, 0, 100, "a").unwrap();
+
+        // One run that never even started (queued only).
+        let r2 = db
+            .create_job_run(job_id, "scheduled", &["a".to_string(), "b".to_string()])
+            .unwrap();
+
+        // One previously-completed run that must NOT be touched.
+        let r3 = db
+            .create_job_run(job_id, "manual", &["a".to_string(), "b".to_string()])
+            .unwrap();
+        db.mark_run_started(r3, 50).unwrap();
+        db.mark_run_step_started(r3, 0, 50, "a").unwrap();
+        db.mark_run_step_finished(r3, 0, "succeeded", Some("out"), None, 60)
+            .unwrap();
+        db.mark_run_step_started(r3, 1, 60, "out\n\nb").unwrap();
+        db.mark_run_step_finished(r3, 1, "succeeded", Some("done"), None, 70)
+            .unwrap();
+        db.mark_run_finished(r3, "succeeded", 70, None).unwrap();
+
+        let swept = db.recover_orphan_runs().unwrap();
+        assert_eq!(swept, 2);
+
+        let run1 = db.get_job_run(r1).unwrap();
+        assert_eq!(run1.status, "interrupted");
+        assert!(run1.finished_at.is_some());
+        assert!(run1.error.as_deref().unwrap_or("").contains("closed"));
+        // Step 0 was 'running' → swept to 'cancelled'. Step 1 was 'pending'
+        // → untouched.
+        assert_eq!(run1.steps[0].status, "cancelled");
+        assert!(run1.steps[0]
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("closed"));
+        assert_eq!(run1.steps[1].status, "pending");
+
+        let run2 = db.get_job_run(r2).unwrap();
+        assert_eq!(run2.status, "interrupted");
+        assert_eq!(run2.steps[0].status, "pending");
+
+        let run3 = db.get_job_run(r3).unwrap();
+        assert_eq!(run3.status, "succeeded");
+        assert_eq!(run3.finished_at, Some(70));
+    }
+
+    #[test]
+    fn recover_orphan_runs_is_idempotent() {
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Orphan", &["a"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        db.mark_run_started(run_id, 1).unwrap();
+
+        let first = db.recover_orphan_runs().unwrap();
+        let second = db.recover_orphan_runs().unwrap();
+        assert_eq!(first, 1);
+        assert_eq!(second, 0);
+
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.status, "interrupted");
+    }
+
+    #[test]
+    fn recover_orphan_runs_preserves_existing_finished_at() {
+        // Edge case: a run row that's stuck at 'running' but somehow has
+        // a finished_at already (shouldn't happen, but be defensive). The
+        // sweep must not stomp the existing timestamp.
+        let db = test_db();
+        let job_id = job_with_steps(&db, "Edge", &["a"]);
+        let run_id = db
+            .create_job_run(job_id, "manual", &["a".to_string()])
+            .unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE job_runs SET status = 'running', started_at = 10, finished_at = 999
+                 WHERE id = ?1",
+                params![run_id],
+            )
+            .unwrap();
+        }
+        db.recover_orphan_runs().unwrap();
+        let run = db.get_job_run(run_id).unwrap();
+        assert_eq!(run.status, "interrupted");
+        assert_eq!(run.finished_at, Some(999));
     }
 
     #[test]

@@ -4,6 +4,7 @@ import { toolResult, toolError } from './types';
 import { getSettings } from '$lib/stores/settings';
 import { getActiveConversation } from '$lib/stores/chat.svelte';
 import { askApproval } from '$lib/stores/sandboxApproval.svelte';
+import { isAutoApproveActive } from '$lib/stores/approvalOverride';
 
 function formatResult(r: ToolResult): string {
 	const lines: string[] = [];
@@ -62,7 +63,8 @@ registerTool({
 		// 'off' bypasses; 'once-per-chat' bypasses if the user has already
 		// approved this chat. 'every-run' always prompts.
 		const needsPrompt =
-			mode === 'every-run' || (mode === 'once-per-chat' && !conv?.sandboxApproved);
+			!isAutoApproveActive() &&
+			(mode === 'every-run' || (mode === 'once-per-chat' && !conv?.sandboxApproved));
 		if (needsPrompt) {
 			try {
 				const choice = await askApproval({ code, mode });

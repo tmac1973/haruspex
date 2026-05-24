@@ -127,6 +127,25 @@ describe('sandbox tools', () => {
 		expect(mocks.runPython).not.toHaveBeenCalled();
 	});
 
+	it('skips the approval prompt and runs Python when auto-approve is active', async () => {
+		mocks.runPython.mockResolvedValue(ok({ result: 'job ok' }));
+		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
+		const { executeTool } = await import('$lib/agent/tools');
+		const { updateSettings } = await import('$lib/stores/settings');
+		// Force the every-run mode so we'd normally prompt every time.
+		updateSettings({ sandboxApproval: 'every-run' });
+		try {
+			const out = await runWithAutoApprove(() =>
+				executeTool('run_python', { code: 'print("hi")' }, ctx)
+			);
+			expect(mocks.askApproval).not.toHaveBeenCalled();
+			expect(mocks.runPython).toHaveBeenCalled();
+			expect(out.result).toContain('job ok');
+		} finally {
+			updateSettings({ sandboxApproval: 'once-per-chat' });
+		}
+	});
+
 	it('exposes sandbox tool schemas via getToolSchemas regardless of working dir', async () => {
 		const { getToolSchemas } = await import('$lib/agent/tools');
 		const { updateSettings } = await import('$lib/stores/settings');

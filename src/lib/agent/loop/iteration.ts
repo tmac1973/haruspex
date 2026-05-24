@@ -162,6 +162,34 @@ function looksLikeClarifyingQuestion(content: string): boolean {
 }
 
 /**
+ * Race a promise against an AbortSignal. If the signal fires before the
+ * promise settles, rejects with AbortError. The original promise keeps
+ * running and its resolution is discarded — most tools dispatch to
+ * Tauri commands or fetch that don't honor signals, so this is the
+ * only way to make a cancel mid-tool actually feel immediate.
+ */
+function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+	if (!signal) return promise;
+	if (signal.aborted) {
+		return Promise.reject(new DOMException('Aborted', 'AbortError'));
+	}
+	return new Promise<T>((resolve, reject) => {
+		const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+		signal.addEventListener('abort', onAbort, { once: true });
+		promise.then(
+			(value) => {
+				signal.removeEventListener('abort', onAbort);
+				resolve(value);
+			},
+			(err) => {
+				signal.removeEventListener('abort', onAbort);
+				reject(err);
+			}
+		);
+	});
+}
+
+/**
  * Replace older tool-message content with a short stub when prompt
  * tokens have crossed the in-loop trim threshold. Returns true if any
  * messages were trimmed.
@@ -593,13 +621,22 @@ export async function runIteration(
 
 		logDebug('agent', `tool start: ${call.name}`, { args: call.arguments });
 		options.onToolStart(call);
-		const output = await executeTool(call.name, call.arguments, {
-			workingDir: ctx.workingDir,
-			signal,
-			pendingImages: ctx.pendingImages,
-			deepResearch: ctx.deepResearch,
-			filesWrittenThisTurn: ctx.filesWrittenThisTurn
-		});
+		// Race the tool call against the abort signal. Most tools dispatch
+		// to Tauri commands or fetch and don't honor signal themselves, so
+		// without this race a cancel mid-tool waits for the tool to finish
+		// before taking effect — which from the user's perspective looks
+		// like the cancel button is broken. The orphaned Rust work
+		// completes silently; its result is discarded.
+		const output = await raceWithAbort(
+			executeTool(call.name, call.arguments, {
+				workingDir: ctx.workingDir,
+				signal,
+				pendingImages: ctx.pendingImages,
+				deepResearch: ctx.deepResearch,
+				filesWrittenThisTurn: ctx.filesWrittenThisTurn
+			}),
+			signal
+		);
 		logDebug('agent', `tool end: ${call.name}`, {
 			resultLen: output.result.length,
 			resultPreview: output.result.slice(0, 1000),
