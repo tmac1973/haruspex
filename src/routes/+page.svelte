@@ -2,6 +2,7 @@
 	import TabBar from '$lib/components/TabBar.svelte';
 	import ChatView from '$lib/components/ChatView.svelte';
 	import JobsTab from '$lib/components/jobs/JobsTab.svelte';
+	import WorkspaceTab from '$lib/components/workspace/WorkspaceTab.svelte';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 
 	const activeTab = $derived(getActiveTab());
@@ -11,6 +12,8 @@
 	<TabBar />
 	{#if activeTab === 'chat'}
 		<ChatView />
+	{:else if activeTab === 'workspace'}
+		<WorkspaceTab />
 	{:else}
 		<JobsTab />
 	{/if}
