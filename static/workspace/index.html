@@ -525,16 +525,18 @@
 				currentStdout = '';
 				currentStderr = '';
 				const t0 = performance.now();
+				const trace = (label) =>
+					console.log('[workspace iframe]', id.slice(0, 8), label, '+' + Math.round(performance.now() - t0) + 'ms');
 				try {
+					trace('handleRun start');
 					await pyodide.loadPackagesFromImports(code);
-					// matplotlib hook is idempotent (sentinel-guarded in Python).
-					// Snapshot the workdir alongside so the post-run drain can
-					// detect new/modified files regardless of how they were
-					// written (zipfile-based: python-pptx, python-docx, etc.).
+					trace('after loadPackagesFromImports');
 					await pyodide.runPythonAsync(
 						'_haruspex_install_matplotlib_hook(); _haruspex_snapshot_workdir()'
 					);
+					trace('after hook+snapshot');
 					const value = await pyodide.runPythonAsync(code);
+					trace('after user code');
 					try {
 						await pyodide.runPythonAsync('await _haruspex_drain_pending_saves()');
 					} catch (drainErr) {
@@ -542,6 +544,7 @@
 							'\n[haruspex] drain failed: ' + (drainErr?.message || String(drainErr)) + '\n'
 						);
 					}
+					trace('after drain');
 					const result = emptyResult(Math.round(performance.now() - t0));
 					if (value !== undefined && value !== null) {
 						const postprocess = pyodide.globals.get('_haruspex_postprocess');
@@ -552,9 +555,11 @@
 							if (typeof value?.destroy === 'function') value.destroy();
 						}
 					}
+					trace('posting done');
 					post({ kind: 'done', id, result });
 				} catch (err) {
 					const message = err?.message || String(err);
+					trace('error: ' + message);
 					post({ kind: 'done', id, result: emptyResult(Math.round(performance.now() - t0), message) });
 				} finally {
 					currentRunId = null;

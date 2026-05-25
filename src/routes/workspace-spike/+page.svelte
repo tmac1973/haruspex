@@ -75,6 +75,7 @@
 			const p = ensurePool();
 			log(`[${activeChat}] > ${label}`);
 			const r = await p.runPython(activeChat, code, {
+				timeoutMs: 60_000,
 				onStdout: (s) => log(`[${activeChat}] OUT ${s.trimEnd()}`),
 				onStderr: (s) => log(`[${activeChat}] ERR ${s.trimEnd()}`)
 			});
@@ -253,6 +254,7 @@ print(r)
 			const p = ensurePool();
 			log(`[${activeChat}] > install_package(plotly)`);
 			const r = await p.installPackage(activeChat, 'plotly', {
+				timeoutMs: 60_000,
 				onStdout: (s) => log(`[${activeChat}] OUT ${s.trimEnd()}`),
 				onStderr: (s) => log(`[${activeChat}] ERR ${s.trimEnd()}`)
 			});
