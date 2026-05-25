@@ -71,6 +71,36 @@
 				post({ kind: 'stderr', id: currentRunId, data });
 			}
 
+			/**
+			 * Re-execute every <script> in `root` in document order, awaiting
+			 * external (src=...) script loads before continuing so later
+			 * inline scripts see globals the external scripts registered.
+			 * Necessary for plotly / bokeh / altair HTML which emit a
+			 * <script src="cdn..."> followed by an inline init call.
+			 */
+			async function reExecuteScripts(root) {
+				const scripts = Array.from(root.querySelectorAll('script'));
+				for (const oldScript of scripts) {
+					const fresh = document.createElement('script');
+					for (const attr of oldScript.attributes) fresh.setAttribute(attr.name, attr.value);
+					fresh.textContent = oldScript.textContent;
+					if (oldScript.src) {
+						await new Promise((resolve) => {
+							fresh.onload = () => resolve();
+							fresh.onerror = () => {
+								postStderr(
+									'[haruspex.show_html] failed to load ' + oldScript.src + '\n'
+								);
+								resolve();
+							};
+							oldScript.replaceWith(fresh);
+						});
+					} else {
+						oldScript.replaceWith(fresh);
+					}
+				}
+			}
+
 			function emptyResult(durationMs, error = null) {
 				const out = {
 					stdout: currentStdout,
@@ -134,14 +164,15 @@
 				pyodide.globals.set('_haruspex_stage_show_html', (html) => {
 					const s = String(html);
 					stage.innerHTML = s;
-					// Re-execute <script> tags so plotly / bokeh / altair-generated
-					// dashboard HTML actually wires up.
-					for (const oldScript of stage.querySelectorAll('script')) {
-						const fresh = document.createElement('script');
-						for (const attr of oldScript.attributes) fresh.setAttribute(attr.name, attr.value);
-						fresh.textContent = oldScript.textContent;
-						oldScript.replaceWith(fresh);
-					}
+					// Re-execute <script> tags. Setting innerHTML doesn't run
+					// them; replaceWith on a freshly-created <script> does.
+					// External (src=...) scripts must finish loading before
+					// later inline scripts run, otherwise plotly / bokeh /
+					// altair fail with 'Plotly is not defined' because the
+					// inline newPlot() call runs before the CDN bundle loads.
+					// Fire-and-forget so haruspex.show_html stays sync from
+					// the model's POV.
+					void reExecuteScripts(stage);
 					post({ kind: 'stage_write' });
 				});
 
