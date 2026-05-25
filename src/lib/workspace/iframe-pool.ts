@@ -102,7 +102,13 @@ export class IframePool {
 		el.style.inset = '0';
 		el.style.width = '100%';
 		el.style.height = '100%';
-		el.style.visibility = visible ? 'visible' : 'hidden';
+		// Active iframe: clear the inline style so it INHERITS visibility
+		// from the wrapper. Setting 'visible' here would override a parent
+		// 'visibility: hidden' (CSS visibility children can re-show
+		// themselves) and the iframe would bleed across tab switches.
+		// Inactive iframe: explicit 'hidden' so it stays hidden even when
+		// the Workspace tab is active.
+		el.style.visibility = visible ? '' : 'hidden';
 	}
 
 	private async evictIfOver(): Promise<void> {
