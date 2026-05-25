@@ -5,56 +5,84 @@
 	//   - 'manager'  → drives the production iframe via IframeManager (step 3)
 	// Delete once the production UI lands.
 
-	import { onDestroy } from 'svelte';
-	import { IframeManager } from '$lib/workspace/iframe-manager';
+	import { onDestroy, onMount } from 'svelte';
+	import { IframePool, type Snapshot } from '$lib/workspace/iframe-pool';
 
 	let mode: 'spike' | 'manager' = $state('manager');
 	let mountTarget: HTMLDivElement | null = $state(null);
 	let logLines: string[] = $state([]);
-	let manager: IframeManager | null = null;
+	let pool: IframePool | null = $state(null);
+	let activeChat = $state('chat-a');
 	let stageWrites = $state(0);
 	let stageClears = $state(0);
 	let snapshotPng = $state<string | null>(null);
 	let workdir = $state('/tmp/haruspex-spike');
 	let proxyMode = $state('none');
+	let poolSize = $state(0);
+	let evictedSnapshots = $state<Record<string, Snapshot>>({});
+
+	const CHAT_OPTIONS = ['chat-a', 'chat-b', 'chat-c', 'chat-d'] as const;
 
 	function log(line: string): void {
 		logLines = [...logLines, line];
 	}
 
-	function ensureManager(): IframeManager {
+	function ensurePool(): IframePool {
 		if (!mountTarget) throw new Error('mount target not bound yet');
-		if (!manager) {
-			manager = new IframeManager({
-				getRuntimeConfig: () => ({
+		if (!pool) {
+			pool = new IframePool({
+				cap: 3,
+				getRuntimeConfig: (chatId) => ({
 					proxyMode,
-					workingDir: workdir.trim() || null
+					workingDir: workdir.trim() ? `${workdir.trim()}/${chatId}` : null
 				}),
 				getProxyConfig: () => ({ mode: proxyMode, url: '' }),
-				onStageWrite: () => {
+				onStageWrite: (chatId) => {
 					stageWrites++;
-					log('[stage_write]');
+					log(`[${chatId}] stage_write`);
 				},
-				onStageClear: () => {
+				onStageClear: (chatId) => {
 					stageClears++;
-					log('[stage_clear]');
+					log(`[${chatId}] stage_clear`);
+				},
+				onEvicted: (chatId, snap) => {
+					evictedSnapshots = { ...evictedSnapshots, [chatId]: snap };
+					log(`[${chatId}] evicted — snapshot ${snap.mime}, ${snap.payload.length} chars`);
 				}
 			});
-			manager.attach(mountTarget);
+			// Pool exposes a single host div containing all per-chat
+			// iframes. Svelte doesn't know about it — that's intentional;
+			// iframe lifetimes are managed by the pool, not the
+			// component tree.
+			// eslint-disable-next-line svelte/no-dom-manipulating
+			mountTarget.appendChild(pool.host);
 		}
-		return manager;
+		return pool;
 	}
+
+	function refreshPoolSize(): void {
+		if (pool) poolSize = pool.size;
+	}
+
+	onMount(() => {
+		// Auto-attach so the pool's host exists in the DOM before any
+		// button creates the first iframe.
+		ensurePool();
+	});
 
 	async function runDemo(label: string, code: string): Promise<void> {
 		try {
-			const m = ensureManager();
-			log(`> ${label}`);
-			const r = await m.runPython(code, {
-				onStdout: (s) => log('OUT ' + s.trimEnd()),
-				onStderr: (s) => log('ERR ' + s.trimEnd())
+			const p = ensurePool();
+			log(`[${activeChat}] > ${label}`);
+			const r = await p.runPython(activeChat, code, {
+				onStdout: (s) => log(`[${activeChat}] OUT ${s.trimEnd()}`),
+				onStderr: (s) => log(`[${activeChat}] ERR ${s.trimEnd()}`)
 			});
-			log(`done: result=${r.result || '(none)'} artifacts=${r.artifacts} took=${r.duration_ms}ms`);
-			if (r.error) log(`ERROR: ${r.error}`);
+			refreshPoolSize();
+			log(
+				`[${activeChat}] done: result=${r.result || '(none)'} artifacts=${r.artifacts} took=${r.duration_ms}ms`
+			);
+			if (r.error) log(`[${activeChat}] ERROR: ${r.error}`);
 			if (r.artifactsList.length) {
 				for (const a of r.artifactsList) {
 					if (a.kind === 'image') log(`  artifact image: ${a.mime} (${a.dataUrl.length} chars)`);
@@ -64,6 +92,14 @@
 		} catch (err) {
 			log('exception: ' + (err instanceof Error ? err.message : String(err)));
 		}
+	}
+
+	function setActiveChat(chatId: string): void {
+		activeChat = chatId;
+		const p = ensurePool();
+		p.setActive(chatId);
+		refreshPoolSize();
+		log(`[setActive] ${chatId} (pool size ${p.size})`);
 	}
 
 	async function doMath(): Promise<void> {
@@ -214,14 +250,15 @@ print(r)
 
 	async function doInstall(): Promise<void> {
 		try {
-			const m = ensureManager();
-			log('> install_package(plotly)');
-			const r = await m.installPackage('plotly', {
-				onStdout: (s) => log('OUT ' + s.trimEnd()),
-				onStderr: (s) => log('ERR ' + s.trimEnd())
+			const p = ensurePool();
+			log(`[${activeChat}] > install_package(plotly)`);
+			const r = await p.installPackage(activeChat, 'plotly', {
+				onStdout: (s) => log(`[${activeChat}] OUT ${s.trimEnd()}`),
+				onStderr: (s) => log(`[${activeChat}] ERR ${s.trimEnd()}`)
 			});
-			log(`done: result=${r.result || '(none)'} took=${r.duration_ms}ms`);
-			if (r.error) log(`ERROR: ${r.error}`);
+			refreshPoolSize();
+			log(`[${activeChat}] done: result=${r.result || '(none)'} took=${r.duration_ms}ms`);
+			if (r.error) log(`[${activeChat}] ERROR: ${r.error}`);
 		} catch (err) {
 			log('exception: ' + (err instanceof Error ? err.message : String(err)));
 		}
@@ -246,9 +283,13 @@ haruspex.show_html(fig.to_html(include_plotlyjs="cdn"))
 
 	async function doSnapshot(): Promise<void> {
 		try {
-			const m = ensureManager();
-			const snap = await m.captureSnapshot();
-			log(`snapshot: ${snap.mime}, ${snap.payload.length} chars`);
+			const p = ensurePool();
+			const snap = await p.captureSnapshot(activeChat);
+			if (!snap) {
+				log(`[${activeChat}] no iframe to snapshot`);
+				return;
+			}
+			log(`[${activeChat}] snapshot: ${snap.mime}, ${snap.payload.length} chars`);
 			snapshotPng = snap.mime === 'image/png' ? snap.payload : null;
 		} catch (err) {
 			log('snapshot failed: ' + (err instanceof Error ? err.message : String(err)));
@@ -256,14 +297,15 @@ haruspex.show_html(fig.to_html(include_plotlyjs="cdn"))
 	}
 
 	async function doReset(): Promise<void> {
-		if (!manager) return;
-		await manager.reset();
-		log('[reset]');
+		if (!pool) return;
+		await pool.reset(activeChat);
+		refreshPoolSize();
+		log(`[${activeChat}] reset`);
 	}
 
 	onDestroy(() => {
-		manager?.reset();
-		manager = null;
+		pool?.terminateAll();
+		pool = null;
 	});
 </script>
 
@@ -286,7 +328,7 @@ haruspex.show_html(fig.to_html(include_plotlyjs="cdn"))
 		<div class="manager-pane">
 			<div class="config">
 				<label
-					>workdir
+					>workdir root
 					<input bind:value={workdir} placeholder="/tmp/haruspex-spike" />
 				</label>
 				<label
@@ -297,9 +339,23 @@ haruspex.show_html(fig.to_html(include_plotlyjs="cdn"))
 					</select>
 				</label>
 				<span class="hint"
-					>The workdir must exist on disk before save tests; run
-					<code>mkdir -p {workdir}</code> in a terminal.</span
+					>Per-chat workdirs are <code>{workdir}/&lt;chat-id&gt;</code>. Create them with
+					<code>mkdir -p {workdir}/{`{${CHAT_OPTIONS.join(',')}}`}</code>.</span
 				>
+			</div>
+			<div class="chats">
+				<span>active chat:</span>
+				{#each CHAT_OPTIONS as c (c)}
+					<button
+						class:active={activeChat === c}
+						class:live={pool?.hasIframeFor(c)}
+						class:evicted={!!evictedSnapshots[c]}
+						onclick={() => setActiveChat(c)}
+					>
+						{c}{#if pool?.hasIframeFor(c)}&nbsp;●{:else if evictedSnapshots[c]}&nbsp;✕{/if}
+					</button>
+				{/each}
+				<span class="counters">pool size: {poolSize}/3</span>
 			</div>
 			<div class="controls">
 				<button onclick={doMath}>2 + 2 / print</button>
@@ -394,6 +450,28 @@ haruspex.show_html(fig.to_html(include_plotlyjs="cdn"))
 		background: #1a1a1a;
 		padding: 0 0.25rem;
 		border-radius: 2px;
+	}
+	.chats {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		flex-wrap: wrap;
+		font-size: 0.85rem;
+		padding: 0.5rem;
+		background: #1f2030;
+		border: 1px solid #333;
+	}
+	.chats button.active {
+		outline: 2px solid #cf6;
+		outline-offset: -2px;
+	}
+	.chats button.live {
+		border-color: #6a6;
+		color: #cfc;
+	}
+	.chats button.evicted {
+		border-color: #a66;
+		color: #fcc;
 	}
 	.controls {
 		display: flex;

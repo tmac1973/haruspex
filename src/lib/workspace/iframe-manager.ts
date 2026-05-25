@@ -527,4 +527,16 @@ export class IframeManager {
 	get hasIframe(): boolean {
 		return this.iframe !== null;
 	}
+
+	/** Underlying <iframe>, or null if not attached. Used by IframePool
+	 *  to apply pool-level positioning + visibility on each manager. */
+	get iframeEl(): HTMLIFrameElement | null {
+		return this.iframe;
+	}
+
+	/** Teardown without respawn. Pool uses this on eviction. */
+	terminate(): void {
+		this.teardown();
+		this.mount = null;
+	}
 }
