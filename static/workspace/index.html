@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>Haruspex workspace</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				padding: 0;
+				height: 100%;
+				width: 100%;
+				background: #1a1a1a;
+				color: #ddd;
+				font-family: system-ui, sans-serif;
+				overflow: hidden;
+			}
+			#stage {
+				position: absolute;
+				inset: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				overflow: auto;
+			}
+			#canvas {
+				display: block;
+				background: #000;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="stage">
+			<canvas id="canvas" width="640" height="480" tabindex="0"></canvas>
+		</div>
+
+		<script type="module">
+			// Workspace iframe runtime. Loads Pyodide, sets up the message
+			// router that talks to the parent SvelteKit thread, and runs
+			// init.py to install the haruspex helper module + matplotlib
+			// hook + DataFrame postprocess. The iframe owns the visual
+			// stage (#stage) and a default <canvas> wired up via
+			// pyodide.canvas.setCanvas2D so pygame can render without any
+			// extra setup from the model.
+
+			const stage = document.getElementById('stage');
+			const canvas = document.getElementById('canvas');
+
+			let pyodide = null;
+			let currentRunId = null;
+			let currentStdout = '';
+			let currentStderr = '';
+			let pendingInterruptBuffer = null;
+			let proxyConfigWaiter = null;
+
+			function post(msg) {
+				window.parent.postMessage(msg, '*');
+			}
+
+			function postStdout(data) {
+				currentStdout += data;
+				post({ kind: 'stdout', id: currentRunId, data });
+			}
+
+			function postStderr(data) {
+				currentStderr += data;
+				post({ kind: 'stderr', id: currentRunId, data });
+			}
+
+			function emptyResult(durationMs, error = null) {
+				const out = {
+					stdout: currentStdout,
+					stderr: currentStderr,
+					result: '',
+					error,
+					artifacts: 0,
+					artifactsList: [],
+					notes: [],
+					duration_ms: durationMs
+				};
+				currentStdout = '';
+				currentStderr = '';
+				return out;
+			}
+
+			// ----------------------------------------------------------------
+			// Pyodide globals exposed to Python init.py.
+			// Same naming as the legacy worker bridge so the porting stays 1:1.
+			// ----------------------------------------------------------------
+
+			function bindPyodideGlobals() {
+				pyodide.globals.set('_haruspex_emit_image', (mime, bytes) => {
+					if (!currentRunId) return;
+					let safe;
+					if (bytes instanceof Uint8Array) {
+						safe = new Uint8Array(bytes);
+					} else if (bytes && typeof bytes.toJs === 'function') {
+						const c = bytes.toJs();
+						safe =
+							c instanceof Uint8Array
+								? new Uint8Array(c)
+								: new Uint8Array(c);
+					} else {
+						return;
+					}
+					post({
+						kind: 'artifact',
+						id: currentRunId,
+						mime: String(mime),
+						payload: { kind: 'bytes', bytes: safe }
+					});
+				});
+
+				pyodide.globals.set('_haruspex_emit_html', (html, shown, total) => {
+					if (!currentRunId) return;
+					const truncated =
+						shown !== null && total !== null && shown !== undefined && total !== undefined
+							? { shown, total }
+							: undefined;
+					post({
+						kind: 'artifact',
+						id: currentRunId,
+						mime: 'text/html',
+						payload: { kind: 'text', text: String(html) },
+						truncated
+					});
+				});
+
+				// Stage manipulation, called from haruspex.show_html / clear_stage.
+				pyodide.globals.set('_haruspex_stage_show_html', (html) => {
+					const s = String(html);
+					stage.innerHTML = s;
+					// Re-execute <script> tags so plotly / bokeh / altair-generated
+					// dashboard HTML actually wires up.
+					for (const oldScript of stage.querySelectorAll('script')) {
+						const fresh = document.createElement('script');
+						for (const attr of oldScript.attributes) fresh.setAttribute(attr.name, attr.value);
+						fresh.textContent = oldScript.textContent;
+						oldScript.replaceWith(fresh);
+					}
+					post({ kind: 'stage_write' });
+				});
+
+				pyodide.globals.set('_haruspex_stage_clear', () => {
+					stage.innerHTML = '';
+					// Re-create the default canvas so subsequent pygame use still
+					// has a target without the model having to rebuild the DOM.
+					const fresh = document.createElement('canvas');
+					fresh.id = 'canvas';
+					fresh.width = 640;
+					fresh.height = 480;
+					fresh.tabIndex = 0;
+					stage.appendChild(fresh);
+					if (pyodide.canvas && typeof pyodide.canvas.setCanvas2D === 'function') {
+						pyodide.canvas.setCanvas2D(fresh);
+					}
+					post({ kind: 'stage_clear' });
+				});
+
+				// Task registry is managed Python-side in init.py — putting
+				// asyncio.Task PyProxies into a JS Set would have them
+				// auto-destroyed when this function returns (Pyodide 0.27+
+				// behavior). See _haruspex_tasks in init.py.
+			}
+
+			// ----------------------------------------------------------------
+			// Boot
+			// ----------------------------------------------------------------
+
+			// Wheels we ship in static/pyodide/ at the root. Pre-loaded from
+			// local URLs at boot so pygame-ce / bokeh / altair (and their
+			// transitive deps) work without an internet round-trip. Other
+			// Pyodide-lockfile packages (matplotlib, scipy, etc.) resolve via
+			// indexURL=CDN — same posture as the legacy worker.
+			const BUNDLED_WORKSPACE_WHEELS = [
+				'altair-6.0.0-py3-none-any.whl',
+				'attrs-25.2.0-py3-none-any.whl',
+				'bokeh-3.6.3-py3-none-any.whl',
+				'contourpy-1.3.1-cp313-cp313-pyemscripten_2025_0_wasm32.whl',
+				'jinja2-3.1.6-py3-none-any.whl',
+				'jsonschema-4.23.0-py3-none-any.whl',
+				'jsonschema_specifications-2024.10.1-py3-none-any.whl',
+				'markupsafe-3.0.2-cp313-cp313-pyemscripten_2025_0_wasm32.whl',
+				'narwhals-2.15.0-py3-none-any.whl',
+				'numpy-2.2.5-cp313-cp313-pyemscripten_2025_0_wasm32.whl',
+				'packaging-26.2-py3-none-any.whl',
+				'pandas-2.3.3-cp313-cp313-pyemscripten_2025_0_wasm32.whl',
+				'pillow-11.3.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl',
+				'pygame_ce-2.5.6.dev2-cp313-cp313-pyemscripten_2025_0_wasm32.whl',
+				'pyrsistent-0.20.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl',
+				'python_dateutil-2.9.0.post0-py2.py3-none-any.whl',
+				'pytz-2025.2-py2.py3-none-any.whl',
+				'pyyaml-6.0.2-cp313-cp313-pyemscripten_2025_0_wasm32.whl',
+				'referencing-0.36.2-py3-none-any.whl',
+				'rpds_py-0.30.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl',
+				'six-1.17.0-py2.py3-none-any.whl',
+				'typing_extensions-4.15.0-py3-none-any.whl',
+				'xyzservices-2025.1.0-py3-none-any.whl'
+			];
+
+			async function boot() {
+				try {
+					const { loadPyodide } = await import('/pyodide/pyodide.mjs');
+					pyodide = await loadPyodide({
+						indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.29.4/full/',
+						stdout: (s) => postStdout(s + '\n'),
+						stderr: (s) => postStderr(s + '\n')
+					});
+
+					// Bind the iframe's default canvas to Emscripten so pygame
+					// works without the model having to call setCanvas2D itself.
+					if (pyodide.canvas && typeof pyodide.canvas.setCanvas2D === 'function') {
+						pyodide.canvas.setCanvas2D(canvas);
+					}
+
+					if (pendingInterruptBuffer) {
+						pyodide.setInterruptBuffer(new Uint8Array(pendingInterruptBuffer));
+						pendingInterruptBuffer = null;
+					}
+
+					await pyodide.loadPackage('micropip');
+
+					// Warm the bundled workspace wheels from local URLs so
+					// pygame-ce / bokeh / altair work without hitting CDN.
+					// loadPackage with explicit URLs resolves those wheels
+					// directly; subsequent `import` calls find them installed.
+					try {
+						await pyodide.loadPackage(
+							BUNDLED_WORKSPACE_WHEELS.map((w) => `/pyodide/${w}`)
+						);
+					} catch (err) {
+						postStderr(
+							'[haruspex] warm-load of bundled workspace wheels failed: ' +
+								(err?.message || String(err)) +
+								'\n'
+						);
+					}
+
+					bindPyodideGlobals();
+
+					// Ask parent for runtime config (proxy mode, working dir
+					// set) so init.py knows whether to install the urllib
+					// shim. For MVP we don't actually use these yet, but
+					// keep the protocol symmetric for step 4.
+					const runtimeCfg = await new Promise((resolve) => {
+						proxyConfigWaiter = resolve;
+						post({ kind: 'get_runtime_config' });
+					});
+					pyodide.globals.set('_haruspex_skip_http_patch', runtimeCfg.proxyMode === 'manual');
+					pyodide.globals.set('_haruspex_working_dir_set', !!runtimeCfg.workingDirSet);
+
+					// Load init.py from the same dir as this HTML file.
+					const initSrc = await (await fetch('/workspace/init.py')).text();
+					await pyodide.runPythonAsync(initSrc);
+
+					post({ kind: 'ready' });
+				} catch (err) {
+					post({ kind: 'load_error', error: err?.message || String(err) });
+				}
+			}
+
+			// ----------------------------------------------------------------
+			// Message router
+			// ----------------------------------------------------------------
+
+			window.addEventListener('message', (event) => {
+				if (event.source !== window.parent) return;
+				const msg = event.data;
+				if (!msg || typeof msg.kind !== 'string') return;
+
+				switch (msg.kind) {
+					case 'set_interrupt_buffer':
+						if (pyodide) pyodide.setInterruptBuffer(new Uint8Array(msg.buffer));
+						else pendingInterruptBuffer = msg.buffer;
+						return;
+					case 'runtime_config':
+						if (proxyConfigWaiter) {
+							const w = proxyConfigWaiter;
+							proxyConfigWaiter = null;
+							w({ proxyMode: msg.proxyMode, workingDirSet: msg.workingDirSet });
+						}
+						return;
+					case 'run':
+						void handleRun(msg.id, msg.code);
+						return;
+					case 'install':
+						void handleInstall(msg.id, msg.package);
+						return;
+					case 'reset':
+						// Iframe reset is owned by the parent — it tears down and
+						// respawns this iframe. We just ack so the protocol stays
+						// symmetric (matches the worker behavior).
+						post({ kind: 'done', id: msg.id, result: emptyResult(0) });
+						return;
+					case 'capture_snapshot':
+						handleCaptureSnapshot(msg.request_id);
+						return;
+				}
+			});
+
+			async function handleRun(id, code) {
+				if (!pyodide) {
+					post({ kind: 'done', id, result: emptyResult(0, 'Pyodide is not loaded') });
+					return;
+				}
+				currentRunId = id;
+				currentStdout = '';
+				currentStderr = '';
+				const t0 = performance.now();
+				try {
+					await pyodide.loadPackagesFromImports(code);
+					// matplotlib hook is idempotent (sentinel-guarded in Python).
+					await pyodide.runPythonAsync('_haruspex_install_matplotlib_hook()');
+					const value = await pyodide.runPythonAsync(code);
+					const result = emptyResult(Math.round(performance.now() - t0));
+					if (value !== undefined && value !== null) {
+						const postprocess = pyodide.globals.get('_haruspex_postprocess');
+						try {
+							result.result = String(postprocess(value));
+						} finally {
+							postprocess?.destroy?.();
+							if (typeof value?.destroy === 'function') value.destroy();
+						}
+					}
+					post({ kind: 'done', id, result });
+				} catch (err) {
+					const message = err?.message || String(err);
+					post({ kind: 'done', id, result: emptyResult(Math.round(performance.now() - t0), message) });
+				} finally {
+					currentRunId = null;
+				}
+			}
+
+			async function handleInstall(id, packageName) {
+				if (!pyodide) {
+					post({ kind: 'done', id, result: emptyResult(0, 'Pyodide is not loaded') });
+					return;
+				}
+				const t0 = performance.now();
+				post({ kind: 'install_progress', id, package: packageName, phase: 'resolving' });
+				try {
+					const micropip = pyodide.pyimport('micropip');
+					post({ kind: 'install_progress', id, package: packageName, phase: 'downloading' });
+					await micropip.install(packageName);
+					post({ kind: 'install_progress', id, package: packageName, phase: 'installing' });
+					const result = emptyResult(Math.round(performance.now() - t0));
+					result.result = `installed ${packageName}`;
+					post({ kind: 'done', id, result });
+				} catch (err) {
+					const message = err?.message || String(err);
+					post({ kind: 'done', id, result: emptyResult(Math.round(performance.now() - t0), message) });
+				}
+			}
+
+			function handleCaptureSnapshot(requestId) {
+				// Pick the dominant child to snapshot. If the stage has a
+				// visible canvas with non-trivial content (pygame, py5, etc.),
+				// PNG-encode it. Otherwise serialize the stage HTML.
+				const dominantCanvas = stage.querySelector('canvas');
+				if (dominantCanvas) {
+					try {
+						const dataUrl = dominantCanvas.toDataURL('image/png');
+						post({ kind: 'snapshot', request_id: requestId, mime: 'image/png', payload: dataUrl });
+						return;
+					} catch {
+						// fall through to HTML snapshot
+					}
+				}
+				post({
+					kind: 'snapshot',
+					request_id: requestId,
+					mime: 'text/html',
+					payload: stage.outerHTML
+				});
+			}
+
+			boot();
+		</script>
+	</body>
+</html>
