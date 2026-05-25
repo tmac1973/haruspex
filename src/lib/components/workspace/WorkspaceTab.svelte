@@ -28,14 +28,6 @@
 	const activeTab = $derived(getActiveTab());
 
 	onMount(() => {
-		const pool = getWorkspacePool();
-		if (mountEl && !attached) {
-			// Svelte doesn't own pool.host — it's a long-lived element
-			// shared across tab visits. The pool manages its lifecycle.
-			// eslint-disable-next-line svelte/no-dom-manipulating
-			mountEl.appendChild(pool.host);
-			attached = true;
-		}
 		// Auto-switch to Workspace the first time the active chat
 		// writes to the stage in a given turn.
 		setStageWriteHook((chatId) => {
@@ -44,6 +36,21 @@
 			if (!shouldAutoSwitch(chatId)) return;
 			setActiveTab('workspace');
 		});
+	});
+
+	// Attach pool.host to the stage div as soon as the stage is in the
+	// DOM. Done via $effect (not onMount) because the stage is rendered
+	// unconditionally now but bind:this updates can occur after the
+	// component's initial mount — using onMount would race against the
+	// bind. Iframes only navigate to their src when their ancestor
+	// chain reaches the document, so this is load-bearing for every
+	// run_python call to complete.
+	$effect(() => {
+		if (attached || !mountEl) return;
+		const pool = getWorkspacePool();
+		// eslint-disable-next-line svelte/no-dom-manipulating
+		mountEl.appendChild(pool.host);
+		attached = true;
 	});
 
 	onDestroy(() => {
@@ -89,11 +96,7 @@
 </script>
 
 <div class="workspace-tab">
-	{#if !activeChatId}
-		<div class="empty">
-			<p>Open or create a chat first.</p>
-		</div>
-	{:else}
+	{#if activeChatId}
 		<div class="controls">
 			<button onclick={doReset} disabled={resetting}>
 				{resetting ? 'Resetting…' : 'Reset session'}
@@ -103,16 +106,20 @@
 				>Per-chat Python state. Switching chats keeps each session alive (up to 3).</span
 			>
 		</div>
-		<div class="stage" bind:this={mountEl}>
-			{#if !attached}
-				<div class="empty">
-					<p>
-						The model can render Python or HTML here. The stage stays empty until the model writes
-						content.
-					</p>
-				</div>
-			{/if}
-		</div>
+	{/if}
+	<!--
+		Stage is rendered unconditionally — pool.host must reach the DOM
+		for the iframe inside to navigate to its src. The empty / no-chat
+		overlays sit on top via absolute positioning.
+	-->
+	<div class="stage" bind:this={mountEl}>
+		{#if !activeChatId}
+			<div class="empty overlay">
+				<p>Open or create a chat first.</p>
+			</div>
+		{/if}
+	</div>
+	{#if activeChatId}
 		<WorkspaceConsole chatId={activeChatId} />
 	{/if}
 </div>
@@ -167,5 +174,10 @@
 		font-size: 0.9rem;
 		padding: 1rem;
 		text-align: center;
+	}
+	.empty.overlay {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
 	}
 </style>
