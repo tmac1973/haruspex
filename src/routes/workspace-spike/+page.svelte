@@ -15,6 +15,8 @@
 	let stageWrites = $state(0);
 	let stageClears = $state(0);
 	let snapshotPng = $state<string | null>(null);
+	let workdir = $state('/tmp/haruspex-spike');
+	let proxyMode = $state('none');
 
 	function log(line: string): void {
 		logLines = [...logLines, line];
@@ -24,6 +26,11 @@
 		if (!mountTarget) throw new Error('mount target not bound yet');
 		if (!manager) {
 			manager = new IframeManager({
+				getRuntimeConfig: () => ({
+					proxyMode,
+					workingDir: workdir.trim() || null
+				}),
+				getProxyConfig: () => ({ mode: proxyMode, url: '' }),
 				onStageWrite: () => {
 					stageWrites++;
 					log('[stage_write]');
@@ -130,6 +137,109 @@ haruspex.spawn(main())
 		await runDemo('stop_tasks', `import haruspex; haruspex.stop_tasks()`);
 	}
 
+	async function doSaveText(): Promise<void> {
+		await runDemo(
+			'haruspex.save',
+			`
+import haruspex
+r = await haruspex.save("hello.txt", "hello from the workspace iframe\\n")
+print(r)
+`
+		);
+	}
+
+	async function doSaveBytes(): Promise<void> {
+		await runDemo(
+			'save bytes (matplotlib PNG)',
+			`
+import io, matplotlib.pyplot as plt, haruspex
+fig, ax = plt.subplots()
+ax.plot([0,1,2,3], [3,1,4,1])
+buf = io.BytesIO()
+fig.savefig(buf, format="png")
+r = await haruspex.save("plot.png", buf.getvalue())
+print(r)
+`
+		);
+	}
+
+	async function doDrainTest(): Promise<void> {
+		await runDemo(
+			'drain (open + write outside)',
+			`
+# Writes via builtins.open inside the workdir → caught by phase 1 of the
+# drain. Writes outside the workdir → caught by the builtins.open patch
+# and saved by basename. Verify both end up on the host.
+with open("inside.txt", "w") as f:
+    f.write("written inside workdir")
+with open("/home/pyodide/outside.txt", "w") as f:
+    f.write("written outside workdir")
+"both written"
+`
+		);
+	}
+
+	async function doPyfetch(): Promise<void> {
+		await runDemo(
+			'pyfetch httpbin',
+			`
+import pyodide.http, json
+r = await pyodide.http.pyfetch("https://httpbin.org/get?from=workspace")
+data = json.loads(await r.string())
+print("url:", data.get("url"))
+print("args:", data.get("args"))
+"fetched"
+`
+		);
+	}
+
+	async function doFpdf(): Promise<void> {
+		await runDemo(
+			'fpdf2 → save PDF',
+			`
+import haruspex
+from fpdf import FPDF
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Helvetica", size=18)
+pdf.cell(0, 12, "Workspace doc-wheel test", new_x="LMARGIN", new_y="NEXT")
+pdf.set_font("Helvetica", size=10)
+pdf.cell(0, 8, "If this lands at /tmp/haruspex-spike/test.pdf, drain + save work.")
+b = bytes(pdf.output())
+r = await haruspex.save("test.pdf", b)
+print(r)
+`
+		);
+	}
+
+	async function doInstall(): Promise<void> {
+		try {
+			const m = ensureManager();
+			log('> install_package(plotly)');
+			const r = await m.installPackage('plotly', {
+				onStdout: (s) => log('OUT ' + s.trimEnd()),
+				onStderr: (s) => log('ERR ' + s.trimEnd())
+			});
+			log(`done: result=${r.result || '(none)'} took=${r.duration_ms}ms`);
+			if (r.error) log(`ERROR: ${r.error}`);
+		} catch (err) {
+			log('exception: ' + (err instanceof Error ? err.message : String(err)));
+		}
+	}
+
+	async function doPlotly(): Promise<void> {
+		await runDemo(
+			'plotly → show_html',
+			`
+import plotly.express as px, haruspex
+df = px.data.iris()
+fig = px.scatter(df, x="sepal_width", y="sepal_length", color="species")
+haruspex.show_html(fig.to_html(include_plotlyjs="cdn"))
+"rendered"
+`
+		);
+	}
+
 	async function doClearStage(): Promise<void> {
 		await runDemo('clear_stage', `import haruspex; haruspex.clear_stage()`);
 	}
@@ -174,11 +284,35 @@ haruspex.spawn(main())
 
 	{#if mode === 'manager'}
 		<div class="manager-pane">
+			<div class="config">
+				<label
+					>workdir
+					<input bind:value={workdir} placeholder="/tmp/haruspex-spike" />
+				</label>
+				<label
+					>proxy
+					<select bind:value={proxyMode}>
+						<option value="none">none</option>
+						<option value="manual">manual (block urllib)</option>
+					</select>
+				</label>
+				<span class="hint"
+					>The workdir must exist on disk before save tests; run
+					<code>mkdir -p {workdir}</code> in a terminal.</span
+				>
+			</div>
 			<div class="controls">
 				<button onclick={doMath}>2 + 2 / print</button>
 				<button onclick={doMatplotlib}>matplotlib → artifact</button>
 				<button onclick={doPandasDataFrame}>DataFrame → artifact</button>
 				<button onclick={doShowHtml}>haruspex.show_html</button>
+				<button onclick={doSaveText}>haruspex.save (text)</button>
+				<button onclick={doSaveBytes}>save matplotlib PNG</button>
+				<button onclick={doDrainTest}>drain (inside + outside)</button>
+				<button onclick={doPyfetch}>pyfetch httpbin</button>
+				<button onclick={doFpdf}>fpdf2 → save PDF</button>
+				<button onclick={doInstall}>install_package plotly</button>
+				<button onclick={doPlotly}>plotly → show_html</button>
 				<button onclick={doPygame}>pygame (haruspex.spawn)</button>
 				<button onclick={doStopTasks}>haruspex.stop_tasks</button>
 				<button onclick={doClearStage}>haruspex.clear_stage</button>
@@ -229,6 +363,37 @@ haruspex.spawn(main())
 		display: grid;
 		grid-template-columns: 1fr;
 		gap: 0.5rem;
+	}
+	.config {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+		flex-wrap: wrap;
+		font-size: 0.85rem;
+		padding: 0.5rem;
+		background: #222;
+		border: 1px solid #333;
+	}
+	.config input,
+	.config select {
+		background: #1a1a1a;
+		color: #ddd;
+		border: 1px solid #444;
+		padding: 0.2rem 0.4rem;
+		font-family: ui-monospace, monospace;
+		font-size: 0.85rem;
+	}
+	.config input {
+		width: 18rem;
+	}
+	.hint {
+		color: #888;
+		font-size: 0.75rem;
+	}
+	.hint code {
+		background: #1a1a1a;
+		padding: 0 0.25rem;
+		border-radius: 2px;
 	}
 	.controls {
 		display: flex;

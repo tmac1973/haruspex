@@ -52,6 +52,10 @@
 			let currentStderr = '';
 			let pendingInterruptBuffer = null;
 			let proxyConfigWaiter = null;
+			// Pending parent-routed bridges, keyed by request_id.
+			const pendingFetches = new Map();
+			const pendingSaves = new Map();
+			const pendingDeletes = new Map();
 
 			function post(msg) {
 				window.parent.postMessage(msg, '*');
@@ -161,6 +165,92 @@
 				// asyncio.Task PyProxies into a JS Set would have them
 				// auto-destroyed when this function returns (Pyodide 0.27+
 				// behavior). See _haruspex_tasks in init.py.
+
+				// ------------------------------------------------------------
+				// Parent-routed bridges. __TAURI_INTERNALS__ is not injected
+				// into child iframes on Tauri 2.x / WebKitGTK, so every Rust
+				// invoke goes: Python coroutine → JS bridge → postMessage to
+				// parent → parent invokes Rust → parent posts response →
+				// JS bridge resolves the awaited Promise → Python continues.
+				// ------------------------------------------------------------
+
+				pyodide.globals.set('_haruspex_fetch', (url, method, headers, body) => {
+					const requestId = crypto.randomUUID();
+					let bodyBytes;
+					if (body == null) {
+						bodyBytes = undefined;
+					} else if (body instanceof Uint8Array) {
+						bodyBytes = new Uint8Array(body);
+					} else if (typeof body === 'string') {
+						bodyBytes = new TextEncoder().encode(body);
+					} else if (body && typeof body.toJs === 'function') {
+						const c = body.toJs();
+						if (c instanceof Uint8Array) bodyBytes = new Uint8Array(c);
+						else if (typeof c === 'string') bodyBytes = new TextEncoder().encode(c);
+					}
+					const headersObj = {};
+					if (headers && typeof headers === 'object') {
+						const src = typeof headers.toJs === 'function' ? headers.toJs() : headers;
+						for (const [k, v] of Object.entries(src)) {
+							if (v != null) headersObj[String(k)] = String(v);
+						}
+					}
+					return new Promise((resolve, reject) => {
+						pendingFetches.set(requestId, { resolve, reject });
+						post({
+							kind: 'fetch_request',
+							id: currentRunId,
+							request_id: requestId,
+							url: String(url),
+							init: {
+								method: typeof method === 'string' ? method : undefined,
+								headers: headersObj,
+								body: bodyBytes
+							}
+						});
+					});
+				});
+
+				pyodide.globals.set('_haruspex_save', (filename, content) => {
+					const requestId = crypto.randomUUID();
+					let payload;
+					if (typeof content === 'string') {
+						payload = content;
+					} else if (content instanceof Uint8Array) {
+						// Detach from any WASM buffer so structured-clone works.
+						payload = new Uint8Array(content);
+					} else if (content && typeof content.toJs === 'function') {
+						const c = content.toJs();
+						if (c instanceof Uint8Array) payload = new Uint8Array(c);
+						else if (typeof c === 'string') payload = c;
+						else return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
+					} else {
+						return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
+					}
+					return new Promise((resolve, reject) => {
+						pendingSaves.set(requestId, { resolve, reject });
+						post({
+							kind: 'save_request',
+							id: currentRunId,
+							request_id: requestId,
+							filename: String(filename),
+							content: payload
+						});
+					});
+				});
+
+				pyodide.globals.set('_haruspex_delete', (filename) => {
+					const requestId = crypto.randomUUID();
+					return new Promise((resolve, reject) => {
+						pendingDeletes.set(requestId, { resolve, reject });
+						post({
+							kind: 'delete_request',
+							id: currentRunId,
+							request_id: requestId,
+							filename: String(filename)
+						});
+					});
+				});
 			}
 
 			// ----------------------------------------------------------------
@@ -219,6 +309,13 @@
 					}
 
 					await pyodide.loadPackage('micropip');
+					// Same-origin URL to the doc-creation wheels bundled by
+					// scripts/fetch-pyodide.sh into static/pyodide/wheels/.
+					// init.py reads this to construct the micropip.install URLs.
+					pyodide.globals.set(
+						'_haruspex_doc_wheels_url',
+						new URL('/pyodide/wheels/', self.location.origin).href
+					);
 
 					// Warm the bundled workspace wheels from local URLs so
 					// pygame-ce / bokeh / altair work without hitting CDN.
@@ -295,8 +392,98 @@
 					case 'capture_snapshot':
 						handleCaptureSnapshot(msg.request_id);
 						return;
+					case 'sync_workdir_files':
+						void handleSyncWorkdir(msg);
+						return;
+					case 'fetch_response': {
+						const p = pendingFetches.get(msg.request_id);
+						if (!p) return;
+						pendingFetches.delete(msg.request_id);
+						if (msg.error) p.reject(new Error(msg.error));
+						else
+							p.resolve({
+								status: msg.status,
+								headers: msg.headers,
+								body: msg.body,
+								url: msg.url
+							});
+						return;
+					}
+					case 'save_response': {
+						const p = pendingSaves.get(msg.request_id);
+						if (!p) return;
+						pendingSaves.delete(msg.request_id);
+						if (msg.ok) p.resolve({ path: msg.path ?? '', bytes: msg.bytes ?? 0 });
+						else p.reject(new Error(msg.error ?? 'haruspex.save failed'));
+						return;
+					}
+					case 'delete_response': {
+						const p = pendingDeletes.get(msg.request_id);
+						if (!p) return;
+						pendingDeletes.delete(msg.request_id);
+						if (msg.ok) p.resolve({ path: msg.path ?? '' });
+						else p.reject(new Error(msg.error ?? 'haruspex.delete failed'));
+						return;
+					}
 				}
 			});
+
+			async function handleSyncWorkdir(msg) {
+				if (!pyodide) {
+					post({ kind: 'sync_workdir_ack', sync_id: msg.sync_id, error: 'pyodide not loaded' });
+					return;
+				}
+				try {
+					const fs = pyodide.FS;
+					try {
+						fs.mkdirTree(msg.workdir_abs);
+					} catch {
+						// already exists
+					}
+					for (const file of msg.to_sync) {
+						const bytes =
+							file.bytes instanceof Uint8Array ? new Uint8Array(file.bytes) : new Uint8Array(0);
+						const lastSlash = file.abs_path.lastIndexOf('/');
+						if (lastSlash > 0) {
+							try {
+								fs.mkdirTree(file.abs_path.slice(0, lastSlash));
+							} catch {
+								// dir already exists
+							}
+						}
+						try {
+							fs.writeFile(file.abs_path, bytes);
+						} catch (err) {
+							postStderr(
+								'[haruspex.sync] failed to write ' + file.path + ': ' + String(err) + '\n'
+							);
+						}
+					}
+					for (const path of msg.deleted) {
+						const abs = msg.workdir_abs + '/' + path;
+						try {
+							if (fs.analyzePath(abs).exists) fs.unlink(abs);
+						} catch {
+							// best-effort
+						}
+					}
+					for (const sk of msg.skipped) {
+						postStderr('[haruspex.sync] skipped ' + sk.path + ': ' + sk.reason + '\n');
+					}
+					// Chdir so the model's relative paths resolve to the
+					// synced files.
+					await pyodide.runPythonAsync(
+						'import os as _os; _os.chdir(' + JSON.stringify(msg.workdir_abs) + ')'
+					);
+					post({ kind: 'sync_workdir_ack', sync_id: msg.sync_id });
+				} catch (err) {
+					post({
+						kind: 'sync_workdir_ack',
+						sync_id: msg.sync_id,
+						error: err?.message || String(err)
+					});
+				}
+			}
 
 			async function handleRun(id, code) {
 				if (!pyodide) {
@@ -310,8 +497,20 @@
 				try {
 					await pyodide.loadPackagesFromImports(code);
 					// matplotlib hook is idempotent (sentinel-guarded in Python).
-					await pyodide.runPythonAsync('_haruspex_install_matplotlib_hook()');
+					// Snapshot the workdir alongside so the post-run drain can
+					// detect new/modified files regardless of how they were
+					// written (zipfile-based: python-pptx, python-docx, etc.).
+					await pyodide.runPythonAsync(
+						'_haruspex_install_matplotlib_hook(); _haruspex_snapshot_workdir()'
+					);
 					const value = await pyodide.runPythonAsync(code);
+					try {
+						await pyodide.runPythonAsync('await _haruspex_drain_pending_saves()');
+					} catch (drainErr) {
+						postStderr(
+							'\n[haruspex] drain failed: ' + (drainErr?.message || String(drainErr)) + '\n'
+						);
+					}
 					const result = emptyResult(Math.round(performance.now() - t0));
 					if (value !== undefined && value !== null) {
 						const postprocess = pyodide.globals.get('_haruspex_postprocess');
