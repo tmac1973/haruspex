@@ -495,6 +495,9 @@ def _haruspex_install_matplotlib_hook():
 def _haruspex_postprocess(value):
     if value is None:
         return ''
+    # Pandas DataFrames render cleanly as inline-chat HTML — pure markup,
+    # no scripts. Handle first so we don't fall into the generic
+    # _repr_html_ branch (which would route them to the workspace).
     try:
         import pandas as _pd
         if isinstance(value, _pd.DataFrame):
@@ -510,6 +513,15 @@ def _haruspex_postprocess(value):
         try:
             html = value._repr_html_()
             if html:
+                # Script-bearing HTML (plotly, bokeh, altair, folium, etc.)
+                # can't render in the chat — chat artifacts go through
+                # {@html ...} which doesn't execute <script> tags, so the
+                # user would see an empty placeholder. Route these to the
+                # workspace stage instead; haruspex.show_html re-executes
+                # the embedded scripts so the figure draws.
+                if '<script' in html.lower():
+                    _haruspex_stage_show_html(html)
+                    return '(rendered in Workspace tab)'
                 _haruspex_emit_html(html, None, None)
                 return '(rendered as HTML in UI)'
         except Exception:
