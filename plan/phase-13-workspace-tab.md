@@ -35,7 +35,7 @@ The original phase 13 (now superseded by this document) introduced a **second** 
 | Long-running code | **Model wraps in `asyncio.ensure_future(...)`** to detach. Tool returns when the submitted top-level code completes. | Idiomatic Python. The tool runtime stays simple (no timeout-to-detach state machine). A pygame game looks like: `task = asyncio.ensure_future(run_game())` — top-level finishes instantly, tool returns, game keeps running. We document this in the `run_python` description and add a one-line example. |
 | Tab visibility | **Tab bar always visible** (`[Chat \| Workspace]`). Auto-switch to Workspace **the first time the stage receives content** in a chat turn; subsequent writes in the same turn don't re-steal focus. Indicator dot on the Workspace tab when stage has fresh content the user hasn't viewed. | Discoverable, minimally jarring. The user can always click back to Chat. |
 | HTML rendering surface | **`haruspex.show_html(html)` helper module function**, plus `haruspex.clear_stage()`. Raw `js.document` access remains available as an escape hatch but is not the documented path. | Discoverable via `dir(haruspex)`; the helper centralizes `<script>` re-execution so dashboard HTML works without each model having to remember to handle script tags manually. |
-| Bundled wheels | **pygame-ce + plotly + bokeh + altair**, plus the existing fpdf2 / python-pptx / xlsxwriter / defusedxml / fonttools. ~30–40 MB net bundle growth. | Headline interactive use cases work offline; matches Haruspex's offline-first goal. |
+| Bundled wheels | **pygame-ce + bokeh + altair** (in Pyodide 0.29.4's lockfile — bundle their wheels + transitive deps at `static/pyodide/` root, resolve via `loadPackage` with `indexURL='/pyodide/'`). **Plotly is not in the lockfile**, so it defers to `install_package` on first use (one PyPI roundtrip per chat, then cached). Plus the existing fpdf2 / python-pptx / xlsxwriter / defusedxml / fonttools. ~30 MB net bundle growth. | Lockfile-resident packages bundle for ~zero ergonomic cost. Plotly out-of-lockfile would require a PyPI snapshot or a built wheel, which is more maintenance burden than the offline-first benefit justifies. |
 | Chat-switch behavior | **Persistent per-chat iframes**, LRU cap of 3. Active chat's iframe stays alive; on switch, the previous chat's iframe stays hidden (`visibility: hidden`) but running. When a 4th chat becomes active, the least-recently-used iframe is **evicted**: capture stage snapshot, store with conversation, destroy iframe. Returning to an evicted chat: boot fresh iframe, render snapshot statically with "Resume session" button, replay history on demand. | Best UX for "ask follow-up after switching back" without keeping ten Pyodide instances live. The LRU also bounds memory growth to ~3 × 50–100 MB. |
 | Aux tools | **None beyond `reset_python`**. Stage clearing, task cancellation, etc. happen via the `haruspex` Python helper module (`haruspex.clear_stage()`, `haruspex.stop_tasks()`). | Keeps the model-facing tool surface narrow. Reset is the only kill-switch the model needs at the tool level. |
 | Approval | **Unchanged from today**. The existing `sandboxApproval` setting (`every-run` / `once-per-chat` / `off`) and per-chat `sandboxApproved` flag cover everything; one approval per chat governs all Python (compute OR visual). No separate workspace approval. | Unification's main benefit — one trust boundary. |
@@ -65,8 +65,8 @@ The original phase 13 (now superseded by this document) introduced a **second** 
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Workspace iframe (one per chat, same-origin, /workspace/index.html)  │
 │  • Loads Pyodide                                                     │
-│  • Pre-installs: fpdf2, python-pptx, xlsxwriter, pygame-ce, plotly,  │
-│    bokeh, altair (bundled wheels from static/pyodide/wheels/)        │
+│  • Pre-installs (offline): fpdf2, python-pptx, xlsxwriter,           │
+│    pygame-ce, bokeh, altair. Plotly: install_package on demand.      │
 │  • Exposes:                                                          │
 │      - <div id="stage"> — visible canvas / HTML region               │
 │      - haruspex.show_html / clear_stage / stop_tasks (Python helpers)│
@@ -92,6 +92,15 @@ The Web Worker has no `document`, no canvas, no DOM event listeners. pygame-ce /
 
 The trade-off: a synchronous `time.sleep(5)` in Python blocks the iframe's own event loop, which means a concurrently-running pygame loop will drop frames during that sleep. Documented in the tool description and in the `haruspex` module docstring; game-loop code uses `await asyncio.sleep(0)` instead.
 
+### Load-bearing facts from the prior spike (Tauri 2.x / WebKitGTK)
+
+These are not assumptions; they were verified on the prior `feat/phase-13-workspace-tab` branch and must be honored by this implementation:
+
+1. **`window.__TAURI_INTERNALS__` is NOT injected into child iframes**. It exists in the parent window but not in the iframe's `contentWindow`. The iframe therefore CANNOT call `invoke('sandbox_fetch', ...)` directly. All Rust-Tauri calls (`sandbox_fetch`, `sandbox_save`, `sandbox_delete_in_workdir`, `sandbox_sync_workdir`) must be **routed through the parent** via `postMessage`: iframe asks → parent invokes Rust → parent posts response back. This is the same shape as today's worker bridge — the protocol's `fetch_request`/`fetch_response`/`save_request`/`save_response`/`delete_request`/`delete_response`/`sync_workdir_files`/`sync_workdir_ack` pairs carry over unchanged.
+2. **`pyodide.canvas.setCanvas2D(canvasEl)` MUST be called before `pygame.init()`**. SDL2 looks at Emscripten's `Module.canvas` to find where to draw. Without this call, `pygame.display.set_mode()` raises `SDL2.ctx is undefined` inside SDL_image's `createImageData`. The init script provisions a `<canvas id="canvas">` inside the stage and calls `pyodide.canvas.setCanvas2D` at boot, so user code can call `pygame.init()` freely.
+3. **Iframe-side canvas needs `tabindex` and explicit focus** to receive keyboard events. The init script gives the canvas `tabindex="0"` and focuses it the first time pygame draws.
+4. **Pyodide 0.29.4 lockfile** ships `pygame-ce`, `bokeh`, `altair`, plus matplotlib/numpy/pandas/etc. as already-built Pyodide wheels. We drop their `.whl` files at `static/pyodide/` root (not in `wheels/`) and load via `pyodide.loadPackage(['pygame-ce', 'bokeh', 'altair'])` with `indexURL='/pyodide/'`. Loads in ~160ms vs ~3+s for PyPI install.
+
 ---
 
 ## Tool Surface (model-facing)
@@ -111,7 +120,7 @@ Three tools total. Tool registration uses the standard patterns from `maintenanc
       '(1) Inline-in-chat: matplotlib `plt.show()`, a pandas DataFrame as the last expression, and any value with `_repr_html_` are rendered as artifacts in the chat message. ' +
       '(2) Workspace tab: import `haruspex` and call `haruspex.show_html(html_string)` to render interactive HTML (e.g. plotly: `haruspex.show_html(fig.to_html(include_plotlyjs="cdn"))`). pygame draws to a canvas inside the workspace tab automatically. ' +
       'LONG-RUNNING CODE: for game loops, animations, or anything that runs indefinitely, wrap in `asyncio.ensure_future`: ```python\nasync def game(): ...\ntask = asyncio.ensure_future(game())``` — the tool call returns immediately, the task keeps running in the background, and the next `run_python` call shares the same Python state (you can cancel via `task.cancel()` or call `haruspex.stop_tasks()`). Do NOT use `while True:` at the top level without yielding or detaching; it will hang the tool. ' +
-      'Bundled offline: matplotlib, numpy, pandas, scipy, scikit-learn, sympy, pillow, beautifulsoup4 (Pyodide built-ins), plus fpdf2, python-pptx, xlsxwriter, pygame-ce, plotly, bokeh, altair. Other packages: `install_package` first.',
+      'Bundled offline: matplotlib, numpy, pandas, scipy, scikit-learn, sympy, pillow, beautifulsoup4 (Pyodide built-ins), plus fpdf2, python-pptx, xlsxwriter, pygame-ce, bokeh, altair. Plotly and other PyPI packages: `install_package` first (downloads once, then cached).',
     parameters: {
       type: 'object',
       properties: {
@@ -136,7 +145,7 @@ Result mirrors today's `ToolResult`: `{ stdout, stderr, result, error, artifacts
   function: {
     name: 'install_package',
     description:
-      'Install a Python package into the sandbox via micropip. Pre-built Pyodide packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) work out of the box. Pure-Python wheels from PyPI also work; packages with C extensions that have not been pre-built for Pyodide will fail. Pre-installed: fpdf2, python-pptx, xlsxwriter, pygame-ce, plotly, bokeh, altair — do not reinstall. Installs persist for the current chat.',
+      'Install a Python package into the sandbox via micropip. Pre-built Pyodide packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) work out of the box. Pure-Python wheels from PyPI also work; packages with C extensions that have not been pre-built for Pyodide will fail. Pre-installed: fpdf2, python-pptx, xlsxwriter, pygame-ce, bokeh, altair — do not reinstall. Plotly is NOT pre-installed (not in Pyodide lockfile); use install_package(\'plotly\') first. Installs persist for the current chat.',
     parameters: {
       type: 'object',
       properties: {
@@ -402,14 +411,23 @@ static/workspace/
                                        # pyfetch override, urllib patch, matplotlib hook, postprocess, drain
                                        # (composed from today's HARUSPEX_INIT_PY block)
 
-static/pyodide/wheels/                 # existing dir; add:
-  pygame_ce-*.whl
-  plotly-*.whl
+static/pyodide/                        # NEW: workspace wheels at root (loaded by indexURL='/pyodide/'):
+  pygame_ce-*.whl                      #   in Pyodide 0.29.4 lockfile, loaded via pyodide.loadPackage
   bokeh-*.whl
   altair-*.whl
-  (pure-Python transitive deps)
+  <transitive deps>                    # numpy, pandas, narwhals, jinja2, jsonschema, pyyaml, etc.
+                                       # (~23 wheels, ~18 MB, fetched by scripts/fetch-pyodide.sh
+                                       #  from the Pyodide CDN; same set as derived from
+                                       #  static/pyodide/pyodide-lock.json)
 
-scripts/fetch-pyodide.sh               # extend to download the new wheels
+static/pyodide/wheels/                 # existing dir (chat-sandbox doc wheels — unchanged):
+  fpdf2-*.whl
+  python_pptx-*.whl
+  defusedxml-*.whl
+  fonttools-*.whl
+  xlsxwriter-*.whl
+
+scripts/fetch-pyodide.sh               # extends to download the workspace wheels at /pyodide/ root
 ```
 
 The `static/pyodide/` dir is already used by the worker; the iframe loads from the same place.
@@ -418,30 +436,23 @@ The `static/pyodide/` dir is already used by the worker; the iframe loads from t
 
 ## Implementation Steps
 
-### Step 1 — Spike: pygame in a Tauri iframe (1 day)
+### Step 1 — Re-confirm the spike on this branch (half day)
 
-Goal: prove the basic mechanism before committing to a full migration. **Do not delete the worker yet.** This is a parallel proof-of-concept route at a temporary URL.
+The prior branch already proved pygame-ce renders in a Tauri iframe on WebKitGTK and surfaced two load-bearing findings (recorded under "Load-bearing facts from the prior spike" above). This step is a smaller re-confirmation on a clean branch: rebuild a minimal `static/workspace/spike.html`, a wrapper route, run dev, and verify the bouncing-circle pygame demo renders, accepts keyboard input, and runs `pyodide.canvas.setCanvas2D` cleanly. **Do not delete the worker yet.**
 
-- Hand-roll a static `static/workspace/spike.html` with inline Pyodide loader, loading `pygame-ce` from CDN at runtime.
-- Run a hardcoded "moving circle" demo.
-- Load via `/workspace/spike` and confirm:
-  - Pygame renders to canvas.
-  - Keyboard / mouse events reach Python.
-  - `window.__TAURI_INTERNALS__.invoke('sandbox_fetch', ...)` works from the iframe.
-- Confirm same-origin `postMessage` between parent and iframe works as expected.
-
-If pygame or `invoke` doesn't work on WebKitGTK Linux, escalate before proceeding. Possible escapes:
-
-- Different SDL backend if pygame-ce offers one.
-- Fall back to a Python-canvas drawing helper (less ergonomic but reliable).
-- Use parent-mediated `invoke` (bridge `postMessage` → parent → Rust → `postMessage` back).
+- `static/workspace/spike.html`: minimal Pyodide loader, `<canvas id="canvas" tabindex="0">`, `pyodide.canvas.setCanvas2D(canvas)`, then a hardcoded bouncing-circle pygame demo wrapped in `asyncio.ensure_future`. ~150 LOC, leaner than the prior version.
+- `src/routes/workspace-spike/+page.svelte`: thin wrapper that just embeds `/workspace/spike.html` in an iframe. No "manager mode" — that's step 4.
+- Run `npm run tauri dev`, navigate to `/workspace-spike`, confirm: pygame renders, ←/→ keys move the ball, no SDL errors.
+- DO NOT test `window.__TAURI_INTERNALS__.invoke` in the iframe — we already know it's absent. The spike's job is only to re-confirm pygame + canvas + key events on the current main.
+- Once confirmed, delete the spike artifacts in step 9 (after the production iframe lands).
 
 ### Step 2 — Bundle the wheels (half day)
 
-- Identify exact wheel filenames + pure-Python transitive deps for `pygame-ce`, `plotly`, `bokeh`, `altair`.
-- Add them to `scripts/fetch-pyodide.sh`.
-- Confirm wheel sizes; if total bundle > ~50 MB, reconsider.
-- Test offline install in the spike iframe.
+- pygame-ce, bokeh, altair (+ their transitive deps) all ship in Pyodide 0.29.4's lockfile. Drop them at `static/pyodide/` root (NOT in `wheels/`); the iframe loads them via `pyodide.loadPackage([...])` with `indexURL='/pyodide/'`. ~18 MB for the full set.
+- Plotly is NOT in the lockfile — it stays an `install_package` first-use download (~5 MB from PyPI, then browser-cached).
+- Extend `scripts/fetch-pyodide.sh` to download the workspace wheel set from `https://cdn.jsdelivr.net/pyodide/v0.29.4/full/<wheel>`. Mirror the marker-file idempotency used for the doc-creation wheels.
+- The exact wheel list is derivable from `static/pyodide/pyodide-lock.json`; the working set on the prior branch was 23 wheels including transitive deps (numpy, pandas, narwhals, jinja2, jsonschema, pyrsistent, rpds_py, pyyaml, etc.).
+- Test offline install in the spike iframe (`pyodide.loadPackage(['pygame-ce', 'bokeh', 'altair'])` from disk, no network).
 
 ### Step 3 — Build the new iframe runtime (2 days)
 
@@ -515,8 +526,8 @@ Conventional Commits scope: `feat(sandbox): unify worker/workspace into iframe r
 
 ## Risks & Open Questions
 
-- **pygame-ce on WebKitGTK** — unverified. Step 1 is the gate. Falling back leaves the unification valuable for plotly / HTML / bokeh / altair; pygame would be a documented "tries to render but may not on Linux" caveat.
-- **Tauri `invoke` from child iframes** — believed to work (same-origin, `__TAURI_INTERNALS__` injected) but unverified for *child iframes specifically*. Verify in step 1. Fallback: parent-mediated bridge.
+- **pygame-ce on WebKitGTK** — verified on the prior branch; re-confirmed in step 1 on this branch.
+- **Tauri `invoke` from child iframes** — verified absent on the prior branch (`__TAURI_INTERNALS__` is not injected into child iframes). The plan adopts the parent-postMessage bridge as the design, NOT as a fallback. Protocol carries the bridge messages, same shape as today's worker bridge.
 - **Stdout from detached tasks** — Pyodide's `setStdout` is process-global, so background-task `print()`s will route to *whichever* `currentRunId` was last set. We need to be more careful than today: if a tool call returns and 30 seconds later a background task prints, we still want that print in the console pane, just not in any returned tool result. Buffer it with `id: null` or with a synthetic "background" id.
 - **Replay skipping `asyncio.ensure_future`** — the heuristic ("substring match") is fragile. If a model writes `task = asyncio.ensure_future(compute_a_sum())` (a normal compute that just happens to use a coroutine), replay will skip it and the model loses the result. Document, and consider a more reliable signal long-term (e.g. a per-call "is-long-running" hint the model can pass, OR an AST check).
 - **Memory growth** — three iframes ≈ 150–300 MB of Pyodide state. Cap of 3 is a defensive guess; revisit based on real usage.
@@ -546,7 +557,7 @@ If the user has a partially-implemented branch from the original phase 13 plan (
 
 1. Delete the new tools (`start_tab_session`, `update_tab`, `stop_tab_session`, `install_package_in_tab`).
 2. Keep any work on `WorkspaceTab.svelte` / `WorkspaceConsole.svelte` — those are reused here.
-3. Keep any work on bundled wheels (pygame-ce/plotly/bokeh/altair) — reused.
+3. Keep any work on bundled wheels (pygame-ce/bokeh/altair + transitive deps at `static/pyodide/` root) — reused. Plotly stays as install_package, not bundled.
 4. Discard the second Pyodide instance / second worker / parallel iframe-manager — the unified iframe is per-chat, not per-purpose.
 5. Discard `workspaceApproved` field — unified under `sandboxApproved`.
 
