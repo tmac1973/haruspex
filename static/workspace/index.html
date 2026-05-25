@@ -535,7 +535,39 @@
 						'_haruspex_install_matplotlib_hook(); _haruspex_snapshot_workdir()'
 					);
 					trace('after hook+snapshot');
-					const value = await pyodide.runPythonAsync(code);
+					// Auto-transform sync-style code so top-level while/for loops
+					// (pygame's `while running: ... clock.tick(60)` pattern) yield
+					// cooperatively. Same-origin iframes share the parent's event
+					// loop on WebKitGTK — a blocking Python loop here freezes the
+					// whole app. See _haruspex_workspace_transform in init.py.
+					pyodide.globals.set('_haruspex_user_code_in', code);
+					const transformedProxy = await pyodide.runPythonAsync(
+						'_haruspex_workspace_transform(_haruspex_user_code_in)'
+					);
+					const actualCode = typeof transformedProxy === 'string' ? transformedProxy : code;
+					const wasTransformed = actualCode !== code;
+					if (wasTransformed) {
+						postStderr(
+							'[workspace] auto-wrapped sync code to yield cooperatively (' +
+								code.length +
+								' → ' +
+								actualCode.length +
+								' bytes)\n'
+						);
+						trace('code transformed');
+					}
+					// Transformed code is always sync (we wrap user code in an
+					// async function and schedule it via asyncio.ensure_future —
+					// no top-level await). pyodide.runPython is the sync variant
+					// and returns immediately, without waiting for the asyncio
+					// loop to drain. Untransformed code might use top-level
+					// await, so it still goes through runPythonAsync.
+					let value;
+					if (wasTransformed) {
+						value = pyodide.runPython(actualCode);
+					} else {
+						value = await pyodide.runPythonAsync(actualCode);
+					}
 					trace('after user code');
 					try {
 						await pyodide.runPythonAsync('await _haruspex_drain_pending_saves()');

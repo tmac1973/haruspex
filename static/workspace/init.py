@@ -23,6 +23,7 @@
 # adapted for the iframe context. After step 9 the legacy worker is
 # deleted and this file becomes the only place these helpers live.
 
+import ast as _ast
 import asyncio as _asyncio
 import builtins as _builtins
 import io as _io
@@ -530,3 +531,199 @@ def _haruspex_postprocess(value):
         return repr(value)
     except Exception as e:
         return f'<repr failed: {e}>'
+
+
+# ======================================================================
+# Cooperative-yield AST auto-transform.
+#
+# Pyodide on the iframe main thread shares the UI event loop with the
+# parent on WebKitGTK. Models trained on desktop pygame examples emit a
+# synchronous top-level loop like:
+#
+#     while running:
+#         for event in pygame.event.get(): ...
+#         # update + draw
+#         pygame.display.flip()
+#         clock.tick(60)
+#
+# With no `await asyncio.sleep(0)` anywhere — this freezes the iframe
+# AND the parent UI (same event loop). The system-prompt nudge and
+# tool description alone don't reliably change what the model writes —
+# the fix has to live in the runtime.
+#
+# This transform wraps user code in an async function, declares every
+# top-level name `global` so nested code paths still see them in the
+# module namespace, and injects `await asyncio.sleep(0)` at the start
+# of every while/for loop body. The browser event loop gets a turn
+# between iterations and the UI stays responsive.
+#
+# Code that already uses async patterns (defines an async def, calls
+# asyncio.ensure_future / asyncio.create_task / asyncio.run, calls
+# haruspex.spawn) is left untouched. Code with no loops is also
+# untouched — there's nothing to fix.
+#
+# Failures (parse errors, unparse glitches) silently fall back to the
+# original source — pyodide.runPythonAsync will surface the real error.
+# ======================================================================
+
+
+def _haruspex_workspace_already_async(tree):
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.AsyncFunctionDef):
+            return True
+        if isinstance(node, _ast.Call):
+            func = node.func
+            if isinstance(func, _ast.Attribute) and func.attr in (
+                'ensure_future', 'create_task', 'run', 'spawn'
+            ):
+                if isinstance(func.value, _ast.Name) and func.value.id in (
+                    'asyncio', 'haruspex'
+                ):
+                    return True
+    return False
+
+
+def _haruspex_workspace_has_loop(tree):
+    for node in _ast.walk(tree):
+        if isinstance(node, (_ast.While, _ast.For)):
+            return True
+    return False
+
+
+def _haruspex_workspace_make_yield():
+    # `await __haruspex_asyncio.sleep(0)` as a fresh AST node. We use
+    # the renamed import so we don't depend on user code also having
+    # `import asyncio`. A new node per injection so each loop body
+    # owns its statement.
+    return _ast.Expr(
+        value=_ast.Await(
+            value=_ast.Call(
+                func=_ast.Attribute(
+                    value=_ast.Name(id='__haruspex_asyncio', ctx=_ast.Load()),
+                    attr='sleep',
+                    ctx=_ast.Load(),
+                ),
+                args=[_ast.Constant(value=0)],
+                keywords=[],
+            )
+        )
+    )
+
+
+def _haruspex_workspace_inject_yields(stmts):
+    """Walk statements, injecting `await asyncio.sleep(0)` at the start
+    of every while/for body at this lexical level. Recurses through
+    if/try/with (same execution scope) but stops at function/class
+    definitions (await would be a syntax error inside a sync nested
+    function)."""
+    for stmt in stmts:
+        if isinstance(stmt, (_ast.While, _ast.For, _ast.AsyncFor)):
+            stmt.body.insert(0, _haruspex_workspace_make_yield())
+            _haruspex_workspace_inject_yields(stmt.body)
+            if stmt.orelse:
+                _haruspex_workspace_inject_yields(stmt.orelse)
+        elif isinstance(stmt, _ast.If):
+            _haruspex_workspace_inject_yields(stmt.body)
+            _haruspex_workspace_inject_yields(stmt.orelse)
+        elif isinstance(stmt, _ast.Try):
+            _haruspex_workspace_inject_yields(stmt.body)
+            for handler in stmt.handlers:
+                _haruspex_workspace_inject_yields(handler.body)
+            _haruspex_workspace_inject_yields(stmt.orelse)
+            _haruspex_workspace_inject_yields(stmt.finalbody)
+        elif isinstance(stmt, (_ast.With, _ast.AsyncWith)):
+            _haruspex_workspace_inject_yields(stmt.body)
+        # FunctionDef / AsyncFunctionDef / ClassDef / others: don't
+        # recurse — bodies have their own scope.
+
+
+def _haruspex_workspace_assign_names(target):
+    if isinstance(target, _ast.Name):
+        return [target.id]
+    if isinstance(target, (_ast.Tuple, _ast.List)):
+        names = []
+        for elt in target.elts:
+            names.extend(_haruspex_workspace_assign_names(elt))
+        return names
+    if isinstance(target, _ast.Starred):
+        return _haruspex_workspace_assign_names(target.value)
+    return []
+
+
+def _haruspex_workspace_top_level_names(stmts):
+    names = []
+    for node in stmts:
+        if isinstance(node, _ast.Assign):
+            for target in node.targets:
+                names.extend(_haruspex_workspace_assign_names(target))
+        elif isinstance(node, (_ast.AugAssign, _ast.AnnAssign)):
+            names.extend(_haruspex_workspace_assign_names(node.target))
+        elif isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+            names.append(node.name)
+        elif isinstance(node, _ast.Import):
+            for alias in node.names:
+                first = (alias.asname or alias.name).split('.')[0]
+                names.append(first)
+        elif isinstance(node, _ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == '*':
+                    continue  # can't declare wildcard globals
+                names.append(alias.asname or alias.name)
+    return sorted({n for n in names if n.isidentifier() and not n.startswith('__')})
+
+
+def _haruspex_workspace_transform(source):
+    """Auto-wrap synchronous-style user code into a cooperative
+    coroutine. Returns the transformed source string, or the original
+    source unchanged if the transform isn't needed or fails."""
+    try:
+        tree = _ast.parse(source)
+    except Exception:
+        return source
+
+    if _haruspex_workspace_already_async(tree):
+        return source
+    if not _haruspex_workspace_has_loop(tree):
+        return source
+
+    _haruspex_workspace_inject_yields(tree.body)
+    names = _haruspex_workspace_top_level_names(tree.body)
+
+    body = list(tree.body)
+    if names:
+        body.insert(0, _ast.Global(names=names))
+
+    async_fn = _ast.AsyncFunctionDef(
+        name='__haruspex_workspace_main',
+        args=_ast.arguments(
+            posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]
+        ),
+        body=body,
+        decorator_list=[],
+        returns=None,
+        type_comment=None,
+    )
+
+    # Schedule the async task and store its Task object as a
+    # module-level name so the asyncio loop keeps a strong reference.
+    # The caller (static/workspace/index.html) runs this transformed
+    # source via SYNC pyodide.runPython — the call returns immediately
+    # after ensure_future schedules the task. runPythonAsync would
+    # wait for the asyncio loop to be idle, which never happens for an
+    # infinite game loop.
+    schedule = _ast.parse(
+        '__haruspex_workspace_task = '
+        '__haruspex_asyncio.ensure_future(__haruspex_workspace_main())'
+    ).body[0]
+    import_asyncio = _ast.parse('import asyncio as __haruspex_asyncio').body[0]
+
+    new_module = _ast.Module(
+        body=[import_asyncio, async_fn, schedule],
+        type_ignores=[],
+    )
+    _ast.fix_missing_locations(new_module)
+
+    try:
+        return _ast.unparse(new_module)
+    except Exception:
+        return source
