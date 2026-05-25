@@ -39,7 +39,12 @@ registerTool({
 		function: {
 			name: 'run_python',
 			description:
-				'Execute Python code in a persistent sandbox running in this app. Variables, imports, and installed packages persist across calls within the current chat. Use this for math, data analysis, parsing, plotting, document creation (PDFs via fpdf2, PowerPoints via python-pptx — both pre-installed), or any computation that benefits from real code execution. Top-level await is supported. The final expression value is returned alongside any captured stdout/stderr. Common pre-installable packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow) need install_package first.',
+				'Execute Python code in a persistent sandbox. Variables, imports, and installed packages persist across calls within the current chat. Top-level await is supported. The final expression value is returned alongside captured stdout/stderr. ' +
+				'OUTPUT CHANNELS: ' +
+				'(1) Inline in chat — matplotlib `plt.show()`, a pandas DataFrame as the last expression, or any value with `_repr_html_` renders as an artifact on the assistant message. ' +
+				'(2) Workspace tab — `import haruspex; haruspex.show_html(html_string)` renders interactive HTML (e.g. plotly: `haruspex.show_html(fig.to_html(include_plotlyjs="cdn"))`). pygame draws to a canvas inside the Workspace tab automatically. The tab auto-focuses on first write. ' +
+				'LONG-RUNNING CODE: wrap game loops / animations in `haruspex.spawn(coroutine())` so the tool call returns immediately while the task keeps running. Plain `while True:` at the top level will hang the tool. Cancel with `haruspex.stop_tasks()`. ' +
+				'Bundled offline: matplotlib, numpy, pandas, scipy, scikit-learn, sympy, pillow, beautifulsoup4 (Pyodide built-ins), plus fpdf2, python-pptx, xlsxwriter, pygame-ce, bokeh, altair. Other packages (plotly, folium, ...): `install_package` first.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -97,7 +102,7 @@ registerTool({
 		function: {
 			name: 'reset_python',
 			description:
-				'Wipe the Python sandbox: clears all variables, imports, and installed packages for the current chat. Use after a poisoned state (hung import, bad monkey-patch, irrecoverable error). Does not affect chat history.',
+				'Wipe the Python sandbox: clears variables, imports, installed packages, AND the workspace stage for the current chat. Kills every background task launched via haruspex.spawn. Use after poisoned state (hung import, runaway loop, irrecoverable error). Does not affect chat history.',
 			parameters: { type: 'object', properties: {} }
 		}
 	},
@@ -119,7 +124,7 @@ registerTool({
 		function: {
 			name: 'install_package',
 			description:
-				'Install a Python package into the sandbox via micropip. Pre-built Pyodide packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) work out of the box. Pure-Python wheels from PyPI also work; packages with C extensions that have not been pre-built for Pyodide will fail. fpdf2 and python-pptx are already pre-installed in this sandbox — do not reinstall them. Installs persist for the current chat session.',
+				'Install a Python package into the sandbox via micropip. Pre-built Pyodide packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) work out of the box. Pure-Python wheels from PyPI also work; packages with C extensions that have not been pre-built for Pyodide will fail. Pre-installed: fpdf2, python-pptx, xlsxwriter, pygame-ce, bokeh, altair — do not reinstall. Plotly is NOT pre-installed (not in Pyodide lockfile); use install_package("plotly") first. Installs persist for the current chat.',
 			parameters: {
 				type: 'object',
 				properties: {

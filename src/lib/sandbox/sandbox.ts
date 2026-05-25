@@ -1,30 +1,39 @@
-import { WorkerManager, type RunOptions } from './worker-manager';
-import type { ToolResult } from './protocol';
+// Public surface for the unified python sandbox. Swapped from the
+// legacy global WorkerManager (deleted in step 9) to dispatch through
+// IframePool, scoped to the active chat. Tools and chat store callers
+// don't need to know the swap happened.
 
-let manager: WorkerManager | null = null;
+import { getActiveConversationId } from '$lib/stores/chat.svelte';
+import { getWorkspacePool } from '$lib/workspace/workspace.svelte';
+import type { RunOptions } from '$lib/workspace/iframe-manager';
+import type { ToolResult } from '$lib/workspace/protocol';
 
-function getManager(): WorkerManager {
-	if (!manager) manager = new WorkerManager();
-	return manager;
+function requireChatId(): string {
+	const id = getActiveConversationId();
+	if (!id) throw new Error('Python sandbox call without an active conversation');
+	return id;
 }
 
 export function runPython(code: string, opts?: RunOptions): Promise<ToolResult> {
-	return getManager().runPython(code, opts);
+	return getWorkspacePool().runPython(requireChatId(), code, opts);
 }
 
 export function installPackage(packageName: string, opts?: RunOptions): Promise<ToolResult> {
-	return getManager().installPackage(packageName, opts);
+	return getWorkspacePool().installPackage(requireChatId(), packageName, opts);
 }
 
-export function resetSandbox(): Promise<void> {
-	return getManager().reset();
+export async function resetSandbox(): Promise<void> {
+	const id = getActiveConversationId();
+	if (!id) return;
+	await getWorkspacePool().reset(id);
 }
 
-// Test seam: replace the singleton manager so tests can inject a mocked
-// worker factory. Production code should never call this.
-export function __setManagerForTesting(next: WorkerManager | null): void {
-	manager = next;
+// Legacy test seam — kept exported so importers don't break, but a no-op.
+// Tests that need to mock the sandbox now mock the whole module via
+// vi.mock('$lib/sandbox/sandbox', ...) (see chat.test.ts / sandbox.test.ts).
+export function __setManagerForTesting(): void {
+	// no-op
 }
 
-export type { Artifact, ToolResult } from './protocol';
-export type { RunOptions };
+export type { Artifact, ToolResult } from '$lib/workspace/protocol';
+export type { RunOptions } from '$lib/workspace/iframe-manager';

@@ -13,6 +13,7 @@ import { beginTurn, logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
 import { runPython, installPackage, resetSandbox } from '$lib/sandbox/sandbox';
+import { getWorkspacePool } from '$lib/workspace/workspace.svelte';
 import {
 	getContextUsage,
 	updateContextUsage,
@@ -385,18 +386,38 @@ function collectSandboxCalls(messages: ChatMessage[]): SandboxCallToReplay[] {
 }
 
 /**
+ * Skip replay for code that launches long-running background tasks —
+ * the original run already detached one game / animation, replay would
+ * launch another, and after a few chat opens we'd have N parallel
+ * pygame loops chewing the CPU.
+ */
+function isLongRunningLaunch(code: string): boolean {
+	return /\b(asyncio\.ensure_future|asyncio\.create_task|haruspex\.spawn)\b/.test(code);
+}
+
+/**
  * Walk a chat's message history, find every prior install_package /
  * run_python / reset_python tool call, and replay them sequentially
- * against a fresh sandbox worker so the model picks up where it left
- * off. Per-call errors are swallowed (the chat history already records
- * what the model saw at the time; the goal is to rebuild state, not
- * surface failures). The active-chat guard aborts replay if the user
- * switches to another chat mid-flight.
+ * against a fresh per-chat iframe so the model picks up where it left
+ * off. Skipped entirely if the IframePool already has a live iframe
+ * for this chat — its Python state hasn't been lost. Per-call errors
+ * are swallowed (the chat history already records what the model saw
+ * at the time; the goal is to rebuild state, not surface failures).
+ * The active-chat guard aborts replay if the user switches to another
+ * chat mid-flight.
  */
 async function restoreSandboxSession(id: string): Promise<void> {
 	const conv = conversations.find((c) => c.id === id);
 	if (!conv) return;
 	if (!getSettings().sandboxEnabled) return;
+	// Pool keeps iframes alive across chat switches (LRU cap 3). If
+	// this chat still has its iframe, Python state is intact — skip
+	// replay entirely.
+	const pool = getWorkspacePool();
+	if (pool.hasIframeFor(id)) {
+		logDebug('sandbox', 'session restore skipped — iframe still live', { chatId: id });
+		return;
+	}
 	const calls = collectSandboxCalls(conv.messages);
 	if (calls.length === 0) return;
 	if (calls.length > SESSION_REPLAY_CAP) {
@@ -412,9 +433,8 @@ async function restoreSandboxSession(id: string): Promise<void> {
 	conv.sessionRestoreSkipped = false;
 	logDebug('sandbox', 'session restore start', { chatId: id, callCount: calls.length });
 	try {
-		// Reset the worker so replay starts clean. Other chats that had
-		// active sandbox state lose it — by design, single-worker model.
-		await resetSandbox();
+		// IframePool boots a fresh iframe lazily on the first runPython
+		// for this chat — no explicit reset needed.
 		for (const call of calls) {
 			if (activeConversationId !== id) {
 				logDebug('sandbox', 'session restore aborted — chat switched', { fromChatId: id });
@@ -424,6 +444,12 @@ async function restoreSandboxSession(id: string): Promise<void> {
 				if (call.name === 'install_package' && call.args.package) {
 					await installPackage(call.args.package);
 				} else if (call.name === 'run_python' && call.args.code) {
+					if (isLongRunningLaunch(call.args.code)) {
+						logDebug('sandbox', 'session restore: skipping long-running launch', {
+							preview: call.args.code.slice(0, 60)
+						});
+						continue;
+					}
 					await runPython(call.args.code);
 				} else if (call.name === 'reset_python') {
 					await resetSandbox();

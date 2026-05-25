@@ -302,7 +302,9 @@ describe('chat store', () => {
 			await setActiveConversation(a);
 			await flush();
 
-			expect(sandboxMocks.resetSandbox).toHaveBeenCalled();
+			// IframePool boots a fresh iframe lazily on the first runPython
+			// for the chat, so the explicit resetSandbox at the start of
+			// restore (legacy worker behavior) is no longer needed.
 			expect(sandboxMocks.installPackage).toHaveBeenCalledWith('numpy');
 			expect(sandboxMocks.runPython).toHaveBeenCalledWith('import numpy');
 			// Successful restore implies prior approval — sandboxApproved set.
