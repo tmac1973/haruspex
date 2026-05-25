@@ -1165,6 +1165,21 @@ impl Database {
         })
     }
 
+    pub fn delete_job_run(&self, run_id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM job_runs WHERE id = ?1", params![run_id])
+            .map_err(|e| format!("Run delete failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn delete_all_job_runs(&self, job_id: i64) -> Result<i64, String> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn
+            .execute("DELETE FROM job_runs WHERE job_id = ?1", params![job_id])
+            .map_err(|e| format!("Run bulk delete failed: {}", e))?;
+        Ok(n as i64)
+    }
+
     /// Sweep run rows orphaned by a previous-session crash or hard close.
     /// Runs left in 'queued' or 'running' are marked 'interrupted' and any
     /// in-flight steps are marked the same. Idempotent — calling it on a
@@ -1400,6 +1415,19 @@ pub fn db_get_job_run(
 #[tauri::command]
 pub fn db_recover_orphan_runs(state: tauri::State<'_, Database>) -> Result<i64, String> {
     state.recover_orphan_runs()
+}
+
+#[tauri::command]
+pub fn db_delete_job_run(state: tauri::State<'_, Database>, run_id: i64) -> Result<(), String> {
+    state.delete_job_run(run_id)
+}
+
+#[tauri::command]
+pub fn db_delete_all_job_runs(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+) -> Result<i64, String> {
+    state.delete_all_job_runs(job_id)
 }
 
 #[tauri::command]
@@ -1909,6 +1937,72 @@ mod tests {
             .unwrap();
         assert_eq!(runs, 0);
         assert_eq!(run_steps, 0);
+    }
+
+    #[test]
+    fn delete_job_run_removes_one_and_cascades_steps() {
+        let db = test_db();
+        let job_id = db.create_job(&sample_job_input("rj")).unwrap();
+        let mut run_ids = vec![];
+        {
+            let conn = db.conn.lock().unwrap();
+            for _ in 0..2 {
+                conn.execute(
+                    "INSERT INTO job_runs (job_id, status, trigger, queued_at)
+                     VALUES (?1, 'succeeded', 'manual', 0)",
+                    params![job_id],
+                )
+                .unwrap();
+                let run_id = conn.last_insert_rowid();
+                run_ids.push(run_id);
+                conn.execute(
+                    "INSERT INTO job_run_steps
+                        (run_id, ordering, prompt_authored, prompt_rendered, status)
+                     VALUES (?1, 0, 'p', 'p', 'succeeded')",
+                    params![run_id],
+                )
+                .unwrap();
+            }
+        }
+
+        db.delete_job_run(run_ids[0]).unwrap();
+
+        let remaining = db.list_job_runs(job_id).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, run_ids[1]);
+
+        let conn = db.conn.lock().unwrap();
+        let orphan_steps: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM job_run_steps WHERE run_id = ?1",
+                params![run_ids[0]],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphan_steps, 0);
+    }
+
+    #[test]
+    fn delete_all_job_runs_clears_only_target_job() {
+        let db = test_db();
+        let keep_id = db.create_job(&sample_job_input("keep")).unwrap();
+        let wipe_id = db.create_job(&sample_job_input("wipe")).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            for jid in [keep_id, wipe_id, wipe_id] {
+                conn.execute(
+                    "INSERT INTO job_runs (job_id, status, trigger, queued_at)
+                     VALUES (?1, 'succeeded', 'manual', 0)",
+                    params![jid],
+                )
+                .unwrap();
+            }
+        }
+
+        let n = db.delete_all_job_runs(wipe_id).unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(db.list_job_runs(wipe_id).unwrap().len(), 0);
+        assert_eq!(db.list_job_runs(keep_id).unwrap().len(), 1);
     }
 
     #[test]

@@ -91,6 +91,28 @@ export async function createJobRun(
 	}
 }
 
+export async function deleteJobRun(jobId: number, runId: number): Promise<boolean> {
+	try {
+		await invoke('db_delete_job_run', { runId });
+		runsByJob[jobId] = (runsByJob[jobId] ?? []).filter((r) => r.id !== runId);
+		return true;
+	} catch (e) {
+		logDebug('jobs', 'deleteJobRun failed', { jobId, runId, error: String(e) });
+		return false;
+	}
+}
+
+export async function deleteAllJobRuns(jobId: number): Promise<boolean> {
+	try {
+		await invoke<number>('db_delete_all_job_runs', { jobId });
+		runsByJob[jobId] = [];
+		return true;
+	} catch (e) {
+		logDebug('jobs', 'deleteAllJobRuns failed', { jobId, error: String(e) });
+		return false;
+	}
+}
+
 export async function markRunStarted(runId: number, startedAt: number): Promise<void> {
 	try {
 		await invoke('db_mark_run_started', { runId, startedAt });

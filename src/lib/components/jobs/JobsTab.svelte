@@ -79,7 +79,17 @@
 		{/if}
 	</div>
 	{#if numericSelectedId !== null && !showRunView}
-		<JobRunHistory jobId={numericSelectedId} {selectedRunId} onselect={selectRun} />
+		<JobRunHistory
+			jobId={numericSelectedId}
+			{selectedRunId}
+			onselect={selectRun}
+			onrundeleted={(runId) => {
+				if (selectedRunId === runId) selectedRunId = null;
+			}}
+			onallrunsdeleted={() => {
+				selectedRunId = null;
+			}}
+		/>
 	{/if}
 </div>
 
