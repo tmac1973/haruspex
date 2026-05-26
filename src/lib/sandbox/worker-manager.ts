@@ -49,6 +49,7 @@ function toArtifact(msg: {
 	payload: { kind: 'bytes'; bytes: Uint8Array } | { kind: 'text'; text: string };
 	alt?: string;
 	truncated?: { shown: number; total: number };
+	interactive?: boolean;
 }): Artifact {
 	if (msg.payload.kind === 'bytes') {
 		const b64 = base64Encode(msg.payload.bytes);
@@ -62,7 +63,8 @@ function toArtifact(msg: {
 	return {
 		kind: 'html',
 		html: msg.payload.text,
-		truncated: msg.truncated
+		truncated: msg.truncated,
+		interactive: msg.interactive
 	};
 }
 

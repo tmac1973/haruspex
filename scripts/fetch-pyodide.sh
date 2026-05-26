@@ -29,13 +29,13 @@ WHEELS=(
     "xlsxwriter-3.2.9-py3-none-any.whl"
 )
 
-# Workspace wheels: full transitive dep tree for pygame-ce + bokeh +
-# altair, derived from static/pyodide/pyodide-lock.json. These sit at
-# the root of static/pyodide/ (not in wheels/) so pyodide.loadPackage(
-# '<name>') resolves them via the lockfile when indexURL='/pyodide/'.
-# Re-derive whenever PYODIDE_VERSION changes — wheel filenames are
-# version-specific.
-WORKSPACE_WHEELS_VERSION="1"
+# Interactive-plot wheels: full transitive dep tree for bokeh + altair,
+# derived from static/pyodide/pyodide-lock.json. These sit at the root
+# of static/pyodide/ (not in wheels/) so pyodide.loadPackage('<name>')
+# resolves them via the lockfile when indexURL='/pyodide/'. Re-derive
+# whenever PYODIDE_VERSION changes — wheel filenames are version-
+# specific.
+WORKSPACE_WHEELS_VERSION="2"
 WORKSPACE_WHEELS=(
     "altair-6.0.0-py3-none-any.whl"
     "attrs-25.2.0-py3-none-any.whl"
@@ -51,7 +51,6 @@ WORKSPACE_WHEELS=(
     "packaging-26.2-py3-none-any.whl"
     "pandas-2.3.3-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
     "pillow-11.3.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
-    "pygame_ce-2.5.6.dev2-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
     "pyrsistent-0.20.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
     "python_dateutil-2.9.0.post0-py2.py3-none-any.whl"
     "pytz-2025.2-py2.py3-none-any.whl"

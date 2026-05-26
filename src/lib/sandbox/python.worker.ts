@@ -462,7 +462,14 @@ def _haruspex_install_matplotlib_hook():
 def _haruspex_postprocess(value):
     """Inspect the run's last expression and emit a rich artifact when it has
     one. Returns the string to use as the textual 'result' field; '' when the
-    artifact stands alone, repr(value) for plain values."""
+    artifact stands alone, repr(value) for plain values.
+
+    Script-bearing _repr_html_ output (plotly, bokeh, altair, folium,
+    ...) gets the interactive=True flag so the chat renders it inside
+    a sandboxed iframe (srcdoc) where its embedded <script> tags
+    actually execute. Plain markup (pandas DataFrame tables) renders
+    via {@html ...} in the message — much cheaper.
+    """
     if value is None:
         return ''
     try:
@@ -470,9 +477,9 @@ def _haruspex_postprocess(value):
         if isinstance(value, _pd.DataFrame):
             _total = len(value)
             if _total > 200:
-                _haruspex_emit_html(value.head(200)._repr_html_(), 200, _total)
+                _haruspex_emit_html(value.head(200)._repr_html_(), 200, _total, False)
                 return f'(DataFrame: {_total} rows × {len(value.columns)} cols, first 200 rendered in UI)'
-            _haruspex_emit_html(value._repr_html_(), None, None)
+            _haruspex_emit_html(value._repr_html_(), None, None, False)
             return f'(DataFrame: {_total} rows × {len(value.columns)} cols, rendered in UI)'
     except Exception:
         pass
@@ -480,7 +487,10 @@ def _haruspex_postprocess(value):
         try:
             _html = value._repr_html_()
             if _html:
-                _haruspex_emit_html(_html, None, None)
+                _interactive = '<script' in _html.lower()
+                _haruspex_emit_html(_html, None, None, _interactive)
+                if _interactive:
+                    return '(rendered as interactive plot in chat)'
                 return '(rendered as HTML in UI)'
         except Exception:
             pass
@@ -679,7 +689,7 @@ async function init(): Promise<void> {
 		});
 		pyodide.globals.set(
 			'_haruspex_emit_html',
-			(html: unknown, shown: number | null, total: number | null) => {
+			(html: unknown, shown: number | null, total: number | null, interactive: unknown) => {
 				if (!currentRunId) return;
 				const truncated =
 					shown !== null && total !== null && shown !== undefined && total !== undefined
@@ -690,7 +700,8 @@ async function init(): Promise<void> {
 					id: currentRunId,
 					mime: 'text/html',
 					payload: { kind: 'text', text: String(html) },
-					truncated
+					truncated,
+					interactive: !!interactive
 				});
 			}
 		);

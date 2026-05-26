@@ -12,8 +12,7 @@ import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
-import { runPython, installPackage, resetSandbox } from '$lib/sandbox/sandbox';
-import { getWorkspacePool } from '$lib/workspace/workspace.svelte';
+import { runPython, installPackage, resetSandbox, hasLiveWorkerFor } from '$lib/sandbox/sandbox';
 import {
 	getContextUsage,
 	updateContextUsage,
@@ -410,12 +409,11 @@ async function restoreSandboxSession(id: string): Promise<void> {
 	const conv = conversations.find((c) => c.id === id);
 	if (!conv) return;
 	if (!getSettings().sandboxEnabled) return;
-	// Pool keeps iframes alive across chat switches (LRU cap 3). If
-	// this chat still has its iframe, Python state is intact — skip
-	// replay entirely.
-	const pool = getWorkspacePool();
-	if (pool.hasIframeFor(id)) {
-		logDebug('sandbox', 'session restore skipped — iframe still live', { chatId: id });
+	// Worker pool keeps per-chat Workers alive across chat switches
+	// (LRU cap 3). If this chat still has its Worker, Python state is
+	// intact — skip replay entirely.
+	if (hasLiveWorkerFor(id)) {
+		logDebug('sandbox', 'session restore skipped — worker still live', { chatId: id });
 		return;
 	}
 	const calls = collectSandboxCalls(conv.messages);

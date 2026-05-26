@@ -1,12 +1,11 @@
-// Public surface for the unified python sandbox. Swapped from the
-// legacy global WorkerManager (deleted in step 9) to dispatch through
-// IframePool, scoped to the active chat. Tools and chat store callers
-// don't need to know the swap happened.
+// Public surface for the python sandbox. Dispatches through the
+// per-chat WorkerPool (one Web Worker per chat, LRU cap 3) scoped to
+// the active conversation.
 
 import { getActiveConversationId } from '$lib/stores/chat.svelte';
-import { getWorkspacePool } from '$lib/workspace/workspace.svelte';
-import type { RunOptions } from '$lib/workspace/iframe-manager';
-import type { ToolResult } from '$lib/workspace/protocol';
+import { getWorkerPool } from './worker-pool';
+import type { RunOptions } from './worker-manager';
+import type { ToolResult } from './protocol';
 
 function requireChatId(): string {
 	const id = getActiveConversationId();
@@ -15,17 +14,35 @@ function requireChatId(): string {
 }
 
 export function runPython(code: string, opts?: RunOptions): Promise<ToolResult> {
-	return getWorkspacePool().runPython(requireChatId(), code, opts);
+	return getWorkerPool().runPython(requireChatId(), code, opts);
 }
 
 export function installPackage(packageName: string, opts?: RunOptions): Promise<ToolResult> {
-	return getWorkspacePool().installPackage(requireChatId(), packageName, opts);
+	return getWorkerPool().installPackage(requireChatId(), packageName, opts);
 }
 
 export async function resetSandbox(): Promise<void> {
 	const id = getActiveConversationId();
 	if (!id) return;
-	await getWorkspacePool().reset(id);
+	await getWorkerPool().reset(id);
+}
+
+/**
+ * Cancel the active chat's in-flight run (if any) by terminating the
+ * Worker. The Worker respawns lazily on the next call. Used by the
+ * Cancel button on the in-progress tool-result card.
+ */
+export function cancelActiveRun(): void {
+	const id = getActiveConversationId();
+	if (!id) return;
+	getWorkerPool().cancel(id);
+}
+
+/** True if the chat has a live Worker (Python state intact). Used by
+ *  the chat store's session-restore path to skip replay when state is
+ *  still warm. */
+export function hasLiveWorkerFor(chatId: string): boolean {
+	return getWorkerPool().hasWorkerFor(chatId);
 }
 
 // Legacy test seam — kept exported so importers don't break, but a no-op.
@@ -35,5 +52,5 @@ export function __setManagerForTesting(): void {
 	// no-op
 }
 
-export type { Artifact, ToolResult } from '$lib/workspace/protocol';
-export type { RunOptions } from '$lib/workspace/iframe-manager';
+export type { Artifact, ToolResult } from './protocol';
+export type { RunOptions } from './worker-manager';

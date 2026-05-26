@@ -50,7 +50,9 @@ const sandboxMocks = vi.hoisted(() => ({
 		notes: [],
 		duration_ms: 1
 	}),
-	resetSandbox: vi.fn().mockResolvedValue(undefined)
+	resetSandbox: vi.fn().mockResolvedValue(undefined),
+	hasLiveWorkerFor: vi.fn().mockReturnValue(false),
+	cancelActiveRun: vi.fn()
 }));
 
 vi.mock('$lib/sandbox/sandbox', () => sandboxMocks);

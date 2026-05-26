@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { getActiveTab, setActiveTab, type ActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
-	import { getActiveConversationId } from '$lib/stores/chat.svelte';
-	import { hasFreshContent } from '$lib/workspace/workspace.svelte';
 
 	interface Tab {
 		id: ActiveTab;
@@ -11,7 +9,6 @@
 
 	const tabs: Tab[] = [
 		{ id: 'chat', label: 'Chat' },
-		{ id: 'workspace', label: 'Workspace' },
 		{ id: 'jobs', label: 'Jobs' }
 	];
 
@@ -26,14 +23,6 @@
 		if (running && queued > 0) return `${queued + 1}`;
 		if (running) return '●';
 		return `${queued}`;
-	});
-
-	// Workspace badge: lit when the active chat's stage has fresh
-	// content the user hasn't seen since their last Workspace visit.
-	const workspaceBadge = $derived.by(() => {
-		const chatId = getActiveConversationId();
-		if (!chatId) return null;
-		return hasFreshContent(chatId) ? '●' : null;
 	});
 </script>
 
@@ -50,9 +39,6 @@
 			{tab.label}
 			{#if tab.id === 'jobs' && jobsBadge !== null}
 				<span class="badge" title="Jobs running or queued">{jobsBadge}</span>
-			{/if}
-			{#if tab.id === 'workspace' && workspaceBadge !== null}
-				<span class="badge" title="Workspace has new content">{workspaceBadge}</span>
 			{/if}
 		</button>
 	{/each}
