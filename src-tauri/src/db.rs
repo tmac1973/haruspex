@@ -12,6 +12,8 @@ pub struct MessageInput {
     pub content: String,
     pub tool_calls: Option<String>,
     pub tool_call_id: Option<String>,
+    #[serde(default)]
+    pub steps: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -32,6 +34,11 @@ pub struct DbMessage {
     pub tool_call_id: Option<String>,
     pub created_at: i64,
     pub sort_order: i64,
+    /// JSON-serialized SearchStep[] captured for this assistant message.
+    /// Holds image artifact data URLs + thumbDataUrl + HTML artifact
+    /// bodies so the chat can re-render inline plots / DataFrames after
+    /// app restart. Null for non-assistant rows.
+    pub steps: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -349,6 +356,17 @@ impl Database {
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
+        // Idempotent ALTER for older DBs: add the `steps` column to the
+        // messages table if it isn't already there. SQLite has no
+        // ADD COLUMN IF NOT EXISTS so we swallow the duplicate-column
+        // error from the second run.
+        if let Err(e) = conn.execute("ALTER TABLE messages ADD COLUMN steps TEXT", []) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column name") {
+                return Err(format!("Migration (add steps column) failed: {}", msg));
+            }
+        }
+
         info!("Database migration complete");
         Ok(())
     }
@@ -396,7 +414,7 @@ impl Database {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, conversation_id, role, content, tool_calls, tool_call_id, created_at, sort_order
+                "SELECT id, conversation_id, role, content, tool_calls, tool_call_id, created_at, sort_order, steps
                  FROM messages WHERE conversation_id = ?1 ORDER BY sort_order ASC",
             )
             .map_err(|e| format!("Query failed: {}", e))?;
@@ -412,6 +430,7 @@ impl Database {
                     tool_call_id: row.get(5)?,
                     created_at: row.get(6)?,
                     sort_order: row.get(7)?,
+                    steps: row.get(8)?,
                 })
             })
             .map_err(|e| format!("Query failed: {}", e))?
@@ -445,6 +464,7 @@ impl Database {
         content: &str,
         tool_calls: Option<&str>,
         tool_call_id: Option<&str>,
+        steps: Option<&str>,
     ) -> Result<i64, String> {
         let conn = self.conn.lock().unwrap();
         let now = chrono_now();
@@ -459,9 +479,9 @@ impl Database {
             .map_err(|e| format!("Query failed: {}", e))?;
 
         conn.execute(
-            "INSERT INTO messages (conversation_id, role, content, tool_calls, tool_call_id, created_at, sort_order)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![conversation_id, role, content, tool_calls, tool_call_id, now, sort_order],
+            "INSERT INTO messages (conversation_id, role, content, tool_calls, tool_call_id, created_at, sort_order, steps)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![conversation_id, role, content, tool_calls, tool_call_id, now, sort_order, steps],
         )
         .map_err(|e| format!("Insert failed: {}", e))?;
 
@@ -696,8 +716,8 @@ impl Database {
 
         for (i, msg) in messages.iter().enumerate() {
             conn.execute(
-                "INSERT INTO messages (conversation_id, role, content, tool_calls, tool_call_id, created_at, sort_order)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO messages (conversation_id, role, content, tool_calls, tool_call_id, created_at, sort_order, steps)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     conversation_id,
                     msg.role,
@@ -705,7 +725,8 @@ impl Database {
                     msg.tool_calls,
                     msg.tool_call_id,
                     now,
-                    i as i64 + 1
+                    i as i64 + 1,
+                    msg.steps
                 ],
             )
             .map_err(|e| format!("Insert failed: {}", e))?;
@@ -1259,6 +1280,7 @@ pub fn db_save_message(
     content: String,
     tool_calls: Option<String>,
     tool_call_id: Option<String>,
+    steps: Option<String>,
 ) -> Result<i64, String> {
     state.save_message(
         &conversation_id,
@@ -1266,7 +1288,31 @@ pub fn db_save_message(
         &content,
         tool_calls.as_deref(),
         tool_call_id.as_deref(),
+        steps.as_deref(),
     )
+}
+
+/// Update the `steps` JSON for the most recently inserted message in
+/// a conversation. Used after the agent loop finishes to attach
+/// captured artifacts to the assistant message that was already
+/// persisted at the start of streaming.
+#[tauri::command]
+pub fn db_update_last_message_steps(
+    state: tauri::State<'_, Database>,
+    conversation_id: String,
+    steps: Option<String>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    conn.execute(
+        "UPDATE messages SET steps = ?1 \
+         WHERE id = ( \
+             SELECT id FROM messages WHERE conversation_id = ?2 \
+             ORDER BY sort_order DESC LIMIT 1 \
+         )",
+        params![steps, conversation_id],
+    )
+    .map_err(|e| format!("Update failed: {}", e))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1491,8 +1537,8 @@ mod tests {
     fn save_and_get_messages() {
         let db = test_db();
         db.create_conversation("c1", "Test").unwrap();
-        db.save_message("c1", "user", "Hello", None, None).unwrap();
-        db.save_message("c1", "assistant", "Hi there!", None, None)
+        db.save_message("c1", "user", "Hello", None, None, None).unwrap();
+        db.save_message("c1", "assistant", "Hi there!", None, None, None)
             .unwrap();
 
         let conv = db.get_conversation("c1").unwrap();
@@ -1508,8 +1554,8 @@ mod tests {
     fn cascade_delete() {
         let db = test_db();
         db.create_conversation("c1", "Test").unwrap();
-        db.save_message("c1", "user", "msg1", None, None).unwrap();
-        db.save_message("c1", "assistant", "msg2", None, None)
+        db.save_message("c1", "user", "msg1", None, None, None).unwrap();
+        db.save_message("c1", "assistant", "msg2", None, None, None)
             .unwrap();
 
         db.delete_conversation("c1").unwrap();
@@ -1540,7 +1586,7 @@ mod tests {
         let db = test_db();
         db.create_conversation("c1", "Chat 1").unwrap();
         db.create_conversation("c2", "Chat 2").unwrap();
-        db.save_message("c1", "user", "msg", None, None).unwrap();
+        db.save_message("c1", "user", "msg", None, None, None).unwrap();
 
         db.clear_all_conversations().unwrap();
 
@@ -2300,9 +2346,10 @@ mod tests {
             "",
             Some(r#"[{"id":"call_1","type":"function","function":{"name":"web_search","arguments":"{\"query\":\"test\"}"}}]"#),
             None,
+            None,
         )
         .unwrap();
-        db.save_message("c1", "tool", "search results here", None, Some("call_1"))
+        db.save_message("c1", "tool", "search results here", None, Some("call_1"), None)
             .unwrap();
 
         let conv = db.get_conversation("c1").unwrap();

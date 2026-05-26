@@ -33,6 +33,7 @@ import {
 	dbDeleteConversation,
 	dbClearAll,
 	dbLoadMessages,
+	dbLoadMessageSteps,
 	dbReplaceMessages,
 	type DbConversationSummary
 } from '$lib/stores/db';
@@ -186,6 +187,10 @@ async function loadConversationMessages(id: string): Promise<void> {
 	const conv = conversations.find((c) => c.id === id);
 	if (!conv || conv.messages.length > 0) return;
 	conv.messages = await dbLoadMessages(id);
+	// Rehydrate per-message artifacts (images / DataFrames / interactive
+	// plots) so inline content survives restart.
+	const steps = await dbLoadMessageSteps(id);
+	conv.messageSteps = steps as typeof conv.messageSteps;
 }
 
 export function getConversations(): Conversation[] {
@@ -747,7 +752,11 @@ function commitMessage(conversation: Conversation, content: string, stats: TurnS
 		conversation.messageStats[messageIndex] = messageStats;
 	}
 	conversation.messages.push(assistantMsg);
-	dbSaveMessage(conversation.id, assistantMsg);
+	// Serialize the steps for persistence — inline images live inside
+	// step.artifacts[].dataUrl (base64) so the row can get sizeable.
+	// Acceptable: image artifacts are the whole point of saving them.
+	const stepsJson = stepsForThisTurn.length > 0 ? JSON.stringify(stepsForThisTurn) : null;
+	dbSaveMessage(conversation.id, assistantMsg, stepsJson);
 	conversation.searchSteps = [];
 }
 

@@ -7,6 +7,10 @@ interface DbMessage {
 	content: string;
 	tool_calls: string | null;
 	tool_call_id: string | null;
+	/** JSON-serialized SearchStep[] (artifacts + thumbDataUrl + args)
+	 *  captured for assistant messages so inline images / DataFrames /
+	 *  plots survive an app restart. */
+	steps: string | null;
 }
 
 interface DbConversation {
@@ -85,7 +89,11 @@ export async function initDb(): Promise<{
 	}
 }
 
-export async function dbSaveMessage(conversationId: string, msg: ChatMessage): Promise<void> {
+export async function dbSaveMessage(
+	conversationId: string,
+	msg: ChatMessage,
+	stepsJson?: string | null
+): Promise<void> {
 	if (!available) return;
 	try {
 		await invoke('db_save_message', {
@@ -93,10 +101,55 @@ export async function dbSaveMessage(conversationId: string, msg: ChatMessage): P
 			role: msg.role,
 			content: serializeContent(msg.content),
 			toolCalls: msg.tool_calls ? JSON.stringify(msg.tool_calls) : null,
-			toolCallId: msg.tool_call_id || null
+			toolCallId: msg.tool_call_id || null,
+			steps: stepsJson ?? null
 		});
 	} catch (e) {
 		logDebug('db', 'dbSaveMessage failed', { conversationId, error: String(e) });
+	}
+}
+
+/** Update the `steps` JSON on the most recently inserted message in
+ *  a conversation. Used after an agent turn completes — the assistant
+ *  message was already persisted at stream-time; the artifacts get
+ *  attached afterwards. */
+export async function dbUpdateLastMessageSteps(
+	conversationId: string,
+	stepsJson: string | null
+): Promise<void> {
+	if (!available) return;
+	try {
+		await invoke('db_update_last_message_steps', {
+			conversationId,
+			steps: stepsJson
+		});
+	} catch (e) {
+		logDebug('db', 'dbUpdateLastMessageSteps failed', { conversationId, error: String(e) });
+	}
+}
+
+/** Load the conversation's persisted messageSteps map. Returns
+ *  Record<messageIndex, SearchStep[]> shaped for direct assignment to
+ *  Conversation.messageSteps. */
+export async function dbLoadMessageSteps(id: string): Promise<Record<number, unknown[]>> {
+	if (!available) return {};
+	try {
+		const full = await invoke<DbConversation>('db_get_conversation', { id });
+		const out: Record<number, unknown[]> = {};
+		full.messages.forEach((m, i) => {
+			if (m.steps) {
+				try {
+					const parsed = JSON.parse(m.steps);
+					if (Array.isArray(parsed)) out[i] = parsed;
+				} catch {
+					// ignore corrupt rows
+				}
+			}
+		});
+		return out;
+	} catch (e) {
+		logDebug('db', 'dbLoadMessageSteps failed', { id, error: String(e) });
+		return {};
 	}
 }
 
