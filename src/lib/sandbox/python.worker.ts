@@ -891,6 +891,49 @@ async function handleSyncWorkdir(msg: {
 	}
 }
 
+/**
+ * Run user code with bounded retry on ModuleNotFoundError. The
+ * static-parse auto-install pass before this only sees top-level
+ * import names from the code, which doesn't catch transitive deps
+ * micropip didn't pull (e.g. plotly's metadata marks numpy as optional
+ * but `import plotly.express` requires numpy). Each retry installs the
+ * specific missing name reported by the error. Dedup'd by name so a
+ * permanently-unresolvable import doesn't loop.
+ */
+const IMPORT_ERROR_RE = /No module named ['"]([^'"]+)['"]/;
+const MAX_INSTALL_ROUNDS = 3;
+
+async function runWithImportRetry(
+	pyodide: PyodideInterface,
+	code: string,
+	log: (msg: string) => void
+): Promise<unknown> {
+	const tried = new Set<string>();
+	for (let round = 0; round < MAX_INSTALL_ROUNDS; round++) {
+		try {
+			return await pyodide.runPythonAsync(code);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			const match = IMPORT_ERROR_RE.exec(message);
+			if (!match) throw err;
+			const pkg = match[1].split('.')[0];
+			if (tried.has(pkg)) throw err;
+			tried.add(pkg);
+			pyodide.globals.set('_haruspex_retry_pkg', pkg);
+			try {
+				await pyodide.runPythonAsync(
+					'import micropip as _mp; await _mp.install(_haruspex_retry_pkg)'
+				);
+				log(`[haruspex] auto-installed (on import error) ${pkg}\n`);
+			} catch {
+				throw err;
+			}
+		}
+	}
+	// Last attempt — let the error bubble normally.
+	return pyodide.runPythonAsync(code);
+}
+
 async function handleRun(id: string, code: string): Promise<void> {
 	if (!pyodide) {
 		post({
@@ -930,7 +973,9 @@ async function handleRun(id: string, code: string): Promise<void> {
 		await pyodide.runPythonAsync(
 			'_haruspex_install_matplotlib_hook(); _haruspex_snapshot_workdir()'
 		);
-		const value = await pyodide.runPythonAsync(code);
+		const value = await runWithImportRetry(pyodide, code, (msg) => {
+			currentStderr += msg;
+		});
 		// Flush any native file writes that landed in MEMFS during the run
 		// to the host working dir. Errors per file are surfaced via stderr
 		// inside the drain function; only catastrophic failures bubble up.
