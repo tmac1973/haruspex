@@ -294,7 +294,7 @@ export async function rerunSandboxStep(stepId: string): Promise<void> {
 		s.id === stepId ? { ...s, status: 'running' as const, result: undefined, artifacts: [] } : s
 	);
 	try {
-		const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 30) * 1000);
+		const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
 		const r = await runPython(code, { timeoutMs });
 		const formatted = formatSandboxResultForChat(r);
 		conv.searchSteps = conv.searchSteps.map((s) =>

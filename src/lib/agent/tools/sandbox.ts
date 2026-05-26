@@ -88,7 +88,7 @@ registerTool({
 			}
 		}
 		try {
-			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 30) * 1000);
+			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
 			const r = await runPython(code, { timeoutMs });
 			return { result: formatResult(r), artifacts: r.artifactsList };
 		} catch (e) {
@@ -146,7 +146,7 @@ registerTool({
 			return toolResult(toolError('Missing or empty `package` argument'));
 		}
 		try {
-			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 30) * 1000);
+			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
 			const r = await installPackage(pkg, { timeoutMs });
 			return toolResult(formatResult(r));
 		} catch (e) {
