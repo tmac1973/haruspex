@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.1.40](https://github.com/tmac1973/haruspex/compare/v0.1.39...v0.1.40) (2026-05-26)
+
+
+### Features
+
+* **chat:** click-to-enlarge for inline image thumbnails ([7ca4aea](https://github.com/tmac1973/haruspex/commit/7ca4aea11dfb980d81a355eb5d63cd8f43831f3f))
+* **chat:** persist messageSteps to DB so inline images survive restart ([d7a3fb7](https://github.com/tmac1973/haruspex/commit/d7a3fb724fbd509cffdfa3ddf4d1a9ee1f4236bb))
+* **jobs:** delete runs from history sidebar ([44c6d38](https://github.com/tmac1973/haruspex/commit/44c6d38537cefb69c2b51cccf457d42282028fb7))
+* **jobs:** delete runs from history sidebar — single and bulk ([40d7479](https://github.com/tmac1973/haruspex/commit/40d7479f1c669a0439f10d69cc98d2dea20a8e78))
+* **sandbox:** auto-install imports + de-stale tool descriptions ([65069b1](https://github.com/tmac1973/haruspex/commit/65069b1ccaee59d13e02a23e32ac5806fcf16b94))
+* **sandbox:** bundle pygame-ce/bokeh/altair workspace wheels (step 2) ([56f9344](https://github.com/tmac1973/haruspex/commit/56f9344893ac2df45a08fdb9b33764d84ff22de3))
+* **sandbox:** iframe runtime MVP — protocol, manager, init.py (step 3) ([825895d](https://github.com/tmac1973/haruspex/commit/825895d9581ad36c31fa2fcf7875a0c6b311ee5b))
+* **sandbox:** per-chat iframe pool with LRU (step 5) ([a117ccf](https://github.com/tmac1973/haruspex/commit/a117ccf3676e74855067c609058a7e2355819c13))
+* **sandbox:** port FS bridge into iframe — save/delete/fetch/sync (step 4) ([9ef58f7](https://github.com/tmac1973/haruspex/commit/9ef58f72fab00e15d184be03a76dfc3e8bd48bd3))
+* **sandbox:** render interactive HTML artifacts inline as srcdoc iframes (step E) ([05a9321](https://github.com/tmac1973/haruspex/commit/05a9321d4bf99ddf19616f620bea0fdf97178595))
+* **sandbox:** retry-on-ImportError for transitive deps ([e860ddd](https://github.com/tmac1973/haruspex/commit/e860ddd51577053fe762c7cb97c5b52e8dca805c))
+* **sandbox:** Run-again + Cancel buttons on run_python steps (step F) ([401a364](https://github.com/tmac1973/haruspex/commit/401a364aa648f8c224f64c5c020af51224533098))
+* **sandbox:** spike pygame-ce in Tauri iframe (step 1) ([fc5cc6c](https://github.com/tmac1973/haruspex/commit/fc5cc6c57e7d52d08fdf77ed9e78e9e85238099b))
+* **sandbox:** swap run_python / install_package / reset to IframePool (step 6) ([ab5e084](https://github.com/tmac1973/haruspex/commit/ab5e084be6690297a6bd6c1c4408bbd2444fc6da))
+* **workspace:** Workspace tab + active-chat wiring (step 7) ([41e78aa](https://github.com/tmac1973/haruspex/commit/41e78aa86efcb5c583be14179b56dac754a696b3))
+
+
+### Bug Fixes
+
+* **sandbox:** bump default sandbox timeout 30s → 60s ([364ad89](https://github.com/tmac1973/haruspex/commit/364ad899e842556fdcb2f8f6fd64a90098fec8da))
+* **sandbox:** package auto-install + phantom-load detector ([18275d8](https://github.com/tmac1973/haruspex/commit/18275d808a02d5b98523f78b1ed57e003876e2ae))
+* **sandbox:** route script-bearing _repr_html_ to workspace, not chat ([33cf158](https://github.com/tmac1973/haruspex/commit/33cf158edf9805e622f83c299cf7478be3d7467c))
+* **workspace:** always render the stage div so pool.host can attach ([e1f5a5b](https://github.com/tmac1973/haruspex/commit/e1f5a5b31961cbd5d12b9440916c1ac2db1fe676))
+* **workspace:** AST-rewrite sync game loops so they don't freeze the UI ([c255d18](https://github.com/tmac1973/haruspex/commit/c255d18935abc89d6239c29e95d3ba1c201cbfc2))
+* **workspace:** await external scripts in show_html so plotly works ([4900fcd](https://github.com/tmac1973/haruspex/commit/4900fcd02b743496a7831d9612d5072f1c1fbcd8))
+* **workspace:** inherit visibility on active iframe so it hides with tab ([83e9556](https://github.com/tmac1973/haruspex/commit/83e9556c152f2f67491d8b12deea35757d78aba5))
+* **workspace:** keep WorkspaceTab mounted so pool iframes stay alive ([a87d045](https://github.com/tmac1973/haruspex/commit/a87d045bbe501c1e138296393d98293845629e93))
+* **workspace:** no-op pygame Clock.tick so game loops don't freeze UI ([17839f6](https://github.com/tmac1973/haruspex/commit/17839f6294af64935888eaf251f66e02b044455b))
+
+
+### Code Refactoring
+
+* **sandbox:** pivot back to Web Worker, drop workspace tab/iframe (steps A–D) ([adeb10e](https://github.com/tmac1973/haruspex/commit/adeb10e0498bc6daa259298b7fcc462fbae55333))
+
+
+### Documentation
+
+* **plan:** pivot to inline-iframe rendering with Web Worker runtime ([8fb9a62](https://github.com/tmac1973/haruspex/commit/8fb9a62922fda4379e219e6952d4af087d86f31d))
+* **plan:** rewrite phase 13 as unified python sandbox ([8c9d8ff](https://github.com/tmac1973/haruspex/commit/8c9d8ff6bb6a7851b0bcb240e83ab7ca426e5cf9))
+
 ## [0.1.39](https://github.com/tmac1973/haruspex/compare/v0.1.38...v0.1.39) (2026-05-24)
 
 
