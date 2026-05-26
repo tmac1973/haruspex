@@ -3,8 +3,22 @@
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
 	import { rerunSandboxStep, cancelActiveSandboxRun } from '$lib/stores/chat.svelte';
+	import ImageViewerModal from './ImageViewerModal.svelte';
 
 	hljs.registerLanguage('python', python);
+
+	let viewerSrc = $state<string | null>(null);
+	let viewerAlt = $state<string>('image');
+
+	function openViewer(src: string, alt: string, event: MouseEvent) {
+		event.stopPropagation();
+		viewerSrc = src;
+		viewerAlt = alt;
+	}
+
+	function closeViewer() {
+		viewerSrc = null;
+	}
 
 	interface Props {
 		steps: SearchStep[];
@@ -224,7 +238,14 @@
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="step-thumb" onclick={(e) => e.stopPropagation()}>
-					<img src={step.thumbDataUrl} alt={step.query} />
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<img
+						src={step.thumbDataUrl}
+						alt={step.query}
+						class="clickable"
+						title="Click to enlarge"
+						onclick={(e) => openViewer(step.thumbDataUrl!, step.query, e)}
+					/>
 				</div>
 			{/if}
 			{#if step.artifacts && step.artifacts.length > 0}
@@ -233,7 +254,14 @@
 				<div class="step-artifacts" onclick={(e) => e.stopPropagation()}>
 					{#each step.artifacts as artifact, i (i)}
 						{#if artifact.kind === 'image'}
-							<img class="artifact-image" src={artifact.dataUrl} alt={artifact.alt ?? 'plot'} />
+							<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+							<img
+								class="artifact-image clickable"
+								src={artifact.dataUrl}
+								alt={artifact.alt ?? 'plot'}
+								title="Click to enlarge"
+								onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
+							/>
 						{:else if artifact.interactive}
 							<!--
 								Interactive HTML (plotly / bokeh / altair / folium output) renders
@@ -281,6 +309,8 @@
 		{/each}
 	</div>
 {/if}
+
+<ImageViewerModal src={viewerSrc} alt={viewerAlt} onClose={closeViewer} />
 
 <style>
 	.search-steps {
@@ -428,6 +458,14 @@
 		display: block;
 		object-fit: contain;
 		background: white;
+	}
+
+	.clickable {
+		cursor: zoom-in;
+		transition: opacity 0.12s;
+	}
+	.clickable:hover {
+		opacity: 0.9;
 	}
 
 	.artifact-iframe {
