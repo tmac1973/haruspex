@@ -1537,7 +1537,8 @@ mod tests {
     fn save_and_get_messages() {
         let db = test_db();
         db.create_conversation("c1", "Test").unwrap();
-        db.save_message("c1", "user", "Hello", None, None, None).unwrap();
+        db.save_message("c1", "user", "Hello", None, None, None)
+            .unwrap();
         db.save_message("c1", "assistant", "Hi there!", None, None, None)
             .unwrap();
 
@@ -1554,7 +1555,8 @@ mod tests {
     fn cascade_delete() {
         let db = test_db();
         db.create_conversation("c1", "Test").unwrap();
-        db.save_message("c1", "user", "msg1", None, None, None).unwrap();
+        db.save_message("c1", "user", "msg1", None, None, None)
+            .unwrap();
         db.save_message("c1", "assistant", "msg2", None, None, None)
             .unwrap();
 
@@ -1586,7 +1588,8 @@ mod tests {
         let db = test_db();
         db.create_conversation("c1", "Chat 1").unwrap();
         db.create_conversation("c2", "Chat 2").unwrap();
-        db.save_message("c1", "user", "msg", None, None, None).unwrap();
+        db.save_message("c1", "user", "msg", None, None, None)
+            .unwrap();
 
         db.clear_all_conversations().unwrap();
 
@@ -2349,8 +2352,15 @@ mod tests {
             None,
         )
         .unwrap();
-        db.save_message("c1", "tool", "search results here", None, Some("call_1"), None)
-            .unwrap();
+        db.save_message(
+            "c1",
+            "tool",
+            "search results here",
+            None,
+            Some("call_1"),
+            None,
+        )
+        .unwrap();
 
         let conv = db.get_conversation("c1").unwrap();
         assert_eq!(conv.messages.len(), 2);
