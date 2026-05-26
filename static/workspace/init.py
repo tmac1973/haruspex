@@ -464,6 +464,41 @@ async def _haruspex_drain_pending_saves():
 # image artifact. Idempotent (sentinel-guarded), re-run each run.
 # ======================================================================
 
+def _haruspex_install_pygame_hook():
+    """pygame.time.Clock.tick(n) blocks the iframe's main thread until
+    1/n seconds have elapsed. On WebKitGTK same-origin iframes share
+    the event loop with the parent — so a 60fps Clock.tick freezes
+    the entire app for ~16ms per frame, even with the AST transform's
+    yield at the start of the loop body. Patch tick to a no-op so the
+    loop runs at browser-event-loop cadence (effectively ~60Hz via
+    natural dispatch). Idempotent: sentinel attribute on the class.
+    """
+    try:
+        import pygame.time as _pgtime
+    except ImportError:
+        return
+    Clock = getattr(_pgtime, 'Clock', None)
+    if not Clock or getattr(Clock, '_haruspex_patched', False):
+        return
+    _orig_tick = Clock.tick
+    _orig_tick_busy_loop = getattr(Clock, 'tick_busy_loop', None)
+
+    def _haruspex_tick(self, *args, **kwargs):
+        # Track frame time so get_fps() / get_time() still work, but
+        # don't block. The AST transform yields at the top of the
+        # caller's loop, and the browser event loop dispatches each
+        # iteration ~16ms apart naturally.
+        try:
+            return _orig_tick(self, 0)
+        except Exception:
+            return 0
+
+    Clock.tick = _haruspex_tick
+    if _orig_tick_busy_loop:
+        Clock.tick_busy_loop = _haruspex_tick
+    Clock._haruspex_patched = True
+
+
 def _haruspex_install_matplotlib_hook():
     try:
         import matplotlib as _mpl

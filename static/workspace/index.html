@@ -532,7 +532,7 @@
 					await pyodide.loadPackagesFromImports(code);
 					trace('after loadPackagesFromImports');
 					await pyodide.runPythonAsync(
-						'_haruspex_install_matplotlib_hook(); _haruspex_snapshot_workdir()'
+						'_haruspex_install_matplotlib_hook(); _haruspex_install_pygame_hook(); _haruspex_snapshot_workdir()'
 					);
 					trace('after hook+snapshot');
 					// Auto-transform sync-style code so top-level while/for loops
