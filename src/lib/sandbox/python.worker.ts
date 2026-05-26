@@ -498,6 +498,81 @@ def _haruspex_postprocess(value):
         return repr(value)
     except Exception as _e:
         return f'<repr failed: {_e}>'
+
+# ----------------------------------------------------------------------
+# Auto-install missing imports.
+#
+# Models trained on desktop Python expect 'import plotly' to just work
+# -- the install_package -> run_python -> ImportError -> install_package
+# loop wastes turns. Pyodide's loadPackagesFromImports handles the
+# lockfile-resident packages, but PyPI-only packages (plotly, folium,
+# pyvis, ...) still ModuleNotFound. This helper parses the code's
+# imports, tries each, and micropip-installs the ones that fail.
+# Stdlib / sandbox-shim names that error during install are swallowed
+# silently; everything else surfaces to stderr so a model with a typo'd
+# package name sees what happened.
+# ----------------------------------------------------------------------
+
+import ast as _ast_for_imports
+import importlib as _importlib_for_imports
+
+_haruspex_import_blocklist = frozenset({
+    'haruspex', 'js', 'pyodide', 'micropip',
+})
+
+def _haruspex_collect_top_imports(code):
+    try:
+        tree = _ast_for_imports.parse(code)
+    except SyntaxError:
+        return []
+    names = []
+    seen = set()
+    for node in _ast_for_imports.walk(tree):
+        if isinstance(node, _ast_for_imports.Import):
+            for alias in node.names:
+                pkg = alias.name.split('.')[0]
+                if pkg and pkg not in seen:
+                    seen.add(pkg)
+                    names.append(pkg)
+        elif isinstance(node, _ast_for_imports.ImportFrom):
+            if node.module and node.level == 0:
+                pkg = node.module.split('.')[0]
+                if pkg and pkg not in seen:
+                    seen.add(pkg)
+                    names.append(pkg)
+    return names
+
+async def _haruspex_auto_install_missing(code):
+    """Walk imports in code, micropip-install the ones that aren't
+    already importable. Errors are non-fatal."""
+    pkgs = _haruspex_collect_top_imports(code)
+    if not pkgs:
+        return
+    missing = []
+    for name in pkgs:
+        if name in _haruspex_import_blocklist:
+            continue
+        try:
+            _importlib_for_imports.import_module(name)
+        except Exception:
+            missing.append(name)
+    if not missing:
+        return
+    import micropip as _micropip
+    import sys as _sys_for_auto
+    for name in missing:
+        try:
+            await _micropip.install(name)
+            print('[haruspex] auto-installed ' + name, file=_sys_for_auto.stderr)
+        except Exception as _e:
+            # Stdlib modules and typo'd names land here. Stay quiet
+            # unless it looks like a real package failure — pure
+            # "can't find a candidate" is the common case.
+            _msg = str(_e)
+            if "can't find" in _msg.lower() or 'no matching' in _msg.lower():
+                continue
+            print('[haruspex] auto-install ' + name + ' failed: ' + _msg,
+                  file=_sys_for_auto.stderr)
 `;
 
 function post(msg: WorkerToMain) {
@@ -831,6 +906,21 @@ async function handleRun(id: string, code: string): Promise<void> {
 	const t0 = performance.now();
 	try {
 		await pyodide.loadPackagesFromImports(code);
+		// Auto-install PyPI packages the user code imports but that
+		// aren't in Pyodide's lockfile (so loadPackagesFromImports
+		// didn't catch them). Eliminates the install_package →
+		// run_python → ImportError → install_package round-trip.
+		pyodide.globals.set('_haruspex_user_code_for_imports', code);
+		try {
+			await pyodide.runPythonAsync(
+				'await _haruspex_auto_install_missing(_haruspex_user_code_for_imports)'
+			);
+		} catch (installErr) {
+			currentStderr +=
+				'[haruspex] auto-install pass failed: ' +
+				(installErr instanceof Error ? installErr.message : String(installErr)) +
+				'\n';
+		}
 		// Re-install the matplotlib show-capture hook each run; idempotent
 		// in Python (guarded by a sentinel attribute), so the cost is one
 		// dictionary lookup if matplotlib is loaded. Snapshot the workdir

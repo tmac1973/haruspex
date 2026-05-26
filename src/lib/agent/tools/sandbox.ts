@@ -40,11 +40,13 @@ registerTool({
 			name: 'run_python',
 			description:
 				'Execute Python code in a persistent sandbox. Variables, imports, and installed packages persist across calls within the current chat. Top-level await is supported. The final expression value is returned alongside captured stdout/stderr. ' +
-				'OUTPUT CHANNELS: ' +
-				'(1) Inline in chat — matplotlib `plt.show()`, a pandas DataFrame as the last expression, or any value with `_repr_html_` renders as an artifact on the assistant message. ' +
-				'(2) Workspace tab — `import haruspex; haruspex.show_html(html_string)` renders interactive HTML (e.g. plotly: `haruspex.show_html(fig.to_html(include_plotlyjs="cdn"))`). pygame draws to a canvas inside the Workspace tab automatically. The tab auto-focuses on first write. ' +
-				'LONG-RUNNING CODE: wrap game loops / animations in `haruspex.spawn(coroutine())` so the tool call returns immediately while the task keeps running. Plain `while True:` at the top level will hang the tool. Cancel with `haruspex.stop_tasks()`. ' +
-				'Bundled offline: matplotlib, numpy, pandas, scipy, scikit-learn, sympy, pillow, beautifulsoup4 (Pyodide built-ins), plus fpdf2, python-pptx, xlsxwriter, pygame-ce, bokeh, altair. Other packages (plotly, folium, ...): `install_package` first.',
+				'PACKAGE INSTALLS ARE AUTOMATIC — just import what you need; missing PyPI / Pyodide packages are installed transparently on first import. You do NOT need to call install_package first for normal usage. ' +
+				'OUTPUT: ' +
+				'(1) Text — stdout + final-expression repr. ' +
+				'(2) Inline images — matplotlib `plt.show()` emits the figure as a PNG in chat. ' +
+				'(3) Inline interactive plots — plotly / bokeh / altair / folium figures returned as the LAST EXPRESSION render in the chat message as an interactive HTML iframe (hover, pan, zoom). Example: `import plotly.express as px; fig = px.scatter(...); fig` — just leave `fig` as the last line; the runtime auto-detects script-bearing HTML and renders it interactively. Do NOT save the HTML to disk and do NOT call any helper to render — return the figure as the last expression. ' +
+				'(4) Inline DataFrames — a pandas DataFrame as the last expression renders as an HTML table. ' +
+				'Each call must complete within the timeout (default 30s); there is no background-task pattern. Bundled offline (no install needed, no network): matplotlib, numpy, pandas, scipy, scikit-learn, sympy, pillow, beautifulsoup4 (Pyodide built-ins), plus fpdf2, python-pptx, xlsxwriter, bokeh, altair. plotly and other PyPI packages are auto-installed on first import (one-time download, then browser-cached).',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -102,7 +104,7 @@ registerTool({
 		function: {
 			name: 'reset_python',
 			description:
-				'Wipe the Python sandbox: clears variables, imports, installed packages, AND the workspace stage for the current chat. Kills every background task launched via haruspex.spawn. Use after poisoned state (hung import, runaway loop, irrecoverable error). Does not affect chat history.',
+				'Wipe the Python sandbox for the current chat: clears all variables, imports, and installed packages. Use after a poisoned state (hung import, bad monkey-patch, irrecoverable error). Does not affect chat history.',
 			parameters: { type: 'object', properties: {} }
 		}
 	},
@@ -124,7 +126,7 @@ registerTool({
 		function: {
 			name: 'install_package',
 			description:
-				'Install a Python package into the sandbox via micropip. Pre-built Pyodide packages (numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) work out of the box. Pure-Python wheels from PyPI also work; packages with C extensions that have not been pre-built for Pyodide will fail. Pre-installed: fpdf2, python-pptx, xlsxwriter, pygame-ce, bokeh, altair — do not reinstall. Plotly is NOT pre-installed (not in Pyodide lockfile); use install_package("plotly") first. Installs persist for the current chat.',
+				'Install a Python package via micropip. NOTE: run_python auto-installs imports, so you usually do NOT need this — just import the package directly. Use this tool only if you need a specific version (`pandas==2.1.0`) or want to install a package without running any code yet. Pure-Python wheels from PyPI and pre-built Pyodide packages work. C-extension packages not pre-built for Pyodide will fail.',
 			parameters: {
 				type: 'object',
 				properties: {
