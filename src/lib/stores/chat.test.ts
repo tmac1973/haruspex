@@ -50,7 +50,9 @@ const sandboxMocks = vi.hoisted(() => ({
 		notes: [],
 		duration_ms: 1
 	}),
-	resetSandbox: vi.fn().mockResolvedValue(undefined)
+	resetSandbox: vi.fn().mockResolvedValue(undefined),
+	hasLiveWorkerFor: vi.fn().mockReturnValue(false),
+	cancelActiveRun: vi.fn()
 }));
 
 vi.mock('$lib/sandbox/sandbox', () => sandboxMocks);
@@ -302,7 +304,9 @@ describe('chat store', () => {
 			await setActiveConversation(a);
 			await flush();
 
-			expect(sandboxMocks.resetSandbox).toHaveBeenCalled();
+			// IframePool boots a fresh iframe lazily on the first runPython
+			// for the chat, so the explicit resetSandbox at the start of
+			// restore (legacy worker behavior) is no longer needed.
 			expect(sandboxMocks.installPackage).toHaveBeenCalledWith('numpy');
 			expect(sandboxMocks.runPython).toHaveBeenCalledWith('import numpy');
 			// Successful restore implies prior approval — sandboxApproved set.

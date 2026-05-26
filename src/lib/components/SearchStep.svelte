@@ -2,8 +2,23 @@
 	import type { SearchStep } from '$lib/agent/loop';
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
+	import { rerunSandboxStep, cancelActiveSandboxRun } from '$lib/stores/chat.svelte';
+	import ImageViewerModal from './ImageViewerModal.svelte';
 
 	hljs.registerLanguage('python', python);
+
+	let viewerSrc = $state<string | null>(null);
+	let viewerAlt = $state<string>('image');
+
+	function openViewer(src: string, alt: string, event: MouseEvent) {
+		event.stopPropagation();
+		viewerSrc = src;
+		viewerAlt = alt;
+	}
+
+	function closeViewer() {
+		viewerSrc = null;
+	}
 
 	interface Props {
 		steps: SearchStep[];
@@ -11,6 +26,16 @@
 	}
 
 	let { steps, slowMode = false }: Props = $props();
+
+	function rerunStep(step: SearchStep, event: MouseEvent) {
+		event.stopPropagation();
+		void rerunSandboxStep(step.id);
+	}
+
+	function cancelStep(event: MouseEvent) {
+		event.stopPropagation();
+		cancelActiveSandboxRun();
+	}
 
 	let copyStates: Record<string, string> = $state({});
 	// Per-step user override for run_python code-block visibility. Absent
@@ -181,6 +206,23 @@
 					>
 						{copyStates[`${step.id}:code`] || 'Copy'}
 					</button>
+					{#if step.status === 'running'}
+						<button
+							class="run-control cancel"
+							onclick={cancelStep}
+							title="Terminate the Python worker for this chat"
+						>
+							⏸ Cancel
+						</button>
+					{:else if stepErrored(step)}
+						<button
+							class="run-control rerun"
+							onclick={(e) => rerunStep(step, e)}
+							title="Run the same code again in a fresh attempt"
+						>
+							▶ Run again
+						</button>
+					{/if}
 				</div>
 				{#if !isCodeCollapsed(step)}
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -196,7 +238,14 @@
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="step-thumb" onclick={(e) => e.stopPropagation()}>
-					<img src={step.thumbDataUrl} alt={step.query} />
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<img
+						src={step.thumbDataUrl}
+						alt={step.query}
+						class="clickable"
+						title="Click to enlarge"
+						onclick={(e) => openViewer(step.thumbDataUrl!, step.query, e)}
+					/>
 				</div>
 			{/if}
 			{#if step.artifacts && step.artifacts.length > 0}
@@ -205,7 +254,28 @@
 				<div class="step-artifacts" onclick={(e) => e.stopPropagation()}>
 					{#each step.artifacts as artifact, i (i)}
 						{#if artifact.kind === 'image'}
-							<img class="artifact-image" src={artifact.dataUrl} alt={artifact.alt ?? 'plot'} />
+							<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+							<img
+								class="artifact-image clickable"
+								src={artifact.dataUrl}
+								alt={artifact.alt ?? 'plot'}
+								title="Click to enlarge"
+								onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
+							/>
+						{:else if artifact.interactive}
+							<!--
+								Interactive HTML (plotly / bokeh / altair / folium output) renders
+								inside a sandboxed srcdoc iframe so the browser loads it as a fresh
+								document and executes the embedded <script> tags natively. sandbox=
+								"allow-scripts" lets the chart's JS run but no allow-same-origin →
+								the iframe can't reach the parent.
+							-->
+							<iframe
+								class="artifact-iframe"
+								srcdoc={artifact.html}
+								sandbox="allow-scripts"
+								title="interactive plot"
+							></iframe>
 						{:else}
 							<div class="artifact-html">
 								{#if artifact.truncated}
@@ -239,6 +309,8 @@
 		{/each}
 	</div>
 {/if}
+
+<ImageViewerModal src={viewerSrc} alt={viewerAlt} onClose={closeViewer} />
 
 <style>
 	.search-steps {
@@ -388,6 +460,22 @@
 		background: white;
 	}
 
+	.clickable {
+		cursor: zoom-in;
+		transition: opacity 0.12s;
+	}
+	.clickable:hover {
+		opacity: 0.9;
+	}
+
+	.artifact-iframe {
+		width: 100%;
+		height: 480px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: white;
+	}
+
 	.artifact-html {
 		border: 1px solid var(--border);
 		border-radius: 6px;
@@ -464,6 +552,27 @@
 
 	.copy-btn:hover {
 		background: var(--bg-primary);
+	}
+
+	.run-control {
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 2px 8px;
+		font-size: 0.7rem;
+		cursor: pointer;
+		color: var(--text-secondary);
+	}
+	.run-control:hover {
+		background: var(--bg-primary);
+	}
+	.run-control.cancel {
+		color: #c97;
+		border-color: #c97;
+	}
+	.run-control.rerun {
+		color: #6a6;
+		border-color: #6a6;
 	}
 
 	.detail-block pre {

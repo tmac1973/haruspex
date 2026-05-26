@@ -5,7 +5,17 @@ export type InstallPhase = 'resolving' | 'downloading' | 'installing';
 
 export type Artifact =
 	| { kind: 'image'; mime: string; dataUrl: string; alt?: string }
-	| { kind: 'html'; html: string; truncated?: { shown: number; total: number } };
+	| {
+			kind: 'html';
+			html: string;
+			truncated?: { shown: number; total: number };
+			/** When true the chat renders this artifact inside a sandboxed
+			 *  iframe (srcdoc) so embedded <script> tags execute as part of
+			 *  a normal document load. Used for plotly / bokeh / altair
+			 *  output. Plain HTML (DataFrame tables) leaves this unset and
+			 *  renders via {@html ...}. */
+			interactive?: boolean;
+	  };
 
 export interface ToolResult {
 	stdout: string;
@@ -88,6 +98,7 @@ export type WorkerToMain =
 			payload: { kind: 'bytes'; bytes: Uint8Array } | { kind: 'text'; text: string };
 			alt?: string;
 			truncated?: { shown: number; total: number };
+			interactive?: boolean;
 	  }
 	| { kind: 'install_progress'; id: string; package: string; phase: InstallPhase }
 	| { kind: 'done'; id: string; result: ToolResult }

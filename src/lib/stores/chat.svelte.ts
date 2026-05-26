@@ -12,7 +12,13 @@ import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
-import { runPython, installPackage, resetSandbox } from '$lib/sandbox/sandbox';
+import {
+	runPython,
+	installPackage,
+	resetSandbox,
+	hasLiveWorkerFor,
+	cancelActiveRun
+} from '$lib/sandbox/sandbox';
 import {
 	getContextUsage,
 	updateContextUsage,
@@ -27,6 +33,7 @@ import {
 	dbDeleteConversation,
 	dbClearAll,
 	dbLoadMessages,
+	dbLoadMessageSteps,
 	dbReplaceMessages,
 	type DbConversationSummary
 } from '$lib/stores/db';
@@ -180,6 +187,10 @@ async function loadConversationMessages(id: string): Promise<void> {
 	const conv = conversations.find((c) => c.id === id);
 	if (!conv || conv.messages.length > 0) return;
 	conv.messages = await dbLoadMessages(id);
+	// Rehydrate per-message artifacts (images / DataFrames / interactive
+	// plots) so inline content survives restart.
+	const steps = await dbLoadMessageSteps(id);
+	conv.messageSteps = steps as typeof conv.messageSteps;
 }
 
 export function getConversations(): Conversation[] {
@@ -261,6 +272,94 @@ export function getIsCompacting(): boolean {
 
 export function getExhaustiveResearch(): boolean {
 	return exhaustiveResearch;
+}
+
+/**
+ * Re-run a prior `run_python` step in the active conversation, replacing
+ * its tool-result in place. Used by the "Run again" button on errored /
+ * timed-out steps. Reads the original code from `step.args.code`; the
+ * step's previous artifacts are discarded. No model turn is triggered —
+ * the model just sees the updated tool result on its next read.
+ */
+export async function rerunSandboxStep(stepId: string): Promise<void> {
+	const conv = getActiveConversation();
+	if (!conv) return;
+	const step = conv.searchSteps.find((s) => s.id === stepId);
+	if (!step || step.toolName !== 'run_python') return;
+	const code = step.args?.code;
+	if (typeof code !== 'string' || !code.trim()) return;
+	// Flip to running; clear prior result/artifacts so the UI shows the
+	// spinner immediately.
+	conv.searchSteps = conv.searchSteps.map((s) =>
+		s.id === stepId ? { ...s, status: 'running' as const, result: undefined, artifacts: [] } : s
+	);
+	try {
+		const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
+		const r = await runPython(code, { timeoutMs });
+		const formatted = formatSandboxResultForChat(r);
+		conv.searchSteps = conv.searchSteps.map((s) =>
+			s.id === stepId
+				? {
+						...s,
+						status: 'done' as const,
+						result: formatted,
+						artifacts: r.artifactsList
+					}
+				: s
+		);
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		conv.searchSteps = conv.searchSteps.map((s) =>
+			s.id === stepId
+				? { ...s, status: 'done' as const, result: `Error: ${msg}`, artifacts: [] }
+				: s
+		);
+	}
+}
+
+/**
+ * Mirror of the tool's formatResult — duplicating here keeps the chat
+ * store from importing the agent tools module (circular). Worth
+ * folding into a shared helper if a third caller appears.
+ */
+function formatSandboxResultForChat(r: {
+	stdout: string;
+	stderr: string;
+	result: string;
+	error: string | null;
+	artifacts: number;
+	notes: string[];
+	duration_ms: number;
+}): string {
+	const lines: string[] = [];
+	if (r.error) {
+		lines.push(`Error: ${r.error}`);
+		if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
+		if (r.stdout.trim()) lines.push(`Stdout:\n${r.stdout.trim()}`);
+		lines.push(`(took ${r.duration_ms}ms)`);
+		return lines.join('\n\n');
+	}
+	if (r.stdout.trim()) lines.push(`Stdout:\n${r.stdout.trim()}`);
+	if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
+	if (r.result) lines.push(`Result: ${r.result}`);
+	if (r.artifacts > 0) {
+		lines.push(`(${r.artifacts} artifact${r.artifacts === 1 ? '' : 's'} rendered in UI)`);
+	}
+	if (r.notes.length > 0) lines.push(`Notes: ${r.notes.join('; ')}`);
+	if (lines.length === 0) lines.push('(no output)');
+	lines.push(`(took ${r.duration_ms}ms)`);
+	return lines.join('\n\n');
+}
+
+/**
+ * Cancel the active chat's in-flight run_python (terminates its Worker
+ * via the WorkerPool). The pending dispatch rejects, the tool's
+ * execute() catches it and surfaces a 'Sandbox error: sandbox reset'
+ * tool result, the agent loop continues with that result, the UI
+ * shows the Run-again button.
+ */
+export function cancelActiveSandboxRun(): void {
+	cancelActiveRun();
 }
 
 export function setExhaustiveResearch(value: boolean): void {
@@ -385,18 +484,37 @@ function collectSandboxCalls(messages: ChatMessage[]): SandboxCallToReplay[] {
 }
 
 /**
+ * Skip replay for code that launches long-running background tasks —
+ * the original run already detached one game / animation, replay would
+ * launch another, and after a few chat opens we'd have N parallel
+ * pygame loops chewing the CPU.
+ */
+function isLongRunningLaunch(code: string): boolean {
+	return /\b(asyncio\.ensure_future|asyncio\.create_task|haruspex\.spawn)\b/.test(code);
+}
+
+/**
  * Walk a chat's message history, find every prior install_package /
  * run_python / reset_python tool call, and replay them sequentially
- * against a fresh sandbox worker so the model picks up where it left
- * off. Per-call errors are swallowed (the chat history already records
- * what the model saw at the time; the goal is to rebuild state, not
- * surface failures). The active-chat guard aborts replay if the user
- * switches to another chat mid-flight.
+ * against a fresh per-chat iframe so the model picks up where it left
+ * off. Skipped entirely if the IframePool already has a live iframe
+ * for this chat — its Python state hasn't been lost. Per-call errors
+ * are swallowed (the chat history already records what the model saw
+ * at the time; the goal is to rebuild state, not surface failures).
+ * The active-chat guard aborts replay if the user switches to another
+ * chat mid-flight.
  */
 async function restoreSandboxSession(id: string): Promise<void> {
 	const conv = conversations.find((c) => c.id === id);
 	if (!conv) return;
 	if (!getSettings().sandboxEnabled) return;
+	// Worker pool keeps per-chat Workers alive across chat switches
+	// (LRU cap 3). If this chat still has its Worker, Python state is
+	// intact — skip replay entirely.
+	if (hasLiveWorkerFor(id)) {
+		logDebug('sandbox', 'session restore skipped — worker still live', { chatId: id });
+		return;
+	}
 	const calls = collectSandboxCalls(conv.messages);
 	if (calls.length === 0) return;
 	if (calls.length > SESSION_REPLAY_CAP) {
@@ -412,9 +530,8 @@ async function restoreSandboxSession(id: string): Promise<void> {
 	conv.sessionRestoreSkipped = false;
 	logDebug('sandbox', 'session restore start', { chatId: id, callCount: calls.length });
 	try {
-		// Reset the worker so replay starts clean. Other chats that had
-		// active sandbox state lose it — by design, single-worker model.
-		await resetSandbox();
+		// IframePool boots a fresh iframe lazily on the first runPython
+		// for this chat — no explicit reset needed.
 		for (const call of calls) {
 			if (activeConversationId !== id) {
 				logDebug('sandbox', 'session restore aborted — chat switched', { fromChatId: id });
@@ -424,6 +541,12 @@ async function restoreSandboxSession(id: string): Promise<void> {
 				if (call.name === 'install_package' && call.args.package) {
 					await installPackage(call.args.package);
 				} else if (call.name === 'run_python' && call.args.code) {
+					if (isLongRunningLaunch(call.args.code)) {
+						logDebug('sandbox', 'session restore: skipping long-running launch', {
+							preview: call.args.code.slice(0, 60)
+						});
+						continue;
+					}
 					await runPython(call.args.code);
 				} else if (call.name === 'reset_python') {
 					await resetSandbox();
@@ -629,7 +752,11 @@ function commitMessage(conversation: Conversation, content: string, stats: TurnS
 		conversation.messageStats[messageIndex] = messageStats;
 	}
 	conversation.messages.push(assistantMsg);
-	dbSaveMessage(conversation.id, assistantMsg);
+	// Serialize the steps for persistence — inline images live inside
+	// step.artifacts[].dataUrl (base64) so the row can get sizeable.
+	// Acceptable: image artifacts are the whole point of saving them.
+	const stepsJson = stepsForThisTurn.length > 0 ? JSON.stringify(stepsForThisTurn) : null;
+	dbSaveMessage(conversation.id, assistantMsg, stepsJson);
 	conversation.searchSteps = [];
 }
 

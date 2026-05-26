@@ -103,6 +103,7 @@ pub fn run() {
             db::db_get_conversation,
             db::db_create_conversation,
             db::db_save_message,
+            db::db_update_last_message_steps,
             db::db_rename_conversation,
             db::db_delete_conversation,
             db::db_clear_all_conversations,

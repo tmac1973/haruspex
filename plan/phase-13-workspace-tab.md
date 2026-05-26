@@ -1,43 +1,51 @@
-# Phase 13: Workspace Tab (Interactive Python + HTML Stage)
+# Phase 13: Inline Interactive Plots (revised)
 
 ## Goal
 
-Add a second tab to the main view — alongside Chat — that gives the model a live **DOM stage** the user can watch and interact with. Backed by a separate Pyodide instance running in a same-origin iframe, the model can launch pygame-ce games, plotly/bokeh/altair interactive plots, folium maps, custom Python animations, or raw HTML dashboards. Persistent session semantics per chat: subsequent `update_tab` calls mutate the running view. On chat switch, the visual state is snapshotted and frozen until explicitly restarted.
+Make `run_python` produce interactive plots (plotly, bokeh, altair, raw HTML) that hover/zoom/pan **inline in the chat message**, with no separate tab and no per-message UI mode-switching for the model. Pure-compute use cases (math, parsing, DataFrames, document generation) keep working exactly as in the pre-phase-13 chat sandbox.
+
+### How we got here
+
+This plan went through three shapes:
+
+1. **First attempt** (original phase-13): a separate Workspace tab with its own Pyodide instance and a parallel set of tools (`start_tab_session`, `update_tab`, etc.). Implementation revealed the model could not reliably choose between `run_python` and `update_tab`.
+
+2. **Unified iframe attempt** (most of `feat/unified-python-sandbox`): collapse to one `run_python` tool, one Pyodide per chat in an iframe, with a persistent Workspace tab that hosted the iframes. Got everything working end-to-end (plotly, matplotlib, DataFrames, pygame). But pygame in a same-origin iframe shares the parent's event loop on WebKitGTK — a blocking game loop freezes the whole app, needing an AST transform + `pygame.time.Clock.tick` monkey-patch + bundled wheels (~30MB) just to work somewhat.
+
+3. **Current plan**: drop pygame. Without pygame's need for a real `document` + `<canvas>`, the iframe runtime brings nothing the Web Worker doesn't bring more cheaply. Plotly/bokeh/altair output is just HTML+JS; render each plot as a `<iframe srcdoc>` inside the chat message and the browser handles script execution natively. Python runs in a Web Worker (per chat, LRU cap 3), which gives heavy-compute insulation from the UI thread that the iframe approach actually didn't.
 
 ## Prerequisites
 
-- Phase 11 (code sandbox) — the workspace reuses the Rust FS/fetch commands (`sandbox_sync_workdir`, `sandbox_save`, `sandbox_delete_in_workdir`, `sandbox_fetch`) and the wheel-bundling pattern (`scripts/fetch-pyodide.sh`).
-- An understanding that the chat-side `run_python` worker and the workspace iframe are **two independent Pyodide instances**. They do not share Python state.
-- Familiarity with `maintenance.md` sections 4 (tool system), 6 (Tauri command registration — full-module-path rule), 10 (logging), 11 (persistence), 13 (build gates), 14 (ESLint complexity gates).
+- Phase 11 (code sandbox): we keep the Rust FS/fetch commands (`sandbox_sync_workdir`, `sandbox_save`, `sandbox_delete_in_workdir`, `sandbox_fetch`) and the wheel-bundling pattern (`scripts/fetch-pyodide.sh`). Most of what's there carries over verbatim.
+- Familiarity with `maintenance.md` sections 4 (tool system), 10 (logging), 11 (persistence), 13 (build gates).
 
 ## Deliverables
 
-- **User-testable**: Ask "render Snake in pygame I can play". Model calls `start_tab_session` → UI auto-switches to the Workspace tab → model calls `update_tab` with the pygame code → game appears, keyboard input works, console pane at the bottom of the tab shows `print()` output live.
-- **User-testable**: Ask "plot the last 12 months of S&P 500 closes with plotly so I can hover for values". Model calls `start_tab_session`, fetches data via `pyodide.http.pyfetch` (routed through the proxy-aware bridge), generates a plotly figure, calls `update_tab` with code that injects the figure's HTML into `document.body`. Hovering shows tooltips.
-- **User-testable**: Ask "show me an HTML form to collect three numbers and submit them somewhere". Model calls `start_tab_session`, then `update_tab` with `kind='html'` and a raw HTML page. Form is interactive in the iframe.
-- **User-testable**: While a pygame game is running, switch to a different chat. The Workspace shows the new chat's last state (empty if it never used the workspace, or its frozen snapshot if it did). Switch back to the game's chat → see the frozen final frame of the game, with a "Restart session" button.
-- **User-testable**: First call to `start_tab_session` in a chat prompts "Allow workspace session in this chat?" Subsequent `update_tab` calls in the same chat skip the prompt.
+- **User-testable**: "compute the mean of [1,2,3,4]". `run_python` returns `2.5` inline in chat. Unchanged from today.
+- **User-testable**: "plot the last 12 months of S&P 500 closes with plotly so I can hover for values". Model writes `fig = px.line(...)`, leaves `fig` as the last expression. Chat message renders an interactive plotly chart inside an iframe — hovering shows tooltips, pan/zoom work.
+- **User-testable**: matplotlib `plt.show()` still emits a PNG artifact inline in chat (unchanged).
+- **User-testable**: a pandas DataFrame as the last expression renders as an HTML table inline in chat (unchanged).
+- **User-testable**: a `run_python` call that times out (model wrote a bad infinite loop) gets `▶ Run again` button in the chat — clicking respawns the Worker for that chat and re-runs the code.
+- **User-testable**: while a `run_python` call is in flight, `⏸ Cancel` button appears. Clicking terminates the Worker, surfaces a cancel-error result with the Run-again button.
 
 ---
 
-## Design Decisions
+## Design Decisions (locked-in)
 
-| Decision                   | Choice                                                                                                                                                                                                                                                                                                        | Rationale                                                                                                                                                                                                                        |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Architecture               | **Same-origin iframe** with its own Pyodide instance, separate from the chat sandbox worker.                                                                                                                                                                                                                  | pygame's SDL2/Emscripten backend wants a real `document` + `<canvas>` + DOM event listeners. An iframe gives that without polluting the main SvelteKit DOM. Independent Pyodide isolates a crashed game from chat sandbox state. |
-| Tool surface               | **Session-scoped**: `start_tab_session`, `update_tab`, `stop_tab_session`. Optionally `clear_tab` and `reset_tab_kernel`.                                                                                                                                                                                     | Explicit lifecycle. `start` boots Pyodide; `update` mutates; `stop` tears down. Model has to plan ahead, which surfaces intent better in the chat transcript.                                                                    |
-| Update payload             | `update_tab(content: string, kind: 'python' \| 'html')`.                                                                                                                                                                                                                                                      | Explicit kind avoids autodetect ambiguity. Single content field keeps the schema small.                                                                                                                                          |
-| Multi-purpose              | One stage, two content kinds. Both interleavable within a session.                                                                                                                                                                                                                                            | Matches reality of the Pyodide ecosystem — most "interactive" Python libraries either generate HTML or draw to a canvas.                                                                                                         |
-| Persistence on chat switch | **Snapshot + freeze.** Capture the iframe's visual state (canvas `toDataURL()` for pygame; `document.body.outerHTML` for HTML) into the chat's history; tear down Pyodide. On return, render the snapshot as a static image/iframe-srcdoc; model must call `start_tab_session` again to resume interactivity. | Cheapest. Avoids surprise CPU on chat switch. No replay logic to maintain. Live programs are explicitly "fresh start" on return.                                                                                                 |
-| Filesystem bridge          | **Full parity with `run_python`**: pre-run workdir sync into MEMFS, post-run drain back, `haruspex.save`/`delete` helpers, `pyodide.http.pyfetch` routed through `sandbox_fetch`.                                                                                                                             | pygame needs to load sprites/fonts; plotly may need CSV data; the user already trusts the chat sandbox to read/write workdir.                                                                                                    |
-| Stdout/stderr              | **Both** — live console pane at the bottom of the Workspace tab (collapsible, scrolling) AND mirrored into the tool result returned to the model.                                                                                                                                                             | Live console is essential for watching long-running programs (game-loop `print`s). Mirroring to tool result keeps the model informed without polling.                                                                            |
-| Bundled wheels             | `pygame-ce`, `plotly`, `bokeh`, `altair` bundled via `scripts/fetch-pyodide.sh` and pre-installed at session start. Other packages on-demand via `install_package_in_tab`.                                                                                                                                    | Covers the headline interactive use cases offline. ~30-40 MB bundle growth (acceptable given the offline-first goal).                                                                                                            |
-| Approval                   | **First-call prompt only.** `start_tab_session` prompts once per chat; subsequent `update_tab` calls auto-approve. Separate setting toggle to disable entirely.                                                                                                                                               | The user is approving the _capability_ for the chat, not each rendered frame. Matches the "approve once, iterate" model.                                                                                                         |
-| Stop button                | Workspace tab has a "Stop session" button that calls `stop_tab_session` programmatically. Also reset/clear buttons.                                                                                                                                                                                           | Manual escape hatch when a runaway loop wedges the iframe.                                                                                                                                                                       |
-| Audio                      | **Best-effort, no special support in v1.** pygame's SDL_mixer may or may not work depending on WebKitGTK's audio stack; document as a known limitation.                                                                                                                                                       | Reduces scope. Visual interactivity is the headline; audio is bonus.                                                                                                                                                             |
-| Network                    | Reuse `sandbox_fetch`, including proxy-mode handling.                                                                                                                                                                                                                                                         | Plotly fetches Mapbox tiles, folium fetches OSM tiles, models may fetch datasets. Same proxy story as chat sandbox.                                                                                                              |
-| Timeout                    | **No wall-clock timeout** on running programs (they're expected to be long-lived). `update_tab` calls themselves can take up to e.g. 60s before the tool returns; after that the call is killed and reported as timed out, but the session stays alive.                                                       | Different from `run_python`. Pygame loops should not be terminated for "running too long".                                                                                                                                       |
-| Interrupt                  | Cooperative interrupt via `SharedArrayBuffer` if available (same as chat sandbox); otherwise terminate-iframe-and-respawn on stop.                                                                                                                                                                            | WebKitGTK Linux likely doesn't have `crossOriginIsolated` flipped → terminate path dominates. Acceptable; a stop is a stop.                                                                                                      |
+| Decision | Choice | Rationale |
+| --- | --- | --- |
+| Tool surface | **`run_python`, `install_package`, `reset_python`** — single Python tool surface, exactly today's shape. | The unification benefit (model never picks the wrong Python tool) is achieved by having one tool. Runtime is a separate concern. |
+| Python runtime | **Web Worker, one per chat, LRU cap 3.** | Worker isolates Python compute from the UI thread (the iframe couldn't do this — same-origin iframes share the parent's event loop on WebKitGTK). Per-chat preserves "ask a follow-up after switching chats and your variables are still there". |
+| pygame | **Dropped.** No bundled wheel, no AST transform, no tick patch. | Was the sole justification for an iframe-based runtime; without it, the Worker is strictly cheaper. The visual-game use case is out of scope. |
+| Plot rendering | **Per-message `<iframe srcdoc>`.** Each script-bearing HTML artifact gets its own sandboxed iframe in the chat message. `sandbox="allow-scripts"` (no allow-same-origin → plot can't reach parent). | Browser loads `srcdoc` as a normal document, so external `<script src="...">` tags + inline scripts execute in the right order natively. No manual script re-execution gymnastics. Each plot is independent — scroll up to a chart from 50 messages ago and it's still interactive. |
+| HTML artifact distinction | Existing `kind: 'html'` artifact gains an optional `interactive: boolean` flag. `true` → renders as `<iframe srcdoc>`. `false`/absent → renders as `{@html ...}` (DataFrame tables, simple HTML, no scripts). | Backwards compatible: DataFrame artifacts unchanged. The Python postprocess sets `interactive: true` when the HTML contains a `<script>` tag. |
+| Run-again | Button on tool result if it errored or timed out. Replays the original code from the tool call args; replaces the prior tool result inline. | Cheap escape hatch when a transient issue (slow first install, sluggish startup) kills a run. No state lost — the per-chat Worker survives. |
+| Cancel | Button visible while a `run_python` call is in flight. Terminates the Worker (which respawns lazily next time), returns a cancel-error result with Run-again. | Lets the user abort an unexpectedly slow run without waiting for the timeout. |
+| Approval | **Unchanged.** `sandboxApproval` setting + per-chat `sandboxApproved` flag covers everything. | No new trust boundaries. |
+| Timeout | Existing `sandboxTimeoutSeconds` setting (default 30s) applies per Worker run. | Same as today. |
+| Long-running tasks | **Not supported.** Every `run_python` call must complete within the timeout. No `haruspex.spawn`, no `asyncio.ensure_future` encouragement. | With pygame gone there's no use case that needs detached tasks. |
+| Filesystem bridge | **Reused wholesale** from the legacy worker. `haruspex.save`, `haruspex.delete`, `pyodide.http.pyfetch` override, urllib patch, builtins.open + workdir drain. | Already battle-tested in the chat sandbox; no reason to change. |
+| Bundled wheels | **Keep** fpdf2, python-pptx, xlsxwriter, defusedxml, fonttools (doc-creation) + bokeh, altair and their pure-Python deps (PyPI lockfile resolution). **Drop** pygame_ce. | bokeh / altair want offline parity with matplotlib / pandas. pygame is dead weight after this plan. |
 
 ---
 
@@ -46,391 +54,271 @@ Add a second tab to the main view — alongside Chat — that gives the model a 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Frontend (SvelteKit, main thread)                                    │
-│  • Tab switcher: [ Chat | Workspace ]                                │
-│  • WorkspaceTab.svelte: hosts the iframe, console pane, controls     │
-│  • workspace.ts: public API (startSession, update, stop, snapshot)   │
-│  • iframe lifecycle manager, message routing, snapshot/freeze        │
+│  • Tab bar: [ Chat | Jobs ]   (no Workspace tab)                     │
+│  • ChatView renders messages including:                              │
+│      - run_python tool results, with                                 │
+│      - Run again / Cancel buttons                                    │
+│      - inline image artifacts (matplotlib PNGs)                      │
+│      - inline HTML artifacts:                                        │
+│          - interactive=true → <iframe srcdoc> (plotly etc.)          │
+│          - interactive=false → {@html ...} (DataFrames)              │
+│  • WorkerPool (one per app):                                         │
+│      - one WorkerManager per chat, LRU cap 3                         │
+│      - public: runPython(chatId,...), installPackage(chatId,...),    │
+│        reset(chatId), cancel(chatId)                                 │
+│      - per-chat workdir sync, FS bridge, fetch bridge                │
 └──────────────────────────────────────────────────────────────────────┘
         │ postMessage                                  ▲
         ▼                                              │
 ┌──────────────────────────────────────────────────────────────────────┐
-│ workspace iframe (same-origin, /workspace/index.html)                │
-│  • Loads Pyodide                                                     │
-│  • Pre-installs pygame-ce + plotly + bokeh + altair from bundled     │
-│    wheels in static/pyodide/wheels/                                  │
-│  • Exposes the stage: <div id="stage"> spanning the iframe body      │
-│  • Python runs in iframe's main thread (so pygame sees real DOM)     │
-│  • Captures stdout/stderr → postMessage to parent                    │
-│  • Forwards FS/fetch requests via window.__TAURI__.invoke()          │
-│    (same Rust commands as the chat sandbox)                          │
+│ Web Worker (one per chat — Pyodide)                                  │
+│  • init.py:                                                          │
+│      - haruspex.save / haruspex.delete (FS bridge)                   │
+│      - pyodide.http.pyfetch override                                 │
+│      - urllib / requests / httpx routing                             │
+│      - matplotlib plt.show hook (PNG artifact)                       │
+│      - _haruspex_postprocess: emit interactive=true for              │
+│        script-bearing _repr_html_                                    │
+│      - builtins.open patch + workdir drain                           │
+│      - doc-creation wheel install (fpdf2 etc)                        │
 └──────────────────────────────────────────────────────────────────────┘
-        │ invoke('sandbox_fetch' | 'sandbox_save' | ...)
+        │ invoke('sandbox_fetch' | 'sandbox_save' | ...) — direct,
+        │ via @tauri-apps/api/core; the Worker reaches __TAURI_INTERNALS__
+        │ on the main window through the existing import.
         ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│ Rust Backend (Tauri commands — already exist from Phase 11)          │
+│ Rust Backend (Tauri commands — unchanged from Phase 11)              │
 │  • sandbox_fetch, sandbox_save, sandbox_delete_in_workdir            │
 │  • sandbox_sync_workdir                                              │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**Why iframe + main-thread Python (not a worker):**
+**Why Web Worker, not iframe**:
 
-The chat sandbox uses a Web Worker because that lets the main thread stay responsive while compute-heavy Python runs. The workspace deliberately runs Python on the **iframe's main thread** because:
+Heavy synchronous Python (a 100k-row pandas op, scipy fitting, matplotlib rendering) runs on the Worker thread, leaving the main UI fully responsive. Iframes share the parent's event loop on WebKitGTK (verified during the iframe attempt), so a blocking Python call would freeze chat scrolling, typing, animations — the same class of bug pygame was hitting.
 
-1. pygame-ce / SDL2 / Emscripten expect a real `document.getElementById('canvas')` and DOM event listeners. OffscreenCanvas in a worker partially supports this but pygame's event loop wiring expects synchronous access to `document`.
-2. Plotly / bokeh / altair generate HTML+JS that needs to be injected into a DOM, and their interactivity hooks expect to run in the same global as the DOM they wrote.
-3. The iframe is _already_ isolated from the main SvelteKit thread — it has its own event loop, its own crash domain, its own memory. So putting Python on its main thread doesn't block the chat UI.
-
-The Python `time.sleep(...)` will block the iframe's event loop. Game-loop code must use `await asyncio.sleep(0)` to yield. We document this in the `run_in_tab` tool description.
+The Worker has no DOM. That's fine: plot HTML is generated in Python (e.g. `fig.to_html()`) as a string, shipped to the main thread as an artifact, and rendered there inside an `<iframe srcdoc>` where the browser handles script execution as part of a normal document load.
 
 ---
 
-## Tools (model-facing)
+## Tool Surface (model-facing)
 
-Tool registration uses the standard patterns from `maintenance.md` §4 — `category: 'sandbox'` (gated by the existing `settings.sandboxEnabled` toggle; we're not adding a fourth setting), `labelArg()` for `displayLabel` where applicable, `toolInvokeError()` for failure paths, side-effect import added to `tools/index.ts`.
+Three tools, unchanged from the previous attempt's structure but with simplified descriptions:
 
-### `start_tab_session`
+### `run_python`
 
 ```typescript
 {
   type: 'function',
   function: {
-    name: 'start_tab_session',
-    description: 'Open the Workspace tab and boot a Python+HTML rendering session. Loads pygame-ce, plotly, bokeh, altair, matplotlib pre-installed. Subsequent update_tab calls share Python state. Only one session per chat at a time; calling again resets the existing session. The user is prompted for approval on first call per chat.',
-    parameters: { type: 'object', properties: {} }
+    name: 'run_python',
+    description:
+      'Execute Python code in a persistent sandbox. Variables, imports, and installed packages persist across calls in the current chat. Top-level await is supported. The final expression value is returned alongside captured stdout/stderr. ' +
+      'OUTPUT: ' +
+      '(1) Text — stdout + final expression `repr`. ' +
+      '(2) Inline images — `matplotlib.pyplot.plt.show()` emits the figure as a PNG in chat. ' +
+      '(3) Inline interactive plots — plotly / bokeh / altair / folium figures returned as the last expression render in chat as an interactive HTML iframe (hover, pan, zoom). Tip for plotly: `fig.to_html(include_plotlyjs="cdn")` if you need the full HTML doc explicitly. ' +
+      '(4) Inline DataFrames — a pandas DataFrame as the last expression renders as an HTML table. ' +
+      'Each call must complete within the timeout; there is no `ensure_future` / background-task pattern. Bundled offline: matplotlib, numpy, pandas, scipy, scikit-learn, sympy, pillow, beautifulsoup4 (Pyodide built-ins), plus fpdf2, python-pptx, xlsxwriter, bokeh, altair. Other packages (plotly, folium, …): `install_package` first.',
+    parameters: { ... }
   }
 }
 ```
 
-Result: `{ status: 'started' | 'already_running', notes: string[] }`. Failure on user denial.
+### `install_package`, `reset_python`
 
-### `update_tab`
-
-```typescript
-{
-  type: 'function',
-  function: {
-    name: 'update_tab',
-    description: 'Push content into the active workspace session. kind="python" runs Python in the iframe (top-level await supported; for game loops use `await asyncio.sleep(0)` to yield between frames — `time.sleep` will freeze the iframe). kind="html" replaces the stage with raw HTML. Both kinds can be interleaved; Python state persists across kind="python" calls. To render plotly/bokeh/altair: in Python, generate the figure HTML and inject via `js.document.getElementById("stage").innerHTML = fig_html`.',
-    parameters: {
-      type: 'object',
-      properties: {
-        content: { type: 'string', description: 'Python source OR raw HTML, depending on kind.' },
-        kind:    { type: 'string', enum: ['python', 'html'], description: 'How to interpret content.' }
-      },
-      required: ['content', 'kind']
-    }
-  }
-}
-```
-
-Result mirrors `run_python` shape: `{ stdout, stderr, result, error, duration_ms }`. No `artifacts` field — the artifacts ARE the live tab, not return values.
-
-### `stop_tab_session`
-
-```typescript
-{
-  type: 'function',
-  function: {
-    name: 'stop_tab_session',
-    description: 'Tear down the workspace session: kill the iframe and Pyodide. Does not switch tabs. Use when the user has asked to end the visualization, or before starting an unrelated new session.',
-    parameters: { type: 'object', properties: {} }
-  }
-}
-```
-
-### `install_package_in_tab`
-
-```typescript
-{
-  type: 'function',
-  function: {
-    name: 'install_package_in_tab',
-    description: 'Install a Python package into the workspace iframe via micropip. Pygame-ce, plotly, bokeh, altair, matplotlib are pre-installed — do not reinstall. Use for folium, pyvis, sympy, etc.',
-    parameters: {
-      type: 'object',
-      properties: {
-        package: { type: 'string' }
-      },
-      required: ['package']
-    }
-  }
-}
-```
-
-(Deliberately split from the chat-sandbox `install_package` — different Pyodide instance, different state.)
+Same shape as today. `reset_python` tears down the active chat's Worker.
 
 ---
 
-## Iframe ↔ Parent Protocol
+## Per-message iframe rendering
 
-### Parent → iframe
+### Artifact protocol change
 
-```typescript
-type ParentToIframe =
-	| { kind: 'init'; workdirAbs: string | null; proxyMode: string; bundledWheelsUrl: string }
-	| { kind: 'run'; id: string; content: string; contentKind: 'python' | 'html' }
-	| { kind: 'install'; id: string; package: string }
-	| { kind: 'stop' }
-	| { kind: 'capture_snapshot'; request_id: string };
+```diff
+ export type Artifact =
+   | { kind: 'image'; mime: string; dataUrl: string; alt?: string }
+-  | { kind: 'html'; html: string; truncated?: { shown: number; total: number } };
++  | { kind: 'html'; html: string; truncated?: { shown: number; total: number }; interactive?: boolean };
 ```
 
-### Iframe → parent
+`interactive: true` → the chat renders this artifact as `<iframe srcdoc>`. False / absent → renders via `{@html ...}`.
 
-```typescript
-type IframeToParent =
-	| { kind: 'ready' }
-	| { kind: 'load_error'; error: string }
-	| { kind: 'stdout'; id: string; data: string }
-	| { kind: 'stderr'; id: string; data: string }
-	| {
-			kind: 'done';
-			id: string;
-			result: {
-				stdout: string;
-				stderr: string;
-				result: string;
-				error: string | null;
-				duration_ms: number;
-			};
-	  }
-	| { kind: 'snapshot'; request_id: string; mime: 'image/png' | 'text/html'; payload: string };
+### Python postprocess
+
+Existing `_haruspex_postprocess` in the worker's init script gains a small branch:
+
+```python
+if hasattr(value, '_repr_html_'):
+    html = value._repr_html_()
+    if html:
+        if '<script' in html.lower():
+            _haruspex_emit_html(html, None, None, interactive=True)
+            return '(rendered as interactive HTML in chat)'
+        _haruspex_emit_html(html, None, None)
+        return '(rendered as HTML in chat)'
 ```
 
-The iframe handles its own Tauri `invoke` calls for FS and fetch (those don't need to round-trip through the parent). This is verified to work in Tauri 2.x because `window.__TAURI_INTERNALS__` is injected into all same-origin frames.
+Plus a public `haruspex.render_interactive_html(html)` if the model needs to emit interactive HTML explicitly (not always a `_repr_html_`).
 
-### `kind='html'` flow
+### Chat rendering (SearchStep.svelte or equivalent)
 
-Parent sends `{ kind: 'run', content: '<...>', contentKind: 'html' }`. Iframe replaces the stage:
-
-```javascript
-document.getElementById('stage').innerHTML = content;
+```svelte
+{#each step.artifacts as a, i (i)}
+    {#if a.kind === 'image'}
+        <img class="artifact-image" src={a.dataUrl} alt={a.alt ?? 'plot'} />
+    {:else if a.kind === 'html' && a.interactive}
+        <iframe
+            class="artifact-iframe"
+            srcdoc={a.html}
+            sandbox="allow-scripts"
+            title="interactive plot"
+        ></iframe>
+    {:else if a.kind === 'html'}
+        <div class="artifact-html">
+            {#if a.truncated}<div class="artifact-truncation-note">…</div>{/if}
+            {@html a.html}
+        </div>
+    {/if}
+{/each}
 ```
 
-Any `<script>` tags inside `content` are extracted and re-executed via `new Function(...)()` so HTML+JS dashboards work. Style is not stripped.
+Iframe styling:
 
-### `kind='python'` flow
-
-Parent sends `{ kind: 'run', content: 'import pygame\n...', contentKind: 'python' }`. Iframe calls `pyodide.runPythonAsync(content)`, capturing stdout/stderr via the same `setStdout(batched:...)` pattern as the chat sandbox worker. Errors bubble back as `done` with `error: traceback`.
-
----
-
-## Filesystem Bridge
-
-Reused wholesale from Phase 11. The iframe's Python init script installs `haruspex.save`, `haruspex.delete`, and patches `pyodide.http.pyfetch` exactly like the chat sandbox worker does. The differences are:
-
-- **Sync timing**: On `start_tab_session`, the parent invokes `sandbox_sync_workdir` and posts the file list to the iframe in the `init` message. Subsequent `update_tab` calls trigger an incremental re-sync (post-message-driven, same as `WorkerManager.syncWorkdir`).
-- **Drain timing**: After every `kind='python'` run, the iframe calls `_haruspex_drain_pending_saves()` as the chat sandbox does, mirroring MEMFS changes back to host.
-- **Long-running programs**: For pygame loops, the drain runs only on session stop or explicit `clear_tab`. Mid-loop writes via `haruspex.save` still propagate immediately because they go through the explicit JS bridge.
-
-This is a deliberate choice: a long-running game shouldn't pay drain cost every frame.
-
----
-
-## Snapshot + Freeze (chat switch behavior)
-
-When the active chat changes while a workspace session exists:
-
-1. Parent posts `{ kind: 'capture_snapshot' }` to the iframe.
-2. Iframe inspects its stage:
-   - If a `<canvas>` is the dominant child (pygame, py5, etc.) → `canvas.toDataURL('image/png')`, post back as `mime='image/png'`.
-   - Otherwise → `document.body.outerHTML`, post back as `mime='text/html'`.
-3. Parent stores the snapshot in the chat's persistence (alongside chat messages — new field on the conversation).
-4. Parent tears down the iframe (`<iframe>.remove()`).
-5. New chat is loaded. If it has a stored snapshot, the workspace tab renders it as a static image (for canvas snapshots) or as an `iframe srcdoc` with scripts disabled (for HTML — to avoid re-executing untrusted JS without explicit user opt-in).
-6. A "Restart session" button is shown over the snapshot. Clicking it (or any model call to `start_tab_session` on this chat) tears down the snapshot and boots a fresh iframe.
-
-Per-chat persistence schema addition (per `maintenance.md` §11, this routes through `db.ts` — a new persistent record on the conversation):
-
-```typescript
-interface Conversation {
-	// ...existing fields...
-	workspaceSnapshot?: {
-		mime: 'image/png' | 'text/html';
-		payload: string; // data URL for png, raw HTML string for html
-		capturedAt: number;
-	};
-	workspaceApproved?: boolean; // analogous to sandboxApproved (in-memory store, not persisted)
+```css
+.artifact-iframe {
+    width: 100%;
+    height: 480px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
 }
 ```
 
-Concretely: `workspaceSnapshot` becomes a new TEXT column on the `conversations` table (or its own row in a `conversation_meta` table — pick whichever fits the existing `db.ts` shape). `workspaceApproved` stays on the `Conversation` runes-store record only, same as `sandboxApproved`.
+(Default 480px; if a chart wants a taller default we can sniff the plotly height attribute, but 480 is the standard plotly default.)
 
 ---
 
-## UI Integration
+## Worker pool (per-chat, LRU cap 3)
 
-### Tab switcher
+Same shape as the iframe pool we already built, but holds Workers instead of iframes. WorkerManager is mostly a port of the legacy `worker-manager.ts` from before the iframe rewrite — that file is still in the repo unmodified, so it's the obvious starting point.
 
-Add to `+page.svelte`: a two-tab bar at the top of the main pane (`[Chat] [Workspace]`). Default tab is `Chat`. When a workspace session starts (model called `start_tab_session`), auto-switch to `Workspace` once per session — don't repeatedly steal focus on every `update_tab`. A small "●" indicator on the Chat tab when a workspace session is active.
+```typescript
+class WorkerPool {
+    private readonly cap = 3;
+    private readonly mgrs = new Map<string, WorkerManager>();
+    private readonly order: string[] = [];
 
-### Workspace tab layout
+    async runPython(chatId: string, code: string, opts?: RunOptions): Promise<ToolResult>
+    async installPackage(chatId: string, pkg: string, opts?: RunOptions): Promise<ToolResult>
+    async reset(chatId: string): Promise<void>
+    cancel(chatId: string): void   // terminate Worker, respawn lazily next call
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ Workspace                                                │
-│ ┌──────────────────────────────────────────────────────┐ │
-│ │                                                      │ │
-│ │            iframe (the stage)                        │ │
-│ │            grows to fill available space             │ │
-│ │                                                      │ │
-│ └──────────────────────────────────────────────────────┘ │
-│ ┌──────────────────────────────────────────────────────┐ │
-│ │ Console (collapsible, default open, max-height ~30%) │ │
-│ │ > game started                                       │ │
-│ │ > frame 0                                            │ │
-│ └──────────────────────────────────────────────────────┘ │
-│ [ Stop session ] [ Clear stage ] [ Reset kernel ]        │
-└──────────────────────────────────────────────────────────┘
+    // LRU mechanics
+    private touch(chatId: string): void
+    private async evictIfOver(): Promise<void>
+}
 ```
 
-When no session is running: the iframe area shows a placeholder ("The model can render Python or HTML here. It will start a session when needed.") and the controls are hidden except for one "Snapshot (none)" hint if there's a stored snapshot.
+Eviction is simpler than the iframe pool: no snapshot to take (Workers have no visible state). Just terminate.
 
-### New components
+---
 
-- `src/lib/components/WorkspaceTab.svelte` — the entire tab body (iframe + console + controls).
-- `src/lib/components/WorkspaceConsole.svelte` — the stdout/stderr log pane, virtualized if log lines exceed a cap (e.g. 5000 lines, oldest evicted).
-- A tab switcher inside `+page.svelte` (probably inline rather than a separate component).
+## Run-again / Cancel UX
 
-Any approval-confirmation dialog reuses `Modal.svelte` + `ModalButton.svelte` per `maintenance.md` §9. Do not hand-roll a backdrop / focus trap.
+### Cancel (during execution)
+
+While a `run_python` call is in flight (the tool spinner is visible), the tool-result card shows a `⏸ Cancel` button. Clicking calls `WorkerPool.cancel(chatId)` which terminates the Worker. The agent loop sees a cancel error, surfaces it as the tool result, and the chat-side card now shows a `▶ Run again` button.
+
+### Run again (after error / timeout / cancel)
+
+If a `run_python` tool result has an error (including timeout and cancel), the result card shows `▶ Run again`. Clicking:
+
+1. Re-extracts the code from the tool call's `arguments` JSON.
+2. Calls the same approval-gate path the tool would (skip if `sandboxApproved`).
+3. Calls `WorkerPool.runPython(chatId, code)`.
+4. Replaces the prior tool result with the new one in chat history.
+
+The model doesn't see this as a new tool call (no new tool_call_id) — the existing tool result message just gets its content updated. From the model's POV when it next reads the conversation, the call succeeded.
+
+Replacing vs appending: replace is cleaner UX but loses the audit trail. We'll replace and surface the prior failure in `chat.svelte.ts` debug log only.
 
 ---
 
 ## File Structure
 
 ```
-src/lib/workspace/
-  protocol.ts           # ParentToIframe / IframeToParent types (analog of sandbox/protocol.ts)
-  iframe-manager.ts     # lifecycle: create iframe, init, run, stop, snapshot (analog of worker-manager.ts)
-  workspace.ts          # public API surface (startSession, update, stop, snapshot)
-  workspace.test.ts
+src/lib/sandbox/                       # the only home for sandbox stuff
+  protocol.ts                          # MainToWorker / WorkerToMain (existing)
+  python.worker.ts                     # the Pyodide worker (existing, simplified)
+  worker-manager.ts                    # one-worker manager (existing, restored)
+  worker-pool.ts                       # NEW — per-chat cap-3 LRU
+  sandbox.ts                           # public API, dispatches to pool
+  sandbox.test.ts                      # existing tests, adjusted
 
-src/lib/agent/tools/
-  workspace.ts          # registers start_tab_session, update_tab, stop_tab_session, install_package_in_tab
+src/lib/agent/tools/sandbox.ts         # tool registration, descriptions
 
 src/lib/components/
-  WorkspaceTab.svelte
-  WorkspaceConsole.svelte
+  SearchStep.svelte (or similar)       # render image / interactive iframe / html artifacts
+  + a small ToolResultControls.svelte  # Run again / Cancel button
 
-static/workspace/
-  index.html            # iframe entry — loads Pyodide, sets up message router
-  init.py               # Python init script (separated for readability; baked into JS at build time or fetched)
-
-static/pyodide/wheels/   # existing dir; add:
-  pygame_ce-*.whl
-  plotly-*.whl
-  bokeh-*.whl
-  altair-*.whl
-  (transitive pure-Python deps)
-
-scripts/fetch-pyodide.sh # extend to download the new wheels
+# Deleted in this phase:
+#   src/lib/workspace/ (all of it)
+#   src/lib/components/workspace/ (all of it)
+#   static/workspace/ (all of it)
+#   src/routes/workspace-spike/
+#   the Workspace entry from ActiveTab + TabBar
+#   pygame_ce wheel from scripts/fetch-pyodide.sh
 ```
 
 ---
 
 ## Implementation Steps
 
-### Step 1 — Spike: pygame in a Tauri iframe (1 day)
+### Step A — Demolition (half day)
 
-Goal: prove the basic mechanism works before committing to the larger build.
+Delete the iframe / workspace-tab code. With nothing wired up, the chat falls back to the legacy worker that's still in the repo. The tools currently call IframePool — they'll need a temporary stub until step C lands, but the build should stay green.
 
-- Hand-roll a static `static/workspace/index.html` with inline Pyodide loader.
-- Load `pygame-ce` from CDN at runtime (skip bundling for the spike).
-- Run a hardcoded "moving circle" pygame demo.
-- Load it directly via a temporary route `/workspace/spike` and confirm:
-  - Pygame renders to canvas.
-  - Keyboard / mouse events reach Python.
-  - `window.__TAURI_INTERNALS__.invoke('sandbox_fetch', ...)` works from inside the iframe.
+### Step B — Restore Web Worker for Python (half day)
 
-If pygame doesn't render or events don't reach Python on WebKitGTK Linux, escalate before doing the rest of the plan. Possible escapes:
+Take the existing `python.worker.ts` (untouched since before phase 13). Strip out: any iframe-specific bits if any leaked back. Add: the `interactive: true` flag emission in `_haruspex_postprocess` for script-bearing HTML.
 
-- Try a different SDL backend if pygame-ce offers one.
-- Fall back to a Python-canvas drawing helper that wraps `pyodide`'s `js.document` directly (less ergonomic for the model but reliable).
-- Reconsider the OffscreenCanvas-in-worker path.
+### Step C — Worker pool (half day)
 
-### Step 2 — Bundle the wheels (half day)
+Adapt `worker-manager.ts` to be poolable (similar to how we adapted IframeManager — small additions: `terminate()` without respawn, an `id` getter). Write `worker-pool.ts` modeled on `iframe-pool.ts` but for Workers.
 
-- Identify exact wheel filenames + pure-Python transitive deps for `pygame-ce`, `plotly`, `bokeh`, `altair`.
-- Add them to `scripts/fetch-pyodide.sh`.
-- Confirm wheel sizes; if total bundle > ~50 MB, reconsider what to bundle.
-- Test offline install in the spike iframe.
+### Step D — Wire sandbox.ts to the pool (15 min)
 
-### Step 3 — Iframe protocol + manager (1-2 days)
+Update `sandbox.ts` to dispatch `runPython`/`installPackage`/`resetSandbox` to the pool, scoped to `getActiveConversationId()`. Same shape as the current sandbox.ts.
 
-- Write `src/lib/workspace/protocol.ts` modeled on `sandbox/protocol.ts`.
-- Write `src/lib/workspace/iframe-manager.ts`: creates the iframe, posts `init`, queues `run` calls, routes responses. Handles stdout/stderr streaming, stop/teardown, snapshot capture. Use `logDebug('workspace', ...)` per `maintenance.md` §10 (don't reach for `console.*`).
-- Write `static/workspace/index.html` + iframe-side runtime: Pyodide load, message router, `pyodide.runPythonAsync` for `kind='python'`, DOM injection for `kind='html'`.
-- Unit-test the manager with a mocked iframe factory (analog of the existing `WorkerManager` test pattern).
+### Step E — Artifact iframe rendering (half day)
 
-### Step 4 — Reuse FS bridge in iframe (1 day)
+Update `SearchStep.svelte` (or wherever artifacts render) to handle `interactive: true` HTML artifacts as `<iframe srcdoc sandbox="allow-scripts">`. Default height 480px.
 
-- Port the Python init script's `haruspex` module, `pyodide.http.pyfetch` override, MEMFS drain logic from `python.worker.ts` to the iframe. Keep them in `static/workspace/init.py` as a separate file (or inline string) — they're mostly identical.
-- Confirm `invoke` calls from the iframe land on the existing Rust commands. Watch for any `getWorkingDir()` indirection that assumes main-thread context.
+### Step F — Run-again / Cancel UX (half day)
 
-### Step 5 — Tools (half day)
+Add a small `ToolResultControls.svelte` component that:
+- Shows `⏸ Cancel` while the tool call is in flight.
+- Shows `▶ Run again` when the tool result has an error.
+- Cancel calls `WorkerPool.cancel(chatId)` and the agent loop's existing cancellation path.
+- Run-again invokes the tool's execute() path with the original args; replaces the tool result inline.
 
-- Write `src/lib/agent/tools/workspace.ts` registering the four tools.
-- Wire up approval prompt: reuse the `askApproval` flow but gate on a separate `workspaceApproved` chat field.
-- Hook `start_tab_session` to also auto-switch the active tab to "Workspace" the first time per session.
+### Step G — Tool descriptions + system-prompt audit (15 min)
 
-### Step 6 — UI integration (1-2 days)
+Update `run_python` description to document the four output channels. Remove any lingering `asyncio.ensure_future` / `haruspex.spawn` language. Per [[feedback_lean_system_prompts]], leave the system prompt alone — the tool description carries the load.
 
-- Tab switcher in `+page.svelte`.
-- `WorkspaceTab.svelte` hosting iframe + console + controls.
-- `WorkspaceConsole.svelte` with virtualized log lines.
-- Hide/show iframe based on tab visibility (use `visibility: hidden` rather than unmount, so the running game doesn't get reaped by a tab switch within the same chat).
+### Step H — Drop pygame wheel + build gates
 
-### Step 7 — Snapshot + freeze (1 day)
+Remove `pygame_ce-*.whl` from `scripts/fetch-pyodide.sh`'s `WORKSPACE_WHEELS` (rename block — it's not workspace anymore, just "lockfile-resident wheels" or fold into the doc-wheels). Run the full build matrix from `maintenance.md` §13.
 
-- Add `workspaceSnapshot` to the conversation persistence schema.
-- On active-conversation change in the store, post `capture_snapshot` to the running iframe (if any), await the result, store it, then tear down.
-- On loading a conversation with a stored snapshot: render it as a static image or sandboxed `<iframe sandbox="">`. Show "Restart session" affordance.
-
-### Step 8 — Polish + system prompt (half day)
-
-- Lean addition to `src/lib/agent/system-prompt.ts` describing the workspace tools — one or two sentences. Per the [[feedback_lean_system_prompts]] note: don't enumerate edge cases here; the tool descriptions carry the load.
-- Tests: end-to-end through the manager with mocked Pyodide; integration test that exercises tab switching + snapshot store/restore.
-- Docs: short README section + a one-line addition to `maintenance.md` §1 (repo layout) under `src/lib/` and `static/`.
-
-### Step 9 — Build gates + commit hygiene (per-commit, not a phase)
-
-Run the full matrix from `maintenance.md` §13 before each commit:
-
-```bash
-npm run format
-npm run check
-npm run lint
-npm run test
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml
-```
-
-Conventional Commits scope: `feat(workspace): …` for new functionality, `refactor(workspace): …` for follow-up cleanups. The pre-commit hook runs `npm run format:check`; run `npm run format` before staging.
-
-**Total estimate**: 6-9 days of focused work, weighted heavily toward step 1 (the spike) and step 3 (the manager). If step 1 reveals pygame doesn't work on WebKitGTK, scope shrinks to HTML + non-pygame Python (plotly etc.) — still useful.
+**Total estimate**: 2-3 days of focused work.
 
 ---
 
 ## Risks & Open Questions
 
-- **pygame-ce on WebKitGTK** — unverified. The spike in step 1 is the gate. If it fails, the plan still has value for plotly/HTML/bokeh use cases; pygame would be deferred or scoped down.
-- **Tauri `invoke` from iframe** — believed to work in Tauri 2.x (same-origin, `__TAURI_INTERNALS__` injected) but unverified for _child iframes specifically_. Verify in step 1. If it doesn't work, fall back to bridging via parent `postMessage` → parent `invoke` → `postMessage` back.
-- **Audio** — pygame's SDL_mixer relies on the browser's audio context. WebKitGTK audio is historically fragile. Document as known limitation; revisit if users ask.
-- **Memory growth** — two Pyodide instances (chat sandbox + workspace) each cost ~50-100 MB resident. Acceptable on modern hardware but worth tracking.
-- **Snapshot fidelity for HTML mode** — `outerHTML` of an iframe body misses canvas state, video positions, scroll position. Acceptable for v1 (it's a snapshot, not a state save) but document.
-- **Crash recovery** — if the iframe crashes (OOM in pygame, etc.), we should detect via `error` event on the iframe element and surface "Workspace crashed; restart?" to the user.
-- **No replay** — by design. If the user wants a chat-A pygame game back, they explicitly restart. Document this so it's not surprising.
-
-### ESLint complexity ceilings (`maintenance.md` §14)
-
-The new code will brush against the warn-level rules. Plan for it:
-
-- `iframe-manager.ts` is a near-clone of `worker-manager.ts` (currently 490 LOC, already in the exemption list). Expect this to land at ~400-500 LOC. **Goal**: keep it under 400 if possible by extracting (a) message dispatch, (b) snapshot capture, (c) FS bridge handlers into separate files. If it ends up exempted, justify in the PR description.
-- `static/workspace/init.py` mirrors a chunk of `python.worker.ts` (846 LOC, exempted). It's Python so ESLint doesn't gate it, but keep it tractable.
-- `WorkspaceTab.svelte` is markup-heavy → exempted by file type. Still aim for <400 LOC.
-- New functions stay under 80 LOC. The protocol dispatch in `iframe-manager.ts` is the highest risk for a fat function — split it into per-`kind` handlers from the start.
-- Do not regress already-warning files. `+page.svelte` (662 LOC) gets the tab switcher; add it carefully and consider whether the switcher becomes its own component if it grows past ~30 LOC.
-
-### No new Rust commands
-
-This plan deliberately reuses the existing `sandbox_*` Tauri commands. If anything forces us to add a new one (e.g. a workspace-specific FS scope), follow `maintenance.md` §6: register it via the full module path in `generate_handler!`. Don't add a `pub use` re-export — the macro can't see through it.
+- **Iframe height tuning** — 480px works for plotly's default figure size, but bokeh / altair figures with different aspect ratios may need a knob. Defer; collect feedback.
+- **CSP and `sandbox="allow-scripts"`** — Tauri's default CSP may block inline scripts inside the srcdoc iframe. Verify on first plotly test. If blocked, may need to relax CSP for the `srcdoc:` document scheme or use a different rendering path.
+- **Plotly CDN load** — `include_plotlyjs="cdn"` makes plotly.js a CDN fetch (~3MB once, then browser-cached). Offline use breaks for plotly's first call. Acceptable; matches the chat sandbox's existing first-package install posture.
+- **Memory growth** — three Workers per chat scope, plus iframes per chart in chat. Iframes per chart are sandboxed but each holds a copy of plotly.js (~few MB). For a chat with 20 plots, that's ~60MB of duplicated bundle. Browser caches script bytes but each iframe still has its own JS context. Watch for this in real use.
+- **Run-again races** — if the user clicks Run-again while another tool call is mid-flight, we need to either queue or refuse. Simplest: refuse with a toast ("waiting on another run").
+- **Cancel from inside a long fetch** — terminating the Worker mid-`sandbox_fetch` leaves the Rust side fetching; the response will be discarded on return. Wasted bandwidth but harmless. The legacy worker has this same posture.

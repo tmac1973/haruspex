@@ -1,30 +1,56 @@
-import { WorkerManager, type RunOptions } from './worker-manager';
+// Public surface for the python sandbox. Dispatches through the
+// per-chat WorkerPool (one Web Worker per chat, LRU cap 3) scoped to
+// the active conversation.
+
+import { getActiveConversationId } from '$lib/stores/chat.svelte';
+import { getWorkerPool } from './worker-pool';
+import type { RunOptions } from './worker-manager';
 import type { ToolResult } from './protocol';
 
-let manager: WorkerManager | null = null;
-
-function getManager(): WorkerManager {
-	if (!manager) manager = new WorkerManager();
-	return manager;
+function requireChatId(): string {
+	const id = getActiveConversationId();
+	if (!id) throw new Error('Python sandbox call without an active conversation');
+	return id;
 }
 
 export function runPython(code: string, opts?: RunOptions): Promise<ToolResult> {
-	return getManager().runPython(code, opts);
+	return getWorkerPool().runPython(requireChatId(), code, opts);
 }
 
 export function installPackage(packageName: string, opts?: RunOptions): Promise<ToolResult> {
-	return getManager().installPackage(packageName, opts);
+	return getWorkerPool().installPackage(requireChatId(), packageName, opts);
 }
 
-export function resetSandbox(): Promise<void> {
-	return getManager().reset();
+export async function resetSandbox(): Promise<void> {
+	const id = getActiveConversationId();
+	if (!id) return;
+	await getWorkerPool().reset(id);
 }
 
-// Test seam: replace the singleton manager so tests can inject a mocked
-// worker factory. Production code should never call this.
-export function __setManagerForTesting(next: WorkerManager | null): void {
-	manager = next;
+/**
+ * Cancel the active chat's in-flight run (if any) by terminating the
+ * Worker. The Worker respawns lazily on the next call. Used by the
+ * Cancel button on the in-progress tool-result card.
+ */
+export function cancelActiveRun(): void {
+	const id = getActiveConversationId();
+	if (!id) return;
+	getWorkerPool().cancel(id);
+}
+
+/** True if the chat has a live Worker (Python state intact). Used by
+ *  the chat store's session-restore path to skip replay when state is
+ *  still warm. */
+export function hasLiveWorkerFor(chatId: string): boolean {
+	return getWorkerPool().hasWorkerFor(chatId);
+}
+
+// Legacy test seam — kept exported so importers don't break, but a no-op.
+// Tests that need to mock the sandbox now mock the whole module via
+// vi.mock('$lib/sandbox/sandbox', ...) (see chat.test.ts / sandbox.test.ts).
+export function __setManagerForTesting(): void {
+	// no-op
 }
 
 export type { Artifact, ToolResult } from './protocol';
-export type { RunOptions };
+export type { RunOptions } from './worker-manager';

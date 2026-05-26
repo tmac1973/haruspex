@@ -227,7 +227,7 @@ const defaults: AppSettings = {
 	activeLocalModelFilename: '',
 	sandboxEnabled: false,
 	sandboxApproval: 'once-per-chat',
-	sandboxTimeoutSeconds: 30,
+	sandboxTimeoutSeconds: 60,
 	thinkingEnabled: true,
 	customSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
