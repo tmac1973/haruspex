@@ -270,6 +270,90 @@ except Exception as _doc_install_err:
     )
 
 # ----------------------------------------------------------------------
+# Generic phantom-load detector.
+#
+# Pyodide quirk: when micropip.install resolves a PyPI package whose
+# metadata declares a Pyodide-lockfile dep (e.g. plotly -> numpy as
+# optional, seaborn -> matplotlib, geopandas -> fiona), micropip can
+# mark the lockfile dep as "loaded" in pyodide.loadedPackages WITHOUT
+# actually calling loadPackage. The wheel is never extracted; the
+# tracker says it's done; every future loadPackage(dep) short-
+# circuits with "already loaded"; Python's "import dep" raises
+# ModuleNotFoundError forever.
+#
+# Fix: wrap micropip.install. After each install, diff
+# pyodide.loadedPackages, find newly-tracked entries, verify each
+# is actually importable. For phantoms (tracked but not importable),
+# clear the tracker entry via JS and force a real loadPackage.
+#
+# Fires for EVERY micropip.install path: auto-install pass, the
+# install_package tool, and any model code calling micropip
+# directly. No package-specific knowledge required.
+# ----------------------------------------------------------------------
+
+try:
+    import micropip as _haruspex_micropip
+    import pyodide_js as _haruspex_pyo_js
+    from pyodide.code import run_js as _haruspex_run_js
+    import sys as _sys_for_install_wrap
+
+    _haruspex_original_install = _haruspex_micropip.install
+
+    async def _haruspex_install_with_phantom_fix(*args, **kwargs):
+        try:
+            before = set(_haruspex_pyo_js.loadedPackages.object_keys())
+        except Exception:
+            before = set()
+        result = await _haruspex_original_install(*args, **kwargs)
+        try:
+            after = set(_haruspex_pyo_js.loadedPackages.object_keys())
+        except Exception:
+            return result
+        newly = after - before
+        for _name in sorted(newly):
+            if not _name.replace('-', '_').replace('.', '_').isidentifier():
+                continue
+            # If it imports cleanly, all good.
+            try:
+                __import__(_name)
+                continue
+            except Exception:
+                pass
+            # Try the canonical Python name too (some pkgs are 'pillow'
+            # in micropip but 'PIL' in import). Skip the heuristic --
+            # only fixes the case where the tracker name IS the module
+            # name, which is the common phantom-load pattern.
+            try:
+                _haruspex_run_js(
+                    'delete pyodide._api.loadedPackages["' + _name + '"]'
+                )
+            except Exception:
+                pass
+            try:
+                await _haruspex_pyo_js.loadPackage(_name)
+                __import__(_name)
+                print(
+                    '[haruspex] force-loaded phantom dep: ' + _name,
+                    file=_sys_for_install_wrap.stderr,
+                )
+            except Exception as _phantom_err:
+                print(
+                    '[haruspex] could not force-load phantom ' + _name + ': '
+                    + str(_phantom_err),
+                    file=_sys_for_install_wrap.stderr,
+                )
+        return result
+
+    _haruspex_micropip.install = _haruspex_install_with_phantom_fix
+except Exception as _wrap_err:
+    # micropip should always be loadable in our env, but if anything
+    # goes wrong, keep going -- the worst case is the pre-wrap
+    # behavior we had before.
+    import sys as _sys_for_wrap_warn
+    print('[haruspex] micropip wrap failed: ' + str(_wrap_err),
+          file=_sys_for_wrap_warn.stderr)
+
+# ----------------------------------------------------------------------
 # MEMFS → host flush — mirror file changes back to the user's working dir.
 #
 # Pyodide's filesystem is in-memory MEMFS. Python's open(), plt.savefig,
@@ -459,6 +543,56 @@ def _haruspex_install_matplotlib_hook():
     _plt.show = _show
     _mpl._haruspex_patched = True
 
+def _haruspex_install_plotly_hook():
+    """Hook plotly.Figure.show() to emit the figure as an interactive
+    HTML artifact instead of trying to use the default browser-renderer
+    (which raises a NotImplementedError in a Worker). Same shape as the
+    matplotlib hook; idempotent via sentinel. The model can keep
+    reflexively writing fig.show() and it Just Works.
+    """
+    try:
+        import plotly
+    except ImportError:
+        return
+    if getattr(plotly, '_haruspex_patched', False):
+        return
+    try:
+        import plotly.graph_objects as _go
+        import plotly.io as _pio
+    except ImportError:
+        return
+
+    def _show(self, *args, **kwargs):
+        _html = _pio.to_html(self, include_plotlyjs='cdn', full_html=True)
+        _haruspex_emit_html(_html, None, None, True)
+
+    _go.Figure.show = _show
+    plotly._haruspex_patched = True
+
+def _haruspex_install_bokeh_hook():
+    """Hook bokeh.io.show() to emit as interactive HTML. bokeh's
+    default show() opens a browser via webbrowser.open, which fails in
+    a Worker. Idempotent via sentinel."""
+    try:
+        import bokeh
+    except ImportError:
+        return
+    if getattr(bokeh, '_haruspex_patched', False):
+        return
+    try:
+        import bokeh.io as _bio
+        from bokeh.embed import file_html as _bokeh_file_html
+        from bokeh.resources import CDN as _bokeh_cdn
+    except ImportError:
+        return
+
+    def _show(obj, *args, **kwargs):
+        _html = _bokeh_file_html(obj, _bokeh_cdn, 'bokeh plot')
+        _haruspex_emit_html(_html, None, None, True)
+
+    _bio.show = _show
+    bokeh._haruspex_patched = True
+
 def _haruspex_postprocess(value):
     """Inspect the run's last expression and emit a rich artifact when it has
     one. Returns the string to use as the textual 'result' field; '' when the
@@ -544,7 +678,10 @@ def _haruspex_collect_top_imports(code):
 
 async def _haruspex_auto_install_missing(code):
     """Walk imports in code, micropip-install the ones that aren't
-    already importable. Errors are non-fatal."""
+    already importable. Common scientific lockfile packages (numpy,
+    pandas, matplotlib, scipy, sympy, pillow, beautifulsoup4) are
+    pre-loaded at worker boot, so this path mostly fires for PyPI
+    packages (plotly, folium, pyvis, ...). Errors are non-fatal."""
     pkgs = _haruspex_collect_top_imports(code)
     if not pkgs:
         return
@@ -558,21 +695,27 @@ async def _haruspex_auto_install_missing(code):
             missing.append(name)
     if not missing:
         return
-    import micropip as _micropip
     import sys as _sys_for_auto
+    import micropip as _micropip
+    _installed_any = False
     for name in missing:
         try:
             await _micropip.install(name)
             print('[haruspex] auto-installed ' + name, file=_sys_for_auto.stderr)
+            _installed_any = True
         except Exception as _e:
-            # Stdlib modules and typo'd names land here. Stay quiet
-            # unless it looks like a real package failure — pure
-            # "can't find a candidate" is the common case.
             _msg = str(_e)
             if "can't find" in _msg.lower() or 'no matching' in _msg.lower():
                 continue
             print('[haruspex] auto-install ' + name + ' failed: ' + _msg,
                   file=_sys_for_auto.stderr)
+    if _installed_any:
+        # Invalidate the finder and drop sys.modules entries that may
+        # be cached as None (negative-import sentinel from a prior
+        # failed import in this Worker).
+        _importlib_for_imports.invalidate_caches()
+        for _n in missing:
+            _sys_for_auto.modules.pop(_n, None)
 `;
 
 function post(msg: WorkerToMain) {
@@ -596,12 +739,30 @@ async function init(): Promise<void> {
 		// pre-load it so install_package() can pyimport it without an
 		// extra round trip on first use.
 		await pyodide.loadPackage('micropip');
-		// Doc-creation deps that ARE in the Pyodide lockfile (Pillow for
-		// fpdf2 + python-pptx; lxml + typing_extensions for python-pptx).
-		// Eager-load so the pure-Python wheels we install below can be
-		// imported without loadPackagesFromImports having to re-fetch deps
-		// on every first `import fpdf` / `import pptx`.
-		await pyodide.loadPackage(['Pillow', 'lxml', 'typing_extensions']);
+		// Common scientific stack — pre-load at boot so they're always
+		// actually loaded (not just tracked-as-dep). Without this, a
+		// later `micropip.install(some_pypi_pkg)` that depends on numpy
+		// can mark numpy in Pyodide's loadedPackages tracker without
+		// actually extracting it, and every subsequent loadPackage
+		// short-circuits with "already loaded" — leaving model code's
+		// `import numpy` looping in ModuleNotFoundError. Loading them
+		// up front (~10-15s on first launch, browser-cached after)
+		// makes that whole bug class impossible.
+		//
+		// fpdf2 + python-pptx + xlsxwriter deps that ARE in the Pyodide
+		// lockfile (Pillow for fpdf2 + python-pptx; lxml + typing_
+		// extensions for python-pptx) are part of this set.
+		await pyodide.loadPackage([
+			'numpy',
+			'pandas',
+			'matplotlib',
+			'scipy',
+			'sympy',
+			'Pillow',
+			'beautifulsoup4',
+			'lxml',
+			'typing_extensions'
+		]);
 		// Same-origin URL to the wheels bundled by scripts/fetch-pyodide.sh
 		// into static/pyodide/wheels/. SvelteKit serves static/ at the
 		// origin root; this works under `npm run dev` and Tauri prod alike.
@@ -892,16 +1053,88 @@ async function handleSyncWorkdir(msg: {
 }
 
 /**
- * Run user code with bounded retry on ModuleNotFoundError. The
- * static-parse auto-install pass before this only sees top-level
+ * Run user code with bounded retry on ImportError / ModuleNotFoundError.
+ * The static-parse auto-install pass before this only sees top-level
  * import names from the code, which doesn't catch transitive deps
  * micropip didn't pull (e.g. plotly's metadata marks numpy as optional
- * but `import plotly.express` requires numpy). Each retry installs the
- * specific missing name reported by the error. Dedup'd by name so a
- * permanently-unresolvable import doesn't loop.
+ * but `import plotly.express` requires numpy and raises a custom
+ * ImportError with a pip-install hint instead of ModuleNotFoundError).
+ * Each retry parses the missing-name hint from the error and installs
+ * it. Dedup'd by name so a permanently-unresolvable import doesn't
+ * loop.
  */
 const IMPORT_ERROR_RE = /No module named ['"]([^'"]+)['"]/;
+const PIP_HINT_RE = /pip install ['"]?([\w[\]\-_.]+)['"]?/;
 const MAX_INSTALL_ROUNDS = 3;
+
+function extractMissingPackage(message: string): string | null {
+	const m = IMPORT_ERROR_RE.exec(message);
+	if (m) return m[1].split('.')[0];
+	// Some libraries (plotly, opencv-python, others) raise a custom
+	// ImportError with a "$ pip install <pkg>" hint in the body instead
+	// of a vanilla ModuleNotFoundError. Parse that as a fallback.
+	const m2 = PIP_HINT_RE.exec(message);
+	if (m2) return m2[1];
+	return null;
+}
+
+/**
+ * Install `pkg` into the running Pyodide via micropip. Lockfile-
+ * resident packages (numpy, pandas, scipy, matplotlib, ...) are
+ * pre-loaded at worker boot, so the only callers of this function
+ * end up here for true PyPI packages (plotly, folium, pyvis, ...).
+ * micropip handles those cleanly. After install we pop any negative-
+ * import cache entry and invalidate the finder so the next `import`
+ * actually consults sys.path.
+ */
+async function installIntoPyodide(
+	pyodide: PyodideInterface,
+	pkg: string,
+	log: (msg: string) => void
+): Promise<void> {
+	pyodide.globals.set('_haruspex_retry_pkg', pkg);
+	await pyodide.runPythonAsync('import micropip as _mp; await _mp.install(_haruspex_retry_pkg)');
+	log(`[haruspex] auto-installed ${pkg}\n`);
+	await pyodide.runPythonAsync(
+		'import importlib, sys\n' +
+			'sys.modules.pop(_haruspex_retry_pkg, None)\n' +
+			'importlib.invalidate_caches()'
+	);
+}
+
+/**
+ * Drop sys.modules entries for the user code's top-level imports so
+ * `__init__.py` re-executes with whatever deps we just installed.
+ * Without this, a module whose first import attempted `import numpy`
+ * and failed stays cached in a state where Python won't re-run its
+ * __init__.py, so the next `import plotly.express` keeps raising the
+ * same ImportError even after numpy is loaded.
+ */
+async function clearFailedImports(pyodide: PyodideInterface, code: string): Promise<void> {
+	pyodide.globals.set('_haruspex_retry_code', code);
+	await pyodide.runPythonAsync(
+		'import ast as _a, sys as _s\n' +
+			'try:\n' +
+			'    _t = _a.parse(_haruspex_retry_code)\n' +
+			'    _drop = set()\n' +
+			'    for _n in _a.walk(_t):\n' +
+			'        if isinstance(_n, _a.Import):\n' +
+			'            for _al in _n.names:\n' +
+			'                _drop.add(_al.name.split(".")[0])\n' +
+			'                _drop.add(_al.name)\n' +
+			'        elif isinstance(_n, _a.ImportFrom):\n' +
+			'            if _n.module and _n.level == 0:\n' +
+			'                _drop.add(_n.module.split(".")[0])\n' +
+			'                _drop.add(_n.module)\n' +
+			'    for _k in list(_s.modules.keys()):\n' +
+			'        for _d in _drop:\n' +
+			'            if _k == _d or _k.startswith(_d + "."):\n' +
+			'                _s.modules.pop(_k, None)\n' +
+			'                break\n' +
+			'except Exception:\n' +
+			'    pass\n'
+	);
+}
 
 async function runWithImportRetry(
 	pyodide: PyodideInterface,
@@ -914,17 +1147,13 @@ async function runWithImportRetry(
 			return await pyodide.runPythonAsync(code);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			const match = IMPORT_ERROR_RE.exec(message);
-			if (!match) throw err;
-			const pkg = match[1].split('.')[0];
+			const pkg = extractMissingPackage(message);
+			if (!pkg) throw err;
 			if (tried.has(pkg)) throw err;
 			tried.add(pkg);
-			pyodide.globals.set('_haruspex_retry_pkg', pkg);
 			try {
-				await pyodide.runPythonAsync(
-					'import micropip as _mp; await _mp.install(_haruspex_retry_pkg)'
-				);
-				log(`[haruspex] auto-installed (on import error) ${pkg}\n`);
+				await installIntoPyodide(pyodide, pkg, log);
+				await clearFailedImports(pyodide, code);
 			} catch {
 				throw err;
 			}
@@ -971,7 +1200,7 @@ async function handleRun(id: string, code: string): Promise<void> {
 		// files — including writes from libraries that bypass
 		// builtins.open (zipfile-based: python-pptx, python-docx, etc.).
 		await pyodide.runPythonAsync(
-			'_haruspex_install_matplotlib_hook(); _haruspex_snapshot_workdir()'
+			'_haruspex_install_matplotlib_hook(); _haruspex_install_plotly_hook(); _haruspex_install_bokeh_hook(); _haruspex_snapshot_workdir()'
 		);
 		const value = await runWithImportRetry(pyodide, code, (msg) => {
 			currentStderr += msg;
