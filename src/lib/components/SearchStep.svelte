@@ -206,6 +206,20 @@
 					{#each step.artifacts as artifact, i (i)}
 						{#if artifact.kind === 'image'}
 							<img class="artifact-image" src={artifact.dataUrl} alt={artifact.alt ?? 'plot'} />
+						{:else if artifact.interactive}
+							<!--
+								Interactive HTML (plotly / bokeh / altair / folium output) renders
+								inside a sandboxed srcdoc iframe so the browser loads it as a fresh
+								document and executes the embedded <script> tags natively. sandbox=
+								"allow-scripts" lets the chart's JS run but no allow-same-origin →
+								the iframe can't reach the parent.
+							-->
+							<iframe
+								class="artifact-iframe"
+								srcdoc={artifact.html}
+								sandbox="allow-scripts"
+								title="interactive plot"
+							></iframe>
 						{:else}
 							<div class="artifact-html">
 								{#if artifact.truncated}
@@ -385,6 +399,14 @@
 		border: 1px solid var(--border);
 		display: block;
 		object-fit: contain;
+		background: white;
+	}
+
+	.artifact-iframe {
+		width: 100%;
+		height: 480px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
 		background: white;
 	}
 
