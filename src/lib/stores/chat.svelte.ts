@@ -12,7 +12,13 @@ import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
-import { runPython, installPackage, resetSandbox, hasLiveWorkerFor } from '$lib/sandbox/sandbox';
+import {
+	runPython,
+	installPackage,
+	resetSandbox,
+	hasLiveWorkerFor,
+	cancelActiveRun
+} from '$lib/sandbox/sandbox';
 import {
 	getContextUsage,
 	updateContextUsage,
@@ -261,6 +267,94 @@ export function getIsCompacting(): boolean {
 
 export function getExhaustiveResearch(): boolean {
 	return exhaustiveResearch;
+}
+
+/**
+ * Re-run a prior `run_python` step in the active conversation, replacing
+ * its tool-result in place. Used by the "Run again" button on errored /
+ * timed-out steps. Reads the original code from `step.args.code`; the
+ * step's previous artifacts are discarded. No model turn is triggered —
+ * the model just sees the updated tool result on its next read.
+ */
+export async function rerunSandboxStep(stepId: string): Promise<void> {
+	const conv = getActiveConversation();
+	if (!conv) return;
+	const step = conv.searchSteps.find((s) => s.id === stepId);
+	if (!step || step.toolName !== 'run_python') return;
+	const code = step.args?.code;
+	if (typeof code !== 'string' || !code.trim()) return;
+	// Flip to running; clear prior result/artifacts so the UI shows the
+	// spinner immediately.
+	conv.searchSteps = conv.searchSteps.map((s) =>
+		s.id === stepId ? { ...s, status: 'running' as const, result: undefined, artifacts: [] } : s
+	);
+	try {
+		const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 30) * 1000);
+		const r = await runPython(code, { timeoutMs });
+		const formatted = formatSandboxResultForChat(r);
+		conv.searchSteps = conv.searchSteps.map((s) =>
+			s.id === stepId
+				? {
+						...s,
+						status: 'done' as const,
+						result: formatted,
+						artifacts: r.artifactsList
+					}
+				: s
+		);
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		conv.searchSteps = conv.searchSteps.map((s) =>
+			s.id === stepId
+				? { ...s, status: 'done' as const, result: `Error: ${msg}`, artifacts: [] }
+				: s
+		);
+	}
+}
+
+/**
+ * Mirror of the tool's formatResult — duplicating here keeps the chat
+ * store from importing the agent tools module (circular). Worth
+ * folding into a shared helper if a third caller appears.
+ */
+function formatSandboxResultForChat(r: {
+	stdout: string;
+	stderr: string;
+	result: string;
+	error: string | null;
+	artifacts: number;
+	notes: string[];
+	duration_ms: number;
+}): string {
+	const lines: string[] = [];
+	if (r.error) {
+		lines.push(`Error: ${r.error}`);
+		if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
+		if (r.stdout.trim()) lines.push(`Stdout:\n${r.stdout.trim()}`);
+		lines.push(`(took ${r.duration_ms}ms)`);
+		return lines.join('\n\n');
+	}
+	if (r.stdout.trim()) lines.push(`Stdout:\n${r.stdout.trim()}`);
+	if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
+	if (r.result) lines.push(`Result: ${r.result}`);
+	if (r.artifacts > 0) {
+		lines.push(`(${r.artifacts} artifact${r.artifacts === 1 ? '' : 's'} rendered in UI)`);
+	}
+	if (r.notes.length > 0) lines.push(`Notes: ${r.notes.join('; ')}`);
+	if (lines.length === 0) lines.push('(no output)');
+	lines.push(`(took ${r.duration_ms}ms)`);
+	return lines.join('\n\n');
+}
+
+/**
+ * Cancel the active chat's in-flight run_python (terminates its Worker
+ * via the WorkerPool). The pending dispatch rejects, the tool's
+ * execute() catches it and surfaces a 'Sandbox error: sandbox reset'
+ * tool result, the agent loop continues with that result, the UI
+ * shows the Run-again button.
+ */
+export function cancelActiveSandboxRun(): void {
+	cancelActiveRun();
 }
 
 export function setExhaustiveResearch(value: boolean): void {

@@ -2,6 +2,7 @@
 	import type { SearchStep } from '$lib/agent/loop';
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
+	import { rerunSandboxStep, cancelActiveSandboxRun } from '$lib/stores/chat.svelte';
 
 	hljs.registerLanguage('python', python);
 
@@ -11,6 +12,16 @@
 	}
 
 	let { steps, slowMode = false }: Props = $props();
+
+	function rerunStep(step: SearchStep, event: MouseEvent) {
+		event.stopPropagation();
+		void rerunSandboxStep(step.id);
+	}
+
+	function cancelStep(event: MouseEvent) {
+		event.stopPropagation();
+		cancelActiveSandboxRun();
+	}
 
 	let copyStates: Record<string, string> = $state({});
 	// Per-step user override for run_python code-block visibility. Absent
@@ -181,6 +192,23 @@
 					>
 						{copyStates[`${step.id}:code`] || 'Copy'}
 					</button>
+					{#if step.status === 'running'}
+						<button
+							class="run-control cancel"
+							onclick={cancelStep}
+							title="Terminate the Python worker for this chat"
+						>
+							⏸ Cancel
+						</button>
+					{:else if stepErrored(step)}
+						<button
+							class="run-control rerun"
+							onclick={(e) => rerunStep(step, e)}
+							title="Run the same code again in a fresh attempt"
+						>
+							▶ Run again
+						</button>
+					{/if}
 				</div>
 				{#if !isCodeCollapsed(step)}
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -486,6 +514,27 @@
 
 	.copy-btn:hover {
 		background: var(--bg-primary);
+	}
+
+	.run-control {
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 2px 8px;
+		font-size: 0.7rem;
+		cursor: pointer;
+		color: var(--text-secondary);
+	}
+	.run-control:hover {
+		background: var(--bg-primary);
+	}
+	.run-control.cancel {
+		color: #c97;
+		border-color: #c97;
+	}
+	.run-control.rerun {
+		color: #6a6;
+		border-color: #6a6;
 	}
 
 	.detail-block pre {
