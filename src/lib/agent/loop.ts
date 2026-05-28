@@ -15,7 +15,7 @@
 
 import type { StreamChunk, Usage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { Artifact } from '$lib/agent/tools';
+import type { Artifact, LintIssue } from '$lib/agent/tools';
 import { logDebug } from '$lib/debug-log';
 import { NudgeState } from './loop/nudges';
 import {
@@ -53,6 +53,13 @@ export interface SearchStep {
 	 * each run_python step.
 	 */
 	args?: Record<string, unknown>;
+	/**
+	 * Lint diagnostics from the pre-run ruff pass that short-circuited a
+	 * run_python call. When present, the UI renders a compact "lint
+	 * failed: <code> <message>" strip instead of the full code + result
+	 * block. The model still sees the formatted error string in `result`.
+	 */
+	lintIssues?: LintIssue[];
 }
 
 export interface AgentLoopOptions {
@@ -63,7 +70,8 @@ export interface AgentLoopOptions {
 		call: ResolvedToolCall,
 		result: string,
 		thumbDataUrl?: string,
-		artifacts?: Artifact[]
+		artifacts?: Artifact[],
+		lintIssues?: LintIssue[]
 	) => void;
 	onStreamChunk: (chunk: StreamChunk) => void;
 	onComplete: () => void;

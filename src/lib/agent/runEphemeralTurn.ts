@@ -16,7 +16,7 @@
 
 import type { ChatMessage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { Artifact } from '$lib/agent/tools';
+import type { Artifact, LintIssue } from '$lib/agent/tools';
 import { runAgentLoop } from '$lib/agent/loop';
 import { buildSystemPrompt, looksLikeFileOutputRequest } from '$lib/agent/system-prompt';
 import { processCitations, stripToolCallArtifacts } from '$lib/markdown';
@@ -35,7 +35,8 @@ export interface EphemeralTurnOptions {
 		call: ResolvedToolCall,
 		result: string,
 		thumbDataUrl?: string,
-		artifacts?: Artifact[]
+		artifacts?: Artifact[],
+		lintIssues?: LintIssue[]
 	) => void;
 }
 
@@ -67,8 +68,8 @@ export async function runEphemeralTurn(
 		visionSupported: options.visionSupported ?? true,
 		signal: options.signal,
 		onToolStart: (call) => options.onToolStart?.(call),
-		onToolEnd: (call, result, thumbDataUrl, artifacts) =>
-			options.onToolEnd?.(call, result, thumbDataUrl, artifacts),
+		onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) =>
+			options.onToolEnd?.(call, result, thumbDataUrl, artifacts, lintIssues),
 		onStreamChunk: (chunk) => {
 			if (chunk.delta.reasoning_content) {
 				if (!streamingContent.includes('<think>')) {

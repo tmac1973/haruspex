@@ -1163,6 +1163,36 @@ async function runWithImportRetry(
 	return pyodide.runPythonAsync(code);
 }
 
+/**
+ * Snapshot the names currently bound in the user's globals — used by the
+ * pre-run lint pass to seed ruff's `builtins` config so F821 doesn't flag
+ * a `df.head()` follow-up to a prior `df = pd.read_csv(...)`. Names
+ * starting with `_` are filtered (dunder + every `_haruspex_*` helper).
+ * Errors are swallowed to an empty list — lint is advisory.
+ */
+async function handleListGlobals(id: string): Promise<void> {
+	if (!pyodide) {
+		post({ kind: 'globals', id, names: [] });
+		return;
+	}
+	let proxy: { toJs?: () => unknown; destroy?: () => void } | null = null;
+	try {
+		proxy = pyodide.runPython("[n for n in globals().keys() if not n.startswith('_')]") as {
+			toJs?: () => unknown;
+			destroy?: () => void;
+		};
+		const js = proxy?.toJs ? (proxy.toJs() as unknown) : null;
+		const names: string[] = Array.isArray(js)
+			? js.filter((n): n is string => typeof n === 'string')
+			: [];
+		post({ kind: 'globals', id, names });
+	} catch {
+		post({ kind: 'globals', id, names: [] });
+	} finally {
+		proxy?.destroy?.();
+	}
+}
+
 async function handleRun(id: string, code: string): Promise<void> {
 	if (!pyodide) {
 		post({
@@ -1306,6 +1336,9 @@ self.addEventListener('message', (e: MessageEvent<MainToWorker>) => {
 			// Cooperative interrupt is delivered through the SharedArrayBuffer;
 			// this message is reserved for future use (e.g. cancelling network
 			// fetches that don't see the bytecode interrupt).
+			break;
+		case 'list_globals':
+			void handleListGlobals(msg.id);
 			break;
 		case 'save_response': {
 			const pending = pendingSaves.get(msg.request_id);

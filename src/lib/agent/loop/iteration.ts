@@ -643,7 +643,13 @@ export async function runIteration(
 			hasThumbnail: !!output.thumbDataUrl,
 			artifactCount: output.artifacts?.length ?? 0
 		});
-		options.onToolEnd(call, output.result, output.thumbDataUrl, output.artifacts);
+		options.onToolEnd(
+			call,
+			output.result,
+			output.thumbDataUrl,
+			output.artifacts,
+			output.lintIssues
+		);
 
 		// Track successful file-write calls so the hallucination check
 		// above knows a real write happened.
