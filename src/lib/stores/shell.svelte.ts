@@ -1,11 +1,20 @@
 /**
  * Shell-tab session state: in-memory chat thread, sidebar state, the
- * `submit()` entry point that runs an agent turn.
+ * `submit*` entry points that run an agent turn.
  *
  * Everything here is intentionally session-scoped — closing the app
  * drops the chat thread. The PTY itself dies on app close anyway, so
  * persisting the chat without its shell context would mislead.
+ *
+ * The active terminal session (id + captured context + selection
+ * accessor) is registered via `bindShellSession` when the Terminal
+ * component mounts. That lets both the toolbar's "Submit to LLM"
+ * button and the sidebar's chat input dispatch through the same
+ * code path without ShellTab having to plumb the handle into
+ * multiple subtrees.
  */
+
+import { invoke } from '@tauri-apps/api/core';
 
 import type { ChatMessage } from '$lib/api';
 import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
@@ -14,12 +23,30 @@ import { getActiveContextSize } from '$lib/stores/settings';
 import { buildShellSystemPrompt, type ShellSessionContext } from '$lib/shell/system-prompt';
 import { runShellTurn } from '$lib/shell/runShellTurn';
 
+interface CapturedRegion {
+	commandLine: string;
+	output: string;
+	exitCode: number | null;
+	cwd: string | null;
+	truncated: boolean;
+}
+
+interface ShellContextResponse {
+	context: ShellSessionContext;
+	current_cwd: string | null;
+}
+
 export interface ShellSubmission {
-	/** The full captured region body that becomes the user message. */
 	body: string;
 	sessionContext: ShellSessionContext;
 	currentCwd: string | null;
 	recentHistory: string[];
+}
+
+export interface ActiveShellSession {
+	sessionId: number;
+	context: ShellSessionContext;
+	getSelection: () => string;
 }
 
 let messages = $state<ChatMessage[]>([]);
@@ -29,6 +56,7 @@ let ticket = $state<InferenceTicket | null>(null);
 let sidebarOpen = $state(false);
 let lastError = $state<string | null>(null);
 let abortController: AbortController | null = null;
+let activeSession: ActiveShellSession | null = null;
 
 export function getShellMessages(): ChatMessage[] {
 	return messages;
@@ -62,6 +90,14 @@ export function getShellLastError(): string | null {
 	return lastError;
 }
 
+export function bindShellSession(session: ActiveShellSession): void {
+	activeSession = session;
+}
+
+export function unbindShellSession(): void {
+	activeSession = null;
+}
+
 export function newShellChat(): void {
 	if (isSubmitting) return;
 	messages = [];
@@ -74,9 +110,101 @@ export function cancelShellTurn(): void {
 }
 
 /**
- * Push a user submission and run one agent turn. The system prompt is
- * rebuilt every call so the freshest captured context (cwd, history)
- * lands in it — the per-turn cost is trivial and avoids stale env info.
+ * Pull cwd + recent history from the live shell at the moment of
+ * submission. Each call hits the Rust side; cheap enough to do per
+ * turn and avoids the staleness that would creep in if we cached.
+ */
+async function fetchLiveContext(): Promise<{
+	currentCwd: string | null;
+	recentHistory: string[];
+} | null> {
+	if (!activeSession) return null;
+	const ctxRes = await invoke<ShellContextResponse>('shell_get_context', {
+		sessionId: activeSession.sessionId
+	});
+	const history = await invoke<string[]>('shell_get_recent_history', {
+		sessionId: activeSession.sessionId,
+		limit: 10
+	});
+	return { currentCwd: ctxRes.current_cwd, recentHistory: history };
+}
+
+function formatCapturedRegion(region: CapturedRegion): string {
+	const cmd = region.commandLine.trim() || '(no command captured)';
+	const out = region.output.trimEnd();
+	const meta = [`exit ${region.exitCode ?? '?'}`];
+	if (region.cwd) meta.push(`cwd ${region.cwd}`);
+	if (region.truncated) meta.push('truncated');
+	return `$ ${cmd}\n${out}\n(${meta.join(', ')})`;
+}
+
+function formatSelectionBody(text: string, cwd: string | null): string {
+	const header = cwd ? `(cwd ${cwd})\n` : '';
+	return `${header}${text}`;
+}
+
+/**
+ * Submit the smart-default capture: highlighted selection wins,
+ * otherwise the most recent completed command + its output.
+ */
+export async function submitFromTerminal(): Promise<void> {
+	if (!activeSession || isSubmitting) return;
+	const selection = activeSession.getSelection().trim();
+	const live = await fetchLiveContext();
+	if (!live) return;
+	let body: string;
+	let cwd: string | null = live.currentCwd;
+
+	if (selection) {
+		body = formatSelectionBody(selection, cwd);
+	} else {
+		const region = await invoke<CapturedRegion | null>('shell_get_last_command', {
+			sessionId: activeSession.sessionId
+		});
+		if (!region) {
+			sidebarOpen = true;
+			lastError =
+				'No completed command captured yet. Run a command at the prompt, then submit again — or drag-select text to submit a specific range.';
+			return;
+		}
+		body = formatCapturedRegion(region);
+		cwd = region.cwd ?? cwd;
+	}
+
+	await submitShell({
+		body,
+		sessionContext: activeSession.context,
+		currentCwd: cwd,
+		recentHistory: live.recentHistory
+	});
+}
+
+/**
+ * Submit a free-form chat message (typed in the sidebar's composer).
+ * Same context-refresh as `submitFromTerminal`; the only difference
+ * is the body is just the user's text.
+ */
+export async function submitChatMessage(text: string): Promise<void> {
+	const trimmed = text.trim();
+	if (!trimmed || isSubmitting) return;
+	if (!activeSession) {
+		lastError = 'Shell session not ready yet.';
+		return;
+	}
+	const live = await fetchLiveContext();
+	if (!live) return;
+	await submitShell({
+		body: trimmed,
+		sessionContext: activeSession.context,
+		currentCwd: live.currentCwd,
+		recentHistory: live.recentHistory
+	});
+}
+
+/**
+ * Lower-level entry: append a user turn with the given body and run
+ * one agent iteration. The system prompt is rebuilt every call so the
+ * freshest session context lands in it.
  */
 export async function submitShell(payload: ShellSubmission): Promise<void> {
 	if (isSubmitting) return;

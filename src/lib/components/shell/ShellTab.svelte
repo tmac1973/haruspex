@@ -4,31 +4,12 @@
 	import Terminal, { type TerminalHandle } from './Terminal.svelte';
 	import ChatSidebar from './ChatSidebar.svelte';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
-	import { isShellSubmitting, setShellSidebarOpen, submitShell } from '$lib/stores/shell.svelte';
-
-	interface CapturedRegion {
-		commandLine: string;
-		output: string;
-		exitCode: number | null;
-		cwd: string | null;
-		truncated: boolean;
-	}
-
-	interface ContextResponse {
-		context: {
-			os: string;
-			kernel: string;
-			distroId?: string;
-			distroName?: string;
-			distroVersion?: string;
-			shellPath: string;
-			shellName: string;
-			shellVersion?: string;
-			home?: string;
-			hostname?: string;
-		};
-		current_cwd: string | null;
-	}
+	import {
+		bindShellSession,
+		isShellSubmitting,
+		submitFromTerminal,
+		unbindShellSession
+	} from '$lib/stores/shell.svelte';
 
 	let handle = $state<TerminalHandle | null>(null);
 	let hasSelection = $state(false);
@@ -36,68 +17,22 @@
 
 	const submitting = $derived(isShellSubmitting());
 
-	async function submitToLlm() {
-		if (!handle || submitting) return;
-		menu = null;
-
-		const selection = hasSelection ? handle.getSelection().trim() : '';
-		let body: string;
-		let cwd: string | null;
-		const ctxRes = await invoke<ContextResponse>('shell_get_context', {
-			sessionId: handle.sessionId
+	function onTerminalReady(h: TerminalHandle) {
+		handle = h;
+		bindShellSession({
+			sessionId: h.sessionId,
+			context: h.context,
+			getSelection: h.getSelection
 		});
-		const history = await invoke<string[]>('shell_get_recent_history', {
-			sessionId: handle.sessionId,
-			limit: 10
-		});
-		cwd = ctxRes.current_cwd;
-
-		if (selection) {
-			body = formatSelectionBody(selection, cwd);
-		} else {
-			const region = await invoke<CapturedRegion | null>('shell_get_last_command', {
-				sessionId: handle.sessionId
-			});
-			if (!region) {
-				setShellSidebarOpen(true);
-				return;
-			}
-			body = formatCapturedRegion(region);
-			cwd = region.cwd ?? cwd;
-		}
-
-		await submitShell({
-			body,
-			sessionContext: handle.context,
-			currentCwd: cwd,
-			recentHistory: history
-		});
-	}
-
-	function formatCapturedRegion(region: CapturedRegion): string {
-		const cmd = region.commandLine.trim() || '(no command captured)';
-		const out = region.output.trimEnd();
-		const meta = [`exit ${region.exitCode ?? '?'}`];
-		if (region.cwd) meta.push(`cwd ${region.cwd}`);
-		if (region.truncated) meta.push('truncated');
-		return `$ ${cmd}\n${out}\n(${meta.join(', ')})`;
-	}
-
-	function formatSelectionBody(text: string, cwd: string | null): string {
-		const header = cwd ? `(cwd ${cwd})\n` : '';
-		return `${header}${text}`;
 	}
 
 	function onKeyDown(event: KeyboardEvent) {
-		// Only react when the Shell tab is the active one. Ctrl+Shift+L is
-		// global on <svelte:window>, so without this guard it would fire
-		// from inside chat or settings.
 		if (getActiveTab() !== 'shell') return;
 		// Ctrl+Shift+L → submit to LLM. Deliberately Shift to avoid clashing
 		// with readline's Ctrl+L clear-screen.
 		if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'l') {
 			event.preventDefault();
-			submitToLlm();
+			submitFromTerminal();
 		}
 	}
 
@@ -130,6 +65,7 @@
 			document.body.classList.remove('shell-tab-active');
 			window.removeEventListener('click', dismissMenu);
 			document.removeEventListener('hsp-shell-paste', onPasteRequest);
+			unbindShellSession();
 		};
 	});
 </script>
@@ -141,7 +77,7 @@
 		<div class="toolbar">
 			<button
 				class="primary"
-				onclick={submitToLlm}
+				onclick={submitFromTerminal}
 				disabled={!handle || submitting}
 				title="Submit to LLM (Ctrl+Shift+L)"
 			>
@@ -155,13 +91,13 @@
 			</button>
 		</div>
 		<div class="terminal-pane">
-			<Terminal onReady={(h) => (handle = h)} onSelectionChange={(has) => (hasSelection = has)} />
+			<Terminal onReady={onTerminalReady} onSelectionChange={(has) => (hasSelection = has)} />
 		</div>
 	</div>
 	<ChatSidebar />
 	{#if menu}
 		<div class="context-menu" style="left: {menu.x}px; top: {menu.y}px" role="menu" tabindex="-1">
-			<button onclick={submitToLlm}>Send to LLM</button>
+			<button onclick={submitFromTerminal}>Send to LLM</button>
 		</div>
 	{/if}
 </div>

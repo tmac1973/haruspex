@@ -9,6 +9,7 @@
 		getShellTicket,
 		isShellSubmitting,
 		newShellChat,
+		submitChatMessage,
 		toggleShellSidebar
 	} from '$lib/stores/shell.svelte';
 
@@ -19,6 +20,10 @@
 	const ticket = $derived(getShellTicket());
 	const lastError = $derived(getShellLastError());
 
+	let composerText = $state('');
+	let composerEl = $state<HTMLTextAreaElement | null>(null);
+	let threadEl = $state<HTMLDivElement | null>(null);
+
 	const streamingMessage = $derived(
 		streaming
 			? {
@@ -27,6 +32,47 @@
 				}
 			: null
 	);
+
+	function autosize() {
+		if (!composerEl) return;
+		composerEl.style.height = 'auto';
+		composerEl.style.height = Math.min(composerEl.scrollHeight, 160) + 'px';
+	}
+
+	function onComposerInput() {
+		autosize();
+	}
+
+	async function handleSend() {
+		const text = composerText.trim();
+		if (!text || submitting) return;
+		composerText = '';
+		autosize();
+		await submitChatMessage(text);
+	}
+
+	function onComposerKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' && !event.shiftKey) {
+			event.preventDefault();
+			handleSend();
+		}
+		if (event.key === 'Escape' && submitting) {
+			event.preventDefault();
+			cancelShellTurn();
+		}
+	}
+
+	$effect(() => {
+		// Track every change that grows the thread (new message OR streaming
+		// delta) and pin the scroll position at the bottom. Reading the
+		// deps inside the effect tells Svelte's runes to re-fire.
+		void messages.length;
+		void streaming;
+		if (!threadEl) return;
+		queueMicrotask(() => {
+			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
+		});
+	});
 </script>
 
 {#if open}
@@ -38,11 +84,11 @@
 				<button onclick={toggleShellSidebar} title="Collapse">›</button>
 			</div>
 		</header>
-		<div class="thread">
+		<div class="thread" bind:this={threadEl}>
 			{#if messages.length === 0 && !streamingMessage}
 				<div class="placeholder">
-					Run a command, then click <strong>Submit to LLM</strong> in the terminal toolbar to analyze
-					the output. Drag-select first to send a specific range instead.
+					Run a command, then click <strong>Submit to LLM</strong> in the terminal toolbar (or type a
+					question below) to start a troubleshooting thread.
 				</div>
 			{/if}
 			{#each messages as msg, i (i)}
@@ -64,11 +110,27 @@
 				<div class="error">{lastError}</div>
 			{/if}
 		</div>
-		{#if submitting}
-			<footer>
-				<button class="cancel" onclick={cancelShellTurn}>Cancel</button>
-			</footer>
-		{/if}
+		<footer class="composer">
+			<textarea
+				bind:this={composerEl}
+				bind:value={composerText}
+				oninput={onComposerInput}
+				onkeydown={onComposerKeydown}
+				placeholder="Ask a follow-up… (Enter to send, Shift+Enter for newline)"
+				rows="1"
+				disabled={submitting}
+			></textarea>
+			{#if submitting}
+				<button class="cancel" onclick={cancelShellTurn} title="Cancel (Esc)">Stop</button>
+			{:else}
+				<button
+					class="send"
+					onclick={handleSend}
+					disabled={!composerText.trim()}
+					title="Send (Enter)">Send</button
+				>
+			{/if}
+		</footer>
 	</aside>
 {:else}
 	<button
@@ -165,22 +227,66 @@
 		margin-top: 8px;
 	}
 
-	.sidebar footer {
+	.composer {
 		display: flex;
-		justify-content: flex-end;
-		padding: 6px 10px;
+		gap: 6px;
+		align-items: flex-end;
+		padding: 8px 10px;
 		border-top: 1px solid var(--border);
+		flex-shrink: 0;
 	}
 
-	.cancel {
+	.composer textarea {
+		flex: 1;
+		min-height: 34px;
+		max-height: 160px;
+		resize: none;
+		padding: 6px 8px;
+		font-family: inherit;
+		font-size: 0.85rem;
+		line-height: 1.4;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		outline: none;
+	}
+
+	.composer textarea:focus {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+	}
+
+	.composer textarea:disabled {
+		background: var(--bg-secondary);
+		cursor: not-allowed;
+	}
+
+	.composer .send,
+	.composer .cancel {
 		appearance: none;
+		padding: 6px 14px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		border-radius: 6px;
+		cursor: pointer;
+	}
+
+	.composer .send {
+		background: var(--accent);
+		color: white;
+		border: 1px solid var(--accent);
+	}
+
+	.composer .send:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.composer .cancel {
 		background: none;
 		color: var(--text-primary);
 		border: 1px solid var(--border);
-		padding: 4px 10px;
-		font-size: 0.78rem;
-		border-radius: 4px;
-		cursor: pointer;
 	}
 
 	.rail {
