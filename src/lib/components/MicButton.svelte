@@ -1,6 +1,10 @@
 <script lang="ts">
-	import { invoke } from '@tauri-apps/api/core';
-	import { getSettings } from '$lib/stores/settings';
+	import {
+		getVoiceCaptureError,
+		getVoiceCaptureStatus,
+		startVoiceCapture,
+		stopAndTranscribe
+	} from '$lib/audio/voiceCapture.svelte';
 
 	interface Props {
 		onTranscription: (text: string) => void;
@@ -8,101 +12,22 @@
 	}
 
 	let { onTranscription, disabled = false }: Props = $props();
-	let recording = $state(false);
-	let processing = $state(false);
-	let downloading = $state(false);
-	let error = $state<string | null>(null);
 
-	type WhisperStatusResponse =
-		| { type: 'Stopped' }
-		| { type: 'Starting' }
-		| { type: 'Ready' }
-		| { type: 'Error'; message: string };
+	const status = $derived(getVoiceCaptureStatus());
+	const error = $derived(getVoiceCaptureError());
+	const recording = $derived(status === 'recording');
+	const processing = $derived(status === 'processing');
+	const downloading = $derived(status === 'downloading');
 
-	function isReady(s: WhisperStatusResponse): boolean {
-		return s.type === 'Ready';
+	async function start() {
+		if (disabled || status !== 'idle') return;
+		await startVoiceCapture();
 	}
 
-	function isError(s: WhisperStatusResponse): boolean {
-		return s.type === 'Error';
-	}
-
-	async function ensureWhisperReady(): Promise<boolean> {
-		try {
-			const status = await invoke<WhisperStatusResponse>('get_whisper_status');
-			if (isReady(status)) return true;
-
-			// Check if whisper model exists, download if not
-			let modelPath = await invoke<string | null>('get_whisper_model_path');
-			if (!modelPath) {
-				downloading = true;
-				try {
-					modelPath = await invoke<string>('download_whisper_model');
-				} catch (e) {
-					error = `Whisper model download failed: ${e}`;
-					return false;
-				} finally {
-					downloading = false;
-				}
-			}
-
-			// Start whisper server
-			await invoke('start_whisper', { modelPath });
-
-			// Wait for ready (up to 15s)
-			for (let i = 0; i < 30; i++) {
-				await new Promise((r) => setTimeout(r, 500));
-				const s = await invoke<WhisperStatusResponse>('get_whisper_status');
-				if (isReady(s)) return true;
-				if (isError(s)) return false;
-			}
-			return false;
-		} catch (e) {
-			console.error('Whisper setup failed:', e);
-			return false;
-		}
-	}
-
-	async function startRecording() {
-		if (disabled || processing) return;
-		error = null;
-		try {
-			const deviceName = getSettings().audioInputDevice || undefined;
-			await invoke('start_recording', { deviceName });
-			recording = true;
-		} catch (e) {
-			error = `Mic error: ${e}`;
-		}
-	}
-
-	async function stopRecording() {
-		if (!recording) return;
-		recording = false;
-		processing = true;
-		error = null;
-
-		try {
-			const audioData = await invoke<number[]>('stop_recording');
-
-			// Ensure whisper is running
-			const ready = await ensureWhisperReady();
-			if (!ready) {
-				error = 'Speech recognition not available. Download whisper model first.';
-				processing = false;
-				return;
-			}
-
-			const text = await invoke<string>('transcribe_audio', { audio: audioData });
-			if (text && text.trim()) {
-				onTranscription(text.trim());
-			} else {
-				error = 'No speech detected';
-			}
-		} catch (e) {
-			error = `Transcription failed: ${e}`;
-		} finally {
-			processing = false;
-		}
+	async function stop() {
+		if (status !== 'recording') return;
+		const text = await stopAndTranscribe();
+		if (text) onTranscription(text);
 	}
 </script>
 
@@ -112,10 +37,10 @@
 		class:recording
 		class:processing={processing || downloading}
 		disabled={disabled || downloading}
-		onmousedown={startRecording}
-		onmouseup={stopRecording}
+		onmousedown={start}
+		onmouseup={stop}
 		onmouseleave={() => {
-			if (recording) stopRecording();
+			if (recording) stop();
 		}}
 		title={downloading
 			? 'Downloading speech model...'
@@ -123,7 +48,7 @@
 				? 'Release to send'
 				: processing
 					? 'Transcribing...'
-					: 'Hold to record'}
+					: 'Hold to record (or hold F2 anywhere)'}
 	>
 		{#if processing || downloading}
 			<span class="spinner"></span>

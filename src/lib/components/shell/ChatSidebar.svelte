@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
+	import MicButton from '$lib/components/MicButton.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import {
 		bindShellComposer,
@@ -134,6 +135,7 @@
 				rows="1"
 				disabled={submitting}
 			></textarea>
+			<MicButton onTranscription={(text) => submitChatMessage(text)} disabled={submitting} />
 			{#if submitting}
 				<button class="cancel" onclick={cancelShellTurn} title="Cancel (Esc)">Stop</button>
 			{:else}

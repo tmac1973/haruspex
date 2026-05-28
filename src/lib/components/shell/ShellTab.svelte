@@ -33,9 +33,12 @@
 
 	function onKeyDown(event: KeyboardEvent) {
 		if (getActiveTab() !== 'shell') return;
-		// Ctrl+Shift+L → submit to LLM. Deliberately Shift to avoid clashing
-		// with readline's Ctrl+L clear-screen.
-		if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'l') {
+		// F1 → submit to LLM. Function keys are cross-platform safe
+		// (Windows/macOS/Linux all leave F-row free in the webview) and
+		// won't clash with bash/readline. F1 is the most-prominent of the
+		// three Shell-tab primary actions: F1 submit, F2 hold-to-talk
+		// (handled in +layout.svelte so it works in Chat too), F3 TTS.
+		if (event.key === 'F1' && !event.ctrlKey && !event.shiftKey && !event.altKey) {
 			event.preventDefault();
 			submitFromTerminal();
 			return;
@@ -110,7 +113,7 @@
 				class="primary"
 				onclick={submitFromTerminal}
 				disabled={!handle || submitting}
-				title="Submit to LLM (Ctrl+Shift+L) — Ctrl+` swaps focus to the assistant"
+				title="Submit to LLM (F1) — F2 hold-to-talk, F3 read aloud, Ctrl+` swap focus"
 			>
 				{#if submitting}
 					Working…

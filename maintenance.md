@@ -551,6 +551,29 @@ When debugging "the markers aren't firing":
 3. Hex-dump the PTY output buffer (briefly add `eprintln!` next to
    `integration::ingest`) and look for `\x1b]133;` literals.
 
+### Global media hotkeys (Phase 15 follow-up)
+
+Three function keys are wired at the layout level (`+layout.svelte`'s
+`onGlobalKeydown` / `onGlobalKeyup`) so they fire regardless of which
+tab is active and which child element has focus:
+
+| Key | Action                                                 | Notes                                                    |
+| --- | ------------------------------------------------------ | -------------------------------------------------------- |
+| F1  | Submit last command / selection (Shell tab only)       | Handled inside `ShellTab.svelte` so other tabs ignore.   |
+| F2  | Hold to record; release transcribes + sends            | Routes the text to `submitChatMessage` (Shell) or `sendMessage` (Chat) based on `getActiveTab()`. |
+| F3  | Toggle read-aloud of the most recent assistant message | Reads the active tab's last assistant turn via `toggleTts`. |
+
+Audio dispatch goes through two shared runes modules so the on-screen
+buttons and the hotkeys can't double-trigger the Rust singletons:
+
+- `src/lib/audio/voiceCapture.svelte.ts` — `startVoiceCapture`,
+  `stopAndTranscribe`, `getVoiceCaptureStatus`,
+  `isVoiceCaptureActive`. Owns the whisper-server warm-up dance.
+  `MicButton.svelte` is now a thin wrapper around this.
+- `src/lib/audio/ttsControl.svelte.ts` — `toggleTts`, `isTtsPlaying`,
+  `isTtsInitializing`, `stopTts`. Owns the koko-server init + the
+  500 ms `tts_is_playing` poll. `SpeakerButton.svelte` wraps this.
+
 ### Paste action
 
 The markdown renderer emits a `Paste` button alongside Copy for any

@@ -23,6 +23,16 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import { messageText, type ChatMessage } from '$lib/api';
+	import {
+		isVoiceCaptureActive,
+		startVoiceCapture,
+		stopAndTranscribe
+	} from '$lib/audio/voiceCapture.svelte';
+	import { toggleTts } from '$lib/audio/ttsControl.svelte';
+	import { getActiveTab } from '$lib/stores/activeTab.svelte';
+	import { getActiveConversation, sendMessage } from '$lib/stores/chat.svelte';
+	import { getShellMessages, submitChatMessage } from '$lib/stores/shell.svelte';
 
 	let { children } = $props();
 	let showLogs = $state(false);
@@ -125,7 +135,68 @@
 			showGpuWarning = true;
 		}
 	});
+
+	// ---- Global media hotkeys (F2 push-to-talk, F3 read-aloud) ----
+	// Registered at the layout level so they fire regardless of which
+	// child element has focus. Restricted to the main page (no PTT
+	// while editing settings).
+
+	function isMainPage(): boolean {
+		return page.url.pathname === '/';
+	}
+
+	function pickTranscriptionTarget(text: string) {
+		const tab = getActiveTab();
+		if (tab === 'shell') {
+			submitChatMessage(text);
+		} else if (tab === 'chat') {
+			sendMessage(text);
+		}
+		// 'jobs' has no chat input — silently drop.
+	}
+
+	function getLastAssistantText(): string {
+		const tab = getActiveTab();
+		const messages =
+			tab === 'shell' ? getShellMessages() : (getActiveConversation()?.messages ?? []);
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const m = messages[i] as ChatMessage;
+			if (m.role === 'assistant') {
+				const text = messageText(m.content).trim();
+				if (text) return text;
+			}
+		}
+		return '';
+	}
+
+	function onGlobalKeydown(event: KeyboardEvent) {
+		if (!isMainPage()) return;
+		if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
+		if (event.key === 'F2') {
+			event.preventDefault();
+			if (event.repeat) return;
+			if (!isVoiceCaptureActive()) startVoiceCapture();
+			return;
+		}
+		if (event.key === 'F3') {
+			event.preventDefault();
+			if (event.repeat) return;
+			const text = getLastAssistantText();
+			if (text) toggleTts(text);
+		}
+	}
+
+	async function onGlobalKeyup(event: KeyboardEvent) {
+		if (!isMainPage()) return;
+		if (event.key === 'F2') {
+			event.preventDefault();
+			const text = await stopAndTranscribe();
+			if (text) pickTranscriptionTarget(text);
+		}
+	}
 </script>
+
+<svelte:window onkeydown={onGlobalKeydown} onkeyup={onGlobalKeyup} />
 
 <svelte:head>
 	<link rel="icon" href={favicon} />

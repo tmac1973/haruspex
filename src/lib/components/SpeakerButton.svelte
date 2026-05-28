@@ -1,52 +1,17 @@
 <script lang="ts">
-	import { invoke } from '@tauri-apps/api/core';
-	import { getSettings } from '$lib/stores/settings';
+	import { isTtsInitializing, isTtsPlaying, toggleTts } from '$lib/audio/ttsControl.svelte';
 
 	interface Props {
 		text: string;
 	}
 
 	let { text }: Props = $props();
-	let playing = $state(false);
-	let initializing = $state(false);
 
-	async function toggleSpeak() {
-		if (playing) {
-			await invoke('tts_stop_playback');
-			playing = false;
-			return;
-		}
+	const playing = $derived(isTtsPlaying());
+	const initializing = $derived(isTtsInitializing());
 
-		const initialized = await invoke<boolean>('tts_is_initialized');
-		if (!initialized) {
-			initializing = true;
-			try {
-				await invoke('tts_initialize');
-			} catch (e) {
-				console.error('TTS init failed:', e);
-				initializing = false;
-				return;
-			}
-			initializing = false;
-		}
-
-		playing = true;
-		try {
-			const settings = getSettings();
-			const voice = settings.ttsVoice || undefined;
-			const outputDevice = settings.audioOutputDevice || undefined;
-			await invoke('tts_synthesize_and_play', { text, voice, outputDevice });
-			const check = setInterval(async () => {
-				const still = await invoke<boolean>('tts_is_playing');
-				if (!still) {
-					playing = false;
-					clearInterval(check);
-				}
-			}, 500);
-		} catch (e) {
-			console.error('TTS failed:', e);
-			playing = false;
-		}
+	function onClick() {
+		toggleTts(text);
 	}
 </script>
 
@@ -54,8 +19,8 @@
 	class="speaker-btn"
 	class:playing
 	class:initializing
-	onclick={toggleSpeak}
-	title={initializing ? 'Loading voice...' : playing ? 'Stop reading' : 'Read aloud'}
+	onclick={onClick}
+	title={initializing ? 'Loading voice...' : playing ? 'Stop reading' : 'Read aloud (F4)'}
 >
 	{#if initializing}
 		<span class="spinner"></span>
