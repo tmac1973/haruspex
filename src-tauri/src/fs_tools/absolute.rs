@@ -35,8 +35,24 @@ fn require_absolute(path: &str) -> Result<PathBuf, String> {
 pub async fn fs_read_text_absolute(path: String) -> Result<String, String> {
     let resolved = require_absolute(&path)?;
 
+    if !resolved.exists() {
+        let parent = resolved
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "/".to_string());
+        return Err(format!(
+            "Path does not exist: {}. The file is not there. Do not retry the same path. \
+             If you wanted to know what's in the parent directory, call fs_list_dir on '{}'. \
+             If you intended to create this file, call fs_write_text (when writes are enabled).",
+            path, parent
+        ));
+    }
     if !resolved.is_file() {
-        return Err(format!("Not a file: {}", path));
+        return Err(format!(
+            "Path is not a regular file (may be a directory, socket, or symlink): {}. \
+             Use fs_list_dir on this path if it's a directory.",
+            path
+        ));
     }
 
     let metadata = fs::metadata(&resolved)
@@ -70,8 +86,18 @@ pub async fn fs_read_text_absolute(path: String) -> Result<String, String> {
 pub async fn fs_list_dir_absolute(path: String) -> Result<DirListing, String> {
     let resolved = require_absolute(&path)?;
 
+    if !resolved.exists() {
+        return Err(format!(
+            "Path does not exist: {}. The directory is not there — do not retry the same path. \
+             Ask the user where the file or directory is, or try a parent path you know exists.",
+            path
+        ));
+    }
     if !resolved.is_dir() {
-        return Err(format!("Not a directory: {}", path));
+        return Err(format!(
+            "Path exists but is not a directory: {}. Use fs_read_text if it's a file.",
+            path
+        ));
     }
 
     let mut entries = Vec::new();
@@ -169,8 +195,15 @@ pub async fn fs_edit_text_absolute(
 ) -> Result<(), String> {
     let resolved = require_absolute(&path)?;
 
+    if !resolved.exists() {
+        return Err(format!(
+            "Path does not exist: {}. fs_edit_text only modifies existing files. \
+             To create a new file with this content, call fs_write_text instead.",
+            path
+        ));
+    }
     if !resolved.is_file() {
-        return Err(format!("Not a file: {}", path));
+        return Err(format!("Path is not a regular file: {}", path));
     }
 
     let metadata = fs::metadata(&resolved)
@@ -220,11 +253,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_missing_file() {
+    async fn rejects_missing_file_with_actionable_message() {
         let err = fs_read_text_absolute("/this/path/does/not/exist/at/all".to_string())
             .await
             .unwrap_err();
-        assert!(err.contains("Not a file"), "got: {err}");
+        assert!(err.contains("does not exist"), "got: {err}");
+        assert!(err.contains("Do not retry"), "expected 'Do not retry' hint: {err}");
+        assert!(
+            err.contains("fs_list_dir") || err.contains("fs_write_text"),
+            "expected pivot suggestion: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_directory_path_with_distinct_message() {
+        let err = fs_read_text_absolute("/tmp".to_string()).await.unwrap_err();
+        assert!(
+            err.contains("not a regular file") || err.contains("directory"),
+            "got: {err}"
+        );
+        assert!(err.contains("fs_list_dir"), "expected fs_list_dir pivot: {err}");
     }
 
     #[tokio::test]
