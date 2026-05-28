@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
+	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import {
 		cancelShellTurn,
 		getShellLastError,
@@ -96,6 +97,8 @@
 			{/each}
 			{#if streamingMessage}
 				<ChatMessage message={streamingMessage} isStreaming />
+			{:else if submitting && (!ticket || ticket.state === 'running')}
+				<ThinkingIndicator />
 			{/if}
 			{#if ticket && ticket.state === 'waiting'}
 				<div class="queue-hint">
