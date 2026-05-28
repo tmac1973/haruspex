@@ -323,6 +323,51 @@
 		overflow: hidden;
 	}
 
+	/* Right-side controls (chips + Paste + Copy) inside the rendered
+	   markdown code-block header. The header itself is flex with
+	   space-between (set in ChatMessage.svelte), so this container
+	   collects everything on the right. */
+	:global(.code-actions) {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	:global(.risky-chip) {
+		display: inline-flex;
+		align-items: center;
+		padding: 1px 6px;
+		border-radius: 999px;
+		font-size: 0.66rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #c44;
+		border: 1px solid #c44;
+		background: color-mix(in srgb, #c44 12%, transparent);
+	}
+
+	:global(.paste-btn) {
+		background: none;
+		border: 1px solid var(--accent);
+		color: var(--accent);
+		border-radius: 4px;
+		padding: 2px 8px;
+		font-size: 0.7rem;
+		cursor: pointer;
+	}
+
+	:global(.paste-btn:hover) {
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+	}
+
+	/* Paste-into-shell is meaningless outside the Shell tab. Hide the
+	   button so a stray bash code block in chat or jobs doesn't promise
+	   something it can't deliver. ShellTab toggles this body class. */
+	:global(body:not(.shell-tab-active) .paste-btn) {
+		display: none;
+	}
+
 	/* Minimal highlight.js theme — applies to both the chat-message
 	   markdown code blocks and the new sandbox tool-step code preview.
 	   Inherits the surrounding text color for unmatched tokens, so it

@@ -110,9 +110,27 @@
 		menu = null;
 	}
 
+	function onPasteRequest(event: Event) {
+		const data = (event as CustomEvent<string>).detail;
+		if (typeof data !== 'string' || !handle) return;
+		// Trim trailing newlines so the paste doesn't auto-execute. The
+		// user must press Enter themselves — that's the security model.
+		const cleaned = data.replace(/[\r\n]+$/, '');
+		if (!cleaned) return;
+		invoke('shell_write', { sessionId: handle.sessionId, data: cleaned })
+			.then(() => handle?.focus())
+			.catch((e) => console.error('shell_write (paste) failed', e));
+	}
+
 	onMount(() => {
+		document.body.classList.add('shell-tab-active');
 		window.addEventListener('click', dismissMenu);
-		return () => window.removeEventListener('click', dismissMenu);
+		document.addEventListener('hsp-shell-paste', onPasteRequest);
+		return () => {
+			document.body.classList.remove('shell-tab-active');
+			window.removeEventListener('click', dismissMenu);
+			document.removeEventListener('hsp-shell-paste', onPasteRequest);
+		};
 	});
 </script>
 
