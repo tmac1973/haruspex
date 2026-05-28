@@ -75,6 +75,17 @@
 				selectionBackground: '#264f78'
 			}
 		});
+		// Reserve F1/F2/F3 for app-level handlers (Submit, push-to-talk,
+		// read-aloud). xterm normally converts function keys into ANSI
+		// escape sequences and pushes them to the PTY — returning false
+		// here keeps those three out of the PTY and lets the events bubble
+		// to the window keydown/keyup listeners.
+		t.attachCustomKeyEventHandler((event) => {
+			if (event.key === 'F1' || event.key === 'F2' || event.key === 'F3') {
+				return false;
+			}
+			return true;
+		});
 		const fit = new FitAddon();
 		t.loadAddon(fit);
 		t.loadAddon(new WebLinksAddon());
