@@ -22,6 +22,7 @@ const ctx = {
 	workingDir: null,
 	pendingImages: [],
 	deepResearch: false,
+	shellMode: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 

@@ -33,6 +33,12 @@ export interface ToolContext {
 	pendingImages: PendingImage[];
 	deepResearch: boolean;
 	filesWrittenThisTurn: Set<string>;
+	/**
+	 * True when the agent is invoked from the Shell tab. fs_read_* tools
+	 * dispatch to absolute-path Rust commands and the workingDir
+	 * requirement is waived. Defaults to false everywhere else.
+	 */
+	shellMode: boolean;
 }
 
 /**

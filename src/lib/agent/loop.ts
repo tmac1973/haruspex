@@ -107,6 +107,13 @@ export interface AgentLoopOptions {
 	 * place. Probed at configure-time for remote backends.
 	 */
 	visionSupported?: boolean;
+	/**
+	 * When true, the loop is being driven by the Shell tab. fs_read_*
+	 * tools dispatch to absolute-path Rust commands and the workingDir
+	 * requirement is waived (the Shell tab does not have a workdir).
+	 * Defaults to false.
+	 */
+	shellMode?: boolean;
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {

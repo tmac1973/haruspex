@@ -17,6 +17,7 @@ const ctx = {
 	workingDir: '/tmp/work',
 	pendingImages: [],
 	deepResearch: false,
+	shellMode: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 
