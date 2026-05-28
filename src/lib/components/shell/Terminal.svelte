@@ -76,12 +76,20 @@
 			}
 		});
 		// Reserve F1/F2/F3 for app-level handlers (Submit, push-to-talk,
-		// read-aloud). xterm normally converts function keys into ANSI
-		// escape sequences and pushes them to the PTY — returning false
-		// here keeps those three out of the PTY and lets the events bubble
-		// to the window keydown/keyup listeners.
+		// read-aloud). Also release Ctrl+Shift+C / Ctrl+Shift+V so the
+		// app can implement copy / paste — xterm would otherwise consume
+		// them. Plain Ctrl+C and Ctrl+V still reach the PTY (SIGINT and
+		// literal Ctrl+V, respectively).
 		t.attachCustomKeyEventHandler((event) => {
 			if (event.key === 'F1' || event.key === 'F2' || event.key === 'F3') {
+				return false;
+			}
+			if (
+				event.type === 'keydown' &&
+				event.ctrlKey &&
+				event.shiftKey &&
+				(event.key === 'C' || event.key === 'V' || event.key === 'c' || event.key === 'v')
+			) {
 				return false;
 			}
 			return true;

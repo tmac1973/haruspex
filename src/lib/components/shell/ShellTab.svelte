@@ -19,6 +19,35 @@
 	let handle = $state<TerminalHandle | null>(null);
 	let hasSelection = $state(false);
 	let menu = $state<{ x: number; y: number } | null>(null);
+	let copyFeedback = $state<string | null>(null);
+
+	async function copySelectionToClipboard(): Promise<boolean> {
+		const text = handle?.getSelection() ?? '';
+		if (!text) return false;
+		try {
+			await navigator.clipboard.writeText(text);
+			copyFeedback = 'Copied';
+			setTimeout(() => (copyFeedback = null), 1200);
+			return true;
+		} catch (e) {
+			console.error('clipboard.writeText failed', e);
+			return false;
+		}
+	}
+
+	async function pasteFromClipboard(): Promise<boolean> {
+		if (!handle) return false;
+		try {
+			const text = await navigator.clipboard.readText();
+			if (!text) return false;
+			await invoke('shell_write', { sessionId: handle.sessionId, data: text });
+			handle.focus();
+			return true;
+		} catch (e) {
+			console.error('clipboard.readText failed', e);
+			return false;
+		}
+	}
 
 	const submitting = $derived(isShellSubmitting());
 
@@ -31,26 +60,38 @@
 		});
 	}
 
+	type Shortcut = { match: (e: KeyboardEvent) => boolean; run: () => void };
+
+	// F1 submit, Ctrl+` focus swap, Ctrl+Shift+C copy, Ctrl+Shift+V paste.
+	// Standard terminal-emulator conventions: plain Ctrl+C stays as
+	// SIGINT for bash; Ctrl+backtick is unused in readline.
+	const shortcuts: Shortcut[] = [
+		{
+			match: (e) => e.key === 'F1' && !e.ctrlKey && !e.shiftKey && !e.altKey,
+			run: submitFromTerminal
+		},
+		{
+			match: (e) => e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'Backquote',
+			run: swapFocus
+		},
+		{
+			match: (e) => e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyC',
+			run: () => void copySelectionToClipboard()
+		},
+		{
+			match: (e) => e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyV',
+			run: () => void pasteFromClipboard()
+		}
+	];
+
 	function onKeyDown(event: KeyboardEvent) {
 		if (getActiveTab() !== 'shell') return;
-		// F1 → submit to LLM. Function keys are cross-platform safe
-		// (Windows/macOS/Linux all leave F-row free in the webview) and
-		// won't clash with bash/readline. F1 is the most-prominent of the
-		// three Shell-tab primary actions: F1 submit, F2 hold-to-talk
-		// (handled in +layout.svelte so it works in Chat too), F3 TTS.
-		if (event.key === 'F1' && !event.ctrlKey && !event.shiftKey && !event.altKey) {
-			event.preventDefault();
-			submitFromTerminal();
-			return;
-		}
-		// Ctrl+` → swap focus between the terminal and the assistant composer.
-		// event.code is layout-agnostic (Backquote is the physical key) so
-		// this works on non-US keyboards too. Bash/readline has no binding
-		// for Ctrl+backtick, so this won't eat anything the user might want
-		// to type.
-		if (event.ctrlKey && !event.shiftKey && !event.altKey && event.code === 'Backquote') {
-			event.preventDefault();
-			swapFocus();
+		for (const s of shortcuts) {
+			if (s.match(event)) {
+				event.preventDefault();
+				s.run();
+				return;
+			}
 		}
 	}
 
@@ -149,8 +190,20 @@
 	<ChatSidebar />
 	{#if menu}
 		<div class="context-menu" style="left: {menu.x}px; top: {menu.y}px" role="menu" tabindex="-1">
-			<button onclick={submitFromTerminal}>Send to LLM</button>
+			<button onclick={copySelectionToClipboard} disabled={!hasSelection}>
+				Copy<span class="kbd">Ctrl+Shift+C</span>
+			</button>
+			<button onclick={pasteFromClipboard}>
+				Paste<span class="kbd">Ctrl+Shift+V</span>
+			</button>
+			<hr />
+			<button onclick={submitFromTerminal}>
+				Send to LLM<span class="kbd">F1</span>
+			</button>
 		</div>
+	{/if}
+	{#if copyFeedback}
+		<div class="toast">{copyFeedback}</div>
 	{/if}
 </div>
 
@@ -235,9 +288,46 @@
 		width: 100%;
 		text-align: left;
 		cursor: pointer;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 12px;
 	}
 
-	.context-menu button:hover {
+	.context-menu button:hover:not(:disabled) {
 		background: var(--bg-secondary);
+	}
+
+	.context-menu button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.context-menu .kbd {
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		font-family: ui-monospace, Menlo, Monaco, 'Cascadia Mono', monospace;
+	}
+
+	.context-menu hr {
+		margin: 4px 0;
+		border: 0;
+		border-top: 1px solid var(--border);
+	}
+
+	.toast {
+		position: absolute;
+		bottom: 18px;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 6px 14px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		border: 1px solid var(--border);
+		border-radius: 14px;
+		font-size: 0.78rem;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+		z-index: 20;
+		pointer-events: none;
 	}
 </style>
