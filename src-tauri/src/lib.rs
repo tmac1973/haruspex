@@ -13,6 +13,7 @@ mod sandbox_fetch;
 mod sandbox_save;
 mod sandbox_sync;
 mod server;
+mod shell;
 mod sidecar_utils;
 mod tts;
 mod whisper;
@@ -23,6 +24,7 @@ use models::ModelManager;
 use proxy::stats::SearchStats;
 use proxy::ProxyState;
 use server::LlamaServer;
+use shell::ShellManager;
 use tauri::{Manager, RunEvent};
 use tts::TtsEngine;
 use whisper::WhisperServer;
@@ -55,6 +57,7 @@ pub fn run() {
         .manage(AudioRecorder::new())
         .manage(WhisperServer::new())
         .manage(TtsEngine::new())
+        .manage(ShellManager::new())
         .invoke_handler(tauri::generate_handler![
             server::start_server,
             server::stop_server,
@@ -160,6 +163,10 @@ pub fn run() {
             links::open_url,
             feedback::get_diagnostics,
             feedback::save_diagnostics_file,
+            shell::shell_spawn,
+            shell::shell_write,
+            shell::shell_resize,
+            shell::shell_kill,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -168,6 +175,8 @@ pub fn run() {
                 let llama = app.state::<LlamaServer>();
                 let whisper = app.state::<WhisperServer>();
                 let tts = app.state::<TtsEngine>();
+                let shell_mgr = app.state::<ShellManager>();
+                shell_mgr.shutdown_all();
                 tauri::async_runtime::block_on(async {
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;

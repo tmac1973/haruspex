@@ -9,7 +9,8 @@
 
 	const tabs: Tab[] = [
 		{ id: 'chat', label: 'Chat' },
-		{ id: 'jobs', label: 'Jobs' }
+		{ id: 'jobs', label: 'Jobs' },
+		{ id: 'shell', label: 'Shell' }
 	];
 
 	const active = $derived(getActiveTab());
