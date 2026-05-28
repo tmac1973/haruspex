@@ -23,15 +23,35 @@ interface ToolFilterOpts {
 	deepResearch: boolean;
 	visionSupported: boolean;
 	shellMode: boolean;
+	shellAllowWrite: boolean;
 	hasEmail: boolean;
 	sandboxEnabled: boolean;
 }
 
-function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
+// Tools exposed to the Shell-tab agent. Reads are always on; writes
+// require shellAllowWrite. Email and sandbox don't make sense for
+// admin troubleshooting and stay hidden.
+const SHELL_FS_READS = new Set(['fs_read_text', 'fs_list_dir', 'fs_read_pdf']);
+const SHELL_FS_WRITES = new Set(['fs_write_text', 'fs_edit_text']);
+
+function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	const name = reg.schema.function.name;
-	// fs tools are workdir-gated in Chat mode but available system-wide
-	// (no workdir required) in Shell mode.
-	if (reg.category === 'fs' && !opts.hasWorkingDir && !opts.shellMode) return false;
+	if (reg.category === 'web') {
+		if (opts.deepResearch && name === 'fetch_url') return false;
+		return true;
+	}
+	if (reg.category === 'fs') {
+		if (SHELL_FS_READS.has(name)) return true;
+		if (opts.shellAllowWrite && SHELL_FS_WRITES.has(name)) return true;
+		return false;
+	}
+	// Email, sandbox, etc. are intentionally hidden in Shell mode.
+	return false;
+}
+
+function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
+	const name = reg.schema.function.name;
+	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
 	if (opts.deepResearch && name === 'fetch_url') return false;
@@ -39,17 +59,23 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	return true;
 }
 
+function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
+	return opts.shellMode ? shouldIncludeShellTool(reg, opts) : shouldIncludeChatTool(reg, opts);
+}
+
 export function getToolSchemas(opts: {
 	hasWorkingDir: boolean;
 	deepResearch?: boolean;
 	visionSupported?: boolean;
 	shellMode?: boolean;
+	shellAllowWrite?: boolean;
 }): ToolDefinition[] {
 	const filter: ToolFilterOpts = {
 		hasWorkingDir: opts.hasWorkingDir,
 		deepResearch: opts.deepResearch ?? false,
 		visionSupported: opts.visionSupported ?? true,
 		shellMode: opts.shellMode ?? false,
+		shellAllowWrite: opts.shellAllowWrite ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled
 	};

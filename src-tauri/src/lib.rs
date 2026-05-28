@@ -132,6 +132,8 @@ pub fn run() {
             fs_tools::absolute::fs_read_text_absolute,
             fs_tools::absolute::fs_list_dir_absolute,
             fs_tools::absolute::fs_read_pdf_absolute,
+            fs_tools::absolute::fs_write_text_absolute,
+            fs_tools::absolute::fs_edit_text_absolute,
             fs_tools::path::fs_list_dir,
             fs_tools::text::fs_read_text,
             fs_tools::text::fs_write_text,

@@ -33,6 +33,7 @@ export interface BuildShellPromptOpts {
 	sessionContext: ShellSessionContext;
 	currentCwd: string | null;
 	recentHistory: string[];
+	allowWrite?: boolean;
 }
 
 export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
@@ -64,7 +65,7 @@ YOUR ROLE:
 - Read the captured shell output the user pastes in.
 - If you can answer from training knowledge alone, do so.
 - Otherwise, use web_search and fetch_url to look up error messages, command syntax, package documentation, CVEs, or anything that benefits from up-to-date info.
-- Use fs_read_text or fs_list_dir (whole-system absolute paths) to inspect config files, logs, or directories anywhere on the filesystem when it helps you diagnose. Examples: fs_read_text on "/etc/nginx/nginx.conf", fs_list_dir on "/var/log".
+- Use fs_read_text or fs_list_dir (whole-system absolute paths) to inspect config files, logs, or directories anywhere on the filesystem when it helps you diagnose. Examples: fs_read_text on "/etc/nginx/nginx.conf", fs_list_dir on "/var/log".${writeSection(opts.allowWrite)}
 
 COMMAND SUGGESTIONS:
 - Suggest commands by writing them in fenced bash code blocks (\`\`\`bash ... \`\`\`). The UI turns each such block into a clickable card the user can paste into their terminal with one click.
@@ -82,6 +83,12 @@ CONVERSATION RULES:
 - Be concise. Admin work is interrupt-driven — short answers with a clear next step beat a wall of background.
 - If you don't know, say so. Suggest a probing command that would reveal the answer.`
 	};
+}
+
+function writeSection(allowWrite?: boolean): string {
+	if (!allowWrite) return '';
+	return `
+- The user has enabled file writes for this session. You may call fs_write_text or fs_edit_text on absolute paths to modify configuration files, scripts, or other text files anywhere the app user can write. Be cautious with system files (/etc, /var, /boot): explain the change in prose before the tool call, and prefer fs_edit_text for surgical edits over fs_write_text which replaces the whole file. The parent directory must already exist — suggest a shell mkdir if needed rather than trying to create one.`;
 }
 
 function describeEnvironment(ctx: ShellSessionContext): string {

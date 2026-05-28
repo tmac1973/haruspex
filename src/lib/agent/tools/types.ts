@@ -39,6 +39,12 @@ export interface ToolContext {
 	 * requirement is waived. Defaults to false everywhere else.
 	 */
 	shellMode: boolean;
+	/**
+	 * When true (only meaningful with shellMode), fs_write_text and
+	 * fs_edit_text become available and dispatch to absolute-path Rust
+	 * commands. Off by default; the user opts in via Settings → Shell.
+	 */
+	shellAllowWrite: boolean;
 }
 
 /**

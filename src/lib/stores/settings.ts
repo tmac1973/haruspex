@@ -198,6 +198,16 @@ export interface AppSettings {
 	 * the primary view and the sidebar is on-demand.
 	 */
 	shellSidebarDefaultOpen: boolean;
+	/**
+	 * Whether the Shell-tab agent may write files anywhere on the
+	 * filesystem (fs_write_text, fs_edit_text). Disabled by default;
+	 * when off, the model only has read tools + can suggest shell
+	 * commands. When on, the model can also call fs_write_text /
+	 * fs_edit_text on absolute paths — including system config files
+	 * if the app process has permission. Reads are always allowed in
+	 * Shell mode regardless of this flag.
+	 */
+	shellAllowWrite: boolean;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -247,7 +257,8 @@ const defaults: AppSettings = {
 	integrations: defaultIntegrations,
 	proxy: defaultProxy,
 	shellBinary: '',
-	shellSidebarDefaultOpen: false
+	shellSidebarDefaultOpen: false,
+	shellAllowWrite: false
 };
 
 function load(): AppSettings {

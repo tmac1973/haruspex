@@ -3,6 +3,7 @@
 
 	let shellBinary = $state(getSettings().shellBinary);
 	let shellSidebarDefaultOpen = $state(getSettings().shellSidebarDefaultOpen);
+	let shellAllowWrite = $state(getSettings().shellAllowWrite);
 
 	function persistBinary() {
 		updateSettings({ shellBinary: shellBinary.trim() });
@@ -10,6 +11,10 @@
 
 	function persistSidebarDefault() {
 		updateSettings({ shellSidebarDefaultOpen });
+	}
+
+	function persistAllowWrite() {
+		updateSettings({ shellAllowWrite });
 	}
 </script>
 
@@ -31,6 +36,21 @@
 		onkeydown={(e) => e.key === 'Enter' && persistBinary()}
 	/>
 	<p class="hint">Takes effect the next time you open the Shell tab or restart the app.</p>
+</section>
+
+<section class="card danger" class:enabled={shellAllowWrite}>
+	<h3>Allow the assistant to write files</h3>
+	<label class="row">
+		<input type="checkbox" bind:checked={shellAllowWrite} onchange={persistAllowWrite} />
+		<span>Enable <code>fs_write_text</code> and <code>fs_edit_text</code> in Shell mode</span>
+	</label>
+	<p class="help">
+		When on, the Shell-tab assistant can write or edit any file the app's user account can write to
+		— including system files under <code>/etc</code>, <code>/var</code>, and similar. Off by
+		default. The model still won't execute shell commands directly; it just gains the ability to
+		modify file contents on its own when it judges that the right fix. Reads are always allowed
+		regardless of this setting.
+	</p>
 </section>
 
 <section class="card">
@@ -56,6 +76,10 @@
 		border-radius: 8px;
 		padding: 16px;
 		margin-bottom: 16px;
+	}
+
+	.card.danger.enabled {
+		border-color: var(--error-text, #c66);
 	}
 
 	.card h3 {

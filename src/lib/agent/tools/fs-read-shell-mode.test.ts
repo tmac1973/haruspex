@@ -13,6 +13,7 @@ const chatCtx = {
 	pendingImages: [],
 	deepResearch: false,
 	shellMode: false,
+	shellAllowWrite: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 
@@ -21,6 +22,16 @@ const shellCtx = {
 	pendingImages: [],
 	deepResearch: false,
 	shellMode: true,
+	shellAllowWrite: false,
+	filesWrittenThisTurn: new Set<string>()
+};
+
+const shellCtxWritable = {
+	workingDir: null,
+	pendingImages: [],
+	deepResearch: false,
+	shellMode: true,
+	shellAllowWrite: true,
 	filesWrittenThisTurn: new Set<string>()
 };
 
@@ -92,5 +103,74 @@ describe('fs_read tools in Shell mode', () => {
 		const schemas = getToolSchemas({ hasWorkingDir: false, shellMode: false });
 		const names = schemas.map((s) => s.function.name);
 		expect(names).not.toContain('fs_read_text');
+	});
+
+	it('write tools are hidden in shell mode by default', async () => {
+		const { getToolSchemas } = await import('$lib/agent/tools');
+		const schemas = getToolSchemas({
+			hasWorkingDir: false,
+			shellMode: true,
+			shellAllowWrite: false
+		});
+		const names = schemas.map((s) => s.function.name);
+		expect(names).not.toContain('fs_write_text');
+		expect(names).not.toContain('fs_edit_text');
+	});
+
+	it('write tools are exposed when shellMode + shellAllowWrite both on', async () => {
+		const { getToolSchemas } = await import('$lib/agent/tools');
+		const schemas = getToolSchemas({
+			hasWorkingDir: false,
+			shellMode: true,
+			shellAllowWrite: true
+		});
+		const names = schemas.map((s) => s.function.name);
+		expect(names).toContain('fs_write_text');
+		expect(names).toContain('fs_edit_text');
+	});
+
+	it('document builders and sandbox are hidden in shell mode', async () => {
+		const { getToolSchemas } = await import('$lib/agent/tools');
+		const schemas = getToolSchemas({
+			hasWorkingDir: false,
+			shellMode: true,
+			shellAllowWrite: true
+		});
+		const names = schemas.map((s) => s.function.name);
+		expect(names).not.toContain('fs_write_pdf');
+		expect(names).not.toContain('fs_write_docx');
+		expect(names).not.toContain('fs_write_xlsx');
+		expect(names).not.toContain('fs_download_url');
+		expect(names).not.toContain('run_python');
+	});
+
+	it('fs_write_text dispatches to the absolute command when shell-mode + allowWrite', async () => {
+		mocks.invoke.mockResolvedValue(undefined);
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool(
+			'fs_write_text',
+			{ path: '/tmp/test.conf', content: 'foo', overwrite: true },
+			shellCtxWritable
+		);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_write_text_absolute', {
+			path: '/tmp/test.conf',
+			content: 'foo',
+			overwrite: true
+		});
+	});
+
+	it('fs_edit_text dispatches to the absolute command when shell-mode + allowWrite', async () => {
+		mocks.invoke.mockResolvedValue(undefined);
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool(
+			'fs_edit_text',
+			{ path: '/etc/hosts', old_str: 'old', new_str: 'new' },
+			shellCtxWritable
+		);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_edit_text_absolute', {
+			path: '/etc/hosts',
+			oldStr: 'old',
+			newStr: 'new'
+		});
 	});
 });

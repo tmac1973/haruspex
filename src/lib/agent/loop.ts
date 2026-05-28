@@ -114,6 +114,12 @@ export interface AgentLoopOptions {
 	 * Defaults to false.
 	 */
 	shellMode?: boolean;
+	/**
+	 * Companion flag to shellMode: when true, the Shell-tab agent also
+	 * gets fs_write_text and fs_edit_text (absolute-path variants).
+	 * Defaults to false.
+	 */
+	shellAllowWrite?: boolean;
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {

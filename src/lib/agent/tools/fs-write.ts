@@ -278,6 +278,63 @@ function textWriteExecutor(
 }
 
 /**
+ * Shell-mode dispatch for fs_write_text. When the agent is running in
+ * the Shell tab and the user has enabled writes in settings, route to
+ * fs_write_text_absolute (no workdir, accepts an absolute path).
+ * Falls back to the chat-mode executor otherwise.
+ */
+function shellAwareWriteText() {
+	const chat = textWriteExecutor('fs_write_text', 'fs_write_text');
+	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		if (!(ctx.shellMode && ctx.shellAllowWrite)) return chat(args, ctx);
+		const err = validateTextContent(args, 'fs_write_text');
+		if (err) return toolResult(toolError(err));
+		const path = args.path as string;
+		const overwrite = (args.overwrite as boolean | undefined) ?? true;
+		try {
+			await invoke('fs_write_text_absolute', {
+				path,
+				content: args.content as string,
+				overwrite
+			});
+			return toolResult(`Wrote ${path}`);
+		} catch (e) {
+			return toolResult(toolInvokeError('fs_write_text', e));
+		}
+	};
+}
+
+function shellAwareEditText() {
+	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const path = args.path as string;
+		if (ctx.shellMode && ctx.shellAllowWrite) {
+			try {
+				await invoke('fs_edit_text_absolute', {
+					path,
+					oldStr: args.old_str as string,
+					newStr: args.new_str as string
+				});
+				return toolResult(`Edited ${path}`);
+			} catch (e) {
+				return toolResult(toolInvokeError('fs_edit_text', e));
+			}
+		}
+		try {
+			await invoke('fs_edit_text', {
+				workdir: ctx.workingDir,
+				relPath: path,
+				oldStr: args.old_str as string,
+				newStr: args.new_str as string
+			});
+			const diag = await lintPythonIfApplicable(ctx.workingDir, path);
+			return toolResult(`Edited ${path}${diag}`);
+		} catch (e) {
+			return toolResult(toolInvokeError('fs_edit_text', e));
+		}
+	};
+}
+
+/**
  * Reject slide-deck inputs that are obvious scaffolds — zero slides,
  * empty titles, content slides with no bullets and no image, or
  * placeholder-style bullets.
@@ -413,13 +470,14 @@ registerTool({
 		function: {
 			name: 'fs_write_text',
 			description:
-				'Create a new text file or overwrite an existing one in the working directory. Use this for txt, md, csv, json, bash scripts, and other plain text formats. The content parameter is written verbatim to the file.',
+				'Create a new text file or overwrite an existing one. In Chat mode the path is relative to the working directory. In Shell mode the path must be absolute (e.g. "/etc/nginx/conf.d/site.conf") — but writes only work if the user has enabled them in Settings → Shell. Use this for txt, md, csv, json, bash scripts, and other plain text formats. The content parameter is written verbatim to the file.',
 			parameters: {
 				type: 'object',
 				properties: {
 					path: {
 						type: 'string',
-						description: 'Relative path for the new/overwritten file within the working directory.'
+						description:
+							'File path. Chat mode: relative to the working directory. Shell mode: absolute path.'
 					},
 					content: {
 						type: 'string',
@@ -435,7 +493,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: textWriteExecutor('fs_write_text', 'fs_write_text')
+	execute: shellAwareWriteText()
 });
 
 registerTool({
@@ -684,13 +742,14 @@ registerTool({
 		function: {
 			name: 'fs_edit_text',
 			description:
-				'Edit a text file by replacing exactly one occurrence of old_str with new_str. The old_str must appear exactly once in the file — include enough surrounding context to make it unique. Use this for small targeted changes; for large rewrites use fs_write_text with overwrite.',
+				'Edit a text file by replacing exactly one occurrence of old_str with new_str. The old_str must appear exactly once in the file — include enough surrounding context to make it unique. Use this for small targeted changes; for large rewrites use fs_write_text with overwrite. In Chat mode the path is relative to the working directory. In Shell mode the path must be absolute (e.g. "/etc/ssh/sshd_config") and writes must be enabled in Settings → Shell.',
 			parameters: {
 				type: 'object',
 				properties: {
 					path: {
 						type: 'string',
-						description: 'Relative path to the file within the working directory.'
+						description:
+							'File path. Chat mode: relative to the working directory. Shell mode: absolute path.'
 					},
 					old_str: {
 						type: 'string',
@@ -706,18 +765,5 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	async execute(args, ctx) {
-		try {
-			await invoke('fs_edit_text', {
-				workdir: ctx.workingDir,
-				relPath: args.path as string,
-				oldStr: args.old_str as string,
-				newStr: args.new_str as string
-			});
-			const diag = await lintPythonIfApplicable(ctx.workingDir, args.path as string);
-			return toolResult(`Edited ${args.path}${diag}`);
-		} catch (e) {
-			return toolResult(toolInvokeError('fs_edit_text', e));
-		}
-	}
+	execute: shellAwareEditText()
 });

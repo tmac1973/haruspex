@@ -19,7 +19,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ChatMessage } from '$lib/api';
 import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 import { logDebug } from '$lib/debug-log';
-import { getActiveContextSize } from '$lib/stores/settings';
+import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { buildShellSystemPrompt, type ShellSessionContext } from '$lib/shell/system-prompt';
 import { runShellTurn } from '$lib/shell/runShellTurn';
 
@@ -247,7 +247,8 @@ export async function submitShell(payload: ShellSubmission): Promise<void> {
 	const systemPrompt = buildShellSystemPrompt({
 		sessionContext: payload.sessionContext,
 		currentCwd: payload.currentCwd,
-		recentHistory: payload.recentHistory
+		recentHistory: payload.recentHistory,
+		allowWrite: getSettings().shellAllowWrite
 	});
 
 	const turnMessages: ChatMessage[] = [systemPrompt, ...messages];
@@ -259,6 +260,7 @@ export async function submitShell(payload: ShellSubmission): Promise<void> {
 			messages: turnMessages,
 			contextSize: getActiveContextSize(),
 			visionSupported: true,
+			allowWrite: getSettings().shellAllowWrite,
 			signal: abortController.signal,
 			onTicket: (t) => (ticket = t),
 			onAdmitted: () => (ticket = null),

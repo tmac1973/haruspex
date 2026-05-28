@@ -72,6 +72,7 @@ export interface LoopContext {
 	contextSize: number;
 	deepResearch: boolean;
 	shellMode: boolean;
+	shellAllowWrite: boolean;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
 	filesWrittenThisTurn: Set<string>;
@@ -88,19 +89,22 @@ export interface LoopContext {
 export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const workingDir = options.workingDir ?? null;
 	const shellMode = options.shellMode ?? false;
+	const shellAllowWrite = options.shellAllowWrite ?? false;
 	return {
 		messages: options.messages,
 		tools: getToolSchemas({
 			hasWorkingDir: workingDir !== null,
 			deepResearch: options.deepResearch ?? false,
 			visionSupported: options.visionSupported ?? true,
-			shellMode
+			shellMode,
+			shellAllowWrite
 		}),
 		signal: options.signal,
 		workingDir,
 		contextSize: options.contextSize ?? 0,
 		deepResearch: options.deepResearch ?? false,
 		shellMode,
+		shellAllowWrite,
 		expectsFileOutput: options.expectsFileOutput ?? false,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
@@ -638,6 +642,7 @@ export async function runIteration(
 				pendingImages: ctx.pendingImages,
 				deepResearch: ctx.deepResearch,
 				shellMode: ctx.shellMode,
+				shellAllowWrite: ctx.shellAllowWrite,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn
 			}),
 			signal

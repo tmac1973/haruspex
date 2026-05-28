@@ -23,6 +23,7 @@ export interface ShellTurnOptions {
 	contextSize: number;
 	maxIterations?: number;
 	visionSupported?: boolean;
+	allowWrite?: boolean;
 	signal?: AbortSignal;
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
@@ -64,6 +65,7 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 		maxIterations: options.maxIterations ?? 8,
 		deepResearch: false,
 		shellMode: true,
+		shellAllowWrite: options.allowWrite ?? false,
 		expectsFileOutput: false,
 		visionSupported: options.visionSupported ?? true,
 		signal: options.signal,

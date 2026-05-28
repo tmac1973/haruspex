@@ -23,6 +23,7 @@ const ctx = {
 	pendingImages: [],
 	deepResearch: false,
 	shellMode: false,
+	shellAllowWrite: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 
