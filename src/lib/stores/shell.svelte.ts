@@ -18,6 +18,8 @@ import { invoke } from '@tauri-apps/api/core';
 
 import type { ChatMessage } from '$lib/api';
 import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
+import type { SearchStep } from '$lib/agent/loop';
+import { getDisplayLabel } from '$lib/agent/tools';
 import { logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { buildShellSystemPrompt, type ShellSessionContext } from '$lib/shell/system-prompt';
@@ -56,6 +58,8 @@ let ticket = $state<InferenceTicket | null>(null);
 let sidebarOpen = $state(false);
 let lastError = $state<string | null>(null);
 let composerFocused = $state(false);
+let searchSteps = $state<SearchStep[]>([]);
+let messageSteps = $state<Record<number, SearchStep[]>>({});
 let abortController: AbortController | null = null;
 let activeSession: ActiveShellSession | null = null;
 let composerFocusFn: (() => void) | null = null;
@@ -90,6 +94,14 @@ export function toggleShellSidebar(): void {
 
 export function getShellLastError(): string | null {
 	return lastError;
+}
+
+export function getShellSearchSteps(): SearchStep[] {
+	return searchSteps;
+}
+
+export function getShellMessageSteps(): Record<number, SearchStep[]> {
+	return messageSteps;
 }
 
 export function bindShellSession(session: ActiveShellSession): void {
@@ -129,6 +141,8 @@ export function newShellChat(): void {
 	if (isSubmitting) return;
 	messages = [];
 	streamingContent = '';
+	searchSteps = [];
+	messageSteps = {};
 	lastError = null;
 }
 
@@ -240,6 +254,7 @@ export async function submitShell(payload: ShellSubmission): Promise<void> {
 	sidebarOpen = true;
 	isSubmitting = true;
 	streamingContent = '';
+	searchSteps = [];
 
 	const userMsg: ChatMessage = { role: 'user', content: payload.body };
 	messages = [...messages, userMsg];
@@ -264,13 +279,37 @@ export async function submitShell(payload: ShellSubmission): Promise<void> {
 			signal: abortController.signal,
 			onTicket: (t) => (ticket = t),
 			onAdmitted: () => (ticket = null),
-			onAssistantDelta: (full) => (streamingContent = full)
+			onAssistantDelta: (full) => (streamingContent = full),
+			onToolStart: (call) => {
+				searchSteps = [
+					...searchSteps,
+					{
+						id: call.id,
+						toolName: call.name,
+						query: getDisplayLabel(call.name, call.arguments),
+						status: 'running',
+						args: call.arguments
+					}
+				];
+			},
+			onToolEnd: (call, result, thumbDataUrl, artifacts) => {
+				searchSteps = searchSteps.map((s) =>
+					s.id === call.id ? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts } : s
+				);
+			}
 		});
 		const assistantMsg: ChatMessage = {
 			role: 'assistant',
 			content: result.finalText
 		};
+		const assistantIndex = messages.length;
 		messages = [...messages, assistantMsg];
+		// Snapshot the live steps onto this assistant message so the
+		// thread shows what tools ran for each turn after the live row
+		// clears.
+		if (searchSteps.length > 0) {
+			messageSteps = { ...messageSteps, [assistantIndex]: searchSteps };
+		}
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		if (msg.includes('Aborted')) {
@@ -281,6 +320,7 @@ export async function submitShell(payload: ShellSubmission): Promise<void> {
 		}
 	} finally {
 		streamingContent = '';
+		searchSteps = [];
 		isSubmitting = false;
 		ticket = null;
 		abortController = null;

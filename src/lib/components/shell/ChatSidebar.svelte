@@ -2,12 +2,15 @@
 	import { onMount } from 'svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import MicButton from '$lib/components/MicButton.svelte';
+	import SearchStepComponent from '$lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import {
 		bindShellComposer,
 		cancelShellTurn,
 		getShellLastError,
 		getShellMessages,
+		getShellMessageSteps,
+		getShellSearchSteps,
 		getShellSidebarOpen,
 		getShellStreamingContent,
 		getShellTicket,
@@ -25,6 +28,8 @@
 	const submitting = $derived(isShellSubmitting());
 	const ticket = $derived(getShellTicket());
 	const lastError = $derived(getShellLastError());
+	const searchSteps = $derived(getShellSearchSteps());
+	const messageSteps = $derived(getShellMessageSteps());
 
 	let composerText = $state('');
 	let composerEl = $state<HTMLTextAreaElement | null>(null);
@@ -103,8 +108,14 @@
 				</div>
 			{/if}
 			{#each messages as msg, i (i)}
+				{#if msg.role === 'assistant' && messageSteps[i]?.length}
+					<SearchStepComponent steps={messageSteps[i]} />
+				{/if}
 				<ChatMessage message={msg} />
 			{/each}
+			{#if searchSteps.length > 0}
+				<SearchStepComponent steps={searchSteps} />
+			{/if}
 			{#if streamingMessage}
 				<ChatMessage message={streamingMessage} isStreaming />
 			{:else if submitting && (!ticket || ticket.state === 'running')}
