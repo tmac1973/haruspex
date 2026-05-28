@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { onMount } from 'svelte';
 	import Terminal, { type TerminalHandle } from './Terminal.svelte';
+	import ChatSidebar from './ChatSidebar.svelte';
+	import { getActiveTab } from '$lib/stores/activeTab.svelte';
+	import { isShellSubmitting, setShellSidebarOpen, submitShell } from '$lib/stores/shell.svelte';
 
 	interface CapturedRegion {
 		commandLine: string;
@@ -28,81 +32,118 @@
 
 	let handle = $state<TerminalHandle | null>(null);
 	let hasSelection = $state(false);
-	let debugText = $state('');
-	let debugTitle = $state('');
-	let debugVisible = $state(false);
+	let menu = $state<{ x: number; y: number } | null>(null);
 
-	function showDebug(title: string, text: string) {
-		debugTitle = title;
-		debugText = text || '(empty)';
-		debugVisible = true;
-	}
+	const submitting = $derived(isShellSubmitting());
 
-	async function submitForReview() {
-		if (!handle) return;
-		if (hasSelection) {
-			showDebug('Submit (selection)', handle.getSelection());
-			return;
-		}
-		const region = await invoke<CapturedRegion | null>('shell_get_last_command', {
+	async function submitToLlm() {
+		if (!handle || submitting) return;
+		menu = null;
+
+		const selection = hasSelection ? handle.getSelection().trim() : '';
+		let body: string;
+		let cwd: string | null;
+		const ctxRes = await invoke<ContextResponse>('shell_get_context', {
 			sessionId: handle.sessionId
 		});
-		if (!region) {
-			showDebug(
-				'Submit (last command)',
-				'(no completed command yet — run something at the prompt)'
-			);
-			return;
-		}
-		const body =
-			`$ ${region.commandLine.trim()}\n` +
-			`${region.output}\n` +
-			`(exit ${region.exitCode ?? '?'}, cwd ${region.cwd ?? '?'}${region.truncated ? ', truncated' : ''})`;
-		showDebug('Submit (last command)', body);
-	}
-
-	async function showContext() {
-		if (!handle) return;
-		const r = await invoke<ContextResponse>('shell_get_context', {
-			sessionId: handle.sessionId
-		});
-		showDebug('Session context', JSON.stringify(r, null, 2));
-	}
-
-	async function showHistory() {
-		if (!handle) return;
-		const r = await invoke<string[]>('shell_get_recent_history', {
+		const history = await invoke<string[]>('shell_get_recent_history', {
 			sessionId: handle.sessionId,
 			limit: 10
 		});
-		showDebug('Recent history', r.length ? r.join('\n') : '(none)');
+		cwd = ctxRes.current_cwd;
+
+		if (selection) {
+			body = formatSelectionBody(selection, cwd);
+		} else {
+			const region = await invoke<CapturedRegion | null>('shell_get_last_command', {
+				sessionId: handle.sessionId
+			});
+			if (!region) {
+				setShellSidebarOpen(true);
+				return;
+			}
+			body = formatCapturedRegion(region);
+			cwd = region.cwd ?? cwd;
+		}
+
+		await submitShell({
+			body,
+			sessionContext: handle.context,
+			currentCwd: cwd,
+			recentHistory: history
+		});
 	}
+
+	function formatCapturedRegion(region: CapturedRegion): string {
+		const cmd = region.commandLine.trim() || '(no command captured)';
+		const out = region.output.trimEnd();
+		const meta = [`exit ${region.exitCode ?? '?'}`];
+		if (region.cwd) meta.push(`cwd ${region.cwd}`);
+		if (region.truncated) meta.push('truncated');
+		return `$ ${cmd}\n${out}\n(${meta.join(', ')})`;
+	}
+
+	function formatSelectionBody(text: string, cwd: string | null): string {
+		const header = cwd ? `(cwd ${cwd})\n` : '';
+		return `${header}${text}`;
+	}
+
+	function onKeyDown(event: KeyboardEvent) {
+		// Only react when the Shell tab is the active one. Ctrl+Shift+L is
+		// global on <svelte:window>, so without this guard it would fire
+		// from inside chat or settings.
+		if (getActiveTab() !== 'shell') return;
+		// Ctrl+Shift+L → submit to LLM. Deliberately Shift to avoid clashing
+		// with readline's Ctrl+L clear-screen.
+		if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'l') {
+			event.preventDefault();
+			submitToLlm();
+		}
+	}
+
+	function onContextMenu(event: MouseEvent) {
+		event.preventDefault();
+		menu = { x: event.clientX, y: event.clientY };
+	}
+
+	function dismissMenu() {
+		menu = null;
+	}
+
+	onMount(() => {
+		window.addEventListener('click', dismissMenu);
+		return () => window.removeEventListener('click', dismissMenu);
+	});
 </script>
 
-<div class="shell-tab">
-	<div class="toolbar">
-		<button class="primary" onclick={submitForReview} disabled={!handle}>
-			{hasSelection ? 'Submit selection' : 'Submit last command'}
-		</button>
-		<button onclick={showContext} disabled={!handle}>Context</button>
-		<button onclick={showHistory} disabled={!handle}>History</button>
+<svelte:window onkeydown={onKeyDown} />
+
+<div class="shell-tab" oncontextmenu={onContextMenu} role="presentation">
+	<div class="terminal-region">
+		<div class="toolbar">
+			<button
+				class="primary"
+				onclick={submitToLlm}
+				disabled={!handle || submitting}
+				title="Submit to LLM (Ctrl+Shift+L)"
+			>
+				{#if submitting}
+					Working…
+				{:else if hasSelection}
+					Submit selection
+				{:else}
+					Submit last command
+				{/if}
+			</button>
+		</div>
+		<div class="terminal-pane">
+			<Terminal onReady={(h) => (handle = h)} onSelectionChange={(has) => (hasSelection = has)} />
+		</div>
 	</div>
-	<div class="terminal-pane">
-		<Terminal onReady={(h) => (handle = h)} onSelectionChange={(has) => (hasSelection = has)} />
-	</div>
-	{#if debugVisible}
-		<button
-			type="button"
-			class="debug-backdrop"
-			aria-label="Close debug overlay"
-			onclick={() => (debugVisible = false)}
-		></button>
-		<div class="debug-overlay" role="dialog" aria-labelledby="debug-title">
-			<header>
-				<h3 id="debug-title">{debugTitle}</h3>
-				<button onclick={() => (debugVisible = false)}>Close</button>
-			</header>
-			<pre>{debugText}</pre>
+	<ChatSidebar />
+	{#if menu}
+		<div class="context-menu" style="left: {menu.x}px; top: {menu.y}px" role="menu" tabindex="-1">
+			<button onclick={submitToLlm}>Send to LLM</button>
 		</div>
 	{/if}
 </div>
@@ -110,11 +151,19 @@
 <style>
 	.shell-tab {
 		display: flex;
-		flex-direction: column;
+		flex-direction: row;
 		flex: 1 1 auto;
 		min-height: 0;
 		overflow: hidden;
 		position: relative;
+	}
+
+	.terminal-region {
+		display: flex;
+		flex-direction: column;
+		flex: 1 1 auto;
+		min-width: 0;
+		min-height: 0;
 	}
 
 	.toolbar {
@@ -131,7 +180,7 @@
 		background: var(--bg-secondary);
 		color: var(--text-primary);
 		border: 1px solid var(--border);
-		padding: 4px 10px;
+		padding: 4px 12px;
 		font-size: 0.8rem;
 		border-radius: 4px;
 		cursor: pointer;
@@ -159,64 +208,30 @@
 		min-height: 0;
 	}
 
-	.debug-backdrop {
-		position: absolute;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.4);
-		border: 0;
-		padding: 0;
-		cursor: pointer;
-		z-index: 1;
-	}
-
-	.debug-overlay {
-		position: absolute;
-		top: 20%;
-		left: 10%;
-		right: 10%;
-		bottom: 10%;
+	.context-menu {
+		position: fixed;
 		background: var(--bg-primary);
 		border: 1px solid var(--border);
-		border-radius: 6px;
-		display: flex;
-		flex-direction: column;
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-		z-index: 2;
-		overflow: hidden;
+		border-radius: 4px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+		z-index: 10;
+		min-width: 160px;
+		padding: 4px 0;
 	}
 
-	.debug-overlay header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 8px 12px;
-		border-bottom: 1px solid var(--border);
-	}
-
-	.debug-overlay h3 {
-		margin: 0;
-		font-size: 0.9rem;
-	}
-
-	.debug-overlay button {
+	.context-menu button {
 		appearance: none;
 		background: none;
-		border: 1px solid var(--border);
+		border: 0;
 		color: var(--text-primary);
-		padding: 3px 10px;
-		border-radius: 4px;
-		cursor: pointer;
+		padding: 6px 14px;
 		font-size: 0.8rem;
+		width: 100%;
+		text-align: left;
+		cursor: pointer;
 	}
 
-	.debug-overlay pre {
-		flex: 1 1 auto;
-		margin: 0;
-		padding: 12px;
-		overflow: auto;
-		font-family: ui-monospace, Menlo, Monaco, 'Cascadia Mono', 'Courier New', monospace;
-		font-size: 0.8rem;
-		white-space: pre-wrap;
-		word-break: break-word;
+	.context-menu button:hover {
+		background: var(--bg-secondary);
 	}
 </style>
