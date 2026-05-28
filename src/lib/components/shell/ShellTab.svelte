@@ -7,6 +7,9 @@
 	import { getSettings } from '$lib/stores/settings';
 	import {
 		bindShellSession,
+		focusShellComposer,
+		getShellSidebarOpen,
+		isShellComposerFocused,
 		isShellSubmitting,
 		setShellSidebarOpen,
 		submitFromTerminal,
@@ -35,7 +38,30 @@
 		if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'l') {
 			event.preventDefault();
 			submitFromTerminal();
+			return;
 		}
+		// Ctrl+` → swap focus between the terminal and the assistant composer.
+		// event.code is layout-agnostic (Backquote is the physical key) so
+		// this works on non-US keyboards too. Bash/readline has no binding
+		// for Ctrl+backtick, so this won't eat anything the user might want
+		// to type.
+		if (event.ctrlKey && !event.shiftKey && !event.altKey && event.code === 'Backquote') {
+			event.preventDefault();
+			swapFocus();
+		}
+	}
+
+	function swapFocus() {
+		if (isShellComposerFocused()) {
+			handle?.focus();
+			return;
+		}
+		if (!getShellSidebarOpen()) {
+			setShellSidebarOpen(true);
+		}
+		// The sidebar may have just opened; wait one microtask for the
+		// composer to render before focusing it.
+		queueMicrotask(() => focusShellComposer());
 	}
 
 	function onContextMenu(event: MouseEvent) {
@@ -84,7 +110,7 @@
 				class="primary"
 				onclick={submitFromTerminal}
 				disabled={!handle || submitting}
-				title="Submit to LLM (Ctrl+Shift+L)"
+				title="Submit to LLM (Ctrl+Shift+L) — Ctrl+` swaps focus to the assistant"
 			>
 				{#if submitting}
 					Working…

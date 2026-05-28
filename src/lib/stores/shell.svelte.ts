@@ -55,8 +55,10 @@ let isSubmitting = $state(false);
 let ticket = $state<InferenceTicket | null>(null);
 let sidebarOpen = $state(false);
 let lastError = $state<string | null>(null);
+let composerFocused = $state(false);
 let abortController: AbortController | null = null;
 let activeSession: ActiveShellSession | null = null;
+let composerFocusFn: (() => void) | null = null;
 
 export function getShellMessages(): ChatMessage[] {
 	return messages;
@@ -96,6 +98,31 @@ export function bindShellSession(session: ActiveShellSession): void {
 
 export function unbindShellSession(): void {
 	activeSession = null;
+}
+
+/**
+ * Register a focus accessor for the assistant composer. Ctrl+` uses
+ * this to swap focus between the terminal and the chat input without
+ * the sidebar component having to expose its own ref.
+ */
+export function bindShellComposer(focus: () => void): void {
+	composerFocusFn = focus;
+}
+
+export function unbindShellComposer(): void {
+	composerFocusFn = null;
+}
+
+export function focusShellComposer(): void {
+	composerFocusFn?.();
+}
+
+export function setShellComposerFocused(focused: boolean): void {
+	composerFocused = focused;
+}
+
+export function isShellComposerFocused(): boolean {
+	return composerFocused;
 }
 
 export function newShellChat(): void {

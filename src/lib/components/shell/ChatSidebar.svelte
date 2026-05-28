@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import {
+		bindShellComposer,
 		cancelShellTurn,
 		getShellLastError,
 		getShellMessages,
@@ -10,8 +12,10 @@
 		getShellTicket,
 		isShellSubmitting,
 		newShellChat,
+		setShellComposerFocused,
 		submitChatMessage,
-		toggleShellSidebar
+		toggleShellSidebar,
+		unbindShellComposer
 	} from '$lib/stores/shell.svelte';
 
 	const open = $derived(getShellSidebarOpen());
@@ -74,6 +78,11 @@
 			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
 		});
 	});
+
+	onMount(() => {
+		bindShellComposer(() => composerEl?.focus());
+		return () => unbindShellComposer();
+	});
 </script>
 
 {#if open}
@@ -119,7 +128,9 @@
 				bind:value={composerText}
 				oninput={onComposerInput}
 				onkeydown={onComposerKeydown}
-				placeholder="Ask a follow-up… (Enter to send, Shift+Enter for newline)"
+				onfocus={() => setShellComposerFocused(true)}
+				onblur={() => setShellComposerFocused(false)}
+				placeholder="Ask a follow-up… (Enter to send, Shift+Enter for newline, Ctrl+` to switch back to the shell)"
 				rows="1"
 				disabled={submitting}
 			></textarea>
