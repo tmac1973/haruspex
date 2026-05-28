@@ -4,9 +4,11 @@
 	import Terminal, { type TerminalHandle } from './Terminal.svelte';
 	import ChatSidebar from './ChatSidebar.svelte';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
+	import { getSettings } from '$lib/stores/settings';
 	import {
 		bindShellSession,
 		isShellSubmitting,
+		setShellSidebarOpen,
 		submitFromTerminal,
 		unbindShellSession
 	} from '$lib/stores/shell.svelte';
@@ -59,6 +61,9 @@
 
 	onMount(() => {
 		document.body.classList.add('shell-tab-active');
+		if (getSettings().shellSidebarDefaultOpen) {
+			setShellSidebarOpen(true);
+		}
 		window.addEventListener('click', dismissMenu);
 		document.addEventListener('hsp-shell-paste', onPasteRequest);
 		return () => {

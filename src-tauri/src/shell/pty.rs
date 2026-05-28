@@ -1,7 +1,16 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-pub fn resolve_shell() -> String {
+/// User-configured shell binary takes priority over $SHELL. Invalid
+/// overrides (empty string, missing file) fall back to the default
+/// detection so a bad setting doesn't break the Shell tab.
+pub fn resolve_shell_with_override(override_path: Option<&str>) -> String {
+    if let Some(path) = override_path {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() && Path::new(trimmed).is_file() {
+            return trimmed.to_string();
+        }
+    }
     if let Ok(s) = std::env::var("SHELL") {
         if !s.is_empty() && Path::new(&s).is_file() {
             return s;

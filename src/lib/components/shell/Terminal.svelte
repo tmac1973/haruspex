@@ -6,6 +6,7 @@
 	import { FitAddon } from '@xterm/addon-fit';
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import '@xterm/xterm/css/xterm.css';
+	import { getSettings } from '$lib/stores/settings';
 
 	interface SessionContext {
 		os: string;
@@ -118,7 +119,12 @@
 				return;
 			}
 
-			const spawn = await invoke<SpawnResult>('shell_spawn', { cols: t.cols, rows: t.rows });
+			const shellOverride = getSettings().shellBinary.trim() || null;
+			const spawn = await invoke<SpawnResult>('shell_spawn', {
+				cols: t.cols,
+				rows: t.rows,
+				shellOverride
+			});
 			sessionId = spawn.session_id;
 
 			if (cancelled) {

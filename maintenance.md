@@ -471,6 +471,106 @@ starts. Idempotent. `COALESCE`s preserve existing timestamps.
 
 ---
 
+## 11b. Shell tab (Phase 15)
+
+The Shell tab gives the user a real interactive terminal with a one-click
+path to "ask the LLM about this." The PTY is owned in-process; the LLM
+chat thread lives in a runes store; no SQLite involvement.
+
+### Module layout
+
+```
+src-tauri/src/shell/
+  pty.rs          shell-binary + cwd detection, rcfile/ZDOTDIR injection
+  session.rs      portable-pty wrapper, reader thread, kill on Drop
+  integration.rs  OSC 133 marker parser, output ring, capture_last_command
+  context.rs      uname / /etc/os-release / $SHELL --version + history file parse
+  mod.rs          Tauri commands + ShellManager state
+
+src-tauri/resources/shell-integration/
+  haruspex.bash   OSC 133 A/B/C/D + OSC 7 emitters
+  haruspex.zsh    same for zsh (autoload add-zsh-hook)
+
+src/lib/shell/
+  system-prompt.ts  buildShellSystemPrompt — captured context + role
+  runShellTurn.ts   wraps runAgentLoop, acquires inferenceQueue ticket
+  risky-commands.ts pattern matcher for visual risk badges
+
+src/lib/components/shell/
+  ShellTab.svelte   tab shell + toolbar + paste handler + tab key gating
+  Terminal.svelte   xterm.js mount, output/exit listeners, ResizeObserver
+  ChatSidebar.svelte collapsing right rail + thread + composer textarea
+
+src/lib/stores/shell.svelte.ts
+  runes-backed messages/streaming/sidebarOpen/ticket. Holds the active
+  session binding (sessionId + SessionContext + getSelection) registered
+  by Terminal.svelte. Both submitFromTerminal and submitChatMessage end
+  up in submitShell, which is the only place runShellTurn is invoked.
+```
+
+### Tauri commands
+
+- `shell_spawn(cols, rows, shellOverride)` → `{ session_id, context }`
+- `shell_write(session_id, data)` — pipes UTF-8 stdin into the PTY
+- `shell_resize(session_id, cols, rows)`
+- `shell_kill(session_id)` — also fired by `ShellManager::shutdown_all` on app exit
+- `shell_get_context(session_id)` → `{ context, current_cwd }`
+- `shell_get_last_command(session_id)` → captured last command + output
+- `shell_get_recent_history(session_id, limit)` → bash/zsh/fish history
+
+### Adding a risky pattern
+
+`src/lib/shell/risky-commands.ts` is the only source. Append a
+`{ label, description, test }` to `PATTERNS` and a positive +
+boundary-negative case to `risky-commands.test.ts`. The markdown
+renderer picks it up automatically — no schema or registration step.
+
+### shellMode tool dispatch
+
+The Shell agent runs with `LoopContext.shellMode = true`. That waives
+the workingDir guard on fs tools (registry.ts) and makes
+`tools/fs-read.ts` dispatch to the parallel `*_absolute` Tauri commands
+defined in `fs_tools/absolute.rs`. The chat agent never sees `shellMode
+= true`, so chat-mode fs reads stay workdir-restricted.
+
+### Shell integration scripts
+
+Bash gets a generated `--rcfile <temp>` that sources `~/.bashrc` then
+the bundled `haruspex.bash`. Zsh gets a `ZDOTDIR` pointing at a temp
+dir whose `.zshrc` sources the user's real `.zshrc` then the bundled
+`haruspex.zsh`. Both temp dirs are owned by the `Session` and removed
+in `Drop`. Unknown shells (fish, nu) fall back to passthrough — they
+still work as terminals; only smart-default capture is lost (selection
+still works).
+
+When debugging "the markers aren't firing":
+1. `cat /proc/<pid>/environ | tr '\0' '\n' | grep -i HSP` — is the
+   integration script's `__HSP_INTEGRATION_LOADED=1` set?
+2. Add `echo "PROMPT_COMMAND=$PROMPT_COMMAND" >&2` inside `haruspex.bash`
+   and look for `__hsp_precmd` in there.
+3. Hex-dump the PTY output buffer (briefly add `eprintln!` next to
+   `integration::ingest`) and look for `\x1b]133;` literals.
+
+### Paste action
+
+The markdown renderer emits a `Paste` button alongside Copy for any
+fenced code block tagged `bash` / `sh` / `shell`. The button dispatches
+`document.dispatchEvent(new CustomEvent('hsp-shell-paste', { detail }))`.
+`ShellTab.svelte` listens while mounted and writes the bytes to the
+PTY via `shell_write` (trailing `\n` stripped so paste never
+auto-executes), then focuses the terminal. The button is hidden via
+`body:not(.shell-tab-active) .paste-btn { display: none }` outside the
+Shell tab.
+
+### Resource bundling
+
+`tauri.conf.json` ships `resources/shell-integration/*` so the
+integration scripts are available alongside the AppImage / .deb / .rpm
+artifacts. The resolver in `shell/mod.rs::integration_dir` tries the
+bundled layout, then a dev fallback that points at the source tree.
+
+---
+
 ## 12. Conventions (the rules to internalize)
 
 - **Conventional Commits required** — release-please parses every commit

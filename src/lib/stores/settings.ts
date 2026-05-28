@@ -185,6 +185,19 @@ export interface AppSettings {
 	inferenceBackend: InferenceBackendConfig;
 	integrations: IntegrationsConfig;
 	proxy: ProxyConfig;
+	/**
+	 * Optional path to the shell binary the Shell tab launches. Empty
+	 * string means "auto-detect from $SHELL with /bin/bash fallback"
+	 * (the Rust side's default). Lets power users pin nu, fish, or a
+	 * non-default install path.
+	 */
+	shellBinary: string;
+	/**
+	 * Whether the Shell-tab assistant sidebar starts open when the tab
+	 * is first opened in a session. Defaults to false — the terminal is
+	 * the primary view and the sidebar is on-demand.
+	 */
+	shellSidebarDefaultOpen: boolean;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -232,7 +245,9 @@ const defaults: AppSettings = {
 	customSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
 	integrations: defaultIntegrations,
-	proxy: defaultProxy
+	proxy: defaultProxy,
+	shellBinary: '',
+	shellSidebarDefaultOpen: false
 };
 
 function load(): AppSettings {

@@ -71,9 +71,10 @@ pub fn shell_spawn(
     state: State<'_, ShellManager>,
     cols: u16,
     rows: u16,
+    shell_override: Option<String>,
 ) -> Result<ShellSpawnResult, String> {
     let id = state.alloc_id();
-    let shell = pty::resolve_shell();
+    let shell = pty::resolve_shell_with_override(shell_override.as_deref());
     let cwd = pty::resolve_cwd();
     let integration_dir = integration_dir(&app);
     let session = Session::spawn(
