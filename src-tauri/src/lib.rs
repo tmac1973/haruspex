@@ -167,6 +167,9 @@ pub fn run() {
             shell::shell_write,
             shell::shell_resize,
             shell::shell_kill,
+            shell::shell_get_context,
+            shell::shell_get_last_command,
+            shell::shell_get_recent_history,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
