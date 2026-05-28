@@ -16,6 +16,7 @@ import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact } from '$lib/agent/tools';
 import { runAgentLoop } from '$lib/agent/loop';
 import { withInferenceSlot, type InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
+import { updateContextUsage } from '$lib/stores/context.svelte';
 import { stripToolCallArtifacts } from '$lib/markdown';
 
 export interface ShellTurnOptions {
@@ -69,6 +70,7 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 		expectsFileOutput: false,
 		visionSupported: options.visionSupported ?? true,
 		signal: options.signal,
+		onUsageUpdate: (usage) => updateContextUsage(usage, options.contextSize),
 		onToolStart: (call) => options.onToolStart?.(call),
 		onToolEnd: (call, result, thumbDataUrl, artifacts) =>
 			options.onToolEnd?.(call, result, thumbDataUrl, artifacts),
