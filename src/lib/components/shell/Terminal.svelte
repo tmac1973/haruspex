@@ -106,7 +106,14 @@
 
 	function observeResize(t: Terminal, fit: FitAddon, id: number, el: HTMLElement) {
 		const ro = new ResizeObserver(() => {
+			// When ShellTab is hidden via display:none (user switched to
+			// another tab) the host collapses to 0×0 and ResizeObserver
+			// fires. Resizing the PTY to 0×0 would clobber the terminal's
+			// dimensions — bail and let the next visible-state resize
+			// (triggered by becoming the active tab) restore the layout.
+			if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
 			fit.fit();
+			if (t.cols === 0 || t.rows === 0) return;
 			invoke('shell_resize', { sessionId: id, cols: t.cols, rows: t.rows }).catch((e) =>
 				console.error('shell_resize failed', e)
 			);

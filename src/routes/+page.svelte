@@ -6,6 +6,14 @@
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 
 	const activeTab = $derived(getActiveTab());
+
+	// Lazy-mount Shell once, then keep it alive across tab switches so the
+	// PTY survives. Chat and Jobs use the regular unmount-on-switch model
+	// — they own no live process the user expects to persist.
+	let shellEverOpened = $state(false);
+	$effect(() => {
+		if (activeTab === 'shell') shellEverOpened = true;
+	});
 </script>
 
 <div class="page-layout">
@@ -14,8 +22,11 @@
 		<ChatView />
 	{:else if activeTab === 'jobs'}
 		<JobsTab />
-	{:else}
-		<ShellTab />
+	{/if}
+	{#if shellEverOpened}
+		<div class="shell-host" class:hidden={activeTab !== 'shell'}>
+			<ShellTab />
+		</div>
 	{/if}
 </div>
 
@@ -25,5 +36,16 @@
 		flex-direction: column;
 		height: calc(100vh - 45px);
 		overflow: hidden;
+	}
+
+	.shell-host {
+		display: flex;
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.shell-host.hidden {
+		display: none;
 	}
 </style>

@@ -88,11 +88,9 @@
 			.catch((e) => console.error('shell_write (paste) failed', e));
 	}
 
+	let appliedSidebarDefault = false;
+
 	onMount(() => {
-		document.body.classList.add('shell-tab-active');
-		if (getSettings().shellSidebarDefaultOpen) {
-			setShellSidebarOpen(true);
-		}
 		window.addEventListener('click', dismissMenu);
 		document.addEventListener('hsp-shell-paste', onPasteRequest);
 		return () => {
@@ -101,6 +99,26 @@
 			document.removeEventListener('hsp-shell-paste', onPasteRequest);
 			unbindShellSession();
 		};
+	});
+
+	// Track tab activation rather than mount lifecycle. ShellTab stays
+	// mounted across tab switches (so the PTY survives), so we toggle
+	// body class / focus / sidebar-default whenever it becomes the
+	// active tab — not just on first mount.
+	$effect(() => {
+		const active = getActiveTab() === 'shell';
+		if (active) {
+			document.body.classList.add('shell-tab-active');
+			if (!appliedSidebarDefault && getSettings().shellSidebarDefaultOpen) {
+				setShellSidebarOpen(true);
+			}
+			appliedSidebarDefault = true;
+			// Wait one tick so display:none → display:flex layout has
+			// settled before xterm's textarea takes focus.
+			queueMicrotask(() => handle?.focus());
+		} else {
+			document.body.classList.remove('shell-tab-active');
+		}
 	});
 </script>
 
