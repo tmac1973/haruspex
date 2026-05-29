@@ -3,6 +3,9 @@
 	import { onMount } from 'svelte';
 	import Terminal, { type TerminalHandle } from './Terminal.svelte';
 	import ChatSidebar from './ChatSidebar.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import ModalButton from '$lib/components/ModalButton.svelte';
+	import { classifyShellRisk, type RiskMatch } from '$lib/shell/risky-commands';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import {
 		bindShellSession,
@@ -19,6 +22,7 @@
 	let hasSelection = $state(false);
 	let menu = $state<{ x: number; y: number } | null>(null);
 	let copyFeedback = $state<string | null>(null);
+	let riskyConfirm = $state<{ command: string; reasons: RiskMatch[] } | null>(null);
 
 	async function copySelectionToClipboard(): Promise<boolean> {
 		const text = handle?.getSelection() ?? '';
@@ -143,20 +147,45 @@
 	}
 
 	/**
-	 * Pastes the command, presses Enter, waits for the OSC 133 D marker
-	 * (command complete), and submits a follow-up. The auto-attach picks
-	 * up the just-run command + output, so the model gets context
-	 * without the user having to do anything else.
+	 * Run flow: paste the command, press Enter, wait for the next OSC
+	 * 133 D marker, then auto-submit a follow-up so the freshly-run
+	 * command + output get attached for the model to analyze.
+	 *
+	 * Risky patterns (sudo, rm -rf, dd of=, mkfs, curl|sh, writes under
+	 * /etc, …) route through a confirm modal first so single-click
+	 * execution can't trigger something destructive. Once confirmed
+	 * (or for non-risky commands), executeRunCommand does the actual
+	 * paste + wait + submit.
 	 *
 	 * Times out after 60 s — long-running commands (htop, watch, vim)
-	 * never finish and we don't want to hang forever. If we timeout
-	 * we drop the auto-submit silently; the user can ask manually.
+	 * never finish; we drop the auto-submit silently and the user can
+	 * ask manually.
 	 */
-	async function onRunRequest(event: Event) {
+	function onRunRequest(event: Event) {
 		const data = (event as CustomEvent<string>).detail;
 		if (typeof data !== 'string' || !handle) return;
 		const cleaned = data.replace(/[\r\n]+$/, '').trim();
 		if (!cleaned) return;
+		const risk = classifyShellRisk(cleaned);
+		if (risk.matched) {
+			riskyConfirm = { command: cleaned, reasons: risk.reasons };
+			return;
+		}
+		void executeRunCommand(cleaned);
+	}
+
+	function confirmRiskyRun() {
+		const pending = riskyConfirm;
+		riskyConfirm = null;
+		if (pending) void executeRunCommand(pending.command);
+	}
+
+	function cancelRiskyRun() {
+		riskyConfirm = null;
+	}
+
+	async function executeRunCommand(cleaned: string) {
+		if (!handle) return;
 		const before = await getMarkerCount();
 		try {
 			await invoke('shell_write', { sessionId: handle.sessionId, data: cleaned + '\n' });
@@ -233,6 +262,33 @@
 	{#if copyFeedback}
 		<div class="toast">{copyFeedback}</div>
 	{/if}
+	<Modal open={riskyConfirm !== null} labelledBy="risky-confirm-title">
+		{#if riskyConfirm}
+			<h2 id="risky-confirm-title">⚠ Run risky command?</h2>
+			<p>The assistant suggested a command that matches one or more risky patterns:</p>
+			<ul class="risk-list">
+				{#each riskyConfirm.reasons as r (r.label)}
+					<li><strong>{r.label}</strong> — {r.description}</li>
+				{/each}
+			</ul>
+			<pre class="risky-cmd">{riskyConfirm.command}</pre>
+			<p class="hint">
+				Clicking <strong>Run anyway</strong> will type this command at your shell prompt, press
+				Enter, and send the output back to the assistant for analysis. <strong>Cancel</strong> leaves
+				nothing typed.
+			</p>
+			<div class="actions-row">
+				<ModalButton variant="subtle" onclick={cancelRiskyRun}>
+					{#snippet title()}Cancel{/snippet}
+					{#snippet subtitle()}Don't run anything{/snippet}
+				</ModalButton>
+				<ModalButton variant="danger" onclick={confirmRiskyRun}>
+					{#snippet title()}Run anyway{/snippet}
+					{#snippet subtitle()}I've read the command and accept the risk{/snippet}
+				</ModalButton>
+			</div>
+		{/if}
+	</Modal>
 </div>
 
 <style>
@@ -322,5 +378,41 @@
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 		z-index: 20;
 		pointer-events: none;
+	}
+
+	.risk-list {
+		margin: 0 0 12px 0;
+		padding-left: 20px;
+		font-size: 0.85rem;
+		color: var(--text-primary);
+	}
+
+	.risk-list li {
+		margin-bottom: 4px;
+	}
+
+	.risky-cmd {
+		background: var(--code-bg);
+		color: #f87171;
+		padding: 10px 12px;
+		border-radius: 6px;
+		font-family: ui-monospace, Menlo, Monaco, 'Cascadia Mono', 'Courier New', monospace;
+		font-size: 0.85rem;
+		overflow-x: auto;
+		margin: 0 0 12px 0;
+		white-space: pre-wrap;
+		word-break: break-all;
+	}
+
+	.hint {
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		margin-bottom: 14px !important;
+	}
+
+	.actions-row {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
 	}
 </style>
