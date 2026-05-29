@@ -199,6 +199,15 @@ export interface AppSettings {
 	 */
 	shellHistoryTurnsForPrompt: number;
 	/**
+	 * Maximum size in bytes for the *output* of any single captured
+	 * shell command attached to a chat message. When a command's output
+	 * exceeds this, the middle is dropped — the head + tail of the
+	 * output stay, with a "[middle truncated — N bytes total]" marker.
+	 * Prevents one big dmesg / journalctl / log dump from blowing the
+	 * model's context. 0 disables truncation. Default 8192 (8 KiB).
+	 */
+	shellMaxBytesPerCapture: number;
+	/**
 	 * Whether the Shell-tab agent may write files anywhere on the
 	 * filesystem (fs_write_text, fs_edit_text). Disabled by default;
 	 * when off, the model only has read tools + can suggest shell
@@ -258,6 +267,7 @@ const defaults: AppSettings = {
 	proxy: defaultProxy,
 	shellBinary: '',
 	shellHistoryTurnsForPrompt: 3,
+	shellMaxBytesPerCapture: 8192,
 	shellAllowWrite: false
 };
 

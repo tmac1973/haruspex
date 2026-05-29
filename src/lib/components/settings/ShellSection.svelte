@@ -3,6 +3,7 @@
 
 	let shellBinary = $state(getSettings().shellBinary);
 	let shellHistoryTurnsForPrompt = $state(getSettings().shellHistoryTurnsForPrompt);
+	let shellMaxBytesPerCapture = $state(getSettings().shellMaxBytesPerCapture);
 	let shellAllowWrite = $state(getSettings().shellAllowWrite);
 
 	function persistBinary() {
@@ -13,6 +14,12 @@
 		const clamped = Math.max(0, Math.min(20, Math.floor(shellHistoryTurnsForPrompt)));
 		shellHistoryTurnsForPrompt = clamped;
 		updateSettings({ shellHistoryTurnsForPrompt: clamped });
+	}
+
+	function persistMaxBytes() {
+		const clamped = Math.max(0, Math.min(1_048_576, Math.floor(shellMaxBytesPerCapture)));
+		shellMaxBytesPerCapture = clamped;
+		updateSettings({ shellMaxBytesPerCapture: clamped });
 	}
 
 	function persistAllowWrite() {
@@ -73,6 +80,30 @@
 		completed commands captured from the terminal — including the command, output, exit code, and
 		cwd. Set to <code>0</code> to disable auto-attach and only send your typed question. Default
 		<code>3</code>.
+	</p>
+</section>
+
+<section class="card">
+	<h3>Max output bytes per captured command</h3>
+	<label class="row">
+		<input
+			type="number"
+			min="0"
+			max="1048576"
+			step="1024"
+			bind:value={shellMaxBytesPerCapture}
+			onblur={persistMaxBytes}
+			onkeydown={(e) => e.key === 'Enter' && persistMaxBytes()}
+		/>
+		<span>bytes (head + tail kept, middle dropped if larger)</span>
+	</label>
+	<p class="help">
+		Caps each captured command's output before it's sent to the model. Outputs over the cap keep the
+		first and last halves with a <code>[middle truncated]</code> marker in between, so one big
+		<code>dmesg</code>
+		or <code>journalctl</code> doesn't blow your whole context window. Set to <code>0</code> to
+		disable and send raw output (risky for long logs). Default
+		<code>8192</code> (8 KiB ≈ ~2K tokens).
 	</p>
 </section>
 

@@ -24,6 +24,7 @@ import { logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { buildShellSystemPrompt, type ShellSessionContext } from '$lib/shell/system-prompt';
 import { runShellTurn } from '$lib/shell/runShellTurn';
+import { truncateCapturedOutput } from '$lib/shell/truncate';
 
 interface CapturedRegion {
 	commandLine: string;
@@ -170,23 +171,34 @@ async function fetchLiveContext(): Promise<{
 	return { currentCwd: ctxRes.current_cwd, recentHistory: history };
 }
 
-function formatCapturedRegion(region: CapturedRegion): string {
+function formatCapturedRegion(region: CapturedRegion, maxBytes: number): string {
 	const cmd = region.commandLine.trim() || '(no command captured)';
-	const out = region.output.trimEnd();
+	const {
+		text: out,
+		truncated: outputTruncated,
+		originalBytes
+	} = truncateCapturedOutput(region.output.trimEnd(), maxBytes);
 	const meta = [`exit ${region.exitCode ?? '?'}`];
 	if (region.cwd) meta.push(`cwd ${region.cwd}`);
-	if (region.truncated) meta.push('truncated');
+	// Two possible truncation sources:
+	//   - region.truncated comes from the Rust output ring overflowing
+	//     (very long-running command flushed past the 1 MiB session ring)
+	//   - outputTruncated is our JS-side head+tail trim for context budget
+	if (region.truncated) meta.push('ring overflow');
+	if (outputTruncated) meta.push(`output trimmed from ${originalBytes} B`);
 	return `$ ${cmd}\n${out}\n(${meta.join(', ')})`;
 }
 
 /**
  * Render the captures as a "Recent shell activity" block in chronological
  * order (oldest first). Empty array → empty string so the caller can
- * just concatenate.
+ * just concatenate. Each region's output is independently capped at
+ * `maxBytesPerCapture` bytes — one huge dmesg doesn't poison the
+ * smaller commands that ran alongside it.
  */
-function formatRecentCommands(regions: CapturedRegion[]): string {
+function formatRecentCommands(regions: CapturedRegion[], maxBytesPerCapture: number): string {
 	if (regions.length === 0) return '';
-	const blocks = regions.map(formatCapturedRegion).join('\n\n');
+	const blocks = regions.map((r) => formatCapturedRegion(r, maxBytesPerCapture)).join('\n\n');
 	return `Recent shell activity (oldest first):\n\n${blocks}\n\n---\n\n`;
 }
 
@@ -206,7 +218,8 @@ export async function submitChatMessage(text: string): Promise<void> {
 	const live = await fetchLiveContext();
 	if (!live) return;
 
-	const limit = Math.max(0, getSettings().shellHistoryTurnsForPrompt);
+	const settings = getSettings();
+	const limit = Math.max(0, settings.shellHistoryTurnsForPrompt);
 	const recent =
 		limit > 0
 			? await invoke<CapturedRegion[]>('shell_get_recent_commands', {
@@ -214,7 +227,8 @@ export async function submitChatMessage(text: string): Promise<void> {
 					limit
 				})
 			: [];
-	const body = `${formatRecentCommands(recent)}${trimmed}`;
+	const maxBytesPerCapture = Math.max(0, settings.shellMaxBytesPerCapture);
+	const body = `${formatRecentCommands(recent, maxBytesPerCapture)}${trimmed}`;
 
 	await submitShell({
 		body,
