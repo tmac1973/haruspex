@@ -8,6 +8,7 @@
 	import {
 		bindShellComposer,
 		cancelShellTurn,
+		getShellIntegrationCompletedCommands,
 		getShellIntegrationMarkerCount,
 		getShellLastError,
 		getShellMessages,
@@ -34,6 +35,30 @@
 	const searchSteps = $derived(getShellSearchSteps());
 	const messageSteps = $derived(getShellMessageSteps());
 	const markerCount = $derived(getShellIntegrationMarkerCount());
+	const completedCommands = $derived(getShellIntegrationCompletedCommands());
+	// Three-state badge:
+	//   - red "no integration"    : marker_count is 0 → hook didn't load
+	//   - amber "no captures yet"  : markers exist but no B→C→D cycles → user
+	//                                hasn't run anything in this session yet
+	//   - green "N captures"       : completed commands are available; the
+	//                                auto-attach will include them
+	const integrationState = $derived<'red' | 'amber' | 'green'>(
+		markerCount === 0 ? 'red' : completedCommands === 0 ? 'amber' : 'green'
+	);
+	const integrationLabel = $derived(
+		integrationState === 'red'
+			? '● no integration'
+			: integrationState === 'amber'
+				? '● no captures yet'
+				: `● ${completedCommands} capture${completedCommands === 1 ? '' : 's'}`
+	);
+	const integrationTooltip = $derived(
+		integrationState === 'red'
+			? 'Shell integration NOT detected. Right-click the terminal and pick Restart shell, then run a command. If that still shows 0, the bash hook script is not loading.'
+			: integrationState === 'amber'
+				? 'OSC 133 hook is loaded but no commands have completed in this session yet. Run something in the terminal — the auto-attach uses completed B→C→D cycles, not just the prompt redraws.'
+				: `${completedCommands} completed command${completedCommands === 1 ? '' : 's'} available — the auto-attach will include up to ${completedCommands < 10 ? completedCommands : 10} of them in your next message (configurable in Settings → Shell).`
+	);
 	// Refresh the status while the sidebar is open so the badge tracks
 	// captures as the user runs commands. 2 s is enough to feel live
 	// without thrashing the Tauri IPC.
@@ -147,13 +172,12 @@
 			<div class="actions">
 				<span
 					class="integration-badge"
-					class:bad={markerCount === 0}
-					class:good={markerCount > 0}
-					title={markerCount > 0
-						? `Shell integration loaded: ${markerCount} OSC 133 markers seen so far`
-						: 'Shell integration NOT detected. Right-click the terminal and pick Restart shell, then run a command. If that still shows 0, the bash hook script is not loading.'}
+					class:bad={integrationState === 'red'}
+					class:warn={integrationState === 'amber'}
+					class:good={integrationState === 'green'}
+					title={integrationTooltip}
 				>
-					{markerCount > 0 ? '● integration ok' : '● integration ?'}
+					{integrationLabel}
 				</span>
 				<button onclick={newShellChat} disabled={submitting} title="Clear chat">New chat</button>
 				<button onclick={toggleShellSidebar} title="Collapse">›</button>
@@ -293,6 +317,12 @@
 		color: #4ade80;
 		border-color: color-mix(in srgb, #4ade80 35%, transparent);
 		background: color-mix(in srgb, #4ade80 10%, transparent);
+	}
+
+	.integration-badge.warn {
+		color: #f59e0b;
+		border-color: color-mix(in srgb, #f59e0b 35%, transparent);
+		background: color-mix(in srgb, #f59e0b 10%, transparent);
 	}
 
 	.integration-badge.bad {

@@ -38,6 +38,7 @@ interface ShellContextResponse {
 	context: ShellSessionContext;
 	current_cwd: string | null;
 	marker_count: number;
+	completed_commands: number;
 }
 
 export interface ShellSubmission {
@@ -63,6 +64,7 @@ let composerFocused = $state(false);
 let searchSteps = $state<SearchStep[]>([]);
 let messageSteps = $state<Record<number, SearchStep[]>>({});
 let integrationMarkerCount = $state(0);
+let integrationCompletedCommands = $state(0);
 let abortController: AbortController | null = null;
 let activeSession: ActiveShellSession | null = null;
 let composerFocusFn: (() => void) | null = null;
@@ -111,14 +113,20 @@ export function getShellIntegrationMarkerCount(): number {
 	return integrationMarkerCount;
 }
 
+export function getShellIntegrationCompletedCommands(): number {
+	return integrationCompletedCommands;
+}
+
 /**
- * Poll the active session's marker count so the sidebar badge can show
- * whether OSC 133 markers are actually firing. Cheap (single Tauri call,
- * no Rust-side work beyond a vec length).
+ * Poll the active session's marker / capture counts so the sidebar
+ * badge can show whether OSC 133 is firing AND whether the user has
+ * actually completed commands the auto-attach can grab. Cheap (single
+ * Tauri call, no Rust-side work beyond two vec scans).
  */
 export async function refreshShellIntegrationStatus(): Promise<void> {
 	if (!activeSession) {
 		integrationMarkerCount = 0;
+		integrationCompletedCommands = 0;
 		return;
 	}
 	try {
@@ -126,8 +134,10 @@ export async function refreshShellIntegrationStatus(): Promise<void> {
 			sessionId: activeSession.sessionId
 		});
 		integrationMarkerCount = res.marker_count;
+		integrationCompletedCommands = res.completed_commands;
 	} catch {
 		integrationMarkerCount = 0;
+		integrationCompletedCommands = 0;
 	}
 }
 
@@ -136,12 +146,14 @@ export function bindShellSession(session: ActiveShellSession): void {
 	// Snapshot integration status right away so the sidebar badge
 	// reflects the new PTY (zero markers after a restart, etc.).
 	integrationMarkerCount = 0;
+	integrationCompletedCommands = 0;
 	void refreshShellIntegrationStatus();
 }
 
 export function unbindShellSession(): void {
 	activeSession = null;
 	integrationMarkerCount = 0;
+	integrationCompletedCommands = 0;
 }
 
 /**

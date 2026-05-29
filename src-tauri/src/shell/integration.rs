@@ -232,6 +232,42 @@ impl Integration {
         self.markers.iter()
     }
 
+    /// How many fully completed B→C→D cycles we could currently capture
+    /// if `capture_recent_commands(usize::MAX)` were called. This is the
+    /// "number of completed commands the auto-attach has to work with" —
+    /// distinct from the raw marker count, which also includes A+B
+    /// pairs from prompt redraws that never followed a command.
+    pub fn completed_command_count(&self) -> usize {
+        // Walk D markers backwards, count one for each that has a
+        // matching C and B before it in the ring.
+        let markers: Vec<&Marker> = self.markers.iter().collect();
+        let mut count = 0;
+        let mut search_end = markers.len();
+        loop {
+            let Some(d_offset) = markers[..search_end]
+                .iter()
+                .rposition(|m| m.kind == MarkerKind::OutputEnd)
+            else {
+                break;
+            };
+            let Some(c_offset) = markers[..d_offset]
+                .iter()
+                .rposition(|m| m.kind == MarkerKind::OutputStart)
+            else {
+                break;
+            };
+            let Some(b_offset) = markers[..c_offset]
+                .iter()
+                .rposition(|m| m.kind == MarkerKind::CommandStart)
+            else {
+                break;
+            };
+            count += 1;
+            search_end = b_offset;
+        }
+        count
+    }
+
     /// Returns bytes in [start, end) sliced from the output ring, or
     /// None if the requested range fell off the front.
     fn slice_output(&self, start: u64, end: u64) -> Option<Vec<u8>> {

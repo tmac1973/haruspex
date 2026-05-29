@@ -185,6 +185,13 @@ pub struct ShellContextResponse {
     /// 0 means the shell-integration script almost certainly didn't
     /// load — the badge in the sidebar surfaces this to the user.
     pub marker_count: usize,
+    /// Number of complete B→C→D cycles available to the auto-attach.
+    /// Distinct from marker_count because A+B pairs (prompt redraws
+    /// without a following command) inflate marker_count but don't
+    /// contribute to captures. When this is 0 but marker_count > 0,
+    /// the integration is loaded but the user hasn't run anything
+    /// yet in this session — the badge calls that out.
+    pub completed_commands: usize,
 }
 
 #[tauri::command]
@@ -200,6 +207,7 @@ pub fn shell_get_context(
         context: session.context.clone(),
         current_cwd: session.current_cwd(),
         marker_count: session.marker_count(),
+        completed_commands: session.completed_command_count(),
     })
 }
 

@@ -153,6 +153,13 @@ impl Session {
             .unwrap_or(0)
     }
 
+    pub fn completed_command_count(&self) -> usize {
+        self.integration
+            .lock()
+            .map(|i| i.completed_command_count())
+            .unwrap_or(0)
+    }
+
     pub fn current_cwd(&self) -> Option<String> {
         self.integration
             .lock()
