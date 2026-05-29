@@ -17,6 +17,8 @@
 
 use std::collections::VecDeque;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use serde::Serialize;
 
 pub const DEFAULT_OUTPUT_CAPACITY: usize = 1 << 20; // 1 MiB
@@ -40,6 +42,11 @@ pub struct Marker {
     pub seq_end: u64,
     pub exit_code: Option<i32>,
     pub cwd: Option<String>,
+    /// For `C` markers, the command line as bash/zsh reported it via
+    /// the `cl=<base64>` attribute. Only set when the shell hook is
+    /// new enough to emit it; otherwise capture falls back to slicing
+    /// the bytes the terminal echoed between B and C.
+    pub command_line: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -197,7 +204,13 @@ impl Integration {
             _ => return,
         };
         let exit_code = if matches!(kind, MarkerKind::OutputEnd) {
+            // D payload is just the exit code (no `;` further).
             data.parse::<i32>().ok()
+        } else {
+            None
+        };
+        let command_line = if matches!(kind, MarkerKind::OutputStart) {
+            decode_cl_attribute(data)
         } else {
             None
         };
@@ -207,6 +220,7 @@ impl Integration {
             seq_end,
             exit_code,
             cwd: self.current_cwd.clone(),
+            command_line,
         });
     }
 
@@ -339,12 +353,27 @@ impl Integration {
             };
             let b = markers[b_offset];
 
-            let cmd_bytes = self.slice_output(b.seq_end, c.seq_start);
             let out_bytes = self.slice_output(c.seq_end, d.seq_start);
-            let truncated = cmd_bytes.is_none() || out_bytes.is_none();
+            // Prefer the command line the shell hook reported via `cl=`
+            // on the C marker — it's the exact text bash/zsh executed
+            // and isn't subject to terminal-echo distortion (backspace,
+            // history navigation, inline autosuggestions). Fall back to
+            // slicing the byte stream for older hook versions or other
+            // integrations.
+            let (command_line, cmd_truncated) = if let Some(cl) = c.command_line.as_ref() {
+                (cl.clone(), false)
+            } else {
+                let cmd_bytes = self.slice_output(b.seq_end, c.seq_start);
+                let truncated = cmd_bytes.is_none();
+                (
+                    bytes_to_clean_text(cmd_bytes.as_deref().unwrap_or(&[])),
+                    truncated,
+                )
+            };
+            let truncated = cmd_truncated || out_bytes.is_none();
 
             regions.push(CapturedRegion {
-                command_line: bytes_to_clean_text(cmd_bytes.as_deref().unwrap_or(&[])),
+                command_line,
                 output: bytes_to_clean_text(out_bytes.as_deref().unwrap_or(&[])),
                 exit_code: d.exit_code,
                 cwd: d
@@ -373,6 +402,20 @@ impl Default for Integration {
 fn bytes_to_clean_text(bytes: &[u8]) -> String {
     let text = String::from_utf8_lossy(bytes);
     strip_ansi(&text)
+}
+
+/// Parse a `133;C` payload that may carry a `cl=<base64>` attribute
+/// (other attributes separated by `;` are ignored). Returns the decoded
+/// UTF-8 command line, or None when no `cl=` is present or decoding
+/// fails.
+fn decode_cl_attribute(data: &str) -> Option<String> {
+    for attr in data.split(';') {
+        if let Some(b64) = attr.strip_prefix("cl=") {
+            let bytes = BASE64.decode(b64).ok()?;
+            return Some(String::from_utf8_lossy(&bytes).into_owned());
+        }
+    }
+    None
 }
 
 fn strip_ansi(s: &str) -> String {
@@ -588,5 +631,46 @@ mod tests {
         let mut integ = Integration::new();
         run_cycle(&mut integ, "ls", "a\n", 0);
         assert!(integ.capture_recent_commands(0).is_empty());
+    }
+
+    #[test]
+    fn c_marker_cl_attribute_overrides_byte_slice() {
+        // Simulates the new bash hook: the user typed `cd plate` then
+        // backspaced "te" then typed "nets" — the terminal echo bytes
+        // contain stray characters, but the cl= attribute carries the
+        // actual command bash executed.
+        let mut integ = Integration::new();
+        let cmd_b64 = BASE64.encode("cd planets");
+        let payload = format!(
+            "\x1B]133;A\x07$ \x1B]133;B\x07cd plate\x08 \x08\x08 \x08nets\n\x1B]133;C;cl={}\x07\x1B]133;D;0\x07",
+            cmd_b64
+        );
+        integ.ingest(payload.as_bytes());
+        let cap = integ.capture_last_command().unwrap();
+        assert_eq!(cap.command_line, "cd planets");
+        assert!(!cap.truncated);
+    }
+
+    #[test]
+    fn c_marker_without_cl_attribute_falls_back_to_byte_slice() {
+        // Older hook versions / non-bash integrations emit plain
+        // 133;C with no attributes. Capture should still work.
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07echo hi\n\x1B]133;C\x07hi\n\x1B]133;D;0\x07");
+        let cap = integ.capture_last_command().unwrap();
+        assert_eq!(cap.command_line.trim(), "echo hi");
+    }
+
+    #[test]
+    fn d_marker_pairs_with_post_command_cwd() {
+        // Hook ordering: OSC 7 fires before D, so D should be stamped
+        // with the new cwd, not the previous one.
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]7;file://localhost/home/tim\x07");
+        integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07cd projects\n\x1B]133;C\x07");
+        // emit cwd then D, matching the new precmd ordering
+        integ.ingest(b"\x1B]7;file://localhost/home/tim/projects\x07\x1B]133;D;0\x07");
+        let cap = integ.capture_last_command().unwrap();
+        assert_eq!(cap.cwd.as_deref(), Some("/home/tim/projects"));
     }
 }
