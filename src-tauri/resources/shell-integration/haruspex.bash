@@ -26,9 +26,17 @@ __hsp_precmd() {
     # If we just finished running a user command, emit D.
     if [[ -n "$__hsp_in_command" ]]; then
         __hsp_command_done
-        __hsp_in_command=""
     fi
     __hsp_emit_cwd
+    # IMPORTANT: clear the flag LAST, after emit_cwd. The DEBUG trap
+    # fires before every simple command — including the ones inside
+    # this function. If we clear the flag before emit_cwd, the trap
+    # sees in_command="" and emits a spurious C marker, then sets the
+    # flag back to "1". That spurious flag-set then suppresses the C
+    # for the user's next command, breaking the B → C → D cycle. The
+    # fix is to keep in_command set through the entire precmd body so
+    # every DEBUG firing inside it is correctly suppressed.
+    __hsp_in_command=""
 }
 
 __hsp_preexec() {
