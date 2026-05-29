@@ -4,15 +4,13 @@
 	import Terminal, { type TerminalHandle } from './Terminal.svelte';
 	import ChatSidebar from './ChatSidebar.svelte';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
-	import { getSettings } from '$lib/stores/settings';
 	import {
 		bindShellSession,
 		focusShellComposer,
 		getShellSidebarOpen,
 		isShellComposerFocused,
-		isShellSubmitting,
 		setShellSidebarOpen,
-		submitFromTerminal,
+		toggleShellSidebar,
 		unbindShellSession
 	} from '$lib/stores/shell.svelte';
 
@@ -49,8 +47,6 @@
 		}
 	}
 
-	const submitting = $derived(isShellSubmitting());
-
 	function onTerminalReady(h: TerminalHandle) {
 		handle = h;
 		bindShellSession({
@@ -62,13 +58,13 @@
 
 	type Shortcut = { match: (e: KeyboardEvent) => boolean; run: () => void };
 
-	// F1 submit, Ctrl+` focus swap, Ctrl+Shift+C copy, Ctrl+Shift+V paste.
-	// Standard terminal-emulator conventions: plain Ctrl+C stays as
-	// SIGINT for bash; Ctrl+backtick is unused in readline.
+	// F1 toggle sidebar, Ctrl+` focus swap, Ctrl+Shift+C copy,
+	// Ctrl+Shift+V paste. Plain Ctrl+C stays as SIGINT for bash;
+	// Ctrl+backtick is unused in readline.
 	const shortcuts: Shortcut[] = [
 		{
 			match: (e) => e.key === 'F1' && !e.ctrlKey && !e.shiftKey && !e.altKey,
-			run: submitFromTerminal
+			run: toggleShellSidebar
 		},
 		{
 			match: (e) => e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'Backquote',
@@ -129,8 +125,6 @@
 			.catch((e) => console.error('shell_write (paste) failed', e));
 	}
 
-	let appliedSidebarDefault = false;
-
 	onMount(() => {
 		window.addEventListener('click', dismissMenu);
 		document.addEventListener('hsp-shell-paste', onPasteRequest);
@@ -144,18 +138,12 @@
 
 	// Track tab activation rather than mount lifecycle. ShellTab stays
 	// mounted across tab switches (so the PTY survives), so we toggle
-	// body class / focus / sidebar-default whenever it becomes the
-	// active tab — not just on first mount.
+	// body class / focus whenever it becomes the active tab — not just
+	// on first mount.
 	$effect(() => {
 		const active = getActiveTab() === 'shell';
 		if (active) {
 			document.body.classList.add('shell-tab-active');
-			if (!appliedSidebarDefault && getSettings().shellSidebarDefaultOpen) {
-				setShellSidebarOpen(true);
-			}
-			appliedSidebarDefault = true;
-			// Wait one tick so display:none → display:flex layout has
-			// settled before xterm's textarea takes focus.
 			queueMicrotask(() => handle?.focus());
 		} else {
 			document.body.classList.remove('shell-tab-active');
@@ -167,22 +155,6 @@
 
 <div class="shell-tab" oncontextmenu={onContextMenu} role="presentation">
 	<div class="terminal-region">
-		<div class="toolbar">
-			<button
-				class="primary"
-				onclick={submitFromTerminal}
-				disabled={!handle || submitting}
-				title="Submit to LLM (F1) — F2 hold-to-talk, F3 read aloud, Ctrl+` swap focus"
-			>
-				{#if submitting}
-					Working…
-				{:else if hasSelection}
-					Submit selection
-				{:else}
-					Submit last command
-				{/if}
-			</button>
-		</div>
 		<div class="terminal-pane">
 			<Terminal onReady={onTerminalReady} onSelectionChange={(has) => (hasSelection = has)} />
 		</div>
@@ -195,10 +167,6 @@
 			</button>
 			<button onclick={pasteFromClipboard}>
 				Paste<span class="kbd">Ctrl+Shift+V</span>
-			</button>
-			<hr />
-			<button onclick={submitFromTerminal}>
-				Send to LLM<span class="kbd">F1</span>
 			</button>
 		</div>
 	{/if}
@@ -223,41 +191,6 @@
 		flex: 1 1 auto;
 		min-width: 0;
 		min-height: 0;
-	}
-
-	.toolbar {
-		display: flex;
-		gap: 6px;
-		padding: 6px 8px;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg-primary);
-		flex-shrink: 0;
-	}
-
-	.toolbar button {
-		appearance: none;
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-		border: 1px solid var(--border);
-		padding: 4px 12px;
-		font-size: 0.8rem;
-		border-radius: 4px;
-		cursor: pointer;
-	}
-
-	.toolbar button:hover:not(:disabled) {
-		background: var(--bg-tertiary, var(--bg-secondary));
-	}
-
-	.toolbar button:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.toolbar button.primary {
-		background: var(--accent);
-		color: white;
-		border-color: var(--accent);
 	}
 
 	.terminal-pane {
@@ -307,12 +240,6 @@
 		font-size: 0.7rem;
 		color: var(--text-secondary);
 		font-family: ui-monospace, Menlo, Monaco, 'Cascadia Mono', monospace;
-	}
-
-	.context-menu hr {
-		margin: 4px 0;
-		border: 0;
-		border-top: 1px solid var(--border);
 	}
 
 	.toast {

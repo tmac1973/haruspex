@@ -166,6 +166,19 @@ pub fn shell_get_last_command(
 }
 
 #[tauri::command]
+pub fn shell_get_recent_commands(
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+    limit: usize,
+) -> Result<Vec<CapturedRegion>, String> {
+    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or_else(|| "shell session not found".to_string())?;
+    Ok(session.capture_recent_commands(limit))
+}
+
+#[tauri::command]
 pub fn shell_get_recent_history(
     state: State<'_, ShellManager>,
     session_id: SessionId,

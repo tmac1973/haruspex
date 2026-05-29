@@ -103,8 +103,8 @@
 		<div class="thread" bind:this={threadEl}>
 			{#if messages.length === 0 && !streamingMessage}
 				<div class="placeholder">
-					Run a command, then click <strong>Submit to LLM</strong> in the terminal toolbar (or type a
-					question below) to start a troubleshooting thread.
+					Type a question or hold <kbd>F2</kbd> to speak. Your last few shell commands and their output
+					are attached automatically — number configurable in Settings → Shell.
 				</div>
 			{/if}
 			{#each messages as msg, i (i)}
@@ -142,7 +142,7 @@
 				onkeydown={onComposerKeydown}
 				onfocus={() => setShellComposerFocused(true)}
 				onblur={() => setShellComposerFocused(false)}
-				placeholder="Ask a follow-up… (Enter to send, Shift+Enter for newline, Ctrl+` to switch back to the shell)"
+				placeholder="Ask the assistant… (Enter to send, Shift+Enter for newline, Ctrl+` switch to shell)"
 				rows="1"
 				disabled={submitting}
 			></textarea>

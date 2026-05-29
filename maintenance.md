@@ -516,6 +516,7 @@ src/lib/stores/shell.svelte.ts
 - `shell_kill(session_id)` — also fired by `ShellManager::shutdown_all` on app exit
 - `shell_get_context(session_id)` → `{ context, current_cwd }`
 - `shell_get_last_command(session_id)` → captured last command + output
+- `shell_get_recent_commands(session_id, limit)` → up to N most recent completed B→C→D cycles in chronological order, used by `submitChatMessage` to auto-attach context
 - `shell_get_recent_history(session_id, limit)` → bash/zsh/fish history
 
 ### Adding a risky pattern
@@ -559,7 +560,7 @@ tab is active and which child element has focus:
 
 | Key | Action                                                 | Notes                                                    |
 | --- | ------------------------------------------------------ | -------------------------------------------------------- |
-| F1  | Submit last command / selection (Shell tab only)       | Handled inside `ShellTab.svelte` so other tabs ignore.   |
+| F1  | Toggle assistant sidebar (Shell tab only)              | Handled inside `ShellTab.svelte` via `toggleShellSidebar`. |
 | F2  | Hold to record; release transcribes + sends            | Routes the text to `submitChatMessage` (Shell) or `sendMessage` (Chat) based on `getActiveTab()`. |
 | F3  | Toggle read-aloud of the most recent assistant message | Reads the active tab's last assistant turn via `toggleTts`. |
 

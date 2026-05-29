@@ -2,15 +2,17 @@
 	import { getSettings, updateSettings } from '$lib/stores/settings';
 
 	let shellBinary = $state(getSettings().shellBinary);
-	let shellSidebarDefaultOpen = $state(getSettings().shellSidebarDefaultOpen);
+	let shellHistoryTurnsForPrompt = $state(getSettings().shellHistoryTurnsForPrompt);
 	let shellAllowWrite = $state(getSettings().shellAllowWrite);
 
 	function persistBinary() {
 		updateSettings({ shellBinary: shellBinary.trim() });
 	}
 
-	function persistSidebarDefault() {
-		updateSettings({ shellSidebarDefaultOpen });
+	function persistHistoryTurns() {
+		const clamped = Math.max(0, Math.min(20, Math.floor(shellHistoryTurnsForPrompt)));
+		shellHistoryTurnsForPrompt = clamped;
+		updateSettings({ shellHistoryTurnsForPrompt: clamped });
 	}
 
 	function persistAllowWrite() {
@@ -54,18 +56,23 @@
 </section>
 
 <section class="card">
-	<h3>Assistant sidebar</h3>
+	<h3>Recent shell commands attached to each chat message</h3>
 	<label class="row">
 		<input
-			type="checkbox"
-			bind:checked={shellSidebarDefaultOpen}
-			onchange={persistSidebarDefault}
+			type="number"
+			min="0"
+			max="20"
+			bind:value={shellHistoryTurnsForPrompt}
+			onblur={persistHistoryTurns}
+			onkeydown={(e) => e.key === 'Enter' && persistHistoryTurns()}
 		/>
-		<span>Open the assistant sidebar by default when opening the Shell tab</span>
+		<span>commands (and their output) included automatically</span>
 	</label>
 	<p class="help">
-		When off (default), the sidebar stays collapsed to a thin rail until you click it open or click
-		Submit to LLM in the terminal toolbar.
+		Every message you send from the Shell tab's assistant composer is prefixed with the last N
+		completed commands captured from the terminal — including the command, output, exit code, and
+		cwd. Set to <code>0</code> to disable auto-attach and only send your typed question. Default
+		<code>3</code>.
 	</p>
 </section>
 
@@ -123,6 +130,21 @@
 	}
 
 	input[type='text']:focus {
+		border-color: var(--accent);
+	}
+
+	input[type='number'] {
+		width: 70px;
+		padding: 6px 8px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		font-size: 0.9rem;
+		outline: none;
+	}
+
+	input[type='number']:focus {
 		border-color: var(--accent);
 	}
 

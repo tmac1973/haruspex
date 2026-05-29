@@ -179,51 +179,22 @@ function formatCapturedRegion(region: CapturedRegion): string {
 	return `$ ${cmd}\n${out}\n(${meta.join(', ')})`;
 }
 
-function formatSelectionBody(text: string, cwd: string | null): string {
-	const header = cwd ? `(cwd ${cwd})\n` : '';
-	return `${header}${text}`;
-}
-
 /**
- * Submit the smart-default capture: highlighted selection wins,
- * otherwise the most recent completed command + its output.
+ * Render the captures as a "Recent shell activity" block in chronological
+ * order (oldest first). Empty array → empty string so the caller can
+ * just concatenate.
  */
-export async function submitFromTerminal(): Promise<void> {
-	if (!activeSession || isSubmitting) return;
-	const selection = activeSession.getSelection().trim();
-	const live = await fetchLiveContext();
-	if (!live) return;
-	let body: string;
-	let cwd: string | null = live.currentCwd;
-
-	if (selection) {
-		body = formatSelectionBody(selection, cwd);
-	} else {
-		const region = await invoke<CapturedRegion | null>('shell_get_last_command', {
-			sessionId: activeSession.sessionId
-		});
-		if (!region) {
-			sidebarOpen = true;
-			lastError =
-				'No completed command captured yet. Run a command at the prompt, then submit again — or drag-select text to submit a specific range.';
-			return;
-		}
-		body = formatCapturedRegion(region);
-		cwd = region.cwd ?? cwd;
-	}
-
-	await submitShell({
-		body,
-		sessionContext: activeSession.context,
-		currentCwd: cwd,
-		recentHistory: live.recentHistory
-	});
+function formatRecentCommands(regions: CapturedRegion[]): string {
+	if (regions.length === 0) return '';
+	const blocks = regions.map(formatCapturedRegion).join('\n\n');
+	return `Recent shell activity (oldest first):\n\n${blocks}\n\n---\n\n`;
 }
 
 /**
- * Submit a free-form chat message (typed in the sidebar's composer).
- * Same context-refresh as `submitFromTerminal`; the only difference
- * is the body is just the user's text.
+ * Submit a chat message from the sidebar composer. The user's text is
+ * automatically prefixed with the last N captured commands (N from
+ * settings.shellHistoryTurnsForPrompt) so the agent has fresh context
+ * without the user having to copy-paste anything.
  */
 export async function submitChatMessage(text: string): Promise<void> {
 	const trimmed = text.trim();
@@ -234,8 +205,19 @@ export async function submitChatMessage(text: string): Promise<void> {
 	}
 	const live = await fetchLiveContext();
 	if (!live) return;
+
+	const limit = Math.max(0, getSettings().shellHistoryTurnsForPrompt);
+	const recent =
+		limit > 0
+			? await invoke<CapturedRegion[]>('shell_get_recent_commands', {
+					sessionId: activeSession.sessionId,
+					limit
+				})
+			: [];
+	const body = `${formatRecentCommands(recent)}${trimmed}`;
+
 	await submitShell({
-		body: trimmed,
+		body,
 		sessionContext: activeSession.context,
 		currentCwd: live.currentCwd,
 		recentHistory: live.recentHistory

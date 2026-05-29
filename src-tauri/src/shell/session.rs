@@ -139,6 +139,13 @@ impl Session {
         self.integration.lock().ok()?.capture_last_command()
     }
 
+    pub fn capture_recent_commands(&self, limit: usize) -> Vec<CapturedRegion> {
+        self.integration
+            .lock()
+            .map(|i| i.capture_recent_commands(limit))
+            .unwrap_or_default()
+    }
+
     pub fn current_cwd(&self) -> Option<String> {
         self.integration
             .lock()

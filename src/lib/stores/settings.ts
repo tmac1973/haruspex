@@ -193,11 +193,11 @@ export interface AppSettings {
 	 */
 	shellBinary: string;
 	/**
-	 * Whether the Shell-tab assistant sidebar starts open when the tab
-	 * is first opened in a session. Defaults to false — the terminal is
-	 * the primary view and the sidebar is on-demand.
+	 * How many of the most-recent completed shell commands (and their
+	 * output) to attach automatically to every chat message sent from
+	 * the Shell-tab sidebar. 0 disables auto-attach. Default 3.
 	 */
-	shellSidebarDefaultOpen: boolean;
+	shellHistoryTurnsForPrompt: number;
 	/**
 	 * Whether the Shell-tab agent may write files anywhere on the
 	 * filesystem (fs_write_text, fs_edit_text). Disabled by default;
@@ -257,7 +257,7 @@ const defaults: AppSettings = {
 	integrations: defaultIntegrations,
 	proxy: defaultProxy,
 	shellBinary: '',
-	shellSidebarDefaultOpen: false,
+	shellHistoryTurnsForPrompt: 3,
 	shellAllowWrite: false
 };
 

@@ -258,7 +258,10 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("does not exist"), "got: {err}");
-        assert!(err.contains("Do not retry"), "expected 'Do not retry' hint: {err}");
+        assert!(
+            err.contains("Do not retry"),
+            "expected 'Do not retry' hint: {err}"
+        );
         assert!(
             err.contains("fs_list_dir") || err.contains("fs_write_text"),
             "expected pivot suggestion: {err}"
@@ -272,7 +275,10 @@ mod tests {
             err.contains("not a regular file") || err.contains("directory"),
             "got: {err}"
         );
-        assert!(err.contains("fs_list_dir"), "expected fs_list_dir pivot: {err}");
+        assert!(
+            err.contains("fs_list_dir"),
+            "expected fs_list_dir pivot: {err}"
+        );
     }
 
     #[tokio::test]

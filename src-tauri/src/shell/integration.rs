@@ -265,40 +265,64 @@ impl Integration {
     }
 
     /// Find the most recent completed command cycle in the marker ring.
-    /// Looks for the pattern ...B...C...D scanning backwards.
     pub fn capture_last_command(&self) -> Option<CapturedRegion> {
+        self.capture_recent_commands(1).into_iter().next_back()
+    }
+
+    /// Walk the marker ring backwards collecting up to `limit` complete
+    /// B → C → D cycles. Returns them in chronological order (oldest
+    /// first) so the caller can render them as a transcript without
+    /// reversing.
+    pub fn capture_recent_commands(&self, limit: usize) -> Vec<CapturedRegion> {
+        if limit == 0 {
+            return Vec::new();
+        }
         let markers: Vec<&Marker> = self.markers.iter().collect();
-        let (d_idx, d) = markers
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, m)| m.kind == MarkerKind::OutputEnd)?;
-        let (_, c) = markers[..d_idx]
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, m)| m.kind == MarkerKind::OutputStart)?;
-        let (_, b) = markers[..d_idx]
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, m)| m.kind == MarkerKind::CommandStart)?;
+        let mut regions: Vec<CapturedRegion> = Vec::new();
+        let mut search_end = markers.len();
+        while regions.len() < limit {
+            let Some(d_offset) = markers[..search_end]
+                .iter()
+                .rposition(|m| m.kind == MarkerKind::OutputEnd)
+            else {
+                break;
+            };
+            let d = markers[d_offset];
+            let Some(c_offset) = markers[..d_offset]
+                .iter()
+                .rposition(|m| m.kind == MarkerKind::OutputStart)
+            else {
+                break;
+            };
+            let c = markers[c_offset];
+            let Some(b_offset) = markers[..c_offset]
+                .iter()
+                .rposition(|m| m.kind == MarkerKind::CommandStart)
+            else {
+                break;
+            };
+            let b = markers[b_offset];
 
-        let cmd_bytes = self.slice_output(b.seq_end, c.seq_start);
-        let out_bytes = self.slice_output(c.seq_end, d.seq_start);
-        let truncated = cmd_bytes.is_none() || out_bytes.is_none();
+            let cmd_bytes = self.slice_output(b.seq_end, c.seq_start);
+            let out_bytes = self.slice_output(c.seq_end, d.seq_start);
+            let truncated = cmd_bytes.is_none() || out_bytes.is_none();
 
-        Some(CapturedRegion {
-            command_line: bytes_to_clean_text(cmd_bytes.as_deref().unwrap_or(&[])),
-            output: bytes_to_clean_text(out_bytes.as_deref().unwrap_or(&[])),
-            exit_code: d.exit_code,
-            cwd: d
-                .cwd
-                .clone()
-                .or_else(|| c.cwd.clone())
-                .or_else(|| b.cwd.clone()),
-            truncated,
-        })
+            regions.push(CapturedRegion {
+                command_line: bytes_to_clean_text(cmd_bytes.as_deref().unwrap_or(&[])),
+                output: bytes_to_clean_text(out_bytes.as_deref().unwrap_or(&[])),
+                exit_code: d.exit_code,
+                cwd: d
+                    .cwd
+                    .clone()
+                    .or_else(|| c.cwd.clone())
+                    .or_else(|| b.cwd.clone()),
+                truncated,
+            });
+
+            search_end = b_offset;
+        }
+        regions.reverse();
+        regions
     }
 }
 
@@ -485,5 +509,48 @@ mod tests {
         integ.ingest(b"\x1B]133;B\x07cmd\n\x1B]133;C\x07line1\r\nline2\r\n\x1B]133;D;0\x07");
         let cap = integ.capture_last_command().unwrap();
         assert_eq!(cap.output, "line1\nline2\n");
+    }
+
+    fn run_cycle(integ: &mut Integration, cmd: &str, out: &str, exit: u8) {
+        integ.ingest(b"\x1B]133;A\x07prompt$ \x1B]133;B\x07");
+        integ.ingest(cmd.as_bytes());
+        integ.ingest(b"\n\x1B]133;C\x07");
+        integ.ingest(out.as_bytes());
+        integ.ingest(format!("\x1B]133;D;{}\x07", exit).as_bytes());
+    }
+
+    #[test]
+    fn capture_recent_commands_returns_oldest_first() {
+        let mut integ = Integration::new();
+        run_cycle(&mut integ, "ls", "a b c\n", 0);
+        run_cycle(&mut integ, "echo hi", "hi\n", 0);
+        run_cycle(&mut integ, "false", "", 1);
+
+        let three = integ.capture_recent_commands(3);
+        assert_eq!(three.len(), 3);
+        assert_eq!(three[0].command_line.trim(), "ls");
+        assert_eq!(three[1].command_line.trim(), "echo hi");
+        assert_eq!(three[2].command_line.trim(), "false");
+        assert_eq!(three[2].exit_code, Some(1));
+    }
+
+    #[test]
+    fn capture_recent_commands_caps_at_limit() {
+        let mut integ = Integration::new();
+        for i in 0..5 {
+            run_cycle(&mut integ, &format!("cmd{}", i), "ok\n", 0);
+        }
+        let two = integ.capture_recent_commands(2);
+        assert_eq!(two.len(), 2);
+        // Most recent two should be cmd3 and cmd4 in chronological order.
+        assert_eq!(two[0].command_line.trim(), "cmd3");
+        assert_eq!(two[1].command_line.trim(), "cmd4");
+    }
+
+    #[test]
+    fn capture_recent_commands_zero_limit_is_empty() {
+        let mut integ = Integration::new();
+        run_cycle(&mut integ, "ls", "a\n", 0);
+        assert!(integ.capture_recent_commands(0).is_empty());
     }
 }
