@@ -4,7 +4,44 @@
 	import MicButton from '$lib/components/MicButton.svelte';
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
+	import { messageText, type ChatMessage as ChatMessageType } from '$lib/api';
 	import { getSettings, updateSettings } from '$lib/stores/settings';
+
+	const SHELL_PREAMBLE_MARKER = 'Recent shell activity (oldest first):';
+	const SHELL_PREAMBLE_SEP = '\n\n---\n\n';
+
+	interface SplitMessage {
+		preamble: string | null;
+		question: string;
+	}
+
+	function splitShellPreamble(content: string): SplitMessage {
+		if (!content.startsWith(SHELL_PREAMBLE_MARKER)) {
+			return { preamble: null, question: content };
+		}
+		const sepIdx = content.indexOf(SHELL_PREAMBLE_SEP);
+		if (sepIdx < 0) {
+			return { preamble: null, question: content };
+		}
+		return {
+			preamble: content.slice(0, sepIdx),
+			question: content.slice(sepIdx + SHELL_PREAMBLE_SEP.length)
+		};
+	}
+
+	function userMessageView(msg: ChatMessageType): SplitMessage {
+		return splitShellPreamble(messageText(msg.content));
+	}
+
+	function preambleSummary(preamble: string): string {
+		const lines = preamble.split('\n').length;
+		// Count "$ " command lines as a proxy for how many shell commands
+		// landed in the preamble — shows up nicer than raw lines.
+		const cmdLines = preamble.split('\n').filter((l) => l.startsWith('$ ')).length;
+		return cmdLines > 0
+			? `Attached: ${cmdLines} shell command${cmdLines === 1 ? '' : 's'} (${lines} lines)`
+			: `Attached: ${lines} lines of shell context`;
+	}
 	import {
 		bindShellComposer,
 		cancelShellTurn,
@@ -194,7 +231,20 @@
 				{#if msg.role === 'assistant' && messageSteps[i]?.length}
 					<SearchStepComponent steps={messageSteps[i]} />
 				{/if}
-				<ChatMessage message={msg} />
+				{#if msg.role === 'user'}
+					{@const split = userMessageView(msg)}
+					{#if split.preamble}
+						<details class="shell-preamble">
+							<summary>{preambleSummary(split.preamble)}</summary>
+							<pre>{split.preamble}</pre>
+						</details>
+						<ChatMessage message={{ ...msg, content: split.question }} />
+					{:else}
+						<ChatMessage message={msg} />
+					{/if}
+				{:else}
+					<ChatMessage message={msg} />
+				{/if}
 			{/each}
 			{#if searchSteps.length > 0}
 				<SearchStepComponent steps={searchSteps} />
@@ -371,6 +421,56 @@
 		color: var(--text-secondary);
 		font-style: italic;
 		padding: 8px 4px;
+	}
+
+	.shell-preamble {
+		margin: 6px 0 2px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-secondary);
+		font-size: 0.78rem;
+	}
+
+	.shell-preamble summary {
+		padding: 6px 10px;
+		cursor: pointer;
+		color: var(--text-secondary);
+		user-select: none;
+		list-style: none;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.shell-preamble summary::before {
+		content: '▸';
+		display: inline-block;
+		transition: transform 0.12s ease;
+		color: var(--text-secondary);
+		font-size: 0.7rem;
+	}
+
+	.shell-preamble[open] summary::before {
+		transform: rotate(90deg);
+	}
+
+	.shell-preamble summary:hover {
+		color: var(--text-primary);
+	}
+
+	.shell-preamble pre {
+		margin: 0;
+		padding: 8px 12px 10px;
+		border-top: 1px solid var(--border);
+		font-family: ui-monospace, Menlo, Monaco, 'Cascadia Mono', 'Courier New', monospace;
+		font-size: 0.75rem;
+		line-height: 1.4;
+		color: var(--text-primary);
+		overflow-x: auto;
+		white-space: pre-wrap;
+		word-break: break-word;
+		max-height: 360px;
+		overflow-y: auto;
 	}
 
 	.error {
