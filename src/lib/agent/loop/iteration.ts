@@ -325,18 +325,8 @@ export async function runIteration(
 		ctx.pendingImages.length = 0;
 	}
 
-	// Non-streaming request to check for tool calls. Pass
-	// structuredOutput so the sampler picks the lower-variance "coding"
-	// profile — tool-deciding iterations need to emit a structurally
-	// valid <tool_call> block (or a clean final answer), not creative
-	// prose. The general profile's temperature 1.0 makes structural
-	// tokens like </think> and <tool_call> easy to mis-sample under Q4
-	// quantization; the coding profile's 0.6 leaves enough margin for
-	// them to win consistently.
-	const sampling = getSamplingParams({
-		codeContext: isCodeContext(messages),
-		structuredOutput: true
-	});
+	// Non-streaming request to check for tool calls.
+	const sampling = getSamplingParams({ codeContext: isCodeContext(messages) });
 	const templateKwargs = getChatTemplateKwargs();
 	const callStartMs = Date.now();
 	const response = await chatCompletion(

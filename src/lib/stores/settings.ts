@@ -560,25 +560,13 @@ export interface SamplingOptions {
 	 * model family's coding profile when available.
 	 */
 	codeContext?: boolean;
-	/**
-	 * True when the next completion is a tool-deciding iteration in the
-	 * agent loop — i.e. the model needs to emit a structurally valid
-	 * `<tool_call>...</tool_call>` block or a final answer, not creative
-	 * prose. The general profile (temperature 1.0) makes structural
-	 * tokens like `</think>` and `<tool_call>` only marginally preferred
-	 * over neighbours; under heavy quantization (Q4_K_M) the model
-	 * sometimes picks the wrong one and the parser sees a malformed
-	 * call. The coding profile (temperature 0.6) widens that margin
-	 * enough to make the correct structural choice stable.
-	 */
-	structuredOutput?: boolean;
 }
 
 export function getSamplingParams(opts: SamplingOptions = {}): SamplingParams {
 	const family = getActiveModelFamily();
 	const profiles = SAMPLING_PROFILES[family] ?? SAMPLING_PROFILES[DEFAULT_FAMILY];
 	const mode = settings.thinkingEnabled ? profiles.thinking : profiles.nonThinking;
-	return opts.codeContext || opts.structuredOutput ? mode.coding : mode.general;
+	return opts.codeContext ? mode.coding : mode.general;
 }
 
 export function getResponseFormatPrompt(): string {
