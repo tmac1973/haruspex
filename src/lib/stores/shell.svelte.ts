@@ -37,6 +37,7 @@ interface CapturedRegion {
 interface ShellContextResponse {
 	context: ShellSessionContext;
 	current_cwd: string | null;
+	marker_count: number;
 }
 
 export interface ShellSubmission {
@@ -61,6 +62,7 @@ let lastError = $state<string | null>(null);
 let composerFocused = $state(false);
 let searchSteps = $state<SearchStep[]>([]);
 let messageSteps = $state<Record<number, SearchStep[]>>({});
+let integrationMarkerCount = $state(0);
 let abortController: AbortController | null = null;
 let activeSession: ActiveShellSession | null = null;
 let composerFocusFn: (() => void) | null = null;
@@ -105,12 +107,41 @@ export function getShellMessageSteps(): Record<number, SearchStep[]> {
 	return messageSteps;
 }
 
+export function getShellIntegrationMarkerCount(): number {
+	return integrationMarkerCount;
+}
+
+/**
+ * Poll the active session's marker count so the sidebar badge can show
+ * whether OSC 133 markers are actually firing. Cheap (single Tauri call,
+ * no Rust-side work beyond a vec length).
+ */
+export async function refreshShellIntegrationStatus(): Promise<void> {
+	if (!activeSession) {
+		integrationMarkerCount = 0;
+		return;
+	}
+	try {
+		const res = await invoke<ShellContextResponse>('shell_get_context', {
+			sessionId: activeSession.sessionId
+		});
+		integrationMarkerCount = res.marker_count;
+	} catch {
+		integrationMarkerCount = 0;
+	}
+}
+
 export function bindShellSession(session: ActiveShellSession): void {
 	activeSession = session;
+	// Snapshot integration status right away so the sidebar badge
+	// reflects the new PTY (zero markers after a restart, etc.).
+	integrationMarkerCount = 0;
+	void refreshShellIntegrationStatus();
 }
 
 export function unbindShellSession(): void {
 	activeSession = null;
+	integrationMarkerCount = 0;
 }
 
 /**

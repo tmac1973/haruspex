@@ -36,6 +36,7 @@
 		context: SessionContext;
 		getSelection: () => string;
 		focus: () => void;
+		restart: () => Promise<void>;
 	}
 
 	const { onReady, onSelectionChange }: Props = $props();
@@ -130,6 +131,67 @@
 		return ro;
 	}
 
+	function buildHandle(context: SessionContext): TerminalHandle {
+		return {
+			get sessionId() {
+				return sessionId ?? -1;
+			},
+			context,
+			getSelection: () => term?.getSelection() ?? '',
+			focus: () => term?.focus(),
+			restart: () => restart()
+		};
+	}
+
+	async function attachSession(
+		t: Terminal,
+		fit: FitAddon,
+		newSessionId: number,
+		context: SessionContext
+	) {
+		sessionId = newSessionId;
+		[unlistenOutput, unlistenExit] = await wirePtyEvents(t, newSessionId);
+		// Closures reference the outer `sessionId` variable, not a
+		// captured copy — so after restart() bumps it, keystrokes and
+		// resizes flow to the new PTY.
+		t.onData((data) => {
+			if (sessionId == null) return;
+			invoke('shell_write', { sessionId, data }).catch((e) =>
+				console.error('shell_write failed', e)
+			);
+		});
+		t.onSelectionChange(() => onSelectionChange?.(t.hasSelection()));
+		resizeObserver = observeResize(t, fit, newSessionId, container);
+		t.focus();
+		onReady?.(buildHandle(context));
+	}
+
+	async function restart() {
+		if (!term || sessionId == null) return;
+		const oldId = sessionId;
+		// Tear down listeners + observer; we'll re-attach below.
+		unlistenOutput?.();
+		unlistenOutput = null;
+		unlistenExit?.();
+		unlistenExit = null;
+		resizeObserver?.disconnect();
+		resizeObserver = null;
+		// Clear the visible state so the user sees a fresh prompt.
+		term.reset();
+
+		const shellOverride = getSettings().shellBinary.trim() || null;
+		const fit = new FitAddon();
+		// Reuse the existing terminal; xterm holds onto its own resize
+		// addon from createTerminal. We only need a fresh observer.
+		const spawn = await invoke<SpawnResult>('shell_restart', {
+			sessionId: oldId,
+			cols: term.cols,
+			rows: term.rows,
+			shellOverride
+		});
+		await attachSession(term, fit, spawn.session_id, spawn.context);
+	}
+
 	onMount(() => {
 		let cancelled = false;
 
@@ -151,33 +213,15 @@
 				rows: t.rows,
 				shellOverride
 			});
-			sessionId = spawn.session_id;
 
 			if (cancelled) {
-				await invoke('shell_kill', { sessionId }).catch(() => {});
+				await invoke('shell_kill', { sessionId: spawn.session_id }).catch(() => {});
 				t.dispose();
 				term = null;
 				return;
 			}
 
-			[unlistenOutput, unlistenExit] = await wirePtyEvents(t, spawn.session_id);
-
-			t.onData((data) =>
-				invoke('shell_write', { sessionId: spawn.session_id, data }).catch((e) =>
-					console.error('shell_write failed', e)
-				)
-			);
-			t.onSelectionChange(() => onSelectionChange?.(t.hasSelection()));
-
-			resizeObserver = observeResize(t, fit, spawn.session_id, container);
-			t.focus();
-
-			onReady?.({
-				sessionId: spawn.session_id,
-				context: spawn.context,
-				getSelection: () => term?.getSelection() ?? '',
-				focus: () => term?.focus()
-			});
+			await attachSession(t, fit, spawn.session_id, spawn.context);
 		})().catch((e) => console.error('terminal init failed', e));
 
 		return () => {

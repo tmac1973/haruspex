@@ -168,6 +168,8 @@
 			<button onclick={pasteFromClipboard}>
 				Paste<span class="kbd">Ctrl+Shift+V</span>
 			</button>
+			<hr />
+			<button onclick={() => handle?.restart()} disabled={!handle}> Restart shell </button>
 		</div>
 	{/if}
 	{#if copyFeedback}
@@ -240,6 +242,12 @@
 		font-size: 0.7rem;
 		color: var(--text-secondary);
 		font-family: ui-monospace, Menlo, Monaco, 'Cascadia Mono', monospace;
+	}
+
+	.context-menu hr {
+		margin: 4px 0;
+		border: 0;
+		border-top: 1px solid var(--border);
 	}
 
 	.toast {

@@ -7,6 +7,7 @@
 	import {
 		bindShellComposer,
 		cancelShellTurn,
+		getShellIntegrationMarkerCount,
 		getShellLastError,
 		getShellMessages,
 		getShellMessageSteps,
@@ -16,6 +17,7 @@
 		getShellTicket,
 		isShellSubmitting,
 		newShellChat,
+		refreshShellIntegrationStatus,
 		setShellComposerFocused,
 		submitChatMessage,
 		toggleShellSidebar,
@@ -30,6 +32,15 @@
 	const lastError = $derived(getShellLastError());
 	const searchSteps = $derived(getShellSearchSteps());
 	const messageSteps = $derived(getShellMessageSteps());
+	const markerCount = $derived(getShellIntegrationMarkerCount());
+	// Refresh the status while the sidebar is open so the badge tracks
+	// captures as the user runs commands. 2 s is enough to feel live
+	// without thrashing the Tauri IPC.
+	$effect(() => {
+		if (!open) return;
+		const id = setInterval(() => void refreshShellIntegrationStatus(), 2000);
+		return () => clearInterval(id);
+	});
 
 	let composerText = $state('');
 	let composerEl = $state<HTMLTextAreaElement | null>(null);
@@ -96,6 +107,16 @@
 		<header>
 			<h3>Assistant</h3>
 			<div class="actions">
+				<span
+					class="integration-badge"
+					class:bad={markerCount === 0}
+					class:good={markerCount > 0}
+					title={markerCount > 0
+						? `Shell integration loaded: ${markerCount} OSC 133 markers seen so far`
+						: 'Shell integration NOT detected. Right-click the terminal and pick Restart shell, then run a command. If that still shows 0, the bash hook script is not loading.'}
+				>
+					{markerCount > 0 ? '● integration ok' : '● integration ?'}
+				</span>
 				<button onclick={newShellChat} disabled={submitting} title="Clear chat">New chat</button>
 				<button onclick={toggleShellSidebar} title="Collapse">›</button>
 			</div>
@@ -200,7 +221,29 @@
 
 	.actions {
 		display: flex;
-		gap: 4px;
+		gap: 6px;
+		align-items: center;
+	}
+
+	.integration-badge {
+		font-size: 0.7rem;
+		font-family: ui-monospace, Menlo, Monaco, 'Cascadia Mono', monospace;
+		padding: 2px 6px;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		cursor: help;
+	}
+
+	.integration-badge.good {
+		color: #4ade80;
+		border-color: color-mix(in srgb, #4ade80 35%, transparent);
+		background: color-mix(in srgb, #4ade80 10%, transparent);
+	}
+
+	.integration-badge.bad {
+		color: var(--error-text, #c66);
+		border-color: color-mix(in srgb, var(--error-text, #c66) 35%, transparent);
+		background: color-mix(in srgb, var(--error-text, #c66) 10%, transparent);
 	}
 
 	.actions button {

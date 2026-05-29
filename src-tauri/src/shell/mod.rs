@@ -132,10 +132,59 @@ pub fn shell_kill(state: State<'_, ShellManager>, session_id: SessionId) -> Resu
     Ok(())
 }
 
+/// Kill the given session and start a fresh one with the same id-namespace
+/// allocator. Returns the new session id + freshly captured context (so a
+/// kernel/distro upgrade since the last spawn picks up here too) the same
+/// way shell_spawn does. Used by the "Restart shell" UI affordance — also
+/// the recovery path when the integration script gets updated and the user
+/// needs a new bash session to source it.
+#[tauri::command]
+pub fn shell_restart(
+    app: AppHandle,
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+    cols: u16,
+    rows: u16,
+    shell_override: Option<String>,
+) -> Result<ShellSpawnResult, String> {
+    // Drop the old session (its Drop impl kills the PTY + cleans tempdirs).
+    {
+        let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+        sessions.remove(&session_id);
+    }
+    let new_id = state.alloc_id();
+    let shell = pty::resolve_shell_with_override(shell_override.as_deref());
+    let cwd = pty::resolve_cwd();
+    let integration_dir = integration_dir(&app);
+    let session = Session::spawn(
+        app,
+        new_id,
+        &shell,
+        &cwd,
+        integration_dir.as_deref(),
+        cols,
+        rows,
+    )?;
+    let context = session.context.clone();
+    state
+        .sessions
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(new_id, session);
+    Ok(ShellSpawnResult {
+        session_id: new_id,
+        context,
+    })
+}
+
 #[derive(Serialize)]
 pub struct ShellContextResponse {
     pub context: SessionContext,
     pub current_cwd: Option<String>,
+    /// Number of OSC 133 markers seen in the session ring so far.
+    /// 0 means the shell-integration script almost certainly didn't
+    /// load — the badge in the sidebar surfaces this to the user.
+    pub marker_count: usize,
 }
 
 #[tauri::command]
@@ -150,6 +199,7 @@ pub fn shell_get_context(
     Ok(ShellContextResponse {
         context: session.context.clone(),
         current_cwd: session.current_cwd(),
+        marker_count: session.marker_count(),
     })
 }
 

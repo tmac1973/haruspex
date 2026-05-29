@@ -146,6 +146,13 @@ impl Session {
             .unwrap_or_default()
     }
 
+    pub fn marker_count(&self) -> usize {
+        self.integration
+            .lock()
+            .map(|i| i.markers().count())
+            .unwrap_or(0)
+    }
+
     pub fn current_cwd(&self) -> Option<String> {
         self.integration
             .lock()
