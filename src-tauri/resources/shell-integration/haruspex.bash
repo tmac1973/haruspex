@@ -58,13 +58,24 @@ __hsp_preexec() {
     # command bash is about to run.
     local cmd=${BASH_COMMAND:-}
     # DEBUG fires before every simple command, including those inside
-    # PROMPT_COMMAND itself. Suppress those by checking the FUNCNAME
-    # stack — if any of our own functions is on the call chain, we're
-    # being invoked from inside precmd and should NOT emit a C marker.
+    # PROMPT_COMMAND. We need to suppress all of those — otherwise a
+    # spurious C lands between the real user command's C and the
+    # upcoming D, and the D ends up paired with the wrong C.
     #
-    # FUNCNAME[0] is "__hsp_preexec" itself (skip), so we check [1+].
-    # This is more robust than a manual flag because a bash error
-    # inside precmd that bypasses the flag-clear can't strand us.
+    # Two-layer guard:
+    #
+    # 1) BASH_COMMAND itself starts with `__hsp_`. This catches the
+    #    DEBUG firing for the *call* to one of our own functions
+    #    (e.g. PROMPT_COMMAND='__hsp_precmd' fires DEBUG with
+    #    BASH_COMMAND="__hsp_precmd" *before* the function is entered,
+    #    so FUNCNAME doesn't have it on the stack yet).
+    #
+    # 2) Our function is already on the FUNCNAME stack. This catches
+    #    simple commands *inside* our own functions — printf calls in
+    #    emit_cwd / command_done, etc.
+    case "$cmd" in
+        __hsp_*) return ;;
+    esac
     local f
     for f in "${FUNCNAME[@]:1}"; do
         case "$f" in
