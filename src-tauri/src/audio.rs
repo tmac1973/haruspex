@@ -60,43 +60,43 @@ fn enumerate_input_devices() -> Result<Vec<cpal::Device>, String> {
     })
 }
 
-/// Pick an input device by user-configured name. When the name is empty
-/// or "System Default", picks the host's default-named device from the
-/// freshly enumerated list (rather than going through cpal's cached
-/// `default_input_device()`, which is the hot-swap footgun).
+/// Returns the host's system default input device, wrapped in
+/// catch_unwind. On Linux this is libasound's "default" PCM which
+/// routes through ~/.asoundrc to PulseAudio/PipeWire — i.e. the
+/// device the user actually thinks of as "my mic." We deliberately
+/// keep this path because the enumerated-name list contains raw
+/// ALSA devices (sysdefault:CARD=PCH, hw:CARD=…, etc.) that mostly
+/// don't carry a real signal.
+fn host_default_input_device() -> Result<cpal::Device, String> {
+    safe_cpal("default_input_device", || {
+        let host = cpal::default_host();
+        host.default_input_device()
+            .ok_or_else(|| format!("No default input device found.{}", HOT_SWAP_HINT))
+    })
+}
+
+/// Pick an input device by user-configured name. Empty / "System Default"
+/// goes through cpal's `default_input_device()` (the only thing that
+/// reliably hits the user's real mic on Linux). Specific names are
+/// looked up via fresh enumeration so a hot-swap doesn't strand us
+/// on a stale handle. Both paths are wrapped in catch_unwind.
 fn find_input_device_by_name(name: &str) -> Result<cpal::Device, String> {
-    let devices = enumerate_input_devices()?;
-    if devices.is_empty() {
-        return Err(format!("No audio input devices found.{}", HOT_SWAP_HINT));
-    }
-
     if name.is_empty() || name == "System Default" {
-        // Try the host's default-named device first; otherwise fall
-        // back to the first enumerated device.
-        for d in &devices {
-            if device_name(d) == "default" {
-                return Ok(d.clone());
-            }
-        }
-        return Ok(devices.into_iter().next().unwrap());
+        return host_default_input_device();
     }
 
+    let devices = enumerate_input_devices()?;
     for device in &devices {
         if device_name(device) == name {
             return Ok(device.clone());
         }
     }
     warn!(
-        "Input device '{}' not found in {} enumerated devices, falling back to default",
+        "Input device '{}' not found in {} enumerated devices, falling back to host default",
         name,
         devices.len()
     );
-    for d in &devices {
-        if device_name(d) == "default" {
-            return Ok(d.clone());
-        }
-    }
-    Ok(devices.into_iter().next().unwrap())
+    host_default_input_device()
 }
 
 pub struct AudioRecorder {
