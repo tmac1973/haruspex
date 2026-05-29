@@ -240,9 +240,9 @@
 
 <svelte:window onkeydown={onKeyDown} />
 
-<div class="shell-tab" oncontextmenu={onContextMenu} role="presentation">
+<div class="shell-tab" role="presentation">
 	<div class="terminal-region">
-		<div class="terminal-pane">
+		<div class="terminal-pane" oncontextmenu={onContextMenu} role="presentation">
 			<Terminal onReady={onTerminalReady} onSelectionChange={(has) => (hasSelection = has)} />
 		</div>
 	</div>

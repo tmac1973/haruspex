@@ -9,9 +9,9 @@ if [[ -n "${__HSP_INTEGRATION_LOADED:-}" ]]; then
 fi
 __HSP_INTEGRATION_LOADED=1
 
-# Flag: set while we're between preexec and precmd (i.e. user's command
-# is running). Used to suppress DEBUG-trap output marker emission during
-# PROMPT_COMMAND's own simple commands.
+# Flag set by preexec, cleared by precmd. Used by precmd to know
+# whether a real user command actually ran (vs an empty Enter on a
+# prompt, where DEBUG doesn't fire).
 __hsp_in_command=""
 __hsp_last_status=0
 
@@ -23,30 +23,37 @@ __hsp_emit_cwd()      { printf '\033]7;file://%s%s\007' "${HOSTNAME:-localhost}"
 
 __hsp_precmd() {
     __hsp_last_status=$?
-    # If we just finished running a user command, emit D.
     if [[ -n "$__hsp_in_command" ]]; then
         __hsp_command_done
+        __hsp_in_command=""
     fi
     __hsp_emit_cwd
-    # IMPORTANT: clear the flag LAST, after emit_cwd. The DEBUG trap
-    # fires before every simple command — including the ones inside
-    # this function. If we clear the flag before emit_cwd, the trap
-    # sees in_command="" and emits a spurious C marker, then sets the
-    # flag back to "1". That spurious flag-set then suppresses the C
-    # for the user's next command, breaking the B → C → D cycle. The
-    # fix is to keep in_command set through the entire precmd body so
-    # every DEBUG firing inside it is correctly suppressed.
-    __hsp_in_command=""
 }
 
 __hsp_preexec() {
-    # DEBUG fires before every simple command. We only care about the
-    # first one that runs after a prompt is displayed (the user's
-    # command). Subsequent firings during PROMPT_COMMAND are gated by
-    # the __hsp_in_command flag.
-    if [[ -n "$__hsp_in_command" ]]; then
-        return
-    fi
+    # DEBUG fires before every simple command, including those inside
+    # PROMPT_COMMAND itself. Suppress those by checking the FUNCNAME
+    # stack — if any of our own functions is on the call chain, we're
+    # being invoked from inside precmd and should NOT emit a C marker.
+    #
+    # FUNCNAME[0] is "__hsp_preexec" itself (skip), so we check [1+].
+    # This is more robust than a manual flag because a bash error
+    # inside precmd that bypasses the flag-clear can't strand us.
+    local f
+    for f in "${FUNCNAME[@]:1}"; do
+        case "$f" in
+            __hsp_precmd|__hsp_command_done|__hsp_emit_cwd|__hsp_prompt_start|__hsp_prompt_end|__hsp_output_start)
+                return
+                ;;
+        esac
+    done
+    # Multi-statement input on a single Enter (`cmd1; cmd2` or a
+    # multi-line paste) fires DEBUG for each statement. We want a C
+    # marker for each so the host can capture them as separate
+    # B → C → D cycles for as long as PROMPT_COMMAND fires between
+    # them. (For a single multi-statement input, PROMPT_COMMAND only
+    # fires once at the very end — that case is inherently captured
+    # as one cycle with the first statement's text as the "command".)
     __hsp_in_command=1
     __hsp_output_start
 }
