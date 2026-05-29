@@ -208,6 +208,12 @@ export interface AppSettings {
 	 */
 	shellMaxBytesPerCapture: number;
 	/**
+	 * Width in pixels of the Shell-tab assistant sidebar. Persisted so
+	 * dragging the resize handle survives restarts. Clamped 320..most
+	 * of the viewport at apply time.
+	 */
+	shellSidebarWidth: number;
+	/**
 	 * Whether the Shell-tab agent may write files anywhere on the
 	 * filesystem (fs_write_text, fs_edit_text). Disabled by default;
 	 * when off, the model only has read tools + can suggest shell
@@ -268,6 +274,7 @@ const defaults: AppSettings = {
 	shellBinary: '',
 	shellHistoryTurnsForPrompt: 3,
 	shellMaxBytesPerCapture: 8192,
+	shellSidebarWidth: 480,
 	shellAllowWrite: false
 };
 

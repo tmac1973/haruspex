@@ -10,6 +10,7 @@
 		getShellSidebarOpen,
 		isShellComposerFocused,
 		setShellSidebarOpen,
+		submitChatMessage,
 		toggleShellSidebar,
 		unbindShellSession
 	} from '$lib/stores/shell.svelte';
@@ -125,13 +126,70 @@
 			.catch((e) => console.error('shell_write (paste) failed', e));
 	}
 
+	interface ShellContextSnapshot {
+		marker_count: number;
+	}
+
+	async function getMarkerCount(): Promise<number> {
+		if (!handle) return 0;
+		try {
+			const res = await invoke<ShellContextSnapshot>('shell_get_context', {
+				sessionId: handle.sessionId
+			});
+			return res.marker_count;
+		} catch {
+			return 0;
+		}
+	}
+
+	/**
+	 * Pastes the command, presses Enter, waits for the OSC 133 D marker
+	 * (command complete), and submits a follow-up. The auto-attach picks
+	 * up the just-run command + output, so the model gets context
+	 * without the user having to do anything else.
+	 *
+	 * Times out after 60 s — long-running commands (htop, watch, vim)
+	 * never finish and we don't want to hang forever. If we timeout
+	 * we drop the auto-submit silently; the user can ask manually.
+	 */
+	async function onRunRequest(event: Event) {
+		const data = (event as CustomEvent<string>).detail;
+		if (typeof data !== 'string' || !handle) return;
+		const cleaned = data.replace(/[\r\n]+$/, '').trim();
+		if (!cleaned) return;
+		const before = await getMarkerCount();
+		try {
+			await invoke('shell_write', { sessionId: handle.sessionId, data: cleaned + '\n' });
+			handle.focus();
+		} catch (e) {
+			console.error('shell_write (run) failed', e);
+			return;
+		}
+		// Poll for the D marker. Each complete cycle adds 4 markers
+		// (A, B, C, D), but conservatively we wait for at least 2 new
+		// markers since C+D arrives during the command and the new A+B
+		// land once the prompt redraws.
+		const startedAt = Date.now();
+		const timeoutMs = 60_000;
+		const pollMs = 400;
+		while (Date.now() - startedAt < timeoutMs) {
+			await new Promise((r) => setTimeout(r, pollMs));
+			const now = await getMarkerCount();
+			if (now >= before + 2) break;
+		}
+		if (Date.now() - startedAt >= timeoutMs) return;
+		await submitChatMessage(`Please analyze the output of \`${cleaned}\` that I just ran.`);
+	}
+
 	onMount(() => {
 		window.addEventListener('click', dismissMenu);
 		document.addEventListener('hsp-shell-paste', onPasteRequest);
+		document.addEventListener('hsp-shell-run', onRunRequest);
 		return () => {
 			document.body.classList.remove('shell-tab-active');
 			window.removeEventListener('click', dismissMenu);
 			document.removeEventListener('hsp-shell-paste', onPasteRequest);
+			document.removeEventListener('hsp-shell-run', onRunRequest);
 			unbindShellSession();
 		};
 	});

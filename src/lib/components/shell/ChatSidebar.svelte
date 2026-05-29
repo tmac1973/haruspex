@@ -4,6 +4,7 @@
 	import MicButton from '$lib/components/MicButton.svelte';
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
+	import { getSettings, updateSettings } from '$lib/stores/settings';
 	import {
 		bindShellComposer,
 		cancelShellTurn,
@@ -45,6 +46,37 @@
 	let composerText = $state('');
 	let composerEl = $state<HTMLTextAreaElement | null>(null);
 	let threadEl = $state<HTMLDivElement | null>(null);
+	let sidebarWidth = $state(getSettings().shellSidebarWidth);
+
+	const MIN_WIDTH = 320;
+	function maxWidth(): number {
+		// Leave at least 320 px for the terminal so the user can still
+		// see what they're typing while the sidebar is dragged wide.
+		return Math.max(MIN_WIDTH, window.innerWidth - 320);
+	}
+
+	function startResize(event: MouseEvent) {
+		event.preventDefault();
+		const startX = event.clientX;
+		const startWidth = sidebarWidth;
+		document.body.style.cursor = 'col-resize';
+		document.body.style.userSelect = 'none';
+
+		function onMove(e: MouseEvent) {
+			// Sidebar is on the right; dragging the handle left widens it.
+			const delta = startX - e.clientX;
+			sidebarWidth = Math.max(MIN_WIDTH, Math.min(maxWidth(), startWidth + delta));
+		}
+		function onUp() {
+			window.removeEventListener('mousemove', onMove);
+			window.removeEventListener('mouseup', onUp);
+			document.body.style.cursor = '';
+			document.body.style.userSelect = '';
+			updateSettings({ shellSidebarWidth: sidebarWidth });
+		}
+		window.addEventListener('mousemove', onMove);
+		window.addEventListener('mouseup', onUp);
+	}
 
 	const streamingMessage = $derived(
 		streaming
@@ -103,7 +135,13 @@
 </script>
 
 {#if open}
-	<aside class="sidebar" aria-label="LLM troubleshooting assistant">
+	<aside class="sidebar" style="width: {sidebarWidth}px" aria-label="LLM troubleshooting assistant">
+		<button
+			class="resize-handle"
+			onmousedown={startResize}
+			aria-label="Drag to resize sidebar"
+			title="Drag to resize"
+		></button>
 		<header>
 			<h3>Assistant</h3>
 			<div class="actions">
@@ -194,15 +232,32 @@
 
 <style>
 	.sidebar {
+		position: relative;
 		display: flex;
 		flex-direction: column;
-		width: 33%;
 		min-width: 320px;
-		max-width: 560px;
 		border-left: 1px solid var(--border);
 		background: var(--bg-primary);
 		flex-shrink: 0;
 		min-height: 0;
+	}
+
+	.resize-handle {
+		position: absolute;
+		left: -3px;
+		top: 0;
+		bottom: 0;
+		width: 6px;
+		background: transparent;
+		border: 0;
+		cursor: col-resize;
+		z-index: 5;
+		padding: 0;
+	}
+
+	.resize-handle:hover,
+	.resize-handle:active {
+		background: color-mix(in srgb, var(--accent) 40%, transparent);
 	}
 
 	.sidebar header {

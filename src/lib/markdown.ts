@@ -43,11 +43,12 @@ function renderShellHeaderExtras(text: string): string {
 				.join('')
 		: '';
 	// Inline onclick dispatches a CustomEvent the Shell tab listens for.
-	// Outside the Shell tab the .paste-btn is hidden via the
-	// body:not(.shell-tab-active) CSS rule, so this is dead UI in chat
-	// or jobs context.
-	const pasteBtn = `<button class="paste-btn" onclick="document.dispatchEvent(new CustomEvent('hsp-shell-paste', { detail: this.closest('.code-block').querySelector('code').textContent }))" title="Paste into the shell prompt">Paste</button>`;
-	return `${chips}${pasteBtn}`;
+	// Outside the Shell tab the .paste-btn / .run-btn are hidden via
+	// the body:not(.shell-tab-active) CSS rule, so this is dead UI in
+	// chat or jobs context.
+	const pasteBtn = `<button class="paste-btn" onclick="document.dispatchEvent(new CustomEvent('hsp-shell-paste', { detail: this.closest('.code-block').querySelector('code').textContent }))" title="Type the command at the shell prompt — does NOT press Enter">Paste</button>`;
+	const runBtn = `<button class="run-btn" onclick="document.dispatchEvent(new CustomEvent('hsp-shell-run', { detail: this.closest('.code-block').querySelector('code').textContent }))" title="Paste, press Enter, then send the command's output back to the assistant for analysis">Run</button>`;
+	return `${chips}${pasteBtn}${runBtn}`;
 }
 
 const marked = new Marked({

@@ -418,7 +418,8 @@
 		background: color-mix(in srgb, #c44 12%, transparent);
 	}
 
-	:global(.paste-btn) {
+	:global(.paste-btn),
+	:global(.run-btn) {
 		background: none;
 		border: 1px solid var(--accent);
 		color: var(--accent);
@@ -428,14 +429,26 @@
 		cursor: pointer;
 	}
 
-	:global(.paste-btn:hover) {
+	:global(.paste-btn:hover),
+	:global(.run-btn:hover) {
 		background: color-mix(in srgb, var(--accent) 14%, transparent);
 	}
 
-	/* Paste-into-shell is meaningless outside the Shell tab. Hide the
-	   button so a stray bash code block in chat or jobs doesn't promise
-	   something it can't deliver. ShellTab toggles this body class. */
-	:global(body:not(.shell-tab-active) .paste-btn) {
+	:global(.run-btn) {
+		background: var(--accent);
+		color: white;
+	}
+
+	:global(.run-btn:hover) {
+		background: color-mix(in srgb, var(--accent) 80%, black);
+	}
+
+	/* Paste-into-shell and Run-in-shell are meaningless outside the
+	   Shell tab. Hide them so a stray bash code block in chat or jobs
+	   doesn't promise something it can't deliver. ShellTab toggles
+	   the body class. */
+	:global(body:not(.shell-tab-active) .paste-btn),
+	:global(body:not(.shell-tab-active) .run-btn) {
 		display: none;
 	}
 
