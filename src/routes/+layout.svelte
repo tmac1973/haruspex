@@ -32,7 +32,11 @@
 	import { toggleTts } from '$lib/audio/ttsControl.svelte';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getActiveConversation, sendMessage } from '$lib/stores/chat.svelte';
-	import { getShellMessages, submitChatMessage } from '$lib/stores/shell.svelte';
+	import {
+		getShellMessages,
+		setShellSidebarOpen,
+		submitChatMessage
+	} from '$lib/stores/shell.svelte';
 
 	let { children } = $props();
 	let showLogs = $state(false);
@@ -175,6 +179,11 @@
 		if (event.key === 'F2') {
 			event.preventDefault();
 			if (event.repeat) return;
+			// On the Shell tab, open the assistant sidebar the moment
+			// recording starts so the user sees they're aiming at the
+			// assistant — without this the panel only opens once the
+			// transcription pipeline completes a couple seconds later.
+			if (getActiveTab() === 'shell') setShellSidebarOpen(true);
 			if (!isVoiceCaptureActive()) startVoiceCapture();
 			return;
 		}
