@@ -15,19 +15,31 @@ export interface ResolvedToolCall {
  * Primary Qwen-style tool-call extractor: `<tool_call>{json}</tool_call>`.
  * This is the format local Qwen 3 / 3.5 emits when the server strips
  * special tokens correctly.
+ *
+ * When the inner content isn't valid JSON we also try parsing it as
+ * `<function=name>...<parameter=key>value...</function>` — Qwen3 at Q4
+ * sometimes wraps the function-style format inside `<tool_call>` tags,
+ * especially when it's "rehearsing" a call inside a `<think>` block.
+ * That used to fall through to the malformed-tool-call recovery path
+ * and burn an iteration.
  */
 export function extractToolCalls(content: string): ParsedToolCall[] {
 	const calls: ParsedToolCall[] = [];
 	const regex = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
 	let match;
 	while ((match = regex.exec(content)) !== null) {
+		const inner = match[1];
 		try {
-			const parsed = JSON.parse(match[1]);
+			const parsed = JSON.parse(inner);
 			if (parsed.name && parsed.arguments) {
 				calls.push(parsed);
+				continue;
 			}
 		} catch {
-			// Skip malformed tool calls
+			// fall through to function-style fallback
+		}
+		if (/<function=[a-zA-Z_]/.test(inner)) {
+			calls.push(...extractFunctionStyleToolCalls(inner));
 		}
 	}
 	return calls;
@@ -152,13 +164,20 @@ export function resolveToolCalls(response: ChatCompletionResponse): ResolvedTool
 	}
 
 	if (response.content) {
-		// Fallback 1: Qwen-native <tool_call>{json}</tool_call>.
+		// Fallback 1: Qwen-native <tool_call>{json}</tool_call>. Falls
+		// through if no parseable call was found (e.g. a stray opener
+		// with no body, or a malformed inner payload) so the next
+		// fallback gets a chance instead of the iteration loop tripping
+		// into malformed-tool-call recovery.
 		if (hasToolCalls(response.content)) {
-			return extractToolCalls(response.content).map((tc, i) => ({
-				id: `call_${Date.now()}_${i}`,
-				name: tc.name,
-				arguments: tc.arguments
-			}));
+			const calls = extractToolCalls(response.content);
+			if (calls.length > 0) {
+				return calls.map((tc, i) => ({
+					id: `call_${Date.now()}_${i}`,
+					name: tc.name,
+					arguments: tc.arguments
+				}));
+			}
 		}
 
 		// Fallback 2: <function=name><parameter=key>value — seen when

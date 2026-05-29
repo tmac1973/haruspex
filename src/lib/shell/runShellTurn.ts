@@ -63,7 +63,13 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 		messages: options.messages,
 		workingDir: null,
 		contextSize: options.contextSize,
-		maxIterations: options.maxIterations ?? 8,
+		// Shell-tab questions like "what does this code do?" or "find the
+		// misconfig" often need 4–6 sequential file reads. With the old
+		// cap of 8 a single malformed-tool-call recovery (one iteration
+		// burned) left no headroom for finishing the investigation. 12
+		// still bounds the turn for runaway loops but actually fits real
+		// admin-troubleshooting use.
+		maxIterations: options.maxIterations ?? 12,
 		deepResearch: false,
 		shellMode: true,
 		shellAllowWrite: options.allowWrite ?? false,

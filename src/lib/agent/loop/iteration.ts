@@ -325,8 +325,18 @@ export async function runIteration(
 		ctx.pendingImages.length = 0;
 	}
 
-	// Non-streaming request to check for tool calls
-	const sampling = getSamplingParams({ codeContext: isCodeContext(messages) });
+	// Non-streaming request to check for tool calls. Pass
+	// structuredOutput so the sampler picks the lower-variance "coding"
+	// profile — tool-deciding iterations need to emit a structurally
+	// valid <tool_call> block (or a clean final answer), not creative
+	// prose. The general profile's temperature 1.0 makes structural
+	// tokens like </think> and <tool_call> easy to mis-sample under Q4
+	// quantization; the coding profile's 0.6 leaves enough margin for
+	// them to win consistently.
+	const sampling = getSamplingParams({
+		codeContext: isCodeContext(messages),
+		structuredOutput: true
+	});
 	const templateKwargs = getChatTemplateKwargs();
 	const callStartMs = Date.now();
 	const response = await chatCompletion(
@@ -707,11 +717,15 @@ export async function runMaxIterationsFinalSynthesis(
 		usedTools: state.usedTools
 	});
 	if (state.usedTools) {
-		ctx.messages.push({
-			role: 'user',
-			content:
-				'Now please provide your complete answer based on everything you have researched. Do not search for anything else.'
-		});
+		// Chat/research turns want a definitive "stop searching, answer
+		// now" nudge; shell-troubleshooting turns should wrap up with
+		// what they have AND tell the user what they would have looked
+		// at next. The harsh prompt for chat produces a clean answer;
+		// the same prompt in shell mode produces 128-char aborts.
+		const finalPrompt = ctx.shellMode
+			? 'Wrap up now using what you have found so far. If your investigation is incomplete, briefly say so and suggest the next command or file the user could share with you to continue.'
+			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
+		ctx.messages.push({ role: 'user', content: finalPrompt });
 	}
 	const sampling = getSamplingParams({ codeContext: isCodeContext(ctx.messages) });
 	const templateKwargs = getChatTemplateKwargs();
