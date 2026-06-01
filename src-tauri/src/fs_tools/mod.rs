@@ -1,3 +1,4 @@
+pub mod absolute;
 pub mod docx;
 pub mod download;
 pub mod images;

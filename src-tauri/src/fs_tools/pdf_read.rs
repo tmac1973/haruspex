@@ -209,8 +209,14 @@ pub async fn fs_read_pdf(workdir: String, rel_path: String) -> Result<String, St
     if !resolved.is_file() {
         return Err(format!("Not a file: {}", rel_path));
     }
+    read_pdf_at_path(&resolved).await
+}
 
-    let metadata = fs::metadata(&resolved)
+/// Extract text from a PDF at a fully-resolved path. Used by both the
+/// workdir-relative `fs_read_pdf` and the Shell-tab absolute-path
+/// variant.
+pub(super) async fn read_pdf_at_path(resolved: &std::path::Path) -> Result<String, String> {
+    let metadata = fs::metadata(resolved)
         .await
         .map_err(|e| format!("Failed to stat file: {}", e))?;
 
@@ -225,7 +231,7 @@ pub async fn fs_read_pdf(workdir: String, rel_path: String) -> Result<String, St
     // Try pdfium first — it's the same library Chrome uses, handles forms
     // and custom fonts correctly. Fall back to pdf-extract if pdfium isn't
     // available (missing native lib).
-    let resolved_clone = resolved.clone();
+    let resolved_clone = resolved.to_path_buf();
     let text = tokio::task::spawn_blocking(move || -> Result<String, String> {
         if pdfium_available() {
             match extract_pdf_with_pdfium(&resolved_clone) {

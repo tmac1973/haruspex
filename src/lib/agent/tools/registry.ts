@@ -18,28 +18,71 @@ export function registerTool(reg: ToolRegistration): void {
  * - Vision-dependent tools filtered when backend doesn't support vision
  * - Email tools hidden until the user has enabled at least one account
  */
+interface ToolFilterOpts {
+	hasWorkingDir: boolean;
+	deepResearch: boolean;
+	visionSupported: boolean;
+	shellMode: boolean;
+	shellAllowWrite: boolean;
+	hasEmail: boolean;
+	sandboxEnabled: boolean;
+}
+
+// Tools exposed to the Shell-tab agent. Reads are always on; writes
+// require shellAllowWrite. Email and sandbox don't make sense for
+// admin troubleshooting and stay hidden.
+const SHELL_FS_READS = new Set(['fs_read_text', 'fs_list_dir', 'fs_read_pdf']);
+const SHELL_FS_WRITES = new Set(['fs_write_text', 'fs_edit_text']);
+
+function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
+	const name = reg.schema.function.name;
+	if (reg.category === 'web') {
+		if (opts.deepResearch && name === 'fetch_url') return false;
+		return true;
+	}
+	if (reg.category === 'fs') {
+		if (SHELL_FS_READS.has(name)) return true;
+		if (opts.shellAllowWrite && SHELL_FS_WRITES.has(name)) return true;
+		return false;
+	}
+	// Email, sandbox, etc. are intentionally hidden in Shell mode.
+	return false;
+}
+
+function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
+	const name = reg.schema.function.name;
+	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
+	if (reg.category === 'email' && !opts.hasEmail) return false;
+	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
+	if (opts.deepResearch && name === 'fetch_url') return false;
+	if (!opts.visionSupported && reg.requiresVision) return false;
+	return true;
+}
+
+function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
+	return opts.shellMode ? shouldIncludeShellTool(reg, opts) : shouldIncludeChatTool(reg, opts);
+}
+
 export function getToolSchemas(opts: {
 	hasWorkingDir: boolean;
 	deepResearch?: boolean;
 	visionSupported?: boolean;
+	shellMode?: boolean;
+	shellAllowWrite?: boolean;
 }): ToolDefinition[] {
-	const { hasWorkingDir, deepResearch = false, visionSupported = true } = opts;
-	const hasEmail = hasEnabledEmailAccount();
-	const sandboxEnabled = getSettings().sandboxEnabled;
+	const filter: ToolFilterOpts = {
+		hasWorkingDir: opts.hasWorkingDir,
+		deepResearch: opts.deepResearch ?? false,
+		visionSupported: opts.visionSupported ?? true,
+		shellMode: opts.shellMode ?? false,
+		shellAllowWrite: opts.shellAllowWrite ?? false,
+		hasEmail: hasEnabledEmailAccount(),
+		sandboxEnabled: getSettings().sandboxEnabled
+	};
 	const schemas: ToolDefinition[] = [];
-
 	for (const reg of tools.values()) {
-		const name = reg.schema.function.name;
-
-		if (reg.category === 'fs' && !hasWorkingDir) continue;
-		if (reg.category === 'email' && !hasEmail) continue;
-		if (reg.category === 'sandbox' && !sandboxEnabled) continue;
-		if (deepResearch && name === 'fetch_url') continue;
-		if (!visionSupported && reg.requiresVision) continue;
-
-		schemas.push(reg.schema);
+		if (shouldIncludeTool(reg, filter)) schemas.push(reg.schema);
 	}
-
 	return schemas;
 }
 
@@ -56,8 +99,10 @@ export async function executeTool(
 		return toolResult(toolError(`Unknown tool: ${name}`));
 	}
 
-	// Guard: fs tools require a working directory
-	if (reg.category === 'fs' && !ctx.workingDir) {
+	// Guard: fs tools require a working directory in Chat mode. In
+	// Shell mode the absolute-path variants are dispatched instead, so
+	// workingDir is allowed to be null.
+	if (reg.category === 'fs' && !ctx.workingDir && !ctx.shellMode) {
 		return toolResult(toolError('No working directory set'));
 	}
 

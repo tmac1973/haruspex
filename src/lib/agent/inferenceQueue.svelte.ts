@@ -22,7 +22,7 @@
 
 import { getSettings } from '$lib/stores/settings';
 
-export type InferenceConsumer = 'chat' | { kind: 'job'; jobName: string };
+export type InferenceConsumer = 'chat' | 'shell' | { kind: 'job'; jobName: string };
 
 export interface InferenceTicket {
 	id: number;

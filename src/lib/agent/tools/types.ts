@@ -33,6 +33,18 @@ export interface ToolContext {
 	pendingImages: PendingImage[];
 	deepResearch: boolean;
 	filesWrittenThisTurn: Set<string>;
+	/**
+	 * True when the agent is invoked from the Shell tab. fs_read_* tools
+	 * dispatch to absolute-path Rust commands and the workingDir
+	 * requirement is waived. Defaults to false everywhere else.
+	 */
+	shellMode: boolean;
+	/**
+	 * When true (only meaningful with shellMode), fs_write_text and
+	 * fs_edit_text become available and dispatch to absolute-path Rust
+	 * commands. Off by default; the user opts in via Settings → Shell.
+	 */
+	shellAllowWrite: boolean;
 }
 
 /**

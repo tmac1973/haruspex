@@ -13,6 +13,7 @@ mod sandbox_fetch;
 mod sandbox_save;
 mod sandbox_sync;
 mod server;
+mod shell;
 mod sidecar_utils;
 mod tts;
 mod whisper;
@@ -23,6 +24,7 @@ use models::ModelManager;
 use proxy::stats::SearchStats;
 use proxy::ProxyState;
 use server::LlamaServer;
+use shell::ShellManager;
 use tauri::{Manager, RunEvent};
 use tts::TtsEngine;
 use whisper::WhisperServer;
@@ -55,6 +57,7 @@ pub fn run() {
         .manage(AudioRecorder::new())
         .manage(WhisperServer::new())
         .manage(TtsEngine::new())
+        .manage(ShellManager::new())
         .invoke_handler(tauri::generate_handler![
             server::start_server,
             server::stop_server,
@@ -126,6 +129,11 @@ pub fn run() {
             db::db_delete_all_job_runs,
             db::db_set_job_next_due_at,
             db::db_list_due_jobs,
+            fs_tools::absolute::fs_read_text_absolute,
+            fs_tools::absolute::fs_list_dir_absolute,
+            fs_tools::absolute::fs_read_pdf_absolute,
+            fs_tools::absolute::fs_write_text_absolute,
+            fs_tools::absolute::fs_edit_text_absolute,
             fs_tools::path::fs_list_dir,
             fs_tools::text::fs_read_text,
             fs_tools::text::fs_write_text,
@@ -160,6 +168,16 @@ pub fn run() {
             links::open_url,
             feedback::get_diagnostics,
             feedback::save_diagnostics_file,
+            shell::shell_spawn,
+            shell::shell_write,
+            shell::shell_resize,
+            shell::shell_kill,
+            shell::shell_restart,
+            shell::shell_get_context,
+            shell::shell_get_last_command,
+            shell::shell_get_recent_commands,
+            shell::shell_get_recent_history,
+            shell::shell_platform_supported,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -168,6 +186,8 @@ pub fn run() {
                 let llama = app.state::<LlamaServer>();
                 let whisper = app.state::<WhisperServer>();
                 let tts = app.state::<TtsEngine>();
+                let shell_mgr = app.state::<ShellManager>();
+                shell_mgr.shutdown_all();
                 tauri::async_runtime::block_on(async {
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;

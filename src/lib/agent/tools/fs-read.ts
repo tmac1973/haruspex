@@ -48,6 +48,19 @@ async function fsRead(
 	}
 }
 
+/**
+ * Shell-mode equivalent: invoke an `*_absolute` Tauri command with a
+ * single `path` argument. The path must be absolute; the Rust side
+ * enforces this.
+ */
+async function fsReadAbsolute(command: string, path: string): Promise<string> {
+	try {
+		return await invoke<string>(command, { path });
+	} catch (e) {
+		return toolInvokeError(command, e);
+	}
+}
+
 // --- Registration ---
 
 registerTool({
@@ -57,13 +70,14 @@ registerTool({
 		function: {
 			name: 'fs_list_dir',
 			description:
-				'List the files and subdirectories in a directory within the working directory. Pass "." or "" to list the working directory root. Always call this first before reading specific files if you are not sure what files exist.',
+				'List the files and subdirectories in a directory. In Chat mode, the path is relative to the working directory (use "." for the root). In Shell mode, the path must be absolute (e.g. "/etc", "/var/log").',
 			parameters: {
 				type: 'object',
 				properties: {
 					path: {
 						type: 'string',
-						description: 'Relative path within the working directory. Use "." for the root.'
+						description:
+							'Directory path. Chat mode: relative to the working directory (use "." for the root). Shell mode: absolute path.'
 					}
 				},
 				required: ['path']
@@ -72,11 +86,14 @@ registerTool({
 	},
 	displayLabel: (args) => (args.path as string) || '.',
 	async execute(args, ctx) {
+		const path = (args.path as string) ?? '.';
 		try {
-			const listing = await invoke<DirListing>('fs_list_dir', {
-				workdir: ctx.workingDir,
-				relPath: (args.path as string) ?? '.'
-			});
+			const listing = ctx.shellMode
+				? await invoke<DirListing>('fs_list_dir_absolute', { path })
+				: await invoke<DirListing>('fs_list_dir', {
+						workdir: ctx.workingDir,
+						relPath: path
+					});
 			return toolResult(formatDirListing(listing));
 		} catch (e) {
 			return toolResult(toolInvokeError('fs_list_dir', e));
@@ -91,13 +108,14 @@ registerTool({
 		function: {
 			name: 'fs_read_text',
 			description:
-				'Read the contents of a text file (txt, md, csv, json, sh, yml, toml, log, etc.) from the working directory. Do not use this for PDF, docx, xlsx, or image files — use format-specific tools instead.',
+				'Read the contents of a text file (txt, md, csv, json, sh, yml, toml, log, conf, etc.). In Chat mode, the path is relative to the working directory. In Shell mode, the path must be absolute (e.g. "/etc/nginx/nginx.conf"). Do not use this for PDF, docx, xlsx, or image files — use format-specific tools instead.',
 			parameters: {
 				type: 'object',
 				properties: {
 					path: {
 						type: 'string',
-						description: 'Relative path to the file within the working directory.'
+						description:
+							'File path. Chat mode: relative to the working directory. Shell mode: absolute path.'
 					}
 				},
 				required: ['path']
@@ -106,7 +124,11 @@ registerTool({
 	},
 	displayLabel: labelArg('path'),
 	async execute(args, ctx) {
-		return toolResult(await fsRead('fs_read_text', ctx.workingDir!, args.path as string));
+		const path = args.path as string;
+		const text = ctx.shellMode
+			? await fsReadAbsolute('fs_read_text_absolute', path)
+			: await fsRead('fs_read_text', ctx.workingDir!, path);
+		return toolResult(text);
 	}
 });
 
@@ -117,13 +139,14 @@ registerTool({
 		function: {
 			name: 'fs_read_pdf',
 			description:
-				'Extract text content from a PDF file in the working directory. Fast but only works for PDFs with a proper text layer. For form PDFs, scanned documents, or when text extraction produces garbled output, use fs_read_pdf_pages instead to read the PDF visually.',
+				'Extract text content from a PDF file. In Chat mode, the path is relative to the working directory. In Shell mode, the path must be absolute. Fast but only works for PDFs with a proper text layer; for form PDFs or scanned documents, use fs_read_pdf_pages instead.',
 			parameters: {
 				type: 'object',
 				properties: {
 					path: {
 						type: 'string',
-						description: 'Relative path to the PDF within the working directory.'
+						description:
+							'PDF path. Chat mode: relative to the working directory. Shell mode: absolute path.'
 					}
 				},
 				required: ['path']
@@ -132,7 +155,11 @@ registerTool({
 	},
 	displayLabel: labelArg('path'),
 	async execute(args, ctx) {
-		return toolResult(await fsRead('fs_read_pdf', ctx.workingDir!, args.path as string));
+		const path = args.path as string;
+		const text = ctx.shellMode
+			? await fsReadAbsolute('fs_read_pdf_absolute', path)
+			: await fsRead('fs_read_pdf', ctx.workingDir!, path);
+		return toolResult(text);
 	}
 });
 

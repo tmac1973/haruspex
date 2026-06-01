@@ -226,3 +226,31 @@ describe('hasFunctionStyleToolCalls', () => {
 		expect(hasFunctionStyleToolCalls('<tool_call>{}</tool_call>')).toBe(false);
 	});
 });
+
+describe('extractToolCalls function-style fallback', () => {
+	// Qwen3 at Q4_K_M sometimes wraps function-style markup inside a
+	// <tool_call> block, especially when "rehearsing" a call inside its
+	// <think> stream. Before the fallback was added this dropped to
+	// the malformed-tool-call recovery path and burned an iteration.
+	it('parses function-style markup wrapped in <tool_call>', () => {
+		const content =
+			'<tool_call>\n<function=fs_read_text>\n<parameter=path>\n/home/tim/projects/planets/main.py\n</parameter>\n</function>\n</tool_call>';
+		const calls = extractToolCalls(content);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].name).toBe('fs_read_text');
+		expect(calls[0].arguments).toEqual({ path: '/home/tim/projects/planets/main.py' });
+	});
+
+	it('parses the wrapped form even when embedded inside <think>', () => {
+		// This is the exact shape that showed up in the shell-tab log
+		// — reasoning_content was prepended as <think>…</think> by the
+		// API layer, and the model had emitted a <tool_call> inside
+		// its reasoning.
+		const content =
+			'<think>Let me use the correct absolute path.\n\n<tool_call>\n<function=fs_read_text>\n<parameter=path>\n/home/tim/projects/planets/main.py\n</parameter>\n</function>\n</tool_call></think>';
+		const calls = extractToolCalls(content);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].name).toBe('fs_read_text');
+		expect(calls[0].arguments.path).toBe('/home/tim/projects/planets/main.py');
+	});
+});

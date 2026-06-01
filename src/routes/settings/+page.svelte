@@ -7,6 +7,7 @@
 	import AudioSection from '$lib/components/settings/AudioSection.svelte';
 	import SearchSection from '$lib/components/settings/SearchSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
+	import ShellSection from '$lib/components/settings/ShellSection.svelte';
 	import FeedbackSection from '$lib/components/settings/FeedbackSection.svelte';
 
 	type Category =
@@ -16,6 +17,7 @@
 		| 'audio'
 		| 'search'
 		| 'integrations'
+		| 'shell'
 		| 'feedback';
 
 	interface CategoryDef {
@@ -30,6 +32,7 @@
 		{ id: 'audio', label: 'Audio' },
 		{ id: 'search', label: 'Search' },
 		{ id: 'integrations', label: 'Integrations' },
+		{ id: 'shell', label: 'Shell' },
 		{ id: 'feedback', label: 'Feedback' }
 	];
 
@@ -95,6 +98,8 @@
 				<SearchSection />
 			{:else if activeCategory === 'integrations'}
 				<EmailSection />
+			{:else if activeCategory === 'shell'}
+				<ShellSection />
 			{:else if activeCategory === 'feedback'}
 				<FeedbackSection />
 			{/if}

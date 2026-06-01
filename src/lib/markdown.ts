@@ -1,5 +1,6 @@
 import { Marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
+import { classifyShellRisk } from '$lib/shell/risky-commands';
 
 // Register only the languages we need to keep the bundle small
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -29,6 +30,27 @@ hljs.registerLanguage('sql', sql);
 hljs.registerLanguage('yaml', yaml);
 hljs.registerLanguage('yml', yaml);
 
+const SHELL_LANGS = new Set(['bash', 'sh', 'shell']);
+
+function renderShellHeaderExtras(text: string): string {
+	const risk = classifyShellRisk(text);
+	const chips = risk.matched
+		? risk.reasons
+				.map(
+					(r) =>
+						`<span class="risky-chip" title="${escapeHtml(r.description)}">${escapeHtml(r.label)}</span>`
+				)
+				.join('')
+		: '';
+	// Inline onclick dispatches a CustomEvent the Shell tab listens for.
+	// Outside the Shell tab the .paste-btn / .run-btn are hidden via
+	// the body:not(.shell-tab-active) CSS rule, so this is dead UI in
+	// chat or jobs context.
+	const pasteBtn = `<button class="paste-btn" onclick="document.dispatchEvent(new CustomEvent('hsp-shell-paste', { detail: this.closest('.code-block').querySelector('code').textContent }))" title="Type the command at the shell prompt — does NOT press Enter">Paste</button>`;
+	const runBtn = `<button class="run-btn" onclick="document.dispatchEvent(new CustomEvent('hsp-shell-run', { detail: this.closest('.code-block').querySelector('code').textContent }))" title="Paste, press Enter, then send the command's output back to the assistant for analysis">Run</button>`;
+	return `${chips}${pasteBtn}${runBtn}`;
+}
+
 const marked = new Marked({
 	renderer: {
 		code({ text, lang }: { text: string; lang?: string }) {
@@ -36,11 +58,15 @@ const marked = new Marked({
 			const highlighted = language ? hljs.highlight(text, { language }).value : escapeHtml(text);
 
 			const langLabel = lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : '';
+			const shellExtras = lang && SHELL_LANGS.has(lang) ? renderShellHeaderExtras(text) : '';
 
 			return `<div class="code-block">
 				<div class="code-header">
 					${langLabel}
-					<button class="copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').textContent)">Copy</button>
+					<div class="code-actions">
+						${shellExtras}
+						<button class="copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').textContent)">Copy</button>
+					</div>
 				</div>
 				<pre><code class="${language ? `hljs language-${language}` : ''}">${highlighted}</code></pre>
 			</div>`;

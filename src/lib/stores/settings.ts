@@ -185,6 +185,44 @@ export interface AppSettings {
 	inferenceBackend: InferenceBackendConfig;
 	integrations: IntegrationsConfig;
 	proxy: ProxyConfig;
+	/**
+	 * Optional path to the shell binary the Shell tab launches. Empty
+	 * string means "auto-detect from $SHELL with /bin/bash fallback"
+	 * (the Rust side's default). Lets power users pin nu, fish, or a
+	 * non-default install path.
+	 */
+	shellBinary: string;
+	/**
+	 * How many of the most-recent completed shell commands (and their
+	 * output) to attach automatically to every chat message sent from
+	 * the Shell-tab sidebar. 0 disables auto-attach. Default 3.
+	 */
+	shellHistoryTurnsForPrompt: number;
+	/**
+	 * Maximum size in bytes for the *output* of any single captured
+	 * shell command attached to a chat message. When a command's output
+	 * exceeds this, the middle is dropped — the head + tail of the
+	 * output stay, with a "[middle truncated — N bytes total]" marker.
+	 * Prevents one big dmesg / journalctl / log dump from blowing the
+	 * model's context. 0 disables truncation. Default 8192 (8 KiB).
+	 */
+	shellMaxBytesPerCapture: number;
+	/**
+	 * Width in pixels of the Shell-tab assistant sidebar. Persisted so
+	 * dragging the resize handle survives restarts. Clamped 320..most
+	 * of the viewport at apply time.
+	 */
+	shellSidebarWidth: number;
+	/**
+	 * Whether the Shell-tab agent may write files anywhere on the
+	 * filesystem (fs_write_text, fs_edit_text). Disabled by default;
+	 * when off, the model only has read tools + can suggest shell
+	 * commands. When on, the model can also call fs_write_text /
+	 * fs_edit_text on absolute paths — including system config files
+	 * if the app process has permission. Reads are always allowed in
+	 * Shell mode regardless of this flag.
+	 */
+	shellAllowWrite: boolean;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -232,7 +270,12 @@ const defaults: AppSettings = {
 	customSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
 	integrations: defaultIntegrations,
-	proxy: defaultProxy
+	proxy: defaultProxy,
+	shellBinary: '',
+	shellHistoryTurnsForPrompt: 3,
+	shellMaxBytesPerCapture: 8192,
+	shellSidebarWidth: 480,
+	shellAllowWrite: false
 };
 
 function load(): AppSettings {

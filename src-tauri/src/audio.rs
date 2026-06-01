@@ -3,10 +3,19 @@ use cpal::SampleFormat as CpalSampleFormat;
 use hound::{SampleFormat, WavSpec, WavWriter};
 use log::{error, info, warn};
 use std::io::Cursor;
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 const WHISPER_SAMPLE_RATE: u32 = 16000;
+
+/// USB-switch / hot-plug hint appended to errors so the user knows the
+/// likely cause. The deeper libasound `dlopen` crash that can land here
+/// can't be caught from Rust, but most hot-swap failures cpal/alsa-rs
+/// reports as plain errors or panics — those we wrap.
+const HOT_SWAP_HINT: &str =
+    " (this can happen after switching a USB audio device between machines; \
+     unplug and replug the device, then try again — if it persists, restart Haruspex)";
 
 fn device_name(device: &cpal::Device) -> String {
     device
@@ -15,23 +24,79 @@ fn device_name(device: &cpal::Device) -> String {
         .unwrap_or_else(|_| "unknown".to_string())
 }
 
-fn find_input_device_by_name(name: &str) -> Result<cpal::Device, String> {
-    let host = cpal::default_host();
-    if name.is_empty() || name == "System Default" {
-        return host
-            .default_input_device()
-            .ok_or_else(|| "No default input device".to_string());
-    }
-    if let Ok(devices) = host.input_devices() {
-        for device in devices {
-            if device_name(&device) == name {
-                return Ok(device);
-            }
+/// Catch Rust panics from cpal / alsa-rs / coreaudio-rs internals so a
+/// post-hot-swap stale state doesn't bring down the app. Does NOT catch
+/// SIGSEGV — that's libasound's plugin loader and is fundamentally
+/// uncatchable in-process.
+fn safe_cpal<F, T>(label: &str, f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String>,
+{
+    match std::panic::catch_unwind(AssertUnwindSafe(f)) {
+        Ok(res) => res,
+        Err(panic) => {
+            let msg = panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "cpal call panicked".to_string());
+            error!("audio: {} panicked: {}", label, msg);
+            Err(format!("{}: {}{}", label, msg, HOT_SWAP_HINT))
         }
     }
-    warn!("Input device '{}' not found, falling back to default", name);
-    host.default_input_device()
-        .ok_or_else(|| "No default input device".to_string())
+}
+
+/// Enumerate input devices freshly from a brand-new host. Returns the
+/// list so the caller can pick one — never returns cpal's cached
+/// default-device handle, which is the part most likely to be stale
+/// after a USB hot-swap.
+fn enumerate_input_devices() -> Result<Vec<cpal::Device>, String> {
+    safe_cpal("input device enumeration", || {
+        let host = cpal::default_host();
+        let devices = host
+            .input_devices()
+            .map_err(|e| format!("Failed to list input devices: {}", e))?;
+        Ok(devices.collect())
+    })
+}
+
+/// Returns the host's system default input device, wrapped in
+/// catch_unwind. On Linux this is libasound's "default" PCM which
+/// routes through ~/.asoundrc to PulseAudio/PipeWire — i.e. the
+/// device the user actually thinks of as "my mic." We deliberately
+/// keep this path because the enumerated-name list contains raw
+/// ALSA devices (sysdefault:CARD=PCH, hw:CARD=…, etc.) that mostly
+/// don't carry a real signal.
+fn host_default_input_device() -> Result<cpal::Device, String> {
+    safe_cpal("default_input_device", || {
+        let host = cpal::default_host();
+        host.default_input_device()
+            .ok_or_else(|| format!("No default input device found.{}", HOT_SWAP_HINT))
+    })
+}
+
+/// Pick an input device by user-configured name. Empty / "System Default"
+/// goes through cpal's `default_input_device()` (the only thing that
+/// reliably hits the user's real mic on Linux). Specific names are
+/// looked up via fresh enumeration so a hot-swap doesn't strand us
+/// on a stale handle. Both paths are wrapped in catch_unwind.
+fn find_input_device_by_name(name: &str) -> Result<cpal::Device, String> {
+    if name.is_empty() || name == "System Default" {
+        return host_default_input_device();
+    }
+
+    let devices = enumerate_input_devices()?;
+    for device in &devices {
+        if device_name(device) == name {
+            return Ok(device.clone());
+        }
+    }
+    warn!(
+        "Input device '{}' not found in {} enumerated devices, falling back to host default",
+        name,
+        devices.len()
+    );
+    host_default_input_device()
 }
 
 pub struct AudioRecorder {
@@ -56,24 +121,22 @@ impl AudioRecorder {
             return Err("Already recording".to_string());
         }
 
-        let device = match device_name_opt {
-            Some(name) if !name.is_empty() && name != "System Default" => {
-                find_input_device_by_name(name)?
-            }
-            _ => {
-                let host = cpal::default_host();
-                host.default_input_device()
-                    .ok_or("No audio input device found")?
-            }
-        };
+        // Always go through fresh enumeration — bypasses cpal's cached
+        // default-device handle which is the most likely thing to be
+        // stale after a USB hot-swap.
+        let device = find_input_device_by_name(device_name_opt.unwrap_or(""))?;
 
         info!("Recording from: {}", device_name(&device));
 
         // Use the device's native config — Windows WASAPI rejects forced 16kHz mono.
         // We downmix to mono in the callback and resample to 16kHz at stop_recording.
-        let supported = device
-            .default_input_config()
-            .map_err(|e| format!("No supported input config: {}", e))?;
+        // Wrapped in catch_unwind because cpal/alsa-rs can panic when ALSA
+        // is in a half-broken state post-hot-swap.
+        let supported = safe_cpal("default_input_config", || {
+            device
+                .default_input_config()
+                .map_err(|e| format!("No supported input config: {}", e))
+        })?;
         let sample_format = supported.sample_format();
         let native_rate = supported.sample_rate();
         let channels = supported.channels() as usize;
@@ -119,17 +182,23 @@ impl AudioRecorder {
             }};
         }
 
-        let stream = match sample_format {
-            CpalSampleFormat::F32 => build_stream!(f32, |s: f32| s),
-            CpalSampleFormat::I16 => build_stream!(i16, |s: i16| s as f32 / 32768.0),
-            CpalSampleFormat::U16 => build_stream!(u16, |s: u16| (s as f32 - 32768.0) / 32768.0),
-            other => return Err(format!("Unsupported sample format: {:?}", other)),
-        }
-        .map_err(|e| format!("Failed to build audio stream: {}", e))?;
+        let stream = safe_cpal("build_input_stream", || {
+            let r = match sample_format {
+                CpalSampleFormat::F32 => build_stream!(f32, |s: f32| s),
+                CpalSampleFormat::I16 => build_stream!(i16, |s: i16| s as f32 / 32768.0),
+                CpalSampleFormat::U16 => {
+                    build_stream!(u16, |s: u16| (s as f32 - 32768.0) / 32768.0)
+                }
+                other => return Err(format!("Unsupported sample format: {:?}", other)),
+            };
+            r.map_err(|e| format!("Failed to build audio stream: {}{}", e, HOT_SWAP_HINT))
+        })?;
 
-        stream
-            .play()
-            .map_err(|e| format!("Failed to start audio stream: {}", e))?;
+        safe_cpal("stream.play", || {
+            stream
+                .play()
+                .map_err(|e| format!("Failed to start audio stream: {}{}", e, HOT_SWAP_HINT))
+        })?;
 
         self.is_recording.store(true, Ordering::SeqCst);
         *self.stream.lock().unwrap() = Some(stream);
@@ -246,13 +315,13 @@ pub fn is_recording(state: tauri::State<'_, AudioRecorder>) -> bool {
 
 #[tauri::command]
 pub fn list_audio_input_devices() -> Result<Vec<String>, String> {
-    let host = cpal::default_host();
-    let devices = host
-        .input_devices()
-        .map_err(|e| format!("Failed to list input devices: {}", e))?;
+    // Use the same panic-safe enumeration the recorder uses so the
+    // settings dropdown doesn't take the app down if ALSA is in a
+    // half-broken state.
+    let devices = enumerate_input_devices()?;
     let mut names = vec!["System Default".to_string()];
-    for device in devices {
-        names.push(device_name(&device));
+    for device in &devices {
+        names.push(device_name(device));
     }
     Ok(names)
 }

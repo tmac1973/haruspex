@@ -1,11 +1,11 @@
-export type ActiveTab = 'chat' | 'jobs';
+export type ActiveTab = 'chat' | 'jobs' | 'shell';
 
 const STORAGE_KEY = 'haruspex.activeTab';
 
 function load(): ActiveTab {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
-		if (raw === 'chat' || raw === 'jobs') return raw;
+		if (raw === 'chat' || raw === 'jobs' || raw === 'shell') return raw;
 	} catch {
 		// ignore
 	}

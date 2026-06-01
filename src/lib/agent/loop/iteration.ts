@@ -71,6 +71,8 @@ export interface LoopContext {
 	workingDir: string | null;
 	contextSize: number;
 	deepResearch: boolean;
+	shellMode: boolean;
+	shellAllowWrite: boolean;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
 	filesWrittenThisTurn: Set<string>;
@@ -86,17 +88,23 @@ export interface LoopContext {
  */
 export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const workingDir = options.workingDir ?? null;
+	const shellMode = options.shellMode ?? false;
+	const shellAllowWrite = options.shellAllowWrite ?? false;
 	return {
 		messages: options.messages,
 		tools: getToolSchemas({
 			hasWorkingDir: workingDir !== null,
 			deepResearch: options.deepResearch ?? false,
-			visionSupported: options.visionSupported ?? true
+			visionSupported: options.visionSupported ?? true,
+			shellMode,
+			shellAllowWrite
 		}),
 		signal: options.signal,
 		workingDir,
 		contextSize: options.contextSize ?? 0,
 		deepResearch: options.deepResearch ?? false,
+		shellMode,
+		shellAllowWrite,
 		expectsFileOutput: options.expectsFileOutput ?? false,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
@@ -317,7 +325,7 @@ export async function runIteration(
 		ctx.pendingImages.length = 0;
 	}
 
-	// Non-streaming request to check for tool calls
+	// Non-streaming request to check for tool calls.
 	const sampling = getSamplingParams({ codeContext: isCodeContext(messages) });
 	const templateKwargs = getChatTemplateKwargs();
 	const callStartMs = Date.now();
@@ -633,6 +641,8 @@ export async function runIteration(
 				signal,
 				pendingImages: ctx.pendingImages,
 				deepResearch: ctx.deepResearch,
+				shellMode: ctx.shellMode,
+				shellAllowWrite: ctx.shellAllowWrite,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn
 			}),
 			signal
@@ -697,11 +707,15 @@ export async function runMaxIterationsFinalSynthesis(
 		usedTools: state.usedTools
 	});
 	if (state.usedTools) {
-		ctx.messages.push({
-			role: 'user',
-			content:
-				'Now please provide your complete answer based on everything you have researched. Do not search for anything else.'
-		});
+		// Chat/research turns want a definitive "stop searching, answer
+		// now" nudge; shell-troubleshooting turns should wrap up with
+		// what they have AND tell the user what they would have looked
+		// at next. The harsh prompt for chat produces a clean answer;
+		// the same prompt in shell mode produces 128-char aborts.
+		const finalPrompt = ctx.shellMode
+			? 'Wrap up now using what you have found so far. If your investigation is incomplete, briefly say so and suggest the next command or file the user could share with you to continue.'
+			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
+		ctx.messages.push({ role: 'user', content: finalPrompt });
 	}
 	const sampling = getSamplingParams({ codeContext: isCodeContext(ctx.messages) });
 	const templateKwargs = getChatTemplateKwargs();

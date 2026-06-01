@@ -10,6 +10,8 @@ const defaultCtx = {
 	workingDir: null,
 	pendingImages: [],
 	deepResearch: false,
+	shellMode: false,
+	shellAllowWrite: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 

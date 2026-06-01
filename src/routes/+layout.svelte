@@ -23,6 +23,20 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import { messageText, type ChatMessage } from '$lib/api';
+	import {
+		isVoiceCaptureActive,
+		startVoiceCapture,
+		stopAndTranscribe
+	} from '$lib/audio/voiceCapture.svelte';
+	import { toggleTts } from '$lib/audio/ttsControl.svelte';
+	import { getActiveTab } from '$lib/stores/activeTab.svelte';
+	import { getActiveConversation, sendMessage } from '$lib/stores/chat.svelte';
+	import {
+		getShellMessages,
+		setShellSidebarOpen,
+		submitChatMessage
+	} from '$lib/stores/shell.svelte';
 
 	let { children } = $props();
 	let showLogs = $state(false);
@@ -125,7 +139,73 @@
 			showGpuWarning = true;
 		}
 	});
+
+	// ---- Global media hotkeys (F2 push-to-talk, F3 read-aloud) ----
+	// Registered at the layout level so they fire regardless of which
+	// child element has focus. Restricted to the main page (no PTT
+	// while editing settings).
+
+	function isMainPage(): boolean {
+		return page.url.pathname === '/';
+	}
+
+	function pickTranscriptionTarget(text: string) {
+		const tab = getActiveTab();
+		if (tab === 'shell') {
+			submitChatMessage(text);
+		} else if (tab === 'chat') {
+			sendMessage(text);
+		}
+		// 'jobs' has no chat input — silently drop.
+	}
+
+	function getLastAssistantText(): string {
+		const tab = getActiveTab();
+		const messages =
+			tab === 'shell' ? getShellMessages() : (getActiveConversation()?.messages ?? []);
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const m = messages[i] as ChatMessage;
+			if (m.role === 'assistant') {
+				const text = messageText(m.content).trim();
+				if (text) return text;
+			}
+		}
+		return '';
+	}
+
+	function onGlobalKeydown(event: KeyboardEvent) {
+		if (!isMainPage()) return;
+		if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
+		if (event.key === 'F2') {
+			event.preventDefault();
+			if (event.repeat) return;
+			// On the Shell tab, open the assistant sidebar the moment
+			// recording starts so the user sees they're aiming at the
+			// assistant — without this the panel only opens once the
+			// transcription pipeline completes a couple seconds later.
+			if (getActiveTab() === 'shell') setShellSidebarOpen(true);
+			if (!isVoiceCaptureActive()) startVoiceCapture();
+			return;
+		}
+		if (event.key === 'F3') {
+			event.preventDefault();
+			if (event.repeat) return;
+			const text = getLastAssistantText();
+			if (text) toggleTts(text);
+		}
+	}
+
+	async function onGlobalKeyup(event: KeyboardEvent) {
+		if (!isMainPage()) return;
+		if (event.key === 'F2') {
+			event.preventDefault();
+			const text = await stopAndTranscribe();
+			if (text) pickTranscriptionTarget(text);
+		}
+	}
 </script>
+
+<svelte:window onkeydown={onGlobalKeydown} onkeyup={onGlobalKeyup} />
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
@@ -321,6 +401,64 @@
 	main {
 		flex: 1;
 		overflow: hidden;
+	}
+
+	/* Right-side controls (chips + Paste + Copy) inside the rendered
+	   markdown code-block header. The header itself is flex with
+	   space-between (set in ChatMessage.svelte), so this container
+	   collects everything on the right. */
+	:global(.code-actions) {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	:global(.risky-chip) {
+		display: inline-flex;
+		align-items: center;
+		padding: 1px 6px;
+		border-radius: 999px;
+		font-size: 0.66rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #c44;
+		border: 1px solid #c44;
+		background: color-mix(in srgb, #c44 12%, transparent);
+	}
+
+	:global(.paste-btn),
+	:global(.run-btn) {
+		background: none;
+		border: 1px solid var(--accent);
+		color: var(--accent);
+		border-radius: 4px;
+		padding: 2px 8px;
+		font-size: 0.7rem;
+		cursor: pointer;
+	}
+
+	:global(.paste-btn:hover),
+	:global(.run-btn:hover) {
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+	}
+
+	:global(.run-btn) {
+		background: var(--accent);
+		color: white;
+	}
+
+	:global(.run-btn:hover) {
+		background: color-mix(in srgb, var(--accent) 80%, black);
+	}
+
+	/* Paste-into-shell and Run-in-shell are meaningless outside the
+	   Shell tab. Hide them so a stray bash code block in chat or jobs
+	   doesn't promise something it can't deliver. ShellTab toggles
+	   the body class. */
+	:global(body:not(.shell-tab-active) .paste-btn),
+	:global(body:not(.shell-tab-active) .run-btn) {
+		display: none;
 	}
 
 	/* Minimal highlight.js theme — applies to both the chat-message
