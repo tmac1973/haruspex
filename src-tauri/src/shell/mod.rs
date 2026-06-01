@@ -248,3 +248,14 @@ pub fn shell_get_recent_history(
         .ok_or_else(|| "shell session not found".to_string())?;
     Ok(read_recent_history(&session.context.shell_name, limit))
 }
+
+/// Returns whether the Shell tab is supported on the current host.
+/// macOS and Windows are gated off for now: PTY spawn works via
+/// portable-pty, but the OSC 133 capture scripts only ship for
+/// bash/zsh (not cmd/powershell), and the audio/cpal guards haven't
+/// been validated outside Linux. The frontend uses this to swap the
+/// xterm mount for a "platform not yet supported" placeholder.
+#[tauri::command]
+pub fn shell_platform_supported() -> bool {
+    cfg!(target_os = "linux")
+}
