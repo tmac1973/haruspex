@@ -257,13 +257,10 @@ impl Integration {
         let markers: Vec<&Marker> = self.markers.iter().collect();
         let mut count = 0;
         let mut search_end = markers.len();
-        loop {
-            let Some(d_offset) = markers[..search_end]
-                .iter()
-                .rposition(|m| m.kind == MarkerKind::OutputEnd)
-            else {
-                break;
-            };
+        while let Some(d_offset) = markers[..search_end]
+            .iter()
+            .rposition(|m| m.kind == MarkerKind::OutputEnd)
+        {
             let Some(c_offset) = markers[..d_offset]
                 .iter()
                 .rposition(|m| m.kind == MarkerKind::OutputStart)
