@@ -26,7 +26,7 @@ describe('lintSandboxCode', () => {
 		mocks.invoke.mockResolvedValue([
 			{
 				code: 'F821',
-				message: "Undefined name `df_cleand`",
+				message: 'Undefined name `df_cleand`',
 				line: 4,
 				column: 7,
 				endLine: 4,
@@ -77,7 +77,7 @@ describe('formatLintFailure', () => {
 	});
 
 	it('uses singular phrasing for one issue', () => {
-		const out = formatLintFailure([issue('F821', 3, "Undefined name `x`")]);
+		const out = formatLintFailure([issue('F821', 3, 'Undefined name `x`')]);
 		expect(out).toMatch(/caught 1 issue/);
 		expect(out).toMatch(/line 3 \[F821\]: Undefined name `x`/);
 	});
