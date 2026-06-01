@@ -15,7 +15,7 @@
  */
 
 import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { Artifact } from '$lib/agent/tools';
+import type { Artifact, LintIssue } from '$lib/agent/tools';
 import type { SearchStep } from '$lib/agent/loop';
 import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
@@ -257,14 +257,17 @@ function buildStreamCallbacks(runId: number, stepIndex: number) {
 			call: ResolvedToolCall,
 			result: string,
 			thumbDataUrl?: string,
-			artifacts?: Artifact[]
+			artifacts?: Artifact[],
+			lintIssues?: LintIssue[]
 		) => {
 			if (!current || current.id !== runId) return;
 			const step = current.steps[stepIndex];
 			if (!step) return;
 			patchStep(runId, stepIndex, {
 				searchSteps: step.searchSteps.map((s) =>
-					s.id === call.id ? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts } : s
+					s.id === call.id
+						? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts, lintIssues }
+						: s
 				)
 			});
 		}

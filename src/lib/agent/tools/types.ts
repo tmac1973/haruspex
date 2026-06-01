@@ -1,7 +1,8 @@
 import type { ToolDefinition } from '$lib/api';
 import type { Artifact } from '$lib/sandbox/sandbox';
+import type { LintIssue } from '$lib/sandbox/lint';
 
-export type { Artifact };
+export type { Artifact, LintIssue };
 
 export interface PendingImage {
 	path: string;
@@ -21,6 +22,13 @@ export interface ToolExecOutput {
 	result: string;
 	thumbDataUrl?: string;
 	artifacts?: Artifact[];
+	/**
+	 * Populated when a tool was short-circuited by a pre-run lint pass
+	 * (currently only run_python). The diagnostics are passed through to
+	 * the chat UI so failed runs can render as a compact one-line summary
+	 * instead of the full traceback-style result string.
+	 */
+	lintIssues?: LintIssue[];
 }
 
 /**

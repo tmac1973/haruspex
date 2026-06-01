@@ -89,6 +89,13 @@ export class WorkerPool {
 		return this.ensureFor(chatId).installPackage(packageName, opts);
 	}
 
+	async listGlobals(chatId: string): Promise<string[]> {
+		const entry = this.mgrs.get(chatId);
+		if (!entry || !entry.mgr.hasWorker) return [];
+		this.touch(chatId);
+		return entry.mgr.listGlobals();
+	}
+
 	async reset(chatId: string): Promise<void> {
 		const entry = this.mgrs.get(chatId);
 		if (!entry) return;

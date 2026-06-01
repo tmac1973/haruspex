@@ -882,10 +882,10 @@ export async function sendMessage(content: string): Promise<void> {
 							}
 						];
 					},
-					onToolEnd: (call, result, thumbDataUrl, artifacts) => {
+					onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) => {
 						conversation.searchSteps = conversation.searchSteps.map((s) =>
 							s.id === call.id
-								? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts }
+								? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts, lintIssues }
 								: s
 						);
 					},

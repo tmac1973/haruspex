@@ -1,4 +1,5 @@
 import { runPython, installPackage, resetSandbox, type ToolResult } from '$lib/sandbox/sandbox';
+import { lintSandboxCode, formatLintFailure } from '$lib/sandbox/lint';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
 import { getSettings } from '$lib/stores/settings';
@@ -86,6 +87,18 @@ registerTool({
 					toolError(`Approval prompt failed: ${e instanceof Error ? e.message : String(e)}`)
 				);
 			}
+		}
+		// Pre-run lint pass — short-circuits on bug-class issues (undefined
+		// names, control-flow misuse, mutable defaults, etc.) so the model
+		// gets actionable feedback in microseconds instead of failing
+		// mid-execution after side effects. Failures here are advisory:
+		// if the ruff sidecar is missing the call returns [] and we run.
+		const lintIssues = await lintSandboxCode(code);
+		if (lintIssues.length > 0) {
+			return {
+				result: formatLintFailure(lintIssues),
+				lintIssues
+			};
 		}
 		try {
 			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);

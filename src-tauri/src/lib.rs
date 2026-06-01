@@ -154,6 +154,7 @@ pub fn run() {
             fs_tools::path::fs_path_exists,
             fs_tools::path::fs_find_available_path,
             lint::fs_lint_python,
+            lint::lint_python_source,
             sandbox_fetch::sandbox_fetch,
             sandbox_save::sandbox_save,
             sandbox_save::sandbox_delete_in_workdir,

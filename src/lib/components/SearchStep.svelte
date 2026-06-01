@@ -53,7 +53,20 @@
 	}
 
 	function stepErrored(step: SearchStep): boolean {
-		return step.status === 'done' && !!step.result?.startsWith('Error:');
+		if (step.status !== 'done') return false;
+		if (step.lintIssues && step.lintIssues.length > 0) return true;
+		return !!step.result?.startsWith('Error:');
+	}
+
+	function lintSummary(step: SearchStep): string {
+		const issues = step.lintIssues;
+		if (!issues || issues.length === 0) return '';
+		if (issues.length === 1) {
+			const i = issues[0];
+			return `⚠ ${i.code} line ${i.line}: ${i.message}`;
+		}
+		const uniqCodes = Array.from(new Set(issues.map((i) => i.code))).slice(0, 4);
+		return `⚠ ${issues.length} lint issues (${uniqCodes.join(', ')})`;
 	}
 
 	function isCodeCollapsed(step: SearchStep): boolean {
@@ -173,65 +186,82 @@
 				class="step"
 				class:has-details={!!step.result}
 				class:expanded={detailsExpanded[step.id]}
+				class:errored={stepErrored(step)}
 				data-status={step.status}
 				onclick={() => toggleDetails(step)}
 				title={step.result ? (detailsExpanded[step.id] ? 'Hide log' : 'Show log') : ''}
 			>
 				<span class="step-icon">{stepIcon(step.toolName)}</span>
-				<span class="step-label">{stepLabel(step.toolName, step.query)}</span>
+				<span class="step-label">
+					{stepLabel(step.toolName, step.query)}
+					{#if step.lintIssues && step.lintIssues.length > 0}
+						<span class="lint-summary">{lintSummary(step)}</span>
+					{/if}
+				</span>
 				<span class="step-chevron">
 					{#if step.result}{detailsExpanded[step.id] ? '▾' : '▸'}{/if}
 				</span>
 				<span class="step-status">
 					{#if step.status === 'running'}
 						<span class="spinner"></span>
+					{:else if stepErrored(step)}
+						<span class="status-err" title="errored">✕</span>
 					{:else}
 						&#10003;
 					{/if}
 				</span>
 			</div>
 			{#if step.toolName === 'run_python' && typeof step.args?.code === 'string'}
-				<div class="code-controls">
-					<button
-						class="code-toggle"
-						class:errored={stepErrored(step)}
-						onclick={(e) => toggleCode(step, e)}
-						title={isCodeCollapsed(step) ? 'Show code' : 'Hide code'}
-					>
-						{isCodeCollapsed(step) ? '▸' : '▾'} code
-					</button>
-					<button
-						class="copy-btn"
-						onclick={(e) => copyResult(`${step.id}:code`, step.args!.code as string, e)}
-					>
-						{copyStates[`${step.id}:code`] || 'Copy'}
-					</button>
-					{#if step.status === 'running'}
+				<!--
+					Collapse the code-controls + code block by default on errored
+					runs so a chain of "tried this, failed; tried that, failed"
+					attempts doesn't visually drown the conversation. The full
+					detail is one click away (toggle the step row). Running and
+					successful steps keep the existing inline layout.
+				-->
+				{#if step.status === 'running' || !stepErrored(step) || detailsExpanded[step.id]}
+					<div class="code-controls">
 						<button
-							class="run-control cancel"
-							onclick={cancelStep}
-							title="Terminate the Python worker for this chat"
+							class="code-toggle"
+							class:errored={stepErrored(step)}
+							onclick={(e) => toggleCode(step, e)}
+							title={isCodeCollapsed(step) ? 'Show code' : 'Hide code'}
 						>
-							⏸ Cancel
+							{isCodeCollapsed(step) ? '▸' : '▾'} code
 						</button>
-					{:else if stepErrored(step)}
 						<button
-							class="run-control rerun"
-							onclick={(e) => rerunStep(step, e)}
-							title="Run the same code again in a fresh attempt"
+							class="copy-btn"
+							onclick={(e) => copyResult(`${step.id}:code`, step.args!.code as string, e)}
 						>
-							▶ Run again
+							{copyStates[`${step.id}:code`] || 'Copy'}
 						</button>
-					{/if}
-				</div>
-				{#if !isCodeCollapsed(step)}
-					<!-- svelte-ignore a11y_click_events_have_key_events -->
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div class="step-code" onclick={(e) => e.stopPropagation()}>
-						<pre><code class="language-python"
-								>{@html highlightPython(step.args.code as string)}</code
-							></pre>
+						{#if step.status === 'running'}
+							<button
+								class="run-control cancel"
+								onclick={cancelStep}
+								title="Terminate the Python worker for this chat"
+							>
+								⏸ Cancel
+							</button>
+						{:else if stepErrored(step)}
+							<button
+								class="run-control rerun"
+								onclick={(e) => rerunStep(step, e)}
+								title="Run the same code again in a fresh attempt"
+							>
+								▶ Run again
+							</button>
+						{/if}
 					</div>
+					{#if !isCodeCollapsed(step)}
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="step-code" onclick={(e) => e.stopPropagation()}>
+							<pre><code class="language-python"
+									>{@html highlightPython(step.args.code as string)}</code
+								></pre>
+						</div>
+					{/if}
 				{/if}
 			{/if}
 			{#if step.thumbDataUrl}
@@ -378,6 +408,25 @@
 	.step-status {
 		flex-shrink: 0;
 		color: #22c55e;
+	}
+
+	.status-err {
+		color: #c97;
+		font-weight: 600;
+	}
+
+	.step.errored .step-label {
+		color: var(--text-secondary);
+	}
+
+	.lint-summary {
+		margin-left: 8px;
+		padding: 1px 6px;
+		font-size: 0.72rem;
+		color: #c97;
+		background: rgba(204, 153, 119, 0.1);
+		border-radius: 3px;
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 	}
 
 	.step-thumb {

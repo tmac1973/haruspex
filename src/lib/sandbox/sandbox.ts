@@ -21,6 +21,18 @@ export function installPackage(packageName: string, opts?: RunOptions): Promise<
 	return getWorkerPool().installPackage(requireChatId(), packageName, opts);
 }
 
+/**
+ * Snapshot the names bound in the active chat's persistent Python globals.
+ * Returns [] if no worker is alive for this chat (first run — no prior state)
+ * or no active conversation. Used by the pre-run lint pass to suppress F821
+ * on names defined by an earlier run_python call.
+ */
+export function listSandboxGlobals(): Promise<string[]> {
+	const id = getActiveConversationId();
+	if (!id) return Promise.resolve([]);
+	return getWorkerPool().listGlobals(id);
+}
+
 export async function resetSandbox(): Promise<void> {
 	const id = getActiveConversationId();
 	if (!id) return;

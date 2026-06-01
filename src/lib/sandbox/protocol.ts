@@ -55,6 +55,7 @@ export type MainToWorker =
 	| { kind: 'install'; id: string; package: string }
 	| { kind: 'reset'; id: string }
 	| { kind: 'interrupt'; id: string }
+	| { kind: 'list_globals'; id: string }
 	| {
 			kind: 'fetch_response';
 			id: string;
@@ -102,6 +103,7 @@ export type WorkerToMain =
 	  }
 	| { kind: 'install_progress'; id: string; package: string; phase: InstallPhase }
 	| { kind: 'done'; id: string; result: ToolResult }
+	| { kind: 'globals'; id: string; names: string[] }
 	| {
 			kind: 'fetch_request';
 			id: string;

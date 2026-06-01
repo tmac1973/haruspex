@@ -21,6 +21,12 @@ interface PendingRun {
 	onStderr?: (chunk: string) => void;
 }
 
+interface PendingGlobals {
+	resolve: (names: string[]) => void;
+	reject: (err: Error) => void;
+	timer: ReturnType<typeof setTimeout> | null;
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 const INTERRUPT_FALLBACK_MS = 2_000;
 
@@ -99,6 +105,7 @@ export class WorkerManager {
 	private readyWaiters: Array<() => void> = [];
 	private readyError: string | null = null;
 	private pending = new Map<string, PendingRun>();
+	private pendingGlobals = new Map<string, PendingGlobals>();
 	private interruptBuffer: SharedArrayBuffer | null = null;
 	private readonly isIsolated: () => boolean;
 	/**
@@ -220,6 +227,14 @@ export class WorkerManager {
 			case 'fetch_request':
 				void this.handleFetchRequest(msg);
 				return;
+			case 'globals': {
+				const pending = this.pendingGlobals.get(msg.id);
+				if (!pending) return;
+				this.pendingGlobals.delete(msg.id);
+				if (pending.timer) clearTimeout(pending.timer);
+				pending.resolve(msg.names);
+				return;
+			}
 			case 'sync_workdir_ack': {
 				const pending = this.pendingSyncs.get(msg.sync_id);
 				if (!pending) return;
@@ -395,6 +410,33 @@ export class WorkerManager {
 		return this.dispatch({ kind: 'install', id, package: packageName }, id, opts);
 	}
 
+	/**
+	 * Ask the worker for the names currently bound in user globals. Used by
+	 * the pre-run lint pass to seed ruff's `builtins` config so F821 doesn't
+	 * false-positive on names defined by an earlier run_python call. Returns
+	 * an empty list if the worker isn't ready, the request times out, or the
+	 * worker has been respawned mid-flight — lint is advisory.
+	 */
+	async listGlobals(timeoutMs = 1500): Promise<string[]> {
+		const id = crypto.randomUUID();
+		try {
+			await this.waitForReady();
+		} catch {
+			return [];
+		}
+		return new Promise<string[]>((resolve) => {
+			const timer = setTimeout(() => {
+				if (this.pendingGlobals.delete(id)) resolve([]);
+			}, timeoutMs);
+			this.pendingGlobals.set(id, {
+				resolve: (names) => resolve(names),
+				reject: () => resolve([]),
+				timer
+			});
+			this.send({ kind: 'list_globals', id });
+		});
+	}
+
 	async reset(): Promise<void> {
 		this.respawn();
 	}
@@ -419,6 +461,12 @@ export class WorkerManager {
 		const pendingSyncs = Array.from(this.pendingSyncs.values());
 		this.pendingSyncs.clear();
 		pendingSyncs.forEach((s) => s.reject(new Error('sandbox reset during sync')));
+		const pendingGlobals = Array.from(this.pendingGlobals.values());
+		this.pendingGlobals.clear();
+		pendingGlobals.forEach((g) => {
+			if (g.timer) clearTimeout(g.timer);
+			g.resolve([]);
+		});
 	}
 
 	private async handleSaveRequest(msg: {

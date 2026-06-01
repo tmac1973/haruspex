@@ -9,4 +9,4 @@ import './sandbox';
 export { getToolSchemas, executeTool, getDisplayLabel } from './registry';
 
 // Re-export types used by consumers
-export type { ToolExecOutput, PendingImage, ToolContext, Artifact } from './types';
+export type { ToolExecOutput, PendingImage, ToolContext, Artifact, LintIssue } from './types';

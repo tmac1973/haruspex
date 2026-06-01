@@ -33,6 +33,20 @@
             "--select=E9,F",
             { "validator": "\\S+" }
           ]
+        },
+        {
+          "name": "binaries/ruff",
+          "sidecar": true,
+          "args": [
+            "check",
+            "--output-format=json",
+            "--exit-zero",
+            "--isolated",
+            "--select=E9,F63,F7,F82,F541,F901,B006,B008",
+            "--config",
+            { "validator": "builtins=\\[.*\\]" },
+            { "validator": "\\S+" }
+          ]
         }
       ]
     },
@@ -48,6 +62,20 @@
             "--exit-zero",
             "--isolated",
             "--select=E9,F",
+            { "validator": "\\S+" }
+          ]
+        },
+        {
+          "name": "binaries/ruff",
+          "sidecar": true,
+          "args": [
+            "check",
+            "--output-format=json",
+            "--exit-zero",
+            "--isolated",
+            "--select=E9,F63,F7,F82,F541,F901,B006,B008",
+            "--config",
+            { "validator": "builtins=\\[.*\\]" },
             { "validator": "\\S+" }
           ]
         }
