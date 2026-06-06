@@ -163,6 +163,14 @@
 		t.onSelectionChange(() => onSelectionChange?.(t.hasSelection()));
 		resizeObserver = observeResize(t, fit, newSessionId, container);
 		t.focus();
+		// Now that the output listener and the onData reply path are both
+		// wired, tell the backend to flush any output buffered during the
+		// spawn→attach gap. Until this fires, startup terminal queries (e.g.
+		// fish's Primary Device Attributes probe) would be dropped and go
+		// unanswered, stalling the shell on a compatibility check.
+		await invoke('shell_mark_ready', { sessionId: newSessionId }).catch((e) =>
+			console.error('shell_mark_ready failed', e)
+		);
 		onReady?.(buildHandle(context));
 	}
 

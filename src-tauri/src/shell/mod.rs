@@ -111,6 +111,24 @@ pub fn shell_write(
     session.write(data.as_bytes())
 }
 
+/// Called by the frontend once it has attached its `shell://output`
+/// listener and the xterm reply path. Flushes output buffered during the
+/// spawn→attach gap so startup terminal queries (e.g. fish's Primary
+/// Device Attributes probe) reach xterm and get answered.
+#[tauri::command]
+pub fn shell_mark_ready(
+    app: AppHandle,
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+) -> Result<(), String> {
+    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or_else(|| "shell session not found".to_string())?;
+    session.mark_ready(&app, session_id);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn shell_resize(
     state: State<'_, ShellManager>,
