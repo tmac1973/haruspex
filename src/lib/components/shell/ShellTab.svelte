@@ -68,12 +68,12 @@
 
 	type Shortcut = { match: (e: KeyboardEvent) => boolean; run: () => void };
 
-	// F1 toggle sidebar, Ctrl+` focus swap, Ctrl+Shift+C copy,
-	// Ctrl+Shift+V paste. Plain Ctrl+C stays as SIGINT for bash;
-	// Ctrl+backtick is unused in readline.
+	// Ctrl+Shift+A toggle sidebar (F1 is the app-wide shortcuts help),
+	// Ctrl+` focus swap, Ctrl+Shift+C copy, Ctrl+Shift+V paste. Plain
+	// Ctrl+C stays as SIGINT for bash; Ctrl+backtick is unused in readline.
 	const shortcuts: Shortcut[] = [
 		{
-			match: (e) => e.key === 'F1' && !e.ctrlKey && !e.shiftKey && !e.altKey,
+			match: (e) => e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyA',
 			run: toggleShellSidebar
 		},
 		{

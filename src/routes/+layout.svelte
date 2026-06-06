@@ -5,6 +5,7 @@
 	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
 	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
+	import HelpModal from '$lib/components/HelpModal.svelte';
 	import StartupNoticeDialog from '$lib/components/StartupNoticeDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
@@ -40,6 +41,7 @@
 
 	let { children } = $props();
 	let showLogs = $state(false);
+	let showHelp = $state(false);
 	let showStartupNotice = $state(false);
 	let version = $state('');
 	let update = $state<UpdateInfo | null>(null);
@@ -173,9 +175,20 @@
 		return '';
 	}
 
+	function hasNoModifiers(event: KeyboardEvent): boolean {
+		return !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey;
+	}
+
 	function onGlobalKeydown(event: KeyboardEvent) {
+		// F1 toggles the shortcuts help — available on every page (incl.
+		// settings), so it's handled before the main-page guard below.
+		if (event.key === 'F1' && hasNoModifiers(event)) {
+			event.preventDefault();
+			if (!event.repeat) showHelp = !showHelp;
+			return;
+		}
 		if (!isMainPage()) return;
-		if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
+		if (!hasNoModifiers(event)) return;
 		if (event.key === 'F2') {
 			event.preventDefault();
 			if (event.repeat) return;
@@ -227,6 +240,26 @@
 	<div class="header-right">
 		<ServerStatusBadge />
 		<ContextIndicator />
+		<button
+			class="header-icon-btn"
+			title="Keyboard shortcuts (F1)"
+			onclick={() => (showHelp = !showHelp)}
+		>
+			<svg
+				width="18"
+				height="18"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			>
+				<circle cx="12" cy="12" r="10"></circle>
+				<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+				<line x1="12" y1="17" x2="12.01" y2="17"></line>
+			</svg>
+		</button>
 		<button class="header-icon-btn" title="Sidecar Logs" onclick={() => (showLogs = !showLogs)}>
 			<svg
 				width="18"
@@ -272,6 +305,7 @@
 </main>
 
 <LogViewer open={showLogs} onclose={() => (showLogs = false)} />
+<HelpModal open={showHelp} onclose={() => (showHelp = false)} />
 
 {#if showStartupNotice}
 	<StartupNoticeDialog onclose={() => (showStartupNotice = false)} />

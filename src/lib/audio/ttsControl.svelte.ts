@@ -1,7 +1,7 @@
 /**
  * Shared TTS playback state.
  *
- * Both the on-screen SpeakerButton (per-message) and the global F4
+ * Both the on-screen SpeakerButton (per-message) and the global F3
  * read-aloud hotkey go through this module so a button-start +
  * hotkey-stop (or vice versa) work cleanly.
  */
