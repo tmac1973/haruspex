@@ -20,7 +20,7 @@
 	class:playing
 	class:initializing
 	onclick={onClick}
-	title={initializing ? 'Loading voice...' : playing ? 'Stop reading' : 'Read aloud (F4)'}
+	title={initializing ? 'Loading voice...' : playing ? 'Stop reading' : 'Read aloud (F3)'}
 >
 	{#if initializing}
 		<span class="spinner"></span>

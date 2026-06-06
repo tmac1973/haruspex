@@ -101,6 +101,22 @@ Open the `.dmg` and drag Haruspex to Applications. Because the app is **not code
 > [!WARNING]
 > **Haruspex uses your GPU for inference.** While it is running, other GPU-intensive applications like games may experience reduced performance. Close Haruspex before launching games or other GPU-heavy programs.
 
+## Keyboard shortcuts
+
+Press **F1** (or click the **?** in the header) to see this list in the app anytime.
+
+| Shortcut | Action | Where |
+| --- | --- | --- |
+| `F1` | Show the keyboard-shortcuts help | Everywhere |
+| `F2` (hold) | Push-to-talk voice input — release to send | Main window |
+| `F3` | Read the last reply aloud (toggle) | Main window |
+| `Ctrl`/`Cmd` + `N` | New conversation | Chat tab |
+| `Enter` / `Shift`+`Enter` | Send message / new line | Chat & Shell composers |
+| `Esc` | Stop generating · close dialogs | Everywhere |
+| `Ctrl`+`Shift`+`A` | Toggle the assistant sidebar | Shell tab |
+| `` Ctrl+` `` | Switch focus: terminal ↔ assistant | Shell tab |
+| `Ctrl`+`Shift`+`C` / `V` | Copy selection / paste | Shell tab |
+
 ## Development
 
 ### Build prerequisites
