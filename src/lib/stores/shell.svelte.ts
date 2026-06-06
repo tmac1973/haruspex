@@ -20,6 +20,7 @@ import type { ChatMessage } from '$lib/api';
 import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 import type { SearchStep } from '$lib/agent/loop';
 import { getDisplayLabel } from '$lib/agent/tools';
+import { describeContextManaged } from '$lib/agent/context-budget';
 import { logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { buildShellSystemPrompt, type ShellSessionContext } from '$lib/shell/system-prompt';
@@ -63,6 +64,9 @@ let lastError = $state<string | null>(null);
 let composerFocused = $state(false);
 let searchSteps = $state<SearchStep[]>([]);
 let messageSteps = $state<Record<number, SearchStep[]>>({});
+// Transient notice when the pre-send guard reduced history to fit the
+// model's context window. Cleared at the start of each turn.
+let contextNotice = $state<string | null>(null);
 let integrationMarkerCount = $state(0);
 let integrationCompletedCommands = $state(0);
 let abortController: AbortController | null = null;
@@ -103,6 +107,10 @@ export function getShellLastError(): string | null {
 
 export function getShellSearchSteps(): SearchStep[] {
 	return searchSteps;
+}
+
+export function getShellContextNotice(): string | null {
+	return contextNotice;
 }
 
 export function getShellMessageSteps(): Record<number, SearchStep[]> {
@@ -188,6 +196,7 @@ export function newShellChat(): void {
 	searchSteps = [];
 	messageSteps = {};
 	lastError = null;
+	contextNotice = null;
 }
 
 export function cancelShellTurn(): void {
@@ -294,6 +303,7 @@ export async function submitShell(payload: ShellSubmission): Promise<void> {
 	isSubmitting = true;
 	streamingContent = '';
 	searchSteps = [];
+	contextNotice = null;
 
 	const userMsg: ChatMessage = { role: 'user', content: payload.body };
 	messages = [...messages, userMsg];
@@ -319,6 +329,7 @@ export async function submitShell(payload: ShellSubmission): Promise<void> {
 			onTicket: (t) => (ticket = t),
 			onAdmitted: () => (ticket = null),
 			onAssistantDelta: (full) => (streamingContent = full),
+			onContextManaged: (info) => (contextNotice = describeContextManaged(info)),
 			onToolStart: (call) => {
 				searchSteps = [
 					...searchSteps,

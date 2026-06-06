@@ -1,8 +1,13 @@
-import { type ChatMessage, type Usage, ApiError } from '$lib/api';
+import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { getDisplayLabel } from '$lib/agent/tools';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
+import {
+	estimateMessagesTokens,
+	describeContextManaged,
+	getTokenCalibration
+} from '$lib/agent/context-budget';
 import {
 	buildSystemPrompt,
 	looksLikeFileOutputRequest,
@@ -19,12 +24,7 @@ import {
 	hasLiveWorkerFor,
 	cancelActiveRun
 } from '$lib/sandbox/sandbox';
-import {
-	getContextUsage,
-	updateContextUsage,
-	resetContextUsage,
-	setContextUsage
-} from '$lib/stores/context.svelte';
+import { updateContextUsage, resetContextUsage, setContextUsage } from '$lib/stores/context.svelte';
 import {
 	initDb,
 	dbSaveMessage,
@@ -136,6 +136,10 @@ let workingDir = $state<string | null>(loadWorkingDir());
 let isGenerating = $state(false);
 let isWaitingForSlot = $state(false);
 let isCompacting = $state(false);
+// Transient notice set when the pre-send guard had to reduce history to
+// fit the model's context window. Shown inline in the thread, cleared at
+// the start of the next turn.
+let contextNotice = $state<string | null>(null);
 let streamingContent = $state('');
 let errorMessage = $state<string | null>(null);
 // Turn id of the agent run that produced the current error, if any. The
@@ -270,6 +274,10 @@ export function getIsCompacting(): boolean {
 	return isCompacting;
 }
 
+export function getContextNotice(): string | null {
+	return contextNotice;
+}
+
 export function getExhaustiveResearch(): boolean {
 	return exhaustiveResearch;
 }
@@ -367,11 +375,17 @@ export function setExhaustiveResearch(value: boolean): void {
 }
 
 async function compactIfNeeded(): Promise<void> {
-	const usage = getContextUsage();
-	if (!shouldCompact(usage.promptTokens, usage.contextSize)) return;
-
 	const conversation = getActiveConversation();
 	if (!conversation || conversation.messages.length < 10) return;
+
+	// Proactive: estimate the prompt we're *about* to send rather than
+	// reacting to the last response's token count. The reactive approach
+	// could never fire when a single turn jumped over the wall in one
+	// step — by then the request had already been built and rejected. Scale
+	// by the learned calibration so dense content (code/logs) triggers the
+	// summary as early as it should.
+	const estimated = estimateMessagesTokens(conversation.messages) * getTokenCalibration();
+	if (!shouldCompact(estimated, getActiveContextSize())) return;
 
 	isCompacting = true;
 	try {
@@ -725,11 +739,39 @@ function buildApiPrompt(
 		}
 	}
 
+	// Merge any additional leading system messages (e.g. a compaction
+	// summary stored in history) into the single system prompt. Chat
+	// templates like Qwen's reject a system message that isn't the very
+	// first, so two leading system messages would 500 the request.
+	messagesForApi = mergeLeadingSystemMessages(messagesForApi);
+
 	messagesForApi = injectMessageHints(messagesForApi, {
 		workingDir,
 		exhaustiveResearch
 	});
 	return { messages: messagesForApi, baseMessageCount: messagesForApi.length };
+}
+
+/**
+ * Collapse consecutive leading system messages into one. The compaction
+ * summary is stored as a system message at the front of history; once the
+ * fresh system prompt is prepended, that becomes two adjacent system
+ * messages, which strict chat templates reject.
+ */
+function mergeLeadingSystemMessages(messages: ChatMessage[]): ChatMessage[] {
+	const merged: ChatMessage[] = [];
+	for (const m of messages) {
+		const prev = merged[merged.length - 1];
+		if (m.role === 'system' && prev && prev.role === 'system') {
+			merged[merged.length - 1] = {
+				...prev,
+				content: `${messageText(prev.content)}\n\n${messageText(m.content)}`
+			};
+		} else {
+			merged.push(m);
+		}
+	}
+	return merged;
 }
 
 /**
@@ -814,6 +856,7 @@ export async function sendMessage(content: string): Promise<void> {
 	const conversation = ensureSendableConversation(content);
 	if (!conversation) return;
 
+	contextNotice = null;
 	await compactIfNeeded();
 	finalizeUserTurn(conversation, content);
 	const signal = resetTurnState(conversation);
@@ -866,6 +909,9 @@ export async function sendMessage(content: string): Promise<void> {
 							promptTokens: u.prompt_tokens,
 							completionTokens: u.completion_tokens
 						};
+					},
+					onContextManaged: (info) => {
+						contextNotice = describeContextManaged(info);
 					},
 					onCallStats: (stats) => {
 						turnStats.lastCallStats = stats;

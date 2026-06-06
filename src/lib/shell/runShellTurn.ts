@@ -15,6 +15,7 @@ import type { ChatMessage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact } from '$lib/agent/tools';
 import { runAgentLoop } from '$lib/agent/loop';
+import type { ContextManagedInfo } from '$lib/agent/context-budget';
 import { withInferenceSlot, type InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 import { updateContextUsage } from '$lib/stores/context.svelte';
 import { stripToolCallArtifacts } from '$lib/markdown';
@@ -29,6 +30,7 @@ export interface ShellTurnOptions {
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
 	onAssistantDelta?: (full: string) => void;
+	onContextManaged?: (info: ContextManagedInfo) => void;
 	onToolStart?: (call: ResolvedToolCall) => void;
 	onToolEnd?: (
 		call: ResolvedToolCall,
@@ -77,6 +79,7 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 		visionSupported: options.visionSupported ?? true,
 		signal: options.signal,
 		onUsageUpdate: (usage) => updateContextUsage(usage, options.contextSize),
+		onContextManaged: (info) => options.onContextManaged?.(info),
 		onToolStart: (call) => options.onToolStart?.(call),
 		onToolEnd: (call, result, thumbDataUrl, artifacts) =>
 			options.onToolEnd?.(call, result, thumbDataUrl, artifacts),

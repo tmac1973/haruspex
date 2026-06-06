@@ -15,11 +15,20 @@ import {
 	chatCompletionStream,
 	messageText,
 	type ChatMessage,
+	type ChatCompletionResponse,
 	type Usage
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { executeTool, getToolSchemas, type PendingImage } from '$lib/agent/tools';
 import type { ToolDefinition } from '$lib/api';
+import {
+	fitMessagesToBudget,
+	trimOldToolMessages,
+	estimateMessagesTokens,
+	recordTokenCalibration,
+	parseContextOverflow,
+	getTokenCalibration
+} from '$lib/agent/context-budget';
 import { getChatTemplateKwargs, getSamplingParams } from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
 import { logDebug } from '$lib/debug-log';
@@ -30,9 +39,6 @@ import type { AgentLoopOptions } from '../loop';
 // Lower than the conversation-level compaction threshold (0.8) so we
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
-// Always preserve this many of the most recent tool messages — the
-// model needs the freshest results to actually answer the question.
-const PRESERVE_RECENT_TOOL_MESSAGES = 3;
 // Per-call output token cap. Used for both agent-loop iterations (where
 // the model may emit a large `fs_write_pdf` tool call containing an
 // entire report as its content argument) and the final streaming
@@ -197,29 +203,76 @@ function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T>
 	});
 }
 
+// `trimOldToolMessages` now lives in $lib/agent/context-budget alongside
+// the pre-send guard that shares it.
+
 /**
- * Replace older tool-message content with a short stub when prompt
- * tokens have crossed the in-loop trim threshold. Returns true if any
- * messages were trimmed.
+ * Deterministically shrink `ctx.messages` to fit the server's context
+ * window before a model call, reserving `reserveOutput` tokens for the
+ * response. No-op when context size is unknown (0) or the prompt already
+ * fits. Surfaces what it did via the optional `onContextManaged` callback.
  */
-function trimOldToolMessages(messages: ChatMessage[]): boolean {
-	const toolIndices: number[] = [];
-	for (let i = 0; i < messages.length; i++) {
-		if (messages[i].role === 'tool') toolIndices.push(i);
+function applyContextGuard(
+	ctx: LoopContext,
+	reserveOutput: number,
+	tools?: ToolDefinition[]
+): void {
+	if (ctx.contextSize <= 0) return;
+	const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, { reserveOutput, tools });
+	if (info) {
+		logDebug('agent', 'pre-send context guard reduced prompt', info);
+		ctx.options.onContextManaged?.(info);
 	}
-	if (toolIndices.length <= PRESERVE_RECENT_TOOL_MESSAGES) return false;
-	const trimUpTo = toolIndices.length - PRESERVE_RECENT_TOOL_MESSAGES;
-	let trimmed = false;
-	for (let k = 0; k < trimUpTo; k++) {
-		const idx = toolIndices[k];
-		const msg = messages[idx];
-		const text = messageText(msg.content);
-		if (text.startsWith('[Trimmed:')) continue;
-		const stub = `[Trimmed: ${text.length} chars dropped to free context. Earlier tool result is no longer in scope — refer to more recent results or call the tool again if needed.]`;
-		messages[idx] = { ...msg, content: stub };
-		trimmed = true;
+}
+
+/** Per-call sampling/output params shared by the guarded helper. */
+type CompletionParams = {
+	temperature: number;
+	top_p: number;
+	top_k: number;
+	presence_penalty: number;
+	max_tokens: number;
+	chat_template_kwargs: ReturnType<typeof getChatTemplateKwargs>;
+};
+
+/**
+ * Non-streaming completion with the full context defense:
+ *   1. Pre-send guard shrinks the prompt to the calibrated budget.
+ *   2. On success, feed the real `prompt_tokens` back into calibration so
+ *      our byte estimate self-corrects for this content's density.
+ *   3. If a context-overflow 400 still slips through (estimate was too
+ *      optimistic), recalibrate from the server's exact token count, refit
+ *      harder, and retry once.
+ */
+async function sendGuardedCompletion(
+	ctx: LoopContext,
+	tools: ToolDefinition[] | undefined,
+	params: CompletionParams,
+	reserveOutput: number
+): Promise<ChatCompletionResponse> {
+	applyContextGuard(ctx, reserveOutput, tools);
+	let sentEstimate = estimateMessagesTokens(ctx.messages, tools);
+	try {
+		const res = await chatCompletion({ messages: ctx.messages, tools, ...params }, ctx.signal);
+		if (res.usage) recordTokenCalibration(sentEstimate, res.usage.prompt_tokens);
+		return res;
+	} catch (e) {
+		const overflow = e instanceof ApiError ? parseContextOverflow(e.message) : null;
+		if (!overflow) throw e;
+		// The estimate was too optimistic and we hit the wall. Learn the true
+		// ratio from the server's exact count, then refit and retry once.
+		recordTokenCalibration(sentEstimate, overflow.promptTokens);
+		logDebug('agent', 'context overflow 400 — recalibrating and retrying', {
+			overflow,
+			calibration: getTokenCalibration()
+		});
+		const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, { reserveOutput, tools });
+		if (info) ctx.options.onContextManaged?.(info);
+		sentEstimate = estimateMessagesTokens(ctx.messages, tools);
+		const res = await chatCompletion({ messages: ctx.messages, tools, ...params }, ctx.signal);
+		if (res.usage) recordTokenCalibration(sentEstimate, res.usage.prompt_tokens);
+		return res;
 	}
-	return trimmed;
 }
 
 /**
@@ -263,6 +316,8 @@ async function streamFinalSynthesis(
 	sampling: ReturnType<typeof getSamplingParams>,
 	templateKwargs: ReturnType<typeof getChatTemplateKwargs>
 ): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
+	applyContextGuard(ctx, FINAL_SYNTHESIS_MAX_TOKENS, tools);
+	const sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 	const stream = chatCompletionStream(
 		{
 			messages: ctx.messages,
@@ -292,6 +347,7 @@ async function streamFinalSynthesis(
 		ctx.options.onStreamChunk(chunk);
 	}
 	if (streamUsage) {
+		recordTokenCalibration(sentEstimate, streamUsage.prompt_tokens);
 		ctx.options.onCallStats?.({
 			durationMs: Math.max(1, Date.now() - streamStartMs),
 			completionTokens: streamUsage.completion_tokens
@@ -325,14 +381,17 @@ export async function runIteration(
 		ctx.pendingImages.length = 0;
 	}
 
-	// Non-streaming request to check for tool calls.
+	// Non-streaming request to check for tool calls. The guarded helper
+	// shrinks the prompt to fit (reserving output headroom), self-calibrates
+	// the token estimate from the server's reported usage, and retries once
+	// if a context-overflow 400 still slips through.
 	const sampling = getSamplingParams({ codeContext: isCodeContext(messages) });
 	const templateKwargs = getChatTemplateKwargs();
 	const callStartMs = Date.now();
-	const response = await chatCompletion(
+	const response = await sendGuardedCompletion(
+		ctx,
+		tools,
 		{
-			messages,
-			tools,
 			temperature: sampling.temperature,
 			top_p: sampling.top_p,
 			top_k: sampling.top_k,
@@ -340,7 +399,7 @@ export async function runIteration(
 			max_tokens: AGENT_LOOP_MAX_TOKENS,
 			chat_template_kwargs: templateKwargs
 		},
-		signal
+		AGENT_LOOP_MAX_TOKENS
 	);
 	const callDurationMs = Date.now() - callStartMs;
 

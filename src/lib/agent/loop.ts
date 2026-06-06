@@ -16,6 +16,7 @@
 import type { StreamChunk, Usage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
+import type { ContextManagedInfo } from './context-budget';
 import { logDebug } from '$lib/debug-log';
 import { NudgeState } from './loop/nudges';
 import {
@@ -77,6 +78,13 @@ export interface AgentLoopOptions {
 	onComplete: () => void;
 	onError: (error: Error) => void;
 	onUsageUpdate?: (usage: Usage) => void;
+	/**
+	 * Called when the pre-send context guard had to reduce the prompt
+	 * (trim tool results, truncate, or drop old turns) to fit the model's
+	 * context window. Lets the UI surface a notice that history was
+	 * compacted. Not called when the prompt already fit.
+	 */
+	onContextManaged?: (info: ContextManagedInfo) => void;
 	/**
 	 * Wall-clock duration + completion-token count of each model call this
 	 * turn made. Used to compute a tok/s indicator for the assistant
