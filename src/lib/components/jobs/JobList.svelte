@@ -111,7 +111,7 @@
 					</div>
 					<button
 						type="button"
-						class="run-btn"
+						class="job-run-btn"
 						title={running ? 'Queue this run after the active one' : 'Run now'}
 						disabled={job.step_count === 0}
 						onclick={(e) => handleRun(e, job.id)}
@@ -245,7 +245,7 @@
 		color: var(--text-secondary);
 	}
 
-	.run-btn {
+	.job-run-btn {
 		width: 28px;
 		height: 28px;
 		border: 1px solid var(--border);
@@ -260,12 +260,12 @@
 		flex-shrink: 0;
 	}
 
-	.run-btn:hover:not(:disabled) {
+	.job-run-btn:hover:not(:disabled) {
 		background: color-mix(in srgb, var(--accent) 15%, transparent);
 		border-color: var(--accent);
 	}
 
-	.run-btn:disabled {
+	.job-run-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
 	}

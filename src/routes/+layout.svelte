@@ -461,8 +461,8 @@
 		background: color-mix(in srgb, #c44 12%, transparent);
 	}
 
-	:global(.paste-btn),
-	:global(.run-btn) {
+	:global(.code-block .paste-btn),
+	:global(.code-block .run-btn) {
 		background: none;
 		border: 1px solid var(--accent);
 		color: var(--accent);
@@ -472,26 +472,28 @@
 		cursor: pointer;
 	}
 
-	:global(.paste-btn:hover),
-	:global(.run-btn:hover) {
+	:global(.code-block .paste-btn:hover),
+	:global(.code-block .run-btn:hover) {
 		background: color-mix(in srgb, var(--accent) 14%, transparent);
 	}
 
-	:global(.run-btn) {
+	:global(.code-block .run-btn) {
 		background: var(--accent);
 		color: white;
 	}
 
-	:global(.run-btn:hover) {
+	:global(.code-block .run-btn:hover) {
 		background: color-mix(in srgb, var(--accent) 80%, black);
 	}
 
 	/* Paste-into-shell and Run-in-shell are meaningless outside the
 	   Shell tab. Hide them so a stray bash code block in chat or jobs
 	   doesn't promise something it can't deliver. ShellTab toggles
-	   the body class. */
-	:global(body:not(.shell-tab-active) .paste-btn),
-	:global(body:not(.shell-tab-active) .run-btn) {
+	   the body class. Scoped to .code-block so this only ever targets
+	   the markdown shell buttons — not any other component that happens
+	   to reuse a .run-btn class (e.g. the Jobs list run arrow). */
+	:global(body:not(.shell-tab-active) .code-block .paste-btn),
+	:global(body:not(.shell-tab-active) .code-block .run-btn) {
 		display: none;
 	}
 
