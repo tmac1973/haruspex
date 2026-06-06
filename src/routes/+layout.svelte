@@ -5,7 +5,7 @@
 	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
 	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
-	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
+	import StartupNoticeDialog from '$lib/components/StartupNoticeDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
 	import { startScheduler } from '$lib/agent/jobs/scheduler.svelte';
@@ -274,7 +274,7 @@
 <LogViewer open={showLogs} onclose={() => (showLogs = false)} />
 
 {#if showStartupNotice}
-	<GpuWarningDialog onclose={() => (showStartupNotice = false)} />
+	<StartupNoticeDialog onclose={() => (showStartupNotice = false)} />
 {/if}
 
 <FileConflictModal />
