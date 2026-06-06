@@ -42,6 +42,31 @@
 			? `Attached: ${cmdLines} shell command${cmdLines === 1 ? '' : 's'} (${lines} lines)`
 			: `Attached: ${lines} lines of shell context`;
 	}
+
+	// The preamble <pre> is a fixed-height scroll box; when its content is
+	// taller than the box AND the user hasn't scrolled to the bottom, mark
+	// the wrapper so a "scroll for more" fade appears. Without this cue the
+	// clipped content reads as missing rather than scrollable.
+	function overflowFade(node: HTMLElement) {
+		const wrap = node.parentElement;
+		const update = () => {
+			if (!wrap) return;
+			const clipped =
+				node.scrollHeight > node.clientHeight + 1 &&
+				node.scrollTop + node.clientHeight < node.scrollHeight - 1;
+			wrap.classList.toggle('clipped', clipped);
+		};
+		update();
+		node.addEventListener('scroll', update, { passive: true });
+		const ro = new ResizeObserver(update);
+		ro.observe(node);
+		return {
+			destroy() {
+				node.removeEventListener('scroll', update);
+				ro.disconnect();
+			}
+		};
+	}
 	import {
 		bindShellComposer,
 		cancelShellTurn,
@@ -238,7 +263,9 @@
 					{#if split.preamble}
 						<details class="shell-preamble">
 							<summary>{preambleSummary(split.preamble)}</summary>
-							<pre>{split.preamble}</pre>
+							<div class="preamble-scroll">
+								<pre use:overflowFade>{split.preamble}</pre>
+							</div>
 						</details>
 						<ChatMessage message={{ ...msg, content: split.question }} />
 					{:else}
@@ -468,6 +495,28 @@
 
 	.shell-preamble summary:hover {
 		color: var(--text-primary);
+	}
+
+	.preamble-scroll {
+		position: relative;
+	}
+
+	/* "Scroll for more" cue: a fade + chevron pinned to the bottom of the
+	   scroll box, shown only while content is clipped below the fold. */
+	.preamble-scroll:global(.clipped)::after {
+		content: '⌄ more';
+		position: absolute;
+		left: 1px;
+		right: 1px;
+		bottom: 0;
+		padding: 14px 0 3px;
+		text-align: center;
+		font-size: 0.62rem;
+		letter-spacing: 0.03em;
+		color: var(--text-secondary);
+		pointer-events: none;
+		border-radius: 0 0 6px 6px;
+		background: linear-gradient(to bottom, transparent, var(--bg-secondary) 65%);
 	}
 
 	.shell-preamble pre {

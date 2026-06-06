@@ -60,6 +60,17 @@ const PATTERNS: RiskPattern[] = [
 		description: 'pkill / killall / kill -9 can take down running services',
 		test: (cmd) =>
 			/(^|[\s|&;`(])(pkill|killall)\b/.test(cmd) || /(^|[\s|&;`(])kill\s+-9\b/.test(cmd)
+	},
+	{
+		label: 'erases disk',
+		description: 'diskutil eraseDisk / apfs deleteContainer destroys a volume (macOS)',
+		test: (cmd) =>
+			/(^|[\s|&;`(])diskutil\s+(erase(disk|volume)|apfs\s+(delete|erase)\w*)/i.test(cmd)
+	},
+	{
+		label: 'removes service',
+		description: 'launchctl remove/unload can disable a system or login service (macOS)',
+		test: (cmd) => /(^|[\s|&;`(])launchctl\s+(remove|unload|bootout)\b/.test(cmd)
 	}
 ];
 

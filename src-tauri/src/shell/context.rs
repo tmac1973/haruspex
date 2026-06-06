@@ -4,6 +4,8 @@ use std::process::Command;
 
 use serde::Serialize;
 
+use super::platform;
+
 /// Captured at PTY spawn time. Cheap to read but doesn't change for the
 /// lifetime of the shell session — distro upgrades mid-session would
 /// require respawning anyway.
@@ -25,8 +27,14 @@ pub struct SessionContext {
 impl SessionContext {
     pub fn capture(shell_path: &str) -> Self {
         let kernel = uname_r();
-        let os = std::env::consts::OS.to_string();
-        let (distro_id, distro_name, distro_version) = parse_os_release();
+        // OS / distro identity is platform-specific: Linux parses
+        // /etc/os-release, macOS reads sw_vers. The kernel (uname -r),
+        // shell, history, and hostname are captured the same way everywhere.
+        let os_info = platform::capture_os();
+        let os = os_info.os;
+        let distro_id = os_info.distro_id;
+        let distro_name = os_info.distro_name;
+        let distro_version = os_info.distro_version;
         let shell_name = Path::new(shell_path)
             .file_name()
             .and_then(|s| s.to_str())
@@ -56,32 +64,6 @@ fn uname_r() -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string())
-}
-
-fn parse_os_release() -> (Option<String>, Option<String>, Option<String>) {
-    let candidates = ["/etc/os-release", "/usr/lib/os-release"];
-    for path in candidates {
-        if let Ok(text) = fs::read_to_string(path) {
-            let mut id = None;
-            let mut name = None;
-            let mut version = None;
-            for line in text.lines() {
-                let Some((k, v)) = line.split_once('=') else {
-                    continue;
-                };
-                let v = v.trim().trim_matches('"').to_string();
-                match k {
-                    "ID" => id = Some(v),
-                    "PRETTY_NAME" if name.is_none() => name = Some(v),
-                    "NAME" if name.is_none() => name = Some(v),
-                    "VERSION_ID" => version = Some(v),
-                    _ => {}
-                }
-            }
-            return (id, name, version);
-        }
-    }
-    (None, None, None)
 }
 
 fn probe_shell_version(shell_path: &str) -> Option<String> {
@@ -178,12 +160,5 @@ mod tests {
         let text = ": 1700000000:0;ls -la\n: 1700000010:1;echo hi\nplain command\n";
         let lines = parse_zsh_history(text);
         assert_eq!(lines, vec!["ls -la", "echo hi", "plain command"]);
-    }
-
-    #[test]
-    fn parses_os_release_returns_something_or_nothing() {
-        // Just exercise the parser — on CI / Linux test boxes this
-        // usually returns Some(...).
-        let (_id, _name, _version) = parse_os_release();
     }
 }

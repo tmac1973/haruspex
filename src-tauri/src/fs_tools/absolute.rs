@@ -304,9 +304,12 @@ mod tests {
             .await
             .expect("list /etc");
         assert_eq!(listing.path, "/etc");
+        // `hosts` lives in /etc on every Unix (Linux + macOS), unlike
+        // os-release which is Linux-only — so the listing check stays
+        // meaningful cross-platform.
         assert!(
-            listing.entries.iter().any(|e| e.name == "os-release"),
-            "expected os-release in /etc listing"
+            listing.entries.iter().any(|e| e.name == "hosts"),
+            "expected hosts in /etc listing"
         );
     }
 }

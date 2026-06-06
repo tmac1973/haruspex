@@ -175,10 +175,12 @@ impl Session {
         self.integration.lock().ok()?.capture_last_command()
     }
 
-    pub fn capture_recent_commands(&self, limit: usize) -> Vec<CapturedRegion> {
+    /// Recent completed commands plus the in-flight command (if one is
+    /// running) so the auto-attach can include what the user just started.
+    pub fn capture_recent_commands_with_pending(&self, limit: usize) -> Vec<CapturedRegion> {
         self.integration
             .lock()
-            .map(|i| i.capture_recent_commands(limit))
+            .map(|i| i.capture_recent_commands_with_pending(limit))
             .unwrap_or_default()
     }
 

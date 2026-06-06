@@ -24,9 +24,9 @@
 	let menu = $state<{ x: number; y: number } | null>(null);
 	let copyFeedback = $state<string | null>(null);
 	let riskyConfirm = $state<{ command: string; reasons: RiskMatch[] } | null>(null);
-	// null = still checking, true/false = answer. We default to true and
-	// flip to false on non-Linux so the placeholder doesn't flash on the
-	// supported platform during the round-trip.
+	// Default to true so the placeholder doesn't flash on a supported
+	// platform (Linux/macOS) during the round-trip; the backend flips it to
+	// false on unsupported platforms (Windows, until Phase 17).
 	let platformSupported = $state<boolean>(true);
 
 	async function copySelectionToClipboard(): Promise<boolean> {
@@ -262,17 +262,16 @@
 	{#if !platformSupported}
 		<div class="platform-placeholder">
 			<div class="platform-card">
-				<h2>Shell tab — Linux only for now</h2>
+				<h2>Shell tab — not yet on Windows</h2>
 				<p>
-					Haruspex's interactive terminal + AI sidebar currently ships only on Linux. The PTY layer
-					is cross-platform, but the OSC 133 capture scripts and the assistant's auto-attach context
-					rely on bash/zsh — not <code>cmd.exe</code> or PowerShell — and the audio defensive guards haven't
-					been validated on macOS or Windows yet.
+					Haruspex's interactive terminal + AI sidebar ships on Linux and macOS. The PTY layer is
+					cross-platform, but the OSC 133 capture scripts and the assistant's auto-attach context
+					rely on bash/zsh — not <code>cmd.exe</code> or PowerShell.
 				</p>
 				<p>
-					macOS support is the likely next stop (zsh-by-default, similar PTY surface). Windows needs
-					new capture scripting for PowerShell or WSL bridging. The chat and jobs tabs work normally
-					on every platform — switch to those for now.
+					Windows support is the next stop: it needs new capture scripting for PowerShell or WSL
+					bridging. The chat and jobs tabs work normally on every platform — switch to those for
+					now.
 				</p>
 			</div>
 		</div>

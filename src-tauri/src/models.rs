@@ -614,6 +614,10 @@ pub fn detect_hardware() -> HardwareInfo {
 }
 
 /// Check if a GPU name looks like an integrated graphics adapter.
+/// Only the Linux and Windows `detect_gpu` paths inspect the GPU name;
+/// macOS reports Apple Silicon directly, so gate this out there to avoid a
+/// dead-code warning.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn is_integrated_gpu(name: &str) -> bool {
     let lower = name.to_lowercase();
     // Intel integrated (HD, UHD, Iris, Arc iGPU)

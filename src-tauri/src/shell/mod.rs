@@ -1,5 +1,6 @@
 mod context;
 mod integration;
+mod platform;
 mod pty;
 mod session;
 
@@ -251,7 +252,9 @@ pub fn shell_get_recent_commands(
     let session = sessions
         .get(&session_id)
         .ok_or_else(|| "shell session not found".to_string())?;
-    Ok(session.capture_recent_commands(limit))
+    // Include the in-flight command so asking about something still
+    // running attaches its output-so-far, not just completed commands.
+    Ok(session.capture_recent_commands_with_pending(limit))
 }
 
 #[tauri::command]
@@ -268,12 +271,12 @@ pub fn shell_get_recent_history(
 }
 
 /// Returns whether the Shell tab is supported on the current host.
-/// macOS and Windows are gated off for now: PTY spawn works via
-/// portable-pty, but the OSC 133 capture scripts only ship for
-/// bash/zsh (not cmd/powershell), and the audio/cpal guards haven't
-/// been validated outside Linux. The frontend uses this to swap the
-/// xterm mount for a "platform not yet supported" placeholder.
+/// Linux and macOS are supported (PTY via portable-pty + bash/zsh OSC 133
+/// capture). Windows is gated off until Phase 17: cmd/PowerShell need new
+/// capture scripting. The frontend uses this to swap the xterm mount for a
+/// "platform not yet supported" placeholder. Delegates to the per-OS
+/// `platform` module so the gate lives in one place.
 #[tauri::command]
 pub fn shell_platform_supported() -> bool {
-    cfg!(target_os = "linux")
+    platform::platform_supported()
 }

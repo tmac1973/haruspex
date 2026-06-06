@@ -259,7 +259,7 @@ Goal: ship-ready.
 - **Persisted shell-troubleshooting history.** No SQLite tables. If users ask for "remember my last 5 troubleshooting sessions," that's a future phase.
 - **Shell auto-execute of suggestions.** Will not be added. The architecture has no code path from the LLM to the PTY write that bypasses a user click.
 - **fs_write from the Shell agent.** The Shell agent suggests; the user runs. If the user wants the model to write a file, they can switch to the Chat tab where fs_write is wired up.
-- **macOS and Windows.** Designed for cross-platform via `ShellPlatform` abstraction; implementation is a future phase.
+- **macOS and Windows.** Designed for cross-platform via the `shell/platform.rs` abstraction. macOS is implemented in `plan/phase-16-shell-tab-macos.md`; Windows in `plan/phase-17-shell-tab-windows.md`.
 - **Per-tab shortcut customization.** Submit shortcut is fixed at `Ctrl+Shift+L` in v1.
 - **Sub-agent / deep research mode in Shell.** `research_url` is available but the "deep research" flag from Chat is not surfaced in Shell. The expected interactions are short and iterative.
 - **Job integration.** A Job that runs a shell command is out of scope; jobs use the LLM tool surface, not the Shell tab's PTY.

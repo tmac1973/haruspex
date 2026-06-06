@@ -33,6 +33,8 @@ interface CapturedRegion {
 	exitCode: number | null;
 	cwd: string | null;
 	truncated: boolean;
+	// True for an in-flight command (still running, no exit code yet).
+	pending?: boolean;
 }
 
 interface ShellContextResponse {
@@ -230,7 +232,11 @@ function formatCapturedRegion(region: CapturedRegion, maxBytes: number): string 
 		truncated: outputTruncated,
 		originalBytes
 	} = truncateCapturedOutput(region.output.trimEnd(), maxBytes);
-	const meta = [`exit ${region.exitCode ?? '?'}`];
+	// A pending command is still running — no exit code yet, output is
+	// whatever has been emitted so far.
+	const meta = [
+		region.pending ? 'still running, no exit code yet' : `exit ${region.exitCode ?? '?'}`
+	];
 	if (region.cwd) meta.push(`cwd ${region.cwd}`);
 	// Two possible truncation sources:
 	//   - region.truncated comes from the Rust output ring overflowing
