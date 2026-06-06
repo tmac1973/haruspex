@@ -58,6 +58,10 @@ pub struct CapturedRegion {
     pub cwd: Option<String>,
     /// True if either range fell off the end of the output ring.
     pub truncated: bool,
+    /// True for an in-flight command: a `C` (output start) with no `D`
+    /// (output end) yet — i.e. the command is still running. `exit_code`
+    /// is None and `output` holds whatever has been emitted so far.
+    pub pending: bool,
 }
 
 enum ParserState {
@@ -379,12 +383,71 @@ impl Integration {
                     .or_else(|| c.cwd.clone())
                     .or_else(|| b.cwd.clone()),
                 truncated,
+                pending: false,
             });
 
             search_end = b_offset;
         }
         regions.reverse();
         regions
+    }
+
+    /// Like `capture_recent_commands`, but if a command is currently
+    /// in flight (a `C` marker with no matching `D` yet — the user ran
+    /// something that hasn't returned to the prompt), append it as a
+    /// `pending` region holding the output emitted so far. This lets the
+    /// auto-attach include the command the user just kicked off, instead
+    /// of waiting for the next prompt to draw (which is what emits `D`).
+    pub fn capture_recent_commands_with_pending(&self, limit: usize) -> Vec<CapturedRegion> {
+        let mut regions = self.capture_recent_commands(limit);
+        if let Some(pending) = self.pending_command() {
+            regions.push(pending);
+        }
+        regions
+    }
+
+    /// The in-flight command, if any: the most recent `C` that has no `D`
+    /// after it (and a `B` before it). Output runs from the `C` to the
+    /// current end of the stream; exit code is unknown. Returns None when
+    /// the shell is sitting idle at a prompt (the trailing marker is a
+    /// `B`, not a `C`).
+    fn pending_command(&self) -> Option<CapturedRegion> {
+        let markers: Vec<&Marker> = self.markers.iter().collect();
+        let c_offset = markers
+            .iter()
+            .rposition(|m| m.kind == MarkerKind::OutputStart)?;
+        // If any D follows this C, the command already completed — not pending.
+        if markers[c_offset + 1..]
+            .iter()
+            .any(|m| m.kind == MarkerKind::OutputEnd)
+        {
+            return None;
+        }
+        let c = markers[c_offset];
+        let b_offset = markers[..c_offset]
+            .iter()
+            .rposition(|m| m.kind == MarkerKind::CommandStart)?;
+        let b = markers[b_offset];
+
+        let out_bytes = self.slice_output(c.seq_end, self.total_offset);
+        let (command_line, cmd_truncated) = if let Some(cl) = c.command_line.as_ref() {
+            (cl.clone(), false)
+        } else {
+            let cmd_bytes = self.slice_output(b.seq_end, c.seq_start);
+            let truncated = cmd_bytes.is_none();
+            (
+                bytes_to_clean_text(cmd_bytes.as_deref().unwrap_or(&[])),
+                truncated,
+            )
+        };
+        Some(CapturedRegion {
+            command_line,
+            output: bytes_to_clean_text(out_bytes.as_deref().unwrap_or(&[])),
+            exit_code: None,
+            cwd: c.cwd.clone().or_else(|| b.cwd.clone()),
+            truncated: cmd_truncated || out_bytes.is_none(),
+            pending: true,
+        })
     }
 }
 
@@ -621,6 +684,50 @@ mod tests {
         // Most recent two should be cmd3 and cmd4 in chronological order.
         assert_eq!(two[0].command_line.trim(), "cmd3");
         assert_eq!(two[1].command_line.trim(), "cmd4");
+    }
+
+    #[test]
+    fn pending_command_captured_while_running() {
+        // A C with no D yet — the user kicked off a command that hasn't
+        // returned to the prompt.
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07");
+        integ.ingest(b"sleep 5\n\x1B]133;C;cl=c2xlZXAgNQ==\x07partial output\n");
+        // completed-only capture sees nothing
+        assert!(integ.capture_recent_commands(5).is_empty());
+        // with-pending sees the in-flight command
+        let with_pending = integ.capture_recent_commands_with_pending(5);
+        assert_eq!(with_pending.len(), 1);
+        let p = &with_pending[0];
+        assert_eq!(p.command_line, "sleep 5");
+        assert_eq!(p.output, "partial output\n");
+        assert_eq!(p.exit_code, None);
+        assert!(p.pending);
+    }
+
+    #[test]
+    fn pending_appended_after_completed_commands() {
+        let mut integ = Integration::new();
+        run_cycle(&mut integ, "ls", "a b\n", 0);
+        // now a running command
+        integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07top\n\x1B]133;C\x07loading\n");
+        let regions = integ.capture_recent_commands_with_pending(5);
+        assert_eq!(regions.len(), 2);
+        assert_eq!(regions[0].command_line.trim(), "ls");
+        assert!(!regions[0].pending);
+        assert_eq!(regions[1].command_line.trim(), "top");
+        assert!(regions[1].pending);
+    }
+
+    #[test]
+    fn no_pending_when_idle_at_prompt() {
+        // Trailing marker is B (prompt drawn, nothing running).
+        let mut integ = Integration::new();
+        run_cycle(&mut integ, "ls", "a\n", 0);
+        integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07");
+        let regions = integ.capture_recent_commands_with_pending(5);
+        assert_eq!(regions.len(), 1);
+        assert!(!regions[0].pending);
     }
 
     #[test]

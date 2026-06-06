@@ -1,6 +1,8 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use super::platform;
+
 /// User-configured shell binary takes priority over $SHELL. Invalid
 /// overrides (empty string, missing file) fall back to the default
 /// detection so a bad setting doesn't break the Shell tab.
@@ -16,7 +18,8 @@ pub fn resolve_shell_with_override(override_path: Option<&str>) -> String {
             return s;
         }
     }
-    "/bin/bash".to_string()
+    // Platform default: /bin/bash on Linux, /bin/zsh on macOS.
+    platform::default_shell()
 }
 
 pub fn resolve_cwd() -> String {
@@ -60,13 +63,23 @@ impl SpawnPlan {
 /// Build a SpawnPlan that injects our OSC 133 hook for the given shell.
 /// integration_dir must contain `haruspex.bash` / `haruspex.zsh`.
 /// On failure (e.g. unknown shell, write error) returns a passthrough plan.
+///
+/// Platform login behavior is layered on top of the shell-specific plan:
+/// `platform::login_args()` adds the login flag where the platform needs it
+/// (macOS, so `path_helper`/login rc files populate PATH), and
+/// `platform::login_env()` seeds PATH for shells we *don't* launch login
+/// (macOS bash). Both are no-ops on Linux, so Linux plans are unchanged.
 pub fn plan_integration(shell_path: &str, integration_dir: &Path) -> SpawnPlan {
     let name = shell_name(shell_path);
-    match name {
+    let login = !platform::login_args(shell_path).is_empty();
+    let mut plan = match name {
         "bash" => plan_bash(integration_dir).unwrap_or_else(SpawnPlan::passthrough),
-        "zsh" => plan_zsh(integration_dir).unwrap_or_else(SpawnPlan::passthrough),
+        "zsh" => plan_zsh(integration_dir, login).unwrap_or_else(SpawnPlan::passthrough),
         _ => SpawnPlan::passthrough(),
-    }
+    };
+    plan.args.extend(platform::login_args(shell_path));
+    plan.env.extend(platform::login_env(shell_path));
+    plan
 }
 
 fn plan_bash(integration_dir: &Path) -> Option<SpawnPlan> {
@@ -96,7 +109,16 @@ fn plan_bash(integration_dir: &Path) -> Option<SpawnPlan> {
     })
 }
 
-fn plan_zsh(integration_dir: &Path) -> Option<SpawnPlan> {
+/// Prepare a zsh integration plan. We override ZDOTDIR to a temp dir whose
+/// `.zshrc` sources the user's real `.zshrc` and then our OSC 133 hook
+/// (interactive rc, where the hook belongs).
+///
+/// When `login` is true (macOS — the shell is launched `zsh -l`), zsh also
+/// reads `.zprofile`/`.zlogin` from ZDOTDIR. We write thin shims there that
+/// source the user's real login files so their PATH setup (nvm, pyenv, …)
+/// runs. `/etc/zprofile` is read regardless of ZDOTDIR, so `path_helper`
+/// (and thus `/opt/homebrew/bin`) is already on PATH by the time these run.
+fn plan_zsh(integration_dir: &Path, login: bool) -> Option<SpawnPlan> {
     let hook = integration_dir.join("haruspex.zsh");
     if !hook.is_file() {
         return None;
@@ -118,6 +140,23 @@ fn plan_zsh(integration_dir: &Path) -> Option<SpawnPlan> {
     }
     contents.push_str(&format!(". {}\n", shell_quote(&hook.to_string_lossy())));
     write_file(&zdotdir.join(".zshrc"), &contents).ok()?;
+
+    if login {
+        // Source the user's real login files so login-only PATH setup runs.
+        for name in [".zprofile", ".zlogin"] {
+            let user_file = PathBuf::from(&user_zdotdir).join(name);
+            if user_file.is_file() {
+                let line = format!(
+                    "[ -f {f} ] && . {f}\n",
+                    f = shell_quote(&user_file.to_string_lossy())
+                );
+                // Best-effort: a missing shim just means that login file
+                // isn't sourced; the interactive hook still loads.
+                let _ = write_file(&zdotdir.join(name), &line);
+            }
+        }
+    }
+
     Some(SpawnPlan {
         args: Vec::new(),
         env: vec![("ZDOTDIR".to_string(), zdotdir.to_string_lossy().to_string())],

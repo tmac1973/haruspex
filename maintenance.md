@@ -471,21 +471,26 @@ starts. Idempotent. `COALESCE`s preserve existing timestamps.
 
 ---
 
-## 11b. Shell tab (Phase 15)
+## 11b. Shell tab (Phase 15 / 16)
 
 The Shell tab gives the user a real interactive terminal with a one-click
 path to "ask the LLM about this." The PTY is owned in-process; the LLM
-chat thread lives in a runes store; no SQLite involvement.
+chat thread lives in a runes store; no SQLite involvement. Supported on
+Linux and macOS (Phase 16); Windows is gated off until Phase 17.
 
 ### Module layout
 
 ```
 src-tauri/src/shell/
-  pty.rs          shell-binary + cwd detection, rcfile/ZDOTDIR injection
+  platform.rs     per-OS seam: default_shell / login_args / login_env /
+                  capture_os / platform_supported, cfg-gated linux|macos|other
+  pty.rs          shell-binary + cwd detection, rcfile/ZDOTDIR injection,
+                  layers platform login args/env onto the spawn plan
   session.rs      portable-pty wrapper, reader thread, kill on Drop
   integration.rs  OSC 133 marker parser, output ring, capture_last_command
-  context.rs      uname / /etc/os-release / $SHELL --version + history file parse
-  mod.rs          Tauri commands + ShellManager state
+  context.rs      uname + platform::capture_os() + $SHELL --version + history parse
+  mod.rs          Tauri commands + ShellManager state; shell_platform_supported
+                  delegates to platform::platform_supported()
 
 src-tauri/resources/shell-integration/
   haruspex.bash   OSC 133 A/B/C/D + OSC 7 emitters
@@ -525,6 +530,33 @@ src/lib/stores/shell.svelte.ts
 `{ label, description, test }` to `PATTERNS` and a positive +
 boundary-negative case to `risky-commands.test.ts`. The markdown
 renderer picks it up automatically — no schema or registration step.
+
+### Platform branches (where the per-OS work lives)
+
+All platform-varying behavior is behind `shell/platform.rs`, cfg-gated into
+`linux`, `macos`, and an `other` (Phase-17 Windows) module. Each exposes the
+same four functions, so the rest of `shell/` is platform-agnostic. To add a
+platform, implement that module — don't sprinkle `cfg!` through `pty.rs` /
+`context.rs`.
+
+- **default_shell()** — `/bin/bash` (linux), `/bin/zsh` (macos, the platform
+  default since 10.15). Used only as the fallback when neither the user
+  override nor `$SHELL` resolves.
+- **login_args(shell)** — macOS GUI apps inherit a minimal `launchd` PATH, so
+  the shell is launched as a *login* shell (`-l`) to run `/etc/zprofile` →
+  `path_helper` and the user's login rc, matching Terminal.app. zsh gets
+  `-l`; **bash does not**, because a login bash ignores `--rcfile` and would
+  drop our OSC 133 hook.
+- **login_env(shell)** — complements `login_args`: for a shell we *didn't*
+  launch login (macOS bash), PATH is seeded by probing `<shell> -lc 'printf
+  %s "$PATH"'` once at spawn so Homebrew tools resolve. Empty on linux.
+- For login zsh, `pty.rs::plan_zsh` also writes `.zprofile`/`.zlogin` shims
+  into the temp `ZDOTDIR` that source the user's real login files (the
+  interactive OSC 133 hook stays in the temp `.zshrc`).
+- **capture_os()** — linux parses `/etc/os-release`; macOS reads `sw_vers`
+  (`distro_name = "macOS"`, `distro_version = "<ProductVersion> (<Build>)"`).
+  `kernel` (`uname -r`), shell, history, and hostname are captured the same
+  way everywhere in `context.rs`.
 
 ### shellMode tool dispatch
 

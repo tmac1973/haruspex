@@ -62,6 +62,18 @@ describe('classifyShellRisk', () => {
 		expect(classifyShellRisk('kill 1234').matched).toBe(false);
 	});
 
+	it('flags macOS diskutil erase/delete', () => {
+		expect(classifyShellRisk('diskutil eraseDisk JHFS+ Backup disk2').matched).toBe(true);
+		expect(classifyShellRisk('diskutil apfs deleteContainer disk2').matched).toBe(true);
+		expect(classifyShellRisk('diskutil list').matched).toBe(false);
+	});
+
+	it('flags macOS launchctl remove/unload/bootout', () => {
+		expect(classifyShellRisk('launchctl remove com.example.agent').matched).toBe(true);
+		expect(classifyShellRisk('sudo launchctl bootout system/com.example').matched).toBe(true);
+		expect(classifyShellRisk('launchctl list').matched).toBe(false);
+	});
+
 	it('returns multiple reasons when multiple patterns match', () => {
 		const r = classifyShellRisk('sudo rm -rf /var/log');
 		const labels = r.reasons.map((x) => x.label);
