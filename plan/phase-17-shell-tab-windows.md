@@ -101,6 +101,12 @@ integration and context strategy.
 │  • NEW: <ShellPicker/> in the toolbar — lists catalog entries, greys     │
 │    out uninstalled ones, restarts session on pick.                       │
 │  • placeholder card removed on Windows (gate now open)                   │
+│  • Run/Paste already strip comment-only lines + inject via bracketed     │
+│    paste (commandBlock.ts) — verify against PowerShell/PSReadLine        │
+│    (see Risks: "Suggested-command injection on PowerShell")              │
+│ Terminal.svelte                                                          │
+│  • attachSession() calls shell_mark_ready after wiring the output        │
+│    listener + onData — preserve this on the ConPTY path (see note below) │
 │ stores/shell.svelte.ts                                                    │
 │  • selectedShell: { kind, exe?, distro? }; catalog: ShellCatalogEntry[]  │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -128,14 +134,31 @@ integration and context strategy.
 │                  in-distro probe (WSL)                                     │
 │ integration.rs← unchanged (OSC 133 parser already platform-agnostic;      │
 │                  haruspex.ps1 emits the same 133 markers)                  │
+│ session.rs    ← spawn-path unchanged for Windows except routing through    │
+│                  ShellKind; preserves the post-Phase-15 output-replay      │
+│                  handshake (shell_mark_ready) — matters most on ConPTY     │
 │ mod.rs        ← shell_spawn/shell_restart take a selection; NEW           │
-│                  shell_list_shells command; platform_supported → +windows │
+│                  shell_list_shells command; platform_supported → +windows; │
+│                  hosts the shell_mark_ready command (post-Phase-15)        │
 │                                                                            │
 │ resources/shell-integration/                                              │
 │   haruspex.ps1  ← NEW. wraps prompt + PSReadLine → OSC 133 + OSC 7        │
 │   haruspex.bash / haruspex.zsh ← reused inside WSL distros, unchanged     │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Post-Phase-15 note: the spawn→attach output-replay handshake
+
+Since this plan was written, `Session::spawn` gained an **output-replay buffer**: PTY
+output is buffered until the frontend calls the new `shell_mark_ready` command (from
+`Terminal.svelte`'s `attachSession`, once the `shell://output` listener and the xterm
+`onData` reply path are both wired), then flushed. This fixed a race where a shell's
+startup terminal query was emitted into the spawn→attach gap and lost. The mechanism is
+platform-agnostic and **every Windows session (PowerShell and WSL) inherits it** by
+going through `Session::spawn` — there's no per-shell work, but the ConPTY path must not
+regress it. It is *especially* relevant on Windows: ConPTY emits a burst of cursor /
+resize / redraw output the instant the child attaches, so buffering-until-ready is what
+keeps that startup burst from being dropped before xterm is listening.
 
 ### PowerShell injection (the new integration path)
 
@@ -302,6 +325,19 @@ no previously-clean file gains warnings.
 - **ConPTY quirks.** ConPTY reflows/rewrites output differently from a Unix PTY (cursor
   repositioning, resize redraw). xterm.js handles it, but full-screen TUIs under PowerShell may
   render imperfectly. Validate `Get-Process | Out-Host -Paging`, `vim` under WSL, and resize.
+- **ConPTY startup burst × the output-replay buffer.** ConPTY emits a redraw/cursor burst
+  immediately on child attach — the very output the `shell_mark_ready` replay buffer exists to
+  catch. Confirm the buffer flushes correctly on the ConPTY path (xterm renders a clean first
+  prompt, no lost/garbled startup output) for both PowerShell and `wsl.exe` children. If ConPTY
+  itself issues a Device-Attributes-style query at startup, the same wired-before-flush ordering
+  must answer it — validate the first prompt appears without a multi-second stall.
+- **Suggested-command injection on PowerShell.** Run/Paste inject suggested commands via
+  bracketed paste (`ESC[200~…ESC[201~`, from `commandBlock.ts`) plus comment-line stripping.
+  PSReadLine supports bracketed paste, but verify: (a) a multi-line block pastes as one editable
+  buffer and the trailing CR executes it (vs. running only the first line), (b) PowerShell
+  comments (`#`) are stripped the same way shell comments are — `stripCommandComments` keys on a
+  leading `#`, which matches PowerShell line comments, so this should hold, but confirm. WSL
+  bash/zsh behave as on Linux.
 - **`wsl.exe` absent / WSL not enabled.** `enumerate_shells` must treat a missing `wsl.exe` or
   "no distros" as zero WSL entries (greyed "No WSL distros found"), never an error that breaks the
   picker.
