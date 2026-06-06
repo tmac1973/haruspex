@@ -132,7 +132,7 @@ export interface AppSettings {
 	searchRecency: 'any' | 'day' | 'week' | 'month' | 'year';
 	audioOutputDevice: string;
 	audioInputDevice: string;
-	dismissedGpuWarning: boolean;
+	dismissedStartupNotice: boolean;
 	keepRecentToolResults: boolean;
 	/**
 	 * Filename (basename, e.g. "Qwen3.5-9B-Q4_K_M.gguf") of the model the
@@ -260,7 +260,7 @@ const defaults: AppSettings = {
 	searchRecency: 'any' as const,
 	audioOutputDevice: '',
 	audioInputDevice: '',
-	dismissedGpuWarning: false,
+	dismissedStartupNotice: false,
 	keepRecentToolResults: true,
 	activeLocalModelFilename: '',
 	sandboxEnabled: false,

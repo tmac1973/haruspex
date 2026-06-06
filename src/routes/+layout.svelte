@@ -40,7 +40,7 @@
 
 	let { children } = $props();
 	let showLogs = $state(false);
-	let showGpuWarning = $state(false);
+	let showStartupNotice = $state(false);
 	let version = $state('');
 	let update = $state<UpdateInfo | null>(null);
 
@@ -135,8 +135,8 @@
 			// Tauri commands not available (e.g., in browser dev mode)
 		}
 
-		if (!getSettings().dismissedGpuWarning) {
-			showGpuWarning = true;
+		if (!getSettings().dismissedStartupNotice) {
+			showStartupNotice = true;
 		}
 	});
 
@@ -273,8 +273,8 @@
 
 <LogViewer open={showLogs} onclose={() => (showLogs = false)} />
 
-{#if showGpuWarning}
-	<GpuWarningDialog onclose={() => (showGpuWarning = false)} />
+{#if showStartupNotice}
+	<GpuWarningDialog onclose={() => (showStartupNotice = false)} />
 {/if}
 
 <FileConflictModal />

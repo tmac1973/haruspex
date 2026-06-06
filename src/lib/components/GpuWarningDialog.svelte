@@ -10,7 +10,7 @@
 
 	function dismiss() {
 		if (dontShowAgain) {
-			updateSettings({ dismissedGpuWarning: true });
+			updateSettings({ dismissedStartupNotice: true });
 		}
 		onclose();
 	}
@@ -18,13 +18,21 @@
 
 <div class="backdrop">
 	<div class="dialog">
-		<h2>GPU Usage Notice</h2>
+		<h2>Before you begin</h2>
+		<h3>AI safety</h3>
+		<p>
+			Haruspex is an AI assistant, and AI models hallucinate. It can be confidently wrong, misread
+			output, and suggest commands — including in the Shell tab — that are mistaken or destructive.
+			The agent never runs commands on its own: anything it suggests lands at your prompt for you to
+			review and run. <strong
+				>You are the last line of defense — read and understand a command before you run it.</strong
+			>
+		</p>
+		<h3>GPU usage</h3>
 		<p>
 			Haruspex uses your GPU for AI inference. While it is running, other GPU-intensive applications
-			such as games may experience reduced performance.
-		</p>
-		<p>
-			For the best experience, close Haruspex before launching games or other GPU-heavy programs.
+			such as games may experience reduced performance — close Haruspex before launching games or
+			other GPU-heavy programs.
 		</p>
 		<div class="footer">
 			<label class="checkbox-row">
@@ -58,6 +66,16 @@
 	h2 {
 		margin: 0 0 12px 0;
 		font-size: 1.1rem;
+	}
+
+	h3 {
+		margin: 16px 0 6px 0;
+		font-size: 0.95rem;
+		color: var(--text-primary);
+	}
+
+	h3:first-of-type {
+		margin-top: 0;
 	}
 
 	p {
