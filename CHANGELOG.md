@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.42](https://github.com/tmac1973/haruspex/compare/v0.1.41...v0.1.42) (2026-06-06)
+
+
+### Bug Fixes
+
+* **shell:** warn on risky commands for Paste, not just Run ([68d4a27](https://github.com/tmac1973/haruspex/commit/68d4a278b23b0d464a2527e5ab7a0b3eb175b21e))
+* **shell:** warn on risky commands for Paste, not just Run ([fe35a40](https://github.com/tmac1973/haruspex/commit/fe35a40548549186a6e2c72c0df2198aafefea02))
+
 ## [0.1.41](https://github.com/tmac1973/haruspex/compare/v0.1.40...v0.1.41) (2026-06-06)
 
 
