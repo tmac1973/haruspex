@@ -15,7 +15,7 @@ The primary goals of this project are:
 - **Privacy** - Conversations and inference stay local. Searches themselves hit the web but web proxies and SearXNG are supported to anonymize your web searches. 
 - **Open Source/Open Weight** - Use of open weight local models means no monthly bill.
 - **Minimal Hardware Requirements** - This project targets 8GB of Unified RAM/VRAM for LLM+Context. Currently the model used is Qwen-3.5-9B (though we do offer Qwen-3.5-4B if you are tight on memory). All project features are built with this target (and the inherit limitations of a small model) in mind. 
-- **Human Enablement, Not Human Replacement** - There are many projects out building fully autonomous agents, this isn't one of them. This project aims to use AI to assist humans in learning, creation, and troubleshooting; not replace the human element completely. 
+- **Human Enablement, Not Human Replacement** - There are many projects that are building fully autonomous agents, this isn't one of them. This project aims to use AI to assist humans in learning, creation, and troubleshooting; not replace the human element completely. 
 
 ## Features
 
