@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.43](https://github.com/tmac1973/haruspex/compare/v0.1.42...v0.1.43) (2026-06-06)
+
+
+### Bug Fixes
+
+* **jobs:** run buttons hidden by shell-button CSS class collision ([5966cf4](https://github.com/tmac1973/haruspex/commit/5966cf40edca3ce027d106e4869bcdc6d0771a58))
+* **jobs:** run buttons hidden by shell-button CSS class collision ([d0e7319](https://github.com/tmac1973/haruspex/commit/d0e73199b454f480ee3066b9dd762a8b86a056e9))
+
 ## [0.1.42](https://github.com/tmac1973/haruspex/compare/v0.1.41...v0.1.42) (2026-06-06)
 
 
