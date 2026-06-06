@@ -45,6 +45,7 @@
 	import {
 		bindShellComposer,
 		cancelShellTurn,
+		getShellContextNotice,
 		getShellIntegrationCompletedCommands,
 		getShellIntegrationMarkerCount,
 		getShellLastError,
@@ -69,6 +70,7 @@
 	const submitting = $derived(isShellSubmitting());
 	const ticket = $derived(getShellTicket());
 	const lastError = $derived(getShellLastError());
+	const contextNotice = $derived(getShellContextNotice());
 	const searchSteps = $derived(getShellSearchSteps());
 	const messageSteps = $derived(getShellMessageSteps());
 	const markerCount = $derived(getShellIntegrationMarkerCount());
@@ -263,6 +265,9 @@
 							: 'another shell turn'}…
 				</div>
 			{/if}
+			{#if contextNotice}
+				<div class="context-notice">ⓘ {contextNotice}</div>
+			{/if}
 			{#if lastError}
 				<div class="error">{lastError}</div>
 			{/if}
@@ -421,6 +426,13 @@
 		color: var(--text-secondary);
 		font-style: italic;
 		padding: 8px 4px;
+	}
+
+	.context-notice {
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+		font-style: italic;
+		padding: 6px 4px;
 	}
 
 	.shell-preamble {

@@ -6,6 +6,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import ModalButton from '$lib/components/ModalButton.svelte';
 	import { classifyShellRisk, type RiskMatch } from '$lib/shell/risky-commands';
+	import { stripCommandComments, toBracketedPaste } from '$lib/shell/commandBlock';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import {
 		bindShellSession,
@@ -125,11 +126,14 @@
 	function onPasteRequest(event: Event) {
 		const data = (event as CustomEvent<string>).detail;
 		if (typeof data !== 'string' || !handle) return;
-		// Trim trailing newlines so the paste doesn't auto-execute. The
-		// user must press Enter themselves — that's the security model.
-		const cleaned = data.replace(/[\r\n]+$/, '');
+		// Drop comment-only and blank lines so they don't each become a
+		// shell-history entry. No trailing Enter — the paste doesn't
+		// auto-execute; the user presses Enter themselves (the security
+		// model). Bracketed paste keeps the shell's line editor from
+		// mangling the text (auto-closed quotes, reprints, autosuggestions).
+		const cleaned = stripCommandComments(data);
 		if (!cleaned) return;
-		invoke('shell_write', { sessionId: handle.sessionId, data: cleaned })
+		invoke('shell_write', { sessionId: handle.sessionId, data: toBracketedPaste(cleaned) })
 			.then(() => handle?.focus())
 			.catch((e) => console.error('shell_write (paste) failed', e));
 	}
@@ -168,7 +172,9 @@
 	function onRunRequest(event: Event) {
 		const data = (event as CustomEvent<string>).detail;
 		if (typeof data !== 'string' || !handle) return;
-		const cleaned = data.replace(/[\r\n]+$/, '').trim();
+		// Strip comment-only and blank lines so only real commands run
+		// (and only they land in shell history).
+		const cleaned = stripCommandComments(data).trim();
 		if (!cleaned) return;
 		const risk = classifyShellRisk(cleaned);
 		if (risk.matched) {
@@ -192,7 +198,12 @@
 		if (!handle) return;
 		const before = await getMarkerCount();
 		try {
-			await invoke('shell_write', { sessionId: handle.sessionId, data: cleaned + '\n' });
+			// Bracketed paste + a trailing Enter: the shell inserts the
+			// command(s) literally (no quote/highlight mangling) then runs.
+			await invoke('shell_write', {
+				sessionId: handle.sessionId,
+				data: toBracketedPaste(cleaned, true)
+			});
 			handle.focus();
 		} catch (e) {
 			console.error('shell_write (run) failed', e);

@@ -15,12 +15,13 @@ The primary goals of this project are:
 - **Privacy** - Conversations and inference stay local. Searches themselves hit the web but web proxies and SearXNG are supported to anonymize your web searches. 
 - **Open Source/Open Weight** - Use of open weight local models means no monthly bill.
 - **Minimal Hardware Requirements** - This project targets 8GB of Unified RAM/VRAM for LLM+Context. Currently the model used is Qwen-3.5-9B (though we do offer Qwen-3.5-4B if you are tight on memory). All project features are built with this target (and the inherit limitations of a small model) in mind. 
+- **Human Enablement, Not Human Replacement** - There are many projects out building fully autonomous agents, this isn't one of them. This project aims to use AI to assist humans in learning, creation, and troubleshooting; not replace the human element completely. 
 
 ## Features
 
 - **Private by design** — all inference runs on your hardware, nothing is sent to the cloud
 - **Web research** — searches the web and reads pages to answer questions about anything, with an optional **deep research mode** for multi-source synthesis
-- **Shell tab** — a real interactive terminal with a one-click "Submit to LLM" path: ask the assistant to analyze the last command's output or a selected range. The agent can read config files / logs anywhere on the system and suggest fix commands as click-to-paste cards (with red chips on risky patterns like `sudo`, `rm -rf`, `dd of=`, `curl | sh`). The agent never executes — every command lands at the prompt for you to review and press Enter.
+- **Shell tab** — a real interactive terminal with a one-click "Submit to LLM" path: ask the assistant to analyze the last command's output or a selected range. The agent can read config files / logs anywhere on the system and suggest fix commands as click-to-paste cards (with red chips on risky patterns like `sudo`, `rm -rf`, `dd of=`, `curl | sh`). The agent never executes — every command lands at the prompt for you to review and press Enter. ⚠️ The model can suggest mistaken or destructive commands — read the [AI safety disclaimer](#ai-safety-disclaimer) before running anything it proposes.
 - **Local file access (opt-in)** — pick a working directory and the model can read and write text, PDF, docx, xlsx, odt/ods/odp, pptx, and images, sandboxed to that directory ([details](#local-files))
 - **Python sandbox** — the model can write and execute Python in a sandboxed Pyodide environment running in the webview, with on-demand package installs (`install_package`) and HTTP via `pyfetch`; approval-gated with a per-call time limit
 - **Vision** — analyze images and form PDFs via the model's built-in mmproj projector
@@ -32,6 +33,22 @@ The primary goals of this project are:
 - **Persistent conversations** — SQLite-backed chat history survives restarts
 - **Log viewer** — toolbar modal with copyable per-sidecar logs for easy bug reports
 - **Dark mode** — system-aware with manual override
+
+## AI safety disclaimer
+
+> [!WARNING]
+> **Haruspex is an AI assistant, and AI models hallucinate. Verify before you act.**
+>
+> The language model can be confidently wrong. It may invent facts, misread a file or command output, and — especially relevant now that Haruspex has a **Shell tab** — suggest commands that are mistaken, dangerous, or destructive (deleting data, changing system configuration, exposing secrets, etc.). The smaller local models this project targets are more prone to these mistakes than large cloud models.
+>
+> Haruspex is built around **human enablement, not human replacement**: the agent **never executes shell commands on its own**. Every suggested command lands at your prompt for you to read and run yourself, and risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, …) are flagged — but these are aids, not guarantees. **You are the last line of defense.**
+>
+> Before running anything the model suggests:
+> - Read and understand the command. If you don't, don't run it.
+> - Be especially careful with commands that delete files, modify system settings, pipe downloads into a shell, or touch credentials.
+> - Keep backups of anything you can't afford to lose.
+>
+> Haruspex is provided "as is", without warranty of any kind. You use it — and any commands or output it produces — **at your own risk**. The authors and contributors are not liable for any damage, data loss, or other harm resulting from its use. See the [License](#license) for the full disclaimer.
 
 ## Installing
 

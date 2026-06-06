@@ -25,12 +25,23 @@ struct ExitEvent {
     session_id: SessionId,
 }
 
+/// Buffers PTY output until the frontend has wired up its `shell://output`
+/// listener AND the xterm `onData` reply path. Without this, output the
+/// shell emits during the spawn→attach gap (notably fish's startup Primary
+/// Device Attributes query) is delivered to no listener and lost, so the
+/// query goes unanswered and fish stalls ~10s on a compatibility check.
+struct ReplayState {
+    ready: bool,
+    buffer: Vec<u8>,
+}
+
 pub struct Session {
     pub context: SessionContext,
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn portable_pty::Child + Send + Sync>>,
     integration: Arc<Mutex<Integration>>,
+    replay: Arc<Mutex<ReplayState>>,
     // Kept alive so the rcfile / zdotdir survive for the shell's
     // lifetime. Cleaned up in Drop.
     _tempdirs: Vec<PathBuf>,
@@ -95,7 +106,11 @@ impl Session {
             .map_err(|e| format!("clone_reader failed: {e}"))?;
 
         let integration = Arc::new(Mutex::new(Integration::new()));
-        spawn_reader_thread(app, id, reader, integration.clone());
+        let replay = Arc::new(Mutex::new(ReplayState {
+            ready: false,
+            buffer: Vec::new(),
+        }));
+        spawn_reader_thread(app, id, reader, integration.clone(), replay.clone());
 
         let context = SessionContext::capture(shell);
 
@@ -105,8 +120,29 @@ impl Session {
             writer: Mutex::new(writer),
             child: Mutex::new(child),
             integration,
+            replay,
             _tempdirs: plan.tempdirs,
         })
+    }
+
+    /// Signal that the frontend has attached its output listener and reply
+    /// path. Flushes any output buffered during the spawn→attach gap, then
+    /// switches the reader thread to live emission. Idempotent.
+    pub fn mark_ready(&self, app: &AppHandle, id: SessionId) {
+        if let Ok(mut r) = self.replay.lock() {
+            if r.ready {
+                return;
+            }
+            if !r.buffer.is_empty() {
+                let evt = OutputEvent {
+                    session_id: id,
+                    base64: general_purpose::STANDARD.encode(&r.buffer),
+                };
+                let _ = app.emit("shell://output", evt);
+                r.buffer.clear();
+            }
+            r.ready = true;
+        }
     }
 
     pub fn write(&self, bytes: &[u8]) -> Result<(), String> {
@@ -182,6 +218,7 @@ fn spawn_reader_thread(
     id: SessionId,
     mut reader: Box<dyn Read + Send>,
     integration: Arc<Mutex<Integration>>,
+    replay: Arc<Mutex<ReplayState>>,
 ) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -191,6 +228,19 @@ fn spawn_reader_thread(
                 Ok(n) => {
                     if let Ok(mut integ) = integration.lock() {
                         integ.ingest(&buf[..n]);
+                    }
+                    // Until the frontend marks itself ready, buffer output
+                    // instead of emitting it to a listener that doesn't exist
+                    // yet (which would silently drop it).
+                    let mut emit_live = true;
+                    if let Ok(mut r) = replay.lock() {
+                        if !r.ready {
+                            r.buffer.extend_from_slice(&buf[..n]);
+                            emit_live = false;
+                        }
+                    }
+                    if !emit_live {
+                        continue;
                     }
                     let evt = OutputEvent {
                         session_id: id,

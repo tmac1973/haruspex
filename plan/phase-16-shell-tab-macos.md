@@ -98,7 +98,10 @@ src-tauri/src/shell/
   context.rs    ← SessionContext::capture() calls platform::capture_os()
                   instead of the inlined parse_os_release(); history paths unchanged
   mod.rs        ← shell_platform_supported() delegates to platform::platform_supported()
-  session.rs    ← unchanged (login args flow through SpawnPlan.args)
+                  (also now hosts the shell_mark_ready command — see note below)
+  session.rs    ← spawn-path otherwise unchanged (login args flow through
+                  SpawnPlan.args); preserves the post-Phase-15 output-replay
+                  handshake — see note below
   integration.rs← unchanged (OSC 133 parser is platform-agnostic)
 
 resources/shell-integration/
@@ -108,6 +111,20 @@ resources/shell-integration/
 src/lib/components/shell/ShellTab.svelte
   ← placeholder copy updated to "Windows only" wording (macOS now supported)
 ```
+
+### Post-Phase-15 note: the spawn→attach output-replay handshake
+
+Since this plan was written, the shell spawn path gained an **output-replay buffer**
+flushed by a new `shell_mark_ready` command. `Session::spawn` now buffers PTY output
+instead of emitting it immediately; `Terminal.svelte`'s `attachSession` calls
+`shell_mark_ready` once the `shell://output` listener *and* the xterm `onData` reply
+path are both wired, at which point the buffered bytes are flushed. This fixed a race
+where a shell's startup query (fish's Primary Device Attributes probe) was emitted into
+the spawn→attach gap, delivered to no listener, and left unanswered — stalling the shell
+~10s. `session.rs` and `mod.rs` therefore differ from the Phase 15 baseline. The fix is
+**platform-agnostic and must be preserved** by the abstraction extraction in 16a — it
+benefits any shell that probes the terminal at startup (so zsh/bash login startup on
+macOS inherits it for free; no Mac-specific work, just don't regress the handshake).
 
 ### The login-shell × `--rcfile` interaction (the one subtle bit)
 

@@ -171,6 +171,7 @@ pub fn run() {
             feedback::save_diagnostics_file,
             shell::shell_spawn,
             shell::shell_write,
+            shell::shell_mark_ready,
             shell::shell_resize,
             shell::shell_kill,
             shell::shell_restart,

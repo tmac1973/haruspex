@@ -5,7 +5,7 @@
 	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
 	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
-	import GpuWarningDialog from '$lib/components/GpuWarningDialog.svelte';
+	import StartupNoticeDialog from '$lib/components/StartupNoticeDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
 	import { startScheduler } from '$lib/agent/jobs/scheduler.svelte';
@@ -40,7 +40,7 @@
 
 	let { children } = $props();
 	let showLogs = $state(false);
-	let showGpuWarning = $state(false);
+	let showStartupNotice = $state(false);
 	let version = $state('');
 	let update = $state<UpdateInfo | null>(null);
 
@@ -135,8 +135,8 @@
 			// Tauri commands not available (e.g., in browser dev mode)
 		}
 
-		if (!getSettings().dismissedGpuWarning) {
-			showGpuWarning = true;
+		if (!getSettings().dismissedStartupNotice) {
+			showStartupNotice = true;
 		}
 	});
 
@@ -273,8 +273,8 @@
 
 <LogViewer open={showLogs} onclose={() => (showLogs = false)} />
 
-{#if showGpuWarning}
-	<GpuWarningDialog onclose={() => (showGpuWarning = false)} />
+{#if showStartupNotice}
+	<StartupNoticeDialog onclose={() => (showStartupNotice = false)} />
 {/if}
 
 <FileConflictModal />

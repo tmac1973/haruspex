@@ -12,6 +12,7 @@
 		getIsGenerating,
 		getIsWaitingForSlot,
 		getIsCompacting,
+		getContextNotice,
 		getStreamingContent,
 		getErrorMessage,
 		getErrorTurnId,
@@ -63,6 +64,7 @@
 	const isGenerating = $derived(getIsGenerating());
 	const isWaitingForSlot = $derived(getIsWaitingForSlot());
 	const isCompacting = $derived(getIsCompacting());
+	const contextNotice = $derived(getContextNotice());
 	const streamingContent = $derived(getStreamingContent());
 	const errorMessage = $derived(getErrorMessage());
 	const errorTurnId = $derived(getErrorTurnId());
@@ -338,6 +340,10 @@
 
 				{#if isCompacting}
 					<div class="compacting-indicator">Compacting conversation history...</div>
+				{/if}
+
+				{#if contextNotice}
+					<div class="compacting-indicator">ⓘ {contextNotice}</div>
 				{/if}
 
 				{#if activeConversation?.isRestoringSession}
