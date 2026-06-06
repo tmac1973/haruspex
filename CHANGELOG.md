@@ -1,5 +1,75 @@
 # Changelog
 
+## [0.1.41](https://github.com/tmac1973/haruspex/compare/v0.1.40...v0.1.41) (2026-06-06)
+
+
+### Features
+
+* **agent:** guarantee requests fit context with a self-calibrating pre-send guard ([f6f675e](https://github.com/tmac1973/haruspex/commit/f6f675e6ba80820b9c3e7d1155c5a27238c3d391))
+* **sandbox:** ruff pre-run lint pass + compress failed run_python steps ([024eeee](https://github.com/tmac1973/haruspex/commit/024eeee064014f33c751e39d94773761734e2ce1))
+* **sandbox:** ruff pre-run lint pass + compress failed run_python steps ([1d4acf7](https://github.com/tmac1973/haruspex/commit/1d4acf7a18c0750768bada18f36ed40a6c3c13f0))
+* **shell, audio:** mic input in shell + F1/F2/F3 global media hotkeys ([b00557f](https://github.com/tmac1973/haruspex/commit/b00557ff99dd89eec298f96a424e035a9fd16d33))
+* **shell:** add Shell tab with PTY-backed terminal (15a) ([258b549](https://github.com/tmac1973/haruspex/commit/258b5491babfbcbe7fce18fbc1686fc90228ca72))
+* **shell:** chat composer in the sidebar for follow-up questions ([5b244af](https://github.com/tmac1973/haruspex/commit/5b244afce95badd7dc8c0512f7a129b6f7ec742b))
+* **shell:** collapse the attached shell preamble in user messages ([57e497e](https://github.com/tmac1973/haruspex/commit/57e497e91132558fbf5b0197fcd89fe6e5eceb40))
+* **shell:** confirm dialog when Run is clicked on a risky command ([ce81085](https://github.com/tmac1973/haruspex/commit/ce8108544c2a4ae547511806afab73e2c72308a5))
+* **shell:** Ctrl+\` swaps focus between terminal and assistant composer ([3d03c49](https://github.com/tmac1973/haruspex/commit/3d03c4948b7b2737ce498d53ff8069f055a04822))
+* **shell:** Ctrl+Shift+C / Ctrl+Shift+V + right-click copy/paste ([a534eaf](https://github.com/tmac1973/haruspex/commit/a534eafff2475389c20917935366480077459a5b))
+* **shell:** head+tail truncate captured outputs before sending to model ([85a5c5b](https://github.com/tmac1973/haruspex/commit/85a5c5bebea4fe07070e0d61ba461b59b080cedc))
+* **shell:** macOS port + in-flight capture + overflow hint ([feeafda](https://github.com/tmac1973/haruspex/commit/feeafda5370605bbb5ad5306d676fbfc001a6b4c))
+* **shell:** macOS port + in-flight capture + overflow hint ([33d6479](https://github.com/tmac1973/haruspex/commit/33d647903580e4a9392f5ae7a3dbc6f346553a97))
+* **shell:** opt-in fs_write + tighten shell-mode tool allowlist ([7d77013](https://github.com/tmac1973/haruspex/commit/7d770139a579c1958ad039de855613f76aa6e301))
+* **shell:** OSC 133 integration + context capture + debug overlay (15b) ([76dd5af](https://github.com/tmac1973/haruspex/commit/76dd5af51be79e9086f8bb4607dcb7497fc3913c))
+* **shell:** paste button + risky-command badges (15e) ([977ba83](https://github.com/tmac1973/haruspex/commit/977ba837ebb537f9277b4ddbdb182eb0e489da3f))
+* **shell:** placeholder card on non-Linux until cross-platform lands ([1a3479a](https://github.com/tmac1973/haruspex/commit/1a3479ae1d2b7c23694636e2ca79e03bf0792e1f))
+* **shell:** Run button on suggested commands + resizable sidebar ([85602d9](https://github.com/tmac1973/haruspex/commit/85602d917c9b477a1dc2161395ed6c77969995a0))
+* **shell:** settings section + README + maintenance.md docs (15f) ([d54e06a](https://github.com/tmac1973/haruspex/commit/d54e06a5e32a11e21687fc1845a9b7f48f36f6e8))
+* **shell:** shell agent driver + chat sidebar (15d) ([90ae325](https://github.com/tmac1973/haruspex/commit/90ae325b1ccfb0eef6991ea9fa1758efeaa3db17))
+* **shell:** Shell tab — interactive terminal + AI troubleshooting sidebar ([cfa3129](https://github.com/tmac1973/haruspex/commit/cfa31292e338d8ec9895a85178b9ef4e1145e163))
+* **shell:** shell-mode fs_read tools with absolute paths (15c) ([00d6780](https://github.com/tmac1973/haruspex/commit/00d678032201a2dcb3bb11d68fd41442b832a398))
+* **shell:** surface tool calls in the sidebar like the chat tab does ([b095300](https://github.com/tmac1973/haruspex/commit/b0953003e752821341900f39fad6f1642f123e2d))
+* **ui:** add AI safety notice to the startup dialog ([22aa6ab](https://github.com/tmac1973/haruspex/commit/22aa6ab357fd4276d760280b98feec2b2075ea44))
+* **ui:** keyboard-shortcuts help modal (F1) + document hotkeys ([5317a4e](https://github.com/tmac1973/haruspex/commit/5317a4eba448dae4e7d1f7d550f8b9b158af927e))
+* **ui:** keyboard-shortcuts help modal (F1) + document hotkeys ([c2f96f4](https://github.com/tmac1973/haruspex/commit/c2f96f418b83dc2142f153805dfd927c952a21e9))
+
+
+### Bug Fixes
+
+* **agent:** salvage tool calls Qwen3 wraps in &lt;tool_call&gt;&lt;function=...&gt; form ([f26146b](https://github.com/tmac1973/haruspex/commit/f26146bc8d9b1cfa5ee6d276bc83c71474ae6807))
+* **audio:** defensive guards against USB hot-swap state corruption ([929b807](https://github.com/tmac1973/haruspex/commit/929b8070857fcb24f807cc9bdb322fedf5492956))
+* **audio:** restore default_input_device for the System Default case ([8289fff](https://github.com/tmac1973/haruspex/commit/8289fffd666bbf7558a69388a5ebb63a23d4895b))
+* **shell:** badge now distinguishes "no integration" from "no captures yet" ([00c664e](https://github.com/tmac1973/haruspex/commit/00c664e665779837f507e504469792751150d6e9))
+* **shell:** bash hook was eating the C marker for every command after the first ([6b1500a](https://github.com/tmac1973/haruspex/commit/6b1500a04513ac43b518c49d284848f5633b1762))
+* **shell:** buffer PTY output until the frontend attaches to avoid a startup-query race ([f6607d3](https://github.com/tmac1973/haruspex/commit/f6607d3ad431d11226496ff65c95ffa34c651342))
+* **shell:** capture the real command line and post-command cwd ([43c353f](https://github.com/tmac1973/haruspex/commit/43c353f780d9dc2cfd9089fadb48aa0fe0ced356))
+* **shell:** clippy while_let_loop on completed_command_count ([55e1383](https://github.com/tmac1973/haruspex/commit/55e1383912478b5fc6763b9a6cd89c3bc616d53d))
+* **shell:** coach the agent away from read-retry loops + double-writes ([596fffc](https://github.com/tmac1973/haruspex/commit/596fffcd5b916f7be1e7299de545318c62bab53b))
+* **shell:** harden bash hook and scope context menu to the terminal pane ([5eba813](https://github.com/tmac1973/haruspex/commit/5eba81356e5888509becd258f93646b9fb769edb))
+* **shell:** open the sidebar the moment F2 starts recording ([518dce1](https://github.com/tmac1973/haruspex/commit/518dce10afaf603cfb19573d504e6782f06ba3b3))
+* **shell:** persist PTY across tab switches ([483da0e](https://github.com/tmac1973/haruspex/commit/483da0e933379095a655153c98058ddd37a290aa))
+* **shell:** release F1/F2/F3 from xterm so app hotkeys actually fire ([b92228c](https://github.com/tmac1973/haruspex/commit/b92228cfd76a99027e8ef3f4cea7879a276884c1))
+* **shell:** Restart shell button + integration status badge ([8edc254](https://github.com/tmac1973/haruspex/commit/8edc25403dc45b8d8530a5e6e6328483464e4bd4))
+* **shell:** show thinking indicator while a turn is processing ([7ef2653](https://github.com/tmac1973/haruspex/commit/7ef26532d051aa6e5ecf73481b9013d8ca3a9c25))
+* **shell:** strip comments and inject suggested commands via bracketed paste ([0453317](https://github.com/tmac1973/haruspex/commit/0453317a609edd388ef6ac165cd8ab73c7e3d0a1))
+* **shell:** suppress preexec for DEBUG firings about to call our hooks ([df2d17e](https://github.com/tmac1973/haruspex/commit/df2d17ec50102810ce6bf5e609e49cd2fcf6822a))
+* **shell:** update context indicator on shell turns ([9a81cd3](https://github.com/tmac1973/haruspex/commit/9a81cd3bd8a5ef9c030ef7fd3c31aa3e80d325a0))
+* **ui:** place the help (?) icon next to the settings gear ([0d94e26](https://github.com/tmac1973/haruspex/commit/0d94e26185916fa8f0e82617991f64a965049d0a))
+
+
+### Code Refactoring
+
+* **shell:** auto-attach recent shell activity instead of explicit submit ([012aba9](https://github.com/tmac1973/haruspex/commit/012aba9c099bf7f3f1915ebeb616c6794af9e7a0))
+* **ui:** rename GpuWarningDialog to StartupNoticeDialog ([6e2f75d](https://github.com/tmac1973/haruspex/commit/6e2f75da3d9bff793620437271dd50feb77bc53e))
+
+
+### Documentation
+
+* add AI safety / hallucination disclaimer to README ([be6d315](https://github.com/tmac1973/haruspex/commit/be6d3154e375404fbbc16bc7dfdabd151484df65))
+* **plan:** add phase 15 shell tab plan ([c5282a9](https://github.com/tmac1973/haruspex/commit/c5282a9edea84694689e0463fa8d40e3a5fd8478))
+* **readme:** add Jobs tab feature + note sandbox/shell-write default off ([8d39a7e](https://github.com/tmac1973/haruspex/commit/8d39a7e532c3a7574e9b7dcababb71067895fb81))
+* **readme:** add Jobs tab feature + note sandbox/shell-write default off ([c8758c0](https://github.com/tmac1973/haruspex/commit/c8758c0ae8a27c0785ed9cd4db0e5ed7fb3646e4))
+* **shell:** reconcile macOS/Windows port plans with this session's changes ([7ef7ad1](https://github.com/tmac1973/haruspex/commit/7ef7ad1a4008fe9e61720909b28204f3a92be139))
+
 ## [0.1.40](https://github.com/tmac1973/haruspex/compare/v0.1.39...v0.1.40) (2026-05-26)
 
 
