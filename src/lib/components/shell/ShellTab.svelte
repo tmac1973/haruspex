@@ -23,7 +23,11 @@
 	let hasSelection = $state(false);
 	let menu = $state<{ x: number; y: number } | null>(null);
 	let copyFeedback = $state<string | null>(null);
-	let riskyConfirm = $state<{ command: string; reasons: RiskMatch[] } | null>(null);
+	let riskyConfirm = $state<{
+		command: string;
+		reasons: RiskMatch[];
+		action: 'paste' | 'run';
+	} | null>(null);
 	// Default to true so the placeholder doesn't flash on a supported
 	// platform (Linux/macOS) during the round-trip; the backend flips it to
 	// false on unsupported platforms (Windows, until Phase 17).
@@ -127,12 +131,25 @@
 		const data = (event as CustomEvent<string>).detail;
 		if (typeof data !== 'string' || !handle) return;
 		// Drop comment-only and blank lines so they don't each become a
-		// shell-history entry. No trailing Enter — the paste doesn't
-		// auto-execute; the user presses Enter themselves (the security
-		// model). Bracketed paste keeps the shell's line editor from
-		// mangling the text (auto-closed quotes, reprints, autosuggestions).
+		// shell-history entry.
 		const cleaned = stripCommandComments(data);
 		if (!cleaned) return;
+		// Same risk gate as Run: even though paste doesn't auto-execute, the
+		// command is about to sit at the prompt one Enter away, so warn first.
+		const risk = classifyShellRisk(cleaned);
+		if (risk.matched) {
+			riskyConfirm = { command: cleaned, reasons: risk.reasons, action: 'paste' };
+			return;
+		}
+		executePaste(cleaned);
+	}
+
+	// No trailing Enter — the paste doesn't auto-execute; the user presses
+	// Enter themselves (the security model). Bracketed paste keeps the
+	// shell's line editor from mangling the text (auto-closed quotes,
+	// reprints, autosuggestions).
+	function executePaste(cleaned: string) {
+		if (!handle) return;
 		invoke('shell_write', { sessionId: handle.sessionId, data: toBracketedPaste(cleaned) })
 			.then(() => handle?.focus())
 			.catch((e) => console.error('shell_write (paste) failed', e));
@@ -178,19 +195,21 @@
 		if (!cleaned) return;
 		const risk = classifyShellRisk(cleaned);
 		if (risk.matched) {
-			riskyConfirm = { command: cleaned, reasons: risk.reasons };
+			riskyConfirm = { command: cleaned, reasons: risk.reasons, action: 'run' };
 			return;
 		}
 		void executeRunCommand(cleaned);
 	}
 
-	function confirmRiskyRun() {
+	function confirmRisky() {
 		const pending = riskyConfirm;
 		riskyConfirm = null;
-		if (pending) void executeRunCommand(pending.command);
+		if (!pending) return;
+		if (pending.action === 'paste') executePaste(pending.command);
+		else void executeRunCommand(pending.command);
 	}
 
-	function cancelRiskyRun() {
+	function cancelRisky() {
 		riskyConfirm = null;
 	}
 
@@ -300,7 +319,9 @@
 	{/if}
 	<Modal open={riskyConfirm !== null} labelledBy="risky-confirm-title">
 		{#if riskyConfirm}
-			<h2 id="risky-confirm-title">⚠ Run risky command?</h2>
+			<h2 id="risky-confirm-title">
+				⚠ {riskyConfirm.action === 'run' ? 'Run' : 'Paste'} risky command?
+			</h2>
 			<p>The assistant suggested a command that matches one or more risky patterns:</p>
 			<ul class="risk-list">
 				{#each riskyConfirm.reasons as r (r.label)}
@@ -309,17 +330,24 @@
 			</ul>
 			<pre class="risky-cmd">{riskyConfirm.command}</pre>
 			<p class="hint">
-				Clicking <strong>Run anyway</strong> will type this command at your shell prompt, press
-				Enter, and send the output back to the assistant for analysis. <strong>Cancel</strong> leaves
-				nothing typed.
+				{#if riskyConfirm.action === 'run'}
+					Clicking <strong>Run anyway</strong> will type this command at your shell prompt, press Enter,
+					and send the output back to the assistant for analysis.
+				{:else}
+					Clicking <strong>Paste anyway</strong> will type this command at your shell prompt — it won't
+					run until you press Enter yourself.
+				{/if}
+				<strong>Cancel</strong> leaves nothing typed.
 			</p>
 			<div class="actions-row">
-				<ModalButton variant="subtle" onclick={cancelRiskyRun}>
+				<ModalButton variant="subtle" onclick={cancelRisky}>
 					{#snippet title()}Cancel{/snippet}
-					{#snippet subtitle()}Don't run anything{/snippet}
+					{#snippet subtitle()}Don't type anything{/snippet}
 				</ModalButton>
-				<ModalButton variant="danger" onclick={confirmRiskyRun}>
-					{#snippet title()}Run anyway{/snippet}
+				<ModalButton variant="danger" onclick={confirmRisky}>
+					{#snippet title()}{riskyConfirm?.action === 'run'
+							? 'Run anyway'
+							: 'Paste anyway'}{/snippet}
 					{#snippet subtitle()}I've read the command and accept the risk{/snippet}
 				</ModalButton>
 			</div>
