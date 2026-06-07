@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.1.45](https://github.com/tmac1973/haruspex/compare/v0.1.44...v0.1.45) (2026-06-07)
+
+
+### Features
+
+* **shell:** detach shell tabs into their own windows ([c8b4e7d](https://github.com/tmac1973/haruspex/commit/c8b4e7d9f7fabedecdde017d36ef53aeb6722b87))
+* **shell:** multiple shell tabs + detachable windows on a shared inference queue ([b1c1c62](https://github.com/tmac1973/haruspex/commit/b1c1c626b78c470f58e80a0a04d5c99282d61934))
+* **shell:** multiple shell tabs in one window ([577eb71](https://github.com/tmac1973/haruspex/commit/577eb717b0eb335f7fc43370bd19235fc45c7eac))
+
+
+### Bug Fixes
+
+* **audio:** F2/F3 media hotkeys no-op in packaged builds ([6ed5445](https://github.com/tmac1973/haruspex/commit/6ed544536f6fed7201bd4daec2e23ff58603ea5d))
+* **audio:** F2/F3 media hotkeys no-op in packaged builds ([1254d80](https://github.com/tmac1973/haruspex/commit/1254d800c85c03a7ef69f20a61b250e3cdffa933))
+* **shell:** bias assistant toward web search over training data ([61d8625](https://github.com/tmac1973/haruspex/commit/61d862545277fe144f6d35594017f01cec895d54))
+* **shell:** clean scrollback handoff + hotkeys in detached windows ([cfa663f](https://github.com/tmac1973/haruspex/commit/cfa663fa923d44474b6b026bf5053e93822bb4ba))
+* **shell:** keep PTY alive when opening settings ([5e0a566](https://github.com/tmac1973/haruspex/commit/5e0a5666af3427374d37ee3eaf875bd57819eb22))
+* **shell:** persist PTY across settings + search-first assistant prompt ([b401045](https://github.com/tmac1973/haruspex/commit/b4010455515d938c32b03fd8a7cd56334d81f737))
+* **shell:** proportion detached window to terminal + sidebar ([a55566c](https://github.com/tmac1973/haruspex/commit/a55566ce1573bc43a4760f6510e6a2f4677893ff))
+* **shell:** Run auto-submit on long-lived/detached sessions ([409046d](https://github.com/tmac1973/haruspex/commit/409046d1a516ceb6a8f1b4023ef15741170affdb))
+
+
+### Code Refactoring
+
+* **inference:** move the inference queue into Rust ([99449a1](https://github.com/tmac1973/haruspex/commit/99449a18436e7b57ed0f33340ca36c1503fc9ad8))
+
 ## [0.1.44](https://github.com/tmac1973/haruspex/compare/v0.1.43...v0.1.44) (2026-06-07)
 
 
