@@ -5,6 +5,7 @@
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
 	import { WebLinksAddon } from '@xterm/addon-web-links';
+	import { SerializeAddon } from '@xterm/addon-serialize';
 	import '@xterm/xterm/css/xterm.css';
 	import { getSettings } from '$lib/stores/settings';
 
@@ -47,12 +48,15 @@
 		getSelection: () => string;
 		focus: () => void;
 		restart: () => Promise<void>;
+		/** Serialized grid snapshot (for clean cross-window scrollback handoff). */
+		serialize: () => string;
 	}
 
 	const { onReady, onSelectionChange, attachSessionId }: Props = $props();
 
 	let container: HTMLDivElement;
 	let term: Terminal | null = null;
+	let serializeAddon: SerializeAddon | null = null;
 	let sessionId: number | null = null;
 	let unlistenOutput: UnlistenFn | null = null;
 	let unlistenExit: UnlistenFn | null = null;
@@ -108,6 +112,8 @@
 		const fit = new FitAddon();
 		t.loadAddon(fit);
 		t.loadAddon(new WebLinksAddon());
+		serializeAddon = new SerializeAddon();
+		t.loadAddon(serializeAddon);
 		return { t, fit };
 	}
 
@@ -149,7 +155,8 @@
 			context,
 			getSelection: () => term?.getSelection() ?? '',
 			focus: () => term?.focus(),
-			restart: () => restart()
+			restart: () => restart(),
+			serialize: () => serializeAddon?.serialize() ?? ''
 		};
 	}
 
@@ -191,11 +198,19 @@
 	// lost with the old webview.
 	async function attachExisting(t: Terminal, fit: FitAddon, id: number) {
 		const ctxRes = await invoke<ShellContextResponse>('shell_get_context', { sessionId: id });
+		// Prefer the serialized grid snapshot the source window stashed — it
+		// repaints cleanly at any width. Fall back to the raw output ring only
+		// if no snapshot is present (e.g. source terminal wasn't ready).
 		try {
-			const b64 = await invoke<string>('shell_get_scrollback', { sessionId: id });
-			if (b64) t.write(base64ToBytes(b64));
+			const snapshot = await invoke<string | null>('shell_take_scrollback', { sessionId: id });
+			if (snapshot) {
+				t.write(snapshot);
+			} else {
+				const b64 = await invoke<string>('shell_get_scrollback', { sessionId: id });
+				if (b64) t.write(base64ToBytes(b64));
+			}
 		} catch (e) {
-			console.error('shell_get_scrollback failed', e);
+			console.error('scrollback restore failed', e);
 		}
 		await attachSession(t, fit, id, ctxRes.context);
 	}

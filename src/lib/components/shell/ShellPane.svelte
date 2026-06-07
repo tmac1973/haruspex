@@ -67,7 +67,8 @@
 		session.bindSession({
 			sessionId: h.sessionId,
 			context: h.context,
-			getSelection: h.getSelection
+			getSelection: h.getSelection,
+			serialize: h.serialize
 		});
 	}
 

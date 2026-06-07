@@ -56,6 +56,8 @@ export interface ActiveShellSession {
 	sessionId: number;
 	context: ShellSessionContext;
 	getSelection: () => string;
+	/** Serialized terminal-grid snapshot for cross-window scrollback handoff. */
+	serialize: () => string;
 }
 
 function formatCapturedRegion(region: CapturedRegion, maxBytes: number): string {
@@ -150,6 +152,11 @@ export class ShellSession {
 
 	get boundSessionId(): number | null {
 		return this.activeSession?.sessionId ?? null;
+	}
+
+	/** Snapshot the live terminal grid for cross-window scrollback handoff. */
+	serializeTerminal(): string {
+		return this.activeSession?.serialize() ?? '';
 	}
 
 	setSidebarOpen = (open: boolean): void => {

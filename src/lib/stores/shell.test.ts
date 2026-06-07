@@ -145,7 +145,12 @@ describe('ShellSession state independence', () => {
 
 describe('detach / re-attach', () => {
 	function bind(session: ShellSession, ptyId: number) {
-		session.bindSession({ sessionId: ptyId, context: {} as never, getSelection: () => '' });
+		session.bindSession({
+			sessionId: ptyId,
+			context: {} as never,
+			getSelection: () => '',
+			serialize: () => ''
+		});
 	}
 
 	it('closeShellSession kills the bound PTY', () => {

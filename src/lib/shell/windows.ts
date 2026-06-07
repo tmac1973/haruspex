@@ -35,9 +35,7 @@ export async function openDetachedShell(session: ShellSession): Promise<void> {
 	const ptyId = session.boundSessionId;
 	if (ptyId == null) return; // terminal not ready yet — nothing to detach
 
-	await invoke('shell_stash_chat', { sessionId: ptyId, chat: session.serializeChat() }).catch((e) =>
-		console.error('shell_stash_chat failed', e)
-	);
+	await stashHandoff(ptyId, session.serializeChat(), session.serializeTerminal());
 
 	const w = new WebviewWindow(`shell-${ptyId}`, {
 		url: `/shell/${ptyId}`,
@@ -53,13 +51,26 @@ export async function openDetachedShell(session: ShellSession): Promise<void> {
 /**
  * From inside a detached window: hand the shell back to the main window and
  * close. The PTY survives (Terminal no longer kills on unmount); the main
- * window's listener re-attaches and re-hydrates the stashed chat.
+ * window's listener re-attaches and re-hydrates the stashed chat + scrollback.
  */
-export async function handBackToMain(ptyId: number, chatJson: string, name: string): Promise<void> {
+export async function handBackToMain(
+	ptyId: number,
+	chatJson: string,
+	name: string,
+	scrollback: string
+): Promise<void> {
+	await stashHandoff(ptyId, chatJson, scrollback);
+	await emit(REATTACH_EVENT, { ptyId, name } satisfies ReattachPayload);
+}
+
+/** Stash the chat thread + serialized terminal grid for the adopting window. */
+async function stashHandoff(ptyId: number, chatJson: string, scrollback: string): Promise<void> {
 	await invoke('shell_stash_chat', { sessionId: ptyId, chat: chatJson }).catch((e) =>
 		console.error('shell_stash_chat failed', e)
 	);
-	await emit(REATTACH_EVENT, { ptyId, name } satisfies ReattachPayload);
+	await invoke('shell_stash_scrollback', { sessionId: ptyId, data: scrollback }).catch((e) =>
+		console.error('shell_stash_scrollback failed', e)
+	);
 }
 
 /**

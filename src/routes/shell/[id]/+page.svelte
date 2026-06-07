@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { page } from '$app/state';
 	import ShellPane from '$lib/components/shell/ShellPane.svelte';
-	import { ShellSession } from '$lib/stores/shell.svelte';
+	import { setActiveTab } from '$lib/stores/activeTab.svelte';
+	import { reattachShellSession, getActiveShellSession } from '$lib/stores/shell.svelte';
 	import { handBackToMain } from '$lib/shell/windows';
 
 	// The route param is the live PTY session id this window adopts.
 	const ptyId = Number(page.params.id);
-	// Standalone session (this window has its own module registry; we don't
-	// route it through the registry — it's the only shell here).
-	const session = new ShellSession(`detached-${ptyId}`, 'Shell');
+	// Register the adopted shell in this window's own registry (each webview
+	// has its own module state) so the layout's global hotkeys (F2/F3) resolve
+	// it via getActiveShellSession(). reattach also re-hydrates the chat stash.
+	setActiveTab('shell');
+	const session = reattachShellSession(ptyId, 'Shell') ?? getActiveShellSession()!;
 	session.setSidebarOpen(true);
 
 	let closing = false;
@@ -19,7 +21,7 @@
 	async function handBack() {
 		if (closing) return;
 		closing = true;
-		await handBackToMain(ptyId, session.serializeChat(), session.name);
+		await handBackToMain(ptyId, session.serializeChat(), session.name, session.serializeTerminal());
 		await getCurrentWindow().destroy();
 	}
 
@@ -27,11 +29,6 @@
 		// Enable the assistant's Paste/Run code-block buttons (gated on this
 		// class) — this window is all shell, all the time.
 		document.body.classList.add('shell-tab-active');
-
-		// Re-hydrate the chat thread stashed by the window we detached from.
-		void invoke<string | null>('shell_take_chat', { sessionId: ptyId })
-			.then((json) => session.hydrateChat(json))
-			.catch(() => {});
 
 		// Closing the window (X or Re-attach) hands the shell back to the main
 		// window rather than killing the PTY.

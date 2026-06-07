@@ -25,6 +25,11 @@ pub struct ShellManager {
     /// re-attach, keyed by PTY session id. In-memory only (a detached chat
     /// survives the move but not an app restart) — see plan Phase 3.
     chat_stash: Mutex<HashMap<SessionId, String>>,
+    /// Serialized terminal grid snapshot (xterm SerializeAddon output) handed
+    /// off alongside the chat, so the adopting window repaints history cleanly
+    /// rather than replaying the raw byte stream (which reflows badly at a
+    /// different window width). Keyed by PTY session id; consumed once.
+    scrollback_stash: Mutex<HashMap<SessionId, String>>,
 }
 
 impl ShellManager {
@@ -313,6 +318,34 @@ pub fn shell_take_chat(
 ) -> Result<Option<String>, String> {
     Ok(state
         .chat_stash
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&session_id))
+}
+
+/// Stash a serialized terminal-grid snapshot for cross-window handoff.
+#[tauri::command]
+pub fn shell_stash_scrollback(
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+    data: String,
+) -> Result<(), String> {
+    state
+        .scrollback_stash
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(session_id, data);
+    Ok(())
+}
+
+/// Take (and clear) a stashed terminal-grid snapshot for the given session.
+#[tauri::command]
+pub fn shell_take_scrollback(
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+) -> Result<Option<String>, String> {
+    Ok(state
+        .scrollback_stash
         .lock()
         .map_err(|e| e.to_string())?
         .remove(&session_id))
