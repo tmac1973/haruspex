@@ -148,7 +148,13 @@
 	// while editing settings).
 
 	function isMainPage(): boolean {
-		return page.url.pathname === '/';
+		// Packaged builds load the webview from `tauri://localhost`, where
+		// `page.url.pathname` is '' (empty) rather than '/' as it is under
+		// the `tauri dev` server (http://localhost:1420/). Matching on the
+		// SvelteKit route id is stable across both: the root route is '/'
+		// regardless of how the asset URL is shaped. Without this, the
+		// F2/F3 media hotkeys silently no-op in release builds.
+		return page.route.id === '/';
 	}
 
 	function pickTranscriptionTarget(text: string) {
