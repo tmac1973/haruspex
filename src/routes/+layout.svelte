@@ -34,11 +34,7 @@
 	import { toggleTts } from '$lib/audio/ttsControl.svelte';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getActiveConversation, sendMessage } from '$lib/stores/chat.svelte';
-	import {
-		getShellMessages,
-		setShellSidebarOpen,
-		submitChatMessage
-	} from '$lib/stores/shell.svelte';
+	import { getActiveShellSession } from '$lib/stores/shell.svelte';
 
 	let { children } = $props();
 	let showLogs = $state(false);
@@ -164,7 +160,7 @@
 	function pickTranscriptionTarget(text: string) {
 		const tab = getActiveTab();
 		if (tab === 'shell') {
-			submitChatMessage(text);
+			void getActiveShellSession()?.submitChatMessage(text);
 		} else if (tab === 'chat') {
 			sendMessage(text);
 		}
@@ -174,7 +170,9 @@
 	function getLastAssistantText(): string {
 		const tab = getActiveTab();
 		const messages =
-			tab === 'shell' ? getShellMessages() : (getActiveConversation()?.messages ?? []);
+			tab === 'shell'
+				? (getActiveShellSession()?.messages ?? [])
+				: (getActiveConversation()?.messages ?? []);
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const m = messages[i] as ChatMessage;
 			if (m.role === 'assistant') {
@@ -208,7 +206,7 @@
 			// recording starts so the user sees they're aiming at the
 			// assistant — without this the panel only opens once the
 			// transcription pipeline completes a couple seconds later.
-			if (getActiveTab() === 'shell') setShellSidebarOpen(true);
+			if (getActiveTab() === 'shell') getActiveShellSession()?.setSidebarOpen(true);
 			if (!isVoiceCaptureActive()) startVoiceCapture();
 			return;
 		}

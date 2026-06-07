@@ -8,16 +8,14 @@
 	import { classifyShellRisk, type RiskMatch } from '$lib/shell/risky-commands';
 	import { stripCommandComments, toBracketedPaste } from '$lib/shell/commandBlock';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
-	import {
-		bindShellSession,
-		focusShellComposer,
-		getShellSidebarOpen,
-		isShellComposerFocused,
-		setShellSidebarOpen,
-		submitChatMessage,
-		toggleShellSidebar,
-		unbindShellSession
-	} from '$lib/stores/shell.svelte';
+	import { getActiveShellId, type ShellSession } from '$lib/stores/shell.svelte';
+
+	const { session }: { session: ShellSession } = $props();
+
+	// Only the active pane responds to window/document-level events. All panes
+	// stay mounted (so background PTYs survive), so every pane registers these
+	// listeners — this guard ensures just one acts.
+	const isActive = $derived(getActiveTab() === 'shell' && getActiveShellId() === session.id);
 
 	let handle = $state<TerminalHandle | null>(null);
 	let hasSelection = $state(false);
@@ -28,10 +26,6 @@
 		reasons: RiskMatch[];
 		action: 'paste' | 'run';
 	} | null>(null);
-	// Default to true so the placeholder doesn't flash on a supported
-	// platform (Linux/macOS) during the round-trip; the backend flips it to
-	// false on unsupported platforms (Windows, until Phase 17).
-	let platformSupported = $state<boolean>(true);
 
 	async function copySelectionToClipboard(): Promise<boolean> {
 		const text = handle?.getSelection() ?? '';
@@ -63,7 +57,7 @@
 
 	function onTerminalReady(h: TerminalHandle) {
 		handle = h;
-		bindShellSession({
+		session.bindSession({
 			sessionId: h.sessionId,
 			context: h.context,
 			getSelection: h.getSelection
@@ -78,7 +72,7 @@
 	const shortcuts: Shortcut[] = [
 		{
 			match: (e) => e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyA',
-			run: toggleShellSidebar
+			run: () => session.toggleSidebar()
 		},
 		{
 			match: (e) => e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'Backquote',
@@ -95,7 +89,7 @@
 	];
 
 	function onKeyDown(event: KeyboardEvent) {
-		if (getActiveTab() !== 'shell') return;
+		if (!isActive) return;
 		for (const s of shortcuts) {
 			if (s.match(event)) {
 				event.preventDefault();
@@ -106,16 +100,16 @@
 	}
 
 	function swapFocus() {
-		if (isShellComposerFocused()) {
+		if (session.isComposerFocused()) {
 			handle?.focus();
 			return;
 		}
-		if (!getShellSidebarOpen()) {
-			setShellSidebarOpen(true);
+		if (!session.sidebarOpen) {
+			session.setSidebarOpen(true);
 		}
-		// The sidebar may have just opened; wait one microtask for the
-		// composer to render before focusing it.
-		queueMicrotask(() => focusShellComposer());
+		// The sidebar may have just opened; wait one microtask for the composer
+		// to render before focusing it.
+		queueMicrotask(() => session.focusComposer());
 	}
 
 	function onContextMenu(event: MouseEvent) {
@@ -128,6 +122,7 @@
 	}
 
 	function onPasteRequest(event: Event) {
+		if (!isActive) return;
 		const data = (event as CustomEvent<string>).detail;
 		if (typeof data !== 'string' || !handle) return;
 		// Drop comment-only and blank lines so they don't each become a
@@ -145,9 +140,9 @@
 	}
 
 	// No trailing Enter — the paste doesn't auto-execute; the user presses
-	// Enter themselves (the security model). Bracketed paste keeps the
-	// shell's line editor from mangling the text (auto-closed quotes,
-	// reprints, autosuggestions).
+	// Enter themselves (the security model). Bracketed paste keeps the shell's
+	// line editor from mangling the text (auto-closed quotes, reprints,
+	// autosuggestions).
 	function executePaste(cleaned: string) {
 		if (!handle) return;
 		invoke('shell_write', { sessionId: handle.sessionId, data: toBracketedPaste(cleaned) })
@@ -172,25 +167,24 @@
 	}
 
 	/**
-	 * Run flow: paste the command, press Enter, wait for the next OSC
-	 * 133 D marker, then auto-submit a follow-up so the freshly-run
-	 * command + output get attached for the model to analyze.
+	 * Run flow: paste the command, press Enter, wait for the next OSC 133 D
+	 * marker, then auto-submit a follow-up so the freshly-run command + output
+	 * get attached for the model to analyze.
 	 *
-	 * Risky patterns (sudo, rm -rf, dd of=, mkfs, curl|sh, writes under
-	 * /etc, …) route through a confirm modal first so single-click
-	 * execution can't trigger something destructive. Once confirmed
-	 * (or for non-risky commands), executeRunCommand does the actual
-	 * paste + wait + submit.
+	 * Risky patterns (sudo, rm -rf, dd of=, mkfs, curl|sh, writes under /etc, …)
+	 * route through a confirm modal first so single-click execution can't
+	 * trigger something destructive. Once confirmed (or for non-risky
+	 * commands), executeRunCommand does the actual paste + wait + submit.
 	 *
-	 * Times out after 60 s — long-running commands (htop, watch, vim)
-	 * never finish; we drop the auto-submit silently and the user can
-	 * ask manually.
+	 * Times out after 60 s — long-running commands (htop, watch, vim) never
+	 * finish; we drop the auto-submit silently and the user can ask manually.
 	 */
 	function onRunRequest(event: Event) {
+		if (!isActive) return;
 		const data = (event as CustomEvent<string>).detail;
 		if (typeof data !== 'string' || !handle) return;
-		// Strip comment-only and blank lines so only real commands run
-		// (and only they land in shell history).
+		// Strip comment-only and blank lines so only real commands run (and
+		// only they land in shell history).
 		const cleaned = stripCommandComments(data).trim();
 		if (!cleaned) return;
 		const risk = classifyShellRisk(cleaned);
@@ -228,10 +222,10 @@
 			console.error('shell_write (run) failed', e);
 			return;
 		}
-		// Poll for the D marker. Each complete cycle adds 4 markers
-		// (A, B, C, D), but conservatively we wait for at least 2 new
-		// markers since C+D arrives during the command and the new A+B
-		// land once the prompt redraws.
+		// Poll for the D marker. Each complete cycle adds 4 markers (A, B, C,
+		// D), but conservatively we wait for at least 2 new markers since C+D
+		// arrives during the command and the new A+B land once the prompt
+		// redraws.
 		const startedAt = Date.now();
 		const timeoutMs = 60_000;
 		const pollMs = 400;
@@ -241,67 +235,36 @@
 			if (now >= before + 2) break;
 		}
 		if (Date.now() - startedAt >= timeoutMs) return;
-		await submitChatMessage(`Please analyze the output of \`${cleaned}\` that I just ran.`);
+		await session.submitChatMessage(`Please analyze the output of \`${cleaned}\` that I just ran.`);
 	}
 
 	onMount(() => {
-		invoke<boolean>('shell_platform_supported')
-			.then((ok) => (platformSupported = ok))
-			.catch(() => (platformSupported = true));
 		window.addEventListener('click', dismissMenu);
 		document.addEventListener('hsp-shell-paste', onPasteRequest);
 		document.addEventListener('hsp-shell-run', onRunRequest);
 		return () => {
-			document.body.classList.remove('shell-tab-active');
 			window.removeEventListener('click', dismissMenu);
 			document.removeEventListener('hsp-shell-paste', onPasteRequest);
 			document.removeEventListener('hsp-shell-run', onRunRequest);
-			unbindShellSession();
+			session.unbindSession();
 		};
 	});
 
-	// Track tab activation rather than mount lifecycle. ShellTab stays
-	// mounted across tab switches (so the PTY survives), so we toggle
-	// body class / focus whenever it becomes the active tab — not just
-	// on first mount.
+	// Focus this pane's terminal when it becomes the active shell tab.
 	$effect(() => {
-		const active = getActiveTab() === 'shell';
-		if (active) {
-			document.body.classList.add('shell-tab-active');
-			queueMicrotask(() => handle?.focus());
-		} else {
-			document.body.classList.remove('shell-tab-active');
-		}
+		if (isActive) queueMicrotask(() => handle?.focus());
 	});
 </script>
 
 <svelte:window onkeydown={onKeyDown} />
 
-<div class="shell-tab" role="presentation">
-	{#if !platformSupported}
-		<div class="platform-placeholder">
-			<div class="platform-card">
-				<h2>Shell tab — not yet on Windows</h2>
-				<p>
-					Haruspex's interactive terminal + AI sidebar ships on Linux and macOS. The PTY layer is
-					cross-platform, but the OSC 133 capture scripts and the assistant's auto-attach context
-					rely on bash/zsh — not <code>cmd.exe</code> or PowerShell.
-				</p>
-				<p>
-					Windows support is the next stop: it needs new capture scripting for PowerShell or WSL
-					bridging. The chat and jobs tabs work normally on every platform — switch to those for
-					now.
-				</p>
-			</div>
+<div class="shell-pane" role="presentation">
+	<div class="terminal-region">
+		<div class="terminal-pane" oncontextmenu={onContextMenu} role="presentation">
+			<Terminal onReady={onTerminalReady} onSelectionChange={(has) => (hasSelection = has)} />
 		</div>
-	{:else}
-		<div class="terminal-region">
-			<div class="terminal-pane" oncontextmenu={onContextMenu} role="presentation">
-				<Terminal onReady={onTerminalReady} onSelectionChange={(has) => (hasSelection = has)} />
-			</div>
-		</div>
-		<ChatSidebar />
-	{/if}
+	</div>
+	<ChatSidebar {session} />
 	{#if menu}
 		<div class="context-menu" style="left: {menu.x}px; top: {menu.y}px" role="menu" tabindex="-1">
 			<button onclick={copySelectionToClipboard} disabled={!hasSelection}>
@@ -356,7 +319,7 @@
 </div>
 
 <style>
-	.shell-tab {
+	.shell-pane {
 		display: flex;
 		flex-direction: row;
 		flex: 1 1 auto;
@@ -378,44 +341,6 @@
 		flex: 1 1 auto;
 		min-width: 0;
 		min-height: 0;
-	}
-
-	.platform-placeholder {
-		flex: 1 1 auto;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 2rem;
-		overflow: auto;
-	}
-
-	.platform-card {
-		max-width: 560px;
-		background: var(--bg-primary);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 1.5rem 1.75rem;
-		color: var(--text-primary);
-	}
-
-	.platform-card h2 {
-		margin: 0 0 0.75rem 0;
-		font-size: 1.1rem;
-	}
-
-	.platform-card p {
-		margin: 0.5rem 0;
-		font-size: 0.9rem;
-		line-height: 1.5;
-		color: var(--text-secondary);
-	}
-
-	.platform-card code {
-		font-family: var(--font-mono, ui-monospace, monospace);
-		font-size: 0.85em;
-		padding: 0 0.25em;
-		background: var(--bg-secondary, rgba(255, 255, 255, 0.05));
-		border-radius: 3px;
 	}
 
 	.context-menu {
