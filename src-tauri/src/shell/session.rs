@@ -47,6 +47,34 @@ pub struct Session {
     _tempdirs: Vec<PathBuf>,
 }
 
+/// Strip AppImage-bundled paths out of LD_LIBRARY_PATH for the spawned
+/// shell. Without this, an AppImage build leaks its munged LD_LIBRARY_PATH
+/// into the shell, so the shell (and tools it runs) load the AppImage's
+/// bundled libs instead of the system ones — e.g. fish warning
+/// `libpcre2-8.so.0: no version information available`. No-op when not
+/// running inside an AppImage (APPDIR unset), so dev mode and .deb / .rpm
+/// installs are unaffected.
+#[cfg(target_os = "linux")]
+fn sanitize_appimage_env(cmd: &mut CommandBuilder) {
+    let appdir = match std::env::var("APPDIR") {
+        Ok(v) if !v.is_empty() => v,
+        _ => return,
+    };
+    let current = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+    let cleaned: Vec<&str> = current
+        .split(':')
+        .filter(|p| !p.is_empty() && !p.starts_with(&appdir))
+        .collect();
+    if cleaned.is_empty() {
+        cmd.env_remove("LD_LIBRARY_PATH");
+    } else {
+        cmd.env("LD_LIBRARY_PATH", cleaned.join(":"));
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn sanitize_appimage_env(_cmd: &mut CommandBuilder) {}
+
 impl Session {
     pub fn spawn(
         app: AppHandle,
@@ -83,6 +111,7 @@ impl Session {
             std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()),
         );
         cmd.env("COLORTERM", "truecolor");
+        sanitize_appimage_env(&mut cmd);
         for (k, v) in &plan.env {
             cmd.env(k, v);
         }
