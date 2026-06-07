@@ -17,6 +17,10 @@ import {
 	reattachShellSession,
 	type ShellSession
 } from '$lib/stores/shell.svelte';
+import { getSettings } from '$lib/stores/settings';
+
+/** Target width for the terminal half of a freshly detached window. */
+const DETACHED_TERMINAL_TARGET = 760;
 
 /** Event a detached window emits to hand its shell back to the main window. */
 const REATTACH_EVENT = 'shell://reattach';
@@ -37,11 +41,15 @@ export async function openDetachedShell(session: ShellSession): Promise<void> {
 
 	await stashHandoff(ptyId, session.serializeChat(), session.serializeTerminal());
 
+	// Size the window so the terminal gets a comfortable width alongside the
+	// (saved) sidebar width — otherwise a wide sidebar swamps a fixed-width
+	// window and the user has to resize on every detach.
+	const sidebarWidth = Math.round(getSettings().shellSidebarWidth);
 	const w = new WebviewWindow(`shell-${ptyId}`, {
 		url: `/shell/${ptyId}`,
 		title: session.name,
-		width: 900,
-		height: 640
+		width: DETACHED_TERMINAL_TARGET + sidebarWidth,
+		height: 700
 	});
 	w.once('tauri://error', (e) => console.error('detached shell window error', e));
 

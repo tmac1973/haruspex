@@ -117,14 +117,16 @@
 	let composerText = $state('');
 	let composerEl = $state<HTMLTextAreaElement | null>(null);
 	let threadEl = $state<HTMLDivElement | null>(null);
-	let sidebarWidth = $state(getSettings().shellSidebarWidth);
-
 	const MIN_WIDTH = 320;
 	function maxWidth(): number {
 		// Leave at least 320 px for the terminal so the user can still
 		// see what they're typing while the sidebar is dragged wide.
 		return Math.max(MIN_WIDTH, window.innerWidth - 320);
 	}
+
+	// Clamp the saved width to the current window so a sidebar sized in a wide
+	// main window doesn't swamp a narrower (e.g. detached) one on first paint.
+	let sidebarWidth = $state(Math.min(getSettings().shellSidebarWidth, maxWidth()));
 
 	function startResize(event: MouseEvent) {
 		event.preventDefault();
