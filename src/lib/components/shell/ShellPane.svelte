@@ -159,16 +159,20 @@
 	}
 
 	interface ShellContextSnapshot {
-		marker_count: number;
+		completed_total: number;
 	}
 
-	async function getMarkerCount(): Promise<number> {
+	// Monotonic lifetime count of completed commands. We poll this (rather than
+	// the marker count) to detect the Run command finishing — marker_count caps
+	// at the ring size (256) and plateaus once a shell has run enough commands,
+	// which broke the auto-submit on long-lived / detached sessions.
+	async function getCompletedTotal(): Promise<number> {
 		if (!handle) return 0;
 		try {
 			const res = await invoke<ShellContextSnapshot>('shell_get_context', {
 				sessionId: handle.sessionId
 			});
-			return res.marker_count;
+			return res.completed_total;
 		} catch {
 			return 0;
 		}
@@ -217,7 +221,7 @@
 
 	async function executeRunCommand(cleaned: string) {
 		if (!handle) return;
-		const before = await getMarkerCount();
+		const before = await getCompletedTotal();
 		try {
 			// Bracketed paste + a trailing Enter: the shell inserts the
 			// command(s) literally (no quote/highlight mangling) then runs.
@@ -230,17 +234,17 @@
 			console.error('shell_write (run) failed', e);
 			return;
 		}
-		// Poll for the D marker. Each complete cycle adds 4 markers (A, B, C,
-		// D), but conservatively we wait for at least 2 new markers since C+D
-		// arrives during the command and the new A+B land once the prompt
-		// redraws.
+		// Wait for one more completed command (a new D / OutputEnd marker) —
+		// i.e. the command we just launched returning to a prompt. Long-running
+		// / interactive commands never finish; we time out and drop the
+		// auto-submit silently.
 		const startedAt = Date.now();
 		const timeoutMs = 60_000;
 		const pollMs = 400;
 		while (Date.now() - startedAt < timeoutMs) {
 			await new Promise((r) => setTimeout(r, pollMs));
-			const now = await getMarkerCount();
-			if (now >= before + 2) break;
+			const now = await getCompletedTotal();
+			if (now > before) break;
 		}
 		if (Date.now() - startedAt >= timeoutMs) return;
 		await session.submitChatMessage(`Please analyze the output of \`${cleaned}\` that I just ran.`);

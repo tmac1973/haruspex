@@ -83,6 +83,11 @@ pub struct Integration {
     /// Ring of markers, oldest first.
     markers: VecDeque<Marker>,
     marker_capacity: usize,
+    /// Monotonic count of D (OutputEnd) markers seen over the session's whole
+    /// lifetime — i.e. completed commands. Unlike `markers.len()` this never
+    /// caps when the ring saturates, so callers can detect "a new command
+    /// finished" by waiting for it to increase (used by the Run auto-submit).
+    output_end_total: u64,
     /// Most recent cwd announced via OSC 7.
     current_cwd: Option<String>,
     state: ParserState,
@@ -101,6 +106,7 @@ impl Integration {
             total_offset: 0,
             markers: VecDeque::with_capacity(marker_capacity),
             marker_capacity,
+            output_end_total: 0,
             current_cwd: None,
             state: ParserState::Normal,
         }
@@ -239,10 +245,19 @@ impl Integration {
     }
 
     fn push_marker(&mut self, marker: Marker) {
+        if marker.kind == MarkerKind::OutputEnd {
+            self.output_end_total = self.output_end_total.saturating_add(1);
+        }
         if self.markers.len() == self.marker_capacity {
             self.markers.pop_front();
         }
         self.markers.push_back(marker);
+    }
+
+    /// Monotonic count of completed commands (D markers) over the session's
+    /// lifetime. Never resets or caps — see the field comment.
+    pub fn output_end_total(&self) -> u64 {
+        self.output_end_total
     }
 
     #[allow(dead_code)] // Used by tests + future debug overlay
@@ -555,6 +570,20 @@ mod tests {
         assert_eq!(captured.output, "file1 file2\n");
         assert_eq!(captured.exit_code, Some(0));
         assert!(!captured.truncated);
+    }
+
+    #[test]
+    fn output_end_total_is_monotonic_past_marker_cap() {
+        // Small ring so the cap is easy to exceed; output_end_total must keep
+        // climbing even after markers.len() saturates (the Run auto-submit
+        // relies on this to detect command completion on long-lived shells).
+        let mut integ = Integration::with_capacity(DEFAULT_OUTPUT_CAPACITY, 8);
+        for _ in 0..50 {
+            integ.ingest(b"\x1B]133;B\x07cmd\n\x1B]133;C\x07out\n\x1B]133;D;0\x07");
+        }
+        assert_eq!(integ.output_end_total(), 50);
+        // The marker ring itself is capped...
+        assert!(integ.markers().count() <= 8);
     }
 
     #[test]

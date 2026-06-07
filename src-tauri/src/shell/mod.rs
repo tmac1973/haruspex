@@ -220,6 +220,10 @@ pub struct ShellContextResponse {
     /// the integration is loaded but the user hasn't run anything
     /// yet in this session — the badge calls that out.
     pub completed_commands: usize,
+    /// Monotonic lifetime count of completed commands — never caps when the
+    /// marker ring saturates. The Run auto-submit polls this to detect the
+    /// command it launched finishing (marker_count can't, once saturated).
+    pub completed_total: u64,
 }
 
 #[tauri::command]
@@ -236,6 +240,7 @@ pub fn shell_get_context(
         current_cwd: session.current_cwd(),
         marker_count: session.marker_count(),
         completed_commands: session.completed_command_count(),
+        completed_total: session.completed_command_total(),
     })
 }
 

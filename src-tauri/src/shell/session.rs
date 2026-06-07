@@ -271,6 +271,16 @@ impl Session {
             .unwrap_or(0)
     }
 
+    /// Monotonic count of completed commands over the session's lifetime
+    /// (never caps when the marker ring saturates). Used by the Run
+    /// auto-submit to detect that the command it ran has finished.
+    pub fn completed_command_total(&self) -> u64 {
+        self.integration
+            .lock()
+            .map(|i| i.output_end_total())
+            .unwrap_or(0)
+    }
+
     pub fn current_cwd(&self) -> Option<String> {
         self.integration
             .lock()
