@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.44](https://github.com/tmac1973/haruspex/compare/v0.1.43...v0.1.44) (2026-06-07)
+
+
+### Bug Fixes
+
+* **shell:** strip AppImage libs from spawned shell's LD_LIBRARY_PATH ([3b6738d](https://github.com/tmac1973/haruspex/commit/3b6738d8b2c822214df91a9e29a3e2945861b05d))
+* **shell:** strip AppImage libs from spawned shell's LD_LIBRARY_PATH ([15cb6c3](https://github.com/tmac1973/haruspex/commit/15cb6c3d04d8a82025703b194cb035fee7e53e06))
+
 ## [0.1.43](https://github.com/tmac1973/haruspex/compare/v0.1.42...v0.1.43) (2026-06-06)
 
 
