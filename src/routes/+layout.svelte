@@ -6,6 +6,7 @@
 	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import HelpModal from '$lib/components/HelpModal.svelte';
+	import SettingsPanel from '$lib/components/settings/SettingsPanel.svelte';
 	import StartupNoticeDialog from '$lib/components/StartupNoticeDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
@@ -42,6 +43,9 @@
 	let { children } = $props();
 	let showLogs = $state(false);
 	let showHelp = $state(false);
+	// Settings renders as an in-page overlay rather than a route navigation, so
+	// the Shell tab's PTY (and scrollback) survives opening/closing settings.
+	let showSettings = $state(false);
 	let showStartupNotice = $state(false);
 	let version = $state('');
 	let update = $state<UpdateInfo | null>(null);
@@ -193,7 +197,9 @@
 			if (!event.repeat) showHelp = !showHelp;
 			return;
 		}
-		if (!isMainPage()) return;
+		// Settings opens as an overlay on the main route, so isMainPage() is
+		// still true while it's up — suppress push-to-talk / read-aloud there.
+		if (!isMainPage() || showSettings) return;
 		if (!hasNoModifiers(event)) return;
 		if (event.key === 'F2') {
 			event.preventDefault();
@@ -215,7 +221,7 @@
 	}
 
 	async function onGlobalKeyup(event: KeyboardEvent) {
-		if (!isMainPage()) return;
+		if (!isMainPage() || showSettings) return;
 		if (event.key === 'F2') {
 			event.preventDefault();
 			const text = await stopAndTranscribe();
@@ -283,9 +289,9 @@
 		</button>
 		<button
 			class="header-icon-btn"
-			title={page.url.pathname.startsWith('/settings') ? 'Close Settings' : 'Settings'}
-			aria-pressed={page.url.pathname.startsWith('/settings')}
-			onclick={() => goto(page.url.pathname.startsWith('/settings') ? '/' : '/settings')}
+			title={showSettings ? 'Close Settings' : 'Settings'}
+			aria-pressed={showSettings}
+			onclick={() => (showSettings = !showSettings)}
 		>
 			<svg
 				width="18"
@@ -308,6 +314,11 @@
 
 <main>
 	{@render children()}
+	{#if showSettings}
+		<div class="settings-overlay">
+			<SettingsPanel onclose={() => (showSettings = false)} />
+		</div>
+	{/if}
 </main>
 
 <LogViewer open={showLogs} onclose={() => (showLogs = false)} />
@@ -441,6 +452,18 @@
 	main {
 		flex: 1;
 		overflow: hidden;
+		position: relative;
+	}
+
+	/* Settings overlay covers the main content area (the Shell tab stays
+	   mounted underneath so its PTY survives). Anchored to <main> via
+	   position: relative above; sits below the header. */
+	.settings-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 20;
+		overflow-y: auto;
+		background: var(--bg-primary);
 	}
 
 	/* Right-side controls (chips + Paste + Copy) inside the rendered
