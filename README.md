@@ -2,7 +2,7 @@
 
 Click this screenshot to watch the explainer video:
 
-[![Watch the video](https://img.youtube.com/vi/q59X6fkGMsQ/maxresdefault.jpg)](https://youtu.be/q59X6fkGMsQ)
+[![Watch the video](https://img.youtube.com/vi/EQhNwZMXuAI/maxresdefault.jpg)](https://youtu.be/EQhNwZMXuAI)
 
 A cross-platform desktop AI web researcher and agent that runs entirely on your computer. No cloud, no accounts, no telemetry — your conversations never leave your device.
 
