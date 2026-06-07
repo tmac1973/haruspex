@@ -67,39 +67,21 @@
 			}
 		};
 	}
-	import {
-		bindShellComposer,
-		cancelShellTurn,
-		getShellContextNotice,
-		getShellIntegrationCompletedCommands,
-		getShellIntegrationMarkerCount,
-		getShellLastError,
-		getShellMessages,
-		getShellMessageSteps,
-		getShellSearchSteps,
-		getShellSidebarOpen,
-		getShellStreamingContent,
-		getShellTicket,
-		isShellSubmitting,
-		newShellChat,
-		refreshShellIntegrationStatus,
-		setShellComposerFocused,
-		submitChatMessage,
-		toggleShellSidebar,
-		unbindShellComposer
-	} from '$lib/stores/shell.svelte';
+	import type { ShellSession } from '$lib/stores/shell.svelte';
 
-	const open = $derived(getShellSidebarOpen());
-	const messages = $derived(getShellMessages());
-	const streaming = $derived(getShellStreamingContent());
-	const submitting = $derived(isShellSubmitting());
-	const ticket = $derived(getShellTicket());
-	const lastError = $derived(getShellLastError());
-	const contextNotice = $derived(getShellContextNotice());
-	const searchSteps = $derived(getShellSearchSteps());
-	const messageSteps = $derived(getShellMessageSteps());
-	const markerCount = $derived(getShellIntegrationMarkerCount());
-	const completedCommands = $derived(getShellIntegrationCompletedCommands());
+	const { session }: { session: ShellSession } = $props();
+
+	const open = $derived(session.sidebarOpen);
+	const messages = $derived(session.messages);
+	const streaming = $derived(session.streamingContent);
+	const submitting = $derived(session.isSubmitting);
+	const ticket = $derived(session.ticket);
+	const lastError = $derived(session.lastError);
+	const contextNotice = $derived(session.contextNotice);
+	const searchSteps = $derived(session.searchSteps);
+	const messageSteps = $derived(session.messageSteps);
+	const markerCount = $derived(session.integrationMarkerCount);
+	const completedCommands = $derived(session.integrationCompletedCommands);
 	// Three-state badge:
 	//   - red "no integration"    : marker_count is 0 → hook didn't load
 	//   - amber "no captures yet"  : markers exist but no B→C→D cycles → user
@@ -128,21 +110,23 @@
 	// without thrashing the Tauri IPC.
 	$effect(() => {
 		if (!open) return;
-		const id = setInterval(() => void refreshShellIntegrationStatus(), 2000);
+		const id = setInterval(() => void session.refreshIntegrationStatus(), 2000);
 		return () => clearInterval(id);
 	});
 
 	let composerText = $state('');
 	let composerEl = $state<HTMLTextAreaElement | null>(null);
 	let threadEl = $state<HTMLDivElement | null>(null);
-	let sidebarWidth = $state(getSettings().shellSidebarWidth);
-
 	const MIN_WIDTH = 320;
 	function maxWidth(): number {
 		// Leave at least 320 px for the terminal so the user can still
 		// see what they're typing while the sidebar is dragged wide.
 		return Math.max(MIN_WIDTH, window.innerWidth - 320);
 	}
+
+	// Clamp the saved width to the current window so a sidebar sized in a wide
+	// main window doesn't swamp a narrower (e.g. detached) one on first paint.
+	let sidebarWidth = $state(Math.min(getSettings().shellSidebarWidth, maxWidth()));
 
 	function startResize(event: MouseEvent) {
 		event.preventDefault();
@@ -191,7 +175,7 @@
 		if (!text || submitting) return;
 		composerText = '';
 		autosize();
-		await submitChatMessage(text);
+		await session.submitChatMessage(text);
 	}
 
 	function onComposerKeydown(event: KeyboardEvent) {
@@ -201,7 +185,7 @@
 		}
 		if (event.key === 'Escape' && submitting) {
 			event.preventDefault();
-			cancelShellTurn();
+			session.cancelTurn();
 		}
 	}
 
@@ -218,8 +202,8 @@
 	});
 
 	onMount(() => {
-		bindShellComposer(() => composerEl?.focus());
-		return () => unbindShellComposer();
+		session.bindComposer(() => composerEl?.focus());
+		return () => session.unbindComposer();
 	});
 </script>
 
@@ -243,8 +227,8 @@
 				>
 					{integrationLabel}
 				</span>
-				<button onclick={newShellChat} disabled={submitting} title="Clear chat">New chat</button>
-				<button onclick={toggleShellSidebar} title="Collapse">›</button>
+				<button onclick={session.newChat} disabled={submitting} title="Clear chat">New chat</button>
+				<button onclick={session.toggleSidebar} title="Collapse">›</button>
 			</div>
 		</header>
 		<div class="thread" bind:this={threadEl}>
@@ -305,15 +289,18 @@
 				bind:value={composerText}
 				oninput={onComposerInput}
 				onkeydown={onComposerKeydown}
-				onfocus={() => setShellComposerFocused(true)}
-				onblur={() => setShellComposerFocused(false)}
+				onfocus={() => session.setComposerFocused(true)}
+				onblur={() => session.setComposerFocused(false)}
 				placeholder="Ask the assistant… (Enter to send, Shift+Enter for newline, Ctrl+` switch to shell)"
 				rows="1"
 				disabled={submitting}
 			></textarea>
-			<MicButton onTranscription={(text) => submitChatMessage(text)} disabled={submitting} />
+			<MicButton
+				onTranscription={(text) => session.submitChatMessage(text)}
+				disabled={submitting}
+			/>
 			{#if submitting}
-				<button class="cancel" onclick={cancelShellTurn} title="Cancel (Esc)">Stop</button>
+				<button class="cancel" onclick={session.cancelTurn} title="Cancel (Esc)">Stop</button>
 			{:else}
 				<button
 					class="send"
@@ -327,7 +314,7 @@
 {:else}
 	<button
 		class="rail"
-		onclick={toggleShellSidebar}
+		onclick={session.toggleSidebar}
 		title="Open assistant"
 		aria-label="Open assistant sidebar"
 	>

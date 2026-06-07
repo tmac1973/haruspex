@@ -4,6 +4,19 @@ vi.mock('$lib/agent/loop', () => ({
 	runAgentLoop: vi.fn()
 }));
 
+vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
+	// The queue gate now talks to Rust; tests for it live in
+	// inferenceQueue.test.ts. Here we just want a pass-through so sendMessage
+	// runs its turn without the Tauri command round-trip.
+	withInferenceSlot: async <T>(
+		opts: { onAdmitted?: () => void },
+		fn: () => Promise<T>
+	): Promise<T> => {
+		opts.onAdmitted?.();
+		return fn();
+	}
+}));
+
 vi.mock('$lib/api', () => ({
 	ApiError: class ApiError extends Error {
 		statusCode?: number;

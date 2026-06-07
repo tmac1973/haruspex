@@ -5,6 +5,7 @@
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
 	import { WebLinksAddon } from '@xterm/addon-web-links';
+	import { SerializeAddon } from '@xterm/addon-serialize';
 	import '@xterm/xterm/css/xterm.css';
 	import { getSettings } from '$lib/stores/settings';
 
@@ -26,9 +27,19 @@
 		context: SessionContext;
 	}
 
+	interface ShellContextResponse {
+		context: SessionContext;
+		current_cwd: string | null;
+		marker_count: number;
+		completed_commands: number;
+	}
+
 	interface Props {
 		onReady?: (handle: TerminalHandle) => void;
 		onSelectionChange?: (hasSelection: boolean) => void;
+		// When set, attach to this existing PTY (detach/re-attach) instead of
+		// spawning a new one: fetch its context, replay scrollback, go live.
+		attachSessionId?: number;
 	}
 
 	export interface TerminalHandle {
@@ -37,12 +48,15 @@
 		getSelection: () => string;
 		focus: () => void;
 		restart: () => Promise<void>;
+		/** Serialized grid snapshot (for clean cross-window scrollback handoff). */
+		serialize: () => string;
 	}
 
-	const { onReady, onSelectionChange }: Props = $props();
+	const { onReady, onSelectionChange, attachSessionId }: Props = $props();
 
 	let container: HTMLDivElement;
 	let term: Terminal | null = null;
+	let serializeAddon: SerializeAddon | null = null;
 	let sessionId: number | null = null;
 	let unlistenOutput: UnlistenFn | null = null;
 	let unlistenExit: UnlistenFn | null = null;
@@ -98,6 +112,8 @@
 		const fit = new FitAddon();
 		t.loadAddon(fit);
 		t.loadAddon(new WebLinksAddon());
+		serializeAddon = new SerializeAddon();
+		t.loadAddon(serializeAddon);
 		return { t, fit };
 	}
 
@@ -139,7 +155,8 @@
 			context,
 			getSelection: () => term?.getSelection() ?? '',
 			focus: () => term?.focus(),
-			restart: () => restart()
+			restart: () => restart(),
+			serialize: () => serializeAddon?.serialize() ?? ''
 		};
 	}
 
@@ -172,6 +189,30 @@
 			console.error('shell_mark_ready failed', e)
 		);
 		onReady?.(buildHandle(context));
+	}
+
+	// Detach/re-attach: bind to an already-running PTY in a new webview.
+	// Repaint recent scrollback BEFORE wiring the live listener so history
+	// and new output don't interleave. The PTY never restarted, so cwd / env
+	// / running processes are already intact — only the painted history was
+	// lost with the old webview.
+	async function attachExisting(t: Terminal, fit: FitAddon, id: number) {
+		const ctxRes = await invoke<ShellContextResponse>('shell_get_context', { sessionId: id });
+		// Prefer the serialized grid snapshot the source window stashed — it
+		// repaints cleanly at any width. Fall back to the raw output ring only
+		// if no snapshot is present (e.g. source terminal wasn't ready).
+		try {
+			const snapshot = await invoke<string | null>('shell_take_scrollback', { sessionId: id });
+			if (snapshot) {
+				t.write(snapshot);
+			} else {
+				const b64 = await invoke<string>('shell_get_scrollback', { sessionId: id });
+				if (b64) t.write(base64ToBytes(b64));
+			}
+		} catch (e) {
+			console.error('scrollback restore failed', e);
+		}
+		await attachSession(t, fit, id, ctxRes.context);
 	}
 
 	async function restart() {
@@ -215,6 +256,13 @@
 				return;
 			}
 
+			if (attachSessionId != null) {
+				// Attach to an existing PTY (detach/re-attach). Don't kill it on
+				// cancel — another window may still own it.
+				await attachExisting(t, fit, attachSessionId);
+				return;
+			}
+
 			const shellOverride = getSettings().shellBinary.trim() || null;
 			const spawn = await invoke<SpawnResult>('shell_spawn', {
 				cols: t.cols,
@@ -233,13 +281,15 @@
 		})().catch((e) => console.error('terminal init failed', e));
 
 		return () => {
+			// Note: the PTY is intentionally NOT killed here. Its lifecycle is
+			// owned explicitly by the shell registry (closeShellSession kills;
+			// app exit kills all) so a pane can unmount during detach without
+			// dropping the live shell. The cancelled-spawn path above still
+			// kills a PTY that was spawned but never adopted.
 			cancelled = true;
 			resizeObserver?.disconnect();
 			unlistenOutput?.();
 			unlistenExit?.();
-			if (sessionId != null) {
-				invoke('shell_kill', { sessionId }).catch(() => {});
-			}
 			term?.dispose();
 			term = null;
 		};

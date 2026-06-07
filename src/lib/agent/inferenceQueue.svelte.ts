@@ -1,76 +1,41 @@
 /**
- * App-wide queue for in-flight agent turns.
+ * Thin client over the Rust-side inference queue (`inference_queue.rs`).
  *
- * The chat tab and the jobs runner both call `runAgentLoop`, which POSTs
- * to the configured inference backend. We funnel every such call through
- * this module so:
+ * The admission gate used to live here as a per-webview JS semaphore, but
+ * that can't coordinate once shells are detached into their own windows —
+ * each webview is a separate JS context. The gate now lives in Rust, shared
+ * process-wide; this module just speaks its command protocol while keeping
+ * the same public API (`withInferenceSlot`, `getQueueSnapshot`,
+ * `getRunningCount`) so callers (chat / shell / jobs) are unchanged.
  *
- *  - The local llama-server (one slot by default) doesn't get a second
- *    request stuck waiting in its HTTP queue with no UI feedback.
- *  - Remote backends that DO support concurrency (vLLM, llama-server
- *    with `-np N`, hosted APIs) can be opted into true parallel mode
- *    via the inferenceBackend.allowParallelInference setting — the
- *    queue then short-circuits to no-op acquire/release.
+ * Protocol per turn:
+ *   1. `inference_acquire(reqId, consumer, parallel, windowLabel)` — resolves
+ *      when admitted, rejects if cancelled/reclaimed.
+ *   2. heartbeat `inference_heartbeat(reqId)` on an interval from enqueue
+ *      until release, refreshing the lease so a long turn (or a long wait
+ *      behind another turn) isn't falsely reclaimed.
+ *   3. `inference_cancel(reqId)` on abort, to bail a still-queued waiter.
+ *   4. `inference_release(reqId)` in `finally`.
  *
- * Capacity is fixed at 1 for local mode and 1-or-unbounded for remote
- * mode depending on the setting. We re-read the setting at every acquire
- * so the change takes effect without a restart.
- *
- * Each waiter is given a stable ticket id so the UI can render WHO is
- * waiting and WHO is running ("Chat is queued behind Morning headlines").
+ * Rust broadcasts a full `inference://queue` snapshot on every change; we
+ * mirror it into `$state` so `getQueueSnapshot()`/`getRunningCount()` reflect
+ * every window, not just this one.
  */
+
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 import { getSettings } from '$lib/stores/settings';
 
 export type InferenceConsumer = 'chat' | 'shell' | { kind: 'job'; jobName: string };
 
 export interface InferenceTicket {
-	id: number;
+	/** `<windowLabel>:<n>` — unique across windows. */
+	id: string;
 	consumer: InferenceConsumer;
 	state: 'waiting' | 'running';
 	enqueuedAt: number;
-}
-
-interface Waiter {
-	id: number;
-	resolve: () => void;
-}
-
-let nextTicketId = 1;
-const queue = $state<InferenceTicket[]>([]);
-let pendingWaiters: Waiter[] = [];
-let runningCount = 0;
-
-export function getQueueSnapshot(): InferenceTicket[] {
-	return queue;
-}
-
-export function getRunningCount(): number {
-	return runningCount;
-}
-
-function currentCapacity(): number {
-	const inf = getSettings().inferenceBackend;
-	if (inf.mode === 'remote' && inf.allowParallelInference) {
-		// Effectively unbounded — the remote server decides what to batch.
-		return Number.POSITIVE_INFINITY;
-	}
-	return 1;
-}
-
-function pump(): void {
-	while (pendingWaiters.length > 0 && runningCount < currentCapacity()) {
-		const next = pendingWaiters.shift();
-		if (!next) break;
-		const idx = queue.findIndex((t) => t.id === next.id);
-		if (idx >= 0) {
-			// Direct mutation: queue is $state so the slot's `state` field
-			// updates reactively for any subscriber rendering the queue.
-			queue[idx].state = 'running';
-		}
-		runningCount++;
-		next.resolve();
-	}
 }
 
 export interface WithSlotOptions {
@@ -81,16 +46,102 @@ export interface WithSlotOptions {
 }
 
 /**
- * Run `fn` with a queue slot held for its duration. The promise resolves
- * once `fn` resolves; any thrown error propagates after the slot is
- * released. The ticket is exposed via `onTicket` so UI can render the
- * waiting/running indicator for this specific caller. `onAdmitted` fires
- * when the slot is granted — the caller uses it to flip a "waiting"
- * indicator to "running" without having to subscribe to the queue.
+ * Refresh the lease well inside the Rust-side TTL (5 min). 60 s gives a
+ * comfortable margin even if a few beats are missed while the renderer is
+ * busy streaming.
+ */
+const HEARTBEAT_INTERVAL_MS = 60_000;
+const QUEUE_EVENT = 'inference://queue';
+
+// --- window identity / request ids ----------------------------------------
+
+let windowLabel: string | null = null;
+function getWindowLabel(): string {
+	if (windowLabel === null) {
+		try {
+			windowLabel = getCurrentWebviewWindow().label;
+		} catch {
+			// Non-Tauri context (tests) — a stable placeholder is fine.
+			windowLabel = 'main';
+		}
+	}
+	return windowLabel;
+}
+
+let reqCounter = 0;
+function nextReqId(): string {
+	reqCounter += 1;
+	return `${getWindowLabel()}:${reqCounter}`;
+}
+
+function parallelAllowed(): boolean {
+	const inf = getSettings().inferenceBackend;
+	return inf.mode === 'remote' && inf.allowParallelInference;
+}
+
+// --- cross-window queue snapshot (event-mirrored) -------------------------
+
+interface RawTicket {
+	id: string;
+	consumer: InferenceConsumer;
+	state: 'waiting' | 'running';
+	enqueuedAt: number;
+}
+
+let snapshot = $state<InferenceTicket[]>([]);
+let listenerStarted = false;
+let gotEvent = false;
+let unlisten: UnlistenFn | null = null;
+
+function applySnapshot(tickets: RawTicket[]): void {
+	snapshot = tickets.map((t) => ({
+		id: t.id,
+		consumer: t.consumer,
+		state: t.state,
+		enqueuedAt: t.enqueuedAt
+	}));
+}
+
+/**
+ * Subscribe to the broadcast once, and seed from a one-shot snapshot for a
+ * window that joins while turns are already in flight. Events always win
+ * over the late initial fetch.
+ */
+function ensureSnapshotListener(): void {
+	if (listenerStarted) return;
+	listenerStarted = true;
+	void listen<RawTicket[]>(QUEUE_EVENT, (event) => {
+		gotEvent = true;
+		applySnapshot(event.payload);
+	}).then((un) => {
+		unlisten = un;
+	});
+	void invoke<RawTicket[]>('inference_queue_snapshot')
+		.then((tickets) => {
+			if (!gotEvent) applySnapshot(tickets);
+		})
+		.catch(() => {});
+}
+
+export function getQueueSnapshot(): InferenceTicket[] {
+	return snapshot;
+}
+
+export function getRunningCount(): number {
+	return snapshot.filter((t) => t.state === 'running').length;
+}
+
+// --- the gate -------------------------------------------------------------
+
+/**
+ * Run `fn` while holding a process-wide inference slot. Resolves once `fn`
+ * resolves; releases the slot on success, error, or abort. `onTicket` fires
+ * with the waiting ticket so the UI can render "waiting behind …";
+ * `onAdmitted` fires when the slot is granted.
  *
- * Honors `signal`: aborting before the slot is granted bails out without
- * ever calling `fn`. Aborting while `fn` is running is `fn`'s problem
- * (it should propagate the AbortError through this call).
+ * Honors `signal`: aborting before admission cancels the queued waiter and
+ * throws `AbortError` without ever calling `fn`. Aborting while `fn` runs is
+ * `fn`'s responsibility to propagate; the slot is released regardless.
  */
 export async function withInferenceSlot<T>(
 	options: WithSlotOptions,
@@ -99,46 +150,60 @@ export async function withInferenceSlot<T>(
 	const { consumer, signal, onTicket, onAdmitted } = options;
 	if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-	const id = nextTicketId++;
-	const ticket: InferenceTicket = {
-		id,
-		consumer,
-		state: 'waiting',
-		enqueuedAt: Date.now()
-	};
-	queue.push(ticket);
-	onTicket?.(ticket);
+	ensureSnapshotListener();
 
+	const reqId = nextReqId();
+	onTicket?.({ id: reqId, consumer, state: 'waiting', enqueuedAt: Date.now() });
+
+	// Heartbeat from enqueue (covers the waiting period too).
+	const heartbeat = setInterval(() => {
+		void invoke('inference_heartbeat', { reqId }).catch(() => {});
+	}, HEARTBEAT_INTERVAL_MS);
+
+	let abortInitiated = false;
 	let abortListener: (() => void) | null = null;
-	const ready = new Promise<void>((resolve, reject) => {
-		pendingWaiters.push({ id, resolve });
-		if (signal) {
-			abortListener = () => reject(new DOMException('Aborted', 'AbortError'));
-			signal.addEventListener('abort', abortListener);
-		}
-	});
-	pump();
+	if (signal) {
+		abortListener = () => {
+			abortInitiated = true;
+			void invoke('inference_cancel', { reqId }).catch(() => {});
+		};
+		signal.addEventListener('abort', abortListener);
+	}
 
-	let admitted = false;
 	try {
-		await ready;
-		admitted = true;
+		await invoke('inference_acquire', {
+			reqId,
+			consumer,
+			parallel: parallelAllowed(),
+			windowLabel: getWindowLabel()
+		});
+		// Abort could have raced in between the grant and here.
+		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 		onAdmitted?.();
 		return await fn();
+	} catch (e) {
+		// A cancelled/reclaimed acquire rejects; surface it as AbortError when
+		// we (or the caller's signal) initiated the abort, so callers see a
+		// consistent "Aborted" rather than the raw Rust string.
+		if (abortInitiated || signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		throw e;
 	} finally {
+		clearInterval(heartbeat);
 		if (abortListener && signal) signal.removeEventListener('abort', abortListener);
-		const idx = queue.findIndex((t) => t.id === id);
-		if (idx >= 0) queue.splice(idx, 1);
-		pendingWaiters = pendingWaiters.filter((w) => w.id !== id);
-		if (admitted && runningCount > 0) runningCount--;
-		pump();
+		// Harmless no-op server-side if the ticket was never admitted.
+		void invoke('inference_release', { reqId }).catch(() => {});
 	}
 }
 
 /** Test-only hook to reset module state between cases. */
 export function _resetForTests(): void {
-	queue.splice(0, queue.length);
-	pendingWaiters = [];
-	runningCount = 0;
-	nextTicketId = 1;
+	snapshot = [];
+	reqCounter = 0;
+	windowLabel = null;
+	listenerStarted = false;
+	gotEvent = false;
+	if (unlisten) {
+		unlisten();
+		unlisten = null;
+	}
 }

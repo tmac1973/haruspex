@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -35,6 +36,39 @@ struct ReplayState {
     buffer: Vec<u8>,
 }
 
+/// How much raw terminal output to retain for scrollback replay. When a
+/// shell tab is detached into its own window, the new webview's fresh xterm
+/// has no history (the painted lines lived in the old webview's DOM). The
+/// PTY itself never restarts, so cwd / env / running processes are intact —
+/// this ring just lets the new window repaint recent output before going
+/// live. 256 KiB is enough for a few screenfuls without unbounded growth.
+const SCROLLBACK_CAP: usize = 256 * 1024;
+
+/// Bounded FIFO of recent raw PTY bytes for detach/re-attach scrollback.
+struct ScrollbackRing {
+    buf: VecDeque<u8>,
+}
+
+impl ScrollbackRing {
+    fn new() -> Self {
+        Self {
+            buf: VecDeque::new(),
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) {
+        self.buf.extend(bytes.iter().copied());
+        if self.buf.len() > SCROLLBACK_CAP {
+            let overflow = self.buf.len() - SCROLLBACK_CAP;
+            self.buf.drain(0..overflow);
+        }
+    }
+
+    fn snapshot(&self) -> Vec<u8> {
+        self.buf.iter().copied().collect()
+    }
+}
+
 pub struct Session {
     pub context: SessionContext,
     master: Mutex<Box<dyn MasterPty + Send>>,
@@ -42,6 +76,7 @@ pub struct Session {
     child: Mutex<Box<dyn portable_pty::Child + Send + Sync>>,
     integration: Arc<Mutex<Integration>>,
     replay: Arc<Mutex<ReplayState>>,
+    scrollback: Arc<Mutex<ScrollbackRing>>,
     // Kept alive so the rcfile / zdotdir survive for the shell's
     // lifetime. Cleaned up in Drop.
     _tempdirs: Vec<PathBuf>,
@@ -139,7 +174,15 @@ impl Session {
             ready: false,
             buffer: Vec::new(),
         }));
-        spawn_reader_thread(app, id, reader, integration.clone(), replay.clone());
+        let scrollback = Arc::new(Mutex::new(ScrollbackRing::new()));
+        spawn_reader_thread(
+            app,
+            id,
+            reader,
+            integration.clone(),
+            replay.clone(),
+            scrollback.clone(),
+        );
 
         let context = SessionContext::capture(shell);
 
@@ -150,6 +193,7 @@ impl Session {
             child: Mutex::new(child),
             integration,
             replay,
+            scrollback,
             _tempdirs: plan.tempdirs,
         })
     }
@@ -227,11 +271,32 @@ impl Session {
             .unwrap_or(0)
     }
 
+    /// Monotonic count of completed commands over the session's lifetime
+    /// (never caps when the marker ring saturates). Used by the Run
+    /// auto-submit to detect that the command it ran has finished.
+    pub fn completed_command_total(&self) -> u64 {
+        self.integration
+            .lock()
+            .map(|i| i.output_end_total())
+            .unwrap_or(0)
+    }
+
     pub fn current_cwd(&self) -> Option<String> {
         self.integration
             .lock()
             .ok()
             .and_then(|i| i.current_cwd().map(|s| s.to_string()))
+    }
+
+    /// Recent raw terminal output (base64) for repainting a detached window's
+    /// fresh xterm before it goes live.
+    pub fn scrollback_base64(&self) -> String {
+        let bytes = self
+            .scrollback
+            .lock()
+            .map(|s| s.snapshot())
+            .unwrap_or_default();
+        general_purpose::STANDARD.encode(&bytes)
     }
 }
 
@@ -244,12 +309,38 @@ impl Drop for Session {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ring_retains_recent_bytes_under_cap() {
+        let mut ring = ScrollbackRing::new();
+        ring.push(b"hello ");
+        ring.push(b"world");
+        assert_eq!(ring.snapshot(), b"hello world");
+    }
+
+    #[test]
+    fn ring_evicts_oldest_past_cap() {
+        let mut ring = ScrollbackRing::new();
+        ring.push(&vec![b'a'; SCROLLBACK_CAP]);
+        ring.push(&vec![b'b'; SCROLLBACK_CAP]);
+        let snap = ring.snapshot();
+        // Capped at SCROLLBACK_CAP; the first push is fully evicted by the
+        // second, so only the newest bytes ('b') remain.
+        assert_eq!(snap.len(), SCROLLBACK_CAP);
+        assert!(snap.iter().all(|&b| b == b'b'));
+    }
+}
+
 fn spawn_reader_thread(
     app: AppHandle,
     id: SessionId,
     mut reader: Box<dyn Read + Send>,
     integration: Arc<Mutex<Integration>>,
     replay: Arc<Mutex<ReplayState>>,
+    scrollback: Arc<Mutex<ScrollbackRing>>,
 ) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -259,6 +350,12 @@ fn spawn_reader_thread(
                 Ok(n) => {
                     if let Ok(mut integ) = integration.lock() {
                         integ.ingest(&buf[..n]);
+                    }
+                    // Retain raw output for detach/re-attach scrollback,
+                    // regardless of ready state — a new window replays the
+                    // full ring, not the spawn-gap replay buffer.
+                    if let Ok(mut sb) = scrollback.lock() {
+                        sb.push(&buf[..n]);
                     }
                     // Until the frontend marks itself ready, buffer output
                     // instead of emitting it to a listener that doesn't exist
