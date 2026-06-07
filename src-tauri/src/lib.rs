@@ -4,6 +4,7 @@ mod db;
 mod feedback;
 mod fs_tools;
 mod inference;
+mod inference_queue;
 mod integrations;
 mod links;
 mod lint;
@@ -20,12 +21,13 @@ mod whisper;
 
 use audio::AudioRecorder;
 use db::Database;
+use inference_queue::InferenceQueue;
 use models::ModelManager;
 use proxy::stats::SearchStats;
 use proxy::ProxyState;
 use server::LlamaServer;
 use shell::ShellManager;
-use tauri::{Manager, RunEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 use tts::TtsEngine;
 use whisper::WhisperServer;
 
@@ -49,9 +51,23 @@ pub fn run() {
                 fs_tools::init_pdfium(&resource_dir);
             }
 
+            // Backstop reclaim of inference slots whose holder window hung
+            // without releasing or heartbeating.
+            inference_queue::spawn_lease_sweeper(app.handle().clone());
+
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // Primary orphan cleanup: a window that closes (or crashes)
+            // forfeits any inference slots/tickets it held, so a detached
+            // shell window dying mid-turn can't deadlock the single slot.
+            if let WindowEvent::Destroyed = event {
+                let queue = window.state::<InferenceQueue>();
+                queue.on_window_destroyed(window.app_handle(), window.label());
+            }
+        })
         .manage(LlamaServer::new())
+        .manage(InferenceQueue::new())
         .manage(ProxyState::new())
         .manage(SearchStats::new())
         .manage(AudioRecorder::new())
@@ -83,6 +99,11 @@ pub fn run() {
             proxy::images::proxy_image_search,
             proxy::images::proxy_fetch_url_images,
             inference::probe_inference_server,
+            inference_queue::inference_acquire,
+            inference_queue::inference_cancel,
+            inference_queue::inference_release,
+            inference_queue::inference_heartbeat,
+            inference_queue::inference_queue_snapshot,
             audio::start_recording,
             audio::stop_recording,
             audio::is_recording,
