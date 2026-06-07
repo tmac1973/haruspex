@@ -5,6 +5,8 @@
 	import ShellTabStrip from './ShellTabStrip.svelte';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getShellSessions, getActiveShellId, ensureShellSession } from '$lib/stores/shell.svelte';
+	import { listenForReattach } from '$lib/shell/windows';
+	import type { UnlistenFn } from '@tauri-apps/api/event';
 
 	// Default to true so the placeholder doesn't flash on a supported platform
 	// (Linux/macOS) during the round-trip; the backend flips it to false on
@@ -21,7 +23,14 @@
 		invoke<boolean>('shell_platform_supported')
 			.then((ok) => (platformSupported = ok))
 			.catch(() => (platformSupported = true));
-		return () => document.body.classList.remove('shell-tab-active');
+		// Adopt shells handed back from detached windows (this is the main
+		// window — ShellWorkspace only mounts here).
+		let unlistenReattach: UnlistenFn | null = null;
+		void listenForReattach().then((un) => (unlistenReattach = un));
+		return () => {
+			document.body.classList.remove('shell-tab-active');
+			unlistenReattach?.();
+		};
 	});
 
 	// Body class drives the Paste/Run markdown buttons (only meaningful on the
@@ -60,7 +69,7 @@
 				<!-- All panes stay mounted so background PTYs and in-flight turns
 				     survive; only the active one is shown. -->
 				<div class="pane-host" class:hidden={session.id !== activeId}>
-					<ShellPane {session} />
+					<ShellPane {session} attachSessionId={session.attachPtyId ?? undefined} />
 				</div>
 			{/each}
 		</div>

@@ -21,6 +21,10 @@ pub use session::SessionId;
 pub struct ShellManager {
     sessions: Mutex<HashMap<SessionId, Session>>,
     next_id: AtomicU32,
+    /// Chat threads handed off across windows during shell-tab detach /
+    /// re-attach, keyed by PTY session id. In-memory only (a detached chat
+    /// survives the move but not an app restart) — see plan Phase 3.
+    chat_stash: Mutex<HashMap<SessionId, String>>,
 }
 
 impl ShellManager {
@@ -268,6 +272,50 @@ pub fn shell_get_recent_history(
         .get(&session_id)
         .ok_or_else(|| "shell session not found".to_string())?;
     Ok(read_recent_history(&session.context.shell_name, limit))
+}
+
+/// Recent raw terminal output (base64) for the given session, used to
+/// repaint a detached window's fresh xterm before it subscribes to live
+/// output. The PTY is untouched — this is purely cosmetic history.
+#[tauri::command]
+pub fn shell_get_scrollback(
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+) -> Result<String, String> {
+    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or_else(|| "shell session not found".to_string())?;
+    Ok(session.scrollback_base64())
+}
+
+/// Stash a shell tab's chat thread (JSON) so the window taking over the
+/// session can re-hydrate it. Overwrites any prior stash for this id.
+#[tauri::command]
+pub fn shell_stash_chat(
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+    chat: String,
+) -> Result<(), String> {
+    state
+        .chat_stash
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(session_id, chat);
+    Ok(())
+}
+
+/// Take (and clear) a stashed chat thread for the given session id.
+#[tauri::command]
+pub fn shell_take_chat(
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+) -> Result<Option<String>, String> {
+    Ok(state
+        .chat_stash
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&session_id))
 }
 
 /// Returns whether the Shell tab is supported on the current host.

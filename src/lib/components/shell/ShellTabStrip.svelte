@@ -4,8 +4,10 @@
 		getActiveShellId,
 		setActiveShell,
 		createShellSession,
-		closeShellSession
+		closeShellSession,
+		type ShellSession
 	} from '$lib/stores/shell.svelte';
+	import { openDetachedShell } from '$lib/shell/windows';
 
 	const sessions = $derived(getShellSessions());
 	const activeId = $derived(getActiveShellId());
@@ -14,6 +16,11 @@
 		// Don't let the click also select the tab being closed.
 		event.stopPropagation();
 		closeShellSession(id);
+	}
+
+	function detach(event: MouseEvent, session: ShellSession) {
+		event.stopPropagation();
+		void openDetachedShell(session);
 	}
 </script>
 
@@ -37,6 +44,12 @@
 			{#if session.isSubmitting}
 				<span class="busy" title="A turn is running" aria-label="running">●</span>
 			{/if}
+			<button
+				class="detach"
+				title="Detach to its own window"
+				aria-label="Detach {session.name}"
+				onclick={(e) => detach(e, session)}>⤢</button
+			>
 			{#if sessions.length > 1}
 				<button
 					class="close"
@@ -98,7 +111,8 @@
 		line-height: 1;
 	}
 
-	.close {
+	.close,
+	.detach {
 		appearance: none;
 		background: none;
 		border: 0;
@@ -111,7 +125,12 @@
 		border-radius: 3px;
 	}
 
-	.close:hover {
+	.detach {
+		font-size: 0.8rem;
+	}
+
+	.close:hover,
+	.detach:hover {
 		opacity: 1;
 		background: var(--bg-secondary);
 	}

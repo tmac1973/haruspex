@@ -10,12 +10,19 @@
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getActiveShellId, type ShellSession } from '$lib/stores/shell.svelte';
 
-	const { session }: { session: ShellSession } = $props();
+	const {
+		session,
+		standalone = false,
+		attachSessionId
+	}: { session: ShellSession; standalone?: boolean; attachSessionId?: number } = $props();
 
 	// Only the active pane responds to window/document-level events. All panes
 	// stay mounted (so background PTYs survive), so every pane registers these
-	// listeners — this guard ensures just one acts.
-	const isActive = $derived(getActiveTab() === 'shell' && getActiveShellId() === session.id);
+	// listeners — this guard ensures just one acts. A standalone pane (its own
+	// detached window) is always the active one.
+	const isActive = $derived(
+		standalone || (getActiveTab() === 'shell' && getActiveShellId() === session.id)
+	);
 
 	let handle = $state<TerminalHandle | null>(null);
 	let hasSelection = $state(false);
@@ -261,7 +268,11 @@
 <div class="shell-pane" role="presentation">
 	<div class="terminal-region">
 		<div class="terminal-pane" oncontextmenu={onContextMenu} role="presentation">
-			<Terminal onReady={onTerminalReady} onSelectionChange={(has) => (hasSelection = has)} />
+			<Terminal
+				{attachSessionId}
+				onReady={onTerminalReady}
+				onSelectionChange={(has) => (hasSelection = has)}
+			/>
 		</div>
 	</div>
 	<ChatSidebar {session} />

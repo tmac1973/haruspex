@@ -46,8 +46,14 @@
 	let version = $state('');
 	let update = $state<UpdateInfo | null>(null);
 
+	// A detached shell window loads this same root layout. It must NOT re-run
+	// app bootstrap (sidecars, job scheduler, setup redirect) or render the
+	// main chrome — it shows only its shell pane (routes/shell/[id]).
+	const detached = $derived(page.route.id === '/shell/[id]');
+
 	onMount(async () => {
 		applyTheme();
+		if (page.route.id === '/shell/[id]') return;
 		initServerStore();
 		initChatStore();
 		// Sweep any job runs left at 'queued' / 'running' by a previous
@@ -234,100 +240,104 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<header>
-	<h1>
-		Haruspex{#if version}<span class="version">{version}</span>{/if}
-		{#if update}
-			<a
-				class="update-link"
-				href={update.url}
-				title="Version {update.version} is available on GitHub"
-			>
-				New version available
-			</a>
-		{/if}
-	</h1>
-	<div class="header-right">
-		<ServerStatusBadge />
-		<ContextIndicator />
-		<button class="header-icon-btn" title="Sidecar Logs" onclick={() => (showLogs = !showLogs)}>
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
-				<polyline points="4 17 10 11 4 5"></polyline>
-				<line x1="12" y1="19" x2="20" y2="19"></line>
-			</svg>
-		</button>
-		<button
-			class="header-icon-btn"
-			title="Keyboard shortcuts (F1)"
-			onclick={() => (showHelp = !showHelp)}
-		>
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
-				<circle cx="12" cy="12" r="10"></circle>
-				<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-				<line x1="12" y1="17" x2="12.01" y2="17"></line>
-			</svg>
-		</button>
-		<button
-			class="header-icon-btn"
-			title={showSettings ? 'Close Settings' : 'Settings'}
-			aria-pressed={showSettings}
-			onclick={() => (showSettings = !showSettings)}
-		>
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
-				<circle cx="12" cy="12" r="3"></circle>
-				<path
-					d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
-				></path>
-			</svg>
-		</button>
-	</div>
-</header>
-
-<main>
+{#if detached}
 	{@render children()}
-	{#if showSettings}
-		<div class="settings-overlay">
-			<SettingsPanel onclose={() => (showSettings = false)} />
+{:else}
+	<header>
+		<h1>
+			Haruspex{#if version}<span class="version">{version}</span>{/if}
+			{#if update}
+				<a
+					class="update-link"
+					href={update.url}
+					title="Version {update.version} is available on GitHub"
+				>
+					New version available
+				</a>
+			{/if}
+		</h1>
+		<div class="header-right">
+			<ServerStatusBadge />
+			<ContextIndicator />
+			<button class="header-icon-btn" title="Sidecar Logs" onclick={() => (showLogs = !showLogs)}>
+				<svg
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<polyline points="4 17 10 11 4 5"></polyline>
+					<line x1="12" y1="19" x2="20" y2="19"></line>
+				</svg>
+			</button>
+			<button
+				class="header-icon-btn"
+				title="Keyboard shortcuts (F1)"
+				onclick={() => (showHelp = !showHelp)}
+			>
+				<svg
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<circle cx="12" cy="12" r="10"></circle>
+					<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+					<line x1="12" y1="17" x2="12.01" y2="17"></line>
+				</svg>
+			</button>
+			<button
+				class="header-icon-btn"
+				title={showSettings ? 'Close Settings' : 'Settings'}
+				aria-pressed={showSettings}
+				onclick={() => (showSettings = !showSettings)}
+			>
+				<svg
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<circle cx="12" cy="12" r="3"></circle>
+					<path
+						d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+					></path>
+				</svg>
+			</button>
 		</div>
+	</header>
+
+	<main>
+		{@render children()}
+		{#if showSettings}
+			<div class="settings-overlay">
+				<SettingsPanel onclose={() => (showSettings = false)} />
+			</div>
+		{/if}
+	</main>
+
+	<LogViewer open={showLogs} onclose={() => (showLogs = false)} />
+	<HelpModal open={showHelp} onclose={() => (showHelp = false)} />
+
+	{#if showStartupNotice}
+		<StartupNoticeDialog onclose={() => (showStartupNotice = false)} />
 	{/if}
-</main>
 
-<LogViewer open={showLogs} onclose={() => (showLogs = false)} />
-<HelpModal open={showHelp} onclose={() => (showHelp = false)} />
-
-{#if showStartupNotice}
-	<StartupNoticeDialog onclose={() => (showStartupNotice = false)} />
+	<FileConflictModal />
+	<SandboxApprovalModal />
 {/if}
-
-<FileConflictModal />
-<SandboxApprovalModal />
 
 <style>
 	:global(:root) {

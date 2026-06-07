@@ -101,6 +101,12 @@ function formatRecentCommands(regions: CapturedRegion[], maxBytesPerCapture: num
 export class ShellSession {
 	readonly id: string;
 	name = $state('');
+	/**
+	 * When set, this session's Terminal attaches to an already-running PTY
+	 * (re-attached from a detached window) instead of spawning a fresh one.
+	 * Null for normally-created sessions.
+	 */
+	readonly attachPtyId: number | null;
 
 	messages = $state<ChatMessage[]>([]);
 	streamingContent = $state('');
@@ -121,9 +127,25 @@ export class ShellSession {
 	private activeSession: ActiveShellSession | null = null;
 	private composerFocusFn: (() => void) | null = null;
 
-	constructor(id: string, name: string) {
+	constructor(id: string, name: string, attachPtyId: number | null = null) {
 		this.id = id;
 		this.name = name;
+		this.attachPtyId = attachPtyId;
+	}
+
+	/** Snapshot the chat thread for cross-window handoff (detach/re-attach). */
+	serializeChat(): string {
+		return JSON.stringify(this.messages);
+	}
+
+	/** Restore a chat thread handed off from another window. */
+	hydrateChat(json: string | null): void {
+		if (!json) return;
+		try {
+			this.messages = JSON.parse(json) as ChatMessage[];
+		} catch {
+			// Corrupt stash — start with an empty thread rather than crashing.
+		}
 	}
 
 	get boundSessionId(): number | null {
@@ -397,13 +419,55 @@ export function createShellSession(): ShellSession {
 }
 
 /**
- * Close a shell session. Aborts any in-flight turn; the pane unmount kills
- * the PTY. If the closed session was active, activate a neighbour.
+ * Close a shell session for good: abort any in-flight turn and kill the PTY.
+ * The Terminal no longer kills on unmount (so detach can keep the PTY alive),
+ * so the kill is explicit here. If the closed session was active, activate a
+ * neighbour.
  */
 export function closeShellSession(id: string): void {
 	const idx = sessions.findIndex((s) => s.id === id);
 	if (idx < 0) return;
+	const session = sessions[idx];
+	session.cancelTurn();
+	const ptyId = session.boundSessionId;
+	if (ptyId != null) {
+		void invoke('shell_kill', { sessionId: ptyId }).catch(() => {});
+	}
+	dropSession(idx, id);
+}
+
+/**
+ * Detach a session out of this window WITHOUT killing the PTY — the caller
+ * (windows.ts) has already stashed the chat and opened the detached window
+ * that will take over the live shell.
+ */
+export function detachShellSession(id: string): void {
+	const idx = sessions.findIndex((s) => s.id === id);
+	if (idx < 0) return;
+	// Cancel any in-flight turn: it's running in this window's JS / inference
+	// slot and can't follow the session to the new window.
 	sessions[idx].cancelTurn();
+	dropSession(idx, id);
+}
+
+/**
+ * Adopt a PTY handed back from a detached window: create a fresh session that
+ * attaches to the existing PTY and re-hydrate its stashed chat thread.
+ * No-op if a session for that PTY is already present.
+ */
+export function reattachShellSession(ptyId: number, name?: string): ShellSession | null {
+	if (sessions.some((s) => s.attachPtyId === ptyId || s.boundSessionId === ptyId)) return null;
+	const num = nextSessionNum++;
+	const session = new ShellSession(`shell-${num}`, name || `Shell ${num}`, ptyId);
+	void invoke<string | null>('shell_take_chat', { sessionId: ptyId })
+		.then((json) => session.hydrateChat(json))
+		.catch(() => {});
+	sessions.push(session);
+	activeShellId = session.id;
+	return session;
+}
+
+function dropSession(idx: number, id: string): void {
 	sessions.splice(idx, 1);
 	if (activeShellId === id) {
 		const neighbour = sessions[idx] ?? sessions[idx - 1] ?? null;

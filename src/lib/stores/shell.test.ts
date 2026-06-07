@@ -27,10 +27,13 @@ vi.mock('$lib/agent/tools', () => ({ getDisplayLabel: () => 'tool' }));
 vi.mock('$lib/agent/context-budget', () => ({ describeContextManaged: () => 'managed' }));
 vi.mock('$lib/debug-log', () => ({ logDebug: vi.fn() }));
 
+import { invoke } from '@tauri-apps/api/core';
 import {
 	ShellSession,
 	createShellSession,
 	closeShellSession,
+	detachShellSession,
+	reattachShellSession,
 	setActiveShell,
 	getShellSessions,
 	getActiveShellSession,
@@ -46,6 +49,7 @@ beforeEach(() => {
 		opts.onAdmitted?.();
 		return { finalText: 'done' };
 	});
+	vi.mocked(invoke).mockClear();
 });
 
 describe('shell registry', () => {
@@ -136,5 +140,44 @@ describe('ShellSession state independence', () => {
 			recentHistory: []
 		});
 		expect(runShellTurn).not.toHaveBeenCalled();
+	});
+});
+
+describe('detach / re-attach', () => {
+	function bind(session: ShellSession, ptyId: number) {
+		session.bindSession({ sessionId: ptyId, context: {} as never, getSelection: () => '' });
+	}
+
+	it('closeShellSession kills the bound PTY', () => {
+		const a = createShellSession();
+		bind(a, 42);
+		closeShellSession(a.id);
+		expect(invoke).toHaveBeenCalledWith('shell_kill', { sessionId: 42 });
+		expect(getShellSessions()).toHaveLength(0);
+	});
+
+	it('detachShellSession removes the tab WITHOUT killing the PTY', () => {
+		const a = createShellSession();
+		const b = createShellSession();
+		bind(b, 7);
+		detachShellSession(b.id);
+		expect(invoke).not.toHaveBeenCalledWith('shell_kill', expect.anything());
+		expect(getShellSessions().map((s) => s.id)).toEqual([a.id]);
+		expect(getActiveShellId()).toBe(a.id);
+	});
+
+	it('reattachShellSession adds an attach-mode session and takes its chat', () => {
+		const s = reattachShellSession(99, 'Shell 99');
+		expect(s).not.toBeNull();
+		expect(s!.attachPtyId).toBe(99);
+		expect(getActiveShellSession()).toBe(s);
+		expect(invoke).toHaveBeenCalledWith('shell_take_chat', { sessionId: 99 });
+	});
+
+	it('reattachShellSession is idempotent for a PTY already present', () => {
+		reattachShellSession(99);
+		const second = reattachShellSession(99);
+		expect(second).toBeNull();
+		expect(getShellSessions().filter((s) => s.attachPtyId === 99)).toHaveLength(1);
 	});
 });

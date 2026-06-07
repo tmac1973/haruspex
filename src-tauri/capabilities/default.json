@@ -1,89 +1,91 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "main"
-  ],
-  "permissions": [
-    "core:default",
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "binaries/llama-server",
-          "sidecar": true
-        },
-        {
-          "name": "binaries/whisper-server",
-          "sidecar": true
-        },
-        {
-          "name": "binaries/koko",
-          "sidecar": true
-        },
-        {
-          "name": "binaries/ruff",
-          "sidecar": true,
-          "args": [
-            "check",
-            "--output-format=json",
-            "--exit-zero",
-            "--isolated",
-            "--select=E9,F",
-            { "validator": "\\S+" }
-          ]
-        },
-        {
-          "name": "binaries/ruff",
-          "sidecar": true,
-          "args": [
-            "check",
-            "--output-format=json",
-            "--exit-zero",
-            "--isolated",
-            "--select=E9,F63,F7,F82,F541,F901,B006,B008",
-            "--config",
-            { "validator": "builtins=\\[.*\\]" },
-            { "validator": "\\S+" }
-          ]
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "binaries/ruff",
-          "sidecar": true,
-          "args": [
-            "check",
-            "--output-format=json",
-            "--exit-zero",
-            "--isolated",
-            "--select=E9,F",
-            { "validator": "\\S+" }
-          ]
-        },
-        {
-          "name": "binaries/ruff",
-          "sidecar": true,
-          "args": [
-            "check",
-            "--output-format=json",
-            "--exit-zero",
-            "--isolated",
-            "--select=E9,F63,F7,F82,F541,F901,B006,B008",
-            "--config",
-            { "validator": "builtins=\\[.*\\]" },
-            { "validator": "\\S+" }
-          ]
-        }
-      ]
-    },
-    "shell:allow-kill",
-    "shell:allow-open",
-    "dialog:allow-open",
-    "dialog:allow-save"
-  ]
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "default",
+	"description": "enables the default permissions",
+	"windows": ["main", "shell-*"],
+	"permissions": [
+		"core:default",
+		"core:webview:allow-create-webview-window",
+		"core:window:allow-close",
+		"core:window:allow-destroy",
+		"core:window:allow-set-title",
+		{
+			"identifier": "shell:allow-spawn",
+			"allow": [
+				{
+					"name": "binaries/llama-server",
+					"sidecar": true
+				},
+				{
+					"name": "binaries/whisper-server",
+					"sidecar": true
+				},
+				{
+					"name": "binaries/koko",
+					"sidecar": true
+				},
+				{
+					"name": "binaries/ruff",
+					"sidecar": true,
+					"args": [
+						"check",
+						"--output-format=json",
+						"--exit-zero",
+						"--isolated",
+						"--select=E9,F",
+						{ "validator": "\\S+" }
+					]
+				},
+				{
+					"name": "binaries/ruff",
+					"sidecar": true,
+					"args": [
+						"check",
+						"--output-format=json",
+						"--exit-zero",
+						"--isolated",
+						"--select=E9,F63,F7,F82,F541,F901,B006,B008",
+						"--config",
+						{ "validator": "builtins=\\[.*\\]" },
+						{ "validator": "\\S+" }
+					]
+				}
+			]
+		},
+		{
+			"identifier": "shell:allow-execute",
+			"allow": [
+				{
+					"name": "binaries/ruff",
+					"sidecar": true,
+					"args": [
+						"check",
+						"--output-format=json",
+						"--exit-zero",
+						"--isolated",
+						"--select=E9,F",
+						{ "validator": "\\S+" }
+					]
+				},
+				{
+					"name": "binaries/ruff",
+					"sidecar": true,
+					"args": [
+						"check",
+						"--output-format=json",
+						"--exit-zero",
+						"--isolated",
+						"--select=E9,F63,F7,F82,F541,F901,B006,B008",
+						"--config",
+						{ "validator": "builtins=\\[.*\\]" },
+						{ "validator": "\\S+" }
+					]
+				}
+			]
+		},
+		"shell:allow-kill",
+		"shell:allow-open",
+		"dialog:allow-open",
+		"dialog:allow-save"
+	]
 }
