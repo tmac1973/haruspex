@@ -90,6 +90,13 @@ impl Log for AppLogger {
     fn flush(&self) {}
 }
 
+/// Log-consistent timestamp (`YYYY-MM-DD HH:MM:SS`) for other modules that
+/// want to stamp their own output the same way the app log does — e.g. the
+/// llama-server crash telemetry file.
+pub fn timestamp() -> String {
+    chrono_now()
+}
+
 /// Minimal timestamp without pulling in the chrono crate.
 /// Format: YYYY-MM-DD HH:MM:SS in local time.
 fn chrono_now() -> String {
