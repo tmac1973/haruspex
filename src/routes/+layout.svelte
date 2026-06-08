@@ -426,6 +426,37 @@
 		background: var(--text-secondary);
 	}
 
+	/* Status pill — a colored capsule for run / step state. Add
+	   `class="status-pill status-{state}"` (state ∈ running, succeeded,
+	   failed, cancelled, interrupted; anything else gets the neutral base).
+	   Shared by the job-run views. */
+	:global(.status-pill) {
+		font-size: 0.7rem;
+		padding: 2px 8px;
+		border-radius: 999px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		border: 1px solid var(--border);
+		color: var(--text-secondary);
+	}
+	:global(.status-pill.status-running) {
+		background: color-mix(in srgb, var(--accent) 15%, transparent);
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	:global(.status-pill.status-succeeded) {
+		background: color-mix(in srgb, var(--success) 15%, transparent);
+		border-color: var(--success);
+		color: var(--success);
+	}
+	:global(.status-pill.status-failed),
+	:global(.status-pill.status-cancelled),
+	:global(.status-pill.status-interrupted) {
+		background: var(--error-bg);
+		border-color: var(--error-border);
+		color: var(--error-text);
+	}
+
 	header {
 		display: flex;
 		align-items: center;

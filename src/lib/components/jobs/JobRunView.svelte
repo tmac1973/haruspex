@@ -1,12 +1,12 @@
 <script lang="ts">
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import SearchStepView from '$lib/components/SearchStep.svelte';
+	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
 	import {
 		cancel,
 		clearCurrentRun,
 		getCurrentRun,
-		type RunStepState,
-		type StepStatus
+		type RunStepState
 	} from '$lib/agent/jobs/runner.svelte';
 
 	interface Props {
@@ -32,22 +32,7 @@
 	}
 
 	function runStatusClass(): string {
-		return run ? `status status-${run.status}` : 'status';
-	}
-
-	function stepStatusLabel(status: StepStatus): string {
-		switch (status) {
-			case 'pending':
-				return 'Pending';
-			case 'running':
-				return 'Running';
-			case 'succeeded':
-				return 'Done';
-			case 'failed':
-				return 'Failed';
-			case 'cancelled':
-				return 'Cancelled';
-		}
+		return run ? `status-pill status-${run.status}` : 'status-pill';
 	}
 
 	function isLiveStep(step: RunStepState): boolean {
@@ -78,14 +63,12 @@
 
 		<div class="steps">
 			{#each run.steps as step (step.index)}
-				<div class="step" data-status={step.status}>
-					<div class="step-head">
-						<span class="step-num">Step {step.index + 1}</span>
-						<span class="step-status status-{step.status}">{stepStatusLabel(step.status)}</span>
+				<JobStepCard stepNumber={step.index + 1} status={step.status}>
+					{#snippet headExtra()}
 						{#if step.deepResearch}
 							<span class="badge">Deep research</span>
 						{/if}
-					</div>
+					{/snippet}
 					<pre class="prompt">{step.promptAuthored}</pre>
 					{#if step.index > 0 && step.status !== 'pending'}
 						<div class="prepend-note">
@@ -117,7 +100,7 @@
 					{#if step.error}
 						<div class="error">{step.error}</div>
 					{/if}
-				</div>
+				</JobStepCard>
 			{/each}
 		</div>
 
@@ -157,80 +140,10 @@
 		font-size: 1rem;
 	}
 
-	.status {
-		font-size: 0.74rem;
-		padding: 2px 8px;
-		border-radius: 999px;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		border: 1px solid var(--border);
-	}
-
-	.status-running {
-		background: color-mix(in srgb, var(--accent) 15%, transparent);
-		border-color: var(--accent);
-		color: var(--accent);
-	}
-
-	.status-succeeded {
-		background: color-mix(in srgb, var(--success) 15%, transparent);
-		border-color: var(--success);
-		color: var(--success);
-	}
-
-	.status-failed,
-	.status-cancelled {
-		background: var(--error-bg);
-		border-color: var(--error-border);
-		color: var(--error-text);
-	}
-
 	.steps {
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-	}
-
-	.step {
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-secondary);
-		padding: 10px 12px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.step[data-status='pending'] {
-		opacity: 0.55;
-	}
-
-	.step-head {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.step-num {
-		font-size: 0.74rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: var(--text-secondary);
-	}
-
-	.step-status {
-		font-size: 0.7rem;
-		padding: 1px 6px;
-		border-radius: 999px;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		border: 1px solid var(--border);
-		color: var(--text-secondary);
-	}
-
-	.step-status.status-pending {
-		color: var(--text-secondary);
 	}
 
 	.badge {

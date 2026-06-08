@@ -1,10 +1,7 @@
 <script lang="ts">
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
-	import {
-		getJobRun,
-		type JobRunStepStatus,
-		type JobRunWithSteps
-	} from '$lib/stores/jobRuns.svelte';
+	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
+	import { getJobRun, type JobRunWithSteps } from '$lib/stores/jobRuns.svelte';
 
 	interface Props {
 		runId: number;
@@ -33,23 +30,6 @@
 			});
 	});
 
-	function stepStatusLabel(status: JobRunStepStatus): string {
-		switch (status) {
-			case 'pending':
-				return 'Pending';
-			case 'running':
-				return 'Running';
-			case 'succeeded':
-				return 'Done';
-			case 'failed':
-				return 'Failed';
-			case 'skipped':
-				return 'Skipped';
-			case 'cancelled':
-				return 'Cancelled';
-		}
-	}
-
 	function formatWhen(ms: number | null): string {
 		if (!ms) return '—';
 		return new Date(ms).toLocaleString();
@@ -65,7 +45,7 @@
 		<div class="header-left">
 			<h3>Run #{runId}</h3>
 			{#if run}
-				<span class="status status-{run.status}">{run.status}</span>
+				<span class="status-pill status-{run.status}">{run.status}</span>
 				<span class="meta">{run.trigger}</span>
 				<span class="meta">queued {formatWhen(run.queued_at)}</span>
 			{/if}
@@ -86,11 +66,7 @@
 
 		<div class="steps">
 			{#each run.steps as step (step.id)}
-				<div class="step" data-status={step.status}>
-					<div class="step-head">
-						<span class="step-num">Step {step.ordering + 1}</span>
-						<span class="step-status status-{step.status}">{stepStatusLabel(step.status)}</span>
-					</div>
+				<JobStepCard stepNumber={step.ordering + 1} status={step.status}>
 					<pre class="prompt">{step.prompt_authored}</pre>
 
 					{#if step.ordering > 0 && step.prompt_rendered !== step.prompt_authored}
@@ -112,7 +88,7 @@
 					{#if step.error}
 						<div class="error">{step.error}</div>
 					{/if}
-				</div>
+				</JobStepCard>
 			{/each}
 		</div>
 	{/if}
@@ -149,36 +125,6 @@
 		font-size: 1rem;
 	}
 
-	.status {
-		font-size: 0.7rem;
-		padding: 2px 8px;
-		border-radius: 999px;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		border: 1px solid var(--border);
-		color: var(--text-secondary);
-	}
-
-	.status-running {
-		background: color-mix(in srgb, var(--accent) 15%, transparent);
-		border-color: var(--accent);
-		color: var(--accent);
-	}
-
-	.status-succeeded {
-		background: color-mix(in srgb, var(--success) 15%, transparent);
-		border-color: var(--success);
-		color: var(--success);
-	}
-
-	.status-failed,
-	.status-cancelled,
-	.status-interrupted {
-		background: var(--error-bg);
-		border-color: var(--error-border);
-		color: var(--error-text);
-	}
-
 	.meta {
 		font-size: 0.76rem;
 		color: var(--text-secondary);
@@ -188,44 +134,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-	}
-
-	.step {
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-secondary);
-		padding: 10px 12px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.step[data-status='pending'] {
-		opacity: 0.55;
-	}
-
-	.step-head {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.step-num {
-		font-size: 0.74rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: var(--text-secondary);
-	}
-
-	.step-status {
-		font-size: 0.7rem;
-		padding: 1px 6px;
-		border-radius: 999px;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		border: 1px solid var(--border);
-		color: var(--text-secondary);
 	}
 
 	.prompt {
