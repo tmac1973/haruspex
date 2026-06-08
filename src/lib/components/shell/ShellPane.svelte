@@ -9,6 +9,7 @@
 	import { stripCommandComments, toBracketedPaste } from '$lib/shell/commandBlock';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getActiveShellId, type ShellSession } from '$lib/stores/shell.svelte';
+	import { getSettings } from '$lib/stores/settings';
 
 	const {
 		session,
@@ -234,6 +235,10 @@
 			console.error('shell_write (run) failed', e);
 			return;
 		}
+		// When auto-submit is disabled, Run just executes the command in the
+		// terminal — we don't poll for completion or send the output back to
+		// the assistant. The user stays in control of what the model sees.
+		if (!getSettings().shellRunAutoSubmit) return;
 		// Wait for one more completed command (a new D / OutputEnd marker) —
 		// i.e. the command we just launched returning to a prompt. Long-running
 		// / interactive commands never finish; we time out and drop the

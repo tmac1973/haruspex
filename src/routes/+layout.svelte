@@ -483,6 +483,20 @@
 		gap: 6px;
 	}
 
+	/* A multi-command shell suggestion renders as a stack of individual
+	   code-blocks (one per command, each with its own Run button) wrapped
+	   in .cmd-list. Tighten the spacing so the group still reads as one
+	   suggestion rather than several unrelated blocks. */
+	:global(.cmd-list) {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	:global(.cmd-list .code-block) {
+		margin: 0;
+	}
+
 	:global(.risky-chip) {
 		display: inline-flex;
 		align-items: center;
