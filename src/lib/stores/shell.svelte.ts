@@ -382,6 +382,7 @@ export class ShellSession {
 				contextSize: getActiveContextSize(),
 				visionSupported: true,
 				allowWrite: getSettings().shellAllowWrite,
+				cwd: payload.currentCwd,
 				signal: this.abortController.signal,
 				onTicket: (t) => (this.ticket = t),
 				onAdmitted: () => (this.ticket = null),

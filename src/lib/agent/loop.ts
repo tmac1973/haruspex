@@ -75,6 +75,11 @@ export interface AgentLoopOptions {
 	workingDir?: string | null;
 	onToolStart: (call: ResolvedToolCall) => void;
 	/**
+	 * Shell tab's current working directory, threaded to the tool context
+	 * so shell-mode fs_* tools can resolve relative paths against it.
+	 */
+	shellCwd?: string | null;
+	/**
 	 * Optional progress channel for a running tool call. Wired to the
 	 * tool's ToolContext.onProgress so a long-running tool can update its
 	 * card mid-flight (e.g. run_python surfacing a package install).

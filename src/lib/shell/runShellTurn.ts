@@ -26,6 +26,9 @@ export interface ShellTurnOptions {
 	maxIterations?: number;
 	visionSupported?: boolean;
 	allowWrite?: boolean;
+	/** Shell's current working directory — lets shell-mode fs_* tools
+	 *  resolve relative path args (the model's bare `foo.py`) against it. */
+	cwd?: string | null;
 	signal?: AbortSignal;
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
@@ -75,6 +78,7 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 		deepResearch: false,
 		shellMode: true,
 		shellAllowWrite: options.allowWrite ?? false,
+		shellCwd: options.cwd ?? null,
 		expectsFileOutput: false,
 		visionSupported: options.visionSupported ?? true,
 		signal: options.signal,

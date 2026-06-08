@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { labelArg, toolInvokeError } from './_helpers';
+import { labelArg, resolveShellPath, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
@@ -289,7 +289,10 @@ function shellAwareWriteText() {
 		if (!(ctx.shellMode && ctx.shellAllowWrite)) return chat(args, ctx);
 		const err = validateTextContent(args, 'fs_write_text');
 		if (err) return toolResult(toolError(err));
-		const path = args.path as string;
+		// Resolve a bare/relative name against the shell's cwd so the model's
+		// natural `snake_game.py` lands instead of erroring on the absolute
+		// requirement.
+		const path = resolveShellPath(args.path as string, ctx.shellCwd);
 		const overwrite = (args.overwrite as boolean | undefined) ?? true;
 		try {
 			await invoke('fs_write_text_absolute', {
@@ -306,8 +309,8 @@ function shellAwareWriteText() {
 
 function shellAwareEditText() {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
-		const path = args.path as string;
 		if (ctx.shellMode && ctx.shellAllowWrite) {
+			const path = resolveShellPath(args.path as string, ctx.shellCwd);
 			try {
 				await invoke('fs_edit_text_absolute', {
 					path,
@@ -319,6 +322,7 @@ function shellAwareEditText() {
 				return toolResult(toolInvokeError('fs_edit_text', e));
 			}
 		}
+		const path = args.path as string;
 		try {
 			await invoke('fs_edit_text', {
 				workdir: ctx.workingDir,
@@ -470,7 +474,7 @@ registerTool({
 		function: {
 			name: 'fs_write_text',
 			description:
-				'Create a new text file or overwrite an existing one. In Chat mode the path is relative to the working directory. In Shell mode the path must be absolute (e.g. "/etc/nginx/conf.d/site.conf") — but writes only work if the user has enabled them in Settings → Shell. Use this for txt, md, csv, json, bash scripts, and other plain text formats. The content parameter is written verbatim to the file.',
+				'Create a new text file or overwrite an existing one. In Chat mode the path is relative to the working directory. In Shell mode an absolute path (e.g. "/etc/nginx/conf.d/site.conf") is preferred, but a relative path (e.g. "snake_game.py") is resolved against the current shell directory — writes only work if the user has enabled them in Settings → Shell. Use this for txt, md, csv, json, bash scripts, and other plain text formats. The content parameter is written verbatim to the file.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -742,7 +746,7 @@ registerTool({
 		function: {
 			name: 'fs_edit_text',
 			description:
-				'Edit a text file by replacing exactly one occurrence of old_str with new_str. The old_str must appear exactly once in the file — include enough surrounding context to make it unique. Use this for small targeted changes; for large rewrites use fs_write_text with overwrite. In Chat mode the path is relative to the working directory. In Shell mode the path must be absolute (e.g. "/etc/ssh/sshd_config") and writes must be enabled in Settings → Shell.',
+				'Edit a text file by replacing exactly one occurrence of old_str with new_str. The old_str must appear exactly once in the file — include enough surrounding context to make it unique. Use this for small targeted changes; for large rewrites use fs_write_text with overwrite. In Chat mode the path is relative to the working directory. In Shell mode an absolute path (e.g. "/etc/ssh/sshd_config") is preferred, but a relative path is resolved against the current shell directory; writes must be enabled in Settings → Shell.',
 			parameters: {
 				type: 'object',
 				properties: {

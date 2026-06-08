@@ -54,6 +54,14 @@ export interface ToolContext {
 	 */
 	shellAllowWrite: boolean;
 	/**
+	 * The Shell tab's current working directory, captured at turn start.
+	 * Lets shell-mode fs_* tools resolve relative path arguments (the bare
+	 * `snake_game.py` a model naturally emits) against it instead of
+	 * erroring on the `*_absolute` commands' absolute-path requirement.
+	 * Null when unknown or outside shell mode.
+	 */
+	shellCwd?: string | null;
+	/**
 	 * Optional progress channel for long-running tools. The agent loop
 	 * wires this to the currently-running tool card so a tool can surface
 	 * transient status (e.g. run_python reporting "Installing plotly…"

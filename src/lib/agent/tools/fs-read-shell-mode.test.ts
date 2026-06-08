@@ -89,6 +89,53 @@ describe('fs_read tools in Shell mode', () => {
 		});
 	});
 
+	it('resolves a relative path against the shell cwd before dispatching', async () => {
+		mocks.invoke.mockResolvedValue('contents');
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool(
+			'fs_read_text',
+			{ path: 'notes.txt' },
+			{ ...shellCtx, shellCwd: '/home/tim' }
+		);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', {
+			path: '/home/tim/notes.txt'
+		});
+	});
+
+	it('leaves an absolute path untouched even when a shell cwd is known', async () => {
+		mocks.invoke.mockResolvedValue('contents');
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool(
+			'fs_read_text',
+			{ path: '/etc/hosts' },
+			{ ...shellCtx, shellCwd: '/home/tim' }
+		);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', { path: '/etc/hosts' });
+	});
+
+	it('passes a relative path through unchanged when no cwd is known (graceful fallback)', async () => {
+		mocks.invoke.mockResolvedValue('contents');
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool('fs_read_text', { path: 'notes.txt' }, shellCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', { path: 'notes.txt' });
+	});
+
+	it('fs_write_text resolves a relative path against the shell cwd', async () => {
+		mocks.invoke.mockResolvedValue(undefined);
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool(
+			'fs_write_text',
+			{ path: 'snake_game.py', content: 'print("hi")' },
+			{ ...shellCtxWritable, shellCwd: '/home/tim/games' }
+		);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_write_text_absolute', {
+			path: '/home/tim/games/snake_game.py',
+			content: 'print("hi")',
+			overwrite: true
+		});
+		expect(out.result).toContain('/home/tim/games/snake_game.py');
+	});
+
 	it('fs tools are exposed even without a working directory', async () => {
 		const { getToolSchemas } = await import('$lib/agent/tools');
 		const schemas = getToolSchemas({ hasWorkingDir: false, shellMode: true });
