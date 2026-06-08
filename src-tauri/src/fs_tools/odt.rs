@@ -3,7 +3,8 @@
 //! convention.
 
 use super::images::{
-    fit_image_emu, image_pixel_dimensions, load_markdown_images, px_to_emu, LoadedImage,
+    build_image_index, fit_image_emu, image_pixel_dimensions, load_markdown_images, px_to_emu,
+    ImageIndex, LoadedImage,
 };
 use super::markdown_inline::{
     escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
@@ -21,25 +22,20 @@ pub(super) fn build_odt(
     paragraphs: &[&str],
     images: &std::collections::HashMap<String, LoadedImage>,
 ) -> Result<Vec<u8>, String> {
-    use std::collections::BTreeSet;
     use std::io::Write;
-    use zip::write::SimpleFileOptions;
 
     // Walk paragraphs once to assign stable Pictures/imageN.{ext} indices
     // to each unique image path referenced via standalone `![alt](path)`.
-    let mut ordered_image_paths: Vec<&String> = Vec::new();
-    let mut image_index: std::collections::HashMap<&String, usize> =
-        std::collections::HashMap::new();
-    for para in paragraphs {
-        if let Some((path, _)) = parse_standalone_image_line(para) {
-            if let Some(loaded_path) = images.keys().find(|k| **k == path) {
-                if !image_index.contains_key(loaded_path) {
-                    image_index.insert(loaded_path, ordered_image_paths.len() + 1);
-                    ordered_image_paths.push(loaded_path);
-                }
-            }
-        }
-    }
+    let ImageIndex {
+        ordered: ordered_image_paths,
+        by_path: image_index,
+        unique_exts,
+    } = build_image_index(
+        paragraphs.iter().filter_map(|p| {
+            parse_standalone_image_line(p).and_then(|(path, _)| images.keys().find(|k| **k == path))
+        }),
+        images,
+    );
     // Per-image natural sizes, in EMU. Width%/auto-fit and aspect-ratio
     // scaling happen in the body loop so per-reference options can apply.
     // ODF svg attributes need cm (1 cm = 360000 EMU).
@@ -52,20 +48,11 @@ pub(super) fn build_odt(
         let (px_w, px_h) = image_pixel_dimensions(&img.bytes)?;
         natural_emu.insert(*path, (px_to_emu(px_w), px_to_emu(px_h)));
     }
-    let mut unique_exts: BTreeSet<&str> = BTreeSet::new();
-    for path in &ordered_image_paths {
-        if let Some(img) = images.get(*path) {
-            unique_exts.insert(img.extension.as_str());
-        }
-    }
 
     let mut buf = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-        let stored =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        let deflated =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let (stored, deflated) = super::odf::odf_options();
 
         // 1) `mimetype` — MUST be the first entry, MUST be STORED.
         zip.start_file("mimetype", stored)
@@ -112,13 +99,8 @@ pub(super) fn build_odt(
         // 3) meta.xml — minimal doc metadata. Optional but polite.
         zip.start_file("meta.xml", deflated)
             .map_err(|e| e.to_string())?;
-        zip.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
-<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" office:version="1.2">
-<office:meta><meta:generator>Haruspex</meta:generator></office:meta>
-</office:document-meta>"#,
-        )
-        .map_err(|e| e.to_string())?;
+        zip.write_all(super::odf::ODF_META_XML)
+            .map_err(|e| e.to_string())?;
 
         // 4) styles.xml — defines the paragraph styles referenced from
         //    content.xml. LibreOffice uses `Heading_20_1`, etc.

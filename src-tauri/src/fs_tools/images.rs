@@ -7,7 +7,7 @@
 
 use super::path::{resolve_in_workdir, workdir_path};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io::Cursor;
 use std::path::Path;
 use tokio::fs;
@@ -75,6 +75,50 @@ pub(super) fn image_pixel_dimensions(bytes: &[u8]) -> Result<(u32, u32), String>
 /// 1 px @ 96 dpi = 914400 / 96 = 9525 EMU exactly.
 pub(super) fn px_to_emu(px: u32) -> u64 {
     px as u64 * 9525
+}
+
+/// Stable per-image media index for a document. Built once so the manifest /
+/// rels writer and the media writer agree on filenames (`image{i+1}.{ext}`).
+/// Shared by the docx / odt / odp / pptx writers.
+pub(super) struct ImageIndex<'a> {
+    /// Referenced image paths in first-appearance order — entry `i` maps to
+    /// the media filename `image{i+1}.{ext}`.
+    pub ordered: Vec<&'a String>,
+    /// path → 1-based media index.
+    pub by_path: HashMap<&'a String, usize>,
+    /// Unique extensions of the *loaded* images, sorted — for deterministic
+    /// `[Content_Types].xml`. Paths absent from `images` contribute nothing.
+    pub unique_exts: BTreeSet<&'a str>,
+}
+
+/// Build an [`ImageIndex`] from an ordered sequence of referenced image
+/// paths; duplicates collapse to their first appearance. `unique_exts` is
+/// derived from the loaded `images` map. The caller decides what counts as a
+/// reference (docx/odt: standalone `![](…)` lines present in `images`;
+/// pptx/odp: each slide's image).
+pub(super) fn build_image_index<'a>(
+    paths: impl IntoIterator<Item = &'a String>,
+    images: &'a HashMap<String, LoadedImage>,
+) -> ImageIndex<'a> {
+    let mut ordered: Vec<&'a String> = Vec::new();
+    let mut by_path: HashMap<&'a String, usize> = HashMap::new();
+    for path in paths {
+        if !by_path.contains_key(path) {
+            by_path.insert(path, ordered.len() + 1);
+            ordered.push(path);
+        }
+    }
+    let mut unique_exts: BTreeSet<&'a str> = BTreeSet::new();
+    for path in &ordered {
+        if let Some(img) = images.get(*path) {
+            unique_exts.insert(img.extension.as_str());
+        }
+    }
+    ImageIndex {
+        ordered,
+        by_path,
+        unique_exts,
+    }
 }
 
 /// Fit an image's natural EMU dimensions into the document: width is either a

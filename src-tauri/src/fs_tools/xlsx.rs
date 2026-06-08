@@ -30,15 +30,11 @@ fn cell_as_number(cell: &str) -> Option<f64> {
 /// `build_odt`.
 pub(super) fn build_ods(sheets: &[XlsxSheet]) -> Result<Vec<u8>, String> {
     use std::io::Write;
-    use zip::write::SimpleFileOptions;
 
     let mut buf = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-        let stored =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        let deflated =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let (stored, deflated) = super::odf::odf_options();
 
         zip.start_file("mimetype", stored)
             .map_err(|e| e.to_string())?;
@@ -60,13 +56,8 @@ pub(super) fn build_ods(sheets: &[XlsxSheet]) -> Result<Vec<u8>, String> {
 
         zip.start_file("meta.xml", deflated)
             .map_err(|e| e.to_string())?;
-        zip.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
-<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" office:version="1.2">
-<office:meta><meta:generator>Haruspex</meta:generator></office:meta>
-</office:document-meta>"#,
-        )
-        .map_err(|e| e.to_string())?;
+        zip.write_all(super::odf::ODF_META_XML)
+            .map_err(|e| e.to_string())?;
 
         zip.start_file("styles.xml", deflated)
             .map_err(|e| e.to_string())?;
