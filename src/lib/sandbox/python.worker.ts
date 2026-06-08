@@ -698,6 +698,7 @@ async def _haruspex_auto_install_missing(code):
     import sys as _sys_for_auto
     import micropip as _micropip
     _installed_any = False
+    _local_map = globals().get('_haruspex_local_wheels')
     for name in missing:
         try:
             # Announce before the (possibly slow) download so the UI shows
@@ -707,7 +708,19 @@ async def _haruspex_auto_install_missing(code):
                 _haruspex_install_status(name, 'downloading')
             except Exception:
                 pass
-            await _micropip.install(name)
+            # Vendored PyPI packages (e.g. plotly) install from their local
+            # wheel(s) with deps=False — offline, no PyPI round-trip. The
+            # mapped list bundles the package plus any non-lockfile deps.
+            _local = None
+            if _local_map is not None:
+                try:
+                    _local = _local_map.get(name)
+                except Exception:
+                    _local = None
+            if _local:
+                await _micropip.install(list(_local), deps=False)
+            else:
+                await _micropip.install(name)
             print('[haruspex] auto-installed ' + name, file=_sys_for_auto.stderr)
             _installed_any = True
         except Exception as _e:
@@ -827,7 +840,13 @@ async function init(): Promise<void> {
 			'Pillow',
 			'beautifulsoup4',
 			'lxml',
-			'typing_extensions'
+			'typing_extensions',
+			// requests must be loaded BEFORE the HARUSPEX_INIT_PY pyodide-http
+			// patch_all() runs — patch_all only patches requests if it's
+			// already importable. Loaded lazily it would stay unpatched (no
+			// WASM sockets) and requests.get() would fail. Its deps (urllib3,
+			// certifi, charset-normalizer, idna) come with it from the lock.
+			'requests'
 		]);
 		// Same-origin URL to the wheels bundled by scripts/fetch-pyodide.sh
 		// into static/pyodide/wheels/. SvelteKit serves static/ at the
@@ -835,6 +854,22 @@ async function init(): Promise<void> {
 		pyodide.globals.set(
 			'_haruspex_doc_wheels_url',
 			new URL('/pyodide/wheels/', self.location.origin).href
+		);
+		// PyPI-only packages we vendor and install LAZILY from their local
+		// wheels (deps=False) on first import, instead of letting micropip
+		// hit PyPI. Each entry maps the import name → the wheel(s) to install
+		// together (the package plus any non-lockfile runtime deps). plotly
+		// pulls narwhals (vendored at root); packaging is already loaded via
+		// matplotlib. Keeps plotly offline without paying its large unzip at
+		// every worker boot. See _haruspex_auto_install_missing.
+		pyodide.globals.set(
+			'_haruspex_local_wheels',
+			pyodide.toPy({
+				plotly: [
+					new URL('/pyodide/wheels/plotly-6.8.0-py3-none-any.whl', self.location.origin).href,
+					new URL('/pyodide/narwhals-2.15.0-py3-none-any.whl', self.location.origin).href
+				]
+			})
 		);
 		// Pyodide's batched callback delivers one line at a time WITHOUT
 		// the trailing newline, so re-append it before forwarding. Without

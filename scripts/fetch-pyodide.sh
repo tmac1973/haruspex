@@ -29,16 +29,25 @@ fi
 
 PYODIDE_VERSION="0.29.4"
 
-# Pure-Python wheels for offline document generation. Pillow / lxml /
-# typing_extensions are already inside Pyodide and loaded via
-# pyodide.loadPackage at runtime.
-WHEELS_VERSION="1"
+# PyPI wheels we install by explicit local URL (deps=False), NOT via the
+# Pyodide lockfile — either because they're not in the lockfile at all
+# (plotly) or because we want them offline for doc generation. Pillow /
+# lxml / typing_extensions are inside Pyodide and loaded via loadPackage.
+#
+#   - fpdf2 / python-pptx / xlsxwriter (+ pure deps) → installed at boot
+#     for offline PDF/PPTX/XLSX generation (see HARUSPEX_INIT_PY).
+#   - plotly → installed LAZILY from its local wheel on first `import
+#     plotly` (it unzips large; see _haruspex_local_wheels in the worker).
+#     Its runtime deps narwhals (vendored at root) + packaging (loaded via
+#     matplotlib) are already present.
+WHEELS_VERSION="2"
 WHEELS=(
     "fpdf2-2.8.7-py3-none-any.whl"
     "defusedxml-0.7.1-py2.py3-none-any.whl"
     "fonttools-4.62.1-py3-none-any.whl"
     "python_pptx-1.0.2-py3-none-any.whl"
     "xlsxwriter-3.2.9-py3-none-any.whl"
+    "plotly-6.8.0-py3-none-any.whl"
 )
 
 # Interactive-plot wheels: full transitive dep tree for bokeh + altair,
@@ -207,8 +216,8 @@ fi
 # it stays correct across PYODIDE_VERSION bumps — bump CHAT_STACK_VERSION
 # (or the top-level list) to force a re-resolve. Only wheels not already on
 # disk (e.g. numpy/pandas pulled by the workspace set) are downloaded.
-CHAT_STACK_VERSION="1"
-CHAT_STACK_TOP=(matplotlib scipy sympy scikit-learn beautifulsoup4 lxml)
+CHAT_STACK_VERSION="2"
+CHAT_STACK_TOP=(matplotlib scipy sympy scikit-learn beautifulsoup4 lxml requests)
 CHAT_STACK_MARKER="$DEST_DIR/.haruspex-chat-stack-version"
 LOCK_FILE="$DEST_DIR/pyodide-lock.json"
 
