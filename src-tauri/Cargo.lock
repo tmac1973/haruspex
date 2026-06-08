@@ -2192,7 +2192,7 @@ dependencies = [
 
 [[package]]
 name = "haruspex"
-version = "0.1.44"
+version = "0.1.45"
 dependencies = [
  "async-imap",
  "base64 0.22.1",
