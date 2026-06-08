@@ -173,9 +173,9 @@
 	}
 
 	.status-succeeded {
-		background: color-mix(in srgb, #16a34a 15%, transparent);
-		border-color: #16a34a;
-		color: #16a34a;
+		background: color-mix(in srgb, var(--success) 15%, transparent);
+		border-color: var(--success);
+		color: var(--success);
 	}
 
 	.status-failed,

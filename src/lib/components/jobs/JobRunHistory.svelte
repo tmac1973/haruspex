@@ -6,6 +6,7 @@
 		loadRunsForJob,
 		type JobRunSummary
 	} from '$lib/stores/jobRuns.svelte';
+	import { formatDuration } from '$lib/utils/format';
 
 	interface Props {
 		jobId: number;
@@ -35,11 +36,7 @@
 
 	function durationLabel(run: JobRunSummary): string {
 		if (run.started_at && run.finished_at) {
-			const sec = Math.max(1, Math.round((run.finished_at - run.started_at) / 1000));
-			if (sec < 60) return `${sec}s`;
-			const min = Math.floor(sec / 60);
-			const rem = sec % 60;
-			return rem === 0 ? `${min}m` : `${min}m ${rem}s`;
+			return formatDuration(run.finished_at - run.started_at);
 		}
 		if (run.status === 'running') return 'in progress';
 		return '';
@@ -81,7 +78,7 @@
 			</button>
 		{/if}
 	</div>
-	<div class="rows">
+	<div class="rows thin-scroll">
 		{#if runs.length === 0}
 			<div class="empty">No runs yet.</div>
 		{:else}
@@ -177,23 +174,6 @@
 		scrollbar-gutter: stable;
 	}
 
-	.rows::-webkit-scrollbar {
-		width: 10px;
-	}
-
-	.rows::-webkit-scrollbar-track {
-		background: transparent;
-	}
-
-	.rows::-webkit-scrollbar-thumb {
-		background: var(--border);
-		border-radius: 5px;
-	}
-
-	.rows::-webkit-scrollbar-thumb:hover {
-		background: var(--text-secondary);
-	}
-
 	.empty {
 		padding: 16px 12px;
 		font-size: 0.82rem;
@@ -262,8 +242,8 @@
 	}
 
 	.status-dot.status-succeeded {
-		background: #16a34a;
-		border-color: #16a34a;
+		background: var(--success);
+		border-color: var(--success);
 	}
 
 	.status-dot.status-failed,

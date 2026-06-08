@@ -62,7 +62,7 @@
 		</button>
 	</div>
 	{#if !collapsed}
-		<div class="conversation-list">
+		<div class="conversation-list thin-scroll">
 			{#each conversations as conv (conv.id)}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -163,19 +163,6 @@
 		overflow-y: auto;
 		scrollbar-gutter: stable;
 		padding: 4px 8px 4px 4px;
-	}
-	.conversation-list::-webkit-scrollbar {
-		width: 10px;
-	}
-	.conversation-list::-webkit-scrollbar-track {
-		background: transparent;
-	}
-	.conversation-list::-webkit-scrollbar-thumb {
-		background: var(--border);
-		border-radius: 5px;
-	}
-	.conversation-list::-webkit-scrollbar-thumb:hover {
-		background: var(--text-secondary);
 	}
 	.conversation-item {
 		display: flex;

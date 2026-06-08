@@ -363,6 +363,7 @@
 		--error-bg: #fef2f2;
 		--error-text: #dc2626;
 		--error-border: #fecaca;
+		--success: #16a34a;
 	}
 
 	@media (prefers-color-scheme: dark) {
@@ -379,6 +380,7 @@
 			--error-bg: #1c1111;
 			--error-text: #f87171;
 			--error-border: #3b1111;
+			--success: #16a34a;
 		}
 	}
 
@@ -395,6 +397,7 @@
 		--error-bg: #1c1111;
 		--error-text: #f87171;
 		--error-border: #3b1111;
+		--success: #16a34a;
 	}
 
 	:global(html),
@@ -405,6 +408,22 @@
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 		background: var(--bg-primary);
 		color: var(--text-primary);
+	}
+
+	/* Thin custom scrollbar — add `class="thin-scroll"` to any scroll
+	   container. Shared by the conversation list, job-run history, etc. */
+	:global(.thin-scroll::-webkit-scrollbar) {
+		width: 10px;
+	}
+	:global(.thin-scroll::-webkit-scrollbar-track) {
+		background: transparent;
+	}
+	:global(.thin-scroll::-webkit-scrollbar-thumb) {
+		background: var(--border);
+		border-radius: 5px;
+	}
+	:global(.thin-scroll::-webkit-scrollbar-thumb:hover) {
+		background: var(--text-secondary);
 	}
 
 	header {
