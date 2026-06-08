@@ -145,6 +145,24 @@ pub(super) const MAX_DOC_READ_BYTES: u64 = 50 * 1_048_576;
 /// On-disk read cap for plain-text reads (1 MB).
 pub(super) const MAX_TEXT_READ_BYTES: u64 = 1_048_576;
 
+/// Stat `resolved` and error if it exceeds `max` bytes. `fmt` names the
+/// format in the message (e.g. "PDF" / "xlsx" / "docx"). The read-size guard
+/// every document reader opens with.
+pub(super) async fn stat_within_limit(resolved: &Path, max: u64, fmt: &str) -> Result<(), String> {
+    let metadata = fs::metadata(resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+    if metadata.len() > max {
+        return Err(format!(
+            "{} too large ({} bytes). Maximum is {} bytes.",
+            fmt,
+            metadata.len(),
+            max
+        ));
+    }
+    Ok(())
+}
+
 /// Create the parent directory if needed, then write `bytes` to `resolved`.
 /// The mkdir-then-write tail every document writer ends with.
 pub(super) async fn write_bytes_to_workdir(resolved: &Path, bytes: &[u8]) -> Result<(), String> {

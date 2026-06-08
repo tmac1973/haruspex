@@ -1,4 +1,4 @@
-use log::{info, warn};
+use log::info;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
@@ -8,7 +8,8 @@ use tokio::sync::Mutex;
 
 use crate::sidecar_utils::{
     base_url, drive_status_on_health, health_url, http_client, kill_child, kill_process_on_port,
-    new_log_buffer, poll_health, ports, push_log, with_library_paths, LogBuffer, SidecarStatus,
+    new_log_buffer, poll_health, ports, spawn_log_reader, with_library_paths, LogBuffer,
+    SidecarStatus,
 };
 
 const WHISPER_PORT: u16 = ports::WHISPER;
@@ -64,7 +65,7 @@ impl WhisperServer {
         // Set library path so whisper-server can find its bundled shared libraries
         let sidecar = with_library_paths(sidecar, app);
 
-        let (mut rx, child) = sidecar
+        let (rx, child) = sidecar
             .spawn()
             .map_err(|e| format!("Failed to spawn whisper-server: {}", e))?;
 
@@ -73,44 +74,14 @@ impl WhisperServer {
             *c = Some(child);
         }
 
-        // Spawn stderr reader
-        let status_clone = Arc::clone(&self.status);
-        let log_buffer_clone = Arc::clone(&self.log_buffer);
-        tauri::async_runtime::spawn(async move {
-            use tauri_plugin_shell::process::CommandEvent;
-            while let Some(event) = rx.recv().await {
-                match event {
-                    CommandEvent::Stderr(line) => {
-                        let line_str = String::from_utf8_lossy(&line);
-                        let trimmed = line_str.trim();
-                        info!("whisper-server: {}", trimmed);
-                        let mut buf = log_buffer_clone.lock().await;
-                        push_log(&mut buf, trimmed);
-                    }
-                    CommandEvent::Stdout(line) => {
-                        let line_str = String::from_utf8_lossy(&line);
-                        let trimmed = line_str.trim();
-                        if !trimmed.is_empty() {
-                            info!("whisper-server: {}", trimmed);
-                            let mut buf = log_buffer_clone.lock().await;
-                            push_log(&mut buf, trimmed);
-                        }
-                    }
-                    CommandEvent::Terminated(payload) => {
-                        let code = payload.code.unwrap_or(-1);
-                        warn!("whisper-server exited with code: {}", code);
-                        let msg = format!("[terminated] code={}", code);
-                        let mut buf = log_buffer_clone.lock().await;
-                        push_log(&mut buf, &msg);
-                        let mut status = status_clone.lock().await;
-                        if *status != WhisperStatus::Stopped {
-                            *status = WhisperStatus::Error(format!("Exited with code {}", code));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        });
+        // Drain the log/event stream into the buffer + status.
+        spawn_log_reader(
+            "whisper-server",
+            rx,
+            Arc::clone(&self.status),
+            Arc::clone(&self.log_buffer),
+            &[],
+        );
 
         // Health poll: drive the status from Starting → Ready (or Error
         // on timeout). Bails out early if another path (e.g. an explicit

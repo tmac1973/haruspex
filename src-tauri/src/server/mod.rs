@@ -188,39 +188,11 @@ impl LlamaServer {
     async fn spawn_and_monitor(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
         self.set_status(ServerStatus::Starting, app).await;
 
-        // If the model has a multimodal projector, append --mmproj to the args
-        // so llama-server loads vision support.
-        let mmproj_path = {
-            use tauri::Manager;
-            app.try_state::<crate::models::ModelManager>()
-                .and_then(|mgr| mgr.find_mmproj_for_model(std::path::Path::new(model_path)))
-        };
-
-        let args = {
-            let inner = self.inner.lock().await;
-            let mut args = inner.config.build_args(model_path);
-            if let Some(path) = mmproj_path.as_ref() {
-                args.push("--mmproj".to_string());
-                args.push(path.to_string_lossy().to_string());
-                info!("Vision projector enabled: {}", path.display());
-            }
-            args
-        };
+        let args = Self::build_llama_args(app, &self.inner, model_path).await;
 
         info!("Starting llama-server with args: {:?}", args);
 
-        let sidecar = app
-            .shell()
-            .sidecar("llama-server")
-            .map_err(|e| format!("Failed to create sidecar command: {}", e))?
-            .args(&args);
-
-        // Set library path so llama-server can find its bundled shared libraries
-        let sidecar = sidecar_utils::with_library_paths(sidecar, app);
-
-        let (rx, child) = sidecar
-            .spawn()
-            .map_err(|e| format!("Failed to spawn llama-server: {}", e))?;
+        let (rx, child) = Self::spawn_llama(app, &args)?;
 
         let gen = {
             let mut inner = self.inner.lock().await;
@@ -243,6 +215,52 @@ impl LlamaServer {
         Self::spawn_health_poller(self.inner.clone(), app.clone(), gen);
 
         Ok(())
+    }
+
+    /// Build the llama-server CLI args for `model_path`: the configured base
+    /// args plus `--mmproj` when the model has a multimodal projector. Shared
+    /// by the initial spawn and both respawn paths (CPU fallback, auto-restart).
+    async fn build_llama_args(
+        app: &AppHandle,
+        inner: &Arc<Mutex<ServerInner>>,
+        model_path: &str,
+    ) -> Vec<String> {
+        let mmproj_path = {
+            use tauri::Manager;
+            app.try_state::<crate::models::ModelManager>()
+                .and_then(|mgr| mgr.find_mmproj_for_model(std::path::Path::new(model_path)))
+        };
+        let state = inner.lock().await;
+        let mut args = state.config.build_args(model_path);
+        if let Some(path) = mmproj_path.as_ref() {
+            args.push("--mmproj".to_string());
+            args.push(path.to_string_lossy().to_string());
+            info!("Vision projector enabled: {}", path.display());
+        }
+        args
+    }
+
+    /// Spawn the llama-server sidecar with `args` and the platform library
+    /// paths applied. Returns the event stream + child handle. Shared by the
+    /// initial spawn and both respawn paths.
+    fn spawn_llama(
+        app: &AppHandle,
+        args: &[String],
+    ) -> Result<
+        (
+            tauri::async_runtime::Receiver<tauri_plugin_shell::process::CommandEvent>,
+            CommandChild,
+        ),
+        String,
+    > {
+        let cmd = app
+            .shell()
+            .sidecar("llama-server")
+            .map_err(|e| format!("Failed to create sidecar command: {}", e))?
+            .args(args);
+        sidecar_utils::with_library_paths(cmd, app)
+            .spawn()
+            .map_err(|e| format!("Failed to spawn llama-server: {}", e))
     }
 
     fn spawn_output_reader(
@@ -371,29 +389,8 @@ impl LlamaServer {
                         if should_fallback {
                             warn!("Attempting CPU fallback (--n-gpu-layers 0)");
 
-                            let mmproj_path = {
-                                use tauri::Manager;
-                                app.try_state::<crate::models::ModelManager>()
-                                    .and_then(|mgr| {
-                                        mgr.find_mmproj_for_model(std::path::Path::new(&model_path))
-                                    })
-                            };
-
-                            let args = {
-                                let state = inner.lock().await;
-                                let mut args = state.config.build_args(&model_path);
-                                if let Some(path) = mmproj_path.as_ref() {
-                                    args.push("--mmproj".to_string());
-                                    args.push(path.to_string_lossy().to_string());
-                                }
-                                args
-                            };
-
-                            let sidecar_result = app
-                                .shell()
-                                .sidecar("llama-server")
-                                .map(|cmd| sidecar_utils::with_library_paths(cmd.args(&args), &app))
-                                .and_then(|cmd| cmd.spawn());
+                            let args = Self::build_llama_args(&app, &inner, &model_path).await;
+                            let sidecar_result = Self::spawn_llama(&app, &args);
 
                             match sidecar_result {
                                 Ok((new_rx, new_child)) => {
@@ -454,29 +451,8 @@ impl LlamaServer {
                                 let _ = app.emit("server-status-changed", &state.status);
                             }
 
-                            let mmproj_path = {
-                                use tauri::Manager;
-                                app.try_state::<crate::models::ModelManager>()
-                                    .and_then(|mgr| {
-                                        mgr.find_mmproj_for_model(std::path::Path::new(&model_path))
-                                    })
-                            };
-
-                            let args = {
-                                let state = inner.lock().await;
-                                let mut args = state.config.build_args(&model_path);
-                                if let Some(path) = mmproj_path.as_ref() {
-                                    args.push("--mmproj".to_string());
-                                    args.push(path.to_string_lossy().to_string());
-                                }
-                                args
-                            };
-
-                            let sidecar_result = app
-                                .shell()
-                                .sidecar("llama-server")
-                                .map(|cmd| sidecar_utils::with_library_paths(cmd.args(&args), &app))
-                                .and_then(|cmd| cmd.spawn());
+                            let args = Self::build_llama_args(&app, &inner, &model_path).await;
+                            let sidecar_result = Self::spawn_llama(&app, &args);
 
                             match sidecar_result {
                                 Ok((new_rx, new_child)) => {

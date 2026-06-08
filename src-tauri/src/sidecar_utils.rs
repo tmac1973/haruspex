@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::process::{Command, CommandChild};
+use tauri_plugin_shell::process::{Command, CommandChild, CommandEvent};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
@@ -185,6 +185,65 @@ pub async fn kill_child(child: &Mutex<Option<CommandChild>>, name: &str) -> Resu
             .map_err(|e| format!("Failed to kill {name}: {e}"))?;
     }
     Ok(())
+}
+
+/// Spawn the async task that drains a sidecar's `CommandEvent` stream into
+/// its log ring buffer and status. Shared by whisper-server and koko (the
+/// llama-server reader is richer — GPU classify, crash telemetry, fallback —
+/// and stays bespoke).
+///
+/// - stdout/stderr lines are logged and pushed to `log`.
+/// - if a stdout line contains any `ready_markers` substring, status flips
+///   `Starting → Ready` (koko's "listening" sniff; pass `&[]` to disable).
+/// - on `Terminated`, status flips to `Error` unless it was already `Stopped`.
+pub fn spawn_log_reader(
+    name: &'static str,
+    mut rx: tauri::async_runtime::Receiver<CommandEvent>,
+    status: Arc<Mutex<SidecarStatus>>,
+    log: LogBuffer,
+    ready_markers: &'static [&'static str],
+) {
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stderr(line) => {
+                    let s = String::from_utf8_lossy(&line);
+                    let trimmed = s.trim();
+                    info!("{name}: {}", trimmed);
+                    let mut buf = log.lock().await;
+                    push_log(&mut buf, trimmed);
+                }
+                CommandEvent::Stdout(line) => {
+                    let s = String::from_utf8_lossy(&line);
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        info!("{name}: {}", trimmed);
+                        let mut buf = log.lock().await;
+                        push_log(&mut buf, trimmed);
+                    }
+                    if ready_markers.iter().any(|m| trimmed.contains(m)) {
+                        let mut st = status.lock().await;
+                        if *st == SidecarStatus::Starting {
+                            *st = SidecarStatus::Ready;
+                            info!("{name} is ready");
+                        }
+                    }
+                }
+                CommandEvent::Terminated(payload) => {
+                    let code = payload.code.unwrap_or(-1);
+                    warn!("{name} exited with code: {}", code);
+                    let mut buf = log.lock().await;
+                    push_log(&mut buf, &format!("[terminated] code={}", code));
+                    drop(buf);
+                    let mut st = status.lock().await;
+                    if *st != SidecarStatus::Stopped {
+                        *st = SidecarStatus::Error(format!("Exited with code {}", code));
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
 }
 
 /// Drive a plain `Arc<Mutex<SidecarStatus>>` from `Starting` to `Ready`

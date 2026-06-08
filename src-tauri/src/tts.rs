@@ -11,7 +11,7 @@ use tokio::time::sleep;
 
 use crate::sidecar_utils::{
     base_url, http_client, kill_child, kill_process_on_port, new_log_buffer, poll_health, ports,
-    push_log, with_library_paths, LogBuffer, SidecarStatus,
+    spawn_log_reader, with_library_paths, LogBuffer, SidecarStatus,
 };
 
 const TTS_PORT: u16 = ports::TTS;
@@ -154,7 +154,7 @@ impl TtsEngine {
             }
         }
 
-        let (mut rx, child) = sidecar
+        let (rx, child) = sidecar
             .spawn()
             .map_err(|e| format!("Failed to spawn koko: {}", e))?;
 
@@ -163,50 +163,15 @@ impl TtsEngine {
             *c = Some(child);
         }
 
-        let status_clone = Arc::clone(&self.status);
-        let log_buffer_clone = Arc::clone(&self.log_buffer);
-        tauri::async_runtime::spawn(async move {
-            use tauri_plugin_shell::process::CommandEvent;
-            while let Some(event) = rx.recv().await {
-                match event {
-                    CommandEvent::Stderr(line) => {
-                        let line_str = String::from_utf8_lossy(&line);
-                        let trimmed = line_str.trim();
-                        info!("koko: {}", trimmed);
-                        let mut buf = log_buffer_clone.lock().await;
-                        push_log(&mut buf, trimmed);
-                    }
-                    CommandEvent::Stdout(line) => {
-                        let line_str = String::from_utf8_lossy(&line);
-                        let trimmed = line_str.trim();
-                        if !trimmed.is_empty() {
-                            info!("koko: {}", trimmed);
-                            let mut buf = log_buffer_clone.lock().await;
-                            push_log(&mut buf, trimmed);
-                        }
-                        if trimmed.contains("listening") || trimmed.contains("Listening") {
-                            let mut status = status_clone.lock().await;
-                            if *status == TtsStatus::Starting {
-                                *status = TtsStatus::Ready;
-                                info!("Kokoro TTS server is ready");
-                            }
-                        }
-                    }
-                    CommandEvent::Terminated(payload) => {
-                        let code = payload.code.unwrap_or(-1);
-                        warn!("koko exited with code: {}", code);
-                        let msg = format!("[terminated] code={}", code);
-                        let mut buf = log_buffer_clone.lock().await;
-                        push_log(&mut buf, &msg);
-                        let mut status = status_clone.lock().await;
-                        if *status != TtsStatus::Stopped {
-                            *status = TtsStatus::Error(format!("Exited with code {}", code));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        });
+        // Drain the log/event stream; a stdout line containing "listening"
+        // flips status Starting → Ready (koko's readiness signal).
+        spawn_log_reader(
+            "koko",
+            rx,
+            Arc::clone(&self.status),
+            Arc::clone(&self.log_buffer),
+            &["listening", "Listening"],
+        );
 
         // Health-poll fallback. koko's root `/` endpoint may return 4xx
         // depending on version, so we accept *any* response (not just
