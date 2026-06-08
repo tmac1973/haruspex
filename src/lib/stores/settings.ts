@@ -417,6 +417,16 @@ export function getActiveContextSize(): number {
 	return settings.contextSize;
 }
 
+/**
+ * Whether the active backend can accept image inputs. Local llama-server
+ * always can (multimodal projector handling is automatic); a remote backend
+ * is assumed capable unless the user explicitly marked it otherwise.
+ */
+export function isVisionSupported(): boolean {
+	const backend = settings.inferenceBackend;
+	return backend.mode === 'remote' ? backend.remoteVisionSupported !== false : true;
+}
+
 export function applyTheme(theme?: ThemeMode): void {
 	const mode = theme ?? settings.theme;
 	const root = document.documentElement;

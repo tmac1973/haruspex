@@ -20,6 +20,7 @@ import {
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { executeTool, getToolSchemas, type PendingImage } from '$lib/agent/tools';
+import { isFetchFailureResult } from '$lib/agent/tools/_helpers';
 import type { ToolDefinition } from '$lib/api';
 import {
 	fitMessagesToBudget,
@@ -737,11 +738,7 @@ export async function runIteration(
 		}
 		if (call.name === 'fetch_url' || call.name === 'research_url') {
 			const url = call.arguments.url as string | undefined;
-			const fetchFailed =
-				toolContent.startsWith('Failed to fetch') ||
-				toolContent.startsWith('Research sub-agent failed') ||
-				toolContent.startsWith('Paywalled:');
-			if (url && !fetchFailed) {
+			if (url && !isFetchFailureResult(toolContent)) {
 				nudges.recordFetchedUrl(url);
 				toolContent = `[Source: ${url}]\n\n${toolContent}`;
 			}

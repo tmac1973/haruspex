@@ -20,6 +20,7 @@
 		getSettings,
 		setActiveLocalModel
 	} from '$lib/stores/settings';
+	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
 
 	interface ModelInfo {
 		id: string;
@@ -52,16 +53,6 @@
 		activeModelPath = await invoke<string | null>('get_active_model_path', {
 			preferredFilename: getActiveLocalModelFilename() || null
 		});
-	}
-
-	function formatBytes(bytes: number): string {
-		if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(0)} MB`;
-		return `${(bytes / 1073741824).toFixed(1)} GB`;
-	}
-
-	function formatSpeed(bps: number): string {
-		if (bps < 1048576) return `${(bps / 1024).toFixed(0)} KB/s`;
-		return `${(bps / 1048576).toFixed(1)} MB/s`;
 	}
 
 	function activeModelFilename(): string | null {
@@ -167,7 +158,7 @@
 								</div>
 								<span class="progress-text">
 									{formatBytes(downloadProgress.downloaded)} / {formatBytes(downloadProgress.total)}
-									&middot; {formatSpeed(downloadProgress.speed_bps)}
+									&middot; {formatBytesPerSecond(downloadProgress.speed_bps)}
 								</span>
 								<button class="btn btn-small" onclick={cancelDownload}>Cancel</button>
 							</div>

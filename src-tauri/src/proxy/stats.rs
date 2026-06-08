@@ -8,7 +8,6 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Why a search engine attempt didn't return usable results. Each kind
 /// maps 1:1 to a `fail_*` column in `search_stats_engines`.
@@ -213,10 +212,7 @@ impl Default for SearchStats {
 }
 
 pub(super) fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+    crate::time_util::now_ms()
 }
 
 #[cfg(test)]

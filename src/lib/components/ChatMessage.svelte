@@ -2,6 +2,7 @@
 	import { renderMarkdown, stripMarkdownForTTS } from '$lib/markdown';
 	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
 	import { getSettings } from '$lib/stores/settings';
+	import { createCopyAction } from '$lib/utils/clipboard.svelte';
 	import { messageText, type ChatMessage, type MessageContentPart } from '$lib/api';
 
 	interface Props {
@@ -35,17 +36,7 @@
 		textContent ? stripMarkdownForTTS(textContent, getSettings().ttsReadTablesByColumn) : ''
 	);
 
-	let copyLabel = $state('Copy');
-	async function copyToClipboard() {
-		try {
-			await navigator.clipboard.writeText(textContent);
-			copyLabel = 'Copied!';
-			setTimeout(() => (copyLabel = 'Copy'), 1500);
-		} catch {
-			copyLabel = 'Failed';
-			setTimeout(() => (copyLabel = 'Copy'), 1500);
-		}
-	}
+	const copy = createCopyAction();
 </script>
 
 <div class="message" data-role={message.role}>
@@ -77,8 +68,8 @@
 				<span class="tok-rate" title="Generation speed for this response">{tokRateLabel}</span>
 			{/if}
 			<SpeakerButton text={plainText} />
-			<button class="icon-btn" title="Copy to clipboard" onclick={copyToClipboard}>
-				{copyLabel === 'Copied!' ? '\u2705' : '\u{1F4CB}'}
+			<button class="icon-btn" title="Copy to clipboard" onclick={() => copy.copy(textContent)}>
+				{copy.state === 'copied' ? '\u2705' : '\u{1F4CB}'}
 			</button>
 		</div>
 	{/if}

@@ -25,6 +25,7 @@ import { describeContextManaged } from '$lib/agent/context-budget';
 import { logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { computeMessageStats, type MessageStats } from '$lib/stores/chat.svelte';
+import { errMessage } from '$lib/utils/error';
 import { buildShellSystemPrompt, type ShellSessionContext } from '$lib/shell/system-prompt';
 import { runShellTurn } from '$lib/shell/runShellTurn';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
@@ -435,7 +436,7 @@ export class ShellSession {
 				this.messageStats = { ...this.messageStats, [assistantIndex]: stats };
 			}
 		} catch (e) {
-			const msg = e instanceof Error ? e.message : String(e);
+			const msg = errMessage(e);
 			if (msg.includes('Aborted')) {
 				this.lastError = 'Cancelled.';
 			} else {

@@ -15,6 +15,7 @@ import type { ChatMessage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact } from '$lib/agent/tools';
 import { runAgentLoop } from '$lib/agent/loop';
+import { appendStreamDelta } from '$lib/agent/think-stream';
 import type { ContextManagedInfo } from '$lib/agent/context-budget';
 import { withInferenceSlot, type InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 import { updateContextUsage } from '$lib/stores/context.svelte';
@@ -90,19 +91,11 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 		onToolEnd: (call, result, thumbDataUrl, artifacts) =>
 			options.onToolEnd?.(call, result, thumbDataUrl, artifacts),
 		onStreamChunk: (chunk) => {
-			if (chunk.delta.reasoning_content) {
-				if (!streamingContent.includes('<think>')) streamingContent += '<think>';
-				streamingContent += chunk.delta.reasoning_content;
-			}
-			if (chunk.delta.content) {
-				if (streamingContent.includes('<think>') && !streamingContent.includes('</think>')) {
-					streamingContent += '</think>\n\n';
-				}
-				streamingContent += chunk.delta.content;
-			}
+			streamingContent = appendStreamDelta(streamingContent, chunk.delta);
 			options.onAssistantDelta?.(streamingContent);
 		},
 		onComplete: () => {
+			// Shell intentionally skips citation processing — strip + trim only.
 			finalText = stripToolCallArtifacts(streamingContent).trim();
 		},
 		onError: (err) => {

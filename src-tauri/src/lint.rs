@@ -81,10 +81,7 @@ fn temp_python_path() -> PathBuf {
     let suffix = format!(
         "{:x}-{:x}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
+        crate::time_util::now_nanos()
     );
     std::env::temp_dir().join(format!("haruspex_ruff_{}.py", suffix))
 }

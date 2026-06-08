@@ -30,6 +30,7 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
 
 vi.mock('$lib/stores/settings', () => ({
 	getActiveContextSize: () => 8192,
+	isVisionSupported: () => true,
 	getSettings: () => ({
 		inferenceBackend: { mode: 'local' as const }
 	})

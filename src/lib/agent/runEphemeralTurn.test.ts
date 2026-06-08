@@ -19,7 +19,8 @@ vi.mock('$lib/agent/system-prompt', () => ({
 
 vi.mock('$lib/markdown', () => ({
 	processCitations: (text: string) => ({ content: text, citedUrls: [] }),
-	stripToolCallArtifacts: (s: string) => s
+	stripToolCallArtifacts: (s: string) => s,
+	finalizeStreamText: (raw: string) => ({ content: raw.trim(), citedUrls: [] })
 }));
 
 import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';

@@ -21,8 +21,9 @@ import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps } from '$lib/stores/jobs.svelte';
-import { getActiveContextSize, getSettings } from '$lib/stores/settings';
+import { getActiveContextSize, isVisionSupported } from '$lib/stores/settings';
 import { getDisplayLabel } from '$lib/agent/tools';
+import { errMessage } from '$lib/utils/error';
 import {
 	createJobRun,
 	markRunFinished,
@@ -288,9 +289,7 @@ async function runOneStep(
 	abort: AbortController
 ): Promise<{ ok: true; output: string } | { ok: false; aborted: boolean; error: string }> {
 	const step = job.steps[stepIndex];
-	const backend = getSettings().inferenceBackend;
-	const visionSupported =
-		backend.mode === 'remote' ? backend.remoteVisionSupported !== false : true;
+	const visionSupported = isVisionSupported();
 	const startedAt = Date.now();
 
 	const contextSize = getActiveContextSize();
@@ -357,7 +356,7 @@ async function runOneStep(
 		return { ok: true, output: finalText };
 	} catch (e) {
 		const aborted = e instanceof DOMException && e.name === 'AbortError';
-		const msg = aborted ? 'Cancelled by user' : e instanceof Error ? e.message : String(e);
+		const msg = aborted ? 'Cancelled by user' : errMessage(e);
 		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
 		const finishedAt = Date.now();
 		patchStep(runId, stepIndex, {

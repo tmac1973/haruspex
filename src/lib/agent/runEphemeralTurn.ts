@@ -18,8 +18,9 @@ import type { ChatMessage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
 import { runAgentLoop } from '$lib/agent/loop';
+import { appendStreamDelta } from '$lib/agent/think-stream';
 import { buildSystemPrompt, looksLikeFileOutputRequest } from '$lib/agent/system-prompt';
-import { processCitations, stripToolCallArtifacts } from '$lib/markdown';
+import { finalizeStreamText } from '$lib/markdown';
 
 export interface EphemeralTurnOptions {
 	userMessage: string;
@@ -71,23 +72,11 @@ export async function runEphemeralTurn(
 		onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) =>
 			options.onToolEnd?.(call, result, thumbDataUrl, artifacts, lintIssues),
 		onStreamChunk: (chunk) => {
-			if (chunk.delta.reasoning_content) {
-				if (!streamingContent.includes('<think>')) {
-					streamingContent += '<think>';
-				}
-				streamingContent += chunk.delta.reasoning_content;
-			}
-			if (chunk.delta.content) {
-				if (streamingContent.includes('<think>') && !streamingContent.includes('</think>')) {
-					streamingContent += '</think>\n\n';
-				}
-				streamingContent += chunk.delta.content;
-			}
+			streamingContent = appendStreamDelta(streamingContent, chunk.delta);
 			options.onAssistantDelta?.(streamingContent);
 		},
 		onComplete: () => {
-			const { content } = processCitations(stripToolCallArtifacts(streamingContent).trim(), []);
-			finalText = content;
+			finalText = finalizeStreamText(streamingContent).content;
 		},
 		onError: (err) => {
 			runError = err;
