@@ -1,14 +1,14 @@
-use log::{error, info, warn};
+use log::{info, warn};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
 use crate::sidecar_utils::{
-    http_client, kill_process_on_port, new_log_buffer, poll_health, ports, push_log, LogBuffer,
-    SidecarStatus,
+    base_url, drive_status_on_health, health_url, http_client, kill_child, kill_process_on_port,
+    new_log_buffer, poll_health, ports, push_log, with_library_paths, LogBuffer, SidecarStatus,
 };
 
 const WHISPER_PORT: u16 = ports::WHISPER;
@@ -55,64 +55,14 @@ impl WhisperServer {
             WHISPER_PORT.to_string(),
         ];
 
-        let mut sidecar = app
+        let sidecar = app
             .shell()
             .sidecar("whisper-server")
             .map_err(|e| format!("Failed to create whisper sidecar: {}", e))?
             .args(&args);
 
         // Set library path so whisper-server can find its bundled shared libraries
-        {
-            let mut lib_paths = Vec::new();
-            if let Ok(exe_path) = std::env::current_exe() {
-                if let Some(exe_dir) = exe_path.parent() {
-                    lib_paths.push(exe_dir.to_string_lossy().to_string());
-                }
-            }
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                let libs_dir = resource_dir.join("binaries").join("libs");
-                if libs_dir.exists() {
-                    let libs_str = libs_dir.to_string_lossy().to_string();
-                    if !lib_paths.contains(&libs_str) {
-                        lib_paths.push(libs_str);
-                    }
-                }
-                let resource_str = resource_dir.to_string_lossy().to_string();
-                if !lib_paths.contains(&resource_str) {
-                    lib_paths.push(resource_str);
-                }
-            }
-
-            #[cfg(target_os = "linux")]
-            {
-                let mut parts = lib_paths;
-                let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                if !existing.is_empty() {
-                    parts.push(existing);
-                }
-                sidecar = sidecar.env("LD_LIBRARY_PATH", parts.join(":"));
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                let mut parts = lib_paths;
-                let existing = std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
-                if !existing.is_empty() {
-                    parts.push(existing);
-                }
-                sidecar = sidecar.env("DYLD_LIBRARY_PATH", parts.join(":"));
-            }
-
-            #[cfg(target_os = "windows")]
-            {
-                let mut parts = lib_paths;
-                let existing = std::env::var("PATH").unwrap_or_default();
-                if !existing.is_empty() {
-                    parts.push(existing);
-                }
-                sidecar = sidecar.env("PATH", parts.join(";"));
-            }
-        }
+        let sidecar = with_library_paths(sidecar, app);
 
         let (mut rx, child) = sidecar
             .spawn()
@@ -167,36 +117,28 @@ impl WhisperServer {
         // stop()) moves the status away from Starting first.
         let status_for_health = Arc::clone(&self.status);
         tauri::async_runtime::spawn(async move {
-            let url = format!("http://127.0.0.1:{}/health", WHISPER_PORT);
+            let url = health_url(WHISPER_PORT);
             let status_check = Arc::clone(&status_for_health);
-            let ok = poll_health(&url, "whisper-server", HEALTH_POLL_TIMEOUT, move || {
-                let s = Arc::clone(&status_check);
-                async move { *s.lock().await == WhisperStatus::Starting }
-            })
+            let ok = poll_health(
+                &url,
+                "whisper-server",
+                HEALTH_POLL_TIMEOUT,
+                false,
+                move || {
+                    let s = Arc::clone(&status_check);
+                    async move { *s.lock().await == WhisperStatus::Starting }
+                },
+            )
             .await;
-            let mut status = status_for_health.lock().await;
-            if ok {
-                if *status == WhisperStatus::Starting {
-                    *status = WhisperStatus::Ready;
-                }
-            } else if *status == WhisperStatus::Starting {
-                error!("whisper-server health check timed out");
-                *status = WhisperStatus::Error("Health check timed out".to_string());
-            }
+            drive_status_on_health(&status_for_health, ok, "whisper-server").await;
         });
 
         Ok(())
     }
 
     pub async fn stop(&self) -> Result<(), String> {
-        let mut child = self.child.lock().await;
-        if let Some(c) = child.take() {
-            info!("Stopping whisper-server");
-            c.kill()
-                .map_err(|e| format!("Failed to kill whisper-server: {}", e))?;
-        }
-        let mut status = self.status.lock().await;
-        *status = WhisperStatus::Stopped;
+        kill_child(&self.child, "whisper-server").await?;
+        *self.status.lock().await = WhisperStatus::Stopped;
         Ok(())
     }
 
@@ -231,7 +173,7 @@ impl WhisperServer {
         let form = reqwest::multipart::Form::new().part("file", part);
 
         let resp = client
-            .post(format!("http://127.0.0.1:{}/inference", WHISPER_PORT))
+            .post(format!("{}/inference", base_url(WHISPER_PORT)))
             .multipart(form)
             .send()
             .await

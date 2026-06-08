@@ -7,11 +7,13 @@
 //! the UI. This module owns those primitives so the three sidecar files
 //! consume one canonical implementation each.
 
-use log::{info, warn};
+use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
+use tauri::{AppHandle, Manager};
+use tauri_plugin_shell::process::{Command, CommandChild};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
@@ -114,6 +116,93 @@ fn localhost(port: u16) -> String {
     format!("127.0.0.1:{port}")
 }
 
+/// `http://127.0.0.1:<port>` — the base URL every sidecar's local HTTP
+/// endpoints hang off. One definition so the host/scheme can't drift.
+pub fn base_url(port: u16) -> String {
+    format!("http://{}", localhost(port))
+}
+
+/// `http://127.0.0.1:<port>/health` — the readiness endpoint.
+pub fn health_url(port: u16) -> String {
+    format!("{}/health", base_url(port))
+}
+
+/// Directories a bundled sidecar must search for its shared libraries:
+/// the executable's own dir (dev: target/debug; prod: install bin dir)
+/// plus the packaged `binaries/libs` and the resource dir. Order matters —
+/// the exe dir wins so a dev symlink shadows a stale packaged copy.
+pub fn library_paths(app: &AppHandle) -> Vec<String> {
+    let mut paths = Vec::new();
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            paths.push(exe_dir.to_string_lossy().to_string());
+        }
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let libs_dir = resource_dir.join("binaries").join("libs");
+        if libs_dir.exists() {
+            let libs_str = libs_dir.to_string_lossy().to_string();
+            if !paths.contains(&libs_str) {
+                paths.push(libs_str);
+            }
+        }
+        let resource_str = resource_dir.to_string_lossy().to_string();
+        if !paths.contains(&resource_str) {
+            paths.push(resource_str);
+        }
+    }
+    paths
+}
+
+/// Apply the platform's shared-library search-path env var
+/// (`LD_LIBRARY_PATH` on Linux, `DYLD_LIBRARY_PATH` on macOS, `PATH` on
+/// Windows) to a sidecar command, appending any existing value so the
+/// process still finds system libraries. Every sidecar spawn routes
+/// through this so the path logic lives in exactly one place.
+pub fn with_library_paths(cmd: Command, app: &AppHandle) -> Command {
+    let mut parts = library_paths(app);
+    #[cfg(target_os = "linux")]
+    let (var, sep) = ("LD_LIBRARY_PATH", ":");
+    #[cfg(target_os = "macos")]
+    let (var, sep) = ("DYLD_LIBRARY_PATH", ":");
+    #[cfg(target_os = "windows")]
+    let (var, sep) = ("PATH", ";");
+    let existing = std::env::var(var).unwrap_or_default();
+    if !existing.is_empty() {
+        parts.push(existing);
+    }
+    cmd.env(var, parts.join(sep))
+}
+
+/// Kill a sidecar's child process if one is running, clearing the handle.
+/// No-op when nothing is running. The caller sets the status afterward
+/// (the three sidecars track status differently enough that folding it in
+/// here doesn't generalize cleanly).
+pub async fn kill_child(child: &Mutex<Option<CommandChild>>, name: &str) -> Result<(), String> {
+    if let Some(c) = child.lock().await.take() {
+        info!("Stopping {name}");
+        c.kill()
+            .map_err(|e| format!("Failed to kill {name}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Drive a plain `Arc<Mutex<SidecarStatus>>` from `Starting` to `Ready`
+/// (on a successful health poll) or to `Error` (on timeout). Shared by the
+/// sidecars whose status is a bare mutex; llama-server tracks status inside
+/// a richer generation-guarded struct and handles this itself.
+pub async fn drive_status_on_health(status: &Arc<Mutex<SidecarStatus>>, ok: bool, name: &str) {
+    let mut s = status.lock().await;
+    if ok {
+        if *s == SidecarStatus::Starting {
+            *s = SidecarStatus::Ready;
+        }
+    } else if *s == SidecarStatus::Starting {
+        error!("{name} health check timed out");
+        *s = SidecarStatus::Error("Health check timed out".to_string());
+    }
+}
+
 /// Block briefly until `port` stops accepting connections. Used after
 /// a kill to confirm the previous process actually let go before we
 /// spawn its replacement.
@@ -190,10 +279,15 @@ pub async fn kill_process_on_port(port: u16, name: &str) {
 /// *before* each sleep+poll, so a caller that wants to short-circuit
 /// when status moves away from `Starting` can do so without racing
 /// the loop body.
+///
+/// `accept_any` treats *any* HTTP response as success rather than only
+/// 2xx — koko's root endpoint may answer 4xx yet still mean "process is
+/// up", so its readiness backstop sets this true.
 pub async fn poll_health<F, Fut>(
     url: &str,
     name: &'static str,
     timeout: Duration,
+    accept_any: bool,
     mut keep_going: F,
 ) -> bool
 where
@@ -208,7 +302,7 @@ where
         }
         sleep(timing::HEALTH_POLL_INTERVAL).await;
         if let Ok(resp) = client.get(url).send().await {
-            if resp.status().is_success() {
+            if resp.status().is_success() || accept_any {
                 info!("{name} health check passed");
                 return true;
             }
