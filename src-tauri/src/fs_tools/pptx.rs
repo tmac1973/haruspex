@@ -6,10 +6,9 @@
 
 use super::images::{load_image_set, LoadedImage};
 use super::markdown_inline::escape_xml;
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
+use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir};
 use std::collections::{BTreeSet, HashMap};
 use std::io::{Cursor, Write};
-use tokio::fs;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
@@ -676,16 +675,5 @@ pub async fn fs_write_pptx(
     .await
     .map_err(|e| format!("pptx build task failed: {}", e))??;
 
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
-
-    fs::write(&resolved, bytes)
-        .await
-        .map_err(|e| format!("Failed to write pptx: {}", e))?;
-    Ok(())
+    write_bytes_to_workdir(&resolved, &bytes).await
 }

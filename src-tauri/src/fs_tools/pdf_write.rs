@@ -9,11 +9,10 @@ use super::markdown_inline::{
     ascii_fold_for_pdf, is_horizontal_rule, normalize_list_marker, parse_inline_markdown,
     preprocess_lines, runs_to_words, wrap_styled_words, DocumentBlock, ImageAlignment, InlineRun,
 };
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
+use super::path::{
+    refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir, MAX_WRITE_BYTES,
+};
 use std::collections::HashMap;
-use tokio::fs;
-
-const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
 
 /// Font family selector — Helvetica for normal prose, Courier for
 /// monospace tables where column alignment via space padding matters.
@@ -503,16 +502,5 @@ pub async fn fs_write_pdf(
     .await
     .map_err(|e| format!("PDF build task failed: {}", e))??;
 
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
-
-    fs::write(&resolved, bytes)
-        .await
-        .map_err(|e| format!("Failed to write PDF: {}", e))?;
-    Ok(())
+    write_bytes_to_workdir(&resolved, &bytes).await
 }

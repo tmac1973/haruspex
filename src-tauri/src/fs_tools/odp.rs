@@ -5,9 +5,8 @@
 
 use super::images::{load_image_set, LoadedImage};
 use super::markdown_inline::escape_xml;
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
+use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir};
 use super::pptx::{PptxLayout, PptxSlide};
-use tokio::fs;
 
 /// and a layout choice (content or section). Reuses the ODF zip
 /// scaffolding from `build_odt` (STORED mimetype first, manifest, meta,
@@ -271,16 +270,5 @@ pub async fn fs_write_odp(
     .await
     .map_err(|e| format!("odp build task failed: {}", e))??;
 
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
-
-    fs::write(&resolved, bytes)
-        .await
-        .map_err(|e| format!("Failed to write odp: {}", e))?;
-    Ok(())
+    write_bytes_to_workdir(&resolved, &bytes).await
 }

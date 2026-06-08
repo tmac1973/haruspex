@@ -3,15 +3,15 @@
 //! convention.
 
 use super::images::{
-    image_pixel_dimensions, load_markdown_images, px_to_emu, LoadedImage, MAX_DOC_IMAGE_WIDTH_EMU,
+    fit_image_emu, image_pixel_dimensions, load_markdown_images, px_to_emu, LoadedImage,
 };
 use super::markdown_inline::{
     escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
 };
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
-use tokio::fs;
+use super::path::{
+    refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir, MAX_WRITE_BYTES,
+};
 
-const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
 /// `mimetype`, is stored uncompressed (`CompressionMethod::Stored`),
 /// has no extra field, and contains the exact ODF media-type string for
 /// the format. This lets tools identify the document type from the raw
@@ -166,14 +166,8 @@ pub(super) fn build_odt(
             if let Some((path, opts)) = parse_standalone_image_line(para) {
                 if let Some(&idx) = image_index.get(&path) {
                     let (nat_w, nat_h) = natural_emu[&path];
-                    let target_w_emu = match opts.width_fraction {
-                        Some(frac) => ((MAX_DOC_IMAGE_WIDTH_EMU as f32) * frac).round() as u64,
-                        None => nat_w.min(MAX_DOC_IMAGE_WIDTH_EMU),
-                    };
-                    let target_w_emu = target_w_emu.max(1);
-                    let target_h_emu =
-                        ((nat_h as f64) * (target_w_emu as f64) / (nat_w.max(1) as f64)) as u64;
-                    let target_h_emu = target_h_emu.max(1);
+                    let (target_w_emu, target_h_emu) =
+                        fit_image_emu(nat_w, nat_h, opts.width_fraction);
                     let cm_w = target_w_emu as f32 / 360000.0;
                     let cm_h = target_h_emu as f32 / 360000.0;
                     let style_attr = match opts.alignment {
@@ -246,16 +240,5 @@ pub async fn fs_write_odt(
     .await
     .map_err(|e| format!("odt build task failed: {}", e))??;
 
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
-
-    fs::write(&resolved, bytes)
-        .await
-        .map_err(|e| format!("Failed to write odt: {}", e))?;
-    Ok(())
+    write_bytes_to_workdir(&resolved, &bytes).await
 }

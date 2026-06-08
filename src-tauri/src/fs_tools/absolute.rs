@@ -12,12 +12,10 @@
 //! when they open the Shell tab and ask "what's in /etc/nginx?" is that
 //! the agent can answer.
 
-use super::path::{refuse_if_exists, DirEntry, DirListing};
+use super::path::{refuse_if_exists, DirEntry, DirListing, MAX_TEXT_READ_BYTES, MAX_WRITE_BYTES};
 use std::path::PathBuf;
 use tokio::fs;
 
-const MAX_TEXT_READ_BYTES: u64 = 1_048_576; // 1 MB
-const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
 const MAX_DIR_ENTRIES: usize = 500;
 
 fn require_absolute(path: &str) -> Result<PathBuf, String> {

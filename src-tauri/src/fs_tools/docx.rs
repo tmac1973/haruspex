@@ -3,17 +3,17 @@
 //! preprocessing comes from `super::markdown_inline`.
 
 use super::images::{
-    image_pixel_dimensions, load_markdown_images, px_to_emu, LoadedImage, MAX_DOC_IMAGE_WIDTH_EMU,
+    fit_image_emu, image_pixel_dimensions, load_markdown_images, px_to_emu, LoadedImage,
 };
 use super::markdown_inline::{
     escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
 };
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
+use super::path::{
+    refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir, MAX_DOC_READ_BYTES,
+    MAX_WRITE_BYTES,
+};
 use std::path::Path;
 use tokio::fs;
-
-const MAX_PDF_READ_BYTES: u64 = 50 * 1_048_576; // 50 MB, shared with PDF read cap
-const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
 
 /// Extract text from a .docx file by reading word/document.xml from the zip
 /// and scanning for <w:t>...</w:t> elements. Paragraphs (<w:p>) become line
@@ -230,13 +230,7 @@ pub(super) fn build_docx(
                     // Apply width% if specified, else auto-fit to content
                     // width (capping at MAX_DOC_IMAGE_WIDTH_EMU). Aspect
                     // ratio is always preserved.
-                    let target_w = match opts.width_fraction {
-                        Some(frac) => ((MAX_DOC_IMAGE_WIDTH_EMU as f32) * frac).round() as u64,
-                        None => nat_w.min(MAX_DOC_IMAGE_WIDTH_EMU),
-                    };
-                    let target_w = target_w.max(1);
-                    let target_h = ((nat_h as f64) * (target_w as f64) / (nat_w as f64)) as u64;
-                    let target_h = target_h.max(1);
+                    let (target_w, target_h) = fit_image_emu(nat_w, nat_h, opts.width_fraction);
                     let jc = match opts.alignment {
                         ImageAlignment::Center => "center",
                         ImageAlignment::Right => "right",
@@ -322,18 +316,7 @@ pub async fn fs_write_docx(
     .await
     .map_err(|e| format!("docx build task failed: {}", e))??;
 
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
-
-    fs::write(&resolved, bytes)
-        .await
-        .map_err(|e| format!("Failed to write docx: {}", e))?;
-    Ok(())
+    write_bytes_to_workdir(&resolved, &bytes).await
 }
 
 #[tauri::command]
@@ -350,11 +333,11 @@ pub async fn fs_read_docx(workdir: String, rel_path: String) -> Result<String, S
         .map_err(|e| format!("Failed to stat file: {}", e))?;
 
     // docx size limit: 50 MB (same as PDF)
-    if metadata.len() > MAX_PDF_READ_BYTES {
+    if metadata.len() > MAX_DOC_READ_BYTES {
         return Err(format!(
             "docx too large ({} bytes). Maximum is {} bytes.",
             metadata.len(),
-            MAX_PDF_READ_BYTES
+            MAX_DOC_READ_BYTES
         ));
     }
 
