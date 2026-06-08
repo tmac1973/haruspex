@@ -9,6 +9,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { chatCompletion, type ChatMessage } from '$lib/api';
 import { getChatTemplateKwargs, getSamplingParams, getSettings } from '$lib/stores/settings';
+import { errMessage } from '$lib/utils/error';
 import { toolError } from './types';
 
 /**
@@ -19,6 +20,22 @@ export const labelArg =
 	(key: string) =>
 	(args: Record<string, unknown>): string =>
 		(args[key] as string) ?? '';
+
+/**
+ * Prefixes a fetch/research tool result uses to signal failure. The agent
+ * loop (to skip recording a citation) and the chat store (to skip showing a
+ * source chip) must agree on these, so the list lives in one place.
+ */
+export const FETCH_FAILURE_PREFIXES = [
+	'Failed to fetch',
+	'Research sub-agent failed',
+	'Paywalled:'
+] as const;
+
+/** True when a tool result string is a known fetch/research failure. */
+export function isFetchFailureResult(result: string | undefined): boolean {
+	return !!result && FETCH_FAILURE_PREFIXES.some((p) => result.startsWith(p));
+}
 
 /**
  * Resolve a tool `path` argument for Shell-mode dispatch. The Shell
@@ -47,8 +64,7 @@ export function resolveShellPath(path: string, shellCwd: string | null | undefin
  * error envelope the model expects.
  */
 export function toolInvokeError(command: string, e: unknown): string {
-	const msg = e instanceof Error ? e.message : String(e);
-	return toolError(`${command} failed: ${msg}`);
+	return toolError(`${command} failed: ${errMessage(e)}`);
 }
 
 /**

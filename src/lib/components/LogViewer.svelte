@@ -2,6 +2,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
 	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
+	import { createCopyAction } from '$lib/utils/clipboard.svelte';
 
 	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'crashes' | 'debug' | 'tools' | 'stats';
 
@@ -315,7 +316,7 @@
 		}
 	}
 
-	let copyState = $state<'idle' | 'copied'>('idle');
+	const copyLogs = createCopyAction();
 	let clearState = $state<'idle' | 'cleared'>('idle');
 
 	async function clearCurrentLog() {
@@ -345,19 +346,6 @@
 		setTimeout(() => {
 			clearState = 'idle';
 		}, 1200);
-	}
-
-	async function copyAllLogs() {
-		const text = logLines.join('\n');
-		try {
-			await navigator.clipboard.writeText(text);
-			copyState = 'copied';
-			setTimeout(() => {
-				copyState = 'idle';
-			}, 1500);
-		} catch (e) {
-			console.error('Failed to copy logs:', e);
-		}
 	}
 
 	$effect(() => {
@@ -414,10 +402,10 @@
 					{#if activeTab !== 'stats'}
 						<button
 							class="copy-btn"
-							onclick={copyAllLogs}
+							onclick={() => copyLogs.copy(logLines.join('\n'))}
 							title="Copy current log tab to clipboard for bug reports"
 						>
-							{copyState === 'copied' ? 'Copied!' : 'Copy all'}
+							{copyLogs.state === 'copied' ? 'Copied!' : 'Copy all'}
 						</button>
 					{/if}
 					<button class="close-btn" onclick={onclose} title="Close">&times;</button>

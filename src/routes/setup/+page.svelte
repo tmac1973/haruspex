@@ -25,6 +25,7 @@
 		type InferenceBackendConfig
 	} from '$lib/stores/settings';
 	import { enterRemoteMode } from '$lib/stores/server.svelte';
+	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
 
 	const step = $derived(getStep());
@@ -36,18 +37,6 @@
 	const testResponse = $derived(getTestResponse());
 	const testStatusMessage = $derived(getTestStatusMessage());
 	const models = $derived(getModels());
-
-	function formatBytes(bytes: number): string {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-		if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
-		return `${(bytes / 1073741824).toFixed(2)} GB`;
-	}
-
-	function formatSpeed(bps: number): string {
-		if (bps < 1048576) return `${(bps / 1024).toFixed(0)} KB/s`;
-		return `${(bps / 1048576).toFixed(1)} MB/s`;
-	}
 
 	function estimatedTime(progress: {
 		downloaded: number;
@@ -287,7 +276,7 @@
 					</div>
 					<div class="progress-details">
 						<span>{formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
-						<span>{formatSpeed(progress.speed_bps)}</span>
+						<span>{formatBytesPerSecond(progress.speed_bps)}</span>
 						<span>{estimatedTime(progress)}</span>
 					</div>
 					<div class="progress-percent">

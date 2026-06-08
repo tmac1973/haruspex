@@ -15,8 +15,11 @@ import {
 } from '$lib/agent/system-prompt';
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
-import { getActiveContextSize, getSettings } from '$lib/stores/settings';
+import { getActiveContextSize, getSettings, isVisionSupported } from '$lib/stores/settings';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
+import { appendStreamDelta } from '$lib/agent/think-stream';
+import { isFetchFailureResult } from '$lib/agent/tools/_helpers';
+import { errMessage } from '$lib/utils/error';
 import {
 	runPython,
 	installPackage,
@@ -333,7 +336,7 @@ export async function rerunSandboxStep(stepId: string): Promise<void> {
 				: s
 		);
 	} catch (e) {
-		const msg = e instanceof Error ? e.message : String(e);
+		const msg = errMessage(e);
 		conv.searchSteps = conv.searchSteps.map((s) =>
 			s.id === stepId
 				? { ...s, status: 'done' as const, result: `Error: ${msg}`, artifacts: [] }
@@ -584,7 +587,7 @@ async function restoreSandboxSession(id: string): Promise<void> {
 				}
 			} catch (err) {
 				logDebug('sandbox', `session restore: ${call.name} failed (skipping)`, {
-					error: err instanceof Error ? err.message : String(err)
+					error: errMessage(err)
 				});
 			}
 		}
@@ -636,24 +639,15 @@ function extractUrlsFromSteps(steps: SearchStep[]): string[] {
 	const urls: string[] = [];
 	for (const step of steps) {
 		if (step.toolName === 'fetch_url' && step.query) {
-			if (step.status === 'done' && isFetchFailure(step.result)) continue;
+			if (step.status === 'done' && isFetchFailureResult(step.result)) continue;
 			urls.push(step.query);
 		} else if (step.toolName === 'research_url' && step.query) {
-			if (step.status === 'done' && isFetchFailure(step.result)) continue;
+			if (step.status === 'done' && isFetchFailureResult(step.result)) continue;
 			const dash = step.query.indexOf(' — ');
 			urls.push(dash >= 0 ? step.query.slice(0, dash) : step.query);
 		}
 	}
 	return [...new Set(urls)];
-}
-
-function isFetchFailure(result: string | undefined): boolean {
-	if (!result) return false;
-	return (
-		result.startsWith('Failed to fetch') ||
-		result.startsWith('Research sub-agent failed') ||
-		result.startsWith('Paywalled:')
-	);
 }
 
 /**
@@ -891,9 +885,7 @@ export async function sendMessage(content: string): Promise<void> {
 
 		const activeCtxSize = getActiveContextSize();
 
-		const backend = getSettings().inferenceBackend;
-		const visionSupported =
-			backend.mode === 'remote' ? backend.remoteVisionSupported !== false : true;
+		const visionSupported = isVisionSupported();
 
 		isWaitingForSlot = true;
 		await withInferenceSlot(
@@ -960,18 +952,7 @@ export async function sendMessage(content: string): Promise<void> {
 						);
 					},
 					onStreamChunk: (chunk) => {
-						if (chunk.delta.reasoning_content) {
-							if (!streamingContent.includes('<think>')) {
-								streamingContent += '<think>';
-							}
-							streamingContent += chunk.delta.reasoning_content;
-						}
-						if (chunk.delta.content) {
-							if (streamingContent.includes('<think>') && !streamingContent.includes('</think>')) {
-								streamingContent += '</think>\n\n';
-							}
-							streamingContent += chunk.delta.content;
-						}
+						streamingContent = appendStreamDelta(streamingContent, chunk.delta);
 					},
 					onComplete: () => {
 						const fetched = extractUrlsFromSteps(conversation.searchSteps);

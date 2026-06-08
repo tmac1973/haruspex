@@ -3,6 +3,7 @@ import type { Artifact, InstallPhase, MainToWorker, ToolResult, WorkerToMain } f
 import { getWorkingDir } from '$lib/stores/chat.svelte';
 import { getSettings } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
+import { errMessage } from '$lib/utils/error';
 
 export interface RunOptions {
 	timeoutMs?: number;
@@ -363,7 +364,7 @@ export class WorkerManager {
 							await this.syncWorkdir();
 						} catch (err) {
 							logDebug('sandbox', 'pre-run workdir sync failed (non-fatal)', {
-								error: err instanceof Error ? err.message : String(err)
+								error: errMessage(err)
 							});
 						}
 					}
@@ -611,7 +612,7 @@ export class WorkerManager {
 			});
 			respond({ ok: true, path: result.path, bytes: result.bytes });
 		} catch (err) {
-			respond({ ok: false, error: err instanceof Error ? err.message : String(err) });
+			respond({ ok: false, error: errMessage(err) });
 		}
 	}
 
@@ -640,7 +641,7 @@ export class WorkerManager {
 			this.syncedFiles.delete(msg.filename);
 			respond({ ok: true, path: result.path });
 		} catch (err) {
-			respond({ ok: false, error: err instanceof Error ? err.message : String(err) });
+			respond({ ok: false, error: errMessage(err) });
 		}
 	}
 
@@ -709,7 +710,7 @@ export class WorkerManager {
 				headers: {},
 				body: new Uint8Array(),
 				url: msg.url,
-				error: err instanceof Error ? err.message : String(err)
+				error: errMessage(err)
 			});
 		}
 	}

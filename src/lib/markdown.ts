@@ -578,6 +578,19 @@ export function processCitations(text: string, fetchedUrls: readonly string[]): 
 	return { content, citedUrls };
 }
 
+/**
+ * Finalize a streamed assistant reply: strip tool-call artifacts, trim, and
+ * resolve citations. Shared by the turn drivers (chat / shell / ephemeral)
+ * so the strip→trim→cite pipeline stays identical. Pass the URLs fetched
+ * during the turn so citation chips resolve; default `[]` skips citations.
+ */
+export function finalizeStreamText(
+	raw: string,
+	fetchedUrls: readonly string[] = []
+): ProcessedCitations {
+	return processCitations(stripToolCallArtifacts(raw).trim(), fetchedUrls);
+}
+
 export function renderMarkdown(text: string): string {
 	const sanitized = sanitizeForRender(text);
 	const withThinking = convertThinkingBlocks(sanitized);
