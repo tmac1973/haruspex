@@ -32,3 +32,27 @@ export function createCopyAction(resetMs = 1500) {
 		}
 	};
 }
+
+/**
+ * Keyed variant of {@link createCopyAction} for lists where each row has its
+ * own copy button (e.g. one per search step). `state(key)` is `idle` until
+ * that key's `copy` runs.
+ */
+export function createKeyedCopyAction(resetMs = 1500) {
+	const states = $state<Record<string, CopyState>>({});
+	return {
+		state(key: string): CopyState {
+			return states[key] ?? 'idle';
+		},
+		async copy(key: string, text: string | (() => string)): Promise<void> {
+			try {
+				await navigator.clipboard.writeText(typeof text === 'function' ? text() : text);
+				states[key] = 'copied';
+			} catch (e) {
+				console.error('Failed to copy to clipboard:', errMessage(e));
+				states[key] = 'failed';
+			}
+			setTimeout(() => (states[key] = 'idle'), resetMs);
+		}
+	};
+}

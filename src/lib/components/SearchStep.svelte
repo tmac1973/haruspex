@@ -3,6 +3,7 @@
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
 	import { rerunSandboxStep, cancelActiveSandboxRun } from '$lib/stores/chat.svelte';
+	import { createKeyedCopyAction } from '$lib/utils/clipboard.svelte';
 	import ImageViewerModal from './ImageViewerModal.svelte';
 
 	hljs.registerLanguage('python', python);
@@ -37,7 +38,11 @@
 		cancelActiveSandboxRun();
 	}
 
-	let copyStates: Record<string, string> = $state({});
+	const copyAction = createKeyedCopyAction();
+	function copyLabel(key: string): string {
+		const s = copyAction.state(key);
+		return s === 'copied' ? 'Copied!' : s === 'failed' ? 'Failed' : 'Copy';
+	}
 	// Per-step user override for run_python code-block visibility. Absent
 	// entry → use the default (collapsed if the run errored, expanded
 	// otherwise) so the user doesn't have to scroll past 4 failing tries
@@ -96,16 +101,9 @@
 		}
 	}
 
-	async function copyResult(stepId: string, text: string, event: MouseEvent) {
+	function copyResult(stepId: string, text: string, event: MouseEvent) {
 		event.stopPropagation();
-		try {
-			await navigator.clipboard.writeText(text);
-			copyStates[stepId] = 'Copied!';
-			setTimeout(() => (copyStates[stepId] = ''), 1500);
-		} catch {
-			copyStates[stepId] = 'Failed';
-			setTimeout(() => (copyStates[stepId] = ''), 1500);
-		}
+		copyAction.copy(stepId, text);
 	}
 
 	function stepIcon(toolName: string): string {
@@ -241,7 +239,7 @@
 							class="copy-btn"
 							onclick={(e) => copyResult(`${step.id}:code`, step.args!.code as string, e)}
 						>
-							{copyStates[`${step.id}:code`] || 'Copy'}
+							{copyLabel(`${step.id}:code`)}
 						</button>
 						{#if step.status === 'running'}
 							<button
@@ -338,7 +336,7 @@
 					<div class="detail-header">
 						<div class="detail-label">{step.toolName}: {step.query}</div>
 						<button class="copy-btn" onclick={(e) => copyResult(step.id, step.result ?? '', e)}>
-							{copyStates[step.id] || 'Copy'}
+							{copyLabel(step.id)}
 						</button>
 					</div>
 					<pre>{step.result}</pre>
