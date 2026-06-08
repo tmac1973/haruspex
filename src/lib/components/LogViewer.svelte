@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
 
-	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'debug' | 'tools' | 'stats';
+	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'crashes' | 'debug' | 'tools' | 'stats';
 
 	interface Props {
 		open: boolean;
@@ -142,14 +142,14 @@
 		return iso.slice(t + 1, z > t ? z : undefined);
 	}
 
-	const tabCommands: Record<Exclude<LogTab, 'debug' | 'tools' | 'stats'>, string> = {
+	const tabCommands: Record<Exclude<LogTab, 'crashes' | 'debug' | 'tools' | 'stats'>, string> = {
 		app: 'get_app_logs',
 		llm: 'get_server_logs',
 		tts: 'get_tts_logs',
 		whisper: 'get_whisper_logs'
 	};
 
-	const clearCommands: Record<Exclude<LogTab, 'debug' | 'tools' | 'stats'>, string> = {
+	const clearCommands: Record<Exclude<LogTab, 'crashes' | 'debug' | 'tools' | 'stats'>, string> = {
 		app: 'clear_app_logs',
 		llm: 'clear_server_logs',
 		tts: 'clear_tts_logs',
@@ -161,6 +161,7 @@
 		llm: 'LLM',
 		tts: 'TTS',
 		whisper: 'Whisper',
+		crashes: 'Crashes',
 		debug: 'Debug',
 		tools: 'Tools',
 		stats: 'Stats'
@@ -172,7 +173,12 @@
 				statsData = await invoke<CombinedStats>('get_search_stats');
 				return;
 			}
-			if (activeTab === 'debug') {
+			if (activeTab === 'crashes') {
+				// The crash telemetry is a single multi-line file, not a ring
+				// buffer of lines — fetch the whole thing and split for display.
+				const text = await invoke<string>('get_llama_crash_log');
+				logLines = text ? text.replace(/\n$/, '').split('\n') : [];
+			} else if (activeTab === 'debug') {
 				// Frontend-side ring buffer; no Tauri round-trip needed.
 				logLines = getDebugLogs();
 			} else if (activeTab === 'tools') {
@@ -320,6 +326,9 @@
 				}
 				await invoke('reset_lifetime_search_stats');
 				await fetchLogs();
+			} else if (activeTab === 'crashes') {
+				await invoke('clear_llama_crash_log');
+				logLines = [];
 			} else if (activeTab === 'debug' || activeTab === 'tools') {
 				// Frontend ring buffer — both tabs read from it; clearing once
 				// empties them both.
@@ -372,7 +381,7 @@
 		<div class="modal">
 			<div class="modal-header">
 				<div class="tabs">
-					{#each ['app', 'llm', 'tts', 'whisper', 'debug', 'tools', 'stats'] as const as tab (tab)}
+					{#each ['app', 'llm', 'tts', 'whisper', 'crashes', 'debug', 'tools', 'stats'] as const as tab (tab)}
 						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
 							{tabLabels[tab]}
 						</button>

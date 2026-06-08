@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
@@ -14,6 +14,7 @@ use crate::sidecar_utils::{
     LOG_RING_BUFFER_SIZE,
 };
 
+mod crash_telemetry;
 mod log_classifier;
 use log_classifier::{classify, LogSignal};
 
@@ -111,6 +112,9 @@ struct ServerInner {
     /// `start()` call.
     cpu_fallback_active: bool,
     generation: u64, // incremented on each start, used to ignore stale events
+    /// When the current child process was spawned — used to report uptime in
+    /// crash telemetry (how long it survived before dying).
+    started_at: Option<Instant>,
 }
 
 pub struct LlamaServer {
@@ -130,6 +134,7 @@ impl LlamaServer {
                 gpu_error_reason: None,
                 cpu_fallback_active: false,
                 generation: 0,
+                started_at: None,
             })),
         }
     }
@@ -284,6 +289,7 @@ impl LlamaServer {
         let gen = {
             let mut inner = self.inner.lock().await;
             inner.child = Some(child);
+            inner.started_at = Some(Instant::now());
             inner.generation += 1;
             inner.generation
         };
@@ -349,8 +355,8 @@ impl LlamaServer {
                     CommandEvent::Terminated(payload) => {
                         let code = payload.code.unwrap_or(-1);
                         info!(
-                            "llama-server (gen {}) exited with code: {}",
-                            generation, code
+                            "llama-server (gen {}) exited with code: {} signal: {:?}",
+                            generation, code, payload.signal
                         );
 
                         // Ignore termination events from old generations
@@ -363,6 +369,49 @@ impl LlamaServer {
                                 );
                                 return;
                             }
+                        }
+
+                        // Crash telemetry: capture a post-mortem before any
+                        // recovery logic mutates state. A clean stop sets the
+                        // status to Stopped first, so we skip those; anything
+                        // else (a crash signal, or a non-zero exit while it was
+                        // Starting/Ready) is recorded with the last stderr lines
+                        // — which is where llama.cpp prints the abort reason.
+                        let crash_report = {
+                            let state = inner.lock().await;
+                            let clean_stop = state.status == ServerStatus::Stopped;
+                            let crashed = payload
+                                .signal
+                                .map(crash_telemetry::is_crash_signal)
+                                .unwrap_or(false)
+                                || payload.code.map(|c| c != 0).unwrap_or(true);
+                            if clean_stop || !crashed {
+                                None
+                            } else {
+                                Some(crash_telemetry::CrashReport {
+                                    generation,
+                                    code: payload.code,
+                                    signal: payload.signal,
+                                    status_before: format!("{:?}", state.status),
+                                    model_path: model_path.clone(),
+                                    n_gpu_layers: state.config.n_gpu_layers,
+                                    ctx_size: state.config.ctx_size,
+                                    flash_attn: state.config.flash_attn,
+                                    cpu_fallback_active: state.cpu_fallback_active,
+                                    uptime_secs: state.started_at.map(|t| t.elapsed().as_secs()),
+                                    recent_log: state
+                                        .log_buffer
+                                        .iter()
+                                        .rev()
+                                        .take(crash_telemetry::TAIL_LINES)
+                                        .rev()
+                                        .cloned()
+                                        .collect(),
+                                })
+                            }
+                        };
+                        if let Some(report) = crash_report {
+                            crash_telemetry::record(&app, &report);
                         }
 
                         let should_fallback = {
@@ -441,6 +490,7 @@ impl LlamaServer {
                                     let fallback_state = {
                                         let mut state = inner.lock().await;
                                         state.child = Some(new_child);
+                                        state.started_at = Some(Instant::now());
                                         state.cpu_fallback_active = true;
                                         // Reason was captured from the
                                         // pre-abort stderr; if for some
@@ -549,6 +599,7 @@ impl LlamaServer {
                                     {
                                         let mut state = inner.lock().await;
                                         state.child = Some(new_child);
+                                        state.started_at = Some(Instant::now());
                                     }
                                     Self::spawn_output_reader(
                                         inner.clone(),
@@ -726,6 +777,24 @@ pub async fn get_cpu_fallback_state(
     Ok(state.get_cpu_fallback_state().await)
 }
 
+/// Read the persisted llama-server crash log (empty string if none yet).
+#[tauri::command]
+pub fn get_llama_crash_log(app: AppHandle) -> String {
+    crash_telemetry::read(&app)
+}
+
+/// Path to the crash log file, so the UI can point the user at it on disk.
+#[tauri::command]
+pub fn get_llama_crash_log_path(app: AppHandle) -> Option<String> {
+    crash_telemetry::crash_log_path(&app).map(|p| p.to_string_lossy().to_string())
+}
+
+/// Delete the persisted crash log.
+#[tauri::command]
+pub fn clear_llama_crash_log(app: AppHandle) {
+    crash_telemetry::clear(&app);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -819,6 +888,7 @@ mod tests {
             gpu_error_reason: None,
             cpu_fallback_active: false,
             generation: 0,
+            started_at: None,
         };
 
         for i in 0..LOG_RING_BUFFER_SIZE + 100 {
