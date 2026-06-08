@@ -251,7 +251,9 @@
 								<pre use:overflowFade>{split.preamble}</pre>
 							</div>
 						</details>
-						<ChatMessage message={{ ...msg, content: split.question }} />
+						{#if split.question.trim()}
+							<ChatMessage message={{ ...msg, content: split.question }} />
+						{/if}
 					{:else}
 						<ChatMessage message={msg} />
 					{/if}
@@ -295,6 +297,27 @@
 				rows="1"
 				disabled={submitting}
 			></textarea>
+			<button
+				class="ctx-btn"
+				onclick={() => session.submitRecentCommands()}
+				disabled={submitting}
+				title="Submit recent shell commands & output, no prompt (F4)"
+				aria-label="Submit recent shell commands"
+			>
+				<svg
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<polyline points="4 17 10 11 4 5"></polyline>
+					<line x1="12" y1="19" x2="20" y2="19"></line>
+				</svg>
+			</button>
 			<MicButton
 				onTranscription={(text) => session.submitChatMessage(text)}
 				disabled={submitting}
@@ -562,6 +585,31 @@
 
 	.composer textarea:disabled {
 		background: var(--bg-secondary);
+		cursor: not-allowed;
+	}
+
+	.ctx-btn {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		border: 1px solid var(--border);
+		background: var(--bg-secondary);
+		color: var(--text-secondary);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: all 0.15s;
+	}
+
+	.ctx-btn:hover:not(:disabled) {
+		color: var(--text-primary);
+		border-color: var(--text-secondary);
+	}
+
+	.ctx-btn:disabled {
+		opacity: 0.4;
 		cursor: not-allowed;
 	}
 

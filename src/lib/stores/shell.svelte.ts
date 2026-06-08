@@ -302,6 +302,52 @@ export class ShellSession {
 	};
 
 	/**
+	 * Submit the last N captured commands (and their output) with NO question
+	 * text — the sidebar's "submit context" button and the F4 hotkey. The agent
+	 * is expected to deduce what to do from the chat history. No-op when nothing
+	 * has been captured yet.
+	 */
+	submitRecentCommands = async (): Promise<void> => {
+		if (this.isSubmitting) return;
+		if (!this.activeSession) {
+			this.lastError = 'Shell session not ready yet.';
+			return;
+		}
+		const live = await this.fetchLiveContext();
+		if (!live) return;
+
+		const settings = getSettings();
+		const limit = Math.max(0, settings.shellHistoryTurnsForPrompt);
+		const recent =
+			limit > 0
+				? await invoke<CapturedRegion[]>('shell_get_recent_commands', {
+						sessionId: this.activeSession.sessionId,
+						limit
+					})
+				: [];
+		if (recent.length === 0) {
+			this.sidebarOpen = true;
+			this.lastError =
+				limit > 0
+					? 'No captured commands to submit yet — run something in the terminal first.'
+					: 'Recent-command attaching is disabled (Settings → Shell sets it to 0).';
+			return;
+		}
+		const maxBytesPerCapture = Math.max(0, settings.shellMaxBytesPerCapture);
+		// Reuse the same preamble format as submitChatMessage (marker + blocks +
+		// trailing "---" separator) so the sidebar renders it as the collapsible
+		// shell-activity block; there's just no question after the separator.
+		const body = formatRecentCommands(recent, maxBytesPerCapture);
+
+		await this.submitShell({
+			body,
+			sessionContext: this.activeSession.context,
+			currentCwd: live.currentCwd,
+			recentHistory: live.recentHistory
+		});
+	};
+
+	/**
 	 * Lower-level entry: append a user turn with the given body and run one
 	 * agent iteration. The system prompt is rebuilt every call so the freshest
 	 * session context lands in it.
