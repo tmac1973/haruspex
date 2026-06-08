@@ -5,12 +5,10 @@
 
 use super::bypass::apply_proxy;
 use super::paywall::{detect_paywall_signal, PAYWALL_SENTINEL};
-use super::ProxyConfig;
+use super::{ProxyConfig, FETCH_TIMEOUT};
 use scraper::{Html, Selector};
 use std::net::IpAddr;
-use std::time::Duration;
 
-const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_FETCH_LENGTH: usize = 4000;
 pub(crate) const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 

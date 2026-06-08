@@ -42,7 +42,10 @@ pub struct LoadedImage {
 
 /// Normalize an image file extension to one we know how to embed. Rejects
 /// anything outside png / jpg / jpeg / gif, which are the formats both
-/// PPTX (Office) and ODP (LibreOffice) reliably display. "jpg" is
+/// PPTX (Office) and ODP (LibreOffice) reliably display. This is narrower
+/// than the frontend's thumbnail-preview list (`IMAGE_EXT_RE` in
+/// src/lib/agent/tools/fs-read.ts, which also allows webp/bmp/ico/tiff) —
+/// the two are intentionally different (preview vs document-embed). "jpg" is
 /// collapsed to "jpeg" so the downstream media/Content-Type naming is
 /// consistent.
 pub(super) fn normalize_image_extension(path: &str) -> Result<String, String> {

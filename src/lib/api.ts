@@ -1,6 +1,7 @@
 // llama-server OpenAI-compatible API client wrapper
 import { getSettings } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
+import { PORTS } from '$lib/ports';
 
 let nextRequestId = 1;
 
@@ -105,7 +106,7 @@ export class ApiError extends Error {
 	}
 }
 
-const DEFAULT_PORT = 8765;
+const DEFAULT_PORT = PORTS.llama;
 
 function getBaseUrl(port: number = DEFAULT_PORT): string {
 	return `http://127.0.0.1:${port}`;

@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { PORTS } from '$lib/ports';
 
 /**
  * Server status visible to the UI. The first four mirror the Rust-side
@@ -45,7 +46,7 @@ export interface ServerState {
 let serverState = $state<ServerState>({
 	status: 'stopped',
 	errorMessage: undefined,
-	port: 8765
+	port: PORTS.llama
 });
 
 function parseStatusEvent(payload: RustServerStatus): void {

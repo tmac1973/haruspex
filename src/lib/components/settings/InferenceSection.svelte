@@ -7,6 +7,7 @@
 		enterRemoteMode,
 		exitRemoteMode
 	} from '$lib/stores/server.svelte';
+	import { PORTS } from '$lib/ports';
 	import {
 		getActiveLocalModelFilename,
 		getSettings,
@@ -172,7 +173,7 @@
 		</div>
 		<div class="info-row">
 			<span>Port</span>
-			<span>8765</span>
+			<span>{PORTS.llama}</span>
 		</div>
 		<div class="server-actions">
 			{#if serverState.status === 'ready' || serverState.status === 'error'}
