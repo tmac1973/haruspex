@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.46](https://github.com/tmac1973/haruspex/compare/v0.1.45...v0.1.46) (2026-06-08)
+
+
+### Features
+
+* **shell:** default Run auto-submit to off ([1eb72c0](https://github.com/tmac1973/haruspex/commit/1eb72c0ab2b6dc190651d17304d1d711380fd039))
+* **shell:** per-command Run buttons + optional Run auto-submit ([9ac1d07](https://github.com/tmac1973/haruspex/commit/9ac1d0734d5b25d9d077dc68769d8dd4a290568a))
+* **shell:** per-command Run buttons + optional Run auto-submit ([b6f13ec](https://github.com/tmac1973/haruspex/commit/b6f13ec0619191c2b0a7db6572856dd8a5ba6923))
+* **shell:** submit recent commands to assistant (button + F4); Run auto-submit off by default ([de21a5a](https://github.com/tmac1973/haruspex/commit/de21a5ad5c297c775ba10b3b827468b58a42c720))
+* **shell:** submit recent commands to assistant via button + F4 ([2da9c8c](https://github.com/tmac1973/haruspex/commit/2da9c8c660389a726e11066452a684d277ab1cc0))
+
+
+### Bug Fixes
+
+* **shell:** always set TERM=xterm-256color for PTY sessions ([837d47d](https://github.com/tmac1973/haruspex/commit/837d47ddd4b9ba6bd4707f63da423059e08853bd))
+* **shell:** always set TERM=xterm-256color for PTY sessions ([e6b23bc](https://github.com/tmac1973/haruspex/commit/e6b23bcd899fbd4803a24d89b68c8b2f337c1b6f))
+
 ## [0.1.45](https://github.com/tmac1973/haruspex/compare/v0.1.44...v0.1.45) (2026-06-07)
 
 
