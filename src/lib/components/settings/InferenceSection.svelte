@@ -94,7 +94,7 @@
 	}
 </script>
 
-<section>
+<section class="settings-section">
 	<h2>Inference backend</h2>
 	<p class="hint">
 		Haruspex normally manages its own llama-server sidecar with a downloaded model. If you already
@@ -140,7 +140,7 @@
 {#if !remoteMode}
 	<ModelsSection />
 
-	<section>
+	<section class="settings-section">
 		<h2>Context Size</h2>
 		<p class="hint">
 			Larger context allows longer conversations but uses more VRAM. Requires server restart to take
@@ -165,7 +165,7 @@
 		{/if}
 	</section>
 
-	<section>
+	<section class="settings-section">
 		<h2>Server</h2>
 		<div class="info-row">
 			<span>Status</span>
@@ -191,24 +191,6 @@
 {/if}
 
 <style>
-	section {
-		padding-bottom: 24px;
-		margin-bottom: 24px;
-		border-bottom: 1px solid var(--border);
-	}
-
-	section:last-child {
-		border-bottom: none;
-		margin-bottom: 0;
-		padding-bottom: 0;
-	}
-
-	h2 {
-		font-size: 1rem;
-		margin: 0 0 8px 0;
-		color: var(--text-primary);
-	}
-
 	.hint {
 		font-size: 0.8rem;
 		color: var(--text-secondary);

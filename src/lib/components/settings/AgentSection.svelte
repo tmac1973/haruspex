@@ -42,7 +42,7 @@
 		'e.g. "Always answer in British English. Prefer Rust examples when explaining systems code."';
 </script>
 
-<section>
+<section class="settings-section">
 	<h2>Behavior</h2>
 	<label class="toggle-row">
 		<input type="checkbox" checked={thinkingEnabled} onchange={toggleThinkingEnabled} />
@@ -83,7 +83,7 @@
 	</div>
 </section>
 
-<section>
+<section class="settings-section">
 	<h2>
 		Python Sandbox <span class="experimental-badge">experimental</span>
 	</h2>
@@ -152,24 +152,6 @@
 </section>
 
 <style>
-	section {
-		padding-bottom: 24px;
-		margin-bottom: 24px;
-		border-bottom: 1px solid var(--border);
-	}
-
-	section:last-child {
-		border-bottom: none;
-		margin-bottom: 0;
-		padding-bottom: 0;
-	}
-
-	h2 {
-		font-size: 1rem;
-		margin: 0 0 8px 0;
-		color: var(--text-primary);
-	}
-
 	.hint {
 		font-size: 0.8rem;
 		color: var(--text-secondary);
