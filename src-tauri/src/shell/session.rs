@@ -141,10 +141,10 @@ impl Session {
                 cmd.env(var, v);
             }
         }
-        cmd.env(
-            "TERM",
-            std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()),
-        );
+        // The frontend is always an xterm.js emulator, so advertise its real
+        // capabilities. Don't inherit the parent process's TERM: GUI launchers,
+        // IDEs and build tools often set TERM=dumb, which breaks curses/TUI apps.
+        cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         sanitize_appimage_env(&mut cmd);
         for (k, v) in &plan.env {
