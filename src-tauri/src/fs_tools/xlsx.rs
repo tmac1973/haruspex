@@ -4,15 +4,22 @@
 //! interchangeable except for the output format.
 
 use super::markdown_inline::escape_xml;
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
+use super::path::{
+    refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir, MAX_DOC_READ_BYTES,
+};
 use tokio::fs;
-
-const MAX_XLSX_READ_BYTES: u64 = 50 * 1_048_576; // 50 MB, same as PDF
 
 #[derive(serde::Deserialize)]
 pub struct XlsxSheet {
     pub name: String,
     pub rows: Vec<Vec<String>>,
+}
+
+/// Decide whether a cell string is numeric. The ODS and XLSX writers must
+/// agree on this so a value lands as a number in one format and text in the
+/// other — route both through this one classifier.
+fn cell_as_number(cell: &str) -> Option<f64> {
+    cell.parse::<f64>().ok()
 }
 
 /// Build a minimal OpenDocument Spreadsheet (.ods) file from a slice of
@@ -86,7 +93,7 @@ pub(super) fn build_ods(sheets: &[XlsxSheet]) -> Result<Vec<u8>, String> {
             for row in &sheet.rows {
                 body_xml.push_str("<table:table-row>");
                 for cell in row {
-                    if let Ok(n) = cell.parse::<f64>() {
+                    if let Some(n) = cell_as_number(cell) {
                         body_xml.push_str(&format!(
                             r#"<table:table-cell office:value-type="float" office:value="{}"><text:p>{}</text:p></table:table-cell>"#,
                             n,
@@ -144,7 +151,7 @@ pub async fn fs_write_xlsx(
                 .map_err(|e| format!("Failed to set sheet name: {}", e))?;
             for (row_idx, row) in sheet_data.rows.iter().enumerate() {
                 for (col_idx, cell) in row.iter().enumerate() {
-                    if let Ok(n) = cell.parse::<f64>() {
+                    if let Some(n) = cell_as_number(cell) {
                         worksheet
                             .write_number(row_idx as u32, col_idx as u16, n)
                             .map_err(|e| format!("Failed to write cell: {}", e))?;
@@ -188,18 +195,7 @@ pub async fn fs_write_ods(
             .await
             .map_err(|e| format!("ods build task failed: {}", e))??;
 
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
-
-    fs::write(&resolved, bytes)
-        .await
-        .map_err(|e| format!("Failed to write ods: {}", e))?;
-    Ok(())
+    write_bytes_to_workdir(&resolved, &bytes).await
 }
 
 #[tauri::command]
@@ -219,11 +215,11 @@ pub async fn fs_read_xlsx(
         .await
         .map_err(|e| format!("Failed to stat file: {}", e))?;
 
-    if metadata.len() > MAX_XLSX_READ_BYTES {
+    if metadata.len() > MAX_DOC_READ_BYTES {
         return Err(format!(
             "xlsx too large ({} bytes). Maximum is {} bytes.",
             metadata.len(),
-            MAX_XLSX_READ_BYTES
+            MAX_DOC_READ_BYTES
         ));
     }
 
@@ -313,33 +309,7 @@ pub async fn fs_read_xlsx(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
-
-    fn assert_odf_mimetype(bytes: &[u8], expected_mime: &str) {
-        let cursor = std::io::Cursor::new(bytes);
-        let mut zip = zip::ZipArchive::new(cursor).expect("valid zip");
-        let mut first = zip.by_index(0).expect("at least one entry");
-        assert_eq!(first.name(), "mimetype", "first entry must be mimetype");
-        assert_eq!(
-            first.compression(),
-            zip::CompressionMethod::Stored,
-            "mimetype must be stored uncompressed"
-        );
-        let mut content = String::new();
-        first.read_to_string(&mut content).unwrap();
-        assert_eq!(content, expected_mime);
-    }
-
-    fn read_zip_entry(bytes: &[u8], name: &str) -> String {
-        let cursor = std::io::Cursor::new(bytes);
-        let mut zip = zip::ZipArchive::new(cursor).expect("valid zip");
-        let mut entry = zip
-            .by_name(name)
-            .unwrap_or_else(|_| panic!("{} missing", name));
-        let mut content = String::new();
-        entry.read_to_string(&mut content).unwrap();
-        content
-    }
+    use crate::fs_tools::test_support::{assert_odf_mimetype, read_zip_entry};
 
     #[test]
     fn build_ods_produces_valid_odf_zip() {

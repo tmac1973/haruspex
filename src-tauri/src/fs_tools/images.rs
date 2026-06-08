@@ -77,6 +77,20 @@ pub(super) fn px_to_emu(px: u32) -> u64 {
     px as u64 * 9525
 }
 
+/// Fit an image's natural EMU dimensions into the document: width is either a
+/// fraction of the max content width or the natural width capped at that max;
+/// height preserves the aspect ratio. Both clamp to ≥ 1 EMU. Shared by the
+/// docx and odt writers.
+pub(super) fn fit_image_emu(nat_w: u64, nat_h: u64, width_fraction: Option<f32>) -> (u64, u64) {
+    let w = match width_fraction {
+        Some(frac) => ((MAX_DOC_IMAGE_WIDTH_EMU as f32) * frac).round() as u64,
+        None => nat_w.min(MAX_DOC_IMAGE_WIDTH_EMU),
+    }
+    .max(1);
+    let h = (((nat_h as f64) * (w as f64) / (nat_w.max(1) as f64)) as u64).max(1);
+    (w, h)
+}
+
 /// Extract every `![alt](path)` image reference from a markdown-shaped
 /// document, in order of first appearance, deduplicated. The returned
 /// vector preserves source order so the document builders can assign

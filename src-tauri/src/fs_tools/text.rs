@@ -1,11 +1,11 @@
 //! Plain-text file Tauri commands: read, write, find-and-replace edit.
 //! All three sandbox via `resolve_in_workdir` like every other fs tool.
 
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
+use super::path::{
+    refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir,
+    MAX_TEXT_READ_BYTES, MAX_WRITE_BYTES,
+};
 use tokio::fs;
-
-const MAX_TEXT_READ_BYTES: u64 = 1_048_576; // 1 MB
-const MAX_WRITE_BYTES: usize = 10 * 1_048_576; // 10 MB
 
 #[tauri::command]
 pub async fn fs_read_text(workdir: String, rel_path: String) -> Result<String, String> {
@@ -68,18 +68,7 @@ pub async fn fs_write_text(
 
     // Create parent directories if needed (still within workdir — the
     // sandbox check already verified the full path is inside)
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
-
-    fs::write(&resolved, content)
-        .await
-        .map_err(|e| format!("Failed to write file: {}", e))?;
-    Ok(())
+    write_bytes_to_workdir(&resolved, content.as_bytes()).await
 }
 
 #[tauri::command]

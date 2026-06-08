@@ -136,6 +136,30 @@ pub(super) fn refuse_if_exists(
     Ok(())
 }
 
+/// Shared size caps for the fs_* tools, so the same number isn't redeclared
+/// in every reader/writer module.
+/// In-memory write payload cap (10 MB) — docx / odt / pdf / text writers.
+pub(super) const MAX_WRITE_BYTES: usize = 10 * 1_048_576;
+/// On-disk read cap for the heavier document readers (50 MB) — pdf / docx / xlsx.
+pub(super) const MAX_DOC_READ_BYTES: u64 = 50 * 1_048_576;
+/// On-disk read cap for plain-text reads (1 MB).
+pub(super) const MAX_TEXT_READ_BYTES: u64 = 1_048_576;
+
+/// Create the parent directory if needed, then write `bytes` to `resolved`.
+/// The mkdir-then-write tail every document writer ends with.
+pub(super) async fn write_bytes_to_workdir(resolved: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = resolved.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
+        }
+    }
+    fs::write(resolved, bytes)
+        .await
+        .map_err(|e| format!("Failed to write file: {}", e))
+}
+
 #[tauri::command]
 pub async fn fs_list_dir(workdir: String, rel_path: String) -> Result<DirListing, String> {
     let workdir = workdir_path(&workdir)?;

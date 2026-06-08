@@ -12,6 +12,9 @@ pub mod pptx;
 pub mod text;
 pub mod xlsx;
 
+#[cfg(test)]
+mod test_support;
+
 pub use path::resolve_in_workdir;
 pub use pdf_read::init_pdfium;
 
@@ -174,39 +177,7 @@ mod tests {
         assert!(all_text.contains("link"));
     }
 
-    /// Parse the bytes returned by build_odt / build_ods / build_odp as a
-    /// zip archive and verify the ODF first-entry-stored-mimetype
-    /// invariants: (1) first file is named "mimetype", (2) it uses
-    /// Stored compression, (3) its contents match the expected media
-    /// type for the format. Shared helper for the three ODF tests below.
-    fn assert_odf_mimetype(bytes: &[u8], expected_mime: &str) {
-        let cursor = std::io::Cursor::new(bytes);
-        let mut zip = zip::ZipArchive::new(cursor).expect("valid zip");
-        let mut first = zip.by_index(0).expect("at least one entry");
-        assert_eq!(first.name(), "mimetype", "first entry must be mimetype");
-        assert_eq!(
-            first.compression(),
-            zip::CompressionMethod::Stored,
-            "mimetype must be stored uncompressed"
-        );
-        let mut content = String::new();
-        use std::io::Read;
-        first.read_to_string(&mut content).unwrap();
-        assert_eq!(content, expected_mime);
-    }
-
-    /// Read an entire file out of a zip archive as a UTF-8 string.
-    fn read_zip_entry(bytes: &[u8], name: &str) -> String {
-        let cursor = std::io::Cursor::new(bytes);
-        let mut zip = zip::ZipArchive::new(cursor).expect("valid zip");
-        let mut entry = zip
-            .by_name(name)
-            .unwrap_or_else(|_| panic!("{} missing", name));
-        let mut content = String::new();
-        use std::io::Read;
-        entry.read_to_string(&mut content).unwrap();
-        content
-    }
+    use super::test_support::{assert_odf_mimetype, read_zip_entry, read_zip_entry_bytes};
 
     #[test]
     fn build_odt_produces_valid_odf_zip() {
@@ -572,20 +543,6 @@ mod tests {
         assert!(rels.contains("slideMaster1.xml"));
         assert!(rels.contains("slides/slide1.xml"));
         assert!(rels.contains("slides/slide2.xml"));
-    }
-
-    /// Read a zip entry's raw bytes (used by the image-embedding tests
-    /// to verify binary parts were written verbatim).
-    fn read_zip_entry_bytes(bytes: &[u8], name: &str) -> Vec<u8> {
-        let cursor = std::io::Cursor::new(bytes);
-        let mut zip = zip::ZipArchive::new(cursor).expect("valid zip");
-        let mut entry = zip
-            .by_name(name)
-            .unwrap_or_else(|_| panic!("{} missing", name));
-        let mut out = Vec::new();
-        use std::io::Read;
-        entry.read_to_end(&mut out).unwrap();
-        out
     }
 
     #[test]

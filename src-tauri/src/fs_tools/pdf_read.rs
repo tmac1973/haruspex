@@ -7,12 +7,10 @@
 //! restore visual reading order, which the raw character stream doesn't
 //! guarantee.
 
-use super::path::{resolve_in_workdir, workdir_path};
+use super::path::{resolve_in_workdir, workdir_path, MAX_DOC_READ_BYTES};
 use std::path::Path;
 use std::sync::OnceLock;
 use tokio::fs;
-
-const MAX_PDF_READ_BYTES: u64 = 50 * 1_048_576; // 50 MB
 
 /// Tracks whether pdfium has been successfully bound to its shared library.
 /// Set once at app startup via init_pdfium(). If pdfium is available we use
@@ -220,11 +218,11 @@ pub(super) async fn read_pdf_at_path(resolved: &std::path::Path) -> Result<Strin
         .await
         .map_err(|e| format!("Failed to stat file: {}", e))?;
 
-    if metadata.len() > MAX_PDF_READ_BYTES {
+    if metadata.len() > MAX_DOC_READ_BYTES {
         return Err(format!(
             "PDF too large ({} bytes). Maximum is {} bytes.",
             metadata.len(),
-            MAX_PDF_READ_BYTES
+            MAX_DOC_READ_BYTES
         ));
     }
 
@@ -285,11 +283,11 @@ pub async fn fs_read_pdf_bytes(workdir: String, rel_path: String) -> Result<Stri
         .await
         .map_err(|e| format!("Failed to stat file: {}", e))?;
 
-    if metadata.len() > MAX_PDF_READ_BYTES {
+    if metadata.len() > MAX_DOC_READ_BYTES {
         return Err(format!(
             "PDF too large ({} bytes). Maximum is {} bytes.",
             metadata.len(),
-            MAX_PDF_READ_BYTES
+            MAX_DOC_READ_BYTES
         ));
     }
 
