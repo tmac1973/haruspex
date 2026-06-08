@@ -80,6 +80,7 @@
 	const contextNotice = $derived(session.contextNotice);
 	const searchSteps = $derived(session.searchSteps);
 	const messageSteps = $derived(session.messageSteps);
+	const messageStats = $derived(session.messageStats);
 	const markerCount = $derived(session.integrationMarkerCount);
 	const completedCommands = $derived(session.integrationCompletedCommands);
 	// Three-state badge:
@@ -258,7 +259,7 @@
 						<ChatMessage message={msg} />
 					{/if}
 				{:else}
-					<ChatMessage message={msg} />
+					<ChatMessage message={msg} tokensPerSecond={messageStats[i]?.tokensPerSecond} />
 				{/if}
 			{/each}
 			{#if searchSteps.length > 0}
