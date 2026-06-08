@@ -6,6 +6,7 @@ import { getSettings } from '$lib/stores/settings';
 import { getActiveConversation } from '$lib/stores/chat.svelte';
 import { askApproval } from '$lib/stores/sandboxApproval.svelte';
 import { isAutoApproveActive } from '$lib/stores/approvalOverride';
+import { errMessage } from '$lib/utils/error';
 
 function formatResult(r: ToolResult): string {
 	const lines: string[] = [];
@@ -83,9 +84,7 @@ registerTool({
 					conv.sandboxApproved = true;
 				}
 			} catch (e) {
-				return toolResult(
-					toolError(`Approval prompt failed: ${e instanceof Error ? e.message : String(e)}`)
-				);
+				return toolResult(toolError(`Approval prompt failed: ${errMessage(e)}`));
 			}
 		}
 		// Pre-run lint pass — short-circuits on bug-class issues (undefined
@@ -110,7 +109,7 @@ registerTool({
 			});
 			return { result: formatResult(r), artifacts: r.artifactsList };
 		} catch (e) {
-			return toolResult(toolError(`Sandbox error: ${e instanceof Error ? e.message : String(e)}`));
+			return toolResult(toolError(`Sandbox error: ${errMessage(e)}`));
 		}
 	}
 });
@@ -132,7 +131,7 @@ registerTool({
 			await resetSandbox();
 			return toolResult('Python sandbox reset.');
 		} catch (e) {
-			return toolResult(toolError(`Reset failed: ${e instanceof Error ? e.message : String(e)}`));
+			return toolResult(toolError(`Reset failed: ${errMessage(e)}`));
 		}
 	}
 });
@@ -168,7 +167,7 @@ registerTool({
 			const r = await installPackage(pkg, { timeoutMs });
 			return toolResult(formatResult(r));
 		} catch (e) {
-			return toolResult(toolError(`Install failed: ${e instanceof Error ? e.message : String(e)}`));
+			return toolResult(toolError(`Install failed: ${errMessage(e)}`));
 		}
 	}
 });

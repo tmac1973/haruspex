@@ -32,6 +32,7 @@
 		setActiveLocalModel
 	} from '$lib/stores/settings';
 	import { getDebugLogsForTurn } from '$lib/debug-log';
+	import { createCopyAction } from '$lib/utils/clipboard.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
@@ -40,24 +41,15 @@
 	let autoScroll = $state(true);
 	let showScrollButton = $state(false);
 
-	let copyDebugLogState = $state<'idle' | 'copied' | 'failed'>('idle');
+	const copyDebugLog = createCopyAction();
 
-	async function copyDebugLogForError() {
+	function copyDebugLogForError() {
 		if (errorTurnId == null) return;
-		const lines = getDebugLogsForTurn(errorTurnId);
-		if (lines.length === 0) {
-			copyDebugLogState = 'failed';
-			setTimeout(() => (copyDebugLogState = 'idle'), 1500);
-			return;
-		}
-		try {
-			await navigator.clipboard.writeText(lines.join('\n'));
-			copyDebugLogState = 'copied';
-			setTimeout(() => (copyDebugLogState = 'idle'), 1500);
-		} catch {
-			copyDebugLogState = 'failed';
-			setTimeout(() => (copyDebugLogState = 'idle'), 1500);
-		}
+		copyDebugLog.copy(() => {
+			const lines = getDebugLogsForTurn(errorTurnId!);
+			if (lines.length === 0) throw new Error('no debug logs for this turn');
+			return lines.join('\n');
+		});
 	}
 
 	const activeConversation = $derived(getActiveConversation());
@@ -374,9 +366,9 @@
 								onclick={copyDebugLogForError}
 								title="Copy the debug log for just this failed turn"
 							>
-								{#if copyDebugLogState === 'copied'}
+								{#if copyDebugLog.state === 'copied'}
 									Copied!
-								{:else if copyDebugLogState === 'failed'}
+								{:else if copyDebugLog.state === 'failed'}
 									Nothing to copy
 								{:else}
 									Copy debug log

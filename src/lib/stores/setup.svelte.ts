@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { errMessage } from '$lib/utils/error';
 import {
 	getActiveLocalModelFilename,
 	getSettings,
@@ -296,12 +297,12 @@ export async function runTestQuery(): Promise<void> {
 				testStatusMessage =
 					'The model is responding very slowly. This is normal for integrated graphics — you can skip the test and try chatting normally.';
 			} else {
-				testStatusMessage = `Error: ${e instanceof Error ? e.message : String(e)}`;
+				testStatusMessage = `Error: ${errMessage(e)}`;
 			}
 			testResult = 'error';
 		}
 	} catch (e) {
-		testStatusMessage = `Error: ${e instanceof Error ? e.message : String(e)}`;
+		testStatusMessage = `Error: ${errMessage(e)}`;
 		testResult = 'error';
 	}
 }
