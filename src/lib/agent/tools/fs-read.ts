@@ -8,7 +8,11 @@ import { toolError, toolResult } from './types';
 // the KV cache and crashing llama-server.
 const MAX_PENDING_IMAGES = 6;
 
-// Regex for file extensions we can preview as a thumbnail inline.
+// Regex for file extensions we can preview as a thumbnail inline. This is
+// deliberately BROADER than the document-embed allow-list in Rust
+// (src-tauri/src/fs_tools/images.rs `normalize_image_extension`, which only
+// accepts png/jpg/jpeg/gif): previewing a webp/bmp/ico/tiff is fine, but
+// embedding one into a .pptx/.odp is not.
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|ico|tiff?)$/i;
 export { IMAGE_EXT_RE };
 

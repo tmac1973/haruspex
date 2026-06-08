@@ -18,7 +18,7 @@ use std::time::Duration;
 /// Hard cap on a single fetched response. Generous enough for typical
 /// API responses, small enough to bound runaway downloads.
 const MAX_FETCH_BYTES: usize = 50 * 1_048_576; // 50 MB
-const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+const SANDBOX_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Default, Deserialize)]
 pub struct SandboxFetchInit {
@@ -50,7 +50,7 @@ pub async fn sandbox_fetch(
         .map_err(|e| format!("Invalid HTTP method '{}': {}", method_str, e))?;
 
     let client = apply_proxy(
-        reqwest::Client::builder().timeout(FETCH_TIMEOUT),
+        reqwest::Client::builder().timeout(SANDBOX_FETCH_TIMEOUT),
         proxy.as_ref(),
     )?
     .build()
