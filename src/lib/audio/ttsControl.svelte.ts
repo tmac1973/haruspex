@@ -7,7 +7,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { getSettings } from '$lib/stores/settings';
+import { getSettings, DEFAULT_TTS_VOICE } from '$lib/stores/settings';
 
 let playing = $state(false);
 let initializing = $state(false);
@@ -54,7 +54,7 @@ export async function toggleTts(text: string): Promise<void> {
 		const settings = getSettings();
 		await invoke('tts_synthesize_and_play', {
 			text: trimmed,
-			voice: settings.ttsVoice || undefined,
+			voice: settings.ttsVoice || DEFAULT_TTS_VOICE,
 			outputDevice: settings.audioOutputDevice || undefined
 		});
 		const interval = setInterval(async () => {

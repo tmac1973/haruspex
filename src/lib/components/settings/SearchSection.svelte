@@ -3,6 +3,7 @@
 		getSettings,
 		updateSettings,
 		updateProxy,
+		DEFAULT_SEARXNG_URL,
 		type AppSettings,
 		type SearchProvider,
 		type ProxyMode
@@ -100,7 +101,7 @@
 				type="text"
 				bind:value={searxngUrl}
 				onblur={saveSearxngUrl}
-				placeholder="http://localhost:8080"
+				placeholder={DEFAULT_SEARXNG_URL}
 			/>
 		</div>
 	{/if}

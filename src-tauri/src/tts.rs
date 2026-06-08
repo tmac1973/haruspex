@@ -386,10 +386,11 @@ pub async fn tts_initialize(
 pub async fn tts_synthesize_and_play(
     state: tauri::State<'_, TtsEngine>,
     text: String,
-    voice: Option<String>,
+    // Required: the TS caller always resolves this to `DEFAULT_TTS_VOICE`
+    // before invoking, so there's a single default (audit X5).
+    voice: String,
     output_device: Option<String>,
 ) -> Result<(), String> {
-    let voice = voice.unwrap_or_else(|| "af_heart".to_string());
     state
         .synthesize_and_play(&text, &voice, output_device.as_deref())
         .await

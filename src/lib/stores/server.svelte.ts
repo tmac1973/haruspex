@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { PORTS } from '$lib/ports';
+import { DEFAULT_CONTEXT_SIZE } from '$lib/stores/settings';
 
 /**
  * Server status visible to the UI. The first four mirror the Rust-side
@@ -119,7 +120,7 @@ export async function startServer(
 	try {
 		await invoke('start_server', {
 			modelPath,
-			ctxSize: ctxSize || null,
+			ctxSize: ctxSize ?? DEFAULT_CONTEXT_SIZE,
 			extraArgs: extraArgs || null
 		});
 	} catch (e) {

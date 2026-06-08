@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { type ChatMessage } from '$lib/api';
 import { detectPaywall } from '$lib/agent/paywall';
-import { getSettings } from '$lib/stores/settings';
+import { getSettings, DEFAULT_SEARXNG_URL } from '$lib/stores/settings';
 import { labelArg, proxyFetch, runSubAgent, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolResult } from './types';
@@ -69,7 +69,7 @@ registerTool({
 				query,
 				provider: settings.searchProvider,
 				apiKey: settings.braveApiKey || null,
-				instanceUrl: settings.searxngUrl || null,
+				instanceUrl: settings.searxngUrl || DEFAULT_SEARXNG_URL,
 				recency: settings.searchRecency || null,
 				deepResearch: ctx.deepResearch,
 				proxy: settings.proxy

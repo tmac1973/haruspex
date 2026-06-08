@@ -256,14 +256,22 @@ const defaultProxy: ProxyConfig = {
 	bypass: ''
 };
 
+// Canonical user-facing defaults. These are the single source of truth for
+// values that also have to satisfy a Tauri command on the Rust side: the TS
+// caller always resolves to these before invoking, so the Rust command no
+// longer carries its own divergent fallback literal (audit X4/X5).
+export const DEFAULT_CONTEXT_SIZE = 32768;
+export const DEFAULT_SEARXNG_URL = 'http://localhost:8080';
+export const DEFAULT_TTS_VOICE = 'af_heart';
+
 const defaults: AppSettings = {
 	responseFormat: 'standard',
 	theme: 'system',
-	ttsVoice: 'af_heart',
+	ttsVoice: DEFAULT_TTS_VOICE,
 	searchProvider: 'auto',
 	braveApiKey: '',
-	searxngUrl: 'http://localhost:8080',
-	contextSize: 32768,
+	searxngUrl: DEFAULT_SEARXNG_URL,
+	contextSize: DEFAULT_CONTEXT_SIZE,
 	ttsReadTablesByColumn: true,
 	searchRecency: 'any' as const,
 	audioOutputDevice: '',
