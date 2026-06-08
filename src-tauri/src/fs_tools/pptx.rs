@@ -4,7 +4,7 @@
 //! crate; the slide types are also reused by ODP (`super::odp`) since
 //! both formats accept the same input shape.
 
-use super::images::{load_image_set, LoadedImage};
+use super::images::{build_image_index, load_image_set, ImageIndex, LoadedImage};
 use super::markdown_inline::escape_xml;
 use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir};
 use std::collections::{BTreeSet, HashMap};
@@ -87,47 +87,6 @@ pub struct PptxSlide {
 /// spelling the full generic in every helper signature.
 type Zip<'a> = ZipWriter<Cursor<&'a mut Vec<u8>>>;
 
-/// Stable index assigned to each unique image referenced across the
-/// deck. Built once up front so the slide rels writer and the media
-/// writer can agree on filenames.
-struct ImageIndex<'a> {
-    /// Image paths in first-appearance order — `image{i+1}.{ext}` is
-    /// the resulting media filename.
-    ordered: Vec<&'a String>,
-    /// Map from slide-declared relative path → 1-based media index.
-    by_path: HashMap<&'a String, usize>,
-    /// Unique image extensions actually used, sorted for deterministic
-    /// `[Content_Types].xml` output.
-    unique_exts: BTreeSet<&'a str>,
-}
-
-fn build_image_index<'a>(
-    slides: &'a [PptxSlide],
-    images: &'a HashMap<String, LoadedImage>,
-) -> ImageIndex<'a> {
-    let mut ordered: Vec<&'a String> = Vec::new();
-    let mut by_path: HashMap<&'a String, usize> = HashMap::new();
-    for slide in slides {
-        if let Some(path) = &slide.image {
-            if !by_path.contains_key(path) {
-                by_path.insert(path, ordered.len() + 1);
-                ordered.push(path);
-            }
-        }
-    }
-    let mut unique_exts: BTreeSet<&'a str> = BTreeSet::new();
-    for path in &ordered {
-        if let Some(img) = images.get(*path) {
-            unique_exts.insert(img.extension.as_str());
-        }
-    }
-    ImageIndex {
-        ordered,
-        by_path,
-        unique_exts,
-    }
-}
-
 fn write_part(
     zip: &mut Zip<'_>,
     name: &str,
@@ -148,20 +107,7 @@ fn write_content_types(
     exts: &BTreeSet<&str>,
     slide_count: usize,
 ) -> Result<(), String> {
-    let mut content_types = String::from(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-"#,
-    );
-    for ext in exts {
-        content_types.push_str(&format!(
-            r#"<Default Extension="{}" ContentType="image/{}"/>
-"#,
-            ext, ext
-        ));
-    }
+    let mut content_types = super::ooxml::content_types_prologue(exts);
     content_types.push_str(
         r#"<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
 <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
@@ -186,10 +132,7 @@ fn write_root_rels(zip: &mut Zip<'_>, opts: SimpleFileOptions) -> Result<(), Str
         zip,
         "_rels/.rels",
         opts,
-        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
-</Relationships>"#,
+        super::ooxml::root_rels("ppt/presentation.xml").as_bytes(),
     )
 }
 
@@ -618,7 +561,7 @@ pub(super) fn build_pptx(
         return Err("At least one slide is required".to_string());
     }
 
-    let index = build_image_index(slides, images);
+    let index = build_image_index(slides.iter().filter_map(|s| s.image.as_ref()), images);
 
     let mut buf = Vec::new();
     {

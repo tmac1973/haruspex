@@ -3,7 +3,7 @@
 //! — but writes ODF zip packaging with the first-entry-stored-mimetype
 //! convention LibreOffice Impress expects.
 
-use super::images::{load_image_set, LoadedImage};
+use super::images::{build_image_index, load_image_set, ImageIndex, LoadedImage};
 use super::markdown_inline::escape_xml;
 use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir};
 use super::pptx::{PptxLayout, PptxSlide};
@@ -16,7 +16,6 @@ pub(super) fn build_odp(
     images: &std::collections::HashMap<String, LoadedImage>,
 ) -> Result<Vec<u8>, String> {
     use std::io::Write;
-    use zip::write::SimpleFileOptions;
 
     if slides.is_empty() {
         return Err("At least one slide is required".to_string());
@@ -25,25 +24,16 @@ pub(super) fn build_odp(
     // Assign a stable index to each unique image path — same logic as
     // build_pptx. ODP puts the media files under Pictures/ and references
     // them by relative path in content.xml and manifest.xml.
-    let mut ordered_image_paths: Vec<&String> = Vec::new();
-    let mut image_index: std::collections::HashMap<&String, usize> =
-        std::collections::HashMap::new();
-    for slide in slides {
-        if let Some(path) = &slide.image {
-            if !image_index.contains_key(path) {
-                image_index.insert(path, ordered_image_paths.len() + 1);
-                ordered_image_paths.push(path);
-            }
-        }
-    }
+    let ImageIndex {
+        ordered: ordered_image_paths,
+        by_path: image_index,
+        ..
+    } = build_image_index(slides.iter().filter_map(|s| s.image.as_ref()), images);
 
     let mut buf = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-        let stored =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        let deflated =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let (stored, deflated) = super::odf::odf_options();
 
         // 1) mimetype — STORED, first entry
         zip.start_file("mimetype", stored)
@@ -83,13 +73,8 @@ pub(super) fn build_odp(
         // 3) meta.xml
         zip.start_file("meta.xml", deflated)
             .map_err(|e| e.to_string())?;
-        zip.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
-<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" office:version="1.2">
-<office:meta><meta:generator>Haruspex</meta:generator></office:meta>
-</office:document-meta>"#,
-        )
-        .map_err(|e| e.to_string())?;
+        zip.write_all(super::odf::ODF_META_XML)
+            .map_err(|e| e.to_string())?;
 
         // 4) styles.xml — widescreen page layout + master page. Body
         //    paragraph styles are defined in content.xml's automatic

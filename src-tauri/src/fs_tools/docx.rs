@@ -3,7 +3,8 @@
 //! preprocessing comes from `super::markdown_inline`.
 
 use super::images::{
-    fit_image_emu, image_pixel_dimensions, load_markdown_images, px_to_emu, LoadedImage,
+    build_image_index, fit_image_emu, image_pixel_dimensions, load_markdown_images, px_to_emu,
+    ImageIndex, LoadedImage,
 };
 use super::markdown_inline::{
     escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
@@ -97,25 +98,21 @@ pub(super) fn build_docx(
     paragraphs: &[&str],
     images: &std::collections::HashMap<String, LoadedImage>,
 ) -> Result<Vec<u8>, String> {
-    use std::collections::BTreeSet;
     use std::io::Write;
     use zip::write::SimpleFileOptions;
 
     // Walk paragraphs once to assign stable media indices to each unique
     // image path. Duplicate paths share a single word/media/imageN.{ext}.
-    let mut ordered_image_paths: Vec<&String> = Vec::new();
-    let mut image_index: std::collections::HashMap<&String, usize> =
-        std::collections::HashMap::new();
-    for para in paragraphs {
-        if let Some((path, _)) = parse_standalone_image_line(para) {
-            if let Some(loaded_path) = images.keys().find(|k| **k == path) {
-                if !image_index.contains_key(loaded_path) {
-                    image_index.insert(loaded_path, ordered_image_paths.len() + 1);
-                    ordered_image_paths.push(loaded_path);
-                }
-            }
-        }
-    }
+    let ImageIndex {
+        ordered: ordered_image_paths,
+        by_path: image_index,
+        unique_exts,
+    } = build_image_index(
+        paragraphs.iter().filter_map(|p| {
+            parse_standalone_image_line(p).and_then(|(path, _)| images.keys().find(|k| **k == path))
+        }),
+        images,
+    );
     // Decode pixel dimensions for each image once. Each image's natural EMU
     // size lives here; the per-paragraph rendering loop applies per-image
     // ImageOptions (alignment, width%) on top of these natural dimensions.
@@ -128,12 +125,6 @@ pub(super) fn build_docx(
         let (px_w, px_h) = image_pixel_dimensions(&img.bytes)?;
         natural_emu.insert(*path, (px_to_emu(px_w), px_to_emu(px_h)));
     }
-    let mut unique_exts: BTreeSet<&str> = BTreeSet::new();
-    for path in &ordered_image_paths {
-        if let Some(img) = images.get(*path) {
-            unique_exts.insert(img.extension.as_str());
-        }
-    }
 
     let mut buf = Vec::new();
     {
@@ -141,22 +132,9 @@ pub(super) fn build_docx(
         let options =
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-        // [Content_Types].xml — adds Default entries for any image
-        // extensions actually used.
-        let mut content_types = String::from(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-"#,
-        );
-        for ext in &unique_exts {
-            content_types.push_str(&format!(
-                r#"<Default Extension="{}" ContentType="image/{}"/>
-"#,
-                ext, ext
-            ));
-        }
+        // [Content_Types].xml — shared prologue + Default entries for any
+        // image extensions used, then the docx body Override.
+        let mut content_types = super::ooxml::content_types_prologue(&unique_exts);
         content_types.push_str(
             r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
 </Types>"#,
@@ -169,13 +147,8 @@ pub(super) fn build_docx(
         // _rels/.rels — package-level relationship to the main document.
         zip.start_file("_rels/.rels", options)
             .map_err(|e| e.to_string())?;
-        zip.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>"#,
-        )
-        .map_err(|e| e.to_string())?;
+        zip.write_all(super::ooxml::root_rels("word/document.xml").as_bytes())
+            .map_err(|e| e.to_string())?;
 
         // word/_rels/document.xml.rels — only emitted when there's at
         // least one image to reference. Word tolerates a missing file
