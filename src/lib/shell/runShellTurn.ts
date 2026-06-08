@@ -33,6 +33,7 @@ export interface ShellTurnOptions {
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
 	onAssistantDelta?: (full: string) => void;
+	onCallStats?: (stats: { durationMs: number; completionTokens: number }) => void;
 	onContextManaged?: (info: ContextManagedInfo) => void;
 	onToolStart?: (call: ResolvedToolCall) => void;
 	onToolEnd?: (
@@ -83,6 +84,7 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 		visionSupported: options.visionSupported ?? true,
 		signal: options.signal,
 		onUsageUpdate: (usage) => updateContextUsage(usage, options.contextSize),
+		onCallStats: (stats) => options.onCallStats?.(stats),
 		onContextManaged: (info) => options.onContextManaged?.(info),
 		onToolStart: (call) => options.onToolStart?.(call),
 		onToolEnd: (call, result, thumbDataUrl, artifacts) =>

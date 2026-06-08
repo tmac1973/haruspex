@@ -24,6 +24,7 @@ import { getDisplayLabel } from '$lib/agent/tools';
 import { describeContextManaged } from '$lib/agent/context-budget';
 import { logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
+import { computeMessageStats, type MessageStats } from '$lib/stores/chat.svelte';
 import { buildShellSystemPrompt, type ShellSessionContext } from '$lib/shell/system-prompt';
 import { runShellTurn } from '$lib/shell/runShellTurn';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
@@ -119,6 +120,9 @@ export class ShellSession {
 	composerFocused = $state(false);
 	searchSteps = $state<SearchStep[]>([]);
 	messageSteps = $state<Record<number, SearchStep[]>>({});
+	// Per-assistant-message tok/s timing, keyed by message index — drives the
+	// generation-speed footer in the sidebar, mirroring the chat tab.
+	messageStats = $state<Record<number, MessageStats>>({});
 	// Transient notice when the pre-send guard reduced history to fit the
 	// model's context window. Cleared at the start of each turn.
 	contextNotice = $state<string | null>(null);
@@ -237,6 +241,7 @@ export class ShellSession {
 		this.streamingContent = '';
 		this.searchSteps = [];
 		this.messageSteps = {};
+		this.messageStats = {};
 		this.lastError = null;
 		this.contextNotice = null;
 	};
@@ -376,6 +381,11 @@ export class ShellSession {
 
 		this.abortController = new AbortController();
 
+		// Tok/s timing: the agent loop emits per-call stats via onCallStats; the
+		// final answer is the last call, so keep overwriting and read it back
+		// once the turn completes.
+		let lastCallStats: { durationMs: number; completionTokens: number } | null = null;
+
 		try {
 			const result = await runShellTurn({
 				messages: turnMessages,
@@ -387,6 +397,7 @@ export class ShellSession {
 				onTicket: (t) => (this.ticket = t),
 				onAdmitted: () => (this.ticket = null),
 				onAssistantDelta: (full) => (this.streamingContent = full),
+				onCallStats: (stats) => (lastCallStats = stats),
 				onContextManaged: (info) => (this.contextNotice = describeContextManaged(info)),
 				onToolStart: (call) => {
 					this.searchSteps = [
@@ -418,6 +429,10 @@ export class ShellSession {
 			// shows what tools ran for each turn after the live row clears.
 			if (this.searchSteps.length > 0) {
 				this.messageSteps = { ...this.messageSteps, [assistantIndex]: this.searchSteps };
+			}
+			const stats = computeMessageStats(lastCallStats);
+			if (stats) {
+				this.messageStats = { ...this.messageStats, [assistantIndex]: stats };
 			}
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e);

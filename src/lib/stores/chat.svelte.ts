@@ -101,6 +101,23 @@ export interface MessageStats {
 	durationMs: number;
 }
 
+/**
+ * Turn one LLM call's timing into the per-message tok/s stats shown in the
+ * thread footer. Shared by the chat store and the shell session so both tabs
+ * compute the rate identically. Returns null when the call lacks usable
+ * timing (no completion tokens or zero duration).
+ */
+export function computeMessageStats(
+	s: { durationMs: number; completionTokens: number } | null
+): MessageStats | null {
+	if (!s || s.completionTokens <= 0 || s.durationMs <= 0) return null;
+	return {
+		tokensPerSecond: s.completionTokens / (s.durationMs / 1000),
+		completionTokens: s.completionTokens,
+		durationMs: s.durationMs
+	};
+}
+
 const WORKING_DIR_KEY = 'haruspex-working-dir';
 
 function loadWorkingDir(): string | null {
@@ -649,13 +666,7 @@ interface TurnStats {
 }
 
 function computeStats(stats: TurnStats): MessageStats | null {
-	const s = stats.lastCallStats;
-	if (!s || s.completionTokens <= 0 || s.durationMs <= 0) return null;
-	return {
-		tokensPerSecond: s.completionTokens / (s.durationMs / 1000),
-		completionTokens: s.completionTokens,
-		durationMs: s.durationMs
-	};
+	return computeMessageStats(stats.lastCallStats);
 }
 
 /**
