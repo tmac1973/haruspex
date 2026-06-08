@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { openFeedbackIssue, saveFullDiagnostics } from '$lib/feedback';
+	import { errMessage } from '$lib/utils/error';
 
 	type Status =
 		| { kind: 'idle' }
@@ -21,7 +22,7 @@
 		} catch (err) {
 			status = {
 				kind: 'error',
-				message: `Failed to open feedback issue: ${err instanceof Error ? err.message : String(err)}`
+				message: `Failed to open feedback issue: ${errMessage(err)}`
 			};
 		}
 	}
@@ -38,7 +39,7 @@
 		} catch (err) {
 			status = {
 				kind: 'error',
-				message: `Failed to save diagnostics: ${err instanceof Error ? err.message : String(err)}`
+				message: `Failed to save diagnostics: ${errMessage(err)}`
 			};
 		}
 	}
