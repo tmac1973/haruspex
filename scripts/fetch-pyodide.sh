@@ -15,6 +15,18 @@
 
 set -e
 
+# Resolve a Python interpreter for the JSON-parsing helpers below. Dev
+# machines and macOS/Linux CI have `python3`; Windows Git Bash often only
+# exposes `python`. Either works — both helpers are plain stdlib json.
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+else
+    echo "ERROR: need python3 (or python) on PATH to resolve wheel metadata" >&2
+    exit 1
+fi
+
 PYODIDE_VERSION="0.29.4"
 
 # Pure-Python wheels for offline document generation. Pillow / lxml /
@@ -132,7 +144,7 @@ else
         # python_pptx → python-pptx for the API; underscores stay valid too.
         pkg_url_name="${pkg//_/-}"
         json=$(curl -fsSL "https://pypi.org/pypi/${pkg_url_name}/json")
-        file_url=$(echo "$json" | python3 -c "
+        file_url=$(echo "$json" | "$PYTHON_BIN" -c "
 import json, sys
 data = json.load(sys.stdin)
 target = '$wheel'
@@ -181,4 +193,69 @@ else
     echo "$WORKSPACE_WHEELS_VERSION" > "$WORKSPACE_WHEELS_MARKER"
     total_mb=$((total_bytes / 1024 / 1024))
     echo "   Installed ${#WORKSPACE_WHEELS[@]} workspace wheels (~${total_mb} MB) to static/pyodide/"
+fi
+
+# --- Chat sandbox scientific stack (matplotlib, scipy, sympy, scikit-learn,
+#     beautifulsoup4, lxml + full transitive deps) ---
+# The chat run_python worker sets indexURL='/pyodide/' and pre-loads this
+# stack at boot, so vendoring the wheels here makes the common scientific
+# imports instant and fully offline instead of a multi-MB CDN download
+# under the run timeout. Anything NOT vendored still resolves: the worker's
+# local-first fetch shim falls back to the CDN on a local miss.
+#
+# The dependency closure is derived from the bundled pyodide-lock.json so
+# it stays correct across PYODIDE_VERSION bumps — bump CHAT_STACK_VERSION
+# (or the top-level list) to force a re-resolve. Only wheels not already on
+# disk (e.g. numpy/pandas pulled by the workspace set) are downloaded.
+CHAT_STACK_VERSION="1"
+CHAT_STACK_TOP=(matplotlib scipy sympy scikit-learn beautifulsoup4 lxml)
+CHAT_STACK_MARKER="$DEST_DIR/.haruspex-chat-stack-version"
+LOCK_FILE="$DEST_DIR/pyodide-lock.json"
+
+if [ -f "$CHAT_STACK_MARKER" ] && [ "$(cat "$CHAT_STACK_MARKER")" = "$CHAT_STACK_VERSION" ]; then
+    echo ">> Chat sandbox stack v$CHAT_STACK_VERSION already present at static/pyodide/"
+elif [ ! -f "$LOCK_FILE" ]; then
+    echo "   ERROR: $LOCK_FILE missing — cannot resolve the chat sandbox stack"
+    exit 1
+else
+    echo ">> Resolving chat sandbox stack (matplotlib, scipy, sympy, scikit-learn, deps) from pyodide-lock.json..."
+    rm -f "$CHAT_STACK_MARKER"
+    # Resolve the transitive closure to a newline-separated list of wheel
+    # filenames using the local lock file.
+    closure_files=$(LOCK_FILE="$LOCK_FILE" "$PYTHON_BIN" -c "
+import json, os, sys
+lock = json.load(open(os.environ['LOCK_FILE']))
+byname = {v['name'].lower(): v for v in lock['packages'].values()}
+seen, out, stack = set(), [], [n.lower() for n in sys.argv[1:]]
+while stack:
+    n = stack.pop()
+    if n in seen:
+        continue
+    seen.add(n)
+    v = byname.get(n)
+    if not v:
+        sys.stderr.write('   WARNING: %s not in pyodide-lock.json — skipping\n' % n)
+        continue
+    out.append(v['file_name'])
+    stack.extend(d.lower() for d in v.get('depends', []))
+print('\n'.join(sorted(set(out))))
+" "${CHAT_STACK_TOP[@]}")
+
+    cdn_base="https://cdn.jsdelivr.net/pyodide/v$PYODIDE_VERSION/full"
+    new_count=0
+    total_bytes=0
+    for wheel in $closure_files; do
+        if [ -f "$DEST_DIR/$wheel" ]; then
+            echo "   $wheel (cached)"
+        else
+            echo "   $wheel"
+            curl -fsSL -o "$DEST_DIR/$wheel" "$cdn_base/$wheel"
+            new_count=$((new_count + 1))
+        fi
+        size=$(stat -c %s "$DEST_DIR/$wheel" 2>/dev/null || stat -f %z "$DEST_DIR/$wheel")
+        total_bytes=$((total_bytes + size))
+    done
+    echo "$CHAT_STACK_VERSION" > "$CHAT_STACK_MARKER"
+    total_mb=$((total_bytes / 1024 / 1024))
+    echo "   Chat sandbox stack ready (${new_count} new, ~${total_mb} MB total) in static/pyodide/"
 fi

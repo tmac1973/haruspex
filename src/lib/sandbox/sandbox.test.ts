@@ -306,6 +306,87 @@ describe('WorkerManager', () => {
 		vi.useRealTimers();
 	});
 
+	it('pauses the execution timeout while the worker is installing packages', async () => {
+		vi.useFakeTimers();
+		manager = new WorkerManager(
+			() => {
+				const w = new MockWorker();
+				lastWorker = w;
+				return w as unknown as Worker;
+			},
+			{ isIsolated: () => false }
+		);
+		const promise = manager.runPython('import plotly', { timeoutMs: 100 });
+		await vi.advanceTimersByTimeAsync(0);
+		const w = lastWorker as unknown as MockWorker;
+		const { id } = findRunMessage(w);
+		// Worker enters its install phase before the 100ms exec budget elapses.
+		w.deliver({ kind: 'pkg_phase_start', id });
+		// Well past the execution timeout — but it's paused, so no terminate.
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(w.terminated).toBe(false);
+		w.deliver({ kind: 'done', id, result: makeOkResult({ result: 'ok' }) });
+		await expect(promise).resolves.toMatchObject({ result: 'ok' });
+		vi.useRealTimers();
+	});
+
+	it('re-arms the execution timeout once the worker starts executing', async () => {
+		vi.useFakeTimers();
+		manager = new WorkerManager(
+			() => {
+				const w = new MockWorker();
+				lastWorker = w;
+				return w as unknown as Worker;
+			},
+			{ isIsolated: () => false }
+		);
+		const promise = manager.runPython('import plotly; hang()', { timeoutMs: 100 });
+		const rejection = expect(promise).rejects.toThrow(/timeout/i);
+		await vi.advanceTimersByTimeAsync(0);
+		const w = lastWorker as unknown as MockWorker;
+		const { id } = findRunMessage(w);
+		w.deliver({ kind: 'pkg_phase_start', id });
+		await vi.advanceTimersByTimeAsync(5_000); // install — no timeout
+		expect(w.terminated).toBe(false);
+		// Install done, user code now runs and hangs.
+		w.deliver({ kind: 'exec_start', id });
+		await vi.advanceTimersByTimeAsync(150); // past the re-armed 100ms budget
+		expect(w.terminated).toBe(true);
+		await rejection;
+		vi.useRealTimers();
+	});
+
+	it('forwards install progress to the onInstall callback', async () => {
+		const events: Array<{ pkg: string; phase: string }> = [];
+		const promise = manager.runPython('import plotly', {
+			onInstall: (pkg, phase) => events.push({ pkg, phase })
+		});
+		await flush(() => lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false);
+		const w = lastWorker as unknown as MockWorker;
+		const { id } = findRunMessage(w);
+		w.deliver({ kind: 'pkg_phase_start', id });
+		w.deliver({ kind: 'install_progress', id, package: 'plotly', phase: 'downloading' });
+		expect(events).toEqual([{ pkg: 'plotly', phase: 'downloading' }]);
+		w.deliver({ kind: 'done', id, result: makeOkResult() });
+		await promise;
+	});
+
+	it('terminates a run whose package install stalls with no progress', async () => {
+		vi.useFakeTimers();
+		const promise = manager.runPython('import plotly', { timeoutMs: 100 });
+		const rejection = expect(promise).rejects.toThrow(/install|stall/i);
+		await vi.advanceTimersByTimeAsync(0);
+		const w = lastWorker as unknown as MockWorker;
+		const { id } = findRunMessage(w);
+		w.deliver({ kind: 'pkg_phase_start', id });
+		// No further install_progress arrives — the stall watchdog eventually
+		// fires (INSTALL_TIMEOUT_MS = 180s) and terminates the worker.
+		await vi.advanceTimersByTimeAsync(180_000 + 100);
+		expect(w.terminated).toBe(true);
+		await rejection;
+		vi.useRealTimers();
+	});
+
 	it('accumulates streamed artifacts and attaches them to the run result', async () => {
 		const promise = manager.runPython('plt.show()');
 		await flush(() => lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false);

@@ -25,8 +25,12 @@ ensure-resource-dirs:
 		touch src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder; \
 	fi
 
+.PHONY: ensure-pyodide
+ensure-pyodide: ## Vendor the Pyodide runtime + wheels into static/pyodide/
+	@./scripts/fetch-pyodide.sh
+
 .PHONY: app
-app: ensure-resource-dirs ## Build the Tauri app (requires sidecars)
+app: ensure-resource-dirs ensure-pyodide ## Build the Tauri app (requires sidecars)
 	npm ci
 ifeq ($(OS),Windows_NT)
 	source scripts/msvc-path-fix.sh && npm run tauri build -- --bundles nsis,msi $(TAURI_ARGS)
@@ -67,7 +71,7 @@ ensure-sidecars: ## Check that all sidecar binaries are built
 	fi
 
 .PHONY: dev
-dev: ensure-sidecars ## Run the app in dev mode
+dev: ensure-sidecars ensure-pyodide ## Run the app in dev mode
 	GDK_BACKEND=x11 npm run tauri dev; stty sane
 
 .PHONY: check

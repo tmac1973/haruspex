@@ -53,6 +53,14 @@ export interface ToolContext {
 	 * commands. Off by default; the user opts in via Settings → Shell.
 	 */
 	shellAllowWrite: boolean;
+	/**
+	 * Optional progress channel for long-running tools. The agent loop
+	 * wires this to the currently-running tool card so a tool can surface
+	 * transient status (e.g. run_python reporting "Installing plotly…"
+	 * while a package downloads). Cleared automatically when the tool
+	 * finishes. No-op if the caller doesn't provide it.
+	 */
+	onProgress?: (status: string) => void;
 }
 
 /**

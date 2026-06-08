@@ -700,6 +700,13 @@ async def _haruspex_auto_install_missing(code):
     _installed_any = False
     for name in missing:
         try:
+            # Announce before the (possibly slow) download so the UI shows
+            # "Installing <name>…" and the install watchdog — not the
+            # execution timeout — governs the wait.
+            try:
+                _haruspex_install_status(name, 'downloading')
+            except Exception:
+                pass
             await _micropip.install(name)
             print('[haruspex] auto-installed ' + name, file=_sys_for_auto.stderr)
             _installed_any = True
@@ -722,18 +729,77 @@ function post(msg: WorkerToMain) {
 	self.postMessage(msg);
 }
 
+// --- Run-phase signals for the manager's split install/exec budget. ---
+// The manager pauses the execution timeout while a run is in its package
+// phase and arms a separate install watchdog instead, so a slow first-
+// import download doesn't read as "your code hung". These are no-ops
+// outside an active run (currentRunId === '').
+function postPkgPhaseStart(): void {
+	if (currentRunId) post({ kind: 'pkg_phase_start', id: currentRunId });
+}
+function postExecStart(): void {
+	if (currentRunId) post({ kind: 'exec_start', id: currentRunId });
+}
+function postInstallProgress(
+	packageName: string,
+	phase: 'resolving' | 'downloading' | 'installing'
+): void {
+	if (currentRunId)
+		post({ kind: 'install_progress', id: currentRunId, package: packageName, phase });
+}
+
+// Pyodide distribution version — must match the npm `pyodide` package
+// (see package.json) and the version vendored by scripts/fetch-pyodide.sh.
+const PYODIDE_VERSION = '0.29.4';
+const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+
+/**
+ * Serve Pyodide's runtime assets (core .wasm, stdlib zip, lock file, and
+ * package wheels) from the app's bundled static/pyodide/ directory, with
+ * a transparent fall-through to the CDN for anything not vendored.
+ *
+ * loadPyodide / loadPackage / loadPackagesFromImports all ultimately call
+ * the worker's global fetch, so wrapping it here catches EVERY package
+ * load path — not just the ones we call explicitly. The bundled common
+ * stack (numpy, pandas, scipy, scikit-learn, matplotlib, sympy, …) loads
+ * locally and instantly; an exotic lockfile package we didn't vendor 404s
+ * locally and is refetched from the CDN, so flipping indexURL to local is
+ * a pure win with no regression. (micropip's PyPI installs hit PyPI
+ * directly and are unaffected by indexURL / this shim.)
+ */
+function installLocalFirstFetch(): void {
+	const localPrefix = new URL('/pyodide/', self.location.origin).href;
+	const orig = self.fetch.bind(self);
+	self.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+		const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+		if (!url || !url.startsWith(localPrefix)) return orig(input, init);
+		try {
+			const resp = await orig(input, init);
+			if (resp.ok) return resp;
+		} catch {
+			// fall through to the CDN
+		}
+		// Local miss — refetch the same asset from the Pyodide CDN. The
+		// wheels/ subdir is doc-creation wheels only (always vendored), so
+		// the fallback realistically only fires for root-level wheels.
+		const filename = url.slice(localPrefix.length);
+		return orig(PYODIDE_CDN + filename, init);
+	};
+}
+
 async function init(): Promise<void> {
 	if (initStarted) return;
 	initStarted = true;
 	try {
-		// loadPyodide comes from the npm package; everything it pulls at
-		// runtime (core .wasm, stdlib zip, lock file, packages installed
-		// via micropip) lives at the Pyodide CDN. The version path here
-		// must match the npm package version (see package.json).
-		// Network is required on first run; the browser caches all of
-		// this for subsequent runs.
+		// loadPyodide comes from the npm package; the assets it pulls at
+		// runtime (core .wasm, stdlib zip, lock file, package wheels) are
+		// served from the bundled static/pyodide/ directory via the
+		// local-first fetch shim below, falling back to the CDN for
+		// anything not vendored. SvelteKit serves static/ at the origin
+		// root under both `npm run dev` and Tauri prod.
+		installLocalFirstFetch();
 		pyodide = await loadPyodide({
-			indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.29.4/full/'
+			indexURL: new URL('/pyodide/', self.location.origin).href
 		});
 		// micropip ships as a loadable package, not part of the stdlib —
 		// pre-load it so install_package() can pyimport it without an
@@ -941,6 +1007,16 @@ async function init(): Promise<void> {
 				});
 			}
 		);
+		// Bridge so the Python auto-install loop can announce which package
+		// it's about to download — surfaces as "Installing X…" on the
+		// running tool card and refreshes the manager's install watchdog.
+		pyodide.globals.set('_haruspex_install_status', (pkg: unknown, phase: unknown) => {
+			const ph = String(phase ?? 'downloading');
+			postInstallProgress(
+				String(pkg),
+				ph === 'resolving' || ph === 'installing' ? ph : 'downloading'
+			);
+		});
 		// Ask main for the current proxy mode so the init script can decide
 		// whether to install the urllib/requests/httpx → pyfetch bridge
 		// (pyodide-http). When a proxy is configured, we deliberately leave
@@ -1093,6 +1169,7 @@ async function installIntoPyodide(
 	log: (msg: string) => void
 ): Promise<void> {
 	pyodide.globals.set('_haruspex_retry_pkg', pkg);
+	postInstallProgress(pkg, 'downloading');
 	await pyodide.runPythonAsync('import micropip as _mp; await _mp.install(_haruspex_retry_pkg)');
 	log(`[haruspex] auto-installed ${pkg}\n`);
 	await pyodide.runPythonAsync(
@@ -1144,6 +1221,8 @@ async function runWithImportRetry(
 	const tried = new Set<string>();
 	for (let round = 0; round < MAX_INSTALL_ROUNDS; round++) {
 		try {
+			// Entering user-code execution: (re)arm the execution timeout.
+			postExecStart();
 			return await pyodide.runPythonAsync(code);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -1152,6 +1231,9 @@ async function runWithImportRetry(
 			if (tried.has(pkg)) throw err;
 			tried.add(pkg);
 			try {
+				// Back into the install phase: pause the execution timeout
+				// while we download the missing transitive dependency.
+				postPkgPhaseStart();
 				await installIntoPyodide(pyodide, pkg, log);
 				await clearFailedImports(pyodide, code);
 			} catch {
@@ -1160,6 +1242,7 @@ async function runWithImportRetry(
 		}
 	}
 	// Last attempt — let the error bubble normally.
+	postExecStart();
 	return pyodide.runPythonAsync(code);
 }
 
@@ -1207,6 +1290,11 @@ async function handleRun(id: string, code: string): Promise<void> {
 	currentStderr = '';
 	const t0 = performance.now();
 	try {
+		// Enter the package-resolution phase: the manager pauses the
+		// execution timeout here and runs the install watchdog instead, so
+		// loadPackagesFromImports + the auto-install pass below can take as
+		// long as the downloads need without tripping the run budget.
+		postPkgPhaseStart();
 		await pyodide.loadPackagesFromImports(code);
 		// Auto-install PyPI packages the user code imports but that
 		// aren't in Pyodide's lockfile (so loadPackagesFromImports
@@ -1285,6 +1373,10 @@ async function handleInstall(id: string, packageName: string): Promise<void> {
 		return;
 	}
 	const t0 = performance.now();
+	currentRunId = id;
+	// The whole call is an install — pause the execution timeout for its
+	// duration and let the install watchdog govern instead.
+	post({ kind: 'pkg_phase_start', id });
 	post({ kind: 'install_progress', id, package: packageName, phase: 'resolving' });
 	try {
 		const micropip = pyodide.pyimport('micropip');
@@ -1301,6 +1393,8 @@ async function handleInstall(id: string, packageName: string): Promise<void> {
 			id,
 			result: emptyResult(Math.round(performance.now() - t0), message)
 		});
+	} finally {
+		currentRunId = '';
 	}
 }
 

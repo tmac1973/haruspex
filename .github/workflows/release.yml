@@ -174,6 +174,7 @@ jobs:
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev \
             libvulkan-dev glslc libsonic-dev libpcaudio-dev libssl-dev \
             libfuse2t64 \
+            python3 \
             file patchelf desktop-file-utils librsvg2-bin libglib2.0-bin
 
       - name: Install macOS dependencies
@@ -230,6 +231,14 @@ jobs:
           cp "$FOUND" "$DEST"
           chmod +x "$DEST"
           rm -rf "$TMP"
+
+      # Vendor the Pyodide runtime + wheels into static/pyodide/ (gitignored,
+      # so absent on a fresh checkout). vite build copies static/ verbatim,
+      # so without this the shipped app has no local Pyodide assets and the
+      # Python sandbox falls back to the CDN at runtime for everything.
+      - name: Vendor Pyodide runtime + wheels
+        shell: bash
+        run: ./scripts/fetch-pyodide.sh
 
       - name: Build app
         shell: bash
