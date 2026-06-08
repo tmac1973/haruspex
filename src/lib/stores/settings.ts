@@ -223,6 +223,14 @@ export interface AppSettings {
 	 * Shell mode regardless of this flag.
 	 */
 	shellAllowWrite: boolean;
+	/**
+	 * Whether clicking "Run" on an assistant-suggested command in the
+	 * Shell tab automatically sends the command's output back to the
+	 * assistant for analysis once it finishes. On by default. When off,
+	 * Run just executes the command in the terminal and stops there —
+	 * the user decides whether to ask the assistant about the result.
+	 */
+	shellRunAutoSubmit: boolean;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -275,7 +283,8 @@ const defaults: AppSettings = {
 	shellHistoryTurnsForPrompt: 3,
 	shellMaxBytesPerCapture: 8192,
 	shellSidebarWidth: 480,
-	shellAllowWrite: false
+	shellAllowWrite: false,
+	shellRunAutoSubmit: true
 };
 
 function load(): AppSettings {

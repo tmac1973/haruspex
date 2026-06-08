@@ -51,28 +51,138 @@ function renderShellHeaderExtras(text: string): string {
 	return `${chips}${pasteBtn}${runBtn}`;
 }
 
+function renderCodeBlock(text: string, lang: string | undefined, showLangLabel: boolean): string {
+	const language = lang && hljs.getLanguage(lang) ? lang : undefined;
+	const highlighted = language ? hljs.highlight(text, { language }).value : escapeHtml(text);
+
+	const langLabel =
+		showLangLabel && lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : '';
+	const shellExtras = lang && SHELL_LANGS.has(lang) ? renderShellHeaderExtras(text) : '';
+
+	return `<div class="code-block">
+		<div class="code-header">
+			${langLabel}
+			<div class="code-actions">
+				${shellExtras}
+				<button class="copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').textContent)">Copy</button>
+			</div>
+		</div>
+		<pre><code class="${language ? `hljs language-${language}` : ''}">${highlighted}</code></pre>
+	</div>`;
+}
+
 const marked = new Marked({
 	renderer: {
 		code({ text, lang }: { text: string; lang?: string }) {
-			const language = lang && hljs.getLanguage(lang) ? lang : undefined;
-			const highlighted = language ? hljs.highlight(text, { language }).value : escapeHtml(text);
-
-			const langLabel = lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : '';
-			const shellExtras = lang && SHELL_LANGS.has(lang) ? renderShellHeaderExtras(text) : '';
-
-			return `<div class="code-block">
-				<div class="code-header">
-					${langLabel}
-					<div class="code-actions">
-						${shellExtras}
-						<button class="copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').textContent)">Copy</button>
-					</div>
-				</div>
-				<pre><code class="${language ? `hljs language-${language}` : ''}">${highlighted}</code></pre>
-			</div>`;
+			// A shell block that's just a list of independent one-line commands
+			// gets split into one code-block per command, so each command gets
+			// its own Run/Paste button and its own risk classification. This
+			// stops a single Run from firing a whole batch (e.g. a `reboot`
+			// bundled in with harmless commands). Anything with control flow,
+			// continuations, heredocs or unterminated quotes is left intact.
+			if (lang && SHELL_LANGS.has(lang)) {
+				const commands = splitShellCommands(text);
+				if (commands) {
+					return `<div class="cmd-list">${commands
+						.map((cmd) => renderCodeBlock(cmd, lang, false))
+						.join('')}</div>`;
+				}
+			}
+			return renderCodeBlock(text, lang, true);
 		}
 	}
 });
+
+// Shell keywords / line shapes that mean the block is more than a flat list
+// of independent commands — splitting it per line would break the construct.
+const SHELL_CONTROL_RE =
+	/^(for|while|until|if|then|else|elif|fi|do|done|case|esac|function|select|in)\b/;
+
+/**
+ * Does this line end while still inside an open single/double quote? That
+ * signals a multi-line quoted string, so the block can't be split safely.
+ * Walks the line respecting backslash escapes (in double quotes and
+ * unquoted text) and stops at an unquoted `#` comment.
+ */
+function lineEndsInsideQuote(line: string): boolean {
+	let quote: string | null = null;
+	for (let i = 0; i < line.length; i++) {
+		const c = line[i];
+		if (quote) {
+			if (c === '\\' && quote === '"') {
+				i++;
+				continue;
+			}
+			if (c === quote) quote = null;
+		} else {
+			if (c === '#') break;
+			if (c === '\\') {
+				i++;
+				continue;
+			}
+			if (c === '"' || c === "'") quote = c;
+		}
+	}
+	return quote !== null;
+}
+
+/**
+ * Does this trimmed line look like part of a multi-line shell construct,
+ * rather than a self-contained command? Any of these means the block can't
+ * be split per line: a `\` / `&&` / `||` / `|` continuation, a heredoc, a
+ * control-flow keyword, a `{`/`(` group opener (or `}`/`)` closer), or an
+ * unterminated quote.
+ */
+function isMultiLineConstructLine(t: string): boolean {
+	if (/(\\|&&|\|\||\|)$/.test(t)) return true; // line continuation
+	if (/<<-?\s*['"]?[A-Za-z_]/.test(t)) return true; // heredoc
+	if (SHELL_CONTROL_RE.test(t)) return true;
+	if (/\b(then|do)$/.test(t)) return true;
+	if (/[{(]$/.test(t) || t === '}' || t === ')') return true; // block/group
+	return lineEndsInsideQuote(t);
+}
+
+/**
+ * Split a shell code block into one segment per independent command, or
+ * return null if it isn't a flat list of simple commands (in which case the
+ * caller renders it as a single block, unchanged).
+ *
+ * Each returned segment keeps the comment lines that immediately preceded
+ * its command, so the model's explanatory `# ...` notes stay attached to
+ * the command they describe. Returns null when there's only one command —
+ * there's nothing to split — or when any line looks like it's part of a
+ * multi-line construct (see isMultiLineConstructLine).
+ */
+export function splitShellCommands(text: string): string[] | null {
+	const lines = text.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n');
+
+	for (const line of lines) {
+		const t = line.trim();
+		if (t === '' || t.startsWith('#')) continue;
+		if (isMultiLineConstructLine(t)) return null;
+	}
+
+	const segments: string[] = [];
+	let pendingComments: string[] = [];
+	for (const line of lines) {
+		const t = line.trim();
+		if (t === '') continue;
+		if (t.startsWith('#')) {
+			pendingComments.push(line);
+			continue;
+		}
+		segments.push([...pendingComments, line].join('\n'));
+		pendingComments = [];
+	}
+	// Trailing comments with no following command: attach to the last segment
+	// so they aren't dropped (and so a comment-only block isn't "split").
+	if (pendingComments.length) {
+		if (segments.length === 0) return null;
+		segments[segments.length - 1] += '\n' + pendingComments.join('\n');
+	}
+
+	return segments.length > 1 ? segments : null;
+}
 
 function escapeHtml(text: string): string {
 	return text

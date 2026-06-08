@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	processCitations,
 	renderMarkdown,
+	splitShellCommands,
 	stripMarkdownForTTS,
 	stripToolCallArtifacts
 } from '$lib/markdown';
@@ -285,6 +286,75 @@ describe('renderMarkdown image stripping', () => {
 		const html = renderMarkdown('![inline](data:image/png;base64,iVBORw0KGgo=)');
 		expect(html).toContain('<img');
 		expect(html).toContain('data:image/png;base64');
+	});
+});
+
+describe('splitShellCommands', () => {
+	it('splits a flat list of independent commands', () => {
+		expect(splitShellCommands('sudo apt update\nsudo apt upgrade -y\nreboot')).toEqual([
+			'sudo apt update',
+			'sudo apt upgrade -y',
+			'reboot'
+		]);
+	});
+
+	it('returns null for a single command (nothing to split)', () => {
+		expect(splitShellCommands('ls -la')).toBeNull();
+	});
+
+	it('keeps preceding comments attached to their command', () => {
+		expect(
+			splitShellCommands(
+				'# refresh package lists\nsudo apt update\n# then upgrade\nsudo apt upgrade -y'
+			)
+		).toEqual(['# refresh package lists\nsudo apt update', '# then upgrade\nsudo apt upgrade -y']);
+	});
+
+	it('skips blank lines between commands', () => {
+		expect(splitShellCommands('echo one\n\necho two')).toEqual(['echo one', 'echo two']);
+	});
+
+	it('does not split a && / || / | chain spanning lines', () => {
+		expect(splitShellCommands('cd /tmp &&\nrm -rf build')).toBeNull();
+		expect(splitShellCommands('cat file |\ngrep foo')).toBeNull();
+	});
+
+	it('keeps an inline ; or && chain on one line as a single command', () => {
+		expect(splitShellCommands('cd /tmp && rm x\necho done')).toEqual([
+			'cd /tmp && rm x',
+			'echo done'
+		]);
+	});
+
+	it('does not split backslash line continuations', () => {
+		expect(splitShellCommands('echo hello \\\n  world\nls')).toBeNull();
+	});
+
+	it('does not split control-flow constructs', () => {
+		expect(splitShellCommands('for f in *.txt; do\n  echo "$f"\ndone')).toBeNull();
+		expect(splitShellCommands('if [ -f x ]; then\n  cat x\nfi')).toBeNull();
+	});
+
+	it('does not split heredocs', () => {
+		expect(splitShellCommands('cat <<EOF\nhello\nEOF\nls')).toBeNull();
+	});
+
+	it('does not split when a quoted string spans lines', () => {
+		expect(splitShellCommands('echo "line one\nline two"\nls')).toBeNull();
+	});
+
+	it('splits commands that contain balanced quotes with an apostrophe', () => {
+		expect(splitShellCommands('git commit -m "it\'s done"\ngit push')).toEqual([
+			'git commit -m "it\'s done"',
+			'git push'
+		]);
+	});
+
+	it('renders a multi-command shell block as separate code-blocks each with a Run button', () => {
+		const html = renderMarkdown('```bash\nsudo apt update\nreboot\n```');
+		expect(html).toContain('cmd-list');
+		// One run button per command
+		expect(html.match(/class="run-btn"/g)?.length).toBe(2);
 	});
 });
 
