@@ -74,10 +74,10 @@
 		<span>Auto-submit the result when you click <strong>Run</strong> on a suggested command</span>
 	</label>
 	<p class="help">
-		On by default. When on, clicking <strong>Run</strong> on an assistant-suggested command executes
-		it in the terminal, waits for it to finish, then automatically sends the command's output back
-		to the assistant for analysis. Turn this off to have <strong>Run</strong> just execute the command
-		and stop there — you stay in control of whether the assistant ever sees the output. Either way you
+		Off by default. When on, clicking <strong>Run</strong> on an assistant-suggested command
+		executes it in the terminal, waits for it to finish, then automatically sends the command's
+		output back to the assistant for analysis. While off, <strong>Run</strong> just executes the command
+		and stops there — you stay in control of whether the assistant ever sees the output. Either way you
 		can still ask about it manually from the composer.
 	</p>
 </section>
