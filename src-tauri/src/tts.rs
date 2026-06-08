@@ -10,11 +10,14 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use crate::sidecar_utils::{
-    http_client, kill_process_on_port, new_log_buffer, ports, push_log, timing, LogBuffer,
-    SidecarStatus,
+    base_url, http_client, kill_child, kill_process_on_port, new_log_buffer, poll_health, ports,
+    push_log, with_library_paths, LogBuffer, SidecarStatus,
 };
 
 const TTS_PORT: u16 = ports::TTS;
+/// Readiness backstop budget (the primary signal is the "listening" stdout
+/// sniff). 30s ≈ the old 60 × 500ms hand-rolled loop.
+const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Lifecycle state of the koko TTS sidecar. Aliased onto the shared
 /// `SidecarStatus` so all three sidecars share one wire shape.
@@ -131,63 +134,13 @@ impl TtsEngine {
             TTS_PORT.to_string(),
         ]);
 
-        let mut sidecar = app
+        let sidecar = app
             .shell()
             .sidecar("koko")
             .map_err(|e| format!("Failed to create koko sidecar: {}", e))?
             .args(&args);
 
-        {
-            let mut lib_paths = Vec::new();
-            if let Ok(exe_path) = std::env::current_exe() {
-                if let Some(exe_dir) = exe_path.parent() {
-                    lib_paths.push(exe_dir.to_string_lossy().to_string());
-                }
-            }
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                let libs_dir = resource_dir.join("binaries").join("libs");
-                if libs_dir.exists() {
-                    let libs_str = libs_dir.to_string_lossy().to_string();
-                    if !lib_paths.contains(&libs_str) {
-                        lib_paths.push(libs_str);
-                    }
-                }
-                let resource_str = resource_dir.to_string_lossy().to_string();
-                if !lib_paths.contains(&resource_str) {
-                    lib_paths.push(resource_str);
-                }
-            }
-
-            #[cfg(target_os = "linux")]
-            {
-                let mut parts = lib_paths;
-                let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                if !existing.is_empty() {
-                    parts.push(existing);
-                }
-                sidecar = sidecar.env("LD_LIBRARY_PATH", parts.join(":"));
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                let mut parts = lib_paths;
-                let existing = std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
-                if !existing.is_empty() {
-                    parts.push(existing);
-                }
-                sidecar = sidecar.env("DYLD_LIBRARY_PATH", parts.join(":"));
-            }
-
-            #[cfg(target_os = "windows")]
-            {
-                let mut parts = lib_paths;
-                let existing = std::env::var("PATH").unwrap_or_default();
-                if !existing.is_empty() {
-                    parts.push(existing);
-                }
-                sidecar = sidecar.env("PATH", parts.join(";"));
-            }
-        }
+        let mut sidecar = with_library_paths(sidecar, app);
 
         // espeak-rs-sys bakes the build-time path into the binary for espeak-ng-data.
         // Set ESPEAK_DATA_PATH to our bundled copy so phonemization works.
@@ -263,35 +216,21 @@ impl TtsEngine {
         // starts accepting connections.
         let status_for_health = Arc::clone(&self.status);
         tauri::async_runtime::spawn(async move {
-            let client = http_client(timing::SHORT_HTTP_TIMEOUT);
-
-            for _ in 0..60 {
-                {
-                    let status = status_for_health.lock().await;
-                    if *status == TtsStatus::Ready || *status != TtsStatus::Starting {
-                        return;
-                    }
-                }
-                sleep(timing::HEALTH_POLL_INTERVAL).await;
-
-                if let Ok(resp) = client
-                    .get(format!("http://127.0.0.1:{}/", TTS_PORT))
-                    .send()
-                    .await
-                {
-                    if resp.status().as_u16() > 0 {
-                        let mut status = status_for_health.lock().await;
-                        if *status == TtsStatus::Starting {
-                            *status = TtsStatus::Ready;
-                            info!("Kokoro TTS server ready (health poll)");
-                        }
-                        return;
-                    }
-                }
-            }
-
+            // accept_any: koko's `/` may answer 4xx yet still mean "up".
+            let url = format!("{}/", base_url(TTS_PORT));
+            let status_check = Arc::clone(&status_for_health);
+            let ok = poll_health(&url, "koko", HEALTH_POLL_TIMEOUT, true, move || {
+                let s = Arc::clone(&status_check);
+                async move { *s.lock().await == TtsStatus::Starting }
+            })
+            .await;
             let mut status = status_for_health.lock().await;
-            if *status == TtsStatus::Starting {
+            if ok {
+                if *status == TtsStatus::Starting {
+                    *status = TtsStatus::Ready;
+                    info!("Kokoro TTS server ready (health poll)");
+                }
+            } else if *status == TtsStatus::Starting {
                 *status = TtsStatus::Error("TTS server startup timed out".to_string());
                 error!("Kokoro TTS server startup timed out");
             }
@@ -301,14 +240,8 @@ impl TtsEngine {
     }
 
     pub async fn stop(&self) -> Result<(), String> {
-        let mut child = self.child.lock().await;
-        if let Some(c) = child.take() {
-            info!("Stopping koko TTS server");
-            c.kill()
-                .map_err(|e| format!("Failed to kill koko: {}", e))?;
-        }
-        let mut status = self.status.lock().await;
-        *status = TtsStatus::Stopped;
+        kill_child(&self.child, "koko").await?;
+        *self.status.lock().await = TtsStatus::Stopped;
         self.stop_flag.store(true, Ordering::SeqCst);
         Ok(())
     }
@@ -360,7 +293,7 @@ impl TtsEngine {
         });
 
         let resp = client
-            .post(format!("http://127.0.0.1:{}/v1/audio/speech", TTS_PORT))
+            .post(format!("{}/v1/audio/speech", base_url(TTS_PORT)))
             .json(&body)
             .send()
             .await

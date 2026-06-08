@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
@@ -185,37 +185,6 @@ impl LlamaServer {
         self.spawn_and_monitor(app, model_path).await
     }
 
-    fn get_library_paths(app: &AppHandle) -> Vec<String> {
-        // In dev mode, .so files are symlinked to target/debug/ (same dir as the exe).
-        // In production, Tauri places externalBin in /usr/bin/ but resources (libs)
-        // in the resource dir (e.g. /usr/lib/haruspex/). We need both paths.
-        let mut paths = Vec::new();
-
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                paths.push(exe_dir.to_string_lossy().to_string());
-            }
-        }
-
-        if let Ok(resource_dir) = app.path().resource_dir() {
-            // Libs are bundled as resources at binaries/libs/* so they end up
-            // in <resource_dir>/binaries/libs/ in production installs.
-            let libs_dir = resource_dir.join("binaries").join("libs");
-            if libs_dir.exists() {
-                let libs_str = libs_dir.to_string_lossy().to_string();
-                if !paths.contains(&libs_str) {
-                    paths.push(libs_str);
-                }
-            }
-            let resource_str = resource_dir.to_string_lossy().to_string();
-            if !paths.contains(&resource_str) {
-                paths.push(resource_str);
-            }
-        }
-
-        paths
-    }
-
     async fn spawn_and_monitor(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
         self.set_status(ServerStatus::Starting, app).await;
 
@@ -240,47 +209,14 @@ impl LlamaServer {
 
         info!("Starting llama-server with args: {:?}", args);
 
-        let mut sidecar = app
+        let sidecar = app
             .shell()
             .sidecar("llama-server")
             .map_err(|e| format!("Failed to create sidecar command: {}", e))?
             .args(&args);
 
         // Set library path so llama-server can find its bundled shared libraries
-        {
-            let lib_paths = Self::get_library_paths(app);
-            info!("Setting library paths to: {:?}", lib_paths);
-
-            #[cfg(target_os = "linux")]
-            {
-                let mut parts = lib_paths;
-                let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                if !existing.is_empty() {
-                    parts.push(existing);
-                }
-                sidecar = sidecar.env("LD_LIBRARY_PATH", parts.join(":"));
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                let mut parts = lib_paths;
-                let existing = std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
-                if !existing.is_empty() {
-                    parts.push(existing);
-                }
-                sidecar = sidecar.env("DYLD_LIBRARY_PATH", parts.join(":"));
-            }
-
-            #[cfg(target_os = "windows")]
-            {
-                let mut parts = lib_paths;
-                let existing = std::env::var("PATH").unwrap_or_default();
-                if !existing.is_empty() {
-                    parts.push(existing);
-                }
-                sidecar = sidecar.env("PATH", parts.join(";"));
-            }
-        }
+        let sidecar = sidecar_utils::with_library_paths(sidecar, app);
 
         let (rx, child) = sidecar
             .spawn()
@@ -456,33 +392,7 @@ impl LlamaServer {
                             let sidecar_result = app
                                 .shell()
                                 .sidecar("llama-server")
-                                .map(|cmd| {
-                                    let mut cmd = cmd.args(&args);
-
-                                    #[cfg(target_os = "linux")]
-                                    {
-                                        let mut parts = Self::get_library_paths(&app);
-                                        let existing =
-                                            std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                                        if !existing.is_empty() {
-                                            parts.push(existing);
-                                        }
-                                        cmd = cmd.env("LD_LIBRARY_PATH", parts.join(":"));
-                                    }
-
-                                    #[cfg(target_os = "macos")]
-                                    {
-                                        let mut parts = Self::get_library_paths(&app);
-                                        let existing =
-                                            std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
-                                        if !existing.is_empty() {
-                                            parts.push(existing);
-                                        }
-                                        cmd = cmd.env("DYLD_LIBRARY_PATH", parts.join(":"));
-                                    }
-
-                                    cmd
-                                })
+                                .map(|cmd| sidecar_utils::with_library_paths(cmd.args(&args), &app))
                                 .and_then(|cmd| cmd.spawn());
 
                             match sidecar_result {
@@ -565,33 +475,7 @@ impl LlamaServer {
                             let sidecar_result = app
                                 .shell()
                                 .sidecar("llama-server")
-                                .map(|cmd| {
-                                    let mut cmd = cmd.args(&args);
-
-                                    #[cfg(target_os = "linux")]
-                                    {
-                                        let mut parts = Self::get_library_paths(&app);
-                                        let existing =
-                                            std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                                        if !existing.is_empty() {
-                                            parts.push(existing);
-                                        }
-                                        cmd = cmd.env("LD_LIBRARY_PATH", parts.join(":"));
-                                    }
-
-                                    #[cfg(target_os = "macos")]
-                                    {
-                                        let mut parts = Self::get_library_paths(&app);
-                                        let existing =
-                                            std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
-                                        if !existing.is_empty() {
-                                            parts.push(existing);
-                                        }
-                                        cmd = cmd.env("DYLD_LIBRARY_PATH", parts.join(":"));
-                                    }
-
-                                    cmd
-                                })
+                                .map(|cmd| sidecar_utils::with_library_paths(cmd.args(&args), &app))
                                 .and_then(|cmd| cmd.spawn());
 
                             match sidecar_result {
@@ -651,21 +535,26 @@ impl LlamaServer {
                 let state = inner.lock().await;
                 state.config.port
             };
-            let url = format!("http://127.0.0.1:{}/health", port);
+            let url = sidecar_utils::health_url(port);
 
             // keep_going: bail if this poller's generation is stale (a
             // newer start() has taken over) or if the status has moved
             // off Starting (e.g. an explicit stop or an early error).
             let inner_for_keep = Arc::clone(&inner);
-            let ok =
-                sidecar_utils::poll_health(&url, "llama-server", HEALTH_POLL_TIMEOUT, move || {
+            let ok = sidecar_utils::poll_health(
+                &url,
+                "llama-server",
+                HEALTH_POLL_TIMEOUT,
+                false,
+                move || {
                     let s = Arc::clone(&inner_for_keep);
                     async move {
                         let state = s.lock().await;
                         state.generation == generation && state.status == ServerStatus::Starting
                     }
-                })
-                .await;
+                },
+            )
+            .await;
 
             let mut state = inner.lock().await;
             if state.generation != generation {
