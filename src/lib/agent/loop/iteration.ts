@@ -79,6 +79,7 @@ export interface LoopContext {
 	deepResearch: boolean;
 	shellMode: boolean;
 	shellAllowWrite: boolean;
+	shellCwd: string | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
 	filesWrittenThisTurn: Set<string>;
@@ -111,6 +112,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		deepResearch: options.deepResearch ?? false,
 		shellMode,
 		shellAllowWrite,
+		shellCwd: options.shellCwd ?? null,
 		expectsFileOutput: options.expectsFileOutput ?? false,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
@@ -702,6 +704,7 @@ export async function runIteration(
 				deepResearch: ctx.deepResearch,
 				shellMode: ctx.shellMode,
 				shellAllowWrite: ctx.shellAllowWrite,
+				shellCwd: ctx.shellCwd,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
 				onProgress: (status: string) => options.onToolProgress?.(call, status)
 			}),

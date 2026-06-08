@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { labelArg, toolInvokeError } from './_helpers';
+import { labelArg, resolveShellPath, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 
@@ -70,14 +70,14 @@ registerTool({
 		function: {
 			name: 'fs_list_dir',
 			description:
-				'List the files and subdirectories in a directory. In Chat mode, the path is relative to the working directory (use "." for the root). In Shell mode, the path must be absolute (e.g. "/etc", "/var/log").',
+				'List the files and subdirectories in a directory. In Chat mode, the path is relative to the working directory (use "." for the root). In Shell mode, use an absolute path (e.g. "/etc", "/var/log") or a relative one, which is resolved against the current shell directory.',
 			parameters: {
 				type: 'object',
 				properties: {
 					path: {
 						type: 'string',
 						description:
-							'Directory path. Chat mode: relative to the working directory (use "." for the root). Shell mode: absolute path.'
+							'Directory path. Chat mode: relative to the working directory (use "." for the root). Shell mode: absolute, or relative to the current shell directory.'
 					}
 				},
 				required: ['path']
@@ -89,7 +89,9 @@ registerTool({
 		const path = (args.path as string) ?? '.';
 		try {
 			const listing = ctx.shellMode
-				? await invoke<DirListing>('fs_list_dir_absolute', { path })
+				? await invoke<DirListing>('fs_list_dir_absolute', {
+						path: resolveShellPath(path, ctx.shellCwd)
+					})
 				: await invoke<DirListing>('fs_list_dir', {
 						workdir: ctx.workingDir,
 						relPath: path
@@ -108,14 +110,14 @@ registerTool({
 		function: {
 			name: 'fs_read_text',
 			description:
-				'Read the contents of a text file (txt, md, csv, json, sh, yml, toml, log, conf, etc.). In Chat mode, the path is relative to the working directory. In Shell mode, the path must be absolute (e.g. "/etc/nginx/nginx.conf"). Do not use this for PDF, docx, xlsx, or image files — use format-specific tools instead.',
+				'Read the contents of a text file (txt, md, csv, json, sh, yml, toml, log, conf, etc.). In Chat mode, the path is relative to the working directory. In Shell mode, use an absolute path (e.g. "/etc/nginx/nginx.conf") or a relative one, which is resolved against the current shell directory. Do not use this for PDF, docx, xlsx, or image files — use format-specific tools instead.',
 			parameters: {
 				type: 'object',
 				properties: {
 					path: {
 						type: 'string',
 						description:
-							'File path. Chat mode: relative to the working directory. Shell mode: absolute path.'
+							'File path. Chat mode: relative to the working directory. Shell mode: absolute, or relative to the current shell directory.'
 					}
 				},
 				required: ['path']
@@ -126,7 +128,7 @@ registerTool({
 	async execute(args, ctx) {
 		const path = args.path as string;
 		const text = ctx.shellMode
-			? await fsReadAbsolute('fs_read_text_absolute', path)
+			? await fsReadAbsolute('fs_read_text_absolute', resolveShellPath(path, ctx.shellCwd))
 			: await fsRead('fs_read_text', ctx.workingDir!, path);
 		return toolResult(text);
 	}
@@ -139,14 +141,14 @@ registerTool({
 		function: {
 			name: 'fs_read_pdf',
 			description:
-				'Extract text content from a PDF file. In Chat mode, the path is relative to the working directory. In Shell mode, the path must be absolute. Fast but only works for PDFs with a proper text layer; for form PDFs or scanned documents, use fs_read_pdf_pages instead.',
+				'Extract text content from a PDF file. In Chat mode, the path is relative to the working directory. In Shell mode, use an absolute path or a relative one, which is resolved against the current shell directory. Fast but only works for PDFs with a proper text layer; for form PDFs or scanned documents, use fs_read_pdf_pages instead.',
 			parameters: {
 				type: 'object',
 				properties: {
 					path: {
 						type: 'string',
 						description:
-							'PDF path. Chat mode: relative to the working directory. Shell mode: absolute path.'
+							'PDF path. Chat mode: relative to the working directory. Shell mode: absolute, or relative to the current shell directory.'
 					}
 				},
 				required: ['path']
@@ -157,7 +159,7 @@ registerTool({
 	async execute(args, ctx) {
 		const path = args.path as string;
 		const text = ctx.shellMode
-			? await fsReadAbsolute('fs_read_pdf_absolute', path)
+			? await fsReadAbsolute('fs_read_pdf_absolute', resolveShellPath(path, ctx.shellCwd))
 			: await fsRead('fs_read_pdf', ctx.workingDir!, path);
 		return toolResult(text);
 	}
