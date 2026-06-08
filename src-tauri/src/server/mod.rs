@@ -50,6 +50,9 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             port: ports::LLAMA,
+            // Placeholder for the pre-start `LlamaServer::new()` state only;
+            // every real `start_server` overrides this with the caller's
+            // value. The user-facing default lives in TS (`DEFAULT_CONTEXT_SIZE`).
             ctx_size: 16384,
             n_gpu_layers: 99,
             flash_attn: true,
@@ -603,11 +606,13 @@ pub async fn start_server(
     app: AppHandle,
     state: tauri::State<'_, LlamaServer>,
     model_path: String,
-    ctx_size: Option<u32>,
+    // Required: the TS caller always resolves this to `DEFAULT_CONTEXT_SIZE`
+    // before invoking, so there's a single user-facing default (audit X4).
+    ctx_size: u32,
     extra_args: Option<Vec<String>>,
 ) -> Result<(), String> {
     let config = ServerConfig {
-        ctx_size: ctx_size.unwrap_or(16384),
+        ctx_size,
         extra_args: extra_args.unwrap_or_default(),
         ..Default::default()
     };

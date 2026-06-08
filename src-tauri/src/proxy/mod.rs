@@ -324,7 +324,13 @@ pub async fn proxy_search(
             r?
         }
         "searxng" => {
-            let url = instance_url.as_deref().unwrap_or("http://localhost:8080");
+            // The TS caller always resolves this to `DEFAULT_SEARXNG_URL`, so a
+            // missing/empty value is a misconfiguration rather than a default to
+            // paper over here (audit X5; mirrors the Brave key check above).
+            let url = instance_url.as_deref().unwrap_or("");
+            if url.is_empty() {
+                return Err("SearXNG instance URL not configured".to_string());
+            }
             info!(
                 "Searching SearXNG ({}) for: {} (recency: {})",
                 url, query, recency
