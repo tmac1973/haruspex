@@ -5,9 +5,9 @@
 
 use super::markdown_inline::escape_xml;
 use super::path::{
-    refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir, MAX_DOC_READ_BYTES,
+    refuse_if_exists, resolve_in_workdir, stat_within_limit, workdir_path, write_bytes_to_workdir,
+    MAX_DOC_READ_BYTES,
 };
-use tokio::fs;
 
 #[derive(serde::Deserialize)]
 pub struct XlsxSheet {
@@ -202,17 +202,7 @@ pub async fn fs_read_xlsx(
         return Err(format!("Not a file: {}", rel_path));
     }
 
-    let metadata = fs::metadata(&resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_DOC_READ_BYTES {
-        return Err(format!(
-            "xlsx too large ({} bytes). Maximum is {} bytes.",
-            metadata.len(),
-            MAX_DOC_READ_BYTES
-        ));
-    }
+    stat_within_limit(&resolved, MAX_DOC_READ_BYTES, "xlsx").await?;
 
     let resolved_clone = resolved.clone();
     let sheet_name = sheet.clone();

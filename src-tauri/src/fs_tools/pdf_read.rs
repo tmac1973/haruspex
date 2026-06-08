@@ -7,7 +7,7 @@
 //! restore visual reading order, which the raw character stream doesn't
 //! guarantee.
 
-use super::path::{resolve_in_workdir, workdir_path, MAX_DOC_READ_BYTES};
+use super::path::{resolve_in_workdir, stat_within_limit, workdir_path, MAX_DOC_READ_BYTES};
 use std::path::Path;
 use std::sync::OnceLock;
 use tokio::fs;
@@ -214,17 +214,7 @@ pub async fn fs_read_pdf(workdir: String, rel_path: String) -> Result<String, St
 /// workdir-relative `fs_read_pdf` and the Shell-tab absolute-path
 /// variant.
 pub(super) async fn read_pdf_at_path(resolved: &std::path::Path) -> Result<String, String> {
-    let metadata = fs::metadata(resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_DOC_READ_BYTES {
-        return Err(format!(
-            "PDF too large ({} bytes). Maximum is {} bytes.",
-            metadata.len(),
-            MAX_DOC_READ_BYTES
-        ));
-    }
+    stat_within_limit(resolved, MAX_DOC_READ_BYTES, "PDF").await?;
 
     // Try pdfium first — it's the same library Chrome uses, handles forms
     // and custom fonts correctly. Fall back to pdf-extract if pdfium isn't
@@ -279,17 +269,7 @@ pub async fn fs_read_pdf_bytes(workdir: String, rel_path: String) -> Result<Stri
         return Err(format!("Not a file: {}", rel_path));
     }
 
-    let metadata = fs::metadata(&resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_DOC_READ_BYTES {
-        return Err(format!(
-            "PDF too large ({} bytes). Maximum is {} bytes.",
-            metadata.len(),
-            MAX_DOC_READ_BYTES
-        ));
-    }
+    stat_within_limit(&resolved, MAX_DOC_READ_BYTES, "PDF").await?;
 
     let bytes = fs::read(&resolved)
         .await
