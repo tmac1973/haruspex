@@ -562,11 +562,22 @@ def _haruspex_install_plotly_hook():
     except ImportError:
         return
 
+    # Load plotly.js from the bundled local copy (zero network); fall back
+    # to the CDN only if the bundle URL somehow wasn't set.
+    _pjs = globals().get('_haruspex_plotlyjs_url') or 'cdn'
+
     def _show(self, *args, **kwargs):
-        _html = _pio.to_html(self, include_plotlyjs='cdn', full_html=True)
+        _html = _pio.to_html(self, include_plotlyjs=_pjs, full_html=True)
         _haruspex_emit_html(_html, None, None, True)
 
+    def _repr_html_(self):
+        # A bare figure as the last expression renders via _repr_html_;
+        # force the local plotly.js URL here too so neither render path
+        # reaches for the CDN.
+        return _pio.to_html(self, include_plotlyjs=_pjs, full_html=True)
+
     _go.Figure.show = _show
+    _go.Figure._repr_html_ = _repr_html_
     plotly._haruspex_patched = True
 
 def _haruspex_install_bokeh_hook():
@@ -870,6 +881,15 @@ async function init(): Promise<void> {
 					new URL('/pyodide/narwhals-2.15.0-py3-none-any.whl', self.location.origin).href
 				]
 			})
+		);
+		// Local plotly.min.js (extracted from the wheel into static/plotly/)
+		// so rendered figures load their JS from the app origin, not
+		// cdn.plot.ly. The interactive-artifact iframe already loads
+		// cross-origin scripts (it used the CDN before), so an app-origin
+		// <script src> resolves the same way — with zero network.
+		pyodide.globals.set(
+			'_haruspex_plotlyjs_url',
+			new URL('/plotly/plotly.min.js', self.location.origin).href
 		);
 		// Pyodide's batched callback delivers one line at a time WITHOUT
 		// the trailing newline, so re-append it before forwarding. Without

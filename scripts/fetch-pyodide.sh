@@ -176,6 +176,34 @@ sys.exit(1)
     echo "   Installed $(ls "$WHEELS_DIR"/*.whl | wc -l) wheels to static/pyodide/wheels/"
 fi
 
+# --- plotly.min.js (offline interactive rendering) ---
+# The chat worker points plotly's include_plotlyjs at a local URL
+# (/plotly/plotly.min.js) so rendered figures load their JS from the app
+# instead of cdn.plot.ly — zero network. Extract the exact build plotly
+# bundles from the wheel we just vendored, so the JS always matches the
+# Python package version. Marker tracks WHEELS_VERSION (which gates the
+# plotly wheel).
+PLOTLY_JS_DIR="$PROJECT_ROOT/static/plotly"
+PLOTLY_JS_MARKER="$PLOTLY_JS_DIR/.haruspex-plotlyjs-version"
+PLOTLY_WHEEL_FILE="$(ls "$WHEELS_DIR"/plotly-*.whl 2>/dev/null | head -1)"
+if [ -f "$PLOTLY_JS_MARKER" ] && [ "$(cat "$PLOTLY_JS_MARKER")" = "$WHEELS_VERSION" ]; then
+    echo ">> plotly.min.js v$WHEELS_VERSION already present at static/plotly/"
+elif [ -z "$PLOTLY_WHEEL_FILE" ]; then
+    echo "   ERROR: no plotly wheel in $WHEELS_DIR — cannot extract plotly.min.js"
+    exit 1
+else
+    echo ">> Extracting plotly.min.js from $(basename "$PLOTLY_WHEEL_FILE") into static/plotly/..."
+    mkdir -p "$PLOTLY_JS_DIR"
+    PLOTLY_WHEEL_FILE="$PLOTLY_WHEEL_FILE" PLOTLY_JS_DIR="$PLOTLY_JS_DIR" "$PYTHON_BIN" -c "
+import os, zipfile
+z = zipfile.ZipFile(os.environ['PLOTLY_WHEEL_FILE'])
+data = z.read('plotly/package_data/plotly.min.js')
+open(os.path.join(os.environ['PLOTLY_JS_DIR'], 'plotly.min.js'), 'wb').write(data)
+print('   plotly.min.js: %.1f MB' % (len(data) / 1e6))
+"
+    echo "$WHEELS_VERSION" > "$PLOTLY_JS_MARKER"
+fi
+
 # --- Workspace wheels (pygame-ce + bokeh + altair + transitive deps) ---
 # Pulled from the Pyodide CDN — these are pre-built for Pyodide and listed
 # in the local pyodide-lock.json, so the workspace iframe can resolve them
