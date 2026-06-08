@@ -66,17 +66,23 @@ act-ci: ## Run the CI checks workflow locally via act
 # ---- Dev ----
 
 .PHONY: ensure-sidecars
-ensure-sidecars: ## Check that all sidecar binaries are built
-	@missing=""; \
-	for bin in llama-server whisper-server koko; do \
-		if [ ! -x src-tauri/binaries/$$bin-$(TARGET) ]; then \
-			missing="$$missing $$bin"; \
+ensure-sidecars: ## Rebuild sidecars only when missing or their pinned version changed
+	@stale=""; \
+	for pair in "llama-server:LLAMA_CPP_VERSION" "whisper-server:WHISPER_CPP_VERSION"; do \
+		name=$${pair%%:*}; vf=$${pair##*:}; \
+		bin="src-tauri/binaries/$$name-$(TARGET)"; \
+		want=$$(cat "$$vf" 2>/dev/null); \
+		if [ ! -x "$$bin" ] || [ "$$(cat $$bin.version 2>/dev/null)" != "$$want" ]; then \
+			stale="$$stale $$name"; \
 		fi; \
 	done; \
-	if [ -n "$$missing" ]; then \
-		echo "ERROR: Missing sidecar binaries:$$missing"; \
-		echo "Run 'make sidecars' or './scripts/dev-setup.sh' to build them."; \
-		exit 1; \
+	if [ ! -x "src-tauri/binaries/koko-$(TARGET)" ]; then stale="$$stale koko"; fi; \
+	if [ -n "$$stale" ]; then \
+		echo ">> Sidecars missing or out of date:$$stale"; \
+		echo ">> Running build-sidecars.sh (up-to-date sidecars are skipped)..."; \
+		./scripts/build-sidecars.sh --target $(TARGET); \
+	else \
+		echo ">> Sidecars up to date"; \
 	fi
 
 .PHONY: dev

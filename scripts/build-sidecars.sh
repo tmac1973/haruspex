@@ -28,6 +28,21 @@ source "$SCRIPT_DIR/msvc-path-fix.sh"
 
 LLAMA_VERSION=$(cat "$PROJECT_ROOT/LLAMA_CPP_VERSION" 2>/dev/null || echo "master")
 WHISPER_VERSION=$(cat "$PROJECT_ROOT/WHISPER_CPP_VERSION" 2>/dev/null || echo "master")
+
+# Version stamps: a small file written next to each pinned sidecar recording
+# the version it was built at. The skip check below compares the stamp to the
+# pinned version, so bumping LLAMA_CPP_VERSION / WHISPER_CPP_VERSION forces
+# exactly one rebuild while an unchanged pin stays a fast no-op. (koko is not
+# pinned — it always tracks the cloned default branch and only rebuilds when
+# its binary is missing.)
+LLAMA_STAMP="$BINARIES_DIR/llama-server-${TARGET}.version"
+WHISPER_STAMP="$BINARIES_DIR/whisper-server-${TARGET}.version"
+
+# True when the binary exists AND its recorded version matches the pin.
+sidecar_current() {
+    local bin="$1" stamp="$2" want="$3"
+    [ -f "$bin" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$want" ]
+}
 case "$TARGET" in
     *-windows-msvc) BUILD_DIR="$PROJECT_ROOT/.sidecar-build" ;;
     *)              BUILD_DIR="/tmp/haruspex-sidecar-build" ;;
@@ -172,15 +187,16 @@ esac
 
 # ---- llama-server ----
 LLAMA_BIN="$BINARIES_DIR/llama-server-${TARGET}${EXT}"
-if [ -f "$LLAMA_BIN" ]; then
-    echo ">> llama-server already built, skipping."
+if sidecar_current "$LLAMA_BIN" "$LLAMA_STAMP" "$LLAMA_VERSION"; then
+    echo ">> llama-server already built ($LLAMA_VERSION), skipping."
 else
     echo ">> Building llama-server (llama.cpp $LLAMA_VERSION)..."
     LLAMA_SRC="${BUILD_DIR}/llama.cpp"
-    if [ ! -d "$LLAMA_SRC" ]; then
-        git clone --depth 1 --branch "$LLAMA_VERSION" https://github.com/ggml-org/llama.cpp.git "$LLAMA_SRC" 2>/dev/null || \
-        git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$LLAMA_SRC" 2>/dev/null
-    fi
+    # Wipe any cached checkout so a version bump re-clones at the new pinned
+    # branch — a shallow --branch clone can't be re-pointed to another tag.
+    rm -rf "$LLAMA_SRC"
+    git clone --depth 1 --branch "$LLAMA_VERSION" https://github.com/ggml-org/llama.cpp.git "$LLAMA_SRC" 2>/dev/null || \
+    git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$LLAMA_SRC" 2>/dev/null
 
     rm -rf "$BUILD_DIR/llama"
     mkdir -p "$BUILD_DIR/llama"
@@ -210,9 +226,19 @@ else
     cp "$LLAMA_OUT" "$LLAMA_BIN"
     chmod +x "$LLAMA_BIN"
 
+    # Drop previously-bundled llama-owned shared libs before copying the new
+    # ones, so a version bump doesn't leave orphaned, soname-shadowed copies
+    # (e.g. libggml-base.so.0.9.8 lingering next to 0.14.0). These families are
+    # produced by llama.cpp; whisper's libwhisper*, koko's deps, and libpdfium
+    # are owned elsewhere and left untouched. whisper.cpp shares this ggml set
+    # at runtime (llama's copy is authoritative — the soname stays .so.0).
+    mkdir -p "$BINARIES_DIR/libs"
+    rm -f "$BINARIES_DIR"/libs/libggml*.so* \
+          "$BINARIES_DIR"/libs/libllama*.so* \
+          "$BINARIES_DIR"/libs/libmtmd*.so*
+
     # Copy shared libraries to libs/ subdirectory
     # Use -L to dereference symlinks so we get real files (symlinks don't survive packaging)
-    mkdir -p "$BINARIES_DIR/libs"
     find -L . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
         cp -L "$lib" "$BINARIES_DIR/libs/"
     done
@@ -235,21 +261,22 @@ else
         fi
     done
 
-    echo "   Built: $LLAMA_BIN"
+    echo "$LLAMA_VERSION" > "$LLAMA_STAMP"
+    echo "   Built: $LLAMA_BIN ($LLAMA_VERSION)"
 fi
 echo
 
 # ---- whisper-server ----
 WHISPER_BIN="$BINARIES_DIR/whisper-server-${TARGET}${EXT}"
-if [ -f "$WHISPER_BIN" ]; then
-    echo ">> whisper-server already built, skipping."
+if sidecar_current "$WHISPER_BIN" "$WHISPER_STAMP" "$WHISPER_VERSION"; then
+    echo ">> whisper-server already built ($WHISPER_VERSION), skipping."
 else
     echo ">> Building whisper-server (whisper.cpp $WHISPER_VERSION)..."
     WHISPER_SRC="${BUILD_DIR}/whisper.cpp"
-    if [ ! -d "$WHISPER_SRC" ]; then
-        git clone --depth 1 --branch "$WHISPER_VERSION" https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC" 2>/dev/null || \
-        git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC" 2>/dev/null
-    fi
+    # Wipe any cached checkout so a version bump re-clones at the new pin.
+    rm -rf "$WHISPER_SRC"
+    git clone --depth 1 --branch "$WHISPER_VERSION" https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC" 2>/dev/null || \
+    git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC" 2>/dev/null
 
     rm -rf "$BUILD_DIR/whisper"
     mkdir -p "$BUILD_DIR/whisper"
@@ -299,7 +326,8 @@ else
         fi
     done
 
-    echo "   Built: $WHISPER_BIN"
+    echo "$WHISPER_VERSION" > "$WHISPER_STAMP"
+    echo "   Built: $WHISPER_BIN ($WHISPER_VERSION)"
 fi
 echo
 
