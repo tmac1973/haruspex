@@ -61,12 +61,25 @@ export interface SearchStep {
 	 * block. The model still sees the formatted error string in `result`.
 	 */
 	lintIssues?: LintIssue[];
+	/**
+	 * Transient status shown on a running step while it works — currently
+	 * run_python reporting "Installing plotly…" during a first-import
+	 * package download. Set via the loop's onToolProgress callback and
+	 * dropped when the step transitions to 'done'.
+	 */
+	installStatus?: string;
 }
 
 export interface AgentLoopOptions {
 	messages: import('$lib/api').ChatMessage[];
 	workingDir?: string | null;
 	onToolStart: (call: ResolvedToolCall) => void;
+	/**
+	 * Optional progress channel for a running tool call. Wired to the
+	 * tool's ToolContext.onProgress so a long-running tool can update its
+	 * card mid-flight (e.g. run_python surfacing a package install).
+	 */
+	onToolProgress?: (call: ResolvedToolCall, status: string) => void;
 	onToolEnd: (
 		call: ResolvedToolCall,
 		result: string,

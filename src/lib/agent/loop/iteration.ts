@@ -702,7 +702,8 @@ export async function runIteration(
 				deepResearch: ctx.deepResearch,
 				shellMode: ctx.shellMode,
 				shellAllowWrite: ctx.shellAllowWrite,
-				filesWrittenThisTurn: ctx.filesWrittenThisTurn
+				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
+				onProgress: (status: string) => options.onToolProgress?.(call, status)
 			}),
 			signal
 		);

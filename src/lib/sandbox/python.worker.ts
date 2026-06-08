@@ -562,11 +562,22 @@ def _haruspex_install_plotly_hook():
     except ImportError:
         return
 
+    # Load plotly.js from the bundled local copy (zero network); fall back
+    # to the CDN only if the bundle URL somehow wasn't set.
+    _pjs = globals().get('_haruspex_plotlyjs_url') or 'cdn'
+
     def _show(self, *args, **kwargs):
-        _html = _pio.to_html(self, include_plotlyjs='cdn', full_html=True)
+        _html = _pio.to_html(self, include_plotlyjs=_pjs, full_html=True)
         _haruspex_emit_html(_html, None, None, True)
 
+    def _repr_html_(self):
+        # A bare figure as the last expression renders via _repr_html_;
+        # force the local plotly.js URL here too so neither render path
+        # reaches for the CDN.
+        return _pio.to_html(self, include_plotlyjs=_pjs, full_html=True)
+
     _go.Figure.show = _show
+    _go.Figure._repr_html_ = _repr_html_
     plotly._haruspex_patched = True
 
 def _haruspex_install_bokeh_hook():
@@ -698,9 +709,29 @@ async def _haruspex_auto_install_missing(code):
     import sys as _sys_for_auto
     import micropip as _micropip
     _installed_any = False
+    _local_map = globals().get('_haruspex_local_wheels')
     for name in missing:
         try:
-            await _micropip.install(name)
+            # Announce before the (possibly slow) download so the UI shows
+            # "Installing <name>…" and the install watchdog — not the
+            # execution timeout — governs the wait.
+            try:
+                _haruspex_install_status(name, 'downloading')
+            except Exception:
+                pass
+            # Vendored PyPI packages (e.g. plotly) install from their local
+            # wheel(s) with deps=False — offline, no PyPI round-trip. The
+            # mapped list bundles the package plus any non-lockfile deps.
+            _local = None
+            if _local_map is not None:
+                try:
+                    _local = _local_map.get(name)
+                except Exception:
+                    _local = None
+            if _local:
+                await _micropip.install(list(_local), deps=False)
+            else:
+                await _micropip.install(name)
             print('[haruspex] auto-installed ' + name, file=_sys_for_auto.stderr)
             _installed_any = True
         except Exception as _e:
@@ -722,18 +753,77 @@ function post(msg: WorkerToMain) {
 	self.postMessage(msg);
 }
 
+// --- Run-phase signals for the manager's split install/exec budget. ---
+// The manager pauses the execution timeout while a run is in its package
+// phase and arms a separate install watchdog instead, so a slow first-
+// import download doesn't read as "your code hung". These are no-ops
+// outside an active run (currentRunId === '').
+function postPkgPhaseStart(): void {
+	if (currentRunId) post({ kind: 'pkg_phase_start', id: currentRunId });
+}
+function postExecStart(): void {
+	if (currentRunId) post({ kind: 'exec_start', id: currentRunId });
+}
+function postInstallProgress(
+	packageName: string,
+	phase: 'resolving' | 'downloading' | 'installing'
+): void {
+	if (currentRunId)
+		post({ kind: 'install_progress', id: currentRunId, package: packageName, phase });
+}
+
+// Pyodide distribution version — must match the npm `pyodide` package
+// (see package.json) and the version vendored by scripts/fetch-pyodide.sh.
+const PYODIDE_VERSION = '0.29.4';
+const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+
+/**
+ * Serve Pyodide's runtime assets (core .wasm, stdlib zip, lock file, and
+ * package wheels) from the app's bundled static/pyodide/ directory, with
+ * a transparent fall-through to the CDN for anything not vendored.
+ *
+ * loadPyodide / loadPackage / loadPackagesFromImports all ultimately call
+ * the worker's global fetch, so wrapping it here catches EVERY package
+ * load path — not just the ones we call explicitly. The bundled common
+ * stack (numpy, pandas, scipy, scikit-learn, matplotlib, sympy, …) loads
+ * locally and instantly; an exotic lockfile package we didn't vendor 404s
+ * locally and is refetched from the CDN, so flipping indexURL to local is
+ * a pure win with no regression. (micropip's PyPI installs hit PyPI
+ * directly and are unaffected by indexURL / this shim.)
+ */
+function installLocalFirstFetch(): void {
+	const localPrefix = new URL('/pyodide/', self.location.origin).href;
+	const orig = self.fetch.bind(self);
+	self.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+		const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+		if (!url || !url.startsWith(localPrefix)) return orig(input, init);
+		try {
+			const resp = await orig(input, init);
+			if (resp.ok) return resp;
+		} catch {
+			// fall through to the CDN
+		}
+		// Local miss — refetch the same asset from the Pyodide CDN. The
+		// wheels/ subdir is doc-creation wheels only (always vendored), so
+		// the fallback realistically only fires for root-level wheels.
+		const filename = url.slice(localPrefix.length);
+		return orig(PYODIDE_CDN + filename, init);
+	};
+}
+
 async function init(): Promise<void> {
 	if (initStarted) return;
 	initStarted = true;
 	try {
-		// loadPyodide comes from the npm package; everything it pulls at
-		// runtime (core .wasm, stdlib zip, lock file, packages installed
-		// via micropip) lives at the Pyodide CDN. The version path here
-		// must match the npm package version (see package.json).
-		// Network is required on first run; the browser caches all of
-		// this for subsequent runs.
+		// loadPyodide comes from the npm package; the assets it pulls at
+		// runtime (core .wasm, stdlib zip, lock file, package wheels) are
+		// served from the bundled static/pyodide/ directory via the
+		// local-first fetch shim below, falling back to the CDN for
+		// anything not vendored. SvelteKit serves static/ at the origin
+		// root under both `npm run dev` and Tauri prod.
+		installLocalFirstFetch();
 		pyodide = await loadPyodide({
-			indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.29.4/full/'
+			indexURL: new URL('/pyodide/', self.location.origin).href
 		});
 		// micropip ships as a loadable package, not part of the stdlib —
 		// pre-load it so install_package() can pyimport it without an
@@ -761,7 +851,13 @@ async function init(): Promise<void> {
 			'Pillow',
 			'beautifulsoup4',
 			'lxml',
-			'typing_extensions'
+			'typing_extensions',
+			// requests must be loaded BEFORE the HARUSPEX_INIT_PY pyodide-http
+			// patch_all() runs — patch_all only patches requests if it's
+			// already importable. Loaded lazily it would stay unpatched (no
+			// WASM sockets) and requests.get() would fail. Its deps (urllib3,
+			// certifi, charset-normalizer, idna) come with it from the lock.
+			'requests'
 		]);
 		// Same-origin URL to the wheels bundled by scripts/fetch-pyodide.sh
 		// into static/pyodide/wheels/. SvelteKit serves static/ at the
@@ -769,6 +865,31 @@ async function init(): Promise<void> {
 		pyodide.globals.set(
 			'_haruspex_doc_wheels_url',
 			new URL('/pyodide/wheels/', self.location.origin).href
+		);
+		// PyPI-only packages we vendor and install LAZILY from their local
+		// wheels (deps=False) on first import, instead of letting micropip
+		// hit PyPI. Each entry maps the import name → the wheel(s) to install
+		// together (the package plus any non-lockfile runtime deps). plotly
+		// pulls narwhals (vendored at root); packaging is already loaded via
+		// matplotlib. Keeps plotly offline without paying its large unzip at
+		// every worker boot. See _haruspex_auto_install_missing.
+		pyodide.globals.set(
+			'_haruspex_local_wheels',
+			pyodide.toPy({
+				plotly: [
+					new URL('/pyodide/wheels/plotly-6.8.0-py3-none-any.whl', self.location.origin).href,
+					new URL('/pyodide/narwhals-2.15.0-py3-none-any.whl', self.location.origin).href
+				]
+			})
+		);
+		// Local plotly.min.js (extracted from the wheel into static/plotly/)
+		// so rendered figures load their JS from the app origin, not
+		// cdn.plot.ly. The interactive-artifact iframe already loads
+		// cross-origin scripts (it used the CDN before), so an app-origin
+		// <script src> resolves the same way — with zero network.
+		pyodide.globals.set(
+			'_haruspex_plotlyjs_url',
+			new URL('/plotly/plotly.min.js', self.location.origin).href
 		);
 		// Pyodide's batched callback delivers one line at a time WITHOUT
 		// the trailing newline, so re-append it before forwarding. Without
@@ -941,6 +1062,16 @@ async function init(): Promise<void> {
 				});
 			}
 		);
+		// Bridge so the Python auto-install loop can announce which package
+		// it's about to download — surfaces as "Installing X…" on the
+		// running tool card and refreshes the manager's install watchdog.
+		pyodide.globals.set('_haruspex_install_status', (pkg: unknown, phase: unknown) => {
+			const ph = String(phase ?? 'downloading');
+			postInstallProgress(
+				String(pkg),
+				ph === 'resolving' || ph === 'installing' ? ph : 'downloading'
+			);
+		});
 		// Ask main for the current proxy mode so the init script can decide
 		// whether to install the urllib/requests/httpx → pyfetch bridge
 		// (pyodide-http). When a proxy is configured, we deliberately leave
@@ -1093,6 +1224,7 @@ async function installIntoPyodide(
 	log: (msg: string) => void
 ): Promise<void> {
 	pyodide.globals.set('_haruspex_retry_pkg', pkg);
+	postInstallProgress(pkg, 'downloading');
 	await pyodide.runPythonAsync('import micropip as _mp; await _mp.install(_haruspex_retry_pkg)');
 	log(`[haruspex] auto-installed ${pkg}\n`);
 	await pyodide.runPythonAsync(
@@ -1144,6 +1276,8 @@ async function runWithImportRetry(
 	const tried = new Set<string>();
 	for (let round = 0; round < MAX_INSTALL_ROUNDS; round++) {
 		try {
+			// Entering user-code execution: (re)arm the execution timeout.
+			postExecStart();
 			return await pyodide.runPythonAsync(code);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -1152,6 +1286,9 @@ async function runWithImportRetry(
 			if (tried.has(pkg)) throw err;
 			tried.add(pkg);
 			try {
+				// Back into the install phase: pause the execution timeout
+				// while we download the missing transitive dependency.
+				postPkgPhaseStart();
 				await installIntoPyodide(pyodide, pkg, log);
 				await clearFailedImports(pyodide, code);
 			} catch {
@@ -1160,6 +1297,7 @@ async function runWithImportRetry(
 		}
 	}
 	// Last attempt — let the error bubble normally.
+	postExecStart();
 	return pyodide.runPythonAsync(code);
 }
 
@@ -1207,6 +1345,11 @@ async function handleRun(id: string, code: string): Promise<void> {
 	currentStderr = '';
 	const t0 = performance.now();
 	try {
+		// Enter the package-resolution phase: the manager pauses the
+		// execution timeout here and runs the install watchdog instead, so
+		// loadPackagesFromImports + the auto-install pass below can take as
+		// long as the downloads need without tripping the run budget.
+		postPkgPhaseStart();
 		await pyodide.loadPackagesFromImports(code);
 		// Auto-install PyPI packages the user code imports but that
 		// aren't in Pyodide's lockfile (so loadPackagesFromImports
@@ -1285,6 +1428,10 @@ async function handleInstall(id: string, packageName: string): Promise<void> {
 		return;
 	}
 	const t0 = performance.now();
+	currentRunId = id;
+	// The whole call is an install — pause the execution timeout for its
+	// duration and let the install watchdog govern instead.
+	post({ kind: 'pkg_phase_start', id });
 	post({ kind: 'install_progress', id, package: packageName, phase: 'resolving' });
 	try {
 		const micropip = pyodide.pyimport('micropip');
@@ -1301,6 +1448,8 @@ async function handleInstall(id: string, packageName: string): Promise<void> {
 			id,
 			result: emptyResult(Math.round(performance.now() - t0), message)
 		});
+	} finally {
+		currentRunId = '';
 	}
 }
 

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Artifact, MainToWorker, ToolResult, WorkerToMain } from './protocol';
+import type { Artifact, InstallPhase, MainToWorker, ToolResult, WorkerToMain } from './protocol';
 import { getWorkingDir } from '$lib/stores/chat.svelte';
 import { getSettings } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
@@ -8,17 +8,43 @@ export interface RunOptions {
 	timeoutMs?: number;
 	onStdout?: (chunk: string) => void;
 	onStderr?: (chunk: string) => void;
+	/**
+	 * Called when the worker reports a package install in progress during
+	 * a run (auto-install of an imported package, or an explicit
+	 * install_package call). Lets the UI surface "Installing plotly…" on
+	 * the running tool card so a long first-import download reads as
+	 * intentional rather than a hang.
+	 */
+	onInstall?: (packageName: string, phase: InstallPhase) => void;
 }
 
 interface PendingRun {
 	resolve: (result: ToolResult) => void;
 	reject: (err: Error) => void;
+	/**
+	 * The execution-timeout timer. Armed on dispatch, PAUSED (cleared to
+	 * null) while the worker is in its package-install phase, and re-armed
+	 * on `exec_start`. So this only counts wall-clock time spent actually
+	 * running user code — installs are budgeted separately via
+	 * `installWatchdog`.
+	 */
 	timer: ReturnType<typeof setTimeout> | null;
+	/** Execution-timeout budget in ms, retained so `exec_start` can re-arm
+	 *  `timer` after an install pause. */
+	execTimeoutMs: number;
+	/**
+	 * Install watchdog. Armed on `pkg_phase_start` and refreshed on every
+	 * `install_progress` event, so a steadily-progressing multi-package
+	 * install never trips it; it only fires when a download stalls with no
+	 * progress for INSTALL_TIMEOUT_MS.
+	 */
+	installWatchdog: ReturnType<typeof setTimeout> | null;
 	terminateFallback: ReturnType<typeof setTimeout> | null;
 	interrupted: boolean;
 	artifacts: Artifact[];
 	onStdout?: (chunk: string) => void;
 	onStderr?: (chunk: string) => void;
+	onInstall?: (packageName: string, phase: InstallPhase) => void;
 }
 
 interface PendingGlobals {
@@ -29,6 +55,12 @@ interface PendingGlobals {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const INTERRUPT_FALLBACK_MS = 2_000;
+// Install watchdog budget. Refreshed on every install_progress event, so
+// this is a stall timeout (no progress for this long), not a total cap —
+// a large multi-wheel download that keeps making progress runs as long as
+// it needs. Only a genuinely wedged download (dead network mid-fetch)
+// trips it.
+const INSTALL_TIMEOUT_MS = 180_000;
 
 export type WorkerFactory = () => Worker;
 
@@ -198,10 +230,47 @@ export class WorkerManager {
 				p?.onStderr?.(msg.data);
 				return;
 			}
+			case 'pkg_phase_start': {
+				// Worker entered the install phase: pause the execution
+				// timeout and arm the (refreshing) install watchdog so a slow
+				// download isn't charged against the run budget.
+				const p = this.pending.get(msg.id);
+				if (!p) return;
+				if (p.timer) {
+					clearTimeout(p.timer);
+					p.timer = null;
+				}
+				this.armInstallWatchdog(msg.id);
+				return;
+			}
+			case 'exec_start': {
+				// Worker is about to run user code: drop the install watchdog
+				// and (re-)arm a fresh execution timeout from this point.
+				const p = this.pending.get(msg.id);
+				if (!p) return;
+				if (p.installWatchdog) {
+					clearTimeout(p.installWatchdog);
+					p.installWatchdog = null;
+				}
+				if (p.timer) clearTimeout(p.timer);
+				p.interrupted = false;
+				p.timer = setTimeout(() => this.onTimeout(msg.id, p.execTimeoutMs), p.execTimeoutMs);
+				return;
+			}
+			case 'install_progress': {
+				const p = this.pending.get(msg.id);
+				if (!p) return;
+				// Refresh the stall watchdog and surface the package name to
+				// the UI ("Installing plotly…").
+				this.armInstallWatchdog(msg.id);
+				p.onInstall?.(msg.package, msg.phase);
+				return;
+			}
 			case 'done': {
 				const p = this.pending.get(msg.id);
 				if (!p) return;
 				if (p.timer) clearTimeout(p.timer);
+				if (p.installWatchdog) clearTimeout(p.installWatchdog);
 				if (p.terminateFallback) clearTimeout(p.terminateFallback);
 				this.pending.delete(msg.id);
 				const result = {
@@ -243,8 +312,6 @@ export class WorkerManager {
 				else pending.resolve();
 				return;
 			}
-			case 'install_progress':
-				return;
 		}
 	}
 
@@ -256,6 +323,7 @@ export class WorkerManager {
 		this.pending.clear();
 		pending.forEach((p) => {
 			if (p.timer) clearTimeout(p.timer);
+			if (p.installWatchdog) clearTimeout(p.installWatchdog);
 			if (p.terminateFallback) clearTimeout(p.terminateFallback);
 			p.reject(err);
 		});
@@ -274,11 +342,14 @@ export class WorkerManager {
 				resolve,
 				reject,
 				timer,
+				execTimeoutMs: timeoutMs,
+				installWatchdog: null,
 				terminateFallback: null,
 				interrupted: false,
 				artifacts: [],
 				onStdout: opts.onStdout,
-				onStderr: opts.onStderr
+				onStderr: opts.onStderr,
+				onInstall: opts.onInstall
 			});
 			void this.waitForReady()
 				.then(async () => {
@@ -395,9 +466,40 @@ export class WorkerManager {
 		const p = this.pending.get(id);
 		if (!p) return;
 		this.pending.delete(id);
+		if (p.installWatchdog) clearTimeout(p.installWatchdog);
 		if (p.terminateFallback) clearTimeout(p.terminateFallback);
 		this.respawn();
 		p.reject(new Error(`sandbox timeout after ${timeoutMs}ms`));
+	}
+
+	/**
+	 * (Re)arm the install stall watchdog for a run. Called on
+	 * `pkg_phase_start` and refreshed on each `install_progress`, so the
+	 * effective limit is "no install progress for INSTALL_TIMEOUT_MS",
+	 * not a total install cap. Unlike the execution timeout there's no
+	 * cooperative-interrupt phase — a wedged `micropip.install` is sitting
+	 * in a network await with no bytecode to interrupt, so we terminate
+	 * and respawn directly with a distinct, install-specific message.
+	 */
+	private armInstallWatchdog(id: string): void {
+		const p = this.pending.get(id);
+		if (!p) return;
+		if (p.installWatchdog) clearTimeout(p.installWatchdog);
+		p.installWatchdog = setTimeout(() => this.onInstallTimeout(id), INSTALL_TIMEOUT_MS);
+	}
+
+	private onInstallTimeout(id: string): void {
+		const p = this.pending.get(id);
+		if (!p) return;
+		this.pending.delete(id);
+		if (p.timer) clearTimeout(p.timer);
+		if (p.terminateFallback) clearTimeout(p.terminateFallback);
+		this.respawn();
+		p.reject(
+			new Error(
+				`sandbox package install stalled (no progress for ${INSTALL_TIMEOUT_MS}ms) — the download may have failed`
+			)
+		);
 	}
 
 	async runPython(code: string, opts: RunOptions = {}): Promise<ToolResult> {
@@ -452,6 +554,7 @@ export class WorkerManager {
 		this.pending.clear();
 		pending.forEach((p) => {
 			if (p.timer) clearTimeout(p.timer);
+			if (p.installWatchdog) clearTimeout(p.installWatchdog);
 			if (p.terminateFallback) clearTimeout(p.terminateFallback);
 			p.reject(new Error('sandbox reset'));
 		});

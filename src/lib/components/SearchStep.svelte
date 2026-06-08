@@ -201,6 +201,14 @@
 				<span class="step-chevron">
 					{#if step.result}{detailsExpanded[step.id] ? '▾' : '▸'}{/if}
 				</span>
+				{#if step.status === 'running' && step.installStatus}
+					<span
+						class="install-status"
+						title="Downloading a package — this can take a moment on first use"
+					>
+						{step.installStatus}
+					</span>
+				{/if}
 				<span class="step-status">
 					{#if step.status === 'running'}
 						<span class="spinner"></span>
@@ -427,6 +435,16 @@
 		background: rgba(204, 153, 119, 0.1);
 		border-radius: 3px;
 		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	}
+
+	.install-status {
+		margin-left: auto;
+		padding: 1px 8px;
+		font-size: 0.72rem;
+		color: var(--text-secondary);
+		background: rgba(120, 160, 220, 0.12);
+		border-radius: 3px;
+		white-space: nowrap;
 	}
 
 	.step-thumb {

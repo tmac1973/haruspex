@@ -928,10 +928,23 @@ export async function sendMessage(content: string): Promise<void> {
 							}
 						];
 					},
+					onToolProgress: (call, status) => {
+						conversation.searchSteps = conversation.searchSteps.map((s) =>
+							s.id === call.id ? { ...s, installStatus: status } : s
+						);
+					},
 					onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) => {
 						conversation.searchSteps = conversation.searchSteps.map((s) =>
 							s.id === call.id
-								? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts, lintIssues }
+								? {
+										...s,
+										status: 'done' as const,
+										result,
+										thumbDataUrl,
+										artifacts,
+										lintIssues,
+										installStatus: undefined
+									}
 								: s
 						);
 					},

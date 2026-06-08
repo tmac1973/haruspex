@@ -47,7 +47,7 @@ registerTool({
 				'(2) Inline images — matplotlib `plt.show()` emits the figure as a PNG in chat. ' +
 				'(3) Inline interactive plots — plotly / bokeh / altair / folium figures returned as the LAST EXPRESSION render in the chat message as an interactive HTML iframe (hover, pan, zoom). Example: `import plotly.express as px; fig = px.scatter(...); fig` — just leave `fig` as the last line; the runtime auto-detects script-bearing HTML and renders it interactively. Do NOT save the HTML to disk and do NOT call any helper to render — return the figure as the last expression. ' +
 				'(4) Inline DataFrames — a pandas DataFrame as the last expression renders as an HTML table. ' +
-				'Each call must complete within the timeout (default 30s); there is no background-task pattern. Bundled offline (no install needed, no network): matplotlib, numpy, pandas, scipy, scikit-learn, sympy, pillow, beautifulsoup4 (Pyodide built-ins), plus fpdf2, python-pptx, xlsxwriter, bokeh, altair. plotly and other PyPI packages are auto-installed on first import (one-time download, then browser-cached).',
+				'Your CODE must complete within the timeout (default 30s); there is no background-task pattern. Package installs do NOT count against that timeout — a first-time import that has to download is budgeted separately, so you can just import freely. Bundled offline (no install needed, no network): matplotlib, numpy, pandas, scipy, scikit-learn, sympy, pillow, beautifulsoup4, lxml, requests, plotly, plus fpdf2, python-pptx, xlsxwriter, bokeh, altair. Other PyPI packages are auto-installed on first import (one-time download, then cached).',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -61,7 +61,7 @@ registerTool({
 		}
 	},
 	displayLabel: (args) => firstLine((args.code as string) || ''),
-	async execute(args) {
+	async execute(args, ctx) {
 		const code = args.code;
 		if (typeof code !== 'string' || !code.trim()) {
 			return toolResult(toolError('Missing or empty `code` argument'));
@@ -102,7 +102,12 @@ registerTool({
 		}
 		try {
 			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
-			const r = await runPython(code, { timeoutMs });
+			const r = await runPython(code, {
+				timeoutMs,
+				// Surface package downloads on the running tool card so a slow
+				// first import reads as "Installing plotly…" rather than a hang.
+				onInstall: (pkg) => ctx.onProgress?.(`Installing ${pkg}…`)
+			});
 			return { result: formatResult(r), artifacts: r.artifactsList };
 		} catch (e) {
 			return toolResult(toolError(`Sandbox error: ${e instanceof Error ? e.message : String(e)}`));

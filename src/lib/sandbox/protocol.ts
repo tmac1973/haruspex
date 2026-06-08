@@ -102,6 +102,23 @@ export type WorkerToMain =
 			interactive?: boolean;
 	  }
 	| { kind: 'install_progress'; id: string; package: string; phase: InstallPhase }
+	/**
+	 * Emitted by the worker when a run enters its package-resolution /
+	 * install phase (loadPackagesFromImports + auto-install + retry
+	 * installs). The manager pauses the execution-timeout while this is
+	 * active and arms a separate, refreshing install watchdog — a slow
+	 * `micropip.install` no longer masquerades as "your code hung". Sent
+	 * unconditionally at the top of each run; a warm run with nothing to
+	 * install transitions to `exec_start` almost immediately.
+	 */
+	| { kind: 'pkg_phase_start'; id: string }
+	/**
+	 * Emitted by the worker immediately before it runs the user's code
+	 * (and before each import-retry re-run). The manager (re)arms the
+	 * execution-timeout from this point so installs don't burn the
+	 * execution budget.
+	 */
+	| { kind: 'exec_start'; id: string }
 	| { kind: 'done'; id: string; result: ToolResult }
 	| { kind: 'globals'; id: string; names: string[] }
 	| {
