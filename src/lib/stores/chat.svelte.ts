@@ -1,7 +1,7 @@
 import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
 import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
-import { getDisplayLabel } from '$lib/agent/tools';
+import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
 import {
 	estimateMessagesTokens,
@@ -920,16 +920,7 @@ export async function sendMessage(content: string): Promise<void> {
 						turnStats.lastCallStats = stats;
 					},
 					onToolStart: (call) => {
-						conversation.searchSteps = [
-							...conversation.searchSteps,
-							{
-								id: call.id,
-								toolName: call.name,
-								query: getDisplayLabel(call.name, call.arguments),
-								status: 'running',
-								args: call.arguments
-							}
-						];
+						conversation.searchSteps = [...conversation.searchSteps, newRunningStep(call)];
 					},
 					onToolProgress: (call, status) => {
 						conversation.searchSteps = conversation.searchSteps.map((s) =>
@@ -937,18 +928,13 @@ export async function sendMessage(content: string): Promise<void> {
 						);
 					},
 					onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) => {
-						conversation.searchSteps = conversation.searchSteps.map((s) =>
-							s.id === call.id
-								? {
-										...s,
-										status: 'done' as const,
-										result,
-										thumbDataUrl,
-										artifacts,
-										lintIssues,
-										installStatus: undefined
-									}
-								: s
+						conversation.searchSteps = markStepDone(
+							conversation.searchSteps,
+							call,
+							result,
+							thumbDataUrl,
+							artifacts,
+							lintIssues
 						);
 					},
 					onStreamChunk: (chunk) => {

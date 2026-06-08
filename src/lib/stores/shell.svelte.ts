@@ -20,7 +20,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ChatMessage } from '$lib/api';
 import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 import type { SearchStep } from '$lib/agent/loop';
-import { getDisplayLabel } from '$lib/agent/tools';
+import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { describeContextManaged } from '$lib/agent/context-budget';
 import { logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
@@ -401,23 +401,10 @@ export class ShellSession {
 				onCallStats: (stats) => (lastCallStats = stats),
 				onContextManaged: (info) => (this.contextNotice = describeContextManaged(info)),
 				onToolStart: (call) => {
-					this.searchSteps = [
-						...this.searchSteps,
-						{
-							id: call.id,
-							toolName: call.name,
-							query: getDisplayLabel(call.name, call.arguments),
-							status: 'running',
-							args: call.arguments
-						}
-					];
+					this.searchSteps = [...this.searchSteps, newRunningStep(call)];
 				},
 				onToolEnd: (call, result, thumbDataUrl, artifacts) => {
-					this.searchSteps = this.searchSteps.map((s) =>
-						s.id === call.id
-							? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts }
-							: s
-					);
+					this.searchSteps = markStepDone(this.searchSteps, call, result, thumbDataUrl, artifacts);
 				}
 			});
 			const assistantMsg: ChatMessage = {

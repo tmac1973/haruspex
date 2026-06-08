@@ -22,7 +22,7 @@ import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps } from '$lib/stores/jobs.svelte';
 import { getActiveContextSize, isVisionSupported } from '$lib/stores/settings';
-import { getDisplayLabel } from '$lib/agent/tools';
+import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { errMessage } from '$lib/utils/error';
 import {
 	createJobRun,
@@ -242,16 +242,7 @@ function buildStreamCallbacks(runId: number, stepIndex: number) {
 			const step = current.steps[stepIndex];
 			if (!step) return;
 			patchStep(runId, stepIndex, {
-				searchSteps: [
-					...step.searchSteps,
-					{
-						id: call.id,
-						toolName: call.name,
-						query: getDisplayLabel(call.name, call.arguments),
-						status: 'running' as const,
-						args: call.arguments
-					}
-				]
+				searchSteps: [...step.searchSteps, newRunningStep(call)]
 			});
 		},
 		onToolEnd: (
@@ -265,10 +256,13 @@ function buildStreamCallbacks(runId: number, stepIndex: number) {
 			const step = current.steps[stepIndex];
 			if (!step) return;
 			patchStep(runId, stepIndex, {
-				searchSteps: step.searchSteps.map((s) =>
-					s.id === call.id
-						? { ...s, status: 'done' as const, result, thumbDataUrl, artifacts, lintIssues }
-						: s
+				searchSteps: markStepDone(
+					step.searchSteps,
+					call,
+					result,
+					thumbDataUrl,
+					artifacts,
+					lintIssues
 				)
 			});
 		}

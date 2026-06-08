@@ -14,8 +14,7 @@
 import type { ChatMessage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact } from '$lib/agent/tools';
-import { runAgentLoop } from '$lib/agent/loop';
-import { appendStreamDelta } from '$lib/agent/think-stream';
+import { runTurnCore } from '$lib/agent/runTurn';
 import type { ContextManagedInfo } from '$lib/agent/context-budget';
 import { withInferenceSlot, type InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 import { updateContextUsage } from '$lib/stores/context.svelte';
@@ -62,47 +61,36 @@ export async function runShellTurn(options: ShellTurnOptions): Promise<ShellTurn
 }
 
 async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
-	let streamingContent = '';
-	let finalText = '';
-	let runError: Error | null = null;
-
-	await runAgentLoop({
-		messages: options.messages,
-		workingDir: null,
-		contextSize: options.contextSize,
-		// Shell-tab questions like "what does this code do?" or "find the
-		// misconfig" often need 4–6 sequential file reads. With the old
-		// cap of 8 a single malformed-tool-call recovery (one iteration
-		// burned) left no headroom for finishing the investigation. 12
-		// still bounds the turn for runaway loops but actually fits real
-		// admin-troubleshooting use.
-		maxIterations: options.maxIterations ?? 12,
-		deepResearch: false,
-		shellMode: true,
-		shellAllowWrite: options.allowWrite ?? false,
-		shellCwd: options.cwd ?? null,
-		expectsFileOutput: false,
-		visionSupported: options.visionSupported ?? true,
-		signal: options.signal,
-		onUsageUpdate: (usage) => updateContextUsage(usage, options.contextSize),
-		onCallStats: (stats) => options.onCallStats?.(stats),
-		onContextManaged: (info) => options.onContextManaged?.(info),
-		onToolStart: (call) => options.onToolStart?.(call),
-		onToolEnd: (call, result, thumbDataUrl, artifacts) =>
-			options.onToolEnd?.(call, result, thumbDataUrl, artifacts),
-		onStreamChunk: (chunk) => {
-			streamingContent = appendStreamDelta(streamingContent, chunk.delta);
-			options.onAssistantDelta?.(streamingContent);
+	return runTurnCore(
+		{
+			messages: options.messages,
+			workingDir: null,
+			contextSize: options.contextSize,
+			// Shell-tab questions like "what does this code do?" or "find the
+			// misconfig" often need 4–6 sequential file reads. With the old
+			// cap of 8 a single malformed-tool-call recovery (one iteration
+			// burned) left no headroom for finishing the investigation. 12
+			// still bounds the turn for runaway loops but actually fits real
+			// admin-troubleshooting use.
+			maxIterations: options.maxIterations ?? 12,
+			deepResearch: false,
+			shellMode: true,
+			shellAllowWrite: options.allowWrite ?? false,
+			shellCwd: options.cwd ?? null,
+			expectsFileOutput: false,
+			visionSupported: options.visionSupported ?? true,
+			signal: options.signal,
+			onUsageUpdate: (usage) => updateContextUsage(usage, options.contextSize),
+			onCallStats: (stats) => options.onCallStats?.(stats),
+			onContextManaged: (info) => options.onContextManaged?.(info),
+			onToolStart: (call) => options.onToolStart?.(call),
+			onToolEnd: (call, result, thumbDataUrl, artifacts) =>
+				options.onToolEnd?.(call, result, thumbDataUrl, artifacts)
 		},
-		onComplete: () => {
+		{
+			onAssistantDelta: options.onAssistantDelta,
 			// Shell intentionally skips citation processing — strip + trim only.
-			finalText = stripToolCallArtifacts(streamingContent).trim();
-		},
-		onError: (err) => {
-			runError = err;
+			finalize: (raw) => stripToolCallArtifacts(raw).trim()
 		}
-	});
-
-	if (runError) throw runError;
-	return { finalText };
+	);
 }
