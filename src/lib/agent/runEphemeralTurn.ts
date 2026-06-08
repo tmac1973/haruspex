@@ -17,8 +17,7 @@
 import type { ChatMessage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
-import { runAgentLoop } from '$lib/agent/loop';
-import { appendStreamDelta } from '$lib/agent/think-stream';
+import { runTurnCore } from '$lib/agent/runTurn';
 import { buildSystemPrompt, looksLikeFileOutputRequest } from '$lib/agent/system-prompt';
 import { finalizeStreamText } from '$lib/markdown';
 
@@ -55,34 +54,23 @@ export async function runEphemeralTurn(
 
 	const expectsFileOutput = !!options.workingDir && looksLikeFileOutputRequest(options.userMessage);
 
-	let streamingContent = '';
-	let finalText = '';
-	let runError: Error | null = null;
-
-	await runAgentLoop({
-		messages,
-		workingDir: options.workingDir,
-		contextSize: options.contextSize,
-		maxIterations: options.maxIterations ?? (options.deepResearch ? 25 : 10),
-		deepResearch: options.deepResearch ?? false,
-		expectsFileOutput,
-		visionSupported: options.visionSupported ?? true,
-		signal: options.signal,
-		onToolStart: (call) => options.onToolStart?.(call),
-		onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) =>
-			options.onToolEnd?.(call, result, thumbDataUrl, artifacts, lintIssues),
-		onStreamChunk: (chunk) => {
-			streamingContent = appendStreamDelta(streamingContent, chunk.delta);
-			options.onAssistantDelta?.(streamingContent);
+	return runTurnCore(
+		{
+			messages,
+			workingDir: options.workingDir,
+			contextSize: options.contextSize,
+			maxIterations: options.maxIterations ?? (options.deepResearch ? 25 : 10),
+			deepResearch: options.deepResearch ?? false,
+			expectsFileOutput,
+			visionSupported: options.visionSupported ?? true,
+			signal: options.signal,
+			onToolStart: (call) => options.onToolStart?.(call),
+			onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) =>
+				options.onToolEnd?.(call, result, thumbDataUrl, artifacts, lintIssues)
 		},
-		onComplete: () => {
-			finalText = finalizeStreamText(streamingContent).content;
-		},
-		onError: (err) => {
-			runError = err;
+		{
+			onAssistantDelta: options.onAssistantDelta,
+			finalize: (raw) => finalizeStreamText(raw).content
 		}
-	});
-
-	if (runError) throw runError;
-	return { finalText };
+	);
 }
