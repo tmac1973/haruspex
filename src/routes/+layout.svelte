@@ -221,6 +221,17 @@
 			const text = getLastAssistantText();
 			if (text) toggleTts(text);
 		}
+		if (event.key === 'F4') {
+			event.preventDefault();
+			if (event.repeat) return;
+			// Shell tab only: dump the last N captured commands + output to the
+			// assistant with no prompt. Open the sidebar so the user sees it land.
+			if (getActiveTab() !== 'shell') return;
+			const session = getActiveShellSession();
+			if (!session) return;
+			session.setSidebarOpen(true);
+			void session.submitRecentCommands();
+		}
 	}
 
 	async function onGlobalKeyup(event: KeyboardEvent) {

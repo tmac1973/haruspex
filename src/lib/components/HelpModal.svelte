@@ -42,6 +42,10 @@
 		{
 			title: 'Shell tab',
 			items: [
+				{
+					keys: 'F4',
+					action: 'Submit recent shell commands & output to the assistant (no prompt)'
+				},
 				{ keys: 'Ctrl + Shift + A', action: 'Toggle the assistant sidebar' },
 				{ keys: 'Ctrl + `', action: 'Switch focus: terminal ↔ assistant' },
 				{ keys: 'Ctrl + Shift + C', action: 'Copy terminal selection' },

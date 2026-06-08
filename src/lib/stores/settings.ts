@@ -226,7 +226,7 @@ export interface AppSettings {
 	/**
 	 * Whether clicking "Run" on an assistant-suggested command in the
 	 * Shell tab automatically sends the command's output back to the
-	 * assistant for analysis once it finishes. On by default. When off,
+	 * assistant for analysis once it finishes. Off by default. When off,
 	 * Run just executes the command in the terminal and stops there —
 	 * the user decides whether to ask the assistant about the result.
 	 */
@@ -284,7 +284,7 @@ const defaults: AppSettings = {
 	shellMaxBytesPerCapture: 8192,
 	shellSidebarWidth: 480,
 	shellAllowWrite: false,
-	shellRunAutoSubmit: true
+	shellRunAutoSubmit: false
 };
 
 function load(): AppSettings {

@@ -90,13 +90,14 @@
 				selectionBackground: '#264f78'
 			}
 		});
-		// Reserve F1/F2/F3 for app-level handlers (shortcuts help,
-		// push-to-talk, read-aloud). Also release Ctrl+Shift+C / V (copy /
-		// paste) and Ctrl+Shift+A (toggle assistant sidebar) so the app can
-		// handle them — xterm would otherwise consume them. Plain Ctrl+C and
-		// Ctrl+V still reach the PTY (SIGINT and literal Ctrl+V).
+		// Reserve F1/F2/F3/F4 for app-level handlers (shortcuts help,
+		// push-to-talk, read-aloud, submit recent commands). Also release
+		// Ctrl+Shift+C / V (copy / paste) and Ctrl+Shift+A (toggle assistant
+		// sidebar) so the app can handle them — xterm would otherwise consume
+		// them. Plain Ctrl+C and Ctrl+V still reach the PTY (SIGINT and literal
+		// Ctrl+V).
 		t.attachCustomKeyEventHandler((event) => {
-			if (event.key === 'F1' || event.key === 'F2' || event.key === 'F3') {
+			if (event.key === 'F1' || event.key === 'F2' || event.key === 'F3' || event.key === 'F4') {
 				return false;
 			}
 			if (
