@@ -224,3 +224,42 @@ pub async fn fs_write_odt(
 
     write_bytes_to_workdir(&resolved, &bytes).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fs_tools::test_support::{assert_odf_mimetype, read_zip_entry};
+    use std::collections::HashMap;
+
+    fn content_xml(paragraphs: &[&str]) -> String {
+        let bytes = build_odt(paragraphs, &HashMap::new()).unwrap();
+        assert_odf_mimetype(&bytes, "application/vnd.oasis.opendocument.text");
+        read_zip_entry(&bytes, "content.xml")
+    }
+
+    #[test]
+    fn odt_renders_headings_at_each_level() {
+        let c = content_xml(&["# One", "## Two", "### Three"]);
+        assert!(c.contains(
+            r#"<text:h text:style-name="Heading_20_1" text:outline-level="1">One</text:h>"#
+        ));
+        assert!(c.contains(
+            r#"<text:h text:style-name="Heading_20_2" text:outline-level="2">Two</text:h>"#
+        ));
+        assert!(c.contains(
+            r#"<text:h text:style-name="Heading_20_3" text:outline-level="3">Three</text:h>"#
+        ));
+    }
+
+    #[test]
+    fn odt_renders_plain_paragraph() {
+        let c = content_xml(&["Just text."]);
+        assert!(c.contains("<text:p>Just text.</text:p>"));
+    }
+
+    #[test]
+    fn odt_escapes_xml_special_chars() {
+        let c = content_xml(&["a < b & c > d"]);
+        assert!(c.contains("a &lt; b &amp; c &gt; d"));
+    }
+}

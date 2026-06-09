@@ -313,3 +313,46 @@ pub async fn fs_read_docx(workdir: String, rel_path: String) -> Result<String, S
 
     Ok(text)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fs_tools::test_support::read_zip_entry;
+    use std::collections::HashMap;
+
+    fn document_xml(paragraphs: &[&str]) -> String {
+        let bytes = build_docx(paragraphs, &HashMap::new()).unwrap();
+        read_zip_entry(&bytes, "word/document.xml")
+    }
+
+    #[test]
+    fn docx_renders_headings_at_each_level() {
+        let body = document_xml(&["# One", "## Two", "### Three"]);
+        assert!(body.contains(r#"<w:pStyle w:val="Heading1"/>"#));
+        assert!(body.contains(r#"<w:pStyle w:val="Heading2"/>"#));
+        assert!(body.contains(r#"<w:pStyle w:val="Heading3"/>"#));
+        assert!(body.contains(r#"<w:t xml:space="preserve">One</w:t>"#));
+        assert!(body.contains(r#"<w:t xml:space="preserve">Three</w:t>"#));
+    }
+
+    #[test]
+    fn docx_renders_plain_paragraph() {
+        let body = document_xml(&["Just text."]);
+        assert!(
+            body.contains(r#"<w:p><w:r><w:t xml:space="preserve">Just text.</w:t></w:r></w:p>"#)
+        );
+    }
+
+    #[test]
+    fn docx_escapes_xml_special_chars() {
+        let body = document_xml(&["a < b & c > d"]);
+        assert!(body.contains("a &lt; b &amp; c &gt; d"));
+    }
+
+    #[test]
+    fn docx_package_declares_document_part() {
+        let bytes = build_docx(&["hi"], &HashMap::new()).unwrap();
+        let content_types = read_zip_entry(&bytes, "[Content_Types].xml");
+        assert!(content_types.contains("word/document.xml"));
+    }
+}
