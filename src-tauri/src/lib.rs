@@ -42,6 +42,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        // Custom scheme backing the Python sandbox's synchronous HTTP
+        // (requests / urllib via pyodide-http's XMLHttpRequest transport).
+        // The worker rewrites cross-origin XHRs onto this scheme; the
+        // handler fetches via reqwest (no browser CORS). See sandbox_fetch.
+        .register_asynchronous_uri_scheme_protocol("haruspexfetch", |_ctx, request, responder| {
+            tauri::async_runtime::spawn(async move {
+                responder.respond(sandbox_fetch::handle_fetch_scheme(request).await);
+            });
+        })
         .setup(|app| {
             app.manage(ModelManager::new(app.handle()));
             app.manage(Database::new(app.handle()).expect("Failed to initialize database"));
