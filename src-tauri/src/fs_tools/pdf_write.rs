@@ -120,6 +120,24 @@ pub(super) fn build_pdf(
 
     let mut doc = PdfDocument::new("Document");
     let registered_images = register_images(&mut doc, images)?;
+    let all_pages = layout_pages(lines, &registered_images);
+
+    let bytes = doc
+        .with_pages(all_pages)
+        .save(&PdfSaveOptions::default(), &mut Vec::new());
+
+    Ok(bytes)
+}
+
+/// Lay out the document into pages — the pure, document-free core of
+/// `build_pdf`. Takes the pre-registered image table (XObject id + natural
+/// pixel size) and emits the printpdf op stream per page. Split out so the
+/// op stream is unit-testable without constructing a `PdfDocument`.
+fn layout_pages(
+    lines: &[&str],
+    registered_images: &HashMap<String, (printpdf::XObjectId, u32, u32)>,
+) -> Vec<printpdf::PdfPage> {
+    use printpdf::*;
 
     // US Letter: 215.9 mm × 279.4 mm. Keep a 20 mm margin on all sides.
     let page_width_mm = 215.9_f32;
@@ -468,11 +486,7 @@ pub(super) fn build_pdf(
         current_ops,
     ));
 
-    let bytes = doc
-        .with_pages(all_pages)
-        .save(&PdfSaveOptions::default(), &mut Vec::new());
-
-    Ok(bytes)
+    all_pages
 }
 
 #[tauri::command]
@@ -503,4 +517,71 @@ pub async fn fs_write_pdf(
     .map_err(|e| format!("PDF build task failed: {}", e))??;
 
     write_bytes_to_workdir(&resolved, &bytes).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use printpdf::{Op, TextItem};
+    use std::collections::HashMap;
+
+    fn pages(lines: &[&str]) -> Vec<printpdf::PdfPage> {
+        layout_pages(lines, &HashMap::new())
+    }
+
+    /// Concatenate every ShowText payload across all pages — lets us assert
+    /// the rendered text without parsing the final PDF bytes.
+    fn all_text(pages: &[printpdf::PdfPage]) -> String {
+        let mut out = String::new();
+        for page in pages {
+            for op in &page.ops {
+                if let Op::ShowText { items } = op {
+                    for item in items {
+                        if let TextItem::Text(s) = item {
+                            out.push_str(s);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn count_set_font(pages: &[printpdf::PdfPage]) -> usize {
+        pages
+            .iter()
+            .flat_map(|p| &p.ops)
+            .filter(|op| matches!(op, Op::SetFont { .. }))
+            .count()
+    }
+
+    #[test]
+    fn pdf_lays_out_headings_and_body_on_one_page() {
+        let p = pages(&["# Title", "Some body text here.", "More text."]);
+        assert_eq!(p.len(), 1);
+        let text = all_text(&p);
+        assert!(text.contains("Title"));
+        assert!(text.contains("Some body text"));
+        assert!(text.contains("More text."));
+        assert!(count_set_font(&p) >= 1);
+    }
+
+    #[test]
+    fn pdf_flows_across_multiple_pages_when_content_overflows() {
+        let many: Vec<&str> = (0..120).map(|_| "Filler paragraph line.").collect();
+        let p = pages(&many);
+        assert!(
+            p.len() >= 2,
+            "expected a page break, got {} page(s)",
+            p.len()
+        );
+    }
+
+    #[test]
+    fn pdf_renders_markdown_table_cells() {
+        let p = pages(&["| A | B |", "| - | - |", "| 1 | 2 |"]);
+        let text = all_text(&p);
+        assert!(text.contains('A') && text.contains('B'));
+        assert!(text.contains('1') && text.contains('2'));
+    }
 }
