@@ -3,6 +3,7 @@ mod audio;
 mod db;
 mod feedback;
 mod fs_tools;
+mod hardware;
 mod inference;
 mod inference_queue;
 mod integrations;
@@ -97,7 +98,7 @@ pub fn run() {
             models::list_models,
             models::download_model,
             models::cancel_download,
-            models::cmd_detect_hardware,
+            hardware::cmd_detect_hardware,
             models::import_model,
             models::get_models_dir,
             models::has_any_model,
