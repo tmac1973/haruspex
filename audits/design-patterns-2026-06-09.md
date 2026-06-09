@@ -300,6 +300,8 @@ See Structural § Adapter. Pragmatic today. Only act if a generic "process any d
 
 ### Finding 7 — `Date.now()`-based tool-call IDs can collide — **3/10**
 
+> **DONE** on branch `chore/cycle-guard-and-toolcall-ids`: both text-fallback paths in `resolveToolCalls` now use a module-level monotonic `nextToolCallId()` (base-36 counter) instead of `call_${Date.now()}_${i}`. The structured path keeps the server-provided id.
+
 **Location:** `src/lib/agent/parser.ts:202,215` (verified) — fallback IDs are `` `call_${Date.now()}_${i}` ``.
 
 Within one response the `_${i}` suffix disambiguates, so collisions are unlikely in practice. But IDs are not unique *across* iterations within the same millisecond, and these IDs flow into `tool_call_id` correlation. Low severity; note it.
@@ -336,5 +338,5 @@ Every Rust `#[derive(Serialize)]` DTO is hand-mirrored as a TS interface (`store
 
 1. ~~**Findings 2 + 3** (5/5)~~ — DONE (`fix/parser-unguarded-json-parse`): inline SQL moved into `Database`; `Database::conn()` poison-recovery helper across all DB call sites. No follow-up needed — `server/mod.rs` (tokio mutex, can't poison) and `inference_queue.rs` (already handles poison, never `.unwrap()`s) don't share the bug; see Finding 3.
 2. ~~**Finding 1** (3)~~ — DONE (`fix/parser-unguarded-json-parse`); robustness fix, unit-tested.
-3. **Finding 7** (3) — trivial, do alongside any parser work.
+3. ~~**Finding 7** (3)~~ — DONE (`chore/cycle-guard-and-toolcall-ids`): monotonic `nextToolCallId()`.
 4. **Findings 4, 5, 6, 8** — design notes; act only when the relevant subsystem grows or the IPC proposal lands.

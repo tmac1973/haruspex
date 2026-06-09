@@ -178,6 +178,15 @@ export function extractFunctionStyleToolCalls(content: string): ParsedToolCall[]
 	return calls;
 }
 
+// Monotonic id for tool calls recovered from text content. The structured
+// path reuses the server-provided id; only the text fallbacks mint their own.
+// A counter avoids the collisions a `Date.now()`-based id could produce for
+// calls emitted within the same millisecond.
+let toolCallSeq = 0;
+function nextToolCallId(): string {
+	return `call_${(toolCallSeq++).toString(36)}`;
+}
+
 export function resolveToolCalls(response: ChatCompletionResponse): ResolvedToolCall[] {
 	// Prefer structured tool_calls if present — this is the path a
 	// well-configured server takes and it's always the most reliable.
@@ -211,8 +220,8 @@ export function resolveToolCalls(response: ChatCompletionResponse): ResolvedTool
 		if (hasToolCalls(response.content)) {
 			const calls = extractToolCalls(response.content);
 			if (calls.length > 0) {
-				return calls.map((tc, i) => ({
-					id: `call_${Date.now()}_${i}`,
+				return calls.map((tc) => ({
+					id: nextToolCallId(),
 					name: tc.name,
 					arguments: tc.arguments
 				}));
@@ -224,8 +233,8 @@ export function resolveToolCalls(response: ChatCompletionResponse): ResolvedTool
 		// native tool-call tokens into this Hermes-ish text form
 		// instead of into the OpenAI tool_calls JSON.
 		if (hasFunctionStyleToolCalls(response.content)) {
-			return extractFunctionStyleToolCalls(response.content).map((tc, i) => ({
-				id: `call_${Date.now()}_${i}`,
+			return extractFunctionStyleToolCalls(response.content).map((tc) => ({
+				id: nextToolCallId(),
 				name: tc.name,
 				arguments: tc.arguments
 			}));

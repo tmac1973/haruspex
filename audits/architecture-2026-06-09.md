@@ -283,6 +283,8 @@ Lower priority than A1–A3 — it's size/cohesion, not a correctness or couplin
 
 ### Finding A6 — circular-dep tooling is blind to `$lib` aliases — **3/10**
 
+> **DONE** on branch `chore/cycle-guard-and-toolcall-ids`: added a grep-based regression guard to the CI `frontend` job (`.github/workflows/ci.yml`) that fails if anything under `src/lib/sandbox/` or `src/lib/agent/tools/` imports `stores/chat.svelte` — i.e. reintroduces the A1 cycle madge can't see. Verified it both passes on current code and fires on a planted violation.
+
 **Evidence:** `npx madge --circular` (with and without `--ts-config`) reports **only** the relative-path cycle A7 and misses the real `$lib`-based A1 cycle (the 41 "warnings" are unresolved `$lib` imports). Any CI relying on madge for cycle detection gives false confidence.
 
 **Remediation — give madge the alias map via a config file:**
@@ -330,5 +332,5 @@ If madge still can't resolve `$lib` (it often won't follow SvelteKit's generated
 3. **A3** (5) — decouple `proxy` from `db` (trait or feedback-flush).
 4. **A4** (5) — centralize host/timeout constants now; sidecar abstraction later.
 5. **A5** (4) — extract `proxy/state.rs` + `proxy/config.rs`.
-6. **A6** (3) — fix/replace the cycle-detection in CI so A1-class regressions are caught.
+6. **A6** (3) — DONE (`chore/cycle-guard-and-toolcall-ids`): CI grep guard catches A1-class regressions.
 7. **A7** (2) — move shared loop types out, next time the loop is touched.
