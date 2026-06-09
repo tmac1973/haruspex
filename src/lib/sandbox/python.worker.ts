@@ -811,6 +811,292 @@ function installLocalFirstFetch(): void {
 	};
 }
 
+/**
+ * Pre-load micropip and the common scientific stack at boot.
+ *
+ * micropip ships as a loadable package, not part of the stdlib — pre-load
+ * it so install_package() can pyimport it without an extra round trip on
+ * first use.
+ *
+ * The scientific stack must be *actually* loaded (not just tracked-as-dep).
+ * Without this, a later `micropip.install(some_pypi_pkg)` that depends on
+ * numpy can mark numpy in Pyodide's loadedPackages tracker without actually
+ * extracting it, and every subsequent loadPackage short-circuits with
+ * "already loaded" — leaving model code's `import numpy` looping in
+ * ModuleNotFoundError. Loading them up front (~10-15s on first launch,
+ * browser-cached after) makes that whole bug class impossible.
+ *
+ * fpdf2 + python-pptx + xlsxwriter deps that ARE in the Pyodide lockfile
+ * (Pillow for fpdf2 + python-pptx; lxml + typing_extensions for python-pptx)
+ * are part of this set.
+ */
+async function loadCorePackages(py: PyodideInterface): Promise<void> {
+	await py.loadPackage('micropip');
+	await py.loadPackage([
+		'numpy',
+		'pandas',
+		'matplotlib',
+		'scipy',
+		'sympy',
+		'Pillow',
+		'beautifulsoup4',
+		'lxml',
+		'typing_extensions',
+		// requests must be loaded BEFORE the HARUSPEX_INIT_PY pyodide-http
+		// patch_all() runs — patch_all only patches requests if it's
+		// already importable. Loaded lazily it would stay unpatched (no
+		// WASM sockets) and requests.get() would fail. Its deps (urllib3,
+		// certifi, charset-normalizer, idna) come with it from the lock.
+		'requests'
+	]);
+}
+
+/**
+ * Set the package-discovery globals the init script + auto-installer read:
+ * the bundled doc-wheel directory, the lazy local-wheel map (PyPI-only
+ * packages we vendor and install with deps=False on first import, instead
+ * of letting micropip hit PyPI — plotly pulls vendored narwhals), and the
+ * app-origin plotly.min.js URL so rendered figures load with zero network.
+ */
+function setPackageGlobals(py: PyodideInterface): void {
+	// Same-origin URL to the wheels bundled by scripts/fetch-pyodide.sh
+	// into static/pyodide/wheels/. SvelteKit serves static/ at the origin
+	// root; this works under `npm run dev` and Tauri prod alike.
+	py.globals.set(
+		'_haruspex_doc_wheels_url',
+		new URL('/pyodide/wheels/', self.location.origin).href
+	);
+	py.globals.set(
+		'_haruspex_local_wheels',
+		py.toPy({
+			plotly: [
+				new URL('/pyodide/wheels/plotly-6.8.0-py3-none-any.whl', self.location.origin).href,
+				new URL('/pyodide/narwhals-2.15.0-py3-none-any.whl', self.location.origin).href
+			]
+		})
+	);
+	py.globals.set(
+		'_haruspex_plotlyjs_url',
+		new URL('/plotly/plotly.min.js', self.location.origin).href
+	);
+}
+
+/**
+ * Forward Python stdout/stderr to the main thread. Pyodide's batched
+ * callback delivers one line at a time WITHOUT the trailing newline, so
+ * re-append it before forwarding — otherwise `print('a'); print('b')`
+ * shows up as 'ab' instead of 'a\nb'.
+ */
+function wireOutputStreams(py: PyodideInterface): void {
+	py.setStdout({
+		batched: (s) => {
+			const line = s + '\n';
+			currentStdout += line;
+			if (currentRunId) post({ kind: 'stdout', id: currentRunId, data: line });
+		}
+	});
+	py.setStderr({
+		batched: (s) => {
+			const line = s + '\n';
+			currentStderr += line;
+			if (currentRunId) post({ kind: 'stderr', id: currentRunId, data: line });
+		}
+	});
+}
+
+/** Install an interrupt buffer that arrived before Pyodide finished loading. */
+function applyPendingInterruptBuffer(py: PyodideInterface): void {
+	if (pendingInterruptBuffer) {
+		py.setInterruptBuffer(new Uint8Array(pendingInterruptBuffer));
+		pendingInterruptBuffer = null;
+	}
+}
+
+/**
+ * Register the JS bridges Python calls into: image/HTML artifact emit,
+ * proxied fetch, working-dir save/delete, and install-status reporting.
+ * Each routes through the main thread via post()/the pending-request maps.
+ */
+function registerHostBridges(py: PyodideInterface): void {
+	// Pyodide's auto-conversion of Python bytes to JS yields a Uint8Array
+	// that may be a view into WASM memory — postMessage refuses to
+	// structured-clone such views (DataCloneError). Copy into a fresh
+	// JS-owned Uint8Array before posting. Same defensive String() on
+	// the mime so a Python str doesn't leak through as a PyProxy.
+	py.globals.set('_haruspex_emit_image', (mime: unknown, bytes: unknown) => {
+		if (!currentRunId) return;
+		let safeBytes: Uint8Array;
+		if (bytes instanceof Uint8Array) {
+			safeBytes = new Uint8Array(bytes);
+		} else if (
+			bytes &&
+			typeof bytes === 'object' &&
+			'toJs' in bytes &&
+			typeof (bytes as { toJs: () => unknown }).toJs === 'function'
+		) {
+			const converted = (bytes as { toJs: () => unknown }).toJs();
+			safeBytes =
+				converted instanceof Uint8Array
+					? new Uint8Array(converted)
+					: new Uint8Array(converted as ArrayBufferLike);
+		} else {
+			return;
+		}
+		post({
+			kind: 'artifact',
+			id: currentRunId,
+			mime: String(mime),
+			payload: { kind: 'bytes', bytes: safeBytes }
+		});
+	});
+	py.globals.set(
+		'_haruspex_fetch',
+		(url: unknown, method: unknown, headers: unknown, body: unknown) => {
+			const requestId = crypto.randomUUID();
+			let bodyBytes: Uint8Array | undefined;
+			if (body == null) {
+				bodyBytes = undefined;
+			} else if (body instanceof Uint8Array) {
+				bodyBytes = new Uint8Array(body);
+			} else if (typeof body === 'string') {
+				bodyBytes = new TextEncoder().encode(body);
+			} else if (
+				typeof body === 'object' &&
+				body !== null &&
+				'toJs' in body &&
+				typeof (body as { toJs: () => unknown }).toJs === 'function'
+			) {
+				const c = (body as { toJs: () => unknown }).toJs();
+				if (c instanceof Uint8Array) bodyBytes = new Uint8Array(c);
+				else if (typeof c === 'string') bodyBytes = new TextEncoder().encode(c);
+			}
+			const headersObj: Record<string, string> = {};
+			if (headers && typeof headers === 'object') {
+				const src =
+					'toJs' in headers && typeof (headers as { toJs: () => unknown }).toJs === 'function'
+						? ((headers as { toJs: () => unknown }).toJs() as Record<string, unknown>)
+						: (headers as Record<string, unknown>);
+				for (const [k, v] of Object.entries(src)) {
+					if (v != null) headersObj[String(k)] = String(v);
+				}
+			}
+			return new Promise<{
+				status: number;
+				headers: Record<string, string>;
+				body: Uint8Array;
+				url: string;
+			}>((resolve, reject) => {
+				pendingFetches.set(requestId, { resolve, reject });
+				post({
+					kind: 'fetch_request',
+					id: currentRunId,
+					request_id: requestId,
+					url: String(url),
+					init: {
+						method: typeof method === 'string' ? method : undefined,
+						headers: headersObj,
+						body: bodyBytes
+					}
+				});
+			});
+		}
+	);
+	py.globals.set('_haruspex_delete', (filename: unknown) => {
+		const requestId = crypto.randomUUID();
+		return new Promise<{ path: string }>((resolve, reject) => {
+			pendingDeletes.set(requestId, { resolve, reject });
+			post({
+				kind: 'delete_request',
+				id: currentRunId,
+				request_id: requestId,
+				filename: String(filename)
+			});
+		});
+	});
+	py.globals.set('_haruspex_save', (filename: unknown, content: unknown) => {
+		const requestId = crypto.randomUUID();
+		let payload: Uint8Array | string;
+		if (typeof content === 'string') {
+			payload = content;
+		} else if (content instanceof Uint8Array) {
+			// Detach from any underlying WASM buffer so postMessage can
+			// structured-clone it (same fix as the artifact emit path).
+			payload = new Uint8Array(content);
+		} else if (
+			content &&
+			typeof content === 'object' &&
+			'toJs' in content &&
+			typeof (content as { toJs: () => unknown }).toJs === 'function'
+		) {
+			const converted = (content as { toJs: () => unknown }).toJs();
+			if (converted instanceof Uint8Array) {
+				payload = new Uint8Array(converted);
+			} else if (typeof converted === 'string') {
+				payload = converted;
+			} else {
+				return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
+			}
+		} else {
+			return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
+		}
+		return new Promise<{ path: string; bytes: number }>((resolve, reject) => {
+			pendingSaves.set(requestId, { resolve, reject });
+			post({
+				kind: 'save_request',
+				id: currentRunId,
+				request_id: requestId,
+				filename: String(filename),
+				content: payload
+			});
+		});
+	});
+	py.globals.set(
+		'_haruspex_emit_html',
+		(html: unknown, shown: number | null, total: number | null, interactive: unknown) => {
+			if (!currentRunId) return;
+			const truncated =
+				shown !== null && total !== null && shown !== undefined && total !== undefined
+					? { shown, total }
+					: undefined;
+			post({
+				kind: 'artifact',
+				id: currentRunId,
+				mime: 'text/html',
+				payload: { kind: 'text', text: String(html) },
+				truncated,
+				interactive: !!interactive
+			});
+		}
+	);
+	// Bridge so the Python auto-install loop can announce which package
+	// it's about to download — surfaces as "Installing X…" on the
+	// running tool card and refreshes the manager's install watchdog.
+	py.globals.set('_haruspex_install_status', (pkg: unknown, phase: unknown) => {
+		const ph = String(phase ?? 'downloading');
+		postInstallProgress(
+			String(pkg),
+			ph === 'resolving' || ph === 'installing' ? ph : 'downloading'
+		);
+	});
+}
+
+/**
+ * Ask main for the current proxy mode so the init script can decide whether
+ * to install the urllib/requests/httpx → pyfetch bridge (pyodide-http).
+ * When a proxy is configured we deliberately leave urllib unpatched:
+ * pyodide-http uses sync XMLHttpRequest under the hood, which bypasses our
+ * pyfetch override (and therefore the proxy). Forcing the model to use
+ * pyodide.http.pyfetch directly is the only path that respects the proxy.
+ */
+async function applyRuntimeConfig(py: PyodideInterface): Promise<void> {
+	const runtimeCfg = await new Promise<{ mode: string; workingDirSet: boolean }>((resolve) => {
+		proxyModeWaiter = resolve;
+		post({ kind: 'get_proxy_mode' });
+	});
+	py.globals.set('_haruspex_skip_http_patch', runtimeCfg.mode === 'manual');
+	py.globals.set('_haruspex_working_dir_set', runtimeCfg.workingDirSet);
+}
+
 async function init(): Promise<void> {
 	if (initStarted) return;
 	initStarted = true;
@@ -822,270 +1108,19 @@ async function init(): Promise<void> {
 		// anything not vendored. SvelteKit serves static/ at the origin
 		// root under both `npm run dev` and Tauri prod.
 		installLocalFirstFetch();
-		pyodide = await loadPyodide({
+		const py = await loadPyodide({
 			indexURL: new URL('/pyodide/', self.location.origin).href
 		});
-		// micropip ships as a loadable package, not part of the stdlib —
-		// pre-load it so install_package() can pyimport it without an
-		// extra round trip on first use.
-		await pyodide.loadPackage('micropip');
-		// Common scientific stack — pre-load at boot so they're always
-		// actually loaded (not just tracked-as-dep). Without this, a
-		// later `micropip.install(some_pypi_pkg)` that depends on numpy
-		// can mark numpy in Pyodide's loadedPackages tracker without
-		// actually extracting it, and every subsequent loadPackage
-		// short-circuits with "already loaded" — leaving model code's
-		// `import numpy` looping in ModuleNotFoundError. Loading them
-		// up front (~10-15s on first launch, browser-cached after)
-		// makes that whole bug class impossible.
-		//
-		// fpdf2 + python-pptx + xlsxwriter deps that ARE in the Pyodide
-		// lockfile (Pillow for fpdf2 + python-pptx; lxml + typing_
-		// extensions for python-pptx) are part of this set.
-		await pyodide.loadPackage([
-			'numpy',
-			'pandas',
-			'matplotlib',
-			'scipy',
-			'sympy',
-			'Pillow',
-			'beautifulsoup4',
-			'lxml',
-			'typing_extensions',
-			// requests must be loaded BEFORE the HARUSPEX_INIT_PY pyodide-http
-			// patch_all() runs — patch_all only patches requests if it's
-			// already importable. Loaded lazily it would stay unpatched (no
-			// WASM sockets) and requests.get() would fail. Its deps (urllib3,
-			// certifi, charset-normalizer, idna) come with it from the lock.
-			'requests'
-		]);
-		// Same-origin URL to the wheels bundled by scripts/fetch-pyodide.sh
-		// into static/pyodide/wheels/. SvelteKit serves static/ at the
-		// origin root; this works under `npm run dev` and Tauri prod alike.
-		pyodide.globals.set(
-			'_haruspex_doc_wheels_url',
-			new URL('/pyodide/wheels/', self.location.origin).href
-		);
-		// PyPI-only packages we vendor and install LAZILY from their local
-		// wheels (deps=False) on first import, instead of letting micropip
-		// hit PyPI. Each entry maps the import name → the wheel(s) to install
-		// together (the package plus any non-lockfile runtime deps). plotly
-		// pulls narwhals (vendored at root); packaging is already loaded via
-		// matplotlib. Keeps plotly offline without paying its large unzip at
-		// every worker boot. See _haruspex_auto_install_missing.
-		pyodide.globals.set(
-			'_haruspex_local_wheels',
-			pyodide.toPy({
-				plotly: [
-					new URL('/pyodide/wheels/plotly-6.8.0-py3-none-any.whl', self.location.origin).href,
-					new URL('/pyodide/narwhals-2.15.0-py3-none-any.whl', self.location.origin).href
-				]
-			})
-		);
-		// Local plotly.min.js (extracted from the wheel into static/plotly/)
-		// so rendered figures load their JS from the app origin, not
-		// cdn.plot.ly. The interactive-artifact iframe already loads
-		// cross-origin scripts (it used the CDN before), so an app-origin
-		// <script src> resolves the same way — with zero network.
-		pyodide.globals.set(
-			'_haruspex_plotlyjs_url',
-			new URL('/plotly/plotly.min.js', self.location.origin).href
-		);
-		// Pyodide's batched callback delivers one line at a time WITHOUT
-		// the trailing newline, so re-append it before forwarding. Without
-		// this, `print('a'); print('b')` shows up as 'ab' instead of 'a\nb'.
-		pyodide.setStdout({
-			batched: (s) => {
-				const line = s + '\n';
-				currentStdout += line;
-				if (currentRunId) post({ kind: 'stdout', id: currentRunId, data: line });
-			}
-		});
-		pyodide.setStderr({
-			batched: (s) => {
-				const line = s + '\n';
-				currentStderr += line;
-				if (currentRunId) post({ kind: 'stderr', id: currentRunId, data: line });
-			}
-		});
-		if (pendingInterruptBuffer) {
-			pyodide.setInterruptBuffer(new Uint8Array(pendingInterruptBuffer));
-			pendingInterruptBuffer = null;
-		}
-		// Pyodide's auto-conversion of Python bytes to JS yields a Uint8Array
-		// that may be a view into WASM memory — postMessage refuses to
-		// structured-clone such views (DataCloneError). Copy into a fresh
-		// JS-owned Uint8Array before posting. Same defensive String() on
-		// the mime so a Python str doesn't leak through as a PyProxy.
-		pyodide.globals.set('_haruspex_emit_image', (mime: unknown, bytes: unknown) => {
-			if (!currentRunId) return;
-			let safeBytes: Uint8Array;
-			if (bytes instanceof Uint8Array) {
-				safeBytes = new Uint8Array(bytes);
-			} else if (
-				bytes &&
-				typeof bytes === 'object' &&
-				'toJs' in bytes &&
-				typeof (bytes as { toJs: () => unknown }).toJs === 'function'
-			) {
-				const converted = (bytes as { toJs: () => unknown }).toJs();
-				safeBytes =
-					converted instanceof Uint8Array
-						? new Uint8Array(converted)
-						: new Uint8Array(converted as ArrayBufferLike);
-			} else {
-				return;
-			}
-			post({
-				kind: 'artifact',
-				id: currentRunId,
-				mime: String(mime),
-				payload: { kind: 'bytes', bytes: safeBytes }
-			});
-		});
-		pyodide.globals.set(
-			'_haruspex_fetch',
-			(url: unknown, method: unknown, headers: unknown, body: unknown) => {
-				const requestId = crypto.randomUUID();
-				let bodyBytes: Uint8Array | undefined;
-				if (body == null) {
-					bodyBytes = undefined;
-				} else if (body instanceof Uint8Array) {
-					bodyBytes = new Uint8Array(body);
-				} else if (typeof body === 'string') {
-					bodyBytes = new TextEncoder().encode(body);
-				} else if (
-					typeof body === 'object' &&
-					body !== null &&
-					'toJs' in body &&
-					typeof (body as { toJs: () => unknown }).toJs === 'function'
-				) {
-					const c = (body as { toJs: () => unknown }).toJs();
-					if (c instanceof Uint8Array) bodyBytes = new Uint8Array(c);
-					else if (typeof c === 'string') bodyBytes = new TextEncoder().encode(c);
-				}
-				const headersObj: Record<string, string> = {};
-				if (headers && typeof headers === 'object') {
-					const src =
-						'toJs' in headers && typeof (headers as { toJs: () => unknown }).toJs === 'function'
-							? ((headers as { toJs: () => unknown }).toJs() as Record<string, unknown>)
-							: (headers as Record<string, unknown>);
-					for (const [k, v] of Object.entries(src)) {
-						if (v != null) headersObj[String(k)] = String(v);
-					}
-				}
-				return new Promise<{
-					status: number;
-					headers: Record<string, string>;
-					body: Uint8Array;
-					url: string;
-				}>((resolve, reject) => {
-					pendingFetches.set(requestId, { resolve, reject });
-					post({
-						kind: 'fetch_request',
-						id: currentRunId,
-						request_id: requestId,
-						url: String(url),
-						init: {
-							method: typeof method === 'string' ? method : undefined,
-							headers: headersObj,
-							body: bodyBytes
-						}
-					});
-				});
-			}
-		);
-		pyodide.globals.set('_haruspex_delete', (filename: unknown) => {
-			const requestId = crypto.randomUUID();
-			return new Promise<{ path: string }>((resolve, reject) => {
-				pendingDeletes.set(requestId, { resolve, reject });
-				post({
-					kind: 'delete_request',
-					id: currentRunId,
-					request_id: requestId,
-					filename: String(filename)
-				});
-			});
-		});
-		pyodide.globals.set('_haruspex_save', (filename: unknown, content: unknown) => {
-			const requestId = crypto.randomUUID();
-			let payload: Uint8Array | string;
-			if (typeof content === 'string') {
-				payload = content;
-			} else if (content instanceof Uint8Array) {
-				// Detach from any underlying WASM buffer so postMessage can
-				// structured-clone it (same fix as the artifact emit path).
-				payload = new Uint8Array(content);
-			} else if (
-				content &&
-				typeof content === 'object' &&
-				'toJs' in content &&
-				typeof (content as { toJs: () => unknown }).toJs === 'function'
-			) {
-				const converted = (content as { toJs: () => unknown }).toJs();
-				if (converted instanceof Uint8Array) {
-					payload = new Uint8Array(converted);
-				} else if (typeof converted === 'string') {
-					payload = converted;
-				} else {
-					return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
-				}
-			} else {
-				return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
-			}
-			return new Promise<{ path: string; bytes: number }>((resolve, reject) => {
-				pendingSaves.set(requestId, { resolve, reject });
-				post({
-					kind: 'save_request',
-					id: currentRunId,
-					request_id: requestId,
-					filename: String(filename),
-					content: payload
-				});
-			});
-		});
-		pyodide.globals.set(
-			'_haruspex_emit_html',
-			(html: unknown, shown: number | null, total: number | null, interactive: unknown) => {
-				if (!currentRunId) return;
-				const truncated =
-					shown !== null && total !== null && shown !== undefined && total !== undefined
-						? { shown, total }
-						: undefined;
-				post({
-					kind: 'artifact',
-					id: currentRunId,
-					mime: 'text/html',
-					payload: { kind: 'text', text: String(html) },
-					truncated,
-					interactive: !!interactive
-				});
-			}
-		);
-		// Bridge so the Python auto-install loop can announce which package
-		// it's about to download — surfaces as "Installing X…" on the
-		// running tool card and refreshes the manager's install watchdog.
-		pyodide.globals.set('_haruspex_install_status', (pkg: unknown, phase: unknown) => {
-			const ph = String(phase ?? 'downloading');
-			postInstallProgress(
-				String(pkg),
-				ph === 'resolving' || ph === 'installing' ? ph : 'downloading'
-			);
-		});
-		// Ask main for the current proxy mode so the init script can decide
-		// whether to install the urllib/requests/httpx → pyfetch bridge
-		// (pyodide-http). When a proxy is configured, we deliberately leave
-		// urllib unpatched: pyodide-http uses sync XMLHttpRequest under the
-		// hood and that bypasses our pyfetch override (and therefore the
-		// proxy). Forcing the model to use pyodide.http.pyfetch directly is
-		// the only path that respects the proxy.
-		const runtimeCfg = await new Promise<{ mode: string; workingDirSet: boolean }>((resolve) => {
-			proxyModeWaiter = resolve;
-			post({ kind: 'get_proxy_mode' });
-		});
-		pyodide.globals.set('_haruspex_skip_http_patch', runtimeCfg.mode === 'manual');
-		pyodide.globals.set('_haruspex_working_dir_set', runtimeCfg.workingDirSet);
-		await pyodide.runPythonAsync(HARUSPEX_INIT_PY);
+		pyodide = py;
+
+		await loadCorePackages(py);
+		setPackageGlobals(py);
+		wireOutputStreams(py);
+		applyPendingInterruptBuffer(py);
+		registerHostBridges(py);
+		await applyRuntimeConfig(py);
+
+		await py.runPythonAsync(HARUSPEX_INIT_PY);
 		post({ kind: 'ready' });
 	} catch (err) {
 		post({ kind: 'load_error', error: err instanceof Error ? err.message : String(err) });
