@@ -1,5 +1,5 @@
 import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
-import { runAgentLoop, type SearchStep } from '$lib/agent/loop';
+import { runAgentLoop, type SearchStep, type AgentLoopOptions } from '$lib/agent/loop';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { shouldCompact, compactConversation } from '$lib/agent/compaction';
@@ -857,6 +857,107 @@ function handleTurnError(e: unknown): void {
 	errorTurnId = currentTurnId;
 }
 
+/** The subset of AgentLoopOptions wired up per turn by sendMessage. */
+type AgentLoopCallbacks = Pick<
+	AgentLoopOptions,
+	| 'onUsageUpdate'
+	| 'onContextManaged'
+	| 'onCallStats'
+	| 'onToolStart'
+	| 'onToolProgress'
+	| 'onToolEnd'
+	| 'onStreamChunk'
+	| 'onComplete'
+	| 'onError'
+>;
+
+/**
+ * Build the agent-loop callback bundle for one turn. Each callback closes
+ * over the active `conversation`, the turn's `turnStats`, and the module
+ * state it mutates (streaming content, context notice, error fields).
+ */
+function buildAgentLoopCallbacks(
+	conversation: Conversation,
+	activeCtxSize: number,
+	turnStats: TurnStats
+): AgentLoopCallbacks {
+	return {
+		onUsageUpdate: (u: Usage) => {
+			updateContextUsage(u, activeCtxSize);
+			conversation.contextUsage = {
+				promptTokens: u.prompt_tokens,
+				completionTokens: u.completion_tokens
+			};
+		},
+		onContextManaged: (info) => {
+			contextNotice = describeContextManaged(info);
+		},
+		onCallStats: (stats) => {
+			turnStats.lastCallStats = stats;
+		},
+		onToolStart: (call) => {
+			conversation.searchSteps = [...conversation.searchSteps, newRunningStep(call)];
+		},
+		onToolProgress: (call, status) => {
+			conversation.searchSteps = conversation.searchSteps.map((s) =>
+				s.id === call.id ? { ...s, installStatus: status } : s
+			);
+		},
+		onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) => {
+			conversation.searchSteps = markStepDone(
+				conversation.searchSteps,
+				call,
+				result,
+				thumbDataUrl,
+				artifacts,
+				lintIssues
+			);
+		},
+		onStreamChunk: (chunk) => {
+			streamingContent = appendStreamDelta(streamingContent, chunk.delta);
+		},
+		onComplete: () => finalizeStreamedTurn(conversation, turnStats),
+		onError: handleTurnError
+	};
+}
+
+/**
+ * Commit (or diagnose) the streamed answer when the agent loop finishes.
+ * Strips tool-call artifacts, resolves citations against the URLs fetched
+ * this turn, then either commits the final message or surfaces an
+ * empty-response diagnosis.
+ */
+function finalizeStreamedTurn(conversation: Conversation, turnStats: TurnStats): void {
+	const fetched = extractUrlsFromSteps(conversation.searchSteps);
+	const processed = processCitations(stripToolCallArtifacts(streamingContent).trim(), fetched);
+	const finalContent = processed.content;
+
+	if (finalContent) {
+		logDebug('chat', 'onComplete commit', {
+			rawStreamingLen: streamingContent.length,
+			finalContentLen: finalContent.length,
+			citedUrls: processed.citedUrls
+		});
+		commitMessage(conversation, finalContent, turnStats);
+		if (exhaustiveResearch) exhaustiveResearch = false;
+	} else {
+		const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
+		logDebug('chat', `onComplete empty → diagnosis ${diagnosis.type}`, {
+			rawStreamingLen: streamingContent.length,
+			rawStreamingPreview: streamingContent.slice(0, 2000),
+			diagnosis
+		});
+		if (diagnosis.type === 'commit') {
+			commitMessage(conversation, diagnosis.content, turnStats);
+			if (exhaustiveResearch) exhaustiveResearch = false;
+		} else {
+			errorMessage = diagnosis.message;
+			errorTurnId = currentTurnId;
+		}
+	}
+	conversation.sourceUrls = processed.citedUrls;
+}
+
 export async function sendMessage(content: string): Promise<void> {
 	const conversation = ensureSendableConversation(content);
 	if (!conversation) return;
@@ -906,74 +1007,7 @@ export async function sendMessage(content: string): Promise<void> {
 					expectsFileOutput,
 					visionSupported,
 					signal,
-					onUsageUpdate: (u: Usage) => {
-						updateContextUsage(u, activeCtxSize);
-						conversation.contextUsage = {
-							promptTokens: u.prompt_tokens,
-							completionTokens: u.completion_tokens
-						};
-					},
-					onContextManaged: (info) => {
-						contextNotice = describeContextManaged(info);
-					},
-					onCallStats: (stats) => {
-						turnStats.lastCallStats = stats;
-					},
-					onToolStart: (call) => {
-						conversation.searchSteps = [...conversation.searchSteps, newRunningStep(call)];
-					},
-					onToolProgress: (call, status) => {
-						conversation.searchSteps = conversation.searchSteps.map((s) =>
-							s.id === call.id ? { ...s, installStatus: status } : s
-						);
-					},
-					onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) => {
-						conversation.searchSteps = markStepDone(
-							conversation.searchSteps,
-							call,
-							result,
-							thumbDataUrl,
-							artifacts,
-							lintIssues
-						);
-					},
-					onStreamChunk: (chunk) => {
-						streamingContent = appendStreamDelta(streamingContent, chunk.delta);
-					},
-					onComplete: () => {
-						const fetched = extractUrlsFromSteps(conversation.searchSteps);
-						const processed = processCitations(
-							stripToolCallArtifacts(streamingContent).trim(),
-							fetched
-						);
-						const finalContent = processed.content;
-
-						if (finalContent) {
-							logDebug('chat', 'onComplete commit', {
-								rawStreamingLen: streamingContent.length,
-								finalContentLen: finalContent.length,
-								citedUrls: processed.citedUrls
-							});
-							commitMessage(conversation, finalContent, turnStats);
-							if (exhaustiveResearch) exhaustiveResearch = false;
-						} else {
-							const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
-							logDebug('chat', `onComplete empty → diagnosis ${diagnosis.type}`, {
-								rawStreamingLen: streamingContent.length,
-								rawStreamingPreview: streamingContent.slice(0, 2000),
-								diagnosis
-							});
-							if (diagnosis.type === 'commit') {
-								commitMessage(conversation, diagnosis.content, turnStats);
-								if (exhaustiveResearch) exhaustiveResearch = false;
-							} else {
-								errorMessage = diagnosis.message;
-								errorTurnId = currentTurnId;
-							}
-						}
-						conversation.sourceUrls = processed.citedUrls;
-					},
-					onError: handleTurnError
+					...buildAgentLoopCallbacks(conversation, activeCtxSize, turnStats)
 				})
 		);
 
