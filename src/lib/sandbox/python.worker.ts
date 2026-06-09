@@ -2,6 +2,11 @@
 
 import { loadPyodide, type PyodideInterface } from 'pyodide';
 import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
+import {
+	dispatchWorkerMessage,
+	settlePending,
+	type WorkerMessageHandlers
+} from './worker-dispatch';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -1546,81 +1551,61 @@ async function handleInstall(id: string, packageName: string): Promise<void> {
 	}
 }
 
+// Inbound-message handlers, closing over this module's state. The routing
+// (and the pending-request settle logic) lives in ./worker-dispatch so it's
+// unit-testable without booting Pyodide.
+const workerHandlers: WorkerMessageHandlers = {
+	setInterruptBuffer: (buffer) => applyInterruptBuffer(buffer),
+	resolveProxyMode: (mode, workingDirSet) => {
+		if (proxyModeWaiter) {
+			const w = proxyModeWaiter;
+			proxyModeWaiter = null;
+			w({ mode, workingDirSet });
+		}
+	},
+	syncWorkdir: (msg) => void handleSyncWorkdir(msg),
+	run: (id, code) => void handleRun(id, code),
+	install: (id, packageName) => void handleInstall(id, packageName),
+	// Full reset is implemented by the manager via terminate-and-respawn.
+	// Acknowledging here keeps the protocol symmetric in case we add an
+	// in-process reset later.
+	acknowledgeReset: (id) => post({ kind: 'done', id, result: emptyResult(0) }),
+	// Cooperative interrupt is delivered through the SharedArrayBuffer; this
+	// message is reserved for future use (e.g. cancelling network fetches
+	// that don't see the bytecode interrupt).
+	interrupt: () => {},
+	listGlobals: (id) => void handleListGlobals(id),
+	settleSave: (msg) =>
+		settlePending(
+			pendingSaves,
+			msg.request_id,
+			msg.ok
+				? { ok: true, value: { path: msg.path ?? '', bytes: msg.bytes ?? 0 } }
+				: { ok: false, error: msg.error ?? 'haruspex.save failed' }
+		),
+	settleDelete: (msg) =>
+		settlePending(
+			pendingDeletes,
+			msg.request_id,
+			msg.ok
+				? { ok: true, value: { path: msg.path ?? '' } }
+				: { ok: false, error: msg.error ?? 'haruspex.delete failed' }
+		),
+	settleFetch: (msg) =>
+		settlePending(
+			pendingFetches,
+			msg.request_id,
+			msg.error
+				? { ok: false, error: msg.error }
+				: {
+						ok: true,
+						value: { status: msg.status, headers: msg.headers, body: msg.body, url: msg.url }
+					}
+		)
+};
+
 self.addEventListener('message', (e: MessageEvent<MainToWorker>) => {
-	const msg = e.data;
-	switch (msg.kind) {
-		case 'set_interrupt_buffer':
-			applyInterruptBuffer(msg.buffer);
-			break;
-		case 'proxy_mode':
-			if (proxyModeWaiter) {
-				const w = proxyModeWaiter;
-				proxyModeWaiter = null;
-				w({ mode: msg.mode, workingDirSet: msg.workingDirSet });
-			}
-			break;
-		case 'sync_workdir_files':
-			void handleSyncWorkdir(msg);
-			break;
-		case 'run':
-			void handleRun(msg.id, msg.code);
-			break;
-		case 'install':
-			void handleInstall(msg.id, msg.package);
-			break;
-		case 'reset':
-			// Full reset is implemented by the manager via terminate-and-respawn.
-			// Acknowledging here keeps the protocol symmetric in case we add an
-			// in-process reset later.
-			post({ kind: 'done', id: msg.id, result: emptyResult(0) });
-			break;
-		case 'interrupt':
-			// Cooperative interrupt is delivered through the SharedArrayBuffer;
-			// this message is reserved for future use (e.g. cancelling network
-			// fetches that don't see the bytecode interrupt).
-			break;
-		case 'list_globals':
-			void handleListGlobals(msg.id);
-			break;
-		case 'save_response': {
-			const pending = pendingSaves.get(msg.request_id);
-			if (!pending) break;
-			pendingSaves.delete(msg.request_id);
-			if (msg.ok) {
-				pending.resolve({ path: msg.path ?? '', bytes: msg.bytes ?? 0 });
-			} else {
-				pending.reject(new Error(msg.error ?? 'haruspex.save failed'));
-			}
-			break;
-		}
-		case 'delete_response': {
-			const pending = pendingDeletes.get(msg.request_id);
-			if (!pending) break;
-			pendingDeletes.delete(msg.request_id);
-			if (msg.ok) {
-				pending.resolve({ path: msg.path ?? '' });
-			} else {
-				pending.reject(new Error(msg.error ?? 'haruspex.delete failed'));
-			}
-			break;
-		}
-		case 'fetch_response': {
-			const pending = pendingFetches.get(msg.request_id);
-			if (!pending) break;
-			pendingFetches.delete(msg.request_id);
-			if (msg.error) {
-				pending.reject(new Error(msg.error));
-			} else {
-				pending.resolve({
-					status: msg.status,
-					headers: msg.headers,
-					body: msg.body,
-					url: msg.url
-				});
-			}
-			break;
-		}
-	}
+	dispatchWorkerMessage(e.data, workerHandlers);
 });
 
 void init();
