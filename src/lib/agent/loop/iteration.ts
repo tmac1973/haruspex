@@ -138,28 +138,51 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
  * Any other exchange (web fetches, email, plain prose) returns false
  * and we use the general profile.
  */
+/**
+ * True if any of an assistant turn's tool calls is Python work: a run_python
+ * call, or an fs_edit_text / fs_write_text against a `.py` path.
+ */
+function assistantTouchesPython(toolCalls: NonNullable<ChatMessage['tool_calls']>): boolean {
+	for (const tc of toolCalls) {
+		const name = tc.function?.name;
+		if (name === 'run_python') return true;
+		if (name === 'fs_edit_text' || name === 'fs_write_text') {
+			try {
+				const args = JSON.parse(tc.function.arguments) as { path?: string };
+				if (args.path?.toLowerCase().endsWith('.py')) return true;
+			} catch {
+				// Unparseable arguments — treat as not-code-context.
+			}
+		}
+	}
+	return false;
+}
+
+/** The "open 2-3 distinct sources" nudge pushed when a turn researched too narrowly. */
+function diversityNudgePrompt(fetchedCount: number): string {
+	return (
+		`STOP. You have opened ${fetchedCount === 0 ? 'no pages' : 'only one page'} ` +
+		'this turn. A complete answer needs 2–3 distinct sources covering different ' +
+		'angles (e.g. an official body, an academic / think-tank source, and a ' +
+		'journalistic or community account). You MUST now call fetch_url on two or ' +
+		'three additional URLs from the prior web_search results — pick ones that ' +
+		'plausibly cover the sub-points your answer will make. Do NOT reply with ' +
+		'text describing the URLs you plan to fetch — your NEXT output must be a ' +
+		'tool_calls block invoking fetch_url. After the fetches return, produce the ' +
+		'final answer with [source](URL) citations pointing to the specific page ' +
+		'where each claim appeared — do not reuse the same URL across unrelated claims.'
+	);
+}
+
 export function isCodeContext(messages: ChatMessage[]): boolean {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
 		if (msg.role === 'tool') {
-			const text = messageText(msg.content);
-			if (/<diagnostics file="[^"]+\.py"/i.test(text)) return true;
+			if (/<diagnostics file="[^"]+\.py"/i.test(messageText(msg.content))) return true;
 			continue;
 		}
 		if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-			for (const tc of msg.tool_calls) {
-				const name = tc.function?.name;
-				if (name === 'run_python') return true;
-				if (name === 'fs_edit_text' || name === 'fs_write_text') {
-					try {
-						const args = JSON.parse(tc.function.arguments) as { path?: string };
-						if (args.path && args.path.toLowerCase().endsWith('.py')) return true;
-					} catch {
-						// Unparseable arguments — treat as not-code-context.
-					}
-				}
-			}
-			return false;
+			return assistantTouchesPython(msg.tool_calls);
 		}
 		if (msg.role === 'user') return false;
 	}
@@ -360,36 +383,20 @@ async function streamFinalSynthesis(
 }
 
 /**
- * One iteration of the agent loop. Returns:
- *   - 'continue': push messages, take another iteration.
- *   - 'break':    exit the loop and run the max-iterations handler.
- *   - 'complete': streamed the final answer; runAgentLoop should return.
- *
- * Pre-conditions on entry: caller has already checked the abort signal.
+ * Send the non-streaming tool-check completion, report usage/timing, trim
+ * older tool messages when nearing the context wall, and parse out any tool
+ * calls. The guarded helper shrinks the prompt to fit, self-calibrates the
+ * token estimate from reported usage, and retries once on a context-overflow
+ * 400. A parse failure (e.g. truncated JSON from max_tokens) yields an empty
+ * tool-call list so the truncation guards downstream handle it.
  */
-export async function runIteration(
+async function runModelCall(
 	ctx: LoopContext,
-	state: LoopState,
-	nudges: NudgeState,
+	sampling: ReturnType<typeof getSamplingParams>,
+	templateKwargs: ReturnType<typeof getChatTemplateKwargs>,
 	iteration: number
-): Promise<IterationOutcome> {
-	const { messages, tools, options } = ctx;
-	logDebug('agent', `iteration ${iteration} start`, { messageCount: messages.length });
-
-	// If images were loaded on the previous iteration, attach them to the
-	// most recent user message before sending. This is how multimodal
-	// requests reach the vision model.
-	if (ctx.pendingImages.length > 0) {
-		injectPendingImages(messages, ctx.pendingImages);
-		ctx.pendingImages.length = 0;
-	}
-
-	// Non-streaming request to check for tool calls. The guarded helper
-	// shrinks the prompt to fit (reserving output headroom), self-calibrates
-	// the token estimate from the server's reported usage, and retries once
-	// if a context-overflow 400 still slips through.
-	const sampling = getSamplingParams({ codeContext: isCodeContext(messages) });
-	const templateKwargs = getChatTemplateKwargs();
+): Promise<{ response: ChatCompletionResponse; toolCalls: ResolvedToolCall[] }> {
+	const { tools, options } = ctx;
 	const callStartMs = Date.now();
 	const response = await sendGuardedCompletion(
 		ctx,
@@ -414,15 +421,12 @@ export async function runIteration(
 		});
 	}
 
-	// In-loop trim: if this turn's accumulated tool messages are pushing
-	// us toward the server's context wall, drop the bulky content from
-	// older tool results before the next iteration sends them again.
 	if (
 		ctx.contextSize > 0 &&
 		response.usage &&
 		response.usage.prompt_tokens / ctx.contextSize >= IN_LOOP_TRIM_THRESHOLD
 	) {
-		trimOldToolMessages(messages);
+		trimOldToolMessages(ctx.messages);
 	}
 
 	let toolCalls: ResolvedToolCall[] = [];
@@ -431,9 +435,6 @@ export async function runIteration(
 		toolCalls = resolveToolCalls(response);
 	} catch (e) {
 		parseError = e;
-		// Tool call parsing failed (e.g., truncated JSON from max_tokens).
-		// Fall through with empty toolCalls so the truncation handler
-		// below catches it.
 	}
 	logDebug('agent', `iteration ${iteration} parsed`, {
 		toolCallCount: toolCalls.length,
@@ -441,6 +442,38 @@ export async function runIteration(
 		content_len: response.content ? response.content.length : 0,
 		parseError: parseError ? String(parseError) : null
 	});
+
+	return { response, toolCalls };
+}
+
+/**
+ * One iteration of the agent loop. Returns:
+ *   - 'continue': push messages, take another iteration.
+ *   - 'break':    exit the loop and run the max-iterations handler.
+ *   - 'complete': streamed the final answer; runAgentLoop should return.
+ *
+ * Pre-conditions on entry: caller has already checked the abort signal.
+ */
+export async function runIteration(
+	ctx: LoopContext,
+	state: LoopState,
+	nudges: NudgeState,
+	iteration: number
+): Promise<IterationOutcome> {
+	const { messages } = ctx;
+	logDebug('agent', `iteration ${iteration} start`, { messageCount: messages.length });
+
+	// If images were loaded on the previous iteration, attach them to the
+	// most recent user message before sending. This is how multimodal
+	// requests reach the vision model.
+	if (ctx.pendingImages.length > 0) {
+		injectPendingImages(messages, ctx.pendingImages);
+		ctx.pendingImages.length = 0;
+	}
+
+	const sampling = getSamplingParams({ codeContext: isCodeContext(messages) });
+	const templateKwargs = getChatTemplateKwargs();
+	const { response, toolCalls } = await runModelCall(ctx, sampling, templateKwargs, iteration);
 
 	// No tool calls: run the recovery-guard chain in priority order, then
 	// fall through to the terminal no-tool-call handler. Each guard checks
@@ -661,20 +694,7 @@ async function finalizeNoToolCalls(
 			role: 'assistant',
 			content: response.content || ''
 		});
-		messages.push({
-			role: 'user',
-			content:
-				`STOP. You have opened ${fetchedCount === 0 ? 'no pages' : 'only one page'} ` +
-				'this turn. A complete answer needs 2–3 distinct sources covering different ' +
-				'angles (e.g. an official body, an academic / think-tank source, and a ' +
-				'journalistic or community account). You MUST now call fetch_url on two or ' +
-				'three additional URLs from the prior web_search results — pick ones that ' +
-				'plausibly cover the sub-points your answer will make. Do NOT reply with ' +
-				'text describing the URLs you plan to fetch — your NEXT output must be a ' +
-				'tool_calls block invoking fetch_url. After the fetches return, produce the ' +
-				'final answer with [source](URL) citations pointing to the specific page ' +
-				'where each claim appeared — do not reuse the same URL across unrelated claims.'
-		});
+		messages.push({ role: 'user', content: diversityNudgePrompt(fetchedCount) });
 		nudges.armNarrateRecovery();
 		return 'continue';
 	}

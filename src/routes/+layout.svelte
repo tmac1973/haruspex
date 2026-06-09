@@ -192,6 +192,37 @@
 		return !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey;
 	}
 
+	// F2: push-to-talk. On the Shell tab, open the assistant sidebar the
+	// moment recording starts so the user sees they're aiming at the
+	// assistant — without this the panel only opens once the transcription
+	// pipeline completes a couple seconds later.
+	function handleVoiceCaptureKey(event: KeyboardEvent) {
+		event.preventDefault();
+		if (event.repeat) return;
+		if (getActiveTab() === 'shell') getActiveShellSession()?.setSidebarOpen(true);
+		if (!isVoiceCaptureActive()) startVoiceCapture();
+	}
+
+	// F3: read the last assistant message aloud.
+	function handleReadAloudKey(event: KeyboardEvent) {
+		event.preventDefault();
+		if (event.repeat) return;
+		const text = getLastAssistantText();
+		if (text) toggleTts(text);
+	}
+
+	// F4 (Shell tab only): dump the last N captured commands + output to the
+	// assistant with no prompt. Open the sidebar so the user sees it land.
+	function handleDumpCommandsKey(event: KeyboardEvent) {
+		event.preventDefault();
+		if (event.repeat) return;
+		if (getActiveTab() !== 'shell') return;
+		const session = getActiveShellSession();
+		if (!session) return;
+		session.setSidebarOpen(true);
+		void session.submitRecentCommands();
+	}
+
 	function onGlobalKeydown(event: KeyboardEvent) {
 		// F1 toggles the shortcuts help — available on every page (incl.
 		// settings), so it's handled before the main-page guard below.
@@ -204,34 +235,9 @@
 		// still true while it's up — suppress push-to-talk / read-aloud there.
 		if (!isMainPage() || showSettings) return;
 		if (!hasNoModifiers(event)) return;
-		if (event.key === 'F2') {
-			event.preventDefault();
-			if (event.repeat) return;
-			// On the Shell tab, open the assistant sidebar the moment
-			// recording starts so the user sees they're aiming at the
-			// assistant — without this the panel only opens once the
-			// transcription pipeline completes a couple seconds later.
-			if (getActiveTab() === 'shell') getActiveShellSession()?.setSidebarOpen(true);
-			if (!isVoiceCaptureActive()) startVoiceCapture();
-			return;
-		}
-		if (event.key === 'F3') {
-			event.preventDefault();
-			if (event.repeat) return;
-			const text = getLastAssistantText();
-			if (text) toggleTts(text);
-		}
-		if (event.key === 'F4') {
-			event.preventDefault();
-			if (event.repeat) return;
-			// Shell tab only: dump the last N captured commands + output to the
-			// assistant with no prompt. Open the sidebar so the user sees it land.
-			if (getActiveTab() !== 'shell') return;
-			const session = getActiveShellSession();
-			if (!session) return;
-			session.setSidebarOpen(true);
-			void session.submitRecentCommands();
-		}
+		if (event.key === 'F2') handleVoiceCaptureKey(event);
+		else if (event.key === 'F3') handleReadAloudKey(event);
+		else if (event.key === 'F4') handleDumpCommandsKey(event);
 	}
 
 	async function onGlobalKeyup(event: KeyboardEvent) {

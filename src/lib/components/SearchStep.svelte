@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { SearchStep } from '$lib/agent/loop';
+	import { stepLabel, stepIcon } from './searchStepLabels';
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
 	import { rerunSandboxStep, cancelActiveSandboxRun } from '$lib/stores/chat.svelte';
@@ -104,68 +105,6 @@
 	function copyResult(stepId: string, text: string, event: MouseEvent) {
 		event.stopPropagation();
 		copyAction.copy(stepId, text);
-	}
-
-	function stepIcon(toolName: string): string {
-		if (toolName === 'web_search') return '\u{1F50D}'; // magnifying glass
-		if (toolName === 'image_search') return '\u{1F5BC}\uFE0F'; // framed picture
-		if (toolName === 'research_url') return '\u{1F9D0}'; // face with monocle
-		if (toolName === 'fs_download_url') return '\u{2B07}\uFE0F'; // down arrow
-		if (toolName.startsWith('fs_write')) return '\u{1F4DD}'; // memo
-		if (toolName.startsWith('fs_list')) return '\u{1F4C2}'; // open folder
-		if (toolName.startsWith('fs_edit')) return '\u270F\uFE0F'; // pencil
-		return '\u{1F4C4}'; // generic document
-	}
-
-	function stepLabel(toolName: string, query: string): string {
-		switch (toolName) {
-			case 'web_search':
-				return `Searching: "${query}"`;
-			case 'fetch_url':
-				return `Reading: ${query}`;
-			case 'research_url':
-				return `Researching: ${query}`;
-			case 'fs_list_dir':
-				return `Listing: ${query}`;
-			case 'fs_read_text':
-				return `Reading: ${query}`;
-			case 'fs_read_pdf':
-				return `Reading PDF: ${query}`;
-			case 'fs_read_pdf_pages':
-				return `Rendering PDF pages: ${query}`;
-			case 'fs_read_docx':
-				return `Reading docx: ${query}`;
-			case 'fs_read_xlsx':
-				return `Reading xlsx: ${query}`;
-			case 'fs_read_image':
-				return `Viewing image: ${query}`;
-			case 'fs_write_text':
-				return `Writing: ${query}`;
-			case 'fs_write_docx':
-				return `Writing docx: ${query}`;
-			case 'fs_write_pdf':
-				return `Writing pdf: ${query}`;
-			case 'fs_write_xlsx':
-				return `Writing xlsx: ${query}`;
-			case 'fs_write_odt':
-				return `Writing odt: ${query}`;
-			case 'fs_write_ods':
-				return `Writing ods: ${query}`;
-			case 'fs_write_pptx':
-				return `Writing pptx: ${query}`;
-			case 'fs_write_odp':
-				return `Writing odp: ${query}`;
-			case 'fs_edit_text':
-				return `Editing: ${query}`;
-			case 'image_search':
-				return `Searching images: "${query}"`;
-			case 'fetch_url_images':
-				return `Scanning page for images: ${query}`;
-			case 'fs_download_url':
-				return `Downloading: ${query}`;
-			default:
-				return `${toolName}: ${query}`;
-		}
 	}
 </script>
 

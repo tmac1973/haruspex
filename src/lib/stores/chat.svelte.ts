@@ -538,6 +538,23 @@ function isLongRunningLaunch(code: string): boolean {
  * The active-chat guard aborts replay if the user switches to another
  * chat mid-flight.
  */
+/** Replay one collected sandbox call during session restore. */
+async function replaySandboxCall(call: SandboxCallToReplay): Promise<void> {
+	if (call.name === 'install_package' && call.args.package) {
+		await installPackage(call.args.package);
+	} else if (call.name === 'run_python' && call.args.code) {
+		if (isLongRunningLaunch(call.args.code)) {
+			logDebug('sandbox', 'session restore: skipping long-running launch', {
+				preview: call.args.code.slice(0, 60)
+			});
+			return;
+		}
+		await runPython(call.args.code);
+	} else if (call.name === 'reset_python') {
+		await resetSandbox();
+	}
+}
+
 async function restoreSandboxSession(id: string): Promise<void> {
 	const conv = conversations.find((c) => c.id === id);
 	if (!conv) return;
@@ -572,19 +589,7 @@ async function restoreSandboxSession(id: string): Promise<void> {
 				return;
 			}
 			try {
-				if (call.name === 'install_package' && call.args.package) {
-					await installPackage(call.args.package);
-				} else if (call.name === 'run_python' && call.args.code) {
-					if (isLongRunningLaunch(call.args.code)) {
-						logDebug('sandbox', 'session restore: skipping long-running launch', {
-							preview: call.args.code.slice(0, 60)
-						});
-						continue;
-					}
-					await runPython(call.args.code);
-				} else if (call.name === 'reset_python') {
-					await resetSandbox();
-				}
+				await replaySandboxCall(call);
 			} catch (err) {
 				logDebug('sandbox', `session restore: ${call.name} failed (skipping)`, {
 					error: errMessage(err)

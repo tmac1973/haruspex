@@ -196,124 +196,129 @@ export class WorkerManager {
 		});
 	}
 
+	/**
+	 * Per-message-kind handlers. Each entry receives the narrowed message
+	 * variant; `onMessage` is then a single typed lookup. Keeping this a
+	 * table (rather than a 15-arm switch) keeps each handler small and
+	 * independently testable.
+	 */
+	private readonly messageHandlers: {
+		[K in WorkerToMain['kind']]: (msg: Extract<WorkerToMain, { kind: K }>) => void;
+	} = {
+		ready: () => this.handleReady(),
+		load_error: (m) => this.handleLoadError(m),
+		get_proxy_mode: () => this.handleProxyModeRequest(),
+		stdout: (m) => this.pending.get(m.id)?.onStdout?.(m.data),
+		stderr: (m) => this.pending.get(m.id)?.onStderr?.(m.data),
+		pkg_phase_start: (m) => this.handlePkgPhaseStart(m),
+		exec_start: (m) => this.handleExecStart(m),
+		install_progress: (m) => this.handleInstallProgress(m),
+		done: (m) => this.handleDone(m),
+		artifact: (m) => this.handleArtifact(m),
+		save_request: (m) => void this.handleSaveRequest(m),
+		delete_request: (m) => void this.handleDeleteRequest(m),
+		fetch_request: (m) => void this.handleFetchRequest(m),
+		globals: (m) => this.handleGlobals(m),
+		sync_workdir_ack: (m) => this.handleSyncAck(m)
+	};
+
 	private onMessage(msg: WorkerToMain): void {
-		switch (msg.kind) {
-			case 'ready':
-				this.ready = true;
-				if (this.interruptBuffer && this.worker) {
-					this.worker.postMessage({
-						kind: 'set_interrupt_buffer',
-						buffer: this.interruptBuffer
-					});
-				}
-				this.readyWaiters.splice(0).forEach((fn) => fn());
-				return;
-			case 'load_error':
-				this.readyError = msg.error;
-				this.readyWaiters.splice(0).forEach((fn) => fn());
-				return;
-			case 'get_proxy_mode':
-				if (this.worker) {
-					this.worker.postMessage({
-						kind: 'proxy_mode',
-						mode: getSettings().proxy?.mode ?? 'none',
-						workingDirSet: !!getWorkingDir()
-					});
-				}
-				return;
-			case 'stdout': {
-				const p = this.pending.get(msg.id);
-				p?.onStdout?.(msg.data);
-				return;
-			}
-			case 'stderr': {
-				const p = this.pending.get(msg.id);
-				p?.onStderr?.(msg.data);
-				return;
-			}
-			case 'pkg_phase_start': {
-				// Worker entered the install phase: pause the execution
-				// timeout and arm the (refreshing) install watchdog so a slow
-				// download isn't charged against the run budget.
-				const p = this.pending.get(msg.id);
-				if (!p) return;
-				if (p.timer) {
-					clearTimeout(p.timer);
-					p.timer = null;
-				}
-				this.armInstallWatchdog(msg.id);
-				return;
-			}
-			case 'exec_start': {
-				// Worker is about to run user code: drop the install watchdog
-				// and (re-)arm a fresh execution timeout from this point.
-				const p = this.pending.get(msg.id);
-				if (!p) return;
-				if (p.installWatchdog) {
-					clearTimeout(p.installWatchdog);
-					p.installWatchdog = null;
-				}
-				if (p.timer) clearTimeout(p.timer);
-				p.interrupted = false;
-				p.timer = setTimeout(() => this.onTimeout(msg.id, p.execTimeoutMs), p.execTimeoutMs);
-				return;
-			}
-			case 'install_progress': {
-				const p = this.pending.get(msg.id);
-				if (!p) return;
-				// Refresh the stall watchdog and surface the package name to
-				// the UI ("Installing plotly…").
-				this.armInstallWatchdog(msg.id);
-				p.onInstall?.(msg.package, msg.phase);
-				return;
-			}
-			case 'done': {
-				const p = this.pending.get(msg.id);
-				if (!p) return;
-				if (p.timer) clearTimeout(p.timer);
-				if (p.installWatchdog) clearTimeout(p.installWatchdog);
-				if (p.terminateFallback) clearTimeout(p.terminateFallback);
-				this.pending.delete(msg.id);
-				const result = {
-					...msg.result,
-					artifacts: p.artifacts.length,
-					artifactsList: p.artifacts
-				};
-				p.resolve(result);
-				return;
-			}
-			case 'artifact': {
-				const p = this.pending.get(msg.id);
-				if (!p) return;
-				p.artifacts.push(toArtifact(msg));
-				return;
-			}
-			case 'save_request':
-				void this.handleSaveRequest(msg);
-				return;
-			case 'delete_request':
-				void this.handleDeleteRequest(msg);
-				return;
-			case 'fetch_request':
-				void this.handleFetchRequest(msg);
-				return;
-			case 'globals': {
-				const pending = this.pendingGlobals.get(msg.id);
-				if (!pending) return;
-				this.pendingGlobals.delete(msg.id);
-				if (pending.timer) clearTimeout(pending.timer);
-				pending.resolve(msg.names);
-				return;
-			}
-			case 'sync_workdir_ack': {
-				const pending = this.pendingSyncs.get(msg.sync_id);
-				if (!pending) return;
-				this.pendingSyncs.delete(msg.sync_id);
-				if (msg.error) pending.reject(new Error(msg.error));
-				else pending.resolve();
-				return;
-			}
+		(this.messageHandlers[msg.kind] as (m: WorkerToMain) => void)(msg);
+	}
+
+	private handleReady(): void {
+		this.ready = true;
+		if (this.interruptBuffer && this.worker) {
+			this.worker.postMessage({ kind: 'set_interrupt_buffer', buffer: this.interruptBuffer });
 		}
+		this.readyWaiters.splice(0).forEach((fn) => fn());
+	}
+
+	private handleLoadError(msg: Extract<WorkerToMain, { kind: 'load_error' }>): void {
+		this.readyError = msg.error;
+		this.readyWaiters.splice(0).forEach((fn) => fn());
+	}
+
+	private handleProxyModeRequest(): void {
+		if (this.worker) {
+			this.worker.postMessage({
+				kind: 'proxy_mode',
+				mode: getSettings().proxy?.mode ?? 'none',
+				workingDirSet: !!getWorkingDir()
+			});
+		}
+	}
+
+	/**
+	 * Worker entered the install phase: pause the execution timeout and arm
+	 * the (refreshing) install watchdog so a slow download isn't charged
+	 * against the run budget.
+	 */
+	private handlePkgPhaseStart(msg: Extract<WorkerToMain, { kind: 'pkg_phase_start' }>): void {
+		const p = this.pending.get(msg.id);
+		if (!p) return;
+		if (p.timer) {
+			clearTimeout(p.timer);
+			p.timer = null;
+		}
+		this.armInstallWatchdog(msg.id);
+	}
+
+	/**
+	 * Worker is about to run user code: drop the install watchdog and
+	 * (re-)arm a fresh execution timeout from this point.
+	 */
+	private handleExecStart(msg: Extract<WorkerToMain, { kind: 'exec_start' }>): void {
+		const p = this.pending.get(msg.id);
+		if (!p) return;
+		if (p.installWatchdog) {
+			clearTimeout(p.installWatchdog);
+			p.installWatchdog = null;
+		}
+		if (p.timer) clearTimeout(p.timer);
+		p.interrupted = false;
+		p.timer = setTimeout(() => this.onTimeout(msg.id, p.execTimeoutMs), p.execTimeoutMs);
+	}
+
+	private handleInstallProgress(msg: Extract<WorkerToMain, { kind: 'install_progress' }>): void {
+		const p = this.pending.get(msg.id);
+		if (!p) return;
+		// Refresh the stall watchdog and surface the package name to the UI
+		// ("Installing plotly…").
+		this.armInstallWatchdog(msg.id);
+		p.onInstall?.(msg.package, msg.phase);
+	}
+
+	private handleDone(msg: Extract<WorkerToMain, { kind: 'done' }>): void {
+		const p = this.pending.get(msg.id);
+		if (!p) return;
+		if (p.timer) clearTimeout(p.timer);
+		if (p.installWatchdog) clearTimeout(p.installWatchdog);
+		if (p.terminateFallback) clearTimeout(p.terminateFallback);
+		this.pending.delete(msg.id);
+		p.resolve({ ...msg.result, artifacts: p.artifacts.length, artifactsList: p.artifacts });
+	}
+
+	private handleArtifact(msg: Extract<WorkerToMain, { kind: 'artifact' }>): void {
+		const p = this.pending.get(msg.id);
+		if (!p) return;
+		p.artifacts.push(toArtifact(msg));
+	}
+
+	private handleGlobals(msg: Extract<WorkerToMain, { kind: 'globals' }>): void {
+		const pending = this.pendingGlobals.get(msg.id);
+		if (!pending) return;
+		this.pendingGlobals.delete(msg.id);
+		if (pending.timer) clearTimeout(pending.timer);
+		pending.resolve(msg.names);
+	}
+
+	private handleSyncAck(msg: Extract<WorkerToMain, { kind: 'sync_workdir_ack' }>): void {
+		const pending = this.pendingSyncs.get(msg.sync_id);
+		if (!pending) return;
+		this.pendingSyncs.delete(msg.sync_id);
+		if (msg.error) pending.reject(new Error(msg.error));
+		else pending.resolve();
 	}
 
 	private onWorkerError(message: string): void {
