@@ -711,6 +711,21 @@ mod tests {
     }
 
     #[test]
+    fn extract_text_truncates_multibyte_content_on_char_boundary() {
+        // 3-byte chars with no whitespace guarantee a char straddles the
+        // MAX_FETCH_LENGTH byte index (4000 is not a multiple of 3), which
+        // panicked before truncation backed off to a char boundary.
+        let long_text = "—".repeat(3000);
+        let html = format!(
+            "<html><body><article><p>{}</p></article></body></html>",
+            long_text
+        );
+        let text = extract_text(&html);
+        assert!(text.len() <= MAX_FETCH_LENGTH + 3); // +3 for "..."
+        assert!(text.ends_with("..."));
+    }
+
+    #[test]
     fn detect_paywall_signal_schema_org_is_accessible_for_free() {
         let html = r#"<html><head>
             <script type="application/ld+json">
