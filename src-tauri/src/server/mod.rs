@@ -120,6 +120,26 @@ struct ServerInner {
     started_at: Option<Instant>,
 }
 
+impl ServerInner {
+    /// Inspect a stderr line for a GPU-init failure and arm the CPU-fallback
+    /// path. Keeps the *first* matching line as the reason — it's almost
+    /// always the most informative root cause (e.g. `Device memory allocation
+    /// of size X failed`); subsequent lines are downstream effects (assert
+    /// aborts, buffer alloc retries) that read worse out of context.
+    fn note_stderr_gpu_error(&mut self, line_str: &str) {
+        if classify(line_str) == LogSignal::GpuError && !self.gpu_fallback_attempted {
+            warn!("GPU error detected, will attempt CPU fallback on exit");
+            self.gpu_error_detected = true;
+            if self.gpu_error_reason.is_none() {
+                let cleaned = strip_ansi(line_str).trim().to_string();
+                if !cleaned.is_empty() {
+                    self.gpu_error_reason = Some(cleaned);
+                }
+            }
+        }
+    }
+}
+
 pub struct LlamaServer {
     inner: Arc<Mutex<ServerInner>>,
 }
@@ -289,213 +309,21 @@ impl LlamaServer {
                         warn!("llama-server stderr: {}", line_str);
                         let mut state = inner.lock().await;
                         push_log(&mut state.log_buffer, &format!("[stderr] {}", line_str));
-
-                        if classify(&line_str) == LogSignal::GpuError
-                            && !state.gpu_fallback_attempted
-                        {
-                            warn!("GPU error detected, will attempt CPU fallback on exit");
-                            state.gpu_error_detected = true;
-                            // Keep the *first* matching line — it's almost
-                            // always the most informative root cause (e.g.
-                            // `Device memory allocation of size X failed`).
-                            // Subsequent lines are downstream effects (assert
-                            // aborts, buffer alloc retries) that read worse
-                            // out of context.
-                            if state.gpu_error_reason.is_none() {
-                                let cleaned = strip_ansi(&line_str).trim().to_string();
-                                if !cleaned.is_empty() {
-                                    state.gpu_error_reason = Some(cleaned);
-                                }
-                            }
-                        }
+                        state.note_stderr_gpu_error(&line_str);
                     }
                     CommandEvent::Terminated(payload) => {
-                        let code = payload.code.unwrap_or(-1);
-                        info!(
-                            "llama-server (gen {}) exited with code: {} signal: {:?}",
-                            generation, code, payload.signal
-                        );
-
-                        // Ignore termination events from old generations
-                        {
-                            let state = inner.lock().await;
-                            if state.generation != generation {
-                                info!(
-                                    "Ignoring stale termination event from generation {}",
-                                    generation
-                                );
-                                return;
-                            }
-                        }
-
-                        // Crash telemetry: capture a post-mortem before any
-                        // recovery logic mutates state. A clean stop sets the
-                        // status to Stopped first, so we skip those; anything
-                        // else (a crash signal, or a non-zero exit while it was
-                        // Starting/Ready) is recorded with the last stderr lines
-                        // — which is where llama.cpp prints the abort reason.
-                        let crash_report = {
-                            let state = inner.lock().await;
-                            let clean_stop = state.status == ServerStatus::Stopped;
-                            let crashed = payload
-                                .signal
-                                .map(crash_telemetry::is_crash_signal)
-                                .unwrap_or(false)
-                                || payload.code.map(|c| c != 0).unwrap_or(true);
-                            if clean_stop || !crashed {
-                                None
-                            } else {
-                                Some(crash_telemetry::CrashReport {
-                                    generation,
-                                    code: payload.code,
-                                    signal: payload.signal,
-                                    status_before: format!("{:?}", state.status),
-                                    model_path: model_path.clone(),
-                                    n_gpu_layers: state.config.n_gpu_layers,
-                                    ctx_size: state.config.ctx_size,
-                                    flash_attn: state.config.flash_attn,
-                                    cpu_fallback_active: state.cpu_fallback_active,
-                                    uptime_secs: state.started_at.map(|t| t.elapsed().as_secs()),
-                                    recent_log: state
-                                        .log_buffer
-                                        .iter()
-                                        .rev()
-                                        .take(crash_telemetry::TAIL_LINES)
-                                        .rev()
-                                        .cloned()
-                                        .collect(),
-                                })
-                            }
-                        };
-                        if let Some(report) = crash_report {
-                            crash_telemetry::record(&app, &report);
-                        }
-
-                        let should_fallback = {
-                            let mut state = inner.lock().await;
-                            state.child = None;
-
-                            if state.status == ServerStatus::Starting
-                                && !state.gpu_fallback_attempted
-                                && state.gpu_error_detected
-                                && state.config.n_gpu_layers != 0
-                            {
-                                state.gpu_fallback_attempted = true;
-                                state.gpu_error_detected = false;
-                                state.config.n_gpu_layers = 0;
-                                true
-                            } else {
-                                false
-                            }
-                        };
-
-                        if should_fallback {
-                            warn!("Attempting CPU fallback (--n-gpu-layers 0)");
-
-                            let args = Self::build_llama_args(&app, &inner, &model_path).await;
-                            let sidecar_result = Self::spawn_llama(&app, &args);
-
-                            match sidecar_result {
-                                Ok((new_rx, new_child)) => {
-                                    let fallback_state = {
-                                        let mut state = inner.lock().await;
-                                        state.child = Some(new_child);
-                                        state.started_at = Some(Instant::now());
-                                        state.cpu_fallback_active = true;
-                                        // Reason was captured from the
-                                        // pre-abort stderr; if for some
-                                        // reason none was matched, fall back
-                                        // to a generic message so the banner
-                                        // still has something to display.
-                                        let reason =
-                                            state.gpu_error_reason.clone().unwrap_or_else(|| {
-                                                "GPU initialization failed — running on CPU."
-                                                    .to_string()
-                                            });
-                                        GpuFallbackState { reason }
-                                    };
-                                    let _ = app.emit("gpu-fallback-active", &fallback_state);
-                                    // Spawn a new reader for the fallback process
-                                    Self::spawn_output_reader(
-                                        inner.clone(),
-                                        app.clone(),
-                                        model_path,
-                                        new_rx,
-                                        generation,
-                                    );
-                                    // Health poller is still running, it will pick up the new process
-                                }
-                                Err(e) => {
-                                    error!("CPU fallback failed: {}", e);
-                                    let mut state = inner.lock().await;
-                                    state.status =
-                                        ServerStatus::Error(format!("CPU fallback failed: {}", e));
-                                    let _ = app.emit("server-status-changed", &state.status);
-                                }
-                            }
-                            return;
-                        }
-
-                        // Crashed mid-operation: if the server was Ready and this
-                        // wasn't a clean stop, attempt one auto-restart. This
-                        // recovers from in-request crashes (e.g. image batch
-                        // overflow during vision processing) without requiring
-                        // the user to manually restart.
-                        let should_auto_restart = {
-                            let state = inner.lock().await;
-                            matches!(state.status, ServerStatus::Ready)
-                        };
-
-                        if should_auto_restart {
-                            warn!("llama-server crashed while Ready — attempting auto-restart");
-                            {
-                                let mut state = inner.lock().await;
-                                state.status = ServerStatus::Starting;
-                                let _ = app.emit("server-status-changed", &state.status);
-                            }
-
-                            let args = Self::build_llama_args(&app, &inner, &model_path).await;
-                            let sidecar_result = Self::spawn_llama(&app, &args);
-
-                            match sidecar_result {
-                                Ok((new_rx, new_child)) => {
-                                    {
-                                        let mut state = inner.lock().await;
-                                        state.child = Some(new_child);
-                                        state.started_at = Some(Instant::now());
-                                    }
-                                    Self::spawn_output_reader(
-                                        inner.clone(),
-                                        app.clone(),
-                                        model_path,
-                                        new_rx,
-                                        generation,
-                                    );
-                                    // Restart the health poller for the new process
-                                    Self::spawn_health_poller(
-                                        inner.clone(),
-                                        app.clone(),
-                                        generation,
-                                    );
-                                }
-                                Err(e) => {
-                                    error!("Auto-restart failed: {}", e);
-                                    let mut state = inner.lock().await;
-                                    state.status =
-                                        ServerStatus::Error(format!("Auto-restart failed: {}", e));
-                                    let _ = app.emit("server-status-changed", &state.status);
-                                }
-                            }
-                            return;
-                        }
-
-                        // Not a fallback situation — report error
-                        let mut state = inner.lock().await;
-                        if state.status != ServerStatus::Stopped {
-                            state.status =
-                                ServerStatus::Error(format!("Server exited with code {}", code));
-                            let _ = app.emit("server-status-changed", &state.status);
-                        }
+                        Self::handle_termination(
+                            &inner,
+                            &app,
+                            &model_path,
+                            generation,
+                            payload.code,
+                            payload.signal,
+                        )
+                        .await;
+                        // The process is gone; this reader's rx is spent. Any
+                        // recovery path has already spawned a fresh reader.
+                        return;
                     }
                     CommandEvent::Error(err) => {
                         error!("llama-server error: {}", err);
@@ -506,6 +334,216 @@ impl LlamaServer {
                 }
             }
         });
+    }
+
+    /// Handle a `Terminated` event for `generation`: skip stale generations,
+    /// record crash telemetry, then route to exactly one recovery path
+    /// (CPU fallback, auto-restart) or report a terminal error.
+    async fn handle_termination(
+        inner: &Arc<Mutex<ServerInner>>,
+        app: &AppHandle,
+        model_path: &str,
+        generation: u64,
+        code: Option<i32>,
+        signal: Option<i32>,
+    ) {
+        let exit_code = code.unwrap_or(-1);
+        info!(
+            "llama-server (gen {}) exited with code: {} signal: {:?}",
+            generation, exit_code, signal
+        );
+
+        // Ignore termination events from old generations.
+        {
+            let state = inner.lock().await;
+            if state.generation != generation {
+                info!(
+                    "Ignoring stale termination event from generation {}",
+                    generation
+                );
+                return;
+            }
+        }
+
+        // Capture a post-mortem before any recovery logic mutates state.
+        if let Some(report) =
+            Self::capture_crash_report(inner, code, signal, generation, model_path).await
+        {
+            crash_telemetry::record(app, &report);
+        }
+
+        if Self::take_gpu_fallback(inner).await {
+            Self::respawn_cpu_fallback(inner, app, model_path, generation).await;
+            return;
+        }
+
+        // Crashed mid-operation: if the server was Ready and this wasn't a
+        // clean stop, attempt one auto-restart. This recovers from in-request
+        // crashes (e.g. image batch overflow during vision processing) without
+        // requiring the user to manually restart.
+        let should_auto_restart = {
+            let state = inner.lock().await;
+            matches!(state.status, ServerStatus::Ready)
+        };
+        if should_auto_restart {
+            Self::respawn_auto_restart(inner, app, model_path, generation).await;
+            return;
+        }
+
+        // Not a recovery situation — report error.
+        let mut state = inner.lock().await;
+        if state.status != ServerStatus::Stopped {
+            state.status = ServerStatus::Error(format!("Server exited with code {}", exit_code));
+            let _ = app.emit("server-status-changed", &state.status);
+        }
+    }
+
+    /// Build a crash post-mortem from the current state, or `None` for a clean
+    /// stop (status already `Stopped`) or a non-crash exit. A clean stop sets
+    /// the status to `Stopped` first, so we skip those; anything else (a crash
+    /// signal, or a non-zero exit while Starting/Ready) is recorded with the
+    /// last stderr lines — where llama.cpp prints the abort reason.
+    async fn capture_crash_report(
+        inner: &Arc<Mutex<ServerInner>>,
+        code: Option<i32>,
+        signal: Option<i32>,
+        generation: u64,
+        model_path: &str,
+    ) -> Option<crash_telemetry::CrashReport> {
+        let state = inner.lock().await;
+        let clean_stop = state.status == ServerStatus::Stopped;
+        let crashed = signal
+            .map(crash_telemetry::is_crash_signal)
+            .unwrap_or(false)
+            || code.map(|c| c != 0).unwrap_or(true);
+        if clean_stop || !crashed {
+            return None;
+        }
+        Some(crash_telemetry::CrashReport {
+            generation,
+            code,
+            signal,
+            status_before: format!("{:?}", state.status),
+            model_path: model_path.to_string(),
+            n_gpu_layers: state.config.n_gpu_layers,
+            ctx_size: state.config.ctx_size,
+            flash_attn: state.config.flash_attn,
+            cpu_fallback_active: state.cpu_fallback_active,
+            uptime_secs: state.started_at.map(|t| t.elapsed().as_secs()),
+            recent_log: state
+                .log_buffer
+                .iter()
+                .rev()
+                .take(crash_telemetry::TAIL_LINES)
+                .rev()
+                .cloned()
+                .collect(),
+        })
+    }
+
+    /// Clear the dead child and decide whether to attempt a one-shot CPU
+    /// fallback. Returns `true` (and arms the fallback flags) only when a GPU
+    /// error was detected during a `Starting` attempt that used GPU layers.
+    async fn take_gpu_fallback(inner: &Arc<Mutex<ServerInner>>) -> bool {
+        let mut state = inner.lock().await;
+        state.child = None;
+        if state.status == ServerStatus::Starting
+            && !state.gpu_fallback_attempted
+            && state.gpu_error_detected
+            && state.config.n_gpu_layers != 0
+        {
+            state.gpu_fallback_attempted = true;
+            state.gpu_error_detected = false;
+            state.config.n_gpu_layers = 0;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Respawn on CPU (`--n-gpu-layers 0`) after a GPU-init failure and surface
+    /// the captured reason to the UI banner. The health poller is still running
+    /// and will pick up the new process, so we only spawn a fresh reader.
+    async fn respawn_cpu_fallback(
+        inner: &Arc<Mutex<ServerInner>>,
+        app: &AppHandle,
+        model_path: &str,
+        generation: u64,
+    ) {
+        warn!("Attempting CPU fallback (--n-gpu-layers 0)");
+        let args = Self::build_llama_args(app, inner, model_path).await;
+        match Self::spawn_llama(app, &args) {
+            Ok((new_rx, new_child)) => {
+                let fallback_state = {
+                    let mut state = inner.lock().await;
+                    state.child = Some(new_child);
+                    state.started_at = Some(Instant::now());
+                    state.cpu_fallback_active = true;
+                    // Reason was captured from the pre-abort stderr; if none
+                    // was matched, fall back to a generic message so the banner
+                    // still has something to display.
+                    let reason = state.gpu_error_reason.clone().unwrap_or_else(|| {
+                        "GPU initialization failed — running on CPU.".to_string()
+                    });
+                    GpuFallbackState { reason }
+                };
+                let _ = app.emit("gpu-fallback-active", &fallback_state);
+                Self::spawn_output_reader(
+                    inner.clone(),
+                    app.clone(),
+                    model_path.to_string(),
+                    new_rx,
+                    generation,
+                );
+            }
+            Err(e) => {
+                error!("CPU fallback failed: {}", e);
+                let mut state = inner.lock().await;
+                state.status = ServerStatus::Error(format!("CPU fallback failed: {}", e));
+                let _ = app.emit("server-status-changed", &state.status);
+            }
+        }
+    }
+
+    /// Respawn after a mid-operation crash while `Ready`. Moves status back to
+    /// `Starting` and restarts both the reader and the health poller for the
+    /// new process.
+    async fn respawn_auto_restart(
+        inner: &Arc<Mutex<ServerInner>>,
+        app: &AppHandle,
+        model_path: &str,
+        generation: u64,
+    ) {
+        warn!("llama-server crashed while Ready — attempting auto-restart");
+        {
+            let mut state = inner.lock().await;
+            state.status = ServerStatus::Starting;
+            let _ = app.emit("server-status-changed", &state.status);
+        }
+        let args = Self::build_llama_args(app, inner, model_path).await;
+        match Self::spawn_llama(app, &args) {
+            Ok((new_rx, new_child)) => {
+                {
+                    let mut state = inner.lock().await;
+                    state.child = Some(new_child);
+                    state.started_at = Some(Instant::now());
+                }
+                Self::spawn_output_reader(
+                    inner.clone(),
+                    app.clone(),
+                    model_path.to_string(),
+                    new_rx,
+                    generation,
+                );
+                Self::spawn_health_poller(inner.clone(), app.clone(), generation);
+            }
+            Err(e) => {
+                error!("Auto-restart failed: {}", e);
+                let mut state = inner.lock().await;
+                state.status = ServerStatus::Error(format!("Auto-restart failed: {}", e));
+                let _ = app.emit("server-status-changed", &state.status);
+            }
+        }
     }
 
     fn spawn_health_poller(inner: Arc<Mutex<ServerInner>>, app: AppHandle, generation: u64) {
