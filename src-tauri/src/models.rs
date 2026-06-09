@@ -539,6 +539,38 @@ struct GpuInfo {
     integrated: bool,
 }
 
+/// Recommended quant by effective VRAM (MB) for a discrete GPU with known
+/// memory. Ascending thresholds; the first entry whose threshold the VRAM
+/// is *below* wins. The final `u64::MAX` row is the catch-all.
+const QUANT_BY_VRAM_MB: &[(u64, &str)] = &[
+    (6144, "Qwen3.5-4B-Q6_K"),
+    (8192, "Qwen3.5-9B-Q4_K_M"),
+    (12288, "Qwen3.5-9B-Q5_K_M"),
+    (16384, "Qwen3.5-9B-Q6_K"),
+    (u64::MAX, "Qwen3.5-9B-Q8_0"),
+];
+
+/// Recommended context size (tokens) by effective VRAM (MB). Same
+/// ascending-threshold lookup as `QUANT_BY_VRAM_MB`.
+const CTX_SIZE_BY_VRAM_MB: &[(u64, u32)] = &[
+    (6144, 8192),       // 8K for integrated / low VRAM
+    (8192, 16384),      // 16K for tight VRAM
+    (12288, 32768),     // 32K for 8-12GB
+    (24576, 65536),     // 64K for 12-24GB
+    (u64::MAX, 131072), // 128K for 24GB+
+];
+
+/// Pick the value for the first tier whose threshold `vram_mb` falls below.
+/// Equivalent to an ascending `if vram < a { .. } else if vram < b { .. }`
+/// ladder; the table must end with a `u64::MAX` sentinel row.
+fn tier_lookup<T: Copy>(table: &[(u64, T)], vram_mb: u64) -> T {
+    table
+        .iter()
+        .find(|(threshold, _)| vram_mb < *threshold)
+        .map(|(_, value)| *value)
+        .expect("tier table must end with a u64::MAX sentinel")
+}
+
 pub fn detect_hardware() -> HardwareInfo {
     use sysinfo::System;
 
@@ -567,18 +599,7 @@ pub fn detect_hardware() -> HardwareInfo {
         // recommending a large model on a system that can't actually run it.
         "Qwen3.5-4B-Q6_K"
     } else {
-        let effective_vram = gpu.vram_mb.unwrap_or(available_ram_mb);
-        if effective_vram < 6144 {
-            "Qwen3.5-4B-Q6_K"
-        } else if effective_vram < 8192 {
-            "Qwen3.5-9B-Q4_K_M"
-        } else if effective_vram < 12288 {
-            "Qwen3.5-9B-Q5_K_M"
-        } else if effective_vram < 16384 {
-            "Qwen3.5-9B-Q6_K"
-        } else {
-            "Qwen3.5-9B-Q8_0"
-        }
+        tier_lookup(QUANT_BY_VRAM_MB, gpu.vram_mb.unwrap_or(available_ram_mb))
     };
 
     // Context size recommendation based on effective memory.
@@ -588,17 +609,7 @@ pub fn detect_hardware() -> HardwareInfo {
     } else {
         gpu.vram_mb.unwrap_or(available_ram_mb)
     };
-    let recommended_context_size = if ctx_vram < 6144 {
-        8192 // 8K for integrated/low VRAM
-    } else if ctx_vram < 8192 {
-        16384 // 16K for tight VRAM
-    } else if ctx_vram < 12288 {
-        32768 // 32K for 8-12GB
-    } else if ctx_vram < 24576 {
-        65536 // 64K for 12-24GB
-    } else {
-        131072 // 128K for 24GB+
-    };
+    let recommended_context_size = tier_lookup(CTX_SIZE_BY_VRAM_MB, ctx_vram);
 
     HardwareInfo {
         gpu_available: gpu.available,

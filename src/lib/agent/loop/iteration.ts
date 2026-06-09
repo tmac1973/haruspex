@@ -373,7 +373,7 @@ export async function runIteration(
 	nudges: NudgeState,
 	iteration: number
 ): Promise<IterationOutcome> {
-	const { messages, tools, signal, options } = ctx;
+	const { messages, tools, options } = ctx;
 	logDebug('agent', `iteration ${iteration} start`, { messageCount: messages.length });
 
 	// If images were loaded on the previous iteration, attach them to the
@@ -442,22 +442,69 @@ export async function runIteration(
 		parseError: parseError ? String(parseError) : null
 	});
 
-	// If the model was cut off mid-response (hit max_tokens) after
-	// using tools, continue the loop so it can finish generating tool
-	// calls or content.
-	if (toolCalls.length === 0 && state.usedTools && response.finish_reason === 'length') {
-		logDebug('agent', `iteration ${iteration} branch=continue-on-length nudge`);
-		messages.push({ role: 'assistant', content: response.content || '' });
-		messages.push({ role: 'user', content: 'Continue.' });
-		return 'continue';
+	// No tool calls: run the recovery-guard chain in priority order, then
+	// fall through to the terminal no-tool-call handler. Each guard checks
+	// its own precondition and returns an outcome to short-circuit, or null
+	// to defer to the next. `??` preserves the original sequential-if order.
+	if (toolCalls.length === 0) {
+		const recovered =
+			tryContinueOnLength(ctx, state, response, iteration) ??
+			tryMalformedToolCall(ctx, state, response, iteration) ??
+			tryDegradedOutput(state, response, iteration) ??
+			tryNarrateRecovery(ctx, nudges, response, iteration) ??
+			tryFileWriteRecovery(ctx, nudges, response, iteration);
+		if (recovered) return recovered;
+		return await finalizeNoToolCalls(
+			ctx,
+			state,
+			nudges,
+			response,
+			sampling,
+			templateKwargs,
+			iteration
+		);
 	}
 
-	// Malformed tool_call recovery: even with a clean `stop` finish
-	// reason, the model can emit a `<tool_call>` XML fragment in its
-	// chat content that fails to parse — usually because the JSON
-	// arguments are broken or the closing tag is missing.
+	state.usedTools = true;
+	// Model emitted real tool_calls — clear any pending narrate-recovery
+	// so we don't fire it spuriously on a later no-tool-calls iteration.
+	nudges.consumeNarrateRecovery();
+	await executeToolCalls(ctx, nudges, toolCalls);
+	return 'continue';
+}
+
+/**
+ * Max-tokens truncation after tools: the model was cut off mid-response,
+ * so continue the loop to let it finish generating. Precondition: caller
+ * has already established `toolCalls.length === 0`.
+ */
+function tryContinueOnLength(
+	ctx: LoopContext,
+	state: LoopState,
+	response: ChatCompletionResponse,
+	iteration: number
+): IterationOutcome | null {
+	if (state.usedTools && response.finish_reason === 'length') {
+		logDebug('agent', `iteration ${iteration} branch=continue-on-length nudge`);
+		ctx.messages.push({ role: 'assistant', content: response.content || '' });
+		ctx.messages.push({ role: 'user', content: 'Continue.' });
+		return 'continue';
+	}
+	return null;
+}
+
+/**
+ * Malformed tool_call recovery: even with a clean `stop` finish reason, the
+ * model can emit a `<tool_call>` XML fragment in its chat content that fails
+ * to parse — usually broken JSON arguments or a missing closing tag.
+ */
+function tryMalformedToolCall(
+	ctx: LoopContext,
+	state: LoopState,
+	response: ChatCompletionResponse,
+	iteration: number
+): IterationOutcome | null {
 	if (
-		toolCalls.length === 0 &&
 		state.usedTools &&
 		response.content &&
 		(/<tool_call>/.test(response.content) || /<function=/.test(response.content))
@@ -465,11 +512,11 @@ export async function runIteration(
 		logDebug('agent', `iteration ${iteration} branch=malformed-tool-call recovery`, {
 			rawContent: response.content
 		});
-		messages.push({
+		ctx.messages.push({
 			role: 'assistant',
 			content: stripToolCallArtifacts(response.content)
 		});
-		messages.push({
+		ctx.messages.push({
 			role: 'user',
 			content:
 				'Your previous message contained a malformed or incomplete tool call — ' +
@@ -480,46 +527,60 @@ export async function runIteration(
 		});
 		return 'continue';
 	}
+	return null;
+}
 
-	// Detect degraded model output: after using tools, smaller models
-	// sometimes emit a bare URL or a naked tool-name fragment as their
-	// "answer" instead of either a structured tool_call or real prose.
-	if (toolCalls.length === 0 && state.usedTools) {
-		const raw = (response.content || '').trim();
-		const isBareUrl = /^https?:\/\/\S+$/.test(raw);
-		const looksLikeNakedToolCall = /^(fetch_url|web_search|research_url|fs_[a-z_]+)\s*[:=(]/.test(
-			raw
-		);
-		if (raw.length > 0 && (isBareUrl || looksLikeNakedToolCall)) {
-			logDebug('agent', `iteration ${iteration} branch=degraded-output break`, {
-				raw,
-				isBareUrl,
-				looksLikeNakedToolCall
-			});
-			return 'break';
-		}
+/**
+ * Detect degraded model output: after using tools, smaller models sometimes
+ * emit a bare URL or a naked tool-name fragment as their "answer" instead of
+ * either a structured tool_call or real prose. Break so the caller can
+ * recover gracefully.
+ */
+function tryDegradedOutput(
+	state: LoopState,
+	response: ChatCompletionResponse,
+	iteration: number
+): IterationOutcome | null {
+	if (!state.usedTools) return null;
+	const raw = (response.content || '').trim();
+	const isBareUrl = /^https?:\/\/\S+$/.test(raw);
+	const looksLikeNakedToolCall = /^(fetch_url|web_search|research_url|fs_[a-z_]+)\s*[:=(]/.test(
+		raw
+	);
+	if (raw.length > 0 && (isBareUrl || looksLikeNakedToolCall)) {
+		logDebug('agent', `iteration ${iteration} branch=degraded-output break`, {
+			raw,
+			isBareUrl,
+			looksLikeNakedToolCall
+		});
+		return 'break';
 	}
+	return null;
+}
 
-	// Narrate-recovery: a prior iteration pushed a nudge that demanded
-	// a tool call. The model came back with text but no tool_calls —
-	// classic "describe the plan instead of executing it" failure on
-	// smaller models. Force action before any other branch (including
-	// the no-tools final-synthesis path that would otherwise commit the
-	// narration as the final answer).
-	if (
-		toolCalls.length === 0 &&
-		nudges.needsNarrateRecovery() &&
-		!looksLikeClarifyingQuestion(response.content || '')
-	) {
+/**
+ * Narrate-recovery: a prior iteration pushed a nudge that demanded a tool
+ * call. The model came back with text but no tool_calls — the classic
+ * "describe the plan instead of executing it" failure on smaller models.
+ * Force action before any final-synthesis path that would otherwise commit
+ * the narration as the final answer.
+ */
+function tryNarrateRecovery(
+	ctx: LoopContext,
+	nudges: NudgeState,
+	response: ChatCompletionResponse,
+	iteration: number
+): IterationOutcome | null {
+	if (nudges.needsNarrateRecovery() && !looksLikeClarifyingQuestion(response.content || '')) {
 		nudges.consumeNarrateRecovery();
 		logDebug('agent', `iteration ${iteration} branch=narrate-recovery`, {
 			assistantContent: response.content
 		});
-		messages.push({
+		ctx.messages.push({
 			role: 'assistant',
 			content: response.content || ''
 		});
-		messages.push({
+		ctx.messages.push({
 			role: 'user',
 			content:
 				'STOP. Your previous response described what you would do next but did not ' +
@@ -529,10 +590,17 @@ export async function runIteration(
 		});
 		return 'continue';
 	}
+	return null;
+}
 
-	// File-write hallucination recovery.
+/** File-write hallucination recovery. */
+function tryFileWriteRecovery(
+	ctx: LoopContext,
+	nudges: NudgeState,
+	response: ChatCompletionResponse,
+	iteration: number
+): IterationOutcome | null {
 	if (
-		toolCalls.length === 0 &&
 		nudges.needsFileWriteNudge(ctx.expectsFileOutput) &&
 		!looksLikeClarifyingQuestion(response.content || '')
 	) {
@@ -544,11 +612,11 @@ export async function runIteration(
 				assistantContent: response.content
 			}
 		);
-		messages.push({
+		ctx.messages.push({
 			role: 'assistant',
 			content: response.content || ''
 		});
-		messages.push({
+		ctx.messages.push({
 			role: 'user',
 			content:
 				'STOP. You have not actually created any file yet — no fs_write_* tool call ' +
@@ -563,115 +631,124 @@ export async function runIteration(
 		nudges.armNarrateRecovery();
 		return 'continue';
 	}
+	return null;
+}
 
-	if (toolCalls.length === 0) {
-		// Diversity gate.
-		if (nudges.needsDiversityNudge(state.usedTools)) {
-			const fetchedCount = nudges.consumeDiversityNudge();
-			logDebug('agent', `iteration ${iteration} branch=diversity-nudge`, {
-				fetchedCount
-			});
-			messages.push({
-				role: 'assistant',
-				content: response.content || ''
-			});
-			messages.push({
-				role: 'user',
-				content:
-					`STOP. You have opened ${fetchedCount === 0 ? 'no pages' : 'only one page'} ` +
-					'this turn. A complete answer needs 2–3 distinct sources covering different ' +
-					'angles (e.g. an official body, an academic / think-tank source, and a ' +
-					'journalistic or community account). You MUST now call fetch_url on two or ' +
-					'three additional URLs from the prior web_search results — pick ones that ' +
-					'plausibly cover the sub-points your answer will make. Do NOT reply with ' +
-					'text describing the URLs you plan to fetch — your NEXT output must be a ' +
-					'tool_calls block invoking fetch_url. After the fetches return, produce the ' +
-					'final answer with [source](URL) citations pointing to the specific page ' +
-					'where each claim appeared — do not reuse the same URL across unrelated claims.'
-			});
-			nudges.armNarrateRecovery();
-			return 'continue';
-		}
+/**
+ * Terminal no-tool-call handler: after the recovery guards have all
+ * deferred, either nudge for source diversity, commit the clean non-stream
+ * answer directly, or re-stream the final synthesis. Always returns a
+ * terminal outcome.
+ */
+async function finalizeNoToolCalls(
+	ctx: LoopContext,
+	state: LoopState,
+	nudges: NudgeState,
+	response: ChatCompletionResponse,
+	sampling: ReturnType<typeof getSamplingParams>,
+	templateKwargs: ReturnType<typeof getChatTemplateKwargs>,
+	iteration: number
+): Promise<IterationOutcome> {
+	const { messages, tools, options } = ctx;
 
-		// If this iteration's non-streaming check call already came back
-		// with a clean, substantive answer, surface it directly through
-		// the stream callbacks and skip the redundant re-stream.
-		if (
-			response.finish_reason === 'stop' &&
-			response.content &&
-			response.content.trim().length > 0
-		) {
-			logDebug(
-				'agent',
-				`iteration ${iteration} branch=final-synthesis (commit non-stream response, skip re-stream)`,
-				{ contentLen: response.content.length, usedTools: state.usedTools }
-			);
-			options.onStreamChunk({
-				delta: { content: response.content },
-				finish_reason: 'stop'
-			});
-			options.onComplete();
-			return 'complete';
-		}
+	// Diversity gate.
+	if (nudges.needsDiversityNudge(state.usedTools)) {
+		const fetchedCount = nudges.consumeDiversityNudge();
+		logDebug('agent', `iteration ${iteration} branch=diversity-nudge`, {
+			fetchedCount
+		});
+		messages.push({
+			role: 'assistant',
+			content: response.content || ''
+		});
+		messages.push({
+			role: 'user',
+			content:
+				`STOP. You have opened ${fetchedCount === 0 ? 'no pages' : 'only one page'} ` +
+				'this turn. A complete answer needs 2–3 distinct sources covering different ' +
+				'angles (e.g. an official body, an academic / think-tank source, and a ' +
+				'journalistic or community account). You MUST now call fetch_url on two or ' +
+				'three additional URLs from the prior web_search results — pick ones that ' +
+				'plausibly cover the sub-points your answer will make. Do NOT reply with ' +
+				'text describing the URLs you plan to fetch — your NEXT output must be a ' +
+				'tool_calls block invoking fetch_url. After the fetches return, produce the ' +
+				'final answer with [source](URL) citations pointing to the specific page ' +
+				'where each claim appeared — do not reuse the same URL across unrelated claims.'
+		});
+		nudges.armNarrateRecovery();
+		return 'continue';
+	}
 
-		if (state.usedTools) {
-			logDebug('agent', `iteration ${iteration} branch=final-synthesis (post-tools re-stream)`, {
-				reason:
-					response.finish_reason === 'length'
-						? 'non-stream truncated (length)'
-						: 'non-stream had no usable content'
-			});
-			const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
-				ctx,
-				undefined,
-				sampling,
-				templateKwargs
-			);
-			logDebug('agent', `final synthesis (post-tools) ended`, {
-				chunks: totalChunks,
-				contentLen: totalContent,
-				lastFinish
-			});
-			options.onComplete();
-			if (lastFinish === 'length') {
-				options.onError(
-					new ApiError(
-						'The model ran out of tokens before finishing its answer. ' +
-							'Try a less context-heavy question, disable deep research, ' +
-							'or increase the context size in Settings.'
-					)
-				);
-			}
-		} else {
-			logDebug('agent', `iteration ${iteration} branch=final-synthesis (no-tools)`);
-			const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
-				ctx,
-				tools,
-				sampling,
-				templateKwargs
-			);
-			logDebug('agent', `final synthesis (no-tools) ended`, {
-				chunks: totalChunks,
-				contentLen: totalContent,
-				lastFinish
-			});
-			options.onComplete();
-			if (lastFinish === 'length') {
-				options.onError(
-					new ApiError(
-						'The model ran out of tokens before finishing its answer. ' +
-							'Try a shorter question or increase the context size in Settings.'
-					)
-				);
-			}
-		}
+	// If this iteration's non-streaming check call already came back with a
+	// clean, substantive answer, surface it directly through the stream
+	// callbacks and skip the redundant re-stream.
+	if (response.finish_reason === 'stop' && response.content && response.content.trim().length > 0) {
+		logDebug(
+			'agent',
+			`iteration ${iteration} branch=final-synthesis (commit non-stream response, skip re-stream)`,
+			{ contentLen: response.content.length, usedTools: state.usedTools }
+		);
+		options.onStreamChunk({
+			delta: { content: response.content },
+			finish_reason: 'stop'
+		});
+		options.onComplete();
 		return 'complete';
 	}
 
-	state.usedTools = true;
-	// Model emitted real tool_calls — clear any pending narrate-recovery
-	// so we don't fire it spuriously on a later no-tool-calls iteration.
-	nudges.consumeNarrateRecovery();
+	// Re-stream the final answer. After tools, drop the tool list (the model
+	// is answering, not calling) and tailor the out-of-tokens hint; the
+	// no-tools path keeps tools available in case it still wants one.
+	const postTools = state.usedTools;
+	if (postTools) {
+		logDebug('agent', `iteration ${iteration} branch=final-synthesis (post-tools re-stream)`, {
+			reason:
+				response.finish_reason === 'length'
+					? 'non-stream truncated (length)'
+					: 'non-stream had no usable content'
+		});
+	} else {
+		logDebug('agent', `iteration ${iteration} branch=final-synthesis (no-tools)`);
+	}
+	const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
+		ctx,
+		postTools ? undefined : tools,
+		sampling,
+		templateKwargs
+	);
+	logDebug('agent', `final synthesis (${postTools ? 'post-tools' : 'no-tools'}) ended`, {
+		chunks: totalChunks,
+		contentLen: totalContent,
+		lastFinish
+	});
+	options.onComplete();
+	if (lastFinish === 'length') {
+		options.onError(
+			new ApiError(
+				postTools
+					? 'The model ran out of tokens before finishing its answer. ' +
+							'Try a less context-heavy question, disable deep research, ' +
+							'or increase the context size in Settings.'
+					: 'The model ran out of tokens before finishing its answer. ' +
+							'Try a shorter question or increase the context size in Settings.'
+			)
+		);
+	}
+	return 'complete';
+}
+
+/**
+ * Execute the model's tool calls in order: append the assistant tool_calls
+ * message, then run each tool (raced against the abort signal), stream its
+ * result back through the callbacks, update nudge bookkeeping, and append
+ * the tool result message. Throws AbortError if the signal fires mid-tool.
+ */
+async function executeToolCalls(
+	ctx: LoopContext,
+	nudges: NudgeState,
+	toolCalls: ResolvedToolCall[]
+): Promise<void> {
+	const { messages, signal, options } = ctx;
 
 	// Append assistant message with tool calls (but NOT the content —
 	// the model should regenerate its answer after seeing tool results)
@@ -685,7 +762,6 @@ export async function runIteration(
 		}))
 	});
 
-	// Execute each tool
 	for (const call of toolCalls) {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
@@ -726,7 +802,7 @@ export async function runIteration(
 		);
 
 		// Track successful file-write calls so the hallucination check
-		// above knows a real write happened.
+		// knows a real write happened.
 		if (call.name.startsWith('fs_write_') && !output.result.includes('"error"')) {
 			nudges.markFileWritten();
 		}
@@ -754,8 +830,6 @@ export async function runIteration(
 			content: toolContent
 		});
 	}
-
-	return 'continue';
 }
 
 /**

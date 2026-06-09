@@ -339,6 +339,26 @@ impl Integration {
     /// B → C → D cycles. Returns them in chronological order (oldest
     /// first) so the caller can render them as a transcript without
     /// reversing.
+    /// Resolve a command's text from its `B` (CommandStart) and `C`
+    /// (OutputStart) markers. Prefer the command line the shell hook reported
+    /// via `cl=` on the `C` marker — it's the exact text bash/zsh executed and
+    /// isn't subject to terminal-echo distortion (backspace, history
+    /// navigation, inline autosuggestions). Fall back to slicing the byte
+    /// stream between `B` and `C` for older hook versions or other
+    /// integrations. Returns `(command_line, truncated)`.
+    fn resolve_command_line(&self, b: &Marker, c: &Marker) -> (String, bool) {
+        if let Some(cl) = c.command_line.as_ref() {
+            (cl.clone(), false)
+        } else {
+            let cmd_bytes = self.slice_output(b.seq_end, c.seq_start);
+            let truncated = cmd_bytes.is_none();
+            (
+                bytes_to_clean_text(cmd_bytes.as_deref().unwrap_or(&[])),
+                truncated,
+            )
+        }
+    }
+
     pub fn capture_recent_commands(&self, limit: usize) -> Vec<CapturedRegion> {
         if limit == 0 {
             return Vec::new();
@@ -370,22 +390,7 @@ impl Integration {
             let b = markers[b_offset];
 
             let out_bytes = self.slice_output(c.seq_end, d.seq_start);
-            // Prefer the command line the shell hook reported via `cl=`
-            // on the C marker — it's the exact text bash/zsh executed
-            // and isn't subject to terminal-echo distortion (backspace,
-            // history navigation, inline autosuggestions). Fall back to
-            // slicing the byte stream for older hook versions or other
-            // integrations.
-            let (command_line, cmd_truncated) = if let Some(cl) = c.command_line.as_ref() {
-                (cl.clone(), false)
-            } else {
-                let cmd_bytes = self.slice_output(b.seq_end, c.seq_start);
-                let truncated = cmd_bytes.is_none();
-                (
-                    bytes_to_clean_text(cmd_bytes.as_deref().unwrap_or(&[])),
-                    truncated,
-                )
-            };
+            let (command_line, cmd_truncated) = self.resolve_command_line(b, c);
             let truncated = cmd_truncated || out_bytes.is_none();
 
             regions.push(CapturedRegion {
@@ -445,16 +450,7 @@ impl Integration {
         let b = markers[b_offset];
 
         let out_bytes = self.slice_output(c.seq_end, self.total_offset);
-        let (command_line, cmd_truncated) = if let Some(cl) = c.command_line.as_ref() {
-            (cl.clone(), false)
-        } else {
-            let cmd_bytes = self.slice_output(b.seq_end, c.seq_start);
-            let truncated = cmd_bytes.is_none();
-            (
-                bytes_to_clean_text(cmd_bytes.as_deref().unwrap_or(&[])),
-                truncated,
-            )
-        };
+        let (command_line, cmd_truncated) = self.resolve_command_line(b, c);
         Some(CapturedRegion {
             command_line,
             output: bytes_to_clean_text(out_bytes.as_deref().unwrap_or(&[])),

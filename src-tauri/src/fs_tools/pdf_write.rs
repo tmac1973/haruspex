@@ -83,6 +83,34 @@ fn finish_page_ops(ops: &mut Vec<printpdf::Op>) {
     ops.push(Op::RestoreGraphicsState);
 }
 
+/// Emit a `SetFont` op (and, for flowing text, a matching `SetLineHeight`)
+/// only when the requested font key differs from the last one emitted,
+/// updating the tracker. `with_line_height` is false for one-shot lines like
+/// the image placeholder where leading is irrelevant. The key is
+/// `(font_pt.to_bits(), family, bold, italic)`.
+fn set_font_if_needed(
+    ops: &mut Vec<printpdf::Op>,
+    last_font: &mut Option<(u32, FontFamily, bool, bool)>,
+    key: (u32, FontFamily, bool, bool),
+    font_pt: f32,
+    with_line_height: bool,
+) {
+    use printpdf::*;
+    if *last_font != Some(key) {
+        let (_, family, bold, italic) = key;
+        ops.push(Op::SetFont {
+            font: PdfFontHandle::Builtin(pick_font(family, bold, italic)),
+            size: Pt(font_pt),
+        });
+        if with_line_height {
+            ops.push(Op::SetLineHeight {
+                lh: Pt(font_pt * 1.2),
+            });
+        }
+        *last_font = Some(key);
+    }
+}
+
 /// Register each unique referenced image with the PDF document once
 /// up front. Returns a map keyed by the workdir-relative path so the
 /// rendering loop can look up the document's XObjectId and natural
@@ -120,6 +148,24 @@ pub(super) fn build_pdf(
 
     let mut doc = PdfDocument::new("Document");
     let registered_images = register_images(&mut doc, images)?;
+    let all_pages = layout_pages(lines, &registered_images);
+
+    let bytes = doc
+        .with_pages(all_pages)
+        .save(&PdfSaveOptions::default(), &mut Vec::new());
+
+    Ok(bytes)
+}
+
+/// Lay out the document into pages — the pure, document-free core of
+/// `build_pdf`. Takes the pre-registered image table (XObject id + natural
+/// pixel size) and emits the printpdf op stream per page. Split out so the
+/// op stream is unit-testable without constructing a `PdfDocument`.
+fn layout_pages(
+    lines: &[&str],
+    registered_images: &HashMap<String, (printpdf::XObjectId, u32, u32)>,
+) -> Vec<printpdf::PdfPage> {
+    use printpdf::*;
 
     // US Letter: 215.9 mm × 279.4 mm. Keep a 20 mm margin on all sides.
     let page_width_mm = 215.9_f32;
@@ -174,6 +220,20 @@ pub(super) fn build_pdf(
         start_page_ops(current_ops);
         *last_font = None;
     };
+
+    // Break to a new page when `needed_mm` won't fit in the remaining
+    // vertical space. Thin wrapper over `page_break` so each block type
+    // doesn't repeat the `cursor - needed < bottom` guard.
+    let break_if_needed =
+        |needed_mm: f32,
+         current_ops: &mut Vec<Op>,
+         all_pages: &mut Vec<PdfPage>,
+         cursor_y_mm: &mut f32,
+         last_font: &mut Option<(u32, FontFamily, bool, bool)>| {
+            if *cursor_y_mm - needed_mm < bottom_y_mm {
+                page_break(current_ops, all_pages, cursor_y_mm, last_font);
+            }
+        };
 
     for block in &preprocessed {
         match block {
@@ -239,14 +299,13 @@ pub(super) fn build_pdf(
                 let font_pt_key = font_pt.to_bits();
 
                 for wrapped_line in wrapped_lines {
-                    if cursor_y_mm - line_height_mm < bottom_y_mm {
-                        page_break(
-                            &mut current_ops,
-                            &mut all_pages,
-                            &mut cursor_y_mm,
-                            &mut last_font,
-                        );
-                    }
+                    break_if_needed(
+                        line_height_mm,
+                        &mut current_ops,
+                        &mut all_pages,
+                        &mut cursor_y_mm,
+                        &mut last_font,
+                    );
 
                     let baseline_pt = (cursor_y_mm - line_height_mm) * mm_to_pt + (font_pt * 0.2);
                     current_ops.push(Op::SetTextMatrix {
@@ -254,20 +313,8 @@ pub(super) fn build_pdf(
                     });
 
                     for (idx, sw) in wrapped_line.iter().enumerate() {
-                        let bold = sw.bold;
-                        let italic = sw.italic;
-                        let key = (font_pt_key, FontFamily::Helvetica, bold, italic);
-                        if last_font != Some(key) {
-                            let font = pick_font(FontFamily::Helvetica, bold, italic);
-                            current_ops.push(Op::SetFont {
-                                font: PdfFontHandle::Builtin(font),
-                                size: Pt(font_pt),
-                            });
-                            current_ops.push(Op::SetLineHeight {
-                                lh: Pt(font_pt * 1.2),
-                            });
-                            last_font = Some(key);
-                        }
+                        let key = (font_pt_key, FontFamily::Helvetica, sw.bold, sw.italic);
+                        set_font_if_needed(&mut current_ops, &mut last_font, key, font_pt, true);
 
                         let piece = if idx == 0 {
                             sw.word.clone()
@@ -299,28 +346,16 @@ pub(super) fn build_pdf(
                 cursor_y_mm -= 2.0;
 
                 for mono in mono_lines {
-                    if cursor_y_mm - line_height_mm < bottom_y_mm {
-                        page_break(
-                            &mut current_ops,
-                            &mut all_pages,
-                            &mut cursor_y_mm,
-                            &mut last_font,
-                        );
-                    }
+                    break_if_needed(
+                        line_height_mm,
+                        &mut current_ops,
+                        &mut all_pages,
+                        &mut cursor_y_mm,
+                        &mut last_font,
+                    );
 
-                    let bold = mono.bold;
-                    let key = (font_pt_key, FontFamily::Courier, bold, false);
-                    if last_font != Some(key) {
-                        let font = pick_font(FontFamily::Courier, bold, false);
-                        current_ops.push(Op::SetFont {
-                            font: PdfFontHandle::Builtin(font),
-                            size: Pt(font_pt),
-                        });
-                        current_ops.push(Op::SetLineHeight {
-                            lh: Pt(font_pt * 1.2),
-                        });
-                        last_font = Some(key);
-                    }
+                    let key = (font_pt_key, FontFamily::Courier, mono.bold, false);
+                    set_font_if_needed(&mut current_ops, &mut last_font, key, font_pt, true);
 
                     let baseline_pt = (cursor_y_mm - line_height_mm) * mm_to_pt + (font_pt * 0.2);
                     current_ops.push(Op::SetTextMatrix {
@@ -346,27 +381,15 @@ pub(super) fn build_pdf(
                 // document still flows.
                 let Some(&(ref image_id, px_w, px_h)) = registered_images.get(path) else {
                     let line_height_mm = (body_pt * 1.2) / mm_to_pt;
-                    if cursor_y_mm - line_height_mm < bottom_y_mm {
-                        page_break(
-                            &mut current_ops,
-                            &mut all_pages,
-                            &mut cursor_y_mm,
-                            &mut last_font,
-                        );
-                    }
-                    let font_pt_key = body_pt.to_bits();
-                    let key = (font_pt_key, FontFamily::Helvetica, false, true);
-                    if last_font != Some(key) {
-                        current_ops.push(Op::SetFont {
-                            font: PdfFontHandle::Builtin(pick_font(
-                                FontFamily::Helvetica,
-                                false,
-                                true,
-                            )),
-                            size: Pt(body_pt),
-                        });
-                        last_font = Some(key);
-                    }
+                    break_if_needed(
+                        line_height_mm,
+                        &mut current_ops,
+                        &mut all_pages,
+                        &mut cursor_y_mm,
+                        &mut last_font,
+                    );
+                    let key = (body_pt.to_bits(), FontFamily::Helvetica, false, true);
+                    set_font_if_needed(&mut current_ops, &mut last_font, key, body_pt, false);
                     let baseline_pt = (cursor_y_mm - line_height_mm) * mm_to_pt + (body_pt * 0.2);
                     current_ops.push(Op::SetTextMatrix {
                         matrix: TextMatrix::Translate(Pt(margin_pt), Pt(baseline_pt)),
@@ -412,14 +435,13 @@ pub(super) fn build_pdf(
                 // Force a page break if the image won't fit in the remaining
                 // vertical space. Don't try to shrink past natural size to fit
                 // — the page break preserves intent better than a tiny image.
-                if cursor_y_mm - display_h_mm < bottom_y_mm {
-                    page_break(
-                        &mut current_ops,
-                        &mut all_pages,
-                        &mut cursor_y_mm,
-                        &mut last_font,
-                    );
-                }
+                break_if_needed(
+                    display_h_mm,
+                    &mut current_ops,
+                    &mut all_pages,
+                    &mut cursor_y_mm,
+                    &mut last_font,
+                );
 
                 // Small vertical gap above the image so it doesn't kiss the
                 // line of text immediately above.
@@ -468,11 +490,7 @@ pub(super) fn build_pdf(
         current_ops,
     ));
 
-    let bytes = doc
-        .with_pages(all_pages)
-        .save(&PdfSaveOptions::default(), &mut Vec::new());
-
-    Ok(bytes)
+    all_pages
 }
 
 #[tauri::command]
@@ -503,4 +521,71 @@ pub async fn fs_write_pdf(
     .map_err(|e| format!("PDF build task failed: {}", e))??;
 
     write_bytes_to_workdir(&resolved, &bytes).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use printpdf::{Op, TextItem};
+    use std::collections::HashMap;
+
+    fn pages(lines: &[&str]) -> Vec<printpdf::PdfPage> {
+        layout_pages(lines, &HashMap::new())
+    }
+
+    /// Concatenate every ShowText payload across all pages — lets us assert
+    /// the rendered text without parsing the final PDF bytes.
+    fn all_text(pages: &[printpdf::PdfPage]) -> String {
+        let mut out = String::new();
+        for page in pages {
+            for op in &page.ops {
+                if let Op::ShowText { items } = op {
+                    for item in items {
+                        if let TextItem::Text(s) = item {
+                            out.push_str(s);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn count_set_font(pages: &[printpdf::PdfPage]) -> usize {
+        pages
+            .iter()
+            .flat_map(|p| &p.ops)
+            .filter(|op| matches!(op, Op::SetFont { .. }))
+            .count()
+    }
+
+    #[test]
+    fn pdf_lays_out_headings_and_body_on_one_page() {
+        let p = pages(&["# Title", "Some body text here.", "More text."]);
+        assert_eq!(p.len(), 1);
+        let text = all_text(&p);
+        assert!(text.contains("Title"));
+        assert!(text.contains("Some body text"));
+        assert!(text.contains("More text."));
+        assert!(count_set_font(&p) >= 1);
+    }
+
+    #[test]
+    fn pdf_flows_across_multiple_pages_when_content_overflows() {
+        let many: Vec<&str> = (0..120).map(|_| "Filler paragraph line.").collect();
+        let p = pages(&many);
+        assert!(
+            p.len() >= 2,
+            "expected a page break, got {} page(s)",
+            p.len()
+        );
+    }
+
+    #[test]
+    fn pdf_renders_markdown_table_cells() {
+        let p = pages(&["| A | B |", "| - | - |", "| 1 | 2 |"]);
+        let text = all_text(&p);
+        assert!(text.contains('A') && text.contains('B'));
+        assert!(text.contains('1') && text.contains('2'));
+    }
 }
