@@ -199,6 +199,8 @@ That alone removes the cycle with no behavior change. Then split along the seams
 
 ### Finding A2 — `models.rs` (1265 LOC) conflates three domains — **6/10**
 
+> **Hardware split DONE** on branch `refactor/split-models-hardware`: the cross-domain concern (#3) is extracted to a new top-level `hardware.rs` module (`HardwareInfo`, `GpuInfo`, VRAM tables, `tier_lookup`, `detect_hardware`, all per-OS `detect_gpu` + `cmd_detect_hardware`), with its tests. `models.rs` drops 1265 → 880 LOC and is now single-domain (model registry + download + commands). The remaining registry-vs-downloader sub-split (a `models/manager.rs`) is **intra-domain** organization, not a concern separation, and carries field-visibility friction (the whisper command reaches `ModelManager.cancel_flag`) — left as optional follow-up. (Also fixed a latent bug: the unsupported-OS `detect_gpu` returned a tuple that didn't match its `GpuInfo` call site — it now returns `GpuInfo`.)
+
 **Location:** `src-tauri/src/models.rs` (verified via declaration scan).
 
 Three unrelated concerns in one file:
@@ -326,7 +328,7 @@ If madge still can't resolve `$lib` (it often won't follow SvelteKit's generated
 ## Priority order
 
 1. **A1** (7) — cycle break DONE (`refactor/break-chat-sandbox-cycle`); God-store split still pending.
-2. **A2** (6) — split `models.rs` into `models/` + `hardware/` (pure move).
+2. **A2** (6) — hardware extracted to `hardware.rs` DONE (`refactor/split-models-hardware`); intra-`models` manager split is optional follow-up.
 3. **A3** (5) — decouple `proxy` from `db` (trait or feedback-flush).
 4. **A4** (5) — centralize host/timeout constants now; sidecar abstraction later.
 5. **A5** (4) — extract `proxy/state.rs` + `proxy/config.rs`.
