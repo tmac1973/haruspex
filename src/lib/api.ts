@@ -188,6 +188,84 @@ function buildRequestBody(
 	return body;
 }
 
+/** Sentinel returned by parseSSELine for the `data: [DONE]` terminator. */
+const SSE_DONE = Symbol('sse-done');
+
+/**
+ * Parse one SSE line into a StreamChunk, `SSE_DONE` for the terminator, or
+ * null for non-data / empty-delta / malformed lines. Keeps parseSSE's loop
+ * flat instead of nesting data/try/choices/usage four deep.
+ */
+function parseSSELine(line: string): StreamChunk | typeof SSE_DONE | null {
+	const trimmed = line.trim();
+	if (!trimmed.startsWith('data: ')) return null;
+	const data = trimmed.slice(6);
+	if (data === '[DONE]') return SSE_DONE;
+	try {
+		const parsed = JSON.parse(data);
+		if (parsed.choices && parsed.choices[0]) {
+			const chunk: StreamChunk = {
+				delta: parsed.choices[0].delta || {},
+				finish_reason: parsed.choices[0].finish_reason
+			};
+			if (parsed.usage) chunk.usage = parsed.usage;
+			return chunk;
+		}
+		// Final usage-only chunk (no choices) when stream_options.include_usage is set.
+		if (parsed.usage) return { delta: {}, finish_reason: null, usage: parsed.usage };
+		return null;
+	} catch {
+		return null; // skip malformed JSON chunks
+	}
+}
+
+/**
+ * Merge a model's separate `reasoning_content` and `content` into one string,
+ * wrapping reasoning in a <think> block. Returns null only when both are
+ * empty.
+ */
+function combineReasoningAndContent(
+	reasoning: string | undefined,
+	content: string | null
+): string | null {
+	if (reasoning && content) return `<think>${reasoning}</think>\n\n${content}`;
+	if (reasoning) return `<think>${reasoning}</think>`;
+	return content;
+}
+
+/**
+ * POST a chat request and return the OK response. Shared by the streaming and
+ * non-streaming paths: rethrows AbortError as-is, maps other fetch failures
+ * and non-2xx statuses to ApiError. `label` ("stream" / "non-stream") only
+ * tags the debug logs.
+ */
+async function sendChatRequest(
+	url: string,
+	headers: HeadersInit,
+	body: unknown,
+	signal: AbortSignal | undefined,
+	reqId: number,
+	label: string
+): Promise<Response> {
+	let response: Response;
+	try {
+		response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
+	} catch (e) {
+		if (e instanceof DOMException && e.name === 'AbortError') {
+			logDebug('api', `${label} request #${reqId} aborted before response`);
+			throw e;
+		}
+		logDebug('api', `${label} request #${reqId} fetch failed`, { error: String(e) });
+		throw new ApiError('Failed to connect to the AI model. Is it still loading?');
+	}
+	if (!response.ok) {
+		const text = await response.text().catch(() => 'Unknown error');
+		logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, { body: text });
+		throw new ApiError(`Server error: ${text}`, response.status);
+	}
+	return response;
+}
+
 export async function* parseSSE(response: Response): AsyncGenerator<StreamChunk> {
 	const reader = response.body!.getReader();
 	const decoder = new TextDecoder();
@@ -203,33 +281,9 @@ export async function* parseSSE(response: Response): AsyncGenerator<StreamChunk>
 			buffer = lines.pop()!;
 
 			for (const line of lines) {
-				const trimmed = line.trim();
-				if (trimmed.startsWith('data: ')) {
-					const data = trimmed.slice(6);
-					if (data === '[DONE]') return;
-					try {
-						const parsed = JSON.parse(data);
-						if (parsed.choices && parsed.choices[0]) {
-							const chunk: StreamChunk = {
-								delta: parsed.choices[0].delta || {},
-								finish_reason: parsed.choices[0].finish_reason
-							};
-							if (parsed.usage) {
-								chunk.usage = parsed.usage;
-							}
-							yield chunk;
-						} else if (parsed.usage) {
-							// Final usage-only chunk (no choices) when stream_options.include_usage is set
-							yield {
-								delta: {},
-								finish_reason: null,
-								usage: parsed.usage
-							};
-						}
-					} catch {
-						// Skip malformed JSON chunks
-					}
-				}
+				const chunk = parseSSELine(line);
+				if (chunk === SSE_DONE) return;
+				if (chunk) yield chunk;
 			}
 		}
 	} finally {
@@ -247,28 +301,14 @@ export async function* chatCompletionStream(
 	const reqId = nextRequestId++;
 	logDebug('api', `stream request #${reqId} → ${endpoint.url}`, body);
 
-	let response: Response;
-	try {
-		response = await fetch(endpoint.url, {
-			method: 'POST',
-			headers: endpoint.headers,
-			body: JSON.stringify(body),
-			signal
-		});
-	} catch (e) {
-		if (e instanceof DOMException && e.name === 'AbortError') {
-			logDebug('api', `stream request #${reqId} aborted before response`);
-			throw e;
-		}
-		logDebug('api', `stream request #${reqId} fetch failed`, { error: String(e) });
-		throw new ApiError('Failed to connect to the AI model. Is it still loading?', undefined);
-	}
-
-	if (!response.ok) {
-		const text = await response.text().catch(() => 'Unknown error');
-		logDebug('api', `stream request #${reqId} HTTP ${response.status}`, { body: text });
-		throw new ApiError(`Server error: ${text}`, response.status);
-	}
+	const response = await sendChatRequest(
+		endpoint.url,
+		endpoint.headers,
+		body,
+		signal,
+		reqId,
+		'stream'
+	);
 
 	if (!response.body) {
 		logDebug('api', `stream request #${reqId} no response body`);
@@ -310,28 +350,14 @@ export async function chatCompletion(
 	const reqId = nextRequestId++;
 	logDebug('api', `non-stream request #${reqId} → ${endpoint.url}`, body);
 
-	let response: Response;
-	try {
-		response = await fetch(endpoint.url, {
-			method: 'POST',
-			headers: endpoint.headers,
-			body: JSON.stringify(body),
-			signal
-		});
-	} catch (e) {
-		if (e instanceof DOMException && e.name === 'AbortError') {
-			logDebug('api', `non-stream request #${reqId} aborted before response`);
-			throw e;
-		}
-		logDebug('api', `non-stream request #${reqId} fetch failed`, { error: String(e) });
-		throw new ApiError('Failed to connect to the AI model. Is it still loading?');
-	}
-
-	if (!response.ok) {
-		const text = await response.text().catch(() => 'Unknown error');
-		logDebug('api', `non-stream request #${reqId} HTTP ${response.status}`, { body: text });
-		throw new ApiError(`Server error: ${text}`, response.status);
-	}
+	const response = await sendChatRequest(
+		endpoint.url,
+		endpoint.headers,
+		body,
+		signal,
+		reqId,
+		'non-stream'
+	);
 
 	const data = await response.json();
 	const choice = data.choices?.[0];
@@ -343,14 +369,7 @@ export async function chatCompletion(
 
 	const content = choice.message?.content ?? null;
 	const reasoning = choice.message?.reasoning_content;
-
-	// If model returned reasoning in a separate field, prepend as <think> block
-	const fullContent =
-		reasoning && content
-			? `<think>${reasoning}</think>\n\n${content}`
-			: reasoning && !content
-				? `<think>${reasoning}</think>`
-				: content;
+	const fullContent = combineReasoningAndContent(reasoning, content);
 
 	logDebug('api', `non-stream request #${reqId} response`, {
 		finish_reason: choice.finish_reason,
