@@ -61,6 +61,53 @@ export function stripToolCallXml(content: string): string {
 	return content.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim();
 }
 
+/** Sentinel returned by a coercer that doesn't apply to the input. */
+const NO_COERCION = Symbol('no-coercion');
+
+/** `''` / `null` / `true` / `false`. */
+function coerceLiteral(s: string): unknown {
+	switch (s) {
+		case '':
+			return '';
+		case 'null':
+			return null;
+		case 'true':
+			return true;
+		case 'false':
+			return false;
+		default:
+			return NO_COERCION;
+	}
+}
+
+/** Safe integers only; oversized digit runs fall through to a string. */
+function coerceInteger(s: string): unknown {
+	if (!/^-?\d+$/.test(s)) return NO_COERCION;
+	const n = Number.parseInt(s, 10);
+	return Number.isSafeInteger(n) ? n : NO_COERCION;
+}
+
+function coerceFloat(s: string): unknown {
+	return /^-?\d+\.\d+$/.test(s) ? Number.parseFloat(s) : NO_COERCION;
+}
+
+function coerceJson(s: string): unknown {
+	if (!s.startsWith('{') && !s.startsWith('[')) return NO_COERCION;
+	try {
+		return JSON.parse(s);
+	} catch {
+		return NO_COERCION;
+	}
+}
+
+/** Strip matched surrounding quotes — some templates wrap scalars. */
+function coerceQuoted(s: string): unknown {
+	const wrapped =
+		(s.startsWith('"') && s.endsWith('"') && s.length >= 2) ||
+		(s.startsWith("'") && s.endsWith("'") && s.length >= 2);
+	return wrapped ? s.slice(1, -1) : NO_COERCION;
+}
+
 /**
  * Coerce a raw parameter value (always a string coming out of a
  * `<parameter=key>value` block) into the closest JSON-ish scalar.
@@ -70,30 +117,9 @@ export function stripToolCallXml(content: string): string {
  */
 function coerceFunctionStyleValue(raw: string): unknown {
 	const trimmed = raw.trim();
-	if (trimmed === '') return '';
-	if (trimmed === 'null') return null;
-	if (trimmed === 'true') return true;
-	if (trimmed === 'false') return false;
-	if (/^-?\d+$/.test(trimmed)) {
-		const n = Number.parseInt(trimmed, 10);
-		if (Number.isSafeInteger(n)) return n;
-	}
-	if (/^-?\d+\.\d+$/.test(trimmed)) {
-		return Number.parseFloat(trimmed);
-	}
-	if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-		try {
-			return JSON.parse(trimmed);
-		} catch {
-			// fall through to string
-		}
-	}
-	// Strip matched surrounding quotes — some templates wrap scalars.
-	if (
-		(trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) ||
-		(trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2)
-	) {
-		return trimmed.slice(1, -1);
+	for (const coerce of [coerceLiteral, coerceInteger, coerceFloat, coerceJson, coerceQuoted]) {
+		const value = coerce(trimmed);
+		if (value !== NO_COERCION) return value;
 	}
 	return trimmed;
 }
