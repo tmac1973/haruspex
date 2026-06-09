@@ -12,7 +12,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Manager};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -247,8 +247,23 @@ impl Database {
         Ok(data_dir.join("haruspex.db"))
     }
 
+    /// Lock the connection, recovering from a poisoned mutex.
+    ///
+    /// A panic inside any DB critical section poisons the mutex. With the
+    /// bare `.lock().unwrap()` that used to be at every call site, the first
+    /// such panic would make every subsequent DB call panic too, taking down
+    /// all persistence for the rest of the session. The SQLite handle stays
+    /// valid across a panic — rusqlite `Transaction`s roll back on unwind —
+    /// so we recover the guard instead of cascading.
+    fn conn(&self) -> MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|poisoned| {
+            log::warn!("recovered from a poisoned DB connection mutex");
+            poisoned.into_inner()
+        })
+    }
+
     fn migrate(&self) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS conversations (
                 id TEXT PRIMARY KEY,

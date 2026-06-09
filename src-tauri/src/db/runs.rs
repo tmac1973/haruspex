@@ -8,7 +8,7 @@ impl Database {
         trigger: &str,
         step_prompts: &[String],
     ) -> Result<i64, String> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn();
         let tx = conn
             .transaction()
             .map_err(|e| format!("Transaction failed: {}", e))?;
@@ -37,7 +37,7 @@ impl Database {
     }
 
     pub fn mark_run_started(&self, run_id: i64, started_at: i64) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE job_runs SET status = 'running', started_at = ?1
              WHERE id = ?2 AND status = 'queued'",
@@ -54,7 +54,7 @@ impl Database {
         finished_at: i64,
         error: Option<&str>,
     ) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE job_runs SET status = ?1, finished_at = ?2, error = ?3
              WHERE id = ?4",
@@ -71,7 +71,7 @@ impl Database {
         started_at: i64,
         prompt_rendered: &str,
     ) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE job_run_steps
                 SET status = 'running', started_at = ?1, prompt_rendered = ?2
@@ -91,7 +91,7 @@ impl Database {
         error: Option<&str>,
         finished_at: i64,
     ) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE job_run_steps
                 SET status = ?1, output = ?2, error = ?3, finished_at = ?4
@@ -103,7 +103,7 @@ impl Database {
     }
 
     pub fn list_job_runs(&self, job_id: i64) -> Result<Vec<JobRunSummary>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn
             .prepare(
                 "SELECT id, job_id, status, trigger, queued_at, started_at, finished_at, error
@@ -132,7 +132,7 @@ impl Database {
     }
 
     pub fn get_job_run(&self, run_id: i64) -> Result<JobRunWithSteps, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let (job_id, status, trigger, queued_at, started_at, finished_at, error) = conn
             .query_row(
                 "SELECT job_id, status, trigger, queued_at, started_at, finished_at, error
@@ -194,14 +194,14 @@ impl Database {
     }
 
     pub fn delete_job_run(&self, run_id: i64) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM job_runs WHERE id = ?1", params![run_id])
             .map_err(|e| format!("Run delete failed: {}", e))?;
         Ok(())
     }
 
     pub fn delete_all_job_runs(&self, job_id: i64) -> Result<i64, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let n = conn
             .execute("DELETE FROM job_runs WHERE job_id = ?1", params![job_id])
             .map_err(|e| format!("Run bulk delete failed: {}", e))?;
@@ -213,7 +213,7 @@ impl Database {
     /// in-flight steps are marked the same. Idempotent — calling it on a
     /// clean DB does nothing. Returns the number of runs swept.
     pub fn recover_orphan_runs(&self) -> Result<i64, String> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn();
         let tx = conn
             .transaction()
             .map_err(|e| format!("Transaction failed: {}", e))?;
