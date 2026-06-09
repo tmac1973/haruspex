@@ -1097,6 +1097,60 @@ async function applyRuntimeConfig(py: PyodideInterface): Promise<void> {
 	py.globals.set('_haruspex_working_dir_set', runtimeCfg.workingDirSet);
 }
 
+/**
+ * Route the Python sandbox's SYNCHRONOUS HTTP through Rust.
+ *
+ * `requests` / `urllib` / `httpx` are patched by pyodide-http to use a
+ * synchronous XMLHttpRequest. A sync XHR straight to a cross-origin URL is
+ * CORS-blocked by the WebView, and it can't reach our async pyfetch→Rust
+ * bridge (no SharedArrayBuffer on WebKitGTK to bridge sync↔async). So we
+ * wrap `XMLHttpRequest.open` to rewrite every cross-origin http(s) request
+ * onto the `haruspexfetch:` custom scheme (target URL in the `u=` query),
+ * which Rust answers with reqwest (no browser CORS) + permissive CORS/CORP
+ * headers. Same-origin XHRs and the scheme itself pass through untouched.
+ */
+function installSandboxFetchProxy(): void {
+	const ua = (self.navigator && self.navigator.userAgent) || '';
+	// Tauri exposes custom schemes as `http://<scheme>.localhost` on Windows
+	// and Android, but as the native `<scheme>://localhost` on Linux
+	// (WebKitGTK) and macOS. Using the wrong form sends the request to the
+	// real network ("Connection refused") instead of the scheme handler.
+	const proxyBase = /Windows|Android/i.test(ua)
+		? 'http://haruspexfetch.localhost/'
+		: 'haruspexfetch://localhost/';
+
+	const shouldProxy = (raw: string): boolean => {
+		try {
+			const u = new URL(raw, self.location.href);
+			if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+			if (u.origin === self.location.origin) return false;
+			if (u.hostname === 'haruspexfetch.localhost') return false;
+			return true;
+		} catch {
+			return false;
+		}
+	};
+
+	const proto = XMLHttpRequest.prototype;
+	const origOpen = proto.open;
+	proto.open = function (
+		this: XMLHttpRequest,
+		method: string,
+		url: string | URL,
+		async?: boolean,
+		username?: string | null,
+		password?: string | null
+	): void {
+		const raw = typeof url === 'string' ? url : url.href;
+		const target = shouldProxy(raw)
+			? proxyBase + '?u=' + encodeURIComponent(new URL(raw, self.location.href).href)
+			: url;
+		// Always use the 5-arg form; `async` defaults to true natively, and
+		// pyodide-http's synchronous transport passes false explicitly.
+		origOpen.call(this, method, target, async ?? true, username ?? null, password ?? null);
+	};
+}
+
 async function init(): Promise<void> {
 	if (initStarted) return;
 	initStarted = true;
@@ -1108,6 +1162,10 @@ async function init(): Promise<void> {
 		// anything not vendored. SvelteKit serves static/ at the origin
 		// root under both `npm run dev` and Tauri prod.
 		installLocalFirstFetch();
+		// Route the sandbox's synchronous requests/urllib HTTP through Rust
+		// (see installSandboxFetchProxy) — must be in place before any model
+		// code runs a pyodide-http XHR.
+		installSandboxFetchProxy();
 		const py = await loadPyodide({
 			indexURL: new URL('/pyodide/', self.location.origin).href
 		});
