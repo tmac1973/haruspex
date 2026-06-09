@@ -93,6 +93,50 @@ fn decode_xml_entities(s: &str) -> String {
 /// paragraph string becomes a <w:p> with a single <w:t> run. Basic
 /// formatting (bold, italic) is not supported in this first pass —
 /// the content parameter is plain text with newline-separated paragraphs.
+/// Body XML for a standalone image paragraph. `w:jc` alignment is only
+/// emitted when not default-left (Word treats absent `w:jc` as left), which
+/// keeps the common case lean.
+fn docx_image_paragraph(
+    idx: usize,
+    target_w: u64,
+    target_h: u64,
+    drawing_id: u32,
+    alignment: ImageAlignment,
+) -> String {
+    let ppr = match alignment {
+        ImageAlignment::Left => String::new(),
+        ImageAlignment::Center => r#"<w:pPr><w:jc w:val="center"/></w:pPr>"#.to_string(),
+        ImageAlignment::Right => r#"<w:pPr><w:jc w:val="right"/></w:pPr>"#.to_string(),
+    };
+    format!(
+        r#"<w:p>{ppr}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{w}" cy="{h}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Picture {id}"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="{id}" name="image{idx}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId{idx}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#,
+        ppr = ppr,
+        w = target_w,
+        h = target_h,
+        id = drawing_id,
+        idx = idx,
+    )
+}
+
+/// Body XML for a heading paragraph. Font size shrinks two half-points per
+/// level (`32 - level*2`).
+fn docx_heading_paragraph(level: usize, escaped_text: &str) -> String {
+    format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="Heading{}"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="{}"/></w:rPr><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
+        level,
+        32 - level * 2,
+        escaped_text
+    )
+}
+
+/// Body XML for a plain text paragraph.
+fn docx_text_paragraph(escaped_text: &str) -> String {
+    format!(
+        r#"<w:p><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
+        escaped_text
+    )
+}
+
 pub(super) fn build_docx(
     paragraphs: &[&str],
     images: &std::collections::HashMap<String, LoadedImage>,
@@ -203,50 +247,26 @@ pub(super) fn build_docx(
                     // width (capping at MAX_DOC_IMAGE_WIDTH_EMU). Aspect
                     // ratio is always preserved.
                     let (target_w, target_h) = fit_image_emu(nat_w, nat_h, opts.width_fraction);
-                    let jc = match opts.alignment {
-                        ImageAlignment::Center => "center",
-                        ImageAlignment::Right => "right",
-                        ImageAlignment::Left => "left",
-                    };
                     drawing_id += 1;
-                    // Wrap the drawing in a paragraph with w:jc alignment
-                    // when not default-left. Word treats absent w:jc as
-                    // left-aligned, so we can skip the w:pPr block in that
-                    // case to keep the XML lean.
-                    let ppr = if opts.alignment == ImageAlignment::Left {
-                        String::new()
-                    } else {
-                        format!(r#"<w:pPr><w:jc w:val="{}"/></w:pPr>"#, jc)
-                    };
-                    body_xml.push_str(&format!(
-                        r#"<w:p>{ppr}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{w}" cy="{h}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Picture {id}"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="{id}" name="image{idx}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId{idx}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#,
-                        ppr = ppr,
-                        w = target_w,
-                        h = target_h,
-                        id = drawing_id,
-                        idx = idx,
+                    body_xml.push_str(&docx_image_paragraph(
+                        idx,
+                        target_w,
+                        target_h,
+                        drawing_id,
+                        opts.alignment,
                     ));
                     continue;
                 }
-                // Image referenced but not loaded — render the markdown
-                // verbatim as a paragraph so the user can see what went
-                // wrong instead of silently dropping content.
+                // Image referenced but not loaded — fall through and render
+                // the markdown verbatim as a paragraph so the user can see
+                // what went wrong instead of silently dropping content.
             }
             // Treat as a heading if the line starts with # (simple markdown-ish)
             let (text, heading_level) = parse_heading(para);
             let escaped = escape_xml(text);
-            if let Some(level) = heading_level {
-                body_xml.push_str(&format!(
-                    r#"<w:p><w:pPr><w:pStyle w:val="Heading{}"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="{}"/></w:rPr><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
-                    level,
-                    32 - level * 2,
-                    escaped
-                ));
-            } else {
-                body_xml.push_str(&format!(
-                    r#"<w:p><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
-                    escaped
-                ));
+            match heading_level {
+                Some(level) => body_xml.push_str(&docx_heading_paragraph(level, &escaped)),
+                None => body_xml.push_str(&docx_text_paragraph(&escaped)),
             }
         }
         body_xml.push_str("</w:body></w:document>");

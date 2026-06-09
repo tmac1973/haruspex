@@ -18,6 +18,45 @@ use super::path::{
 /// the format. This lets tools identify the document type from the raw
 /// zip header without decoding the full archive. LibreOffice won't open
 /// a file that violates this — it'll treat it as a generic zip.
+/// content.xml fragment for a standalone image paragraph. Alignment maps to
+/// the automatic paragraph styles declared in the content prologue
+/// (`ImageCenter` / `ImageRight`); left needs no style.
+fn odt_image_paragraph(
+    idx: usize,
+    cm_w: f32,
+    cm_h: f32,
+    ext: &str,
+    alignment: ImageAlignment,
+) -> String {
+    let style_attr = match alignment {
+        ImageAlignment::Center => r#" text:style-name="ImageCenter""#,
+        ImageAlignment::Right => r#" text:style-name="ImageRight""#,
+        ImageAlignment::Left => "",
+    };
+    format!(
+        r#"<text:p{style_attr}><draw:frame draw:name="image{idx}" text:anchor-type="paragraph" svg:width="{w:.3}cm" svg:height="{h:.3}cm"><draw:image xlink:href="Pictures/image{idx}.{ext}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame></text:p>"#,
+        style_attr = style_attr,
+        idx = idx,
+        w = cm_w,
+        h = cm_h,
+        ext = ext,
+    )
+}
+
+/// content.xml fragment for a heading paragraph (`_20_` is the encoded space
+/// in the ODF style name).
+fn odt_heading_paragraph(level: usize, escaped_text: &str) -> String {
+    format!(
+        r#"<text:h text:style-name="Heading_20_{}" text:outline-level="{}">{}</text:h>"#,
+        level, level, escaped_text
+    )
+}
+
+/// content.xml fragment for a plain text paragraph.
+fn odt_text_paragraph(escaped_text: &str) -> String {
+    format!("<text:p>{}</text:p>", escaped_text)
+}
+
 pub(super) fn build_odt(
     paragraphs: &[&str],
     images: &std::collections::HashMap<String, LoadedImage>,
@@ -152,20 +191,8 @@ pub(super) fn build_odt(
                         fit_image_emu(nat_w, nat_h, opts.width_fraction);
                     let cm_w = target_w_emu as f32 / 360000.0;
                     let cm_h = target_h_emu as f32 / 360000.0;
-                    let style_attr = match opts.alignment {
-                        ImageAlignment::Center => r#" text:style-name="ImageCenter""#,
-                        ImageAlignment::Right => r#" text:style-name="ImageRight""#,
-                        ImageAlignment::Left => "",
-                    };
                     let ext = &images[&path].extension;
-                    body_xml.push_str(&format!(
-                        r#"<text:p{style_attr}><draw:frame draw:name="image{idx}" text:anchor-type="paragraph" svg:width="{w:.3}cm" svg:height="{h:.3}cm"><draw:image xlink:href="Pictures/image{idx}.{ext}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame></text:p>"#,
-                        style_attr = style_attr,
-                        idx = idx,
-                        w = cm_w,
-                        h = cm_h,
-                        ext = ext,
-                    ));
+                    body_xml.push_str(&odt_image_paragraph(idx, cm_w, cm_h, ext, opts.alignment));
                     continue;
                 }
                 // Loaded-image lookup miss falls through to plain-text rendering
@@ -173,13 +200,9 @@ pub(super) fn build_odt(
             }
             let (text, heading_level) = parse_heading(para);
             let escaped = escape_xml(text);
-            if let Some(level) = heading_level {
-                body_xml.push_str(&format!(
-                    r#"<text:h text:style-name="Heading_20_{}" text:outline-level="{}">{}</text:h>"#,
-                    level, level, escaped
-                ));
-            } else {
-                body_xml.push_str(&format!("<text:p>{}</text:p>", escaped));
+            match heading_level {
+                Some(level) => body_xml.push_str(&odt_heading_paragraph(level, &escaped)),
+                None => body_xml.push_str(&odt_text_paragraph(&escaped)),
             }
         }
         body_xml.push_str("</office:text></office:body></office:document-content>");
