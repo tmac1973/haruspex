@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Artifact, InstallPhase, MainToWorker, ToolResult, WorkerToMain } from './protocol';
-import { getWorkingDir } from '$lib/stores/chat.svelte';
+import { getWorkingDir } from '$lib/stores/session.svelte';
 import { getSettings } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
 import { errMessage } from '$lib/utils/error';

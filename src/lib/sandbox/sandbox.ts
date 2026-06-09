@@ -2,7 +2,7 @@
 // per-chat WorkerPool (one Web Worker per chat, LRU cap 3) scoped to
 // the active conversation.
 
-import { getActiveConversationId } from '$lib/stores/chat.svelte';
+import { getActiveConversationId } from '$lib/stores/session.svelte';
 import { getWorkerPool } from './worker-pool';
 import type { RunOptions } from './worker-manager';
 import type { ToolResult } from './protocol';

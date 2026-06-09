@@ -5,7 +5,7 @@ import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 // exercised in isolation. getWorkingDir → null keeps the pre-run workdir sync
 // a no-op (so runPython drives straight through to `send`).
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
-vi.mock('$lib/stores/chat.svelte', () => ({ getWorkingDir: () => null }));
+vi.mock('$lib/stores/session.svelte', () => ({ getWorkingDir: () => null }));
 vi.mock('$lib/stores/settings', () => ({ getSettings: () => ({ proxy: { mode: 'none' } }) }));
 vi.mock('$lib/debug-log', () => ({ logDebug: () => {} }));
 

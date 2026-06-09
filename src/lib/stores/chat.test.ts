@@ -322,8 +322,10 @@ describe('chat store', () => {
 			// restore (legacy worker behavior) is no longer needed.
 			expect(sandboxMocks.installPackage).toHaveBeenCalledWith('numpy');
 			expect(sandboxMocks.runPython).toHaveBeenCalledWith('import numpy');
-			// Successful restore implies prior approval — sandboxApproved set.
-			expect(getActiveConversation()?.sandboxApproved).toBe(true);
+			// Successful restore implies prior approval — chat marked approved
+			// in the sandbox-approval store.
+			const { isChatSandboxApproved } = await import('$lib/stores/sandboxApproval.svelte');
+			expect(isChatSandboxApproved(a)).toBe(true);
 			expect(getActiveConversation()?.isRestoringSession).toBe(false);
 		});
 
