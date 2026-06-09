@@ -15,6 +15,25 @@
 
 ---
 
+## Remediation status (updated 2026-06-08)
+
+The roadmap below was executed as a series of focused PRs. **Steps 1–6 are landed**, including the visual/component work (step 5) split into 5a (#91) and 5b (#95 jobs, #96 settings, #97 modals).
+
+**Done** — R1–R22, F1–F8, C1–C5, C8, C9, X1, X4, X5, X6, X7 (X7 needed only cross-reference comments, which already existed). Shared modules created: TS `format.ts`/`error.ts`/`clipboard.svelte.ts`/`think-stream.ts`, agent `runTurn.ts`/`steps.ts`, `ports.ts`; Rust `time_util.rs`, `sidecar_utils` helpers, `fs_tools/{path,odf,ooxml,images,test_support}.rs`; Svelte `jobs/JobStepCard.svelte`, global `.status-pill`/`.settings-section`/`.thin-scroll`, and `Modal.svelte` extended with opt-in `title`/`dismissable`.
+
+**Outstanding / deliberately deferred:**
+
+| ID | Status | Why deferred | Path forward |
+|----|--------|--------------|--------------|
+| **C6 (ImageViewerModal)** | Partial — Help + StartupNotice migrated to `Modal.svelte` (#97); the image viewer was **not**. | It's a fullscreen lightbox (dark 0.85 backdrop, no dialog box, zoom-out), structurally unlike a `Modal` dialog. Forcing it in would need a "bare" Modal mode that shares almost nothing. | Leave as-is, or add a bare/lightbox Modal mode only if a second lightbox appears. |
+| **C7 (`.btn`)** | Not done. | The per-file `.btn` blocks genuinely **diverge** (padding 6px14px vs 8px16px, base `--bg-primary` vs `--bg-secondary`, hover = bg-change vs border vs opacity, primary class `.btn.primary` vs `.btn-primary`, danger `var(--error-text)` vs `#ef4444`). They aren't a clean duplicate; consolidating forces a visual normalization for low payoff (imp 5). | A deliberate "one button system" design pass (global `.btn`/`.btn-primary`/`.btn-danger`), not a mechanical dedup. Its own PR when desired. |
+| **X2 (fs_* command/arg names)** | Not done. | The ideal fix (tauri-specta codegen) is blocked — see X3. | Ship the non-codegen fallback now if wanted: a `src/lib/agent/tools/commands.ts` const map referenced by schema + `invoke()` + tests. |
+| **X3 (proxy struct mirroring)** | Not done — **blocked**. | `specta` 2.0.0-rc.25 (under tauri-specta v2) does **not compile on the project's stable rustc 1.91** — it calls `core::fmt::from_fn` (unstable `debug_closure_helpers`, rust#117729) in the base crate, blocking both type-only export *and* command bindings. Spike branch discarded; nothing merged. | (a) Wait for a specta release that builds on stable; or (b) use **ts-rs** for type sharing now (compiles on stable; solves the struct-mirror half, leaves X2 command-name drift as a documented runtime risk). |
+
+> The cross-IPC typed-bindings proposal (X2/X3) and the spike result live in `audits/x2-x3-typed-ipc-proposal.md`.
+
+---
+
 ## Master ranked findings
 
 | ID | Finding | Type | Area | Sites | ~Dup LOC | Effort | Importance |
