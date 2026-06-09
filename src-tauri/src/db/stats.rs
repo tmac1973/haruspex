@@ -32,28 +32,9 @@ impl Database {
         )
         .map_err(|e| format!("Stats insert failed: {}", e))?;
 
-        // Translate the delta into per-column increments. Only one fail_*
-        // counter is non-zero per call; the rest are 0.
-        let mut fail_http = 0u64;
-        let mut fail_rate_limited = 0u64;
-        let mut fail_parse = 0u64;
-        let mut fail_empty = 0u64;
-        let mut fail_network = 0u64;
-        let mut fail_timeout = 0u64;
-        let mut fail_other = 0u64;
-
-        if let Some(col) = delta.failure_column {
-            match col {
-                "fail_http" => fail_http = 1,
-                "fail_rate_limited" => fail_rate_limited = 1,
-                "fail_parse" => fail_parse = 1,
-                "fail_empty" => fail_empty = 1,
-                "fail_network" => fail_network = 1,
-                "fail_timeout" => fail_timeout = 1,
-                "fail_other" => fail_other = 1,
-                _ => unreachable!(),
-            }
-        }
+        // Translate the delta into per-column increments. Only the active
+        // failure column (validated above) increments by 1; the rest stay 0.
+        let fail = |name: &str| -> i64 { (delta.failure_column == Some(name)) as i64 };
 
         let attempt_inc: u64 = if delta.attempt { 1 } else { 0 };
         let success_inc: u64 = if delta.success { 1 } else { 0 };
@@ -94,13 +75,13 @@ impl Database {
             params![
                 attempt_inc as i64,
                 success_inc as i64,
-                fail_http as i64,
-                fail_rate_limited as i64,
-                fail_parse as i64,
-                fail_empty as i64,
-                fail_network as i64,
-                fail_timeout as i64,
-                fail_other as i64,
+                fail("fail_http"),
+                fail("fail_rate_limited"),
+                fail("fail_parse"),
+                fail("fail_empty"),
+                fail("fail_network"),
+                fail("fail_timeout"),
+                fail("fail_other"),
                 latency as i64,
                 latency as i64,
                 success_ts,
