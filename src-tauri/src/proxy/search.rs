@@ -433,6 +433,26 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
 
 // Auto-rotation search across multiple engines
 
+/// Build the engine try-order from the round-robin rotation: engines still
+/// within their failure cooldown are pushed to the back as fallbacks, healthy
+/// ones tried first. Stable within each partition (rotation order preserved).
+fn order_engines(
+    state: &ProxyState,
+    rotation: &[&'static str],
+    cooldown: std::time::Duration,
+) -> Vec<&'static str> {
+    let mut healthy: Vec<&'static str> = Vec::new();
+    let mut unhealthy: Vec<&'static str> = Vec::new();
+    for &engine in rotation {
+        if state.is_engine_healthy(engine, cooldown) {
+            healthy.push(engine);
+        } else {
+            unhealthy.push(engine);
+        }
+    }
+    healthy.into_iter().chain(unhealthy).collect()
+}
+
 pub(super) async fn search_auto(
     state: &ProxyState,
     stats: &super::SearchStats,
@@ -456,18 +476,7 @@ pub(super) async fn search_auto(
     // we don't always hit the same engine first, then partition into
     // healthy/unhealthy so cooled-down engines come last as fallbacks.
     let rotation = state.rotation_order();
-    let mut healthy: Vec<&str> = Vec::new();
-    let mut unhealthy: Vec<&str> = Vec::new();
-
-    for engine in &rotation {
-        if state.is_engine_healthy(engine, cooldown) {
-            healthy.push(*engine);
-        } else {
-            unhealthy.push(*engine);
-        }
-    }
-
-    let ordered: Vec<&str> = healthy.into_iter().chain(unhealthy).collect();
+    let ordered = order_engines(state, &rotation, cooldown);
     info!(
         "Auto-search rotation order for '{}' (slow_mode={}): {:?}",
         query, slow_mode, ordered
@@ -690,4 +699,46 @@ pub(super) async fn search_searxng(
     }
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn order_engines_all_healthy_preserves_rotation() {
+        let state = ProxyState::new();
+        let rotation = state.rotation_order();
+        let ordered = order_engines(&state, &rotation, Duration::from_secs(60));
+        assert_eq!(ordered, rotation);
+    }
+
+    #[test]
+    fn order_engines_demotes_a_cooled_down_engine_to_the_back() {
+        let state = ProxyState::new();
+        let rotation = state.rotation_order();
+        let victim = rotation[0];
+        state.record_failure(victim);
+        let ordered = order_engines(&state, &rotation, Duration::from_secs(60));
+        assert_eq!(
+            ordered.last(),
+            Some(&victim),
+            "failed engine should be a fallback"
+        );
+        assert_eq!(ordered.len(), rotation.len());
+        for e in &rotation {
+            assert!(ordered.contains(e), "no engine should be dropped");
+        }
+    }
+
+    #[test]
+    fn order_engines_recovers_once_cooldown_elapses() {
+        let state = ProxyState::new();
+        let rotation = state.rotation_order();
+        state.record_failure(rotation[0]);
+        // Zero cooldown ⇒ the just-failed engine already counts as healthy.
+        let ordered = order_engines(&state, &rotation, Duration::from_secs(0));
+        assert_eq!(ordered, rotation);
+    }
 }
