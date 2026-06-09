@@ -11,13 +11,10 @@ use tokio::time::sleep;
 
 use crate::sidecar_utils::{
     base_url, http_client, kill_child, kill_process_on_port, new_log_buffer, poll_health, ports,
-    spawn_log_reader, with_library_paths, LogBuffer, SidecarStatus,
+    spawn_log_reader, timing, with_library_paths, LogBuffer, SidecarStatus, LOOPBACK,
 };
 
 const TTS_PORT: u16 = ports::TTS;
-/// Readiness backstop budget (the primary signal is the "listening" stdout
-/// sniff). 30s ≈ the old 60 × 500ms hand-rolled loop.
-const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Lifecycle state of the koko TTS sidecar. Aliased onto the shared
 /// `SidecarStatus` so all three sidecars share one wire shape.
@@ -129,7 +126,7 @@ impl TtsEngine {
         args.extend([
             "openai".into(),
             "--ip".into(),
-            "127.0.0.1".into(),
+            LOOPBACK.into(),
             "--port".into(),
             TTS_PORT.to_string(),
         ]);
@@ -184,7 +181,7 @@ impl TtsEngine {
             // accept_any: koko's `/` may answer 4xx yet still mean "up".
             let url = format!("{}/", base_url(TTS_PORT));
             let status_check = Arc::clone(&status_for_health);
-            let ok = poll_health(&url, "koko", HEALTH_POLL_TIMEOUT, true, move || {
+            let ok = poll_health(&url, "koko", timing::HEALTH_POLL_TIMEOUT, true, move || {
                 let s = Arc::clone(&status_check);
                 async move { *s.lock().await == TtsStatus::Starting }
             })

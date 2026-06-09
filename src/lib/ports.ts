@@ -12,3 +12,11 @@ export const PORTS = {
 	whisper: 8766,
 	tts: 3001
 } as const;
+
+/** Loopback host the sidecars bind to. Mirrors the Rust `LOOPBACK` const. */
+export const LOOPBACK = '127.0.0.1';
+
+/** `http://127.0.0.1:<port>` — base URL for a sidecar's local HTTP API. */
+export function baseUrl(port: number): string {
+	return `http://${LOOPBACK}:${port}`;
+}

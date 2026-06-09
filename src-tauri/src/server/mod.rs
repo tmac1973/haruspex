@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
@@ -17,8 +17,6 @@ use crate::sidecar_utils::{
 mod crash_telemetry;
 mod log_classifier;
 use log_classifier::{classify, LogSignal};
-
-const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Lifecycle state of the llama-server sidecar. Type alias onto
 /// `SidecarStatus` so all three sidecars share one wire shape.
@@ -87,7 +85,7 @@ impl ServerConfig {
             "1".to_string(),
             "--jinja".to_string(),
             "--host".to_string(),
-            "127.0.0.1".to_string(),
+            sidecar_utils::LOOPBACK.to_string(),
         ];
 
         args.push("--flash-attn".to_string());
@@ -561,7 +559,7 @@ impl LlamaServer {
             let ok = sidecar_utils::poll_health(
                 &url,
                 "llama-server",
-                HEALTH_POLL_TIMEOUT,
+                sidecar_utils::timing::HEALTH_POLL_TIMEOUT_SLOW,
                 false,
                 move || {
                     let s = Arc::clone(&inner_for_keep);
