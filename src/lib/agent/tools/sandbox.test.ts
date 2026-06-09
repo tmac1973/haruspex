@@ -15,7 +15,10 @@ vi.mock('$lib/sandbox/sandbox', () => ({
 }));
 
 vi.mock('$lib/stores/sandboxApproval.svelte', () => ({
-	askApproval: mocks.askApproval
+	askApproval: mocks.askApproval,
+	// No chat is approved by default, so once-per-chat mode prompts.
+	isChatSandboxApproved: () => false,
+	approveChatSandbox: vi.fn()
 }));
 
 const ctx = {

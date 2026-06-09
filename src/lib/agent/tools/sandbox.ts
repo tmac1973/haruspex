@@ -3,8 +3,12 @@ import { lintSandboxCode, formatLintFailure } from '$lib/sandbox/lint';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
 import { getSettings } from '$lib/stores/settings';
-import { getActiveConversation } from '$lib/stores/chat.svelte';
-import { askApproval } from '$lib/stores/sandboxApproval.svelte';
+import { getActiveConversationId } from '$lib/stores/session.svelte';
+import {
+	askApproval,
+	isChatSandboxApproved,
+	approveChatSandbox
+} from '$lib/stores/sandboxApproval.svelte';
 import { isAutoApproveActive } from '$lib/stores/approvalOverride';
 import { errMessage } from '$lib/utils/error';
 
@@ -68,20 +72,20 @@ registerTool({
 			return toolResult(toolError('Missing or empty `code` argument'));
 		}
 		const mode = getSettings().sandboxApproval;
-		const conv = getActiveConversation();
+		const chatId = getActiveConversationId();
 		// 'off' bypasses; 'once-per-chat' bypasses if the user has already
 		// approved this chat. 'every-run' always prompts.
 		const needsPrompt =
 			!isAutoApproveActive() &&
-			(mode === 'every-run' || (mode === 'once-per-chat' && !conv?.sandboxApproved));
+			(mode === 'every-run' || (mode === 'once-per-chat' && !isChatSandboxApproved(chatId)));
 		if (needsPrompt) {
 			try {
 				const choice = await askApproval({ code, mode });
 				if (choice === 'deny') {
 					return toolResult(toolError('User denied code execution.'));
 				}
-				if (choice === 'allow_chat' && conv) {
-					conv.sandboxApproved = true;
+				if (choice === 'allow_chat') {
+					approveChatSandbox(chatId);
 				}
 			} catch (e) {
 				return toolResult(toolError(`Approval prompt failed: ${errMessage(e)}`));

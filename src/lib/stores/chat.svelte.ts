@@ -16,6 +16,16 @@ import {
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings, isVisionSupported } from '$lib/stores/settings';
+import {
+	getActiveConversationId,
+	setActiveConversationId,
+	getWorkingDir,
+	setWorkingDirState
+} from '$lib/stores/session.svelte';
+// Re-export the read accessors so existing importers of the chat store keep
+// working; the backing state now lives in the session leaf store.
+export { getActiveConversationId, getWorkingDir };
+import { approveChatSandbox, forgetChatSandboxApproval } from '$lib/stores/sandboxApproval.svelte';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
 import { appendStreamDelta } from '$lib/agent/think-stream';
 import { isFetchFailureResult } from '$lib/agent/tools/_helpers';
@@ -68,13 +78,6 @@ export interface Conversation {
 	messageStats: Record<number, MessageStats>;
 	/** Cited source URLs from the last generation. Not persisted to DB. */
 	sourceUrls: string[];
-	/**
-	 * True once the user has approved Python sandbox code execution for
-	 * this chat (in once-per-chat mode). In-memory only — re-prompts on
-	 * app restart, on chat reload from DB, and when sandbox approval
-	 * mode is set to every-run.
-	 */
-	sandboxApproved: boolean;
 	/**
 	 * True while we're rebuilding the chat's Python sandbox state by
 	 * replaying its prior install_package / run_python / reset_python
@@ -151,8 +154,10 @@ function saveWorkingDir(path: string | null): void {
 }
 
 let conversations = $state<Conversation[]>([]);
-let activeConversationId = $state<string | null>(null);
-let workingDir = $state<string | null>(loadWorkingDir());
+// activeConversationId + workingDir live in the session leaf store (see the
+// import at the top of this file) so the sandbox/worker layer can read them
+// without importing this module and forming a cycle.
+setWorkingDirState(loadWorkingDir());
 let isGenerating = $state(false);
 let isWaitingForSlot = $state(false);
 let isCompacting = $state(false);
@@ -196,13 +201,12 @@ export async function initChatStore(): Promise<void> {
 		messageSteps: {},
 		messageStats: {},
 		sourceUrls: [],
-		sandboxApproved: false,
 		isRestoringSession: false,
 		sessionRestoreSkipped: false
 	}));
 
 	if (conversations.length > 0) {
-		activeConversationId = conversations[0].id;
+		setActiveConversationId(conversations[0].id);
 		await loadConversationMessages(conversations[0].id);
 	}
 }
@@ -221,21 +225,13 @@ export function getConversations(): Conversation[] {
 	return conversations;
 }
 
-export function getActiveConversationId(): string | null {
-	return activeConversationId;
-}
-
 export function getActiveConversation(): Conversation | undefined {
-	return conversations.find((c) => c.id === activeConversationId);
-}
-
-export function getWorkingDir(): string | null {
-	return workingDir;
+	return conversations.find((c) => c.id === getActiveConversationId());
 }
 
 export function setWorkingDir(path: string | null): void {
-	const previous = workingDir;
-	workingDir = path;
+	const previous = getWorkingDir();
+	setWorkingDirState(path);
 	saveWorkingDir(path);
 	// Switching to a different workdir means the worker's MEMFS + the
 	// manager's syncedFiles cache are pinned to the OLD workdir's
@@ -450,11 +446,10 @@ export function createConversation(): string {
 		messageSteps: {},
 		messageStats: {},
 		sourceUrls: [],
-		sandboxApproved: false,
 		isRestoringSession: false,
 		sessionRestoreSkipped: false
 	});
-	activeConversationId = id;
+	setActiveConversationId(id);
 	errorMessage = null;
 	errorTurnId = null;
 	resetContextUsage();
@@ -473,7 +468,7 @@ function restoreContextUsageFor(id: string | null): void {
 
 export async function setActiveConversation(id: string): Promise<void> {
 	if (conversations.some((c) => c.id === id)) {
-		activeConversationId = id;
+		setActiveConversationId(id);
 		errorMessage = null;
 		errorTurnId = null;
 		restoreContextUsageFor(id);
@@ -584,7 +579,7 @@ async function restoreSandboxSession(id: string): Promise<void> {
 		// IframePool boots a fresh iframe lazily on the first runPython
 		// for this chat — no explicit reset needed.
 		for (const call of calls) {
-			if (activeConversationId !== id) {
+			if (getActiveConversationId() !== id) {
 				logDebug('sandbox', 'session restore aborted — chat switched', { fromChatId: id });
 				return;
 			}
@@ -598,7 +593,7 @@ async function restoreSandboxSession(id: string): Promise<void> {
 		}
 		// Successful restore implies the user previously approved code in
 		// this chat, so don't re-prompt on the next code call.
-		conv.sandboxApproved = true;
+		approveChatSandbox(conv.id);
 		logDebug('sandbox', 'session restore complete', { chatId: id });
 	} finally {
 		conv.isRestoringSession = false;
@@ -606,12 +601,13 @@ async function restoreSandboxSession(id: string): Promise<void> {
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-	const wasActive = activeConversationId === id;
+	const wasActive = getActiveConversationId() === id;
 	conversations = conversations.filter((c) => c.id !== id);
 	if (wasActive) {
-		activeConversationId = conversations.length > 0 ? conversations[0].id : null;
-		restoreContextUsageFor(activeConversationId);
+		setActiveConversationId(conversations.length > 0 ? conversations[0].id : null);
+		restoreContextUsageFor(getActiveConversationId());
 	}
+	forgetChatSandboxApproval(id);
 	await dbDeleteConversation(id);
 }
 
@@ -626,7 +622,7 @@ export async function renameConversation(id: string, title: string): Promise<voi
 export async function clearAllConversations(): Promise<void> {
 	if (isGenerating) cancelGeneration();
 	conversations = [];
-	activeConversationId = null;
+	setActiveConversationId(null);
 	errorMessage = null;
 	errorTurnId = null;
 	await dbClearAll();
@@ -676,7 +672,7 @@ function computeStats(stats: TurnStats): MessageStats | null {
  */
 function ensureSendableConversation(content: string): Conversation | null {
 	if (!content.trim() || isGenerating || isCompacting) return null;
-	if (!activeConversationId) createConversation();
+	if (!getActiveConversationId()) createConversation();
 	return getActiveConversation() ?? null;
 }
 
@@ -979,7 +975,7 @@ export async function sendMessage(content: string): Promise<void> {
 	const turnStats: TurnStats = { lastCallStats: null };
 
 	try {
-		const currentWorkingDir = workingDir;
+		const currentWorkingDir = getWorkingDir();
 		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
 
 		const keepRecentTools = getSettings().keepRecentToolResults;

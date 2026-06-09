@@ -8,14 +8,16 @@
  * Modes:
  *   - off:           never prompts (askApproval should not be called)
  *   - once-per-chat: shows three buttons — Allow once / Allow for chat /
- *                    Deny. The "Allow for chat" choice is what the caller
- *                    uses to flip the per-chat sandboxApproved flag.
+ *                    Deny. The "Allow for chat" choice flips the per-chat
+ *                    approval memory (`approveChatSandbox`) below.
  *   - every-run:     shows two buttons — Allow / Deny. The "allow_once"
  *                    return covers both modes' allow-this-time path.
  *
  * Only one prompt can be pending at a time (the agent loop serializes
  * tool calls). A second overlapping ask rejects.
  */
+
+import { SvelteSet } from 'svelte/reactivity';
 
 export type SandboxApprovalMode = 'once-per-chat' | 'every-run';
 export type SandboxApprovalChoice = 'allow_once' | 'allow_chat' | 'deny';
@@ -54,4 +56,23 @@ export function resolveApproval(choice: SandboxApprovalChoice): void {
 	if (current === null) return;
 	pending = null;
 	current.resolve(choice);
+}
+
+// Per-chat "Allow for chat" memory. Lives here (rather than as a field on the
+// Conversation object in the chat store) so agent/tools/sandbox.ts can read
+// and flip it without importing the chat store — that import previously
+// formed a chat -> tools -> chat dependency cycle. In-memory only, matching
+// the old field's lifetime: re-prompts on app restart / chat reload.
+const approvedChats = new SvelteSet<string>();
+
+export function isChatSandboxApproved(chatId: string | null): boolean {
+	return chatId !== null && approvedChats.has(chatId);
+}
+
+export function approveChatSandbox(chatId: string | null): void {
+	if (chatId !== null) approvedChats.add(chatId);
+}
+
+export function forgetChatSandboxApproval(chatId: string): void {
+	approvedChats.delete(chatId);
 }
