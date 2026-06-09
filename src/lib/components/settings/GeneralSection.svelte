@@ -22,7 +22,7 @@
 	}
 </script>
 
-<section>
+<section class="settings-section">
 	<h2>Theme</h2>
 	<div class="theme-options">
 		{#each [{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as opt (opt.value)}
@@ -37,7 +37,7 @@
 	</div>
 </section>
 
-<section>
+<section class="settings-section">
 	<h2>Response Format</h2>
 	<div class="format-options">
 		<label class="format-option" class:selected={responseFormat === 'minimal'}>
@@ -83,24 +83,6 @@
 </section>
 
 <style>
-	section {
-		padding-bottom: 24px;
-		margin-bottom: 24px;
-		border-bottom: 1px solid var(--border);
-	}
-
-	section:last-child {
-		border-bottom: none;
-		margin-bottom: 0;
-		padding-bottom: 0;
-	}
-
-	h2 {
-		font-size: 1rem;
-		margin: 0 0 8px 0;
-		color: var(--text-primary);
-	}
-
 	.theme-options {
 		display: flex;
 		gap: 8px;

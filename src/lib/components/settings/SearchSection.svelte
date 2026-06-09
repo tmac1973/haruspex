@@ -52,7 +52,7 @@
 	const proxyBypassPlaceholder = 'example.com\n192.168.1.5\n10.0.0.0/8';
 </script>
 
-<section>
+<section class="settings-section">
 	<h2>Web Search</h2>
 	<div class="search-provider">
 		<label for="search-provider">Search provider:</label>
@@ -122,7 +122,7 @@
 	</div>
 </section>
 
-<section>
+<section class="settings-section">
 	<h2>Network Proxy</h2>
 	<p class="hint">
 		Route outbound web traffic (search, URL fetch, image search) through an HTTP/HTTPS proxy. Leave
@@ -192,24 +192,6 @@
 </section>
 
 <style>
-	section {
-		padding-bottom: 24px;
-		margin-bottom: 24px;
-		border-bottom: 1px solid var(--border);
-	}
-
-	section:last-child {
-		border-bottom: none;
-		margin-bottom: 0;
-		padding-bottom: 0;
-	}
-
-	h2 {
-		font-size: 1rem;
-		margin: 0 0 8px 0;
-		color: var(--text-primary);
-	}
-
 	.hint {
 		font-size: 0.8rem;
 		color: var(--text-secondary);

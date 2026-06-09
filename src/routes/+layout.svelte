@@ -410,6 +410,26 @@
 		color: var(--text-primary);
 	}
 
+	/* Settings-section scaffolding — add `class="settings-section"` to a
+	   <section> in any settings panel for the shared divider + heading
+	   chrome. Only one section panel mounts at a time, so :last-child
+	   correctly drops the trailing divider per panel. */
+	:global(.settings-section) {
+		padding-bottom: 24px;
+		margin-bottom: 24px;
+		border-bottom: 1px solid var(--border);
+	}
+	:global(.settings-section:last-child) {
+		border-bottom: none;
+		margin-bottom: 0;
+		padding-bottom: 0;
+	}
+	:global(.settings-section h2) {
+		font-size: 1rem;
+		margin: 0 0 8px 0;
+		color: var(--text-primary);
+	}
+
 	/* Thin custom scrollbar — add `class="thin-scroll"` to any scroll
 	   container. Shared by the conversation list, job-run history, etc. */
 	:global(.thin-scroll::-webkit-scrollbar) {
