@@ -18,6 +18,18 @@ jobs:
       - run: npm run format:check
       - run: npm run check
       - run: npm run test
+      # Regression guard for the chat<->sandbox import cycle fixed in the
+      # architecture audit (A1). madge can't resolve SvelteKit's $lib alias,
+      # so it silently misses these cycles (audit A6) — a grep guard is the
+      # reliable check. The sandbox/worker + sandbox-tool layers read ambient
+      # state from stores/session.svelte + sandboxApproval.svelte, never from
+      # the chat store.
+      - name: Guard against chat<->sandbox import cycle
+        run: |
+          if grep -rn "stores/chat\.svelte" src/lib/sandbox/ src/lib/agent/tools/; then
+            echo "::error::sandbox/ and agent/tools/ must not import the chat store — it reintroduces the chat<->sandbox cycle (see audits/architecture-2026-06-09.md, findings A1/A6). Read the ambient id/workdir from stores/session.svelte instead."
+            exit 1
+          fi
 
   backend:
     runs-on: ubuntu-latest
