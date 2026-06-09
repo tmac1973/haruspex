@@ -3,8 +3,11 @@
 	 * Keyboard-shortcuts help. Single source of truth for the app's hotkeys —
 	 * keep `SECTIONS` in sync when a binding changes (and the README's
 	 * "Keyboard shortcuts" section). Opened with F1 (global) or the header
-	 * "?" button; closes on Esc, F1 again, or the close button.
+	 * "?" button; closes on Esc, F1 again, the × button, or backdrop click
+	 * (the last three via the shared Modal).
 	 */
+	import Modal from './Modal.svelte';
+
 	interface Props {
 		open: boolean;
 		onclose: () => void;
@@ -59,102 +62,32 @@
 			items: [{ keys: 'Esc', action: 'Close logs, the image viewer, or this help' }]
 		}
 	];
-
-	function onKeydown(event: KeyboardEvent) {
-		if (!open) return;
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			onclose();
-		}
-	}
 </script>
 
-<svelte:window onkeydown={onKeydown} />
-
-{#if open}
-	<div class="help-backdrop">
-		<div class="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title">
-			<div class="help-head">
-				<h2 id="help-title">Keyboard shortcuts</h2>
-				<button class="help-close" onclick={onclose} aria-label="Close help">×</button>
-			</div>
-			<div class="help-body">
-				{#each SECTIONS as section (section.title)}
-					<section>
-						<h3>{section.title}</h3>
-						<dl>
-							{#each section.items as s (s.keys + s.action)}
-								<div class="row">
-									<dt><kbd>{s.keys}</kbd></dt>
-									<dd>{s.action}</dd>
-								</div>
-							{/each}
-						</dl>
-					</section>
+<Modal
+	{open}
+	{onclose}
+	dismissable
+	title="Keyboard shortcuts"
+	maxWidth={560}
+	labelledBy="help-title"
+>
+	{#each SECTIONS as section (section.title)}
+		<section>
+			<h3>{section.title}</h3>
+			<dl>
+				{#each section.items as s (s.keys + s.action)}
+					<div class="row">
+						<dt><kbd>{s.keys}</kbd></dt>
+						<dd>{s.action}</dd>
+					</div>
 				{/each}
-			</div>
-		</div>
-	</div>
-{/if}
+			</dl>
+		</section>
+	{/each}
+</Modal>
 
 <style>
-	.help-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 1000;
-		padding: 24px;
-	}
-
-	.help-modal {
-		background: var(--bg-primary);
-		border: 1px solid var(--border);
-		border-radius: 12px;
-		width: 100%;
-		max-width: 560px;
-		max-height: 80vh;
-		display: flex;
-		flex-direction: column;
-		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-	}
-
-	.help-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 18px 24px 12px;
-		border-bottom: 1px solid var(--border);
-	}
-
-	.help-head h2 {
-		margin: 0;
-		font-size: 1.15rem;
-		color: var(--text-primary);
-	}
-
-	.help-close {
-		background: none;
-		border: none;
-		color: var(--text-secondary);
-		font-size: 1.4rem;
-		line-height: 1;
-		cursor: pointer;
-		padding: 0 4px;
-		border-radius: 4px;
-	}
-
-	.help-close:hover {
-		color: var(--text-primary);
-	}
-
-	.help-body {
-		padding: 8px 24px 20px;
-		overflow-y: auto;
-	}
-
 	section {
 		margin-top: 14px;
 	}
