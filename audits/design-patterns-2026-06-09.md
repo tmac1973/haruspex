@@ -259,7 +259,9 @@ pub fn db_update_last_message_steps(state: tauri::State<'_, Database>, conversat
 
 ### Finding 3 — `Mutex::lock().unwrap()` on managed singletons can cascade-panic — **5/10**
 
-**Locations:** `db/commands.rs:58` (verified); the same `.lock().unwrap()` idiom recurs across `db/*.rs`, `inference_queue.rs`, `server/mod.rs` (pattern, not exhaustively verified). **Status: FIXED for the `Database` singleton** on branch `fix/parser-unguarded-json-parse` — added a private `Database::conn()` helper (option 2, poison-recovery via `into_inner()`, with a `log::warn!`) and collapsed all ~31 production `self.conn.lock().unwrap()` sites to `self.conn()`. `db/tests.rs` left as-is (test code; panic-on-poison is acceptable). **Not yet applied** to `inference_queue.rs` / `server/mod.rs` — those mutexes guard different state and are a separate pass.
+**Locations:** `db/commands.rs:58` (verified); the same `.lock().unwrap()` idiom recurs across `db/*.rs`, `inference_queue.rs`, `server/mod.rs` (pattern, not exhaustively verified). **Status: FIXED for the `Database` singleton** on branch `fix/parser-unguarded-json-parse` — added a private `Database::conn()` helper (option 2, poison-recovery via `into_inner()`, with a `log::warn!`) and collapsed all ~31 production `self.conn.lock().unwrap()` sites to `self.conn()`. `db/tests.rs` left as-is (test code; panic-on-poison is acceptable).
+
+> **No action needed elsewhere (audited).** The cascade-panic was specific to `Database`'s bare `.lock().unwrap()`. The other two singletons do not share it: `server/mod.rs` uses `tokio::sync::Mutex` (`.lock().await`, e.g. `:166`), which **cannot poison**; and `inference_queue.rs` uses `std::sync::Mutex` but already handles every poisoned-lock case (`map_err(..)?` `:165`, `match` `:188/:209/:255`, `if let Ok` `:232`, `unwrap_or_default()` `:284`, `.ok()?` `:291`) rather than `.unwrap()`-ing — so no panic risk. A `conn()`-style `into_inner()` recovery there would be *less* safe than the current stall, since recovering the queue's `Inner { tickets, senders, running }` after a mid-mutation panic could resume on inconsistent counts. Leave both as-is.
 
 `std::sync::Mutex` poisons if a thread panics while holding the lock. With `.unwrap()`, the *first* panic inside any DB/queue critical section turns every subsequent command on that singleton into a panic too — a single bad row can take down all DB access for the session. For a long-lived desktop singleton this is a real availability risk, not theoretical.
 
@@ -332,7 +334,7 @@ Every Rust `#[derive(Serialize)]` DTO is hand-mirrored as a TS interface (`store
 
 ## Priority order
 
-1. ~~**Findings 2 + 3** (5/5)~~ — DONE (`fix/parser-unguarded-json-parse`): inline SQL moved into `Database`; `Database::conn()` poison-recovery helper across all DB call sites. Follow-up: extend the helper pattern to `inference_queue.rs` / `server/mod.rs`.
+1. ~~**Findings 2 + 3** (5/5)~~ — DONE (`fix/parser-unguarded-json-parse`): inline SQL moved into `Database`; `Database::conn()` poison-recovery helper across all DB call sites. No follow-up needed — `server/mod.rs` (tokio mutex, can't poison) and `inference_queue.rs` (already handles poison, never `.unwrap()`s) don't share the bug; see Finding 3.
 2. ~~**Finding 1** (3)~~ — DONE (`fix/parser-unguarded-json-parse`); robustness fix, unit-tested.
 3. **Finding 7** (3) — trivial, do alongside any parser work.
 4. **Findings 4, 5, 6, 8** — design notes; act only when the relevant subsystem grows or the IPC proposal lands.
