@@ -137,9 +137,14 @@ pub(super) fn extract_text(html: &str) -> String {
         .collect::<Vec<&str>>()
         .join("\n");
 
-    // Truncate
+    // Truncate. Back off to a char boundary first — slicing at a fixed byte
+    // index panics when a multi-byte character straddles it.
     if cleaned.len() > MAX_FETCH_LENGTH {
-        let truncated = &cleaned[..MAX_FETCH_LENGTH];
+        let mut end = MAX_FETCH_LENGTH;
+        while !cleaned.is_char_boundary(end) {
+            end -= 1;
+        }
+        let truncated = &cleaned[..end];
         // Find the last complete word
         if let Some(pos) = truncated.rfind(char::is_whitespace) {
             format!("{}...", &truncated[..pos])
