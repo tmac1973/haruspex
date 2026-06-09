@@ -45,6 +45,14 @@ pub mod timing {
     /// 100ms = 2s, matches the implicit cap the three sidecars used
     /// individually before this consolidation.
     pub const PORT_RELEASE_ATTEMPTS: usize = 20;
+
+    /// Overall deadline for a sidecar to answer `/health` and report Ready,
+    /// measured from process spawn. Suits the CPU-bound STT/TTS sidecars.
+    pub const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(30);
+
+    /// Longer health deadline for the LLM server: its first load mmaps a
+    /// multi-GB model and initializes Vulkan before `/health` answers.
+    pub const HEALTH_POLL_TIMEOUT_SLOW: Duration = Duration::from_secs(60);
 }
 
 /// Maximum entries kept in a sidecar's in-memory log ring buffer.
@@ -112,8 +120,12 @@ pub fn http_client(timeout: Duration) -> reqwest::Client {
         .expect("reqwest::Client::builder")
 }
 
+/// Loopback host every sidecar binds to (`--host`) and every local URL
+/// points at. One definition so the bind arg and the URL host can't drift.
+pub const LOOPBACK: &str = "127.0.0.1";
+
 fn localhost(port: u16) -> String {
-    format!("127.0.0.1:{port}")
+    format!("{LOOPBACK}:{port}")
 }
 
 /// `http://127.0.0.1:<port>` — the base URL every sidecar's local HTTP

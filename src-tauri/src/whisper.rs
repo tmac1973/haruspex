@@ -8,12 +8,11 @@ use tokio::sync::Mutex;
 
 use crate::sidecar_utils::{
     base_url, drive_status_on_health, health_url, http_client, kill_child, kill_process_on_port,
-    new_log_buffer, poll_health, ports, spawn_log_reader, with_library_paths, LogBuffer,
-    SidecarStatus,
+    new_log_buffer, poll_health, ports, spawn_log_reader, timing, with_library_paths, LogBuffer,
+    SidecarStatus, LOOPBACK,
 };
 
 const WHISPER_PORT: u16 = ports::WHISPER;
-const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Lifecycle state of the whisper-server sidecar. Kept as a type alias
 /// onto `SidecarStatus` so the Tauri command surface (and frontend
@@ -51,7 +50,7 @@ impl WhisperServer {
             "--model".to_string(),
             model_path.to_string(),
             "--host".to_string(),
-            "127.0.0.1".to_string(),
+            LOOPBACK.to_string(),
             "--port".to_string(),
             WHISPER_PORT.to_string(),
         ];
@@ -93,7 +92,7 @@ impl WhisperServer {
             let ok = poll_health(
                 &url,
                 "whisper-server",
-                HEALTH_POLL_TIMEOUT,
+                timing::HEALTH_POLL_TIMEOUT,
                 false,
                 move || {
                     let s = Arc::clone(&status_check);

@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { errMessage } from '$lib/utils/error';
-import { PORTS } from '$lib/ports';
+import { PORTS, baseUrl } from '$lib/ports';
 import {
 	getActiveLocalModelFilename,
 	getSettings,
@@ -234,7 +234,7 @@ async function streamTestMessage(): Promise<void> {
 	};
 
 	try {
-		const response = await fetch(`http://127.0.0.1:${PORTS.llama}/v1/chat/completions`, {
+		const response = await fetch(`${baseUrl(PORTS.llama)}/v1/chat/completions`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
