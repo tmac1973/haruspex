@@ -3,7 +3,7 @@ use rusqlite::params;
 
 impl Database {
     pub fn list_conversations(&self) -> Result<Vec<ConversationSummary>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn
             .prepare("SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC")
             .map_err(|e| format!("Query failed: {}", e))?;
@@ -27,7 +27,7 @@ impl Database {
     }
 
     pub fn get_conversation(&self, id: &str) -> Result<ConversationWithMessages, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         let (title, created_at, updated_at) = conn
             .query_row(
@@ -78,7 +78,7 @@ impl Database {
     }
 
     pub fn create_conversation(&self, id: &str, title: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let now = chrono_now();
         conn.execute(
             "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
@@ -97,7 +97,7 @@ impl Database {
         tool_call_id: Option<&str>,
         steps: Option<&str>,
     ) -> Result<i64, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let now = chrono_now();
 
         // Get next sort_order
@@ -127,7 +127,7 @@ impl Database {
     }
 
     pub fn rename_conversation(&self, id: &str, title: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE conversations SET title = ?1 WHERE id = ?2",
             params![title, id],
@@ -137,14 +137,14 @@ impl Database {
     }
 
     pub fn delete_conversation(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM conversations WHERE id = ?1", params![id])
             .map_err(|e| format!("Delete failed: {}", e))?;
         Ok(())
     }
 
     pub fn clear_all_conversations(&self) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute_batch("DELETE FROM messages; DELETE FROM conversations;")
             .map_err(|e| format!("Clear failed: {}", e))?;
         Ok(())
@@ -155,7 +155,7 @@ impl Database {
         conversation_id: &str,
         messages: &[MessageInput],
     ) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let now = chrono_now();
 
         conn.execute(
@@ -188,6 +188,27 @@ impl Database {
         )
         .map_err(|e| format!("Update failed: {}", e))?;
 
+        Ok(())
+    }
+
+    /// Update the `steps` JSON for the most recently inserted message in a
+    /// conversation. Used after the agent loop finishes to attach captured
+    /// artifacts to the assistant message persisted at the start of streaming.
+    pub fn update_last_message_steps(
+        &self,
+        conversation_id: &str,
+        steps: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE messages SET steps = ?1 \
+             WHERE id = ( \
+                 SELECT id FROM messages WHERE conversation_id = ?2 \
+                 ORDER BY sort_order DESC LIMIT 1 \
+             )",
+            params![steps, conversation_id],
+        )
+        .map_err(|e| format!("Update failed: {}", e))?;
         Ok(())
     }
 }

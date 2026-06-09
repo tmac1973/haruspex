@@ -1,5 +1,4 @@
 use super::*;
-use rusqlite::params;
 
 #[tauri::command]
 pub fn db_list_conversations(
@@ -55,17 +54,7 @@ pub fn db_update_last_message_steps(
     conversation_id: String,
     steps: Option<String>,
 ) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
-    conn.execute(
-        "UPDATE messages SET steps = ?1 \
-         WHERE id = ( \
-             SELECT id FROM messages WHERE conversation_id = ?2 \
-             ORDER BY sort_order DESC LIMIT 1 \
-         )",
-        params![steps, conversation_id],
-    )
-    .map_err(|e| format!("Update failed: {}", e))?;
-    Ok(())
+    state.update_last_message_steps(&conversation_id, steps.as_deref())
 }
 
 #[tauri::command]

@@ -137,6 +137,75 @@ describe('resolveToolCalls', () => {
 		expect(resolveToolCalls(response)).toHaveLength(0);
 	});
 
+	it('does not throw on malformed structured arguments, falls through to XML', () => {
+		// A remote/quantized server emitted a tool_calls entry with
+		// truncated JSON args. Previously JSON.parse threw past the
+		// recovery chain; now it falls through to the XML fallback.
+		const response: ChatCompletionResponse = {
+			content: '<tool_call>{"name":"web_search","arguments":{"query":"test"}}</tool_call>',
+			tool_calls: [
+				{
+					id: 'call_bad',
+					type: 'function',
+					function: { name: 'structured_tool', arguments: '{"q":' }
+				}
+			],
+			finish_reason: 'tool_calls'
+		};
+		const calls = resolveToolCalls(response);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].name).toBe('web_search');
+	});
+
+	it('returns empty (no throw) when structured args are malformed and no fallback exists', () => {
+		const response: ChatCompletionResponse = {
+			content: null,
+			tool_calls: [
+				{
+					id: 'call_bad',
+					type: 'function',
+					function: { name: 'structured_tool', arguments: 'not json' }
+				}
+			],
+			finish_reason: 'tool_calls'
+		};
+		expect(() => resolveToolCalls(response)).not.toThrow();
+		expect(resolveToolCalls(response)).toHaveLength(0);
+	});
+
+	it('treats empty-string structured arguments as {}', () => {
+		const response: ChatCompletionResponse = {
+			content: null,
+			tool_calls: [
+				{
+					id: 'call_noargs',
+					type: 'function',
+					function: { name: 'list_dir', arguments: '' }
+				}
+			],
+			finish_reason: 'tool_calls'
+		};
+		const calls = resolveToolCalls(response);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].name).toBe('list_dir');
+		expect(calls[0].arguments).toEqual({});
+	});
+
+	it('keeps only the parseable structured calls when some are malformed', () => {
+		const response: ChatCompletionResponse = {
+			content: null,
+			tool_calls: [
+				{ id: 'c1', type: 'function', function: { name: 'good_tool', arguments: '{"a":1}' } },
+				{ id: 'c2', type: 'function', function: { name: 'bad_tool', arguments: '{oops' } }
+			],
+			finish_reason: 'tool_calls'
+		};
+		const calls = resolveToolCalls(response);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].name).toBe('good_tool');
+		expect(calls[0].id).toBe('c1');
+	});
+
 	it('falls back to <function=name><parameter=key> format', () => {
 		// The exact shape Qwen3 emitted via a misconfigured remote
 		// inference server: tool-call tokens leaked into text content

@@ -1,4 +1,4 @@
-import type { ChatCompletionResponse, ToolCall } from '$lib/api';
+import type { ChatCompletionResponse } from '$lib/api';
 
 export interface ParsedToolCall {
 	name: string;
@@ -181,12 +181,25 @@ export function extractFunctionStyleToolCalls(content: string): ParsedToolCall[]
 export function resolveToolCalls(response: ChatCompletionResponse): ResolvedToolCall[] {
 	// Prefer structured tool_calls if present — this is the path a
 	// well-configured server takes and it's always the most reliable.
+	// A remote/quantized model can still emit truncated or invalid
+	// `arguments`; parse each defensively so one bad call falls through
+	// to the content-based fallbacks (and ultimately malformed-tool-call
+	// recovery) instead of throwing synchronously out of this function.
 	if (response.tool_calls && response.tool_calls.length > 0) {
-		return response.tool_calls.map((tc: ToolCall) => ({
-			id: tc.id,
-			name: tc.function.name,
-			arguments: JSON.parse(tc.function.arguments)
-		}));
+		const parsed: ResolvedToolCall[] = [];
+		for (const tc of response.tool_calls) {
+			const raw = tc.function.arguments;
+			let args: Record<string, unknown>;
+			try {
+				// Many servers send "" for a no-arg tool; treat that as {}.
+				args = raw.trim() === '' ? {} : JSON.parse(raw);
+			} catch {
+				continue;
+			}
+			parsed.push({ id: tc.id, name: tc.function.name, arguments: args });
+		}
+		if (parsed.length > 0) return parsed;
+		// All structured calls were unparseable — drop to the fallbacks below.
 	}
 
 	if (response.content) {

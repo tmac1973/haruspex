@@ -24,7 +24,7 @@ impl Database {
             }
         }
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         conn.execute(
             "INSERT INTO search_stats_engines (engine) VALUES (?1) ON CONFLICT(engine) DO NOTHING",
@@ -98,7 +98,7 @@ impl Database {
     }
 
     pub fn increment_global(&self, key: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO search_stats_globals (key, value) VALUES (?1, 1)
              ON CONFLICT(key) DO UPDATE SET value = value + 1",
@@ -109,7 +109,7 @@ impl Database {
     }
 
     pub fn lifetime_stats_snapshot(&self) -> Result<LifetimeStatsSnapshot, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         let mut stmt = conn
             .prepare(
@@ -168,7 +168,7 @@ impl Database {
     }
 
     pub fn reset_lifetime_stats(&self) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute_batch("DELETE FROM search_stats_engines; DELETE FROM search_stats_globals;")
             .map_err(|e| format!("Reset failed: {}", e))?;
         Ok(())

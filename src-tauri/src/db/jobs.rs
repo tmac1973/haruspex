@@ -3,7 +3,7 @@ use rusqlite::params;
 
 impl Database {
     pub fn create_job(&self, input: &JobInput) -> Result<i64, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let now = chrono_now();
         conn.execute(
             "INSERT INTO jobs
@@ -26,7 +26,7 @@ impl Database {
     }
 
     pub fn list_jobs(&self) -> Result<Vec<JobSummary>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn
             .prepare(
                 "SELECT j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
@@ -64,7 +64,7 @@ impl Database {
     }
 
     pub fn get_job(&self, id: i64) -> Result<JobWithSteps, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         let (
             name,
@@ -135,7 +135,7 @@ impl Database {
     }
 
     pub fn update_job(&self, id: i64, input: &JobInput) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let now = chrono_now();
         let affected = conn
             .execute(
@@ -169,7 +169,7 @@ impl Database {
     }
 
     pub fn set_job_next_due_at(&self, job_id: i64, next_due_at: Option<i64>) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let affected = conn
             .execute(
                 "UPDATE jobs SET next_due_at = ?1 WHERE id = ?2",
@@ -183,7 +183,7 @@ impl Database {
     }
 
     pub fn list_due_jobs(&self, now_ms: i64) -> Result<Vec<JobSummary>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn
             .prepare(
                 "SELECT j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
@@ -221,14 +221,14 @@ impl Database {
     }
 
     pub fn delete_job(&self, id: i64) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM jobs WHERE id = ?1", params![id])
             .map_err(|e| format!("Job delete failed: {}", e))?;
         Ok(())
     }
 
     pub fn replace_job_steps(&self, job_id: i64, steps: &[JobStepInput]) -> Result<(), String> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn();
         let tx = conn
             .transaction()
             .map_err(|e| format!("Transaction failed: {}", e))?;
