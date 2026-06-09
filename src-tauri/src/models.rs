@@ -167,6 +167,28 @@ pub struct ModelManager {
     cancel_flag: Arc<Mutex<bool>>,
 }
 
+/// Total expected size for a (possibly resumed) download. When resuming, the
+/// server's `Content-Length` covers only the *remaining* bytes, so add what's
+/// already on disk; fall back to the registry's expected size when the server
+/// omits `Content-Length`.
+fn resume_total_size(existing_size: u64, content_length: Option<u64>, expected_size: u64) -> u64 {
+    if existing_size > 0 {
+        existing_size + content_length.unwrap_or(expected_size.saturating_sub(existing_size))
+    } else {
+        content_length.unwrap_or(expected_size)
+    }
+}
+
+/// Bytes/sec for the current session — excludes the pre-existing resumed
+/// bytes so a resumed download doesn't report an inflated initial speed.
+fn download_speed_bps(downloaded: u64, existing_size: u64, elapsed_secs: f64) -> u64 {
+    if elapsed_secs > 0.0 {
+        (downloaded.saturating_sub(existing_size) as f64 / elapsed_secs) as u64
+    } else {
+        0
+    }
+}
+
 impl ModelManager {
     pub fn new(app: &AppHandle) -> Self {
         let models_dir = app
@@ -304,14 +326,7 @@ impl ModelManager {
             ));
         }
 
-        let total_size = if existing_size > 0 {
-            existing_size
-                + response
-                    .content_length()
-                    .unwrap_or(expected_size.saturating_sub(existing_size))
-        } else {
-            response.content_length().unwrap_or(expected_size)
-        };
+        let total_size = resume_total_size(existing_size, response.content_length(), expected_size);
 
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
@@ -347,18 +362,12 @@ impl ModelManager {
             let now = std::time::Instant::now();
             if now.duration_since(last_progress_time).as_millis() >= 100 {
                 let elapsed = now.duration_since(start_time).as_secs_f64();
-                let speed_bps = if elapsed > 0.0 {
-                    ((downloaded - existing_size) as f64 / elapsed) as u64
-                } else {
-                    0
-                };
-
                 let _ = app.emit(
                     "download-progress",
                     DownloadProgress {
                         downloaded,
                         total: total_size,
-                        speed_bps,
+                        speed_bps: download_speed_bps(downloaded, existing_size, elapsed),
                         stage: stage_label.to_string(),
                     },
                 );
@@ -377,11 +386,7 @@ impl ModelManager {
             DownloadProgress {
                 downloaded,
                 total: total_size,
-                speed_bps: if elapsed > 0.0 {
-                    ((downloaded - existing_size) as f64 / elapsed) as u64
-                } else {
-                    0
-                },
+                speed_bps: download_speed_bps(downloaded, existing_size, elapsed),
                 stage: stage_label.to_string(),
             },
         );
@@ -1092,6 +1097,32 @@ pub async fn download_whisper_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resume_total_size_fresh_download_uses_content_length() {
+        assert_eq!(resume_total_size(0, Some(1000), 5000), 1000);
+        assert_eq!(resume_total_size(0, None, 5000), 5000);
+    }
+
+    #[test]
+    fn resume_total_size_resumed_adds_existing_to_remaining() {
+        // Server reports only the remaining 600 bytes; 400 already on disk.
+        assert_eq!(resume_total_size(400, Some(600), 1000), 1000);
+        // No Content-Length → expected(1000) - existing(400) = 600 remaining.
+        assert_eq!(resume_total_size(400, None, 1000), 1000);
+    }
+
+    #[test]
+    fn resume_total_size_existing_beyond_expected_saturates() {
+        assert_eq!(resume_total_size(1200, None, 1000), 1200);
+    }
+
+    #[test]
+    fn download_speed_bps_basics() {
+        assert_eq!(download_speed_bps(1000, 0, 0.0), 0); // no elapsed time
+                                                         // 500 new bytes (downloaded 900, resumed-from 400) over 0.5s = 1000 B/s.
+        assert_eq!(download_speed_bps(900, 400, 0.5), 1000);
+    }
 
     #[test]
     fn model_registry_has_expected_entries() {
