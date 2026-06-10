@@ -44,7 +44,7 @@
 						"--output-format=json",
 						"--exit-zero",
 						"--isolated",
-						"--select=E9,F63,F7,F82,F541,F901,B006,B008",
+						"--select=F63,F82,B006",
 						"--config",
 						{ "validator": "builtins=\\[.*\\]" },
 						{ "validator": "\\S+" }
@@ -75,7 +75,7 @@
 						"--output-format=json",
 						"--exit-zero",
 						"--isolated",
-						"--select=E9,F63,F7,F82,F541,F901,B006,B008",
+						"--select=F63,F82,B006",
 						"--config",
 						{ "validator": "builtins=\\[.*\\]" },
 						{ "validator": "\\S+" }

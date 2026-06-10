@@ -12,10 +12,11 @@
  *     every citation to the same URL. One nudge per turn asks the
  *     model to fetch 2–3 more distinct pages.
  *
- *  3. **run_python failure streak**: 3+ consecutive run_python
- *     results starting with "Error:" → append a "step back and
- *     re-evaluate" hint to the tool result so the model can break
- *     out of a tight-loop of near-identical failing code.
+ *  3. **run_python failure streak**: 3+ consecutive failed
+ *     run_python results (runtime "Error:" or pre-run "Lint failed")
+ *     → append a "step back and re-evaluate" hint to the tool result
+ *     so the model can break out of a tight-loop of near-identical
+ *     failing code.
  *
  *  4. **Narrate-recovery**: after any nudge that demands a tool
  *     call, smaller models often reply with text describing what
@@ -32,6 +33,20 @@
 
 export const MAX_FILE_WRITE_RETRIES = 2;
 export const RUN_PYTHON_FAILURE_NUDGE_THRESHOLD = 3;
+
+/**
+ * True if a `run_python` tool result represents a failure that should
+ * count toward the consecutive-failure streak. Covers both shapes the
+ * tool can return: a runtime/usage error (`formatResult` / `toolError`
+ * prefix it with "Error:") and a pre-run ruff lint rejection
+ * (`formatLintFailure` prefixes it with "Lint failed before running").
+ * The lint shape was added after the streak counter and must be matched
+ * explicitly — otherwise a model stuck resubmitting code that keeps
+ * failing lint never trips the "step back" hint and loops forever.
+ */
+function isRunPythonFailure(result: string): boolean {
+	return result.startsWith('Error:') || result.startsWith('Lint failed before running');
+}
 
 export class NudgeState {
 	/** Set to true the first time any fs_write_* tool returns success. */
@@ -127,14 +142,15 @@ export class NudgeState {
 	}
 
 	/**
-	 * Process a `run_python` result: increment the failure streak on
-	 * `Error:` results, reset it on success. Returns either the input
+	 * Process a `run_python` result: increment the failure streak on a
+	 * failed result (runtime "Error:" or pre-run "Lint failed"), reset
+	 * it on success. Returns either the input
 	 * `result` unchanged or `result + hint` once the streak has crossed
 	 * RUN_PYTHON_FAILURE_NUDGE_THRESHOLD, so the caller can append the
 	 * returned string directly to the tool message.
 	 */
 	maybeAppendRunPythonHint(result: string): string {
-		if (result.startsWith('Error:')) {
+		if (isRunPythonFailure(result)) {
 			this.consecutiveRunPythonFailures++;
 			if (this.consecutiveRunPythonFailures >= RUN_PYTHON_FAILURE_NUDGE_THRESHOLD) {
 				return (

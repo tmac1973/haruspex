@@ -1,23 +1,25 @@
 /**
  * Pre-run lint pass for the Python sandbox. Calls the Rust-side
  * `lint_python_source` Tauri command, which shells out to the ruff
- * sidecar with a curated rule set focused on bug-class issues the
- * model is likely to make:
+ * sidecar with a tight rule set. Because a hit here *blocks* the run,
+ * the set is limited to bugs Python surfaces only late (after side
+ * effects) or never:
  *
- *   - E9xx  syntax errors
- *   - F63x  comparison mistakes (is vs ==, etc.)
- *   - F7xx  control-flow misuse
- *   - F82x  undefined names / referenced-before-assignment (F821 is
- *           the headline win — catches typo'd variable names without
- *           running 40 lines of side-effect code first)
- *   - F541  f-string with no placeholders
- *   - F901  raise NotImplemented (vs NotImplementedError)
- *   - B006  mutable default argument
- *   - B008  function call in default argument
+ *   - F82x  undefined names / referenced-before-assignment (the
+ *           headline win — catches a typo'd variable name without
+ *           running 40 lines of side-effect code first; Python would
+ *           only raise NameError when that line finally executes)
+ *   - F63x  comparison mistakes (`is` with a literal, assert on a
+ *           tuple) — run fine and silently misbehave
+ *   - B006  mutable default argument — runs fine, latent bug
  *
- * Style rules (E2xx, W291, F401 unused-import, etc.) are deliberately
- * excluded — they add noise without catching real bugs. The model can
- * escape false positives with `# noqa: CODE` which ruff respects.
+ * Syntax errors (E9/F7) are NOT included: Pyodide rejects them at
+ * compile time before any side effects, so blocking only duplicates a
+ * clear traceback the model already gets. Style/nit rules (F541
+ * f-string-without-placeholders, F901, B008, F401, etc.) are excluded
+ * outright — they reject runnable code and trap small models in a
+ * fix-resubmit loop. The model can still escape a false positive with
+ * `# noqa: CODE`, which ruff respects.
  *
  * Failures are silent (empty list returned) — lint is advisory and
  * must never block a run because ruff is missing or crashed.
