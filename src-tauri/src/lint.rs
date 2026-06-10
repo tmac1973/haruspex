@@ -71,11 +71,24 @@ pub struct LintDiagnostic {
     pub url: Option<String>,
 }
 
-/// Rule selection for the sandbox pre-run lint. Targets *bug-class* issues
-/// the LLM is likely to make — typo'd names, control-flow misuse, comparison
-/// mistakes, mutable defaults — and deliberately excludes style/format noise.
+/// Rule selection for the sandbox pre-run lint. Because a hit here *blocks*
+/// execution, this is deliberately limited to bugs Python would surface only
+/// late (after side effects) or never:
+///
+/// - F82 undefined names — Python raises NameError only when the line runs,
+///   possibly after a fetch/write already happened.
+/// - F63 comparison bugs (`is` with a literal, assert on a tuple) — run fine
+///   and silently misbehave.
+/// - B006 mutable default argument — runs fine, latent bug.
+///
+/// Syntax errors (E9/F7) are intentionally NOT included: Pyodide's compile step
+/// rejects them before execution with a clear traceback and no side effects, so
+/// blocking on them only duplicates what Python already reports. Style/format
+/// nits (e.g. F541 f-string-without-placeholders) are excluded outright — they
+/// reject runnable code and trap small models in a fix-resubmit loop.
+///
 /// Kept in lock-step with the `args` validator in capabilities/default.json.
-const SANDBOX_LINT_SELECT: &str = "E9,F63,F7,F82,F541,F901,B006,B008";
+const SANDBOX_LINT_SELECT: &str = "F63,F82,B006";
 
 fn temp_python_path() -> PathBuf {
     let suffix = format!(
