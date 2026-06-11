@@ -5,6 +5,7 @@
 	import python from 'highlight.js/lib/languages/python';
 	import { rerunSandboxStep, cancelActiveSandboxRun } from '$lib/stores/chat.svelte';
 	import { createKeyedCopyAction } from '$lib/utils/clipboard.svelte';
+	import { sanitizeHtml } from '$lib/sanitize';
 	import ImageViewerModal from './ImageViewerModal.svelte';
 
 	hljs.registerLanguage('python', python);
@@ -258,11 +259,13 @@
 										Showing {artifact.truncated.shown} of {artifact.truncated.total} rows
 									</div>
 								{/if}
-								<!-- Trusted: HTML comes from local Pyodide (DataFrame _repr_html_, etc.),
-								     not from any user-typed code path. Revisit if user-authored Python ever
-								     becomes a thing. -->
+								<!-- NOT trusted: the Python that produced this HTML is model-authored,
+								     and the model's context includes fetched web content. A crafted
+								     _repr_html_ without a <script> tag (e.g. <img onerror>) would
+								     otherwise execute here in the privileged webview — only the
+								     `interactive` branch above is isolated in a sandboxed iframe. -->
 								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-								{@html artifact.html}
+								{@html sanitizeHtml(artifact.html)}
 							</div>
 						{/if}
 					{/each}

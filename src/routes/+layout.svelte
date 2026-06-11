@@ -26,6 +26,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { messageText, type ChatMessage } from '$lib/api';
+	import { installMarkdownActions } from '$lib/markdown-actions';
 	import {
 		isVoiceCaptureActive,
 		startVoiceCapture,
@@ -50,6 +51,11 @@
 	// app bootstrap (sidecars, job scheduler, setup redirect) or render the
 	// main chrome — it shows only its shell pane (routes/shell/[id]).
 	const detached = $derived(page.route.id === '/shell/[id]');
+
+	// Delegated handler for the copy/paste/run buttons inside rendered
+	// markdown (sanitization strips inline onclick). Installed in every
+	// window — the detached shell window renders markdown too.
+	onMount(() => installMarkdownActions());
 
 	onMount(async () => {
 		applyTheme();
