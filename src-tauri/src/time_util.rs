@@ -63,7 +63,30 @@ mod tests {
     }
 
     #[test]
-    fn now_ms_is_positive() {
-        assert!(now_ms() > 0);
+    fn pre_epoch_days() {
+        assert_eq!(days_to_ymd(-1), (1969, 12, 31));
+        // 1969 is not a leap year: 365 days before the epoch is 1969-01-01.
+        assert_eq!(days_to_ymd(-365), (1969, 1, 1));
+    }
+
+    #[test]
+    fn now_ms_and_now_nanos_agree() {
+        let ms = now_ms();
+        let nanos_as_ms = (now_nanos() / 1_000_000) as i64;
+        // Both read the same clock; sampled back-to-back they must agree to
+        // within a generous few seconds, and in order (nanos sampled later).
+        assert!(nanos_as_ms >= ms);
+        assert!(nanos_as_ms - ms < 5_000);
+    }
+
+    #[test]
+    fn now_ms_maps_to_a_plausible_calendar_date() {
+        // Ties the wall clock to the calendar math: ms → days → (y, m, d)
+        // must land on a sane current date, not 1970 or year 50000.
+        let days = now_ms() / 86_400_000;
+        let (year, month, day) = days_to_ymd(days);
+        assert!((2026..2100).contains(&year), "year was {year}");
+        assert!((1..=12).contains(&month));
+        assert!((1..=31).contains(&day));
     }
 }
