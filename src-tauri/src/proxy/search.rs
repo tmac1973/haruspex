@@ -4,14 +4,21 @@
 //! string and calls the appropriate backend.
 
 use super::bypass::apply_proxy;
-use super::extract::{diagnostic_snippet, USER_AGENT};
-use super::stats::{SearchFailure, SearchFailureKind};
-use super::{
-    ProxyConfig, ProxyState, SearchResult, ENGINE_COOLDOWN, ENGINE_COOLDOWN_SLOW, FETCH_TIMEOUT,
-    RATE_LIMIT_INTERVAL, RATE_LIMIT_INTERVAL_SLOW,
+use super::config::{
+    ENGINE_COOLDOWN, ENGINE_COOLDOWN_SLOW, FETCH_TIMEOUT, RATE_LIMIT_INTERVAL,
+    RATE_LIMIT_INTERVAL_SLOW,
 };
+use super::extract::{diagnostic_snippet, USER_AGENT};
+use super::stats::{
+    record_engine_result, record_global_both, AutoPosition, GlobalCounter, SearchFailure,
+    SearchFailureKind, SearchStats, StatSink,
+};
+use super::{ProxyConfig, ProxyState, SearchResult};
 use log::{info, warn};
-use scraper::{Html, Selector};
+use scraper::{ElementRef, Html, Selector};
+
+/// Every engine returns at most this many results per query.
+const MAX_RESULTS: usize = 8;
 
 /// Classify a reqwest error: timeouts go to Timeout, everything else
 /// (connect, DNS, TLS, broken pipe, response read) is Network.
@@ -21,6 +28,73 @@ fn classify_reqwest_err(e: reqwest::Error, context: &str) -> SearchFailure {
     } else {
         SearchFailure::new(SearchFailureKind::Network, format!("{}: {}", context, e))
     }
+}
+
+// Shared result-collection skeletons (audit R-search). Engine quirks —
+// DDG's `uddg=` redirect decode, Mojeek's title-selector fallback, Brave's
+// link-text fallback — stay local to each engine's extraction closure.
+
+/// Trimmed text content of an element — the common title/snippet shape.
+fn element_text(e: ElementRef) -> String {
+    e.text().collect::<String>().trim().to_string()
+}
+
+/// HTML-scrape skeleton shared by DDG / Mojeek / Brave-HTML: iterate the
+/// per-result elements, let the engine-specific closure extract (and
+/// validate) a `SearchResult`, and stop once `MAX_RESULTS` are collected.
+fn scrape_results(
+    document: &Html,
+    result_selector: &Selector,
+    mut extract: impl FnMut(ElementRef) -> Option<SearchResult>,
+) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+    for element in document.select(result_selector) {
+        if let Some(result) = extract(element) {
+            results.push(result);
+        }
+        if results.len() >= MAX_RESULTS {
+            break;
+        }
+    }
+    results
+}
+
+/// JSON→`SearchResult` collection shared by the Brave API and SearXNG —
+/// identical apart from where the results array lives (resolved by the
+/// caller) and which field carries the snippet.
+fn collect_json_results(items: &[serde_json::Value], snippet_field: &str) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+    for item in items.iter().take(MAX_RESULTS) {
+        let title = item
+            .get("title")
+            .and_then(|t| t.as_str())
+            .unwrap_or_default();
+        let url = item.get("url").and_then(|u| u.as_str()).unwrap_or_default();
+        let snippet = item
+            .get(snippet_field)
+            .and_then(|s| s.as_str())
+            .unwrap_or_default();
+
+        if !title.is_empty() && !url.is_empty() {
+            results.push(SearchResult {
+                title: title.to_string(),
+                url: url.to_string(),
+                snippet: snippet.to_string(),
+            });
+        }
+    }
+    results
+}
+
+/// Log an anchored diagnostic snippet when a scrape parser finds nothing —
+/// this is what makes the empty-result log line actionable when an engine
+/// restructures its markup.
+fn warn_empty_scrape(label: &str, html: &str, needles: &[&str]) {
+    let snippet = diagnostic_snippet(html, needles, 3000);
+    warn!(
+        "{} parser found 0 results — anchored snippet of response: {}",
+        label, snippet
+    );
 }
 
 pub(super) async fn search_duckduckgo(
@@ -94,19 +168,17 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
     let url_selector =
         Selector::parse(".result__url").map_err(|_| "Failed to parse URL selector")?;
 
-    let mut results = Vec::new();
-
-    for element in document.select(&result_selector) {
+    Ok(scrape_results(&document, &result_selector, |element| {
         let title = element
             .select(&title_selector)
             .next()
-            .map(|e| e.text().collect::<String>().trim().to_string())
+            .map(element_text)
             .unwrap_or_default();
 
         let snippet = element
             .select(&snippet_selector)
             .next()
-            .map(|e| e.text().collect::<String>().trim().to_string())
+            .map(element_text)
             .unwrap_or_default();
 
         // Try to get URL from the link href, or from the .result__url text
@@ -128,7 +200,7 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
             })
             .or_else(|| {
                 element.select(&url_selector).next().map(|e| {
-                    let text = e.text().collect::<String>().trim().to_string();
+                    let text = element_text(e);
                     if !text.starts_with("http") {
                         format!("https://{}", text)
                     } else {
@@ -138,20 +210,12 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
             })
             .unwrap_or_default();
 
-        if !title.is_empty() && !url.is_empty() {
-            results.push(SearchResult {
-                title,
-                url,
-                snippet,
-            });
-        }
-
-        if results.len() >= 8 {
-            break;
-        }
-    }
-
-    Ok(results)
+        (!title.is_empty() && !url.is_empty()).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
 }
 
 // Mojeek HTML search — small independent index, scrape-friendly, no API key.
@@ -211,7 +275,8 @@ pub(super) async fn search_mojeek(
         parse_mojeek_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
 
     if results.is_empty() {
-        let snippet = diagnostic_snippet(
+        warn_empty_scrape(
+            "Mojeek",
             &html,
             &[
                 "results-standard",
@@ -219,11 +284,6 @@ pub(super) async fn search_mojeek(
                 "id=\"results",
                 "<main",
             ],
-            3000,
-        );
-        warn!(
-            "Mojeek parser found 0 results — anchored snippet of response: {}",
-            snippet
         );
     }
 
@@ -246,17 +306,13 @@ pub(super) fn parse_mojeek_html(html: &str) -> Result<Vec<SearchResult>, String>
     let snippet_selector =
         Selector::parse("p.s").map_err(|_| "Failed to parse mojeek snippet selector")?;
 
-    let mut results = Vec::new();
-
-    for element in document.select(&result_selector) {
+    Ok(scrape_results(&document, &result_selector, |element| {
         let title_el = element
             .select(&title_selector_primary)
             .next()
             .or_else(|| element.select(&title_selector_fallback).next());
 
-        let title = title_el
-            .map(|e| e.text().collect::<String>().trim().to_string())
-            .unwrap_or_default();
+        let title = title_el.map(element_text).unwrap_or_default();
         let url = title_el
             .and_then(|e| e.value().attr("href"))
             .unwrap_or_default()
@@ -264,23 +320,15 @@ pub(super) fn parse_mojeek_html(html: &str) -> Result<Vec<SearchResult>, String>
         let snippet = element
             .select(&snippet_selector)
             .next()
-            .map(|e| e.text().collect::<String>().trim().to_string())
+            .map(element_text)
             .unwrap_or_default();
 
-        if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-            results.push(SearchResult {
-                title,
-                url,
-                snippet,
-            });
-        }
-
-        if results.len() >= 8 {
-            break;
-        }
-    }
-
-    Ok(results)
+        (!title.is_empty() && !url.is_empty() && url.starts_with("http")).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
 }
 
 // Brave HTML search — scrapes search.brave.com directly without an API key.
@@ -349,7 +397,8 @@ pub(super) async fn search_brave_html(
         parse_brave_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
 
     if results.is_empty() {
-        let snippet = diagnostic_snippet(
+        warn_empty_scrape(
+            "Brave HTML",
             &html,
             &[
                 "data-type=\"web\"",
@@ -357,11 +406,6 @@ pub(super) async fn search_brave_html(
                 "generic-snippet",
                 "result-wrapper",
             ],
-            3000,
-        );
-        warn!(
-            "Brave HTML parser found 0 results — anchored snippet of response: {}",
-            snippet
         );
     }
 
@@ -383,9 +427,7 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
     let snippet_selector = Selector::parse(r#"div[class*="generic-snippet"]"#)
         .map_err(|_| "Failed to parse brave snippet selector")?;
 
-    let mut results = Vec::new();
-
-    for element in document.select(&result_selector) {
+    Ok(scrape_results(&document, &result_selector, |element| {
         let link = element.select(&link_selector).next();
         let url = link
             .and_then(|e| e.value().attr("href"))
@@ -398,9 +440,9 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
         let title = element
             .select(&title_selector)
             .next()
-            .map(|e| e.text().collect::<String>().trim().to_string())
+            .map(element_text)
             .filter(|s| !s.is_empty())
-            .or_else(|| link.map(|e| e.text().collect::<String>().trim().to_string()))
+            .or_else(|| link.map(element_text))
             .unwrap_or_default();
 
         let snippet = element
@@ -415,20 +457,12 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
             })
             .unwrap_or_default();
 
-        if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-            results.push(SearchResult {
-                title,
-                url,
-                snippet,
-            });
-        }
-
-        if results.len() >= 8 {
-            break;
-        }
-    }
-
-    Ok(results)
+        (!title.is_empty() && !url.is_empty() && url.starts_with("http")).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
 }
 
 // Auto-rotation search across multiple engines
@@ -455,8 +489,8 @@ fn order_engines(
 
 pub(super) async fn search_auto(
     state: &ProxyState,
-    stats: &super::SearchStats,
-    db: &crate::db::Database,
+    stats: &SearchStats,
+    sink: &dyn StatSink,
     query: &str,
     recency: &str,
     slow_mode: bool,
@@ -492,9 +526,9 @@ pub(super) async fn search_auto(
         );
 
         let position = if idx == 0 {
-            super::AutoPosition::First
+            AutoPosition::First
         } else {
-            super::AutoPosition::Fallback
+            AutoPosition::Fallback
         };
 
         let start = std::time::Instant::now();
@@ -506,7 +540,7 @@ pub(super) async fn search_auto(
         };
         let elapsed = start.elapsed().as_millis() as u64;
 
-        super::record_engine_result(stats, db, engine, &result, elapsed, Some(position));
+        record_engine_result(stats, sink, engine, &result, elapsed, Some(position));
 
         match result {
             Ok(results) if !results.is_empty() => {
@@ -539,17 +573,13 @@ pub(super) async fn search_auto(
     // All engines failed — still advance the cursor so the next attempt
     // starts somewhere new.
     state.advance_rotation_cursor();
-    super::record_global_both(stats, db, super::GlobalCounter::AllEnginesFailed);
+    record_global_both(stats, sink, GlobalCounter::AllEnginesFailed);
     Err(format!(
         "All search engines failed. Last error: {}",
         last_error
     ))
 }
 
-// URL fetching with content extraction
-
-/// Inspect the raw HTML of a fetched page for standardized paywall
-/// declarations. Host-agnostic: we never match a specific publisher.
 // Brave Search API
 pub(super) async fn search_brave(
     query: &str,
@@ -602,34 +632,12 @@ pub(super) async fn search_brave(
         )
     })?;
 
-    let mut results = Vec::new();
-    if let Some(web_results) = data
+    Ok(data
         .get("web")
         .and_then(|w| w.get("results"))
         .and_then(|r| r.as_array())
-    {
-        for item in web_results.iter().take(8) {
-            let title = item
-                .get("title")
-                .and_then(|t| t.as_str())
-                .unwrap_or_default();
-            let url = item.get("url").and_then(|u| u.as_str()).unwrap_or_default();
-            let snippet = item
-                .get("description")
-                .and_then(|d| d.as_str())
-                .unwrap_or_default();
-
-            if !title.is_empty() && !url.is_empty() {
-                results.push(SearchResult {
-                    title: title.to_string(),
-                    url: url.to_string(),
-                    snippet: snippet.to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(results)
+        .map(|items| collect_json_results(items, "description"))
+        .unwrap_or_default())
 }
 
 // SearXNG instance search
@@ -675,30 +683,11 @@ pub(super) async fn search_searxng(
         )
     })?;
 
-    let mut results = Vec::new();
-    if let Some(items) = data.get("results").and_then(|r| r.as_array()) {
-        for item in items.iter().take(8) {
-            let title = item
-                .get("title")
-                .and_then(|t| t.as_str())
-                .unwrap_or_default();
-            let url = item.get("url").and_then(|u| u.as_str()).unwrap_or_default();
-            let snippet = item
-                .get("content")
-                .and_then(|c| c.as_str())
-                .unwrap_or_default();
-
-            if !title.is_empty() && !url.is_empty() {
-                results.push(SearchResult {
-                    title: title.to_string(),
-                    url: url.to_string(),
-                    snippet: snippet.to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(results)
+    Ok(data
+        .get("results")
+        .and_then(|r| r.as_array())
+        .map(|items| collect_json_results(items, "content"))
+        .unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -740,5 +729,52 @@ mod tests {
         // Zero cooldown ⇒ the just-failed engine already counts as healthy.
         let ordered = order_engines(&state, &rotation, Duration::from_secs(0));
         assert_eq!(ordered, rotation);
+    }
+
+    #[test]
+    fn parse_ddg_empty_html() {
+        let result = parse_ddg_html("<html><body>No results</body></html>");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_ddg_malformed_html() {
+        let result = parse_ddg_html("<not valid html at all <<<>>>");
+        assert!(result.is_ok()); // Should not panic
+    }
+
+    #[test]
+    fn parse_brave_html_extracts_minimal_result() {
+        // Minimal markup matching the structure search.brave.com serves:
+        // outer wrapper with data-type="web", a result-content div containing
+        // the destination link, and a generic-snippet div with the body text.
+        let html = r##"
+            <html><body>
+            <div class="snippet svelte-abc" data-pos="1" data-type="web">
+              <div class="result-wrapper svelte-xyz">
+                <div class="result-content svelte-xyz">
+                  <a href="https://example.com/page" class="svelte-l1 l1">
+                    <div class="title search-snippet-title svelte-l1" title="Example Page">Example Page</div>
+                  </a>
+                  <div class="generic-snippet svelte-gs">
+                    <div class="content svelte-gs">An example snippet body.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            </body></html>
+        "##;
+        let results = parse_brave_html(html).expect("parse ok");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Example Page");
+        assert_eq!(results[0].url, "https://example.com/page");
+        assert_eq!(results[0].snippet, "An example snippet body.");
+    }
+
+    #[test]
+    fn parse_brave_html_handles_empty_input() {
+        let results = parse_brave_html("<html><body>nothing here</body></html>").expect("parse ok");
+        assert!(results.is_empty());
     }
 }

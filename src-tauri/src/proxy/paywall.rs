@@ -40,12 +40,82 @@ pub(super) fn detect_paywall_signal(html: &str) -> Option<&'static str> {
     None
 }
 
-// Basic positive/negative fixtures (schema.org JSON-LD, OG content_tier,
-// free articles) live in `proxy::tests` (mod.rs). These cover the
-// tag-boundary scanner edge cases only.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- basic positive/negative fixtures ------------------------------------
+
+    #[test]
+    fn detect_paywall_signal_schema_org_is_accessible_for_free() {
+        let html = r#"<html><head>
+            <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"NewsArticle","isAccessibleForFree":false}
+            </script></head><body><p>Short preview.</p></body></html>"#;
+        let result = detect_paywall_signal(html);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("isAccessibleForFree"));
+    }
+
+    #[test]
+    fn detect_paywall_signal_schema_org_spaced() {
+        // JSON-LD with spacing and mixed-case, as emitted by some CMS.
+        let html = r#"<script type="application/ld+json">
+            {
+                "@type": "NewsArticle",
+                "isAccessibleForFree": false
+            }
+        </script>"#;
+        assert!(detect_paywall_signal(html).is_some());
+    }
+
+    #[test]
+    fn detect_paywall_signal_og_content_tier_locked() {
+        let html = r#"<html><head>
+            <meta property="article:content_tier" content="locked">
+        </head><body>Preview</body></html>"#;
+        let result = detect_paywall_signal(html);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("content_tier"));
+    }
+
+    #[test]
+    fn detect_paywall_signal_og_content_tier_reversed_attributes() {
+        // Attribute order is arbitrary for OG meta tags.
+        let html = r#"<meta content="locked" property="article:content_tier">"#;
+        assert!(detect_paywall_signal(html).is_some());
+    }
+
+    #[test]
+    fn detect_paywall_signal_free_article_not_flagged() {
+        let html = r#"<html><head>
+            <script type="application/ld+json">
+            {"@type":"NewsArticle","isAccessibleForFree":true}
+            </script>
+            <meta property="article:content_tier" content="free">
+        </head><body>Full article body.</body></html>"#;
+        assert!(detect_paywall_signal(html).is_none());
+    }
+
+    #[test]
+    fn detect_paywall_signal_plain_article_not_flagged() {
+        let html = r#"<html><body><article>
+            <p>A perfectly normal free article with no paywall metadata.</p>
+        </article></body></html>"#;
+        assert!(detect_paywall_signal(html).is_none());
+    }
+
+    #[test]
+    fn detect_paywall_signal_content_tier_key_without_locked_value_not_flagged() {
+        // A page that mentions the key name in prose or a different
+        // config block should not be flagged — the "locked" value has
+        // to live within the attribute window.
+        let html = r#"<p>The article:content_tier metadata convention is interesting.</p>
+            <p>Some systems mark content as "locked" elsewhere on the page.</p>"#;
+        assert!(detect_paywall_signal(html).is_none());
+    }
+
+    // -- tag-boundary scanner edge cases --------------------------------------
 
     #[test]
     fn flags_unterminated_meta_tag() {

@@ -1,5 +1,8 @@
 use super::*;
+use crate::proxy::stats::{EngineLifetimeStats, EngineStatDelta, LifetimeStatsSnapshot, StatSink};
+use log::warn;
 use rusqlite::params;
+use std::collections::HashMap;
 
 const VALID_FAILURE_COLUMNS: &[&str] = &[
     "fail_http",
@@ -172,5 +175,32 @@ impl Database {
         conn.execute_batch("DELETE FROM search_stats_engines; DELETE FROM search_stats_globals;")
             .map_err(|e| format!("Reset failed: {}", e))?;
         Ok(())
+    }
+}
+
+/// The proxy records search outcomes through this trait (audit A3) so the
+/// search subsystem never imports the db layer; the dependency points
+/// db→proxy. The two `record_*` methods are fire-and-forget per the trait
+/// contract: persistence failures are logged but never propagate, because
+/// a transient DB error shouldn't break the search itself.
+impl StatSink for Database {
+    fn record_engine(&self, engine: &str, delta: &EngineStatDelta) {
+        if let Err(e) = self.update_engine_stat(engine, delta) {
+            warn!("Failed to persist lifetime stats for {}: {}", engine, e);
+        }
+    }
+
+    fn record_global(&self, counter: &str) {
+        if let Err(e) = self.increment_global(counter) {
+            warn!("Failed to persist global stat {}: {}", counter, e);
+        }
+    }
+
+    fn lifetime_snapshot(&self) -> Result<LifetimeStatsSnapshot, String> {
+        self.lifetime_stats_snapshot()
+    }
+
+    fn reset_lifetime(&self) -> Result<(), String> {
+        self.reset_lifetime_stats()
     }
 }

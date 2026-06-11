@@ -4,8 +4,9 @@
 //! is consumed by `fs_tools::download::fs_download_url`.
 
 use super::bypass::apply_proxy;
+use super::config::FETCH_TIMEOUT;
 use super::paywall::{detect_paywall_signal, PAYWALL_SENTINEL};
-use super::{ProxyConfig, FETCH_TIMEOUT};
+use super::ProxyConfig;
 use scraper::{Html, Selector};
 use std::net::IpAddr;
 
@@ -231,13 +232,132 @@ pub(super) fn strip_html_tags(s: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-// extract_text truncation (including the multibyte-on-the-boundary
-// regression) and validate_url / validate_parsed_url SSRF cases are
-// covered in `proxy::tests` (mod.rs); the tests here cover the helpers
-// and selection paths that module doesn't touch.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- validate_url / validate_parsed_url SSRF cases ----------------------
+
+    #[test]
+    fn validate_url_accepts_https() {
+        assert!(validate_url("https://example.com").is_ok());
+        assert!(validate_url("http://example.com/path?q=1").is_ok());
+    }
+
+    #[test]
+    fn validate_url_rejects_non_http() {
+        assert!(validate_url("ftp://example.com").is_err());
+        assert!(validate_url("file:///etc/passwd").is_err());
+        assert!(validate_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_localhost() {
+        assert!(validate_url("http://localhost").is_err());
+        assert!(validate_url("http://127.0.0.1").is_err());
+        assert!(validate_url("http://0.0.0.0").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_private_ips() {
+        assert!(validate_url("http://10.0.0.1").is_err());
+        assert!(validate_url("http://192.168.1.1").is_err());
+        assert!(validate_url("http://172.16.0.1").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_invalid() {
+        assert!(validate_url("not a url").is_err());
+        assert!(validate_url("").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_ipv6_loopback_and_local_ranges() {
+        // Bracketed IPv6 literals never parse via host_str() — these went
+        // through unchecked before validate_parsed_url matched on url::Host.
+        assert!(validate_url("http://[::1]:8765/").is_err());
+        assert!(validate_url("http://[::]/").is_err());
+        // IPv4-mapped addresses reach the V4 network
+        assert!(validate_url("http://[::ffff:127.0.0.1]/").is_err());
+        assert!(validate_url("http://[::ffff:192.168.1.1]/").is_err());
+        // Unique-local (fc00::/7) and link-local (fe80::/10)
+        assert!(validate_url("http://[fc00::1]/").is_err());
+        assert!(validate_url("http://[fd12:3456::1]/").is_err());
+        assert!(validate_url("http://[fe80::1]/").is_err());
+        // Public IPv6 still allowed
+        assert!(validate_url("http://[2606:4700::6810:84e5]/").is_ok());
+    }
+
+    #[test]
+    fn validate_url_rejects_localhost_subdomains() {
+        assert!(validate_url("http://foo.localhost:8765/").is_err());
+        assert!(validate_url("http://LOCALHOST/").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_link_local_v4() {
+        // 169.254.169.254 — cloud metadata endpoint
+        assert!(validate_url("http://169.254.169.254/latest/meta-data/").is_err());
+    }
+
+    #[test]
+    fn is_private_ip_detects_rfc1918() {
+        assert!(is_private_ip(&"10.0.0.1".parse().unwrap()));
+        assert!(is_private_ip(&"192.168.1.1".parse().unwrap()));
+        assert!(is_private_ip(&"172.16.0.1".parse().unwrap()));
+        assert!(is_private_ip(&"127.0.0.1".parse().unwrap()));
+        assert!(!is_private_ip(&"8.8.8.8".parse().unwrap()));
+        assert!(!is_private_ip(&"1.1.1.1".parse().unwrap()));
+    }
+
+    // -- extract_text basics + truncation ------------------------------------
+
+    #[test]
+    fn extract_text_from_simple_html() {
+        let html = r#"<html><body><article><p>Hello world</p><p>Second paragraph</p></article></body></html>"#;
+        let text = extract_text(html);
+        assert!(text.contains("Hello world"));
+        assert!(text.contains("Second paragraph"));
+    }
+
+    #[test]
+    fn extract_text_truncates_long_content() {
+        let long_text = "word ".repeat(2000);
+        let html = format!(
+            "<html><body><article><p>{}</p></article></body></html>",
+            long_text
+        );
+        let text = extract_text(&html);
+        assert!(text.len() <= MAX_FETCH_LENGTH + 10); // +10 for "..."
+        assert!(text.ends_with("..."));
+    }
+
+    #[test]
+    fn extract_text_truncates_multibyte_content_on_char_boundary() {
+        // 3-byte chars with no whitespace guarantee a char straddles the
+        // MAX_FETCH_LENGTH byte index (4000 is not a multiple of 3), which
+        // panicked before truncation backed off to a char boundary.
+        let long_text = "—".repeat(3000);
+        let html = format!(
+            "<html><body><article><p>{}</p></article></body></html>",
+            long_text
+        );
+        let text = extract_text(&html);
+        assert!(text.len() <= MAX_FETCH_LENGTH + 3); // +3 for "..."
+        assert!(text.ends_with("..."));
+    }
+
+    #[test]
+    fn extract_text_prefers_article() {
+        let html = r#"
+            <html><body>
+            <nav>Navigation stuff</nav>
+            <article><p>This is the main article content that should be extracted because it is long enough to be considered real content.</p></article>
+            <footer>Footer stuff</footer>
+            </body></html>"#;
+        let text = extract_text(html);
+        assert!(text.contains("main article content"));
+    }
 
     // -- diagnostic_snippet ------------------------------------------------
 

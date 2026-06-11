@@ -10,9 +10,8 @@
 use log::info;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::{AppHandle, Manager};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -167,75 +166,12 @@ pub struct JobRunWithSteps {
     pub steps: Vec<JobRunStep>,
 }
 
-/// Incremental change to a single engine's lifetime stats row.
-///
-/// Caller is expected to set `attempt = true` for every recorded outcome and
-/// exactly one of: `success = true` OR `failure_column = Some(...)`. The
-/// `failure_column` must be one of the seven `fail_*` column names defined
-/// in `search_stats_engines`; passing anything else returns an error rather
-/// than silently corrupting the SQL.
-#[derive(Clone, Debug, Default)]
-pub struct EngineStatDelta {
-    pub attempt: bool,
-    pub success: bool,
-    pub latency_ms: u64,
-    pub failure_column: Option<&'static str>,
-    pub now_ms: i64,
-    pub first_choice: bool,
-    pub fallback: bool,
-    pub fallback_success: bool,
-}
-
-/// Snapshot of a single engine's lifetime stats row. Mirrors the column
-/// layout so the frontend can render it without re-fetching per row.
-#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
-#[ts(export)]
-pub struct EngineLifetimeStats {
-    pub engine: String,
-    #[ts(type = "number")]
-    pub attempts: u64,
-    #[ts(type = "number")]
-    pub successes: u64,
-    #[ts(type = "number")]
-    pub fail_http: u64,
-    #[ts(type = "number")]
-    pub fail_rate_limited: u64,
-    #[ts(type = "number")]
-    pub fail_parse: u64,
-    #[ts(type = "number")]
-    pub fail_empty: u64,
-    #[ts(type = "number")]
-    pub fail_network: u64,
-    #[ts(type = "number")]
-    pub fail_timeout: u64,
-    #[ts(type = "number")]
-    pub fail_other: u64,
-    #[ts(type = "number")]
-    pub total_latency_ms: u64,
-    #[ts(type = "number")]
-    pub max_latency_ms: u64,
-    #[ts(type = "number | null")]
-    pub last_success_at: Option<i64>,
-    #[ts(type = "number | null")]
-    pub last_failure_at: Option<i64>,
-    #[ts(type = "number")]
-    pub first_choice_attempts: u64,
-    #[ts(type = "number")]
-    pub fallback_attempts: u64,
-    #[ts(type = "number")]
-    pub fallback_successes: u64,
-}
-
-#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
-#[ts(export)]
-pub struct LifetimeStatsSnapshot {
-    pub engines: Vec<EngineLifetimeStats>,
-    #[ts(as = "HashMap<String, u32>")]
-    pub globals: HashMap<String, u64>,
-}
-
+/// Cloneable handle to the single SQLite connection. Cloning shares the
+/// connection (and its mutex), so the same instance can be managed as
+/// Tauri state *and* registered as the proxy's `StatSink`.
+#[derive(Clone)]
 pub struct Database {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl Database {
@@ -260,7 +196,7 @@ impl Database {
         .map_err(|e| format!("Failed to set pragmas: {}", e))?;
 
         let db = Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         };
         db.migrate()?;
 

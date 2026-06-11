@@ -1,11 +1,13 @@
 use super::*;
+use crate::proxy::stats::EngineStatDelta;
 use rusqlite::{params, Connection};
+use std::collections::HashMap;
 
 fn test_db() -> Database {
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
     let db = Database {
-        conn: Mutex::new(conn),
+        conn: Arc::new(Mutex::new(conn)),
     };
     db.migrate().unwrap();
     db
