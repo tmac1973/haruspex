@@ -30,6 +30,11 @@ jobs:
             echo "::error::sandbox/ and agent/tools/ must not import the chat store — it reintroduces the chat<->sandbox cycle (see audits/architecture-2026-06-09.md, findings A1/A6). Read the ambient id/workdir from stores/session.svelte instead."
             exit 1
           fi
+      # IPC drift guards (audit findings X2/X3): every TS invoke() literal
+      # must name a command registered in lib.rs, and the generated command
+      # constant must be current.
+      - name: Check IPC command names
+        run: node scripts/check-ipc.mjs
 
   backend:
     runs-on: ubuntu-latest
@@ -79,3 +84,14 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+      # ts-rs bindings freshness (audit finding X3): the committed
+      # src/lib/ipc/gen/ types must match what the Rust structs generate.
+      # cargo test above already ran the export tests (into the gitignored
+      # default dir); this re-export targets the committed location.
+      - name: Check generated IPC types are current
+        run: |
+          TS_RS_EXPORT_DIR="$PWD/src/lib/ipc/gen" cargo test --manifest-path src-tauri/Cargo.toml export_bindings
+          git diff --exit-code -- src/lib/ipc/gen || {
+            echo "::error::src/lib/ipc/gen is stale — run scripts/export-ipc-types.sh and commit the result."
+            exit 1
+          }
