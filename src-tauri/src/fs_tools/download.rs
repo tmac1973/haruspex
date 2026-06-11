@@ -85,7 +85,10 @@ pub async fn fs_download_url(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
-        .redirect(reqwest::redirect::Policy::limited(5))
+        // Re-validates every redirect hop — without this, a public URL
+        // answering 302 into localhost/private ranges would stream an
+        // internal response into the workdir where the model can read it.
+        .redirect(crate::proxy::validating_redirect_policy())
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 

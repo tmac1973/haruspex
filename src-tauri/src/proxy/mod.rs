@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 pub(crate) use bypass::apply_proxy;
 use extract::fetch_and_extract;
-pub(crate) use extract::{validate_url, USER_AGENT};
+pub(crate) use extract::{validate_url, validating_redirect_policy, USER_AGENT};
 use search::{search_auto, search_brave, search_duckduckgo, search_searxng};
 use stats::{AutoPosition, RecordedOutcome, SearchFailure, SearchFailureKind, SearchStats};
 
@@ -549,6 +549,35 @@ mod tests {
     fn validate_url_rejects_invalid() {
         assert!(validate_url("not a url").is_err());
         assert!(validate_url("").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_ipv6_loopback_and_local_ranges() {
+        // Bracketed IPv6 literals never parse via host_str() — these went
+        // through unchecked before validate_parsed_url matched on url::Host.
+        assert!(validate_url("http://[::1]:8765/").is_err());
+        assert!(validate_url("http://[::]/").is_err());
+        // IPv4-mapped addresses reach the V4 network
+        assert!(validate_url("http://[::ffff:127.0.0.1]/").is_err());
+        assert!(validate_url("http://[::ffff:192.168.1.1]/").is_err());
+        // Unique-local (fc00::/7) and link-local (fe80::/10)
+        assert!(validate_url("http://[fc00::1]/").is_err());
+        assert!(validate_url("http://[fd12:3456::1]/").is_err());
+        assert!(validate_url("http://[fe80::1]/").is_err());
+        // Public IPv6 still allowed
+        assert!(validate_url("http://[2606:4700::6810:84e5]/").is_ok());
+    }
+
+    #[test]
+    fn validate_url_rejects_localhost_subdomains() {
+        assert!(validate_url("http://foo.localhost:8765/").is_err());
+        assert!(validate_url("http://LOCALHOST/").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_link_local_v4() {
+        // 169.254.169.254 — cloud metadata endpoint
+        assert!(validate_url("http://169.254.169.254/latest/meta-data/").is_err());
     }
 
     #[test]
