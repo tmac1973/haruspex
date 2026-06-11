@@ -18,6 +18,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import type { ChatMessage } from '$lib/api';
+import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
 import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 import type { SearchStep } from '$lib/agent/loop';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
@@ -38,13 +39,6 @@ interface CapturedRegion {
 	truncated: boolean;
 	// True for an in-flight command (still running, no exit code yet).
 	pending?: boolean;
-}
-
-interface ShellContextResponse {
-	context: ShellSessionContext;
-	current_cwd: string | null;
-	marker_count: number;
-	completed_commands: number;
 }
 
 export interface ShellSubmission {

@@ -12,23 +12,10 @@
 		getSettings,
 		setEmailAccounts,
 		type EmailAccount,
-		type EmailProviderId,
-		type EmailTlsMode
+		type EmailProviderId
 	} from '$lib/stores/settings';
+	import type { EmailProviderPreset } from '$lib/ipc/gen/EmailProviderPreset';
 	import EmailAccountForm from '$lib/components/EmailAccountForm.svelte';
-
-	interface EmailProviderPreset {
-		id: string;
-		label: string;
-		imap_host: string;
-		imap_port: number;
-		imap_tls: EmailTlsMode;
-		smtp_host: string;
-		smtp_port: number;
-		smtp_tls: EmailTlsMode;
-		app_password_url: string;
-		requires_2fa: boolean;
-	}
 
 	let emailAccounts = $state<EmailAccount[]>(
 		structuredClone(getSettings().integrations.email.accounts)

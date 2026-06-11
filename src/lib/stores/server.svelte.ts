@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
 import { PORTS } from '$lib/ports';
 import { DEFAULT_CONTEXT_SIZE } from '$lib/stores/settings';
 
@@ -14,12 +15,9 @@ import { DEFAULT_CONTEXT_SIZE } from '$lib/stores/settings';
  */
 export type ServerStatusType = 'stopped' | 'starting' | 'ready' | 'error' | 'remote';
 
-// Matches the Rust enum serialization: #[serde(tag = "type", content = "message")]
-type RustServerStatus =
-	| { type: 'Stopped' }
-	| { type: 'Starting' }
-	| { type: 'Ready' }
-	| { type: 'Error'; message: string };
+// ts-rs-generated mirror of the Rust `SidecarStatus` enum
+// (#[serde(tag = "type", content = "message")]).
+type RustServerStatus = SidecarStatus;
 
 export interface ServerState {
 	status: ServerStatusType;

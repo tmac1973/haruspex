@@ -25,23 +25,30 @@ pub struct MessageInput {
     pub steps: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct ConversationSummary {
     pub id: String,
     pub title: String,
+    #[ts(type = "number")]
     pub created_at: i64,
+    #[ts(type = "number")]
     pub updated_at: i64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct DbMessage {
+    #[ts(type = "number")]
     pub id: i64,
     pub conversation_id: String,
     pub role: String,
     pub content: String,
     pub tool_calls: Option<String>,
     pub tool_call_id: Option<String>,
+    #[ts(type = "number")]
     pub created_at: i64,
+    #[ts(type = "number")]
     pub sort_order: i64,
     /// JSON-serialized SearchStep[] captured for this assistant message.
     /// Holds image artifact data URLs + thumbDataUrl + HTML artifact
@@ -50,11 +57,14 @@ pub struct DbMessage {
     pub steps: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct ConversationWithMessages {
     pub id: String,
     pub title: String,
+    #[ts(type = "number")]
     pub created_at: i64,
+    #[ts(type = "number")]
     pub updated_at: i64,
     pub messages: Vec<DbMessage>,
 }
@@ -178,30 +188,49 @@ pub struct EngineStatDelta {
 
 /// Snapshot of a single engine's lifetime stats row. Mirrors the column
 /// layout so the frontend can render it without re-fetching per row.
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct EngineLifetimeStats {
     pub engine: String,
+    #[ts(type = "number")]
     pub attempts: u64,
+    #[ts(type = "number")]
     pub successes: u64,
+    #[ts(type = "number")]
     pub fail_http: u64,
+    #[ts(type = "number")]
     pub fail_rate_limited: u64,
+    #[ts(type = "number")]
     pub fail_parse: u64,
+    #[ts(type = "number")]
     pub fail_empty: u64,
+    #[ts(type = "number")]
     pub fail_network: u64,
+    #[ts(type = "number")]
     pub fail_timeout: u64,
+    #[ts(type = "number")]
     pub fail_other: u64,
+    #[ts(type = "number")]
     pub total_latency_ms: u64,
+    #[ts(type = "number")]
     pub max_latency_ms: u64,
+    #[ts(type = "number | null")]
     pub last_success_at: Option<i64>,
+    #[ts(type = "number | null")]
     pub last_failure_at: Option<i64>,
+    #[ts(type = "number")]
     pub first_choice_attempts: u64,
+    #[ts(type = "number")]
     pub fallback_attempts: u64,
+    #[ts(type = "number")]
     pub fallback_successes: u64,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct LifetimeStatsSnapshot {
     pub engines: Vec<EngineLifetimeStats>,
+    #[ts(as = "HashMap<String, u32>")]
     pub globals: HashMap<String, u64>,
 }
 

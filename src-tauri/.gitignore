@@ -2,3 +2,8 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# ts-rs default export dir — created when `cargo test` runs without
+# TS_RS_EXPORT_DIR. The canonical generated bindings live in
+# src/lib/ipc/gen (exported via TS_RS_EXPORT_DIR=../src/lib/ipc/gen).
+/bindings/

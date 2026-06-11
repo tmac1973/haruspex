@@ -47,7 +47,8 @@ const ENGINE_COOLDOWN_SLOW: Duration = Duration::from_secs(45);
 // See git history for the previous search_bing / search_qwant implementations.
 const AUTO_ENGINES: &[&str] = &["brave_html", "duckduckgo", "mojeek"];
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct SearchResult {
     pub title: String,
     pub url: String,
@@ -60,9 +61,11 @@ pub struct SearchResult {
 /// typo can't accidentally force traffic through an invalid URL. Bypass
 /// entries are parsed per request; we don't cache them because the user
 /// can edit them between calls and there's no hot path here.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct ProxyConfig {
     #[serde(default)]
+    #[ts(type = "\"none\" | \"manual\"")]
     pub mode: String,
     #[serde(default)]
     pub url: String,
@@ -387,7 +390,8 @@ pub async fn proxy_search(
     Ok(results)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct CombinedSearchStats {
     pub session: stats::SessionStatsSnapshot,
     pub lifetime: crate::db::LifetimeStatsSnapshot,

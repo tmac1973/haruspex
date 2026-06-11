@@ -9,7 +9,8 @@ use super::platform;
 /// Captured at PTY spawn time. Cheap to read but doesn't change for the
 /// lifetime of the shell session — distro upgrades mid-session would
 /// require respawning anyway.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionContext {
     pub os: String,

@@ -13,12 +13,14 @@ const GGUF_MAGIC: [u8; 4] = [0x47, 0x47, 0x55, 0x46]; // "GGUF"
 #[allow(dead_code)]
 const DOWNLOAD_CHUNK_SIZE: usize = 64 * 1024;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct ModelInfo {
     pub id: String,
     pub filename: String,
     pub url: String,
     pub sha256: String,
+    #[ts(type = "number")]
     pub size_bytes: u64,
     pub description: String,
     pub downloaded: bool,
@@ -26,17 +28,24 @@ pub struct ModelInfo {
     /// When present, it is downloaded alongside the main weights and passed
     /// to llama-server via --mmproj to enable vision support.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub mmproj_filename: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub mmproj_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
     pub mmproj_size_bytes: Option<u64>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct DownloadProgress {
+    #[ts(type = "number")]
     pub downloaded: u64,
+    #[ts(type = "number")]
     pub total: u64,
+    #[ts(type = "number")]
     pub speed_bps: u64,
     /// Human-readable label for the current download stage
     /// (e.g. "Downloading model", "Downloading vision projector").

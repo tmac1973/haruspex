@@ -1,5 +1,10 @@
 // App settings — persisted to localStorage
 
+import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
+import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
+import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
+import type { TlsMode } from '$lib/ipc/gen/TlsMode';
+
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type SearchProvider = 'auto' | 'duckduckgo' | 'brave' | 'searxng';
@@ -57,14 +62,17 @@ export interface InferenceBackendConfig {
 /**
  * Email provider presets we ship built-in. "custom" is the escape
  * hatch — the user types their own IMAP/SMTP hostnames.
+ *
+ * Aliases of the ts-rs-generated `EmailProvider` / `TlsMode` enums so
+ * the Rust side stays the single source of truth for the wire shape.
  */
-export type EmailProviderId = 'gmail' | 'fastmail' | 'icloud' | 'yahoo' | 'custom';
-export type EmailTlsMode = 'implicit' | 'starttls';
+export type EmailProviderId = EmailProvider;
+export type EmailTlsMode = TlsMode;
 
 /**
- * A single configured email account. Field names match the
- * camelCase-serialized `EmailAccount` struct on the Rust side, so
- * the entire object roundtrips through `invoke` without translation.
+ * A single configured email account — the ts-rs-generated mirror of the
+ * Rust `EmailAccount` struct (camelCase-serialized), re-exported so the
+ * entire object roundtrips through `invoke` without translation.
  *
  * Credentials (password) are stored in the settings blob alongside
  * the existing Brave / inference API keys — same trust level, same
@@ -75,21 +83,7 @@ export type EmailTlsMode = 'implicit' | 'starttls';
  * opted into per-account without a settings migration. In Phase 10.1
  * it has no effect.
  */
-export interface EmailAccount {
-	id: string;
-	label: string;
-	enabled: boolean;
-	sendEnabled: boolean;
-	provider: EmailProviderId;
-	emailAddress: string;
-	password: string;
-	imapHost: string;
-	imapPort: number;
-	imapTls: EmailTlsMode;
-	smtpHost: string;
-	smtpPort: number;
-	smtpTls: EmailTlsMode;
-}
+export type { EmailAccount };
 
 export interface EmailIntegrationConfig {
 	accounts: EmailAccount[];
@@ -112,13 +106,9 @@ export interface IntegrationsConfig {
  * Stored alongside other settings in localStorage; the Rust backend
  * re-parses `bypass` per request (no hot path).
  */
-export type ProxyMode = 'none' | 'manual';
+export type ProxyMode = ProxyConfig['mode'];
 
-export interface ProxyConfig {
-	mode: ProxyMode;
-	url: string;
-	bypass: string;
-}
+export type { ProxyConfig };
 
 export interface AppSettings {
 	responseFormat: ResponseFormat;

@@ -67,7 +67,8 @@ pub const LOG_RING_BUFFER_SIZE: usize = 1000;
 /// variants and `payload.type === "Error"` + `payload.message` for the
 /// failure variant. `MicButton.svelte` and `server.svelte.ts` consume
 /// this shape directly.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, ts_rs::TS)]
+#[ts(export)]
 #[serde(tag = "type", content = "message")]
 pub enum SidecarStatus {
     Stopped,

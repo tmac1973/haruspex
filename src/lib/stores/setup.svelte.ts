@@ -1,5 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
+import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
+import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
 import { errMessage } from '$lib/utils/error';
 import { PORTS, baseUrl } from '$lib/ports';
 import {
@@ -22,22 +25,9 @@ export interface HardwareInfo {
 	recommended_quant: string;
 }
 
-export interface ModelInfo {
-	id: string;
-	filename: string;
-	url: string;
-	sha256: string;
-	size_bytes: number;
-	description: string;
-	downloaded: boolean;
-}
-
-export interface DownloadProgress {
-	downloaded: number;
-	total: number;
-	speed_bps: number;
-	stage: string;
-}
+// ts-rs-generated mirrors of the Rust structs, re-exported so existing
+// import paths keep working.
+export type { DownloadProgress, ModelInfo };
 
 let step = $state<SetupStep>('welcome');
 let hardware = $state<HardwareInfo | null>(null);
@@ -158,7 +148,7 @@ export async function runTestQuery(): Promise<void> {
 		// always stops-and-restarts, which on slow integrated graphics means
 		// 1-2 minutes of model loading per retry — that turned every retry
 		// into another wait + timeout cycle.
-		const initialStatus = await invoke<{ type: string; message?: string }>('get_server_status');
+		const initialStatus = await invoke<SidecarStatus>('get_server_status');
 		if (initialStatus.type !== 'Ready') {
 			testStatusMessage = 'Starting the AI model (this may take a minute)...';
 			await invoke('start_server', {
@@ -194,7 +184,7 @@ async function waitForServerReady(alreadyReady: boolean): Promise<ServerReadyOut
 	if (alreadyReady) return { ok: true };
 	for (let i = 0; i < 600; i++) {
 		await new Promise((r) => setTimeout(r, 500));
-		const status = await invoke<{ type: string; message?: string }>('get_server_status');
+		const status = await invoke<SidecarStatus>('get_server_status');
 		if (status.type === 'Ready') return { ok: true };
 		if (status.type === 'Error') {
 			return { ok: false, message: `Server error: ${status.message || 'unknown'}` };

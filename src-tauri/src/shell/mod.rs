@@ -48,7 +48,8 @@ impl ShellManager {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct ShellSpawnResult {
     pub session_id: SessionId,
     pub context: SessionContext,
@@ -205,13 +206,15 @@ pub fn shell_restart(
     })
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct ShellContextResponse {
     pub context: SessionContext,
     pub current_cwd: Option<String>,
     /// Number of OSC 133 markers seen in the session ring so far.
     /// 0 means the shell-integration script almost certainly didn't
     /// load — the badge in the sidebar surfaces this to the user.
+    #[ts(type = "number")]
     pub marker_count: usize,
     /// Number of complete B→C→D cycles available to the auto-attach.
     /// Distinct from marker_count because A+B pairs (prompt redraws
@@ -219,10 +222,12 @@ pub struct ShellContextResponse {
     /// contribute to captures. When this is 0 but marker_count > 0,
     /// the integration is loaded but the user hasn't run anything
     /// yet in this session — the badge calls that out.
+    #[ts(type = "number")]
     pub completed_commands: usize,
     /// Monotonic lifetime count of completed commands — never caps when the
     /// marker ring saturates. The Run auto-submit polls this to detect the
     /// command it launched finishing (marker_count can't, once saturated).
+    #[ts(type = "number")]
     pub completed_total: u64,
 }
 

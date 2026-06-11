@@ -2,36 +2,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { type ChatMessage } from '$lib/api';
 import { detectPaywall } from '$lib/agent/paywall';
 import { getSettings, DEFAULT_SEARXNG_URL } from '$lib/stores/settings';
+import type { ImageSearchResult } from '$lib/ipc/gen/ImageSearchResult';
+import type { PageImage } from '$lib/ipc/gen/PageImage';
+import type { SearchResult } from '$lib/ipc/gen/SearchResult';
 import { labelArg, proxyFetch, runSubAgent, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolResult } from './types';
 
 const RESEARCH_AGENT_MAX_TOKENS = 3072;
-
-interface SearchResult {
-	title: string;
-	url: string;
-	snippet: string;
-}
-
-interface ImageSearchResult {
-	title: string;
-	url: string;
-	thumb_url: string;
-	width: number;
-	height: number;
-	mime: string;
-	license: string;
-	attribution: string;
-	description_url: string;
-}
-
-interface PageImage {
-	src: string;
-	alt: string;
-	width: number | null;
-	height: number | null;
-}
 
 function paywallErrorMessage(url: string, reason: string): string {
 	return (
