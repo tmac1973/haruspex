@@ -19,7 +19,9 @@ pub struct XlsxSheet {
 /// agree on this so a value lands as a number in one format and text in the
 /// other — route both through this one classifier.
 fn cell_as_number(cell: &str) -> Option<f64> {
-    cell.parse::<f64>().ok()
+    // "NaN"/"inf" parse as f64 but are not representable spreadsheet
+    // numbers — emitting office:value="NaN" produces an invalid document.
+    cell.parse::<f64>().ok().filter(|n| n.is_finite())
 }
 
 /// Build a minimal OpenDocument Spreadsheet (.ods) file from a slice of
