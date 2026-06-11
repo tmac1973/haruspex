@@ -202,17 +202,21 @@ export async function dbLoadMessages(id: string): Promise<ChatMessage[]> {
 
 export async function dbReplaceMessages(
 	conversationId: string,
-	messages: ChatMessage[]
+	messages: ChatMessage[],
+	stepsByIndex?: Record<number, unknown[]>
 ): Promise<void> {
 	if (!available) return;
 	try {
 		await invoke('db_replace_messages', {
 			conversationId,
-			messages: messages.map((m) => ({
+			messages: messages.map((m, i) => ({
 				role: m.role,
 				content: serializeContent(m.content),
 				tool_calls: m.tool_calls ? JSON.stringify(m.tool_calls) : null,
-				tool_call_id: m.tool_call_id || null
+				tool_call_id: m.tool_call_id || null,
+				// Without this, replacing messages (compaction) silently
+				// wiped every persisted per-message artifact.
+				steps: stepsByIndex?.[i] ? JSON.stringify(stepsByIndex[i]) : null
 			}))
 		});
 	} catch (e) {
