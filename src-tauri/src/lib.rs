@@ -17,6 +17,7 @@ mod sandbox_sync;
 mod server;
 mod shell;
 mod sidecar_utils;
+mod text_util;
 mod time_util;
 mod tts;
 mod whisper;
