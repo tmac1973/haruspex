@@ -2,7 +2,7 @@ import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
 import { runAgentLoop, type SearchStep, type AgentLoopOptions } from '$lib/agent/loop';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
-import { shouldCompact, compactConversation } from '$lib/agent/compaction';
+import { shouldCompact, compactConversation, remapIndexedRecords } from '$lib/agent/compaction';
 import {
 	estimateMessagesTokens,
 	describeContextManaged,
@@ -418,7 +418,23 @@ async function compactIfNeeded(): Promise<void> {
 		};
 		const newMessages: ChatMessage[] = [summaryMsg, ...kept];
 
+		// messageSteps / messageStats are keyed by message INDEX — rewriting
+		// the array without remapping them left artifacts and tok/s footers
+		// rendering under unrelated messages (or vanishing).
+		const newSteps = remapIndexedRecords(
+			conversation.messages,
+			newMessages,
+			conversation.messageSteps
+		);
+		const newStats = remapIndexedRecords(
+			conversation.messages,
+			newMessages,
+			conversation.messageStats
+		);
+
 		conversation.messages = newMessages;
+		conversation.messageSteps = newSteps;
+		conversation.messageStats = newStats;
 		conversation.contextUsage = null;
 		// The turn `lastTurnTools` belonged to has just been summarized away;
 		// keeping the raw tool messages would re-inflate the same context we
@@ -426,7 +442,7 @@ async function compactIfNeeded(): Promise<void> {
 		conversation.lastTurnTools = undefined;
 		resetContextUsage();
 
-		await dbReplaceMessages(conversation.id, newMessages);
+		await dbReplaceMessages(conversation.id, newMessages, newSteps);
 	} finally {
 		isCompacting = false;
 	}
@@ -1020,10 +1036,16 @@ export async function sendMessage(content: string): Promise<void> {
 			handleTurnError(e);
 		}
 	} finally {
-		isGenerating = false;
-		isWaitingForSlot = false;
-		streamingContent = '';
-		abortController = null;
+		// Only clear shared turn state if this turn still owns it. The user
+		// can cancel and immediately dispatch a new turn while this one is
+		// still unwinding its abort — clearing unconditionally here would
+		// clobber the new turn's abort controller and streaming buffer.
+		if (abortController === null || abortController.signal === signal) {
+			isGenerating = false;
+			isWaitingForSlot = false;
+			streamingContent = '';
+			abortController = null;
+		}
 		conversation.updatedAt = Date.now();
 	}
 }

@@ -71,3 +71,26 @@ export async function compactConversation(
 
 	return { summary, removedCount };
 }
+
+/**
+ * Remap a Record keyed by message INDEX after the message array has been
+ * rewritten (compaction). Entries whose message survived move to the
+ * message's new index; entries for summarized-away messages are dropped.
+ * Matching is by object identity — compaction reuses the kept message
+ * objects.
+ */
+export function remapIndexedRecords<T>(
+	oldMessages: readonly unknown[],
+	newMessages: readonly unknown[],
+	records: Record<number, T>
+): Record<number, T> {
+	const oldIndexByMessage = new Map(oldMessages.map((m, i) => [m, i]));
+	const out: Record<number, T> = {};
+	newMessages.forEach((m, newIdx) => {
+		const oldIdx = oldIndexByMessage.get(m);
+		if (oldIdx === undefined) return; // e.g. the inserted summary message
+		const value = records[oldIdx];
+		if (value !== undefined) out[newIdx] = value;
+	});
+	return out;
+}

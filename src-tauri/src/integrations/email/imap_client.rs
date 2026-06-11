@@ -155,15 +155,15 @@ fn build_search_query(filters: &ListFilters) -> String {
         let since = imap_since_for_hours(h);
         parts.push(format!("SINCE {since}"));
     } else if let Some(d) = filters.since_date.as_ref() {
-        parts.push(format!("SINCE {d}"));
+        parts.push(format!("SINCE {}", sanitize_search_value(d)));
     }
 
     if let Some(f) = filters.from.as_ref() {
-        parts.push(format!("FROM \"{}\"", f.replace('"', "")));
+        parts.push(format!("FROM \"{}\"", sanitize_search_value(f)));
     }
 
     if let Some(s) = filters.subject_contains.as_ref() {
-        parts.push(format!("SUBJECT \"{}\"", s.replace('"', "")));
+        parts.push(format!("SUBJECT \"{}\"", sanitize_search_value(s)));
     }
 
     if parts.is_empty() {
@@ -171,6 +171,18 @@ fn build_search_query(filters: &ListFilters) -> String {
     } else {
         parts.join(" ")
     }
+}
+
+/// Strip characters that could break out of a quoted IMAP SEARCH atom.
+/// Filter values are LLM-controlled tool args (reachable via prompt
+/// injection from a malicious email), and `async-imap` does no escaping:
+/// a CR/LF would terminate the SEARCH line and inject a new command on
+/// the authenticated session; a backslash or quote could splice the
+/// quoted string.
+fn sanitize_search_value(v: &str) -> String {
+    v.chars()
+        .filter(|c| !matches!(c, '"' | '\\' | '\r' | '\n' | '\0'))
+        .collect()
 }
 
 /// Format the IMAP SINCE clause for `now - hours` in `DD-Mon-YYYY`
@@ -377,6 +389,23 @@ mod tests {
         // quoted string and inject a new SEARCH clause.
         assert!(!q.contains(r#"ev"il"#));
         assert!(q.contains("FROM \"evil\""));
+    }
+
+    #[test]
+    fn search_query_strips_crlf_injection() {
+        // A CR/LF in a filter value would terminate the SEARCH command
+        // and inject a raw IMAP command on the authenticated session.
+        let q = build_search_query(&ListFilters {
+            from: Some("a\r\nA1 DELETE INBOX\r\n".into()),
+            subject_contains: Some("x\\\"y\r\n".into()),
+            since_date: Some("01-Jan-2026\r\nA2 LOGOUT".into()),
+            ..Default::default()
+        });
+        assert!(!q.contains('\r'));
+        assert!(!q.contains('\n'));
+        assert!(!q.contains('\\'));
+        assert!(q.contains("FROM \"aA1 DELETE INBOX\""));
+        assert!(q.contains("SINCE 01-Jan-2026A2 LOGOUT"));
     }
 
     #[test]

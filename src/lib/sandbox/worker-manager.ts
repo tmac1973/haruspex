@@ -343,11 +343,10 @@ export class WorkerManager {
 	private dispatch(msg: MainToWorker, id: string, opts: RunOptions): Promise<ToolResult> {
 		const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		return new Promise<ToolResult>((resolve, reject) => {
-			const timer = setTimeout(() => this.onTimeout(id, timeoutMs), timeoutMs);
 			this.pending.set(id, {
 				resolve,
 				reject,
-				timer,
+				timer: null,
 				execTimeoutMs: timeoutMs,
 				installWatchdog: null,
 				terminateFallback: null,
@@ -373,11 +372,19 @@ export class WorkerManager {
 							});
 						}
 					}
+					// Arm the execution timeout only now. First boot takes
+					// 10-15 s; counting it against the run budget made a short
+					// configured timeout fire mid-boot, terminating and
+					// respawning the worker before any user code ran.
+					const p = this.pending.get(id);
+					if (!p) return; // rejected during boot (respawn/reset)
+					p.timer = setTimeout(() => this.onTimeout(id, timeoutMs), timeoutMs);
 					this.send(msg);
 				})
 				.catch((err: Error) => {
-					if (this.pending.get(id)) {
-						clearTimeout(timer);
+					const p = this.pending.get(id);
+					if (p) {
+						if (p.timer) clearTimeout(p.timer);
 						this.pending.delete(id);
 						reject(err);
 					}

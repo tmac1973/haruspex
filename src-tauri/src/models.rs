@@ -43,13 +43,28 @@ pub struct DownloadProgress {
     pub stage: String,
 }
 
-// mmproj file sizes verified from HuggingFace API (F16 variant)
+// mmproj sizes and hashes from the HuggingFace API (F16 variant) —
+// the LFS oid of each file IS its sha256.
 const QWEN_4B_MMPROJ_URL: &str =
     "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/mmproj-F16.gguf";
-const QWEN_4B_MMPROJ_SIZE: u64 = 672_000_000; // ~641 MB
+const QWEN_4B_MMPROJ_SIZE: u64 = 672_423_616;
+const QWEN_4B_MMPROJ_SHA256: &str =
+    "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864";
 const QWEN_9B_MMPROJ_URL: &str =
     "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/mmproj-F16.gguf";
-const QWEN_9B_MMPROJ_SIZE: u64 = 918_000_000; // ~876 MB
+const QWEN_9B_MMPROJ_SIZE: u64 = 918_166_080;
+const QWEN_9B_MMPROJ_SHA256: &str =
+    "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f";
+
+/// sha256 for the mmproj at `url`. Keyed by URL rather than stored per
+/// registry entry because several models share one projector file.
+fn mmproj_sha256_for_url(url: &str) -> Option<&'static str> {
+    match url {
+        QWEN_4B_MMPROJ_URL => Some(QWEN_4B_MMPROJ_SHA256),
+        QWEN_9B_MMPROJ_URL => Some(QWEN_9B_MMPROJ_SHA256),
+        _ => None,
+    }
+}
 
 fn qwen_4b_mmproj_filename() -> String {
     "Qwen3.5-4B-mmproj-F16.gguf".to_string()
@@ -68,8 +83,8 @@ fn model_registry() -> Vec<ModelInfo> {
             url:
                 "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf"
                     .to_string(),
-            sha256: String::new(),
-            size_bytes: 2_741_000_000,
+            sha256: "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4".to_string(),
+            size_bytes: 2_740_937_888,
             description: "Qwen 3.5 4B Q4 — for integrated graphics or low VRAM (~2.7 GB)"
                 .to_string(),
             downloaded: false,
@@ -82,8 +97,8 @@ fn model_registry() -> Vec<ModelInfo> {
             filename: "Qwen3.5-4B-Q6_K.gguf".to_string(),
             url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q6_K.gguf"
                 .to_string(),
-            sha256: String::new(),
-            size_bytes: 3_526_000_000,
+            sha256: "fdedd781c9ce676ab66b018ca247ff78e8a33c98098a822c1e2d5075e7718f66".to_string(),
+            size_bytes: 3_525_956_768,
             description: "Qwen 3.5 4B Q6 — better quality 4B, needs 4+ GB VRAM (~3.5 GB)"
                 .to_string(),
             downloaded: false,
@@ -98,8 +113,8 @@ fn model_registry() -> Vec<ModelInfo> {
             url:
                 "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf"
                     .to_string(),
-            sha256: String::new(),
-            size_bytes: 5_680_000_000,
+            sha256: "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8".to_string(),
+            size_bytes: 5_680_522_464,
             description: "Qwen 3.5 9B Q4 — recommended for 8GB VRAM (~5.7 GB)".to_string(),
             downloaded: false,
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
@@ -112,8 +127,8 @@ fn model_registry() -> Vec<ModelInfo> {
             url:
                 "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf"
                     .to_string(),
-            sha256: String::new(),
-            size_bytes: 6_580_000_000,
+            sha256: "dc2a39aef291f91a9116ad214058da0d86eb648743a124bd8c333787c4b9c91c".to_string(),
+            size_bytes: 6_577_841_376,
             description: "Qwen 3.5 9B Q5 — higher quality, tight on 8GB VRAM (~6.6 GB)".to_string(),
             downloaded: false,
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
@@ -125,8 +140,8 @@ fn model_registry() -> Vec<ModelInfo> {
             filename: "Qwen3.5-9B-Q6_K.gguf".to_string(),
             url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q6_K.gguf"
                 .to_string(),
-            sha256: String::new(),
-            size_bytes: 7_460_000_000,
+            sha256: "91898433cf5ce0a8f45516a4cc3e9343b6e01d052d01f684309098c66a326c59".to_string(),
+            size_bytes: 7_458_301_152,
             description: "Qwen 3.5 9B Q6 — high quality, needs 10+ GB VRAM (~7.5 GB)".to_string(),
             downloaded: false,
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
@@ -138,8 +153,8 @@ fn model_registry() -> Vec<ModelInfo> {
             filename: "Qwen3.5-9B-Q8_0.gguf".to_string(),
             url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q8_0.gguf"
                 .to_string(),
-            sha256: String::new(),
-            size_bytes: 9_528_000_000,
+            sha256: "809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4".to_string(),
+            size_bytes: 9_527_502_048,
             description: "Qwen 3.5 9B Q8 — best quality, needs 16+ GB VRAM (~9.5 GB)".to_string(),
             downloaded: false,
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
@@ -313,16 +328,35 @@ impl ModelManager {
             ));
         }
 
-        let total_size = resume_total_size(existing_size, response.content_length(), expected_size);
+        // Only treat this as a resume when the server actually honored the
+        // Range header (206). A 200 means it's sending the whole file —
+        // appending that to the partial would silently corrupt it (and the
+        // corrupt file would pass the 4-byte GGUF magic check).
+        let resumed = existing_size > 0 && response.status().as_u16() == 206;
+        if existing_size > 0 && !resumed {
+            info!(
+                "{}: server ignored Range (status {}), restarting from zero",
+                stage_label,
+                response.status()
+            );
+        }
+        let base_offset = if resumed { existing_size } else { 0 };
 
-        let mut file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
+        let total_size = resume_total_size(base_offset, response.content_length(), expected_size);
+
+        let mut open_opts = tokio::fs::OpenOptions::new();
+        open_opts.create(true);
+        if resumed {
+            open_opts.append(true);
+        } else {
+            open_opts.write(true).truncate(true);
+        }
+        let mut file = open_opts
             .open(&partial_path)
             .await
             .map_err(|e| format!("Failed to open file: {}", e))?;
 
-        let mut downloaded = existing_size;
+        let mut downloaded = base_offset;
         let start_time = std::time::Instant::now();
         let mut last_progress_time = start_time;
 
@@ -354,7 +388,7 @@ impl ModelManager {
                     DownloadProgress {
                         downloaded,
                         total: total_size,
-                        speed_bps: download_speed_bps(downloaded, existing_size, elapsed),
+                        speed_bps: download_speed_bps(downloaded, base_offset, elapsed),
                         stage: stage_label.to_string(),
                     },
                 );
@@ -373,7 +407,7 @@ impl ModelManager {
             DownloadProgress {
                 downloaded,
                 total: total_size,
-                speed_bps: download_speed_bps(downloaded, existing_size, elapsed),
+                speed_bps: download_speed_bps(downloaded, base_offset, elapsed),
                 stage: stage_label.to_string(),
             },
         );
@@ -414,11 +448,7 @@ impl ModelManager {
         // Verify SHA256 if we have a hash
         if !model.sha256.is_empty() {
             info!("Verifying SHA256...");
-            let hash = compute_sha256(&final_path).await?;
-            if hash != model.sha256 {
-                fs::remove_file(&final_path).await.ok();
-                return Err("Download verification failed: SHA256 mismatch".to_string());
-            }
+            verify_sha256(&final_path, &model.sha256).await?;
         }
 
         // Download mmproj (vision projector) if the model has one
@@ -427,14 +457,19 @@ impl ModelManager {
             model.mmproj_filename.as_ref(),
             model.mmproj_size_bytes,
         ) {
-            self.download_file(
-                app,
-                mmproj_url,
-                mmproj_filename,
-                mmproj_size,
-                "Downloading vision projector",
-            )
-            .await?;
+            let mmproj_path = self
+                .download_file(
+                    app,
+                    mmproj_url,
+                    mmproj_filename,
+                    mmproj_size,
+                    "Downloading vision projector",
+                )
+                .await?;
+            if let Some(expected) = mmproj_sha256_for_url(mmproj_url) {
+                info!("Verifying mmproj SHA256...");
+                verify_sha256(&mmproj_path, expected).await?;
+            }
         }
 
         Ok(final_path)
@@ -498,28 +533,51 @@ impl ModelManager {
     }
 }
 
+/// Streaming hash — model files run to ~9.5 GB, far too large for the
+/// previous read-whole-file-into-memory approach.
 async fn compute_sha256(path: &Path) -> Result<String, String> {
-    let data = fs::read(path)
+    use tokio::io::AsyncReadExt;
+    let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|e| format!("Failed to read file for hashing: {}", e))?;
     let mut hasher = Sha256::new();
-    hasher.update(&data);
+    let mut buf = vec![0u8; 1024 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("Failed to read file for hashing: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// Compare a downloaded file against its expected sha256; delete it on
+/// mismatch so a corrupt artifact can't be picked up as a valid model.
+async fn verify_sha256(path: &Path, expected: &str) -> Result<(), String> {
+    let hash = compute_sha256(path).await?;
+    if !hash.eq_ignore_ascii_case(expected) {
+        fs::remove_file(path).await.ok();
+        return Err("Download verification failed: SHA256 mismatch".to_string());
+    }
+    Ok(())
+}
+
 async fn validate_gguf(path: &Path) -> Result<(), String> {
-    let data = fs::read(path)
+    use tokio::io::AsyncReadExt;
+    let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
-
-    if data.len() < 4 {
+    let mut magic = [0u8; 4];
+    if file.read_exact(&mut magic).await.is_err() {
         return Err("File too small to be a valid GGUF".to_string());
     }
-
-    if data[0..4] != GGUF_MAGIC {
+    if magic != GGUF_MAGIC {
         return Err("Not a valid GGUF file (wrong magic bytes)".to_string());
     }
-
     Ok(())
 }
 
@@ -622,7 +680,9 @@ pub async fn download_whisper_model(
 
     let partial_path = whisper_dir.join("ggml-base.en.bin.partial");
     let url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
-    let expected_size: u64 = 148_000_000;
+    let expected_size: u64 = 147_964_211;
+    // LFS oid from the HuggingFace API for ggml-base.en.bin
+    const WHISPER_SHA256: &str = "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
 
     // Reset cancel flag
     {
@@ -662,23 +722,32 @@ pub async fn download_whisper_model(
         ));
     }
 
-    let total_size = if existing_size > 0 {
-        existing_size
-            + response
-                .content_length()
-                .unwrap_or(expected_size - existing_size)
-    } else {
-        response.content_length().unwrap_or(expected_size)
-    };
+    // Only a 206 means the Range was honored; a 200 is the whole file and
+    // appending it to the partial would corrupt the model.
+    let resumed = existing_size > 0 && response.status().as_u16() == 206;
+    if existing_size > 0 && !resumed {
+        info!(
+            "Whisper download: server ignored Range (status {}), restarting from zero",
+            response.status()
+        );
+    }
+    let base_offset = if resumed { existing_size } else { 0 };
 
-    let mut file = tokio::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
+    let total_size = resume_total_size(base_offset, response.content_length(), expected_size);
+
+    let mut open_opts = tokio::fs::OpenOptions::new();
+    open_opts.create(true);
+    if resumed {
+        open_opts.append(true);
+    } else {
+        open_opts.write(true).truncate(true);
+    }
+    let mut file = open_opts
         .open(&partial_path)
         .await
         .map_err(|e| format!("Failed to open file: {}", e))?;
 
-    let mut downloaded = existing_size;
+    let mut downloaded = base_offset;
     let start_time = std::time::Instant::now();
     let mut last_progress_time = start_time;
 
@@ -705,17 +774,12 @@ pub async fn download_whisper_model(
         let now = std::time::Instant::now();
         if now.duration_since(last_progress_time).as_millis() >= 100 {
             let elapsed = now.duration_since(start_time).as_secs_f64();
-            let speed_bps = if elapsed > 0.0 {
-                ((downloaded - existing_size) as f64 / elapsed) as u64
-            } else {
-                0
-            };
             let _ = app.emit(
                 "download-progress",
                 DownloadProgress {
                     downloaded,
                     total: total_size,
-                    speed_bps,
+                    speed_bps: download_speed_bps(downloaded, base_offset, elapsed),
                     stage: "Downloading speech model".to_string(),
                 },
             );
@@ -727,6 +791,9 @@ pub async fn download_whisper_model(
         .await
         .map_err(|e| format!("Flush error: {}", e))?;
     drop(file);
+
+    info!("Verifying whisper model SHA256...");
+    verify_sha256(&partial_path, WHISPER_SHA256).await?;
 
     fs::rename(&partial_path, &final_path)
         .await

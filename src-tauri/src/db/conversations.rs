@@ -155,17 +155,24 @@ impl Database {
         conversation_id: &str,
         messages: &[MessageInput],
     ) -> Result<(), String> {
-        let conn = self.conn();
+        let mut conn = self.conn();
         let now = chrono_now();
 
-        conn.execute(
+        // One transaction: a failure partway through the inserts must not
+        // leave the conversation with the old messages deleted and only a
+        // prefix of the new ones written.
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+
+        tx.execute(
             "DELETE FROM messages WHERE conversation_id = ?1",
             params![conversation_id],
         )
         .map_err(|e| format!("Delete failed: {}", e))?;
 
         for (i, msg) in messages.iter().enumerate() {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO messages (conversation_id, role, content, tool_calls, tool_call_id, created_at, sort_order, steps)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
@@ -182,11 +189,13 @@ impl Database {
             .map_err(|e| format!("Insert failed: {}", e))?;
         }
 
-        conn.execute(
+        tx.execute(
             "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
             params![now, conversation_id],
         )
         .map_err(|e| format!("Update failed: {}", e))?;
+
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
 
         Ok(())
     }
