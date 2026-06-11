@@ -11,7 +11,8 @@ use std::sync::Mutex;
 
 /// Why a search engine attempt didn't return usable results. Each kind
 /// maps 1:1 to a `fail_*` column in `search_stats_engines`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, ts_rs::TS)]
+#[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchFailureKind {
     /// Non-2xx HTTP status from the engine (429, 403, 503, etc.).
@@ -101,29 +102,45 @@ pub struct RecordedOutcome {
     pub position: Option<AutoPosition>,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct EngineSessionStats {
     pub engine: String,
+    #[ts(type = "number")]
     pub attempts: u64,
+    #[ts(type = "number")]
     pub successes: u64,
+    #[ts(as = "HashMap<SearchFailureKind, u32>")]
     pub failures_by_kind: HashMap<SearchFailureKind, u64>,
+    #[ts(type = "number")]
     pub total_latency_ms: u64,
+    #[ts(type = "number")]
     pub max_latency_ms: u64,
+    #[ts(type = "number | null")]
     pub last_success_at: Option<i64>,
+    #[ts(type = "number | null")]
     pub last_failure_at: Option<i64>,
+    #[ts(type = "number")]
     pub first_choice_attempts: u64,
+    #[ts(type = "number")]
     pub fallback_attempts: u64,
+    #[ts(type = "number")]
     pub fallback_successes: u64,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct GlobalCounters {
+    #[ts(type = "number")]
     pub cache_hits: u64,
+    #[ts(type = "number")]
     pub total_queries: u64,
+    #[ts(type = "number")]
     pub all_engines_failed: u64,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct SessionStatsSnapshot {
     pub engines: Vec<EngineSessionStats>,
     pub globals: GlobalCounters,

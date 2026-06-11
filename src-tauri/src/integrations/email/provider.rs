@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 /// port 587). All our built-in presets use `Implicit` because every
 /// major provider we target supports it and it avoids a downgrade
 /// window, but custom hosts can pick either.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum TlsMode {
     #[default]
@@ -26,7 +27,8 @@ pub enum TlsMode {
 /// Which provider family an account is configured for. The id is used
 /// as the serialized tag so we can roundtrip it cleanly through the
 /// frontend settings blob.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum EmailProvider {
     Gmail,
@@ -39,7 +41,8 @@ pub enum EmailProvider {
 /// A built-in preset with default hostnames + docs URL for one
 /// provider. The `Custom` provider has no preset — the frontend uses
 /// the `custom` variant to let the user type their own hosts.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct EmailProviderPreset {
     /// Stable machine id: matches the lowercased enum variant.
     pub id: &'static str,

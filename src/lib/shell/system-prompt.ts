@@ -15,19 +15,11 @@
  */
 
 import type { ChatMessage } from '$lib/api';
+import type { SessionContext } from '$lib/ipc/gen/SessionContext';
 
-export interface ShellSessionContext {
-	os: string;
-	kernel: string;
-	distroId?: string;
-	distroName?: string;
-	distroVersion?: string;
-	shellPath: string;
-	shellName: string;
-	shellVersion?: string;
-	home?: string;
-	hostname?: string;
-}
+/** Re-export of the ts-rs-generated Rust `SessionContext` under the
+ *  name this module historically used. */
+export type ShellSessionContext = SessionContext;
 
 export interface BuildShellPromptOpts {
 	sessionContext: ShellSessionContext;

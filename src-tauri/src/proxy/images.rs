@@ -15,7 +15,8 @@ use serde::Serialize;
 /// pages omit them (relying on CSS), so they're optional. `src` is
 /// always absolute (relative URLs are resolved against the page URL
 /// before they leave `fetch_url_images`).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct PageImage {
     pub src: String,
     pub alt: String,
@@ -214,7 +215,8 @@ pub(super) fn extract_page_images(html: &str, base_url: &url::Url) -> Vec<PageIm
 ///   - `license`: short license name if present (e.g. "CC BY-SA 4.0")
 ///   - `attribution`: author/credit line, plain text
 ///   - `description_url`: Commons page URL for the file (attribution link)
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct ImageSearchResult {
     pub title: String,
     pub url: String,

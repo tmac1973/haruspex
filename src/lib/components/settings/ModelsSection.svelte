@@ -21,22 +21,8 @@
 		setActiveLocalModel
 	} from '$lib/stores/settings';
 	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
-
-	interface ModelInfo {
-		id: string;
-		filename: string;
-		url: string;
-		size_bytes: number;
-		description: string;
-		downloaded: boolean;
-	}
-
-	interface DownloadProgress {
-		downloaded: number;
-		total: number;
-		speed_bps: number;
-		stage: string;
-	}
+	import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
+	import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
 
 	let models = $state<ModelInfo[]>([]);
 	let activeModelPath = $state<string | null>(null);

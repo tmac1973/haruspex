@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { IPC } from '$lib/ipc/commands';
 import { labelArg, resolveShellPath, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
@@ -284,7 +285,7 @@ function textWriteExecutor(
  * Falls back to the chat-mode executor otherwise.
  */
 function shellAwareWriteText() {
-	const chat = textWriteExecutor('fs_write_text', 'fs_write_text');
+	const chat = textWriteExecutor(IPC.fs_write_text, 'fs_write_text');
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
 		if (!(ctx.shellMode && ctx.shellAllowWrite)) return chat(args, ctx);
 		const err = validateTextContent(args, 'fs_write_text');
@@ -523,7 +524,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: textWriteExecutor('fs_write_docx', 'fs_write_docx')
+	execute: textWriteExecutor(IPC.fs_write_docx, 'fs_write_docx')
 });
 
 // Markdown→PDF tool. Always exposed (the Python toggle no longer hides
@@ -552,7 +553,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: textWriteExecutor('fs_write_pdf', 'fs_write_pdf')
+	execute: textWriteExecutor(IPC.fs_write_pdf, 'fs_write_pdf')
 });
 
 registerTool({
@@ -578,7 +579,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: spreadsheetWriteExecutor('fs_write_xlsx')
+	execute: spreadsheetWriteExecutor(IPC.fs_write_xlsx)
 });
 
 registerTool({
@@ -604,7 +605,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: textWriteExecutor('fs_write_odt', 'fs_write_odt')
+	execute: textWriteExecutor(IPC.fs_write_odt, 'fs_write_odt')
 });
 
 registerTool({
@@ -626,7 +627,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: spreadsheetWriteExecutor('fs_write_ods')
+	execute: spreadsheetWriteExecutor(IPC.fs_write_ods)
 });
 
 // Legacy hand-rolled OOXML PPTX path. Same arrangement as fs_write_pdf:
@@ -652,7 +653,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: slidesWriteExecutor('fs_write_pptx')
+	execute: slidesWriteExecutor(IPC.fs_write_pptx)
 });
 
 registerTool({
@@ -674,7 +675,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: slidesWriteExecutor('fs_write_odp')
+	execute: slidesWriteExecutor(IPC.fs_write_odp)
 });
 
 registerTool({

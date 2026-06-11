@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { IPC } from '$lib/ipc/commands';
 	import { onMount } from 'svelte';
 	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
 	import { createCopyAction } from '$lib/utils/clipboard.svelte';
+	import type { CombinedSearchStats } from '$lib/ipc/gen/CombinedSearchStats';
+	import type { EngineLifetimeStats } from '$lib/ipc/gen/EngineLifetimeStats';
+	import type { EngineSessionStats } from '$lib/ipc/gen/EngineSessionStats';
+	import type { GlobalCounters } from '$lib/ipc/gen/GlobalCounters';
+	import type { SearchFailureKind } from '$lib/ipc/gen/SearchFailureKind';
 
 	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'crashes' | 'debug' | 'tools' | 'stats';
 
@@ -11,8 +17,9 @@
 		onclose: () => void;
 	}
 
-	// Stats payload shape returned by the Rust `get_search_stats` command.
-	type FailureKey = 'http' | 'rate_limited' | 'parse' | 'empty' | 'network' | 'timeout' | 'other';
+	// Stats payload shape returned by the Rust `get_search_stats` command —
+	// ts-rs-generated from the Rust structs.
+	type FailureKey = SearchFailureKind;
 	const FAILURE_KEYS: FailureKey[] = [
 		'http',
 		'rate_limited',
@@ -32,47 +39,7 @@
 		other: 'Other'
 	};
 
-	interface SessionEngine {
-		engine: string;
-		attempts: number;
-		successes: number;
-		failures_by_kind: Partial<Record<FailureKey, number>>;
-		total_latency_ms: number;
-		max_latency_ms: number;
-		last_success_at: number | null;
-		last_failure_at: number | null;
-		first_choice_attempts: number;
-		fallback_attempts: number;
-		fallback_successes: number;
-	}
-	interface LifetimeEngine {
-		engine: string;
-		attempts: number;
-		successes: number;
-		fail_http: number;
-		fail_rate_limited: number;
-		fail_parse: number;
-		fail_empty: number;
-		fail_network: number;
-		fail_timeout: number;
-		fail_other: number;
-		total_latency_ms: number;
-		max_latency_ms: number;
-		last_success_at: number | null;
-		last_failure_at: number | null;
-		first_choice_attempts: number;
-		fallback_attempts: number;
-		fallback_successes: number;
-	}
-	interface SessionGlobals {
-		cache_hits: number;
-		total_queries: number;
-		all_engines_failed: number;
-	}
-	interface CombinedStats {
-		session: { engines: SessionEngine[]; globals: SessionGlobals };
-		lifetime: { engines: LifetimeEngine[]; globals: Record<string, number> };
-	}
+	type CombinedStats = CombinedSearchStats;
 
 	interface UnifiedRow {
 		engine: string;
@@ -144,17 +111,17 @@
 	}
 
 	const tabCommands: Record<Exclude<LogTab, 'crashes' | 'debug' | 'tools' | 'stats'>, string> = {
-		app: 'get_app_logs',
-		llm: 'get_server_logs',
-		tts: 'get_tts_logs',
-		whisper: 'get_whisper_logs'
+		app: IPC.get_app_logs,
+		llm: IPC.get_server_logs,
+		tts: IPC.get_tts_logs,
+		whisper: IPC.get_whisper_logs
 	};
 
 	const clearCommands: Record<Exclude<LogTab, 'crashes' | 'debug' | 'tools' | 'stats'>, string> = {
-		app: 'clear_app_logs',
-		llm: 'clear_server_logs',
-		tts: 'clear_tts_logs',
-		whisper: 'clear_whisper_logs'
+		app: IPC.clear_app_logs,
+		llm: IPC.clear_server_logs,
+		tts: IPC.clear_tts_logs,
+		whisper: IPC.clear_whisper_logs
 	};
 
 	const tabLabels: Record<LogTab, string> = {
@@ -202,7 +169,7 @@
 		}
 	}
 
-	function normalizeSession(e: SessionEngine): UnifiedRow {
+	function normalizeSession(e: EngineSessionStats): UnifiedRow {
 		const failures: Record<FailureKey, number> = {
 			http: e.failures_by_kind.http ?? 0,
 			rate_limited: e.failures_by_kind.rate_limited ?? 0,
@@ -227,7 +194,7 @@
 		};
 	}
 
-	function normalizeLifetime(e: LifetimeEngine): UnifiedRow {
+	function normalizeLifetime(e: EngineLifetimeStats): UnifiedRow {
 		return {
 			engine: e.engine,
 			attempts: e.attempts,
@@ -270,7 +237,7 @@
 		return `${Math.floor(s / 86400)}d ago`;
 	}
 
-	function lifetimeGlobalsObj(g: Record<string, number>): SessionGlobals {
+	function lifetimeGlobalsObj(g: CombinedSearchStats['lifetime']['globals']): GlobalCounters {
 		return {
 			cache_hits: g.cache_hits ?? 0,
 			total_queries: g.total_queries ?? 0,
@@ -412,7 +379,7 @@
 				</div>
 			</div>
 			<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
-				{#snippet engineTable(rows: UnifiedRow[], globals: SessionGlobals)}
+				{#snippet engineTable(rows: UnifiedRow[], globals: GlobalCounters)}
 					{#if rows.length === 0}
 						<div class="stats-empty">No engine activity recorded yet.</div>
 					{:else}

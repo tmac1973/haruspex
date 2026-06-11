@@ -1,32 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ChatMessage } from '$lib/api';
+import type { ConversationSummary } from '$lib/ipc/gen/ConversationSummary';
+import type { ConversationWithMessages } from '$lib/ipc/gen/ConversationWithMessages';
+import type { DbMessage } from '$lib/ipc/gen/DbMessage';
 import { logDebug } from '$lib/debug-log';
 
-interface DbMessage {
-	role: string;
-	content: string;
-	tool_calls: string | null;
-	tool_call_id: string | null;
-	/** JSON-serialized SearchStep[] (artifacts + thumbDataUrl + args)
-	 *  captured for assistant messages so inline images / DataFrames /
-	 *  plots survive an app restart. */
-	steps: string | null;
-}
-
-interface DbConversation {
-	id: string;
-	title: string;
-	created_at: number;
-	updated_at: number;
-	messages: DbMessage[];
-}
-
-export interface DbConversationSummary {
-	id: string;
-	title: string;
-	created_at: number;
-	updated_at: number;
-}
+// ts-rs-generated mirrors of the Rust row types, re-exported under the
+// names this module historically used.
+type DbConversation = ConversationWithMessages;
+export type DbConversationSummary = ConversationSummary;
 
 // Marker prefix for multimodal content arrays stored in the DB.
 const MULTIMODAL_PREFIX = '\x00MM\x00';

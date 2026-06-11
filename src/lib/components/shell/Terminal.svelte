@@ -8,31 +8,9 @@
 	import { SerializeAddon } from '@xterm/addon-serialize';
 	import '@xterm/xterm/css/xterm.css';
 	import { getSettings } from '$lib/stores/settings';
-
-	interface SessionContext {
-		os: string;
-		kernel: string;
-		distroId?: string;
-		distroName?: string;
-		distroVersion?: string;
-		shellPath: string;
-		shellName: string;
-		shellVersion?: string;
-		home?: string;
-		hostname?: string;
-	}
-
-	interface SpawnResult {
-		session_id: number;
-		context: SessionContext;
-	}
-
-	interface ShellContextResponse {
-		context: SessionContext;
-		current_cwd: string | null;
-		marker_count: number;
-		completed_commands: number;
-	}
+	import type { SessionContext } from '$lib/ipc/gen/SessionContext';
+	import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
+	import type { ShellSpawnResult } from '$lib/ipc/gen/ShellSpawnResult';
 
 	interface Props {
 		onReady?: (handle: TerminalHandle) => void;
@@ -233,7 +211,7 @@
 		const fit = new FitAddon();
 		// Reuse the existing terminal; xterm holds onto its own resize
 		// addon from createTerminal. We only need a fresh observer.
-		const spawn = await invoke<SpawnResult>('shell_restart', {
+		const spawn = await invoke<ShellSpawnResult>('shell_restart', {
 			sessionId: oldId,
 			cols: term.cols,
 			rows: term.rows,
@@ -265,7 +243,7 @@
 			}
 
 			const shellOverride = getSettings().shellBinary.trim() || null;
-			const spawn = await invoke<SpawnResult>('shell_spawn', {
+			const spawn = await invoke<ShellSpawnResult>('shell_spawn', {
 				cols: t.cols,
 				rows: t.rows,
 				shellOverride

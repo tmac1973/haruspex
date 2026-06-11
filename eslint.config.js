@@ -62,7 +62,8 @@ export default ts.config(
 			'.svelte-kit/',
 			'dist/',
 			'node_modules/',
-			'src-tauri/'
+			'src-tauri/',
+			'src/lib/ipc/gen/'
 		]
 	}
 );

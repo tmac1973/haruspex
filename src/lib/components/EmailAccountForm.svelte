@@ -13,19 +13,9 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { untrack } from 'svelte';
 	import type { EmailAccount, EmailProviderId, EmailTlsMode } from '$lib/stores/settings';
+	import type { EmailProviderPreset } from '$lib/ipc/gen/EmailProviderPreset';
 
-	interface ProviderPreset {
-		id: string;
-		label: string;
-		imap_host: string;
-		imap_port: number;
-		imap_tls: EmailTlsMode;
-		smtp_host: string;
-		smtp_port: number;
-		smtp_tls: EmailTlsMode;
-		app_password_url: string;
-		requires_2fa: boolean;
-	}
+	type ProviderPreset = EmailProviderPreset;
 
 	interface Props {
 		account: EmailAccount;
