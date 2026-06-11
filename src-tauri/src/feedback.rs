@@ -14,7 +14,8 @@
 use serde::Serialize;
 
 use crate::app_log;
-use crate::db::{Database, LifetimeStatsSnapshot};
+use crate::db::Database;
+use crate::proxy::stats::LifetimeStatsSnapshot;
 use crate::proxy::stats::{SearchStats, SessionStatsSnapshot};
 use crate::server::LlamaServer;
 use crate::tts::TtsEngine;

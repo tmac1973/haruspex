@@ -1,9 +1,13 @@
-//! Search statistics — in-memory session counters and the typed failure
-//! kinds shared with the lifetime SQLite store.
+//! Search statistics — in-memory session counters, the typed failure
+//! kinds, and the `StatSink` trait behind which lifetime persistence
+//! hides.
 //!
 //! The session store (`SearchStats`) is reset at app startup. Lifetime
-//! persistence lives in `db.rs`; callers in `proxy/mod.rs` and `search.rs`
-//! update both sides per outcome.
+//! persistence is whatever implements `StatSink` (the SQLite `Database`
+//! in production); callers in `proxy/mod.rs` and `search.rs` update both
+//! sides per outcome via the `record_*` helpers below. The proxy module
+//! deliberately knows nothing about the db layer — the dependency points
+//! the other way (db implements this module's trait).
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -100,6 +104,181 @@ pub struct RecordedOutcome {
     /// Either Ok(latency_ms) on success or Err(kind) on failure.
     pub result: Result<u64, SearchFailureKind>,
     pub position: Option<AutoPosition>,
+}
+
+/// Incremental change to a single engine's lifetime stats row.
+///
+/// Caller is expected to set `attempt = true` for every recorded outcome and
+/// exactly one of: `success = true` OR `failure_column = Some(...)`. The
+/// `failure_column` must be one of the seven `fail_*` column names defined
+/// in `search_stats_engines`; passing anything else returns an error rather
+/// than silently corrupting the SQL.
+#[derive(Clone, Debug, Default)]
+pub struct EngineStatDelta {
+    pub attempt: bool,
+    pub success: bool,
+    pub latency_ms: u64,
+    pub failure_column: Option<&'static str>,
+    pub now_ms: i64,
+    pub first_choice: bool,
+    pub fallback: bool,
+    pub fallback_success: bool,
+}
+
+/// Snapshot of a single engine's lifetime stats row. Mirrors the column
+/// layout so the frontend can render it without re-fetching per row.
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct EngineLifetimeStats {
+    pub engine: String,
+    #[ts(type = "number")]
+    pub attempts: u64,
+    #[ts(type = "number")]
+    pub successes: u64,
+    #[ts(type = "number")]
+    pub fail_http: u64,
+    #[ts(type = "number")]
+    pub fail_rate_limited: u64,
+    #[ts(type = "number")]
+    pub fail_parse: u64,
+    #[ts(type = "number")]
+    pub fail_empty: u64,
+    #[ts(type = "number")]
+    pub fail_network: u64,
+    #[ts(type = "number")]
+    pub fail_timeout: u64,
+    #[ts(type = "number")]
+    pub fail_other: u64,
+    #[ts(type = "number")]
+    pub total_latency_ms: u64,
+    #[ts(type = "number")]
+    pub max_latency_ms: u64,
+    #[ts(type = "number | null")]
+    pub last_success_at: Option<i64>,
+    #[ts(type = "number | null")]
+    pub last_failure_at: Option<i64>,
+    #[ts(type = "number")]
+    pub first_choice_attempts: u64,
+    #[ts(type = "number")]
+    pub fallback_attempts: u64,
+    #[ts(type = "number")]
+    pub fallback_successes: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct LifetimeStatsSnapshot {
+    pub engines: Vec<EngineLifetimeStats>,
+    #[ts(as = "HashMap<String, u32>")]
+    pub globals: HashMap<String, u64>,
+}
+
+/// Lifetime persistence seam for search stats. The proxy records through
+/// this trait instead of touching the db layer directly; `Database`
+/// implements it in `db/stats.rs` (db depends on proxy, not vice-versa).
+///
+/// The two `record_*` methods are fire-and-forget: implementations must
+/// swallow (and log) persistence failures, because a transient DB error
+/// shouldn't break the search itself.
+pub trait StatSink: Send + Sync {
+    /// Apply one engine-attempt delta to the lifetime store.
+    fn record_engine(&self, engine: &str, delta: &EngineStatDelta);
+    /// Bump one global counter (keyed by `GlobalCounter::db_key`).
+    fn record_global(&self, counter: &str);
+    /// Read the full lifetime snapshot (for the stats UI).
+    fn lifetime_snapshot(&self) -> Result<LifetimeStatsSnapshot, String>;
+    /// Reset all lifetime stats.
+    fn reset_lifetime(&self) -> Result<(), String>;
+}
+
+/// Managed-state wrapper so Tauri commands can inject the sink without
+/// naming the concrete implementation.
+pub struct StatSinkHandle(pub std::sync::Arc<dyn StatSink>);
+
+/// Which global counter to bump in `record_global_both`.
+#[derive(Clone, Copy)]
+pub(crate) enum GlobalCounter {
+    Query,
+    CacheHit,
+    AllEnginesFailed,
+}
+
+impl GlobalCounter {
+    fn db_key(self) -> &'static str {
+        match self {
+            GlobalCounter::Query => "total_queries",
+            GlobalCounter::CacheHit => "cache_hits",
+            GlobalCounter::AllEnginesFailed => "all_engines_failed",
+        }
+    }
+}
+
+/// Update both the in-memory session counters and the lifetime store
+/// for a single engine attempt. Persistence failures are logged (by the
+/// sink) but don't propagate — a transient DB error shouldn't break the
+/// search itself.
+pub(super) fn record_outcome_both(
+    stats: &SearchStats,
+    sink: &dyn StatSink,
+    engine: &str,
+    outcome: &RecordedOutcome,
+) {
+    stats.record_outcome(engine, outcome);
+
+    let now = now_ms();
+    let (success, latency_ms, failure_column) = match &outcome.result {
+        Ok(ms) => (true, *ms, None),
+        Err(kind) => (false, 0, Some(kind.db_column())),
+    };
+    let delta = EngineStatDelta {
+        attempt: true,
+        success,
+        latency_ms,
+        failure_column,
+        now_ms: now,
+        first_choice: matches!(outcome.position, Some(AutoPosition::First)),
+        fallback: matches!(outcome.position, Some(AutoPosition::Fallback)),
+        fallback_success: success && matches!(outcome.position, Some(AutoPosition::Fallback)),
+    };
+    sink.record_engine(engine, &delta);
+}
+
+/// Classify a single engine call's `Result` (success / empty / typed
+/// failure) into a `RecordedOutcome` and persist it through both stores.
+/// Empty results (Ok with no items) are recorded as a `Empty` failure
+/// for stats purposes even though the engine technically succeeded.
+pub(crate) fn record_engine_result(
+    stats: &SearchStats,
+    sink: &dyn StatSink,
+    engine: &str,
+    result: &Result<Vec<super::SearchResult>, SearchFailure>,
+    elapsed_ms: u64,
+    position: Option<AutoPosition>,
+) {
+    let outcome = match result {
+        Ok(r) if r.is_empty() => RecordedOutcome {
+            result: Err(SearchFailureKind::Empty),
+            position,
+        },
+        Ok(_) => RecordedOutcome {
+            result: Ok(elapsed_ms),
+            position,
+        },
+        Err(f) => RecordedOutcome {
+            result: Err(f.kind),
+            position,
+        },
+    };
+    record_outcome_both(stats, sink, engine, &outcome);
+}
+
+pub(crate) fn record_global_both(stats: &SearchStats, sink: &dyn StatSink, counter: GlobalCounter) {
+    match counter {
+        GlobalCounter::Query => stats.record_query(),
+        GlobalCounter::CacheHit => stats.record_cache_hit(),
+        GlobalCounter::AllEnginesFailed => stats.record_all_engines_failed(),
+    }
+    sink.record_global(counter.db_key());
 }
 
 #[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]

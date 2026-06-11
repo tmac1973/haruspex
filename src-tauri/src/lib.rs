@@ -26,7 +26,7 @@ use audio::AudioRecorder;
 use db::Database;
 use inference_queue::InferenceQueue;
 use models::ModelManager;
-use proxy::stats::SearchStats;
+use proxy::stats::{SearchStats, StatSinkHandle};
 use proxy::ProxyState;
 use server::LlamaServer;
 use shell::ShellManager;
@@ -55,7 +55,12 @@ pub fn run() {
         })
         .setup(|app| {
             app.manage(ModelManager::new(app.handle()));
-            app.manage(Database::new(app.handle()).expect("Failed to initialize database"));
+            let database = Database::new(app.handle()).expect("Failed to initialize database");
+            // The proxy records search stats through the StatSink trait
+            // (audit A3); Database is a cloneable handle to one shared
+            // connection, so both managed states hit the same SQLite file.
+            app.manage(StatSinkHandle(std::sync::Arc::new(database.clone())));
+            app.manage(database);
 
             // Initialize PDFium for high-quality PDF text extraction.
             // Falls back to pdf-extract if the bundled libpdfium is missing.

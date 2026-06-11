@@ -5,8 +5,9 @@
 //! `proxy::proxy_image_search` / `proxy::proxy_fetch_url_images`.
 
 use super::bypass::apply_proxy;
+use super::config::FETCH_TIMEOUT;
 use super::extract::{strip_html_tags, validate_url, validating_redirect_policy, USER_AGENT};
-use super::{ProxyConfig, FETCH_TIMEOUT};
+use super::ProxyConfig;
 use log::info;
 use scraper::{Html, Selector};
 use serde::Serialize;
@@ -411,4 +412,148 @@ pub(super) fn parse_commons_imageinfo(
         });
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_page_images_resolves_relative_urls() {
+        let base = url::Url::parse("https://example.com/products/mobo/").unwrap();
+        let html = r#"<html><body>
+            <img src="hero.png" alt="Hero shot">
+            <img src="/static/gallery/side.jpg" alt="Side">
+            <img src="https://cdn.example.com/top.webp" alt="Top" width="1200" height="800">
+        </body></html>"#;
+        let images = extract_page_images(html, &base);
+        assert_eq!(images.len(), 3);
+        // Relative URL resolved against the page directory.
+        assert!(images
+            .iter()
+            .any(|i| i.src == "https://example.com/products/mobo/hero.png"));
+        // Absolute-path URL resolved against the page host.
+        assert!(images
+            .iter()
+            .any(|i| i.src == "https://example.com/static/gallery/side.jpg"));
+        // Fully-qualified URL passes through unchanged with width/height.
+        let top = images
+            .iter()
+            .find(|i| i.src == "https://cdn.example.com/top.webp")
+            .unwrap();
+        assert_eq!(top.alt, "Top");
+        assert_eq!(top.width, Some(1200));
+        assert_eq!(top.height, Some(800));
+    }
+
+    #[test]
+    fn extract_page_images_picks_up_og_and_twitter_meta() {
+        let base = url::Url::parse("https://example.com/article").unwrap();
+        let html = r#"<html><head>
+            <meta property="og:image" content="https://cdn.example.com/og.jpg">
+            <meta name="twitter:image" content="https://cdn.example.com/twitter.jpg">
+            <link rel="image_src" href="https://cdn.example.com/legacy.jpg">
+        </head><body></body></html>"#;
+        let images = extract_page_images(html, &base);
+        let srcs: Vec<&str> = images.iter().map(|i| i.src.as_str()).collect();
+        assert!(srcs.contains(&"https://cdn.example.com/og.jpg"));
+        assert!(srcs.contains(&"https://cdn.example.com/twitter.jpg"));
+        assert!(srcs.contains(&"https://cdn.example.com/legacy.jpg"));
+    }
+
+    #[test]
+    fn extract_page_images_deduplicates_and_filters_garbage() {
+        let base = url::Url::parse("https://example.com/").unwrap();
+        let html = r#"<html><body>
+            <img src="photo.jpg" alt="x">
+            <img src="photo.jpg" alt="y">
+            <img src="" alt="empty">
+            <img src="data:image/gif;base64,R0lGOD" alt="tiny pixel">
+            <img src="javascript:alert(1)" alt="bad scheme">
+        </body></html>"#;
+        let images = extract_page_images(html, &base);
+        // Duplicate photo.jpg collapses to one entry
+        assert_eq!(
+            images
+                .iter()
+                .filter(|i| i.src == "https://example.com/photo.jpg")
+                .count(),
+            1
+        );
+        // Empty src is dropped
+        assert!(!images.iter().any(|i| i.alt == "empty"));
+        // Short data: URL is dropped (below threshold)
+        assert!(!images.iter().any(|i| i.alt == "tiny pixel"));
+        // Bad scheme is dropped
+        assert!(!images.iter().any(|i| i.alt == "bad scheme"));
+    }
+
+    #[test]
+    fn parse_commons_imageinfo_extracts_fields() {
+        // Minimal response shape mimicking the Commons imageinfo API.
+        // Includes two pages to verify title-order projection — the
+        // Commons `pages` map is unordered, so we rely on the ordered
+        // `titles` slice to define result order.
+        let json = serde_json::json!({
+            "query": {
+                "pages": {
+                    "99": {
+                        "title": "File:Beta.png",
+                        "imageinfo": [{
+                            "url": "https://upload.wikimedia.org/full/beta.png",
+                            "thumburl": "https://upload.wikimedia.org/thumb/beta.png",
+                            "width": 1024,
+                            "height": 768,
+                            "mime": "image/png",
+                            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Beta.png",
+                            "extmetadata": {
+                                "LicenseShortName": { "value": "CC BY-SA 4.0" },
+                                "Artist": { "value": "<a href=\"//foo\">Jane Doe</a>" }
+                            }
+                        }]
+                    },
+                    "42": {
+                        "title": "File:Alpha.jpg",
+                        "imageinfo": [{
+                            "url": "https://upload.wikimedia.org/full/alpha.jpg",
+                            "thumburl": "https://upload.wikimedia.org/thumb/alpha.jpg",
+                            "width": 2000,
+                            "height": 1500,
+                            "mime": "image/jpeg",
+                            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Alpha.jpg",
+                            "extmetadata": {
+                                "LicenseShortName": { "value": "Public domain" },
+                                "Artist": { "value": "John Doe" }
+                            }
+                        }]
+                    }
+                }
+            }
+        });
+        let ordered = vec!["File:Alpha.jpg".to_string(), "File:Beta.png".to_string()];
+        let out = parse_commons_imageinfo(&json, &ordered);
+        // Result order matches the ordered titles slice, not the JSON map order.
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].title, "File:Alpha.jpg");
+        assert_eq!(out[0].url, "https://upload.wikimedia.org/full/alpha.jpg");
+        assert_eq!(out[0].width, 2000);
+        assert_eq!(out[0].license, "Public domain");
+        assert_eq!(out[0].attribution, "John Doe");
+
+        assert_eq!(out[1].title, "File:Beta.png");
+        assert_eq!(out[1].license, "CC BY-SA 4.0");
+        // HTML tags in the Artist field are stripped.
+        assert_eq!(out[1].attribution, "Jane Doe");
+    }
+
+    #[test]
+    fn parse_commons_imageinfo_returns_empty_on_malformed() {
+        let empty = serde_json::json!({});
+        assert!(parse_commons_imageinfo(&empty, &["File:X.jpg".to_string()]).is_empty());
+
+        let no_imageinfo = serde_json::json!({
+            "query": { "pages": { "1": { "title": "File:Y.jpg" } } }
+        });
+        assert!(parse_commons_imageinfo(&no_imageinfo, &["File:Y.jpg".to_string()]).is_empty());
+    }
 }
