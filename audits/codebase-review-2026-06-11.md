@@ -172,3 +172,26 @@ Accepted/benign and intentionally not re-raised: C6 (ImageViewerModal is a light
 6. Ship the ts-rs DTO fallback + `commands.ts` name map (closes X2/X3 without waiting on specta).
 7. `proxy/` cleanup as one arc: split `mod.rs` (A5), extract a `SearchProvider` seam (F13 + R-search), and move stat-writing behind it (A3).
 8. Start component testing with the already-installed `@testing-library/svelte`; consider a minimal tauri-driver smoke test for the first-run flow.
+
+---
+
+## Remediation status (updated 2026-06-11, same day)
+
+The action plan in §4 was executed end to end as six sequential PRs, all merged:
+
+| PR | Arc | Closes |
+|---|---|---|
+| #109 `fix/security-hardening` | DOMPurify on all `{@html}` sinks + CSP; per-hop redirect validation + IPv6/bracketed-literal SSRF fixes; shared char-boundary truncation | 1.1–1.6, 1.8 |
+| #110 `fix/correctness-batch` | IMAP CRLF sanitization; download sha256 enforcement + 206-resume fix + streaming hashing; docx tag-boundary/entity fixes; compaction artifact remap **+ steps persistence** (worse than audited: compaction also wiped persisted artifacts); transactional replace_messages; non-blocking rate limit; sandbox boot-timeout; turn-state ownership; xlsx NaN; tool-doc drift | 1.7, 1.9–1.17 |
+| #111 `test/coverage-gaps` | 21 agent-loop tests, +23 Rust tests (proxy extract/paywall/xlsx/time_util), 52 store/tool tests (sandboxApproval, email, db, runShellTurn); tautological tests removed | §2 items 1–3, 5–8 |
+| #112 `refactor/typed-ipc` | ts-rs: 24 generated boundary types replace hand mirrors (4 latent drift bugs fixed); `check-ipc.mjs` command-name guard + CI freshness checks | X2, X3/D8 (§3 ranks 2–3) |
+| #113 `refactor/proxy-arc` | proxy/mod.rs split (config/state/mod); StatSink trait inversion (proxy no longer imports db); timed_search + engine result-collection dedup. Net −202 lines | A3, A5, F13, R-search (§3 ranks 4–7) |
+| #114 `test/component-testing` | svelteTesting wired; 19 component tests incl. XSS-sanitization regressions for ChatMessage and SearchStep artifacts, and a pin on the artifact iframe's `sandbox="allow-scripts"` | §2(d) component testing |
+
+**Still open, carried forward:**
+- §3 rank 1 — `chat.svelte.ts` God-store split (largest remaining structural item; deliberately not bundled into these arcs)
+- §3 rank 8 — job-lifecycle service layer (act when the subsystem grows)
+- §3 rank 10 — `.btn` design-pass consolidation
+- DNS-rebinding hardening for the proxy (per-URL validation can't see resolution; noted in PR #109)
+- E2E/tauri-driver smoke test; CSP verification in a packaged build (CSP applies to prod bundles only — verify interactive plots + Pyodide in the next release build)
+- Follow-ups recorded in PR #111: try/catch around `executeTool` in `iteration.ts`, durationMs clamp, email `max_results` doc drift
