@@ -5,7 +5,7 @@
 //! `proxy::proxy_image_search` / `proxy::proxy_fetch_url_images`.
 
 use super::bypass::apply_proxy;
-use super::extract::{strip_html_tags, validate_url, USER_AGENT};
+use super::extract::{strip_html_tags, validate_url, validating_redirect_policy, USER_AGENT};
 use super::{ProxyConfig, FETCH_TIMEOUT};
 use log::info;
 use scraper::{Html, Selector};
@@ -51,7 +51,7 @@ pub async fn proxy_fetch_url_images(
     let client = apply_proxy(
         reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(5)),
+            .redirect(validating_redirect_policy()),
         proxy.as_ref(),
     )?
     .build()
@@ -251,7 +251,7 @@ pub async fn proxy_image_search(
     let client = apply_proxy(
         reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(5)),
+            .redirect(validating_redirect_policy()),
         proxy.as_ref(),
     )?
     .build()

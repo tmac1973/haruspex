@@ -242,7 +242,7 @@ impl TtsEngine {
             "TTS request: {} chars, voice='{}', text: {:?}",
             text.len(),
             voice,
-            &text[..text.len().min(100)]
+            crate::text_util::truncate_at_char_boundary(text, 100)
         );
 
         let client = http_client(Duration::from_secs(120));

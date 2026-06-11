@@ -278,7 +278,7 @@ pub async fn fs_read_xlsx(
     if csv.len() > MAX_XLSX_CHARS {
         return Ok(format!(
             "{}\n\n[... truncated: {} characters total, showing first {}]",
-            &csv[..MAX_XLSX_CHARS],
+            crate::text_util::truncate_at_char_boundary(&csv, MAX_XLSX_CHARS),
             csv.len(),
             MAX_XLSX_CHARS
         ));

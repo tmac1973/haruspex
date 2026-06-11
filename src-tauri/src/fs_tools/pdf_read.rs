@@ -247,7 +247,7 @@ pub(super) async fn read_pdf_at_path(resolved: &std::path::Path) -> Result<Strin
     if trimmed.len() > MAX_PDF_TEXT_CHARS {
         return Ok(format!(
             "{}\n\n[... truncated: {} characters total, showing first {}]",
-            &trimmed[..MAX_PDF_TEXT_CHARS],
+            crate::text_util::truncate_at_char_boundary(trimmed, MAX_PDF_TEXT_CHARS),
             trimmed.len(),
             MAX_PDF_TEXT_CHARS
         ));

@@ -37,7 +37,7 @@ pub(super) async fn fetch_and_extract(
     let client = apply_proxy(
         reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(5)),
+            .redirect(validating_redirect_policy()),
         proxy,
     )?
     .build()
@@ -84,27 +84,58 @@ pub(super) async fn fetch_and_extract(
 
 pub(crate) fn validate_url(url: &str) -> Result<(), String> {
     let parsed = url::Url::parse(url).map_err(|_| "Invalid URL".to_string())?;
+    validate_parsed_url(&parsed)
+}
 
-    // Only allow HTTP(S)
+/// Scheme + host SSRF checks on an already-parsed URL. Matching on
+/// `url::Host` (not `host_str`) matters for IPv6: `host_str` returns the
+/// bracketed form (`[::1]`), which doesn't parse as an `IpAddr` and would
+/// sail past a string-based check.
+pub(crate) fn validate_parsed_url(parsed: &url::Url) -> Result<(), String> {
     match parsed.scheme() {
         "http" | "https" => {}
         scheme => return Err(format!("Unsupported URL scheme: {}", scheme)),
     }
 
-    // Reject private/local IPs (SSRF protection)
-    if let Some(host) = parsed.host_str() {
-        if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0" {
-            return Err("Local URLs are not allowed".to_string());
+    match parsed.host() {
+        Some(url::Host::Domain(domain)) => {
+            let lower = domain.to_ascii_lowercase();
+            if lower == "localhost" || lower.ends_with(".localhost") {
+                return Err("Local URLs are not allowed".to_string());
+            }
         }
-
-        if let Ok(ip) = host.parse::<IpAddr>() {
-            if is_private_ip(&ip) {
+        Some(url::Host::Ipv4(ip)) => {
+            if is_private_ip(&IpAddr::V4(ip)) {
                 return Err("Private IP addresses are not allowed".to_string());
             }
         }
+        Some(url::Host::Ipv6(ip)) => {
+            if is_private_ip(&IpAddr::V6(ip)) {
+                return Err("Private IP addresses are not allowed".to_string());
+            }
+        }
+        None => return Err("URL has no host".to_string()),
     }
 
     Ok(())
+}
+
+/// Redirect policy that re-validates every hop. reqwest's stock policies
+/// follow 3xx blindly, so a public page could answer
+/// `302 Location: http://127.0.0.1:8765/...` and the response from inside
+/// the private network would be read as if it came from the original
+/// target. Every client that fetches untrusted external URLs must use
+/// this instead of `Policy::limited`.
+pub(crate) fn validating_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() > 5 {
+            return attempt.error("too many redirects");
+        }
+        match validate_parsed_url(attempt.url()) {
+            Ok(()) => attempt.follow(),
+            Err(reason) => attempt.error(format!("redirect blocked: {}", reason)),
+        }
+    })
 }
 
 pub(super) fn is_private_ip(ip: &IpAddr) -> bool {
@@ -116,7 +147,18 @@ pub(super) fn is_private_ip(ip: &IpAddr) -> bool {
                 || v4.is_broadcast()
                 || v4.is_unspecified()
         }
-        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified(),
+        IpAddr::V6(v6) => {
+            // An IPv4-mapped address (::ffff:a.b.c.d) reaches the V4 network —
+            // judge it by the embedded V4 address.
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_private_ip(&IpAddr::V4(v4));
+            }
+            let seg0 = v6.segments()[0];
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (seg0 & 0xfe00) == 0xfc00 // unique-local fc00::/7
+                || (seg0 & 0xffc0) == 0xfe80 // link-local fe80::/10
+        }
     }
 }
 
@@ -137,14 +179,9 @@ pub(super) fn extract_text(html: &str) -> String {
         .collect::<Vec<&str>>()
         .join("\n");
 
-    // Truncate. Back off to a char boundary first — slicing at a fixed byte
-    // index panics when a multi-byte character straddles it.
+    // Truncate without splitting a UTF-8 code point.
     if cleaned.len() > MAX_FETCH_LENGTH {
-        let mut end = MAX_FETCH_LENGTH;
-        while !cleaned.is_char_boundary(end) {
-            end -= 1;
-        }
-        let truncated = &cleaned[..end];
+        let truncated = crate::text_util::truncate_at_char_boundary(&cleaned, MAX_FETCH_LENGTH);
         // Find the last complete word
         if let Some(pos) = truncated.rfind(char::is_whitespace) {
             format!("{}...", &truncated[..pos])

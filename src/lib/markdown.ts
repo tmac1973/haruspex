@@ -1,6 +1,7 @@
 import { Marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
 import { classifyShellRisk } from '$lib/shell/risky-commands';
+import { sanitizeHtml } from '$lib/sanitize';
 
 // Register only the languages we need to keep the bundle small
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -42,12 +43,12 @@ function renderShellHeaderExtras(text: string): string {
 				)
 				.join('')
 		: '';
-	// Inline onclick dispatches a CustomEvent the Shell tab listens for.
-	// Outside the Shell tab the .paste-btn / .run-btn are hidden via
-	// the body:not(.shell-tab-active) CSS rule, so this is dead UI in
-	// chat or jobs context.
-	const pasteBtn = `<button class="paste-btn" onclick="document.dispatchEvent(new CustomEvent('hsp-shell-paste', { detail: this.closest('.code-block').querySelector('code').textContent }))" title="Type the command at the shell prompt — does NOT press Enter">Paste</button>`;
-	const runBtn = `<button class="run-btn" onclick="document.dispatchEvent(new CustomEvent('hsp-shell-run', { detail: this.closest('.code-block').querySelector('code').textContent }))" title="Paste, press Enter, then send the command's output back to the assistant for analysis">Run</button>`;
+	// data-action clicks are routed by markdown-actions.ts to a CustomEvent
+	// the Shell tab listens for. Outside the Shell tab the .paste-btn /
+	// .run-btn are hidden via the body:not(.shell-tab-active) CSS rule, so
+	// this is dead UI in chat or jobs context.
+	const pasteBtn = `<button class="paste-btn" data-action="shell-paste" title="Type the command at the shell prompt — does NOT press Enter">Paste</button>`;
+	const runBtn = `<button class="run-btn" data-action="shell-run" title="Paste, press Enter, then send the command's output back to the assistant for analysis">Run</button>`;
 	return `${chips}${pasteBtn}${runBtn}`;
 }
 
@@ -64,7 +65,7 @@ function renderCodeBlock(text: string, lang: string | undefined, showLangLabel: 
 			${langLabel}
 			<div class="code-actions">
 				${shellExtras}
-				<button class="copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').textContent)">Copy</button>
+				<button class="copy-btn" data-action="copy">Copy</button>
 			</div>
 		</div>
 		<pre><code class="${language ? `hljs language-${language}` : ''}">${highlighted}</code></pre>
@@ -595,5 +596,8 @@ export function renderMarkdown(text: string): string {
 	const sanitized = sanitizeForRender(text);
 	const withThinking = convertThinkingBlocks(sanitized);
 	const withFixedTables = fixMalformedTables(withThinking);
-	return marked.parse(withFixedTables) as string;
+	// marked passes raw HTML in the source text through verbatim, and this
+	// output lands in the DOM via {@html} — sanitize the final HTML so
+	// model-authored markup can't execute in the privileged webview.
+	return sanitizeHtml(marked.parse(withFixedTables) as string);
 }
