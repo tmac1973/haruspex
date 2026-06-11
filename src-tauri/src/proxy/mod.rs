@@ -111,15 +111,24 @@ impl ProxyState {
         *cursor = (*cursor + 1) % AUTO_ENGINES.len();
     }
 
-    fn rate_limit_engine(&self, engine: &str, interval: Duration) {
-        let mut last_times = self.last_search_time.lock().unwrap();
-        if let Some(last_time) = last_times.get(engine) {
-            let elapsed = last_time.elapsed();
-            if elapsed < interval {
-                std::thread::sleep(interval - elapsed);
-            }
+    async fn rate_limit_engine(&self, engine: &str, interval: Duration) {
+        // Reserve the next available slot under the lock, then sleep outside
+        // it. The previous version did std::thread::sleep while holding the
+        // guard, which blocked a tokio worker thread for up to 6 s and
+        // serialized searches across *all* engines (they share the one map).
+        let wait = {
+            let mut last_times = self.last_search_time.lock().unwrap();
+            let now = Instant::now();
+            let next = match last_times.get(engine) {
+                Some(last) => (*last + interval).max(now),
+                None => now,
+            };
+            last_times.insert(engine.to_string(), next);
+            next - now
+        };
+        if !wait.is_zero() {
+            tokio::time::sleep(wait).await;
         }
-        last_times.insert(engine.to_string(), Instant::now());
     }
 
     fn record_failure(&self, engine: &str) {
@@ -358,7 +367,9 @@ pub async fn proxy_search(
             .await?
         }
         _ => {
-            state.rate_limit_engine("duckduckgo", RATE_LIMIT_INTERVAL);
+            state
+                .rate_limit_engine("duckduckgo", RATE_LIMIT_INTERVAL)
+                .await;
             info!("Searching DDG for: {} (recency: {})", query, recency);
             let start = Instant::now();
             let r = search_duckduckgo(&query, recency, proxy_ref).await;
@@ -930,13 +941,15 @@ mod tests {
         assert!(state.is_engine_healthy("mojeek", ENGINE_COOLDOWN));
     }
 
-    #[test]
-    fn per_engine_rate_limit() {
+    #[tokio::test]
+    async fn per_engine_rate_limit() {
         let state = ProxyState::new();
         // First call should not block
-        state.rate_limit_engine("brave_html", RATE_LIMIT_INTERVAL);
+        state
+            .rate_limit_engine("brave_html", RATE_LIMIT_INTERVAL)
+            .await;
         // Different engine should also not block
-        state.rate_limit_engine("mojeek", RATE_LIMIT_INTERVAL);
+        state.rate_limit_engine("mojeek", RATE_LIMIT_INTERVAL).await;
         // Verify both tracked independently
         let times = state.last_search_time.lock().unwrap();
         assert!(times.contains_key("brave_html"));

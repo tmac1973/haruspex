@@ -485,7 +485,7 @@ pub(super) async fn search_auto(
     let mut last_error = String::new();
 
     for (idx, engine) in ordered.iter().enumerate() {
-        state.rate_limit_engine(engine, rate_interval);
+        state.rate_limit_engine(engine, rate_interval).await;
         info!(
             "Auto-search trying {} for: {} (recency: {})",
             engine, query, recency
