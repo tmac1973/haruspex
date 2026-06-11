@@ -114,12 +114,9 @@ mod imp {
             assert_eq!(info.os, "linux");
         }
 
-        #[test]
-        fn parses_os_release_returns_something_or_nothing() {
-            // Just exercise the parser — on CI / Linux test boxes this
-            // usually returns Some(...).
-            let (_id, _name, _version) = parse_os_release();
-        }
+        // No test for parse_os_release: it reads /etc/os-release directly
+        // (no injectable input), so any assertion on its output would just
+        // restate whatever distro the test box happens to run.
     }
 }
 

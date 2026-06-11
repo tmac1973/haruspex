@@ -230,3 +230,135 @@ pub(super) fn strip_html_tags(s: &str) -> String {
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
+
+// extract_text truncation (including the multibyte-on-the-boundary
+// regression) and validate_url / validate_parsed_url SSRF cases are
+// covered in `proxy::tests` (mod.rs); the tests here cover the helpers
+// and selection paths that module doesn't touch.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- diagnostic_snippet ------------------------------------------------
+
+    #[test]
+    fn diagnostic_snippet_starts_200_bytes_before_needle() {
+        let html = format!("{}NEEDLE{}", "a".repeat(300), "b".repeat(50));
+        let snippet = diagnostic_snippet(&html, &["NEEDLE"], 250);
+        // Needle is at byte 300, so the snippet starts at byte 100 and the
+        // needle sits 200 chars in.
+        assert!(snippet.starts_with("aaa"));
+        assert!(snippet.contains("NEEDLE"));
+        assert_eq!(snippet.chars().count(), 250);
+    }
+
+    #[test]
+    fn diagnostic_snippet_tries_needles_in_order() {
+        let html = "alpha beta gamma";
+        let snippet = diagnostic_snippet(html, &["missing", "beta"], 10);
+        assert!(snippet.starts_with("alpha beta"));
+    }
+
+    #[test]
+    fn diagnostic_snippet_falls_back_to_prefix_when_no_needle_matches() {
+        assert_eq!(diagnostic_snippet("hello world", &["zzz"], 5), "hello");
+        assert_eq!(diagnostic_snippet("hello", &[], 99), "hello");
+    }
+
+    #[test]
+    fn diagnostic_snippet_saturates_when_needle_is_near_the_start() {
+        let html = "NEEDLE then some trailing text";
+        let snippet = diagnostic_snippet(html, &["NEEDLE"], 11);
+        assert_eq!(snippet, "NEEDLE then");
+    }
+
+    #[test]
+    fn diagnostic_snippet_backs_off_mid_codepoint_start() {
+        // 100 3-byte chars put the needle at byte 300; start = 300 - 200 =
+        // 100, which is mid-codepoint ('€' boundaries are multiples of 3).
+        // Without the walk-forward loop, slicing html[100..] panics.
+        let html = format!("{}NEEDLE", "€".repeat(100));
+        let snippet = diagnostic_snippet(&html, &["NEEDLE"], 80);
+        assert!(snippet.starts_with('€'));
+        assert!(snippet.contains("NEEDLE"));
+    }
+
+    // -- strip_html_tags ---------------------------------------------------
+
+    #[test]
+    fn strip_html_tags_removes_tags_and_keeps_text() {
+        assert_eq!(strip_html_tags("<p>Hello <b>world</b></p>"), "Hello world");
+    }
+
+    #[test]
+    fn strip_html_tags_collapses_whitespace() {
+        assert_eq!(
+            strip_html_tags("  Hello \n\t <span> big </span>  world  "),
+            "Hello big world"
+        );
+    }
+
+    #[test]
+    fn strip_html_tags_passes_through_plain_text() {
+        assert_eq!(strip_html_tags("no tags here"), "no tags here");
+    }
+
+    #[test]
+    fn strip_html_tags_drops_content_after_unclosed_tag() {
+        // An unterminated '<' swallows the rest of the string — documented
+        // current behavior of the scanner.
+        assert_eq!(strip_html_tags("before<a href=unclosed"), "before");
+    }
+
+    // -- extract_text selection + whitespace cleanup ------------------------
+
+    /// Filler long enough (>100 chars) for try_select_text to accept the
+    /// element as main content.
+    const LONG: &str = "This sentence is repeated to pass the one-hundred-character minimum \
+        that try_select_text enforces on candidate containers.";
+
+    #[test]
+    fn extract_text_falls_back_to_main_when_no_article() {
+        let html =
+            format!("<html><body><nav>Site nav</nav><main><p>{LONG}</p></main></body></html>");
+        let text = extract_text(&html);
+        assert!(text.contains("one-hundred-character minimum"));
+        assert!(!text.contains("Site nav"));
+    }
+
+    #[test]
+    fn extract_text_falls_back_to_role_main() {
+        let html = format!(
+            "<html><body><div role='main'><p>{LONG}</p></div><footer>Foot</footer></body></html>"
+        );
+        let text = extract_text(&html);
+        assert!(text.contains("one-hundred-character minimum"));
+        assert!(!text.contains("Foot"));
+    }
+
+    #[test]
+    fn extract_text_ignores_short_article_and_uses_body() {
+        // The <article> is under 100 chars, so it is rejected as "probably
+        // not the main content" and the whole body text is used instead.
+        let html =
+            format!("<html><body><article>tiny</article><div><p>{LONG}</p></div></body></html>");
+        let text = extract_text(&html);
+        assert!(text.contains("one-hundred-character minimum"));
+        // Body fallback keeps everything, including the short article text.
+        assert!(text.contains("tiny"));
+    }
+
+    #[test]
+    fn extract_text_trims_lines_and_drops_blank_ones() {
+        let html = "<html><body><p>  Line one  </p>\n\n\n<p>\t Line two \t</p></body></html>";
+        assert_eq!(extract_text(html), "Line one\nLine two");
+    }
+
+    #[test]
+    fn extract_text_handles_documents_without_body() {
+        // Fragment parsing still produces a document; this must not panic
+        // and should return the text content.
+        let text = extract_text("just plain text, no markup");
+        assert!(text.contains("just plain text"));
+    }
+}

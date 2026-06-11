@@ -339,4 +339,81 @@ mod tests {
         assert!(content.contains(r#"table:number-columns-repeated="3""#));
         assert!(content.contains(r#"table:number-columns-repeated="1""#));
     }
+
+    fn temp_workdir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("haruspex_xlsx_test_{}", name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn fs_write_then_read_xlsx_round_trip() {
+        let dir = temp_workdir("roundtrip");
+        let wd = dir.to_string_lossy().to_string();
+        let sheets = vec![XlsxSheet {
+            name: "Data".to_string(),
+            rows: vec![
+                vec!["Name".to_string(), "Count".to_string()],
+                vec!["alpha, beta".to_string(), "42".to_string()],
+            ],
+        }];
+        fs_write_xlsx(wd.clone(), "t.xlsx".to_string(), sheets, None)
+            .await
+            .expect("write xlsx");
+        let csv = fs_read_xlsx(wd, "t.xlsx".to_string(), None)
+            .await
+            .expect("read xlsx");
+        assert!(csv.contains("Name,Count"));
+        // Comma-bearing cell is CSV-quoted; "42" round-trips as a number.
+        assert!(csv.contains("\"alpha, beta\",42"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn fs_read_xlsx_truncates_multibyte_content_on_char_boundary() {
+        // MAX_XLSX_CHARS (500_000) is local to fs_read_xlsx.
+        const MAX: usize = 500_000;
+        // One 3-byte header row ("ab\n") shifts every following row to an
+        // odd byte offset; rows of 2-byte chars then guarantee the even
+        // truncation index lands mid-codepoint. A raw `&csv[..MAX]` slice
+        // would panic here — the char-boundary backoff must kick in.
+        let cell = "é".repeat(30_000); // 60_000 bytes per cell
+        let mut rows = vec![vec!["ab".to_string()]];
+        for _ in 0..9 {
+            rows.push(vec![cell.clone()]);
+        }
+        // Reconstruct the CSV fs_read_xlsx will produce and verify the
+        // premise: the cap index is NOT a char boundary.
+        let mut expected_csv = String::from("ab\n");
+        for _ in 0..9 {
+            expected_csv.push_str(&cell);
+            expected_csv.push('\n');
+        }
+        assert!(expected_csv.len() > MAX);
+        assert!(
+            !expected_csv.is_char_boundary(MAX),
+            "fixture must straddle the cap with a multibyte char"
+        );
+
+        let dir = temp_workdir("truncate_multibyte");
+        let wd = dir.to_string_lossy().to_string();
+        let sheets = vec![XlsxSheet {
+            name: "Big".to_string(),
+            rows,
+        }];
+        fs_write_xlsx(wd.clone(), "big.xlsx".to_string(), sheets, None)
+            .await
+            .expect("write xlsx");
+        let out = fs_read_xlsx(wd, "big.xlsx".to_string(), None)
+            .await
+            .expect("read xlsx must not panic on multibyte truncation");
+        assert!(out.contains("[... truncated:"));
+        assert!(out.starts_with("ab\n"));
+        // Truncated body is capped at MAX bytes (minus the backed-off char).
+        let body = out.split("\n\n[... truncated:").next().unwrap();
+        assert!(body.len() <= MAX);
+        assert!(body.len() >= MAX - 4);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

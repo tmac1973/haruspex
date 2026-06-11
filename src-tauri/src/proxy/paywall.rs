@@ -39,3 +39,59 @@ pub(super) fn detect_paywall_signal(html: &str) -> Option<&'static str> {
 
     None
 }
+
+// Basic positive/negative fixtures (schema.org JSON-LD, OG content_tier,
+// free articles) live in `proxy::tests` (mod.rs). These cover the
+// tag-boundary scanner edge cases only.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flags_unterminated_meta_tag() {
+        // A truncated page can end mid-tag; the scanner treats end-of-input
+        // as the tag boundary rather than skipping the tag.
+        let html = r#"<meta property="article:content_tier" content="locked""#;
+        assert_eq!(
+            detect_paywall_signal(html),
+            Some("OpenGraph article:content_tier=locked")
+        );
+    }
+
+    #[test]
+    fn does_not_flag_locked_value_in_a_different_meta_tag() {
+        // Key and value must live inside the SAME <meta> tag.
+        let html = r#"<meta property="article:content_tier" content="free">
+            <meta property="something:else" content="locked">"#;
+        assert_eq!(detect_paywall_signal(html), None);
+    }
+
+    #[test]
+    fn detection_is_case_insensitive() {
+        let html = r#"<META PROPERTY="ARTICLE:CONTENT_TIER" CONTENT="LOCKED">"#;
+        assert!(detect_paywall_signal(html).is_some());
+
+        let json_ld = r#"<script>{"ISACCESSIBLEFORFREE": FALSE}</script>"#;
+        assert!(detect_paywall_signal(json_ld).is_some());
+    }
+
+    #[test]
+    fn flags_single_quoted_locked_value() {
+        let html = "<meta property='article:content_tier' content='locked'>";
+        assert!(detect_paywall_signal(html).is_some());
+    }
+
+    #[test]
+    fn scans_past_earlier_meta_tags() {
+        // The locked tier marker is found even when other meta tags precede it.
+        let html = r#"<meta charset="utf-8">
+            <meta name="viewport" content="width=device-width">
+            <meta property="article:content_tier" content="locked">"#;
+        assert!(detect_paywall_signal(html).is_some());
+    }
+
+    #[test]
+    fn empty_input_is_not_flagged() {
+        assert_eq!(detect_paywall_signal(""), None);
+    }
+}
