@@ -1,7 +1,10 @@
 // Message protocol between the main thread and the Pyodide Web Worker.
 // Phase 11 — see plan/phase-11-code-sandbox.md.
 
-export type InstallPhase = 'resolving' | 'downloading' | 'installing';
+// 'bundled' = installing from a wheel vendored in static/pyodide/wheels/
+// (offline unzip) — distinct from 'downloading' so the UI doesn't present
+// pre-bundled packages (plotly et al.) as network fetches.
+export type InstallPhase = 'resolving' | 'downloading' | 'installing' | 'bundled';
 
 export type Artifact =
 	| { kind: 'image'; mime: string; dataUrl: string; alt?: string }

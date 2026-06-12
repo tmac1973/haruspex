@@ -107,9 +107,14 @@ registerTool({
 			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
 			const r = await runPython(code, {
 				timeoutMs,
-				// Surface package downloads on the running tool card so a slow
-				// first import reads as "Installing plotly…" rather than a hang.
-				onInstall: (pkg) => ctx.onProgress?.(`Installing ${pkg}…`)
+				// Surface package installs on the running tool card so a slow
+				// first import reads as progress rather than a hang. Bundled
+				// wheels (plotly et al.) are a local unzip, not a download —
+				// label them so they don't read as network fetches.
+				onInstall: (pkg, phase) =>
+					ctx.onProgress?.(
+						phase === 'bundled' ? `Setting up bundled package ${pkg}…` : `Installing ${pkg}…`
+					)
 			});
 			return { result: formatResult(r), artifacts: r.artifactsList };
 		} catch (e) {
