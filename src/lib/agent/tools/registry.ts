@@ -1,6 +1,7 @@
 import type { ToolDefinition } from '$lib/api';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from './types';
 import { toolResult, toolError } from './types';
+import { coerceArgsToSchema } from './coerce';
 import { hasEnabledEmailAccount, getSettings } from '$lib/stores/settings';
 
 const tools = new Map<string, ToolRegistration>();
@@ -96,7 +97,8 @@ export async function executeTool(
 ): Promise<ToolExecOutput> {
 	const reg = tools.get(name);
 	if (!reg) {
-		return toolResult(toolError(`Unknown tool: ${name}`));
+		const hint = nearestToolName(name);
+		return toolResult(toolError(`Unknown tool: ${name}${hint ? `. Did you mean ${hint}?` : ''}`));
 	}
 
 	// Guard: fs tools require a working directory in Chat mode. In
@@ -106,7 +108,53 @@ export async function executeTool(
 		return toolResult(toolError('No working directory set'));
 	}
 
-	return reg.execute(args, ctx);
+	// Absorb sloppy-but-unambiguous arg shapes (stringified JSON, "5" for
+	// an integer, ...) before the executor's own validation runs — see
+	// coerce.ts. Saves a whole model round-trip per avoided error.
+	return reg.execute(coerceArgsToSchema(reg.schema.function.parameters, args), ctx);
+}
+
+/**
+ * Closest registered tool name for a hallucinated one, so the model can
+ * recover in one step instead of dead-ending on "Unknown tool".
+ */
+function nearestToolName(name: string): string | null {
+	let best: string | null = null;
+	let bestDist = 4; // suggest only within edit distance 3
+	for (const candidate of tools.keys()) {
+		const d = editDistance(name, candidate);
+		if (d < bestDist) {
+			bestDist = d;
+			best = candidate;
+		}
+	}
+	// Fallback: a distinctive substring match ("write_file" → fs_write_text
+	// is too far for edit distance, but "pdf" → fs_write_pdf isn't needed;
+	// keep it simple and only do edit distance plus suffix containment).
+	if (!best) {
+		const lower = name.toLowerCase();
+		for (const candidate of tools.keys()) {
+			if (candidate.toLowerCase().includes(lower) || lower.includes(candidate.toLowerCase())) {
+				return candidate;
+			}
+		}
+	}
+	return best;
+}
+
+function editDistance(a: string, b: string): number {
+	if (Math.abs(a.length - b.length) > 3) return 99;
+	const prev = new Array(b.length + 1).fill(0).map((_, i) => i);
+	for (let i = 1; i <= a.length; i++) {
+		let diag = prev[0];
+		prev[0] = i;
+		for (let j = 1; j <= b.length; j++) {
+			const tmp = prev[j];
+			prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+			diag = tmp;
+		}
+	}
+	return prev[b.length];
 }
 
 /**

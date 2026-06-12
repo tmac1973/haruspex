@@ -5,8 +5,8 @@
 
 use super::markdown_inline::escape_xml;
 use super::path::{
-    refuse_if_exists, resolve_in_workdir, stat_within_limit, workdir_path, write_bytes_to_workdir,
-    MAX_DOC_READ_BYTES,
+    refuse_if_exists, resolve_in_workdir, stat_within_limit, workdir_path, workdir_path_for_write,
+    write_bytes_to_workdir, MAX_DOC_READ_BYTES,
 };
 
 #[derive(serde::Deserialize)]
@@ -123,7 +123,7 @@ pub async fn fs_write_xlsx(
     sheets: Vec<XlsxSheet>,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
-    let workdir = workdir_path(&workdir)?;
+    let workdir = workdir_path_for_write(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if sheets.is_empty() {
@@ -131,6 +131,16 @@ pub async fn fs_write_xlsx(
     }
 
     refuse_if_exists(&resolved, overwrite, &rel_path)?;
+
+    // rust_xlsxwriter saves straight to the path (no write_bytes_to_workdir
+    // tail), so create any missing parent directories here.
+    if let Some(parent) = resolved.parent() {
+        if !parent.exists() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
+        }
+    }
 
     let resolved_str = resolved.to_string_lossy().to_string();
     tokio::task::spawn_blocking(move || -> Result<(), String> {
@@ -174,7 +184,7 @@ pub async fn fs_write_ods(
     sheets: Vec<XlsxSheet>,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
-    let workdir = workdir_path(&workdir)?;
+    let workdir = workdir_path_for_write(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if sheets.is_empty() {
@@ -219,17 +229,23 @@ pub async fn fs_read_xlsx(
             return Err("xlsx has no sheets".to_string());
         }
 
+        // Exact match first; fall back to a trimmed, ASCII-case-insensitive
+        // match so a model asking for "summary" still hits "Summary".
         let target_sheet = match sheet_name {
-            Some(name) => {
-                if !sheet_names.iter().any(|s| s == &name) {
+            Some(name) => match sheet_names.iter().find(|s| *s == &name).or_else(|| {
+                sheet_names
+                    .iter()
+                    .find(|s| s.trim().eq_ignore_ascii_case(name.trim()))
+            }) {
+                Some(found) => found.clone(),
+                None => {
                     return Err(format!(
                         "Sheet '{}' not found. Available sheets: {}",
                         name,
                         sheet_names.join(", ")
                     ));
                 }
-                name
-            }
+            },
             None => sheet_names[0].clone(),
         };
 
@@ -367,6 +383,69 @@ mod tests {
         assert!(csv.contains("Name,Count"));
         // Comma-bearing cell is CSV-quoted; "42" round-trips as a number.
         assert!(csv.contains("\"alpha, beta\",42"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn fs_write_xlsx_creates_missing_workdir_and_parent_dirs() {
+        // Fresh-chat scenario: the workdir itself doesn't exist on disk
+        // yet AND the target path nests in a not-yet-existing directory.
+        let dir = std::env::temp_dir().join("haruspex_xlsx_test_missing_wd");
+        let _ = std::fs::remove_dir_all(&dir);
+        let wd = dir.to_string_lossy().to_string();
+        let sheets = vec![XlsxSheet {
+            name: "S".to_string(),
+            rows: vec![vec!["v".to_string()]],
+        }];
+        fs_write_xlsx(wd.clone(), "output/nested/t.xlsx".to_string(), sheets, None)
+            .await
+            .expect("write into missing dirs");
+        let csv = fs_read_xlsx(wd, "output/nested/t.xlsx".to_string(), None)
+            .await
+            .expect("read back");
+        assert!(csv.contains('v'));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn fs_read_xlsx_sheet_lookup_is_case_insensitive() {
+        let dir = temp_workdir("sheet_ci");
+        let wd = dir.to_string_lossy().to_string();
+        let sheets = vec![
+            XlsxSheet {
+                name: "Summary".to_string(),
+                rows: vec![vec!["from-summary".to_string()]],
+            },
+            XlsxSheet {
+                name: "Data".to_string(),
+                rows: vec![vec!["from-data".to_string()]],
+            },
+        ];
+        fs_write_xlsx(wd.clone(), "s.xlsx".to_string(), sheets, None)
+            .await
+            .expect("write xlsx");
+
+        // Exact match still wins.
+        let exact = fs_read_xlsx(wd.clone(), "s.xlsx".to_string(), Some("Data".to_string()))
+            .await
+            .expect("exact sheet read");
+        assert!(exact.contains("from-data"));
+
+        // Wrong case + surrounding whitespace falls back to the CI match.
+        let ci = fs_read_xlsx(
+            wd.clone(),
+            "s.xlsx".to_string(),
+            Some(" summary ".to_string()),
+        )
+        .await
+        .expect("case-insensitive sheet read");
+        assert!(ci.contains("from-summary"));
+
+        // True misses keep the helpful "Available sheets" error.
+        let err = fs_read_xlsx(wd, "s.xlsx".to_string(), Some("Nope".to_string()))
+            .await
+            .expect_err("missing sheet must error");
+        assert!(err.contains("Available sheets: Summary, Data"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

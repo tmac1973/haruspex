@@ -28,9 +28,11 @@ pub struct DirListing {
 /// does not escape the working directory via `..`, absolute paths, or
 /// symlinks.
 ///
-/// The relative path may refer to a file that does not yet exist (for write
-/// operations). In that case, the parent directory must exist and be inside
-/// the working dir — the resolved path is `canonical_parent/filename`.
+/// The relative path may refer to a file (or nested directories) that do not
+/// yet exist (for write operations). In that case, the deepest existing
+/// ancestor must canonicalize to a location inside the working dir, and the
+/// non-existent tail is appended lexically after rejecting any traversal
+/// components.
 ///
 /// Returns an error if:
 ///   - `workdir` itself cannot be canonicalized
@@ -65,8 +67,10 @@ pub fn resolve_in_workdir(workdir: &Path, rel_path: &str) -> Result<PathBuf, Str
             .canonicalize()
             .map_err(|e| format!("Failed to canonicalize path: {}", e))?
     } else {
-        // For write operations: canonicalize the parent, then append the
-        // file name. This prevents symlink escape via a non-existent target.
+        // For write operations: canonicalize the deepest existing ancestor,
+        // then append the not-yet-existing tail. This prevents symlink
+        // escape via a non-existent target while still allowing writes
+        // into directories that will be created by the write itself.
         resolve_nonexistent(&candidate)?
     };
 
@@ -77,28 +81,63 @@ pub fn resolve_in_workdir(workdir: &Path, rel_path: &str) -> Result<PathBuf, Str
     Ok(canonical)
 }
 
-/// Resolve a path whose final component may not exist yet by canonicalizing
-/// the parent directory (which must exist) and appending the file name.
+/// Resolve a path whose trailing components may not exist yet.
+///
+/// Walks up the ancestor chain to the deepest ancestor that exists on disk,
+/// canonicalizes that (preserving the symlink-escape check — a symlinked
+/// ancestor pointing outside the workdir resolves outside and fails the
+/// caller's `starts_with` containment check), then appends the remaining
+/// non-existent tail lexically. The tail must consist solely of normal
+/// components: a `..` or `.` appended lexically would never be seen by
+/// `canonicalize`, so traversal there is rejected outright.
 fn resolve_nonexistent(candidate: &Path) -> Result<PathBuf, String> {
-    let parent = candidate
-        .parent()
-        .ok_or_else(|| "path has no parent directory".to_string())?;
-    let file_name = candidate
-        .file_name()
-        .ok_or_else(|| "path has no file name".to_string())?;
-    let parent_canonical = parent
+    use std::path::Component;
+
+    // `ancestors()` yields the candidate itself first — skip it, we already
+    // know it doesn't exist.
+    let existing = candidate
+        .ancestors()
+        .skip(1)
+        .find(|a| !a.as_os_str().is_empty() && a.exists())
+        .ok_or_else(|| "path has no existing ancestor directory".to_string())?;
+
+    let tail = candidate
+        .strip_prefix(existing)
+        .map_err(|_| "failed to derive non-existent path tail".to_string())?;
+    for component in tail.components() {
+        match component {
+            Component::Normal(_) => {}
+            _ => return Err("path escapes working directory".to_string()),
+        }
+    }
+
+    let existing_canonical = existing
         .canonicalize()
-        .map_err(|e| format!("Parent directory does not exist: {}", e))?;
-    Ok(parent_canonical.join(file_name))
+        .map_err(|e| format!("Failed to canonicalize parent directory: {}", e))?;
+    Ok(existing_canonical.join(tail))
 }
 
 /// Convert a workdir string passed across the IPC boundary into a
 /// `PathBuf`, validating that it actually points at a directory.
-/// Used as the first step in every fs_* Tauri command.
+/// Used as the first step in every fs_* read command — reads against a
+/// missing workdir should fail loudly rather than conjure an empty dir.
 pub(super) fn workdir_path(workdir: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(workdir);
     if !path.is_dir() {
         return Err(format!("Working directory does not exist: {}", workdir));
+    }
+    Ok(path)
+}
+
+/// Write-path variant of [`workdir_path`]: creates the working directory
+/// (and any missing ancestors) instead of erroring when it doesn't exist
+/// yet. A fresh chat's workdir is only materialized on first write, so
+/// every fs_write_* / download command starts here.
+pub(super) fn workdir_path_for_write(workdir: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(workdir);
+    if !path.is_dir() {
+        std::fs::create_dir_all(&path)
+            .map_err(|e| format!("Failed to create working directory {}: {}", workdir, e))?;
     }
     Ok(path)
 }
@@ -494,11 +533,56 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonexistent_parent() {
+    fn resolves_nonexistent_parent_for_write() {
+        // "output/report.pdf" with no output/ dir yet must resolve — the
+        // write itself creates the directory via write_bytes_to_workdir.
         let dir = make_temp_dir("nonparent");
-        let result = resolve_in_workdir(&dir, "does/not/exist/file.txt");
+        let result = resolve_in_workdir(&dir, "output/report.pdf").unwrap();
+        assert!(result.starts_with(dir.canonicalize().unwrap()));
+        assert!(result.ends_with("output/report.pdf"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolves_deep_nonexistent_tail_for_write() {
+        let dir = make_temp_dir("deep_tail");
+        let result = resolve_in_workdir(&dir, "a/b/c/f.txt").unwrap();
+        assert!(result.starts_with(dir.canonicalize().unwrap()));
+        assert!(result.ends_with("a/b/c/f.txt"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rejects_dotdot_in_nonexistent_tail() {
+        // Lexical `..` traversal inside a not-yet-existing tail must not
+        // be smuggled past the canonicalize-based escape check.
+        let dir = make_temp_dir("tail_dotdot");
+        let result = resolve_in_workdir(&dir, "nope/../../escape.txt");
+        assert!(result.is_err());
+        let result = resolve_in_workdir(&dir, "nope/../inside.txt");
         assert!(result.is_err());
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn write_bytes_creates_missing_parent_dirs() {
+        let dir = make_temp_dir("write_creates_dirs");
+        let resolved = resolve_in_workdir(&dir, "output/report.txt").unwrap();
+        write_bytes_to_workdir(&resolved, b"hello").await.unwrap();
+        assert_eq!(fs::read(dir.join("output/report.txt")).unwrap(), b"hello");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn workdir_path_for_write_creates_missing_workdir() {
+        let dir = std::env::temp_dir().join("haruspex_fs_test_missing_wd");
+        let _ = fs::remove_dir_all(&dir);
+        assert!(!dir.exists());
+        let result = workdir_path_for_write(&dir.to_string_lossy()).unwrap();
+        assert!(result.is_dir());
+        // Read-side helper must still refuse a missing workdir.
+        fs::remove_dir_all(&dir).ok();
+        assert!(workdir_path(&dir.to_string_lossy()).is_err());
     }
 
     #[test]
@@ -528,6 +612,27 @@ mod tests {
         symlink(&outside, dir.join("link")).unwrap();
         let result = resolve_in_workdir(&dir, "link/secret.txt");
         assert!(result.is_err(), "symlink escape was not caught");
+        fs::remove_dir_all(&dir).ok();
+        fs::remove_dir_all(&outside).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_escape_with_nonexistent_tail() {
+        // A symlinked EXISTING ancestor pointing outside the workdir must
+        // still be rejected when the tail doesn't exist yet (write path).
+        use std::os::unix::fs::symlink;
+        let dir = make_temp_dir("symlink_tail");
+        let outside = std::env::temp_dir().join("haruspex_fs_test_outside_tail");
+        fs::create_dir_all(&outside).unwrap();
+        symlink(&outside, dir.join("link")).unwrap();
+        let result = resolve_in_workdir(&dir, "link/new_file.txt");
+        assert!(result.is_err(), "symlinked-ancestor escape was not caught");
+        let result = resolve_in_workdir(&dir, "link/sub/new_file.txt");
+        assert!(
+            result.is_err(),
+            "deep symlinked-ancestor escape was not caught"
+        );
         fs::remove_dir_all(&dir).ok();
         fs::remove_dir_all(&outside).ok();
     }

@@ -10,7 +10,8 @@ use super::markdown_inline::{
     escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
 };
 use super::path::{
-    refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir, MAX_WRITE_BYTES,
+    refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
+    MAX_WRITE_BYTES,
 };
 
 /// `mimetype`, is stored uncompressed (`CompressionMethod::Stored`),
@@ -225,7 +226,7 @@ pub async fn fs_write_odt(
     content: String,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
-    let workdir = workdir_path(&workdir)?;
+    let workdir = workdir_path_for_write(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if content.len() > MAX_WRITE_BYTES {

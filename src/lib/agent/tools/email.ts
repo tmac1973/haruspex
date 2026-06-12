@@ -43,8 +43,10 @@ interface EmailSummarizerInput {
 
 /**
  * Resolve an account selector to concrete stored EmailAccount(s).
- * Matches by UUID first, then case-insensitive label. Empty/undefined
- * returns all enabled accounts (multi-account fan-out).
+ * Matches by UUID first, then case-insensitive label, then the visible
+ * email address (what the user — and therefore the model — most
+ * naturally identifies an account by). Empty/undefined returns all
+ * enabled accounts (multi-account fan-out).
  */
 function resolveEmailAccounts(selector?: string): EmailAccount[] {
 	const all = getSettings().integrations.email.accounts.filter((a) => a.enabled);
@@ -52,7 +54,9 @@ function resolveEmailAccounts(selector?: string): EmailAccount[] {
 	const byId = all.filter((a) => a.id === selector);
 	if (byId.length > 0) return byId;
 	const needle = selector.trim().toLowerCase();
-	return all.filter((a) => a.label.trim().toLowerCase() === needle);
+	const byLabel = all.filter((a) => a.label.trim().toLowerCase() === needle);
+	if (byLabel.length > 0) return byLabel;
+	return all.filter((a) => a.emailAddress.trim().toLowerCase() === needle);
 }
 
 // --- Registration ---
@@ -71,7 +75,7 @@ registerTool({
 					account_id: {
 						type: 'string',
 						description:
-							'Optional — target a specific account by accountId UUID or label. Omit to query all enabled accounts.'
+							'Optional — target a specific account by accountId UUID, label, or email address. Omit to query all enabled accounts.'
 					},
 					hours: {
 						type: 'integer',
@@ -146,7 +150,9 @@ registerTool({
 
 		all.sort((a, b) => b.date.localeCompare(a.date));
 
-		const maxResults = (args.max_results as number | undefined) ?? 20;
+		// Keep in sync with the schema text ("Default 25") and the Rust
+		// per-account fetch default.
+		const maxResults = (args.max_results as number | undefined) ?? 25;
 		const trimmed = all.slice(0, maxResults);
 		return toolResult(JSON.stringify(trimmed));
 	}

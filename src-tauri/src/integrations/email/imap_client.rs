@@ -155,7 +155,7 @@ fn build_search_query(filters: &ListFilters) -> String {
         let since = imap_since_for_hours(h);
         parts.push(format!("SINCE {since}"));
     } else if let Some(d) = filters.since_date.as_ref() {
-        parts.push(format!("SINCE {}", sanitize_search_value(d)));
+        parts.push(format!("SINCE {}", normalize_since_date(d)));
     }
 
     if let Some(f) = filters.from.as_ref() {
@@ -185,6 +185,33 @@ fn sanitize_search_value(v: &str) -> String {
         .collect()
 }
 
+/// Month-name table shared by the SINCE-date formatters below.
+const IMAP_MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/// Normalize a model-supplied `since_date` into IMAP's `DD-Mon-YYYY`
+/// SINCE format. Models routinely emit ISO `YYYY-MM-DD` dates; those
+/// are converted. Anything else (including the already-correct native
+/// format) passes through sanitized, exactly as before.
+fn normalize_since_date(v: &str) -> String {
+    let sanitized = sanitize_search_value(v);
+    let trimmed = sanitized.trim();
+    let bytes = trimmed.as_bytes();
+    if trimmed.len() == 10 && bytes[4] == b'-' && bytes[7] == b'-' {
+        if let (Ok(y), Ok(m), Ok(d)) = (
+            trimmed[0..4].parse::<u16>(),
+            trimmed[5..7].parse::<u8>(),
+            trimmed[8..10].parse::<u8>(),
+        ) {
+            if (1..=12).contains(&m) && (1..=31).contains(&d) {
+                return format!("{:02}-{}-{:04}", d, IMAP_MONTHS[(m - 1) as usize], y);
+            }
+        }
+    }
+    sanitized
+}
+
 /// Format the IMAP SINCE clause for `now - hours` in `DD-Mon-YYYY`
 /// form. We avoid pulling in chrono for this — computing the date
 /// "N hours ago" using std::time + a small month-name table is
@@ -205,11 +232,7 @@ fn unix_to_imap_date(secs: i64) -> String {
     // Day-granularity is all IMAP's SINCE consumes. Shared calendar math
     // lives in crate::time_util (no chrono dependency).
     let (y, m, d) = crate::time_util::days_to_ymd(secs.div_euclid(86_400));
-
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    let month = MONTHS[(m - 1) as usize];
+    let month = IMAP_MONTHS[(m - 1) as usize];
     format!("{:02}-{}-{:04}", d, month, y)
 }
 
@@ -406,6 +429,44 @@ mod tests {
         assert!(!q.contains('\\'));
         assert!(q.contains("FROM \"aA1 DELETE INBOX\""));
         assert!(q.contains("SINCE 01-Jan-2026A2 LOGOUT"));
+    }
+
+    #[test]
+    fn since_date_iso_format_is_converted_to_imap() {
+        assert_eq!(normalize_since_date("2026-04-10"), "10-Apr-2026");
+        assert_eq!(normalize_since_date("1999-12-01"), "01-Dec-1999");
+        // Surrounding whitespace still converts.
+        assert_eq!(normalize_since_date(" 2026-04-10 "), "10-Apr-2026");
+        let q = build_search_query(&ListFilters {
+            since_date: Some("2026-04-10".into()),
+            ..Default::default()
+        });
+        assert_eq!(q, "SINCE 10-Apr-2026");
+    }
+
+    #[test]
+    fn since_date_native_format_passes_through() {
+        assert_eq!(normalize_since_date("10-Apr-2026"), "10-Apr-2026");
+        let q = build_search_query(&ListFilters {
+            since_date: Some("01-Jan-2026".into()),
+            ..Default::default()
+        });
+        assert_eq!(q, "SINCE 01-Jan-2026");
+    }
+
+    #[test]
+    fn since_date_garbage_passes_through_sanitized() {
+        assert_eq!(normalize_since_date("next week"), "next week");
+        // Out-of-range ISO-shaped values are not converted.
+        assert_eq!(normalize_since_date("2026-13-10"), "2026-13-10");
+        assert_eq!(normalize_since_date("2026-04-32"), "2026-04-32");
+        // Injection characters are still scrubbed.
+        assert_eq!(
+            normalize_since_date("01-Jan-2026\r\nA2 LOGOUT"),
+            "01-Jan-2026A2 LOGOUT"
+        );
+        // Sanitizing an ISO date with trailing CRLF still converts.
+        assert_eq!(normalize_since_date("2026-04-10\r\n"), "10-Apr-2026");
     }
 
     #[test]

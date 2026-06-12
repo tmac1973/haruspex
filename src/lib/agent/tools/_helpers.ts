@@ -38,6 +38,25 @@ export function isFetchFailureResult(result: string | undefined): boolean {
 }
 
 /**
+ * True when a tool result string reports a failure, across every error
+ * shape the tools emit: the `{"error": ...}` JSON envelope from
+ * `toolError()`, the `Error:` prefix (sandbox runs, ad-hoc errors), lint
+ * failures, and the fetch/research failure prefixes. The step UI uses
+ * this to decide check-mark vs ✕ — keep it in sync when introducing a
+ * new error shape (better: don't introduce new shapes).
+ */
+export function isToolErrorResult(result: string | undefined): boolean {
+	if (!result) return false;
+	const r = result.trimStart();
+	return (
+		r.startsWith('{"error"') ||
+		r.startsWith('Error:') ||
+		r.startsWith('Lint failed') ||
+		isFetchFailureResult(r)
+	);
+}
+
+/**
  * Resolve a tool `path` argument for Shell-mode dispatch. The Shell
  * agent's `fs_*_absolute` Rust commands require absolute paths, but
  * models naturally emit bare/relative names (`snake_game.py`) the way a
@@ -95,13 +114,29 @@ export async function runSubAgent(
 }
 
 /**
+ * Default a scheme-less URL to https. Models copy URLs the way users
+ * write them — `example.com/page`, `www.nytimes.com/...` — which
+ * `url::Url::parse` on the Rust side rejects as "Invalid URL". Only
+ * strings that plausibly start with a hostname are touched; anything
+ * already carrying a scheme (or not URL-shaped) passes through for the
+ * backend to reject with its normal error.
+ */
+export function ensureUrlScheme(url: string): string {
+	if (typeof url !== 'string') return url;
+	const trimmed = url.trim();
+	if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed; // has a scheme
+	if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(?=[/:?#]|$)/i.test(trimmed)) return `https://${trimmed}`;
+	return trimmed;
+}
+
+/**
  * Invoke the Rust-side `proxy_fetch` command with the standard payload
  * (url + caller + current proxy settings). Caller identifies the
  * originating tool for the proxy state's per-call accounting.
  */
 export async function proxyFetch(url: string, caller: string): Promise<string> {
 	return invoke<string>('proxy_fetch', {
-		url,
+		url: ensureUrlScheme(url),
 		caller,
 		proxy: getSettings().proxy
 	});

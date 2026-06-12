@@ -142,6 +142,61 @@ describe('fs_write_xlsx input validation', () => {
 		expect(out.result).toMatch(/Wrote/);
 	});
 
+	it('accepts numeric and boolean cells and coerces them to strings for Rust', async () => {
+		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+		const out = await callXlsx({
+			path: 'nums.xlsx',
+			sheets: [
+				{
+					name: 'S',
+					rows: [
+						['N', 'F(N)', 'Flag'],
+						[1, 0, true],
+						[2, 1, false]
+					]
+				}
+			]
+		});
+		expect(out.result).toMatch(/Wrote/);
+		const payload = mocks.invoke.mock.calls.find((c) => c[0] === 'fs_write_xlsx')?.[1] as {
+			sheets: { rows: unknown[][] }[];
+		};
+		expect(payload.sheets[0].rows).toEqual([
+			['N', 'F(N)', 'Flag'],
+			['1', '0', 'true'],
+			['2', '1', 'false']
+		]);
+	});
+
+	it('does not flag a column of numeric zeros as entirely blank', async () => {
+		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+		const out = await callXlsx({
+			path: 'zeros.xlsx',
+			sheets: [
+				{
+					name: 'S',
+					rows: [
+						['Name', 'Count'],
+						['alpha', 0],
+						['beta', 0]
+					]
+				}
+			]
+		});
+		expect(out.result).toMatch(/Wrote/);
+	});
+
+	it('coerces null cells to empty strings (still blank for validation)', async () => {
+		const rows = [
+			['n', 'F(n)'],
+			[1, null],
+			[2, null]
+		];
+		const out = await callXlsx({ path: 'out.xlsx', sheets: [{ name: 'S', rows }] });
+		expect(JSON.parse(out.result).error).toMatch(/"F\(n\)" is entirely blank/i);
+		expect(mocks.invoke).not.toHaveBeenCalled();
+	});
+
 	it('accepts formulas (cells starting with "=")', async () => {
 		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 
