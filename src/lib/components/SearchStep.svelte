@@ -5,6 +5,7 @@
 	import python from 'highlight.js/lib/languages/python';
 	import { rerunSandboxStep, cancelActiveSandboxRun } from '$lib/stores/chat.svelte';
 	import { createKeyedCopyAction } from '$lib/utils/clipboard.svelte';
+	import { isToolErrorResult } from '$lib/agent/tools/_helpers';
 	import { sanitizeHtml } from '$lib/sanitize';
 	import ImageViewerModal from './ImageViewerModal.svelte';
 
@@ -62,7 +63,9 @@
 	function stepErrored(step: SearchStep): boolean {
 		if (step.status !== 'done') return false;
 		if (step.lintIssues && step.lintIssues.length > 0) return true;
-		return !!step.result?.startsWith('Error:');
+		// Most tools report failure as a {"error": ...} envelope, which the
+		// old 'Error:'-prefix check missed — failed steps showed a green ✓.
+		return isToolErrorResult(step.result);
 	}
 
 	function lintSummary(step: SearchStep): string {

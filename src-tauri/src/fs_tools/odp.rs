@@ -5,7 +5,9 @@
 
 use super::images::{build_image_index, load_image_set, ImageIndex, LoadedImage};
 use super::markdown_inline::escape_xml;
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path, write_bytes_to_workdir};
+use super::path::{
+    refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
+};
 use super::pptx::{PptxLayout, PptxSlide};
 
 /// and a layout choice (content or section). Reuses the ODF zip
@@ -235,7 +237,7 @@ pub async fn fs_write_odp(
     slides: Vec<PptxSlide>,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
-    let workdir = workdir_path(&workdir)?;
+    let workdir = workdir_path_for_write(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if slides.is_empty() {

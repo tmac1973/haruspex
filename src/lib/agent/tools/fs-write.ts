@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { IPC } from '$lib/ipc/commands';
-import { labelArg, resolveShellPath, toolInvokeError } from './_helpers';
+import { labelArg, resolveShellPath, toolInvokeError, ensureUrlScheme } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
@@ -135,8 +135,7 @@ const SHEETS_SCHEMA = {
  * fill in real data; without this guard the tool silently writes
  * nonsense and reports success.
  */
-function validateSheets(args: Record<string, unknown>): string | null {
-	const sheets = args.sheets;
+function validateSheets(sheets: unknown): string | null {
 	if (!Array.isArray(sheets) || sheets.length === 0) {
 		return 'sheets must be a non-empty array.';
 	}
@@ -147,7 +146,47 @@ function validateSheets(args: Record<string, unknown>): string | null {
 	return null;
 }
 
+/**
+ * If the model sent a JSON-stringified array instead of a real array,
+ * parse it. Anything else passes through untouched.
+ */
+function parseIfJsonArray(value: unknown): unknown {
+	if (typeof value === 'string') {
+		try {
+			const parsed = JSON.parse(value);
+			if (Array.isArray(parsed)) return parsed;
+		} catch {
+			// fall through — let the validator report the shape error
+		}
+	}
+	return value;
+}
+
+/**
+ * Coerce sheet cells to the strings Rust expects (Vec<Vec<String>>).
+ * Models routinely emit numbers/booleans as bare JSON values — those are
+ * real data, not blanks. null/undefined become empty cells.
+ */
+function normalizeSheets(raw: unknown): unknown {
+	const sheets = parseIfJsonArray(raw);
+	if (!Array.isArray(sheets)) return sheets;
+	return sheets.map((sheet) => {
+		if (!sheet || typeof sheet !== 'object') return sheet;
+		const s = sheet as { rows?: unknown };
+		if (!Array.isArray(s.rows)) return sheet;
+		return {
+			...s,
+			rows: s.rows.map((row) =>
+				Array.isArray(row) ? row.map((cell) => (cell == null ? '' : String(cell))) : row
+			)
+		};
+	});
+}
+
 function isBlankCell(cell: unknown): boolean {
+	// Numeric and boolean cells are data, not blanks — the model just
+	// emitted them as bare JSON values instead of strings.
+	if (typeof cell === 'number' || typeof cell === 'boolean') return false;
 	return typeof cell !== 'string' || cell.trim().length === 0;
 }
 
@@ -227,7 +266,8 @@ function validateSheet(raw: unknown, sheetNum: number): string | null {
 
 function spreadsheetWriteExecutor(command: string) {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
-		const validationError = validateSheets(args);
+		const sheets = normalizeSheets(args.sheets);
+		const validationError = validateSheets(sheets);
 		if (validationError) {
 			return toolResult(toolError(validationError));
 		}
@@ -235,7 +275,7 @@ function spreadsheetWriteExecutor(command: string) {
 			command,
 			ctx.workingDir!,
 			args.path as string,
-			{ sheets: args.sheets },
+			{ sheets },
 			ctx.filesWrittenThisTurn
 		);
 	};
@@ -339,74 +379,106 @@ function shellAwareEditText() {
 	};
 }
 
-/**
- * Reject slide-deck inputs that are obvious scaffolds — zero slides,
- * empty titles, content slides with no bullets and no image, or
- * placeholder-style bullets.
- */
-function validateSlides(args: Record<string, unknown>): string | null {
-	const slides = args.slides;
-	if (!Array.isArray(slides) || slides.length === 0) {
-		return 'slides must be a non-empty array. Pass every slide you want in the deck.';
+/** Bullet entries are plain strings or { text, level } objects. */
+function bulletText(b: unknown): string | undefined {
+	if (typeof b === 'string') return b;
+	if (b && typeof b === 'object' && 'text' in b) {
+		const text = (b as { text: unknown }).text;
+		if (typeof text === 'string') return text;
 	}
-	for (let i = 0; i < slides.length; i++) {
-		const slide = slides[i] as {
-			title?: unknown;
-			layout?: unknown;
-			bullets?: unknown;
-			image?: unknown;
-			subtitle?: unknown;
-		};
-		const num = i + 1;
-		if (typeof slide.title !== 'string' || slide.title.trim().length === 0) {
-			return `Slide ${num} has no title. Every slide must have a non-empty title string.`;
-		}
-		const layout = slide.layout ?? 'content';
-		if (layout === 'section') continue;
+	return undefined;
+}
 
-		const bullets = slide.bullets;
-		const hasBullets =
-			Array.isArray(bullets) &&
-			bullets.some((b) => {
-				if (typeof b === 'string') return b.trim().length > 0;
-				if (b && typeof b === 'object' && 'text' in b) {
-					const text = (b as { text: unknown }).text;
-					return typeof text === 'string' && text.trim().length > 0;
-				}
-				return false;
-			});
-		const hasImage = typeof slide.image === 'string' && slide.image.trim().length > 0;
-		if (!hasBullets && !hasImage) {
-			return (
-				`Slide ${num} ("${slide.title}") has no bullets and no image. Content slides need at least one bullet or an image — ` +
-				`compute the content first and pass it as bullets, or use layout:"section" for divider slides.`
-			);
+function hasRealBullets(bullets: unknown): boolean {
+	return (
+		Array.isArray(bullets) &&
+		bullets.some((b) => {
+			const text = bulletText(b);
+			return typeof text === 'string' && text.trim().length > 0;
+		})
+	);
+}
+
+function hasPlaceholderBullet(bullets: unknown): boolean {
+	return (
+		Array.isArray(bullets) &&
+		bullets.some((b) => {
+			const text = bulletText(b);
+			return typeof text === 'string' && /^\/[a-z_]+$/i.test(text.trim());
+		})
+	);
+}
+
+/**
+ * Normalize and validate slide-deck input in one pass. Forgiving on
+ * shape — `layout` is lowercased (the Rust enum is lowercase-only),
+ * string `bullets` are split on newlines into an array, and a slide
+ * with a title but no bullets/image is silently treated as a section
+ * divider. Still rejects obvious scaffolds: zero slides, empty titles,
+ * and placeholder-style bullets.
+ */
+function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
+	const slides = parseIfJsonArray(raw);
+	if (!Array.isArray(slides) || slides.length === 0) {
+		return { error: 'slides must be a non-empty array. Pass every slide you want in the deck.' };
+	}
+	const prepared: Record<string, unknown>[] = [];
+	for (let i = 0; i < slides.length; i++) {
+		const num = i + 1;
+		const rawSlide = slides[i];
+		if (!rawSlide || typeof rawSlide !== 'object') {
+			return { error: `Slide ${num} is not an object. Each slide needs at least a title.` };
 		}
-		if (Array.isArray(bullets)) {
-			const placeholder = bullets.some((b) => {
-				const text = typeof b === 'string' ? b : (b as { text?: unknown })?.text;
-				return typeof text === 'string' && /^\/[a-z_]+$/i.test(text.trim());
-			});
-			if (placeholder) {
-				return (
+		const slide = { ...(rawSlide as Record<string, unknown>) };
+		if (typeof slide.title !== 'string' || slide.title.trim().length === 0) {
+			return {
+				error: `Slide ${num} has no title. Every slide must have a non-empty title string.`
+			};
+		}
+		// The Rust layout enum is rename_all = "lowercase" — accept
+		// "Section"/"CONTENT" etc. by lowercasing before validation and
+		// before the payload is sent.
+		if (typeof slide.layout === 'string') {
+			slide.layout = slide.layout.trim().toLowerCase();
+		}
+		// A non-empty string bullets value is almost always one-bullet-per-line.
+		if (typeof slide.bullets === 'string') {
+			slide.bullets = slide.bullets
+				.split('\n')
+				.map((line) => line.trim())
+				.filter((line) => line.length > 0);
+		}
+
+		if (hasPlaceholderBullet(slide.bullets)) {
+			return {
+				error:
 					`Slide ${num} contains a placeholder-style bullet like "/content" or "/data". ` +
 					`Pass the literal bullet text — the tool does not expand directives.`
-				);
+			};
+		}
+
+		if (slide.layout !== 'section') {
+			const hasImage = typeof slide.image === 'string' && slide.image.trim().length > 0;
+			if (!hasRealBullets(slide.bullets) && !hasImage) {
+				// Title-only (optionally subtitled) slide: render it as a
+				// section divider instead of erroring.
+				slide.layout = 'section';
 			}
 		}
+		prepared.push(slide);
 	}
-	return null;
+	return { slides: prepared };
 }
 
 function slidesWriteExecutor(command: string) {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
-		const err = validateSlides(args);
-		if (err) return toolResult(toolError(err));
+		const { slides, error } = prepareSlides(args.slides);
+		if (error) return toolResult(toolError(error));
 		return fsWriteWithConflictCheck(
 			command,
 			ctx.workingDir!,
 			args.path as string,
-			{ slides: args.slides },
+			{ slides },
 			ctx.filesWrittenThisTurn
 		);
 	};
@@ -490,7 +562,8 @@ registerTool({
 					},
 					overwrite: {
 						type: 'boolean',
-						description: 'Whether to overwrite if the file exists. Defaults to true.'
+						description:
+							'Shell mode only: whether to overwrite an existing file (defaults to true). Ignored in Chat mode, where conflicts with existing files are resolved interactively by the user.'
 					}
 				},
 				required: ['path', 'content']
@@ -706,7 +779,7 @@ registerTool({
 		return path ? `${path} (${url})` : url;
 	},
 	async execute(args, ctx) {
-		const url = args.url as string;
+		const url = ensureUrlScheme(args.url as string);
 		const relPath = args.path as string;
 		const resolved = await resolveWritePathInteractive(
 			ctx.workingDir!,

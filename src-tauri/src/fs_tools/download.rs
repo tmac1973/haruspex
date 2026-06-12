@@ -1,6 +1,6 @@
 //! `fs_download_url` — sandboxed HTTP download into the working directory.
 
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path};
+use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path_for_write};
 use tokio::fs;
 
 /// Max bytes we'll accept from a single HTTP download into the working
@@ -71,7 +71,7 @@ pub async fn fs_download_url(
 ) -> Result<String, String> {
     use tokio::io::AsyncWriteExt;
 
-    let workdir = workdir_path(&workdir)?;
+    let workdir = workdir_path_for_write(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     // SSRF + scheme + private-IP guard. Uses the same helper as proxy_fetch.

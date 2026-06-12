@@ -5,7 +5,7 @@ import { getSettings, DEFAULT_SEARXNG_URL } from '$lib/stores/settings';
 import type { ImageSearchResult } from '$lib/ipc/gen/ImageSearchResult';
 import type { PageImage } from '$lib/ipc/gen/PageImage';
 import type { SearchResult } from '$lib/ipc/gen/SearchResult';
-import { labelArg, proxyFetch, runSubAgent, toolInvokeError } from './_helpers';
+import { labelArg, proxyFetch, runSubAgent, toolInvokeError, ensureUrlScheme } from './_helpers';
 import { registerTool } from './registry';
 import { toolResult } from './types';
 
@@ -246,7 +246,7 @@ registerTool({
 	},
 	displayLabel: labelArg('url'),
 	async execute(args) {
-		const url = args.url as string;
+		const url = ensureUrlScheme(args.url as string);
 		try {
 			const images = await invoke<PageImage[]>('proxy_fetch_url_images', {
 				url,
