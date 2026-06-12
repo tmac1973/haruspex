@@ -371,6 +371,21 @@ describe('WorkerManager', () => {
 		await promise;
 	});
 
+	it('forwards the bundled phase distinctly (vendored wheels are not downloads)', async () => {
+		const events: Array<{ pkg: string; phase: string }> = [];
+		const promise = manager.runPython('import plotly', {
+			onInstall: (pkg, phase) => events.push({ pkg, phase })
+		});
+		await flush(() => lastWorker?.postedMessages.some((m) => m.kind === 'run') ?? false);
+		const w = lastWorker as unknown as MockWorker;
+		const { id } = findRunMessage(w);
+		w.deliver({ kind: 'pkg_phase_start', id });
+		w.deliver({ kind: 'install_progress', id, package: 'plotly', phase: 'bundled' });
+		expect(events).toEqual([{ pkg: 'plotly', phase: 'bundled' }]);
+		w.deliver({ kind: 'done', id, result: makeOkResult() });
+		await promise;
+	});
+
 	it('terminates a run whose package install stalls with no progress', async () => {
 		vi.useFakeTimers();
 		const promise = manager.runPython('import plotly', { timeoutMs: 100 });

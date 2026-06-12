@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import { loadPyodide, type PyodideInterface } from 'pyodide';
-import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
+import type { InstallPhase, MainToWorker, ToolResult, WorkerToMain } from './protocol';
 import {
 	dispatchWorkerMessage,
 	settlePending,
@@ -717,13 +717,6 @@ async def _haruspex_auto_install_missing(code):
     _local_map = globals().get('_haruspex_local_wheels')
     for name in missing:
         try:
-            # Announce before the (possibly slow) download so the UI shows
-            # "Installing <name>…" and the install watchdog — not the
-            # execution timeout — governs the wait.
-            try:
-                _haruspex_install_status(name, 'downloading')
-            except Exception:
-                pass
             # Vendored PyPI packages (e.g. plotly) install from their local
             # wheel(s) with deps=False — offline, no PyPI round-trip. The
             # mapped list bundles the package plus any non-lockfile deps.
@@ -733,6 +726,15 @@ async def _haruspex_auto_install_missing(code):
                     _local = _local_map.get(name)
                 except Exception:
                     _local = None
+            # Announce before the (possibly slow) install so the UI shows
+            # what is happening and the install watchdog — not the
+            # execution timeout — governs the wait. A bundled wheel is a
+            # local unzip, not a download — report it honestly so the
+            # "pre-installed" packages don't look like network fetches.
+            try:
+                _haruspex_install_status(name, 'bundled' if _local else 'downloading')
+            except Exception:
+                pass
             if _local:
                 await _micropip.install(list(_local), deps=False)
             else:
@@ -769,10 +771,7 @@ function postPkgPhaseStart(): void {
 function postExecStart(): void {
 	if (currentRunId) post({ kind: 'exec_start', id: currentRunId });
 }
-function postInstallProgress(
-	packageName: string,
-	phase: 'resolving' | 'downloading' | 'installing'
-): void {
+function postInstallProgress(packageName: string, phase: InstallPhase): void {
 	if (currentRunId)
 		post({ kind: 'install_progress', id: currentRunId, package: packageName, phase });
 }
@@ -1080,7 +1079,7 @@ function registerHostBridges(py: PyodideInterface): void {
 		const ph = String(phase ?? 'downloading');
 		postInstallProgress(
 			String(pkg),
-			ph === 'resolving' || ph === 'installing' ? ph : 'downloading'
+			ph === 'resolving' || ph === 'installing' || ph === 'bundled' ? ph : 'downloading'
 		);
 	});
 }
