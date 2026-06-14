@@ -244,8 +244,14 @@ fi
 # it stays correct across PYODIDE_VERSION bumps — bump CHAT_STACK_VERSION
 # (or the top-level list) to force a re-resolve. Only wheels not already on
 # disk (e.g. numpy/pandas pulled by the workspace set) are downloaded.
-CHAT_STACK_VERSION="2"
-CHAT_STACK_TOP=(matplotlib scipy sympy scikit-learn beautifulsoup4 lxml requests)
+CHAT_STACK_VERSION="3"
+# pyodide-http is installed at boot by HARUSPEX_INIT_PY (micropip.install
+# 'pyodide-http') to bridge urllib/requests/httpx → pyfetch. It lives in the
+# Pyodide lockfile, so micropip fetches its wheel from the local indexURL
+# (/pyodide/). Vendoring it here makes that install offline-capable and stops
+# the local miss → CDN fallback (which logged a noisy "Fetch API cannot load
+# …pyodide_http…" console error on every boot).
+CHAT_STACK_TOP=(matplotlib scipy sympy scikit-learn beautifulsoup4 lxml requests pyodide-http)
 CHAT_STACK_MARKER="$DEST_DIR/.haruspex-chat-stack-version"
 LOCK_FILE="$DEST_DIR/pyodide-lock.json"
 
