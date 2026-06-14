@@ -163,7 +163,7 @@ for ver_files in data['releases'].values():
             print(f['url'])
             sys.exit(0)
 sys.exit(1)
-")
+" | tr -d '\r')
         if [ -z "$file_url" ]; then
             echo "   ERROR: could not resolve URL for $wheel on PyPI"
             exit 1
@@ -282,7 +282,11 @@ while stack:
     out.append(v['file_name'])
     stack.extend(d.lower() for d in v.get('depends', []))
 print('\n'.join(sorted(set(out))))
-" "${CHAT_STACK_TOP[@]}")
+" "${CHAT_STACK_TOP[@]}" | tr -d '\r')
+    # tr -d '\r': Windows CI runs this under Git Bash but with the native
+    # `python`, which emits CRLF. `$(...)` only strips the trailing newline,
+    # so internal lines keep a '\r' that word-splitting leaves attached to
+    # each wheel name → curl rejects "<name>.whl\r" as a malformed URL.
 
     cdn_base="https://cdn.jsdelivr.net/pyodide/v$PYODIDE_VERSION/full"
     new_count=0
