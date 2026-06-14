@@ -468,74 +468,186 @@ impl Default for Integration {
     }
 }
 
-/// Lossy UTF-8 decode + ANSI/OSC strip. Keeps printable text, newlines,
-/// and tabs; drops control bytes that would clutter the LLM's view.
+/// Lossy UTF-8 decode + terminal render. See `render_terminal`.
 fn bytes_to_clean_text(bytes: &[u8]) -> String {
     let text = String::from_utf8_lossy(bytes);
-    strip_ansi(&text)
+    render_terminal(&text)
 }
 
-/// Parse a `133;C` payload that may carry a `cl=<base64>` attribute
-/// (other attributes separated by `;` are ignored). Returns the decoded
-/// UTF-8 command line, or None when no `cl=` is present or decoding
-/// fails.
+/// Parse a `133;C` payload that may carry the command line as an attribute
+/// (other attributes separated by `;` are ignored). Two encodings are
+/// recognized:
+///   - `cl=<base64>` — iTerm2-style, emitted by our own bash/zsh hooks.
+///   - `cmdline_url=<pct>` — kitty's OSC 133 extension, percent-encoded. Fish
+///     4.x emits this natively, so honoring it gives fish captures the exact
+///     command line instead of falling back to the garbled terminal-echo byte
+///     slice between the B and C markers (fish redraws the prompt with
+///     per-character cursor moves we can't losslessly recover).
+///
+/// Returns the decoded UTF-8 command line, or None when neither attribute is
+/// present or decoding fails.
 fn decode_cl_attribute(data: &str) -> Option<String> {
     for attr in data.split(';') {
         if let Some(b64) = attr.strip_prefix("cl=") {
             let bytes = BASE64.decode(b64).ok()?;
             return Some(String::from_utf8_lossy(&bytes).into_owned());
         }
+        if let Some(enc) = attr.strip_prefix("cmdline_url=") {
+            return urlencoding::decode(enc).ok().map(|s| s.into_owned());
+        }
     }
     None
 }
 
-fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
+/// Render captured PTY bytes the way a terminal would, then return the visible
+/// text. Naively stripping escape codes (the old behavior) concatenated every
+/// intermediate frame of a redraw: a `\r`-based progress bar (pacman, pip,
+/// curl, npm) showed up once per update, and a line editor's repaints piled on
+/// top of each other. Instead we replay the control sequences over a line
+/// buffer and read back the final state.
+///
+/// Handled: printable text, `\n` (next line), `\r` (column 0), backspace, tab
+/// (expanded to 8-column stops), and the CSI sequences progress UIs actually
+/// use — cursor up/down/left/right (`A`/`B`/`D`/`C`), column-absolute
+/// (`G`/`` ` ``), erase-in-line (`K`), and erase-down (`0J`). Color/style CSI,
+/// OSC, and other escapes are dropped. Unlike a fixed-size grid emulator the
+/// buffer never discards scrolled-past lines, so long command output is kept
+/// whole. Absolute positioning (`H`/`f`) and full-screen clears (`1J`/`2J`)
+/// are ignored — they belong to alternate-screen TUIs we don't meaningfully
+/// capture anyway.
+fn render_terminal(s: &str) -> String {
+    let mut lines: Vec<Vec<char>> = vec![Vec::new()];
+    let mut row = 0usize;
+    let mut col = 0usize;
     let mut chars = s.chars().peekable();
+
     while let Some(c) = chars.next() {
-        if c == '\x1B' {
-            // CSI: ESC [ ... letter
-            // OSC: ESC ] ... BEL or ESC \
-            // Two-char ESC sequences: ESC X (where X is most other chars)
-            match chars.next() {
-                Some('[') => {
-                    for nc in chars.by_ref() {
-                        if nc.is_ascii_alphabetic() || nc == '~' {
-                            break;
-                        }
-                    }
+        match c {
+            '\x1B' => apply_escape(&mut chars, &mut lines, &mut row, &mut col),
+            '\r' => col = 0,
+            '\n' => {
+                row += 1;
+                if row == lines.len() {
+                    lines.push(Vec::new());
                 }
-                Some(']') => {
-                    // skip until BEL or ESC \
-                    while let Some(nc) = chars.next() {
-                        if nc == '\x07' {
-                            break;
-                        }
-                        if nc == '\x1B' {
-                            // expect '\\'
-                            chars.next();
-                            break;
-                        }
-                    }
-                }
-                Some(_) => {
-                    // single-char ESC sequence, already consumed
-                }
-                None => break,
+                col = 0;
             }
-        } else if c == '\r' {
-            // Common in PTY output as part of CRLF; collapse it so
-            // the LLM doesn't see literal carriage returns.
-            // We keep the next \n if present.
-            continue;
-        } else if c.is_control() && c != '\n' && c != '\t' {
-            // drop other control bytes (BEL, backspace, etc.)
-            continue;
-        } else {
-            out.push(c);
+            '\x08' => col = col.saturating_sub(1),
+            '\t' => col = (col / 8 + 1) * 8,
+            c if c.is_control() => {} // drop BEL and other stray control bytes
+            c => {
+                let line = &mut lines[row];
+                if col >= line.len() {
+                    line.resize(col + 1, ' ');
+                }
+                line[col] = c;
+                col += 1;
+            }
+        }
+    }
+
+    // Join, dropping trailing whitespace each line picked up from
+    // width-padded progress frames.
+    let mut out = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        let rendered: String = line.iter().collect();
+        out.push_str(rendered.trim_end());
+        if i + 1 < lines.len() {
+            out.push('\n');
         }
     }
     out
+}
+
+/// Consume one escape sequence (the ESC is already read) and apply its effect
+/// to the line buffer. CSI sequences dispatch to `apply_csi`; OSC sequences are
+/// skipped to their terminator; two-char and lone escapes are no-ops.
+fn apply_escape(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    lines: &mut Vec<Vec<char>>,
+    row: &mut usize,
+    col: &mut usize,
+) {
+    match chars.next() {
+        Some('[') => {
+            // CSI: params/intermediates until a final byte (0x40..=0x7E).
+            let mut params = String::new();
+            let mut final_byte = '\0';
+            for nc in chars.by_ref() {
+                if nc.is_ascii_alphabetic() || nc == '~' || nc == '@' {
+                    final_byte = nc;
+                    break;
+                }
+                params.push(nc);
+            }
+            apply_csi(&params, final_byte, lines, row, col);
+        }
+        Some(']') => {
+            // OSC: skip until BEL or ESC \ (String Terminator).
+            while let Some(nc) = chars.next() {
+                if nc == '\x07' {
+                    break;
+                }
+                if nc == '\x1B' {
+                    chars.next();
+                    break;
+                }
+            }
+        }
+        _ => {} // two-char ESC (already consumed) or stream end
+    }
+}
+
+fn apply_csi(
+    params: &str,
+    final_byte: char,
+    lines: &mut Vec<Vec<char>>,
+    row: &mut usize,
+    col: &mut usize,
+) {
+    // First numeric parameter; default 0. `?`-prefixed private modes (e.g.
+    // ?2004 bracketed paste) parse to 0 and fall through to the no-op arm.
+    let n = params
+        .trim_start_matches('?')
+        .split(';')
+        .next()
+        .and_then(|p| p.parse::<usize>().ok())
+        .unwrap_or(0);
+    let step = n.max(1); // cursor moves default to 1
+    match final_byte {
+        'C' => *col += step,
+        'D' => *col = col.saturating_sub(step),
+        'G' | '`' => *col = step.saturating_sub(1),
+        'A' => *row = row.saturating_sub(step),
+        'B' => {
+            *row += step;
+            while *row >= lines.len() {
+                lines.push(Vec::new());
+            }
+        }
+        'K' => {
+            let line = &mut lines[*row];
+            match n {
+                0 => line.truncate(*col), // cursor → end of line
+                1 => {
+                    // start → cursor (inclusive)
+                    let end = (*col + 1).min(line.len());
+                    for cell in line.iter_mut().take(end) {
+                        *cell = ' ';
+                    }
+                }
+                2 => line.clear(),
+                _ => {}
+            }
+        }
+        'J' if n == 0 => {
+            // Erase from cursor to end of display: truncate the current line
+            // at the cursor and drop everything below it.
+            lines[*row].truncate(*col);
+            lines.truncate(*row + 1);
+        }
+        _ => {} // colors (m), absolute positioning (H/f), 1J/2J, etc. — ignored
+    }
 }
 
 #[cfg(test)]
@@ -675,6 +787,52 @@ mod tests {
         assert_eq!(cap.output, "line1\nline2\n");
     }
 
+    #[test]
+    fn carriage_return_progress_bar_keeps_only_final_frame() {
+        // A `\r`-redrawn progress line (pip/curl/pacman style): each frame
+        // overwrites the previous from column 0. Only the last frame survives,
+        // padded chars from the longest frame trimmed.
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]133;B\x07dl\n\x1B]133;C\x07");
+        integ.ingest(b" 10%\r 55%\r done!\n\x1B]133;D;0\x07");
+        let cap = integ.capture_last_command().unwrap();
+        assert_eq!(cap.output, " done!\n");
+    }
+
+    #[test]
+    fn erase_in_line_clears_stale_tail() {
+        // "loading..." then \r + erase-to-EOL + "ok" must not leave "ading...".
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]133;B\x07x\n\x1B]133;C\x07loading...\r\x1B[Kok\n\x1B]133;D;0\x07");
+        let cap = integ.capture_last_command().unwrap();
+        assert_eq!(cap.output, "ok\n");
+    }
+
+    #[test]
+    fn cursor_up_redraw_overwrites_earlier_line() {
+        // Multi-line progress (e.g. two download bars): print two lines, move
+        // the cursor up one, and overwrite the first. The second line stays.
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]133;B\x07x\n\x1B]133;C\x07");
+        // Print "a"/"b" bars, move up 2, rewrite line a in place + erase its
+        // tail, move back down 2.
+        integ.ingest(b"a: 0%\nb: 0%\n\x1B[2A\ra: 100%\x1B[K\x1B[2B\r\x1B]133;D;0\x07");
+        let cap = integ.capture_last_command().unwrap();
+        // Line "a" was overwritten in place to 100%; line "b" untouched.
+        assert!(cap.output.contains("a: 100%"));
+        assert!(cap.output.contains("b: 0%"));
+        assert!(!cap.output.contains("a: 0%"));
+    }
+
+    #[test]
+    fn expands_tabs_to_columns() {
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]133;B\x07x\n\x1B]133;C\x07a\tb\n\x1B]133;D;0\x07");
+        let cap = integ.capture_last_command().unwrap();
+        // 'a' at col 0, tab advances to col 8, 'b' at col 8.
+        assert_eq!(cap.output, "a       b\n");
+    }
+
     fn run_cycle(integ: &mut Integration, cmd: &str, out: &str, exit: u8) {
         integ.ingest(b"\x1B]133;A\x07prompt$ \x1B]133;B\x07");
         integ.ingest(cmd.as_bytes());
@@ -777,6 +935,22 @@ mod tests {
         integ.ingest(payload.as_bytes());
         let cap = integ.capture_last_command().unwrap();
         assert_eq!(cap.command_line, "cd planets");
+        assert!(!cap.truncated);
+    }
+
+    #[test]
+    fn c_marker_cmdline_url_attribute_decodes_fish_command() {
+        // Fish 4.x emits OSC 133 natively, carrying the command line via
+        // kitty's `cmdline_url=<percent-encoded>` extension. The bytes the
+        // terminal echoed between B and C are fish's prompt redraw (per-char
+        // cursor moves), which would byte-slice into garbage — the attribute
+        // must win so the capture shows the exact command.
+        let mut integ = Integration::new();
+        let payload = b"\x1B]133;A\x07/tmp $ \x1B]133;B\x07\r\x1B[2Ce\r\x1B[3Cc\
+\r\x1B[4Ch\r\x1B[5Co\x1B]133;C;cmdline_url=echo%20hi%20there\x07hi there\n\x1B]133;D;0\x07";
+        integ.ingest(payload);
+        let cap = integ.capture_last_command().unwrap();
+        assert_eq!(cap.command_line, "echo hi there");
         assert!(!cap.truncated);
     }
 
