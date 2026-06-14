@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.48](https://github.com/tmac1973/haruspex/compare/v0.1.47...v0.1.48) (2026-06-14)
+
+
+### Bug Fixes
+
+* **ci:** strip CRLF from Windows pyodide wheel resolver ([#120](https://github.com/tmac1973/haruspex/issues/120)) ([a05d73f](https://github.com/tmac1973/haruspex/commit/a05d73f2ff2a6acba1b05e212d324d2f25c45610))
+
 ## [0.1.47](https://github.com/tmac1973/haruspex/compare/v0.1.46...v0.1.47) (2026-06-14)
 
 
