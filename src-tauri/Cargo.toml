@@ -55,4 +55,8 @@ tokio-rustls = "0.26"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
 webpki-roots = "0.26"
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
-ts-rs = { version = "10.1.0", features = ["serde-compat"] }
+# no-serde-warnings silences ts-rs's "failed to parse serde attribute" notices
+# for #[serde(skip_serializing_if = ...)] — ts-rs can't translate the runtime
+# predicate to TypeScript, but the affected fields are already #[ts(optional)],
+# so the generated bindings are correct and the warning is pure noise.
+ts-rs = { version = "10.1.0", features = ["serde-compat", "no-serde-warnings"] }
