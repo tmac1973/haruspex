@@ -94,7 +94,8 @@ describe('sandbox tools', () => {
 		);
 		const { executeTool } = await import('$lib/agent/tools');
 		const out = await executeTool('run_python', { code: 'df' }, ctx);
-		expect(out.result).toContain('2 artifacts');
+		expect(out.result).toContain('2 figures/artifacts');
+		expect(out.result).toContain('do NOT embed');
 		expect(out.result).toContain('DataFrame truncated');
 	});
 
