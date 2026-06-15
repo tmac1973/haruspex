@@ -143,6 +143,28 @@ bundle_external_dylibs_macos() {
     rm -f "$todo" "$seen" "$touched"
 }
 
+# Refuse to ship a sidecar that was configured for GPU but silently fell back to
+# CPU. The Vulkan configure/build can fail on too-old shader toolchains and the
+# fallback path below quietly produces a CPU-only binary — exactly how a
+# CPU-only AppImage shipped before (the only libggml-vulkan present was
+# whisper.cpp's older, ABI-mismatched copy, which ggml then refused to load).
+# Set ALLOW_CPU_FALLBACK=1 for intentional CPU-only builds.
+require_gpu_backend() {
+    local what="$1" build_dir="$2" gpu_flags="$3"
+    [ -n "$ALLOW_CPU_FALLBACK" ] && return 0
+    case "$gpu_flags" in
+        *GGML_VULKAN*) ;;        # enforce — Vulkan must have produced a backend
+        *) return 0 ;;           # Metal / none: nothing to verify here
+    esac
+    if ! find "$build_dir" -name "*ggml-vulkan.*" -type f | grep -q .; then
+        echo "ERROR: $what was configured for GPU ($gpu_flags) but no libggml-vulkan"
+        echo "       backend was produced — the build silently fell back to CPU."
+        echo "       Refusing to ship a CPU-only sidecar. Fix the build toolchain"
+        echo "       (e.g. a newer glslc / Vulkan SDK), or set ALLOW_CPU_FALLBACK=1."
+        exit 1
+    fi
+}
+
 echo "========================================"
 echo "  Building Haruspex Sidecars"
 echo "  Target: $TARGET"
@@ -226,6 +248,10 @@ else
     cp "$LLAMA_OUT" "$LLAMA_BIN"
     chmod +x "$LLAMA_BIN"
 
+    # llama.cpp owns the ggml core + Vulkan backend the whole app runs on, so a
+    # silent CPU fallback here is fatal: abort before bundling anything.
+    require_gpu_backend "llama-server" "$BUILD_DIR/llama" "$CMAKE_GPU_FLAGS"
+
     # Drop previously-bundled llama-owned shared libs before copying the new
     # ones, so a version bump doesn't leave orphaned, soname-shadowed copies
     # (e.g. libggml-base.so.0.9.8 lingering next to 0.14.0). These families are
@@ -302,12 +328,22 @@ else
     cp "$WHISPER_OUT" "$WHISPER_BIN"
     chmod +x "$WHISPER_BIN"
 
-    # Copy shared libraries to libs/ subdirectory.
-    # Only copy libs that don't already exist — llama-server's GGML libs take
-    # precedence since llama-server needs the exact versions it was built against.
+    # Copy whisper's OWN shared libraries (libwhisper*, etc.) to libs/.
+    #
+    # Critically, skip the ggml/llama/mtmd family: whisper.cpp pins an OLDER ggml
+    # (different soname version) than llama.cpp. Its versioned files (e.g.
+    # libggml-vulkan.so.0.9.8) have distinct names from llama's (…0.14.0), so the
+    # "already exists" check below does NOT dedup them — they'd be copied in
+    # alongside llama's set. When llama's Vulkan backend is absent, whisper's
+    # stale libggml-vulkan then becomes the active soname and ggml refuses to
+    # load it against llama's core → CPU-only. whisper-server links libggml.so.0
+    # and runs against llama's authoritative copy, so we never bundle whisper's.
     mkdir -p "$BINARIES_DIR/libs"
     find -L . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
         libname=$(basename "$lib")
+        case "$libname" in
+            libggml*|libllama*|libmtmd*) continue ;;
+        esac
         if [ ! -f "$BINARIES_DIR/libs/$libname" ]; then
             cp -L "$lib" "$BINARIES_DIR/libs/"
         fi
