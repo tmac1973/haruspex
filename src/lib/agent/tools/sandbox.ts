@@ -25,7 +25,15 @@ function formatResult(r: ToolResult): string {
 	if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
 	if (r.result) lines.push(`Result: ${r.result}`);
 	if (r.artifacts > 0) {
-		lines.push(`(${r.artifacts} artifact${r.artifacts === 1 ? '' : 's'} rendered in UI)`);
+		// Be explicit and directive: small models otherwise read a vague
+		// "rendered in UI" and still try to "show" the figure by hand-writing
+		// markdown image links or <iframe> tags to invented file paths.
+		const s = r.artifacts === 1 ? '' : 's';
+		lines.push(
+			`(${r.artifacts} figure${s}/artifact${s} already rendered inline in the chat and ` +
+				`shown to the user automatically — do NOT embed them again, reference any file ` +
+				`path, or write image/iframe markup for them; just describe them in your reply.)`
+		);
 	}
 	if (r.notes.length > 0) lines.push(`Notes: ${r.notes.join('; ')}`);
 	if (lines.length === 0) lines.push('(no output)');
