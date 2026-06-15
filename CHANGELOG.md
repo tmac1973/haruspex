@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.49](https://github.com/tmac1973/haruspex/compare/v0.1.48...v0.1.49) (2026-06-15)
+
+
+### Bug Fixes
+
+* **build:** ship a working Vulkan backend in Linux releases ([#122](https://github.com/tmac1973/haruspex/issues/122)) ([faae5e1](https://github.com/tmac1973/haruspex/commit/faae5e18e3b601b7b08d8f99837ed0f15045d240))
+
 ## [0.1.48](https://github.com/tmac1973/haruspex/compare/v0.1.47...v0.1.48) (2026-06-14)
 
 
