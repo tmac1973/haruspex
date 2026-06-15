@@ -25,7 +25,15 @@ function formatResult(r: ToolResult): string {
 	if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
 	if (r.result) lines.push(`Result: ${r.result}`);
 	if (r.artifacts > 0) {
-		lines.push(`(${r.artifacts} artifact${r.artifacts === 1 ? '' : 's'} rendered in UI)`);
+		// Be explicit and directive: small models otherwise read a vague
+		// "rendered in UI" and still try to "show" the figure by hand-writing
+		// markdown image links or <iframe> tags to invented file paths.
+		const s = r.artifacts === 1 ? '' : 's';
+		lines.push(
+			`(${r.artifacts} figure${s}/artifact${s} already rendered inline in the chat and ` +
+				`shown to the user automatically — do NOT embed them again, reference any file ` +
+				`path, or write image/iframe markup for them; just describe them in your reply.)`
+		);
 	}
 	if (r.notes.length > 0) lines.push(`Notes: ${r.notes.join('; ')}`);
 	if (lines.length === 0) lines.push('(no output)');
@@ -50,7 +58,7 @@ registerTool({
 				'OUTPUT: ' +
 				'(1) Text — stdout + final-expression repr. ' +
 				'(2) Inline images — matplotlib `plt.show()` emits the figure as a PNG in chat. ' +
-				'(3) Inline interactive plots — plotly / bokeh / altair / folium figures returned as the LAST EXPRESSION render in the chat message as an interactive HTML iframe (hover, pan, zoom). Example: `import plotly.express as px; fig = px.scatter(...); fig` — just leave `fig` as the last line; the runtime auto-detects script-bearing HTML and renders it interactively. Do NOT save the HTML to disk and do NOT call any helper to render — return the figure as the last expression. ' +
+				'(3) Inline interactive plots — plotly / bokeh / altair / folium figures render in the chat as an interactive HTML iframe (hover, pan, zoom). To show ONE figure, leave it as the LAST EXPRESSION (e.g. `import plotly.express as px; fig = px.scatter(...); fig`). To show SEVERAL, call `fig.show()` on each — every call renders its own inline plot. You do NOT need a working directory and you do NOT need to manage files: `fig.show()` and `fig.write_html(...)` both render inline. Never hand-write `<iframe>` or HTML markup in your reply to embed a chart — it will not render; produce the figure in run_python instead. ' +
 				'(4) Inline DataFrames — a pandas DataFrame as the last expression renders as an HTML table. ' +
 				'Your CODE must complete within the timeout (default 60s); there is no background-task pattern. Package installs do NOT count against that timeout — a first-time import that has to download is budgeted separately, so you can just import freely. Bundled offline (no install needed, no network): matplotlib, numpy, pandas, scipy, scikit-learn, sympy, pillow, beautifulsoup4, lxml, requests, plotly, plus fpdf2, python-pptx, xlsxwriter, bokeh, altair. Other PyPI packages are auto-installed on first import (one-time download, then cached).',
 			parameters: {

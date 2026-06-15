@@ -581,6 +581,27 @@ def _haruspex_install_plotly_hook():
         # reaches for the CDN.
         return _pio.to_html(self, include_plotlyjs=_pjs, full_html=True)
 
+    _orig_pio_write_html = _pio.write_html
+
+    def _pio_write_html(fig, *args, **kwargs):
+        # Models reflexively save figures to disk (fig.write_html / pio.write_html).
+        # Without a working dir that file is an unreachable VFS dead-end the user
+        # can never see, so ALSO emit the figure inline — forcing the bundled
+        # plotly.js so the artifact needs no network. Figure.write_html delegates
+        # to pio.write_html, so this one patch covers both idioms. Only perform
+        # the real disk write when a working dir is configured (otherwise it's a
+        # dead file and a bad path would just raise after we've already shown it).
+        try:
+            _haruspex_emit_html(
+                _pio.to_html(fig, include_plotlyjs=_pjs, full_html=True), None, None, True
+            )
+        except Exception:
+            pass
+        if globals().get('_haruspex_working_dir_set'):
+            return _orig_pio_write_html(fig, *args, **kwargs)
+        return None
+
+    _pio.write_html = _pio_write_html
     _go.Figure.show = _show
     _go.Figure._repr_html_ = _repr_html_
     plotly._haruspex_patched = True
