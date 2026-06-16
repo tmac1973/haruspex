@@ -11,6 +11,8 @@ export const IPC = {
 	clear_server_logs: 'clear_server_logs',
 	clear_tts_logs: 'clear_tts_logs',
 	clear_whisper_logs: 'clear_whisper_logs',
+	clipboard_read_primary: 'clipboard_read_primary',
+	clipboard_read_text: 'clipboard_read_text',
 	cmd_detect_hardware: 'cmd_detect_hardware',
 	db_clear_all_conversations: 'db_clear_all_conversations',
 	db_create_conversation: 'db_create_conversation',
