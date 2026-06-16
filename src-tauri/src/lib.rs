@@ -1,5 +1,6 @@
 mod app_log;
 mod audio;
+mod clipboard;
 mod db;
 mod feedback;
 mod fs_tools;
@@ -226,6 +227,8 @@ pub fn run() {
             shell::shell_stash_scrollback,
             shell::shell_take_scrollback,
             shell::shell_platform_supported,
+            clipboard::clipboard_read_text,
+            clipboard::clipboard_read_primary,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

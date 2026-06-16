@@ -25,6 +25,13 @@
 		context: SessionContext;
 		getSelection: () => string;
 		focus: () => void;
+		/**
+		 * Paste text into the terminal via xterm, which wraps it in
+		 * bracketed-paste guards when the foreground app has enabled that mode
+		 * (just like a native terminal paste) and routes it through onData to
+		 * the PTY.
+		 */
+		paste: (data: string) => void;
 		restart: () => Promise<void>;
 		/** Serialized grid snapshot (for clean cross-window scrollback handoff). */
 		serialize: () => string;
@@ -134,6 +141,7 @@
 			context,
 			getSelection: () => term?.getSelection() ?? '',
 			focus: () => term?.focus(),
+			paste: (data: string) => term?.paste(data),
 			restart: () => restart(),
 			serialize: () => serializeAddon?.serialize() ?? ''
 		};

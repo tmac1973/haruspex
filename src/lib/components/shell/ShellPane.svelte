@@ -49,18 +49,43 @@
 		}
 	}
 
+	// Read the clipboard natively (Rust/arboard) rather than via
+	// navigator.clipboard.readText(), which is unreliable under WebKitGTK and
+	// often returns an empty string — the cause of paste working only
+	// intermittently. Paste through xterm so bracketed-paste mode is honoured.
 	async function pasteFromClipboard(): Promise<boolean> {
 		if (!handle) return false;
 		try {
-			const text = await navigator.clipboard.readText();
+			const text = await invoke<string>('clipboard_read_text');
 			if (!text) return false;
-			await invoke('shell_write', { sessionId: handle.sessionId, data: text });
+			handle.paste(text);
 			handle.focus();
 			return true;
 		} catch (e) {
-			console.error('clipboard.readText failed', e);
+			console.error('clipboard_read_text failed', e);
 			return false;
 		}
+	}
+
+	// Middle-click pastes the X11/Wayland PRIMARY selection (whatever was last
+	// highlighted, in any window) — the conventional terminal behaviour. The
+	// webview can't read the primary selection, so we read it natively.
+	async function pastePrimarySelection() {
+		if (!handle) return;
+		try {
+			const text = await invoke<string>('clipboard_read_primary');
+			if (!text) return;
+			handle.paste(text);
+			handle.focus();
+		} catch (e) {
+			console.error('clipboard_read_primary failed', e);
+		}
+	}
+
+	function onTerminalMouseDown(event: MouseEvent) {
+		if (event.button !== 1) return; // middle button only
+		event.preventDefault();
+		void pastePrimarySelection();
 	}
 
 	function onTerminalReady(h: TerminalHandle) {
@@ -277,7 +302,12 @@
 
 <div class="shell-pane" role="presentation">
 	<div class="terminal-region">
-		<div class="terminal-pane" oncontextmenu={onContextMenu} role="presentation">
+		<div
+			class="terminal-pane"
+			oncontextmenu={onContextMenu}
+			onmousedown={onTerminalMouseDown}
+			role="presentation"
+		>
 			<Terminal
 				{attachSessionId}
 				onReady={onTerminalReady}
