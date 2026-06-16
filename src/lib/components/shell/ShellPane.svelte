@@ -82,10 +82,41 @@
 		}
 	}
 
+	// WebKitGTK performs its own native middle-click paste into xterm's hidden
+	// textarea on mouseup — and it pastes the regular CLIPBOARD, not PRIMARY —
+	// which xterm picks up via its built-in `paste` DOM-event handler. That
+	// would double-paste on top of our explicit PRIMARY paste below (with the
+	// wrong text). preventDefault on this mousedown can't cancel it (the native
+	// paste rides a separate event), so we arm a flag and swallow the one
+	// native paste it triggers in onTerminalPasteCapture.
+	let suppressNativePaste = false;
+	let suppressPasteTimer: ReturnType<typeof setTimeout> | null = null;
+
 	function onTerminalMouseDown(event: MouseEvent) {
 		if (event.button !== 1) return; // middle button only
 		event.preventDefault();
+		suppressNativePaste = true;
+		if (suppressPasteTimer) clearTimeout(suppressPasteTimer);
+		// Safety release: if no native paste materialises (e.g. nothing in the
+		// clipboard) don't leave the flag armed for a later, legitimate paste.
+		suppressPasteTimer = setTimeout(() => (suppressNativePaste = false), 1000);
 		void pastePrimarySelection();
+	}
+
+	// Capture phase on .terminal-pane runs before xterm's own paste listener on
+	// the inner textarea, so stopPropagation here keeps xterm from handling the
+	// native middle-click paste. Only fires for the paste armed by a middle
+	// mousedown — Ctrl+Shift+V and the context menu paste via term.paste(),
+	// which doesn't dispatch a DOM paste event, so they're unaffected.
+	function onTerminalPasteCapture(event: ClipboardEvent) {
+		if (!suppressNativePaste) return;
+		suppressNativePaste = false;
+		if (suppressPasteTimer) {
+			clearTimeout(suppressPasteTimer);
+			suppressPasteTimer = null;
+		}
+		event.preventDefault();
+		event.stopPropagation();
 	}
 
 	function onTerminalReady(h: TerminalHandle) {
@@ -306,6 +337,7 @@
 			class="terminal-pane"
 			oncontextmenu={onContextMenu}
 			onmousedown={onTerminalMouseDown}
+			onpastecapture={onTerminalPasteCapture}
 			role="presentation"
 		>
 			<Terminal
