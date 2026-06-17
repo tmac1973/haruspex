@@ -202,6 +202,22 @@ function looksLikeClarifyingQuestion(content: string): boolean {
 }
 
 /**
+ * True if `content` carries real answer prose once `<think>...</think>`
+ * reasoning blocks are stripped out. With thinking mode on (the default),
+ * a tool-check response can come back as reasoning only — the API layer's
+ * `combineReasoningAndContent` packs that into a bare `<think>...</think>`
+ * string. That is NOT a final answer: committing it directly ends the turn
+ * with the model's reasoning (or, after the UI strips it, nothing) shown
+ * instead of a reply, which is exactly the "model stops before answering,
+ * I have to say continue" failure. Such responses must fall through to the
+ * tool-less re-stream that forces a real answer.
+ */
+function hasNonThinkingContent(content: string | null | undefined): boolean {
+	if (!content) return false;
+	return content.replace(/<think>[\s\S]*?<\/think>/g, '').trim().length > 0;
+}
+
+/**
  * Race a promise against an AbortSignal. If the signal fires before the
  * promise settles, rejects with AbortError. The original promise keeps
  * running and its resolution is discarded — most tools dispatch to
@@ -702,14 +718,15 @@ async function finalizeNoToolCalls(
 	// If this iteration's non-streaming check call already came back with a
 	// clean, substantive answer, surface it directly through the stream
 	// callbacks and skip the redundant re-stream.
-	if (response.finish_reason === 'stop' && response.content && response.content.trim().length > 0) {
+	if (response.finish_reason === 'stop' && hasNonThinkingContent(response.content)) {
+		const content = response.content ?? '';
 		logDebug(
 			'agent',
 			`iteration ${iteration} branch=final-synthesis (commit non-stream response, skip re-stream)`,
-			{ contentLen: response.content.length, usedTools: state.usedTools }
+			{ contentLen: content.length, usedTools: state.usedTools }
 		);
 		options.onStreamChunk({
-			delta: { content: response.content },
+			delta: { content },
 			finish_reason: 'stop'
 		});
 		options.onComplete();

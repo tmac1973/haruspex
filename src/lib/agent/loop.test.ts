@@ -649,6 +649,28 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 	});
 
+	it('re-streams a real answer when the post-tools response is thinking-only', async () => {
+		// Regression: with thinking mode on, the API layer packs a
+		// reasoning-only reply into a bare <think>...</think> string. That is
+		// NOT a final answer — committing it directly ends the turn with no
+		// reply, the "model stops before answering, I have to say continue"
+		// bug. It must fall through to the tool-less re-stream instead.
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'c1', name: 'run_python', args: '{"code":"print(1)"}' }]),
+			textResponse('<think>I now have enough to answer.</think>', 'stop')
+		);
+		streamQueue.push([contentChunk('Here is the real answer.', 'stop')]);
+		const { options, cb } = makeOptions({ maxIterations: 5 });
+
+		await runAgentLoop(options);
+
+		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
+		// Post-tools re-stream drops the tool list so the model answers.
+		expect(streamTools[0]).toBeUndefined();
+		expect(streamedText(cb)).toBe('Here is the real answer.');
+		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+	});
+
 	it('uses the gentler wrap-up prompt for shell-mode max-iterations synthesis', async () => {
 		nonStreamQueue.push(
 			toolCallResponse([{ id: 'c1', name: 'fs_read_text', args: '{"path":"/var/log/syslog"}' }])
