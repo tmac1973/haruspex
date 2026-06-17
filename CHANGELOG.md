@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.50](https://github.com/tmac1973/haruspex/compare/v0.1.49...v0.1.50) (2026-06-17)
+
+
+### Bug Fixes
+
+* **agent:** re-stream when post-tools reply is thinking-only ([#126](https://github.com/tmac1973/haruspex/issues/126)) ([f40aadc](https://github.com/tmac1973/haruspex/commit/f40aadcd9e35fed08a478f7fcc1a1ccc57ed8315))
+* **sandbox:** make inline chart/figure display reliable ([#124](https://github.com/tmac1973/haruspex/issues/124)) ([1b105c6](https://github.com/tmac1973/haruspex/commit/1b105c6780bc7ee8ec37f72f3c414918d8188444))
+* **shell:** make paste reliable and add middle-click primary paste ([#125](https://github.com/tmac1973/haruspex/issues/125)) ([731ba4f](https://github.com/tmac1973/haruspex/commit/731ba4fd25d1edb595f30e5bde4f380162bb14b4))
+
 ## [0.1.49](https://github.com/tmac1973/haruspex/compare/v0.1.48...v0.1.49) (2026-06-15)
 
 
