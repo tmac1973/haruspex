@@ -12,7 +12,12 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { untrack } from 'svelte';
-	import type { InferenceBackendConfig, InferenceBackendKind } from '$lib/stores/settings';
+	import type {
+		InferenceBackendConfig,
+		InferenceBackendKind,
+		RemoteReasoningCaps,
+		RemoteSamplingCaps
+	} from '$lib/stores/settings';
 
 	interface NormalizedModel {
 		id: string;
@@ -20,6 +25,10 @@
 		context_size: number | null;
 		vision_supported: boolean | null;
 		loaded: boolean | null;
+		// llama-toolchest only — null for every other backend.
+		parallel: number | null;
+		reasoning: RemoteReasoningCaps | null;
+		sampling: RemoteSamplingCaps | null;
 	}
 
 	interface ProbeResult {
@@ -82,6 +91,52 @@
 
 	function commit(partial: Partial<InferenceBackendConfig>) {
 		onConfigChange({ ...config, ...partial });
+	}
+
+	// Per-model capability fields to persist alongside a probe / model
+	// switch. Sampling + reasoning are only ever populated by llama-toolchest;
+	// for other backends they're null, which also correctly clears any stale
+	// toolchest caps when the user re-probes a different server. The parallel
+	// slot count auto-sets the parallel-inference toggle — but only for
+	// toolchest, since other backends don't report it and we must not clobber
+	// the user's manual choice.
+	function capabilityCommit(
+		m: NormalizedModel | undefined,
+		kind: InferenceBackendKind
+	): Partial<InferenceBackendConfig> {
+		const partial: Partial<InferenceBackendConfig> = {
+			remoteSampling: m?.sampling ?? null,
+			remoteReasoning: m?.reasoning ?? null,
+			remoteParallel: m?.parallel ?? null
+		};
+		if (kind === 'llama-toolchest' && typeof m?.parallel === 'number') {
+			partial.allowParallelInference = m.parallel > 1;
+		}
+		return partial;
+	}
+
+	// --- "Detected capabilities" readout (llama-toolchest only) ----------
+	// Driven off the persisted `config` so it survives a settings reload, not
+	// just the moment after a probe.
+	let showCaps = $derived(
+		config.remoteBackendKind === 'llama-toolchest' &&
+			(config.remoteReasoning !== null || config.remoteSampling !== null)
+	);
+
+	function reasoningSummary(r: InferenceBackendConfig['remoteReasoning']): string {
+		if (!r) return 'unknown';
+		if (!r.supported) return 'not supported';
+		if (r.toggle === 'chat_template_kwargs' && r.kwarg) {
+			return `${r.kwarg} · ${r.default_enabled ? 'on' : 'off'} by default`;
+		}
+		return r.toggle;
+	}
+
+	function samplingSummary(s: InferenceBackendConfig['remoteSampling']): string {
+		if (!s) return 'not reported';
+		const label = s.source === 'readme' ? 'README recommendation' : (s.source ?? 'recommended');
+		const n = s.presets.length;
+		return `${label} · ${n} preset${n === 1 ? '' : 's'}`;
 	}
 
 	function selectUrl(url: string) {
@@ -149,7 +204,8 @@
 				remoteModelId: modelId,
 				remoteContextSize: typeof manualContextSize === 'number' ? manualContextSize : null,
 				remoteVisionSupported: visionOverride,
-				remoteBackendKind: result.kind
+				remoteBackendKind: result.kind,
+				...capabilityCommit(selectedModel, result.kind)
 			});
 		} catch (e) {
 			probeError = String(e);
@@ -175,7 +231,8 @@
 		commit({
 			remoteModelId: newId,
 			remoteContextSize: typeof manualContextSize === 'number' ? manualContextSize : null,
-			remoteVisionSupported: visionOverride
+			remoteVisionSupported: visionOverride,
+			...capabilityCommit(m, probeResult?.kind ?? null)
 		});
 	}
 
@@ -370,6 +427,38 @@
 			</label>
 		</div>
 	{/if}
+
+	{#if showCaps}
+		<div class="caps">
+			<div class="caps-title">Detected capabilities <span>llama-toolchest</span></div>
+			<dl class="caps-grid">
+				{#if config.remoteReasoning}
+					<dt>Reasoning</dt>
+					<dd>{reasoningSummary(config.remoteReasoning)}</dd>
+				{/if}
+				{#if config.remoteSampling}
+					<dt>Sampling</dt>
+					<dd>{samplingSummary(config.remoteSampling)}</dd>
+				{/if}
+				{#if config.remoteParallel !== null}
+					<dt>Parallel</dt>
+					<dd>{config.remoteParallel} slot{config.remoteParallel === 1 ? '' : 's'}</dd>
+				{/if}
+				{#if config.remoteContextSize !== null}
+					<dt>Context</dt>
+					<dd>{config.remoteContextSize.toLocaleString()} tokens / request</dd>
+				{/if}
+				{#if config.remoteVisionSupported !== null}
+					<dt>Vision</dt>
+					<dd>{config.remoteVisionSupported ? 'supported' : 'not supported'}</dd>
+				{/if}
+			</dl>
+			<p class="hint">
+				Discovered from the server and applied automatically — sampling and reasoning come from the
+				model's recommendations, not Haruspex's built-in defaults.
+			</p>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -405,6 +494,54 @@
 
 	.field input[readonly] {
 		opacity: 0.7;
+	}
+
+	.caps {
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 12px 14px;
+		background: var(--bg-secondary);
+	}
+
+	.caps-title {
+		font-size: 0.85rem;
+		font-weight: 600;
+		margin-bottom: 8px;
+	}
+
+	.caps-title span {
+		font-size: 0.68rem;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		color: var(--text-secondary);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 1px 6px;
+		margin-left: 6px;
+		vertical-align: middle;
+	}
+
+	.caps-grid {
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		gap: 4px 16px;
+		margin: 0;
+	}
+
+	.caps-grid dt {
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.caps-grid dd {
+		font-size: 0.8rem;
+		margin: 0;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.caps .hint {
+		margin-top: 10px;
 	}
 
 	.url-row {

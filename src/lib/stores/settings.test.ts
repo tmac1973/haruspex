@@ -5,6 +5,8 @@ import {
 	updateSettings,
 	getActiveContextSize,
 	getSamplingParams,
+	getChatTemplateKwargs,
+	isReasoningSupported,
 	getActiveModelFamily,
 	setActiveLocalModel
 } from '$lib/stores/settings';
@@ -160,5 +162,102 @@ describe('sampling profile resolution', () => {
 		setActiveLocalModel(null);
 		// Still resolves to default family, not crash.
 		expect(getActiveModelFamily()).toBe('qwen3.5');
+	});
+});
+
+describe('toolchest-discovered capabilities', () => {
+	const sampling = {
+		default: { temperature: 1.0, top_p: 0.99, top_k: 99, presence_penalty: 9.0 },
+		presets: [
+			{ name: 'thinking', temperature: 0.6, top_p: 0.95, top_k: 20, presence_penalty: 0.5 },
+			{ name: 'non-thinking', temperature: 0.7, top_p: 0.8, top_k: 20, presence_penalty: 1.5 },
+			{ name: 'thinking-coding', temperature: 0.3, top_p: 0.9, top_k: 10, presence_penalty: 0.0 }
+		]
+	};
+
+	beforeEach(() => {
+		updateSettings({ thinkingEnabled: true });
+		// Start each test from a clean non-toolchest remote so gating is off
+		// until a test opts in.
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteModelId: 'qwen3.5',
+			remoteBackendKind: null,
+			remoteSampling: null,
+			remoteReasoning: null
+		});
+	});
+
+	it('uses the thinking preset for a toolchest backend', () => {
+		updateInferenceBackend({ remoteBackendKind: 'llama-toolchest', remoteSampling: sampling });
+		expect(getSamplingParams()).toEqual({
+			temperature: 0.6,
+			top_p: 0.95,
+			top_k: 20,
+			presence_penalty: 0.5
+		});
+	});
+
+	it('uses the thinking-coding preset under code context', () => {
+		updateInferenceBackend({ remoteBackendKind: 'llama-toolchest', remoteSampling: sampling });
+		expect(getSamplingParams({ codeContext: true })).toEqual({
+			temperature: 0.3,
+			top_p: 0.9,
+			top_k: 10,
+			presence_penalty: 0.0
+		});
+	});
+
+	it('uses the non-thinking preset when thinking is off', () => {
+		updateSettings({ thinkingEnabled: false });
+		updateInferenceBackend({ remoteBackendKind: 'llama-toolchest', remoteSampling: sampling });
+		expect(getSamplingParams().temperature).toBe(0.7);
+	});
+
+	it('falls back to the built-in profile for fields a preset omits', () => {
+		updateInferenceBackend({
+			remoteBackendKind: 'llama-toolchest',
+			remoteSampling: { default: {}, presets: [{ name: 'thinking', temperature: 0.42 }] }
+		});
+		const p = getSamplingParams();
+		expect(p.temperature).toBe(0.42); // from preset
+		expect(p.top_k).toBe(20); // from built-in qwen3.5 thinking/general
+		expect(p.presence_penalty).toBe(1.5); // from built-in
+	});
+
+	it('ignores discovered sampling for a non-toolchest backend', () => {
+		// Same sampling blob, but backend kind isn't toolchest → built-ins win.
+		updateInferenceBackend({ remoteBackendKind: 'openai-compat', remoteSampling: sampling });
+		expect(getSamplingParams().temperature).toBe(1.0); // Qwen 3.5 thinking/general
+	});
+
+	it('forwards the discovered reasoning kwarg', () => {
+		updateInferenceBackend({
+			remoteBackendKind: 'llama-toolchest',
+			remoteReasoning: {
+				supported: true,
+				default_enabled: true,
+				toggle: 'chat_template_kwargs',
+				kwarg: 'enable_thinking'
+			}
+		});
+		expect(getChatTemplateKwargs()).toEqual({ enable_thinking: true });
+		expect(isReasoningSupported()).toBe(true);
+	});
+
+	it('sends no template kwargs for a non-reasoning toolchest model', () => {
+		updateInferenceBackend({
+			remoteBackendKind: 'llama-toolchest',
+			remoteReasoning: { supported: false, default_enabled: false, toggle: 'none', kwarg: null }
+		});
+		expect(getChatTemplateKwargs()).toEqual({});
+		expect(isReasoningSupported()).toBe(false);
+	});
+
+	it('keeps enable_thinking for non-toolchest backends regardless of discovery', () => {
+		updateSettings({ thinkingEnabled: false });
+		updateInferenceBackend({ remoteBackendKind: 'openai-compat', remoteReasoning: null });
+		expect(getChatTemplateKwargs()).toEqual({ enable_thinking: false });
+		expect(isReasoningSupported()).toBe(true);
 	});
 });

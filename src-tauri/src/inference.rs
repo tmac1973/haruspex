@@ -11,11 +11,13 @@
 //! to least:
 //!
 //!   1. **llama-toolchest** — `GET /api/service/status` confirms the
-//!      management layer, then `/api/service/loaded-models` and
-//!      `/api/models/{id}/info` yield rich per-model metadata including
-//!      context size and vision capability. Toolchest tracks loaded-vs-
-//!      unloaded state explicitly so the UI can surface a "load this
-//!      model" affordance when the user picks an unloaded entry.
+//!      management layer, then a single `GET /api/service/loaded-models`
+//!      yields rich per-model metadata inline under a `capabilities`
+//!      object: per-request context size, vision, tool support, parallel
+//!      slot count, reasoning-mode toggle, and recommended sampling.
+//!      Toolchest tracks loaded-vs-unloaded state explicitly so the UI
+//!      can surface a "load this model" affordance when the user picks an
+//!      unloaded entry.
 //!   2. **stock llama-server** — `GET /props` is a llama.cpp-specific
 //!      endpoint exposing `n_ctx` and chat_template. We use it for the
 //!      default context size and then fall through to `/v1/models` for
@@ -59,10 +61,71 @@ pub enum BackendKind {
     Ollama,
 }
 
+/// Recommended sampling parameters for a model. Every field is optional —
+/// the backend only fills in what its model card / config actually
+/// specifies, and the client falls back to its own defaults for the rest.
+/// Only llama-toolchest populates these today.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct SamplingParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f64>,
+}
+
+/// A named sampling preset (e.g. "thinking", "non-thinking",
+/// "thinking-coding") — the params plus a stable `name` the client keys
+/// on and a human `label`.
+#[derive(Clone, Debug, Serialize)]
+pub struct SamplingPreset {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f64>,
+}
+
+/// A model's recommended sampling: a resolved `default` plus the named
+/// presets the client can pick between based on thinking / code context.
+/// `source` records where the recommendation came from (e.g. "readme",
+/// "generation_config.json") for display.
+#[derive(Clone, Debug, Serialize)]
+pub struct SamplingCaps {
+    pub default: SamplingParams,
+    pub presets: Vec<SamplingPreset>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// How a model exposes its reasoning / "thinking" mode. `toggle` names the
+/// mechanism — `"chat_template_kwargs"` (Qwen-style `enable_thinking`),
+/// `"reasoning_effort"`, or `"none"` — and `kwarg` is the exact key name
+/// when the mechanism is chat_template_kwargs.
+#[derive(Clone, Debug, Serialize)]
+pub struct ReasoningCaps {
+    pub supported: bool,
+    pub default_enabled: bool,
+    pub toggle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kwarg: Option<String>,
+}
+
 /// One model entry from a probe, normalized across all backend shapes.
 /// `context_size` and `vision_supported` are best-effort — `None` means
 /// the backend didn't expose that metadata and the UI will ask the user
-/// to fill it in manually.
+/// to fill it in manually. The richer `parallel` / `reasoning` / `sampling`
+/// fields are only ever populated by llama-toolchest; every other backend
+/// leaves them `None` and the client falls back to its built-in behavior.
 #[derive(Clone, Debug, Serialize)]
 pub struct NormalizedModel {
     pub id: String,
@@ -73,6 +136,12 @@ pub struct NormalizedModel {
     /// from unloaded models. Other backends either list a model (meaning
     /// it's usable) or don't; for them this stays `None`.
     pub loaded: Option<bool>,
+    /// Parallel sequence slots the server runs this model with. `>1` means
+    /// the KV cache (and thus `context_size`, which already reflects the
+    /// per-request share) is split across concurrent requests.
+    pub parallel: Option<u32>,
+    pub reasoning: Option<ReasoningCaps>,
+    pub sampling: Option<SamplingCaps>,
 }
 
 /// Complete probe outcome for the frontend. Everything the Settings page
@@ -216,46 +285,50 @@ async fn try_llama_toolchest(
         return None;
     }
 
-    // Step 2: pull the router-facing list. After the toolchest API
-    // consistency fix this enumerates exactly the models that
-    // /v1/chat/completions will serve — every enabled model, with its
-    // current VRAM-load state. Disabled-but-downloaded models are
-    // intentionally excluded; managing enable/disable is the job of the
-    // toolchest UI, not haruspex.
+    // Step 2: pull the router-facing list. This enumerates exactly the
+    // models /v1/chat/completions will serve — every enabled model, with
+    // its current VRAM-load state and an inline `capabilities` block.
+    // Disabled-but-downloaded models are intentionally excluded; managing
+    // enable/disable is the job of the toolchest UI, not haruspex. One
+    // round-trip yields everything — no per-model /info fan-out.
     let loaded_url = format!("{}/api/service/loaded-models", base);
     let loaded_json = fetch_json(client, &loaded_url, api_key).await?;
     let loaded = parse_toolchest_model_list(&loaded_json);
+    let total = loaded.len();
 
-    // Step 3: enrich each entry with capabilities via /api/models/{id}/info.
-    // We do this sequentially because toolchest is typically small-scale
-    // and the probe latency is dominated by the per-request handshake
-    // rather than wall time; parallelism via join_all would add ~100 lines
-    // of scaffolding for a marginal speedup.
     let mut models: Vec<NormalizedModel> = Vec::new();
     let mut default_context_size: Option<u32> = None;
-    for entry in &loaded {
-        let info_url = format!("{}/api/models/{}/info", base, entry.id);
-        let info = fetch_json(client, &info_url, api_key).await;
-        let (ctx_size, vision) = info
-            .as_ref()
-            .map(parse_toolchest_model_info)
-            .unwrap_or((None, None));
-
-        // Use the first loaded model's context size as the deck-wide default.
-        if default_context_size.is_none() && entry.loaded {
-            default_context_size = ctx_size;
+    let mut first_context_size: Option<u32> = None;
+    let mut loaded_count = 0usize;
+    for entry in loaded {
+        if entry.loaded {
+            loaded_count += 1;
         }
-
+        // The per-request context (capabilities.context_per_request) is the
+        // value that matters for compaction. Prefer the first *loaded*
+        // model's as the deck-wide default; fall back to the first model of
+        // any state when nothing is loaded yet.
+        if first_context_size.is_none() {
+            first_context_size = entry.caps.context_size;
+        }
+        if default_context_size.is_none() && entry.loaded {
+            default_context_size = entry.caps.context_size;
+        }
         models.push(NormalizedModel {
-            id: entry.id.clone(),
-            display_name: entry.name.clone(),
-            context_size: ctx_size,
-            vision_supported: vision,
+            id: entry.id,
+            display_name: entry.name,
+            context_size: entry.caps.context_size,
+            vision_supported: entry.caps.vision,
             loaded: Some(entry.loaded),
+            parallel: entry.caps.parallel,
+            reasoning: entry.caps.reasoning,
+            sampling: entry.caps.sampling,
         });
     }
+    if default_context_size.is_none() {
+        default_context_size = first_context_size;
+    }
 
-    let loaded_count = models.iter().filter(|m| m.loaded == Some(true)).count();
     Some(ProbeResult {
         base_url: base.to_string(),
         kind: BackendKind::LlamaToolchest,
@@ -263,8 +336,7 @@ async fn try_llama_toolchest(
         default_context_size,
         notes: format!(
             "llama-toolchest ({} loaded of {} enabled)",
-            loaded_count,
-            loaded.len()
+            loaded_count, total
         ),
     })
 }
@@ -303,6 +375,9 @@ async fn try_llama_server(
             context_size: n_ctx,
             vision_supported: None,
             loaded: None,
+            parallel: None,
+            reasoning: None,
+            sampling: None,
         })
         .collect();
 
@@ -341,6 +416,9 @@ async fn try_openai_compat(
             context_size: None,
             vision_supported: None,
             loaded: None,
+            parallel: None,
+            reasoning: None,
+            sampling: None,
         })
         .collect();
     let notes = format!(
@@ -386,13 +464,27 @@ async fn try_ollama_native(
 // JSON parsing helpers
 // ---------------------------------------------------------------------
 
-/// An entry from llama-toolchest's model-list endpoints, before it gets
-/// merged with per-model capability info into a `NormalizedModel`.
+/// An entry from llama-toolchest's model-list endpoint, before it gets
+/// turned into a `NormalizedModel`. Carries the inline `capabilities`
+/// block already parsed.
 #[derive(Clone, Debug)]
 struct ToolchestModelEntry {
     id: String,
     name: String,
     loaded: bool,
+    caps: CapabilitiesParsed,
+}
+
+/// The parsed `capabilities` object toolchest attaches to each
+/// loaded-models entry. Everything is optional so a partial / older
+/// server response degrades gracefully.
+#[derive(Clone, Debug, Default)]
+struct CapabilitiesParsed {
+    context_size: Option<u32>,
+    vision: Option<bool>,
+    parallel: Option<u32>,
+    reasoning: Option<ReasoningCaps>,
+    sampling: Option<SamplingCaps>,
 }
 
 /// Parse a toolchest model list response. Handles both `{"models": [...]}`
@@ -438,52 +530,104 @@ fn parse_toolchest_model_list(v: &serde_json::Value) -> Vec<ToolchestModelEntry>
                         .map(|s| matches!(s, "loaded" | "ready" | "running"))
                 })
                 .unwrap_or(true); // default to true when coming from the loaded-models endpoint
-            Some(ToolchestModelEntry { id, name, loaded })
+            let caps = parse_capabilities(item.get("capabilities"));
+            Some(ToolchestModelEntry {
+                id,
+                name,
+                loaded,
+                caps,
+            })
         })
         .collect()
 }
 
-/// Extract context size and vision capability from llama-toolchest's
-/// `/api/models/{id}/info` response. Field names aren't standardized, so
-/// probe a handful of plausible shapes and return the first that matches.
-fn parse_toolchest_model_info(v: &serde_json::Value) -> (Option<u32>, Option<bool>) {
-    // Context size — try nested config, flat fields, and common aliases.
-    let ctx_size = v
-        .get("context_size")
-        .and_then(|x| x.as_u64())
-        .or_else(|| v.get("n_ctx").and_then(|x| x.as_u64()))
-        .or_else(|| v.get("ctx_size").and_then(|x| x.as_u64()))
-        .or_else(|| v.get("max_context_length").and_then(|x| x.as_u64()))
-        .or_else(|| {
-            v.get("config")
-                .and_then(|c| c.get("context_size"))
-                .and_then(|x| x.as_u64())
-        })
-        .or_else(|| {
-            v.get("config")
-                .and_then(|c| c.get("n_ctx"))
-                .and_then(|x| x.as_u64())
-        })
-        .map(|n| n as u32);
+/// Parse the inline `capabilities` object from a toolchest loaded-models
+/// entry. Missing object or fields degrade to `None` so the client falls
+/// back to its built-in defaults (or manual entry) per field.
+fn parse_capabilities(v: Option<&serde_json::Value>) -> CapabilitiesParsed {
+    let Some(v) = v else {
+        return CapabilitiesParsed::default();
+    };
+    let as_u32 = |key: &str| v.get(key).and_then(|x| x.as_u64()).map(|n| n as u32);
 
-    // Vision capability — nested under capabilities, or a flat bool.
-    let vision = v
-        .get("vision")
-        .and_then(|x| x.as_bool())
-        .or_else(|| v.get("multimodal").and_then(|x| x.as_bool()))
-        .or_else(|| v.get("vision_supported").and_then(|x| x.as_bool()))
-        .or_else(|| {
-            v.get("capabilities")
-                .and_then(|c| c.get("vision"))
-                .and_then(|x| x.as_bool())
-        })
-        .or_else(|| {
-            v.get("capabilities")
-                .and_then(|c| c.get("multimodal"))
-                .and_then(|x| x.as_bool())
-        });
+    // `context_per_request` already accounts for parallel-slot KV division;
+    // it's the value the client must compact against. Fall back to the raw
+    // `context_size` only if the server didn't compute the per-request share.
+    let context_size = as_u32("context_per_request").or_else(|| as_u32("context_size"));
 
-    (ctx_size, vision)
+    let reasoning = v.get("reasoning").and_then(|r| {
+        let toggle = r.get("toggle").and_then(|x| x.as_str())?.to_string();
+        Some(ReasoningCaps {
+            supported: r
+                .get("supported")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            default_enabled: r
+                .get("default_enabled")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            toggle,
+            kwarg: r
+                .get("kwarg")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string()),
+        })
+    });
+
+    let sampling = v.get("sampling").map(|s| SamplingCaps {
+        default: s
+            .get("default")
+            .map(parse_sampling_params)
+            .unwrap_or_default(),
+        presets: s
+            .get("presets")
+            .and_then(|p| p.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| {
+                        let name = item.get("name").and_then(|x| x.as_str())?.to_string();
+                        let p = parse_sampling_params(item);
+                        Some(SamplingPreset {
+                            name,
+                            label: item
+                                .get("label")
+                                .and_then(|x| x.as_str())
+                                .map(|s| s.to_string()),
+                            temperature: p.temperature,
+                            top_p: p.top_p,
+                            top_k: p.top_k,
+                            presence_penalty: p.presence_penalty,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        source: s
+            .get("source")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string()),
+    });
+
+    CapabilitiesParsed {
+        context_size,
+        vision: v.get("vision").and_then(|x| x.as_bool()),
+        parallel: as_u32("parallel"),
+        reasoning,
+        sampling,
+    }
+}
+
+/// Pull the four sampling fields the client forwards (temperature, top_p,
+/// top_k, presence_penalty) out of a JSON object. min_p / repeat_penalty
+/// are intentionally ignored — the OpenAI-compat request path doesn't send
+/// them.
+fn parse_sampling_params(v: &serde_json::Value) -> SamplingParams {
+    SamplingParams {
+        temperature: v.get("temperature").and_then(|x| x.as_f64()),
+        top_p: v.get("top_p").and_then(|x| x.as_f64()),
+        top_k: v.get("top_k").and_then(|x| x.as_i64()),
+        presence_penalty: v.get("presence_penalty").and_then(|x| x.as_f64()),
+    }
 }
 
 /// Parse a standard OpenAI `/v1/models` response into a flat list of
@@ -524,6 +668,9 @@ fn parse_ollama_tags(v: &serde_json::Value) -> Vec<NormalizedModel> {
                 context_size: None,
                 vision_supported: None,
                 loaded: None,
+                parallel: None,
+                reasoning: None,
+                sampling: None,
             })
         })
         .collect()
@@ -683,34 +830,87 @@ mod tests {
     }
 
     #[test]
-    fn parse_toolchest_model_info_nested_capabilities() {
+    fn parse_capabilities_full_object() {
         let json = serde_json::json!({
-            "id": "qwen-7b",
-            "context_size": 32768,
-            "capabilities": { "vision": true }
+            "context_length": 262144,
+            "context_size": 131072,
+            "context_per_request": 32768,
+            "parallel": 4,
+            "vision": true,
+            "tools": true,
+            "reasoning": {
+                "supported": true,
+                "default_enabled": true,
+                "toggle": "chat_template_kwargs",
+                "kwarg": "enable_thinking"
+            },
+            "sampling": {
+                "source": "readme",
+                "default": { "temperature": 1.0, "top_p": 0.95, "top_k": 20, "presence_penalty": 1.5 },
+                "presets": [
+                    { "name": "thinking", "label": "Thinking mode", "temperature": 0.6, "top_p": 0.95, "top_k": 20 },
+                    { "name": "non-thinking", "temperature": 0.7, "top_p": 0.8 }
+                ]
+            }
         });
-        let (ctx, vision) = parse_toolchest_model_info(&json);
-        assert_eq!(ctx, Some(32768));
-        assert_eq!(vision, Some(true));
+        let caps = parse_capabilities(Some(&json));
+        // context_per_request wins over the raw context_size.
+        assert_eq!(caps.context_size, Some(32768));
+        assert_eq!(caps.vision, Some(true));
+        assert_eq!(caps.parallel, Some(4));
+
+        let r = caps.reasoning.expect("reasoning present");
+        assert!(r.supported);
+        assert!(r.default_enabled);
+        assert_eq!(r.toggle, "chat_template_kwargs");
+        assert_eq!(r.kwarg.as_deref(), Some("enable_thinking"));
+
+        let s = caps.sampling.expect("sampling present");
+        assert_eq!(s.source.as_deref(), Some("readme"));
+        assert_eq!(s.default.temperature, Some(1.0));
+        assert_eq!(s.presets.len(), 2);
+        assert_eq!(s.presets[0].name, "thinking");
+        assert_eq!(s.presets[0].label.as_deref(), Some("Thinking mode"));
+        assert_eq!(s.presets[0].temperature, Some(0.6));
+        // A preset that omits a field leaves it None for the client to fill.
+        assert_eq!(s.presets[1].top_k, None);
     }
 
     #[test]
-    fn parse_toolchest_model_info_flat_fields() {
-        let json = serde_json::json!({
-            "id": "llama-8b",
-            "n_ctx": 8192,
-            "multimodal": false
-        });
-        let (ctx, vision) = parse_toolchest_model_info(&json);
-        assert_eq!(ctx, Some(8192));
-        assert_eq!(vision, Some(false));
+    fn parse_capabilities_falls_back_to_context_size() {
+        // No per-request value: use the raw context_size.
+        let json = serde_json::json!({ "context_size": 65536, "vision": false });
+        let caps = parse_capabilities(Some(&json));
+        assert_eq!(caps.context_size, Some(65536));
+        assert_eq!(caps.vision, Some(false));
     }
 
     #[test]
-    fn parse_toolchest_model_info_missing_fields() {
-        let json = serde_json::json!({ "id": "mystery-model" });
-        let (ctx, vision) = parse_toolchest_model_info(&json);
-        assert_eq!(ctx, None);
-        assert_eq!(vision, None);
+    fn parse_capabilities_missing_object() {
+        let caps = parse_capabilities(None);
+        assert_eq!(caps.context_size, None);
+        assert_eq!(caps.vision, None);
+        assert_eq!(caps.parallel, None);
+        assert!(caps.reasoning.is_none());
+        assert!(caps.sampling.is_none());
+    }
+
+    #[test]
+    fn parse_toolchest_list_carries_capabilities() {
+        let json = serde_json::json!({
+            "models": [
+                {
+                    "id": "qwen-9b",
+                    "public_name": "Qwen 9B",
+                    "status": "loaded",
+                    "capabilities": { "context_per_request": 8192, "vision": true, "parallel": 2 }
+                }
+            ]
+        });
+        let models = parse_toolchest_model_list(&json);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].caps.context_size, Some(8192));
+        assert_eq!(models[0].caps.vision, Some(true));
+        assert_eq!(models[0].caps.parallel, Some(2));
     }
 }
