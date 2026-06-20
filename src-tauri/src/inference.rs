@@ -97,10 +97,14 @@ pub struct SamplingPreset {
 
 /// A model's recommended sampling: a resolved `default` plus the named
 /// presets the client can pick between based on thinking / code context.
+/// `source` records where the recommendation came from (e.g. "readme",
+/// "generation_config.json") for display.
 #[derive(Clone, Debug, Serialize)]
 pub struct SamplingCaps {
     pub default: SamplingParams,
     pub presets: Vec<SamplingPreset>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// How a model exposes its reasoning / "thinking" mode. `toggle` names the
@@ -598,6 +602,10 @@ fn parse_capabilities(v: Option<&serde_json::Value>) -> CapabilitiesParsed {
                     .collect()
             })
             .unwrap_or_default(),
+        source: s
+            .get("source")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string()),
     });
 
     CapabilitiesParsed {
@@ -837,6 +845,7 @@ mod tests {
                 "kwarg": "enable_thinking"
             },
             "sampling": {
+                "source": "readme",
                 "default": { "temperature": 1.0, "top_p": 0.95, "top_k": 20, "presence_penalty": 1.5 },
                 "presets": [
                     { "name": "thinking", "label": "Thinking mode", "temperature": 0.6, "top_p": 0.95, "top_k": 20 },
@@ -857,6 +866,7 @@ mod tests {
         assert_eq!(r.kwarg.as_deref(), Some("enable_thinking"));
 
         let s = caps.sampling.expect("sampling present");
+        assert_eq!(s.source.as_deref(), Some("readme"));
         assert_eq!(s.default.temperature, Some(1.0));
         assert_eq!(s.presets.len(), 2);
         assert_eq!(s.presets[0].name, "thinking");

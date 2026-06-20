@@ -57,6 +57,8 @@ export interface RemoteSamplingPreset extends RemoteSamplingParams {
 export interface RemoteSamplingCaps {
 	default: RemoteSamplingParams;
 	presets: RemoteSamplingPreset[];
+	/** Where the recommendation came from, e.g. "readme" or "generation_config.json". */
+	source?: string | null;
 }
 
 /**
@@ -107,6 +109,13 @@ export interface InferenceBackendConfig {
 	 * client assumes Qwen-style `enable_thinking`.
 	 */
 	remoteReasoning: RemoteReasoningCaps | null;
+	/**
+	 * Parallel sequence-slot count the toolchest server runs the selected
+	 * model with. Stored only for display in the "Detected capabilities"
+	 * readout; the behavioral effect is folded into `allowParallelInference`
+	 * at probe time. `null` for non-toolchest backends.
+	 */
+	remoteParallel: number | null;
 	/**
 	 * Remote-mode opt-in: skip the app's inference queue and let chat +
 	 * job turns run in parallel against the remote server. Only safe when
@@ -295,6 +304,7 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	remoteBackendKind: null,
 	remoteSampling: null,
 	remoteReasoning: null,
+	remoteParallel: null,
 	allowParallelInference: false
 };
 
