@@ -1,0 +1,541 @@
+//! Backend commands for the Code tab: one-shot host command execution
+//! (`run_command_capture` / `run_command_cancel`) plus gitignore-aware
+//! content search (`code_grep`) and file globbing (`code_glob`).
+//!
+//! These run **on the host** as the app user — there is no sandbox. They back
+//! a deliberately lean Code-mode toolset; the heavy lifting (risk gating,
+//! output truncation, approval) lives in the TS tool wrappers. Everything here
+//! returns locations/exit-codes, never whole file bodies, to keep model
+//! context small.
+
+use serde::Serialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+use tokio::io::AsyncReadExt;
+
+/// Default per-command wall-clock timeout when the caller passes none.
+const DEFAULT_TIMEOUT_SECS: u64 = 120;
+/// Hard upper bound on a single command's timeout.
+const MAX_TIMEOUT_SECS: u64 = 1800;
+/// Grace period to finish draining stdout/stderr after the process exits,
+/// before we give up and kill any lingering pipe-holding children.
+const DRAIN_GRACE: Duration = Duration::from_secs(2);
+
+/// Default / max caps for code_grep + code_glob. Returning locations not
+/// bodies, capped server-side, is the whole point (plan §7).
+const GREP_DEFAULT_MAX: usize = 50;
+const GREP_LINE_CHARS: usize = 200;
+const GLOB_DEFAULT_MAX: usize = 100;
+
+/// command_id → child PID, so `run_command_cancel` can find and tree-kill a
+/// run the model aborted. On unix the PID doubles as the process-group id
+/// (we spawn with `process_group(0)`), so killing it reaps the whole tree.
+fn registry() -> &'static Mutex<HashMap<String, u32>> {
+    static R: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct RunCommandResult {
+    pub stdout: String,
+    pub stderr: String,
+    /// `None` when the process was killed by a signal (timeout / cancel on unix).
+    pub exit_code: Option<i32>,
+    /// True on timeout or cancellation.
+    pub killed: bool,
+    pub duration_ms: u32,
+}
+
+#[cfg(unix)]
+fn build_shell_command(command: &str) -> tokio::process::Command {
+    let mut c = tokio::process::Command::new("sh");
+    c.arg("-c").arg(command);
+    c
+}
+
+#[cfg(windows)]
+fn build_shell_command(command: &str) -> tokio::process::Command {
+    let mut c = tokio::process::Command::new("cmd");
+    c.arg("/C").arg(command);
+    c
+}
+
+/// Kill a process and its descendants. Unix: the child is a process-group
+/// leader (spawned with `process_group(0)`), so signalling the group reaps
+/// orphaned `npm`/`cargo` children too. Windows: `taskkill /T` walks the tree.
+#[cfg(unix)]
+fn kill_process_tree(pid: u32) {
+    // SIGKILL the whole group. Best-effort; ignore ESRCH if already gone.
+    unsafe {
+        libc::killpg(pid as i32, libc::SIGKILL);
+    }
+}
+
+#[cfg(windows)]
+fn kill_process_tree(pid: u32) {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .output();
+}
+
+/// Run `command` once in a fresh shell rooted at `cwd`, capture stdout+stderr,
+/// enforce `timeout_secs` with a process-tree kill, and allow cancellation via
+/// `run_command_cancel(command_id)`. No state persists between calls — the
+/// model chains `cd x && cmd` when it needs directory context.
+#[tauri::command]
+pub async fn run_command_capture(
+    command: String,
+    cwd: String,
+    timeout_secs: Option<u64>,
+    command_id: String,
+) -> Result<RunCommandResult, String> {
+    if !Path::new(&cwd).is_dir() {
+        return Err(format!("Working directory does not exist: {cwd}"));
+    }
+    let timeout = Duration::from_secs(
+        timeout_secs
+            .unwrap_or(DEFAULT_TIMEOUT_SECS)
+            .clamp(1, MAX_TIMEOUT_SECS),
+    );
+    let start = Instant::now();
+
+    let mut cmd = build_shell_command(&command);
+    cmd.current_dir(&cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    // Own process group so a timeout/cancel can reap the whole subtree.
+    #[cfg(unix)]
+    cmd.process_group(0);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn command: {e}"))?;
+    let pid = child.id();
+    if let Some(pid) = pid {
+        registry().lock().unwrap().insert(command_id.clone(), pid);
+    }
+
+    // Drain both pipes concurrently so a chatty command can't deadlock on a
+    // full pipe buffer while we wait.
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let mut stderr = child.stderr.take().expect("piped stderr");
+    let out_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf).await;
+        buf
+    });
+    let err_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        let _ = stderr.read_to_end(&mut buf).await;
+        buf
+    });
+
+    let mut killed = false;
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(s) => s.map_err(|e| format!("Failed to wait on command: {e}"))?,
+        Err(_) => {
+            killed = true;
+            if let Some(pid) = pid {
+                kill_process_tree(pid);
+            }
+            child
+                .wait()
+                .await
+                .map_err(|e| format!("Failed to reap killed command: {e}"))?
+        }
+    };
+    registry().lock().unwrap().remove(&command_id);
+
+    // Collect output with a grace window; if a lingering child still holds a
+    // pipe open, kill the tree and return what we have.
+    let readers = async { (out_task.await, err_task.await) };
+    let (stdout_bytes, stderr_bytes) = match tokio::time::timeout(DRAIN_GRACE, readers).await {
+        Ok((o, e)) => (o.unwrap_or_default(), e.unwrap_or_default()),
+        Err(_) => {
+            if let Some(pid) = pid {
+                kill_process_tree(pid);
+            }
+            (Vec::new(), Vec::new())
+        }
+    };
+
+    let exit_code = status.code();
+    // A tree-kill leaves no exit code (signaled) on unix — treat as killed even
+    // if the cancel raced ahead of our own timeout branch.
+    if exit_code.is_none() {
+        killed = true;
+    }
+
+    Ok(RunCommandResult {
+        stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
+        exit_code,
+        killed,
+        duration_ms: start.elapsed().as_millis() as u32,
+    })
+}
+
+/// Kill a running `run_command_capture` invocation by its `command_id`. Called
+/// from the tool's abort handler. No-op if the command already finished.
+#[tauri::command]
+pub fn run_command_cancel(command_id: String) -> Result<(), String> {
+    let pid = registry().lock().unwrap().get(&command_id).copied();
+    if let Some(pid) = pid {
+        kill_process_tree(pid);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// code_grep
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct GrepMatch {
+    pub path: String,
+    pub line: u32,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct GrepResult {
+    pub matches: Vec<GrepMatch>,
+    pub truncated: bool,
+}
+
+/// Search file *contents* under `root` (optionally narrowed to `path`),
+/// gitignore-aware, returning `file:line` locations — never whole bodies.
+/// Capped at `max_matches` (default 50), each line clamped to ~200 chars.
+#[tauri::command]
+pub async fn code_grep(
+    root: String,
+    pattern: String,
+    path: Option<String>,
+    glob: Option<String>,
+    ignore_case: Option<bool>,
+    max_matches: Option<usize>,
+) -> Result<GrepResult, String> {
+    use globset::Glob;
+    use grep::regex::RegexMatcherBuilder;
+    use grep::searcher::sinks::UTF8;
+    use grep::searcher::SearcherBuilder;
+    use ignore::WalkBuilder;
+
+    let cap = max_matches.unwrap_or(GREP_DEFAULT_MAX).max(1);
+    let search_root = match &path {
+        Some(p) => Path::new(&root).join(p),
+        None => PathBuf::from(&root),
+    };
+    if !search_root.exists() {
+        return Err(format!(
+            "Search path does not exist: {}",
+            search_root.display()
+        ));
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<GrepResult, String> {
+        let matcher = RegexMatcherBuilder::new()
+            .case_insensitive(ignore_case.unwrap_or(false))
+            .build(&pattern)
+            .map_err(|e| format!("Invalid search pattern: {e}"))?;
+
+        // Optional file-name glob filter (e.g. "*.rs"), matched against the
+        // file name so it works regardless of directory depth.
+        let name_glob = match &glob {
+            Some(g) => Some(
+                Glob::new(g)
+                    .map_err(|e| format!("Invalid glob: {e}"))?
+                    .compile_matcher(),
+            ),
+            None => None,
+        };
+
+        let root_path = PathBuf::from(&root);
+        let mut matches: Vec<GrepMatch> = Vec::new();
+        let mut truncated = false;
+
+        // require_git(false) → honor .gitignore even when the project isn't a
+        // git checkout (matches `rg --no-require-git`).
+        for dent in WalkBuilder::new(&search_root).require_git(false).build() {
+            let dent = match dent {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                continue;
+            }
+            let fpath = dent.path();
+            if let Some(g) = &name_glob {
+                let name = fpath.file_name().map(|n| n.to_string_lossy());
+                if !name.map(|n| g.is_match(n.as_ref())).unwrap_or(false) {
+                    continue;
+                }
+            }
+            let rel = fpath
+                .strip_prefix(&root_path)
+                .unwrap_or(fpath)
+                .to_string_lossy()
+                .into_owned();
+
+            let mut searcher = SearcherBuilder::new().line_number(true).build();
+            let _ = searcher.search_path(
+                &matcher,
+                fpath,
+                UTF8(|lnum, line| {
+                    let text: String = line
+                        .trim_end_matches(['\n', '\r'])
+                        .chars()
+                        .take(GREP_LINE_CHARS)
+                        .collect();
+                    matches.push(GrepMatch {
+                        path: rel.clone(),
+                        line: lnum as u32,
+                        text,
+                    });
+                    // Stop this file once we hit the cap.
+                    Ok(matches.len() < cap)
+                }),
+            );
+            if matches.len() >= cap {
+                truncated = true;
+                break;
+            }
+        }
+
+        Ok(GrepResult { matches, truncated })
+    })
+    .await
+    .map_err(|e| format!("grep task failed: {e}"))?
+}
+
+// ---------------------------------------------------------------------------
+// code_glob
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct GlobResult {
+    pub paths: Vec<String>,
+    pub truncated: bool,
+}
+
+/// Find files by path glob under `root` (gitignore-aware). Returns paths only,
+/// sorted deterministically, capped at `max_results` (default 100).
+#[tauri::command]
+pub async fn code_glob(
+    root: String,
+    pattern: String,
+    max_results: Option<usize>,
+) -> Result<GlobResult, String> {
+    use globset::Glob;
+    use ignore::WalkBuilder;
+
+    let cap = max_results.unwrap_or(GLOB_DEFAULT_MAX).max(1);
+
+    tokio::task::spawn_blocking(move || -> Result<GlobResult, String> {
+        let matcher = Glob::new(&pattern)
+            .map_err(|e| format!("Invalid glob: {e}"))?
+            .compile_matcher();
+        let root_path = PathBuf::from(&root);
+
+        let mut paths: Vec<String> = Vec::new();
+        for dent in WalkBuilder::new(&root_path).require_git(false).build() {
+            let dent = match dent {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                continue;
+            }
+            let rel = dent
+                .path()
+                .strip_prefix(&root_path)
+                .unwrap_or(dent.path())
+                .to_string_lossy()
+                .into_owned();
+            if matcher.is_match(&rel) {
+                paths.push(rel);
+            }
+        }
+
+        paths.sort();
+        let truncated = paths.len() > cap;
+        paths.truncate(cap);
+        Ok(GlobResult { paths, truncated })
+    })
+    .await
+    .map_err(|e| format!("glob task failed: {e}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn temp_repo(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("haruspex_code_test_{name}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join("src/main.rs"), "fn main() {\n    needle();\n}\n").unwrap();
+        fs::write(dir.join("src/lib.rs"), "pub fn needle() {}\n").unwrap();
+        fs::write(dir.join("README.md"), "no match here\n").unwrap();
+        fs::write(dir.join(".gitignore"), "ignored.rs\n").unwrap();
+        fs::write(dir.join("ignored.rs"), "fn needle() {}\n").unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn run_command_captures_stdout_and_exit_code() {
+        let cwd = std::env::temp_dir();
+        let res = run_command_capture(
+            "echo hello".to_string(),
+            cwd.to_string_lossy().into_owned(),
+            Some(10),
+            "t-echo".to_string(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res.stdout.trim(), "hello");
+        assert_eq!(res.exit_code, Some(0));
+        assert!(!res.killed);
+    }
+
+    #[tokio::test]
+    async fn run_command_passes_through_nonzero_exit() {
+        let res = run_command_capture(
+            "exit 3".to_string(),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+            Some(10),
+            "t-exit".to_string(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res.exit_code, Some(3));
+        assert!(!res.killed);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_command_times_out_and_kills() {
+        let res = run_command_capture(
+            "sleep 30".to_string(),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+            Some(1),
+            "t-timeout".to_string(),
+        )
+        .await
+        .unwrap();
+        assert!(res.killed, "expected killed on timeout");
+        assert_eq!(res.exit_code, None);
+        assert!(res.duration_ms < 10_000, "should not wait the full sleep");
+    }
+
+    #[tokio::test]
+    async fn run_command_rejects_bad_cwd() {
+        let err = run_command_capture(
+            "echo x".to_string(),
+            "/no/such/dir/at/all".to_string(),
+            Some(5),
+            "t-badcwd".to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("does not exist"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn grep_finds_matches_and_honors_gitignore() {
+        let dir = temp_repo("grep");
+        let res = code_grep(
+            dir.to_string_lossy().into_owned(),
+            "needle".to_string(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        // main.rs + lib.rs match; ignored.rs is gitignored; README has no match.
+        let paths: Vec<&str> = res.matches.iter().map(|m| m.path.as_str()).collect();
+        assert!(paths.iter().any(|p| p.ends_with("main.rs")));
+        assert!(paths.iter().any(|p| p.ends_with("lib.rs")));
+        assert!(!paths.iter().any(|p| p.contains("ignored.rs")));
+    }
+
+    #[tokio::test]
+    async fn grep_glob_filters_by_filename() {
+        let dir = temp_repo("grep_glob");
+        let res = code_grep(
+            dir.to_string_lossy().into_owned(),
+            "needle".to_string(),
+            None,
+            Some("*.md".to_string()),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        // README.md has no "needle"; *.rs files are excluded by the glob.
+        assert!(res.matches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn grep_caps_and_marks_truncated() {
+        let dir = temp_repo("grep_cap");
+        let res = code_grep(
+            dir.to_string_lossy().into_owned(),
+            "needle".to_string(),
+            None,
+            None,
+            None,
+            Some(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res.matches.len(), 1);
+        assert!(res.truncated);
+    }
+
+    #[tokio::test]
+    async fn glob_finds_files_sorted_and_gitignore_aware() {
+        let dir = temp_repo("glob");
+        let res = code_glob(
+            dir.to_string_lossy().into_owned(),
+            "**/*.rs".to_string(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(res.paths.iter().any(|p| p.ends_with("main.rs")));
+        assert!(res.paths.iter().any(|p| p.ends_with("lib.rs")));
+        // gitignored ignored.rs excluded.
+        assert!(!res.paths.iter().any(|p| p.contains("ignored.rs")));
+        // Deterministic order.
+        let mut sorted = res.paths.clone();
+        sorted.sort();
+        assert_eq!(res.paths, sorted);
+    }
+
+    #[tokio::test]
+    async fn glob_caps_results() {
+        let dir = temp_repo("glob_cap");
+        let res = code_glob(
+            dir.to_string_lossy().into_owned(),
+            "**/*".to_string(),
+            Some(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res.paths.len(), 1);
+        assert!(res.truncated);
+    }
+}

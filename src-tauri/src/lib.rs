@@ -1,6 +1,7 @@
 mod app_log;
 mod audio;
 mod clipboard;
+mod code_tools;
 mod db;
 mod feedback;
 mod fs_tools;
@@ -180,6 +181,10 @@ pub fn run() {
             fs_tools::text::fs_read_text,
             fs_tools::text::fs_write_text,
             fs_tools::text::fs_edit_text,
+            code_tools::run_command_capture,
+            code_tools::run_command_cancel,
+            code_tools::code_grep,
+            code_tools::code_glob,
             fs_tools::pdf_read::fs_read_pdf,
             fs_tools::docx::fs_read_docx,
             fs_tools::xlsx::fs_read_xlsx,
