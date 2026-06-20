@@ -65,3 +65,5 @@ lettre = { version = "0.11", default-features = false, features = ["tokio1-rustl
 # predicate to TypeScript, but the affected fields are already #[ts(optional)],
 # so the generated bindings are correct and the warning is pure noise.
 ts-rs = { version = "10.1.0", features = ["serde-compat", "no-serde-warnings"] }
+# Unicode normalization (NFKC) for the fuzzy-match fallback in fs_edit_text.
+unicode-normalization = "0.1"

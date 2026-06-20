@@ -51,6 +51,25 @@ describe('fs_read tools in Chat mode', () => {
 		expect(out.result).toBe('file contents');
 	});
 
+	it('fs_read_text forwards offset/limit when provided, omits them otherwise', async () => {
+		const { executeTool } = await import('$lib/agent/tools');
+		mocks.invoke.mockResolvedValue('windowed');
+		await executeTool('fs_read_text', { path: 'big.log', offset: 10, limit: 5 }, chatCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text', {
+			workdir: '/tmp/work',
+			relPath: 'big.log',
+			offset: 10,
+			limit: 5
+		});
+		// No window args → call shape unchanged (no offset/limit keys).
+		mocks.invoke.mockClear();
+		await executeTool('fs_read_text', { path: 'big.log' }, chatCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text', {
+			workdir: '/tmp/work',
+			relPath: 'big.log'
+		});
+	});
+
 	it('fs_list_dir dispatches to the workdir-relative command', async () => {
 		mocks.invoke.mockResolvedValue({ path: '.', entries: [], truncated: false });
 		const { executeTool } = await import('$lib/agent/tools');

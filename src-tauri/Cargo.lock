@@ -2277,6 +2277,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "ts-rs",
+ "unicode-normalization",
  "url",
  "urlencoding",
  "webpki-roots 0.26.11",

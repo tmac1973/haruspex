@@ -183,6 +183,72 @@ pub(super) const MAX_WRITE_BYTES: usize = 10 * 1_048_576;
 pub(super) const MAX_DOC_READ_BYTES: u64 = 50 * 1_048_576;
 /// On-disk read cap for plain-text reads (1 MB).
 pub(super) const MAX_TEXT_READ_BYTES: u64 = 1_048_576;
+/// Hard ceiling on bytes pulled into memory for a *windowed* text read.
+/// Above this we refuse rather than truncate — loading the whole file would
+/// itself be the problem. Generous enough for any real source file.
+pub(super) const MAX_READ_LOAD_BYTES: u64 = 64 * 1_048_576;
+/// Lines returned when the caller passes no `limit`.
+const DEFAULT_READ_LINES: usize = 2000;
+/// Per-call output budget; a single returned window is head-truncated past this.
+const MAX_READ_OUTPUT_BYTES: usize = 256 * 1024;
+
+/// Shared body for the text readers (`fs_read_text` / `fs_read_text_absolute`):
+/// binary-check, UTF-8 decode, then apply optional 1-indexed `offset` + `limit`
+/// line windowing with a head-truncation fallback. Returns text the model can
+/// always consume — never an out-of-band "file too large" error within the
+/// load ceiling. `binary_msg` is the format-specific rejection for binary input.
+pub(super) fn render_text_read(
+    bytes: Vec<u8>,
+    offset: Option<u32>,
+    limit: Option<u32>,
+    binary_msg: &str,
+) -> Result<String, String> {
+    let sample_len = bytes.len().min(8192);
+    if bytes[..sample_len].contains(&0) {
+        return Err(binary_msg.to_string());
+    }
+    let content =
+        String::from_utf8(bytes).map_err(|e| format!("File is not valid UTF-8: {}", e))?;
+
+    let lines: Vec<&str> = content.lines().collect();
+    let total = lines.len();
+    let start = offset.map(|o| (o.max(1) as usize) - 1).unwrap_or(0);
+    if total > 0 && start >= total {
+        return Err(format!(
+            "offset {} is past the end of the file ({} lines).",
+            start + 1,
+            total
+        ));
+    }
+    let count = limit
+        .map(|l| (l as usize).max(1))
+        .unwrap_or(DEFAULT_READ_LINES);
+    let end = start.saturating_add(count).min(total);
+
+    let mut out = lines[start..end].join("\n");
+
+    // Per-call byte budget guards a pathologically long single line / window.
+    if out.len() > MAX_READ_OUTPUT_BYTES {
+        let mut cut = MAX_READ_OUTPUT_BYTES;
+        while cut > 0 && !out.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        out.truncate(cut);
+        out.push_str(&format!(
+            "\n… (output truncated at {} KB — narrow the range with offset/limit)",
+            MAX_READ_OUTPUT_BYTES / 1024
+        ));
+    } else if end < total {
+        let more = total - end;
+        out.push_str(&format!(
+            "\n… (truncated; {} more line{} — use offset/limit to read further)",
+            more,
+            if more == 1 { "" } else { "s" }
+        ));
+    }
+
+    Ok(out)
+}
 
 /// Stat `resolved` and error if it exceeds `max` bytes. `fmt` names the
 /// format in the message (e.g. "PDF" / "xlsx" / "docx"). The read-size guard
@@ -352,6 +418,51 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn render_read_returns_whole_small_file() {
+        let out = render_text_read(b"a\nb\nc\n".to_vec(), None, None, "bin").unwrap();
+        assert_eq!(out, "a\nb\nc");
+    }
+
+    #[test]
+    fn render_read_windows_with_offset_and_limit() {
+        let body = (1..=10)
+            .map(|n| format!("line{n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        // offset=3 (1-indexed), limit=2 → lines 3 and 4.
+        let out = render_text_read(body.into_bytes(), Some(3), Some(2), "bin").unwrap();
+        assert!(out.starts_with("line3\nline4"));
+        assert!(out.contains("more line"), "expected truncation note: {out}");
+    }
+
+    #[test]
+    fn render_read_marks_truncation_without_erroring() {
+        // 2001 lines, no limit → DEFAULT_READ_LINES (2000) returned + marker.
+        let body = (1..=2001)
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = render_text_read(body.into_bytes(), None, None, "bin").unwrap();
+        assert!(
+            out.contains("1 more line — use offset/limit"),
+            "got tail: {}",
+            &out[out.len().saturating_sub(80)..]
+        );
+    }
+
+    #[test]
+    fn render_read_rejects_binary() {
+        let err = render_text_read(b"abc\0def".to_vec(), None, None, "BINARY-MSG").unwrap_err();
+        assert_eq!(err, "BINARY-MSG");
+    }
+
+    #[test]
+    fn render_read_offset_past_end_errors() {
+        let err = render_text_read(b"a\nb\n".to_vec(), Some(99), None, "bin").unwrap_err();
+        assert!(err.contains("past the end"), "got: {err}");
+    }
 
     fn make_temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("haruspex_fs_test_{}", name));

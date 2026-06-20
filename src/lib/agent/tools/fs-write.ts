@@ -7,6 +7,16 @@ import type { ToolContext, ToolExecOutput } from './types';
 import { IMAGE_EXT_RE } from './fs-read';
 import { lintPythonIfApplicable } from './python-lint';
 import { isAutoApproveActive } from '$lib/stores/approvalOverride';
+import type { EditResult } from '$lib/ipc/gen/EditResult';
+
+/**
+ * Compact edit confirmation from the Rust `EditResult` — the changed line
+ * number plus a `[fuzzy]` note when the match needed the whitespace/quote
+ * fuzzy fallback. Deliberately not a full diff (keeps tool output small).
+ */
+function formatEditResult(path: string, r: EditResult): string {
+	return `Edited ${path} (line ${r.first_changed_line})${r.used_fuzzy ? ' [fuzzy match]' : ''}`;
+}
 
 /**
  * Outcome of pre-write conflict resolution. `null` means the user
@@ -353,26 +363,26 @@ function shellAwareEditText() {
 		if (ctx.shellMode && ctx.shellAllowWrite) {
 			const path = resolveShellPath(args.path as string, ctx.shellCwd);
 			try {
-				await invoke('fs_edit_text_absolute', {
+				const r = await invoke<EditResult>('fs_edit_text_absolute', {
 					path,
 					oldStr: args.old_str as string,
 					newStr: args.new_str as string
 				});
-				return toolResult(`Edited ${path}`);
+				return toolResult(formatEditResult(path, r));
 			} catch (e) {
 				return toolResult(toolInvokeError('fs_edit_text', e));
 			}
 		}
 		const path = args.path as string;
 		try {
-			await invoke('fs_edit_text', {
+			const r = await invoke<EditResult>('fs_edit_text', {
 				workdir: ctx.workingDir,
 				relPath: path,
 				oldStr: args.old_str as string,
 				newStr: args.new_str as string
 			});
 			const diag = await lintPythonIfApplicable(ctx.workingDir, path);
-			return toolResult(`Edited ${path}${diag}`);
+			return toolResult(`${formatEditResult(path, r)}${diag}`);
 		} catch (e) {
 			return toolResult(toolInvokeError('fs_edit_text', e));
 		}

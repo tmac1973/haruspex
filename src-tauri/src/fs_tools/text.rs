@@ -1,14 +1,23 @@
 //! Plain-text file Tauri commands: read, write, find-and-replace edit.
 //! All three sandbox via `resolve_in_workdir` like every other fs tool.
 
+use super::fuzzy::{apply_edit, EditResult};
 use super::path::{
-    refuse_if_exists, resolve_in_workdir, workdir_path, workdir_path_for_write,
-    write_bytes_to_workdir, MAX_TEXT_READ_BYTES, MAX_WRITE_BYTES,
+    refuse_if_exists, render_text_read, resolve_in_workdir, workdir_path, workdir_path_for_write,
+    write_bytes_to_workdir, MAX_READ_LOAD_BYTES, MAX_TEXT_READ_BYTES, MAX_WRITE_BYTES,
 };
 use tokio::fs;
 
+/// Read a text file, optionally windowed by 1-indexed `offset` (start line)
+/// and `limit` (max lines). Large files are head-truncated with a marker
+/// rather than erroring, so the model always gets something to work with.
 #[tauri::command]
-pub async fn fs_read_text(workdir: String, rel_path: String) -> Result<String, String> {
+pub async fn fs_read_text(
+    workdir: String,
+    rel_path: String,
+    offset: Option<u32>,
+    limit: Option<u32>,
+) -> Result<String, String> {
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
@@ -20,11 +29,11 @@ pub async fn fs_read_text(workdir: String, rel_path: String) -> Result<String, S
         .await
         .map_err(|e| format!("Failed to stat file: {}", e))?;
 
-    if metadata.len() > MAX_TEXT_READ_BYTES {
+    if metadata.len() > MAX_READ_LOAD_BYTES {
         return Err(format!(
-            "File too large ({} bytes). Maximum text read is {} bytes. Read it in chunks or use a format-specific tool.",
+            "File too large to load ({} bytes, max {} MB). Read it in slices with the offset/limit parameters or via the shell (head/sed).",
             metadata.len(),
-            MAX_TEXT_READ_BYTES
+            MAX_READ_LOAD_BYTES / 1_048_576
         ));
     }
 
@@ -32,13 +41,12 @@ pub async fn fs_read_text(workdir: String, rel_path: String) -> Result<String, S
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
-    // Reject binary files — if there's a NUL byte in the first 8 KB, treat as binary
-    let sample_len = bytes.len().min(8192);
-    if bytes[..sample_len].contains(&0) {
-        return Err("File appears to be binary. Use a format-specific tool (fs_read_pdf, fs_read_image, etc.)".to_string());
-    }
-
-    String::from_utf8(bytes).map_err(|e| format!("File is not valid UTF-8: {}", e))
+    render_text_read(
+        bytes,
+        offset,
+        limit,
+        "File appears to be binary. Use a format-specific tool (fs_read_pdf, fs_read_image, etc.)",
+    )
 }
 
 #[tauri::command]
@@ -71,13 +79,17 @@ pub async fn fs_write_text(
     write_bytes_to_workdir(&resolved, content.as_bytes()).await
 }
 
+/// Find-and-replace edit. `old_str` must resolve to a unique match — exactly
+/// (preferred) or, failing that, via a whitespace/quote/dash-insensitive fuzzy
+/// fallback (see `fuzzy::apply_edit`). Returns what changed for a compact
+/// confirmation.
 #[tauri::command]
 pub async fn fs_edit_text(
     workdir: String,
     rel_path: String,
     old_str: String,
     new_str: String,
-) -> Result<(), String> {
+) -> Result<EditResult, String> {
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
@@ -101,22 +113,9 @@ pub async fn fs_edit_text(
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
-    // Find all occurrences. old_str must appear exactly once to prevent
-    // ambiguous edits.
-    let occurrences = content.matches(&old_str).count();
-    if occurrences == 0 {
-        return Err(format!("old_str not found in {}", rel_path));
-    }
-    if occurrences > 1 {
-        return Err(format!(
-            "old_str appears {} times in {}. It must be unique — include more surrounding context.",
-            occurrences, rel_path
-        ));
-    }
-
-    let new_content = content.replacen(&old_str, &new_str, 1);
-    fs::write(&resolved, new_content)
+    let outcome = apply_edit(&content, &old_str, &new_str, &rel_path)?;
+    fs::write(&resolved, outcome.new_content)
         .await
         .map_err(|e| format!("Failed to write file: {}", e))?;
-    Ok(())
+    Ok(outcome.result)
 }
