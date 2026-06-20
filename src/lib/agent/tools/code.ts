@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { labelArg, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
-import type { ToolContext, ToolExecOutput } from './types';
+import type { ToolExecOutput } from './types';
 import { getSettings } from '$lib/stores/settings';
 import { classifyShellRisk } from '$lib/shell/risky-commands';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
