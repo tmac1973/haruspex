@@ -1,7 +1,12 @@
 <script lang="ts">
-	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import { getSettings, updateSettings, isReasoningSupported } from '$lib/stores/settings';
 
 	let thinkingEnabled = $state(getSettings().thinkingEnabled);
+	// The active backend may report that its model has no reasoning mode (an
+	// llama-toolchest non-reasoning model); hide the toggle in that case since
+	// it would have no effect. Local + other remote backends are assumed
+	// capable. Snapshot at mount, matching the rest of this section.
+	let reasoningSupported = $state(isReasoningSupported());
 	let keepRecentToolResults = $state(getSettings().keepRecentToolResults);
 	let customSystemPrompt = $state(getSettings().customSystemPrompt);
 	let sandboxEnabled = $state(getSettings().sandboxEnabled);
@@ -44,17 +49,19 @@
 
 <section class="settings-section">
 	<h2>Behavior</h2>
-	<label class="toggle-row">
-		<input type="checkbox" checked={thinkingEnabled} onchange={toggleThinkingEnabled} />
-		<div>
-			<strong>Reasoning mode</strong>
-			<span>
-				Let the model emit a <code>&lt;think&gt;</code> reasoning block before its answer. Improves quality
-				on code-heavy and multi-step tasks (Python sandbox, tool planning, debugging) at the cost of more
-				tokens per turn. Turn off for lighter chat to save context.
-			</span>
-		</div>
-	</label>
+	{#if reasoningSupported}
+		<label class="toggle-row">
+			<input type="checkbox" checked={thinkingEnabled} onchange={toggleThinkingEnabled} />
+			<div>
+				<strong>Reasoning mode</strong>
+				<span>
+					Let the model emit a <code>&lt;think&gt;</code> reasoning block before its answer. Improves
+					quality on code-heavy and multi-step tasks (Python sandbox, tool planning, debugging) at the
+					cost of more tokens per turn. Turn off for lighter chat to save context.
+				</span>
+			</div>
+		</label>
+	{/if}
 	<label class="toggle-row">
 		<input type="checkbox" checked={keepRecentToolResults} onchange={toggleKeepRecentToolResults} />
 		<div>

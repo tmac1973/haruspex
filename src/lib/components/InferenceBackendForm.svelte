@@ -12,7 +12,12 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { untrack } from 'svelte';
-	import type { InferenceBackendConfig, InferenceBackendKind } from '$lib/stores/settings';
+	import type {
+		InferenceBackendConfig,
+		InferenceBackendKind,
+		RemoteReasoningCaps,
+		RemoteSamplingCaps
+	} from '$lib/stores/settings';
 
 	interface NormalizedModel {
 		id: string;
@@ -20,6 +25,10 @@
 		context_size: number | null;
 		vision_supported: boolean | null;
 		loaded: boolean | null;
+		// llama-toolchest only — null for every other backend.
+		parallel: number | null;
+		reasoning: RemoteReasoningCaps | null;
+		sampling: RemoteSamplingCaps | null;
 	}
 
 	interface ProbeResult {
@@ -82,6 +91,27 @@
 
 	function commit(partial: Partial<InferenceBackendConfig>) {
 		onConfigChange({ ...config, ...partial });
+	}
+
+	// Per-model capability fields to persist alongside a probe / model
+	// switch. Sampling + reasoning are only ever populated by llama-toolchest;
+	// for other backends they're null, which also correctly clears any stale
+	// toolchest caps when the user re-probes a different server. The parallel
+	// slot count auto-sets the parallel-inference toggle — but only for
+	// toolchest, since other backends don't report it and we must not clobber
+	// the user's manual choice.
+	function capabilityCommit(
+		m: NormalizedModel | undefined,
+		kind: InferenceBackendKind
+	): Partial<InferenceBackendConfig> {
+		const partial: Partial<InferenceBackendConfig> = {
+			remoteSampling: m?.sampling ?? null,
+			remoteReasoning: m?.reasoning ?? null
+		};
+		if (kind === 'llama-toolchest' && typeof m?.parallel === 'number') {
+			partial.allowParallelInference = m.parallel > 1;
+		}
+		return partial;
 	}
 
 	function selectUrl(url: string) {
@@ -149,7 +179,8 @@
 				remoteModelId: modelId,
 				remoteContextSize: typeof manualContextSize === 'number' ? manualContextSize : null,
 				remoteVisionSupported: visionOverride,
-				remoteBackendKind: result.kind
+				remoteBackendKind: result.kind,
+				...capabilityCommit(selectedModel, result.kind)
 			});
 		} catch (e) {
 			probeError = String(e);
@@ -175,7 +206,8 @@
 		commit({
 			remoteModelId: newId,
 			remoteContextSize: typeof manualContextSize === 'number' ? manualContextSize : null,
-			remoteVisionSupported: visionOverride
+			remoteVisionSupported: visionOverride,
+			...capabilityCommit(m, probeResult?.kind ?? null)
 		});
 	}
 

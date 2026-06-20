@@ -34,6 +34,44 @@ export type InferenceBackendKind =
 	| 'ollama'
 	| null;
 
+/**
+ * Recommended sampling parameters discovered from a remote backend. Every
+ * field is optional — only what the model card / server actually specifies
+ * is filled in; the client falls back to its built-in defaults for the
+ * rest. Mirrors the Rust `SamplingParams` probe struct.
+ */
+export interface RemoteSamplingParams {
+	temperature?: number;
+	top_p?: number;
+	top_k?: number;
+	presence_penalty?: number;
+}
+
+/** A named sampling preset (e.g. "thinking", "non-thinking", "thinking-coding"). */
+export interface RemoteSamplingPreset extends RemoteSamplingParams {
+	name: string;
+	label?: string;
+}
+
+/** A model's recommended sampling: a resolved default plus named presets. */
+export interface RemoteSamplingCaps {
+	default: RemoteSamplingParams;
+	presets: RemoteSamplingPreset[];
+}
+
+/**
+ * How a remote model exposes its reasoning / "thinking" mode. `toggle`
+ * names the mechanism (`chat_template_kwargs` for Qwen-style
+ * `enable_thinking`, `reasoning_effort`, or `none`); `kwarg` is the exact
+ * key when the mechanism is chat_template_kwargs.
+ */
+export interface RemoteReasoningCaps {
+	supported: boolean;
+	default_enabled: boolean;
+	toggle: string;
+	kwarg?: string | null;
+}
+
 export interface InferenceBackendConfig {
 	mode: InferenceMode;
 	/** Normalized base URL of the remote server (no trailing slash, no /v1 suffix). */
@@ -56,6 +94,19 @@ export interface InferenceBackendConfig {
 	remoteVisionSupported: boolean | null;
 	/** Backend kind recorded from the last successful probe. */
 	remoteBackendKind: InferenceBackendKind;
+	/**
+	 * Recommended sampling discovered for the selected remote model. Only
+	 * llama-toolchest reports this; `null` for every other backend (and
+	 * before the first probe), in which case the built-in `SAMPLING_PROFILES`
+	 * apply. Gated on `remoteBackendKind === 'llama-toolchest'` at read time.
+	 */
+	remoteSampling: RemoteSamplingCaps | null;
+	/**
+	 * Reasoning-mode capability discovered for the selected remote model.
+	 * Only llama-toolchest reports this; `null` otherwise, in which case the
+	 * client assumes Qwen-style `enable_thinking`.
+	 */
+	remoteReasoning: RemoteReasoningCaps | null;
 	/**
 	 * Remote-mode opt-in: skip the app's inference queue and let chat +
 	 * job turns run in parallel against the remote server. Only safe when
@@ -242,6 +293,8 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	remoteContextSize: null,
 	remoteVisionSupported: null,
 	remoteBackendKind: null,
+	remoteSampling: null,
+	remoteReasoning: null,
 	allowParallelInference: false
 };
 
@@ -446,13 +499,52 @@ export function applyTheme(theme?: ThemeMode): void {
 }
 
 /**
- * Returns chat_template_kwargs forwarded to the Qwen 3 Jinja template.
- * `enable_thinking` toggles the model's reasoning/<think> block — driven
- * by the `thinkingEnabled` user setting (default on). Off skips the
- * reasoning block to save tokens; on improves quality on code-heavy
- * and multi-step tasks.
+ * The remote backend config iff it's an llama-toolchest server that
+ * reported capabilities. Everything capability-driven (sampling, reasoning)
+ * is gated through this so other backends — vanilla llama.cpp, Ollama,
+ * vLLM, OpenAI-compat — keep the built-in behavior.
+ */
+function toolchestBackend(): InferenceBackendConfig | null {
+	const inf = settings.inferenceBackend;
+	return inf.mode === 'remote' && inf.remoteBackendKind === 'llama-toolchest' ? inf : null;
+}
+
+/**
+ * Whether the active model exposes a reasoning / "thinking" mode. Drives
+ * whether the Settings "Reasoning mode" toggle is shown. Local and
+ * non-toolchest remote backends are assumed capable (existing behavior);
+ * a toolchest model reports it explicitly.
+ */
+export function isReasoningSupported(): boolean {
+	const inf = toolchestBackend();
+	if (inf?.remoteReasoning) {
+		return inf.remoteReasoning.supported;
+	}
+	return true;
+}
+
+/**
+ * Returns chat_template_kwargs forwarded to the model's Jinja template.
+ * `enable_thinking` toggles the reasoning/<think> block — driven by the
+ * `thinkingEnabled` user setting (default on). Off skips the reasoning
+ * block to save tokens; on improves quality on code-heavy and multi-step
+ * tasks.
+ *
+ * For an llama-toolchest backend we honor the model's discovered reasoning
+ * shape: send the server-reported kwarg name, or send nothing at all when
+ * the model has no chat_template_kwargs toggle (a non-reasoning model, or
+ * one that toggles via a different mechanism) so we don't push an
+ * unsupported kwarg into its template.
  */
 export function getChatTemplateKwargs(): Record<string, unknown> {
+	const inf = toolchestBackend();
+	const reasoning = inf?.remoteReasoning;
+	if (reasoning) {
+		if (!reasoning.supported || reasoning.toggle !== 'chat_template_kwargs' || !reasoning.kwarg) {
+			return {};
+		}
+		return { [reasoning.kwarg]: settings.thinkingEnabled };
+	}
 	return { enable_thinking: settings.thinkingEnabled };
 }
 
@@ -588,11 +680,51 @@ export interface SamplingOptions {
 	codeContext?: boolean;
 }
 
-export function getSamplingParams(opts: SamplingOptions = {}): SamplingParams {
+/** Built-in family-based sampling — the fallback when the backend doesn't
+ * report its own recommendations (local mode, or any non-toolchest remote). */
+function builtinSamplingParams(opts: SamplingOptions): SamplingParams {
 	const family = getActiveModelFamily();
 	const profiles = SAMPLING_PROFILES[family] ?? SAMPLING_PROFILES[DEFAULT_FAMILY];
 	const mode = settings.thinkingEnabled ? profiles.thinking : profiles.nonThinking;
 	return opts.codeContext ? mode.coding : mode.general;
+}
+
+/**
+ * Pick the discovered toolchest preset that matches the current thinking /
+ * code context, layered over the model's resolved `default`. Returns the
+ * effective params, falling back to the built-in profile for any field the
+ * server left unspecified.
+ *
+ * Preset selection mirrors how the built-in profiles are keyed:
+ *   - thinking + code  → "thinking-coding" (then "thinking")
+ *   - thinking         → "thinking"
+ *   - non-thinking     → "non-thinking"
+ */
+function toolchestSamplingParams(caps: RemoteSamplingCaps, opts: SamplingOptions): SamplingParams {
+	const byName = (name: string) => caps.presets.find((p) => p.name === name);
+	let preset: RemoteSamplingParams | undefined;
+	if (settings.thinkingEnabled) {
+		preset = (opts.codeContext ? byName('thinking-coding') : undefined) ?? byName('thinking');
+	} else {
+		preset = byName('non-thinking');
+	}
+	// Preset overrides the resolved default for whatever fields it carries.
+	const merged: RemoteSamplingParams = { ...caps.default, ...(preset ?? {}) };
+	const fallback = builtinSamplingParams(opts);
+	return {
+		temperature: merged.temperature ?? fallback.temperature,
+		top_p: merged.top_p ?? fallback.top_p,
+		top_k: merged.top_k ?? fallback.top_k,
+		presence_penalty: merged.presence_penalty ?? fallback.presence_penalty
+	};
+}
+
+export function getSamplingParams(opts: SamplingOptions = {}): SamplingParams {
+	const inf = toolchestBackend();
+	if (inf?.remoteSampling) {
+		return toolchestSamplingParams(inf.remoteSampling, opts);
+	}
+	return builtinSamplingParams(opts);
 }
 
 export function getResponseFormatPrompt(): string {
