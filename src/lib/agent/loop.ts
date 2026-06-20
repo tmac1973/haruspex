@@ -154,6 +154,19 @@ export interface AgentLoopOptions {
 	 * Defaults to false.
 	 */
 	shellAllowWrite?: boolean;
+	/**
+	 * When true, the loop is being driven by the Code tab: the lean code
+	 * toolset (read/write/edit/grep/glob + run_command + web research) is
+	 * exposed and fs/exec tools resolve against the mandatory working
+	 * directory. Defaults to false.
+	 */
+	codeMode?: boolean;
+	/**
+	 * Companion flag to codeMode: when true, `run_command` runs risky
+	 * commands without prompting. Defaults to false (the user opts in via
+	 * Settings → Code).
+	 */
+	codeAutoApprove?: boolean;
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {

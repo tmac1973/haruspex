@@ -14,6 +14,8 @@ const chatCtx = {
 	deepResearch: false,
 	shellMode: false,
 	shellAllowWrite: false,
+	codeMode: false,
+	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 
@@ -23,6 +25,8 @@ const shellCtx = {
 	deepResearch: false,
 	shellMode: true,
 	shellAllowWrite: false,
+	codeMode: false,
+	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 
@@ -32,6 +36,8 @@ const shellCtxWritable = {
 	deepResearch: false,
 	shellMode: true,
 	shellAllowWrite: true,
+	codeMode: false,
+	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 

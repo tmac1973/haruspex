@@ -80,6 +80,8 @@ export interface LoopContext {
 	deepResearch: boolean;
 	shellMode: boolean;
 	shellAllowWrite: boolean;
+	codeMode: boolean;
+	codeAutoApprove: boolean;
 	shellCwd: string | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
@@ -98,6 +100,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const workingDir = options.workingDir ?? null;
 	const shellMode = options.shellMode ?? false;
 	const shellAllowWrite = options.shellAllowWrite ?? false;
+	const codeMode = options.codeMode ?? false;
+	const codeAutoApprove = options.codeAutoApprove ?? false;
 	return {
 		messages: options.messages,
 		tools: getToolSchemas({
@@ -105,7 +109,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			deepResearch: options.deepResearch ?? false,
 			visionSupported: options.visionSupported ?? true,
 			shellMode,
-			shellAllowWrite
+			shellAllowWrite,
+			codeMode
 		}),
 		signal: options.signal,
 		workingDir,
@@ -113,6 +118,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		deepResearch: options.deepResearch ?? false,
 		shellMode,
 		shellAllowWrite,
+		codeMode,
+		codeAutoApprove,
 		shellCwd: options.shellCwd ?? null,
 		expectsFileOutput: options.expectsFileOutput ?? false,
 		pendingImages: [],
@@ -818,6 +825,8 @@ async function executeToolCalls(
 				deepResearch: ctx.deepResearch,
 				shellMode: ctx.shellMode,
 				shellAllowWrite: ctx.shellAllowWrite,
+				codeMode: ctx.codeMode,
+				codeAutoApprove: ctx.codeAutoApprove,
 				shellCwd: ctx.shellCwd,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
 				onProgress: (status: string) => options.onToolProgress?.(call, status)
