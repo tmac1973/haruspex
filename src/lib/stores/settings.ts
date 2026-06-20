@@ -289,6 +289,24 @@ export interface AppSettings {
 	 * the user decides whether to ask the assistant about the result.
 	 */
 	shellRunAutoSubmit: boolean;
+	/**
+	 * Code tab: when true, `run_command` runs risk-flagged commands without
+	 * prompting. Off by default — the user opts into a "trust the model on
+	 * this machine" posture explicitly.
+	 */
+	codeAutoApprove: boolean;
+	/**
+	 * Code tab: last-used project directory, restored on next open. Empty
+	 * string means "no directory chosen yet" — the tab refuses tool calls
+	 * until one is set.
+	 */
+	codeDefaultWorkingDir: string;
+	/**
+	 * Code tab: default wall-clock timeout (seconds) for a single
+	 * `run_command` call. The model can override per call; this is the
+	 * fallback. Clamped 5–1800 in the UI.
+	 */
+	codeRunCommandTimeoutSecs: number;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -354,7 +372,10 @@ const defaults: AppSettings = {
 	shellMaxBytesPerCapture: 8192,
 	shellSidebarWidth: 480,
 	shellAllowWrite: false,
-	shellRunAutoSubmit: false
+	shellRunAutoSubmit: false,
+	codeAutoApprove: false,
+	codeDefaultWorkingDir: '',
+	codeRunCommandTimeoutSecs: 120
 };
 
 function load(): AppSettings {

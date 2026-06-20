@@ -192,6 +192,23 @@ pub fn run_command_cancel(command_id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Spill a command's full output to a temp file when it's too big to return
+/// inline, returning the path. The model reads it back via fs_read_text with
+/// offset/limit instead of carrying it all in context.
+#[tauri::command]
+pub async fn code_write_overflow(content: String) -> Result<String, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = std::env::temp_dir().join(format!("haruspex-run-output-{nanos}.txt"));
+    tokio::fs::write(&path, content)
+        .await
+        .map_err(|e| format!("Failed to write overflow file: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 // ---------------------------------------------------------------------------
 // code_grep
 // ---------------------------------------------------------------------------

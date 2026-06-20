@@ -51,6 +51,10 @@ const CODE_TOOLS = new Set([
 	'research_url'
 ]);
 
+// `fs`-category tools that should only ever appear in Code mode — keeps the
+// Chat schema lean (it otherwise exposes every fs tool when a workdir is set).
+const CODE_ONLY_FS = new Set(['code_grep', 'code_glob']);
+
 function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	const name = reg.schema.function.name;
 	// `exec` (run_command) is Code-mode only — never expose it in Shell mode,
@@ -78,6 +82,8 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// `exec` (run_command) runs arbitrary host commands — Code mode only.
 	// Without this, the `return true` fall-through would leak it into Chat.
 	if (reg.category === 'exec') return false;
+	// code_grep / code_glob are Code-mode fs tools; keep them out of Chat.
+	if (CODE_ONLY_FS.has(name)) return false;
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;

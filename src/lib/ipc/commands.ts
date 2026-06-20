@@ -16,6 +16,7 @@ export const IPC = {
 	cmd_detect_hardware: 'cmd_detect_hardware',
 	code_glob: 'code_glob',
 	code_grep: 'code_grep',
+	code_write_overflow: 'code_write_overflow',
 	db_clear_all_conversations: 'db_clear_all_conversations',
 	db_create_conversation: 'db_create_conversation',
 	db_create_job: 'db_create_job',
