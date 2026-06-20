@@ -38,6 +38,14 @@ export interface InferenceBackendConfig {
 	mode: InferenceMode;
 	/** Normalized base URL of the remote server (no trailing slash, no /v1 suffix). */
 	remoteBaseUrl: string;
+	/**
+	 * Saved remote server URLs the user can switch between via the Server
+	 * URL dropdown. The currently active one is mirrored in `remoteBaseUrl`;
+	 * this list is just the menu of choices the user has added. Empty on a
+	 * fresh install — the form seeds it from `remoteBaseUrl` for upgrading
+	 * users who already had a single server configured.
+	 */
+	remoteServerUrls: string[];
 	/** Optional Bearer token for servers that require auth. Blank for self-hosted. */
 	remoteApiKey: string;
 	/** Model ID to include in chat completion requests when in remote mode. */
@@ -228,6 +236,7 @@ const SETTINGS_KEY = 'haruspex-settings';
 const defaultInferenceBackend: InferenceBackendConfig = {
 	mode: 'local',
 	remoteBaseUrl: '',
+	remoteServerUrls: [],
 	remoteApiKey: '',
 	remoteModelId: '',
 	remoteContextSize: null,

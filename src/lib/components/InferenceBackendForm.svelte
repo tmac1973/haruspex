@@ -43,6 +43,18 @@
 	// initial values once at mount — the form owns the editing state
 	// from that point forward and only sync down via the parent reload.
 	let baseUrl = $state(untrack(() => config.remoteBaseUrl));
+	// Saved server URLs the user can switch between. Seed from the active
+	// URL so upgrading users (who only ever had a single `remoteBaseUrl`)
+	// see it in the dropdown straight away and can add more alongside it.
+	let serverUrls = $state<string[]>(
+		untrack(() => {
+			const saved = config.remoteServerUrls ?? [];
+			if (config.remoteBaseUrl && !saved.includes(config.remoteBaseUrl)) {
+				return [...saved, config.remoteBaseUrl];
+			}
+			return [...saved];
+		})
+	);
 	let apiKey = $state(untrack(() => config.remoteApiKey));
 	let modelId = $state(untrack(() => config.remoteModelId));
 	let manualContextSize = $state<number | ''>(untrack(() => config.remoteContextSize ?? ''));
@@ -60,8 +72,44 @@
 		probeResult?.models.some((m) => m.id === modelId && m.vision_supported !== null) ?? false
 	);
 
+	// Options shown in the Server URL dropdown. If the user has typed/edited
+	// a URL that isn't saved yet, surface it as the (selected) first option
+	// so the dropdown always reflects the active `baseUrl` — otherwise a
+	// `<select>` whose value matches no <option> renders blank.
+	let urlOptions = $derived(
+		baseUrl && !serverUrls.includes(baseUrl) ? [baseUrl, ...serverUrls] : serverUrls
+	);
+
 	function commit(partial: Partial<InferenceBackendConfig>) {
 		onConfigChange({ ...config, ...partial });
+	}
+
+	function selectUrl(url: string) {
+		baseUrl = url;
+		// Switching servers invalidates the previous probe's result.
+		probeResult = null;
+		probeError = null;
+		commit({ remoteBaseUrl: url });
+	}
+
+	function addUrl() {
+		const url = baseUrl.trim();
+		if (!url || serverUrls.includes(url)) return;
+		serverUrls = [...serverUrls, url];
+		baseUrl = url;
+		commit({ remoteBaseUrl: url, remoteServerUrls: serverUrls });
+	}
+
+	function removeUrl() {
+		const next = serverUrls.filter((u) => u !== baseUrl);
+		serverUrls = next;
+		// Fall back to the first remaining saved URL (or blank) as the new
+		// active server.
+		const replacement = next[0] ?? '';
+		baseUrl = replacement;
+		probeResult = null;
+		probeError = null;
+		commit({ remoteBaseUrl: replacement, remoteServerUrls: next });
 	}
 
 	async function testConnection() {
@@ -166,13 +214,45 @@
 <div class="inference-form">
 	<div class="field">
 		<label for="inf-base-url">Server URL</label>
-		<input
-			id="inf-base-url"
-			type="text"
-			placeholder="http://localhost:8080"
-			bind:value={baseUrl}
-			onblur={() => commit({ remoteBaseUrl: baseUrl })}
-		/>
+		{#if serverUrls.length > 0}
+			<div class="url-row">
+				<select
+					class="url-select"
+					aria-label="Saved server URLs"
+					value={baseUrl}
+					onchange={(e) => selectUrl((e.target as HTMLSelectElement).value)}
+				>
+					{#each urlOptions as url (url)}
+						<option value={url}>{url}</option>
+					{/each}
+				</select>
+				<button
+					class="btn"
+					type="button"
+					onclick={removeUrl}
+					disabled={!serverUrls.includes(baseUrl)}
+				>
+					Remove
+				</button>
+			</div>
+		{/if}
+		<div class="url-row">
+			<input
+				id="inf-base-url"
+				type="text"
+				placeholder="http://localhost:8080"
+				bind:value={baseUrl}
+				onblur={() => commit({ remoteBaseUrl: baseUrl })}
+			/>
+			<button
+				class="btn"
+				type="button"
+				onclick={addUrl}
+				disabled={!baseUrl.trim() || serverUrls.includes(baseUrl.trim())}
+			>
+				Add
+			</button>
+		</div>
 		<p class="hint">
 			The base URL of your inference server. Examples:
 			<code>http://localhost:11434</code> (Ollama),
@@ -198,7 +278,7 @@
 
 	<div class="test-row">
 		<button class="btn btn-primary" onclick={testConnection} disabled={probing || !baseUrl}>
-			{probing ? 'Testing…' : 'Test connection'}
+			{probing ? 'Probing…' : 'Probe connection'}
 		</button>
 		{#if probeResult}
 			<span class="probe-status detected">
@@ -325,6 +405,22 @@
 
 	.field input[readonly] {
 		opacity: 0.7;
+	}
+
+	.url-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.url-row input[type='text'],
+	.url-row .url-select {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.url-row .btn {
+		flex-shrink: 0;
 	}
 
 	.hint {
