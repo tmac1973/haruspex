@@ -7,6 +7,7 @@
 	import SearchSection from '$lib/components/settings/SearchSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
 	import ShellSection from '$lib/components/settings/ShellSection.svelte';
+	import CodeSection from '$lib/components/settings/CodeSection.svelte';
 	import FeedbackSection from '$lib/components/settings/FeedbackSection.svelte';
 
 	// Rendered as an overlay over the main page (so the Shell tab's PTY stays
@@ -22,6 +23,7 @@
 		| 'search'
 		| 'integrations'
 		| 'shell'
+		| 'code'
 		| 'feedback';
 
 	interface CategoryDef {
@@ -37,6 +39,7 @@
 		{ id: 'search', label: 'Search' },
 		{ id: 'integrations', label: 'Integrations' },
 		{ id: 'shell', label: 'Shell' },
+		{ id: 'code', label: 'Code' },
 		{ id: 'feedback', label: 'Feedback' }
 	];
 
@@ -104,6 +107,8 @@
 				<EmailSection />
 			{:else if activeCategory === 'shell'}
 				<ShellSection />
+			{:else if activeCategory === 'code'}
+				<CodeSection />
 			{:else if activeCategory === 'feedback'}
 				<FeedbackSection />
 			{/if}
