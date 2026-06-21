@@ -115,7 +115,14 @@ async function formatPtyResult(
 		header = `Command still running in your terminal after ${state.timeoutSecs}s — left running. Output so far:`;
 	}
 	const body = region.output.replace(/\s+$/, '');
-	if (!body) return header;
+	if (!body) {
+		// Be explicit so the model doesn't read "no output" as "it failed" and
+		// re-run — many programs (GUIs, servers, formatters) print nothing.
+		if (state.completed && region.exitCode === 0) {
+			return `${header} — command succeeded with no output.`;
+		}
+		return `${header} (no output).`;
+	}
 	const truncated = truncateCapturedOutput(body, RUN_OUTPUT_MAX_BYTES);
 	if (!truncated.truncated) return `${header}\n${truncated.text}`;
 	let overflowNote = '';

@@ -537,6 +537,12 @@ export async function runIteration(
 	// so we don't fire it spuriously on a later no-tool-calls iteration.
 	nudges.consumeNarrateRecovery();
 	await executeToolCalls(ctx, nudges, toolCalls);
+	// Break out of a no-progress loop (same command re-run repeatedly) instead
+	// of cycling to the iteration cap; the final-synthesis path then wraps up.
+	if (nudges.shouldStopForCommandRepeat()) {
+		logDebug('agent', 'branch=run-command-repeat stop', {});
+		return 'break';
+	}
 	return 'continue';
 }
 
@@ -880,6 +886,18 @@ async function executeToolCalls(
 
 		if (call.name === 'run_python') {
 			toolContent = nudges.maybeAppendRunPythonHint(toolContent);
+		}
+
+		// No-progress guard: re-running the identical command (a GUI/no-output
+		// program looks like "it failed" to the model) gets a hint, then a
+		// hard stop. Any other tool counts as progress and resets the streak.
+		if (call.name === 'run_command') {
+			toolContent = nudges.maybeAppendRunCommandHint(
+				(call.arguments.command as string) ?? '',
+				toolContent
+			);
+		} else {
+			nudges.noteNonRunCommandTool();
 		}
 
 		messages.push({

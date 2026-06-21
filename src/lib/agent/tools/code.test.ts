@@ -108,6 +108,17 @@ describe('run_command risk gate', () => {
 });
 
 describe('run_command output handling', () => {
+	it('states success explicitly when exit 0 produces no output', async () => {
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'run_command_capture')
+				return Promise.resolve(runResultDefaults({ stdout: '', stderr: '', exit_code: 0 }));
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool('run_command', { command: './my-gui' }, codeCtx);
+		expect(out.result).toContain('succeeded with no output');
+	});
+
 	it('leads with the exit code and reports a killed command', async () => {
 		mocks.invoke.mockImplementation((cmd: string) => {
 			if (cmd === 'run_command_capture')

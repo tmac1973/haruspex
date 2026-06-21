@@ -93,7 +93,11 @@ async function formatRunResult(res: RunCommandResult): Promise<string> {
 	if (res.stdout.trim()) parts.push(res.stdout.replace(/\s+$/, ''));
 	if (res.stderr.trim()) parts.push(`[stderr]\n${res.stderr.replace(/\s+$/, '')}`);
 	const combined = parts.join('\n');
-	if (!combined) return header;
+	if (!combined) {
+		// Explicit so the model doesn't read "no output" as failure and re-run.
+		if (!res.killed && res.exit_code === 0) return `${header} — command succeeded with no output.`;
+		return `${header} (no output).`;
+	}
 
 	const truncated = truncateCapturedOutput(combined, RUN_OUTPUT_MAX_BYTES);
 	if (!truncated.truncated) {

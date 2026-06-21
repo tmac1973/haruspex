@@ -33,6 +33,9 @@
 
 export const MAX_FILE_WRITE_RETRIES = 2;
 export const RUN_PYTHON_FAILURE_NUDGE_THRESHOLD = 3;
+/** Consecutive identical run_command calls before we hint, then hard-stop. */
+export const RUN_COMMAND_REPEAT_NUDGE_THRESHOLD = 2;
+export const RUN_COMMAND_REPEAT_STOP_THRESHOLD = 3;
 
 /**
  * True if a `run_python` tool result represents a failure that should
@@ -61,6 +64,11 @@ export class NudgeState {
 	private diversityNudged = false;
 	/** Consecutive `run_python` results that began with "Error:". */
 	private consecutiveRunPythonFailures = 0;
+	/** The last `run_command` command string, and how many times in a row it
+	 *  has been run with no other tool in between (a no-progress loop — e.g.
+	 *  re-running a GUI/no-output program assuming it failed). */
+	private lastRunCommand: string | null = null;
+	private consecutiveSameRunCommand = 0;
 	/**
 	 * Armed by armNarrateRecovery after any nudge that demanded a tool
 	 * call. Cleared by consumeNarrateRecovery on either the recovery
@@ -164,5 +172,47 @@ export class NudgeState {
 			this.consecutiveRunPythonFailures = 0;
 		}
 		return result;
+	}
+
+	/**
+	 * Process a `run_command` result. Tracks consecutive runs of the *same*
+	 * command (the streak resets when any other tool runs — see
+	 * `noteNonRunCommandTool`). Once the same command has run
+	 * RUN_COMMAND_REPEAT_NUDGE_THRESHOLD times in a row, append a hint telling
+	 * the model that a 0 exit code means success even with no output and to
+	 * stop re-running. Pair with `shouldStopForCommandRepeat` for the hard stop.
+	 */
+	maybeAppendRunCommandHint(command: string, result: string): string {
+		const cmd = command.trim();
+		if (cmd && cmd === this.lastRunCommand) {
+			this.consecutiveSameRunCommand++;
+		} else {
+			this.lastRunCommand = cmd || null;
+			this.consecutiveSameRunCommand = 1;
+		}
+		if (this.consecutiveSameRunCommand >= RUN_COMMAND_REPEAT_NUDGE_THRESHOLD) {
+			return (
+				result +
+				`\n\n[Haruspex hint] You have run this exact command ${this.consecutiveSameRunCommand} times in a row with the same result. ` +
+				'A 0 exit code means the command SUCCEEDED even if it printed nothing — GUIs, servers, and many tools produce no stdout. ' +
+				'Re-running it will not change anything. Stop and report the result to the user, or take a genuinely different step.'
+			);
+		}
+		return result;
+	}
+
+	/** A non-run_command tool ran — progress was made, so reset the streak. */
+	noteNonRunCommandTool(): void {
+		this.lastRunCommand = null;
+		this.consecutiveSameRunCommand = 0;
+	}
+
+	/**
+	 * True once the same command has been run enough times in a row that the
+	 * loop should stop the turn (rather than let the model keep cycling up to
+	 * the iteration cap). Read after executing tool calls.
+	 */
+	shouldStopForCommandRepeat(): boolean {
+		return this.consecutiveSameRunCommand >= RUN_COMMAND_REPEAT_STOP_THRESHOLD;
 	}
 }
