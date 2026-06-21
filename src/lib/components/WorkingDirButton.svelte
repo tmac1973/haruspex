@@ -2,7 +2,19 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { getWorkingDir, setWorkingDir } from '$lib/stores/chat.svelte';
 
-	const workingDir = $derived(getWorkingDir());
+	interface Props {
+		/** Directory source. Omit to use the Chat tab's working-dir store. */
+		workingDir?: string | null;
+		/** Called with the chosen directory. Omit to use the Chat store setter. */
+		onPick?: (dir: string) => void;
+		/** Called when the user clears the directory. Omit to use the Chat store. */
+		onClear?: () => void;
+	}
+	let { workingDir: workingDirProp, onPick, onClear }: Props = $props();
+
+	// Default to the Chat store when no override props are supplied, so the
+	// existing `<WorkingDirButton />` usage in ChatView is unchanged.
+	const workingDir = $derived(workingDirProp !== undefined ? workingDirProp : getWorkingDir());
 	const displayName = $derived(
 		workingDir ? workingDir.split(/[/\\]/).filter(Boolean).pop() || '/' : ''
 	);
@@ -15,7 +27,8 @@
 				title: 'Select working directory'
 			});
 			if (typeof selected === 'string') {
-				setWorkingDir(selected);
+				if (onPick) onPick(selected);
+				else setWorkingDir(selected);
 			}
 		} catch (e) {
 			console.error('Failed to pick directory:', e);
@@ -24,7 +37,8 @@
 
 	function clearDirectory(e: MouseEvent) {
 		e.stopPropagation();
-		setWorkingDir(null);
+		if (onClear) onClear();
+		else setWorkingDir(null);
 	}
 </script>
 

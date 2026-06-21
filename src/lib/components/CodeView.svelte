@@ -2,6 +2,7 @@
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
+	import WorkingDirButton from '$lib/components/WorkingDirButton.svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { tick } from 'svelte';
 	import { renderStreamingHtml } from '$lib/stores/chat.svelte';
@@ -35,7 +36,6 @@
 	const errorMessage = $derived(getCodeError());
 	const contextNotice = $derived(getCodeContextNotice());
 	const renderedStreaming = $derived(renderStreamingHtml(streamingContent));
-	const dirLabel = $derived(workingDir ? workingDir.split('/').filter(Boolean).pop() : null);
 
 	$effect(() => {
 		if (streamingContent && autoScroll) scrollToBottom();
@@ -147,14 +147,11 @@
 				disabled={!workingDir}
 				rows="1"
 			></textarea>
-			<button
-				class="dir-btn"
-				class:unset={!workingDir}
-				onclick={pickDirectory}
-				title={workingDir ?? 'Choose project directory'}
-			>
-				📁 {workingDir ? dirLabel : 'Choose…'}
-			</button>
+			<WorkingDirButton
+				{workingDir}
+				onPick={(d) => setCodeWorkingDir(d)}
+				onClear={() => setCodeWorkingDir(null)}
+			/>
 			<button
 				class="clear-btn"
 				onclick={() => clearCodeConversation()}
@@ -183,36 +180,16 @@
 		overflow: hidden;
 	}
 
-	.dir-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 5px 12px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-		font-size: 0.85rem;
-		cursor: pointer;
-		white-space: nowrap;
-		max-width: 200px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.dir-btn.unset {
-		border-color: var(--accent);
-		color: var(--accent);
-	}
-
 	.clear-btn {
-		padding: 5px 12px;
+		height: 40px;
+		padding: 0 14px;
 		border: 1px solid var(--border);
 		border-radius: 8px;
 		background: var(--bg-secondary);
 		color: var(--text-secondary);
 		font-size: 0.82rem;
 		cursor: pointer;
+		flex-shrink: 0;
 	}
 
 	.clear-btn:disabled {
