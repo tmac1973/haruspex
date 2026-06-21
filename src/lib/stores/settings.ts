@@ -314,6 +314,13 @@ export interface AppSettings {
 	 * setting governs Chat/Shell. Default on.
 	 */
 	codeThinkingEnabled: boolean;
+	/**
+	 * How the Code-mode `run_command` tool executes when driven from a Shell
+	 * session: `'auto'` drives the interactive PTY when shell integration is
+	 * available and falls back to a one-shot capture otherwise; `'pty'` forces
+	 * the terminal path; `'oneshot'` forces a fresh `sh -c` capture.
+	 */
+	codeCommandExec: 'auto' | 'pty' | 'oneshot';
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -383,7 +390,8 @@ const defaults: AppSettings = {
 	codeAutoApprove: false,
 	codeDefaultWorkingDir: '',
 	codeRunCommandTimeoutSecs: 120,
-	codeThinkingEnabled: true
+	codeThinkingEnabled: true,
+	codeCommandExec: 'auto'
 };
 
 function load(): AppSettings {

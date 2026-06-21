@@ -146,7 +146,9 @@ describe('run_command output handling', () => {
 			{ command: 'sleep 99' },
 			{ ...codeCtx, signal: controller.signal }
 		);
-		// Abort while the command is "running".
+		// Let the approval gate resolve and runHostCommand register its abort
+		// listener, then abort while the command is "running".
+		await new Promise((r) => setTimeout(r, 0));
 		controller.abort();
 		expect(mocks.invoke).toHaveBeenCalledWith('run_command_cancel', expect.anything());
 		resolveRun(runResultDefaults({ killed: true, exit_code: null }));
@@ -231,6 +233,107 @@ describe('Shell + Code combined mode', () => {
 			oldStr: 'a',
 			newStr: 'b'
 		});
+	});
+});
+
+describe('run_command PTY driving', () => {
+	const ptyCtx = {
+		workingDir: null,
+		shellCwd: '/proj',
+		shellSessionId: 1,
+		pendingImages: [],
+		deepResearch: false,
+		shellMode: true,
+		shellAllowWrite: false,
+		codeMode: true,
+		codeAutoApprove: true, // skip the approval prompt in these tests
+		filesWrittenThisTurn: new Set<string>()
+	};
+
+	it('drives the live PTY and reports the captured exit code', async () => {
+		let ctxCalls = 0;
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
+			if (cmd === 'shell_get_context') {
+				ctxCalls++;
+				return Promise.resolve({ completed_total: ctxCalls >= 2 ? 1 : 0, current_cwd: '/proj' });
+			}
+			if (cmd === 'shell_get_recent_commands')
+				return Promise.resolve([
+					{ commandLine: 'ls', output: 'a.txt\n', exitCode: 0, cwd: '/proj', truncated: false }
+				]);
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool('run_command', { command: 'ls' }, ptyCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'shell_write',
+			expect.objectContaining({ sessionId: 1 })
+		);
+		expect(out.result).toContain('Exit code: 0');
+		expect(out.result).toContain('a.txt');
+		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+	});
+
+	it('falls back to one-shot when codeCommandExec is "oneshot"', async () => {
+		const { updateSettings } = await import('$lib/stores/settings');
+		updateSettings({ codeCommandExec: 'oneshot' });
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool('run_command', { command: 'ls' }, ptyCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'run_command_capture',
+			expect.objectContaining({ cwd: '/proj' })
+		);
+		updateSettings({ codeCommandExec: 'auto' });
+	});
+
+	it('falls back to one-shot when the platform is unsupported', async () => {
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_platform_supported') return Promise.resolve(false);
+			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool('run_command', { command: 'ls' }, ptyCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+	});
+
+	it('sends Ctrl-C to the PTY on abort', async () => {
+		const controller = new AbortController();
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
+			if (cmd === 'shell_get_context')
+				return Promise.resolve({ completed_total: 0, current_cwd: '/proj' });
+			if (cmd === 'shell_get_recent_commands')
+				return Promise.resolve([
+					{
+						commandLine: 'sleep',
+						output: '',
+						exitCode: null,
+						cwd: '/proj',
+						truncated: false,
+						pending: true
+					}
+				]);
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		const p = executeTool(
+			'run_command',
+			{ command: 'sleep 99', timeout_secs: 2 },
+			{ ...ptyCtx, signal: controller.signal }
+		);
+		await new Promise((r) => setTimeout(r, 50));
+		controller.abort();
+		await p;
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'shell_write',
+			expect.objectContaining({ data: '\x03' })
+		);
 	});
 });
 

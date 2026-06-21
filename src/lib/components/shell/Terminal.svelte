@@ -8,6 +8,7 @@
 	import { SerializeAddon } from '@xterm/addon-serialize';
 	import '@xterm/xterm/css/xterm.css';
 	import { getSettings } from '$lib/stores/settings';
+	import { isPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
 	import type { SessionContext } from '$lib/ipc/gen/SessionContext';
 	import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
 	import type { ShellSpawnResult } from '$lib/ipc/gen/ShellSpawnResult';
@@ -42,7 +43,8 @@
 	let container: HTMLDivElement;
 	let term: Terminal | null = null;
 	let serializeAddon: SerializeAddon | null = null;
-	let sessionId: number | null = null;
+	// $state so the PTY-busy badge in the template reacts to session changes.
+	let sessionId = $state<number | null>(null);
 	let unlistenOutput: UnlistenFn | null = null;
 	let unlistenExit: UnlistenFn | null = null;
 	let resizeObserver: ResizeObserver | null = null;
@@ -160,6 +162,11 @@
 		// resizes flow to the new PTY.
 		t.onData((data) => {
 			if (sessionId == null) return;
+			// While the coding agent is driving this PTY, swallow user keystrokes
+			// so they can't interleave with the agent's command and corrupt the
+			// output capture. The agent's own writes go through shell_write
+			// directly, not this handler.
+			if (isPtyBusy(sessionId)) return;
 			invoke('shell_write', { sessionId, data }).catch((e) =>
 				console.error('shell_write failed', e)
 			);
@@ -283,7 +290,11 @@
 	});
 </script>
 
-<div class="terminal-host" bind:this={container}></div>
+<div class="terminal-host" bind:this={container}>
+	{#if isPtyBusy(sessionId)}
+		<div class="agent-running-badge">⏳ agent is running a command…</div>
+	{/if}
+</div>
 
 <style>
 	.terminal-host {
@@ -291,6 +302,21 @@
 		inset: 0;
 		background: #1e1e1e;
 		padding: 4px 0 0 4px;
+	}
+
+	.agent-running-badge {
+		position: absolute;
+		top: 8px;
+		right: 12px;
+		z-index: 5;
+		padding: 4px 10px;
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--accent) 85%, black);
+		color: white;
+		font-size: 0.75rem;
+		font-weight: 500;
+		pointer-events: none;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 	}
 
 	.terminal-host :global(.xterm) {

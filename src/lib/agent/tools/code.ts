@@ -11,14 +11,10 @@ import {
 	isSessionApproved,
 	approveSession
 } from '$lib/stores/codeCommandApproval.svelte';
+import { runInPty, shouldUsePty, RUN_OUTPUT_MAX_BYTES } from './pty-exec';
 import type { RunCommandResult } from '$lib/ipc/gen/RunCommandResult';
 import type { GrepResult } from '$lib/ipc/gen/GrepResult';
 import type { GlobResult } from '$lib/ipc/gen/GlobResult';
-
-// Inline output budget for run_command. Past this the combined output is
-// middle-truncated and the full text spilled to a temp file the model can
-// read back with fs_read_text offset/limit (plan §7: output discipline).
-const RUN_OUTPUT_MAX_BYTES = 16 * 1024;
 
 /**
  * The directory the code tools operate in: the live shell CWD when driven from
@@ -26,6 +22,34 @@ const RUN_OUTPUT_MAX_BYTES = 16 * 1024;
  */
 function codeRoot(ctx: ToolContext): string | null {
 	return ctx.shellMode ? (ctx.shellCwd ?? null) : ctx.workingDir;
+}
+
+/**
+ * Run the risk-classifier approval gate. Returns `'ok'` to proceed, or a
+ * `{ message }` tool result to return instead (denied, or the approval prompt
+ * errored). Auto-approve and per-session approval short-circuit the prompt.
+ */
+async function ensureCommandApproved(
+	command: string,
+	ctx: ToolContext
+): Promise<'ok' | { message: string }> {
+	if (ctx.codeAutoApprove || isSessionApproved()) return 'ok';
+	const risk = classifyShellRisk(command);
+	if (!risk.matched) return 'ok';
+	let choice;
+	try {
+		choice = await askCommandApproval({ command, reasons: risk.reasons });
+	} catch (e) {
+		return { message: toolInvokeError('run_command approval', e) };
+	}
+	if (choice === 'deny') {
+		return {
+			message:
+				'Command denied by the user. Do not retry it — ask how they would like to proceed or take a different approach.'
+		};
+	}
+	if (choice === 'allow_session') approveSession();
+	return 'ok';
 }
 
 /**
@@ -93,7 +117,7 @@ registerTool({
 		function: {
 			name: 'run_command',
 			description:
-				'Run a shell command on the host in the project directory; returns combined output and exit code. One-shot — cwd/env do not persist between calls, so chain with && when you need directory state. Output is truncated past ~16KB; if so, the full output is saved to a file path you can read with fs_read_text.',
+				"Run a shell command in the project. When driven from a terminal session it runs in your live interactive shell (sharing the activated venv / env / cwd) and appears in your terminal; otherwise it runs one-shot. cwd/env changes from a one-shot don't persist between calls, so chain with && when needed. Output is truncated past ~16KB; if so, the full output is saved to a file path you can read with fs_read_text.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -114,25 +138,8 @@ registerTool({
 		const root = codeRoot(ctx);
 		if (!root) return toolResult(toolError('No working directory set.'));
 
-		// Risk gate: prompt before running a command the classifier flags,
-		// unless the user enabled auto-approve (setting or per-session).
-		if (!ctx.codeAutoApprove && !isSessionApproved()) {
-			const risk = classifyShellRisk(command);
-			if (risk.matched) {
-				let choice;
-				try {
-					choice = await askCommandApproval({ command, reasons: risk.reasons });
-				} catch (e) {
-					return toolResult(toolInvokeError('run_command approval', e));
-				}
-				if (choice === 'deny') {
-					return toolResult(
-						'Command denied by the user. Do not retry it — ask how they would like to proceed or take a different approach.'
-					);
-				}
-				if (choice === 'allow_session') approveSession();
-			}
-		}
+		const approval = await ensureCommandApproved(command, ctx);
+		if (approval !== 'ok') return toolResult(approval.message);
 
 		const fallbackTimeout = getSettings().codeRunCommandTimeoutSecs;
 		const timeoutSecs =
@@ -141,6 +148,11 @@ registerTool({
 				: fallbackTimeout;
 
 		try {
+			// Drive the live PTY when in a shell session and integration is
+			// available; otherwise fall back to a one-shot capture.
+			if (ctx.shellSessionId != null && (await shouldUsePty(ctx))) {
+				return toolResult(await runInPty(ctx.shellSessionId, command, timeoutSecs, ctx.signal));
+			}
 			const res = await runHostCommand(command, root, timeoutSecs, ctx.signal);
 			return toolResult(await formatRunResult(res));
 		} catch (e) {
