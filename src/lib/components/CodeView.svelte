@@ -84,33 +84,6 @@
 </script>
 
 <div class="code-layout">
-	<div class="code-header">
-		<button
-			class="dir-btn"
-			class:unset={!workingDir}
-			onclick={pickDirectory}
-			title={workingDir ?? ''}
-		>
-			{#if workingDir}
-				<span class="dir-icon">📁</span> {dirLabel}
-			{:else}
-				📁 Choose project directory…
-			{/if}
-		</button>
-		{#if workingDir}
-			<span class="dir-full" title={workingDir}>{workingDir}</span>
-		{/if}
-		<div class="header-spacer"></div>
-		<button
-			class="clear-btn"
-			onclick={() => clearCodeConversation()}
-			disabled={isGenerating || messages.length === 0}
-			title="Clear this conversation"
-		>
-			New
-		</button>
-	</div>
-
 	<div class="messages" bind:this={messagesContainer} onscroll={handleScroll}>
 		{#if messages.length > 0}
 			{#each messages as msg, i (i)}
@@ -175,6 +148,22 @@
 				rows="1"
 			></textarea>
 			<button
+				class="dir-btn"
+				class:unset={!workingDir}
+				onclick={pickDirectory}
+				title={workingDir ?? 'Choose project directory'}
+			>
+				📁 {workingDir ? dirLabel : 'Choose…'}
+			</button>
+			<button
+				class="clear-btn"
+				onclick={() => clearCodeConversation()}
+				disabled={isGenerating || messages.length === 0}
+				title="Clear this conversation"
+			>
+				New
+			</button>
+			<button
 				class="send-btn"
 				onclick={handleSend}
 				disabled={!inputText.trim() || isGenerating || !workingDir}
@@ -194,28 +183,21 @@
 		overflow: hidden;
 	}
 
-	.code-header {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 8px 12px;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg-primary);
-		flex-shrink: 0;
-	}
-
 	.dir-btn {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
 		padding: 5px 12px;
 		border: 1px solid var(--border);
-		border-radius: 6px;
+		border-radius: 8px;
 		background: var(--bg-secondary);
 		color: var(--text-primary);
 		font-size: 0.85rem;
 		cursor: pointer;
 		white-space: nowrap;
+		max-width: 200px;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.dir-btn.unset {
@@ -223,23 +205,10 @@
 		color: var(--accent);
 	}
 
-	.dir-full {
-		font-size: 0.75rem;
-		color: var(--text-secondary);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		max-width: 50%;
-	}
-
-	.header-spacer {
-		flex: 1;
-	}
-
 	.clear-btn {
 		padding: 5px 12px;
 		border: 1px solid var(--border);
-		border-radius: 6px;
+		border-radius: 8px;
 		background: var(--bg-secondary);
 		color: var(--text-secondary);
 		font-size: 0.82rem;
