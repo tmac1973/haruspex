@@ -23,6 +23,8 @@ export interface CodeTurnOptions {
 	workingDir: string;
 	/** When true, run_command skips the risk-approval prompt. */
 	codeAutoApprove?: boolean;
+	/** Per-tab reasoning override (Code tab's Think toggle). */
+	thinkingEnabled?: boolean;
 	maxIterations?: number;
 	visionSupported?: boolean;
 	signal?: AbortSignal;
@@ -64,6 +66,11 @@ async function drive(options: CodeTurnOptions): Promise<{ finalText: string }> {
 			deepResearch: false,
 			codeMode: true,
 			codeAutoApprove: options.codeAutoApprove ?? false,
+			thinkingEnabled: options.thinkingEnabled,
+			// Reasoning models burn the default budget inside <think> before
+			// they ever emit a tool call. Give thinking turns more headroom so
+			// they actually act; non-thinking turns keep the lean default.
+			maxResponseTokens: options.thinkingEnabled ? 16384 : undefined,
 			expectsFileOutput: false,
 			visionSupported: options.visionSupported ?? true,
 			signal: options.signal,

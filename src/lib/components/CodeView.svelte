@@ -3,12 +3,15 @@
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
 	import WorkingDirButton from '$lib/components/WorkingDirButton.svelte';
+	import MicButton from '$lib/components/MicButton.svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { tick } from 'svelte';
 	import { renderStreamingHtml } from '$lib/stores/chat.svelte';
 	import {
 		getCodeWorkingDir,
 		setCodeWorkingDir,
+		getCodeThinkingEnabled,
+		setCodeThinkingEnabled,
 		getCodeMessages,
 		getCodeMessageSteps,
 		getCodeStreamingContent,
@@ -35,6 +38,7 @@
 	const searchSteps = $derived(getCodeSearchSteps());
 	const errorMessage = $derived(getCodeError());
 	const contextNotice = $derived(getCodeContextNotice());
+	const thinkingEnabled = $derived(getCodeThinkingEnabled());
 	const renderedStreaming = $derived(renderStreamingHtml(streamingContent));
 
 	$effect(() => {
@@ -153,6 +157,20 @@
 				onClear={() => setCodeWorkingDir(null)}
 			/>
 			<button
+				class="think-toggle"
+				class:active={thinkingEnabled}
+				onclick={() => setCodeThinkingEnabled(!thinkingEnabled)}
+				title={thinkingEnabled
+					? 'Reasoning ON — the model thinks before acting (slower, can over-think)'
+					: 'Reasoning OFF — the model acts immediately (recommended for agentic coding)'}
+			>
+				Think
+			</button>
+			<MicButton
+				onTranscription={(text) => submitCodeMessage(text)}
+				disabled={isGenerating || !workingDir}
+			/>
+			<button
 				class="clear-btn"
 				onclick={() => clearCodeConversation()}
 				disabled={isGenerating || messages.length === 0}
@@ -195,6 +213,30 @@
 	.clear-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.think-toggle {
+		height: 40px;
+		padding: 0 14px;
+		border: 1px solid var(--border);
+		border-radius: 20px;
+		background: var(--bg-secondary);
+		color: var(--text-secondary);
+		font-size: 0.82rem;
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: all 0.15s;
+	}
+
+	.think-toggle:hover {
+		color: var(--text-primary);
+		border-color: var(--text-secondary);
+	}
+
+	.think-toggle.active {
+		background: color-mix(in srgb, var(--accent) 15%, transparent);
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 
 	.messages {

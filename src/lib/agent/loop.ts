@@ -167,6 +167,19 @@ export interface AgentLoopOptions {
 	 * Settings → Code).
 	 */
 	codeAutoApprove?: boolean;
+	/**
+	 * Per-turn reasoning override. `undefined`/`null` uses the global
+	 * `thinkingEnabled` setting; `true`/`false` forces reasoning on/off for
+	 * this turn (the Code tab's per-tab toggle).
+	 */
+	thinkingEnabled?: boolean | null;
+	/**
+	 * Override the per-call response token budget (`max_tokens`). Defaults to
+	 * the agent-loop default. Reasoning models that "think" extensively need a
+	 * bigger budget or they get truncated mid-thought before emitting a tool
+	 * call — the Code tab raises this when reasoning is on.
+	 */
+	maxResponseTokens?: number;
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {

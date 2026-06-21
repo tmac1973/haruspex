@@ -37,6 +37,15 @@ export function getCodeWorkingDir(): string | null {
 	return workingDir;
 }
 
+/** Per-tab reasoning toggle, persisted independently of the global setting. */
+export function getCodeThinkingEnabled(): boolean {
+	return getSettings().codeThinkingEnabled;
+}
+
+export function setCodeThinkingEnabled(enabled: boolean): void {
+	updateSettings({ codeThinkingEnabled: enabled });
+}
+
 export function setCodeWorkingDir(dir: string | null): void {
 	workingDir = dir;
 	updateSettings({ codeDefaultWorkingDir: dir ?? '' });
@@ -108,6 +117,7 @@ export async function submitCodeMessage(text: string): Promise<void> {
 			contextSize: getActiveContextSize(),
 			workingDir,
 			codeAutoApprove: getSettings().codeAutoApprove,
+			thinkingEnabled: getSettings().codeThinkingEnabled,
 			signal: abortController.signal,
 			onTicket: (t) => (ticket = t),
 			onAdmitted: () => (ticket = null),

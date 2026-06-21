@@ -37,6 +37,7 @@
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getActiveConversation, sendMessage } from '$lib/stores/chat.svelte';
 	import { getActiveShellSession } from '$lib/stores/shell.svelte';
+	import { submitCodeMessage, getCodeMessages } from '$lib/stores/code.svelte';
 
 	let { children } = $props();
 	let showLogs = $state(false);
@@ -175,6 +176,8 @@
 			void getActiveShellSession()?.submitChatMessage(text);
 		} else if (tab === 'chat') {
 			sendMessage(text);
+		} else if (tab === 'code') {
+			void submitCodeMessage(text);
 		}
 		// 'jobs' has no chat input — silently drop.
 	}
@@ -184,7 +187,9 @@
 		const messages =
 			tab === 'shell'
 				? (getActiveShellSession()?.messages ?? [])
-				: (getActiveConversation()?.messages ?? []);
+				: tab === 'code'
+					? getCodeMessages()
+					: (getActiveConversation()?.messages ?? []);
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const m = messages[i] as ChatMessage;
 			if (m.role === 'assistant') {

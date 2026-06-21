@@ -82,6 +82,10 @@ export interface LoopContext {
 	shellAllowWrite: boolean;
 	codeMode: boolean;
 	codeAutoApprove: boolean;
+	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
+	thinkingEnabled: boolean | null;
+	/** Per-call response token budget. */
+	maxResponseTokens: number;
 	shellCwd: string | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
@@ -120,6 +124,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		shellAllowWrite,
 		codeMode,
 		codeAutoApprove,
+		thinkingEnabled: options.thinkingEnabled ?? null,
+		maxResponseTokens: options.maxResponseTokens ?? AGENT_LOOP_MAX_TOKENS,
 		shellCwd: options.shellCwd ?? null,
 		expectsFileOutput: options.expectsFileOutput ?? false,
 		pendingImages: [],
@@ -429,10 +435,10 @@ async function runModelCall(
 			top_p: sampling.top_p,
 			top_k: sampling.top_k,
 			presence_penalty: sampling.presence_penalty,
-			max_tokens: AGENT_LOOP_MAX_TOKENS,
+			max_tokens: ctx.maxResponseTokens,
 			chat_template_kwargs: templateKwargs
 		},
-		AGENT_LOOP_MAX_TOKENS
+		ctx.maxResponseTokens
 	);
 	const callDurationMs = Date.now() - callStartMs;
 
@@ -494,8 +500,11 @@ export async function runIteration(
 		ctx.pendingImages.length = 0;
 	}
 
-	const sampling = getSamplingParams({ codeContext: isCodeContext(messages) });
-	const templateKwargs = getChatTemplateKwargs();
+	const sampling = getSamplingParams({
+		codeContext: ctx.codeMode || isCodeContext(messages),
+		thinkingEnabled: ctx.thinkingEnabled
+	});
+	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
 	const { response, toolCalls } = await runModelCall(ctx, sampling, templateKwargs, iteration);
 
 	// No tool calls: run the recovery-guard chain in priority order, then
@@ -903,8 +912,11 @@ export async function runMaxIterationsFinalSynthesis(
 			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
 		ctx.messages.push({ role: 'user', content: finalPrompt });
 	}
-	const sampling = getSamplingParams({ codeContext: isCodeContext(ctx.messages) });
-	const templateKwargs = getChatTemplateKwargs();
+	const sampling = getSamplingParams({
+		codeContext: ctx.codeMode || isCodeContext(ctx.messages),
+		thinkingEnabled: ctx.thinkingEnabled
+	});
+	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
 	const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
 		ctx,
 		undefined,
