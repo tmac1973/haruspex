@@ -75,6 +75,14 @@ export interface ToolContext {
 	 */
 	shellCwd?: string | null;
 	/**
+	 * The active Shell-tab PTY session id, when the agent is driven from a
+	 * shell session. Lets the Code-mode `run_command` tool inject commands
+	 * into the live terminal and capture their output. Null/undefined
+	 * outside a shell session (e.g. the standalone Code tab), in which case
+	 * `run_command` uses the one-shot capture path.
+	 */
+	shellSessionId?: number | null;
+	/**
 	 * Optional progress channel for long-running tools. The agent loop
 	 * wires this to the currently-running tool card so a tool can surface
 	 * transient status (e.g. run_python reporting "Installing plotly…"

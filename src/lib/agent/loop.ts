@@ -80,6 +80,11 @@ export interface AgentLoopOptions {
 	 */
 	shellCwd?: string | null;
 	/**
+	 * Active Shell PTY session id, threaded to the tool context so the
+	 * Code-mode run_command tool can drive the live terminal.
+	 */
+	shellSessionId?: number | null;
+	/**
 	 * Optional progress channel for a running tool call. Wired to the
 	 * tool's ToolContext.onProgress so a long-running tool can update its
 	 * card mid-flight (e.g. run_python surfacing a package install).

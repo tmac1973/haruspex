@@ -337,7 +337,9 @@ function textWriteExecutor(
 function shellAwareWriteText() {
 	const chat = textWriteExecutor(IPC.fs_write_text, 'fs_write_text');
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
-		if (!(ctx.shellMode && ctx.shellAllowWrite)) return chat(args, ctx);
+		// Shell-CWD (absolute) dispatch when writes are enabled: either the
+		// Shell tab opted in, or Code mode (which always allows edits).
+		if (!(ctx.shellMode && (ctx.shellAllowWrite || ctx.codeMode))) return chat(args, ctx);
 		const err = validateTextContent(args, 'fs_write_text');
 		if (err) return toolResult(toolError(err));
 		// Resolve a bare/relative name against the shell's cwd so the model's
@@ -360,7 +362,7 @@ function shellAwareWriteText() {
 
 function shellAwareEditText() {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
-		if (ctx.shellMode && ctx.shellAllowWrite) {
+		if (ctx.shellMode && (ctx.shellAllowWrite || ctx.codeMode)) {
 			const path = resolveShellPath(args.path as string, ctx.shellCwd);
 			try {
 				const r = await invoke<EditResult>('fs_edit_text_absolute', {

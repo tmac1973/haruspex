@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { labelArg, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
-import type { ToolExecOutput } from './types';
+import type { ToolContext, ToolExecOutput } from './types';
 import { getSettings } from '$lib/stores/settings';
 import { classifyShellRisk } from '$lib/shell/risky-commands';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
@@ -19,6 +19,14 @@ import type { GlobResult } from '$lib/ipc/gen/GlobResult';
 // middle-truncated and the full text spilled to a temp file the model can
 // read back with fs_read_text offset/limit (plan §7: output discipline).
 const RUN_OUTPUT_MAX_BYTES = 16 * 1024;
+
+/**
+ * The directory the code tools operate in: the live shell CWD when driven from
+ * a Shell session (Code mode), otherwise the Code tab's working directory.
+ */
+function codeRoot(ctx: ToolContext): string | null {
+	return ctx.shellMode ? (ctx.shellCwd ?? null) : ctx.workingDir;
+}
 
 /**
  * Run `run_command_capture`, wiring `ctx.signal` to `run_command_cancel` so a
@@ -103,7 +111,8 @@ registerTool({
 	async execute(args, ctx): Promise<ToolExecOutput> {
 		const command = (args.command as string)?.trim();
 		if (!command) return toolResult(toolError('run_command requires a non-empty command.'));
-		if (!ctx.workingDir) return toolResult(toolError('No working directory set.'));
+		const root = codeRoot(ctx);
+		if (!root) return toolResult(toolError('No working directory set.'));
 
 		// Risk gate: prompt before running a command the classifier flags,
 		// unless the user enabled auto-approve (setting or per-session).
@@ -132,7 +141,7 @@ registerTool({
 				: fallbackTimeout;
 
 		try {
-			const res = await runHostCommand(command, ctx.workingDir, timeoutSecs, ctx.signal);
+			const res = await runHostCommand(command, root, timeoutSecs, ctx.signal);
 			return toolResult(await formatRunResult(res));
 		} catch (e) {
 			if (e instanceof DOMException && e.name === 'AbortError') throw e;
@@ -172,10 +181,11 @@ registerTool({
 	},
 	displayLabel: labelArg('pattern'),
 	async execute(args, ctx): Promise<ToolExecOutput> {
-		if (!ctx.workingDir) return toolResult(toolError('No working directory set.'));
+		const root = codeRoot(ctx);
+		if (!root) return toolResult(toolError('No working directory set.'));
 		try {
 			const res = await invoke<GrepResult>('code_grep', {
-				root: ctx.workingDir,
+				root,
 				pattern: args.pattern as string,
 				path: (args.path as string) ?? null,
 				glob: (args.glob as string) ?? null,
@@ -220,10 +230,11 @@ registerTool({
 	},
 	displayLabel: labelArg('pattern'),
 	async execute(args, ctx): Promise<ToolExecOutput> {
-		if (!ctx.workingDir) return toolResult(toolError('No working directory set.'));
+		const root = codeRoot(ctx);
+		if (!root) return toolResult(toolError('No working directory set.'));
 		try {
 			const res = await invoke<GlobResult>('code_glob', {
-				root: ctx.workingDir,
+				root,
 				pattern: args.pattern as string,
 				maxResults: null
 			});

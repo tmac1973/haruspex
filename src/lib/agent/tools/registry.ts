@@ -93,8 +93,10 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 }
 
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
-	if (opts.shellMode) return shouldIncludeShellTool(reg, opts);
+	// codeMode wins over shellMode: the Shell assistant in Code mode exposes the
+	// code toolset (resolved against the live shell CWD), not the plain shell set.
 	if (opts.codeMode) return shouldIncludeCodeTool(reg);
+	if (opts.shellMode) return shouldIncludeShellTool(reg, opts);
 	return shouldIncludeChatTool(reg, opts);
 }
 

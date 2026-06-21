@@ -194,6 +194,46 @@ describe('code_grep / code_glob formatting', () => {
 	});
 });
 
+describe('Shell + Code combined mode', () => {
+	const shellCodeCtx = {
+		workingDir: null,
+		shellCwd: '/proj',
+		pendingImages: [],
+		deepResearch: false,
+		shellMode: true,
+		shellAllowWrite: false,
+		codeMode: true,
+		codeAutoApprove: false,
+		filesWrittenThisTurn: new Set<string>()
+	};
+
+	it('code_grep roots at the live shell CWD', async () => {
+		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool('code_grep', { pattern: 'x' }, shellCodeCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'code_grep',
+			expect.objectContaining({ root: '/proj', pattern: 'x' })
+		);
+	});
+
+	it('fs_edit_text dispatches absolute (shell CWD) in Code mode even without shellAllowWrite', async () => {
+		mocks.invoke.mockResolvedValueOnce({
+			first_changed_line: 1,
+			line_before: 'a',
+			line_after: 'b',
+			used_fuzzy: false
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool('fs_edit_text', { path: 'foo.ts', old_str: 'a', new_str: 'b' }, shellCodeCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_edit_text_absolute', {
+			path: '/proj/foo.ts',
+			oldStr: 'a',
+			newStr: 'b'
+		});
+	});
+});
+
 describe('Code-mode tool filtering', () => {
 	const CODE_TOOLS = [
 		'fs_read_text',
@@ -213,6 +253,14 @@ describe('Code-mode tool filtering', () => {
 			.map((s) => s.function.name)
 			.sort();
 		expect(names).toEqual(CODE_TOOLS);
+	});
+
+	it('codeMode wins over shellMode and exposes the code toolset', async () => {
+		const { getToolSchemas } = await import('$lib/agent/tools');
+		const names = getToolSchemas({ hasWorkingDir: false, shellMode: true, codeMode: true }).map(
+			(s) => s.function.name
+		);
+		expect(names.sort()).toEqual(CODE_TOOLS);
 	});
 
 	it('run_command (exec) never leaks into Chat or Shell schemas', async () => {
