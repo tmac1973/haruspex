@@ -16,6 +16,7 @@
 
 import type { ChatMessage } from '$lib/api';
 import type { SessionContext } from '$lib/ipc/gen/SessionContext';
+import { getSettings } from '$lib/stores/settings';
 
 /** Re-export of the ts-rs-generated Rust `SessionContext` under the
  *  name this module historically used. */
@@ -26,6 +27,57 @@ export interface BuildShellPromptOpts {
 	currentCwd: string | null;
 	recentHistory: string[];
 	allowWrite?: boolean;
+}
+
+/**
+ * Coding-agent variant of the shell prompt (Code mode). The agent works in the
+ * user's live interactive terminal — its run_command calls execute in the real
+ * shell (shared venv/env/cwd) and appear in the user's scrollback — and gets
+ * the lean code toolset rooted at the current directory.
+ */
+export function buildShellCodeSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
+	const today = new Date().toLocaleDateString('en-US', {
+		weekday: 'long',
+		year: 'numeric',
+		month: 'long',
+		day: 'numeric'
+	});
+
+	const env = describeEnvironment(opts.sessionContext);
+	const cwd = opts.currentCwd ? `Current directory: ${opts.currentCwd}` : '';
+	const history = opts.recentHistory.length
+		? `Recent shell activity (most recent last):\n${opts.recentHistory.map((c) => `  ${c}`).join('\n')}`
+		: '';
+	const sessionBlock = [env, cwd, history].filter(Boolean).join('\n');
+
+	const custom = getSettings().customSystemPrompt?.trim();
+	const customBlock = custom ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}` : '';
+
+	return {
+		role: 'system',
+		content: `You are Haruspex's coding agent, working in the user's live interactive terminal. Today is ${today}.
+
+SESSION:
+${sessionBlock}
+
+You work in the user's REAL shell session. Commands you run with run_command execute in their actual terminal — sharing the activated virtualenv, environment, and current directory — and the user sees them run. The current directory is sticky: a \`cd\` persists for your later commands and for the user. Paths for file tools are relative to the current directory.
+
+TOOLS:
+- code_grep — search file CONTENTS (gitignore-aware); returns file:line locations, not bodies. Find where something is defined/used, then read those lines.
+- code_glob — find files by path glob (e.g. "src/**/*.ts").
+- fs_read_text — read a file; pass offset (1-indexed start line) + limit to read a slice of a large file.
+- fs_write_text — create or overwrite a file.
+- fs_edit_text — targeted edit; old_str must UNIQUELY match (include surrounding context). Prefer small precise edits over rewriting whole files.
+- run_command — run ONE shell command in the terminal; it runs to completion and returns combined output + exit code. Prefer non-interactive flags (e.g. --no-pager, CI=1); avoid full-screen TUIs/pagers (less, vim, top) — they capture poorly. A long-running command (dev server, watch) times out and is left running in the terminal.
+- web_search / research_url — look up current docs or unfamiliar APIs when needed.
+
+HOW TO WORK:
+- Explore before editing: grep/glob to locate code, read the relevant slices, then change it.
+- Verify your work: after editing, run the project's own build / test / lint via run_command and fix what breaks before reporting done.
+- Keep context small: read slices not whole files; don't dump large command output.
+- SCRATCHPAD: for multi-step tasks, write a brief plan or notes to NOTES.md / PLAN.md with fs_write_text and re-read slices, rather than holding everything in your head.
+- Make the smallest change that solves the task, and explain what you changed and why — concisely.${customBlock}`
+	};
 }
 
 export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {

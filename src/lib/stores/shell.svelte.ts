@@ -27,7 +27,12 @@ import { logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
 import { computeMessageStats, type MessageStats } from '$lib/stores/chat.svelte';
 import { errMessage } from '$lib/utils/error';
-import { buildShellSystemPrompt, type ShellSessionContext } from '$lib/shell/system-prompt';
+import {
+	buildShellSystemPrompt,
+	buildShellCodeSystemPrompt,
+	type ShellSessionContext
+} from '$lib/shell/system-prompt';
+import { resetSessionApproval } from '$lib/stores/codeCommandApproval.svelte';
 import { runShellTurn } from '$lib/shell/runShellTurn';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
 
@@ -123,6 +128,12 @@ export class ShellSession {
 	contextNotice = $state<string | null>(null);
 	integrationMarkerCount = $state(0);
 	integrationCompletedCommands = $state(0);
+	// Code mode: swaps the assistant to the coding toolset + prompt and drives
+	// run_command in the live PTY. Per-session toggle in the sidebar header.
+	codeMode = $state(false);
+	// Per-session reasoning override (the sidebar Think toggle), seeded from
+	// the global Reasoning setting at construction.
+	thinkingEnabled = $state(getSettings().thinkingEnabled);
 
 	private abortController: AbortController | null = null;
 	private activeSession: ActiveShellSession | null = null;
@@ -164,6 +175,17 @@ export class ShellSession {
 
 	toggleSidebar = (): void => {
 		this.sidebarOpen = !this.sidebarOpen;
+	};
+
+	toggleCodeMode = (): void => {
+		this.codeMode = !this.codeMode;
+		// Leaving Code mode (or re-entering) clears any "allow all this session"
+		// command approval so the guard re-arms.
+		resetSessionApproval();
+	};
+
+	toggleThinking = (): void => {
+		this.thinkingEnabled = !this.thinkingEnabled;
 	};
 
 	/**
@@ -365,12 +387,15 @@ export class ShellSession {
 		const userMsg: ChatMessage = { role: 'user', content: payload.body };
 		this.messages = [...this.messages, userMsg];
 
-		const systemPrompt = buildShellSystemPrompt({
+		const promptOpts = {
 			sessionContext: payload.sessionContext,
 			currentCwd: payload.currentCwd,
 			recentHistory: payload.recentHistory,
 			allowWrite: getSettings().shellAllowWrite
-		});
+		};
+		const systemPrompt = this.codeMode
+			? buildShellCodeSystemPrompt(promptOpts)
+			: buildShellSystemPrompt(promptOpts);
 
 		const turnMessages: ChatMessage[] = [systemPrompt, ...this.messages];
 
@@ -388,6 +413,11 @@ export class ShellSession {
 				visionSupported: true,
 				allowWrite: getSettings().shellAllowWrite,
 				cwd: payload.currentCwd,
+				sessionId: this.boundSessionId,
+				codeMode: this.codeMode,
+				codeAutoApprove: getSettings().codeAutoApprove,
+				thinkingEnabled: this.thinkingEnabled,
+				maxResponseTokens: this.codeMode && this.thinkingEnabled ? 16384 : undefined,
 				signal: this.abortController.signal,
 				onTicket: (t) => (this.ticket = t),
 				onAdmitted: () => (this.ticket = null),

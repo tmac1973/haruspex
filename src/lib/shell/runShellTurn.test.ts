@@ -226,4 +226,26 @@ describe('runShellTurn', () => {
 
 		expect(deltas).toEqual(['checking journal']);
 	});
+
+	it('threads Code-mode options into the agent loop', async () => {
+		mocks.runAgentLoop.mockImplementationOnce(async () => {});
+		await runShellTurn({
+			messages,
+			contextSize: 8000,
+			cwd: '/proj',
+			sessionId: 7,
+			codeMode: true,
+			codeAutoApprove: true,
+			thinkingEnabled: false,
+			maxResponseTokens: 16384
+		} as ShellTurnOptions);
+		const opts = loopOptions();
+		expect(opts.shellMode).toBe(true);
+		expect(opts.codeMode).toBe(true);
+		expect(opts.codeAutoApprove).toBe(true);
+		expect(opts.thinkingEnabled).toBe(false);
+		expect(opts.shellSessionId).toBe(7);
+		expect(opts.shellCwd).toBe('/proj');
+		expect(opts.maxResponseTokens).toBe(16384);
+	});
 });

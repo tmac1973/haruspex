@@ -29,6 +29,16 @@ export interface ShellTurnOptions {
 	/** Shell's current working directory — lets shell-mode fs_* tools
 	 *  resolve relative path args (the model's bare `foo.py`) against it. */
 	cwd?: string | null;
+	/** Active PTY session id, so Code-mode run_command can drive the terminal. */
+	sessionId?: number | null;
+	/** Code mode: expose the code toolset + drive the PTY for run_command. */
+	codeMode?: boolean;
+	/** Code mode: skip the run_command risk-approval prompt. */
+	codeAutoApprove?: boolean;
+	/** Per-session reasoning override (the assistant's Think toggle). */
+	thinkingEnabled?: boolean;
+	/** Per-call response token budget override. */
+	maxResponseTokens?: number;
 	signal?: AbortSignal;
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
@@ -72,11 +82,18 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			// burned) left no headroom for finishing the investigation. 12
 			// still bounds the turn for runaway loops but actually fits real
 			// admin-troubleshooting use.
-			maxIterations: options.maxIterations ?? 12,
+			// Code mode runs longer agentic loops (grep → read → edit → test → fix)
+			// than admin troubleshooting; give it more headroom.
+			maxIterations: options.maxIterations ?? (options.codeMode ? 16 : 12),
 			deepResearch: false,
 			shellMode: true,
 			shellAllowWrite: options.allowWrite ?? false,
 			shellCwd: options.cwd ?? null,
+			shellSessionId: options.sessionId ?? null,
+			codeMode: options.codeMode ?? false,
+			codeAutoApprove: options.codeAutoApprove ?? false,
+			thinkingEnabled: options.thinkingEnabled,
+			maxResponseTokens: options.maxResponseTokens,
 			expectsFileOutput: false,
 			visionSupported: options.visionSupported ?? true,
 			signal: options.signal,
