@@ -296,24 +296,11 @@ export interface AppSettings {
 	 */
 	codeAutoApprove: boolean;
 	/**
-	 * Code tab: last-used project directory, restored on next open. Empty
-	 * string means "no directory chosen yet" — the tab refuses tool calls
-	 * until one is set.
-	 */
-	codeDefaultWorkingDir: string;
-	/**
-	 * Code tab: default wall-clock timeout (seconds) for a single
+	 * Code mode: default wall-clock timeout (seconds) for a single
 	 * `run_command` call. The model can override per call; this is the
 	 * fallback. Clamped 5–1800 in the UI.
 	 */
 	codeRunCommandTimeoutSecs: number;
-	/**
-	 * Code tab reasoning override. The Code tab has its own thinking toggle
-	 * (independent of the global Agent "Reasoning mode") because agentic
-	 * coding loops often act faster with reasoning off, while the global
-	 * setting governs Chat/Shell. Default on.
-	 */
-	codeThinkingEnabled: boolean;
 	/**
 	 * How the Code-mode `run_command` tool executes when driven from a Shell
 	 * session: `'auto'` drives the interactive PTY when shell integration is
@@ -388,9 +375,7 @@ const defaults: AppSettings = {
 	shellAllowWrite: false,
 	shellRunAutoSubmit: false,
 	codeAutoApprove: false,
-	codeDefaultWorkingDir: '',
 	codeRunCommandTimeoutSecs: 120,
-	codeThinkingEnabled: true,
 	codeCommandExec: 'auto'
 };
 

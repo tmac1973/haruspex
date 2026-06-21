@@ -3,7 +3,6 @@
 	import ChatView from '$lib/components/ChatView.svelte';
 	import JobsTab from '$lib/components/jobs/JobsTab.svelte';
 	import ShellWorkspace from '$lib/components/shell/ShellWorkspace.svelte';
-	import CodeView from '$lib/components/CodeView.svelte';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 
 	const activeTab = $derived(getActiveTab());
@@ -24,8 +23,6 @@
 		<ChatView />
 	{:else if activeTab === 'jobs'}
 		<JobsTab />
-	{:else if activeTab === 'code'}
-		<CodeView />
 	{/if}
 	{#if shellEverOpened}
 		<div class="shell-host" class:hidden={activeTab !== 'shell'}>
