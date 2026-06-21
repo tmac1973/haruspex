@@ -302,6 +302,30 @@ describe('run_command PTY driving', () => {
 		updateSettings({ codeCommandExec: 'auto' });
 	});
 
+	it('refuses to inject when the terminal is already busy', async () => {
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
+			if (cmd === 'shell_get_recent_commands')
+				return Promise.resolve([
+					{
+						commandLine: 'go run main.go',
+						output: '',
+						exitCode: null,
+						cwd: '/proj',
+						truncated: false,
+						pending: true
+					}
+				]);
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool('run_command', { command: 'kill %1' }, ptyCtx);
+		expect(out.result).toContain('busy running');
+		expect(out.result).toContain('go run main.go');
+		// Refused: never wrote the new command into the PTY.
+		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
+	});
+
 	it('falls back to one-shot when the platform is unsupported', async () => {
 		mocks.invoke.mockImplementation((cmd: string) => {
 			if (cmd === 'shell_platform_supported') return Promise.resolve(false);
@@ -319,17 +343,8 @@ describe('run_command PTY driving', () => {
 			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
 			if (cmd === 'shell_get_context')
 				return Promise.resolve({ completed_total: 0, current_cwd: '/proj' });
-			if (cmd === 'shell_get_recent_commands')
-				return Promise.resolve([
-					{
-						commandLine: 'sleep',
-						output: '',
-						exitCode: null,
-						cwd: '/proj',
-						truncated: false,
-						pending: true
-					}
-				]);
+			// Idle terminal (no pending command) so the busy-guard lets us inject.
+			if (cmd === 'shell_get_recent_commands') return Promise.resolve([]);
 			return Promise.resolve();
 		});
 		const { executeTool } = await import('$lib/agent/tools');

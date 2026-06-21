@@ -32,6 +32,21 @@ interface CapturedRegion {
 	pending?: boolean;
 }
 
+/** The command currently running in the PTY (last marker is a start with no
+ *  end), or null if the terminal is idle at a prompt. */
+async function pendingCommand(sessionId: number): Promise<CapturedRegion | null> {
+	try {
+		const regions = await invoke<CapturedRegion[]>('shell_get_recent_commands', {
+			sessionId,
+			limit: 1
+		});
+		const last = regions[regions.length - 1];
+		return last?.pending ? last : null;
+	} catch {
+		return null;
+	}
+}
+
 /** Whether to drive the live PTY for this run vs. a one-shot capture. */
 export async function shouldUsePty(ctx: ToolContext): Promise<boolean> {
 	if (!ctx.shellMode || ctx.shellSessionId == null) return false;
@@ -65,6 +80,20 @@ export async function runInPty(
 	};
 	signal?.addEventListener('abort', onAbort, { once: true });
 	try {
+		// Guard: if a command is already running in this PTY — a GUI/server the
+		// user launched, or a prior command that timed out and was left running —
+		// it owns the terminal's stdin. Injecting now would send our keystrokes
+		// to *that* program, not the shell. Refuse with a clear message instead.
+		const inflight = await pendingCommand(sessionId);
+		if (inflight) {
+			return (
+				`The terminal is busy running \`${inflight.commandLine || 'a command'}\` (still in progress), ` +
+				'so a new command cannot run here yet. Do not try to kill or re-run it — wait for it to ' +
+				'finish or for the user to exit it, then continue. If you just launched something the user ' +
+				'is meant to interact with, tell them it is running and stop here.'
+			);
+		}
+
 		const before = (await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId }))
 			.completed_total;
 		await invoke('shell_write', { sessionId, data: toBracketedPaste(command, true) });
@@ -112,7 +141,10 @@ async function formatPtyResult(
 	} else if (region.exitCode !== null && state.completed) {
 		header = `Exit code: ${region.exitCode}${region.cwd ? ` (cwd ${region.cwd})` : ''}`;
 	} else {
-		header = `Command still running in your terminal after ${state.timeoutSecs}s — left running. Output so far:`;
+		header =
+			`Command still running in your terminal after ${state.timeoutSecs}s — it's holding the terminal ` +
+			`(a GUI, server, or interactive prompt). You cannot run more commands here until it exits. Do not ` +
+			`try to kill or re-run it — tell the user it's running and let them exit it when done. Output so far:`;
 	}
 	const body = region.output.replace(/\s+$/, '');
 	if (!body) {
