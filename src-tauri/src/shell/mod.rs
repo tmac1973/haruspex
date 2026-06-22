@@ -5,6 +5,7 @@ mod kind;
 mod platform;
 mod pty;
 mod session;
+mod winps;
 
 use std::collections::HashMap;
 use std::path::PathBuf;

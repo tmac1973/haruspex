@@ -97,11 +97,37 @@ pub fn plan_integration(shell_path: &str, integration_dir: &Path) -> SpawnPlan {
     let mut plan = match name {
         "bash" => plan_bash(integration_dir).unwrap_or_else(SpawnPlan::passthrough),
         "zsh" => plan_zsh(integration_dir, login).unwrap_or_else(SpawnPlan::passthrough),
+        // PowerShell (matched case-insensitively — the basename carries `.exe`).
+        // WSL (`wsl.exe`) falls through to passthrough here; its in-distro hook
+        // is injected separately in 17d.
+        other
+            if {
+                let lc = other.to_ascii_lowercase();
+                lc == "pwsh.exe" || lc == "powershell.exe"
+            } =>
+        {
+            plan_powershell(integration_dir).unwrap_or_else(SpawnPlan::passthrough)
+        }
         _ => SpawnPlan::passthrough(),
     };
     plan.args.extend(platform::login_args(shell_path));
     plan.env.extend(platform::login_env(shell_path));
     plan
+}
+
+/// PowerShell OSC 133 injection: launch with our `haruspex.ps1` dot-sourced
+/// after the user's profile. No tempdir/env needed — the script is a static
+/// bundled resource. Passthrough if it's missing.
+fn plan_powershell(integration_dir: &Path) -> Option<SpawnPlan> {
+    let script = integration_dir.join("haruspex.ps1");
+    if !script.is_file() {
+        return None;
+    }
+    Some(SpawnPlan {
+        args: super::winps::powershell_args(&script),
+        env: Vec::new(),
+        tempdirs: Vec::new(),
+    })
 }
 
 fn plan_bash(integration_dir: &Path) -> Option<SpawnPlan> {
