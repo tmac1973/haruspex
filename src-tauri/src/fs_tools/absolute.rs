@@ -246,7 +246,11 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_missing_file_with_actionable_message() {
-        let err = fs_read_text_absolute("/this/path/does/not/exist/at/all".to_string(), None, None)
+        // Build an absolute path that definitely doesn't exist. A bare Unix
+        // path like "/this/..." isn't absolute on Windows (no drive prefix),
+        // so root it under the platform temp dir to reach the not-found branch.
+        let missing = std::env::temp_dir().join("haruspex-nope/does/not/exist/at/all");
+        let err = fs_read_text_absolute(missing.to_string_lossy().into_owned(), None, None)
             .await
             .unwrap_err();
         assert!(err.contains("does not exist"), "got: {err}");
@@ -262,7 +266,10 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_directory_path_with_distinct_message() {
-        let err = fs_read_text_absolute("/tmp".to_string(), None, None)
+        // An absolute path that exists and is a directory on every platform
+        // (Windows /tmp isn't absolute, so use the real temp dir).
+        let dir = std::env::temp_dir();
+        let err = fs_read_text_absolute(dir.to_string_lossy().into_owned(), None, None)
             .await
             .unwrap_err();
         assert!(
