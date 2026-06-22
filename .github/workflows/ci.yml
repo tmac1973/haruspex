@@ -95,3 +95,60 @@ jobs:
             echo "::error::src/lib/ipc/gen is stale — run scripts/export-ipc-types.sh and commit the result."
             exit 1
           }
+
+  # Windows gates for the Shell-tab port (Phase 17). The whole point is to
+  # compile + lint the `#[cfg(windows)]` branches (code_tools.rs, sidecar_utils.rs,
+  # and the upcoming catalog/winps/wsl modules) that the Linux `backend` job never
+  # touches, plus the type-check + unit tests against Windows path/line-ending
+  # behavior. Single combined job — Windows runner minutes bill at a higher rate
+  # than the Linux frontend/backend split.
+  windows:
+    runs-on: windows-latest
+    steps:
+      # Check out with LF intact so rustfmt/prettier and `git diff` aren't fooled
+      # by CRLF churn on the Windows runner (autocrlf defaults to true there).
+      - name: Disable autocrlf
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Type-check + unit tests catch Windows-specific path / line-ending logic
+      # bugs (cf. the CRLF pyodide-resolver fix). lint/format:check are
+      # platform-independent and already covered by the ubuntu `frontend` job.
+      - run: npm run check
+      - run: npm run test
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # windows-latest already ships the MSVC C++ build tools + WebView2, so no
+      # system-dependency install step is needed (unlike the Linux backend job).
+
+      - name: Create placeholder sidecar binaries and libs
+        shell: pwsh
+        run: |
+          $target = (rustc --print host-tuple)
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          foreach ($name in 'llama-server', 'whisper-server', 'koko', 'ruff') {
+            # externalBin resolves to `<name>-<triple>.exe` on Windows.
+            Set-Content -Path "src-tauri/binaries/$name-$target.exe" -Value '@echo off'
+          }
+          # Placeholder dirs/files for the resources globs in tauri.conf.json.
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries/libs | Out-Null
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries/espeak-ng-data/lang/placeholder | Out-Null
+          Set-Content -Path src-tauri/binaries/libs/.placeholder -Value ''
+          Set-Content -Path src-tauri/binaries/espeak-ng-data/.placeholder -Value ''
+          Set-Content -Path src-tauri/binaries/espeak-ng-data/lang/.placeholder -Value ''
+          Set-Content -Path src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder -Value ''
+
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
