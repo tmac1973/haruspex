@@ -327,11 +327,26 @@ mod imp {
     /// from `cmd /c ver`. Richer capture (registry DisplayVersion / "23H2",
     /// `$PSVersionTable`) lands in 17c.
     pub fn capture_os() -> OsInfo {
+        let version = windows_version();
         OsInfo {
             os: std::env::consts::OS.to_string(),
             distro_id: Some("windows".to_string()),
-            distro_name: Some("Windows".to_string()),
-            distro_version: windows_version(),
+            distro_name: Some(windows_product_name(version.as_deref())),
+            distro_version: version,
+        }
+    }
+
+    /// Friendly product name from the build number in "10.0.<build>.x": build
+    /// 22000+ is Windows 11, the 10.x line below that is Windows 10. (Microsoft
+    /// never bumped the major to 11, so the build is the only reliable signal.)
+    fn windows_product_name(version: Option<&str>) -> String {
+        let build = version
+            .and_then(|v| v.split('.').nth(2))
+            .and_then(|b| b.parse::<u32>().ok());
+        match build {
+            Some(b) if b >= 22000 => "Windows 11".to_string(),
+            Some(_) => "Windows 10".to_string(),
+            None => "Windows".to_string(),
         }
     }
 
@@ -384,7 +399,19 @@ mod imp {
             let info = capture_os();
             assert_eq!(info.os, "windows");
             assert_eq!(info.distro_id.as_deref(), Some("windows"));
-            assert_eq!(info.distro_name.as_deref(), Some("Windows"));
+            // "Windows", "Windows 10", or "Windows 11" depending on the build.
+            assert!(info
+                .distro_name
+                .as_deref()
+                .unwrap_or("")
+                .starts_with("Windows"));
+        }
+
+        #[test]
+        fn product_name_from_build() {
+            assert_eq!(windows_product_name(Some("10.0.22631.4317")), "Windows 11");
+            assert_eq!(windows_product_name(Some("10.0.19045.4291")), "Windows 10");
+            assert_eq!(windows_product_name(None), "Windows");
         }
     }
 }

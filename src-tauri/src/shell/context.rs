@@ -51,12 +51,25 @@ impl SessionContext {
             shell_path: shell_path.to_string(),
             shell_name,
             shell_version,
-            home: std::env::var("HOME").ok(),
+            home: home_dir(),
             hostname: hostname(),
         }
     }
 }
 
+/// The user's home directory: $HOME on Unix, %USERPROFILE% on Windows.
+fn home_dir() -> Option<String> {
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE").ok()
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("HOME").ok()
+    }
+}
+
+#[cfg(not(windows))]
 fn uname_r() -> String {
     Command::new("uname")
         .arg("-r")
@@ -67,8 +80,37 @@ fn uname_r() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// Windows has no `uname`. Use the OS build string from `cmd /c ver`
+/// (e.g. "10.0.22631.4317") as the kernel field.
+#[cfg(windows)]
+fn uname_r() -> String {
+    use std::os::windows::process::CommandExt;
+    let out = Command::new("cmd")
+        .args(["/C", "ver"])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .output();
+    let text = out
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    if let (Some(start), Some(rel)) = (text.find('['), text.find(']')) {
+        let inner = text[start + 1..rel].trim();
+        let v = inner.strip_prefix("Version ").unwrap_or(inner).trim();
+        if !v.is_empty() {
+            return v.to_string();
+        }
+    }
+    "unknown".to_string()
+}
+
 fn probe_shell_version(shell_path: &str) -> Option<String> {
     let name = Path::new(shell_path).file_name()?.to_str()?;
+    // PowerShell doesn't have a reliable `--version` (5.1 doesn't support it);
+    // ask $PSVersionTable instead.
+    let lname = name.to_ascii_lowercase();
+    if lname == "pwsh.exe" || lname == "powershell.exe" {
+        return probe_powershell_version(shell_path);
+    }
     // Most shells respond to --version on stdout; fish puts it there too.
     // bash prints to stdout; zsh prints to stdout; fish prints to stdout.
     let output = Command::new(shell_path).arg("--version").output().ok()?;
@@ -82,8 +124,39 @@ fn probe_shell_version(shell_path: &str) -> Option<String> {
     }
 }
 
+/// Probe PowerShell's version via `$PSVersionTable` → e.g. "PowerShell 7.6.2".
+fn probe_powershell_version(shell_path: &str) -> Option<String> {
+    let mut cmd = Command::new(shell_path);
+    cmd.args([
+        "-NoProfile",
+        "-NoLogo",
+        "-Command",
+        "$PSVersionTable.PSVersion.ToString()",
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let output = cmd.output().ok()?;
+    let v = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if v.is_empty() {
+        None
+    } else {
+        Some(format!("PowerShell {v}"))
+    }
+}
+
 fn hostname() -> Option<String> {
     if let Ok(h) = std::env::var("HOSTNAME") {
+        if !h.is_empty() {
+            return Some(h);
+        }
+    }
+    // Windows sets COMPUTERNAME — read it directly to avoid spawning (and
+    // flashing) hostname.exe.
+    #[cfg(windows)]
+    if let Ok(h) = std::env::var("COMPUTERNAME") {
         if !h.is_empty() {
             return Some(h);
         }
