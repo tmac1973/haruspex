@@ -1,5 +1,7 @@
+mod catalog;
 mod context;
 mod integration;
+mod kind;
 mod platform;
 mod pty;
 mod session;
@@ -361,12 +363,20 @@ pub fn shell_take_scrollback(
         .remove(&session_id))
 }
 
+/// The shells the user can pick in the toolbar: on Windows, PowerShell 7 /
+/// Windows PowerShell / each WSL2 distro (uninstalled ones greyed-out with an
+/// install hint); on other platforms, a single native entry. Never errors.
+#[tauri::command]
+pub fn shell_list_shells() -> Vec<catalog::ShellCatalogEntry> {
+    catalog::enumerate_shells()
+}
+
 /// Returns whether the Shell tab is supported on the current host.
 /// Linux and macOS are supported (PTY via portable-pty + bash/zsh OSC 133
-/// capture). Windows is gated off until Phase 17: cmd/PowerShell need new
-/// capture scripting. The frontend uses this to swap the xterm mount for a
-/// "platform not yet supported" placeholder. Delegates to the per-OS
-/// `platform` module so the gate lives in one place.
+/// capture). On Windows it's gated behind the HARUSPEX_WIN_SHELL dev flag
+/// during the Phase 17 port. The frontend uses this to swap the xterm mount
+/// for a placeholder. Delegates to the per-OS `platform` module so the gate
+/// lives in one place.
 #[tauri::command]
 pub fn shell_platform_supported() -> bool {
     platform::platform_supported()
