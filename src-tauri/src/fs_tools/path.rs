@@ -45,6 +45,17 @@ pub fn resolve_in_workdir(workdir: &Path, rel_path: &str) -> Result<PathBuf, Str
             .map_err(|e| format!("Failed to canonicalize working directory: {}", e));
     }
 
+    // Reject `..` traversal lexically, before any canonicalization, splitting on
+    // BOTH separators. Path::components() can't be trusted to surface `..` on
+    // Windows: canonicalize() yields a verbatim \\?\ path, and a forward-slash
+    // tail joined onto it doesn't normalize the way it does on Unix, so a `..`
+    // can hide inside what Rust treats as a single component (e.g. the
+    // workdir-internal "nope/../inside.txt" slipped past the component check).
+    // A raw-string scan is platform-independent and strictly safer.
+    if rel_path.split(['/', '\\']).any(|seg| seg == "..") {
+        return Err("path escapes working directory".to_string());
+    }
+
     let workdir_canonical = workdir
         .canonicalize()
         .map_err(|e| format!("Failed to canonicalize working directory: {}", e))?;
