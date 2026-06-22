@@ -87,7 +87,10 @@ integration and context strategy.
 | PowerShell context capture | **Windows host info**: `os = "windows"`, version from `cmd /c ver` or the registry (`CurrentBuild`/`DisplayVersion`), PowerShell version from `$PSVersionTable`, cwd from OSC 7, history from PSReadLine's `(Get-PSReadLineOption).HistorySavePath`. | For a native PowerShell session the host *is* the environment. PSReadLine's history file is the PowerShell analog of `~/.bash_history`. |
 | Selection model migration | **Generalize the single `shellBinary` string into a selected-shell descriptor** (`{ kind, exe?, distro? }`) plus the live-enumerated catalog. Keep `shell_override` working for Linux/macOS by mapping the legacy string through. | The picker needs more than one string. Keep the change additive: Linux/macOS still resolve a path; Windows resolves a `ShellKind`. |
 | Path translation for fs_read in WSL | **Out of scope for v1; documented limitation.** The shell-mode `fs_read_*_absolute` commands read the **Windows** filesystem. For WSL sessions, in-distro files are reachable only via `\\wsl$\<distro>\…` or `/mnt/c`. Flag this; don't silently mis-read. | Bridging fs_read through `wsl.exe` is a sizable sub-feature. The AI can still read Windows-side files and can *suggest* commands the user runs in-distro; reading arbitrary in-distro files via the tool is a follow-up. Surfacing the limitation beats a confusing half-implementation. |
-| Risk patterns | **Existing Linux list (applies inside WSL) + PowerShell additions**: `Remove-Item -Recurse -Force` / `rm -r* -fo*`, `Format-Volume`, `Clear-Disk`, `Set-ExecutionPolicy`, `reg delete`, `Stop-Computer`/`Restart-Computer`, `diskpart`. | Same visual-heads-up philosophy as Phase 15. PowerShell verbs are distinct enough to need their own entries; WSL sessions reuse the Linux list. |
+| Risk patterns | **Existing Linux list (applies inside WSL) + PowerShell additions**: `Remove-Item -Recurse -Force` / `rm -r* -fo*`, `Format-Volume`, `Clear-Disk`, `Set-ExecutionPolicy`, `reg delete`, `Stop-Computer`/`Restart-Computer`, `diskpart`. | Same visual-heads-up philosophy as Phase 15 — **and now a safety control**: post-#132 `classifyShellRisk` also gates Code-mode `run_command` approval (`tools/code.ts` `ensureCommandApproved`), so a PowerShell-destructive command the list *doesn't* match auto-runs the agent unprompted. PowerShell verbs are distinct enough to need their own entries; WSL sessions reuse the Linux list. |
+| One-shot `run_command` shell (Code mode) | **Route the one-shot fallback through the selected `ShellKind`** (`pwsh -Command` / `powershell -Command` / `wsl -d <distro> -- bash -c`), not the current hardcoded `cmd /C`. | `code_tools.rs::build_shell_command` hardcodes `cmd /C`; the Code-mode model emits PowerShell cmdlets or WSL bash, never CMD. For WSL it's doubly wrong — it runs on the Windows host and the Linux `cwd` fails `is_dir()`. `run_command_capture` must take the shell selection (thread `ShellKind` through, same seam as `kind.rs`). |
+| Code mode in WSL sessions | **v1: restrict the file tools** (`code_grep`/`code_glob`/`fs_edit_text`/`fs_write_text`) for WSL sessions — they resolve against `shellCwd`, a *Linux* path the Windows-side Rust tools can't walk. PTY `run_command` still works (runs in-distro). Bridging the fs tools through `\\wsl$\<distro>\…` is a follow-up. | This is the same root cause as the `fs_read`-in-WSL limitation but far worse in Code mode: grep/glob/edit silently target a non-existent Windows path. Surfacing/limiting beats a confusing half-broken agent. |
+| Code-mode system prompt | **`ShellKind`-aware**: PowerShell variant (cmdlets, `$env:`, no venv-activate, PS-appropriate non-interactive flags) vs the existing Unix/WSL variant. | `buildShellCodeSystemPrompt` hardcodes Unix idioms (venv activation, `--no-pager`/`CI=1`, avoid `less`/`vim`/`top`). Correct for WSL (Linux), wrong for PowerShell. Mirror how `buildShellSystemPrompt` already adapts suggestions per distro. |
 | Process teardown | **Kill the ConPTY child (the `wsl.exe`/`pwsh.exe` process) on session drop; for WSL, accept that the in-distro shell is reaped when the `wsl.exe` relay exits.** | `wsl.exe` is a relay to the distro's init-managed process. Killing the relay ends the interactive session; WSL's own lifecycle handles the rest. Document that long-running in-distro background jobs are not our responsibility (same as a real terminal). |
 | Audio/cpal guards | **Validate on Windows** (same checklist item as macOS Phase 16) before opening the gate. | The Phase 15 placeholder tied platform support to validated audio guards; confirm no panic on Windows audio init or scope a follow-up. |
 
@@ -198,6 +201,54 @@ shell_spawn(selection = Wsl{ "Ubuntu" })
 
 ---
 
+## Interaction with Code Mode (PR #132)
+
+This plan was written **before** the Shell-assistant **Code mode** merged (PR #132,
+`bb7eef6`). Code mode adds a per-session **Code** toggle to the Shell assistant that swaps in a
+coding toolset (`code_grep`, `code_glob`, hardened `fs_read/write/edit`, and `run_command`) and a
+coding system prompt. It matters here because **Code mode and this Windows port share one
+switch**: `shell_platform_supported()`.
+
+- The **Code** toggle lives in `shell/ChatSidebar.svelte`, only reachable when the Shell tab is —
+  i.e. when `platform_supported()` is true. So Windows Code mode is unreachable until **17e** opens
+  the gate.
+- `run_command` (`tools/code.ts`) picks **PTY-driven** vs **one-shot** execution via `shouldUsePty`
+  (`tools/pty-exec.ts`), which in the default `'auto'` mode returns `shell_platform_supported()`.
+- The **PTY path** (`runInPty`) relies entirely on the OSC 133 capture this phase builds:
+  `shell_get_context.completed_total` ticking, `shell_get_recent_commands`, bracketed-paste
+  injection (`toBracketedPaste(cmd, true)`), and Ctrl-C abort via `shell_write('\x03')`.
+- The **one-shot fallback** (`code_tools.rs::run_command_capture`) already has a Windows branch —
+  but it hardcodes `cmd /C` (see the new "One-shot `run_command` shell" decision row).
+
+**Net effect: the instant 17e flips `platform_supported()` to include Windows, Code mode's
+PTY `run_command` turns on alongside the tab.** That makes the following non-optional for this
+phase, not follow-ups:
+
+1. **Sequencing.** Do **not** open `platform_supported()` before integration lands (17c/17d). If
+   the gate opens while a Windows shell has no OSC 133 markers, Code-mode `'auto'` will PTY-drive
+   against a marker-less shell → `completed_total` never increments → *every agent `run_command`
+   times out*. The existing 17a recommendation (keep the gate closed until 17e) already covers
+   this — but note it now also governs Code mode, so the coupling is load-bearing.
+2. **PTY `run_command` is a done-criterion of 17c/17d**, not just the manual terminal. The
+   "Suggested-command injection on PowerShell" risk (multi-line bracketed paste + trailing-CR
+   executes, `#` comment stripping) applies identically to the agent's `run_command`, since it
+   injects through the same `toBracketedPaste(cmd, true)` path. Verifying the manual Run button
+   covers both — confirm with an agent-driven command too.
+3. **One-shot fallback must run in the selected shell** (new decision row): `cmd /C` is wrong for
+   PowerShell and WSL. Until that lands, set the expectation that Windows Code mode = PTY-only
+   (one-shot is broken), matching `shell-code-mode-plan.md`'s "Windows PTY integration (Phase 17)"
+   line — this phase is where that one-shot becomes shell-correct.
+4. **Risk gate** (new note on the Risk-patterns row): `classifyShellRisk` now gates the *agent's*
+   command approval, so the PowerShell additions are a safety control, not cosmetic badges.
+5. **System prompt** (new decision row): `buildShellCodeSystemPrompt` is Unix-flavored; add a
+   PowerShell variant.
+6. **WSL file tools** (new decision row): `code_grep`/`code_glob`/`fs_edit_text` resolve against a
+   Linux `shellCwd` the Windows-side Rust tools can't walk — restrict them for WSL sessions in v1.
+
+These fold into the sub-phases below (17c/17d done-criteria + a Code-mode line in 17e's tests).
+
+---
+
 ## Sub-phases
 
 Each sub-phase ends at a user-testable state. Run full build gates (`maintenance.md` §13) at the
@@ -253,10 +304,18 @@ Goal: capture works in PowerShell, user profile preserved.
   (same `133` codes, BEL-terminated).
 - PowerShell context capture in `context.rs`: `os="windows"`, build/version from registry or
   `cmd /c ver`, `$PSVersionTable` for shell version, PSReadLine history path for recent history.
+- **Code mode (PR #132):** add the PowerShell variant of `buildShellCodeSystemPrompt`
+  (cmdlets / `$env:` / PS non-interactive flags, no venv-activate framing). Add the PowerShell
+  risk patterns to `risky-commands.ts` (also gates `run_command` approval). Verify the PTY
+  `run_command` path on PowerShell: bracketed-paste injection executes, `completed_total` ticks,
+  output + exit code come back, Ctrl-C abort works. Route the one-shot fallback through
+  `pwsh -Command` / `powershell -Command` instead of `cmd /C`.
 
 **Done when**: in both pwsh and powershell.exe, run a command → "Submit to LLM" captures the last
 command + output; the user's custom prompt/aliases still load; the context badge reads e.g.
-`Windows 11 23H2 · PowerShell 7.4`.
+`Windows 11 23H2 · PowerShell 7.4`. **Code mode:** toggling Code on in a PowerShell session lets the
+agent grep → read → edit → `run_command` (PTY) → see output; a destructive cmdlet prompts for
+approval; the one-shot fallback (force via the `codeCommandExec` setting) runs PowerShell, not CMD.
 
 ### 17d — WSL2 integration + in-distro context
 
@@ -272,9 +331,18 @@ Goal: WSL sessions capture and contextualize correctly.
   `Clear-Disk`, `diskpart`, `Stop-Computer`) to `risky-commands.ts`, gated/labeled appropriately.
 - Document the fs_read-in-WSL limitation (tool reads Windows FS; in-distro files via `\\wsl$`/
   `/mnt` only) in `maintenance.md` and the system-prompt note.
+- **Code mode (PR #132):** route the one-shot fallback through `wsl -d <distro> -- bash -c` (the
+  current `cmd /C` runs on the Windows host with a Linux `cwd` that fails `is_dir()`). Verify PTY
+  `run_command` works in-distro (the reused `haruspex.bash` markers drive capture). **Restrict the
+  Code-mode file tools** (`code_grep`/`code_glob`/`fs_edit_text`/`fs_write_text`) for WSL sessions —
+  they root at the Linux `shellCwd` the Windows-side Rust tools can't walk; gate them off with a
+  clear "in-distro files aren't reachable from the tool yet" message rather than letting them
+  silently mis-target. The existing Linux/WSL `buildShellCodeSystemPrompt` variant is correct here.
 
 **Done when**: launching WSL Ubuntu gives a bash prompt with OSC 133 capture; the context badge
 reads e.g. `Ubuntu 22.04 · bash 5.1 · Linux …-WSL2`; submitting yields `apt`-flavored suggestions.
+**Code mode:** the agent's `run_command` runs in-distro (PTY, or one-shot via `wsl … bash -c`); the
+restricted file tools refuse cleanly with the limitation message.
 
 ### 17e — Open the gate + teardown + polish
 
@@ -284,6 +352,11 @@ Goal: ship-ready Windows Shell tab.
   (it now only renders on… nothing — both platforms supported; delete or repurpose).
 - Process teardown: ConPTY child (`pwsh.exe`/`wsl.exe`) is killed on session drop; add a Windows
   orphan smoke test analogous to the Linux one (spawn N, assert no orphaned `pwsh`/`wsl` relays).
+  Extend the orphan test with a Code-mode case: a timed-out/cancelled `run_command` reaps its
+  process tree (`run_command_cancel` → `taskkill /F /T` for the one-shot path; Ctrl-C for PTY).
+- **Code mode (PR #132):** confirm `codeCommandExec` `'auto'` resolves to PTY on Windows once
+  integration is live (and to the shell-correct one-shot when forced); document per-`ShellKind`
+  resolution in the Shell settings docs.
 - Validate audio/cpal guards on Windows (no panic; STT/TTS start or degrade) — same checklist as
   Phase 16.
 - Default-shell + missing-shell UX: confirm pwsh→5.1 fallback, greyed entries with hints
@@ -337,7 +410,9 @@ no previously-clean file gains warnings.
   buffer and the trailing CR executes it (vs. running only the first line), (b) PowerShell
   comments (`#`) are stripped the same way shell comments are — `stripCommandComments` keys on a
   leading `#`, which matches PowerShell line comments, so this should hold, but confirm. WSL
-  bash/zsh behave as on Linux.
+  bash/zsh behave as on Linux. **Post-#132 this path is also how the Code-mode agent's
+  `run_command` injects** (same `toBracketedPaste(cmd, true)`), so the same verification covers the
+  agent — but confirm the agent case explicitly (it injects without a human in the loop).
 - **`wsl.exe` absent / WSL not enabled.** `enumerate_shells` must treat a missing `wsl.exe` or
   "no distros" as zero WSL entries (greyed "No WSL distros found"), never an error that breaks the
   picker.
@@ -354,6 +429,9 @@ no previously-clean file gains warnings.
 - **CMD (`cmd.exe`).** No usable OSC 133 story; excluded by decision.
 - **fs_read against in-distro WSL files.** Tool reads the Windows filesystem; in-distro reads are
   a documented limitation / future follow-up.
+- **Code-mode file tools in WSL (`code_grep`/`code_glob`/`fs_edit_text`/`fs_write_text`).** Same
+  root cause as above — they root at the Linux `shellCwd`. v1 restricts them for WSL sessions
+  (PTY `run_command` still works in-distro); bridging via `\\wsl$\<distro>\…` is a follow-up.
 - **Git Bash / MSYS2 / Cygwin shells.** Not in the supported set; may be added later if there's
   demand (they're closer to the WSL/bash path than to PowerShell).
 - **Nushell / other PowerShell-adjacent shells.** Terminal-only via selection submit if launched
@@ -382,3 +460,10 @@ no previously-clean file gains warnings.
 6. *(Picker)* Switch from Windows PowerShell to PowerShell 7 to WSL Debian via the toolbar picker
    → each restarts cleanly with the right prompt and context badge; a machine without pwsh shows
    it greyed with "Install PowerShell 7".
+7. *(Code mode, PowerShell)* Toggle **Code** on, "format the JSON in config.json and tell me if
+   the build passes" → agent greps/reads, `fs_edit_text`s, then `run_command`s the build in the
+   live PTY (visible in scrollback, output + exit code returned); a destructive cmdlet would prompt
+   for approval.
+8. *(Code mode, WSL Ubuntu)* Toggle **Code** on, "run the tests" → `run_command` executes in-distro
+   via the PTY and the result comes back; the file tools cleanly report the in-distro limitation
+   rather than mis-targeting the Windows filesystem.
