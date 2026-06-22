@@ -280,10 +280,120 @@ mod imp {
 }
 
 // ---------------------------------------------------------------------------
-// Other (Windows, etc.) — Phase 17 territory. Keeps the crate compiling on
-// platforms whose real implementation hasn't landed yet.
+// Windows (Phase 17) — PowerShell over ConPTY.
+//
+// 17a is a bare-terminal baseline: default to PowerShell, no integration
+// injection yet (PowerShell gets a passthrough SpawnPlan in pty.rs, OSC 133
+// via haruspex.ps1 lands in 17c). The tab is gated behind the
+// HARUSPEX_WIN_SHELL dev flag until the port is complete (17e). The shell
+// catalog / WSL bridge / ShellKind routing arrive in later sub-phases.
 // ---------------------------------------------------------------------------
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(target_os = "windows")]
+mod imp {
+    use super::OsInfo;
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    /// Suppress the console window that would otherwise flash when we shell
+    /// out (e.g. `cmd /c ver`) from the GUI app.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    /// Prefer PowerShell 7 (`pwsh.exe`) when installed; otherwise fall back to
+    /// Windows PowerShell 5.1 (`powershell.exe`), which ships in-box under
+    /// System32 and is always resolvable. CMD is intentionally excluded.
+    pub fn default_shell() -> String {
+        find_on_path("pwsh.exe").unwrap_or_else(|| "powershell.exe".to_string())
+    }
+
+    /// No login-shell wrapping on Windows. PowerShell loads `$PROFILE`
+    /// automatically; our OSC 133 injection (17c, haruspex.ps1) is layered on
+    /// later via the spawn plan, not here.
+    pub fn login_args(_shell_path: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    pub fn login_env(_shell_path: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
+    /// Phase 17 is in progress: the Windows Shell tab is gated behind a dev
+    /// flag until the port is complete (17e). Set `HARUSPEX_WIN_SHELL=1`
+    /// before launching to test the work in progress.
+    pub fn platform_supported() -> bool {
+        std::env::var_os("HARUSPEX_WIN_SHELL").is_some()
+    }
+
+    /// Minimal host identity for 17a: `os = "windows"` plus the build string
+    /// from `cmd /c ver`. Richer capture (registry DisplayVersion / "23H2",
+    /// `$PSVersionTable`) lands in 17c.
+    pub fn capture_os() -> OsInfo {
+        OsInfo {
+            os: std::env::consts::OS.to_string(),
+            distro_id: Some("windows".to_string()),
+            distro_name: Some("Windows".to_string()),
+            distro_version: windows_version(),
+        }
+    }
+
+    /// Search PATH for `exe`, returning its full path if found.
+    fn find_on_path(exe: &str) -> Option<String> {
+        let paths = std::env::var_os("PATH")?;
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(exe);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+        None
+    }
+
+    /// Parse `cmd /c ver` → e.g. "10.0.22631.4317". None on any failure.
+    fn windows_version() -> Option<String> {
+        let output = Command::new("cmd")
+            .args(["/C", "ver"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let start = text.find('[')?;
+        let end = text[start..].find(']')? + start;
+        let inner = text[start + 1..end].trim();
+        let v = inner.strip_prefix("Version ").unwrap_or(inner).trim();
+        if v.is_empty() {
+            None
+        } else {
+            Some(v.to_string())
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn default_shell_is_powershell() {
+            let s = default_shell();
+            assert!(
+                s.ends_with("pwsh.exe") || s.ends_with("powershell.exe"),
+                "got: {s}"
+            );
+        }
+
+        #[test]
+        fn capture_os_reports_windows() {
+            let info = capture_os();
+            assert_eq!(info.os, "windows");
+            assert_eq!(info.distro_id.as_deref(), Some("windows"));
+            assert_eq!(info.distro_name.as_deref(), Some("Windows"));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Other (non-Linux/macOS/Windows) — keeps the crate compiling on platforms
+// whose real implementation hasn't landed.
+// ---------------------------------------------------------------------------
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod imp {
     use super::OsInfo;
 
