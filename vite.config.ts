@@ -23,7 +23,17 @@ export default defineConfig({
 	clearScreen: false,
 	server: {
 		port: 1420,
-		strictPort: true
+		strictPort: true,
+		// `tauri dev` runs cargo concurrently with this dev server, constantly
+		// writing and locking artifacts under src-tauri/target. On Windows,
+		// Vite's file watcher throws EBUSY when it tries to watch one of those
+		// locked build-script .exe files and crashes the whole dev server
+		// ("beforeDevCommand terminated with a non-zero status code"). Exclude
+		// the Rust crate dir from the watcher — nothing under src-tauri is a
+		// frontend source anyway. (Standard Tauri + Vite guidance.)
+		watch: {
+			ignored: ['**/src-tauri/**']
+		}
 	},
 	// The Python sandbox worker (python.worker.ts) loads pyodide, which Rollup
 	// splits into multiple chunks. Vite's default worker format is `iife`,
