@@ -48,6 +48,12 @@
 	let unlistenOutput: UnlistenFn | null = null;
 	let unlistenExit: UnlistenFn | null = null;
 	let resizeObserver: ResizeObserver | null = null;
+	// xterm input/selection listeners are (re)wired on every attachSession;
+	// hold their disposables so a restart disposes the old ones first. Without
+	// this, each restart (e.g. a picker shell-switch) stacks another onData
+	// handler and every keystroke gets written to the PTY N times.
+	let onDataDisposable: { dispose(): void } | null = null;
+	let onSelectionDisposable: { dispose(): void } | null = null;
 
 	interface OutputEvent {
 		session_id: number;
@@ -157,10 +163,15 @@
 	) {
 		sessionId = newSessionId;
 		[unlistenOutput, unlistenExit] = await wirePtyEvents(t, newSessionId);
+		// Dispose any listeners from a prior attach (restart re-enters here) so
+		// they don't accumulate — a stacked onData would write each keystroke to
+		// the PTY once per past attach.
+		onDataDisposable?.dispose();
+		onSelectionDisposable?.dispose();
 		// Closures reference the outer `sessionId` variable, not a
 		// captured copy — so after restart() bumps it, keystrokes and
 		// resizes flow to the new PTY.
-		t.onData((data) => {
+		onDataDisposable = t.onData((data) => {
 			if (sessionId == null) return;
 			// NOTE: we deliberately do NOT block input while the agent is driving
 			// the PTY. The agent's command is the foreground process, so the user's
@@ -173,7 +184,7 @@
 				console.error('shell_write failed', e)
 			);
 		});
-		t.onSelectionChange(() => onSelectionChange?.(t.hasSelection()));
+		onSelectionDisposable = t.onSelectionChange(() => onSelectionChange?.(t.hasSelection()));
 		resizeObserver = observeResize(t, fit, newSessionId, container);
 		t.focus();
 		// Now that the output listener and the onData reply path are both
