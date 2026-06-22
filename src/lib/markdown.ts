@@ -14,6 +14,7 @@ import xml from 'highlight.js/lib/languages/xml';
 import rust from 'highlight.js/lib/languages/rust';
 import sql from 'highlight.js/lib/languages/sql';
 import yaml from 'highlight.js/lib/languages/yaml';
+import powershell from 'highlight.js/lib/languages/powershell';
 
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('js', javascript);
@@ -30,8 +31,18 @@ hljs.registerLanguage('rust', rust);
 hljs.registerLanguage('sql', sql);
 hljs.registerLanguage('yaml', yaml);
 hljs.registerLanguage('yml', yaml);
+hljs.registerLanguage('powershell', powershell);
+hljs.registerLanguage('ps1', powershell);
+hljs.registerLanguage('pwsh', powershell);
 
-const SHELL_LANGS = new Set(['bash', 'sh', 'shell']);
+// Code-block languages that get a Run/Paste card in the Shell tab. PowerShell
+// (Windows) joins the bash family here so its suggestions are runnable too.
+const SHELL_LANGS = new Set(['bash', 'sh', 'shell', 'powershell', 'ps1', 'pwsh']);
+
+// Languages whose multi-line blocks we split into one card per command. The
+// splitter's heuristics (heredocs, continuations, control flow) are bash-aware,
+// so PowerShell blocks are left intact as a single card.
+const SPLITTABLE_SHELL_LANGS = new Set(['bash', 'sh', 'shell']);
 
 function renderShellHeaderExtras(text: string): string {
 	const risk = classifyShellRisk(text);
@@ -81,7 +92,7 @@ const marked = new Marked({
 			// stops a single Run from firing a whole batch (e.g. a `reboot`
 			// bundled in with harmless commands). Anything with control flow,
 			// continuations, heredocs or unterminated quotes is left intact.
-			if (lang && SHELL_LANGS.has(lang)) {
+			if (lang && SPLITTABLE_SHELL_LANGS.has(lang)) {
 				const commands = splitShellCommands(text);
 				if (commands) {
 					return `<div class="cmd-list">${commands
