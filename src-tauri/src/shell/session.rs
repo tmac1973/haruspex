@@ -117,6 +117,9 @@ impl Session {
         shell: &str,
         cwd: &str,
         integration_dir: Option<&std::path::Path>,
+        // Leading args that come before any integration args — e.g.
+        // `-d <distro>` for a `wsl.exe` session. Empty for a plain shell.
+        base_args: &[String],
         cols: u16,
         rows: u16,
     ) -> Result<Self, String> {
@@ -149,6 +152,10 @@ impl Session {
         sanitize_appimage_env(&mut cmd);
         for (k, v) in &plan.env {
             cmd.env(k, v);
+        }
+        // Base args (e.g. `wsl -d <distro>`) come before integration args.
+        for arg in base_args {
+            cmd.arg(arg);
         }
         for arg in &plan.args {
             cmd.arg(arg);

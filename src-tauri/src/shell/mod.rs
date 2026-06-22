@@ -78,6 +78,25 @@ fn integration_dir(app: &AppHandle) -> Option<PathBuf> {
     None
 }
 
+/// Resolve a spawn request to a `(program, leading-args)` pair. A `selection`
+/// from the picker (Windows) wins; otherwise fall back to the legacy
+/// `shell_override` string path (Linux/macOS), which takes no base args.
+fn resolve_spawn_target(
+    selection: Option<kind::ShellSelection>,
+    shell_override: Option<String>,
+) -> (String, Vec<String>) {
+    match selection {
+        Some(sel) => {
+            let spec = sel.to_spec();
+            (spec.program, spec.args)
+        }
+        None => (
+            pty::resolve_shell_with_override(shell_override.as_deref()),
+            Vec::new(),
+        ),
+    }
+}
+
 #[tauri::command]
 pub fn shell_spawn(
     app: AppHandle,
@@ -85,17 +104,19 @@ pub fn shell_spawn(
     cols: u16,
     rows: u16,
     shell_override: Option<String>,
+    selection: Option<kind::ShellSelection>,
 ) -> Result<ShellSpawnResult, String> {
     let id = state.alloc_id();
-    let shell = pty::resolve_shell_with_override(shell_override.as_deref());
+    let (program, base_args) = resolve_spawn_target(selection, shell_override);
     let cwd = pty::resolve_cwd();
     let integration_dir = integration_dir(&app);
     let session = Session::spawn(
         app,
         id,
-        &shell,
+        &program,
         &cwd,
         integration_dir.as_deref(),
+        &base_args,
         cols,
         rows,
     )?;
@@ -177,6 +198,7 @@ pub fn shell_restart(
     cols: u16,
     rows: u16,
     shell_override: Option<String>,
+    selection: Option<kind::ShellSelection>,
 ) -> Result<ShellSpawnResult, String> {
     // Drop the old session (its Drop impl kills the PTY + cleans tempdirs).
     {
@@ -184,15 +206,16 @@ pub fn shell_restart(
         sessions.remove(&session_id);
     }
     let new_id = state.alloc_id();
-    let shell = pty::resolve_shell_with_override(shell_override.as_deref());
+    let (program, base_args) = resolve_spawn_target(selection, shell_override);
     let cwd = pty::resolve_cwd();
     let integration_dir = integration_dir(&app);
     let session = Session::spawn(
         app,
         new_id,
-        &shell,
+        &program,
         &cwd,
         integration_dir.as_deref(),
+        &base_args,
         cols,
         rows,
     )?;

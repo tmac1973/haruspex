@@ -20,3 +20,54 @@ pub enum ShellSelection {
     /// A WSL2 distro; the interactive Linux shell runs inside it.
     Wsl { distro: String },
 }
+
+/// The program + leading args to spawn for a selection, before any OSC 133
+/// integration args the spawn plan layers on. `program` is what
+/// `CommandBuilder::new` execs; `args` come first in the child's argv.
+pub struct ShellSpec {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+impl ShellSelection {
+    pub fn to_spec(&self) -> ShellSpec {
+        match self {
+            ShellSelection::Powershell { exe } => ShellSpec {
+                program: exe.clone(),
+                args: Vec::new(),
+            },
+            ShellSelection::Wsl { distro } => ShellSpec {
+                // `wsl.exe -d <distro>` launches the distro's default login
+                // shell. In-distro OSC 133 injection (the --rcfile bridge) is
+                // 17d; 17b is a bare WSL terminal.
+                program: "wsl.exe".to_string(),
+                args: vec!["-d".to_string(), distro.clone()],
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn powershell_spec_is_just_the_exe() {
+        let spec = ShellSelection::Powershell {
+            exe: "C:\\pwsh.exe".to_string(),
+        }
+        .to_spec();
+        assert_eq!(spec.program, "C:\\pwsh.exe");
+        assert!(spec.args.is_empty());
+    }
+
+    #[test]
+    fn wsl_spec_invokes_distro() {
+        let spec = ShellSelection::Wsl {
+            distro: "Ubuntu".to_string(),
+        }
+        .to_spec();
+        assert_eq!(spec.program, "wsl.exe");
+        assert_eq!(spec.args, vec!["-d".to_string(), "Ubuntu".to_string()]);
+    }
+}
