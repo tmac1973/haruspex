@@ -15,15 +15,23 @@
 
 set -e
 
-# Resolve a Python interpreter for the JSON-parsing helpers below. Dev
+# Resolve a WORKING Python interpreter for the JSON-parsing helpers below. Dev
 # machines and macOS/Linux CI have `python3`; Windows Git Bash often only
-# exposes `python`. Either works — both helpers are plain stdlib json.
-if command -v python3 >/dev/null 2>&1; then
-    PYTHON_BIN="python3"
-elif command -v python >/dev/null 2>&1; then
-    PYTHON_BIN="python"
-else
-    echo "ERROR: need python3 (or python) on PATH to resolve wheel metadata" >&2
+# exposes `python` or the `py` launcher. Critically, we must skip Windows'
+# Microsoft Store alias stub: `command -v python` finds it, but running it just
+# prints "Python was not found" and exits non-zero. So verify each candidate
+# actually executes before accepting it. Both helpers are plain stdlib json.
+PYTHON_BIN=""
+for cand in python3 python py; do
+    if command -v "$cand" >/dev/null 2>&1 && "$cand" -c "import sys" >/dev/null 2>&1; then
+        PYTHON_BIN="$cand"
+        break
+    fi
+done
+if [ -z "$PYTHON_BIN" ]; then
+    echo "ERROR: need a working python3/python/py on PATH to resolve wheel metadata." >&2
+    echo "       On Windows: install Python (winget install Python.Python.3.12) and make" >&2
+    echo "       sure 'python' isn't the Microsoft Store alias stub (the 'py' launcher works)." >&2
     exit 1
 fi
 

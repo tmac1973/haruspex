@@ -7,8 +7,9 @@
     Uses winget to install the system prerequisites: Git (+ Git Bash),
     Node.js LTS, Rust (MSVC toolchain), Visual Studio 2022 Build Tools
     with the C++ workload, CMake, LLVM (libclang, for koko's bindgen
-    build), the Vulkan SDK, and the WebView2 runtime. It also installs
-    the Shell-tab (Phase 17) test prerequisites
+    build), Python (for the Pyodide wheel resolver), the Vulkan SDK, and
+    the WebView2 runtime. It also installs the Shell-tab (Phase 17)
+    test prerequisites
     - PowerShell 7 and WSL2 - which can be skipped with -SkipPwsh /
     -SkipWsl on a build-only machine. Each package is skipped if already
     present. After the
@@ -45,6 +46,7 @@ param(
     [switch]$SkipBuildTools,
     [switch]$SkipCMake,
     [switch]$SkipLLVM,
+    [switch]$SkipPython,
     [switch]$SkipVulkan,
     [switch]$SkipWebView2,
     [switch]$SkipPwsh,
@@ -277,6 +279,17 @@ if (-not $SkipLLVM) {
     }
 } else {
     Write-Warn "Skipping LLVM (per -SkipLLVM)."
+}
+
+# 5c. Python. dev-setup.sh's Pyodide wheel resolver (fetch-pyodide.sh) needs a
+#     working Python to query PyPI metadata. This also installs the `py`
+#     launcher, which the resolver prefers because it isn't shadowed by the
+#     Microsoft Store `python` alias stub.
+if (-not $SkipPython) {
+    Write-Header "Python (for the Pyodide wheel resolver)"
+    Install-WingetPackage -Id 'Python.Python.3.12' -DisplayName 'Python 3.12'
+} else {
+    Write-Warn "Skipping Python (per -SkipPython)."
 }
 
 # 6. Vulkan SDK.
