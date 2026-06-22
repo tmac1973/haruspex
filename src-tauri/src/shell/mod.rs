@@ -59,6 +59,19 @@ pub struct ShellSpawnResult {
 }
 
 fn integration_dir(app: &AppHandle) -> Option<PathBuf> {
+    // In dev the source tree is authoritative and always current. A staged
+    // resource copy under target/ can be stale — e.g. it has the older
+    // bash/zsh hooks but not a newly-added haruspex.ps1 — and would otherwise
+    // shadow the source dir, so check the source FIRST in debug builds.
+    #[cfg(debug_assertions)]
+    {
+        let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("shell-integration");
+        if dev.is_dir() {
+            return Some(dev);
+        }
+    }
     let resource_dir = app.path().resource_dir().ok()?;
     let candidate = resource_dir.join("resources/shell-integration");
     if candidate.is_dir() {
@@ -69,7 +82,8 @@ fn integration_dir(app: &AppHandle) -> Option<PathBuf> {
     if candidate.is_dir() {
         return Some(candidate);
     }
-    // Dev fallback: the source tree path relative to the manifest dir.
+    // Fallback: the source tree path relative to the manifest dir (also covers
+    // any release edge case where the bundled resources aren't found).
     let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("resources")
         .join("shell-integration");
