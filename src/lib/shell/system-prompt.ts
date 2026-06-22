@@ -53,6 +53,16 @@ export function buildShellCodeSystemPrompt(opts: BuildShellPromptOpts): ChatMess
 	const custom = getSettings().customSystemPrompt?.trim();
 	const customBlock = custom ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}` : '';
 
+	// PowerShell sessions need PowerShell idioms, not Unix ones.
+	const shellId = `${opts.sessionContext.shellPath ?? ''} ${opts.sessionContext.shellName ?? ''}`;
+	const isPowerShell = /pwsh|powershell/i.test(shellId);
+	const shellNote = isPowerShell
+		? ' This is PowerShell: use cmdlets (Get-*/Set-*) and PowerShell syntax, not Unix tools.'
+		: '';
+	const captureNote = isPowerShell
+		? 'Prefer non-interactive output; avoid pagers and full-screen/interactive programs (`| more`, `Out-Host -Paging`, interactive `Get-Help`) — they capture poorly.'
+		: 'Prefer non-interactive flags (e.g. --no-pager, CI=1); avoid full-screen TUIs/pagers (less, vim, top) — they capture poorly.';
+
 	return {
 		role: 'system',
 		content: `You are Haruspex's coding agent, working in the user's live interactive terminal. Today is ${today}.
@@ -60,7 +70,7 @@ export function buildShellCodeSystemPrompt(opts: BuildShellPromptOpts): ChatMess
 SESSION:
 ${sessionBlock}
 
-You work in the user's REAL shell session. Commands you run with run_command execute in their actual terminal — sharing the activated virtualenv, environment, and current directory — and the user sees them run. The current directory is sticky: a \`cd\` persists for your later commands and for the user. Paths for file tools are relative to the current directory.
+You work in the user's REAL shell session. Commands you run with run_command execute in their actual terminal — sharing the environment and current directory — and the user sees them run. The current directory is sticky: a \`cd\` persists for your later commands and for the user. Paths for file tools are relative to the current directory.${shellNote}
 
 TOOLS:
 - code_grep — search file CONTENTS (gitignore-aware); returns file:line locations, not bodies. Find where something is defined/used, then read those lines.
@@ -68,7 +78,7 @@ TOOLS:
 - fs_read_text — read a file; pass offset (1-indexed start line) + limit to read a slice of a large file.
 - fs_write_text — create or overwrite a file.
 - fs_edit_text — targeted edit; old_str must UNIQUELY match (include surrounding context). Prefer small precise edits over rewriting whole files.
-- run_command — run ONE shell command in the terminal; it runs to completion and returns combined output + exit code. Prefer non-interactive flags (e.g. --no-pager, CI=1); avoid full-screen TUIs/pagers (less, vim, top) — they capture poorly. A long-running command (dev server, watch) times out and is left running in the terminal.
+- run_command — run ONE shell command in the terminal; it runs to completion and returns combined output + exit code. ${captureNote} A long-running command (dev server, watch) times out and is left running in the terminal.
 - web_search / research_url — look up current docs or unfamiliar APIs when needed.
 
 HOW TO WORK:
