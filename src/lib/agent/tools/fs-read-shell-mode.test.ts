@@ -76,6 +76,16 @@ describe('fs_read tools in Chat mode', () => {
 		});
 	});
 
+	it('fs_read_text label shows the line range when windowed', async () => {
+		const { getDisplayLabel } = await import('$lib/agent/tools');
+		expect(getDisplayLabel('fs_read_text', { path: 'a.ts' })).toBe('a.ts');
+		expect(getDisplayLabel('fs_read_text', { path: 'a.ts', offset: 10, limit: 40 })).toBe(
+			'a.ts:10-49'
+		);
+		expect(getDisplayLabel('fs_read_text', { path: 'a.ts', limit: 40 })).toBe('a.ts:1-40');
+		expect(getDisplayLabel('fs_read_text', { path: 'a.ts', offset: 10 })).toBe('a.ts:10+');
+	});
+
 	it('fs_list_dir dispatches to the workdir-relative command', async () => {
 		mocks.invoke.mockResolvedValue({ path: '.', entries: [], truncated: false });
 		const { executeTool } = await import('$lib/agent/tools');

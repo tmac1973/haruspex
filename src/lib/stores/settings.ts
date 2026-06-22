@@ -308,6 +308,13 @@ export interface AppSettings {
 	 * the terminal path; `'oneshot'` forces a fresh `sh -c` capture.
 	 */
 	codeCommandExec: 'auto' | 'pty' | 'oneshot';
+	/**
+	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
+	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
+	 * → test → fix), so this is higher than chat/shell. Raise it for big tasks;
+	 * compaction keeps context bounded across iterations.
+	 */
+	codeMaxIterations: number;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -376,7 +383,8 @@ const defaults: AppSettings = {
 	shellRunAutoSubmit: false,
 	codeAutoApprove: false,
 	codeRunCommandTimeoutSecs: 120,
-	codeCommandExec: 'auto'
+	codeCommandExec: 'auto',
+	codeMaxIterations: 40
 };
 
 function load(): AppSettings {

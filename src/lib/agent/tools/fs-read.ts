@@ -157,7 +157,19 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: labelArg('path'),
+	// Surface the line range so repeated windowed reads of the same file read
+	// as "reading lines 1-40, then 200-240" rather than looking like the model
+	// is re-reading the whole file over and over.
+	displayLabel: (args) => {
+		const path = (args.path as string) ?? '';
+		const offset =
+			typeof args.offset === 'number' && args.offset > 0 ? Math.floor(args.offset) : null;
+		const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : null;
+		if (offset && limit) return `${path}:${offset}-${offset + limit - 1}`;
+		if (offset) return `${path}:${offset}+`;
+		if (limit) return `${path}:1-${limit}`;
+		return path;
+	},
 	async execute(args, ctx) {
 		const path = args.path as string;
 		const window = readWindowArgs(args);

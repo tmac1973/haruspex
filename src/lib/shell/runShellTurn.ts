@@ -83,8 +83,9 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			// still bounds the turn for runaway loops but actually fits real
 			// admin-troubleshooting use.
 			// Code mode runs longer agentic loops (grep → read → edit → test → fix)
-			// than admin troubleshooting; give it more headroom.
-			maxIterations: options.maxIterations ?? (options.codeMode ? 16 : 12),
+			// than admin troubleshooting; give it more headroom (the store passes
+			// the user-configurable codeMaxIterations).
+			maxIterations: options.maxIterations ?? (options.codeMode ? 40 : 12),
 			deepResearch: false,
 			shellMode: true,
 			shellAllowWrite: options.allowWrite ?? false,

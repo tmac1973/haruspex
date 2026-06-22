@@ -415,6 +415,7 @@ export class ShellSession {
 				cwd: payload.currentCwd,
 				sessionId: this.boundSessionId,
 				codeMode: this.codeMode,
+				maxIterations: this.codeMode ? getSettings().codeMaxIterations : undefined,
 				codeAutoApprove: getSettings().codeAutoApprove,
 				thinkingEnabled: this.thinkingEnabled,
 				maxResponseTokens: this.codeMode && this.thinkingEnabled ? 16384 : undefined,

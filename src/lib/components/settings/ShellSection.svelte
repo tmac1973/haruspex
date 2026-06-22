@@ -34,9 +34,15 @@
 	let codeAutoApprove = $state(getSettings().codeAutoApprove);
 	let codeCommandExec = $state(getSettings().codeCommandExec);
 	let codeRunCommandTimeoutSecs = $state(getSettings().codeRunCommandTimeoutSecs);
+	let codeMaxIterations = $state(getSettings().codeMaxIterations);
 
 	function persistCodeAutoApprove() {
 		updateSettings({ codeAutoApprove });
+	}
+	function persistCodeMaxIterations() {
+		const clamped = Math.max(5, Math.min(200, Math.floor(codeMaxIterations)));
+		codeMaxIterations = clamped;
+		updateSettings({ codeMaxIterations: clamped });
 	}
 	function persistCodeCommandExec() {
 		updateSettings({ codeCommandExec });
@@ -178,6 +184,27 @@
 	<p class="help">
 		Default wall-clock limit for a single <code>run_command</code> call (the model can override per call).
 		A PTY command that hits the limit is left running in your terminal. 5–1800 seconds.
+	</p>
+</section>
+
+<section class="card">
+	<h3>Max steps per task</h3>
+	<label class="row">
+		<input
+			type="number"
+			min="5"
+			max="200"
+			step="5"
+			bind:value={codeMaxIterations}
+			onblur={persistCodeMaxIterations}
+			onkeydown={(e) => e.key === 'Enter' && persistCodeMaxIterations()}
+		/>
+		<span>tool/model steps before the agent is forced to wrap up</span>
+	</label>
+	<p class="help">
+		Coding tasks chain many steps (grep → read → edit → test → fix). If the agent gets cut off
+		mid-task and told to "wrap up", raise this. Context stays bounded across steps via compaction.
+		Default <code>40</code>. 5–200.
 	</p>
 </section>
 
