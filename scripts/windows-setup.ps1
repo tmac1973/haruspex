@@ -7,7 +7,10 @@
     Uses winget to install the system prerequisites: Git (+ Git Bash),
     Node.js LTS, Rust (MSVC toolchain), Visual Studio 2022 Build Tools
     with the C++ workload, CMake, the Vulkan SDK, and the WebView2
-    runtime. Each package is skipped if already present. After the
+    runtime. It also installs the Shell-tab (Phase 17) test prerequisites
+    — PowerShell 7 and WSL2 — which can be skipped with -SkipPwsh /
+    -SkipWsl on a build-only machine. Each package is skipped if already
+    present. After the
     prerequisites are installed, you start a NEW terminal (so PATH
     picks up the changes), clone the repo, and run `dev-setup.sh`
     under Git Bash — it auto-detects the Windows target and builds
@@ -41,7 +44,9 @@ param(
     [switch]$SkipBuildTools,
     [switch]$SkipCMake,
     [switch]$SkipVulkan,
-    [switch]$SkipWebView2
+    [switch]$SkipWebView2,
+    [switch]$SkipPwsh,
+    [switch]$SkipWsl
 )
 
 $ErrorActionPreference = 'Stop'
@@ -116,11 +121,20 @@ function Install-WingetPackage {
     }
 
     & winget @wingetArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Err "winget install failed for $Id (exit $LASTEXITCODE)."
+    $code = $LASTEXITCODE
+    # 0 = success. 3010 / 1641 = installed successfully but a reboot is required
+    # to complete (VS Build Tools commonly returns 3010 under --norestart). winget
+    # can surface the installer's reboot code directly, so treat these as success
+    # rather than aborting the whole script.
+    if ($code -ne 0 -and $code -ne 3010 -and $code -ne 1641) {
+        Write-Err "winget install failed for $Id (exit $code)."
         throw "Failed to install $DisplayName"
     }
-    Write-OK "$DisplayName installed."
+    if ($code -eq 3010 -or $code -eq 1641) {
+        Write-Warn "$DisplayName installed; a reboot is required to complete it."
+    } else {
+        Write-OK "$DisplayName installed."
+    }
 }
 
 # ==========================================================
@@ -159,7 +173,7 @@ if (-not $SkipGit) {
 }
 
 # 2. Node.js LTS — Tauri's frontend build needs npm and a modern Node.
-#    Haruspex's package.json engines field requires 22+.
+#    Haruspex's CI builds on Node 22, so install the matching LTS.
 if (-not $SkipNode) {
     Write-Header "Node.js LTS"
     Install-WingetPackage -Id 'OpenJS.NodeJS.LTS' -DisplayName 'Node.js LTS (22.x)'
@@ -258,6 +272,42 @@ if (-not $SkipWebView2) {
     Write-Warn "Skipping WebView2 (per -SkipWebView2)."
 }
 
+# ----------------------------------------------------------
+# Shell-tab (Phase 17) testing prerequisites
+# ----------------------------------------------------------
+# These are not needed to BUILD Haruspex — only to exercise the Windows Shell
+# tab's two non-CMD targets: PowerShell 7 (the `pwsh` shell) and WSL2 distros.
+# Skip both with -SkipPwsh / -SkipWsl on a build-only machine.
+
+# 8. PowerShell 7 (pwsh). Windows PowerShell 5.1 is always in-box; this adds the
+#    7.x `pwsh` the Shell tab prefers and treats as the default when present.
+if (-not $SkipPwsh) {
+    Write-Header "PowerShell 7 (pwsh)"
+    Install-WingetPackage -Id 'Microsoft.PowerShell' -DisplayName 'PowerShell 7'
+} else {
+    Write-Warn "Skipping PowerShell 7 (per -SkipPwsh)."
+}
+
+# 9. WSL2 + a default distro, for testing the WSL shell sessions. This is NOT a
+#    winget package — `wsl --install` enables Windows features and installs the
+#    default Ubuntu distro. It REQUIRES A REBOOT to finish, and returns nonzero
+#    when WSL is already enabled, so we never throw on it.
+if (-not $SkipWsl) {
+    Write-Header "WSL2 (for testing WSL shell sessions)"
+    Write-Step "Installing WSL2 + default Ubuntu distro (wsl --install --no-launch)..."
+    Write-Warn "This enables Windows features and REQUIRES A REBOOT to complete."
+    # --no-launch installs WSL + the default distro without immediately launching
+    # it (the first launch, post-reboot, does the per-user distro setup).
+    & wsl --install --no-launch
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "wsl --install returned exit $LASTEXITCODE. If WSL is already enabled this is expected; run 'wsl --status' to check."
+    } else {
+        Write-OK "WSL2 requested. After rebooting, run 'wsl -l -v' to confirm the distro is v2."
+    }
+} else {
+    Write-Warn "Skipping WSL2 (per -SkipWsl)."
+}
+
 # ==========================================================
 # Done
 # ==========================================================
@@ -266,6 +316,11 @@ Write-Header "Setup complete"
 Write-Host @"
 
 Next steps:
+
+  0. IF WSL2 WAS JUST INSTALLED, REBOOT FIRST. `wsl --install` enables
+     Windows features that only take effect after a restart; the first
+     post-reboot launch finishes the distro setup. (Skip if you used
+     -SkipWsl or WSL was already enabled.)
 
   1. CLOSE THIS POWERSHELL WINDOW AND OPEN A NEW ONE.
      PATH updates from the installers only apply to new shells.
