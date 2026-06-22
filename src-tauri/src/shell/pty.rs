@@ -13,22 +13,44 @@ pub fn resolve_shell_with_override(override_path: Option<&str>) -> String {
             return trimmed.to_string();
         }
     }
+    // $SHELL is a Unix concept. On Windows it's usually unset, or inherited as
+    // an MSYS path (e.g. /usr/bin/bash from Git Bash) that isn't a valid
+    // Windows path — so skip it and go straight to the platform default.
+    #[cfg(not(windows))]
     if let Ok(s) = std::env::var("SHELL") {
         if !s.is_empty() && Path::new(&s).is_file() {
             return s;
         }
     }
-    // Platform default: /bin/bash on Linux, /bin/zsh on macOS.
+    // Platform default: /bin/bash on Linux, /bin/zsh on macOS, pwsh/powershell
+    // on Windows.
     platform::default_shell()
 }
 
 pub fn resolve_cwd() -> String {
+    // Windows: the GUI app process has no useful $HOME (a Git-Bash-inherited
+    // one is an MSYS path like /c/Users/tim that isn't a valid Windows path),
+    // so use the user's profile directory.
+    #[cfg(windows)]
+    if let Some(profile) = std::env::var_os("USERPROFILE") {
+        let s = profile.to_string_lossy().into_owned();
+        if Path::new(&s).is_dir() {
+            return s;
+        }
+    }
     if let Ok(home) = std::env::var("HOME") {
         if Path::new(&home).is_dir() {
             return home;
         }
     }
-    "/".to_string()
+    #[cfg(windows)]
+    {
+        "C:\\".to_string()
+    }
+    #[cfg(not(windows))]
+    {
+        "/".to_string()
+    }
 }
 
 /// Sniff the shell binary's basename to pick the right integration script.
