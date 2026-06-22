@@ -356,6 +356,14 @@ describe('splitShellCommands', () => {
 		// One run button per command
 		expect(html.match(/class="run-btn"/g)?.length).toBe(2);
 	});
+
+	it('gives a PowerShell block a Run/Paste card (single card, no bash splitting)', () => {
+		const html = renderMarkdown('```powershell\nGet-Process | Sort-Object CPU\n```');
+		expect(html).toContain('class="run-btn"');
+		expect(html).toContain('class="paste-btn"');
+		// PowerShell isn't run through the bash command splitter.
+		expect(html).not.toContain('cmd-list');
+	});
 });
 
 describe('processCitations', () => {

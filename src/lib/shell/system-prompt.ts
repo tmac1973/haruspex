@@ -96,6 +96,16 @@ export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage 
 
 	const sessionBlock = [env, cwd, history].filter(Boolean).join('\n');
 
+	// PowerShell sessions need PowerShell-flavored suggestions in a fenced
+	// `powershell` block (so the UI renders a Run/Paste card) and Windows
+	// package managers. bash/zsh/WSL keep the Unix defaults.
+	const shellId = `${opts.sessionContext.shellPath ?? ''} ${opts.sessionContext.shellName ?? ''}`;
+	const isPowerShell = /pwsh|powershell/i.test(shellId);
+	const fence = isPowerShell ? 'powershell' : 'bash';
+	const pkgHint = isPowerShell
+		? 'use winget (or scoop/choco if present) and native PowerShell cmdlets (Get-*/Set-*/Remove-*) rather than Unix tools'
+		: 'use apt on Debian/Ubuntu, dnf on Fedora/RHEL, pacman on Arch, brew on macOS, etc.';
+
 	return {
 		role: 'system',
 		content: `You are Haruspex's shell troubleshooting assistant. The user is working in a real interactive terminal and asking you questions about what they just did and what to do next.
@@ -124,9 +134,9 @@ FILESYSTEM RULES:
 - If fs_read_text or fs_list_dir reports "Path does not exist", the path is not there. Trust the error. Do NOT retry the same path — try a different path, ask the user where the file lives, or (if writes are enabled) move on to fs_write_text.${writeSection(opts.allowWrite)}
 
 COMMAND SUGGESTIONS:
-- Suggest commands by writing them in fenced bash code blocks (\`\`\`bash ... \`\`\`). The UI turns each such block into a clickable card the user can paste into their terminal with one click.
+- Suggest commands by writing them in fenced ${fence} code blocks (\`\`\`${fence} ... \`\`\`). The UI turns each such block into a clickable card the user can paste into their terminal with one click.
 - Suggest ONE command per fenced block. If the fix needs multiple commands, give multiple separate blocks, each a single line, so the user can review and run them in order.
-- Keep suggestions specific to the user's system: use apt on Debian/Ubuntu, dnf on Fedora/RHEL, pacman on Arch, brew on macOS, etc. — match what SESSION CONTEXT shows.
+- Keep suggestions specific to the user's system: ${pkgHint} — match what SESSION CONTEXT shows.
 - NEVER pretend you executed a command yourself. You have no execute tool. Every suggested command runs only after the user reviews it and presses Enter.
 
 INLINE CITATIONS:
