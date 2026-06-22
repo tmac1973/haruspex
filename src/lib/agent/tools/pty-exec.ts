@@ -17,7 +17,7 @@ import type { ToolContext } from './types';
 /** Inline output budget before middle-truncation + temp-file spill. */
 export const RUN_OUTPUT_MAX_BYTES = 16 * 1024;
 
-const PTY_POLL_MS = 250;
+const PTY_POLL_MS = 100;
 
 interface ShellCtxSnapshot {
 	completed_total: number;
@@ -74,7 +74,13 @@ export async function runInPty(
 	timeoutSecs: number,
 	signal: AbortSignal | undefined
 ): Promise<string> {
-	setPtyBusy(sessionId, true);
+	setPtyBusy(sessionId, command);
+	let released = false;
+	const release = () => {
+		if (released) return;
+		released = true;
+		setPtyBusy(sessionId, null);
+	};
 	const onAbort = () => {
 		void invoke('shell_write', { sessionId, data: '\x03' }).catch(() => {});
 	};
@@ -98,17 +104,25 @@ export async function runInPty(
 			.completed_total;
 		await invoke('shell_write', { sessionId, data: toBracketedPaste(command, true) });
 
+		// Poll for completion — check first, then sleep, so a fast command isn't
+		// held for a full interval after it already finished.
 		const deadline = Date.now() + timeoutSecs * 1000;
 		let completed = false;
-		while (Date.now() < deadline && !signal?.aborted) {
-			await new Promise((r) => setTimeout(r, PTY_POLL_MS));
+		while (!signal?.aborted) {
 			const now = (await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId }))
 				.completed_total;
 			if (now > before) {
 				completed = true;
 				break;
 			}
+			if (Date.now() >= deadline) break;
+			await new Promise((r) => setTimeout(r, PTY_POLL_MS));
 		}
+
+		// Release the terminal the instant the command is done (or timed out /
+		// aborted) — capturing + formatting the output below doesn't need the
+		// lock, so the user gets the prompt back without waiting on the IPC.
+		release();
 
 		const regions = await invoke<CapturedRegion[]>('shell_get_recent_commands', {
 			sessionId,
@@ -122,7 +136,7 @@ export async function runInPty(
 		});
 	} finally {
 		signal?.removeEventListener('abort', onAbort);
-		setPtyBusy(sessionId, false);
+		release();
 	}
 }
 

@@ -8,7 +8,7 @@
 	import { SerializeAddon } from '@xterm/addon-serialize';
 	import '@xterm/xterm/css/xterm.css';
 	import { getSettings } from '$lib/stores/settings';
-	import { isPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
+	import { isPtyBusy, ptyBusyCommand } from '$lib/stores/shellPtyBusy.svelte';
 	import type { SessionContext } from '$lib/ipc/gen/SessionContext';
 	import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
 	import type { ShellSpawnResult } from '$lib/ipc/gen/ShellSpawnResult';
@@ -292,7 +292,9 @@
 
 <div class="terminal-host" bind:this={container}>
 	{#if isPtyBusy(sessionId)}
-		<div class="agent-running-badge">⏳ agent is running a command…</div>
+		<div class="agent-running-badge" title={ptyBusyCommand(sessionId) ?? ''}>
+			⏳ agent running: <span class="cmd">{ptyBusyCommand(sessionId)}</span>
+		</div>
 	{/if}
 </div>
 
@@ -309,6 +311,10 @@
 		top: 8px;
 		right: 12px;
 		z-index: 5;
+		display: flex;
+		gap: 4px;
+		align-items: center;
+		max-width: 70%;
 		padding: 4px 10px;
 		border-radius: 6px;
 		background: color-mix(in srgb, var(--accent) 85%, black);
@@ -317,6 +323,13 @@
 		font-weight: 500;
 		pointer-events: none;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+	}
+
+	.agent-running-badge .cmd {
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.terminal-host :global(.xterm) {
