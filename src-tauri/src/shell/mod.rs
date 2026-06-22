@@ -6,6 +6,7 @@ mod platform;
 mod pty;
 mod session;
 mod winps;
+mod wsl;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
