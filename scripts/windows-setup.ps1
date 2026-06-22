@@ -226,9 +226,22 @@ if (-not $SkipRust) {
     $rustupPath = Join-Path $env:USERPROFILE '.cargo\bin\rustup.exe'
     if (Test-Path $rustupPath) {
         Write-Host "   Ensuring stable-msvc toolchain is installed..." -ForegroundColor Gray
+        # rustup writes normal progress ("info: syncing channel updates...") to
+        # stderr. Under ErrorActionPreference=Stop, merging that via 2>&1 turns it
+        # into a terminating error, so run these with Continue and gate on the
+        # exit code instead.
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
         & $rustupPath toolchain install stable-msvc 2>&1 | Out-Null
         & $rustupPath default stable-msvc 2>&1 | Out-Null
-        Write-OK "Rust toolchain: $(& $rustupPath show active-toolchain 2>&1)"
+        $rustupOk = ($LASTEXITCODE -eq 0)
+        $activeToolchain = (& $rustupPath show active-toolchain 2>&1 | Select-Object -First 1)
+        $ErrorActionPreference = $prevEap
+        if ($rustupOk) {
+            Write-OK "Rust toolchain: $activeToolchain"
+        } else {
+            Write-Warn "rustup exited non-zero configuring stable-msvc; run 'rustup show' in a new shell to verify."
+        }
     } else {
         Write-Warn "rustup.exe not found at $rustupPath after install - start a new terminal and run: rustup default stable-msvc"
     }
