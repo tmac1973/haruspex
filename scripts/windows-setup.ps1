@@ -8,12 +8,12 @@
     Node.js LTS, Rust (MSVC toolchain), Visual Studio 2022 Build Tools
     with the C++ workload, CMake, the Vulkan SDK, and the WebView2
     runtime. It also installs the Shell-tab (Phase 17) test prerequisites
-    — PowerShell 7 and WSL2 — which can be skipped with -SkipPwsh /
+    - PowerShell 7 and WSL2 - which can be skipped with -SkipPwsh /
     -SkipWsl on a build-only machine. Each package is skipped if already
     present. After the
     prerequisites are installed, you start a NEW terminal (so PATH
     picks up the changes), clone the repo, and run `dev-setup.sh`
-    under Git Bash — it auto-detects the Windows target and builds
+    under Git Bash - it auto-detects the Windows target and builds
     the llama-server / whisper-server / koko sidecars natively.
 
 .NOTES
@@ -21,7 +21,7 @@
       missing, install "App Installer" from the Microsoft Store.
     - Several installers (notably VS Build Tools) will request admin
       via UAC. Accept the prompt when it appears. You do NOT need to
-      launch this script from an elevated PowerShell — UAC elevation
+      launch this script from an elevated PowerShell - UAC elevation
       per package is enough.
     - Expect 15-30 minutes end-to-end on a cold machine. VS Build
       Tools is the longest individual step (~5-10 GB download).
@@ -151,7 +151,7 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
 }
 Write-OK "winget found: $(winget --version)"
 
-# Sanity-check the OS — Haruspex targets Windows 10 1809+ / Windows 11.
+# Sanity-check the OS - Haruspex targets Windows 10 1809+ / Windows 11.
 $osVersion = [System.Environment]::OSVersion.Version
 if ($osVersion.Major -lt 10) {
     Write-Err "Windows 10+ required. Detected: $osVersion"
@@ -172,7 +172,7 @@ if (-not $SkipGit) {
     Write-Warn "Skipping Git (per -SkipGit)."
 }
 
-# 2. Node.js LTS — Tauri's frontend build needs npm and a modern Node.
+# 2. Node.js LTS - Tauri's frontend build needs npm and a modern Node.
 #    Haruspex's CI builds on Node 22, so install the matching LTS.
 if (-not $SkipNode) {
     Write-Header "Node.js LTS"
@@ -219,7 +219,7 @@ if (-not $SkipBuildTools) {
 if (-not $SkipRust) {
     Write-Header "Rust (MSVC toolchain)"
     Install-WingetPackage -Id 'Rustlang.Rustup' -DisplayName 'Rustup'
-    # rustup.exe may not be on the current shell's PATH yet — use the
+    # rustup.exe may not be on the current shell's PATH yet - use the
     # well-known install location directly for the initial toolchain
     # install if needed. Idempotent: does nothing if stable-msvc is
     # already the default.
@@ -230,7 +230,7 @@ if (-not $SkipRust) {
         & $rustupPath default stable-msvc 2>&1 | Out-Null
         Write-OK "Rust toolchain: $(& $rustupPath show active-toolchain 2>&1)"
     } else {
-        Write-Warn "rustup.exe not found at $rustupPath after install — start a new terminal and run: rustup default stable-msvc"
+        Write-Warn "rustup.exe not found at $rustupPath after install - start a new terminal and run: rustup default stable-msvc"
     }
 } else {
     Write-Warn "Skipping Rust (per -SkipRust)."
@@ -250,7 +250,7 @@ if (-not $SkipCMake) {
 #    Needed for GPU acceleration in llama-server and whisper-server.
 #    build-sidecars.sh checks for VULKAN_SDK env var + headers at
 #    $VULKAN_SDK/Include/vulkan and enables -DGGML_VULKAN=ON when
-#    present. Without this, the sidecars fall back to CPU — they still
+#    present. Without this, the sidecars fall back to CPU - they still
 #    build and run, just without GPU acceleration.
 #
 #    The installer sets VULKAN_SDK system-wide automatically.
@@ -258,7 +258,7 @@ if (-not $SkipVulkan) {
     Write-Header "Vulkan SDK"
     Install-WingetPackage -Id 'KhronosGroup.VulkanSDK' -DisplayName 'Vulkan SDK'
 } else {
-    Write-Warn "Skipping Vulkan SDK (per -SkipVulkan) — sidecars will be CPU-only."
+    Write-Warn "Skipping Vulkan SDK (per -SkipVulkan) - sidecars will be CPU-only."
 }
 
 # 7. WebView2 Runtime.
@@ -275,7 +275,7 @@ if (-not $SkipWebView2) {
 # ----------------------------------------------------------
 # Shell-tab (Phase 17) testing prerequisites
 # ----------------------------------------------------------
-# These are not needed to BUILD Haruspex — only to exercise the Windows Shell
+# These are not needed to BUILD Haruspex - only to exercise the Windows Shell
 # tab's two non-CMD targets: PowerShell 7 (the `pwsh` shell) and WSL2 distros.
 # Skip both with -SkipPwsh / -SkipWsl on a build-only machine.
 
@@ -289,7 +289,7 @@ if (-not $SkipPwsh) {
 }
 
 # 9. WSL2 + a default distro, for testing the WSL shell sessions. This is NOT a
-#    winget package — `wsl --install` enables Windows features and installs the
+#    winget package - `wsl --install` enables Windows features and installs the
 #    default Ubuntu distro. It REQUIRES A REBOOT to finish, and returns nonzero
 #    when WSL is already enabled, so we never throw on it.
 if (-not $SkipWsl) {
@@ -326,7 +326,7 @@ Next steps:
      PATH updates from the installers only apply to new shells.
 
   2. Open Git Bash (installed by the Git step above) from the Start
-     menu. The existing build scripts are bash — Git Bash runs them
+     menu. The existing build scripts are bash - Git Bash runs them
      natively on Windows.
 
   3. Clone the repo and run dev-setup:
@@ -351,7 +351,7 @@ Notes:
     (llama.cpp has a lot of translation units). Subsequent runs are
     incremental and much faster.
   - The LLM model itself is downloaded by the app's first-run wizard,
-    not by this script — it's too big (~5 GB) to bundle.
+    not by this script - it's too big (~5 GB) to bundle.
   - If the build fails with 'link.exe' errors mentioning Git's sh.exe,
     that's the MSVC linker getting shadowed by Git's coreutils link.
     scripts/msvc-path-fix.sh handles this automatically inside
