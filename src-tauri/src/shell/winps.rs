@@ -16,6 +16,12 @@ pub fn powershell_args(script_path: &Path) -> Vec<String> {
     let quoted = script_path.to_string_lossy().replace('\'', "''");
     vec![
         "-NoLogo".to_string(),
+        // Process-scoped only — lets us dot-source the hook (and the user's
+        // $PROFILE) even when the machine policy is Restricted, without
+        // changing any persisted policy. Same approach VS Code / Windows
+        // Terminal use for their shell integration.
+        "-ExecutionPolicy".to_string(),
+        "Bypass".to_string(),
         "-NoExit".to_string(),
         "-Command".to_string(),
         format!(". '{quoted}'"),
@@ -30,15 +36,19 @@ mod tests {
     #[test]
     fn builds_dot_source_invocation() {
         let args = powershell_args(&PathBuf::from("C:\\res\\haruspex.ps1"));
-        assert_eq!(args[0], "-NoLogo");
-        assert_eq!(args[1], "-NoExit");
-        assert_eq!(args[2], "-Command");
-        assert_eq!(args[3], ". 'C:\\res\\haruspex.ps1'");
+        // Execution-policy bypass so the dot-source isn't blocked by a
+        // Restricted machine policy, then dot-source the hook.
+        assert!(args.windows(2).any(|w| w == ["-ExecutionPolicy", "Bypass"]));
+        assert!(args.contains(&"-NoExit".to_string()));
+        assert_eq!(args.last().unwrap(), ". 'C:\\res\\haruspex.ps1'");
+        let cmd_idx = args.iter().position(|a| a == "-Command").unwrap();
+        // The dot-source command is the arg right after -Command.
+        assert_eq!(args[cmd_idx + 1], ". 'C:\\res\\haruspex.ps1'");
     }
 
     #[test]
     fn escapes_single_quotes_in_path() {
         let args = powershell_args(&PathBuf::from("C:\\o'brien\\haruspex.ps1"));
-        assert_eq!(args[3], ". 'C:\\o''brien\\haruspex.ps1'");
+        assert_eq!(args.last().unwrap(), ". 'C:\\o''brien\\haruspex.ps1'");
     }
 }
