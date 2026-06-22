@@ -111,6 +111,9 @@ fn sanitize_appimage_env(cmd: &mut CommandBuilder) {
 fn sanitize_appimage_env(_cmd: &mut CommandBuilder) {}
 
 impl Session {
+    // A spawn naturally takes many knobs (shell, cwd, integration, base args,
+    // geometry); bundling them into a struct would just move the noise.
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         app: AppHandle,
         id: SessionId,
