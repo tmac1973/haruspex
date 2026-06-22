@@ -108,6 +108,9 @@ pub fn plan_integration(shell_path: &str, integration_dir: &Path) -> SpawnPlan {
         {
             plan_powershell(integration_dir).unwrap_or_else(SpawnPlan::passthrough)
         }
+        other if other.eq_ignore_ascii_case("wsl.exe") => {
+            plan_wsl(integration_dir).unwrap_or_else(SpawnPlan::passthrough)
+        }
         _ => SpawnPlan::passthrough(),
     };
     plan.args.extend(platform::login_args(shell_path));
@@ -127,6 +130,38 @@ fn plan_powershell(integration_dir: &Path) -> Option<SpawnPlan> {
         args: super::winps::powershell_args(&script),
         env: Vec::new(),
         tempdirs: Vec::new(),
+    })
+}
+
+/// WSL OSC 133 injection: run `bash --rcfile <wrapper>` inside the distro. The
+/// wrapper lives on the Windows fs (reached via /mnt) and sources the user's
+/// ~/.bashrc then haruspex.bash — reusing the Linux hook unchanged. Returns the
+/// args that follow `wsl.exe -d <distro>`; passthrough if the hook or path
+/// translation is unavailable.
+fn plan_wsl(integration_dir: &Path) -> Option<SpawnPlan> {
+    let hook = integration_dir.join("haruspex.bash");
+    if !hook.is_file() {
+        return None;
+    }
+    let hook_wsl = super::wsl::win_to_wsl_path(&hook.to_string_lossy())?;
+    let dir = tempdir_in_session()?;
+    let wrapper = dir.join("haruspex-wslrc");
+    let mut contents = String::new();
+    // Source the user's bashrc first (resolved inside the distro), then our
+    // hook. Written with LF — bash inside the distro can't tolerate CRLF.
+    contents.push_str("[ -f \"$HOME/.bashrc\" ] && . \"$HOME/.bashrc\"\n");
+    contents.push_str(&format!(". {}\n", shell_quote(&hook_wsl)));
+    write_file(&wrapper, &contents).ok()?;
+    let wrapper_wsl = super::wsl::win_to_wsl_path(&wrapper.to_string_lossy())?;
+    Some(SpawnPlan {
+        args: vec![
+            "--".to_string(),
+            "bash".to_string(),
+            "--rcfile".to_string(),
+            wrapper_wsl,
+        ],
+        env: Vec::new(),
+        tempdirs: vec![dir],
     })
 }
 
