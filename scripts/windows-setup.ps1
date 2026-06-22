@@ -6,8 +6,9 @@
 .DESCRIPTION
     Uses winget to install the system prerequisites: Git (+ Git Bash),
     Node.js LTS, Rust (MSVC toolchain), Visual Studio 2022 Build Tools
-    with the C++ workload, CMake, the Vulkan SDK, and the WebView2
-    runtime. It also installs the Shell-tab (Phase 17) test prerequisites
+    with the C++ workload, CMake, LLVM (libclang, for koko's bindgen
+    build), the Vulkan SDK, and the WebView2 runtime. It also installs
+    the Shell-tab (Phase 17) test prerequisites
     - PowerShell 7 and WSL2 - which can be skipped with -SkipPwsh /
     -SkipWsl on a build-only machine. Each package is skipped if already
     present. After the
@@ -43,6 +44,7 @@ param(
     [switch]$SkipRust,
     [switch]$SkipBuildTools,
     [switch]$SkipCMake,
+    [switch]$SkipLLVM,
     [switch]$SkipVulkan,
     [switch]$SkipWebView2,
     [switch]$SkipPwsh,
@@ -257,6 +259,24 @@ if (-not $SkipCMake) {
     Install-WingetPackage -Id 'Kitware.CMake' -DisplayName 'CMake'
 } else {
     Write-Warn "Skipping CMake (per -SkipCMake)."
+}
+
+# 5b. LLVM / libclang. koko's espeak-rs-sys dependency runs bindgen at build
+#     time, which needs libclang.dll - without it dev-setup.sh fails building
+#     koko with "Unable to find libclang". The LLVM winget package does NOT add
+#     itself to PATH, so also pin LIBCLANG_PATH (User scope) to its bin dir.
+if (-not $SkipLLVM) {
+    Write-Header "LLVM (libclang, for koko's bindgen build)"
+    Install-WingetPackage -Id 'LLVM.LLVM' -DisplayName 'LLVM'
+    $llvmBin = Join-Path $env:ProgramFiles 'LLVM\bin'
+    if (Test-Path (Join-Path $llvmBin 'libclang.dll')) {
+        [Environment]::SetEnvironmentVariable('LIBCLANG_PATH', $llvmBin, 'User')
+        Write-OK "LIBCLANG_PATH set to $llvmBin (takes effect in new shells)."
+    } else {
+        Write-Warn "libclang.dll not found under $llvmBin - if koko fails to build, set LIBCLANG_PATH manually."
+    }
+} else {
+    Write-Warn "Skipping LLVM (per -SkipLLVM)."
 }
 
 # 6. Vulkan SDK.
