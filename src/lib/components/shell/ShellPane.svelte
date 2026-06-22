@@ -125,6 +125,7 @@
 			sessionId: h.sessionId,
 			context: h.context,
 			getSelection: h.getSelection,
+			restart: h.restart,
 			serialize: h.serialize
 		});
 	}
