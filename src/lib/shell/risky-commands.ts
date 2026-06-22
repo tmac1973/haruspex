@@ -71,6 +71,35 @@ const PATTERNS: RiskPattern[] = [
 		label: 'removes service',
 		description: 'launchctl remove/unload can disable a system or login service (macOS)',
 		test: (cmd) => /(^|[\s|&;`(])launchctl\s+(remove|unload|bootout)\b/.test(cmd)
+	},
+	// ---- PowerShell / Windows (case-insensitive; cmdlets are not case-sensitive) ----
+	{
+		label: 'destructive',
+		description: 'Remove-Item -Recurse -Force deletes a whole tree without prompting (PowerShell)',
+		test: (cmd) =>
+			/(^|[\s|&;`(])(remove-item|rmdir|rd)\b/i.test(cmd) &&
+			/\s-r(e(c(u(rse?)?)?)?)?\b/i.test(cmd) &&
+			/\s-f(o(rce)?)?\b/i.test(cmd)
+	},
+	{
+		label: 'reformats disk',
+		description: 'Format-Volume / Clear-Disk / diskpart destroys data on the target (Windows)',
+		test: (cmd) => /(^|[\s|&;`(])(format-volume|clear-disk|diskpart)\b/i.test(cmd)
+	},
+	{
+		label: 'changes security policy',
+		description: 'Set-ExecutionPolicy lowers PowerShell script-execution protection',
+		test: (cmd) => /(^|[\s|&;`(])set-executionpolicy\b/i.test(cmd)
+	},
+	{
+		label: 'edits registry',
+		description: 'reg delete removes registry keys — can break Windows or installed apps',
+		test: (cmd) => /(^|[\s|&;`(])reg(\.exe)?\s+delete\b/i.test(cmd)
+	},
+	{
+		label: 'system reset',
+		description: 'Stop-Computer / Restart-Computer powers off or reboots the machine (Windows)',
+		test: (cmd) => /(^|[\s|&;`(])(stop-computer|restart-computer)\b/i.test(cmd)
 	}
 ];
 

@@ -80,4 +80,27 @@ describe('classifyShellRisk', () => {
 		expect(labels).toContain('sudo');
 		expect(labels).toContain('destructive');
 	});
+
+	it('flags PowerShell Remove-Item -Recurse -Force (case-insensitive, abbreviations)', () => {
+		expect(classifyShellRisk('Remove-Item -Recurse -Force C:\\temp').matched).toBe(true);
+		expect(classifyShellRisk('remove-item -rec -fo .\\build').matched).toBe(true);
+		expect(classifyShellRisk('Remove-Item -r -f node_modules').matched).toBe(true);
+		// Non-recursive / non-force removal isn't flagged.
+		expect(classifyShellRisk('Remove-Item foo.txt').matched).toBe(false);
+	});
+
+	it('flags Windows disk/volume destruction', () => {
+		expect(classifyShellRisk('Format-Volume -DriveLetter D').matched).toBe(true);
+		expect(classifyShellRisk('Clear-Disk -Number 1 -RemoveData').matched).toBe(true);
+		expect(classifyShellRisk('diskpart').matched).toBe(true);
+		expect(classifyShellRisk('Get-Volume').matched).toBe(false);
+	});
+
+	it('flags Set-ExecutionPolicy, reg delete, and Stop/Restart-Computer', () => {
+		expect(classifyShellRisk('Set-ExecutionPolicy Bypass').matched).toBe(true);
+		expect(classifyShellRisk('reg delete HKLM\\Software\\Foo /f').matched).toBe(true);
+		expect(classifyShellRisk('Restart-Computer -Force').matched).toBe(true);
+		expect(classifyShellRisk('Stop-Computer').matched).toBe(true);
+		expect(classifyShellRisk('Get-ExecutionPolicy').matched).toBe(false);
+	});
 });
