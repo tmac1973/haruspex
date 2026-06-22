@@ -289,6 +289,32 @@ export interface AppSettings {
 	 * the user decides whether to ask the assistant about the result.
 	 */
 	shellRunAutoSubmit: boolean;
+	/**
+	 * Code tab: when true, `run_command` runs risk-flagged commands without
+	 * prompting. Off by default — the user opts into a "trust the model on
+	 * this machine" posture explicitly.
+	 */
+	codeAutoApprove: boolean;
+	/**
+	 * Code mode: default wall-clock timeout (seconds) for a single
+	 * `run_command` call. The model can override per call; this is the
+	 * fallback. Clamped 5–1800 in the UI.
+	 */
+	codeRunCommandTimeoutSecs: number;
+	/**
+	 * How the Code-mode `run_command` tool executes when driven from a Shell
+	 * session: `'auto'` drives the interactive PTY when shell integration is
+	 * available and falls back to a one-shot capture otherwise; `'pty'` forces
+	 * the terminal path; `'oneshot'` forces a fresh `sh -c` capture.
+	 */
+	codeCommandExec: 'auto' | 'pty' | 'oneshot';
+	/**
+	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
+	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
+	 * → test → fix), so this is higher than chat/shell. Raise it for big tasks;
+	 * compaction keeps context bounded across iterations.
+	 */
+	codeMaxIterations: number;
 }
 
 const SETTINGS_KEY = 'haruspex-settings';
@@ -354,7 +380,11 @@ const defaults: AppSettings = {
 	shellMaxBytesPerCapture: 8192,
 	shellSidebarWidth: 480,
 	shellAllowWrite: false,
-	shellRunAutoSubmit: false
+	shellRunAutoSubmit: false,
+	codeAutoApprove: false,
+	codeRunCommandTimeoutSecs: 120,
+	codeCommandExec: 'auto',
+	codeMaxIterations: 40
 };
 
 function load(): AppSettings {
@@ -545,17 +575,22 @@ export function isReasoningSupported(): boolean {
  * the model has no chat_template_kwargs toggle (a non-reasoning model, or
  * one that toggles via a different mechanism) so we don't push an
  * unsupported kwarg into its template.
+ *
+ * `thinkingOverride` lets a caller (e.g. the Code tab) force reasoning on/off
+ * for one turn regardless of the global setting. `null`/`undefined` uses the
+ * global `thinkingEnabled`.
  */
-export function getChatTemplateKwargs(): Record<string, unknown> {
+export function getChatTemplateKwargs(thinkingOverride?: boolean | null): Record<string, unknown> {
+	const thinking = thinkingOverride ?? settings.thinkingEnabled;
 	const inf = toolchestBackend();
 	const reasoning = inf?.remoteReasoning;
 	if (reasoning) {
 		if (!reasoning.supported || reasoning.toggle !== 'chat_template_kwargs' || !reasoning.kwarg) {
 			return {};
 		}
-		return { [reasoning.kwarg]: settings.thinkingEnabled };
+		return { [reasoning.kwarg]: thinking };
 	}
-	return { enable_thinking: settings.thinkingEnabled };
+	return { enable_thinking: thinking };
 }
 
 export interface SamplingParams {
@@ -688,6 +723,17 @@ export interface SamplingOptions {
 	 * model family's coding profile when available.
 	 */
 	codeContext?: boolean;
+	/**
+	 * Force reasoning on/off for this resolution regardless of the global
+	 * `thinkingEnabled` setting (the Code tab uses this for its per-tab
+	 * reasoning toggle). `null`/`undefined` uses the global setting.
+	 */
+	thinkingEnabled?: boolean | null;
+}
+
+/** Resolve the effective thinking state for a sampling/template call. */
+function resolveThinking(override?: boolean | null): boolean {
+	return override ?? settings.thinkingEnabled;
 }
 
 /** Built-in family-based sampling — the fallback when the backend doesn't
@@ -695,7 +741,7 @@ export interface SamplingOptions {
 function builtinSamplingParams(opts: SamplingOptions): SamplingParams {
 	const family = getActiveModelFamily();
 	const profiles = SAMPLING_PROFILES[family] ?? SAMPLING_PROFILES[DEFAULT_FAMILY];
-	const mode = settings.thinkingEnabled ? profiles.thinking : profiles.nonThinking;
+	const mode = resolveThinking(opts.thinkingEnabled) ? profiles.thinking : profiles.nonThinking;
 	return opts.codeContext ? mode.coding : mode.general;
 }
 
@@ -713,7 +759,7 @@ function builtinSamplingParams(opts: SamplingOptions): SamplingParams {
 function toolchestSamplingParams(caps: RemoteSamplingCaps, opts: SamplingOptions): SamplingParams {
 	const byName = (name: string) => caps.presets.find((p) => p.name === name);
 	let preset: RemoteSamplingParams | undefined;
-	if (settings.thinkingEnabled) {
+	if (resolveThinking(opts.thinkingEnabled)) {
 		preset = (opts.codeContext ? byName('thinking-coding') : undefined) ?? byName('thinking');
 	} else {
 		preset = byName('non-thinking');

@@ -12,7 +12,11 @@
 //! when they open the Shell tab and ask "what's in /etc/nginx?" is that
 //! the agent can answer.
 
-use super::path::{refuse_if_exists, DirEntry, DirListing, MAX_TEXT_READ_BYTES, MAX_WRITE_BYTES};
+use super::fuzzy::{apply_edit, EditResult};
+use super::path::{
+    refuse_if_exists, render_text_read, DirEntry, DirListing, MAX_READ_LOAD_BYTES,
+    MAX_TEXT_READ_BYTES, MAX_WRITE_BYTES,
+};
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -30,7 +34,11 @@ fn require_absolute(path: &str) -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-pub async fn fs_read_text_absolute(path: String) -> Result<String, String> {
+pub async fn fs_read_text_absolute(
+    path: String,
+    offset: Option<u32>,
+    limit: Option<u32>,
+) -> Result<String, String> {
     let resolved = require_absolute(&path)?;
 
     if !resolved.exists() {
@@ -57,11 +65,11 @@ pub async fn fs_read_text_absolute(path: String) -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to stat file: {}", e))?;
 
-    if metadata.len() > MAX_TEXT_READ_BYTES {
+    if metadata.len() > MAX_READ_LOAD_BYTES {
         return Err(format!(
-            "File too large ({} bytes). Maximum text read is {} bytes. Read it in chunks (head/tail/sed via the shell) or use a format-specific tool.",
+            "File too large to load ({} bytes, max {} MB). Read it in slices with the offset/limit parameters or via the shell (head/sed).",
             metadata.len(),
-            MAX_TEXT_READ_BYTES
+            MAX_READ_LOAD_BYTES / 1_048_576
         ));
     }
 
@@ -69,15 +77,12 @@ pub async fn fs_read_text_absolute(path: String) -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
-    let sample_len = bytes.len().min(8192);
-    if bytes[..sample_len].contains(&0) {
-        return Err(
-            "File appears to be binary. Use a format-specific tool (fs_read_pdf_absolute, etc.)"
-                .to_string(),
-        );
-    }
-
-    String::from_utf8(bytes).map_err(|e| format!("File is not valid UTF-8: {}", e))
+    render_text_read(
+        bytes,
+        offset,
+        limit,
+        "File appears to be binary. Use a format-specific tool (fs_read_pdf_absolute, etc.)",
+    )
 }
 
 #[tauri::command]
@@ -190,7 +195,7 @@ pub async fn fs_edit_text_absolute(
     path: String,
     old_str: String,
     new_str: String,
-) -> Result<(), String> {
+) -> Result<EditResult, String> {
     let resolved = require_absolute(&path)?;
 
     if !resolved.exists() {
@@ -220,22 +225,11 @@ pub async fn fs_edit_text_absolute(
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
-    let occurrences = content.matches(&old_str).count();
-    if occurrences == 0 {
-        return Err(format!("old_str not found in {}", path));
-    }
-    if occurrences > 1 {
-        return Err(format!(
-            "old_str appears {} times in {}. It must be unique — include more surrounding context.",
-            occurrences, path
-        ));
-    }
-
-    let new_content = content.replacen(&old_str, &new_str, 1);
-    fs::write(&resolved, new_content)
+    let outcome = apply_edit(&content, &old_str, &new_str, &path)?;
+    fs::write(&resolved, outcome.new_content)
         .await
         .map_err(|e| format!("Failed to write file: {}", e))?;
-    Ok(())
+    Ok(outcome.result)
 }
 
 #[cfg(test)]
@@ -244,7 +238,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_relative_path() {
-        let err = fs_read_text_absolute("etc/passwd".to_string())
+        let err = fs_read_text_absolute("etc/passwd".to_string(), None, None)
             .await
             .unwrap_err();
         assert!(err.contains("must be absolute"), "got: {err}");
@@ -252,7 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_missing_file_with_actionable_message() {
-        let err = fs_read_text_absolute("/this/path/does/not/exist/at/all".to_string())
+        let err = fs_read_text_absolute("/this/path/does/not/exist/at/all".to_string(), None, None)
             .await
             .unwrap_err();
         assert!(err.contains("does not exist"), "got: {err}");
@@ -268,7 +262,9 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_directory_path_with_distinct_message() {
-        let err = fs_read_text_absolute("/tmp".to_string()).await.unwrap_err();
+        let err = fs_read_text_absolute("/tmp".to_string(), None, None)
+            .await
+            .unwrap_err();
         assert!(
             err.contains("not a regular file") || err.contains("directory"),
             "got: {err}"
@@ -287,7 +283,7 @@ mod tests {
         if !std::path::Path::new("/etc/os-release").exists() {
             return;
         }
-        let body = fs_read_text_absolute("/etc/os-release".to_string())
+        let body = fs_read_text_absolute("/etc/os-release".to_string(), None, None)
             .await
             .expect("read /etc/os-release");
         assert!(body.contains("NAME="), "expected NAME= in /etc/os-release");

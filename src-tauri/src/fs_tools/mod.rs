@@ -1,6 +1,7 @@
 pub mod absolute;
 pub mod docx;
 pub mod download;
+pub mod fuzzy;
 pub mod images;
 pub mod markdown_inline;
 pub mod odf;

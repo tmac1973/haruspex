@@ -80,7 +80,14 @@ export interface LoopContext {
 	deepResearch: boolean;
 	shellMode: boolean;
 	shellAllowWrite: boolean;
+	codeMode: boolean;
+	codeAutoApprove: boolean;
+	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
+	thinkingEnabled: boolean | null;
+	/** Per-call response token budget. */
+	maxResponseTokens: number;
 	shellCwd: string | null;
+	shellSessionId: number | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
 	filesWrittenThisTurn: Set<string>;
@@ -98,6 +105,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const workingDir = options.workingDir ?? null;
 	const shellMode = options.shellMode ?? false;
 	const shellAllowWrite = options.shellAllowWrite ?? false;
+	const codeMode = options.codeMode ?? false;
+	const codeAutoApprove = options.codeAutoApprove ?? false;
 	return {
 		messages: options.messages,
 		tools: getToolSchemas({
@@ -105,7 +114,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			deepResearch: options.deepResearch ?? false,
 			visionSupported: options.visionSupported ?? true,
 			shellMode,
-			shellAllowWrite
+			shellAllowWrite,
+			codeMode
 		}),
 		signal: options.signal,
 		workingDir,
@@ -113,7 +123,12 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		deepResearch: options.deepResearch ?? false,
 		shellMode,
 		shellAllowWrite,
+		codeMode,
+		codeAutoApprove,
+		thinkingEnabled: options.thinkingEnabled ?? null,
+		maxResponseTokens: options.maxResponseTokens ?? AGENT_LOOP_MAX_TOKENS,
 		shellCwd: options.shellCwd ?? null,
+		shellSessionId: options.shellSessionId ?? null,
 		expectsFileOutput: options.expectsFileOutput ?? false,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
@@ -422,10 +437,10 @@ async function runModelCall(
 			top_p: sampling.top_p,
 			top_k: sampling.top_k,
 			presence_penalty: sampling.presence_penalty,
-			max_tokens: AGENT_LOOP_MAX_TOKENS,
+			max_tokens: ctx.maxResponseTokens,
 			chat_template_kwargs: templateKwargs
 		},
-		AGENT_LOOP_MAX_TOKENS
+		ctx.maxResponseTokens
 	);
 	const callDurationMs = Date.now() - callStartMs;
 
@@ -487,8 +502,11 @@ export async function runIteration(
 		ctx.pendingImages.length = 0;
 	}
 
-	const sampling = getSamplingParams({ codeContext: isCodeContext(messages) });
-	const templateKwargs = getChatTemplateKwargs();
+	const sampling = getSamplingParams({
+		codeContext: ctx.codeMode || isCodeContext(messages),
+		thinkingEnabled: ctx.thinkingEnabled
+	});
+	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
 	const { response, toolCalls } = await runModelCall(ctx, sampling, templateKwargs, iteration);
 
 	// No tool calls: run the recovery-guard chain in priority order, then
@@ -519,6 +537,12 @@ export async function runIteration(
 	// so we don't fire it spuriously on a later no-tool-calls iteration.
 	nudges.consumeNarrateRecovery();
 	await executeToolCalls(ctx, nudges, toolCalls);
+	// Break out of a no-progress loop (same command re-run repeatedly) instead
+	// of cycling to the iteration cap; the final-synthesis path then wraps up.
+	if (nudges.shouldStopForCommandRepeat()) {
+		logDebug('agent', 'branch=run-command-repeat stop', {});
+		return 'break';
+	}
 	return 'continue';
 }
 
@@ -818,7 +842,10 @@ async function executeToolCalls(
 				deepResearch: ctx.deepResearch,
 				shellMode: ctx.shellMode,
 				shellAllowWrite: ctx.shellAllowWrite,
+				codeMode: ctx.codeMode,
+				codeAutoApprove: ctx.codeAutoApprove,
 				shellCwd: ctx.shellCwd,
+				shellSessionId: ctx.shellSessionId,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
 				onProgress: (status: string) => options.onToolProgress?.(call, status)
 			}),
@@ -861,6 +888,18 @@ async function executeToolCalls(
 			toolContent = nudges.maybeAppendRunPythonHint(toolContent);
 		}
 
+		// No-progress guard: re-running the identical command (a GUI/no-output
+		// program looks like "it failed" to the model) gets a hint, then a
+		// hard stop. Any other tool counts as progress and resets the streak.
+		if (call.name === 'run_command') {
+			toolContent = nudges.maybeAppendRunCommandHint(
+				(call.arguments.command as string) ?? '',
+				toolContent
+			);
+		} else {
+			nudges.noteNonRunCommandTool();
+		}
+
 		messages.push({
 			role: 'tool',
 			tool_call_id: call.id,
@@ -894,8 +933,11 @@ export async function runMaxIterationsFinalSynthesis(
 			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
 		ctx.messages.push({ role: 'user', content: finalPrompt });
 	}
-	const sampling = getSamplingParams({ codeContext: isCodeContext(ctx.messages) });
-	const templateKwargs = getChatTemplateKwargs();
+	const sampling = getSamplingParams({
+		codeContext: ctx.codeMode || isCodeContext(ctx.messages),
+		thinkingEnabled: ctx.thinkingEnabled
+	});
+	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
 	const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
 		ctx,
 		undefined,

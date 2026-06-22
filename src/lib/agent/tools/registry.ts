@@ -25,6 +25,7 @@ interface ToolFilterOpts {
 	visionSupported: boolean;
 	shellMode: boolean;
 	shellAllowWrite: boolean;
+	codeMode: boolean;
 	hasEmail: boolean;
 	sandboxEnabled: boolean;
 }
@@ -35,8 +36,30 @@ interface ToolFilterOpts {
 const SHELL_FS_READS = new Set(['fs_read_text', 'fs_list_dir', 'fs_read_pdf']);
 const SHELL_FS_WRITES = new Set(['fs_write_text', 'fs_edit_text']);
 
+// The lean Code-tab toolset: Pi's core (read/write/edit/bash + ls/grep/find)
+// plus web research. Keeping this list small is the single biggest context
+// lever (every exposed tool's schema ships in every request — see plan §7).
+const CODE_TOOLS = new Set([
+	'fs_read_text',
+	'fs_list_dir',
+	'fs_edit_text',
+	'fs_write_text',
+	'code_grep',
+	'code_glob',
+	'run_command',
+	'web_search',
+	'research_url'
+]);
+
+// `fs`-category tools that should only ever appear in Code mode — keeps the
+// Chat schema lean (it otherwise exposes every fs tool when a workdir is set).
+const CODE_ONLY_FS = new Set(['code_grep', 'code_glob']);
+
 function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	const name = reg.schema.function.name;
+	// `exec` (run_command) is Code-mode only — never expose it in Shell mode,
+	// which has its own real terminal.
+	if (reg.category === 'exec') return false;
 	if (reg.category === 'web') {
 		if (opts.deepResearch && name === 'fetch_url') return false;
 		return true;
@@ -50,8 +73,17 @@ function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): bo
 	return false;
 }
 
+function shouldIncludeCodeTool(reg: ToolRegistration): boolean {
+	return CODE_TOOLS.has(reg.schema.function.name);
+}
+
 function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	const name = reg.schema.function.name;
+	// `exec` (run_command) runs arbitrary host commands — Code mode only.
+	// Without this, the `return true` fall-through would leak it into Chat.
+	if (reg.category === 'exec') return false;
+	// code_grep / code_glob are Code-mode fs tools; keep them out of Chat.
+	if (CODE_ONLY_FS.has(name)) return false;
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
@@ -61,7 +93,11 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 }
 
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
-	return opts.shellMode ? shouldIncludeShellTool(reg, opts) : shouldIncludeChatTool(reg, opts);
+	// codeMode wins over shellMode: the Shell assistant in Code mode exposes the
+	// code toolset (resolved against the live shell CWD), not the plain shell set.
+	if (opts.codeMode) return shouldIncludeCodeTool(reg);
+	if (opts.shellMode) return shouldIncludeShellTool(reg, opts);
+	return shouldIncludeChatTool(reg, opts);
 }
 
 export function getToolSchemas(opts: {
@@ -70,6 +106,7 @@ export function getToolSchemas(opts: {
 	visionSupported?: boolean;
 	shellMode?: boolean;
 	shellAllowWrite?: boolean;
+	codeMode?: boolean;
 }): ToolDefinition[] {
 	const filter: ToolFilterOpts = {
 		hasWorkingDir: opts.hasWorkingDir,
@@ -77,6 +114,7 @@ export function getToolSchemas(opts: {
 		visionSupported: opts.visionSupported ?? true,
 		shellMode: opts.shellMode ?? false,
 		shellAllowWrite: opts.shellAllowWrite ?? false,
+		codeMode: opts.codeMode ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled
 	};
@@ -101,10 +139,10 @@ export async function executeTool(
 		return toolResult(toolError(`Unknown tool: ${name}${hint ? `. Did you mean ${hint}?` : ''}`));
 	}
 
-	// Guard: fs tools require a working directory in Chat mode. In
+	// Guard: fs/exec tools require a working directory in Chat/Code mode. In
 	// Shell mode the absolute-path variants are dispatched instead, so
 	// workingDir is allowed to be null.
-	if (reg.category === 'fs' && !ctx.workingDir && !ctx.shellMode) {
+	if ((reg.category === 'fs' || reg.category === 'exec') && !ctx.workingDir && !ctx.shellMode) {
 		return toolResult(toolError('No working directory set'));
 	}
 

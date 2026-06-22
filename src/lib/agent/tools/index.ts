@@ -4,6 +4,7 @@ import './fs-read';
 import './fs-write';
 import './email';
 import './sandbox';
+import './code';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel } from './registry';

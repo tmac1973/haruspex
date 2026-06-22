@@ -57,12 +57,33 @@ async function fsRead(
  * single `path` argument. The path must be absolute; the Rust side
  * enforces this.
  */
-async function fsReadAbsolute(command: string, path: string): Promise<string> {
+async function fsReadAbsolute(
+	command: string,
+	path: string,
+	extra?: Record<string, unknown>
+): Promise<string> {
 	try {
-		return await invoke<string>(command, { path });
+		return await invoke<string>(command, { path, ...extra });
 	} catch (e) {
 		return toolInvokeError(command, e);
 	}
+}
+
+/**
+ * Pull optional 1-indexed `offset` (start line) and `limit` (max lines) out
+ * of the model's args into an invoke-extra object. Both fs_read_text variants
+ * accept them so the model can window a large file instead of pulling the
+ * whole thing. Keys are omitted when absent so a plain read keeps its original
+ * call shape (the Rust side defaults them to None).
+ */
+function readWindowArgs(args: Record<string, unknown>): Record<string, number> {
+	const out: Record<string, number> = {};
+	const num = (v: unknown) => (typeof v === 'number' && v > 0 ? Math.floor(v) : null);
+	const offset = num(args.offset);
+	const limit = num(args.limit);
+	if (offset !== null) out.offset = offset;
+	if (limit !== null) out.limit = limit;
+	return out;
 }
 
 // --- Registration ---
@@ -114,7 +135,7 @@ registerTool({
 		function: {
 			name: 'fs_read_text',
 			description:
-				'Read the contents of a text file (txt, md, csv, json, sh, yml, toml, log, conf, etc.). In Chat mode, the path is relative to the working directory. In Shell mode, use an absolute path (e.g. "/etc/nginx/nginx.conf") or a relative one, which is resolved against the current shell directory. Do not use this for PDF, docx, xlsx, or image files — use format-specific tools instead.',
+				'Read the contents of a text file (txt, md, csv, json, sh, yml, toml, log, conf, etc.). In Chat mode, the path is relative to the working directory. In Shell mode, use an absolute path (e.g. "/etc/nginx/nginx.conf") or a relative one, which is resolved against the current shell directory. Optionally read a window with offset (1-indexed start line) and limit (max lines) — large files are truncated otherwise. Do not use this for PDF, docx, xlsx, or image files — use format-specific tools instead.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -122,18 +143,39 @@ registerTool({
 						type: 'string',
 						description:
 							'File path. Chat mode: relative to the working directory. Shell mode: absolute, or relative to the current shell directory.'
+					},
+					offset: {
+						type: 'number',
+						description: 'Optional 1-indexed line to start reading from.'
+					},
+					limit: {
+						type: 'number',
+						description: 'Optional maximum number of lines to read.'
 					}
 				},
 				required: ['path']
 			}
 		}
 	},
-	displayLabel: labelArg('path'),
+	// Surface the line range so repeated windowed reads of the same file read
+	// as "reading lines 1-40, then 200-240" rather than looking like the model
+	// is re-reading the whole file over and over.
+	displayLabel: (args) => {
+		const path = (args.path as string) ?? '';
+		const offset =
+			typeof args.offset === 'number' && args.offset > 0 ? Math.floor(args.offset) : null;
+		const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : null;
+		if (offset && limit) return `${path}:${offset}-${offset + limit - 1}`;
+		if (offset) return `${path}:${offset}+`;
+		if (limit) return `${path}:1-${limit}`;
+		return path;
+	},
 	async execute(args, ctx) {
 		const path = args.path as string;
+		const window = readWindowArgs(args);
 		const text = ctx.shellMode
-			? await fsReadAbsolute('fs_read_text_absolute', resolveShellPath(path, ctx.shellCwd))
-			: await fsRead('fs_read_text', ctx.workingDir!, path);
+			? await fsReadAbsolute('fs_read_text_absolute', resolveShellPath(path, ctx.shellCwd), window)
+			: await fsRead('fs_read_text', ctx.workingDir!, path, window);
 		return toolResult(text);
 	}
 });

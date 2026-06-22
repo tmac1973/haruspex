@@ -8,6 +8,7 @@
 	import { SerializeAddon } from '@xterm/addon-serialize';
 	import '@xterm/xterm/css/xterm.css';
 	import { getSettings } from '$lib/stores/settings';
+	import { isPtyBusy, ptyBusyCommand } from '$lib/stores/shellPtyBusy.svelte';
 	import type { SessionContext } from '$lib/ipc/gen/SessionContext';
 	import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
 	import type { ShellSpawnResult } from '$lib/ipc/gen/ShellSpawnResult';
@@ -42,7 +43,8 @@
 	let container: HTMLDivElement;
 	let term: Terminal | null = null;
 	let serializeAddon: SerializeAddon | null = null;
-	let sessionId: number | null = null;
+	// $state so the PTY-busy badge in the template reacts to session changes.
+	let sessionId = $state<number | null>(null);
 	let unlistenOutput: UnlistenFn | null = null;
 	let unlistenExit: UnlistenFn | null = null;
 	let resizeObserver: ResizeObserver | null = null;
@@ -160,6 +162,13 @@
 		// resizes flow to the new PTY.
 		t.onData((data) => {
 			if (sessionId == null) return;
+			// NOTE: we deliberately do NOT block input while the agent is driving
+			// the PTY. The agent's command is the foreground process, so the user's
+			// keystrokes reach *its* stdin — which is exactly what's needed to
+			// answer an interactive prompt (a sudo password, a [y/N], git creds).
+			// They can't start a competing shell command (the shell isn't reading
+			// input while a command runs), and output capture is marker-based, so
+			// it isn't corrupted. The "agent running" badge signals the takeover.
 			invoke('shell_write', { sessionId, data }).catch((e) =>
 				console.error('shell_write failed', e)
 			);
@@ -283,7 +292,13 @@
 	});
 </script>
 
-<div class="terminal-host" bind:this={container}></div>
+<div class="terminal-host" bind:this={container}>
+	{#if isPtyBusy(sessionId)}
+		<div class="agent-running-badge" title={ptyBusyCommand(sessionId) ?? ''}>
+			⏳ agent running: <span class="cmd">{ptyBusyCommand(sessionId)}</span>
+		</div>
+	{/if}
+</div>
 
 <style>
 	.terminal-host {
@@ -291,6 +306,32 @@
 		inset: 0;
 		background: #1e1e1e;
 		padding: 4px 0 0 4px;
+	}
+
+	.agent-running-badge {
+		position: absolute;
+		top: 8px;
+		right: 12px;
+		z-index: 5;
+		display: flex;
+		gap: 4px;
+		align-items: center;
+		max-width: 70%;
+		padding: 4px 10px;
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--accent) 85%, black);
+		color: white;
+		font-size: 0.75rem;
+		font-weight: 500;
+		pointer-events: none;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+	}
+
+	.agent-running-badge .cmd {
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.terminal-host :global(.xterm) {

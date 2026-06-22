@@ -83,6 +83,8 @@
 	const messageStats = $derived(session.messageStats);
 	const markerCount = $derived(session.integrationMarkerCount);
 	const completedCommands = $derived(session.integrationCompletedCommands);
+	const codeMode = $derived(session.codeMode);
+	const thinkingEnabled = $derived(session.thinkingEnabled);
 	// Three-state badge:
 	//   - red "no integration"    : marker_count is 0 → hook didn't load
 	//   - amber "no captures yet"  : markers exist but no B→C→D cycles → user
@@ -228,6 +230,28 @@
 				>
 					{integrationLabel}
 				</span>
+				<button
+					class="toggle"
+					class:active={codeMode}
+					onclick={session.toggleCodeMode}
+					disabled={submitting}
+					title={codeMode
+						? 'Code mode ON — coding tools; the agent runs commands in this terminal'
+						: 'Code mode OFF — shell troubleshooting assistant'}
+				>
+					Code
+				</button>
+				<button
+					class="toggle"
+					class:active={thinkingEnabled}
+					onclick={session.toggleThinking}
+					disabled={submitting}
+					title={thinkingEnabled
+						? 'Reasoning ON — the model thinks before acting'
+						: 'Reasoning OFF — the model acts immediately'}
+				>
+					Think
+				</button>
 				<button onclick={session.newChat} disabled={submitting} title="Clear chat">New chat</button>
 				<button onclick={session.toggleSidebar} title="Collapse">›</button>
 			</div>
@@ -442,6 +466,12 @@
 	.actions button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.actions button.toggle.active {
+		background: color-mix(in srgb, var(--accent) 18%, transparent);
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 
 	.thread {

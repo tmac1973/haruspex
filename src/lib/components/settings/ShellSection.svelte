@@ -30,6 +30,28 @@
 	function persistRunAutoSubmit() {
 		updateSettings({ shellRunAutoSubmit });
 	}
+
+	let codeAutoApprove = $state(getSettings().codeAutoApprove);
+	let codeCommandExec = $state(getSettings().codeCommandExec);
+	let codeRunCommandTimeoutSecs = $state(getSettings().codeRunCommandTimeoutSecs);
+	let codeMaxIterations = $state(getSettings().codeMaxIterations);
+
+	function persistCodeAutoApprove() {
+		updateSettings({ codeAutoApprove });
+	}
+	function persistCodeMaxIterations() {
+		const clamped = Math.max(5, Math.min(200, Math.floor(codeMaxIterations)));
+		codeMaxIterations = clamped;
+		updateSettings({ codeMaxIterations: clamped });
+	}
+	function persistCodeCommandExec() {
+		updateSettings({ codeCommandExec });
+	}
+	function persistCodeTimeout() {
+		const clamped = Math.max(5, Math.min(1800, Math.floor(codeRunCommandTimeoutSecs)));
+		codeRunCommandTimeoutSecs = clamped;
+		updateSettings({ codeRunCommandTimeoutSecs: clamped });
+	}
 </script>
 
 <section class="card">
@@ -127,13 +149,104 @@
 	</p>
 </section>
 
+<h2 class="group-heading">Code mode</h2>
+
+<section class="card">
+	<h3>Command execution</h3>
+	<p class="help">
+		How the coding agent's <code>run_command</code> runs. <strong>Auto</strong> drives your live
+		interactive terminal (sharing the activated venv / env / cwd, visible in your scrollback) when
+		shell integration is available, falling back to a one-shot <code>sh -c</code> otherwise.
+		<strong>Terminal</strong> forces the PTY path; <strong>One-shot</strong> always runs a fresh isolated
+		process.
+	</p>
+	<select bind:value={codeCommandExec} onchange={persistCodeCommandExec}>
+		<option value="auto">Auto (PTY when available, else one-shot)</option>
+		<option value="pty">Terminal (PTY) only</option>
+		<option value="oneshot">One-shot capture only</option>
+	</select>
+</section>
+
+<section class="card">
+	<h3>run_command timeout</h3>
+	<label class="row">
+		<input
+			type="number"
+			min="5"
+			max="1800"
+			step="5"
+			bind:value={codeRunCommandTimeoutSecs}
+			onblur={persistCodeTimeout}
+			onkeydown={(e) => e.key === 'Enter' && persistCodeTimeout()}
+		/>
+		<span>seconds</span>
+	</label>
+	<p class="help">
+		Default wall-clock limit for a single <code>run_command</code> call (the model can override per call).
+		A PTY command that hits the limit is left running in your terminal. 5–1800 seconds.
+	</p>
+</section>
+
+<section class="card">
+	<h3>Max steps per task</h3>
+	<label class="row">
+		<input
+			type="number"
+			min="5"
+			max="200"
+			step="5"
+			bind:value={codeMaxIterations}
+			onblur={persistCodeMaxIterations}
+			onkeydown={(e) => e.key === 'Enter' && persistCodeMaxIterations()}
+		/>
+		<span>tool/model steps before the agent is forced to wrap up</span>
+	</label>
+	<p class="help">
+		Coding tasks chain many steps (grep → read → edit → test → fix). If the agent gets cut off
+		mid-task and told to "wrap up", raise this. Context stays bounded across steps via compaction.
+		Default <code>40</code>. 5–200.
+	</p>
+</section>
+
+<section class="card danger" class:enabled={codeAutoApprove}>
+	<h3>Auto-approve commands</h3>
+	<label class="row">
+		<input type="checkbox" bind:checked={codeAutoApprove} onchange={persistCodeAutoApprove} />
+		<span>Run risk-flagged commands without prompting</span>
+	</label>
+	<p class="help">
+		Off by default. When off, Code mode pops a confirmation before running anything the risk
+		classifier flags (sudo, destructive deletes, pipes to a shell, etc.). Only enable if you fully
+		trust the model on this machine — these commands run in your real shell.
+	</p>
+</section>
+
 <style>
+	.group-heading {
+		margin: 8px 0 12px;
+		font-size: 1.05rem;
+		font-weight: 600;
+		padding-bottom: 6px;
+		border-bottom: 1px solid var(--border);
+	}
+
 	.card {
 		background: var(--bg-secondary);
 		border: 1px solid var(--border);
 		border-radius: 8px;
 		padding: 16px;
 		margin-bottom: 16px;
+	}
+
+	.card select {
+		width: 100%;
+		padding: 8px 10px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		font-size: 0.9rem;
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
+		color-scheme: light dark;
 	}
 
 	.card.danger.enabled {

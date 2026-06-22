@@ -14,6 +14,8 @@ const chatCtx = {
 	deepResearch: false,
 	shellMode: false,
 	shellAllowWrite: false,
+	codeMode: false,
+	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 
@@ -23,6 +25,8 @@ const shellCtx = {
 	deepResearch: false,
 	shellMode: true,
 	shellAllowWrite: false,
+	codeMode: false,
+	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 
@@ -32,6 +36,8 @@ const shellCtxWritable = {
 	deepResearch: false,
 	shellMode: true,
 	shellAllowWrite: true,
+	codeMode: false,
+	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 
@@ -49,6 +55,35 @@ describe('fs_read tools in Chat mode', () => {
 			relPath: 'config.json'
 		});
 		expect(out.result).toBe('file contents');
+	});
+
+	it('fs_read_text forwards offset/limit when provided, omits them otherwise', async () => {
+		const { executeTool } = await import('$lib/agent/tools');
+		mocks.invoke.mockResolvedValue('windowed');
+		await executeTool('fs_read_text', { path: 'big.log', offset: 10, limit: 5 }, chatCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text', {
+			workdir: '/tmp/work',
+			relPath: 'big.log',
+			offset: 10,
+			limit: 5
+		});
+		// No window args → call shape unchanged (no offset/limit keys).
+		mocks.invoke.mockClear();
+		await executeTool('fs_read_text', { path: 'big.log' }, chatCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text', {
+			workdir: '/tmp/work',
+			relPath: 'big.log'
+		});
+	});
+
+	it('fs_read_text label shows the line range when windowed', async () => {
+		const { getDisplayLabel } = await import('$lib/agent/tools');
+		expect(getDisplayLabel('fs_read_text', { path: 'a.ts' })).toBe('a.ts');
+		expect(getDisplayLabel('fs_read_text', { path: 'a.ts', offset: 10, limit: 40 })).toBe(
+			'a.ts:10-49'
+		);
+		expect(getDisplayLabel('fs_read_text', { path: 'a.ts', limit: 40 })).toBe('a.ts:1-40');
+		expect(getDisplayLabel('fs_read_text', { path: 'a.ts', offset: 10 })).toBe('a.ts:10+');
 	});
 
 	it('fs_list_dir dispatches to the workdir-relative command', async () => {

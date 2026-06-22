@@ -261,3 +261,34 @@ describe('toolchest-discovered capabilities', () => {
 		expect(isReasoningSupported()).toBe(true);
 	});
 });
+
+describe('reasoning override (Code tab per-tab toggle)', () => {
+	beforeEach(() => {
+		updateInferenceBackend({
+			mode: 'local',
+			remoteBackendKind: null,
+			remoteSampling: null,
+			remoteReasoning: null
+		});
+		setActiveLocalModel('Qwen3.5-9B-Q4_K_M.gguf');
+		updateSettings({ thinkingEnabled: true });
+	});
+
+	it('forces thinking off regardless of the global setting', () => {
+		expect(getChatTemplateKwargs(false)).toEqual({ enable_thinking: false });
+		// Non-thinking general profile (temp 0.7) despite the global setting being on.
+		expect(getSamplingParams({ thinkingEnabled: false }).temperature).toBe(0.7);
+	});
+
+	it('forces thinking on when the global setting is off', () => {
+		updateSettings({ thinkingEnabled: false });
+		expect(getChatTemplateKwargs(true)).toEqual({ enable_thinking: true });
+		expect(getSamplingParams({ thinkingEnabled: true }).temperature).toBe(1.0);
+	});
+
+	it('falls back to the global setting when the override is null/undefined', () => {
+		expect(getChatTemplateKwargs()).toEqual({ enable_thinking: true });
+		expect(getChatTemplateKwargs(null)).toEqual({ enable_thinking: true });
+		expect(getSamplingParams({}).temperature).toBe(1.0);
+	});
+});

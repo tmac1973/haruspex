@@ -80,6 +80,11 @@ export interface AgentLoopOptions {
 	 */
 	shellCwd?: string | null;
 	/**
+	 * Active Shell PTY session id, threaded to the tool context so the
+	 * Code-mode run_command tool can drive the live terminal.
+	 */
+	shellSessionId?: number | null;
+	/**
 	 * Optional progress channel for a running tool call. Wired to the
 	 * tool's ToolContext.onProgress so a long-running tool can update its
 	 * card mid-flight (e.g. run_python surfacing a package install).
@@ -154,6 +159,32 @@ export interface AgentLoopOptions {
 	 * Defaults to false.
 	 */
 	shellAllowWrite?: boolean;
+	/**
+	 * When true, the loop is being driven by the Code tab: the lean code
+	 * toolset (read/write/edit/grep/glob + run_command + web research) is
+	 * exposed and fs/exec tools resolve against the mandatory working
+	 * directory. Defaults to false.
+	 */
+	codeMode?: boolean;
+	/**
+	 * Companion flag to codeMode: when true, `run_command` runs risky
+	 * commands without prompting. Defaults to false (the user opts in via
+	 * Settings → Code).
+	 */
+	codeAutoApprove?: boolean;
+	/**
+	 * Per-turn reasoning override. `undefined`/`null` uses the global
+	 * `thinkingEnabled` setting; `true`/`false` forces reasoning on/off for
+	 * this turn (the Code tab's per-tab toggle).
+	 */
+	thinkingEnabled?: boolean | null;
+	/**
+	 * Override the per-call response token budget (`max_tokens`). Defaults to
+	 * the agent-loop default. Reasoning models that "think" extensively need a
+	 * bigger budget or they get truncated mid-thought before emitting a tool
+	 * call — the Code tab raises this when reasoning is on.
+	 */
+	maxResponseTokens?: number;
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {

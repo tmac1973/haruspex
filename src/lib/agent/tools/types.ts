@@ -54,6 +54,19 @@ export interface ToolContext {
 	 */
 	shellAllowWrite: boolean;
 	/**
+	 * True when the agent is invoked from the Code tab. Exposes the lean
+	 * code toolset (read/write/edit/grep/glob + run_command + web research)
+	 * and routes fs tools against the mandatory working directory. Defaults
+	 * to false everywhere else.
+	 */
+	codeMode: boolean;
+	/**
+	 * When true (only meaningful with codeMode), `run_command` skips the
+	 * shell-risk approval prompt and runs risky commands without asking.
+	 * Off by default; the user opts in via Settings → Code.
+	 */
+	codeAutoApprove: boolean;
+	/**
 	 * The Shell tab's current working directory, captured at turn start.
 	 * Lets shell-mode fs_* tools resolve relative path arguments (the bare
 	 * `snake_game.py` a model naturally emits) against it instead of
@@ -61,6 +74,14 @@ export interface ToolContext {
 	 * Null when unknown or outside shell mode.
 	 */
 	shellCwd?: string | null;
+	/**
+	 * The active Shell-tab PTY session id, when the agent is driven from a
+	 * shell session. Lets the Code-mode `run_command` tool inject commands
+	 * into the live terminal and capture their output. Null/undefined
+	 * outside a shell session (e.g. the standalone Code tab), in which case
+	 * `run_command` uses the one-shot capture path.
+	 */
+	shellSessionId?: number | null;
 	/**
 	 * Optional progress channel for long-running tools. The agent loop
 	 * wires this to the currently-running tool card so a tool can surface
@@ -79,7 +100,7 @@ export interface ToolRegistration {
 	schema: ToolDefinition;
 	execute: (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolExecOutput>;
 	displayLabel: (args: Record<string, unknown>) => string;
-	category: 'web' | 'fs' | 'email' | 'sandbox';
+	category: 'web' | 'fs' | 'email' | 'sandbox' | 'exec';
 	requiresVision?: boolean;
 }
 
