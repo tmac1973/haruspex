@@ -79,9 +79,10 @@ try {
             # Only mark a command when the buffer is a complete, non-empty
             # statement. An incomplete buffer (open brace/quote) means Enter
             # should insert a newline, not run anything - so don't emit C.
+            $tokens = $null
             $errs = $null
             $null = [System.Management.Automation.Language.Parser]::ParseInput(
-                $line, [ref]$null, [ref]$errs)
+                $line, [ref]$tokens, [ref]$errs)
             $incomplete = $false
             if ($errs) {
                 foreach ($e in $errs) { if ($e.IncompleteInput) { $incomplete = $true; break } }
