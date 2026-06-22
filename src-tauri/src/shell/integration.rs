@@ -240,7 +240,7 @@ impl Integration {
             return;
         };
         if let Some(slash) = after_scheme.find('/') {
-            self.current_cwd = Some(after_scheme[slash..].to_string());
+            self.current_cwd = Some(normalize_cwd(&after_scheme[slash..]));
         }
     }
 
@@ -486,6 +486,22 @@ fn bytes_to_clean_text(bytes: &[u8]) -> String {
 ///
 /// Returns the decoded UTF-8 command line, or None when neither attribute is
 /// present or decoding fails.
+/// Normalize an OSC 7 cwd. Unix paths pass through unchanged. The file:// form
+/// of a Windows path arrives as "/C:/Users/tim" (leading slash + forward
+/// slashes); turn it back into "C:\Users\tim" so it's a valid absolute Windows
+/// path for the fs tools and run_command cwd. Detected generically — a Unix
+/// path never looks like /<letter>:/… — so this is a no-op off Windows.
+fn normalize_cwd(path: &str) -> String {
+    let b = path.as_bytes();
+    let is_windows_drive =
+        b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':';
+    if is_windows_drive {
+        path[1..].replace('/', "\\")
+    } else {
+        path.to_string()
+    }
+}
+
 fn decode_cl_attribute(data: &str) -> Option<String> {
     for attr in data.split(';') {
         if let Some(b64) = attr.strip_prefix("cl=") {
@@ -709,6 +725,21 @@ mod tests {
         integ.ingest(b"\x1B]133;A\x07");
         let m = integ.markers().next().unwrap();
         assert_eq!(m.cwd.as_deref(), Some("/home/me"));
+    }
+
+    #[test]
+    fn osc_7_normalizes_windows_path() {
+        // PowerShell emits file://HOST/C:/Users/tim — the parser must hand back
+        // a real Windows path, not "/C:/Users/tim".
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]7;file://WINTEST/C:/Users/tim/test\x07");
+        assert_eq!(integ.current_cwd(), Some("C:\\Users\\tim\\test"));
+    }
+
+    #[test]
+    fn normalize_cwd_leaves_unix_paths() {
+        assert_eq!(normalize_cwd("/home/me/proj"), "/home/me/proj");
+        assert_eq!(normalize_cwd("/C:/Users/tim"), "C:\\Users\\tim");
     }
 
     #[test]
