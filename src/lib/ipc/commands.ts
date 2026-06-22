@@ -123,6 +123,7 @@ export const IPC = {
 	shell_get_recent_history: 'shell_get_recent_history',
 	shell_get_scrollback: 'shell_get_scrollback',
 	shell_kill: 'shell_kill',
+	shell_list_shells: 'shell_list_shells',
 	shell_mark_ready: 'shell_mark_ready',
 	shell_platform_supported: 'shell_platform_supported',
 	shell_resize: 'shell_resize',

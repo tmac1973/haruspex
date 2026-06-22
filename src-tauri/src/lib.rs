@@ -233,6 +233,7 @@ pub fn run() {
             shell::shell_stash_scrollback,
             shell::shell_take_scrollback,
             shell::shell_platform_supported,
+            shell::shell_list_shells,
             clipboard::clipboard_read_text,
             clipboard::clipboard_read_primary,
         ])
