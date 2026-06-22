@@ -162,11 +162,13 @@
 		// resizes flow to the new PTY.
 		t.onData((data) => {
 			if (sessionId == null) return;
-			// While the coding agent is driving this PTY, swallow user keystrokes
-			// so they can't interleave with the agent's command and corrupt the
-			// output capture. The agent's own writes go through shell_write
-			// directly, not this handler.
-			if (isPtyBusy(sessionId)) return;
+			// NOTE: we deliberately do NOT block input while the agent is driving
+			// the PTY. The agent's command is the foreground process, so the user's
+			// keystrokes reach *its* stdin — which is exactly what's needed to
+			// answer an interactive prompt (a sudo password, a [y/N], git creds).
+			// They can't start a competing shell command (the shell isn't reading
+			// input while a command runs), and output capture is marker-based, so
+			// it isn't corrupted. The "agent running" badge signals the takeover.
 			invoke('shell_write', { sessionId, data }).catch((e) =>
 				console.error('shell_write failed', e)
 			);
