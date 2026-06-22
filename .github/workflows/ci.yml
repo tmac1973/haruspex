@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   frontend:
@@ -102,8 +103,17 @@ jobs:
   # touches, plus the type-check + unit tests against Windows path/line-ending
   # behavior. Single combined job — Windows runner minutes bill at a higher rate
   # than the Linux frontend/backend split.
+  #
+  # It's slow (~15 min), so it does NOT run on every PR. It runs only on a
+  # manual dispatch (Actions tab → CI → Run workflow) or when a PR carries the
+  # `windows-ci` label. Add that label to Shell-tab / Phase-17 / fs_tools PRs;
+  # everything else skips it. (To restore a post-merge safety net, add
+  # `github.event_name == 'push'` to the condition below.)
   windows:
     runs-on: windows-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'windows-ci')
     steps:
       # Check out with LF intact so rustfmt/prettier and `git diff` aren't fooled
       # by CRLF churn on the Windows runner (autocrlf defaults to true there).
