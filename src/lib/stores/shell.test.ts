@@ -149,6 +149,7 @@ describe('detach / re-attach', () => {
 			sessionId: ptyId,
 			context: {} as never,
 			getSelection: () => '',
+			restart: async () => {},
 			serialize: () => ''
 		});
 	}

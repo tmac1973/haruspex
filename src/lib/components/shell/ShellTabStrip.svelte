@@ -2,12 +2,14 @@
 	import {
 		getShellSessions,
 		getActiveShellId,
+		getActiveShellSession,
 		setActiveShell,
 		createShellSession,
 		closeShellSession,
 		type ShellSession
 	} from '$lib/stores/shell.svelte';
 	import { openDetachedShell } from '$lib/shell/windows';
+	import ShellPicker from './ShellPicker.svelte';
 
 	const sessions = $derived(getShellSessions());
 	const activeId = $derived(getActiveShellId());
@@ -63,6 +65,7 @@
 	<button class="add" title="New shell" aria-label="New shell" onclick={() => createShellSession()}
 		>+</button
 	>
+	<ShellPicker onPick={() => void getActiveShellSession()?.restartActive()} />
 </div>
 
 <style>

@@ -57,6 +57,9 @@ export interface ActiveShellSession {
 	sessionId: number;
 	context: ShellSessionContext;
 	getSelection: () => string;
+	/** Re-spawn the bound terminal's PTY with the current settings (used by the
+	 *  shell picker after changing the selected shell). */
+	restart: () => Promise<void>;
 	/** Serialized terminal-grid snapshot for cross-window scrollback handoff. */
 	serialize: () => string;
 }
@@ -219,6 +222,16 @@ export class ShellSession {
 		this.integrationMarkerCount = 0;
 		this.integrationCompletedCommands = 0;
 		void this.refreshIntegrationStatus();
+	};
+
+	/** Restart the bound terminal — used by the shell picker after changing the
+	 *  selected shell. No-op if no terminal is bound. */
+	restartActive = async (): Promise<void> => {
+		try {
+			await this.activeSession?.restart();
+		} catch (e) {
+			console.error('shell restart failed', e);
+		}
 	};
 
 	unbindSession = (): void => {

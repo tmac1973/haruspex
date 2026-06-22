@@ -4,6 +4,7 @@ import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
 import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
 import type { TlsMode } from '$lib/ipc/gen/TlsMode';
+import type { ShellSelection } from '$lib/ipc/gen/ShellSelection';
 
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -251,6 +252,12 @@ export interface AppSettings {
 	 */
 	shellBinary: string;
 	/**
+	 * The shell picked from the toolbar on Windows (a PowerShell variant or a
+	 * WSL distro). When set it takes priority over shellBinary; null means use
+	 * the platform default / shellBinary. Only meaningful on Windows.
+	 */
+	shellSelection: ShellSelection | null;
+	/**
 	 * How many of the most-recent completed shell commands (and their
 	 * output) to attach automatically to every chat message sent from
 	 * the Shell-tab sidebar. 0 disables auto-attach. Default 3.
@@ -376,6 +383,7 @@ const defaults: AppSettings = {
 	integrations: defaultIntegrations,
 	proxy: defaultProxy,
 	shellBinary: '',
+	shellSelection: null,
 	shellHistoryTurnsForPrompt: 3,
 	shellMaxBytesPerCapture: 8192,
 	shellSidebarWidth: 480,

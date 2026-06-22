@@ -225,6 +225,7 @@
 		term.reset();
 
 		const shellOverride = getSettings().shellBinary.trim() || null;
+		const selection = getSettings().shellSelection ?? null;
 		const fit = new FitAddon();
 		// Reuse the existing terminal; xterm holds onto its own resize
 		// addon from createTerminal. We only need a fresh observer.
@@ -232,7 +233,8 @@
 			sessionId: oldId,
 			cols: term.cols,
 			rows: term.rows,
-			shellOverride
+			shellOverride,
+			selection
 		});
 		await attachSession(term, fit, spawn.session_id, spawn.context);
 	}
@@ -260,10 +262,12 @@
 			}
 
 			const shellOverride = getSettings().shellBinary.trim() || null;
+			const selection = getSettings().shellSelection ?? null;
 			const spawn = await invoke<ShellSpawnResult>('shell_spawn', {
 				cols: t.cols,
 				rows: t.rows,
-				shellOverride
+				shellOverride,
+				selection
 			});
 
 			if (cancelled) {
