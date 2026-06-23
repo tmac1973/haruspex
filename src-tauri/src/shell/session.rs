@@ -123,6 +123,9 @@ impl Session {
         // Leading args that come before any integration args — e.g.
         // `-d <distro>` for a `wsl.exe` session. Empty for a plain shell.
         base_args: &[String],
+        // The WSL distro name when this is a WSL session, so context is probed
+        // inside the distro rather than the Windows host. None otherwise.
+        wsl_distro: Option<&str>,
         cols: u16,
         rows: u16,
     ) -> Result<Self, String> {
@@ -194,7 +197,7 @@ impl Session {
             scrollback.clone(),
         );
 
-        let context = SessionContext::capture(shell);
+        let context = SessionContext::capture(shell, wsl_distro);
 
         Ok(Session {
             context,

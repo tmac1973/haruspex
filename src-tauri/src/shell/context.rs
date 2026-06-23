@@ -26,7 +26,14 @@ pub struct SessionContext {
 }
 
 impl SessionContext {
-    pub fn capture(shell_path: &str) -> Self {
+    pub fn capture(shell_path: &str, wsl_distro: Option<&str>) -> Self {
+        // WSL sessions describe the distro, not the Windows host: probe inside
+        // it via wsl.exe. Fall back to host capture if the probe fails.
+        if let Some(distro) = wsl_distro {
+            if let Some(ctx) = super::wsl::capture_context(distro) {
+                return ctx;
+            }
+        }
         let kernel = uname_r();
         // OS / distro identity is platform-specific: Linux parses
         // /etc/os-release, macOS reads sw_vers. The kernel (uname -r),
