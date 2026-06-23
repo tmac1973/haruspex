@@ -109,6 +109,7 @@ export const IPC = {
 	proxy_fetch_url_images: 'proxy_fetch_url_images',
 	proxy_image_search: 'proxy_image_search',
 	proxy_search: 'proxy_search',
+	recommended_context_size: 'recommended_context_size',
 	reset_lifetime_search_stats: 'reset_lifetime_search_stats',
 	run_command_cancel: 'run_command_cancel',
 	run_command_capture: 'run_command_capture',

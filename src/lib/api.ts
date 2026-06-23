@@ -72,6 +72,7 @@ export interface ChatCompletionOptions {
 	temperature?: number;
 	top_p?: number;
 	top_k?: number;
+	min_p?: number;
 	presence_penalty?: number;
 	max_tokens?: number;
 	chat_template_kwargs?: Record<string, unknown>;
@@ -174,6 +175,9 @@ function buildRequestBody(
 	}
 	if (options.top_k !== undefined) {
 		body.top_k = options.top_k;
+	}
+	if (options.min_p !== undefined) {
+		body.min_p = options.min_p;
 	}
 	if (options.presence_penalty !== undefined) {
 		body.presence_penalty = options.presence_penalty;

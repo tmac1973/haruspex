@@ -127,6 +127,7 @@ describe('sampling profile resolution', () => {
 			temperature: 1.0,
 			top_p: 0.95,
 			top_k: 20,
+			min_p: 0.0,
 			presence_penalty: 1.5
 		});
 	});
@@ -138,6 +139,7 @@ describe('sampling profile resolution', () => {
 			temperature: 0.6,
 			top_p: 0.95,
 			top_k: 20,
+			min_p: 0.0,
 			presence_penalty: 0.0
 		});
 	});
@@ -149,8 +151,32 @@ describe('sampling profile resolution', () => {
 			temperature: 0.7,
 			top_p: 0.8,
 			top_k: 20,
+			min_p: 0.0,
 			presence_penalty: 1.5
 		});
+	});
+
+	it('Qwen 3.6 35B-A3B (sparse) shares the qwen3.5 profile', () => {
+		setActiveLocalModel('Qwen3.6-35B-A3B-UD-IQ4_NL.gguf');
+		expect(getActiveModelFamily()).toBe('qwen3.5');
+		updateSettings({ thinkingEnabled: true });
+		expect(getSamplingParams().presence_penalty).toBe(1.5);
+	});
+
+	it('Qwen 3.6 dense 27B uses presence_penalty 0.0 for thinking/general', () => {
+		setActiveLocalModel('Qwen3.6-27B-IQ4_NL.gguf');
+		expect(getActiveModelFamily()).toBe('qwen3.6-27b');
+		updateSettings({ thinkingEnabled: true });
+		expect(getSamplingParams()).toEqual({
+			temperature: 1.0,
+			top_p: 0.95,
+			top_k: 20,
+			min_p: 0.0,
+			presence_penalty: 0.0
+		});
+		// Non-thinking general still matches the rest of the lineup.
+		updateSettings({ thinkingEnabled: false });
+		expect(getSamplingParams().presence_penalty).toBe(1.5);
 	});
 
 	it('non-thinking mode + code context mirrors general (Qwen 3.5 has no published coding/non-thinking profile)', () => {
@@ -194,6 +220,7 @@ describe('toolchest-discovered capabilities', () => {
 			temperature: 0.6,
 			top_p: 0.95,
 			top_k: 20,
+			min_p: 0.0,
 			presence_penalty: 0.5
 		});
 	});
@@ -204,6 +231,7 @@ describe('toolchest-discovered capabilities', () => {
 			temperature: 0.3,
 			top_p: 0.9,
 			top_k: 10,
+			min_p: 0.0,
 			presence_penalty: 0.0
 		});
 	});

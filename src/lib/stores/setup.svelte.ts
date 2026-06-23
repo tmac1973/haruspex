@@ -8,7 +8,8 @@ import { PORTS, baseUrl } from '$lib/ports';
 import {
 	getActiveLocalModelFilename,
 	getSettings,
-	setActiveLocalModel
+	setActiveLocalModel,
+	updateSettings
 } from '$lib/stores/settings';
 
 export type SetupStep = 'welcome' | 'hardware' | 'download' | 'test' | 'remote' | 'done';
@@ -23,6 +24,7 @@ export interface HardwareInfo {
 	total_ram_mb: number;
 	available_ram_mb: number;
 	recommended_quant: string;
+	recommended_context_size: number;
 }
 
 // ts-rs-generated mirrors of the Rust structs, re-exported so existing
@@ -31,7 +33,7 @@ export type { DownloadProgress, ModelInfo };
 
 let step = $state<SetupStep>('welcome');
 let hardware = $state<HardwareInfo | null>(null);
-let selectedModel = $state('Qwen3.5-9B-Q4_K_M');
+let selectedModel = $state('Qwen3.5-9B-IQ4_NL');
 let downloadProgress = $state<DownloadProgress | null>(null);
 let downloadError = $state<string | null>(null);
 let testResult = $state<TestResult>('pending');
@@ -71,14 +73,33 @@ export function setStep(s: SetupStep): void {
 	step = s;
 }
 
-export function setSelectedModel(id: string): void {
+export async function setSelectedModel(id: string): Promise<void> {
 	selectedModel = id;
+	// Re-derive the recommended context for the newly chosen model — picking a
+	// larger model than the hardware recommendation needs a smaller context to
+	// stay within VRAM, so we can't keep the recommended model's value.
+	await applyRecommendedContext(id);
+}
+
+/** Compute the recommended context for `modelId` against detected VRAM and
+ * persist it as the active context size. Falls back silently on error. */
+async function applyRecommendedContext(modelId: string): Promise<void> {
+	try {
+		const ctx = await invoke<number>('recommended_context_size', {
+			modelId,
+			vramMb: hardware?.gpu_vram_mb ?? null
+		});
+		updateSettings({ contextSize: ctx });
+	} catch (e) {
+		console.error('Context recommendation failed:', e);
+	}
 }
 
 export async function detectHardware(): Promise<void> {
 	try {
 		hardware = await invoke<HardwareInfo>('cmd_detect_hardware');
 		selectedModel = hardware.recommended_quant;
+		updateSettings({ contextSize: hardware.recommended_context_size });
 		models = await invoke<ModelInfo[]>('list_models');
 	} catch (e) {
 		console.error('Hardware detection failed:', e);
@@ -339,7 +360,7 @@ function parseSseDelta(line: string): string | null {
 export function resetSetup(): void {
 	step = 'welcome';
 	hardware = null;
-	selectedModel = 'Qwen3.5-9B-Q4_K_M';
+	selectedModel = 'Qwen3.5-9B-IQ4_NL';
 	downloadProgress = null;
 	downloadError = null;
 	testResult = 'pending';

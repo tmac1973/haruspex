@@ -45,6 +45,7 @@ export interface RemoteSamplingParams {
 	temperature?: number;
 	top_p?: number;
 	top_k?: number;
+	min_p?: number;
 	presence_penalty?: number;
 }
 
@@ -201,6 +202,13 @@ export interface AppSettings {
 	 * whatever `find_any_model` returns from disk.
 	 */
 	activeLocalModelFilename: string;
+	/**
+	 * Set once the user has seen (and dismissed) the notice that the
+	 * recommended model lineup changed and their current model is now a
+	 * legacy one. Keeps the Settings → Models banner from reappearing on
+	 * every visit after they've acknowledged it.
+	 */
+	legacyModelNoticeDismissed: boolean;
 	/**
 	 * Master switch for the Python code sandbox. When false, run_python
 	 * / install_package / reset_python are filtered out of the model's
@@ -374,6 +382,7 @@ const defaults: AppSettings = {
 	dismissedStartupNotice: false,
 	keepRecentToolResults: true,
 	activeLocalModelFilename: '',
+	legacyModelNoticeDismissed: false,
 	sandboxEnabled: false,
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 60,
@@ -605,6 +614,12 @@ export interface SamplingParams {
 	temperature: number;
 	top_p: number;
 	top_k: number;
+	/**
+	 * Unsloth/Qwen cards specify `min_p=0.0` (disabled) for every profile.
+	 * We send it explicitly because llama.cpp defaults `min_p` to 0.05, which
+	 * would otherwise silently override the recommendation.
+	 */
+	min_p: number;
 	presence_penalty: number;
 }
 
@@ -619,30 +634,44 @@ interface ModelSamplingProfiles {
 }
 
 /**
- * Recommended sampling parameters per model family. Values come straight
- * from each model's published model card — keep them in sync if a model
- * is upgraded. Add a new family by adding another entry here; the model
- * family is derived from the active model identity at runtime by
- * `modelFamilyFromId`. Unknown families fall back to `DEFAULT_FAMILY`.
+ * Recommended sampling parameters per model family. Values are taken
+ * verbatim from each model's published Unsloth/Qwen card ("We recommend the
+ * following set of sampling parameters"). Every card specifies `min_p=0.0`
+ * and `repetition_penalty=1.0` (disabled); we encode `min_p` explicitly and
+ * leave repetition_penalty unset (1.0 is the no-op default). Keep these in
+ * sync if a model is upgraded.
  *
- * The two-axis layout (thinking × {general, coding}) mirrors how the
- * Qwen 3.5 card itself groups its recommendations; the agent loop picks
- * `coding` when the previous tool result indicates the model is in a
- * code-editing context (a `<diagnostics>` block, or a tool call against
- * a Python file).
+ * The two-axis layout (thinking × {general, coding}) mirrors how the cards
+ * group their recommendations; the agent loop picks `coding` when the
+ * previous tool result indicates a code-editing context (a `<diagnostics>`
+ * block, or a tool call against a Python file). The cards publish no
+ * non-thinking *coding* profile, so that slot mirrors non-thinking general.
+ *
+ * Across the lineup the profiles are identical except the Qwen 3.6 dense
+ * 27B, whose card uses `presence_penalty=0.0` (not 1.5) for thinking/general
+ * — hence the separate `qwen3.6-27b` family.
  */
 const SAMPLING_PROFILES: Record<string, ModelSamplingProfiles> = {
+	// Qwen 3.5 4B/9B and Qwen 3.6 35B-A3B (sparse) — identical published profiles.
 	'qwen3.5': {
 		thinking: {
-			general: { temperature: 1.0, top_p: 0.95, top_k: 20, presence_penalty: 1.5 },
-			coding: { temperature: 0.6, top_p: 0.95, top_k: 20, presence_penalty: 0.0 }
+			general: { temperature: 1.0, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 1.5 },
+			coding: { temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 0.0 }
 		},
 		nonThinking: {
-			general: { temperature: 0.7, top_p: 0.8, top_k: 20, presence_penalty: 1.5 },
-			// Qwen 3.5's card doesn't publish a non-thinking coding profile;
-			// mirror general so we still ship deterministic top_k and a sane
-			// presence_penalty when the user has thinking off.
-			coding: { temperature: 0.7, top_p: 0.8, top_k: 20, presence_penalty: 1.5 }
+			general: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 },
+			coding: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 }
+		}
+	},
+	// Qwen 3.6 dense 27B — thinking/general uses presence_penalty 0.0.
+	'qwen3.6-27b': {
+		thinking: {
+			general: { temperature: 1.0, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 0.0 },
+			coding: { temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 0.0 }
+		},
+		nonThinking: {
+			general: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 },
+			coding: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 }
 		}
 	}
 };
@@ -657,7 +686,18 @@ const DEFAULT_FAMILY = 'qwen3.5';
 function modelFamilyFromId(id: string | null | undefined): string {
 	if (!id) return DEFAULT_FAMILY;
 	const lower = id.toLowerCase();
-	if (lower.includes('qwen3.5') || lower.includes('qwen-3.5')) return 'qwen3.5';
+	// The dense 27B is the one model whose published thinking/general
+	// presence_penalty differs (0.0 vs 1.5); give it its own profile.
+	if (lower.includes('qwen3.6-27b') || lower.includes('qwen-3.6-27b')) return 'qwen3.6-27b';
+	// Everything else in the lineup (3.5 4B/9B, 3.6 35B-A3B) shares one profile.
+	if (
+		lower.includes('qwen3.5') ||
+		lower.includes('qwen-3.5') ||
+		lower.includes('qwen3.6') ||
+		lower.includes('qwen-3.6')
+	) {
+		return 'qwen3.5';
+	}
 	return DEFAULT_FAMILY;
 }
 
@@ -709,6 +749,21 @@ export function setActiveLocalModel(filenameOrPath: string | null): void {
  */
 export function getActiveLocalModelFilename(): string {
 	return settings.activeLocalModelFilename;
+}
+
+/**
+ * Whether the user has dismissed the "recommended models changed" notice.
+ * Shown in Settings → Models when their active model is a legacy one.
+ */
+export function getLegacyModelNoticeDismissed(): boolean {
+	return settings.legacyModelNoticeDismissed;
+}
+
+export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
+	if (settings.legacyModelNoticeDismissed !== dismissed) {
+		settings = { ...settings, legacyModelNoticeDismissed: dismissed };
+		save(settings);
+	}
 }
 
 /**
@@ -779,6 +834,7 @@ function toolchestSamplingParams(caps: RemoteSamplingCaps, opts: SamplingOptions
 		temperature: merged.temperature ?? fallback.temperature,
 		top_p: merged.top_p ?? fallback.top_p,
 		top_k: merged.top_k ?? fallback.top_k,
+		min_p: merged.min_p ?? fallback.min_p,
 		presence_penalty: merged.presence_penalty ?? fallback.presence_penalty
 	};
 }

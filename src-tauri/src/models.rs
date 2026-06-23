@@ -24,6 +24,11 @@ pub struct ModelInfo {
     pub size_bytes: u64,
     pub description: String,
     pub downloaded: bool,
+    /// True for models that are no longer part of the recommended lineup but
+    /// remain supported: still listed (when on disk), switchable, and
+    /// re-downloadable. New installs never see these unless they kept one
+    /// from a previous version.
+    pub legacy: bool,
     /// Optional multimodal projector filename (e.g. "mmproj-F16.gguf").
     /// When present, it is downloaded alongside the main weights and passed
     /// to llama-server via --mmproj to enable vision support.
@@ -64,6 +69,16 @@ const QWEN_9B_MMPROJ_URL: &str =
 const QWEN_9B_MMPROJ_SIZE: u64 = 918_166_080;
 const QWEN_9B_MMPROJ_SHA256: &str =
     "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f";
+const QWEN_35B_A3B_MMPROJ_URL: &str =
+    "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/mmproj-F16.gguf";
+const QWEN_35B_A3B_MMPROJ_SIZE: u64 = 899_283_680;
+const QWEN_35B_A3B_MMPROJ_SHA256: &str =
+    "8971ee4f331ff0a4c609374f32984b3d4e6dc086c0aa35f1d637fad1829e887f";
+const QWEN_27B_MMPROJ_URL: &str =
+    "https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/mmproj-F16.gguf";
+const QWEN_27B_MMPROJ_SIZE: u64 = 927_607_360;
+const QWEN_27B_MMPROJ_SHA256: &str =
+    "eacf610d1ee4bd5ed0197a0777dd8f4fceb8eefa27009067c7d496cb68fbde45";
 
 /// sha256 for the mmproj at `url`. Keyed by URL rather than stored per
 /// registry entry because several models share one projector file.
@@ -71,6 +86,8 @@ fn mmproj_sha256_for_url(url: &str) -> Option<&'static str> {
     match url {
         QWEN_4B_MMPROJ_URL => Some(QWEN_4B_MMPROJ_SHA256),
         QWEN_9B_MMPROJ_URL => Some(QWEN_9B_MMPROJ_SHA256),
+        QWEN_35B_A3B_MMPROJ_URL => Some(QWEN_35B_A3B_MMPROJ_SHA256),
+        QWEN_27B_MMPROJ_URL => Some(QWEN_27B_MMPROJ_SHA256),
         _ => None,
     }
 }
@@ -83,9 +100,107 @@ fn qwen_9b_mmproj_filename() -> String {
     "Qwen3.5-9B-mmproj-F16.gguf".to_string()
 }
 
+fn qwen_35b_a3b_mmproj_filename() -> String {
+    "Qwen3.6-35B-A3B-mmproj-F16.gguf".to_string()
+}
+
+fn qwen_27b_mmproj_filename() -> String {
+    "Qwen3.6-27B-mmproj-F16.gguf".to_string()
+}
+
+/// The current recommended lineup — one model per VRAM tier, all Unsloth
+/// dynamic quants. The two 24 GB picks offer a choice of sparse (MoE, the
+/// recommended default) vs dense.
 fn model_registry() -> Vec<ModelInfo> {
     vec![
-        // Qwen 3.5 4B — lighter model for low-end hardware
+        // < 8 GB VRAM — lightweight 4B for integrated graphics / low VRAM
+        ModelInfo {
+            id: "Qwen3.5-4B-IQ4_NL".to_string(),
+            filename: "Qwen3.5-4B-IQ4_NL.gguf".to_string(),
+            url:
+                "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-IQ4_NL.gguf"
+                    .to_string(),
+            sha256: "ff5c3e9740a5aa53f04fdf3b0b8cc75da556bf8948cdb19d61c512d3a43465d9".to_string(),
+            size_bytes: 2_579_944_608,
+            description: "Qwen 3.5 4B — for integrated graphics or under 8 GB VRAM (~2.6 GB)"
+                .to_string(),
+            downloaded: false,
+            legacy: false,
+            mmproj_filename: Some(qwen_4b_mmproj_filename()),
+            mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
+        },
+        // 8 GB VRAM — the default recommendation
+        ModelInfo {
+            id: "Qwen3.5-9B-IQ4_NL".to_string(),
+            filename: "Qwen3.5-9B-IQ4_NL.gguf".to_string(),
+            url:
+                "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-IQ4_NL.gguf"
+                    .to_string(),
+            sha256: "12fd6b43e298ae4c8d374e64e8c2406c252d109ead47dffb46e75be3566ed0e5".to_string(),
+            size_bytes: 5_371_028_704,
+            description: "Qwen 3.5 9B — recommended for 8 GB VRAM (~5.4 GB)".to_string(),
+            downloaded: false,
+            legacy: false,
+            mmproj_filename: Some(qwen_9b_mmproj_filename()),
+            mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+        },
+        // 16 GB VRAM — high-quality 9B
+        ModelInfo {
+            id: "Qwen3.5-9B-UD-Q8_K_XL".to_string(),
+            filename: "Qwen3.5-9B-UD-Q8_K_XL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q8_K_XL.gguf"
+                .to_string(),
+            sha256: "2c4e08e0e72c68d8c1835a26f5be4075894df9ea5be9cc20a246517afd6a0cb6".to_string(),
+            size_bytes: 12_974_040_288,
+            description: "Qwen 3.5 9B Q8 — highest-quality 9B, for 16 GB VRAM (~13 GB)".to_string(),
+            downloaded: false,
+            legacy: false,
+            mmproj_filename: Some(qwen_9b_mmproj_filename()),
+            mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+        },
+        // 24 GB VRAM — sparse MoE, the recommended large model
+        ModelInfo {
+            id: "Qwen3.6-35B-A3B-UD-IQ4_NL".to_string(),
+            filename: "Qwen3.6-35B-A3B-UD-IQ4_NL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-IQ4_NL.gguf"
+                .to_string(),
+            sha256: "0d17e255dc257a11f398ed4bc8d62412d8ce9ca24b3fce2947d962e4bfed5758".to_string(),
+            size_bytes: 18_040_888_288,
+            description: "Qwen 3.6 35B-A3B — fast sparse MoE, recommended for 24 GB VRAM (~18 GB)"
+                .to_string(),
+            downloaded: false,
+            legacy: false,
+            mmproj_filename: Some(qwen_35b_a3b_mmproj_filename()),
+            mmproj_url: Some(QWEN_35B_A3B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_35B_A3B_MMPROJ_SIZE),
+        },
+        // 24 GB VRAM — dense alternative for those who want it
+        ModelInfo {
+            id: "Qwen3.6-27B-IQ4_NL".to_string(),
+            filename: "Qwen3.6-27B-IQ4_NL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-IQ4_NL.gguf"
+                .to_string(),
+            sha256: "239658ade790aa63812407ad91f6365d845e689009f70d302a59d65e9eec584e".to_string(),
+            size_bytes: 16_071_772_384,
+            description: "Qwen 3.6 27B — dense model for 24 GB VRAM, advanced (~16 GB)".to_string(),
+            downloaded: false,
+            legacy: false,
+            mmproj_filename: Some(qwen_27b_mmproj_filename()),
+            mmproj_url: Some(QWEN_27B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_27B_MMPROJ_SIZE),
+        },
+    ]
+}
+
+/// Models retired from the recommended lineup. Kept (with valid URLs/hashes)
+/// so users who downloaded one before upgrading keep it working, can switch
+/// back to it, and — if they delete it — can still re-download it. New
+/// installs never download these; they only surface when already on disk.
+fn legacy_registry() -> Vec<ModelInfo> {
+    vec![
         ModelInfo {
             id: "Qwen3.5-4B-Q4_K_M".to_string(),
             filename: "Qwen3.5-4B-Q4_K_M.gguf".to_string(),
@@ -94,9 +209,9 @@ fn model_registry() -> Vec<ModelInfo> {
                     .to_string(),
             sha256: "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4".to_string(),
             size_bytes: 2_740_937_888,
-            description: "Qwen 3.5 4B Q4 — for integrated graphics or low VRAM (~2.7 GB)"
-                .to_string(),
+            description: "Qwen 3.5 4B Q4 — legacy (~2.7 GB)".to_string(),
             downloaded: false,
+            legacy: true,
             mmproj_filename: Some(qwen_4b_mmproj_filename()),
             mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
@@ -108,14 +223,13 @@ fn model_registry() -> Vec<ModelInfo> {
                 .to_string(),
             sha256: "fdedd781c9ce676ab66b018ca247ff78e8a33c98098a822c1e2d5075e7718f66".to_string(),
             size_bytes: 3_525_956_768,
-            description: "Qwen 3.5 4B Q6 — better quality 4B, needs 4+ GB VRAM (~3.5 GB)"
-                .to_string(),
+            description: "Qwen 3.5 4B Q6 — legacy (~3.5 GB)".to_string(),
             downloaded: false,
+            legacy: true,
             mmproj_filename: Some(qwen_4b_mmproj_filename()),
             mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
         },
-        // Qwen 3.5 9B — best quality, native tool calling
         ModelInfo {
             id: "Qwen3.5-9B-Q4_K_M".to_string(),
             filename: "Qwen3.5-9B-Q4_K_M.gguf".to_string(),
@@ -124,8 +238,9 @@ fn model_registry() -> Vec<ModelInfo> {
                     .to_string(),
             sha256: "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8".to_string(),
             size_bytes: 5_680_522_464,
-            description: "Qwen 3.5 9B Q4 — recommended for 8GB VRAM (~5.7 GB)".to_string(),
+            description: "Qwen 3.5 9B Q4 — legacy (~5.7 GB)".to_string(),
             downloaded: false,
+            legacy: true,
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
@@ -138,8 +253,9 @@ fn model_registry() -> Vec<ModelInfo> {
                     .to_string(),
             sha256: "dc2a39aef291f91a9116ad214058da0d86eb648743a124bd8c333787c4b9c91c".to_string(),
             size_bytes: 6_577_841_376,
-            description: "Qwen 3.5 9B Q5 — higher quality, tight on 8GB VRAM (~6.6 GB)".to_string(),
+            description: "Qwen 3.5 9B Q5 — legacy (~6.6 GB)".to_string(),
             downloaded: false,
+            legacy: true,
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
@@ -151,8 +267,9 @@ fn model_registry() -> Vec<ModelInfo> {
                 .to_string(),
             sha256: "91898433cf5ce0a8f45516a4cc3e9343b6e01d052d01f684309098c66a326c59".to_string(),
             size_bytes: 7_458_301_152,
-            description: "Qwen 3.5 9B Q6 — high quality, needs 10+ GB VRAM (~7.5 GB)".to_string(),
+            description: "Qwen 3.5 9B Q6 — legacy (~7.5 GB)".to_string(),
             downloaded: false,
+            legacy: true,
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
@@ -164,13 +281,97 @@ fn model_registry() -> Vec<ModelInfo> {
                 .to_string(),
             sha256: "809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4".to_string(),
             size_bytes: 9_527_502_048,
-            description: "Qwen 3.5 9B Q8 — best quality, needs 16+ GB VRAM (~9.5 GB)".to_string(),
+            description: "Qwen 3.5 9B Q8 — legacy (~9.5 GB)".to_string(),
             downloaded: false,
+            legacy: true,
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
         },
     ]
+}
+
+/// The recommended lineup plus retired models, for lookups (download,
+/// mmproj resolution) that must still resolve a legacy model by id/filename.
+fn full_registry() -> Vec<ModelInfo> {
+    let mut all = model_registry();
+    all.extend(legacy_registry());
+    all
+}
+
+// --- Context-size recommendation ----------------------------------------
+//
+// Qwen 3.5 / 3.6 are *hybrid* attention models: per their config.json only
+// one layer in four (`full_attention_interval: 4`) is full attention with a
+// KV cache that grows with context; the other three are linear-attention
+// layers that keep a small fixed-size recurrent state. So the KV cache
+// scales with context far more slowly than a pure transformer, and the rate
+// differs per model. We pre-compute the per-token cost from each model's
+// architecture rather than parsing GGUF headers at runtime, since the set of
+// offered models is small and fixed.
+//
+// These are architecture-derived *estimates* (f16 KV cache, batch 1). They
+// should be calibrated against the VRAM llama-server actually reports for
+// these models; the safety margins below exist to absorb that uncertainty
+// plus the linear-attention state and compute/graph buffers.
+
+/// Standard context sizes we'll recommend, ascending.
+const CONTEXT_LADDER: &[u32] = &[8192, 16384, 32768, 65536, 131072];
+/// Floor: never recommend below this even on tight VRAM.
+pub const MIN_CONTEXT: u32 = 8192;
+/// VRAM left free for the display/compositor, driver, and fragmentation.
+const VRAM_RESERVE_BYTES: u64 = 1024 * 1024 * 1024;
+/// Non-KV runtime cost: compute/graph buffers plus the linear-attention
+/// recurrent state (a few hundred MB across the linear layers).
+const COMPUTE_OVERHEAD_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Per-token KV-cache growth in bytes (f16) for a model's full-attention
+/// layers, derived from config.json as
+/// `full_attn_layers × 2 (K+V) × n_kv_head × head_dim × 2 bytes`:
+///   4B / 9B : 8 × 2 × 4 × 256 × 2 = 32768
+///   27B     : 16 × 2 × 4 × 256 × 2 = 65536
+///   35B-A3B : 10 × 2 × 2 × 256 × 2 = 20480
+/// Matched by base-model substring so every quant (and legacy variant) of a
+/// model shares the same value.
+fn kv_bytes_per_token(id: &str) -> Option<u64> {
+    // 4B and 9B share the same full-attention shape (8 layers × 4 kv heads).
+    if id.contains("Qwen3.5-4B") || id.contains("Qwen3.5-9B") {
+        Some(32_768)
+    } else if id.contains("Qwen3.6-27B") {
+        Some(65_536)
+    } else if id.contains("Qwen3.6-35B-A3B") {
+        Some(20_480)
+    } else {
+        None
+    }
+}
+
+/// Largest standard context size for `model_id` that should fit in
+/// `vram_bytes`, accounting for the model weights, vision projector, the
+/// per-token KV growth, and fixed runtime overhead. Returns [`MIN_CONTEXT`]
+/// when the model is unknown or VRAM is too tight to model meaningfully.
+pub fn recommended_context_for(model_id: &str, vram_bytes: u64) -> u32 {
+    let registry = full_registry();
+    let Some(model) = registry.iter().find(|m| m.id == model_id) else {
+        return MIN_CONTEXT;
+    };
+    let Some(kv_per_tok) = kv_bytes_per_token(model_id) else {
+        return MIN_CONTEXT;
+    };
+    let fixed = model.size_bytes
+        + model.mmproj_size_bytes.unwrap_or(0)
+        + VRAM_RESERVE_BYTES
+        + COMPUTE_OVERHEAD_BYTES;
+    if vram_bytes <= fixed {
+        return MIN_CONTEXT;
+    }
+    let max_ctx_fit = ((vram_bytes - fixed) / kv_per_tok) as u32;
+    CONTEXT_LADDER
+        .iter()
+        .rev()
+        .find(|&&rung| rung <= max_ctx_fit)
+        .copied()
+        .unwrap_or(MIN_CONTEXT)
 }
 
 pub struct ModelManager {
@@ -224,8 +425,12 @@ impl ModelManager {
             .map_err(|e| format!("Failed to create models directory: {}", e))
     }
 
+    /// The current lineup plus any legacy models the user still has on disk.
+    /// Legacy models that aren't downloaded are also included (so the UI can
+    /// offer to re-download them behind a "show legacy" affordance); the
+    /// `legacy` and `downloaded` flags let the frontend decide what to show.
     pub async fn list_models(&self) -> Vec<ModelInfo> {
-        let mut registry = model_registry();
+        let mut registry = full_registry();
         for model in &mut registry {
             let path = self.models_dir.join(&model.filename);
             model.downloaded = path.exists();
@@ -273,7 +478,7 @@ impl ModelManager {
     /// the model has no mmproj or the mmproj file is not present.
     pub fn find_mmproj_for_model(&self, model_path: &Path) -> Option<PathBuf> {
         let model_filename = model_path.file_name()?.to_string_lossy().to_string();
-        let registry = model_registry();
+        let registry = full_registry();
         let entry = registry.iter().find(|m| m.filename == model_filename)?;
         let mmproj_filename = entry.mmproj_filename.as_ref()?;
         let mmproj_path = self.models_dir.join(mmproj_filename);
@@ -430,7 +635,8 @@ impl ModelManager {
     }
 
     pub async fn download_model(&self, app: &AppHandle, model_id: &str) -> Result<PathBuf, String> {
-        let registry = model_registry();
+        // full_registry so a user can re-download a legacy model they deleted.
+        let registry = full_registry();
         let model = registry
             .iter()
             .find(|m| m.id == model_id)
@@ -457,7 +663,7 @@ impl ModelManager {
         // Verify SHA256 if we have a hash
         if !model.sha256.is_empty() {
             info!("Verifying SHA256...");
-            verify_sha256(&final_path, &model.sha256).await?;
+            verify_sha256(&final_path, &model.sha256, app, "Verifying model").await?;
         }
 
         // Download mmproj (vision projector) if the model has one
@@ -477,7 +683,7 @@ impl ModelManager {
                 .await?;
             if let Some(expected) = mmproj_sha256_for_url(mmproj_url) {
                 info!("Verifying mmproj SHA256...");
-                verify_sha256(&mmproj_path, expected).await?;
+                verify_sha256(&mmproj_path, expected, app, "Verifying vision projector").await?;
             }
         }
 
@@ -523,6 +729,7 @@ impl ModelManager {
             size_bytes: fs::metadata(&dest).await.map(|m| m.len()).unwrap_or(0),
             description: "Imported model".to_string(),
             downloaded: true,
+            legacy: false,
             mmproj_filename: None,
             mmproj_url: None,
             mmproj_size_bytes: None,
@@ -542,15 +749,46 @@ impl ModelManager {
     }
 }
 
-/// Streaming hash — model files run to ~9.5 GB, far too large for the
+/// Streaming hash — model files run to ~38 GB, far too large for the
 /// previous read-whole-file-into-memory approach.
-async fn compute_sha256(path: &Path) -> Result<String, String> {
+///
+/// When `app` is provided, emits throttled `download-progress` events tagged
+/// with `stage_label` so the UI shows movement during the (multi-GB, tens of
+/// seconds) verification pass instead of looking frozen after the download
+/// bar hits 100%.
+async fn compute_sha256(
+    path: &Path,
+    app: Option<&AppHandle>,
+    stage_label: &str,
+) -> Result<String, String> {
     use tokio::io::AsyncReadExt;
+    let total = fs::metadata(path).await.map(|m| m.len()).unwrap_or(0);
     let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|e| format!("Failed to read file for hashing: {}", e))?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1024 * 1024];
+    let mut hashed: u64 = 0;
+    let start = std::time::Instant::now();
+    let mut last_emit = start;
+
+    // Immediate 0% so the bar resets and the stage flips to "Verifying…"
+    // the instant download finishes, rather than after the first MB is read.
+    let emit = |downloaded: u64, speed_bps: u64| {
+        if let Some(app) = app {
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    downloaded,
+                    total,
+                    speed_bps,
+                    stage: stage_label.to_string(),
+                },
+            );
+        }
+    };
+    emit(0, 0);
+
     loop {
         let n = file
             .read(&mut buf)
@@ -560,14 +798,33 @@ async fn compute_sha256(path: &Path) -> Result<String, String> {
             break;
         }
         hasher.update(&buf[..n]);
+        hashed += n as u64;
+
+        let now = std::time::Instant::now();
+        if now.duration_since(last_emit).as_millis() >= 100 {
+            let elapsed = now.duration_since(start).as_secs_f64();
+            let speed = if elapsed > 0.0 {
+                (hashed as f64 / elapsed) as u64
+            } else {
+                0
+            };
+            emit(hashed, speed);
+            last_emit = now;
+        }
     }
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-/// Compare a downloaded file against its expected sha256; delete it on
-/// mismatch so a corrupt artifact can't be picked up as a valid model.
-async fn verify_sha256(path: &Path, expected: &str) -> Result<(), String> {
-    let hash = compute_sha256(path).await?;
+/// Compare a downloaded file against its expected sha256, emitting verify
+/// progress as `stage_label`; delete it on mismatch so a corrupt artifact
+/// can't be picked up as a valid model.
+async fn verify_sha256(
+    path: &Path,
+    expected: &str,
+    app: &AppHandle,
+    stage_label: &str,
+) -> Result<(), String> {
+    let hash = compute_sha256(path, Some(app), stage_label).await?;
     if !hash.eq_ignore_ascii_case(expected) {
         fs::remove_file(path).await.ok();
         return Err("Download verification failed: SHA256 mismatch".to_string());
@@ -595,6 +852,18 @@ async fn validate_gguf(path: &Path) -> Result<(), String> {
 #[tauri::command]
 pub async fn list_models(state: tauri::State<'_, ModelManager>) -> Result<Vec<ModelInfo>, ()> {
     Ok(state.list_models().await)
+}
+
+/// Recommended context size for `model_id` given detected VRAM (MB). Lets
+/// the setup UI re-derive the suggested context when the user picks a model
+/// other than the hardware recommendation. `None` VRAM (integrated/unknown)
+/// yields the conservative floor.
+#[tauri::command]
+pub async fn recommended_context_size(model_id: String, vram_mb: Option<u64>) -> Result<u32, ()> {
+    Ok(match vram_mb {
+        Some(mb) => recommended_context_for(&model_id, mb * 1024 * 1024),
+        None => MIN_CONTEXT,
+    })
 }
 
 #[tauri::command]
@@ -802,7 +1071,13 @@ pub async fn download_whisper_model(
     drop(file);
 
     info!("Verifying whisper model SHA256...");
-    verify_sha256(&partial_path, WHISPER_SHA256).await?;
+    verify_sha256(
+        &partial_path,
+        WHISPER_SHA256,
+        &app,
+        "Verifying speech model",
+    )
+    .await?;
 
     fs::rename(&partial_path, &final_path)
         .await
@@ -845,20 +1120,75 @@ mod tests {
     #[test]
     fn model_registry_has_expected_entries() {
         let models = model_registry();
-        assert_eq!(models.len(), 6);
+        assert_eq!(models.len(), 5);
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert!(ids.contains(&"Qwen3.5-4B-Q4_K_M"));
-        assert!(ids.contains(&"Qwen3.5-4B-Q6_K"));
-        assert!(ids.contains(&"Qwen3.5-9B-Q4_K_M"));
-        assert!(ids.contains(&"Qwen3.5-9B-Q5_K_M"));
-        assert!(ids.contains(&"Qwen3.5-9B-Q6_K"));
-        assert!(ids.contains(&"Qwen3.5-9B-Q8_0"));
+        assert!(ids.contains(&"Qwen3.5-4B-IQ4_NL"));
+        assert!(ids.contains(&"Qwen3.5-9B-IQ4_NL"));
+        assert!(ids.contains(&"Qwen3.5-9B-UD-Q8_K_XL"));
+        assert!(ids.contains(&"Qwen3.6-35B-A3B-UD-IQ4_NL"));
+        assert!(ids.contains(&"Qwen3.6-27B-IQ4_NL"));
+
+        // None of the current lineup is flagged legacy.
+        assert!(models.iter().all(|m| !m.legacy));
+    }
+
+    #[test]
+    fn legacy_registry_is_marked_and_disjoint() {
+        let current = model_registry();
+        let legacy = legacy_registry();
+        assert!(legacy.iter().all(|m| m.legacy));
+        // No id appears in both lists.
+        for l in &legacy {
+            assert!(
+                !current.iter().any(|c| c.id == l.id),
+                "legacy id {} also in current registry",
+                l.id
+            );
+        }
+        // full_registry is the union with no duplicate ids.
+        let all = full_registry();
+        assert_eq!(all.len(), current.len() + legacy.len());
+    }
+
+    #[test]
+    fn every_current_model_has_a_kv_cost() {
+        for model in model_registry() {
+            assert!(
+                kv_bytes_per_token(&model.id).is_some(),
+                "no kv_bytes_per_token for {}",
+                model.id
+            );
+        }
+    }
+
+    #[test]
+    fn recommended_context_grows_with_vram_and_clamps() {
+        let gb = 1024 * 1024 * 1024u64;
+        let id = "Qwen3.5-9B-IQ4_NL";
+
+        // Too little to hold weights + overhead → floor.
+        assert_eq!(recommended_context_for(id, 4 * gb), MIN_CONTEXT);
+
+        // More VRAM never recommends a smaller context.
+        let c8 = recommended_context_for(id, 8 * gb);
+        let c16 = recommended_context_for(id, 16 * gb);
+        let c24 = recommended_context_for(id, 24 * gb);
+        assert!(c8 <= c16 && c16 <= c24, "{c8} {c16} {c24}");
+
+        // Results are real ladder rungs, never above the cap.
+        for c in [c8, c16, c24] {
+            assert!(CONTEXT_LADDER.contains(&c) || c == MIN_CONTEXT);
+            assert!(c <= 131072);
+        }
+
+        // Unknown model → floor, not a panic.
+        assert_eq!(recommended_context_for("nope", 24 * gb), MIN_CONTEXT);
     }
 
     #[test]
     fn model_registry_urls_are_valid() {
-        for model in model_registry() {
+        for model in full_registry() {
             assert!(
                 model.url.starts_with("https://huggingface.co/"),
                 "Invalid URL for {}: {}",
@@ -883,7 +1213,7 @@ mod tests {
                 model.size_bytes
             );
             assert!(
-                model.size_bytes < 10_000_000_000,
+                model.size_bytes < 40_000_000_000,
                 "Model {} size too large: {}",
                 model.id,
                 model.size_bytes
@@ -945,7 +1275,7 @@ mod tests {
         let file = dir.join("test.bin");
         fs::write(&file, b"hello world").await.unwrap();
 
-        let hash = compute_sha256(&file).await.unwrap();
+        let hash = compute_sha256(&file, None, "").await.unwrap();
         assert_eq!(
             hash,
             "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"

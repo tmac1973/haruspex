@@ -32,21 +32,10 @@ struct GpuInfo {
 /// memory. Ascending thresholds; the first entry whose threshold the VRAM
 /// is *below* wins. The final `u64::MAX` row is the catch-all.
 const QUANT_BY_VRAM_MB: &[(u64, &str)] = &[
-    (6144, "Qwen3.5-4B-Q6_K"),
-    (8192, "Qwen3.5-9B-Q4_K_M"),
-    (12288, "Qwen3.5-9B-Q5_K_M"),
-    (16384, "Qwen3.5-9B-Q6_K"),
-    (u64::MAX, "Qwen3.5-9B-Q8_0"),
-];
-
-/// Recommended context size (tokens) by effective VRAM (MB). Same
-/// ascending-threshold lookup as `QUANT_BY_VRAM_MB`.
-const CTX_SIZE_BY_VRAM_MB: &[(u64, u32)] = &[
-    (6144, 8192),       // 8K for integrated / low VRAM
-    (8192, 16384),      // 16K for tight VRAM
-    (12288, 32768),     // 32K for 8-12GB
-    (24576, 65536),     // 64K for 12-24GB
-    (u64::MAX, 131072), // 128K for 24GB+
+    (8192, "Qwen3.5-4B-IQ4_NL"),             // < 8 GB
+    (16384, "Qwen3.5-9B-IQ4_NL"),            // 8–16 GB (default tier)
+    (24576, "Qwen3.5-9B-UD-Q8_K_XL"),        // 16–24 GB
+    (u64::MAX, "Qwen3.6-35B-A3B-UD-IQ4_NL"), // 24 GB+ → sparse MoE (dense 27B is opt-in only)
 ];
 
 /// Pick the value for the first tier whose threshold `vram_mb` falls below.
@@ -78,27 +67,27 @@ pub fn detect_hardware() -> HardwareInfo {
     // - Known discrete GPU with VRAM → scale by VRAM
     // - Known discrete GPU with unknown VRAM → scale by system RAM as proxy
     let recommended_quant = if gpu.integrated {
-        if gpu.vram_mb.unwrap_or(available_ram_mb) < 4096 {
-            "Qwen3.5-4B-Q4_K_M"
-        } else {
-            "Qwen3.5-4B-Q6_K"
-        }
+        // Integrated graphics share system memory and run inference slowly —
+        // always the lightweight 4B regardless of reported VRAM.
+        "Qwen3.5-4B-IQ4_NL"
     } else if gpu.name.is_none() && gpu.vram_mb.is_none() {
         // Detection failed entirely — default to the smaller model to avoid
         // recommending a large model on a system that can't actually run it.
-        "Qwen3.5-4B-Q6_K"
+        "Qwen3.5-4B-IQ4_NL"
     } else {
         tier_lookup(QUANT_BY_VRAM_MB, gpu.vram_mb.unwrap_or(available_ram_mb))
     };
 
-    // Context size recommendation based on effective memory.
-    // Integrated GPUs and unknown hardware get the smallest context.
-    let ctx_vram = if gpu.integrated || (gpu.name.is_none() && gpu.vram_mb.is_none()) {
-        4096 // force smallest tier
-    } else {
-        gpu.vram_mb.unwrap_or(available_ram_mb)
+    // Context size: computed per-model from the recommended quant's weights,
+    // vision projector, and per-token KV growth against detected VRAM (see
+    // `models::recommended_context_for`). Integrated GPUs and hardware where
+    // VRAM is unknown can't be modelled reliably, so they get the floor.
+    let recommended_context_size = match gpu.vram_mb {
+        Some(vram_mb) if !gpu.integrated => {
+            crate::models::recommended_context_for(recommended_quant, vram_mb * 1024 * 1024)
+        }
+        _ => crate::models::MIN_CONTEXT,
     };
-    let recommended_context_size = tier_lookup(CTX_SIZE_BY_VRAM_MB, ctx_vram);
 
     HardwareInfo {
         gpu_available: gpu.available,
@@ -388,12 +377,10 @@ mod tests {
     fn recommended_quant_based_on_ram() {
         let info = detect_hardware();
         let valid_quants = [
-            "Qwen3.5-4B-Q4_K_M",
-            "Qwen3.5-4B-Q6_K",
-            "Qwen3.5-9B-Q4_K_M",
-            "Qwen3.5-9B-Q5_K_M",
-            "Qwen3.5-9B-Q6_K",
-            "Qwen3.5-9B-Q8_0",
+            "Qwen3.5-4B-IQ4_NL",
+            "Qwen3.5-9B-IQ4_NL",
+            "Qwen3.5-9B-UD-Q8_K_XL",
+            "Qwen3.6-35B-A3B-UD-IQ4_NL",
         ];
         assert!(
             valid_quants.contains(&info.recommended_quant.as_str()),
