@@ -94,21 +94,28 @@ fn integration_dir(app: &AppHandle) -> Option<PathBuf> {
     None
 }
 
-/// Resolve a spawn request to a `(program, leading-args)` pair. A `selection`
-/// from the picker (Windows) wins; otherwise fall back to the legacy
+/// Resolve a spawn request to `(program, leading-args, wsl_distro)`. A
+/// `selection` from the picker (Windows) wins; otherwise fall back to the legacy
 /// `shell_override` string path (Linux/macOS), which takes no base args.
+/// `wsl_distro` is `Some` only for a WSL selection, so context capture can probe
+/// inside the distro.
 fn resolve_spawn_target(
     selection: Option<kind::ShellSelection>,
     shell_override: Option<String>,
-) -> (String, Vec<String>) {
+) -> (String, Vec<String>, Option<String>) {
     match selection {
         Some(sel) => {
+            let distro = match &sel {
+                kind::ShellSelection::Wsl { distro } => Some(distro.clone()),
+                _ => None,
+            };
             let spec = sel.to_spec();
-            (spec.program, spec.args)
+            (spec.program, spec.args, distro)
         }
         None => (
             pty::resolve_shell_with_override(shell_override.as_deref()),
             Vec::new(),
+            None,
         ),
     }
 }
@@ -123,7 +130,7 @@ pub fn shell_spawn(
     selection: Option<kind::ShellSelection>,
 ) -> Result<ShellSpawnResult, String> {
     let id = state.alloc_id();
-    let (program, base_args) = resolve_spawn_target(selection, shell_override);
+    let (program, base_args, wsl_distro) = resolve_spawn_target(selection, shell_override);
     let cwd = pty::resolve_cwd();
     let integration_dir = integration_dir(&app);
     let session = Session::spawn(
@@ -133,6 +140,7 @@ pub fn shell_spawn(
         &cwd,
         integration_dir.as_deref(),
         &base_args,
+        wsl_distro.as_deref(),
         cols,
         rows,
     )?;
@@ -222,7 +230,7 @@ pub fn shell_restart(
         sessions.remove(&session_id);
     }
     let new_id = state.alloc_id();
-    let (program, base_args) = resolve_spawn_target(selection, shell_override);
+    let (program, base_args, wsl_distro) = resolve_spawn_target(selection, shell_override);
     let cwd = pty::resolve_cwd();
     let integration_dir = integration_dir(&app);
     let session = Session::spawn(
@@ -232,6 +240,7 @@ pub fn shell_restart(
         &cwd,
         integration_dir.as_deref(),
         &base_args,
+        wsl_distro.as_deref(),
         cols,
         rows,
     )?;
