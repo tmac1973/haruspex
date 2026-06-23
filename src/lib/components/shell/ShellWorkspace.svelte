@@ -49,17 +49,12 @@
 	{#if !platformSupported}
 		<div class="platform-placeholder">
 			<div class="platform-card">
-				<h2>Shell tab — not yet on Windows</h2>
+				<h2>Shell tab not available on this platform</h2>
 				<p>
-					Haruspex's interactive terminal + AI sidebar ships on Linux and macOS. The PTY layer is
-					cross-platform, but the OSC 133 capture scripts and the assistant's auto-attach context
-					rely on bash/zsh — not <code>cmd.exe</code> or PowerShell.
+					Haruspex's interactive terminal + AI sidebar ships on Linux, macOS, and Windows
+					(PowerShell and WSL2). This platform isn't supported, so the terminal can't start here.
 				</p>
-				<p>
-					Windows support is the next stop: it needs new capture scripting for PowerShell or WSL
-					bridging. The chat and jobs tabs work normally on every platform — switch to those for
-					now.
-				</p>
+				<p>The chat and jobs tabs work normally — switch to those.</p>
 			</div>
 		</div>
 	{:else}
@@ -133,13 +128,5 @@
 		font-size: 0.9rem;
 		line-height: 1.5;
 		color: var(--text-secondary);
-	}
-
-	.platform-card code {
-		font-family: var(--font-mono, ui-monospace, monospace);
-		font-size: 0.85em;
-		padding: 0 0.25em;
-		background: var(--bg-secondary, rgba(255, 255, 255, 0.05));
-		border-radius: 3px;
 	}
 </style>

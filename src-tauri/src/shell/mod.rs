@@ -420,12 +420,11 @@ pub fn shell_list_shells() -> Vec<catalog::ShellCatalogEntry> {
     catalog::enumerate_shells()
 }
 
-/// Returns whether the Shell tab is supported on the current host.
-/// Linux and macOS are supported (PTY via portable-pty + bash/zsh OSC 133
-/// capture). On Windows it's gated behind the HARUSPEX_WIN_SHELL dev flag
-/// during the Phase 17 port. The frontend uses this to swap the xterm mount
-/// for a placeholder. Delegates to the per-OS `platform` module so the gate
-/// lives in one place.
+/// Returns whether the Shell tab is supported on the current host. Linux,
+/// macOS, and Windows (PowerShell over ConPTY + WSL2) are supported; other
+/// platforms aren't. The frontend uses this to swap the xterm mount for a
+/// placeholder. Delegates to the per-OS `platform` module so the gate lives in
+/// one place.
 #[tauri::command]
 pub fn shell_platform_supported() -> bool {
     platform::platform_supported()

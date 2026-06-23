@@ -280,13 +280,12 @@ mod imp {
 }
 
 // ---------------------------------------------------------------------------
-// Windows (Phase 17) — PowerShell over ConPTY.
+// Windows (Phase 17) — PowerShell over ConPTY + WSL2 distros.
 //
-// 17a is a bare-terminal baseline: default to PowerShell, no integration
-// injection yet (PowerShell gets a passthrough SpawnPlan in pty.rs, OSC 133
-// via haruspex.ps1 lands in 17c). The tab is gated behind the
-// HARUSPEX_WIN_SHELL dev flag until the port is complete (17e). The shell
-// catalog / WSL bridge / ShellKind routing arrive in later sub-phases.
+// Default to PowerShell 7 (else Windows PowerShell 5.1). OSC 133 capture is
+// injected per shell kind in pty.rs (haruspex.ps1 for PowerShell; the
+// haruspex.bash bridge for WSL); the shell catalog (catalog.rs), ShellKind
+// routing (kind.rs), and WSL probes (wsl.rs) live alongside.
 // ---------------------------------------------------------------------------
 #[cfg(target_os = "windows")]
 mod imp {
@@ -316,11 +315,10 @@ mod imp {
         Vec::new()
     }
 
-    /// Phase 17 is in progress: the Windows Shell tab is gated behind a dev
-    /// flag until the port is complete (17e). Set `HARUSPEX_WIN_SHELL=1`
-    /// before launching to test the work in progress.
+    /// The Windows Shell tab (Phase 17) is complete: PowerShell over ConPTY and
+    /// WSL2 distros, both with OSC 133 capture and context.
     pub fn platform_supported() -> bool {
-        std::env::var_os("HARUSPEX_WIN_SHELL").is_some()
+        true
     }
 
     /// Minimal host identity for 17a: `os = "windows"` plus the build string

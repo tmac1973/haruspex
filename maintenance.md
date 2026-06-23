@@ -471,30 +471,65 @@ starts. Idempotent. `COALESCE`s preserve existing timestamps.
 
 ---
 
-## 11b. Shell tab (Phase 15 / 16)
+## 11b. Shell tab (Phase 15 / 16 / 17)
 
 The Shell tab gives the user a real interactive terminal with a one-click
 path to "ask the LLM about this." The PTY is owned in-process; the LLM
 chat thread lives in a runes store; no SQLite involvement. Supported on
-Linux and macOS (Phase 16); Windows is gated off until Phase 17.
+Linux, macOS (Phase 16), and Windows (Phase 17 — PowerShell 7 / Windows
+PowerShell 5.1 over ConPTY, and WSL2 distros).
+
+### Windows specifics (Phase 17)
+
+- **Shell catalog + ShellKind.** A toolbar picker (`catalog.rs::enumerate_shells`,
+  `<ShellPicker/>`) lists PowerShell variants + WSL2 distros (uninstalled greyed
+  out). The picked `ShellSelection` (`kind.rs`: `Powershell{exe}` | `Wsl{distro}`)
+  maps to a spawn command; Linux/macOS still resolve a plain shell path via the
+  legacy `shell_override` string (selection = None).
+- **PowerShell injection** (`winps.rs`): `pwsh -NoLogo -ExecutionPolicy Bypass
+  -NoExit -Command ". '<haruspex.ps1>'"` — profile loads first, then our
+  dot-source wraps `prompt` (OSC 133 A/B/D + OSC 7) and a PSReadLine Enter
+  handler emits C+command. `-ExecutionPolicy Bypass` is process-scoped.
+- **WSL bridge** (`wsl.rs`): `wsl -d <distro> -- bash --rcfile <wslpath>` where
+  the wrapper (on the Windows fs, reached via the `/mnt/<drive>` automount)
+  sources `~/.bashrc` then `haruspex.bash` through `tr -d '\r'` (CRLF-tolerant).
+  Context is probed inside the distro (`uname`/os-release/`$HOME`/hostname).
+- **fs tools + WSL** (documented limitation): the fs `*_absolute` tools run on
+  the Windows host. A WSL cwd under `/mnt/<drive>` is translated to the Windows
+  path (`require_absolute` → `normalize_wsl_mount`); a *native* distro path
+  (`/home/…`) can't be reached and returns a clear error. OSC 7 also normalizes
+  PowerShell's `/C:/…` → `C:\…`.
+- **One-shot run_command** (`code_tools.rs`): routes through the session shell —
+  `pwsh -Command` / `wsl -d <distro> --cd <cwd> -- bash -c` — not `cmd /C`. The
+  default auto/PTY path drives the live shell instead.
+- All Windows shell-outs use `CREATE_NO_WINDOW`. Scripts stay LF via
+  `.gitattributes`. Teardown: `Session::drop` → `kill()` reaps the ConPTY child
+  (`pwsh`/`wsl` relay). The Windows CI job (opt-in via the `windows-ci` label or
+  manual dispatch) compiles + tests the `#[cfg(windows)]` branches.
 
 ### Module layout
 
 ```
 src-tauri/src/shell/
   platform.rs     per-OS seam: default_shell / login_args / login_env /
-                  capture_os / platform_supported, cfg-gated linux|macos|other
-  pty.rs          shell-binary + cwd detection, rcfile/ZDOTDIR injection,
-                  layers platform login args/env onto the spawn plan
+                  capture_os / platform_supported, cfg-gated linux|macos|windows|other
+  pty.rs          shell-binary + cwd detection, rcfile/ZDOTDIR/PowerShell/WSL
+                  injection, layers platform login args/env onto the spawn plan
+  catalog.rs      enumerate_shells() → picker entries (PowerShell + WSL2 distros)
+  kind.rs         ShellSelection (Powershell|Wsl) → spawn spec
+  winps.rs        PowerShell -Command dot-source invocation builder
+  wsl.rs          /mnt path translation + in-distro context probe
   session.rs      portable-pty wrapper, reader thread, kill on Drop
   integration.rs  OSC 133 marker parser, output ring, capture_last_command
-  context.rs      uname + platform::capture_os() + $SHELL --version + history parse
-  mod.rs          Tauri commands + ShellManager state; shell_platform_supported
-                  delegates to platform::platform_supported()
+  context.rs      uname + platform::capture_os() + shell --version + history parse;
+                  delegates to wsl.rs for WSL sessions
+  mod.rs          Tauri commands + ShellManager state; shell_list_shells;
+                  shell_platform_supported delegates to platform::platform_supported()
 
 src-tauri/resources/shell-integration/
-  haruspex.bash   OSC 133 A/B/C/D + OSC 7 emitters
+  haruspex.bash   OSC 133 A/B/C/D + OSC 7 emitters (also used inside WSL)
   haruspex.zsh    same for zsh (autoload add-zsh-hook)
+  haruspex.ps1    same markers for PowerShell (prompt wrap + PSReadLine)
 
 src/lib/shell/
   system-prompt.ts  buildShellSystemPrompt — captured context + role
