@@ -147,6 +147,15 @@ export class ShellSession {
 	private abortController: AbortController | null = null;
 	private activeSession: ActiveShellSession | null = null;
 	private composerFocusFn: (() => void) | null = null;
+	// Watermark for the per-message command auto-attach: the session's
+	// `completed_total` (monotonic count of finished commands) as of the last
+	// time we attached captured commands to a turn. On the next turn we only
+	// attach commands completed *since* this, so the same terminal output isn't
+	// re-sent verbatim every message (it's already in the chat history) —
+	// without this, a vague follow-up like "what about now?" arrives buried
+	// under a re-pasted dump of the previous commands, drowning out the actual
+	// conversation. 0 = nothing attached yet this session.
+	private lastAttachedCommandTotal = 0;
 
 	constructor(id: string, name: string, attachPtyId: number | null = null) {
 		this.id = id;
@@ -298,6 +307,7 @@ export class ShellSession {
 	private fetchLiveContext = async (): Promise<{
 		currentCwd: string | null;
 		recentHistory: string[];
+		completedTotal: number;
 	} | null> => {
 		if (!this.activeSession) return null;
 		const ctxRes = await invoke<ShellContextResponse>('shell_get_context', {
@@ -307,7 +317,11 @@ export class ShellSession {
 			sessionId: this.activeSession.sessionId,
 			limit: 10
 		});
-		return { currentCwd: ctxRes.current_cwd, recentHistory: history };
+		return {
+			currentCwd: ctxRes.current_cwd,
+			recentHistory: history,
+			completedTotal: ctxRes.completed_total
+		};
 	};
 
 	/**
@@ -328,13 +342,21 @@ export class ShellSession {
 
 		const settings = getSettings();
 		const limit = Math.max(0, settings.shellHistoryTurnsForPrompt);
+		// Only attach commands that finished since our last attach — anything
+		// older is already in the chat history, so re-sending it just buries the
+		// new question. Cap at the user's configured limit.
+		const newCommands = Math.max(0, live.completedTotal - this.lastAttachedCommandTotal);
+		const attachCount = Math.min(limit, newCommands);
 		const recent =
-			limit > 0
+			attachCount > 0
 				? await invoke<CapturedRegion[]>('shell_get_recent_commands', {
 						sessionId: this.activeSession.sessionId,
-						limit
+						limit: attachCount
 					})
 				: [];
+		// Advance the watermark past every finished command (even any we skipped
+		// over because of the limit) so they aren't re-attached next turn.
+		this.lastAttachedCommandTotal = live.completedTotal;
 		const maxBytesPerCapture = Math.max(0, settings.shellMaxBytesPerCapture);
 		const body = `${formatRecentCommands(recent, maxBytesPerCapture)}${trimmed}`;
 
@@ -385,6 +407,10 @@ export class ShellSession {
 					: 'Recent-command attaching is disabled (Settings → Shell sets it to 0).';
 			return;
 		}
+		// This is an explicit dump, so it sends regardless of the dedup
+		// watermark — but advance the watermark past it so the composer's
+		// auto-attach doesn't immediately re-send the same commands next turn.
+		this.lastAttachedCommandTotal = live.completedTotal;
 		const maxBytesPerCapture = Math.max(0, settings.shellMaxBytesPerCapture);
 		// Reuse the same preamble format as submitChatMessage (marker + blocks +
 		// trailing "---" separator) so the sidebar renders it as the collapsible
