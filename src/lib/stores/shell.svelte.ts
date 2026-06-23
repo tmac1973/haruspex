@@ -274,6 +274,9 @@ export class ShellSession {
 		this.messageStats = {};
 		this.lastError = null;
 		this.contextNotice = null;
+		// A fresh chat is a fresh session: re-arm the per-command approval so an
+		// earlier "allow for this session" doesn't carry into the new chat.
+		resetSessionApproval();
 	};
 
 	cancelTurn = (): void => {
