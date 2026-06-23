@@ -24,17 +24,16 @@ interface ToolFilterOpts {
 	deepResearch: boolean;
 	visionSupported: boolean;
 	shellMode: boolean;
-	shellAllowWrite: boolean;
 	codeMode: boolean;
 	hasEmail: boolean;
 	sandboxEnabled: boolean;
 }
 
-// Tools exposed to the Shell-tab agent. Reads are always on; writes
-// require shellAllowWrite. Email and sandbox don't make sense for
+// Tools exposed to the Shell-tab assistant (non-Code mode). Reads only —
+// the plain assistant is read-only; file edits live in Code mode (which
+// uses the CODE_TOOLS set below). Email and sandbox don't make sense for
 // admin troubleshooting and stay hidden.
 const SHELL_FS_READS = new Set(['fs_read_text', 'fs_list_dir', 'fs_read_pdf']);
-const SHELL_FS_WRITES = new Set(['fs_write_text', 'fs_edit_text']);
 
 // The lean Code-tab toolset: Pi's core (read/write/edit/bash + ls/grep/find)
 // plus web research. Keeping this list small is the single biggest context
@@ -75,9 +74,9 @@ function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): bo
 		return true;
 	}
 	if (reg.category === 'fs') {
-		if (SHELL_FS_READS.has(name)) return true;
-		if (opts.shellAllowWrite && SHELL_FS_WRITES.has(name)) return true;
-		return false;
+		// Reads only — the plain Shell assistant is read-only. Writes are a
+		// Code-mode capability (see shouldIncludeCodeTool / CODE_TOOLS).
+		return SHELL_FS_READS.has(name);
 	}
 	// Email, sandbox, etc. are intentionally hidden in Shell mode.
 	return false;
@@ -123,7 +122,6 @@ export function getToolSchemas(opts: {
 	deepResearch?: boolean;
 	visionSupported?: boolean;
 	shellMode?: boolean;
-	shellAllowWrite?: boolean;
 	codeMode?: boolean;
 }): ToolDefinition[] {
 	const filter: ToolFilterOpts = {
@@ -131,7 +129,6 @@ export function getToolSchemas(opts: {
 		deepResearch: opts.deepResearch ?? false,
 		visionSupported: opts.visionSupported ?? true,
 		shellMode: opts.shellMode ?? false,
-		shellAllowWrite: opts.shellAllowWrite ?? false,
 		codeMode: opts.codeMode ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled

@@ -13,7 +13,6 @@ const chatCtx = {
 	pendingImages: [],
 	deepResearch: false,
 	shellMode: false,
-	shellAllowWrite: false,
 	codeMode: false,
 	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
@@ -24,19 +23,19 @@ const shellCtx = {
 	pendingImages: [],
 	deepResearch: false,
 	shellMode: true,
-	shellAllowWrite: false,
 	codeMode: false,
 	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
 };
 
+// Shell tab in Code mode — the only path that grants file writes now that the
+// standalone "allow writes" toggle is gone.
 const shellCtxWritable = {
 	workingDir: null,
 	pendingImages: [],
 	deepResearch: false,
 	shellMode: true,
-	shellAllowWrite: true,
-	codeMode: false,
+	codeMode: true,
 	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
 };
@@ -187,24 +186,23 @@ describe('fs_read tools in Shell mode', () => {
 		expect(names).not.toContain('fs_read_text');
 	});
 
-	it('write tools are hidden in shell mode by default', async () => {
+	it('write tools are hidden in the plain (read-only) shell assistant', async () => {
 		const { getToolSchemas } = await import('$lib/agent/tools');
 		const schemas = getToolSchemas({
 			hasWorkingDir: false,
-			shellMode: true,
-			shellAllowWrite: false
+			shellMode: true
 		});
 		const names = schemas.map((s) => s.function.name);
 		expect(names).not.toContain('fs_write_text');
 		expect(names).not.toContain('fs_edit_text');
 	});
 
-	it('write tools are exposed when shellMode + shellAllowWrite both on', async () => {
+	it('write tools are exposed when a shell session is in Code mode', async () => {
 		const { getToolSchemas } = await import('$lib/agent/tools');
 		const schemas = getToolSchemas({
 			hasWorkingDir: false,
 			shellMode: true,
-			shellAllowWrite: true
+			codeMode: true
 		});
 		const names = schemas.map((s) => s.function.name);
 		expect(names).toContain('fs_write_text');
@@ -216,7 +214,7 @@ describe('fs_read tools in Shell mode', () => {
 		const schemas = getToolSchemas({
 			hasWorkingDir: false,
 			shellMode: true,
-			shellAllowWrite: true
+			codeMode: true
 		});
 		const names = schemas.map((s) => s.function.name);
 		expect(names).not.toContain('fs_write_pdf');
@@ -226,7 +224,7 @@ describe('fs_read tools in Shell mode', () => {
 		expect(names).not.toContain('run_python');
 	});
 
-	it('fs_write_text dispatches to the absolute command when shell-mode + allowWrite', async () => {
+	it('fs_write_text dispatches to the absolute command in shell-mode Code mode', async () => {
 		mocks.invoke.mockResolvedValue(undefined);
 		const { executeTool } = await import('$lib/agent/tools');
 		await executeTool(
@@ -241,7 +239,7 @@ describe('fs_read tools in Shell mode', () => {
 		});
 	});
 
-	it('fs_edit_text dispatches to the absolute command when shell-mode + allowWrite', async () => {
+	it('fs_edit_text dispatches to the absolute command in shell-mode Code mode', async () => {
 		mocks.invoke.mockResolvedValue(undefined);
 		const { executeTool } = await import('$lib/agent/tools');
 		await executeTool(

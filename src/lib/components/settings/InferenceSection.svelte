@@ -5,7 +5,10 @@
 		stopServer,
 		getServerState,
 		enterRemoteMode,
-		exitRemoteMode
+		exitRemoteMode,
+		restartServerWhenIdle,
+		getPendingRestart,
+		cancelPendingRestart
 	} from '$lib/stores/server.svelte';
 	import { PORTS } from '$lib/ports';
 	import {
@@ -27,6 +30,7 @@
 	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
 
 	const remoteMode = $derived(inferenceBackend.mode === 'remote');
+	const pendingRestart = $derived(getPendingRestart());
 
 	async function setInferenceMode(mode: InferenceMode) {
 		if (mode === inferenceBackend.mode) return;
@@ -36,6 +40,10 @@
 		// the new backend's ceiling instead of the previous one's stale value.
 		setIndicatorContextSize(getActiveContextSize());
 		if (mode === 'remote') {
+			// Drop any queued local restart — we're leaving local mode, so a
+			// deferred model/context restart would otherwise fire later and
+			// resurrect the local sidecar we're about to shut down.
+			cancelPendingRestart();
 			// Stop the local llama-server sidecar — no point burning
 			// VRAM on a model we're not going to query. Then flip the
 			// server-store status to the synthetic 'remote' state so
@@ -76,12 +84,28 @@
 		}
 	}
 
-	function setContextSize(size: number) {
+	async function setContextSize(size: number) {
+		if (size === contextSize) return;
 		contextSize = size;
 		updateSettings({ contextSize: size });
+		// A running server only picks up a new context window on restart. Do it
+		// automatically — but defer it if a turn is in flight so we don't abort
+		// the user's response mid-stream (restartServerWhenIdle queues it and
+		// the banner below shows it's waiting). If the server isn't running,
+		// there's nothing to restart; the new size applies on the next start.
+		if (serverState.status !== 'ready' && serverState.status !== 'starting') return;
+		const modelPath = await invoke<string | null>('get_active_model_path', {
+			preferredFilename: getActiveLocalModelFilename() || null
+		});
+		if (modelPath) {
+			setActiveLocalModel(modelPath);
+			await restartServerWhenIdle(modelPath, size, 'context');
+		}
 	}
 
+	// Explicit Restart — acts immediately and supersedes any queued restart.
 	async function restartServer() {
+		cancelPendingRestart();
 		const modelPath = await invoke<string | null>('get_active_model_path', {
 			preferredFilename: getActiveLocalModelFilename() || null
 		});
@@ -91,6 +115,13 @@
 			await startServer(modelPath, getSettings().contextSize);
 			invoke('tts_initialize').catch(() => {});
 		}
+	}
+
+	// Explicit Stop — acts immediately and cancels any queued restart so the
+	// server doesn't spring back to life after the user deliberately stopped it.
+	function stopServerNow() {
+		cancelPendingRestart();
+		void stopServer();
 	}
 </script>
 
@@ -138,13 +169,25 @@
 </section>
 
 {#if !remoteMode}
+	{#if pendingRestart}
+		<div class="restart-banner" role="status">
+			<span class="restart-spinner" aria-hidden="true"></span>
+			<span class="restart-text">
+				{pendingRestart.reason === 'model' ? 'Model change' : 'Context size change'} queued — the server
+				will restart automatically once the in-progress response finishes.
+			</span>
+			<button class="btn btn-small" onclick={cancelPendingRestart}>Cancel</button>
+		</div>
+	{/if}
+
 	<ModelsSection />
 
 	<section class="settings-section">
 		<h2>Context Size</h2>
 		<p class="hint">
-			Larger context allows longer conversations but uses more VRAM. Requires server restart to take
-			effect.
+			Larger context allows longer conversations but uses more VRAM. Changing this restarts the
+			server automatically to load the new context window — deferred until any in-progress response
+			finishes.
 		</p>
 		<div class="context-options">
 			{#each [{ value: 8192, label: '8K', desc: 'Low VRAM' }, { value: 16384, label: '16K', desc: 'Standard' }, { value: 32768, label: '32K', desc: 'Recommended' }, { value: 65536, label: '64K', desc: '16+ GB VRAM' }, { value: 131072, label: '128K', desc: 'Maximum' }] as opt (opt.value)}
@@ -158,11 +201,6 @@
 				</button>
 			{/each}
 		</div>
-		{#if contextSize !== getSettings().contextSize}
-			<p class="hint" style="color: var(--accent)">
-				Restart the server for the new context size to take effect.
-			</p>
-		{/if}
 	</section>
 
 	<section class="settings-section">
@@ -184,7 +222,7 @@
 				<button class="btn" disabled>Starting...</button>
 			{/if}
 			{#if serverState.status === 'ready' || serverState.status === 'starting'}
-				<button class="btn btn-danger" onclick={() => stopServer()}>Stop Server</button>
+				<button class="btn btn-danger" onclick={stopServerNow}>Stop Server</button>
 			{/if}
 		</div>
 	</section>
@@ -247,6 +285,39 @@
 		border: 1px solid var(--border);
 		border-radius: 8px;
 		background: var(--bg-secondary);
+	}
+
+	.restart-banner {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: 16px;
+		padding: 10px 14px;
+		border: 1px solid var(--accent);
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--accent) 8%, transparent);
+		font-size: 0.82rem;
+		color: var(--text-primary);
+	}
+
+	.restart-text {
+		flex: 1;
+	}
+
+	.restart-spinner {
+		flex: none;
+		width: 14px;
+		height: 14px;
+		border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: restart-spin 0.8s linear infinite;
+	}
+
+	@keyframes restart-spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.context-options {
@@ -320,6 +391,12 @@
 
 	.btn-danger:hover {
 		background: var(--error-bg);
+	}
+
+	.btn-small {
+		flex: none;
+		padding: 4px 10px;
+		font-size: 0.78rem;
 	}
 
 	.server-actions {

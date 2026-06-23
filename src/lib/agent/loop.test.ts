@@ -378,7 +378,6 @@ describe('runAgentLoop: tool-call round trip', () => {
 			deepResearch: true,
 			visionSupported: false,
 			shellMode: false,
-			shellAllowWrite: false,
 			codeMode: false
 		});
 	});

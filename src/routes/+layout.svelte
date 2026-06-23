@@ -12,7 +12,12 @@
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
 	import { startScheduler } from '$lib/agent/jobs/scheduler.svelte';
-	import { enterRemoteMode, initServerStore, startServer } from '$lib/stores/server.svelte';
+	import {
+		enterRemoteMode,
+		initServerStore,
+		maybeFlushPendingRestart,
+		startServer
+	} from '$lib/stores/server.svelte';
 	import {
 		applyTheme,
 		getActiveLocalModelFilename,
@@ -57,6 +62,17 @@
 	// markdown (sanitization strips inline onclick). Installed in every
 	// window — the detached shell window renders markdown too.
 	onMount(() => installMarkdownActions());
+
+	// A model switch or context-size change made while a turn is running is
+	// deferred rather than aborting the turn (see restartServerWhenIdle). This
+	// flushes the queued restart the moment the process-wide inference queue
+	// goes idle. It lives in the root layout — which never unmounts — so the
+	// pending restart survives the user navigating away from Settings.
+	// maybeFlushPendingRestart reads the queue count + pending state
+	// synchronously, so this effect tracks both as dependencies.
+	$effect(() => {
+		void maybeFlushPendingRestart();
+	});
 
 	onMount(async () => {
 		applyTheme();

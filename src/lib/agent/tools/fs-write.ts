@@ -330,16 +330,15 @@ function textWriteExecutor(
 
 /**
  * Shell-mode dispatch for fs_write_text. When the agent is running in
- * the Shell tab and the user has enabled writes in settings, route to
- * fs_write_text_absolute (no workdir, accepts an absolute path).
- * Falls back to the chat-mode executor otherwise.
+ * the Shell tab in Code mode, route to fs_write_text_absolute (no workdir,
+ * accepts an absolute path). Falls back to the chat-mode executor otherwise
+ * (the plain Shell assistant is read-only and never reaches here).
  */
 function shellAwareWriteText() {
 	const chat = textWriteExecutor(IPC.fs_write_text, 'fs_write_text');
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
-		// Shell-CWD (absolute) dispatch when writes are enabled: either the
-		// Shell tab opted in, or Code mode (which always allows edits).
-		if (!(ctx.shellMode && (ctx.shellAllowWrite || ctx.codeMode))) return chat(args, ctx);
+		// Shell-CWD (absolute) dispatch only in Code mode (which allows edits).
+		if (!(ctx.shellMode && ctx.codeMode)) return chat(args, ctx);
 		const err = validateTextContent(args, 'fs_write_text');
 		if (err) return toolResult(toolError(err));
 		// Resolve a bare/relative name against the shell's cwd so the model's
@@ -362,7 +361,7 @@ function shellAwareWriteText() {
 
 function shellAwareEditText() {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
-		if (ctx.shellMode && (ctx.shellAllowWrite || ctx.codeMode)) {
+		if (ctx.shellMode && ctx.codeMode) {
 			const path = resolveShellPath(args.path as string, ctx.shellCwd);
 			try {
 				const r = await invoke<EditResult>('fs_edit_text_absolute', {

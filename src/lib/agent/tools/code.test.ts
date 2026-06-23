@@ -20,7 +20,6 @@ const codeCtx = {
 	pendingImages: [],
 	deepResearch: false,
 	shellMode: false,
-	shellAllowWrite: false,
 	codeMode: true,
 	codeAutoApprove: false,
 	filesWrittenThisTurn: new Set<string>()
@@ -214,7 +213,6 @@ describe('Shell + Code combined mode', () => {
 		pendingImages: [],
 		deepResearch: false,
 		shellMode: true,
-		shellAllowWrite: false,
 		codeMode: true,
 		codeAutoApprove: false,
 		filesWrittenThisTurn: new Set<string>()
@@ -230,7 +228,7 @@ describe('Shell + Code combined mode', () => {
 		);
 	});
 
-	it('fs_edit_text dispatches absolute (shell CWD) in Code mode even without shellAllowWrite', async () => {
+	it('fs_edit_text dispatches absolute (shell CWD) in Code mode', async () => {
 		mocks.invoke.mockResolvedValueOnce({
 			first_changed_line: 1,
 			line_before: 'a',
@@ -255,7 +253,6 @@ describe('run_command PTY driving', () => {
 		pendingImages: [],
 		deepResearch: false,
 		shellMode: true,
-		shellAllowWrite: false,
 		codeMode: true,
 		codeAutoApprove: true, // skip the approval prompt in these tests
 		filesWrittenThisTurn: new Set<string>()

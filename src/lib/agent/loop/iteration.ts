@@ -79,7 +79,6 @@ export interface LoopContext {
 	contextSize: number;
 	deepResearch: boolean;
 	shellMode: boolean;
-	shellAllowWrite: boolean;
 	codeMode: boolean;
 	codeAutoApprove: boolean;
 	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
@@ -104,7 +103,6 @@ export interface LoopContext {
 export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const workingDir = options.workingDir ?? null;
 	const shellMode = options.shellMode ?? false;
-	const shellAllowWrite = options.shellAllowWrite ?? false;
 	const codeMode = options.codeMode ?? false;
 	const codeAutoApprove = options.codeAutoApprove ?? false;
 	return {
@@ -114,7 +112,6 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			deepResearch: options.deepResearch ?? false,
 			visionSupported: options.visionSupported ?? true,
 			shellMode,
-			shellAllowWrite,
 			codeMode
 		}),
 		signal: options.signal,
@@ -122,7 +119,6 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		contextSize: options.contextSize ?? 0,
 		deepResearch: options.deepResearch ?? false,
 		shellMode,
-		shellAllowWrite,
 		codeMode,
 		codeAutoApprove,
 		thinkingEnabled: options.thinkingEnabled ?? null,
@@ -844,7 +840,6 @@ async function executeToolCalls(
 				pendingImages: ctx.pendingImages,
 				deepResearch: ctx.deepResearch,
 				shellMode: ctx.shellMode,
-				shellAllowWrite: ctx.shellAllowWrite,
 				codeMode: ctx.codeMode,
 				codeAutoApprove: ctx.codeAutoApprove,
 				shellCwd: ctx.shellCwd,

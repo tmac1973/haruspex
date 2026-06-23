@@ -26,7 +26,6 @@ export interface ShellTurnOptions {
 	contextSize: number;
 	maxIterations?: number;
 	visionSupported?: boolean;
-	allowWrite?: boolean;
 	/** Shell's current working directory — lets shell-mode fs_* tools
 	 *  resolve relative path args (the model's bare `foo.py`) against it. */
 	cwd?: string | null;
@@ -90,7 +89,6 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			maxIterations: options.maxIterations ?? (options.codeMode ? 40 : 12),
 			deepResearch: false,
 			shellMode: true,
-			shellAllowWrite: options.allowWrite ?? false,
 			shellCwd: options.cwd ?? null,
 			shellSessionId: options.sessionId ?? null,
 			codeMode: options.codeMode ?? false,

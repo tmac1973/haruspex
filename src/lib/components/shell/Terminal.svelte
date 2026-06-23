@@ -113,7 +113,19 @@
 		});
 		const fit = new FitAddon();
 		t.loadAddon(fit);
-		t.loadAddon(new WebLinksAddon());
+		// Open links through the Rust `open_url` command (system browser) rather
+		// than the addon's default `window.open`, which is a no-op in the Tauri
+		// WebKitGTK webview — same reason the layout routes <a> clicks through it.
+		// Require Ctrl/Cmd (like konsole and VS Code's terminal) so a plain click
+		// — e.g. clicking near a URL just to focus the pane — can't fire off a
+		// browser by accident.
+		t.loadAddon(
+			new WebLinksAddon((event, uri) => {
+				if (!event.ctrlKey && !event.metaKey) return;
+				event.preventDefault();
+				invoke('open_url', { url: uri }).catch((e) => console.error('open_url failed:', uri, e));
+			})
+		);
 		serializeAddon = new SerializeAddon();
 		t.loadAddon(serializeAddon);
 		return { t, fit };

@@ -4,8 +4,6 @@
 	let shellBinary = $state(getSettings().shellBinary);
 	let shellHistoryTurnsForPrompt = $state(getSettings().shellHistoryTurnsForPrompt);
 	let shellMaxBytesPerCapture = $state(getSettings().shellMaxBytesPerCapture);
-	let shellAllowWrite = $state(getSettings().shellAllowWrite);
-	let shellRunAutoSubmit = $state(getSettings().shellRunAutoSubmit);
 
 	function persistBinary() {
 		updateSettings({ shellBinary: shellBinary.trim() });
@@ -23,19 +21,15 @@
 		updateSettings({ shellMaxBytesPerCapture: clamped });
 	}
 
-	function persistAllowWrite() {
-		updateSettings({ shellAllowWrite });
-	}
-
-	function persistRunAutoSubmit() {
-		updateSettings({ shellRunAutoSubmit });
-	}
-
+	let shellCodeModeDefault = $state(getSettings().shellCodeModeDefault);
 	let codeAutoApprove = $state(getSettings().codeAutoApprove);
 	let codeCommandExec = $state(getSettings().codeCommandExec);
 	let codeRunCommandTimeoutSecs = $state(getSettings().codeRunCommandTimeoutSecs);
 	let codeMaxIterations = $state(getSettings().codeMaxIterations);
 
+	function persistCodeModeDefault() {
+		updateSettings({ shellCodeModeDefault });
+	}
 	function persistCodeAutoApprove() {
 		updateSettings({ codeAutoApprove });
 	}
@@ -72,36 +66,6 @@
 		onkeydown={(e) => e.key === 'Enter' && persistBinary()}
 	/>
 	<p class="hint">Takes effect the next time you open the Shell tab or restart the app.</p>
-</section>
-
-<section class="card danger" class:enabled={shellAllowWrite}>
-	<h3>Allow the assistant to write files</h3>
-	<label class="row">
-		<input type="checkbox" bind:checked={shellAllowWrite} onchange={persistAllowWrite} />
-		<span>Enable <code>fs_write_text</code> and <code>fs_edit_text</code> in Shell mode</span>
-	</label>
-	<p class="help">
-		When on, the Shell-tab assistant can write or edit any file the app's user account can write to
-		— including system files under <code>/etc</code>, <code>/var</code>, and similar. Off by
-		default. The model still won't execute shell commands directly; it just gains the ability to
-		modify file contents on its own when it judges that the right fix. Reads are always allowed
-		regardless of this setting.
-	</p>
-</section>
-
-<section class="card">
-	<h3>Send command output back to the assistant after Run</h3>
-	<label class="row">
-		<input type="checkbox" bind:checked={shellRunAutoSubmit} onchange={persistRunAutoSubmit} />
-		<span>Auto-submit the result when you click <strong>Run</strong> on a suggested command</span>
-	</label>
-	<p class="help">
-		Off by default. When on, clicking <strong>Run</strong> on an assistant-suggested command
-		executes it in the terminal, waits for it to finish, then automatically sends the command's
-		output back to the assistant for analysis. While off, <strong>Run</strong> just executes the command
-		and stops there — you stay in control of whether the assistant ever sees the output. Either way you
-		can still ask about it manually from the composer.
-	</p>
 </section>
 
 <section class="card">
@@ -150,6 +114,20 @@
 </section>
 
 <h2 class="group-heading">Code mode</h2>
+
+<section class="card">
+	<h3>Enable Code mode by default in new shells</h3>
+	<label class="row">
+		<input type="checkbox" bind:checked={shellCodeModeDefault} onchange={persistCodeModeDefault} />
+		<span>New Shell sessions start in Code mode</span>
+	</label>
+	<p class="help">
+		Off by default. When off, a new shell opens as the read-only troubleshooting assistant (reads +
+		command suggestions only) and you flip Code mode on per-session from the sidebar header. When
+		on, every new shell starts already in Code mode, where the assistant can edit files and run
+		commands. Only affects shells opened after this change.
+	</p>
+</section>
 
 <section class="card">
 	<h3>Command execution</h3>

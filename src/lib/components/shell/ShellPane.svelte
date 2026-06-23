@@ -13,7 +13,6 @@
 	import { stripCommandComments, toBracketedPaste } from '$lib/shell/commandBlock';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getActiveShellId, type ShellSession } from '$lib/stores/shell.svelte';
-	import { getSettings } from '$lib/stores/settings';
 
 	const {
 		session,
@@ -227,38 +226,14 @@
 			.catch((e) => console.error('shell_write (paste) failed', e));
 	}
 
-	interface ShellContextSnapshot {
-		completed_total: number;
-	}
-
-	// Monotonic lifetime count of completed commands. We poll this (rather than
-	// the marker count) to detect the Run command finishing — marker_count caps
-	// at the ring size (256) and plateaus once a shell has run enough commands,
-	// which broke the auto-submit on long-lived / detached sessions.
-	async function getCompletedTotal(): Promise<number> {
-		if (!handle) return 0;
-		try {
-			const res = await invoke<ShellContextSnapshot>('shell_get_context', {
-				sessionId: handle.sessionId
-			});
-			return res.completed_total;
-		} catch {
-			return 0;
-		}
-	}
-
 	/**
-	 * Run flow: paste the command, press Enter, wait for the next OSC 133 D
-	 * marker, then auto-submit a follow-up so the freshly-run command + output
-	 * get attached for the model to analyze.
+	 * Run flow: paste the suggested command and press Enter so it executes in
+	 * the live terminal.
 	 *
 	 * Risky patterns (sudo, rm -rf, dd of=, mkfs, curl|sh, writes under /etc, …)
 	 * route through a confirm modal first so single-click execution can't
 	 * trigger something destructive. Once confirmed (or for non-risky
-	 * commands), executeRunCommand does the actual paste + wait + submit.
-	 *
-	 * Times out after 60 s — long-running commands (htop, watch, vim) never
-	 * finish; we drop the auto-submit silently and the user can ask manually.
+	 * commands), executeRunCommand does the actual paste + Enter.
 	 */
 	function onRunRequest(event: Event) {
 		if (!isActive) return;
@@ -290,7 +265,9 @@
 
 	async function executeRunCommand(cleaned: string) {
 		if (!handle) return;
-		const before = await getCompletedTotal();
+		// Run just executes the suggested command in the terminal — we never
+		// auto-send its output back to the assistant. The user stays in control
+		// of what the model sees and can ask about the result from the composer.
 		try {
 			// Bracketed paste + a trailing Enter: the shell inserts the
 			// command(s) literally (no quote/highlight mangling) then runs.
@@ -301,26 +278,7 @@
 			handle.focus();
 		} catch (e) {
 			console.error('shell_write (run) failed', e);
-			return;
 		}
-		// When auto-submit is disabled, Run just executes the command in the
-		// terminal — we don't poll for completion or send the output back to
-		// the assistant. The user stays in control of what the model sees.
-		if (!getSettings().shellRunAutoSubmit) return;
-		// Wait for one more completed command (a new D / OutputEnd marker) —
-		// i.e. the command we just launched returning to a prompt. Long-running
-		// / interactive commands never finish; we time out and drop the
-		// auto-submit silently.
-		const startedAt = Date.now();
-		const timeoutMs = 60_000;
-		const pollMs = 400;
-		while (Date.now() - startedAt < timeoutMs) {
-			await new Promise((r) => setTimeout(r, pollMs));
-			const now = await getCompletedTotal();
-			if (now > before) break;
-		}
-		if (Date.now() - startedAt >= timeoutMs) return;
-		await session.submitChatMessage(`Please analyze the output of \`${cleaned}\` that I just ran.`);
 	}
 
 	onMount(() => {

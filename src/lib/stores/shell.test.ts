@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Isolate the store from the Tauri boundary and the agent turn machinery —
 // here we're testing the registry + per-session state independence, not the
@@ -16,8 +16,8 @@ vi.mock('$lib/shell/system-prompt', () => ({
 
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
-		shellAllowWrite: false,
-		shellHistoryTurnsForPrompt: 0,
+		shellCodeModeDefault: false,
+		shellHistoryTurnsForPrompt: 3,
 		shellMaxBytesPerCapture: 1000
 	}),
 	getActiveContextSize: () => 8192
@@ -156,6 +156,77 @@ describe('ShellSession state independence', () => {
 			recentHistory: []
 		});
 		expect(runShellTurn).not.toHaveBeenCalled();
+	});
+});
+
+describe('command auto-attach de-duplication', () => {
+	function bindCtx(session: ShellSession, sessionId: number) {
+		session.bindSession({
+			sessionId,
+			context: {} as never,
+			getSelection: () => '',
+			restart: async () => {},
+			serialize: () => ''
+		});
+	}
+
+	// Drives invoke by command name so we can vary completed_total per turn and
+	// observe whether shell_get_recent_commands gets called (i.e. an attach).
+	function installInvoke(state: { completedTotal: number; recentLimits: number[] }) {
+		vi.mocked(invoke).mockImplementation((async (cmd: string, args?: { limit: number }) => {
+			switch (cmd) {
+				case 'shell_get_context':
+					return {
+						context: {},
+						current_cwd: '/home/tim',
+						marker_count: 9,
+						completed_commands: 2,
+						completed_total: state.completedTotal
+					};
+				case 'shell_get_recent_history':
+					return [];
+				case 'shell_get_recent_commands':
+					state.recentLimits.push(args!.limit);
+					return Array.from({ length: args!.limit }, () => ({
+						commandLine: 'cat hangman.py',
+						output: 'print("x")',
+						exitCode: 0,
+						cwd: '/home/tim',
+						truncated: false
+					}));
+				default:
+					return undefined;
+			}
+		}) as never);
+	}
+
+	afterEach(() => {
+		vi.mocked(invoke).mockReset();
+		vi.mocked(invoke).mockResolvedValue(undefined);
+	});
+
+	it('attaches captured commands once, then not again until new ones finish', async () => {
+		const state = { completedTotal: 2, recentLimits: [] as number[] };
+		installInvoke(state);
+		const s = createShellSession();
+		bindCtx(s, 11);
+
+		// Turn 1: 2 commands finished → attach (capped at the limit of 3 → 2).
+		await s.submitChatMessage('what tools do you have available?');
+		expect(state.recentLimits).toEqual([2]);
+		expect(s.messages[0].content).toContain('Recent shell activity');
+		expect(s.messages[0].content).toContain('what tools do you have available?');
+
+		// Turn 2: nothing new finished → no re-attach, just the bare question.
+		await s.submitChatMessage('what about now?');
+		expect(state.recentLimits).toEqual([2]); // shell_get_recent_commands NOT called again
+		expect(s.messages[2].content).toBe('what about now?');
+
+		// Turn 3: one more command finished → attach only that new one.
+		state.completedTotal = 3;
+		await s.submitChatMessage('and now?');
+		expect(state.recentLimits).toEqual([2, 1]); // min(limit, 3 - 2) = 1
+		expect(s.messages[4].content).toContain('Recent shell activity');
 	});
 });
 
