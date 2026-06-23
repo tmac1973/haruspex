@@ -75,7 +75,11 @@ async function runHostCommand(
 			command,
 			cwd,
 			timeoutSecs,
-			commandId
+			commandId,
+			// Route the one-shot through the session's shell (Windows): PowerShell
+			// or, for WSL, bash inside the distro — not `cmd /C`. Null on
+			// Linux/macOS → the host default shell.
+			shell: getSettings().shellSelection
 		});
 	} finally {
 		signal?.removeEventListener('abort', onAbort);
