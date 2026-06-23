@@ -384,12 +384,15 @@ describe('Code-mode tool filtering', () => {
 		expect(names).toEqual(CODE_TOOLS);
 	});
 
-	it('codeMode wins over shellMode and exposes the code toolset', async () => {
+	it('codeMode wins over shellMode and exposes the code toolset plus interactive PTY tools', async () => {
 		const { getToolSchemas } = await import('$lib/agent/tools');
 		const names = getToolSchemas({ hasWorkingDir: false, shellMode: true, codeMode: true }).map(
 			(s) => s.function.name
 		);
-		expect(names.sort()).toEqual(CODE_TOOLS);
+		// Code toolset, plus the interactive terminal tools that only appear when
+		// Code mode is driving a live shell session.
+		const expected = [...CODE_TOOLS, 'shell_read', 'shell_input', 'shell_interrupt'].sort();
+		expect(names.sort()).toEqual(expected);
 	});
 
 	it('run_command (exec) never leaks into Chat or Shell schemas', async () => {
