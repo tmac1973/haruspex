@@ -15,6 +15,18 @@ __HSP_INTEGRATION_LOADED=1
 __hsp_in_command=""
 __hsp_last_status=0
 
+# "At an interactive prompt, waiting for the user's next command." Armed as the
+# LAST entry in PROMPT_COMMAND (see __hsp_arm) — i.e. only after every other
+# precmd hook has run — and disarmed the instant the user's command starts (and
+# again at the top of our own precmd). The DEBUG trap ignores everything while
+# this is empty, which is what stops us from emitting a spurious command-output
+# (C) marker for the precmd hooks of *other* shell integrations that also live
+# in PROMPT_COMMAND. The one that bit us in practice: systemd's
+# __systemd_osc_context_precmdline (OSC 3008) on Fedora, whose DEBUG firing was
+# captured as a never-ending "command", making run_command think the terminal
+# was perpetually busy.
+__hsp_at_prompt=""
+
 __hsp_prompt_start()  { printf '\033]133;A\007'; }
 __hsp_prompt_end()    { printf '\033]133;B\007'; }
 __hsp_command_done()  { printf '\033]133;D;%s\007' "$__hsp_last_status"; }
@@ -45,6 +57,10 @@ __hsp_output_start() {
 # pre-cd directory.
 __hsp_precmd() {
     __hsp_last_status=$?
+    # Disarm for the duration of PROMPT_COMMAND: we run first, so every other
+    # precmd hook after us runs with the gate closed and can't trip the DEBUG
+    # trap into emitting a stray C. __hsp_arm (last entry) re-arms at the end.
+    __hsp_at_prompt=""
     __hsp_emit_cwd
     if [[ -n "$__hsp_in_command" ]]; then
         __hsp_command_done
@@ -52,45 +68,31 @@ __hsp_precmd() {
     fi
 }
 
+# Re-arm the gate. Installed as the final PROMPT_COMMAND entry so it runs after
+# all other precmd hooks; the next DEBUG firing is then the user's real command.
+__hsp_arm() { __hsp_at_prompt=1; }
+
 __hsp_preexec() {
+    # DEBUG fires before every simple command — including the precmd hooks bash
+    # runs from PROMPT_COMMAND (ours, plus other integrations'). Only the first
+    # DEBUG after the prompt has redrawn and re-armed the gate is a real user
+    # command; ignore everything else, otherwise a stray C marker lands and the
+    # host pairs the wrong C with the next D (or sees a phantom running command).
+    [[ -n "$__hsp_at_prompt" ]] || return
     # Snapshot BASH_COMMAND at the very top — any later expansion or
     # subshell could change it. This is the literal text of the
     # command bash is about to run.
     local cmd=${BASH_COMMAND:-}
-    # DEBUG fires before every simple command, including those inside
-    # PROMPT_COMMAND. We need to suppress all of those — otherwise a
-    # spurious C lands between the real user command's C and the
-    # upcoming D, and the D ends up paired with the wrong C.
-    #
-    # Two-layer guard:
-    #
-    # 1) BASH_COMMAND itself starts with `__hsp_`. This catches the
-    #    DEBUG firing for the *call* to one of our own functions
-    #    (e.g. PROMPT_COMMAND='__hsp_precmd' fires DEBUG with
-    #    BASH_COMMAND="__hsp_precmd" *before* the function is entered,
-    #    so FUNCNAME doesn't have it on the stack yet).
-    #
-    # 2) Our function is already on the FUNCNAME stack. This catches
-    #    simple commands *inside* our own functions — printf calls in
-    #    emit_cwd / command_done, etc.
+    # Belt-and-suspenders: never treat one of our own hook functions (or its
+    # internal commands) as the user's command. This also covers the brief
+    # window inside our own precmd before it disarms the gate.
     case "$cmd" in
         __hsp_*) return ;;
     esac
-    local f
-    for f in "${FUNCNAME[@]:1}"; do
-        case "$f" in
-            __hsp_precmd|__hsp_command_done|__hsp_emit_cwd|__hsp_prompt_start|__hsp_prompt_end|__hsp_output_start)
-                return
-                ;;
-        esac
-    done
-    # Multi-statement input on a single Enter (`cmd1; cmd2` or a
-    # multi-line paste) fires DEBUG for each statement. We want a C
-    # marker for each so the host can capture them as separate
-    # B → C → D cycles for as long as PROMPT_COMMAND fires between
-    # them. (For a single multi-statement input, PROMPT_COMMAND only
-    # fires once at the very end — that case is inherently captured
-    # as one cycle with the first statement's text as the "command".)
+    # Disarm before emitting so the simple commands inside __hsp_output_start
+    # don't re-enter, and so a multi-statement line (`cmd1; cmd2`) is captured
+    # as a single B → C → D cycle rather than one stray C per statement.
+    __hsp_at_prompt=""
     __hsp_in_command=1
     __hsp_output_start "$cmd"
 }
@@ -103,12 +105,17 @@ if [[ -z "${__HSP_PS1_WRAPPED:-}" ]]; then
     __HSP_PS1_WRAPPED=1
 fi
 
-# Hook precmd into PROMPT_COMMAND. Run ours first so $? is the user's
-# command exit, not whatever later PROMPT_COMMAND entries return.
-if [[ -z "${PROMPT_COMMAND:-}" ]]; then
-    PROMPT_COMMAND='__hsp_precmd'
+# Hook into PROMPT_COMMAND. __hsp_precmd runs FIRST so $? is the user's command
+# exit (not whatever a later hook returns) and so it disarms the gate before
+# other hooks run; __hsp_arm runs LAST so the gate is re-armed only after every
+# other precmd hook has executed. Handle both forms of PROMPT_COMMAND: a plain
+# string, and the array bash 5.1+ uses (systemd's osc-context does
+# `PROMPT_COMMAND+=(__systemd_osc_context_precmdline)`, which makes it an
+# array — a naive scalar concat would drop or reorder those entries).
+if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == 'declare -a'* ]]; then
+    PROMPT_COMMAND=(__hsp_precmd "${PROMPT_COMMAND[@]}" __hsp_arm)
 else
-    PROMPT_COMMAND='__hsp_precmd;'"$PROMPT_COMMAND"
+    PROMPT_COMMAND="__hsp_precmd;${PROMPT_COMMAND:+$PROMPT_COMMAND;}__hsp_arm"
 fi
 
 trap '__hsp_preexec' DEBUG
