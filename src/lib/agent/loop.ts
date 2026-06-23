@@ -28,6 +28,24 @@ import {
 
 export { isCodeContext } from './loop/iteration';
 
+/**
+ * Why a turn ended.
+ *  - 'complete'        the model finished its answer on its own (normal).
+ *  - 'max_iterations'  the loop used up its whole iteration budget and was
+ *                      forced to wrap up — what users perceive as the agent
+ *                      "giving up" but is really the turn-count cap.
+ *  - 'forced_stop'     the loop broke early because output degraded (a bare
+ *                      URL, a naked tool call, or the same command repeated).
+ * Only the latter two are surfaced as a "stopped" indicator in the chat log.
+ */
+export type AgentStopReason = 'complete' | 'max_iterations' | 'forced_stop';
+
+/** Metadata passed to `onComplete` so callers can tell natural completion
+ *  apart from a system-forced stop and label the turn accordingly. */
+export interface CompletionMeta {
+	stopReason: AgentStopReason;
+}
+
 export interface SearchStep {
 	id: string;
 	toolName: string;
@@ -98,7 +116,9 @@ export interface AgentLoopOptions {
 		lintIssues?: LintIssue[]
 	) => void;
 	onStreamChunk: (chunk: StreamChunk) => void;
-	onComplete: () => void;
+	/** Called once the turn settles. `meta.stopReason` distinguishes a natural
+	 *  finish from a system-forced stop (turn-limit / degraded output). */
+	onComplete: (meta?: CompletionMeta) => void;
 	onError: (error: Error) => void;
 	onUsageUpdate?: (usage: Usage) => void;
 	/**
@@ -204,13 +224,20 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		messages: ctx.messages
 	});
 
+	// 'break' means the loop bailed early on degraded output; running out of
+	// the for-loop means we exhausted the iteration budget. Both fall through
+	// to the forced final synthesis but are reported as distinct stop reasons.
+	let forcedBreak = false;
 	for (let iteration = 1; iteration <= ctx.maxIterations; iteration++) {
 		if (ctx.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 		const outcome = await runIteration(ctx, state, nudges, iteration);
 		if (outcome === 'complete') return;
-		if (outcome === 'break') break;
+		if (outcome === 'break') {
+			forcedBreak = true;
+			break;
+		}
 		// outcome === 'continue': proceed to the next iteration.
 	}
 
-	await runMaxIterationsFinalSynthesis(ctx, state);
+	await runMaxIterationsFinalSynthesis(ctx, state, forcedBreak ? 'forced_stop' : 'max_iterations');
 }

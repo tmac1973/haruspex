@@ -11,7 +11,7 @@
  * commit, diagnostics) and is intentionally NOT routed through this.
  */
 
-import { runAgentLoop, type AgentLoopOptions } from '$lib/agent/loop';
+import { runAgentLoop, type AgentLoopOptions, type AgentStopReason } from '$lib/agent/loop';
 import { appendStreamDelta } from '$lib/agent/think-stream';
 
 /** Loop options minus the streaming/lifecycle callbacks `runTurnCore` owns. */
@@ -27,9 +27,10 @@ export interface TurnHooks {
 export async function runTurnCore(
 	loop: TurnLoopOptions,
 	hooks: TurnHooks
-): Promise<{ finalText: string }> {
+): Promise<{ finalText: string; stopReason: AgentStopReason }> {
 	let streamingContent = '';
 	let finalText = '';
+	let stopReason: AgentStopReason = 'complete';
 	let runError: Error | null = null;
 
 	await runAgentLoop({
@@ -38,8 +39,9 @@ export async function runTurnCore(
 			streamingContent = appendStreamDelta(streamingContent, chunk.delta);
 			hooks.onAssistantDelta?.(streamingContent);
 		},
-		onComplete: () => {
+		onComplete: (meta) => {
 			finalText = hooks.finalize(streamingContent);
+			stopReason = meta?.stopReason ?? 'complete';
 		},
 		onError: (err) => {
 			runError = err;
@@ -47,5 +49,5 @@ export async function runTurnCore(
 	});
 
 	if (runError) throw runError;
-	return { finalText };
+	return { finalText, stopReason };
 }

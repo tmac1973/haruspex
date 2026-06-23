@@ -649,6 +649,8 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		});
 		expect(streamedText(cb)).toBe('Summary of findings.');
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		// The turn was force-stopped by the iteration cap, not the model.
+		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
 	});
 
 	it('re-streams a real answer when the post-tools response is thinking-only', async () => {
@@ -703,5 +705,18 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
 		expect(streamedText(cb)).toBe('Salvaged answer.');
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		// Broke out early on degraded output — reported distinctly from a cap hit.
+		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'forced_stop' });
+	});
+
+	it('reports no forced stop reason when the model finishes on its own', async () => {
+		nonStreamQueue.push(textResponse('All done.', 'stop'));
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		// Natural completion → onComplete called with no meta (no indicator shown).
+		expect(cb.onComplete.mock.calls[0][0]).toBeUndefined();
 	});
 });
