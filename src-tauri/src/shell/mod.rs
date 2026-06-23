@@ -1,7 +1,8 @@
 mod catalog;
 mod context;
 mod integration;
-mod kind;
+// `kind` is also used by code_tools (the one-shot run_command shell routing).
+pub(crate) mod kind;
 mod platform;
 mod pty;
 mod session;

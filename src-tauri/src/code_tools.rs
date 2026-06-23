@@ -8,6 +8,7 @@
 //! returns locations/exit-codes, never whole file bodies, to keep model
 //! context small.
 
+use crate::shell::kind::ShellSelection;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -50,18 +51,44 @@ pub struct RunCommandResult {
     pub duration_ms: u32,
 }
 
+/// Host default shell: `sh -c` on unix, `cmd /C` on windows.
 #[cfg(unix)]
-fn build_shell_command(command: &str) -> tokio::process::Command {
+fn default_shell_command(command: &str) -> tokio::process::Command {
     let mut c = tokio::process::Command::new("sh");
     c.arg("-c").arg(command);
     c
 }
 
 #[cfg(windows)]
-fn build_shell_command(command: &str) -> tokio::process::Command {
+fn default_shell_command(command: &str) -> tokio::process::Command {
     let mut c = tokio::process::Command::new("cmd");
     c.arg("/C").arg(command);
     c
+}
+
+/// Build the one-shot command. A `shell` from the Shell-tab session (Windows)
+/// routes to that shell — PowerShell, or bash inside a WSL distro — instead of
+/// the host default (`cmd /C`), which can't run PowerShell/Linux syntax. WSL
+/// sets its working directory via `--cd` because the cwd is a Linux path the
+/// Windows host can't `current_dir` into.
+fn build_shell_command(
+    command: &str,
+    cwd: &str,
+    shell: Option<&ShellSelection>,
+) -> tokio::process::Command {
+    match shell {
+        Some(ShellSelection::Powershell { exe }) => {
+            let mut c = tokio::process::Command::new(exe);
+            c.args(["-NoLogo", "-NoProfile", "-Command", command]);
+            c
+        }
+        Some(ShellSelection::Wsl { distro }) => {
+            let mut c = tokio::process::Command::new("wsl.exe");
+            c.args(["-d", distro, "--cd", cwd, "--", "bash", "-c", command]);
+            c
+        }
+        None => default_shell_command(command),
+    }
 }
 
 /// Kill a process and its descendants. Unix: the child is a process-group
@@ -92,8 +119,12 @@ pub async fn run_command_capture(
     cwd: String,
     timeout_secs: Option<u64>,
     command_id: String,
+    shell: Option<ShellSelection>,
 ) -> Result<RunCommandResult, String> {
-    if !Path::new(&cwd).is_dir() {
+    // A WSL session runs inside the distro: its cwd is a Linux path the Windows
+    // host can't stat, and the dir is set via `wsl --cd` rather than current_dir.
+    let is_wsl = matches!(shell, Some(ShellSelection::Wsl { .. }));
+    if !is_wsl && !Path::new(&cwd).is_dir() {
         return Err(format!("Working directory does not exist: {cwd}"));
     }
     let timeout = Duration::from_secs(
@@ -103,12 +134,14 @@ pub async fn run_command_capture(
     );
     let start = Instant::now();
 
-    let mut cmd = build_shell_command(&command);
-    cmd.current_dir(&cwd)
-        .stdin(Stdio::null())
+    let mut cmd = build_shell_command(&command, &cwd, shell.as_ref());
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    if !is_wsl {
+        cmd.current_dir(&cwd);
+    }
     // Own process group so a timeout/cancel can reap the whole subtree.
     #[cfg(unix)]
     cmd.process_group(0);
@@ -417,6 +450,7 @@ mod tests {
             cwd.to_string_lossy().into_owned(),
             Some(10),
             "t-echo".to_string(),
+            None,
         )
         .await
         .unwrap();
@@ -432,6 +466,7 @@ mod tests {
             std::env::temp_dir().to_string_lossy().into_owned(),
             Some(10),
             "t-exit".to_string(),
+            None,
         )
         .await
         .unwrap();
@@ -447,6 +482,7 @@ mod tests {
             std::env::temp_dir().to_string_lossy().into_owned(),
             Some(1),
             "t-timeout".to_string(),
+            None,
         )
         .await
         .unwrap();
@@ -462,6 +498,7 @@ mod tests {
             "/no/such/dir/at/all".to_string(),
             Some(5),
             "t-badcwd".to_string(),
+            None,
         )
         .await
         .unwrap_err();
