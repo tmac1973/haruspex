@@ -23,14 +23,55 @@ use tokio::fs;
 const MAX_DIR_ENTRIES: usize = 500;
 
 fn require_absolute(path: &str) -> Result<PathBuf, String> {
-    let p = PathBuf::from(path);
+    // WSL sessions hand us Linux paths. One under the Windows automount
+    // (/mnt/<drive>/…) is just the Windows filesystem mounted in the distro, so
+    // translate it to the real Windows path — the file tools run on the Windows
+    // host. A native-distro path (/home/…) has no Windows equivalent.
+    let translated = normalize_wsl_mount(path);
+    let p = PathBuf::from(&translated);
     if !p.is_absolute() {
+        #[cfg(windows)]
+        if translated.starts_with('/') {
+            return Err(format!(
+                "Path is inside the WSL distro, which the file tools can't reach: {path}. They \
+                 operate on the Windows filesystem — use a path under /mnt/<drive>/… (e.g. \
+                 /mnt/c/Users/…), or have the user work on in-distro files directly."
+            ));
+        }
         return Err(format!(
-            "Path must be absolute when called from the Shell agent: {}",
-            path
+            "Path must be absolute when called from the Shell agent: {translated}"
         ));
     }
     Ok(p)
+}
+
+/// Translate a WSL Windows-automount path ("/mnt/c/Users/tim") to the real
+/// Windows path ("C:\\Users\\tim"). Windows-only: a native Linux `/mnt` mount
+/// must never be rewritten, so this is a no-op off Windows.
+#[cfg(windows)]
+fn normalize_wsl_mount(path: &str) -> String {
+    let b = path.as_bytes();
+    let is_mount = b.len() >= 6
+        && path.starts_with("/mnt/")
+        && b[5].is_ascii_alphabetic()
+        && (b.len() == 6 || b[6] == b'/');
+    if is_mount {
+        let drive = path[5..6].to_ascii_uppercase();
+        let rest = path[6..].replace('/', "\\");
+        let rest = if rest.is_empty() {
+            "\\".to_string()
+        } else {
+            rest
+        };
+        format!("{drive}:{rest}")
+    } else {
+        path.to_string()
+    }
+}
+
+#[cfg(not(windows))]
+fn normalize_wsl_mount(path: &str) -> String {
+    path.to_string()
 }
 
 #[tauri::command]
@@ -235,6 +276,16 @@ pub async fn fs_edit_text_absolute(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn normalizes_wsl_mount_paths() {
+        assert_eq!(normalize_wsl_mount("/mnt/c/Users/tim"), "C:\\Users\\tim");
+        assert_eq!(normalize_wsl_mount("/mnt/d/a/b"), "D:\\a\\b");
+        // Native-distro and Windows paths pass through unchanged.
+        assert_eq!(normalize_wsl_mount("/home/tim/proj"), "/home/tim/proj");
+        assert_eq!(normalize_wsl_mount("C:\\already\\win"), "C:\\already\\win");
+    }
 
     #[tokio::test]
     async fn rejects_relative_path() {
