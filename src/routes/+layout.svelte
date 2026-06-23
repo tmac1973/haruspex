@@ -255,9 +255,34 @@
 			if (text) pickTranscriptionTarget(text);
 		}
 	}
+
+	// Guard against the webview navigating to a dropped file. With the native
+	// OS file-drop handler disabled (so the chat composers get DOM drop events),
+	// any file drop that ISN'T preventDefault'd makes the webview load the
+	// file:// URL — which blanks the SPA and looks like the app hung. The
+	// composer dropzones handle drops that land on them; this window-level guard
+	// neutralizes the navigation default for every other file drop. Gated to
+	// file drags so in-app text/element dragging is unaffected. Mirrors the
+	// existing link-click / context-menu navigation guards above.
+	function isFileDrag(event: DragEvent): boolean {
+		return Array.from(event.dataTransfer?.types ?? []).includes('Files');
+	}
+
+	function onWindowDragOver(event: DragEvent) {
+		if (isFileDrag(event)) event.preventDefault();
+	}
+
+	function onWindowDrop(event: DragEvent) {
+		if (isFileDrag(event)) event.preventDefault();
+	}
 </script>
 
-<svelte:window onkeydown={onGlobalKeydown} onkeyup={onGlobalKeyup} />
+<svelte:window
+	onkeydown={onGlobalKeydown}
+	onkeyup={onGlobalKeyup}
+	ondragover={onWindowDragOver}
+	ondrop={onWindowDrop}
+/>
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
