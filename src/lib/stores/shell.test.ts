@@ -16,8 +16,8 @@ vi.mock('$lib/shell/system-prompt', () => ({
 
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
-		shellAllowWrite: false,
-		shellHistoryTurnsForPrompt: 0,
+		shellCodeModeDefault: false,
+		shellHistoryTurnsForPrompt: 3,
 		shellMaxBytesPerCapture: 1000
 	}),
 	getActiveContextSize: () => 8192

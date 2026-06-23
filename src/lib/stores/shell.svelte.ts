@@ -137,8 +137,9 @@ export class ShellSession {
 	integrationMarkerCount = $state(0);
 	integrationCompletedCommands = $state(0);
 	// Code mode: swaps the assistant to the coding toolset + prompt and drives
-	// run_command in the live PTY. Per-session toggle in the sidebar header.
-	codeMode = $state(false);
+	// run_command in the live PTY. Per-session toggle in the sidebar header,
+	// seeded from the "default new shells to Code mode" setting.
+	codeMode = $state(getSettings().shellCodeModeDefault);
 	// Per-session reasoning override (the sidebar Think toggle), seeded from
 	// the global Reasoning setting at construction.
 	thinkingEnabled = $state(getSettings().thinkingEnabled);
@@ -427,8 +428,7 @@ export class ShellSession {
 		const promptOpts = {
 			sessionContext: payload.sessionContext,
 			currentCwd: payload.currentCwd,
-			recentHistory: payload.recentHistory,
-			allowWrite: getSettings().shellAllowWrite
+			recentHistory: payload.recentHistory
 		};
 		const systemPrompt = this.codeMode
 			? buildShellCodeSystemPrompt(promptOpts)
@@ -448,7 +448,6 @@ export class ShellSession {
 				messages: turnMessages,
 				contextSize: getActiveContextSize(),
 				visionSupported: true,
-				allowWrite: getSettings().shellAllowWrite,
 				cwd: payload.currentCwd,
 				sessionId: this.boundSessionId,
 				codeMode: this.codeMode,

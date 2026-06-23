@@ -287,23 +287,14 @@ export interface AppSettings {
 	 */
 	shellSidebarWidth: number;
 	/**
-	 * Whether the Shell-tab agent may write files anywhere on the
-	 * filesystem (fs_write_text, fs_edit_text). Disabled by default;
-	 * when off, the model only has read tools + can suggest shell
-	 * commands. When on, the model can also call fs_write_text /
-	 * fs_edit_text on absolute paths — including system config files
-	 * if the app process has permission. Reads are always allowed in
-	 * Shell mode regardless of this flag.
+	 * Whether newly opened Shell sessions start in Code mode. Off by
+	 * default — new shells open as the read-only troubleshooting assistant,
+	 * and the user flips Code mode on per-session from the sidebar header.
+	 * When on, every new shell starts already in Code mode (editing +
+	 * command execution enabled). Only affects shells opened after the
+	 * change; existing sessions keep their current mode.
 	 */
-	shellAllowWrite: boolean;
-	/**
-	 * Whether clicking "Run" on an assistant-suggested command in the
-	 * Shell tab automatically sends the command's output back to the
-	 * assistant for analysis once it finishes. Off by default. When off,
-	 * Run just executes the command in the terminal and stops there —
-	 * the user decides whether to ask the assistant about the result.
-	 */
-	shellRunAutoSubmit: boolean;
+	shellCodeModeDefault: boolean;
 	/**
 	 * Code tab: when true, `run_command` runs risk-flagged commands without
 	 * prompting. Off by default — the user opts into a "trust the model on
@@ -396,8 +387,7 @@ const defaults: AppSettings = {
 	shellHistoryTurnsForPrompt: 3,
 	shellMaxBytesPerCapture: 8192,
 	shellSidebarWidth: 480,
-	shellAllowWrite: false,
-	shellRunAutoSubmit: false,
+	shellCodeModeDefault: false,
 	codeAutoApprove: false,
 	codeRunCommandTimeoutSecs: 120,
 	codeCommandExec: 'auto',

@@ -112,7 +112,6 @@ describe('runShellTurn', () => {
 		expect(opts.messages).toBe(messages);
 		expect(opts.workingDir).toBeNull();
 		expect(opts.shellMode).toBe(true);
-		expect(opts.shellAllowWrite).toBe(false);
 		expect(opts.shellCwd).toBeNull();
 		expect(opts.maxIterations).toBe(12);
 		expect(opts.deepResearch).toBe(false);
@@ -120,7 +119,7 @@ describe('runShellTurn', () => {
 		expect(opts.visionSupported).toBe(true);
 	});
 
-	it('forwards explicit allowWrite, cwd, maxIterations, and signal', async () => {
+	it('forwards explicit cwd, maxIterations, and signal', async () => {
 		const ctrl = new AbortController();
 		mocks.runAgentLoop.mockImplementationOnce(async (opts: AgentLoopOptions) => {
 			opts.onComplete();
@@ -130,14 +129,12 @@ describe('runShellTurn', () => {
 			messages,
 			contextSize: 8192,
 			maxIterations: 3,
-			allowWrite: true,
 			cwd: '/home/tim',
 			visionSupported: false,
 			signal: ctrl.signal
 		});
 
 		const opts = loopOptions();
-		expect(opts.shellAllowWrite).toBe(true);
 		expect(opts.shellCwd).toBe('/home/tim');
 		expect(opts.maxIterations).toBe(3);
 		expect(opts.visionSupported).toBe(false);

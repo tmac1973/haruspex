@@ -174,12 +174,6 @@ export interface AgentLoopOptions {
 	 */
 	shellMode?: boolean;
 	/**
-	 * Companion flag to shellMode: when true, the Shell-tab agent also
-	 * gets fs_write_text and fs_edit_text (absolute-path variants).
-	 * Defaults to false.
-	 */
-	shellAllowWrite?: boolean;
-	/**
 	 * When true, the loop is being driven by the Code tab: the lean code
 	 * toolset (read/write/edit/grep/glob + run_command + web research) is
 	 * exposed and fs/exec tools resolve against the mandatory working

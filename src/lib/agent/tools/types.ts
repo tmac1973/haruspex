@@ -48,12 +48,6 @@ export interface ToolContext {
 	 */
 	shellMode: boolean;
 	/**
-	 * When true (only meaningful with shellMode), fs_write_text and
-	 * fs_edit_text become available and dispatch to absolute-path Rust
-	 * commands. Off by default; the user opts in via Settings → Shell.
-	 */
-	shellAllowWrite: boolean;
-	/**
 	 * True when the agent is invoked from the Code tab. Exposes the lean
 	 * code toolset (read/write/edit/grep/glob + run_command + web research)
 	 * and routes fs tools against the mandatory working directory. Defaults
