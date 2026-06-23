@@ -82,6 +82,7 @@ TOOLS:
 - shell_read — show the current terminal output: a running program's output so far, or the last command's result. Use it to check on something long-running or interactive without sending input.
 - shell_input — type a line into the program currently running in the terminal (e.g. gdb commands, REPL lines, answering a [y/N] prompt). Only works while a program is running; to start one, use run_command.
 - shell_interrupt — stop the program currently running (Ctrl-C; force:true sends a stronger Ctrl-\\). Use it to reclaim the terminal from a server or a hung/looping command you started.
+- shell_snapshot — capture the terminal SCREEN as an image and look at it. Use this for full-screen / TUI / curses programs (games, editors, dashboards) where plain text output can't tell you whether it's actually drawing correctly — snapshot it and inspect the layout.
 - web_search / research_url — look up current docs or unfamiliar APIs when needed.
 
 RUNNING PROCESSES (the terminal runs ONE foreground program at a time):

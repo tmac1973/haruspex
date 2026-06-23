@@ -23,6 +23,10 @@ import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { spillIfLarge } from './pty-exec';
+import { snapshotTerminal } from '$lib/stores/shellTerminalSnapshot';
+
+/** Cap on images buffered into one turn — too many exhausts model context. */
+const MAX_PENDING_IMAGES = 4;
 
 interface CapturedRegion {
 	commandLine: string;
@@ -203,6 +207,48 @@ registerTool({
 			return toolResult(await spillIfLarge(header, body));
 		} catch (e) {
 			return toolResult(toolInvokeError('shell_input', e));
+		}
+	}
+});
+
+registerTool({
+	category: 'exec',
+	requiresVision: true,
+	schema: {
+		type: 'function',
+		function: {
+			name: 'shell_snapshot',
+			description:
+				"Capture the current terminal SCREEN as an image and look at it with your vision capability — use this to check whether a full-screen / TUI / curses program (a game, editor, dashboard) is actually drawing correctly, which plain text output can't tell you. The image is added to the conversation; describe what you see in your next response.",
+			parameters: { type: 'object', properties: {} }
+		}
+	},
+	displayLabel: () => 'snapshot terminal',
+	async execute(_args, ctx): Promise<ToolExecOutput> {
+		const sid = sessionOrError(ctx, 'shell_snapshot');
+		if (typeof sid !== 'number') return toolResult(sid.message);
+		if (ctx.pendingImages.length >= MAX_PENDING_IMAGES) {
+			return toolResult(
+				toolError(
+					`Too many images pending (${ctx.pendingImages.length}). Describe the ones you've already captured before snapshotting again.`
+				)
+			);
+		}
+		try {
+			const dataUrl = snapshotTerminal(sid);
+			if (!dataUrl) {
+				return toolResult(
+					toolError('Could not capture the terminal image — the terminal may not be ready.')
+				);
+			}
+			ctx.pendingImages.push({ path: 'terminal-snapshot.png', dataUrl });
+			return {
+				result:
+					'Captured the terminal screen as an image — you can see it in your next response. Check whether the program is rendering correctly (layout, alignment, missing/garbled output).',
+				thumbDataUrl: dataUrl
+			};
+		} catch (e) {
+			return toolResult(toolInvokeError('shell_snapshot', e));
 		}
 	}
 });

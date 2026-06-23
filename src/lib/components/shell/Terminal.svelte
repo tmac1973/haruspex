@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-	import { Terminal } from '@xterm/xterm';
+	import { Terminal, type IBufferCell } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import { SerializeAddon } from '@xterm/addon-serialize';
@@ -36,6 +36,14 @@
 		restart: () => Promise<void>;
 		/** Serialized grid snapshot (for clean cross-window scrollback handoff). */
 		serialize: () => string;
+		/**
+		 * Rasterize the visible terminal grid to a PNG data URL so the agent can
+		 * "see" it with vision (e.g. to check a TUI/curses program is drawing
+		 * correctly). Painted from xterm's cell buffer — the DOM renderer has no
+		 * canvas to grab — so it's faithful to characters and colors. Null if the
+		 * terminal isn't ready.
+		 */
+		snapshotImage: () => string | null;
 	}
 
 	const { onReady, onSelectionChange, attachSessionId }: Props = $props();
@@ -151,8 +159,121 @@
 			focus: () => term?.focus(),
 			paste: (data: string) => term?.paste(data),
 			restart: () => restart(),
-			serialize: () => serializeAddon?.serialize() ?? ''
+			serialize: () => serializeAddon?.serialize() ?? '',
+			snapshotImage
 		};
+	}
+
+	/** Standard xterm 256-colour palette: 0-15 from the active theme (with
+	 *  fallbacks), 16-231 the 6×6×6 cube, 232-255 the grayscale ramp. */
+	function buildPalette(theme: NonNullable<Terminal['options']['theme']>): string[] {
+		const base = [
+			theme.black ?? '#000000',
+			theme.red ?? '#cd3131',
+			theme.green ?? '#0dbc79',
+			theme.yellow ?? '#e5e510',
+			theme.blue ?? '#2472c8',
+			theme.magenta ?? '#bc3fbc',
+			theme.cyan ?? '#11a8cd',
+			theme.white ?? '#e5e5e5',
+			theme.brightBlack ?? '#666666',
+			theme.brightRed ?? '#f14c4c',
+			theme.brightGreen ?? '#23d18b',
+			theme.brightYellow ?? '#f5f543',
+			theme.brightBlue ?? '#3b8eea',
+			theme.brightMagenta ?? '#d670d6',
+			theme.brightCyan ?? '#29b8db',
+			theme.brightWhite ?? '#ffffff'
+		];
+		const palette = [...base];
+		const levels = [0, 95, 135, 175, 215, 255];
+		for (let i = 0; i < 216; i++) {
+			const r = levels[Math.floor(i / 36) % 6];
+			const g = levels[Math.floor(i / 6) % 6];
+			const b = levels[i % 6];
+			palette.push(`rgb(${r},${g},${b})`);
+		}
+		for (let i = 0; i < 24; i++) {
+			const v = 8 + i * 10;
+			palette.push(`rgb(${v},${v},${v})`);
+		}
+		return palette;
+	}
+
+	const rgbHex = (n: number) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
+
+	function snapshotImage(): string | null {
+		if (!term) return null;
+		const cols = term.cols;
+		const rows = term.rows;
+		const buf = term.buffer.active;
+		const theme = term.options.theme ?? {};
+		const defaultFg = theme.foreground ?? '#d4d4d4';
+		const defaultBg = theme.background ?? '#1e1e1e';
+		const palette = buildPalette(theme);
+		const fontSize = term.options.fontSize ?? 13;
+		const fontFamily = term.options.fontFamily ?? 'monospace';
+		const scale = Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1)));
+
+		const measure = document.createElement('canvas').getContext('2d');
+		if (!measure) return null;
+		measure.font = `${fontSize}px ${fontFamily}`;
+		const cellW = Math.max(1, Math.ceil(measure.measureText('M').width || fontSize * 0.6));
+		const cellH = Math.ceil(fontSize * 1.3);
+
+		const canvas = document.createElement('canvas');
+		canvas.width = cols * cellW * scale;
+		canvas.height = rows * cellH * scale;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return null;
+		ctx.scale(scale, scale);
+		ctx.textBaseline = 'top';
+		ctx.fillStyle = defaultBg;
+		ctx.fillRect(0, 0, cols * cellW, rows * cellH);
+
+		const fgOf = (cell: IBufferCell): string =>
+			cell.isFgDefault()
+				? defaultFg
+				: cell.isFgRGB()
+					? rgbHex(cell.getFgColor())
+					: (palette[cell.getFgColor()] ?? defaultFg);
+		const bgOf = (cell: IBufferCell): string =>
+			cell.isBgDefault()
+				? defaultBg
+				: cell.isBgRGB()
+					? rgbHex(cell.getBgColor())
+					: (palette[cell.getBgColor()] ?? defaultBg);
+
+		for (let row = 0; row < rows; row++) {
+			const line = buf.getLine(buf.viewportY + row);
+			if (!line) continue;
+			for (let col = 0; col < cols; col++) {
+				const cell = line.getCell(col);
+				if (!cell) continue;
+				const width = cell.getWidth();
+				if (width === 0) continue; // second half of a wide glyph
+				let fg = fgOf(cell);
+				let bg = bgOf(cell);
+				if (cell.isInverse()) [fg, bg] = [bg, fg];
+				const x = col * cellW;
+				const y = row * cellH;
+				if (bg !== defaultBg) {
+					ctx.fillStyle = bg;
+					ctx.fillRect(x, y, cellW * width, cellH);
+				}
+				const chars = cell.getChars();
+				if (chars && chars !== ' ') {
+					ctx.fillStyle = fg;
+					ctx.font = `${cell.isBold() ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+					ctx.fillText(chars, x, y + (cellH - fontSize) / 2);
+				}
+			}
+		}
+		try {
+			return canvas.toDataURL('image/png');
+		} catch {
+			return null;
+		}
 	}
 
 	async function attachSession(

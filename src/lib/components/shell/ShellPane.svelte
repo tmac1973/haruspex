@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import Terminal, { type TerminalHandle } from './Terminal.svelte';
+	import {
+		registerTerminalSnapshot,
+		clearTerminalSnapshot
+	} from '$lib/stores/shellTerminalSnapshot';
 	import ChatSidebar from './ChatSidebar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import ModalButton from '$lib/components/ModalButton.svelte';
@@ -121,6 +125,9 @@
 
 	function onTerminalReady(h: TerminalHandle) {
 		handle = h;
+		// Expose the terminal rasterizer to the shell_snapshot agent tool, keyed
+		// by PTY session id (the tool only has ctx.shellSessionId to look it up).
+		registerTerminalSnapshot(h.sessionId, h.snapshotImage);
 		session.bindSession({
 			sessionId: h.sessionId,
 			context: h.context,
@@ -129,6 +136,10 @@
 			serialize: h.serialize
 		});
 	}
+
+	onDestroy(() => {
+		if (handle) clearTerminalSnapshot(handle.sessionId);
+	});
 
 	type Shortcut = { match: (e: KeyboardEvent) => boolean; run: () => void };
 

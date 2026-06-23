@@ -6,13 +6,26 @@ function names(opts: Parameters<typeof getToolSchemas>[0]): string[] {
 }
 
 describe('interactive shell tool gating', () => {
-	const INTERACTIVE = ['shell_read', 'shell_input', 'shell_interrupt'];
+	const INTERACTIVE = ['shell_read', 'shell_input', 'shell_interrupt', 'shell_snapshot'];
 
 	it('exposes interactive tools in Shell-tab Code mode (codeMode + shellMode)', () => {
 		const n = names({ hasWorkingDir: true, codeMode: true, shellMode: true });
 		for (const t of INTERACTIVE) expect(n).toContain(t);
 		// run_command rides along in code mode too.
 		expect(n).toContain('run_command');
+	});
+
+	it('hides the vision-only shell_snapshot when the model lacks vision', () => {
+		const n = names({
+			hasWorkingDir: true,
+			codeMode: true,
+			shellMode: true,
+			visionSupported: false
+		});
+		expect(n).not.toContain('shell_snapshot');
+		// The non-vision interactive tools still appear.
+		expect(n).toContain('shell_input');
+		expect(n).toContain('shell_interrupt');
 	});
 
 	it('hides interactive tools in the standalone Code tab (codeMode, no shell session)', () => {

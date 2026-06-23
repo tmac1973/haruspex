@@ -695,8 +695,8 @@ function computeStats(stats: TurnStats): MessageStats | null {
  * the caller should silently no-op (empty input, already generating,
  * mid-compaction, or no conversation could be created).
  */
-function ensureSendableConversation(content: string): Conversation | null {
-	if (!content.trim() || isGenerating || isCompacting) return null;
+function ensureSendableConversation(content: string, hasImages: boolean): Conversation | null {
+	if ((!content.trim() && !hasImages) || isGenerating || isCompacting) return null;
 	if (!getActiveConversationId()) createConversation();
 	return getActiveConversation() ?? null;
 }
@@ -705,13 +705,24 @@ function ensureSendableConversation(content: string): Conversation | null {
  * Set the conversation title on the first turn, push the user message,
  * and persist it. Mutates the conversation in place.
  */
-function finalizeUserTurn(conversation: Conversation, content: string): void {
+function finalizeUserTurn(conversation: Conversation, content: string, images: string[]): void {
 	if (conversation.messages.length === 0) {
-		const title = generateTitle(content);
+		const title = generateTitle(content || 'Image');
 		conversation.title = title;
 		dbRenameConversation(conversation.id, title);
 	}
-	const userMessage: ChatMessage = { role: 'user', content: content.trim() };
+	const text = content.trim();
+	// Plain string when there are no images (the common case); otherwise a
+	// multimodal content-parts array the API forwards as image_url parts.
+	const userMessage: ChatMessage = {
+		role: 'user',
+		content: images.length
+			? [
+					...(text ? [{ type: 'text' as const, text }] : []),
+					...images.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
+				]
+			: text
+	};
 	conversation.messages.push(userMessage);
 	conversation.updatedAt = Date.now();
 	dbSaveMessage(conversation.id, userMessage);
@@ -984,13 +995,13 @@ function finalizeStreamedTurn(conversation: Conversation, turnStats: TurnStats):
 	conversation.sourceUrls = processed.citedUrls;
 }
 
-export async function sendMessage(content: string): Promise<void> {
-	const conversation = ensureSendableConversation(content);
+export async function sendMessage(content: string, images: string[] = []): Promise<void> {
+	const conversation = ensureSendableConversation(content, images.length > 0);
 	if (!conversation) return;
 
 	contextNotice = null;
 	await compactIfNeeded();
-	finalizeUserTurn(conversation, content);
+	finalizeUserTurn(conversation, content, images);
 	const signal = resetTurnState(conversation);
 
 	// Tok/s timing: the agent loop emits per-call timing via onCallStats.
