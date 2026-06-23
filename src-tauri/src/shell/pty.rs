@@ -148,9 +148,15 @@ fn plan_wsl(integration_dir: &Path) -> Option<SpawnPlan> {
     let wrapper = dir.join("haruspex-wslrc");
     let mut contents = String::new();
     // Source the user's bashrc first (resolved inside the distro), then our
-    // hook. Written with LF — bash inside the distro can't tolerate CRLF.
+    // hook. The hook lives on the Windows fs (via /mnt) and may have CRLF line
+    // endings depending on the user's git checkout — bash can't source those
+    // directly (`syntax error near $'{\r'`), so strip CR via process
+    // substitution. The wrapper itself is written with LF below.
     contents.push_str("[ -f \"$HOME/.bashrc\" ] && . \"$HOME/.bashrc\"\n");
-    contents.push_str(&format!(". {}\n", shell_quote(&hook_wsl)));
+    contents.push_str(&format!(
+        "source <(tr -d '\\r' < {})\n",
+        shell_quote(&hook_wsl)
+    ));
     write_file(&wrapper, &contents).ok()?;
     let wrapper_wsl = super::wsl::win_to_wsl_path(&wrapper.to_string_lossy())?;
     Some(SpawnPlan {

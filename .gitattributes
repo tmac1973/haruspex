@@ -1,0 +1,6 @@
+# Scripts sourced or executed by bash/zsh must stay LF — CRLF breaks bash
+# (`syntax error near $'{\r'`). This matters most for the shell-integration
+# hooks, which on Windows are read inside WSL from the Windows fs via /mnt.
+*.sh text eol=lf
+src-tauri/resources/shell-integration/*.bash text eol=lf
+src-tauri/resources/shell-integration/*.zsh text eol=lf
