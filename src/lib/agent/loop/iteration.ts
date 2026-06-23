@@ -287,6 +287,7 @@ type CompletionParams = {
 	temperature: number;
 	top_p: number;
 	top_k: number;
+	min_p: number;
 	presence_penalty: number;
 	max_tokens: number;
 	chat_template_kwargs: ReturnType<typeof getChatTemplateKwargs>;
@@ -382,6 +383,7 @@ async function streamFinalSynthesis(
 			temperature: sampling.temperature,
 			top_p: sampling.top_p,
 			top_k: sampling.top_k,
+			min_p: sampling.min_p,
 			presence_penalty: sampling.presence_penalty,
 			max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
 			chat_template_kwargs: templateKwargs
@@ -436,6 +438,7 @@ async function runModelCall(
 			temperature: sampling.temperature,
 			top_p: sampling.top_p,
 			top_k: sampling.top_k,
+			min_p: sampling.min_p,
 			presence_penalty: sampling.presence_penalty,
 			max_tokens: ctx.maxResponseTokens,
 			chat_template_kwargs: templateKwargs

@@ -104,6 +104,7 @@ pub fn run() {
             server::get_llama_crash_log_path,
             server::clear_llama_crash_log,
             models::list_models,
+            models::recommended_context_size,
             models::download_model,
             models::cancel_download,
             hardware::cmd_detect_hardware,

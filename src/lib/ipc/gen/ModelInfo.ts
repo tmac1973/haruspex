@@ -2,6 +2,13 @@
 
 export type ModelInfo = { id: string, filename: string, url: string, sha256: string, size_bytes: number, description: string, downloaded: boolean, 
 /**
+ * True for models that are no longer part of the recommended lineup but
+ * remain supported: still listed (when on disk), switchable, and
+ * re-downloadable. New installs never see these unless they kept one
+ * from a previous version.
+ */
+legacy: boolean, 
+/**
  * Optional multimodal projector filename (e.g. "mmproj-F16.gguf").
  * When present, it is downloaded alongside the main weights and passed
  * to llama-server via --mmproj to enable vision support.

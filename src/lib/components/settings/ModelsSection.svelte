@@ -17,8 +17,10 @@
 	import { startServer, stopServer } from '$lib/stores/server.svelte';
 	import {
 		getActiveLocalModelFilename,
+		getLegacyModelNoticeDismissed,
 		getSettings,
-		setActiveLocalModel
+		setActiveLocalModel,
+		setLegacyModelNoticeDismissed
 	} from '$lib/stores/settings';
 	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
 	import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
@@ -30,6 +32,23 @@
 	let downloadProgress = $state<DownloadProgress | null>(null);
 	let downloadError = $state<string | null>(null);
 	let modelsDir = $state('');
+	// Whether the "show retired models" section is expanded. Legacy models
+	// the user still has on disk show regardless; this reveals the rest
+	// (so a deleted legacy model can still be re-downloaded).
+	let showLegacy = $state(false);
+	let noticeDismissed = $state(getLegacyModelNoticeDismissed());
+
+	const activeFilename = $derived(
+		activeModelPath ? activeModelPath.split('/').pop() || null : null
+	);
+	const currentModels = $derived(models.filter((m) => !m.legacy));
+	const legacyModels = $derived(models.filter((m) => m.legacy));
+	const downloadedLegacy = $derived(legacyModels.filter((m) => m.downloaded));
+	const visibleLegacy = $derived(showLegacy ? legacyModels : downloadedLegacy);
+	const hiddenLegacyCount = $derived(legacyModels.length - downloadedLegacy.length);
+	// The active model is one that's been retired from the lineup.
+	const activeIsLegacy = $derived(legacyModels.some((m) => m.filename === activeFilename));
+	const showLegacyNotice = $derived(activeIsLegacy && !noticeDismissed);
 
 	async function refreshModels() {
 		models = await invoke<ModelInfo[]>('list_models');
@@ -42,8 +61,12 @@
 	}
 
 	function activeModelFilename(): string | null {
-		if (!activeModelPath) return null;
-		return activeModelPath.split('/').pop() || null;
+		return activeFilename;
+	}
+
+	function dismissNotice() {
+		noticeDismissed = true;
+		setLegacyModelNoticeDismissed(true);
 	}
 
 	async function downloadModel(modelId: string) {
@@ -100,68 +123,111 @@
 	});
 </script>
 
+{#snippet modelCard(model: ModelInfo)}
+	<div class="model-card" class:active={activeModelFilename() === model.filename}>
+		<div class="model-info">
+			<div class="model-name">
+				{model.id}
+				{#if activeModelFilename() === model.filename}
+					<span class="active-badge">active</span>
+				{/if}
+				{#if model.legacy}
+					<span class="legacy-badge">legacy</span>
+				{/if}
+			</div>
+			<div class="model-desc">{model.description}</div>
+			<div class="model-size">{formatBytes(model.size_bytes)}</div>
+		</div>
+		<div class="model-actions">
+			{#if model.downloaded}
+				{#if activeModelFilename() !== model.filename}
+					<button class="btn btn-primary" onclick={() => switchModel(model.filename)}> Use </button>
+				{/if}
+				<button
+					class="btn btn-danger"
+					onclick={() => removeModel(model.filename)}
+					title={model.legacy
+						? 'Delete this legacy model file (you can re-download it later)'
+						: 'Delete model file'}
+				>
+					Delete
+				</button>
+			{:else if downloading === model.id}
+				{#if downloadProgress}
+					<div class="download-inline">
+						<div class="progress-mini">
+							<div
+								class="progress-fill"
+								style="width: {downloadProgress.total > 0
+									? (downloadProgress.downloaded / downloadProgress.total) * 100
+									: 0}%"
+							></div>
+						</div>
+						<span class="progress-text">
+							{#if downloadProgress.stage}{downloadProgress.stage} &middot;
+							{/if}{formatBytes(downloadProgress.downloaded)} / {formatBytes(
+								downloadProgress.total
+							)}
+							&middot; {formatBytesPerSecond(downloadProgress.speed_bps)}
+						</span>
+						<button class="btn btn-small" onclick={cancelDownload}>Cancel</button>
+					</div>
+				{/if}
+			{:else}
+				<button
+					class="btn btn-primary"
+					onclick={() => downloadModel(model.id)}
+					disabled={downloading !== null}
+				>
+					Download
+				</button>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
 <section>
 	<h2>Models</h2>
 	<p class="hint">Models are stored in: <code>{modelsDir}</code></p>
 
-	<div class="model-list">
-		{#each models as model (model.id)}
-			<div class="model-card" class:active={activeModelFilename() === model.filename}>
-				<div class="model-info">
-					<div class="model-name">
-						{model.id}
-						{#if activeModelFilename() === model.filename}
-							<span class="active-badge">active</span>
-						{/if}
-					</div>
-					<div class="model-desc">{model.description}</div>
-					<div class="model-size">{formatBytes(model.size_bytes)}</div>
-				</div>
-				<div class="model-actions">
-					{#if model.downloaded}
-						{#if activeModelFilename() !== model.filename}
-							<button class="btn btn-primary" onclick={() => switchModel(model.filename)}>
-								Use
-							</button>
-						{/if}
-						<button
-							class="btn btn-danger"
-							onclick={() => removeModel(model.filename)}
-							title="Delete model file"
-						>
-							Delete
-						</button>
-					{:else if downloading === model.id}
-						{#if downloadProgress}
-							<div class="download-inline">
-								<div class="progress-mini">
-									<div
-										class="progress-fill"
-										style="width: {downloadProgress.total > 0
-											? (downloadProgress.downloaded / downloadProgress.total) * 100
-											: 0}%"
-									></div>
-								</div>
-								<span class="progress-text">
-									{formatBytes(downloadProgress.downloaded)} / {formatBytes(downloadProgress.total)}
-									&middot; {formatBytesPerSecond(downloadProgress.speed_bps)}
-								</span>
-								<button class="btn btn-small" onclick={cancelDownload}>Cancel</button>
-							</div>
-						{/if}
-					{:else}
-						<button
-							class="btn btn-primary"
-							onclick={() => downloadModel(model.id)}
-							disabled={downloading !== null}
-						>
-							Download
-						</button>
-					{/if}
-				</div>
+	{#if showLegacyNotice}
+		<div class="notice-box">
+			<div class="notice-text">
+				<strong>The recommended models have changed.</strong>
+				Your current model is now a legacy choice — it still works, but newer Unsloth dynamic quants are
+				recommended above. Pick one to try it; you can switch back to your legacy model anytime below.
 			</div>
+			<button class="btn btn-small" onclick={dismissNotice}>Dismiss</button>
+		</div>
+	{/if}
+
+	<div class="model-list">
+		{#each currentModels as model (model.id)}
+			{@render modelCard(model)}
 		{/each}
 	</div>
+
+	{#if legacyModels.length > 0}
+		<div class="legacy-section">
+			<div class="legacy-header">
+				<span class="legacy-title">Legacy models</span>
+				{#if hiddenLegacyCount > 0}
+					<button class="btn btn-small" onclick={() => (showLegacy = !showLegacy)}>
+						{showLegacy ? 'Hide' : `Show ${hiddenLegacyCount} more`}
+					</button>
+				{/if}
+			</div>
+			<p class="hint">
+				Retired from the recommended lineup. Kept so you can keep using one you already have or
+				re-download it; not suggested for new setups.
+			</p>
+			<div class="model-list">
+				{#each visibleLegacy as model (model.id)}
+					{@render modelCard(model)}
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	{#if downloadError}
 		<div class="error-box">{downloadError}</div>
@@ -226,6 +292,54 @@
 		border-radius: 3px;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
+	}
+	.legacy-badge {
+		font-size: 0.7rem;
+		background: var(--bg-primary);
+		color: var(--text-muted);
+		border: 1px solid var(--border);
+		padding: 2px 6px;
+		border-radius: 3px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+	.notice-box {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		margin-bottom: 16px;
+		padding: 12px 14px;
+		background: var(--bg-secondary);
+		border: 1px solid var(--accent);
+		border-radius: 8px;
+	}
+	.notice-text {
+		flex: 1;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+		line-height: 1.5;
+	}
+	.notice-text strong {
+		color: var(--text-primary);
+	}
+	.legacy-section {
+		margin-top: 24px;
+		padding-top: 16px;
+		border-top: 1px solid var(--border);
+	}
+	.legacy-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.legacy-title {
+		font-size: 0.95rem;
+		font-weight: 500;
+		color: var(--text-primary);
+	}
+	.legacy-section .hint {
+		margin-top: 6px;
 	}
 	.model-desc {
 		font-size: 0.85rem;
