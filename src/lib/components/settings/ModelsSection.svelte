@@ -14,7 +14,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
 	import { onMount } from 'svelte';
-	import { startServer, stopServer } from '$lib/stores/server.svelte';
+	import { restartServerWhenIdle, stopServer } from '$lib/stores/server.svelte';
 	import {
 		getActiveLocalModelFilename,
 		getLegacyModelNoticeDismissed,
@@ -106,9 +106,11 @@
 	async function switchModel(filename: string) {
 		const path = `${modelsDir}/${filename}`;
 		setActiveLocalModel(path);
-		await stopServer();
-		await startServer(path, getSettings().contextSize);
 		activeModelPath = path;
+		// Restart onto the new model — but if a turn is in flight, defer it
+		// rather than aborting the response. The "restart queued" banner in
+		// InferenceSection then shows it's waiting for inference to finish.
+		await restartServerWhenIdle(path, getSettings().contextSize, 'model');
 	}
 
 	async function cancelDownload() {

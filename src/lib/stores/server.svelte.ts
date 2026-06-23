@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
 import { PORTS } from '$lib/ports';
 import { DEFAULT_CONTEXT_SIZE } from '$lib/stores/settings';
+import { getRunningCount } from '$lib/agent/inferenceQueue.svelte';
 
 /**
  * Server status visible to the UI. The first four mirror the Rust-side
@@ -134,6 +135,80 @@ export async function stopServer(): Promise<void> {
 		serverState.errorMessage = undefined;
 	} catch (e) {
 		serverState.errorMessage = String(e);
+	}
+}
+
+// --- deferred restart (model switch / context-size change) -----------------
+
+/**
+ * A restart the user asked for — by switching model or changing the context
+ * size — that we couldn't run immediately because inference was in flight.
+ * Yanking the model out from under a running turn would abort it, so instead
+ * we stash the target here and flush it the moment the process-wide inference
+ * queue drains (see `maybeFlushPendingRestart`, driven by the root layout).
+ *
+ * The explicit Start / Stop / Restart buttons deliberately bypass all of
+ * this — they act immediately and clear any pending restart.
+ */
+export interface PendingRestart {
+	modelPath: string;
+	ctxSize: number;
+	/** What the user changed — drives the banner copy. */
+	reason: 'model' | 'context';
+}
+
+let pendingRestart = $state<PendingRestart | null>(null);
+
+export function getPendingRestart(): PendingRestart | null {
+	return pendingRestart;
+}
+
+export function cancelPendingRestart(): void {
+	pendingRestart = null;
+}
+
+/**
+ * Apply a new model + context size by restarting the sidecar — but only if no
+ * inference is running anywhere (chat / shell / job, across every window). If
+ * a turn is in flight, defer: stash the target and return `false` so the
+ * caller can surface a "restart queued" banner. Returns `true` when it
+ * restarted right away.
+ */
+export async function restartServerWhenIdle(
+	modelPath: string,
+	ctxSize: number,
+	reason: 'model' | 'context'
+): Promise<boolean> {
+	if (getRunningCount() > 0) {
+		pendingRestart = { modelPath, ctxSize, reason };
+		return false;
+	}
+	pendingRestart = null;
+	await stopServer();
+	await startServer(modelPath, ctxSize);
+	return true;
+}
+
+// Re-entrancy guard: the layout effect can re-fire while a flush is mid-flight
+// (startServer flips serverState), and we must not launch a second stop/start.
+let flushing = false;
+
+/**
+ * If a restart is queued and inference has gone idle, run it now. Called
+ * reactively from the root layout's effect; a no-op otherwise. Reads
+ * `pendingRestart` and `getRunningCount()` synchronously so the calling
+ * effect tracks both as dependencies.
+ */
+export async function maybeFlushPendingRestart(): Promise<void> {
+	const pending = pendingRestart;
+	if (!pending || flushing || getRunningCount() > 0) return;
+	pendingRestart = null;
+	flushing = true;
+	try {
+		await stopServer();
+		await startServer(pending.modelPath, pending.ctxSize);
+	} finally {
+		flushing = false;
 	}
 }
 
