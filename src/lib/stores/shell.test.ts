@@ -40,6 +40,11 @@ import {
 	getActiveShellId,
 	ensureShellSession
 } from '$lib/stores/shell.svelte';
+import {
+	approveSession,
+	isSessionApproved,
+	resetSessionApproval
+} from '$lib/stores/codeCommandApproval.svelte';
 
 beforeEach(() => {
 	// Drain the module-level registry between tests.
@@ -50,6 +55,17 @@ beforeEach(() => {
 		return { finalText: 'done' };
 	});
 	vi.mocked(invoke).mockClear();
+	resetSessionApproval();
+});
+
+describe('command approval', () => {
+	it('newChat re-arms the per-command approval ("allow for session" does not leak)', () => {
+		const s = createShellSession();
+		approveSession();
+		expect(isSessionApproved()).toBe(true);
+		s.newChat();
+		expect(isSessionApproved()).toBe(false);
+	});
 });
 
 describe('shell registry', () => {
