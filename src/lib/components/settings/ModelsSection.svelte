@@ -125,64 +125,66 @@
 
 {#snippet modelCard(model: ModelInfo)}
 	<div class="model-card" class:active={activeModelFilename() === model.filename}>
-		<div class="model-info">
-			<div class="model-name">
-				{model.id}
-				{#if activeModelFilename() === model.filename}
-					<span class="active-badge">active</span>
-				{/if}
-				{#if model.legacy}
-					<span class="legacy-badge">legacy</span>
+		<div class="model-card-row">
+			<div class="model-info">
+				<div class="model-name">
+					{model.id}
+					{#if activeModelFilename() === model.filename}
+						<span class="active-badge">active</span>
+					{/if}
+					{#if model.legacy}
+						<span class="legacy-badge">legacy</span>
+					{/if}
+				</div>
+				<div class="model-desc">{model.description}</div>
+				<div class="model-size">{formatBytes(model.size_bytes)}</div>
+			</div>
+			<div class="model-actions">
+				{#if model.downloaded}
+					{#if activeModelFilename() !== model.filename}
+						<button class="btn btn-primary" onclick={() => switchModel(model.filename)}>
+							Use
+						</button>
+					{/if}
+					<button
+						class="btn btn-danger"
+						onclick={() => removeModel(model.filename)}
+						title={model.legacy
+							? 'Delete this legacy model file (you can re-download it later)'
+							: 'Delete model file'}
+					>
+						Delete
+					</button>
+				{:else if downloading === model.id}
+					<button class="btn btn-small" onclick={cancelDownload}>Cancel</button>
+				{:else}
+					<button
+						class="btn btn-primary"
+						onclick={() => downloadModel(model.id)}
+						disabled={downloading !== null}
+					>
+						Download
+					</button>
 				{/if}
 			</div>
-			<div class="model-desc">{model.description}</div>
-			<div class="model-size">{formatBytes(model.size_bytes)}</div>
 		</div>
-		<div class="model-actions">
-			{#if model.downloaded}
-				{#if activeModelFilename() !== model.filename}
-					<button class="btn btn-primary" onclick={() => switchModel(model.filename)}> Use </button>
-				{/if}
-				<button
-					class="btn btn-danger"
-					onclick={() => removeModel(model.filename)}
-					title={model.legacy
-						? 'Delete this legacy model file (you can re-download it later)'
-						: 'Delete model file'}
-				>
-					Delete
-				</button>
-			{:else if downloading === model.id}
-				{#if downloadProgress}
-					<div class="download-inline">
-						<div class="progress-mini">
-							<div
-								class="progress-fill"
-								style="width: {downloadProgress.total > 0
-									? (downloadProgress.downloaded / downloadProgress.total) * 100
-									: 0}%"
-							></div>
-						</div>
-						<span class="progress-text">
-							{#if downloadProgress.stage}{downloadProgress.stage} &middot;
-							{/if}{formatBytes(downloadProgress.downloaded)} / {formatBytes(
-								downloadProgress.total
-							)}
-							&middot; {formatBytesPerSecond(downloadProgress.speed_bps)}
-						</span>
-						<button class="btn btn-small" onclick={cancelDownload}>Cancel</button>
-					</div>
-				{/if}
-			{:else}
-				<button
-					class="btn btn-primary"
-					onclick={() => downloadModel(model.id)}
-					disabled={downloading !== null}
-				>
-					Download
-				</button>
-			{/if}
-		</div>
+		{#if downloading === model.id && downloadProgress}
+			<div class="download-inline">
+				<div class="progress-mini">
+					<div
+						class="progress-fill"
+						style="width: {downloadProgress.total > 0
+							? (downloadProgress.downloaded / downloadProgress.total) * 100
+							: 0}%"
+					></div>
+				</div>
+				<span class="progress-text">
+					{#if downloadProgress.stage}{downloadProgress.stage} &middot;
+					{/if}{formatBytes(downloadProgress.downloaded)} / {formatBytes(downloadProgress.total)}
+					&middot; {formatBytesPerSecond(downloadProgress.speed_bps)}
+				</span>
+			</div>
+		{/if}
 	</div>
 {/snippet}
 
@@ -262,12 +264,17 @@
 	}
 	.model-card {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
+		flex-direction: column;
+		gap: 12px;
 		padding: 16px;
 		border-radius: 8px;
 		background: var(--bg-secondary);
 		border: 1px solid var(--border);
+	}
+	.model-card-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
 	}
 	.model-card.active {
 		border-color: var(--accent);
@@ -399,7 +406,8 @@
 		gap: 10px;
 	}
 	.progress-mini {
-		width: 140px;
+		flex: 1;
+		min-width: 120px;
 		height: 6px;
 		background: var(--border);
 		border-radius: 3px;
