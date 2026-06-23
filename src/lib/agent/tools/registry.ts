@@ -58,7 +58,12 @@ const CODE_ONLY_FS = new Set(['code_grep', 'code_glob']);
 // Interactive PTY-control tools. Only meaningful in Code mode driving a live
 // shell session (the Shell tab in Code mode), where there's a real terminal to
 // drive — not the standalone Code tab (one-shot exec, no PTY).
-const SHELL_INTERACTIVE_TOOLS = new Set(['shell_read', 'shell_input', 'shell_interrupt']);
+const SHELL_INTERACTIVE_TOOLS = new Set([
+	'shell_read',
+	'shell_input',
+	'shell_interrupt',
+	'shell_snapshot'
+]);
 
 function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	const name = reg.schema.function.name;
@@ -80,6 +85,9 @@ function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): bo
 
 function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	const name = reg.schema.function.name;
+	// Vision-dependent tools (e.g. shell_snapshot) are useless without a model
+	// that can see images.
+	if (reg.requiresVision && !opts.visionSupported) return false;
 	if (CODE_TOOLS.has(name)) return true;
 	// Interactive terminal control only when Code mode drives a live shell
 	// session (shellMode), where there's a real PTY to send input/signals to.

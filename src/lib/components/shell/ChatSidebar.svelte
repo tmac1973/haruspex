@@ -4,8 +4,13 @@
 	import MicButton from '$lib/components/MicButton.svelte';
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
-	import { messageText, type ChatMessage as ChatMessageType } from '$lib/api';
+	import {
+		messageText,
+		type ChatMessage as ChatMessageType,
+		type MessageContentPart
+	} from '$lib/api';
 	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import { imageFileToDataUrl, imageFilesFrom } from '$lib/utils/image';
 
 	const SHELL_PREAMBLE_MARKER = 'Recent shell activity (oldest first):';
 	const SHELL_PREAMBLE_SEP = '\n\n---\n\n';
@@ -31,6 +36,22 @@
 
 	function userMessageView(msg: ChatMessageType): SplitMessage {
 		return splitShellPreamble(messageText(msg.content));
+	}
+
+	/** Image parts of a (possibly multimodal) user message. */
+	function imagePartsOf(content: ChatMessageType['content']): MessageContentPart[] {
+		return typeof content === 'string' ? [] : content.filter((p) => p.type === 'image_url');
+	}
+
+	/** Rebuild a user message for display with the preamble stripped but any
+	 *  attached images preserved (the preamble split works on text only). */
+	function userQuestionMessage(msg: ChatMessageType, question: string): ChatMessageType {
+		const imgs = imagePartsOf(msg.content);
+		if (!imgs.length) return { ...msg, content: question };
+		return {
+			...msg,
+			content: [...(question.trim() ? [{ type: 'text' as const, text: question }] : []), ...imgs]
+		};
 	}
 
 	function preambleSummary(preamble: string): string {
@@ -119,6 +140,58 @@
 
 	let composerText = $state('');
 	let composerEl = $state<HTMLTextAreaElement | null>(null);
+	let pendingImages = $state<{ id: number; url: string }[]>([]);
+	let imgSeq = 0;
+	let dragOver = $state(false);
+
+	async function addImageFiles(files: File[]) {
+		for (const f of files) {
+			try {
+				const url = await imageFileToDataUrl(f);
+				pendingImages = [...pendingImages, { id: imgSeq++, url }];
+			} catch (e) {
+				console.error('image attach failed', e);
+			}
+		}
+	}
+
+	function removeImage(id: number) {
+		pendingImages = pendingImages.filter((p) => p.id !== id);
+	}
+
+	function onComposerPaste(e: ClipboardEvent) {
+		const files = imageFilesFrom(e.clipboardData);
+		if (files.length) {
+			e.preventDefault();
+			void addImageFiles(files);
+		}
+	}
+
+	function onComposerDrop(e: DragEvent) {
+		const files = imageFilesFrom(e.dataTransfer);
+		dragOver = false;
+		if (files.length) {
+			e.preventDefault();
+			void addImageFiles(files);
+		}
+	}
+
+	function onComposerDragOver(e: DragEvent) {
+		if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) {
+			e.preventDefault();
+			dragOver = true;
+		}
+	}
+
+	/** Single send path (button, Enter, voice) — folds in attached images. */
+	async function doSend(text: string) {
+		const images = pendingImages.map((p) => p.url);
+		if ((!text.trim() && images.length === 0) || submitting) return;
+		composerText = '';
+		pendingImages = [];
+		autosize();
+		await session.submitChatMessage(text, images);
+	}
 	let threadEl = $state<HTMLDivElement | null>(null);
 	const MIN_WIDTH = 320;
 	function maxWidth(): number {
@@ -174,11 +247,7 @@
 	}
 
 	async function handleSend() {
-		const text = composerText.trim();
-		if (!text || submitting) return;
-		composerText = '';
-		autosize();
-		await session.submitChatMessage(text);
+		await doSend(composerText);
 	}
 
 	function onComposerKeydown(event: KeyboardEvent) {
@@ -276,8 +345,8 @@
 								<pre use:overflowFade>{split.preamble}</pre>
 							</div>
 						</details>
-						{#if split.question.trim()}
-							<ChatMessage message={{ ...msg, content: split.question }} />
+						{#if split.question.trim() || imagePartsOf(msg.content).length}
+							<ChatMessage message={userQuestionMessage(msg, split.question)} />
 						{/if}
 					{:else}
 						<ChatMessage message={msg} />
@@ -310,15 +379,34 @@
 				<div class="error">{lastError}</div>
 			{/if}
 		</div>
-		<footer class="composer">
+		<footer
+			class="composer"
+			class:drag-over={dragOver}
+			ondragover={onComposerDragOver}
+			ondragleave={() => (dragOver = false)}
+			ondrop={onComposerDrop}
+		>
+			{#if pendingImages.length}
+				<div class="attachments">
+					{#each pendingImages as img (img.id)}
+						<div class="attachment">
+							<img src={img.url} alt="attachment" />
+							<button class="remove" title="Remove image" onclick={() => removeImage(img.id)}
+								>×</button
+							>
+						</div>
+					{/each}
+				</div>
+			{/if}
 			<textarea
 				bind:this={composerEl}
 				bind:value={composerText}
 				oninput={onComposerInput}
 				onkeydown={onComposerKeydown}
+				onpaste={onComposerPaste}
 				onfocus={() => session.setComposerFocused(true)}
 				onblur={() => session.setComposerFocused(false)}
-				placeholder="Ask the assistant… (Enter to send, Shift+Enter for newline, Ctrl+` switch to shell)"
+				placeholder="Ask the assistant… (Enter to send; drop or paste an image to attach)"
 				rows="1"
 				disabled={submitting}
 			></textarea>
@@ -343,17 +431,14 @@
 					<line x1="12" y1="19" x2="20" y2="19"></line>
 				</svg>
 			</button>
-			<MicButton
-				onTranscription={(text) => session.submitChatMessage(text)}
-				disabled={submitting}
-			/>
+			<MicButton onTranscription={(text) => doSend(text)} disabled={submitting} />
 			{#if submitting}
 				<button class="cancel" onclick={session.cancelTurn} title="Cancel (Esc)">Stop</button>
 			{:else}
 				<button
 					class="send"
 					onclick={handleSend}
-					disabled={!composerText.trim()}
+					disabled={!composerText.trim() && pendingImages.length === 0}
 					title="Send (Enter)">Send</button
 				>
 			{/if}
@@ -586,11 +671,51 @@
 
 	.composer {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 6px;
 		align-items: flex-end;
 		padding: 8px 10px;
 		border-top: 1px solid var(--border);
 		flex-shrink: 0;
+	}
+	.composer.drag-over {
+		background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
+		outline: 2px dashed var(--accent);
+		outline-offset: -4px;
+	}
+	.composer .attachments {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		width: 100%;
+	}
+	.composer .attachment {
+		position: relative;
+		width: 56px;
+		height: 56px;
+		border-radius: 6px;
+		overflow: hidden;
+		border: 1px solid var(--border);
+	}
+	.composer .attachment img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.composer .attachment .remove {
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		width: 18px;
+		height: 18px;
+		line-height: 16px;
+		padding: 0;
+		border: none;
+		border-radius: 4px;
+		background: rgba(0, 0, 0, 0.6);
+		color: white;
+		font-size: 14px;
+		cursor: pointer;
 	}
 
 	.composer textarea {

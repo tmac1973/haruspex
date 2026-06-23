@@ -390,8 +390,15 @@ describe('Code-mode tool filtering', () => {
 			(s) => s.function.name
 		);
 		// Code toolset, plus the interactive terminal tools that only appear when
-		// Code mode is driving a live shell session.
-		const expected = [...CODE_TOOLS, 'shell_read', 'shell_input', 'shell_interrupt'].sort();
+		// Code mode is driving a live shell session (vision defaults on, so
+		// shell_snapshot is included too).
+		const expected = [
+			...CODE_TOOLS,
+			'shell_read',
+			'shell_input',
+			'shell_interrupt',
+			'shell_snapshot'
+		].sort();
 		expect(names.sort()).toEqual(expected);
 	});
 

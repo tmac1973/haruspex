@@ -51,6 +51,8 @@ export interface ShellSubmission {
 	sessionContext: ShellSessionContext;
 	currentCwd: string | null;
 	recentHistory: string[];
+	/** Optional user-attached image data URLs (drag-drop / paste). */
+	images?: string[];
 }
 
 export interface ActiveShellSession {
@@ -309,9 +311,9 @@ export class ShellSession {
 	 * settings.shellHistoryTurnsForPrompt) so the agent has fresh context
 	 * without the user having to copy-paste anything.
 	 */
-	submitChatMessage = async (text: string): Promise<void> => {
+	submitChatMessage = async (text: string, images: string[] = []): Promise<void> => {
 		const trimmed = text.trim();
-		if (!trimmed || this.isSubmitting) return;
+		if ((!trimmed && images.length === 0) || this.isSubmitting) return;
 		if (!this.activeSession) {
 			this.lastError = 'Shell session not ready yet.';
 			return;
@@ -335,7 +337,8 @@ export class ShellSession {
 			body,
 			sessionContext: this.activeSession.context,
 			currentCwd: live.currentCwd,
-			recentHistory: live.recentHistory
+			recentHistory: live.recentHistory,
+			images
 		});
 	};
 
@@ -400,7 +403,15 @@ export class ShellSession {
 		this.searchSteps = [];
 		this.contextNotice = null;
 
-		const userMsg: ChatMessage = { role: 'user', content: payload.body };
+		const userMsg: ChatMessage = {
+			role: 'user',
+			content: payload.images?.length
+				? [
+						...(payload.body ? [{ type: 'text' as const, text: payload.body }] : []),
+						...payload.images.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
+					]
+				: payload.body
+		};
 		this.messages = [...this.messages, userMsg];
 
 		const promptOpts = {

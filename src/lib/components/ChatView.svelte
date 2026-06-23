@@ -33,6 +33,7 @@
 	} from '$lib/stores/settings';
 	import { getDebugLogsForTurn } from '$lib/debug-log';
 	import { createCopyAction } from '$lib/utils/clipboard.svelte';
+	import { imageFileToDataUrl, imageFilesFrom } from '$lib/utils/image';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
@@ -40,6 +41,60 @@
 	let messagesContainer: HTMLDivElement | undefined = $state();
 	let autoScroll = $state(true);
 	let showScrollButton = $state(false);
+	// Images the user has attached (drag-drop / paste) for the next message.
+	let pendingImages = $state<{ id: number; url: string }[]>([]);
+	let imgSeq = 0;
+	let dragOver = $state(false);
+
+	async function addImageFiles(files: File[]) {
+		for (const f of files) {
+			try {
+				const url = await imageFileToDataUrl(f);
+				pendingImages = [...pendingImages, { id: imgSeq++, url }];
+			} catch (e) {
+				console.error('image attach failed', e);
+			}
+		}
+	}
+
+	function removeImage(id: number) {
+		pendingImages = pendingImages.filter((p) => p.id !== id);
+	}
+
+	function onComposerPaste(e: ClipboardEvent) {
+		const files = imageFilesFrom(e.clipboardData);
+		if (files.length) {
+			e.preventDefault();
+			void addImageFiles(files);
+		}
+	}
+
+	function onComposerDrop(e: DragEvent) {
+		const files = imageFilesFrom(e.dataTransfer);
+		dragOver = false;
+		if (files.length) {
+			e.preventDefault();
+			void addImageFiles(files);
+		}
+	}
+
+	function onComposerDragOver(e: DragEvent) {
+		if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) {
+			e.preventDefault();
+			dragOver = true;
+		}
+	}
+
+	/** Single send path for the button, Enter, and voice — folds in any
+	 *  attached images and clears the composer. */
+	async function doSend(text: string) {
+		const images = pendingImages.map((p) => p.url);
+		if ((!text.trim() && images.length === 0) || isGenerating || isCompacting) return;
+		inputText = '';
+		pendingImages = [];
+		autoScroll = true;
+		await sendMessage(text, images);
+	}
 
 	const copyDebugLog = createCopyAction();
 
@@ -116,11 +171,7 @@
 	}
 
 	async function handleSend() {
-		const text = inputText.trim();
-		if (!text || isGenerating) return;
-		inputText = '';
-		autoScroll = true;
-		await sendMessage(text);
+		await doSend(inputText);
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -392,15 +443,37 @@
 			{/if}
 		</div>
 
-		<div class="input-area">
+		<div
+			class="input-area"
+			class:drag-over={dragOver}
+			ondragover={onComposerDragOver}
+			ondragleave={() => (dragOver = false)}
+			ondrop={onComposerDrop}
+			role="group"
+		>
 			{#if isGenerating}
 				<button class="stop-btn" onclick={() => cancelGeneration()}>Stop generating</button>
+			{/if}
+			{#if pendingImages.length}
+				<div class="attachments">
+					{#each pendingImages as img (img.id)}
+						<div class="attachment">
+							<img src={img.url} alt="attachment" />
+							<button class="remove" title="Remove image" onclick={() => removeImage(img.id)}
+								>×</button
+							>
+						</div>
+					{/each}
+				</div>
 			{/if}
 			<div class="input-row">
 				<textarea
 					bind:value={inputText}
 					onkeydown={handleKeydown}
-					placeholder={serverReady ? 'Type a message...' : 'Waiting for model to load...'}
+					onpaste={onComposerPaste}
+					placeholder={serverReady
+						? 'Type a message… (drop or paste an image to attach)'
+						: 'Waiting for model to load...'}
 					disabled={!serverReady && !activeConversation}
 					rows="1"
 				></textarea>
@@ -433,16 +506,16 @@
 				</button>
 				<MicButton
 					onTranscription={async (text) => {
-						inputText = '';
-						autoScroll = true;
-						await sendMessage(text);
+						await doSend(text);
 					}}
 					disabled={isGenerating || isCompacting}
 				/>
 				<button
 					class="send-btn"
 					onclick={handleSend}
-					disabled={!inputText.trim() || isGenerating || isCompacting}
+					disabled={(!inputText.trim() && pendingImages.length === 0) ||
+						isGenerating ||
+						isCompacting}
 				>
 					Send
 				</button>
@@ -694,6 +767,45 @@
 		border-top: 1px solid var(--border);
 		padding: 12px 16px;
 		background: var(--bg-primary);
+	}
+	.input-area.drag-over {
+		background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
+		outline: 2px dashed var(--accent);
+		outline-offset: -4px;
+	}
+	.attachments {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-bottom: 8px;
+	}
+	.attachment {
+		position: relative;
+		width: 64px;
+		height: 64px;
+		border-radius: 6px;
+		overflow: hidden;
+		border: 1px solid var(--border);
+	}
+	.attachment img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.attachment .remove {
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		width: 18px;
+		height: 18px;
+		line-height: 16px;
+		padding: 0;
+		border: none;
+		border-radius: 4px;
+		background: rgba(0, 0, 0, 0.6);
+		color: white;
+		font-size: 14px;
+		cursor: pointer;
 	}
 
 	.stop-btn {

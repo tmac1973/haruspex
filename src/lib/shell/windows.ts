@@ -49,7 +49,10 @@ export async function openDetachedShell(session: ShellSession): Promise<void> {
 		url: `/shell/${ptyId}`,
 		title: session.name,
 		width: DETACHED_TERMINAL_TARGET + sidebarWidth,
-		height: 700
+		height: 700,
+		// Let the DOM receive image drops in the chat sidebar; without this the
+		// webview swallows OS file drops as native tauri://drag-drop events.
+		dragDropEnabled: false
 	});
 	w.once('tauri://error', (e) => console.error('detached shell window error', e));
 
