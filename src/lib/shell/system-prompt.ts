@@ -79,7 +79,15 @@ TOOLS:
 - fs_write_text — create or overwrite a file.
 - fs_edit_text — targeted edit; old_str must UNIQUELY match (include surrounding context). Prefer small precise edits over rewriting whole files.
 - run_command — run ONE shell command in the terminal; it runs to completion and returns combined output + exit code. ${captureNote} A long-running command (dev server, watch) times out and is left running in the terminal.
+- shell_read — show the current terminal output: a running program's output so far, or the last command's result. Use it to check on something long-running or interactive without sending input.
+- shell_input — type a line into the program currently running in the terminal (e.g. gdb commands, REPL lines, answering a [y/N] prompt). Only works while a program is running; to start one, use run_command.
+- shell_interrupt — stop the program currently running (Ctrl-C; force:true sends a stronger Ctrl-\\). Use it to reclaim the terminal from a server or a hung/looping command you started.
 - web_search / research_url — look up current docs or unfamiliar APIs when needed.
+
+RUNNING PROCESSES (the terminal runs ONE foreground program at a time):
+- Servers / watchers / GUIs: start them in the background with \`&\` (e.g. \`npm run dev &\`) so the terminal stays free for more commands; check them with shell_read and stop them later by killing the PID. If you start one in the foreground and run_command reports "still running", use shell_interrupt to stop it when done.
+- Interactive programs (gdb/lldb, python/node REPLs, ssh, anything that prompts): launch with run_command — it will report "still running" once the program is waiting — then drive it with shell_input and observe with shell_read, and shell_interrupt or send the program's own quit command (\`quit\`, \`exit\`, Ctrl-D) when finished. Do NOT run an interactive program and expect run_command to return its full session.
+- Never abandon a process you started holding the terminal — interrupt it or background it so later commands can run.
 
 HOW TO WORK:
 - Explore before editing: grep/glob to locate code, read the relevant slices, then change it.

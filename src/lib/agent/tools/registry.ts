@@ -55,6 +55,11 @@ const CODE_TOOLS = new Set([
 // Chat schema lean (it otherwise exposes every fs tool when a workdir is set).
 const CODE_ONLY_FS = new Set(['code_grep', 'code_glob']);
 
+// Interactive PTY-control tools. Only meaningful in Code mode driving a live
+// shell session (the Shell tab in Code mode), where there's a real terminal to
+// drive — not the standalone Code tab (one-shot exec, no PTY).
+const SHELL_INTERACTIVE_TOOLS = new Set(['shell_read', 'shell_input', 'shell_interrupt']);
+
 function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	const name = reg.schema.function.name;
 	// `exec` (run_command) is Code-mode only — never expose it in Shell mode,
@@ -73,8 +78,13 @@ function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): bo
 	return false;
 }
 
-function shouldIncludeCodeTool(reg: ToolRegistration): boolean {
-	return CODE_TOOLS.has(reg.schema.function.name);
+function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
+	const name = reg.schema.function.name;
+	if (CODE_TOOLS.has(name)) return true;
+	// Interactive terminal control only when Code mode drives a live shell
+	// session (shellMode), where there's a real PTY to send input/signals to.
+	if (SHELL_INTERACTIVE_TOOLS.has(name)) return opts.shellMode;
+	return false;
 }
 
 function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
@@ -95,7 +105,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	// codeMode wins over shellMode: the Shell assistant in Code mode exposes the
 	// code toolset (resolved against the live shell CWD), not the plain shell set.
-	if (opts.codeMode) return shouldIncludeCodeTool(reg);
+	if (opts.codeMode) return shouldIncludeCodeTool(reg, opts);
 	if (opts.shellMode) return shouldIncludeShellTool(reg, opts);
 	return shouldIncludeChatTool(reg, opts);
 }

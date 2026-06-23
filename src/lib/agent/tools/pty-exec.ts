@@ -94,9 +94,9 @@ export async function runInPty(
 		if (inflight) {
 			return (
 				`The terminal is busy running \`${inflight.commandLine || 'a command'}\` (still in progress), ` +
-				'so a new command cannot run here yet. Do not try to kill or re-run it — wait for it to ' +
-				'finish or for the user to exit it, then continue. If you just launched something the user ' +
-				'is meant to interact with, tell them it is running and stop here.'
+				'so a new command cannot run here yet. Use shell_read to see its output, shell_input to send ' +
+				'it input (answer a prompt, or drive a REPL/debugger), or shell_interrupt to stop it and free ' +
+				'the terminal. Do not re-run it.'
 			);
 		}
 
@@ -156,9 +156,9 @@ async function formatPtyResult(
 		header = `Exit code: ${region.exitCode}${region.cwd ? ` (cwd ${region.cwd})` : ''}`;
 	} else {
 		header =
-			`Command still running in your terminal after ${state.timeoutSecs}s — it's holding the terminal ` +
-			`(a GUI, server, or interactive prompt). You cannot run more commands here until it exits. Do not ` +
-			`try to kill or re-run it — tell the user it's running and let them exit it when done. Output so far:`;
+			`Command still running after ${state.timeoutSecs}s — it's holding the terminal (a server, GUI, or ` +
+			`an interactive program like a REPL or debugger). Use shell_read to watch its output, shell_input ` +
+			`to send it input, or shell_interrupt to stop it. Output so far:`;
 	}
 	const body = region.output.replace(/\s+$/, '');
 	if (!body) {
@@ -169,6 +169,16 @@ async function formatPtyResult(
 		}
 		return `${header} (no output).`;
 	}
+	return spillIfLarge(header, body);
+}
+
+/**
+ * Format command/terminal output under the inline budget: return it inline if
+ * it fits, otherwise middle-truncate and spill the full text to a temp file the
+ * model can read with fs_read_text. `body` must be non-empty. Shared by the
+ * PTY runner and the interactive shell tools.
+ */
+export async function spillIfLarge(header: string, body: string): Promise<string> {
 	const truncated = truncateCapturedOutput(body, RUN_OUTPUT_MAX_BYTES);
 	if (!truncated.truncated) return `${header}\n${truncated.text}`;
 	let overflowNote = '';
