@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
+	import StopIndicator from '$lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '$lib/utils/imageDrop';
 	import MicButton from '$lib/components/MicButton.svelte';
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
@@ -103,6 +104,7 @@
 	const searchSteps = $derived(session.searchSteps);
 	const messageSteps = $derived(session.messageSteps);
 	const messageStats = $derived(session.messageStats);
+	const messageStops = $derived(session.messageStops);
 	const markerCount = $derived(session.integrationMarkerCount);
 	const completedCommands = $derived(session.integrationCompletedCommands);
 	const codeMode = $derived(session.codeMode);
@@ -343,6 +345,13 @@
 					{/if}
 				{:else}
 					<ChatMessage message={msg} tokensPerSecond={messageStats[i]?.tokensPerSecond} />
+					{#if messageStops[i]}
+						<StopIndicator
+							reason={messageStops[i]}
+							disabled={submitting}
+							onContinue={session.continueTurn}
+						/>
+					{/if}
 				{/if}
 			{/each}
 			{#if searchSteps.length > 0}

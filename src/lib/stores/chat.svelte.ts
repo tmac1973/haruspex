@@ -1,5 +1,10 @@
 import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
-import { runAgentLoop, type SearchStep, type AgentLoopOptions } from '$lib/agent/loop';
+import {
+	runAgentLoop,
+	type SearchStep,
+	type AgentLoopOptions,
+	type AgentStopReason
+} from '$lib/agent/loop';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { shouldCompact, compactConversation, remapIndexedRecords } from '$lib/agent/compaction';
@@ -76,6 +81,14 @@ export interface Conversation {
 	 * on app restart or chat reload.
 	 */
 	messageStats: Record<number, MessageStats>;
+	/**
+	 * Per-assistant-message stop reason when the SYSTEM forced the turn to end
+	 * (hit the turn-count cap, or broke on degraded output), keyed by the
+	 * assistant message's position in `messages`. Drives the "stopped at turn
+	 * limit / interrupted — Continue" indicator. Absent means the model ended
+	 * the turn on its own. In-memory only (vanishes on reload), like messageStats.
+	 */
+	messageStops: Record<number, AgentStopReason>;
 	/** Cited source URLs from the last generation. Not persisted to DB. */
 	sourceUrls: string[];
 	/**
@@ -200,6 +213,7 @@ export async function initChatStore(): Promise<void> {
 		searchSteps: [],
 		messageSteps: {},
 		messageStats: {},
+		messageStops: {},
 		sourceUrls: [],
 		isRestoringSession: false,
 		sessionRestoreSkipped: false
@@ -440,10 +454,16 @@ async function compactIfNeeded(): Promise<void> {
 			newMessages,
 			conversation.messageStats
 		);
+		const newStops = remapIndexedRecords(
+			conversation.messages,
+			newMessages,
+			conversation.messageStops
+		);
 
 		conversation.messages = newMessages;
 		conversation.messageSteps = newSteps;
 		conversation.messageStats = newStats;
+		conversation.messageStops = newStops;
 		conversation.contextUsage = null;
 		// The turn `lastTurnTools` belonged to has just been summarized away;
 		// keeping the raw tool messages would re-inflate the same context we
@@ -470,6 +490,7 @@ export function createConversation(): string {
 		searchSteps: [],
 		messageSteps: {},
 		messageStats: {},
+		messageStops: {},
 		sourceUrls: [],
 		isRestoringSession: false,
 		sessionRestoreSkipped: false
@@ -822,9 +843,19 @@ function mergeLeadingSystemMessages(messages: ChatMessage[]): ChatMessage[] {
  * tok/s stats, push the message, save to db, and clear the live steps
  * so the UI doesn't render the steps twice (live + persisted).
  */
-function commitMessage(conversation: Conversation, content: string, stats: TurnStats): void {
+function commitMessage(
+	conversation: Conversation,
+	content: string,
+	stats: TurnStats,
+	stopReason?: AgentStopReason
+): void {
 	const assistantMsg: ChatMessage = { role: 'assistant', content };
 	const messageIndex = conversation.messages.length;
+	// Record a system-forced stop (turn-limit / degraded output) so the log can
+	// show why the turn ended and offer Continue. 'complete' = model's own call.
+	if (stopReason && stopReason !== 'complete') {
+		conversation.messageStops[messageIndex] = stopReason;
+	}
 	const stepsForThisTurn = conversation.searchSteps.filter(
 		(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
 	);
@@ -953,7 +984,7 @@ function buildAgentLoopCallbacks(
 		onStreamChunk: (chunk) => {
 			streamingContent = appendStreamDelta(streamingContent, chunk.delta);
 		},
-		onComplete: () => finalizeStreamedTurn(conversation, turnStats),
+		onComplete: (meta) => finalizeStreamedTurn(conversation, turnStats, meta?.stopReason),
 		onError: handleTurnError
 	};
 }
@@ -964,7 +995,11 @@ function buildAgentLoopCallbacks(
  * this turn, then either commits the final message or surfaces an
  * empty-response diagnosis.
  */
-function finalizeStreamedTurn(conversation: Conversation, turnStats: TurnStats): void {
+function finalizeStreamedTurn(
+	conversation: Conversation,
+	turnStats: TurnStats,
+	stopReason?: AgentStopReason
+): void {
 	const fetched = extractUrlsFromSteps(conversation.searchSteps);
 	const processed = processCitations(stripToolCallArtifacts(streamingContent).trim(), fetched);
 	const finalContent = processed.content;
@@ -973,9 +1008,10 @@ function finalizeStreamedTurn(conversation: Conversation, turnStats: TurnStats):
 		logDebug('chat', 'onComplete commit', {
 			rawStreamingLen: streamingContent.length,
 			finalContentLen: finalContent.length,
-			citedUrls: processed.citedUrls
+			citedUrls: processed.citedUrls,
+			stopReason
 		});
-		commitMessage(conversation, finalContent, turnStats);
+		commitMessage(conversation, finalContent, turnStats, stopReason);
 		if (exhaustiveResearch) exhaustiveResearch = false;
 	} else {
 		const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
@@ -985,7 +1021,7 @@ function finalizeStreamedTurn(conversation: Conversation, turnStats: TurnStats):
 			diagnosis
 		});
 		if (diagnosis.type === 'commit') {
-			commitMessage(conversation, diagnosis.content, turnStats);
+			commitMessage(conversation, diagnosis.content, turnStats, stopReason);
 			if (exhaustiveResearch) exhaustiveResearch = false;
 		} else {
 			errorMessage = diagnosis.message;
@@ -993,6 +1029,12 @@ function finalizeStreamedTurn(conversation: Conversation, turnStats: TurnStats):
 		}
 	}
 	conversation.sourceUrls = processed.citedUrls;
+}
+
+/** Resume after a turn-limit / forced stop — the Continue button on the stop
+ *  indicator. Same as the user typing "continue". */
+export function continueTurn(): Promise<void> {
+	return sendMessage('Please continue from where you stopped.');
 }
 
 export async function sendMessage(content: string, images: string[] = []): Promise<void> {

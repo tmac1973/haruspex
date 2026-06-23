@@ -20,7 +20,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ChatMessage } from '$lib/api';
 import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
 import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
-import type { SearchStep } from '$lib/agent/loop';
+import type { SearchStep, AgentStopReason } from '$lib/agent/loop';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { describeContextManaged } from '$lib/agent/context-budget';
 import { logDebug } from '$lib/debug-log';
@@ -128,6 +128,9 @@ export class ShellSession {
 	// Per-assistant-message tok/s timing, keyed by message index — drives the
 	// generation-speed footer in the sidebar, mirroring the chat tab.
 	messageStats = $state<Record<number, MessageStats>>({});
+	// Per-assistant-message "the system stopped this turn" reason, keyed by
+	// message index — drives the turn-limit / forced-stop indicator + Continue.
+	messageStops = $state<Record<number, AgentStopReason>>({});
 	// Transient notice when the pre-send guard reduced history to fit the
 	// model's context window. Cleared at the start of each turn.
 	contextNotice = $state<string | null>(null);
@@ -274,6 +277,7 @@ export class ShellSession {
 		this.searchSteps = [];
 		this.messageSteps = {};
 		this.messageStats = {};
+		this.messageStops = {};
 		this.lastError = null;
 		this.contextNotice = null;
 		// A fresh chat is a fresh session: re-arm the per-command approval so an
@@ -340,6 +344,12 @@ export class ShellSession {
 			recentHistory: live.recentHistory,
 			images
 		});
+	};
+
+	/** Resume after a turn-limit / forced stop — the button on the stop
+	 *  indicator. Same as the user typing "continue". */
+	continueTurn = async (): Promise<void> => {
+		await this.submitChatMessage('Please continue from where you stopped.');
 	};
 
 	/**
@@ -473,6 +483,11 @@ export class ShellSession {
 			const stats = computeMessageStats(lastCallStats);
 			if (stats) {
 				this.messageStats = { ...this.messageStats, [assistantIndex]: stats };
+			}
+			// Record when the system forced this turn to stop (turn-limit /
+			// degraded output) so the sidebar can show why + offer Continue.
+			if (result.stopReason !== 'complete') {
+				this.messageStops = { ...this.messageStops, [assistantIndex]: result.stopReason };
 			}
 		} catch (e) {
 			const msg = errMessage(e);

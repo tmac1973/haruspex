@@ -6,6 +6,7 @@
 	import SourceChip from '$lib/components/SourceChip.svelte';
 	import MicButton from '$lib/components/MicButton.svelte';
 	import WorkingDirButton from '$lib/components/WorkingDirButton.svelte';
+	import StopIndicator from '$lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '$lib/utils/imageDrop';
 	import { messageText } from '$lib/api';
 	import {
@@ -24,6 +25,7 @@
 		setExhaustiveResearch,
 		createConversation,
 		sendMessage,
+		continueTurn,
 		cancelGeneration
 	} from '$lib/stores/chat.svelte';
 	import { getServerState, startServer, stopServer } from '$lib/stores/server.svelte';
@@ -350,6 +352,13 @@
 							message={msg}
 							tokensPerSecond={activeConversation.messageStats?.[i]?.tokensPerSecond}
 						/>
+						{#if activeConversation.messageStops?.[i]}
+							<StopIndicator
+								reason={activeConversation.messageStops[i]}
+								disabled={isGenerating || isCompacting}
+								onContinue={continueTurn}
+							/>
+						{/if}
 					{/if}
 				{/each}
 

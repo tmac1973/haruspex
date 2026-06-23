@@ -919,7 +919,8 @@ async function executeToolCalls(
  */
 export async function runMaxIterationsFinalSynthesis(
 	ctx: LoopContext,
-	state: LoopState
+	state: LoopState,
+	stopReason: 'max_iterations' | 'forced_stop'
 ): Promise<void> {
 	logDebug('agent', `branch=max-iterations reached`, {
 		maxIterations: ctx.maxIterations,
@@ -952,7 +953,7 @@ export async function runMaxIterationsFinalSynthesis(
 		contentLen: totalContent,
 		lastFinish
 	});
-	ctx.options.onComplete();
+	ctx.options.onComplete({ stopReason });
 	if (lastFinish === 'length') {
 		ctx.options.onError(
 			new ApiError(

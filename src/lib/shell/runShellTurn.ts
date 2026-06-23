@@ -14,6 +14,7 @@
 import type { ChatMessage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact } from '$lib/agent/tools';
+import type { AgentStopReason } from '$lib/agent/loop';
 import { runTurnCore } from '$lib/agent/runTurn';
 import type { ContextManagedInfo } from '$lib/agent/context-budget';
 import { withInferenceSlot, type InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
@@ -56,6 +57,7 @@ export interface ShellTurnOptions {
 
 export interface ShellTurnResult {
 	finalText: string;
+	stopReason: AgentStopReason;
 }
 
 export async function runShellTurn(options: ShellTurnOptions): Promise<ShellTurnResult> {
