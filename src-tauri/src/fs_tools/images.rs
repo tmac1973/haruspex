@@ -248,6 +248,39 @@ pub(super) fn load_markdown_images(
     load_image_set(workdir, extract_markdown_image_paths(content))
 }
 
+/// Decode an image from disk, resize it to fit [`MAX_IMAGE_DIMENSION`] on its
+/// longest side, and return a high-quality JPEG `data:` URL. Synchronous and
+/// CPU-bound — call inside `spawn_blocking`. Shared by `fs_read_image` (workdir
+/// path) and `read_dropped_image` (absolute path from a native file drop).
+fn encode_resized_jpeg_data_url(path: &Path) -> Result<String, String> {
+    let img = image::open(path).map_err(|e| format!("Failed to decode image: {}", e))?;
+
+    // Resize if larger than MAX_IMAGE_DIMENSION on the longest side
+    let (w, h) = (img.width(), img.height());
+    let max_side = w.max(h);
+    let resized = if max_side > MAX_IMAGE_DIMENSION {
+        let scale = MAX_IMAGE_DIMENSION as f32 / max_side as f32;
+        let new_w = (w as f32 * scale) as u32;
+        let new_h = (h as f32 * scale) as u32;
+        img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+
+    // Encode as high-quality JPEG — low quality blurs small text/digits
+    // (a decimal point can shift with aggressive chroma subsampling).
+    let mut bytes = Vec::new();
+    let mut cursor = Cursor::new(&mut bytes);
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 92);
+    let rgb = resized.to_rgb8();
+    image::DynamicImage::ImageRgb8(rgb)
+        .write_with_encoder(encoder)
+        .map_err(|e| format!("Failed to encode image: {}", e))?;
+
+    let encoded = B64.encode(&bytes);
+    Ok(format!("data:image/jpeg;base64,{}", encoded))
+}
+
 #[tauri::command]
 pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, String> {
     let workdir = workdir_path(&workdir)?;
@@ -269,40 +302,37 @@ pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, 
         ));
     }
 
-    let resolved_clone = resolved.clone();
-    let data_url = tokio::task::spawn_blocking(move || -> Result<String, String> {
-        let img =
-            image::open(&resolved_clone).map_err(|e| format!("Failed to decode image: {}", e))?;
+    tokio::task::spawn_blocking(move || encode_resized_jpeg_data_url(&resolved))
+        .await
+        .map_err(|e| format!("image task failed: {}", e))?
+}
 
-        // Resize if larger than MAX_IMAGE_DIMENSION on the longest side
-        let (w, h) = (img.width(), img.height());
-        let max_side = w.max(h);
-        let resized = if max_side > MAX_IMAGE_DIMENSION {
-            let scale = MAX_IMAGE_DIMENSION as f32 / max_side as f32;
-            let new_w = (w as f32 * scale) as u32;
-            let new_h = (h as f32 * scale) as u32;
-            img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3)
-        } else {
-            img
-        };
+/// Read an image at an absolute path (from a native file-drop) and return a
+/// resized JPEG `data:` URL for attaching to the chat. Unlike `fs_read_image`
+/// this isn't workdir-scoped — the user explicitly dropped the file.
+#[tauri::command]
+pub async fn read_dropped_image(path: String) -> Result<String, String> {
+    let resolved = std::path::PathBuf::from(&path);
 
-        // Encode as high-quality JPEG — low quality blurs small text/digits
-        // (a decimal point can shift with aggressive chroma subsampling).
-        let mut bytes = Vec::new();
-        let mut cursor = Cursor::new(&mut bytes);
-        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 92);
-        let rgb = resized.to_rgb8();
-        image::DynamicImage::ImageRgb8(rgb)
-            .write_with_encoder(encoder)
-            .map_err(|e| format!("Failed to encode image: {}", e))?;
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", path));
+    }
 
-        let encoded = B64.encode(&bytes);
-        Ok(format!("data:image/jpeg;base64,{}", encoded))
-    })
-    .await
-    .map_err(|e| format!("image task failed: {}", e))??;
+    let metadata = fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
 
-    Ok(data_url)
+    if metadata.len() > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "Image too large ({} bytes). Maximum is {} bytes.",
+            metadata.len(),
+            MAX_IMAGE_BYTES
+        ));
+    }
+
+    tokio::task::spawn_blocking(move || encode_resized_jpeg_data_url(&resolved))
+        .await
+        .map_err(|e| format!("image task failed: {}", e))?
 }
 
 #[cfg(test)]

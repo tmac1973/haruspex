@@ -6,6 +6,7 @@
 	import SourceChip from '$lib/components/SourceChip.svelte';
 	import MicButton from '$lib/components/MicButton.svelte';
 	import WorkingDirButton from '$lib/components/WorkingDirButton.svelte';
+	import { imageDropTarget } from '$lib/utils/imageDrop';
 	import { messageText } from '$lib/api';
 	import {
 		getActiveConversation,
@@ -69,20 +70,9 @@
 		}
 	}
 
-	function onComposerDrop(e: DragEvent) {
-		const files = imageFilesFrom(e.dataTransfer);
-		dragOver = false;
-		if (files.length) {
-			e.preventDefault();
-			void addImageFiles(files);
-		}
-	}
-
-	function onComposerDragOver(e: DragEvent) {
-		if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) {
-			e.preventDefault();
-			dragOver = true;
-		}
+	/** Attach already-encoded image data URLs (from a native file drop). */
+	function addImageUrls(urls: string[]) {
+		pendingImages = [...pendingImages, ...urls.map((url) => ({ id: imgSeq++, url }))];
 	}
 
 	/** Single send path for the button, Enter, and voice — folds in any
@@ -446,10 +436,7 @@
 		<div
 			class="input-area"
 			class:drag-over={dragOver}
-			ondragover={onComposerDragOver}
-			ondragleave={() => (dragOver = false)}
-			ondrop={onComposerDrop}
-			role="group"
+			use:imageDropTarget={{ onImages: addImageUrls, onDragChange: (over) => (dragOver = over) }}
 		>
 			{#if isGenerating}
 				<button class="stop-btn" onclick={() => cancelGeneration()}>Stop generating</button>

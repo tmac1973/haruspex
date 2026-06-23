@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
+	import { imageDropTarget } from '$lib/utils/imageDrop';
 	import MicButton from '$lib/components/MicButton.svelte';
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
@@ -167,20 +168,9 @@
 		}
 	}
 
-	function onComposerDrop(e: DragEvent) {
-		const files = imageFilesFrom(e.dataTransfer);
-		dragOver = false;
-		if (files.length) {
-			e.preventDefault();
-			void addImageFiles(files);
-		}
-	}
-
-	function onComposerDragOver(e: DragEvent) {
-		if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) {
-			e.preventDefault();
-			dragOver = true;
-		}
+	/** Attach already-encoded image data URLs (from a native file drop). */
+	function addImageUrls(urls: string[]) {
+		pendingImages = [...pendingImages, ...urls.map((url) => ({ id: imgSeq++, url }))];
 	}
 
 	/** Single send path (button, Enter, voice) — folds in attached images. */
@@ -382,9 +372,7 @@
 		<footer
 			class="composer"
 			class:drag-over={dragOver}
-			ondragover={onComposerDragOver}
-			ondragleave={() => (dragOver = false)}
-			ondrop={onComposerDrop}
+			use:imageDropTarget={{ onImages: addImageUrls, onDragChange: (over) => (dragOver = over) }}
 		>
 			{#if pendingImages.length}
 				<div class="attachments">
