@@ -191,7 +191,7 @@ mod tests {
         let order = state.rotation_order();
         assert_eq!(
             order,
-            vec!["startpage", "brave_html", "duckduckgo", "mojeek"]
+            vec!["startpage", "yahoo", "brave_html", "duckduckgo", "mojeek"]
         );
     }
 
@@ -201,31 +201,27 @@ mod tests {
         // First search starts with startpage
         assert_eq!(state.rotation_order()[0], "startpage");
 
-        // After advancing, the next one starts with brave_html
+        // After advancing, the next one starts with yahoo
         state.advance_rotation_cursor();
         assert_eq!(
             state.rotation_order(),
-            vec!["brave_html", "duckduckgo", "mojeek", "startpage"]
+            vec!["yahoo", "brave_html", "duckduckgo", "mojeek", "startpage"]
         );
 
         // Advance through the rest of the cycle.
         state.advance_rotation_cursor();
         assert_eq!(
             state.rotation_order(),
-            vec!["duckduckgo", "mojeek", "startpage", "brave_html"]
+            vec!["brave_html", "duckduckgo", "mojeek", "startpage", "yahoo"]
         );
 
-        state.advance_rotation_cursor();
+        // And after a full lap, wraps back around to startpage.
+        for _ in 0..3 {
+            state.advance_rotation_cursor();
+        }
         assert_eq!(
             state.rotation_order(),
-            vec!["mojeek", "startpage", "brave_html", "duckduckgo"]
-        );
-
-        // And wraps back around to startpage
-        state.advance_rotation_cursor();
-        assert_eq!(
-            state.rotation_order(),
-            vec!["startpage", "brave_html", "duckduckgo", "mojeek"]
+            vec!["startpage", "yahoo", "brave_html", "duckduckgo", "mojeek"]
         );
     }
 

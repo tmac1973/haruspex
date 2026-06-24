@@ -612,6 +612,141 @@ fn text_skipping_style(e: ElementRef) -> String {
     buf.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+// Yahoo HTML search — Yahoo's web results are Bing-sourced and server-rendered,
+// so plain-HTTP scraping yields Bing-quality results without a browser. Organic
+// results live in `div.algo`; the clean page title is the nested `h3.title` (a
+// separate absolutely-positioned div holds the favicon + URL breadcrumb, which
+// we ignore); result links are wrapped in `r.search.yahoo.com` redirects that
+// carry the real destination in the `RU=` path segment.
+
+pub(super) async fn search_yahoo(
+    query: &str,
+    _recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5)),
+        proxy,
+    )
+    .map_err(SearchFailure::other)?
+    .build()
+    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
+
+    // Yahoo's freshness param isn't reliably documented on the HTML endpoint, so
+    // recency is intentionally not applied here.
+    let url = format!(
+        "https://search.yahoo.com/search?p={}",
+        urlencoding::encode(query)
+    );
+
+    let resp = client
+        .get(&url)
+        .header("User-Agent", USER_AGENT)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Yahoo search failed"))?;
+
+    if !resp.status().is_success() {
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("Yahoo error: {}", resp.status()),
+        ));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Failed to read Yahoo response"))?;
+
+    let results =
+        parse_yahoo_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
+
+    // No results + a consent/captcha fingerprint means Yahoo bounced us to its
+    // gate rather than a SERP — cool the engine down rather than report empty.
+    if results.is_empty() && is_yahoo_challenge(&html) {
+        return Err(SearchFailure::new(
+            SearchFailureKind::RateLimited,
+            "Yahoo served a consent/anti-bot gate — temporarily unavailable.".to_string(),
+        ));
+    }
+
+    if results.is_empty() {
+        warn_empty_scrape(
+            "Yahoo",
+            &html,
+            &["class=\"algo", "compTitle", "h3 class=\"title", "compText"],
+        );
+    }
+
+    Ok(results)
+}
+
+fn is_yahoo_challenge(html: &str) -> bool {
+    let lower = html.to_lowercase();
+    lower.contains("captcha")
+        || lower.contains("consent.yahoo")
+        || lower.contains("guce.yahoo")
+        || lower.contains("are you a human")
+}
+
+/// Decode the real destination URL from a `r.search.yahoo.com/...//RU=<enc>/RK=`
+/// redirect link. The `RU=` value is percent-encoded (so it contains no literal
+/// `/`), which lets us slice it out up to the next path segment.
+fn decode_yahoo_redirect(href: &str) -> Option<String> {
+    let pos = href.find("/RU=")?;
+    let rest = &href[pos + 4..];
+    let end = rest.find('/').unwrap_or(rest.len());
+    let decoded = urlencoding::decode(&rest[..end]).ok()?.into_owned();
+    decoded.starts_with("http").then_some(decoded)
+}
+
+pub(super) fn parse_yahoo_html(html: &str) -> Result<Vec<SearchResult>, String> {
+    let document = Html::parse_document(html);
+    // Organic results are `div.algo` (ads use `div.ads`, so they're excluded).
+    let result_selector =
+        Selector::parse("div.algo").map_err(|_| "Failed to parse yahoo result selector")?;
+    // Clean title lives in the nested h3.title (not the breadcrumb div).
+    let title_selector =
+        Selector::parse("h3.title").map_err(|_| "Failed to parse yahoo title selector")?;
+    // First Yahoo redirect link in the result is the canonical destination.
+    let link_selector = Selector::parse(r#"a[href*="r.search.yahoo.com"]"#)
+        .map_err(|_| "Failed to parse yahoo link selector")?;
+    let snippet_selector =
+        Selector::parse("div.compText").map_err(|_| "Failed to parse yahoo snippet selector")?;
+
+    Ok(scrape_results(&document, &result_selector, |element| {
+        let title = element
+            .select(&title_selector)
+            .next()
+            .map(element_text)
+            .unwrap_or_default();
+        let url = element
+            .select(&link_selector)
+            .next()
+            .and_then(|e| e.value().attr("href"))
+            .and_then(decode_yahoo_redirect)
+            .unwrap_or_default();
+        let snippet = element
+            .select(&snippet_selector)
+            .next()
+            .map(element_text)
+            .unwrap_or_default();
+
+        (!title.is_empty() && url.starts_with("http")).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
+}
+
 // Auto-rotation search across multiple engines
 
 /// Build the engine try-order from the round-robin rotation: engines still
@@ -706,6 +841,7 @@ pub(super) async fn search_auto(
         let start = std::time::Instant::now();
         let result = match *engine {
             "startpage" => search_startpage(query, recency, proxy).await,
+            "yahoo" => search_yahoo(query, recency, proxy).await,
             "brave_html" => search_brave_html(query, recency, proxy).await,
             "duckduckgo" => search_duckduckgo(query, recency, proxy).await,
             "mojeek" => search_mojeek(query, recency, proxy).await,
@@ -1010,5 +1146,54 @@ mod tests {
         assert!(!is_startpage_challenge(
             "<html><div class=\"result\">normal serp</div></html>"
         ));
+    }
+
+    #[test]
+    fn parse_yahoo_extracts_clean_title_url_and_snippet() {
+        // Mirrors Yahoo's real markup: a `div.algo` container, a redirect link
+        // carrying the real URL in `RU=`, a breadcrumb div (favicon + site name)
+        // that must NOT be mistaken for the title, the clean title in `h3.title`,
+        // and the snippet in `div.compText`.
+        let html = r##"
+            <li class="first"><div class="dd fst algo algo-sr relsrch Sr">
+              <div class="compTitle">
+                <a class="d-ib" data-matarget="algo" target="_blank"
+                   href="https://r.search.yahoo.com/_ylt=Aaa;_ylu=Bbb/RV=2/RE=1/RO=10/RU=https%3a%2f%2fgo.dev%2fdoc%2ftutorial%2fgenerics/RK=2/RS=ccc-">
+                  <div class="d-ib p-abs t-0 l-0">
+                    <span class="d-ib va-mid"><span class="fc-141414 d-b">The Go Programming Language</span>https://go.dev &rsaquo; doc</span>
+                  </div>
+                  <h3 class="title"><span class="d-b">Tutorial: Getting started with generics</span></h3>
+                </a>
+              </div>
+              <div class="compText aAbs"><p class="fc-dustygray">This <b>tutorial</b> introduces generics in Go.</p></div>
+            </div></li>
+        "##;
+        let results = parse_yahoo_html(html).expect("parse ok");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Tutorial: Getting started with generics");
+        assert_eq!(results[0].url, "https://go.dev/doc/tutorial/generics");
+        assert!(results[0].snippet.contains("introduces generics"));
+        // The breadcrumb/site-name must not leak into the title.
+        assert!(!results[0].title.contains("go.dev"));
+    }
+
+    #[test]
+    fn parse_yahoo_handles_empty_input() {
+        let results = parse_yahoo_html("<html><body>nothing</body></html>").expect("parse ok");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn yahoo_redirect_decode() {
+        assert_eq!(
+            decode_yahoo_redirect(
+                "https://r.search.yahoo.com/_ylt=x/RV=2/RU=https%3a%2f%2fexample.com%2fpage/RK=2/RS=y"
+            ),
+            Some("https://example.com/page".to_string())
+        );
+        assert_eq!(
+            decode_yahoo_redirect("https://r.search.yahoo.com/no-ru-here"),
+            None
+        );
     }
 }
