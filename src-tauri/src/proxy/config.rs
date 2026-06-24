@@ -31,7 +31,7 @@ pub(super) const ENGINE_COOLDOWN_SLOW: Duration = Duration::from_secs(45);
 // Both have no plain-HTTP scraping path; resurrecting either would require
 // a headless browser (Playwright/Puppeteer) or a paid API.
 // See git history for the previous search_bing / search_qwant implementations.
-pub(super) const AUTO_ENGINES: &[&str] = &["brave_html", "duckduckgo", "mojeek"];
+pub(super) const AUTO_ENGINES: &[&str] = &["startpage", "brave_html", "duckduckgo", "mojeek"];
 
 /// User-configured HTTP proxy. Mirrors the `ProxyConfig` TS type and is
 /// passed in as an optional argument on every egress command. `mode` is

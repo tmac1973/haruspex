@@ -189,34 +189,43 @@ mod tests {
     fn rotation_starts_at_first_engine() {
         let state = ProxyState::new();
         let order = state.rotation_order();
-        assert_eq!(order, vec!["brave_html", "duckduckgo", "mojeek"]);
+        assert_eq!(
+            order,
+            vec!["startpage", "brave_html", "duckduckgo", "mojeek"]
+        );
     }
 
     #[test]
     fn rotation_advances_after_success() {
         let state = ProxyState::new();
-        // First search starts with brave_html
-        assert_eq!(state.rotation_order()[0], "brave_html");
+        // First search starts with startpage
+        assert_eq!(state.rotation_order()[0], "startpage");
 
-        // After advancing, the next one starts with duckduckgo
+        // After advancing, the next one starts with brave_html
         state.advance_rotation_cursor();
         assert_eq!(
             state.rotation_order(),
-            vec!["duckduckgo", "mojeek", "brave_html"]
+            vec!["brave_html", "duckduckgo", "mojeek", "startpage"]
         );
 
-        // And then mojeek
+        // Advance through the rest of the cycle.
         state.advance_rotation_cursor();
         assert_eq!(
             state.rotation_order(),
-            vec!["mojeek", "brave_html", "duckduckgo"]
+            vec!["duckduckgo", "mojeek", "startpage", "brave_html"]
         );
 
-        // And wraps back around to brave_html
         state.advance_rotation_cursor();
         assert_eq!(
             state.rotation_order(),
-            vec!["brave_html", "duckduckgo", "mojeek"]
+            vec!["mojeek", "startpage", "brave_html", "duckduckgo"]
+        );
+
+        // And wraps back around to startpage
+        state.advance_rotation_cursor();
+        assert_eq!(
+            state.rotation_order(),
+            vec!["startpage", "brave_html", "duckduckgo", "mojeek"]
         );
     }
 

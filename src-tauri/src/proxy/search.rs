@@ -465,6 +465,153 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
     }))
 }
 
+// Startpage HTML search — Startpage proxies Google's results and serves them
+// server-rendered, so plain-HTTP scraping yields Google-quality results without
+// a browser, and without ever hitting Google's own bot wall. The markup is
+// Emotion CSS-in-JS, so we anchor on the stable `data-testid` (`gl-title-link`)
+// and the unhashed class tokens (`result`, `description`) rather than the
+// hashed `css-*` classes. Note: Emotion injects `<style>` tags *inside* the
+// result anchors, so titles/snippets must be read with `text_skipping_style`.
+
+pub(super) async fn search_startpage(
+    query: &str,
+    _recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5)),
+        proxy,
+    )
+    .map_err(SearchFailure::other)?
+    .build()
+    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
+
+    // Startpage's simple GET endpoint exposes no reliable date-filter param, so
+    // recency is intentionally not applied here.
+    let url = format!(
+        "https://www.startpage.com/sp/search?query={}",
+        urlencoding::encode(query)
+    );
+
+    let resp = client
+        .get(&url)
+        .header("User-Agent", USER_AGENT)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Startpage search failed"))?;
+
+    if !resp.status().is_success() {
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("Startpage error: {}", resp.status()),
+        ));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Failed to read Startpage response"))?;
+
+    let results =
+        parse_startpage_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
+
+    // No results + an anti-bot fingerprint means Startpage served its challenge
+    // page rather than a SERP — surface it as rate-limited so the engine cools
+    // down, instead of mistaking it for a genuine empty result set.
+    if results.is_empty() && is_startpage_challenge(&html) {
+        return Err(SearchFailure::new(
+            SearchFailureKind::RateLimited,
+            "Startpage served an anti-bot challenge — temporarily unavailable.".to_string(),
+        ));
+    }
+
+    if results.is_empty() {
+        warn_empty_scrape(
+            "Startpage",
+            &html,
+            &["gl-title-link", "result-title", "class=\"result", "w-gl"],
+        );
+    }
+
+    Ok(results)
+}
+
+/// Heuristic: does this look like Startpage's anti-bot / captcha page rather
+/// than a SERP? Only consulted when zero results parsed (a real SERP that
+/// happens to contain the word elsewhere never reaches this).
+fn is_startpage_challenge(html: &str) -> bool {
+    let lower = html.to_lowercase();
+    lower.contains("captcha")
+        || lower.contains("/sp/captcha")
+        || lower.contains("are you human")
+        || lower.contains("unusual traffic")
+        || lower.contains("anubis")
+}
+
+pub(super) fn parse_startpage_html(html: &str) -> Result<Vec<SearchResult>, String> {
+    let document = Html::parse_document(html);
+    // Each organic result is a div whose class list includes the unhashed
+    // token `result` (alongside an Emotion `css-*` hash we ignore).
+    let result_selector =
+        Selector::parse("div.result").map_err(|_| "Failed to parse startpage result selector")?;
+    // Stable test id on the title anchor; its href is the real destination
+    // (Startpage does not redirect-wrap organic result links).
+    let title_selector = Selector::parse(r#"a[data-testid="gl-title-link"]"#)
+        .map_err(|_| "Failed to parse startpage title selector")?;
+    let desc_selector = Selector::parse("p.description")
+        .map_err(|_| "Failed to parse startpage snippet selector")?;
+
+    Ok(scrape_results(&document, &result_selector, |element| {
+        let title_el = element.select(&title_selector).next();
+        let url = title_el
+            .and_then(|e| e.value().attr("href"))
+            .unwrap_or_default()
+            .to_string();
+        let title = title_el.map(text_skipping_style).unwrap_or_default();
+        let snippet = element
+            .select(&desc_selector)
+            .next()
+            .map(text_skipping_style)
+            .unwrap_or_default();
+
+        (!title.is_empty() && url.starts_with("http")).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
+}
+
+/// Trimmed visible text of an element, ignoring the contents of any nested
+/// `<style>`/`<script>`. Startpage injects Emotion `<style>` tags inside its
+/// result anchors and snippets, whose CSS rules would otherwise pollute the
+/// extracted title/snippet.
+fn text_skipping_style(e: ElementRef) -> String {
+    let mut buf = String::new();
+    for node in e.descendants() {
+        let Some(text) = node.value().as_text() else {
+            continue;
+        };
+        let inside_style = node.ancestors().any(|a| {
+            a.value()
+                .as_element()
+                .map(|el| el.name() == "style" || el.name() == "script")
+                .unwrap_or(false)
+        });
+        if !inside_style {
+            buf.push_str(text);
+        }
+    }
+    buf.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 // Auto-rotation search across multiple engines
 
 /// Build the engine try-order from the round-robin rotation: engines still
@@ -558,6 +705,7 @@ pub(super) async fn search_auto(
 
         let start = std::time::Instant::now();
         let result = match *engine {
+            "startpage" => search_startpage(query, recency, proxy).await,
             "brave_html" => search_brave_html(query, recency, proxy).await,
             "duckduckgo" => search_duckduckgo(query, recency, proxy).await,
             "mojeek" => search_mojeek(query, recency, proxy).await,
@@ -818,5 +966,49 @@ mod tests {
     fn parse_brave_html_handles_empty_input() {
         let results = parse_brave_html("<html><body>nothing here</body></html>").expect("parse ok");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn parse_startpage_extracts_result_and_strips_emotion_style() {
+        // Mirrors Startpage's real markup: a `div.result` wrapper, a title anchor
+        // tagged `data-testid="gl-title-link"` with the real href, an Emotion
+        // <style> injected *inside* the anchor (whose CSS must NOT leak into the
+        // title), and a `p.description` snippet.
+        let html = r##"
+            <html><body>
+            <div class="result css-ocm99y">
+              <div class="wgl-title-link-container css-1gz2b5f">
+                <a class="result-title result-link css-1bggj8v"
+                   href="https://go.dev/doc/tutorial/generics"
+                   data-testid="gl-title-link"><style data-emotion="css i3irj7">.css-i3irj7{color:#2E39B3;}</style>Tutorial: Getting started with generics</a>
+              </div>
+              <p class="description css-abc">Create a folder for your code, then add generics.</p>
+            </div>
+            </body></html>
+        "##;
+        let results = parse_startpage_html(html).expect("parse ok");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Tutorial: Getting started with generics");
+        assert_eq!(results[0].url, "https://go.dev/doc/tutorial/generics");
+        assert!(results[0].snippet.contains("Create a folder"));
+        // The Emotion CSS rule must not have leaked into the title.
+        assert!(!results[0].title.contains("css-"));
+    }
+
+    #[test]
+    fn parse_startpage_handles_empty_input() {
+        let results =
+            parse_startpage_html("<html><body>nothing here</body></html>").expect("parse ok");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn startpage_challenge_detection() {
+        assert!(is_startpage_challenge(
+            "<html>Please solve the CAPTCHA to continue</html>"
+        ));
+        assert!(!is_startpage_challenge(
+            "<html><div class=\"result\">normal serp</div></html>"
+        ));
     }
 }
