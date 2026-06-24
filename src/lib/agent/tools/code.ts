@@ -11,7 +11,8 @@ import {
 	isSessionApproved,
 	approveSession
 } from '$lib/stores/codeCommandApproval.svelte';
-import { runInPty, shouldUsePty, RUN_OUTPUT_MAX_BYTES } from './pty-exec';
+import { runInPty, runInPtyBackground, shouldUsePty, RUN_OUTPUT_MAX_BYTES } from './pty-exec';
+import { registerWatch } from '$lib/shell/backgroundWatch';
 import type { RunCommandResult } from '$lib/ipc/gen/RunCommandResult';
 import type { GrepResult } from '$lib/ipc/gen/GrepResult';
 import type { GlobResult } from '$lib/ipc/gen/GlobResult';
@@ -125,7 +126,7 @@ registerTool({
 		function: {
 			name: 'run_command',
 			description:
-				"Run a shell command in the project. When driven from a terminal session it runs in your live interactive shell (sharing the activated venv / env / cwd) and appears in your terminal; otherwise it runs one-shot. cwd/env changes from a one-shot don't persist between calls, so chain with && when needed. Output is truncated past ~16KB; if so, the full output is saved to a file path you can read with fs_read_text.",
+				"Run a shell command in the project. When driven from a terminal session it runs in your live interactive shell (sharing the activated venv / env / cwd) and appears in your terminal; otherwise it runs one-shot. cwd/env changes from a one-shot don't persist between calls, so chain with && when needed. Output is truncated past ~16KB; if so, the full output is saved to a file path you can read with fs_read_text. For a server, watcher, or any program that does not exit on its own, set background:true (returns immediately, doesn't tie up the terminal) — add watch:true if you want to be notified when it finishes. Do NOT run such a program in the foreground; it will just time out.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -133,6 +134,16 @@ registerTool({
 					timeout_secs: {
 						type: 'number',
 						description: 'Optional timeout in seconds for this command.'
+					},
+					background: {
+						type: 'boolean',
+						description:
+							'Run detached and return immediately (output goes to a temp log you can read with fs_read_text). Use for servers / long-running programs so they do not hold the terminal or block you. Requires the live terminal session.'
+					},
+					watch: {
+						type: 'boolean',
+						description:
+							'Like background, but you receive a notification turn when the command finishes (with its exit code + output). Use for a long build/test/job whose result you need but do not want to sit and wait for. Do not poll — continue or wrap up; the notification will come.'
 					}
 				},
 				required: ['command']
@@ -149,6 +160,8 @@ registerTool({
 		const approval = await ensureCommandApproved(command, ctx);
 		if (approval !== 'ok') return toolResult(approval.message);
 
+		const wantsBackground = args.background === true || args.watch === true;
+
 		const fallbackTimeout = getSettings().codeRunCommandTimeoutSecs;
 		const timeoutSecs =
 			typeof args.timeout_secs === 'number' && args.timeout_secs > 0
@@ -156,6 +169,10 @@ registerTool({
 				: fallbackTimeout;
 
 		try {
+			// background / watch: detach in the live PTY and return at once.
+			if (wantsBackground) {
+				return toolResult(await startBackground(command, ctx, args.watch === true));
+			}
 			// Drive the live PTY when in a shell session and integration is
 			// available; otherwise fall back to a one-shot capture.
 			if (ctx.shellSessionId != null && (await shouldUsePty(ctx))) {
@@ -169,6 +186,38 @@ registerTool({
 		}
 	}
 });
+
+/**
+ * Start `command` detached in the live PTY (run_command background/watch).
+ * Returns the model-facing message. Requires a shell session with integration;
+ * for `watch`, also registers a completion watcher that queues a follow-up turn.
+ */
+async function startBackground(command: string, ctx: ToolContext, watch: boolean): Promise<string> {
+	if (ctx.shellSessionId == null || !(await shouldUsePty(ctx))) {
+		return toolError(
+			'background/watch need the live terminal session (Code mode in the Shell tab with shell integration). Either run it normally, or start it yourself with `&`.'
+		);
+	}
+	const handle = await runInPtyBackground(ctx.shellSessionId, command, ctx.signal);
+	if (typeof handle === 'string') return handle;
+	if (watch) {
+		registerWatch({
+			ptySessionId: ctx.shellSessionId,
+			command,
+			logPath: handle.logPath,
+			donePath: handle.donePath,
+			startedAtMs: Date.now()
+		});
+		return (
+			`Started in the background with watch on (PID ${handle.pid}). Output is collecting in ${handle.logPath}. ` +
+			`You'll get a notification turn here when it finishes — do NOT poll for it; continue with other work or wrap up.`
+		);
+	}
+	return (
+		`Started in the background (PID ${handle.pid}). Output → ${handle.logPath} (read it with fs_read_text). ` +
+		`Not watched, so check on it yourself with shell_read / fs_read_text; stop it with \`kill ${handle.pid}\`.`
+	);
+}
 
 function formatGrep(res: GrepResult): string {
 	if (res.matches.length === 0) return 'No matches.';

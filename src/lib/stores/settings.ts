@@ -389,7 +389,7 @@ const defaults: AppSettings = {
 	shellSidebarWidth: 480,
 	shellCodeModeDefault: false,
 	codeAutoApprove: false,
-	codeRunCommandTimeoutSecs: 120,
+	codeRunCommandTimeoutSecs: 30,
 	codeCommandExec: 'auto',
 	codeMaxIterations: 40
 };
