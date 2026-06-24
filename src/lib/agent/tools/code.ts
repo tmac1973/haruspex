@@ -219,13 +219,26 @@ async function startBackground(command: string, ctx: ToolContext, watch: boolean
 	);
 }
 
-function formatGrep(res: GrepResult): string {
-	if (res.matches.length === 0) return 'No matches.';
-	const lines = res.matches.map((m) => `${m.path}:${m.line}: ${m.text}`);
-	if (res.truncated) {
-		lines.push(`… (truncated at ${res.matches.length} matches — narrow the pattern or path)`);
+function formatGrep(res: GrepResult, mode: { count: boolean; filesOnly: boolean }): string {
+	const trunc = (label: string) =>
+		res.truncated ? [`… (truncated — narrow the pattern or path; ${label})`] : [];
+
+	if (mode.count) {
+		if (res.counts.length === 0) return 'No matches.';
+		const lines = res.counts.map((c) => `${c.path}: ${c.count}`);
+		lines.push(
+			`Total: ${res.total} in ${res.counts.length} file${res.counts.length === 1 ? '' : 's'}`
+		);
+		return [...lines, ...trunc('count capped')].join('\n');
 	}
-	return lines.join('\n');
+	if (mode.filesOnly) {
+		if (res.files.length === 0) return 'No matches.';
+		return [...res.files, ...trunc('file list capped')].join('\n');
+	}
+	if (res.matches.length === 0) return 'No matches.';
+	// Context lines use a '-' separator (grep -C convention); matches use ':'.
+	const lines = res.matches.map((m) => `${m.path}${m.is_match ? ':' : '-'}${m.line}: ${m.text}`);
+	return [...lines, ...trunc('match cap reached')].join('\n');
 }
 
 registerTool({
@@ -235,14 +248,34 @@ registerTool({
 		function: {
 			name: 'code_grep',
 			description:
-				'Search file CONTENTS across the project (gitignore-aware). Returns file:line: matched-line locations, not file bodies. Find where something is defined or used, then fs_read_text those lines.',
+				'Search file CONTENTS across the project (gitignore-aware). Returns file:line: matched-line locations, not file bodies. Prefer this over running `grep` via run_command — it skips gitignored files and avoids spawning a process. Supports exclude globs, count-only, files-only, and context lines (see params). Find where something is defined or used, then fs_read_text those lines.',
 			parameters: {
 				type: 'object',
 				properties: {
 					pattern: { type: 'string', description: 'Text or regular expression.' },
 					path: { type: 'string', description: 'Optional subdirectory to limit the search.' },
-					glob: { type: 'string', description: 'Optional file filter, e.g. "*.rs".' },
-					ignore_case: { type: 'boolean', description: 'Case-insensitive when true.' }
+					glob: {
+						type: 'string',
+						description: 'Optional file filter, e.g. "*.rs" or path glob "src/**/*.ts".'
+					},
+					exclude: {
+						type: 'string',
+						description:
+							'Optional glob of files to EXCLUDE, e.g. "*_test.go" or path glob "vendor/**".'
+					},
+					ignore_case: { type: 'boolean', description: 'Case-insensitive when true.' },
+					count: {
+						type: 'boolean',
+						description: 'Return per-file match counts + total instead of lines (like grep -c).'
+					},
+					files_only: {
+						type: 'boolean',
+						description: 'Return only the files that contain a match (like grep -l).'
+					},
+					context: {
+						type: 'number',
+						description: 'Include this many lines before/after each match (like grep -C).'
+					}
 				},
 				required: ['pattern']
 			}
@@ -258,10 +291,19 @@ registerTool({
 				pattern: args.pattern as string,
 				path: (args.path as string) ?? null,
 				glob: (args.glob as string) ?? null,
+				exclude: (args.exclude as string) ?? null,
 				ignoreCase: (args.ignore_case as boolean) ?? null,
-				maxMatches: null
+				maxMatches: null,
+				count: (args.count as boolean) ?? null,
+				filesOnly: (args.files_only as boolean) ?? null,
+				context: (args.context as number) ?? null
 			});
-			return toolResult(formatGrep(res));
+			return toolResult(
+				formatGrep(res, {
+					count: (args.count as boolean) ?? false,
+					filesOnly: (args.files_only as boolean) ?? false
+				})
+			);
 		} catch (e) {
 			return toolResult(toolInvokeError('code_grep', e));
 		}
