@@ -252,19 +252,100 @@ pub struct GrepMatch {
     pub path: String,
     pub line: u32,
     pub text: String,
+    /// False for the surrounding lines emitted in context mode; true for the
+    /// matched line itself (and always true when no context was requested).
+    pub is_match: bool,
+}
+
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct GrepFileCount {
+    pub path: String,
+    pub count: u32,
 }
 
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[ts(export)]
 pub struct GrepResult {
+    /// Matched (and, in context mode, surrounding) lines. Empty in count /
+    /// files-only mode.
     pub matches: Vec<GrepMatch>,
     pub truncated: bool,
+    /// Per-file match counts — populated only in count mode.
+    pub counts: Vec<GrepFileCount>,
+    /// Grand total of matches across all files — count mode only.
+    pub total: u32,
+    /// Files with at least one match — populated only in files-only mode.
+    pub files: Vec<String>,
+}
+
+/// Trim line endings and clamp to GREP_LINE_CHARS so grep output stays compact.
+fn clamp_line(s: &str) -> String {
+    s.trim_end_matches(['\n', '\r'])
+        .chars()
+        .take(GREP_LINE_CHARS)
+        .collect()
+}
+
+/// grep Sink that collects matched lines *and* their surrounding context for
+/// `code_grep`'s context mode. The `UTF8` convenience sink only surfaces
+/// matched lines (it drops context), so context mode needs a custom sink.
+struct ContextSink<'a> {
+    path: &'a str,
+    out: &'a mut Vec<GrepMatch>,
+    /// Shared running count of *matched* lines (context lines don't count) so
+    /// the cap and truncation behave the same as the no-context path.
+    matched: &'a mut usize,
+    cap: usize,
+}
+
+impl grep::searcher::Sink for ContextSink<'_> {
+    type Error = std::io::Error;
+
+    fn matched(
+        &mut self,
+        _searcher: &grep::searcher::Searcher,
+        m: &grep::searcher::SinkMatch<'_>,
+    ) -> Result<bool, std::io::Error> {
+        self.out.push(GrepMatch {
+            path: self.path.to_string(),
+            line: m.line_number().unwrap_or(0) as u32,
+            text: clamp_line(&String::from_utf8_lossy(m.bytes())),
+            is_match: true,
+        });
+        *self.matched += 1;
+        // Stop this file once the global match cap is reached.
+        Ok(*self.matched < self.cap)
+    }
+
+    fn context(
+        &mut self,
+        _searcher: &grep::searcher::Searcher,
+        c: &grep::searcher::SinkContext<'_>,
+    ) -> Result<bool, std::io::Error> {
+        self.out.push(GrepMatch {
+            path: self.path.to_string(),
+            line: c.line_number().unwrap_or(0) as u32,
+            text: clamp_line(&String::from_utf8_lossy(c.bytes())),
+            is_match: false,
+        });
+        Ok(true)
+    }
 }
 
 /// Search file *contents* under `root` (optionally narrowed to `path`),
 /// gitignore-aware, returning `file:line` locations — never whole bodies.
 /// Capped at `max_matches` (default 50), each line clamped to ~200 chars.
+///
+/// Modes (mirroring the grep flags the model otherwise shells out for):
+///   - `exclude`: skip files matching this glob (filename glob, or path glob
+///     when it contains a slash — same rule as `glob`).
+///   - `count`: return per-file match counts + grand total (`grep -c`).
+///   - `files_only`: return just the files that contain a match (`grep -l`).
+///   - `context`: include N lines around each match (`grep -C N`).
+/// `count` takes precedence over `files_only`; both ignore `context`.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn code_grep(
     root: String,
     pattern: String,
@@ -272,6 +353,10 @@ pub async fn code_grep(
     glob: Option<String>,
     ignore_case: Option<bool>,
     max_matches: Option<usize>,
+    exclude: Option<String>,
+    count: Option<bool>,
+    files_only: Option<bool>,
+    context: Option<u32>,
 ) -> Result<GrepResult, String> {
     use globset::Glob;
     use grep::regex::RegexMatcherBuilder;
@@ -297,20 +382,55 @@ pub async fn code_grep(
             .build(&pattern)
             .map_err(|e| format!("Invalid search pattern: {e}"))?;
 
-        // Optional file-name glob filter (e.g. "*.rs"), matched against the
-        // file name so it works regardless of directory depth.
-        let name_glob = match &glob {
-            Some(g) => Some(
-                Glob::new(g)
-                    .map_err(|e| format!("Invalid glob: {e}"))?
-                    .compile_matcher(),
-            ),
-            None => None,
+        // Optional glob filters. A pattern without a slash (e.g. "*.rs") is
+        // matched against the file name so it works regardless of directory
+        // depth; a pattern containing a slash (e.g. "internal/**/*.go") is
+        // matched against the path relative to `root`, mirroring `code_glob`.
+        let compile = |g: &str, what: &str| {
+            Glob::new(g)
+                .map(|glob| glob.compile_matcher())
+                .map_err(|e| format!("Invalid {what} glob: {e}"))
+        };
+        let glob_is_path = glob.as_deref().map(|g| g.contains('/')).unwrap_or(false);
+        let name_glob = glob.as_deref().map(|g| compile(g, "")).transpose()?;
+        let exclude_is_path = exclude.as_deref().map(|g| g.contains('/')).unwrap_or(false);
+        let exclude_glob = exclude
+            .as_deref()
+            .map(|g| compile(g, "exclude"))
+            .transpose()?;
+
+        let count_mode = count.unwrap_or(false);
+        let files_mode = !count_mode && files_only.unwrap_or(false);
+        // count / files-only don't emit per-line bodies, so context is moot there.
+        let ctx_lines = if count_mode || files_mode {
+            0
+        } else {
+            context.unwrap_or(0) as usize
         };
 
         let root_path = PathBuf::from(&root);
         let mut matches: Vec<GrepMatch> = Vec::new();
+        let mut matched_total: usize = 0;
+        let mut counts: Vec<GrepFileCount> = Vec::new();
+        let mut total: u32 = 0;
+        let mut files: Vec<String> = Vec::new();
         let mut truncated = false;
+
+        let mut searcher = SearcherBuilder::new()
+            .line_number(true)
+            .before_context(ctx_lines)
+            .after_context(ctx_lines)
+            .build();
+
+        // Match a compiled glob against the relative path (path globs) or the
+        // bare file name (simple globs), the same split `glob` uses.
+        let glob_hits = |m: &globset::GlobMatcher, is_path: bool, rel: &str, fpath: &Path| {
+            if is_path {
+                m.is_match(rel)
+            } else {
+                fpath.file_name().map(|n| m.is_match(n)).unwrap_or(false)
+            }
+        };
 
         // require_git(false) → honor .gitignore even when the project isn't a
         // git checkout (matches `rg --no-require-git`).
@@ -323,44 +443,110 @@ pub async fn code_grep(
                 continue;
             }
             let fpath = dent.path();
-            if let Some(g) = &name_glob {
-                let name = fpath.file_name().map(|n| n.to_string_lossy());
-                if !name.map(|n| g.is_match(n.as_ref())).unwrap_or(false) {
-                    continue;
-                }
-            }
             let rel = fpath
                 .strip_prefix(&root_path)
                 .unwrap_or(fpath)
                 .to_string_lossy()
                 .into_owned();
+            if let Some(g) = &name_glob {
+                if !glob_hits(g, glob_is_path, &rel, fpath) {
+                    continue;
+                }
+            }
+            if let Some(g) = &exclude_glob {
+                if glob_hits(g, exclude_is_path, &rel, fpath) {
+                    continue;
+                }
+            }
 
-            let mut searcher = SearcherBuilder::new().line_number(true).build();
-            let _ = searcher.search_path(
-                &matcher,
-                fpath,
-                UTF8(|lnum, line| {
-                    let text: String = line
-                        .trim_end_matches(['\n', '\r'])
-                        .chars()
-                        .take(GREP_LINE_CHARS)
-                        .collect();
-                    matches.push(GrepMatch {
+            if count_mode {
+                let mut n: u32 = 0;
+                let _ = searcher.search_path(
+                    &matcher,
+                    fpath,
+                    UTF8(|_lnum, _line| {
+                        Ok({
+                            n += 1;
+                            true
+                        })
+                    }),
+                );
+                if n > 0 {
+                    counts.push(GrepFileCount {
                         path: rel.clone(),
-                        line: lnum as u32,
-                        text,
+                        count: n,
                     });
-                    // Stop this file once we hit the cap.
-                    Ok(matches.len() < cap)
-                }),
-            );
-            if matches.len() >= cap {
-                truncated = true;
-                break;
+                    total += n;
+                    if counts.len() >= cap {
+                        truncated = true;
+                        break;
+                    }
+                }
+            } else if files_mode {
+                let mut found = false;
+                // Stop at the first hit — we only need the file name.
+                let _ = searcher.search_path(
+                    &matcher,
+                    fpath,
+                    UTF8(|_lnum, _line| {
+                        Ok({
+                            found = true;
+                            false
+                        })
+                    }),
+                );
+                if found {
+                    files.push(rel.clone());
+                    if files.len() >= cap {
+                        truncated = true;
+                        break;
+                    }
+                }
+            } else if ctx_lines > 0 {
+                let _ = searcher.search_path(
+                    &matcher,
+                    fpath,
+                    ContextSink {
+                        path: &rel,
+                        out: &mut matches,
+                        matched: &mut matched_total,
+                        cap,
+                    },
+                );
+                if matched_total >= cap {
+                    truncated = true;
+                    break;
+                }
+            } else {
+                let _ = searcher.search_path(
+                    &matcher,
+                    fpath,
+                    UTF8(|lnum, line| {
+                        matches.push(GrepMatch {
+                            path: rel.clone(),
+                            line: lnum as u32,
+                            text: clamp_line(line),
+                            is_match: true,
+                        });
+                        matched_total += 1;
+                        // Stop this file once we hit the cap.
+                        Ok(matched_total < cap)
+                    }),
+                );
+                if matched_total >= cap {
+                    truncated = true;
+                    break;
+                }
             }
         }
 
-        Ok(GrepResult { matches, truncated })
+        Ok(GrepResult {
+            matches,
+            truncated,
+            counts,
+            total,
+            files,
+        })
     })
     .await
     .map_err(|e| format!("grep task failed: {e}"))?
@@ -515,6 +701,10 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -535,11 +725,63 @@ mod tests {
             Some("*.md".to_string()),
             None,
             None,
+            None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
         // README.md has no "needle"; *.rs files are excluded by the glob.
         assert!(res.matches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn grep_path_glob_matches_relative_path() {
+        let dir = temp_repo("grep_path_glob");
+        // A glob containing a slash is matched against the path relative to
+        // root, so "src/**/*.rs" reaches the nested .rs files.
+        let hit = code_grep(
+            dir.to_string_lossy().into_owned(),
+            "needle".to_string(),
+            None,
+            Some("src/**/*.rs".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let paths: Vec<&str> = hit.matches.iter().map(|m| m.path.as_str()).collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("main.rs")),
+            "got: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("lib.rs")),
+            "got: {paths:?}"
+        );
+
+        // A path glob that doesn't match the directory yields nothing, even
+        // though the bare filename glob "*.rs" would have matched.
+        let miss = code_grep(
+            dir.to_string_lossy().into_owned(),
+            "needle".to_string(),
+            None,
+            Some("other/**/*.rs".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(miss.matches.is_empty(), "got: {:?}", miss.matches);
     }
 
     #[tokio::test]
@@ -552,11 +794,121 @@ mod tests {
             None,
             None,
             Some(1),
+            None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
         assert_eq!(res.matches.len(), 1);
         assert!(res.truncated);
+    }
+
+    #[tokio::test]
+    async fn grep_exclude_skips_matching_files() {
+        let dir = temp_repo("grep_exclude");
+        let res = code_grep(
+            dir.to_string_lossy().into_owned(),
+            "needle".to_string(),
+            None,
+            None,
+            None,
+            None,
+            Some("main.rs".to_string()),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let paths: Vec<&str> = res.matches.iter().map(|m| m.path.as_str()).collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("lib.rs")),
+            "got: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.ends_with("main.rs")),
+            "excluded file still present: {paths:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn grep_count_mode_returns_per_file_totals() {
+        let dir = temp_repo("grep_count");
+        let res = code_grep(
+            dir.to_string_lossy().into_owned(),
+            "needle".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        // needle: once in main.rs, once in lib.rs (ignored.rs is gitignored).
+        assert!(res.matches.is_empty());
+        assert_eq!(res.total, 2);
+        assert_eq!(res.counts.len(), 2);
+        assert!(res.counts.iter().all(|c| c.count == 1));
+    }
+
+    #[tokio::test]
+    async fn grep_files_only_lists_files_without_bodies() {
+        let dir = temp_repo("grep_files_only");
+        let res = code_grep(
+            dir.to_string_lossy().into_owned(),
+            "needle".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(res.matches.is_empty());
+        let mut files = res.files.clone();
+        files.sort();
+        assert_eq!(files.len(), 2, "got: {files:?}");
+        assert!(files.iter().any(|p| p.ends_with("main.rs")));
+        assert!(files.iter().any(|p| p.ends_with("lib.rs")));
+    }
+
+    #[tokio::test]
+    async fn grep_context_includes_surrounding_lines() {
+        let dir = temp_repo("grep_context");
+        // Limit to main.rs (`fn main() {\n    needle();\n}`) for a deterministic
+        // block: the match is line 2, with lines 1 and 3 as context.
+        let res = code_grep(
+            dir.to_string_lossy().into_owned(),
+            "needle".to_string(),
+            None,
+            Some("main.rs".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res.matches.iter().filter(|m| m.is_match).count(), 1);
+        let matched = res.matches.iter().find(|m| m.is_match).unwrap();
+        assert_eq!(matched.line, 2);
+        assert!(res
+            .matches
+            .iter()
+            .any(|m| !m.is_match && m.line == 1 && m.text.contains("fn main")));
+        assert!(res.matches.iter().any(|m| !m.is_match && m.line == 3));
     }
 
     #[tokio::test]

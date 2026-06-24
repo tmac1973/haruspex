@@ -172,12 +172,61 @@ describe('run_command output handling', () => {
 describe('code_grep / code_glob formatting', () => {
 	it('formats grep matches as file:line: text', async () => {
 		mocks.invoke.mockResolvedValueOnce({
-			matches: [{ path: 'src/a.rs', line: 12, text: 'fn needle()' }],
-			truncated: false
+			matches: [{ path: 'src/a.rs', line: 12, text: 'fn needle()', is_match: true }],
+			truncated: false,
+			counts: [],
+			total: 0,
+			files: []
 		});
 		const { executeTool } = await import('$lib/agent/tools');
 		const out = await executeTool('code_grep', { pattern: 'needle' }, codeCtx);
 		expect(out.result).toBe('src/a.rs:12: fn needle()');
+	});
+
+	it('formats count mode as per-file totals + grand total', async () => {
+		mocks.invoke.mockResolvedValueOnce({
+			matches: [],
+			truncated: false,
+			counts: [
+				{ path: 'src/a.rs', count: 2 },
+				{ path: 'src/b.rs', count: 1 }
+			],
+			total: 3,
+			files: []
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool('code_grep', { pattern: 'x', count: true }, codeCtx);
+		expect(out.result).toBe('src/a.rs: 2\nsrc/b.rs: 1\nTotal: 3 in 2 files');
+	});
+
+	it('formats files_only mode as a bare file list', async () => {
+		mocks.invoke.mockResolvedValueOnce({
+			matches: [],
+			truncated: false,
+			counts: [],
+			total: 0,
+			files: ['src/a.rs', 'src/b.rs']
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool('code_grep', { pattern: 'x', files_only: true }, codeCtx);
+		expect(out.result).toBe('src/a.rs\nsrc/b.rs');
+	});
+
+	it('marks context lines with a "-" separator (grep -C style)', async () => {
+		mocks.invoke.mockResolvedValueOnce({
+			matches: [
+				{ path: 'a.rs', line: 1, text: 'fn main() {', is_match: false },
+				{ path: 'a.rs', line: 2, text: 'needle();', is_match: true },
+				{ path: 'a.rs', line: 3, text: '}', is_match: false }
+			],
+			truncated: false,
+			counts: [],
+			total: 0,
+			files: []
+		});
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool('code_grep', { pattern: 'needle', context: 1 }, codeCtx);
+		expect(out.result).toBe('a.rs-1: fn main() {\na.rs:2: needle();\na.rs-3: }');
 	});
 
 	it('reports no grep matches', async () => {
