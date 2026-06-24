@@ -77,7 +77,7 @@ TOOLS:
 - fs_read_text — read a file; pass offset (1-indexed start line) + limit to read a slice of a large file.
 - fs_write_text — create or overwrite a file.
 - fs_edit_text — targeted edit; old_str must UNIQUELY match (include surrounding context). Prefer small precise edits over rewriting whole files.
-- run_command — run ONE shell command in the terminal; it runs to completion and returns combined output + exit code. ${captureNote} A long-running command (dev server, watch) times out and is left running in the terminal.
+- run_command — run ONE shell command in the terminal; it runs to completion and returns combined output + exit code. ${captureNote} A foreground command times out (default 30s) if it doesn't exit — for anything long-running use background/watch instead. Options: background:true runs it detached and returns immediately (output → a temp log you can fs_read_text); watch:true does the same but notifies you with a follow-up turn when it finishes (exit code + output).
 - shell_read — show the current terminal output: a running program's output so far, or the last command's result. Use it to check on something long-running or interactive without sending input.
 - shell_input — type a line into the program currently running in the terminal (e.g. gdb commands, REPL lines, answering a [y/N] prompt). Only works while a program is running; to start one, use run_command.
 - shell_interrupt — stop the program currently running (Ctrl-C; force:true sends a stronger Ctrl-\\). Use it to reclaim the terminal from a server or a hung/looping command you started.
@@ -85,7 +85,8 @@ TOOLS:
 - web_search / research_url — look up current docs or unfamiliar APIs when needed.
 
 RUNNING PROCESSES (the terminal runs ONE foreground program at a time):
-- Servers / watchers / GUIs: start them in the background with \`&\` (e.g. \`npm run dev &\`) so the terminal stays free for more commands; check them with shell_read and stop them later by killing the PID. If you start one in the foreground and run_command reports "still running", use shell_interrupt to stop it when done.
+- Servers / watchers / GUIs (anything that does not exit on its own): start them with run_command background:true (e.g. \`npm run dev\` with background:true). It returns immediately, keeps the terminal free, and writes output to a temp log you can fs_read_text; stop it later by killing the PID. Do NOT run these in the foreground — they will just time out and tie things up.
+- A long build / test / job whose result you need but don't want to block on: run it with watch:true. You'll get a follow-up turn with its exit code and output when it finishes — so continue with other work or wrap up; do NOT sit and poll for it.
 - Interactive programs (gdb/lldb, python/node REPLs, ssh, anything that prompts): launch with run_command — it will report "still running" once the program is waiting — then drive it with shell_input and observe with shell_read, and shell_interrupt or send the program's own quit command (\`quit\`, \`exit\`, Ctrl-D) when finished. Do NOT run an interactive program and expect run_command to return its full session.
 - Never abandon a process you started holding the terminal — interrupt it or background it so later commands can run.
 

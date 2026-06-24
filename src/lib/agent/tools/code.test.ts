@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
 	askCommandApproval: vi.fn(),
 	isSessionApproved: vi.fn(() => false),
-	approveSession: vi.fn()
+	approveSession: vi.fn(),
+	registerWatch: vi.fn(() => 'watch-1')
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -14,6 +15,7 @@ vi.mock('$lib/stores/codeCommandApproval.svelte', () => ({
 	isSessionApproved: mocks.isSessionApproved,
 	approveSession: mocks.approveSession
 }));
+vi.mock('$lib/shell/backgroundWatch', () => ({ registerWatch: mocks.registerWatch }));
 
 const codeCtx = {
 	workingDir: '/work',
@@ -42,6 +44,7 @@ beforeEach(() => {
 	mocks.askCommandApproval.mockReset();
 	mocks.isSessionApproved.mockReset().mockReturnValue(false);
 	mocks.approveSession.mockReset();
+	mocks.registerWatch.mockReset().mockReturnValue('watch-1');
 	mocks.invoke.mockImplementation((cmd: string) => {
 		if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
 		if (cmd === 'code_write_overflow') return Promise.resolve('/tmp/overflow.txt');
@@ -357,6 +360,92 @@ describe('run_command PTY driving', () => {
 			'shell_write',
 			expect.objectContaining({ data: '\x03' })
 		);
+	});
+});
+
+describe('run_command background / watch', () => {
+	const ptyCtx = {
+		workingDir: null,
+		shellCwd: '/proj',
+		shellSessionId: 1,
+		pendingImages: [],
+		deepResearch: false,
+		shellMode: true,
+		codeMode: true,
+		codeAutoApprove: true,
+		filesWrittenThisTurn: new Set<string>()
+	};
+
+	// Mock the PTY so runInPtyBackground's wrapper "runs" and the captured
+	// output carries the HSP_BG marker line it parses for pid/log/done.
+	function mockBackgroundPty() {
+		let ctxCalls = 0;
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
+			if (cmd === 'shell_get_context') {
+				ctxCalls++;
+				return Promise.resolve({ completed_total: ctxCalls >= 2 ? 1 : 0, current_cwd: '/proj' });
+			}
+			if (cmd === 'shell_get_recent_commands')
+				return Promise.resolve([
+					{
+						commandLine: 'bg',
+						output: 'HSP_BG pid=12345 log=/tmp/hsp-bg-AAA done=/tmp/hsp-bg-AAA.done\n',
+						exitCode: 0,
+						cwd: '/proj',
+						truncated: false
+					}
+				]);
+			return Promise.resolve();
+		});
+	}
+
+	it('background:true detaches and returns the pid + log path, without watching', async () => {
+		mockBackgroundPty();
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool(
+			'run_command',
+			{ command: 'npm run dev', background: true },
+			ptyCtx
+		);
+		expect(out.result).toContain('Started in the background');
+		expect(out.result).toContain('12345');
+		expect(out.result).toContain('/tmp/hsp-bg-AAA');
+		expect(mocks.registerWatch).not.toHaveBeenCalled();
+		// The detaching wrapper is what got injected (not a plain foreground run).
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'shell_write',
+			expect.objectContaining({ sessionId: 1 })
+		);
+	});
+
+	it('watch:true also registers a watch for the owning session', async () => {
+		mockBackgroundPty();
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool('run_command', { command: 'pytest -q', watch: true }, ptyCtx);
+		expect(out.result).toContain('watch on');
+		expect(out.result).toContain('12345');
+		expect(mocks.registerWatch).toHaveBeenCalledTimes(1);
+		expect(mocks.registerWatch).toHaveBeenCalledWith(
+			expect.objectContaining({
+				ptySessionId: 1,
+				command: 'pytest -q',
+				logPath: '/tmp/hsp-bg-AAA',
+				donePath: '/tmp/hsp-bg-AAA.done'
+			})
+		);
+	});
+
+	it('rejects background without a live terminal session', async () => {
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool(
+			'run_command',
+			{ command: 'npm run dev', background: true },
+			codeCtx // no shellSessionId
+		);
+		expect(out.result).toContain('live terminal session');
+		expect(mocks.registerWatch).not.toHaveBeenCalled();
+		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
 	});
 });
 

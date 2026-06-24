@@ -160,8 +160,11 @@
 		<span>seconds</span>
 	</label>
 	<p class="help">
-		Default wall-clock limit for a single <code>run_command</code> call (the model can override per call).
-		A PTY command that hits the limit is left running in your terminal. 5–1800 seconds.
+		Default wall-clock limit for a single <code>run_command</code> call (the model can override per
+		call, and raise it for known-slow builds/tests). A PTY command that hits the limit is left
+		running in your terminal. For servers or long jobs the model should use <code>background</code>
+		/
+		<code>watch</code> instead so nothing blocks. Default <code>30</code>. 5–1800 seconds.
 	</p>
 </section>
 

@@ -140,6 +140,52 @@ export async function runInPty(
 	}
 }
 
+export interface BackgroundHandle {
+	pid: string;
+	logPath: string;
+	donePath: string;
+}
+
+const BG_MARKER = /HSP_BG pid=(\S+) log=(\S+) done=(\S+)/;
+
+/**
+ * Start a command in the background in the live PTY and return immediately
+ * (used by run_command's `background` / `watch` options). The command runs
+ * detached with stdout+stderr redirected to a temp log file, and its exit code
+ * written to a sibling `.done` file when it finishes — so a watcher can detect
+ * completion without holding the terminal or blocking inference.
+ *
+ * Returns the pid + file paths, or a human-readable error string (terminal
+ * busy, or the confirmation marker couldn't be parsed). POSIX shell only.
+ */
+export async function runInPtyBackground(
+	sessionId: number,
+	command: string,
+	signal: AbortSignal | undefined
+): Promise<BackgroundHandle | string> {
+	const inflight = await pendingCommand(sessionId);
+	if (inflight) {
+		return (
+			`The terminal is busy running \`${inflight.commandLine || 'a command'}\`, so a background ` +
+			'command cannot start here yet. Free the terminal first (shell_interrupt), then retry.'
+		);
+	}
+	// Wrap the command so it runs detached: a temp log captures its output, a
+	// sibling .done file gets the exit code on completion, and a single marker
+	// line (captured as this foreground command's output) hands the pid + paths
+	// back. The foreground returns to the prompt instantly, so nothing blocks.
+	const wrapper =
+		'__hspl="$(mktemp "${TMPDIR:-/tmp}/hsp-bg-XXXXXX")"; __hspd="${__hspl}.done"; ' +
+		`{ ${command} ; printf %s "$?" > "$__hspd" ; } > "$__hspl" 2>&1 & ` +
+		`printf 'HSP_BG pid=%s log=%s done=%s\\n' "$!" "$__hspl" "$__hspd"`;
+	const out = await runInPty(sessionId, wrapper, 10, signal);
+	const m = out.match(BG_MARKER);
+	if (!m) {
+		return `Tried to background the command but couldn't confirm it started. Terminal said:\n${out}`;
+	}
+	return { pid: m[1], logPath: m[2], donePath: m[3] };
+}
+
 async function formatPtyResult(
 	region: CapturedRegion | null,
 	state: { completed: boolean; aborted: boolean; timeoutSecs: number }

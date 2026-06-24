@@ -35,6 +35,14 @@ import {
 import { resetSessionApproval } from '$lib/stores/codeCommandApproval.svelte';
 import { runShellTurn } from '$lib/shell/runShellTurn';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
+import {
+	setWatchCompletionHandler,
+	peekCompletedWatches,
+	consumeWatches,
+	clearWatchesForSession,
+	readWatchLog,
+	type BackgroundWatch
+} from '$lib/shell/backgroundWatch';
 
 interface CapturedRegion {
 	commandLine: string;
@@ -376,6 +384,34 @@ export class ShellSession {
 	};
 
 	/**
+	 * Deliver "your watched background command finished" as a follow-up turn —
+	 * but only when the session is idle. If a turn is running, the completed
+	 * watches stay queued and this is retried after it ends (submitShell's
+	 * finally). Batches everything finished into one notification turn.
+	 */
+	tryFlushWatchNotifications = async (): Promise<void> => {
+		const ptyId = this.boundSessionId;
+		if (ptyId == null || this.isSubmitting || !this.activeSession) return;
+		const completed = peekCompletedWatches(ptyId);
+		if (completed.length === 0) return;
+		// Reading each log tail is async; if a real turn slips in meanwhile, leave
+		// the watches queued (don't consume) and bail — they flush after it.
+		const body = await buildWatchNotification(completed);
+		const sess = this.activeSession;
+		if (this.isSubmitting || !sess) return;
+		const live = await this.fetchLiveContext();
+		if (this.isSubmitting) return;
+		consumeWatches(completed.map((w) => w.id));
+		this.sidebarOpen = true;
+		await this.submitShell({
+			body,
+			sessionContext: sess.context,
+			currentCwd: live?.currentCwd ?? null,
+			recentHistory: live?.recentHistory ?? []
+		});
+	};
+
+	/**
 	 * Submit the last N captured commands (and their output) with NO question
 	 * text — the sidebar's "submit context" button and the F4 hotkey. The agent
 	 * is expected to deduce what to do from the chat history. No-op when nothing
@@ -528,8 +564,54 @@ export class ShellSession {
 			this.isSubmitting = false;
 			this.ticket = null;
 			this.abortController = null;
+			// A watched background command may have finished while this turn ran;
+			// deliver its notification now that we're idle (deferred so this turn
+			// fully unwinds first).
+			queueMicrotask(() => void this.tryFlushWatchNotifications());
 		}
 	};
+}
+
+/**
+ * Build the user-facing body for a background-watch completion turn: one block
+ * per finished command with its exit code, when it ran, and its output tail.
+ */
+async function buildWatchNotification(completed: BackgroundWatch[]): Promise<string> {
+	const lines: string[] = [
+		completed.length === 1
+			? 'A background command you started with watch has finished.'
+			: `${completed.length} background commands you started with watch have finished.`
+	];
+	for (const w of completed) {
+		const tail = truncateCapturedOutput(await readWatchLog(w.logPath), 4096);
+		const finishedMs = w.completedAtMs ?? Date.now();
+		lines.push(
+			`\n$ ${w.command}\n` +
+				`exit code: ${w.exitCode} · started ${new Date(w.startedAtMs).toLocaleTimeString()}, ` +
+				`ran ${formatDuration(finishedMs - w.startedAtMs)}, finished ${describeAgo(finishedMs)}\n` +
+				`--- output ---\n${tail.text || '(no output)'}\n---`
+		);
+	}
+	lines.push(
+		'\nReact as needed: report the result, fix a failure, or run the next step. ' +
+			'If nothing is needed, a one-line acknowledgement is fine.'
+	);
+	return lines.join('\n');
+}
+
+function formatDuration(ms: number): string {
+	const s = Math.max(0, Math.round(ms / 1000));
+	if (s < 60) return `${s}s`;
+	const m = Math.floor(s / 60);
+	const rem = s % 60;
+	return rem ? `${m}m ${rem}s` : `${m}m`;
+}
+
+function describeAgo(atMs: number): string {
+	const s = Math.max(0, Math.round((Date.now() - atMs) / 1000));
+	if (s < 5) return 'just now';
+	if (s < 60) return `${s}s ago`;
+	return `${Math.floor(s / 60)}m ago`;
 }
 
 // --- registry -------------------------------------------------------------
@@ -537,6 +619,13 @@ export class ShellSession {
 let nextSessionNum = 1;
 const sessions = $state<ShellSession[]>([]);
 let activeShellId = $state<string | null>(null);
+
+// When a watched background command finishes, route the notification to the
+// session that owns its PTY (it queues a follow-up turn once idle).
+setWatchCompletionHandler((ptySessionId) => {
+	const session = sessions.find((s) => s.boundSessionId === ptySessionId);
+	void session?.tryFlushWatchNotifications();
+});
 
 export function getShellSessions(): ShellSession[] {
 	return sessions;
@@ -580,6 +669,7 @@ export function closeShellSession(id: string): void {
 	session.cancelTurn();
 	const ptyId = session.boundSessionId;
 	if (ptyId != null) {
+		clearWatchesForSession(ptyId);
 		void invoke('shell_kill', { sessionId: ptyId }).catch(() => {});
 	}
 	dropSession(idx, id);
@@ -596,6 +686,8 @@ export function detachShellSession(id: string): void {
 	// Cancel any in-flight turn: it's running in this window's JS / inference
 	// slot and can't follow the session to the new window.
 	sessions[idx].cancelTurn();
+	const ptyId = sessions[idx].boundSessionId;
+	if (ptyId != null) clearWatchesForSession(ptyId);
 	dropSession(idx, id);
 }
 
