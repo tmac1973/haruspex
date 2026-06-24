@@ -325,32 +325,38 @@
 				</div>
 			{/if}
 			{#each messages as msg, i (i)}
-				{#if msg.role === 'assistant' && messageSteps[i]?.length}
-					<SearchStepComponent steps={messageSteps[i]} />
-				{/if}
-				{#if msg.role === 'user'}
-					{@const split = userMessageView(msg)}
-					{#if split.preamble}
-						<details class="shell-preamble">
-							<summary>{preambleSummary(split.preamble)}</summary>
-							<div class="preamble-scroll">
-								<pre use:overflowFade>{split.preamble}</pre>
-							</div>
-						</details>
-						{#if split.question.trim() || imagePartsOf(msg.content).length}
-							<ChatMessage message={userQuestionMessage(msg, split.question)} />
+				<!-- Tool-call placeholders (assistant msgs with tool_calls + empty
+				     content) and tool results are kept in the thread so the model
+				     replays its own work across turns, but they render as the
+				     SearchStep rows above, not as their own (empty) bubbles. -->
+				{#if msg.role !== 'tool' && !msg.tool_calls}
+					{#if msg.role === 'assistant' && messageSteps[i]?.length}
+						<SearchStepComponent steps={messageSteps[i]} />
+					{/if}
+					{#if msg.role === 'user'}
+						{@const split = userMessageView(msg)}
+						{#if split.preamble}
+							<details class="shell-preamble">
+								<summary>{preambleSummary(split.preamble)}</summary>
+								<div class="preamble-scroll">
+									<pre use:overflowFade>{split.preamble}</pre>
+								</div>
+							</details>
+							{#if split.question.trim() || imagePartsOf(msg.content).length}
+								<ChatMessage message={userQuestionMessage(msg, split.question)} />
+							{/if}
+						{:else}
+							<ChatMessage message={msg} />
 						{/if}
 					{:else}
-						<ChatMessage message={msg} />
-					{/if}
-				{:else}
-					<ChatMessage message={msg} tokensPerSecond={messageStats[i]?.tokensPerSecond} />
-					{#if messageStops[i]}
-						<StopIndicator
-							reason={messageStops[i]}
-							disabled={submitting}
-							onContinue={session.continueTurn}
-						/>
+						<ChatMessage message={msg} tokensPerSecond={messageStats[i]?.tokensPerSecond} />
+						{#if messageStops[i]}
+							<StopIndicator
+								reason={messageStops[i]}
+								disabled={submitting}
+								onContinue={session.continueTurn}
+							/>
+						{/if}
 					{/if}
 				{/if}
 			{/each}
