@@ -465,6 +465,288 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
     }))
 }
 
+// Startpage HTML search — Startpage proxies Google's results and serves them
+// server-rendered, so plain-HTTP scraping yields Google-quality results without
+// a browser, and without ever hitting Google's own bot wall. The markup is
+// Emotion CSS-in-JS, so we anchor on the stable `data-testid` (`gl-title-link`)
+// and the unhashed class tokens (`result`, `description`) rather than the
+// hashed `css-*` classes. Note: Emotion injects `<style>` tags *inside* the
+// result anchors, so titles/snippets must be read with `text_skipping_style`.
+
+pub(super) async fn search_startpage(
+    query: &str,
+    _recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5)),
+        proxy,
+    )
+    .map_err(SearchFailure::other)?
+    .build()
+    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
+
+    // Startpage's simple GET endpoint exposes no reliable date-filter param, so
+    // recency is intentionally not applied here.
+    let url = format!(
+        "https://www.startpage.com/sp/search?query={}",
+        urlencoding::encode(query)
+    );
+
+    let resp = client
+        .get(&url)
+        .header("User-Agent", USER_AGENT)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Startpage search failed"))?;
+
+    if !resp.status().is_success() {
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("Startpage error: {}", resp.status()),
+        ));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Failed to read Startpage response"))?;
+
+    let results =
+        parse_startpage_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
+
+    // No results + an anti-bot fingerprint means Startpage served its challenge
+    // page rather than a SERP — surface it as rate-limited so the engine cools
+    // down, instead of mistaking it for a genuine empty result set.
+    if results.is_empty() && is_startpage_challenge(&html) {
+        return Err(SearchFailure::new(
+            SearchFailureKind::RateLimited,
+            "Startpage served an anti-bot challenge — temporarily unavailable.".to_string(),
+        ));
+    }
+
+    if results.is_empty() {
+        warn_empty_scrape(
+            "Startpage",
+            &html,
+            &["gl-title-link", "result-title", "class=\"result", "w-gl"],
+        );
+    }
+
+    Ok(results)
+}
+
+/// Heuristic: does this look like Startpage's anti-bot / captcha page rather
+/// than a SERP? Only consulted when zero results parsed (a real SERP that
+/// happens to contain the word elsewhere never reaches this).
+fn is_startpage_challenge(html: &str) -> bool {
+    let lower = html.to_lowercase();
+    lower.contains("captcha")
+        || lower.contains("/sp/captcha")
+        || lower.contains("are you human")
+        || lower.contains("unusual traffic")
+        || lower.contains("anubis")
+}
+
+pub(super) fn parse_startpage_html(html: &str) -> Result<Vec<SearchResult>, String> {
+    let document = Html::parse_document(html);
+    // Each organic result is a div whose class list includes the unhashed
+    // token `result` (alongside an Emotion `css-*` hash we ignore).
+    let result_selector =
+        Selector::parse("div.result").map_err(|_| "Failed to parse startpage result selector")?;
+    // Stable test id on the title anchor; its href is the real destination
+    // (Startpage does not redirect-wrap organic result links).
+    let title_selector = Selector::parse(r#"a[data-testid="gl-title-link"]"#)
+        .map_err(|_| "Failed to parse startpage title selector")?;
+    let desc_selector = Selector::parse("p.description")
+        .map_err(|_| "Failed to parse startpage snippet selector")?;
+
+    Ok(scrape_results(&document, &result_selector, |element| {
+        let title_el = element.select(&title_selector).next();
+        let url = title_el
+            .and_then(|e| e.value().attr("href"))
+            .unwrap_or_default()
+            .to_string();
+        let title = title_el.map(text_skipping_style).unwrap_or_default();
+        let snippet = element
+            .select(&desc_selector)
+            .next()
+            .map(text_skipping_style)
+            .unwrap_or_default();
+
+        (!title.is_empty() && url.starts_with("http")).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
+}
+
+/// Trimmed visible text of an element, ignoring the contents of any nested
+/// `<style>`/`<script>`. Startpage injects Emotion `<style>` tags inside its
+/// result anchors and snippets, whose CSS rules would otherwise pollute the
+/// extracted title/snippet.
+fn text_skipping_style(e: ElementRef) -> String {
+    let mut buf = String::new();
+    for node in e.descendants() {
+        let Some(text) = node.value().as_text() else {
+            continue;
+        };
+        let inside_style = node.ancestors().any(|a| {
+            a.value()
+                .as_element()
+                .map(|el| el.name() == "style" || el.name() == "script")
+                .unwrap_or(false)
+        });
+        if !inside_style {
+            buf.push_str(text);
+        }
+    }
+    buf.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// Yahoo HTML search — Yahoo's web results are Bing-sourced and server-rendered,
+// so plain-HTTP scraping yields Bing-quality results without a browser. Organic
+// results live in `div.algo`; the clean page title is the nested `h3.title` (a
+// separate absolutely-positioned div holds the favicon + URL breadcrumb, which
+// we ignore); result links are wrapped in `r.search.yahoo.com` redirects that
+// carry the real destination in the `RU=` path segment.
+
+pub(super) async fn search_yahoo(
+    query: &str,
+    _recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    let client = apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5)),
+        proxy,
+    )
+    .map_err(SearchFailure::other)?
+    .build()
+    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
+
+    // Yahoo's freshness param isn't reliably documented on the HTML endpoint, so
+    // recency is intentionally not applied here.
+    let url = format!(
+        "https://search.yahoo.com/search?p={}",
+        urlencoding::encode(query)
+    );
+
+    let resp = client
+        .get(&url)
+        .header("User-Agent", USER_AGENT)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Yahoo search failed"))?;
+
+    if !resp.status().is_success() {
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("Yahoo error: {}", resp.status()),
+        ));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Failed to read Yahoo response"))?;
+
+    let results =
+        parse_yahoo_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
+
+    // No results + a consent/captcha fingerprint means Yahoo bounced us to its
+    // gate rather than a SERP — cool the engine down rather than report empty.
+    if results.is_empty() && is_yahoo_challenge(&html) {
+        return Err(SearchFailure::new(
+            SearchFailureKind::RateLimited,
+            "Yahoo served a consent/anti-bot gate — temporarily unavailable.".to_string(),
+        ));
+    }
+
+    if results.is_empty() {
+        warn_empty_scrape(
+            "Yahoo",
+            &html,
+            &["class=\"algo", "compTitle", "h3 class=\"title", "compText"],
+        );
+    }
+
+    Ok(results)
+}
+
+fn is_yahoo_challenge(html: &str) -> bool {
+    let lower = html.to_lowercase();
+    lower.contains("captcha")
+        || lower.contains("consent.yahoo")
+        || lower.contains("guce.yahoo")
+        || lower.contains("are you a human")
+}
+
+/// Decode the real destination URL from a `r.search.yahoo.com/...//RU=<enc>/RK=`
+/// redirect link. The `RU=` value is percent-encoded (so it contains no literal
+/// `/`), which lets us slice it out up to the next path segment.
+fn decode_yahoo_redirect(href: &str) -> Option<String> {
+    let pos = href.find("/RU=")?;
+    let rest = &href[pos + 4..];
+    let end = rest.find('/').unwrap_or(rest.len());
+    let decoded = urlencoding::decode(&rest[..end]).ok()?.into_owned();
+    decoded.starts_with("http").then_some(decoded)
+}
+
+pub(super) fn parse_yahoo_html(html: &str) -> Result<Vec<SearchResult>, String> {
+    let document = Html::parse_document(html);
+    // Organic results are `div.algo` (ads use `div.ads`, so they're excluded).
+    let result_selector =
+        Selector::parse("div.algo").map_err(|_| "Failed to parse yahoo result selector")?;
+    // Clean title lives in the nested h3.title (not the breadcrumb div).
+    let title_selector =
+        Selector::parse("h3.title").map_err(|_| "Failed to parse yahoo title selector")?;
+    // First Yahoo redirect link in the result is the canonical destination.
+    let link_selector = Selector::parse(r#"a[href*="r.search.yahoo.com"]"#)
+        .map_err(|_| "Failed to parse yahoo link selector")?;
+    let snippet_selector =
+        Selector::parse("div.compText").map_err(|_| "Failed to parse yahoo snippet selector")?;
+
+    Ok(scrape_results(&document, &result_selector, |element| {
+        let title = element
+            .select(&title_selector)
+            .next()
+            .map(element_text)
+            .unwrap_or_default();
+        let url = element
+            .select(&link_selector)
+            .next()
+            .and_then(|e| e.value().attr("href"))
+            .and_then(decode_yahoo_redirect)
+            .unwrap_or_default();
+        let snippet = element
+            .select(&snippet_selector)
+            .next()
+            .map(element_text)
+            .unwrap_or_default();
+
+        (!title.is_empty() && url.starts_with("http")).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
+}
+
 // Auto-rotation search across multiple engines
 
 /// Build the engine try-order from the round-robin rotation: engines still
@@ -558,6 +840,8 @@ pub(super) async fn search_auto(
 
         let start = std::time::Instant::now();
         let result = match *engine {
+            "startpage" => search_startpage(query, recency, proxy).await,
+            "yahoo" => search_yahoo(query, recency, proxy).await,
             "brave_html" => search_brave_html(query, recency, proxy).await,
             "duckduckgo" => search_duckduckgo(query, recency, proxy).await,
             "mojeek" => search_mojeek(query, recency, proxy).await,
@@ -818,5 +1102,98 @@ mod tests {
     fn parse_brave_html_handles_empty_input() {
         let results = parse_brave_html("<html><body>nothing here</body></html>").expect("parse ok");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn parse_startpage_extracts_result_and_strips_emotion_style() {
+        // Mirrors Startpage's real markup: a `div.result` wrapper, a title anchor
+        // tagged `data-testid="gl-title-link"` with the real href, an Emotion
+        // <style> injected *inside* the anchor (whose CSS must NOT leak into the
+        // title), and a `p.description` snippet.
+        let html = r##"
+            <html><body>
+            <div class="result css-ocm99y">
+              <div class="wgl-title-link-container css-1gz2b5f">
+                <a class="result-title result-link css-1bggj8v"
+                   href="https://go.dev/doc/tutorial/generics"
+                   data-testid="gl-title-link"><style data-emotion="css i3irj7">.css-i3irj7{color:#2E39B3;}</style>Tutorial: Getting started with generics</a>
+              </div>
+              <p class="description css-abc">Create a folder for your code, then add generics.</p>
+            </div>
+            </body></html>
+        "##;
+        let results = parse_startpage_html(html).expect("parse ok");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Tutorial: Getting started with generics");
+        assert_eq!(results[0].url, "https://go.dev/doc/tutorial/generics");
+        assert!(results[0].snippet.contains("Create a folder"));
+        // The Emotion CSS rule must not have leaked into the title.
+        assert!(!results[0].title.contains("css-"));
+    }
+
+    #[test]
+    fn parse_startpage_handles_empty_input() {
+        let results =
+            parse_startpage_html("<html><body>nothing here</body></html>").expect("parse ok");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn startpage_challenge_detection() {
+        assert!(is_startpage_challenge(
+            "<html>Please solve the CAPTCHA to continue</html>"
+        ));
+        assert!(!is_startpage_challenge(
+            "<html><div class=\"result\">normal serp</div></html>"
+        ));
+    }
+
+    #[test]
+    fn parse_yahoo_extracts_clean_title_url_and_snippet() {
+        // Mirrors Yahoo's real markup: a `div.algo` container, a redirect link
+        // carrying the real URL in `RU=`, a breadcrumb div (favicon + site name)
+        // that must NOT be mistaken for the title, the clean title in `h3.title`,
+        // and the snippet in `div.compText`.
+        let html = r##"
+            <li class="first"><div class="dd fst algo algo-sr relsrch Sr">
+              <div class="compTitle">
+                <a class="d-ib" data-matarget="algo" target="_blank"
+                   href="https://r.search.yahoo.com/_ylt=Aaa;_ylu=Bbb/RV=2/RE=1/RO=10/RU=https%3a%2f%2fgo.dev%2fdoc%2ftutorial%2fgenerics/RK=2/RS=ccc-">
+                  <div class="d-ib p-abs t-0 l-0">
+                    <span class="d-ib va-mid"><span class="fc-141414 d-b">The Go Programming Language</span>https://go.dev &rsaquo; doc</span>
+                  </div>
+                  <h3 class="title"><span class="d-b">Tutorial: Getting started with generics</span></h3>
+                </a>
+              </div>
+              <div class="compText aAbs"><p class="fc-dustygray">This <b>tutorial</b> introduces generics in Go.</p></div>
+            </div></li>
+        "##;
+        let results = parse_yahoo_html(html).expect("parse ok");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Tutorial: Getting started with generics");
+        assert_eq!(results[0].url, "https://go.dev/doc/tutorial/generics");
+        assert!(results[0].snippet.contains("introduces generics"));
+        // The breadcrumb/site-name must not leak into the title.
+        assert!(!results[0].title.contains("go.dev"));
+    }
+
+    #[test]
+    fn parse_yahoo_handles_empty_input() {
+        let results = parse_yahoo_html("<html><body>nothing</body></html>").expect("parse ok");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn yahoo_redirect_decode() {
+        assert_eq!(
+            decode_yahoo_redirect(
+                "https://r.search.yahoo.com/_ylt=x/RV=2/RU=https%3a%2f%2fexample.com%2fpage/RK=2/RS=y"
+            ),
+            Some("https://example.com/page".to_string())
+        );
+        assert_eq!(
+            decode_yahoo_redirect("https://r.search.yahoo.com/no-ru-here"),
+            None
+        );
     }
 }
