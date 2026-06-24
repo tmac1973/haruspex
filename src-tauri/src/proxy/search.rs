@@ -510,16 +510,41 @@ pub(super) async fn search_auto(
     // we don't always hit the same engine first, then partition into
     // healthy/unhealthy so cooled-down engines come last as fallbacks.
     let rotation = state.rotation_order();
-    let ordered = order_engines(state, &rotation, cooldown);
+    // Only contact engines that aren't currently in a failure cooldown.
+    // Re-hitting a just-rate-limited engine almost always 429s again AND, via
+    // record_failure below, would push its cooldown back to "now" — so a burst
+    // of searches could pin every engine in a permanent rate-limited state and
+    // never let the cooldown elapse. Drop cooled-down engines here; if they're
+    // ALL cooling down, fail fast (no HTTP, no recorded failure) so the
+    // cooldowns actually expire and the caller backs off for a bit.
+    let engines: Vec<&'static str> = order_engines(state, &rotation, cooldown)
+        .into_iter()
+        .filter(|engine| state.is_engine_healthy(engine, cooldown))
+        .collect();
     info!(
-        "Auto-search rotation order for '{}' (slow_mode={}): {:?}",
-        query, slow_mode, ordered
+        "Auto-search engines for '{}' (slow_mode={}): {:?}",
+        query, slow_mode, engines
     );
+    if engines.is_empty() {
+        record_global_both(stats, sink, GlobalCounter::AllEnginesFailed);
+        return Err(
+            "Web search is temporarily unavailable (all engines are rate-limited). \
+             Try again in a couple of minutes."
+                .to_string(),
+        );
+    }
 
     let mut last_error = String::new();
 
-    for (idx, engine) in ordered.iter().enumerate() {
-        state.rate_limit_engine(engine, rate_interval).await;
+    for (idx, engine) in engines.iter().enumerate() {
+        // Brave's free HTML endpoint 429s far more eagerly than the others, so
+        // give it extra breathing room between requests.
+        let interval = if *engine == "brave_html" {
+            rate_interval.max(std::time::Duration::from_secs(5))
+        } else {
+            rate_interval
+        };
+        state.rate_limit_engine(engine, interval).await;
         info!(
             "Auto-search trying {} for: {} (recency: {})",
             engine, query, recency
@@ -729,6 +754,23 @@ mod tests {
         // Zero cooldown ⇒ the just-failed engine already counts as healthy.
         let ordered = order_engines(&state, &rotation, Duration::from_secs(0));
         assert_eq!(ordered, rotation);
+    }
+
+    #[test]
+    fn all_engines_cooled_down_leaves_nothing_to_try() {
+        // Mirrors the filter search_auto applies: when every engine is within
+        // its cooldown, the pickable set is empty, so search_auto fails fast
+        // instead of re-hitting rate-limited endpoints.
+        let state = ProxyState::new();
+        let rotation = state.rotation_order();
+        for engine in &rotation {
+            state.record_failure(engine);
+        }
+        let pickable: Vec<&'static str> = order_engines(&state, &rotation, Duration::from_secs(60))
+            .into_iter()
+            .filter(|engine| state.is_engine_healthy(engine, Duration::from_secs(60)))
+            .collect();
+        assert!(pickable.is_empty());
     }
 
     #[test]

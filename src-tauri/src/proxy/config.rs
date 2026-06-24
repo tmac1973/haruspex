@@ -10,7 +10,7 @@ pub(super) const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 pub(super) const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(2);
 pub(super) const SEARCH_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 pub(super) const FETCH_CACHE_TTL: Duration = Duration::from_secs(600); // 10 minutes
-pub(super) const ENGINE_COOLDOWN: Duration = Duration::from_secs(300); // 5 min cooldown after failure
+pub(super) const ENGINE_COOLDOWN: Duration = Duration::from_secs(90); // cooldown after a failure (e.g. a 429)
 
 // Slow-mode pacing — used by deep research with auto rotation when no
 // reliable provider (Brave / SearXNG) is configured. Slower per-engine
