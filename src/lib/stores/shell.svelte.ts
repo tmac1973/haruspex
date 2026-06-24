@@ -462,6 +462,46 @@ export class ShellSession {
 	};
 
 	/**
+	 * Commit a completed turn to the thread. `turnMessages` is the array the
+	 * agent loop mutated in place; everything it appended past `baseTurnLen` is
+	 * this turn's assistant tool_calls + tool results. We keep those pairs (so
+	 * the next turn — especially "continue" after the step cap — replays what
+	 * this turn actually did instead of re-investigating from scratch) and drop
+	 * the loop's synthetic recovery / "answer now" nudges, since the assistant
+	 * prose supersedes them. The context-budget fitter stubs and drops these as
+	 * the window fills, so the thread stays bounded and tool pairs never orphan.
+	 */
+	private recordAssistantTurn(
+		turnMessages: ChatMessage[],
+		baseTurnLen: number,
+		result: { finalText: string; stopReason: AgentStopReason },
+		lastCallStats: { durationMs: number; completionTokens: number } | null
+	): void {
+		const toolPairs = turnMessages
+			.slice(baseTurnLen)
+			.filter((m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls));
+		const assistantMsg: ChatMessage = { role: 'assistant', content: result.finalText };
+		// Steps/stats/stops are keyed by the prose message's final index, which
+		// now sits after any spliced-in tool pairs.
+		const assistantIndex = this.messages.length + toolPairs.length;
+		this.messages = [...this.messages, ...toolPairs, assistantMsg];
+		// Snapshot the live steps onto this assistant message so the thread
+		// shows what tools ran for each turn after the live row clears.
+		if (this.searchSteps.length > 0) {
+			this.messageSteps = { ...this.messageSteps, [assistantIndex]: this.searchSteps };
+		}
+		const stats = computeMessageStats(lastCallStats);
+		if (stats) {
+			this.messageStats = { ...this.messageStats, [assistantIndex]: stats };
+		}
+		// Record when the system forced this turn to stop (turn-limit / degraded
+		// output) so the sidebar can show why + offer Continue.
+		if (result.stopReason !== 'complete') {
+			this.messageStops = { ...this.messageStops, [assistantIndex]: result.stopReason };
+		}
+	}
+
+	/**
 	 * Lower-level entry: append a user turn with the given body and run one
 	 * agent iteration. The system prompt is rebuilt every call so the freshest
 	 * session context lands in it.
@@ -497,6 +537,10 @@ export class ShellSession {
 			: buildShellSystemPrompt(promptOpts);
 
 		const turnMessages: ChatMessage[] = [systemPrompt, ...this.messages];
+		// The agent loop mutates `turnMessages` in place, appending this turn's
+		// assistant tool_calls + tool results after the user message. Remember the
+		// pre-loop length so we can recover those appended pairs afterwards.
+		const baseTurnLen = turnMessages.length;
 
 		this.abortController = new AbortController();
 
@@ -530,26 +574,7 @@ export class ShellSession {
 					this.searchSteps = markStepDone(this.searchSteps, call, result, thumbDataUrl, artifacts);
 				}
 			});
-			const assistantMsg: ChatMessage = {
-				role: 'assistant',
-				content: result.finalText
-			};
-			const assistantIndex = this.messages.length;
-			this.messages = [...this.messages, assistantMsg];
-			// Snapshot the live steps onto this assistant message so the thread
-			// shows what tools ran for each turn after the live row clears.
-			if (this.searchSteps.length > 0) {
-				this.messageSteps = { ...this.messageSteps, [assistantIndex]: this.searchSteps };
-			}
-			const stats = computeMessageStats(lastCallStats);
-			if (stats) {
-				this.messageStats = { ...this.messageStats, [assistantIndex]: stats };
-			}
-			// Record when the system forced this turn to stop (turn-limit /
-			// degraded output) so the sidebar can show why + offer Continue.
-			if (result.stopReason !== 'complete') {
-				this.messageStops = { ...this.messageStops, [assistantIndex]: result.stopReason };
-			}
+			this.recordAssistantTurn(turnMessages, baseTurnLen, result, lastCallStats);
 		} catch (e) {
 			const msg = errMessage(e);
 			if (msg.includes('Aborted')) {

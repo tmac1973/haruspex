@@ -146,6 +146,55 @@ describe('ShellSession state independence', () => {
 		expect(b.messages).toHaveLength(0);
 	});
 
+	it('retains the loop-appended tool_call/result pairs and replays them next turn', async () => {
+		// Simulate runAgentLoop mutating the passed `messages` array in place:
+		// after the user turn it appends an assistant tool_call + its tool result
+		// (plus a synthetic "answer now" nudge that must NOT be persisted).
+		runShellTurn.mockImplementation(
+			async (opts: { messages: { role: string }[]; onAdmitted?: () => void }) => {
+				opts.onAdmitted?.();
+				opts.messages.push(
+					{ role: 'assistant', content: '', tool_calls: [{ id: 'c1' }] } as never,
+					{ role: 'tool', tool_call_id: 'c1', content: 'grep hit' } as never,
+					{ role: 'user', content: 'Now please provide your complete answer.' } as never
+				);
+				return { finalText: 'answer', stopReason: 'max_iterations' };
+			}
+		);
+		const s = createShellSession();
+		await s.submitShell({
+			body: 'find the bug',
+			sessionContext: {} as never,
+			currentCwd: '/home',
+			recentHistory: []
+		});
+
+		// The tool pairs are kept (between user and prose); the nudge is dropped.
+		expect(s.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
+		expect(s.messages[1].tool_calls).toBeDefined();
+		// Stats/stops are keyed to the prose message's final index (3), not 1.
+		expect(s.messageStops[3]).toBe('max_iterations');
+
+		// Second turn ("continue") must see the prior turn's tool pairs in the
+		// messages handed to the loop — proving the model can resume its work.
+		let seenRoles: string[] = [];
+		runShellTurn.mockImplementation(
+			async (opts: { messages: { role: string }[]; onAdmitted?: () => void }) => {
+				opts.onAdmitted?.();
+				seenRoles = opts.messages.map((m) => m.role);
+				return { finalText: 'continued', stopReason: 'complete' };
+			}
+		);
+		await s.submitShell({
+			body: 'Please continue from where you stopped.',
+			sessionContext: {} as never,
+			currentCwd: '/home',
+			recentHistory: []
+		});
+		// system + (user, assistant-tool_calls, tool, assistant) + new user.
+		expect(seenRoles).toEqual(['system', 'user', 'assistant', 'tool', 'assistant', 'user']);
+	});
+
 	it('submitShell is a no-op while a turn is already running', async () => {
 		const a = createShellSession();
 		a.isSubmitting = true;
