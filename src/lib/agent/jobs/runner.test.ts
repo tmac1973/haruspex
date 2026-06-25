@@ -65,12 +65,24 @@ function makeJob(overrides: Partial<JobWithSteps> = {}): JobWithSteps {
 		description: null,
 		working_dir: '/tmp/work',
 		auto_approve_tools: true,
+		job_type: 'research',
 		schedule_kind: 'manual',
 		schedule_config: null,
 		next_due_at: null,
 		created_at: 0,
 		updated_at: 0,
 		steps: [{ id: 1, ordering: 0, prompt: 'do step 1', deep_research: false }],
+		audit_num_runs: null,
+		audit_output_file: null,
+		audit_read_only: true,
+		audit_max_iterations: null,
+		audit_sample_instructions: null,
+		audit_verify_instructions: null,
+		model_remote_base_url: null,
+		model_remote_api_key: null,
+		model_remote_model_id: null,
+		model_remote_context_size: null,
+		model_remote_vision_supported: null,
 		...overrides
 	};
 }
@@ -129,6 +141,56 @@ describe('jobs runner — guards', () => {
 		// Empty working_dir is translated to null on the runEphemeralTurn boundary.
 		const opts = mocks.runEphemeralTurn.mock.calls[0][0];
 		expect(opts.workingDir).toBeNull();
+		// No model override configured → the turn inherits the Settings backend.
+		expect(opts.backend).toBeUndefined();
+	});
+
+	it('threads a per-job remote model override (backend + larger context) into the turn', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				model_remote_base_url: 'http://compute:3000',
+				model_remote_api_key: 'sk-xyz',
+				model_remote_model_id: 'qwen3.5-27b',
+				model_remote_context_size: 131072,
+				model_remote_vision_supported: false
+			})
+		);
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const opts = mocks.runEphemeralTurn.mock.calls[0][0];
+		expect(opts.backend).toEqual({
+			baseUrl: 'http://compute:3000',
+			apiKey: 'sk-xyz',
+			modelId: 'qwen3.5-27b'
+		});
+		// The override's own context window is used, not the 8192 Settings default.
+		expect(opts.contextSize).toBe(131072);
+		// The override forces vision off even though Settings reports it supported.
+		expect(opts.visionSupported).toBe(false);
+	});
+
+	it('falls back to Settings context + vision when the override omits them', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				model_remote_base_url: 'http://compute:3000',
+				model_remote_context_size: null,
+				model_remote_vision_supported: null
+			})
+		);
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// getActiveContextSize() → 8192 and isVisionSupported() → true (mocked above).
+		const opts = mocks.runEphemeralTurn.mock.calls[0][0];
+		expect(opts.contextSize).toBe(8192);
+		expect(opts.visionSupported).toBe(true);
 	});
 
 	it('queues a second enqueue behind an in-flight run', async () => {
@@ -588,5 +650,100 @@ describe('jobs runner — persistence wiring', () => {
 		expect(stepFinish[2]).toBe('cancelled');
 		expect(stepFinish[4]).toBe('Cancelled by user');
 		expect(mocks.markRunFinished.mock.calls[0][2]).toBe('cancelled');
+	});
+});
+
+describe('jobs runner — audit jobs', () => {
+	function auditJob(over: Partial<JobWithSteps> = {}): JobWithSteps {
+		return makeJob({
+			job_type: 'audit',
+			audit_num_runs: 2,
+			audit_output_file: null,
+			steps: [{ id: 1, ordering: 0, prompt: 'Find duplication', deep_research: false }],
+			...over
+		});
+	}
+
+	// Drive a sample or verification turn by inspecting which structured tool the
+	// turn was allowed to call, then emitting that tool's call via onToolStart.
+	function wireFindingsAndVerdict(verdict: 'confirmed' | 'refuted' | 'uncertain') {
+		mocks.runEphemeralTurn.mockImplementation(async (opts: EphemeralTurnOptions) => {
+			const allow = ((opts as { toolAllowlist?: string[] }).toolAllowlist ?? []) as string[];
+			if (allow.includes('submit_findings')) {
+				opts.onToolStart?.({
+					id: 's',
+					name: 'submit_findings',
+					arguments: {
+						findings: [{ file: 'a.rs', lines: '10', title: 'dup parser', severity: 'high' }]
+					}
+				});
+				return { finalText: 'sampled' };
+			}
+			if (allow.includes('submit_verdict')) {
+				opts.onToolStart?.({
+					id: 'v',
+					name: 'submit_verdict',
+					arguments: { verdict, evidence: 'checked the source' }
+				});
+				return { finalText: 'verified' };
+			}
+			return { finalText: '' };
+		});
+	}
+
+	async function settle(getCurrentRun: () => { status: string } | null) {
+		for (let i = 0; i < 80 && getCurrentRun()?.status === 'running'; i++) await tick();
+	}
+
+	it('runs N samples then a synthesis step, verifying and reporting verified findings', async () => {
+		mocks.getJob.mockResolvedValueOnce(auditJob());
+		wireFindingsAndVerdict('confirmed');
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const run = getCurrentRun()!;
+		expect(run.status).toBe('succeeded');
+		expect(run.steps).toHaveLength(3); // 2 samples + synthesis
+		// 2 sample turns + 1 verification turn (the two samples cluster into one).
+		expect(mocks.runEphemeralTurn).toHaveBeenCalledTimes(3);
+
+		const synth = run.steps[2];
+		expect(synth.status).toBe('succeeded');
+		expect(synth.output).toContain('Verified findings');
+		expect(synth.output).toContain('dup parser');
+		expect(synth.output).toContain('found by 2/2 runs');
+	});
+
+	it('exposes only the read-only toolset plus the submit tool on sample turns', async () => {
+		mocks.getJob.mockResolvedValueOnce(auditJob());
+		wireFindingsAndVerdict('confirmed');
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const sampleOpts = mocks.runEphemeralTurn.mock.calls[0][0] as EphemeralTurnOptions & {
+			toolAllowlist: string[];
+		};
+		expect(sampleOpts.toolAllowlist).toEqual(
+			expect.arrayContaining(['code_grep', 'fs_read_text', 'submit_findings'])
+		);
+		expect(sampleOpts.toolAllowlist).not.toContain('fs_write_text');
+		expect(sampleOpts.toolAllowlist).not.toContain('run_command');
+	});
+
+	it('drops refuted findings from the verified set (verified-only)', async () => {
+		mocks.getJob.mockResolvedValueOnce(auditJob({ audit_num_runs: 1 }));
+		wireFindingsAndVerdict('refuted');
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const synth = getCurrentRun()!.steps.at(-1)!;
+		expect(synth.output).toContain('_No findings survived source verification._');
+		expect(synth.output).toContain('Filtered out');
 	});
 });

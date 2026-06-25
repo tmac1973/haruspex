@@ -14,10 +14,25 @@
  * to know which step is live.
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
 import type { SearchStep } from '$lib/agent/loop';
+import {
+	SUBMIT_FINDINGS_TOOL,
+	SUBMIT_VERDICT_TOOL,
+	type AuditFinding,
+	type AuditVerdict
+} from '$lib/agent/tools/audit';
+import type { FindingCluster } from './auditCluster';
+import {
+	orchestrateAudit,
+	buildSamplePrompt,
+	buildVerifyPrompt,
+	DEFAULT_AUDIT_SYNTHESIS_PROMPT
+} from './auditPipeline';
 import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
+import type { BackendOverride } from '$lib/api';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps } from '$lib/stores/jobs.svelte';
@@ -37,6 +52,103 @@ import { logDebug } from '$lib/debug-log';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+/** Read-only investigation toolset shared by audit sample + verification turns. */
+const AUDIT_READ_TOOLS = ['code_grep', 'code_glob', 'fs_read_text', 'fs_list_dir'];
+const SAMPLE_ALLOW = [...AUDIT_READ_TOOLS, SUBMIT_FINDINGS_TOOL];
+const VERIFY_ALLOW = [...AUDIT_READ_TOOLS, SUBMIT_VERDICT_TOOL];
+/** Upper bound on sample runs per audit, regardless of configured value. */
+const MAX_AUDIT_RUNS = 20;
+/**
+ * Per-sample agent-loop turn budget. A thorough whole-codebase audit is mostly
+ * grepping and reading and can take 100+ turns on a large repo — far more than
+ * a normal chat turn (default 10). This is the ceiling on exploration, not a
+ * give-up point: when it's exhausted the loop FORCES a submit_findings call
+ * (see `forceFinalTool`), so a run never ends empty just for running long.
+ * Configurable per job (`audit_max_iterations`); clamped to [1, MAX].
+ */
+const DEFAULT_AUDIT_SAMPLE_ITERATIONS = 200;
+const MAX_AUDIT_SAMPLE_ITERATIONS = 400;
+/**
+ * Turn budget for a single cluster-verification turn. Verifying one finding
+ * against source is focused (a handful of greps/reads), so it needs far less
+ * room than a sample sweep — but more than the chat default in case the cited
+ * code spans several files. submit_verdict is likewise force-called at the cap.
+ */
+const AUDIT_VERIFY_MAX_ITERATIONS = 40;
+
+/** Resolve a job's configured sample budget to a sane, bounded turn count. */
+function auditSampleIterations(job: JobWithSteps): number {
+	const raw = job.audit_max_iterations ?? DEFAULT_AUDIT_SAMPLE_ITERATIONS;
+	return Math.max(1, Math.min(Math.floor(raw), MAX_AUDIT_SAMPLE_ITERATIONS));
+}
+
+/**
+ * The remote backend a job should run against, or undefined to use the global
+ * Settings backend. Active iff the job has a non-blank remote base URL — the
+ * override is remote-only by design (local jobs follow Settings). Applies to
+ * every turn the job runs, regardless of job type.
+ */
+function jobBackendOverride(job: JobWithSteps): BackendOverride | undefined {
+	const url = job.model_remote_base_url?.trim();
+	if (!url) return undefined;
+	return {
+		baseUrl: url,
+		apiKey: job.model_remote_api_key?.trim() || undefined,
+		modelId: job.model_remote_model_id?.trim() || undefined
+	};
+}
+
+/**
+ * The context window (tokens) a job's turns should budget against. A remote
+ * override carries its own size — usually much larger than the local default —
+ * so we honour it when set; otherwise we fall back to the global active size.
+ */
+function jobContextSize(job: JobWithSteps): number {
+	if (job.model_remote_base_url?.trim() && (job.model_remote_context_size ?? 0) > 0) {
+		return job.model_remote_context_size as number;
+	}
+	return getActiveContextSize();
+}
+
+/**
+ * Whether a job's turns should expose vision (image) tools. A remote override
+ * can carry its own capability — when set (non-null) it wins; otherwise we
+ * inherit the global Settings vision support. Matters for research jobs whose
+ * override model differs from Settings; audit turns gate tools via an allowlist
+ * that already excludes vision, so this is a no-op there.
+ */
+function jobVisionSupported(job: JobWithSteps): boolean {
+	if (job.model_remote_base_url?.trim() && job.model_remote_vision_supported !== null) {
+		return job.model_remote_vision_supported;
+	}
+	return isVisionSupported();
+}
+
+interface PlannedStep {
+	authored: string;
+	deepResearch: boolean;
+}
+
+/**
+ * The concrete steps a run executes. Research jobs map 1:1 to their authored
+ * steps; audit jobs expand into N sample steps (the same prompt, run
+ * independently) plus a trailing synthesis step.
+ */
+function planSteps(job: JobWithSteps): PlannedStep[] {
+	if (job.job_type === 'audit') {
+		const n = Math.max(1, Math.min(job.audit_num_runs ?? 3, MAX_AUDIT_RUNS));
+		const prompt = job.steps[0]?.prompt ?? '';
+		const samples: PlannedStep[] = Array.from({ length: n }, () => ({
+			authored: prompt,
+			deepResearch: false
+		}));
+		// Synthesis (cluster → verify → report) is deterministic; this text is
+		// only the step's display label, not a model prompt.
+		return [...samples, { authored: DEFAULT_AUDIT_SYNTHESIS_PROMPT, deepResearch: false }];
+	}
+	return job.steps.map((s) => ({ authored: s.prompt, deepResearch: s.deep_research }));
+}
 
 export interface RunStepState {
 	index: number;
@@ -165,7 +277,7 @@ export async function enqueue(
 	const runId = await createJobRun(
 		jobId,
 		trigger,
-		job.steps.map((s) => s.prompt)
+		planSteps(job).map((s) => s.authored)
 	);
 	if (runId === null) {
 		logDebug('jobs', 'enqueue failed: could not persist run row', { jobId, trigger });
@@ -194,15 +306,19 @@ function startRun(queued: QueuedRun): void {
 	const abort = new AbortController();
 	activeAbort = abort;
 
+	const planned = planSteps(job);
+	const isAudit = job.job_type === 'audit';
 	current = {
 		id: runId,
 		jobId: job.id,
 		jobName: job.name,
-		steps: job.steps.map((s, i) => ({
+		steps: planned.map((s, i) => ({
 			index: i,
-			promptAuthored: s.prompt,
-			promptRendered: i === 0 ? s.prompt : '',
-			deepResearch: s.deep_research,
+			promptAuthored: s.authored,
+			// Audit steps render their prompt at execution time (sample wrapping /
+			// synthesis); research step 0 has no prepend so it renders as-authored.
+			promptRendered: !isAudit && i === 0 ? s.authored : '',
+			deepResearch: s.deepResearch,
 			status: 'pending',
 			streaming: '',
 			output: '',
@@ -283,10 +399,10 @@ async function runOneStep(
 	abort: AbortController
 ): Promise<{ ok: true; output: string } | { ok: false; aborted: boolean; error: string }> {
 	const step = job.steps[stepIndex];
-	const visionSupported = isVisionSupported();
+	const visionSupported = jobVisionSupported(job);
 	const startedAt = Date.now();
 
-	const contextSize = getActiveContextSize();
+	const contextSize = jobContextSize(job);
 	const sizeWarning = estimateSizeWarning(rendered, contextSize);
 	if (sizeWarning) {
 		logDebug('jobs', 'step prompt over budget', {
@@ -308,7 +424,8 @@ async function runOneStep(
 	void markRunStepStarted(runId, stepIndex, startedAt, rendered);
 
 	const callbacks = buildStreamCallbacks(runId, stepIndex);
-	const wrap = job.auto_approve_tools ? runWithAutoApprove : passthrough;
+	// Jobs run unattended — always auto-approve tool calls.
+	const wrap = runWithAutoApprove;
 
 	try {
 		if (current && current.id === runId) {
@@ -334,6 +451,7 @@ async function runOneStep(
 						workingDir: job.working_dir ? job.working_dir : null,
 						contextSize,
 						deepResearch: step.deep_research,
+						backend: jobBackendOverride(job),
 						visionSupported,
 						signal: abort.signal,
 						...callbacks
@@ -368,6 +486,9 @@ async function runPipeline(
 	abort: AbortController,
 	runId: number
 ): Promise<void> {
+	if (job.job_type === 'audit') {
+		return runAuditPipeline(job, abort, runId);
+	}
 	void markRunStarted(runId, Date.now());
 	let priorOutput = '';
 	try {
@@ -403,16 +524,213 @@ async function runPipeline(
 	}
 }
 
+/**
+ * Audit run: execute N independent sample steps (each capturing structured
+ * findings), then a synthesis step that clusters, source-verifies, and reports.
+ * Step failure/cancellation is marked once, centrally, on whichever step was
+ * live (tracked via currentStepIndex) when the error propagated.
+ */
+async function runAuditPipeline(
+	job: JobWithSteps,
+	abort: AbortController,
+	runId: number
+): Promise<void> {
+	void markRunStarted(runId, Date.now());
+	const planned = planSteps(job);
+	const synthesisIndex = planned.length - 1;
+	const numRuns = synthesisIndex; // every step but the last is a sample
+	const auditPrompt = job.steps[0]?.prompt ?? '';
+
+	try {
+		const result = await orchestrateAudit({
+			numRuns,
+			jobName: job.name,
+			signal: abort.signal,
+			runSample: (i) => runAuditSampleStep(job, runId, i, auditPrompt, abort),
+			beginSynthesis: () => {
+				const startedAt = Date.now();
+				if (current && current.id === runId) {
+					current = { ...current, currentStepIndex: synthesisIndex };
+				}
+				patchStep(runId, synthesisIndex, {
+					status: 'running',
+					promptRendered: planned[synthesisIndex].authored,
+					startedAt
+				});
+				void markRunStepStarted(runId, synthesisIndex, startedAt, planned[synthesisIndex].authored);
+			},
+			verifyCluster: (cluster, idx, total) =>
+				verifyClusterTurn(job, runId, synthesisIndex, cluster, idx, total, abort)
+		});
+
+		// Write the report to the configured file (best-effort; failure is noted
+		// in the step output but doesn't fail the run — the report is also saved
+		// to the step itself).
+		let note = '';
+		if (job.audit_output_file && job.working_dir) {
+			try {
+				await invoke('fs_write_text', {
+					workdir: job.working_dir,
+					relPath: job.audit_output_file,
+					content: result.report,
+					overwrite: true
+				});
+				note = `\n\n_Report written to ${job.audit_output_file}._`;
+			} catch (e) {
+				note = `\n\n_Could not write ${job.audit_output_file}: ${errMessage(e)}_`;
+			}
+		}
+
+		const finishedAt = Date.now();
+		const output = result.report + note;
+		patchStep(runId, synthesisIndex, { status: 'succeeded', output, finishedAt });
+		void markRunStepFinished(runId, synthesisIndex, 'succeeded', output, null, finishedAt);
+		finalizeRun(runId, job.id, 'succeeded', null);
+	} catch (e) {
+		const aborted = e instanceof DOMException && e.name === 'AbortError';
+		const msg = aborted ? 'Cancelled by user' : errMessage(e);
+		const status: RunStatus = aborted ? 'cancelled' : 'failed';
+		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
+		const liveStep = current?.id === runId ? current.currentStepIndex : 0;
+		const finishedAt = Date.now();
+		patchStep(runId, liveStep, { status: stepStatus, error: msg, finishedAt });
+		void markRunStepFinished(runId, liveStep, stepStatus, null, msg, finishedAt);
+		finalizeRun(runId, job.id, status, msg);
+	} finally {
+		if (activeAbort === abort) activeAbort = null;
+		if (pending.length > 0) queueMicrotask(drainNext);
+	}
+}
+
+/** Run one audit sample, returning the findings it submitted. Throws on failure. */
+async function runAuditSampleStep(
+	job: JobWithSteps,
+	runId: number,
+	stepIndex: number,
+	auditPrompt: string,
+	abort: AbortController
+): Promise<AuditFinding[]> {
+	const startedAt = Date.now();
+	const rendered = buildSamplePrompt(auditPrompt, job.audit_sample_instructions);
+	if (current && current.id === runId) {
+		current = { ...current, currentStepIndex: stepIndex, waitingForSlot: true };
+	}
+	patchStep(runId, stepIndex, { status: 'running', promptRendered: rendered, startedAt });
+	void markRunStepStarted(runId, stepIndex, startedAt, rendered);
+
+	// Capture the submit_findings arguments off the tool-call stream.
+	let captured: AuditFinding[] = [];
+	const base = buildStreamCallbacks(runId, stepIndex);
+	const callbacks = {
+		...base,
+		onToolStart: (call: ResolvedToolCall) => {
+			if (call.name === SUBMIT_FINDINGS_TOOL && Array.isArray(call.arguments?.findings)) {
+				captured = call.arguments.findings as AuditFinding[];
+			}
+			base.onToolStart(call);
+		}
+	};
+
+	// Jobs run unattended — always auto-approve tool calls.
+	const wrap = runWithAutoApprove;
+	const { finalText } = await withInferenceSlot(
+		{
+			consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
+			signal: abort.signal,
+			onAdmitted: () => {
+				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
+			}
+		},
+		() =>
+			wrap(() =>
+				runEphemeralTurn({
+					userMessage: rendered,
+					workingDir: job.working_dir ? job.working_dir : null,
+					contextSize: jobContextSize(job),
+					visionSupported: jobVisionSupported(job),
+					toolAllowlist: SAMPLE_ALLOW,
+					// Guarantee the run records structured findings: if the model
+					// burns its whole budget exploring and never submits, force the
+					// submit_findings call rather than discarding a prose answer.
+					forceFinalTool: SUBMIT_FINDINGS_TOOL,
+					backend: jobBackendOverride(job),
+					maxIterations: auditSampleIterations(job),
+					signal: abort.signal,
+					...callbacks
+				})
+			)
+	);
+
+	const finishedAt = Date.now();
+	const output =
+		`**${captured.length} finding(s)**\n\n` +
+		`\`\`\`json\n${JSON.stringify(captured, null, 2)}\n\`\`\`` +
+		(finalText.trim() ? `\n\n${finalText.trim()}` : '');
+	patchStep(runId, stepIndex, { status: 'succeeded', output, finishedAt });
+	void markRunStepFinished(runId, stepIndex, 'succeeded', output, null, finishedAt);
+	return captured;
+}
+
+/** Verify one cluster against source via a read-only submit_verdict turn. */
+async function verifyClusterTurn(
+	job: JobWithSteps,
+	runId: number,
+	synthesisIndex: number,
+	cluster: FindingCluster,
+	idx: number,
+	total: number,
+	abort: AbortController
+): Promise<{ verdict: AuditVerdict; evidence: string | null; location: string | null }> {
+	patchStep(runId, synthesisIndex, {
+		streaming: `Verifying ${idx + 1}/${total}: ${cluster.title}`
+	});
+
+	let verdict: AuditVerdict = 'uncertain';
+	let evidence: string | null = null;
+	let location: string | null = null;
+	const onToolStart = (call: ResolvedToolCall) => {
+		if (call.name !== SUBMIT_VERDICT_TOOL) return;
+		const v = call.arguments?.verdict;
+		if (v === 'confirmed' || v === 'refuted' || v === 'uncertain') verdict = v;
+		if (typeof call.arguments?.evidence === 'string') evidence = call.arguments.evidence;
+		if (typeof call.arguments?.location === 'string' && call.arguments.location.trim())
+			location = call.arguments.location.trim();
+	};
+
+	if (current && current.id === runId) current = { ...current, waitingForSlot: true };
+	await withInferenceSlot(
+		{
+			consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
+			signal: abort.signal,
+			onAdmitted: () => {
+				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
+			}
+		},
+		() =>
+			runWithAutoApprove(() =>
+				runEphemeralTurn({
+					userMessage: buildVerifyPrompt(cluster, job.audit_verify_instructions),
+					workingDir: job.working_dir ? job.working_dir : null,
+					contextSize: jobContextSize(job),
+					visionSupported: jobVisionSupported(job),
+					toolAllowlist: VERIFY_ALLOW,
+					forceFinalTool: SUBMIT_VERDICT_TOOL,
+					backend: jobBackendOverride(job),
+					maxIterations: AUDIT_VERIFY_MAX_ITERATIONS,
+					signal: abort.signal,
+					onToolStart
+				})
+			)
+	);
+	return { verdict, evidence, location };
+}
+
 function finalizeRun(runId: number, jobId: number, status: RunStatus, error: string | null): void {
 	const finishedAt = Date.now();
 	if (current && current.id === runId) {
 		current = { ...current, status, error, finishedAt };
 	}
 	void markRunFinished(runId, jobId, status as JobRunStatus, finishedAt, error);
-}
-
-function passthrough<T>(fn: () => Promise<T>): Promise<T> {
-	return fn();
 }
 
 export function cancel(runId: number): void {

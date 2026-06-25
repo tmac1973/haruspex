@@ -6,6 +6,7 @@ import './email';
 import './sandbox';
 import './code';
 import './shell-interactive';
+import './audit';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel } from './registry';

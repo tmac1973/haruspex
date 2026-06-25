@@ -104,9 +104,14 @@
 					}}
 				>
 					<div class="row-main">
-						<span class="name">{job.name}</span>
+						<span class="name">
+							{job.name}
+							<span class="badge" class:research={job.job_type === 'research'}>{job.job_type}</span>
+						</span>
 						<span class="meta">
-							{scheduleSummary(job)} · {job.step_count} step{job.step_count === 1 ? '' : 's'}
+							{scheduleSummary(job)}{job.job_type === 'research'
+								? ` · ${job.step_count} step${job.step_count === 1 ? '' : 's'}`
+								: ''}
 						</span>
 					</div>
 					<button
@@ -238,6 +243,27 @@
 	.name {
 		font-size: 0.9rem;
 		font-weight: 500;
+	}
+
+	.badge {
+		display: inline-block;
+		margin-left: 6px;
+		padding: 0 6px;
+		border-radius: 999px;
+		font-size: 0.62rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		vertical-align: middle;
+		background: color-mix(in srgb, var(--accent) 18%, transparent);
+		color: var(--accent);
+	}
+
+	/* Research is the default type — a muted, neutral badge keeps the accent
+	   reserved for the special audit type while staying visually consistent. */
+	.badge.research {
+		background: color-mix(in srgb, var(--text-secondary) 15%, transparent);
+		color: var(--text-secondary);
 	}
 
 	.meta {

@@ -124,6 +124,24 @@ pub fn db_replace_job_steps(
 }
 
 #[tauri::command]
+pub fn db_create_prompt(
+    state: tauri::State<'_, Database>,
+    input: SavedPromptInput,
+) -> Result<i64, String> {
+    state.create_prompt(&input)
+}
+
+#[tauri::command]
+pub fn db_list_prompts(state: tauri::State<'_, Database>) -> Result<Vec<SavedPrompt>, String> {
+    state.list_prompts()
+}
+
+#[tauri::command]
+pub fn db_delete_prompt(state: tauri::State<'_, Database>, id: i64) -> Result<(), String> {
+    state.delete_prompt(id)
+}
+
+#[tauri::command]
 pub fn db_create_job_run(
     state: tauri::State<'_, Database>,
     job_id: i64,

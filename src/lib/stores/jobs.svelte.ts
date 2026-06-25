@@ -3,6 +3,13 @@ import { logDebug } from '$lib/debug-log';
 
 export type ScheduleKind = 'manual' | 'hourly' | 'daily' | 'weekly' | 'interval';
 
+/**
+ * `research` = the original sequential multi-step pipeline. `audit` = run one
+ * prompt N independent times, then cluster + source-verify the findings into a
+ * single meta-report.
+ */
+export type JobType = 'research' | 'audit';
+
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
 export type Schedule =
@@ -30,6 +37,7 @@ export interface JobSummary {
 	description: string | null;
 	working_dir: string;
 	auto_approve_tools: boolean;
+	job_type: JobType;
 	schedule_kind: ScheduleKind;
 	schedule_config: string | null;
 	next_due_at: number | null;
@@ -38,12 +46,59 @@ export interface JobSummary {
 	step_count: number;
 }
 
-export interface JobWithSteps {
+/** Audit-job config (ignored when job_type !== 'audit'). */
+export interface AuditConfig {
+	/** Number of independent sample runs to execute. */
+	audit_num_runs: number | null;
+	/** File the meta-report is written to (relative to working_dir). */
+	audit_output_file: string | null;
+	/** Run sample + verification turns with a read-only tool subset. */
+	audit_read_only: boolean;
+	/**
+	 * Per-sample agent-loop turn budget (read/grep iterations). null = runner
+	 * default. Bigger codebases need more turns to grep thoroughly.
+	 */
+	audit_max_iterations: number | null;
+	/** Custom sample-run instructions (appended to the audit prompt). null = default. */
+	audit_sample_instructions: string | null;
+	/** Custom verification rubric. null = default. */
+	audit_verify_instructions: string | null;
+}
+
+/**
+ * Per-job remote model override (applies to every job type, not just audits).
+ * When `model_remote_base_url` is set the job runs all its model calls against
+ * this remote server/model instead of the global Settings backend. Remote-only:
+ * leaving these null means "use whatever Settings has selected" (local or remote).
+ */
+export interface ModelOverrideConfig {
+	/** Remote base URL (no trailing slash, no /v1). null/blank = use Settings. */
+	model_remote_base_url: string | null;
+	/** Optional Bearer token for the override server. */
+	model_remote_api_key: string | null;
+	/** Model ID sent to the override server. */
+	model_remote_model_id: string | null;
+	/**
+	 * Context window (tokens/request) of the override model, used for budget +
+	 * compaction math. null = fall back to the global active context size.
+	 * Remote models often have a much larger window than the local default, so
+	 * leaving this unset would needlessly cap how much the job can hold.
+	 */
+	model_remote_context_size: number | null;
+	/**
+	 * Whether the override model accepts image input. null = inherit the global
+	 * Settings vision capability; false hides vision tools for this job's turns.
+	 */
+	model_remote_vision_supported: boolean | null;
+}
+
+export interface JobWithSteps extends AuditConfig, ModelOverrideConfig {
 	id: number;
 	name: string;
 	description: string | null;
 	working_dir: string;
 	auto_approve_tools: boolean;
+	job_type: JobType;
 	schedule_kind: ScheduleKind;
 	schedule_config: string | null;
 	next_due_at: number | null;
@@ -52,11 +107,12 @@ export interface JobWithSteps {
 	steps: JobStep[];
 }
 
-export interface JobInput {
+export interface JobInput extends AuditConfig, ModelOverrideConfig {
 	name: string;
 	description: string | null;
 	working_dir: string;
 	auto_approve_tools: boolean;
+	job_type: JobType;
 	schedule_kind: ScheduleKind;
 	schedule_config: string | null;
 	next_due_at: number | null;

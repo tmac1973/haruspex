@@ -46,3 +46,44 @@ describe('interactive shell tool gating', () => {
 		for (const t of INTERACTIVE) expect(n).not.toContain(t);
 	});
 });
+
+describe('tool allowlist + audit tools', () => {
+	const AUDIT_TOOLS = ['submit_findings', 'submit_verdict'];
+
+	it('audit submit tools never appear in any default mode', () => {
+		const modes = [
+			{ hasWorkingDir: true }, // chat
+			{ hasWorkingDir: true, shellMode: true },
+			{ hasWorkingDir: true, codeMode: true },
+			{ hasWorkingDir: true, codeMode: true, shellMode: true }
+		];
+		for (const m of modes) {
+			const n = names(m);
+			for (const t of AUDIT_TOOLS) expect(n).not.toContain(t);
+		}
+	});
+
+	it('an allowlist exposes EXACTLY the named tools, bypassing mode filters', () => {
+		const n = names({
+			hasWorkingDir: false,
+			toolAllowlist: ['code_grep', 'fs_read_text', 'submit_findings']
+		});
+		expect(new Set(n)).toEqual(new Set(['code_grep', 'fs_read_text', 'submit_findings']));
+	});
+
+	it('the allowlist wins even with mode flags set, and silently drops unknown names', () => {
+		const n = names({
+			hasWorkingDir: true,
+			codeMode: true,
+			shellMode: true,
+			toolAllowlist: ['code_glob', 'submit_verdict', 'not_a_real_tool']
+		});
+		expect(new Set(n)).toEqual(new Set(['code_glob', 'submit_verdict']));
+		// run_command would normally ride along in code mode — the allowlist excludes it.
+		expect(n).not.toContain('run_command');
+	});
+
+	it('an empty allowlist exposes no tools', () => {
+		expect(names({ hasWorkingDir: true, toolAllowlist: [] })).toEqual([]);
+	});
+});
