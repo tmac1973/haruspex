@@ -217,4 +217,48 @@ describe('chatCompletion', () => {
 
 		vi.unstubAllGlobals();
 	});
+
+	it('routes to the per-request backend override (url, model, auth)', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ message: { content: 'ok', role: 'assistant' }, finish_reason: 'stop' }]
+			})
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		await chatCompletion({
+			messages: [],
+			backend: { baseUrl: 'http://compute:3000/', apiKey: 'sk-xyz', modelId: 'qwen3.5-27b' }
+		});
+
+		const [url, init] = fetchMock.mock.calls[0];
+		// Trailing slash trimmed, /v1 suffix appended.
+		expect(url).toBe('http://compute:3000/v1/chat/completions');
+		const headers = init.headers as Record<string, string>;
+		expect(headers['Authorization']).toBe('Bearer sk-xyz');
+		expect(JSON.parse(init.body as string).model).toBe('qwen3.5-27b');
+
+		vi.unstubAllGlobals();
+	});
+
+	it('omits the Authorization header when the override has no api key', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ message: { content: 'ok', role: 'assistant' }, finish_reason: 'stop' }]
+			})
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		await chatCompletion({ messages: [], backend: { baseUrl: 'http://compute:3000' } });
+
+		const [url, init] = fetchMock.mock.calls[0];
+		expect(url).toBe('http://compute:3000/v1/chat/completions');
+		expect((init.headers as Record<string, string>)['Authorization']).toBeUndefined();
+		// Blank model id falls back to the 'default' placeholder.
+		expect(JSON.parse(init.body as string).model).toBe('default');
+
+		vi.unstubAllGlobals();
+	});
 });

@@ -89,6 +89,9 @@ pub struct JobSummary {
     pub description: Option<String>,
     pub working_dir: String,
     pub auto_approve_tools: bool,
+    /// `'research'` (the default, sequential-step pipeline) or `'audit'`
+    /// (run one prompt N times, then cluster + verify into a meta-report).
+    pub job_type: String,
     pub schedule_kind: String,
     pub schedule_config: Option<String>,
     pub next_due_at: Option<i64>,
@@ -104,12 +107,52 @@ pub struct JobWithSteps {
     pub description: Option<String>,
     pub working_dir: String,
     pub auto_approve_tools: bool,
+    pub job_type: String,
     pub schedule_kind: String,
     pub schedule_config: Option<String>,
     pub next_due_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
     pub steps: Vec<JobStep>,
+    // Audit-job config (ignored when job_type != 'audit'). The audit prompt
+    // itself reuses the single job_steps row.
+    /// How many independent sample runs to execute.
+    pub audit_num_runs: Option<i64>,
+    /// File the final meta-report is written to (relative to working_dir).
+    pub audit_output_file: Option<String>,
+    /// Run sample + verification turns with a read-only tool subset.
+    pub audit_read_only: bool,
+    /// Per-sample agent-loop turn budget. NULL = runner default. The bigger
+    /// the codebase, the more grep/read turns a thorough audit needs.
+    pub audit_max_iterations: Option<i64>,
+    /// Custom sample-run instructions (appended to the audit prompt). NULL = default.
+    pub audit_sample_instructions: Option<String>,
+    /// Custom verification rubric. NULL = default.
+    pub audit_verify_instructions: Option<String>,
+    // Per-job remote model override (applies to every job type). When
+    // `model_remote_base_url` is non-empty the job's model calls route to this
+    // remote server/model instead of the global Settings backend. NULL/empty =
+    // use Settings. Remote-only by design — local jobs follow Settings.
+    /// Remote base URL (no trailing slash, no /v1). Empty/NULL = use Settings.
+    pub model_remote_base_url: Option<String>,
+    /// Optional Bearer token for the override server.
+    pub model_remote_api_key: Option<String>,
+    /// Model ID sent to the override server.
+    pub model_remote_model_id: Option<String>,
+    /// Context window (tokens/request) of the override model, for budget +
+    /// compaction math. NULL = fall back to the global active context size.
+    pub model_remote_context_size: Option<i64>,
+    /// Whether the override model accepts image input. NULL = inherit the
+    /// global Settings vision capability; Some(false) hides vision tools.
+    pub model_remote_vision_supported: Option<bool>,
+}
+
+fn default_job_type() -> String {
+    "research".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -118,6 +161,8 @@ pub struct JobInput {
     pub description: Option<String>,
     pub working_dir: String,
     pub auto_approve_tools: bool,
+    #[serde(default = "default_job_type")]
+    pub job_type: String,
     pub schedule_kind: String,
     pub schedule_config: Option<String>,
     /// Pre-computed unix ms when this job is next due. The frontend
@@ -125,6 +170,45 @@ pub struct JobInput {
     /// Rust side. NULL for `manual` schedules.
     #[serde(default)]
     pub next_due_at: Option<i64>,
+    #[serde(default)]
+    pub audit_num_runs: Option<i64>,
+    #[serde(default)]
+    pub audit_output_file: Option<String>,
+    #[serde(default = "default_true")]
+    pub audit_read_only: bool,
+    #[serde(default)]
+    pub audit_max_iterations: Option<i64>,
+    #[serde(default)]
+    pub audit_sample_instructions: Option<String>,
+    #[serde(default)]
+    pub audit_verify_instructions: Option<String>,
+    #[serde(default)]
+    pub model_remote_base_url: Option<String>,
+    #[serde(default)]
+    pub model_remote_api_key: Option<String>,
+    #[serde(default)]
+    pub model_remote_model_id: Option<String>,
+    #[serde(default)]
+    pub model_remote_context_size: Option<i64>,
+    #[serde(default)]
+    pub model_remote_vision_supported: Option<bool>,
+}
+
+/// A user-saved catalog prompt. `scope` is "audit" | "research" | "any".
+#[derive(Clone, Debug, Serialize)]
+pub struct SavedPrompt {
+    pub id: i64,
+    pub name: String,
+    pub scope: String,
+    pub prompt: String,
+    pub created_at: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SavedPromptInput {
+    pub name: String,
+    pub scope: String,
+    pub prompt: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -286,7 +370,19 @@ impl Database {
                 schedule_config TEXT,
                 next_due_at INTEGER,
                 created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
+                updated_at INTEGER NOT NULL,
+                job_type TEXT NOT NULL DEFAULT 'research',
+                audit_num_runs INTEGER,
+                audit_output_file TEXT,
+                audit_read_only INTEGER NOT NULL DEFAULT 1,
+                audit_max_iterations INTEGER,
+                audit_sample_instructions TEXT,
+                audit_verify_instructions TEXT,
+                model_remote_base_url TEXT,
+                model_remote_api_key TEXT,
+                model_remote_model_id TEXT,
+                model_remote_context_size INTEGER,
+                model_remote_vision_supported INTEGER
             );
 
             CREATE INDEX IF NOT EXISTS idx_jobs_next_due
@@ -331,18 +427,45 @@ impl Database {
             );
 
             CREATE INDEX IF NOT EXISTS idx_job_run_steps_run
-                ON job_run_steps(run_id, ordering);",
+                ON job_run_steps(run_id, ordering);
+
+            CREATE TABLE IF NOT EXISTS prompt_catalog (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_prompt_catalog_scope
+                ON prompt_catalog(scope, name);",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
-        // Idempotent ALTER for older DBs: add the `steps` column to the
-        // messages table if it isn't already there. SQLite has no
-        // ADD COLUMN IF NOT EXISTS so we swallow the duplicate-column
-        // error from the second run.
-        if let Err(e) = conn.execute("ALTER TABLE messages ADD COLUMN steps TEXT", []) {
-            let msg = e.to_string();
-            if !msg.contains("duplicate column name") {
-                return Err(format!("Migration (add steps column) failed: {}", msg));
+        // Idempotent ALTERs for older DBs. SQLite has no ADD COLUMN IF NOT
+        // EXISTS, so we swallow the duplicate-column error on re-runs. Existing
+        // jobs predate the audit feature, so they backfill to job_type =
+        // 'research' via the column default.
+        for stmt in [
+            "ALTER TABLE messages ADD COLUMN steps TEXT",
+            "ALTER TABLE jobs ADD COLUMN job_type TEXT NOT NULL DEFAULT 'research'",
+            "ALTER TABLE jobs ADD COLUMN audit_num_runs INTEGER",
+            "ALTER TABLE jobs ADD COLUMN audit_output_file TEXT",
+            "ALTER TABLE jobs ADD COLUMN audit_read_only INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE jobs ADD COLUMN audit_max_iterations INTEGER",
+            "ALTER TABLE jobs ADD COLUMN audit_sample_instructions TEXT",
+            "ALTER TABLE jobs ADD COLUMN audit_verify_instructions TEXT",
+            "ALTER TABLE jobs ADD COLUMN model_remote_base_url TEXT",
+            "ALTER TABLE jobs ADD COLUMN model_remote_api_key TEXT",
+            "ALTER TABLE jobs ADD COLUMN model_remote_model_id TEXT",
+            "ALTER TABLE jobs ADD COLUMN model_remote_context_size INTEGER",
+            "ALTER TABLE jobs ADD COLUMN model_remote_vision_supported INTEGER",
+        ] {
+            if let Err(e) = conn.execute(stmt, []) {
+                let msg = e.to_string();
+                if !msg.contains("duplicate column name") {
+                    return Err(format!("Migration ({stmt}) failed: {msg}"));
+                }
             }
         }
 
@@ -358,6 +481,7 @@ fn chrono_now() -> i64 {
 mod commands;
 mod conversations;
 mod jobs;
+mod prompts;
 mod runs;
 mod stats;
 

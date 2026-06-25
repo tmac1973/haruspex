@@ -13,7 +13,7 @@
  * `loop/nudges.ts`.
  */
 
-import type { StreamChunk, Usage } from '$lib/api';
+import type { BackendOverride, StreamChunk, Usage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
 import type { ContextManagedInfo } from './context-budget';
@@ -199,6 +199,27 @@ export interface AgentLoopOptions {
 	 * call — the Code tab raises this when reasoning is on.
 	 */
 	maxResponseTokens?: number;
+	/**
+	 * When set, the turn exposes EXACTLY these tools (by name), bypassing the
+	 * mode-based tool filters. Used by audit runs to pin a turn to a precise
+	 * read-only subset plus a structured-output tool. See `getToolSchemas`.
+	 */
+	toolAllowlist?: Iterable<string>;
+	/**
+	 * When set, the turn MUST end with a call to this tool. If the model
+	 * reaches the iteration cap (or tries to answer in prose) without having
+	 * called it, the loop forces one final `tool_choice`-pinned call so the
+	 * tool's arguments are captured deterministically. Used by audit runs,
+	 * where a free-text answer is useless — only the submit_findings /
+	 * submit_verdict call carries the result. No-op for normal turns.
+	 */
+	forceFinalTool?: string;
+	/**
+	 * Remote backend override applied to every model call in this turn. When
+	 * set, requests route to this server/model instead of the global Settings
+	 * backend — the mechanism behind per-job model selection. Absent → Settings.
+	 */
+	backend?: BackendOverride;
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
@@ -233,5 +254,10 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		// outcome === 'continue': proceed to the next iteration.
 	}
 
-	await runMaxIterationsFinalSynthesis(ctx, state, forcedBreak ? 'forced_stop' : 'max_iterations');
+	await runMaxIterationsFinalSynthesis(
+		ctx,
+		state,
+		nudges,
+		forcedBreak ? 'forced_stop' : 'max_iterations'
+	);
 }

@@ -76,6 +76,34 @@ export interface ChatCompletionOptions {
 	presence_penalty?: number;
 	max_tokens?: number;
 	chat_template_kwargs?: Record<string, unknown>;
+	/**
+	 * OpenAI-compatible tool-choice control. Pass an object to force the model
+	 * to emit exactly one call to the named function — used to guarantee a
+	 * structured-output tool (e.g. submit_findings) fires at the end of an
+	 * audit turn instead of free-text prose.
+	 */
+	tool_choice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };
+	/**
+	 * Per-request remote backend override. When set (non-blank baseUrl), the
+	 * request routes to this server/model instead of the active Settings
+	 * backend — used so a single job can run against a different remote model
+	 * without changing global Settings. Absent → use the Settings backend.
+	 */
+	backend?: BackendOverride;
+}
+
+/**
+ * A remote chat backend a single request can target instead of the global
+ * Settings backend. Remote-only by design: there is no managed-sidecar
+ * override (local jobs use whatever model Settings has loaded).
+ */
+export interface BackendOverride {
+	/** Base URL of the remote server (no trailing slash, no /v1 suffix). */
+	baseUrl: string;
+	/** Optional Bearer token; blank for servers that need no auth. */
+	apiKey?: string;
+	/** Model ID sent in the request; falls back to 'default' when blank. */
+	modelId?: string;
 }
 
 export interface Usage {
@@ -125,13 +153,27 @@ function getBaseUrl(port: number = DEFAULT_PORT): string {
  * loop, chat store, and streaming helpers all go through it, so adding
  * a new backend mode later means only touching this function.
  */
-function resolveChatEndpoint(port?: number): {
+function resolveChatEndpoint(
+	port?: number,
+	override?: BackendOverride
+): {
 	url: string;
 	headers: Record<string, string>;
 	model: string;
 } {
-	const backend = getSettings().inferenceBackend;
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+	// A per-request override short-circuits the Settings backend entirely.
+	if (override && override.baseUrl.trim().length > 0) {
+		if (override.apiKey && override.apiKey.trim().length > 0) {
+			headers['Authorization'] = `Bearer ${override.apiKey.trim()}`;
+		}
+		return {
+			url: `${override.baseUrl.replace(/\/+$/, '')}/v1/chat/completions`,
+			headers,
+			model: override.modelId?.trim() || 'default'
+		};
+	}
+	const backend = getSettings().inferenceBackend;
 	if (backend.mode === 'remote' && backend.remoteBaseUrl) {
 		if (backend.remoteApiKey && backend.remoteApiKey.trim().length > 0) {
 			headers['Authorization'] = `Bearer ${backend.remoteApiKey.trim()}`;
@@ -166,6 +208,9 @@ function buildRequestBody(
 
 	if (options.tools && options.tools.length > 0) {
 		body.tools = options.tools;
+	}
+	if (options.tool_choice !== undefined) {
+		body.tool_choice = options.tool_choice;
 	}
 	if (options.temperature !== undefined) {
 		body.temperature = options.temperature;
@@ -300,7 +345,7 @@ export async function* chatCompletionStream(
 	signal?: AbortSignal,
 	port?: number
 ): AsyncGenerator<StreamChunk> {
-	const endpoint = resolveChatEndpoint(port);
+	const endpoint = resolveChatEndpoint(port, options.backend);
 	const body = buildRequestBody({ ...options, stream: true }, endpoint.model);
 	const reqId = nextRequestId++;
 	logDebug('api', `stream request #${reqId} → ${endpoint.url}`, body);
@@ -349,7 +394,7 @@ export async function chatCompletion(
 	signal?: AbortSignal,
 	port?: number
 ): Promise<ChatCompletionResponse> {
-	const endpoint = resolveChatEndpoint(port);
+	const endpoint = resolveChatEndpoint(port, options.backend);
 	const body = buildRequestBody({ ...options, stream: false }, endpoint.model);
 	const reqId = nextRequestId++;
 	logDebug('api', `non-stream request #${reqId} → ${endpoint.url}`, body);

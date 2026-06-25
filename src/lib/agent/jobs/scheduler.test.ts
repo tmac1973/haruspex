@@ -33,6 +33,7 @@ function dueJob(overrides: Partial<JobSummary>): JobSummary {
 		description: null,
 		working_dir: '/tmp',
 		auto_approve_tools: true,
+		job_type: 'research',
 		schedule_kind: 'interval',
 		schedule_config: '{"minutes":5}',
 		next_due_at: 100,

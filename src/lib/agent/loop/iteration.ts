@@ -14,6 +14,7 @@ import {
 	chatCompletion,
 	chatCompletionStream,
 	messageText,
+	type BackendOverride,
 	type ChatMessage,
 	type ChatCompletionResponse,
 	type Usage
@@ -34,7 +35,7 @@ import { getChatTemplateKwargs, getSamplingParams } from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
 import { logDebug } from '$lib/debug-log';
 import { NudgeState } from './nudges';
-import type { AgentLoopOptions } from '../loop';
+import type { AgentLoopOptions, CompletionMeta } from '../loop';
 
 // Trim older tool results when context usage crosses this fraction.
 // Lower than the conversation-level compaction threshold (0.8) so we
@@ -91,6 +92,10 @@ export interface LoopContext {
 	pendingImages: PendingImage[];
 	filesWrittenThisTurn: Set<string>;
 	maxIterations: number;
+	/** Tool the turn must finish with; forced via tool_choice. null = none. */
+	forceFinalTool: string | null;
+	/** Remote backend override for every model call this turn; null = Settings. */
+	backend: BackendOverride | null;
 	options: AgentLoopOptions;
 }
 
@@ -112,7 +117,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			deepResearch: options.deepResearch ?? false,
 			visionSupported: options.visionSupported ?? true,
 			shellMode,
-			codeMode
+			codeMode,
+			toolAllowlist: options.toolAllowlist
 		}),
 		signal: options.signal,
 		workingDir,
@@ -129,6 +135,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
 		maxIterations: options.maxIterations ?? 8,
+		forceFinalTool: options.forceFinalTool ?? null,
+		backend: options.backend ?? null,
 		options
 	};
 }
@@ -305,9 +313,13 @@ async function sendGuardedCompletion(
 	reserveOutput: number
 ): Promise<ChatCompletionResponse> {
 	applyContextGuard(ctx, reserveOutput, tools);
+	const backend = ctx.backend ?? undefined;
 	let sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 	try {
-		const res = await chatCompletion({ messages: ctx.messages, tools, ...params }, ctx.signal);
+		const res = await chatCompletion(
+			{ messages: ctx.messages, tools, backend, ...params },
+			ctx.signal
+		);
 		if (res.usage) recordTokenCalibration(sentEstimate, res.usage.prompt_tokens);
 		return res;
 	} catch (e) {
@@ -323,7 +335,10 @@ async function sendGuardedCompletion(
 		const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, { reserveOutput, tools });
 		if (info) ctx.options.onContextManaged?.(info);
 		sentEstimate = estimateMessagesTokens(ctx.messages, tools);
-		const res = await chatCompletion({ messages: ctx.messages, tools, ...params }, ctx.signal);
+		const res = await chatCompletion(
+			{ messages: ctx.messages, tools, backend, ...params },
+			ctx.signal
+		);
 		if (res.usage) recordTokenCalibration(sentEstimate, res.usage.prompt_tokens);
 		return res;
 	}
@@ -358,6 +373,90 @@ function injectPendingImages(messages: ChatMessage[], pending: PendingImage[]): 
 }
 
 /**
+ * True if the forced-final tool has already been called this turn (the
+ * model emitted it on its own during a normal iteration). Scans the
+ * accumulated assistant tool_calls so the terminal handlers don't force a
+ * redundant second call.
+ */
+function forceFinalToolAlreadyCalled(ctx: LoopContext): boolean {
+	const name = ctx.forceFinalTool;
+	if (!name) return false;
+	return ctx.messages.some(
+		(m) => m.role === 'assistant' && m.tool_calls?.some((tc) => tc.function?.name === name)
+	);
+}
+
+/**
+ * Force the turn to end with a `ctx.forceFinalTool` call. Used when an
+ * audit sample/verify turn is wrapping up without having produced its
+ * required structured output — a free-text answer would be discarded, so we
+ * pin the model to the tool via `tool_choice` and dispatch the result
+ * through the normal tool path (firing onToolStart/onToolEnd so the caller
+ * captures the arguments). Best-effort: if the forced call fails or the
+ * server returns no usable call, the turn completes empty rather than
+ * throwing, matching the "model genuinely found nothing" outcome.
+ */
+async function forceFinalToolCall(
+	ctx: LoopContext,
+	nudges: NudgeState,
+	meta?: CompletionMeta
+): Promise<void> {
+	const name = ctx.forceFinalTool!;
+	const tool = ctx.tools.find((t) => t.function.name === name);
+	logDebug('agent', 'branch=force-final-tool', { tool: name, found: !!tool });
+
+	ctx.messages.push({
+		role: 'user',
+		content:
+			`You have finished investigating. Call the ${name} tool now with everything ` +
+			`you found. Submitting partial or empty results is acceptable — do NOT reply ` +
+			`with prose, and do not investigate further.`
+	});
+
+	const sampling = getSamplingParams({
+		codeContext: ctx.codeMode || isCodeContext(ctx.messages),
+		thinkingEnabled: ctx.thinkingEnabled
+	});
+	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
+	const offered = tool ? [tool] : ctx.tools;
+	applyContextGuard(ctx, ctx.maxResponseTokens, offered);
+
+	let response: ChatCompletionResponse;
+	try {
+		response = await chatCompletion(
+			{
+				messages: ctx.messages,
+				tools: offered,
+				backend: ctx.backend ?? undefined,
+				tool_choice: { type: 'function', function: { name } },
+				temperature: sampling.temperature,
+				top_p: sampling.top_p,
+				top_k: sampling.top_k,
+				min_p: sampling.min_p,
+				presence_penalty: sampling.presence_penalty,
+				max_tokens: ctx.maxResponseTokens,
+				chat_template_kwargs: templateKwargs
+			},
+			ctx.signal
+		);
+	} catch (e) {
+		if (e instanceof DOMException && e.name === 'AbortError') throw e;
+		logDebug('agent', 'forced final tool call failed', { tool: name, error: String(e) });
+		ctx.options.onComplete(meta);
+		return;
+	}
+
+	const calls = resolveToolCalls(response).filter((c) => c.name === name);
+	if (calls.length === 0) {
+		logDebug('agent', 'forced final tool call returned no usable call', { tool: name });
+		ctx.options.onComplete(meta);
+		return;
+	}
+	await executeToolCalls(ctx, nudges, calls);
+	ctx.options.onComplete(meta);
+}
+
+/**
  * Stream a chat completion with the given parameters, forwarding each
  * chunk to the options callback and tracking final-finish-reason +
  * total tokens for the call-stats / error-on-length post-processing.
@@ -376,6 +475,7 @@ async function streamFinalSynthesis(
 		{
 			messages: ctx.messages,
 			tools,
+			backend: ctx.backend ?? undefined,
 			temperature: sampling.temperature,
 			top_p: sampling.top_p,
 			top_k: sampling.top_k,
@@ -738,6 +838,14 @@ async function finalizeNoToolCalls(
 		return 'continue';
 	}
 
+	// Audit-style turns: the model is trying to answer in prose, but only a
+	// forced-tool call carries a usable result. Pin the tool instead of
+	// committing the prose (which the caller would discard).
+	if (ctx.forceFinalTool && !forceFinalToolAlreadyCalled(ctx)) {
+		await forceFinalToolCall(ctx, nudges);
+		return 'complete';
+	}
+
 	// If this iteration's non-streaming check call already came back with a
 	// clean, substantive answer, surface it directly through the stream
 	// callbacks and skip the redundant re-stream.
@@ -915,12 +1023,20 @@ async function executeToolCalls(
 export async function runMaxIterationsFinalSynthesis(
 	ctx: LoopContext,
 	state: LoopState,
+	nudges: NudgeState,
 	stopReason: 'max_iterations' | 'forced_stop'
 ): Promise<void> {
 	logDebug('agent', `branch=max-iterations reached`, {
 		maxIterations: ctx.maxIterations,
 		usedTools: state.usedTools
 	});
+	// Audit-style turns must finish with their structured-output tool. The
+	// model spent its whole budget investigating and never submitted, so a
+	// prose synthesis here would be thrown away — force the tool instead.
+	if (ctx.forceFinalTool && !forceFinalToolAlreadyCalled(ctx)) {
+		await forceFinalToolCall(ctx, nudges, { stopReason });
+		return;
+	}
 	if (state.usedTools) {
 		// Chat/research turns want a definitive "stop searching, answer
 		// now" nudge; shell-troubleshooting turns should wrap up with

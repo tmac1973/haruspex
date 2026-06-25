@@ -220,9 +220,21 @@ fn sample_job_input(name: &str) -> JobInput {
         description: Some("desc".to_string()),
         working_dir: "/tmp/work".to_string(),
         auto_approve_tools: false,
+        job_type: "research".to_string(),
         schedule_kind: "manual".to_string(),
         schedule_config: None,
         next_due_at: None,
+        audit_num_runs: None,
+        audit_output_file: None,
+        audit_read_only: true,
+        audit_max_iterations: None,
+        audit_sample_instructions: None,
+        audit_verify_instructions: None,
+        model_remote_base_url: None,
+        model_remote_api_key: None,
+        model_remote_model_id: None,
+        model_remote_context_size: None,
+        model_remote_vision_supported: None,
     }
 }
 
@@ -326,9 +338,21 @@ fn update_job_changes_fields_and_bumps_timestamp() {
             description: None,
             working_dir: "/tmp/other".to_string(),
             auto_approve_tools: true,
+            job_type: "research".to_string(),
             schedule_kind: "daily".to_string(),
             schedule_config: Some(r#"{"time":"09:00"}"#.to_string()),
             next_due_at: Some(1234567890),
+            audit_num_runs: None,
+            audit_output_file: None,
+            audit_read_only: true,
+            audit_max_iterations: None,
+            audit_sample_instructions: None,
+            audit_verify_instructions: None,
+            model_remote_base_url: None,
+            model_remote_api_key: None,
+            model_remote_model_id: None,
+            model_remote_context_size: None,
+            model_remote_vision_supported: None,
         },
     )
     .unwrap();
@@ -584,13 +608,91 @@ fn schedule_config_round_trips_as_opaque_json() {
             description: None,
             working_dir: "/x".to_string(),
             auto_approve_tools: false,
+            job_type: "research".to_string(),
             schedule_kind: "weekly".to_string(),
             schedule_config: Some(json.clone()),
             next_due_at: None,
+            audit_num_runs: None,
+            audit_output_file: None,
+            audit_read_only: true,
+            audit_max_iterations: None,
+            audit_sample_instructions: None,
+            audit_verify_instructions: None,
+            model_remote_base_url: None,
+            model_remote_api_key: None,
+            model_remote_model_id: None,
+            model_remote_context_size: None,
+            model_remote_vision_supported: None,
         })
         .unwrap();
     let job = db.get_job(id).unwrap();
     assert_eq!(job.schedule_config, Some(json));
+}
+
+#[test]
+fn audit_job_config_round_trips() {
+    let db = test_db();
+    let id = db
+        .create_job(&JobInput {
+            name: "Dup audit".to_string(),
+            description: None,
+            working_dir: "/repo".to_string(),
+            auto_approve_tools: false,
+            job_type: "audit".to_string(),
+            schedule_kind: "manual".to_string(),
+            schedule_config: None,
+            next_due_at: None,
+            audit_num_runs: Some(5),
+            audit_output_file: Some("AUDIT.md".to_string()),
+            audit_read_only: true,
+            audit_max_iterations: Some(250),
+            audit_sample_instructions: Some("focus on concurrency".to_string()),
+            audit_verify_instructions: Some("be extra strict".to_string()),
+            model_remote_base_url: Some("http://compute:3000".to_string()),
+            model_remote_api_key: Some("sk-test".to_string()),
+            model_remote_model_id: Some("qwen3.5-27b".to_string()),
+            model_remote_context_size: Some(131072),
+            model_remote_vision_supported: Some(true),
+        })
+        .unwrap();
+    let job = db.get_job(id).unwrap();
+    assert_eq!(job.job_type, "audit");
+    assert_eq!(
+        job.model_remote_base_url.as_deref(),
+        Some("http://compute:3000")
+    );
+    assert_eq!(job.model_remote_api_key.as_deref(), Some("sk-test"));
+    assert_eq!(job.model_remote_model_id.as_deref(), Some("qwen3.5-27b"));
+    assert_eq!(job.model_remote_context_size, Some(131072));
+    assert_eq!(job.model_remote_vision_supported, Some(true));
+    assert_eq!(job.audit_num_runs, Some(5));
+    assert_eq!(job.audit_output_file.as_deref(), Some("AUDIT.md"));
+    assert!(job.audit_read_only);
+    assert_eq!(job.audit_max_iterations, Some(250));
+    assert_eq!(
+        job.audit_sample_instructions.as_deref(),
+        Some("focus on concurrency")
+    );
+    assert_eq!(
+        job.audit_verify_instructions.as_deref(),
+        Some("be extra strict")
+    );
+
+    // The list view carries the discriminator for badges.
+    let summary = db
+        .list_jobs()
+        .unwrap()
+        .into_iter()
+        .find(|j| j.id == id)
+        .unwrap();
+    assert_eq!(summary.job_type, "audit");
+}
+
+#[test]
+fn existing_jobs_default_to_research_type() {
+    let db = test_db();
+    let id = db.create_job(&sample_job_input("Legacy")).unwrap();
+    assert_eq!(db.get_job(id).unwrap().job_type, "research");
 }
 
 fn job_with_steps(db: &Database, name: &str, prompts: &[&str]) -> i64 {
@@ -871,4 +973,25 @@ fn save_message_with_tool_calls() {
     assert_eq!(conv.messages.len(), 2);
     assert!(conv.messages[0].tool_calls.is_some());
     assert_eq!(conv.messages[1].tool_call_id.as_deref(), Some("call_1"));
+}
+
+#[test]
+fn prompt_catalog_crud() {
+    let db = test_db();
+    let id = db
+        .create_prompt(&SavedPromptInput {
+            name: "My dup audit".to_string(),
+            scope: "audit".to_string(),
+            prompt: "look for duplication".to_string(),
+        })
+        .unwrap();
+    let all = db.list_prompts().unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].id, id);
+    assert_eq!(all[0].name, "My dup audit");
+    assert_eq!(all[0].scope, "audit");
+    assert_eq!(all[0].prompt, "look for duplication");
+
+    db.delete_prompt(id).unwrap();
+    assert!(db.list_prompts().unwrap().is_empty());
 }

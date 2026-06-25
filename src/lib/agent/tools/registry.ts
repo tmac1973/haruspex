@@ -99,6 +99,9 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// `exec` (run_command) runs arbitrary host commands — Code mode only.
 	// Without this, the `return true` fall-through would leak it into Chat.
 	if (reg.category === 'exec') return false;
+	// `audit` tools (submit_findings/submit_verdict) are only ever exposed via
+	// an explicit toolAllowlist, never the default toolset.
+	if (reg.category === 'audit') return false;
 	// code_grep / code_glob are Code-mode fs tools; keep them out of Chat.
 	if (CODE_ONLY_FS.has(name)) return false;
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
@@ -123,7 +126,22 @@ export function getToolSchemas(opts: {
 	visionSupported?: boolean;
 	shellMode?: boolean;
 	codeMode?: boolean;
+	/**
+	 * When set, the turn exposes EXACTLY these tools (by name), bypassing the
+	 * mode-based filters entirely. Used by audit runs to pin a turn to a precise
+	 * read-only subset plus the structured-output tool (submit_findings /
+	 * submit_verdict). Names not registered are silently ignored.
+	 */
+	toolAllowlist?: Iterable<string>;
 }): ToolDefinition[] {
+	if (opts.toolAllowlist) {
+		const allow = new Set(opts.toolAllowlist);
+		const schemas: ToolDefinition[] = [];
+		for (const reg of tools.values()) {
+			if (allow.has(reg.schema.function.name)) schemas.push(reg.schema);
+		}
+		return schemas;
+	}
 	const filter: ToolFilterOpts = {
 		hasWorkingDir: opts.hasWorkingDir,
 		deepResearch: opts.deepResearch ?? false,

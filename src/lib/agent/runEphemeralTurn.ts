@@ -14,7 +14,7 @@
  *     wants a live preview (the runner does, the UI reflects it).
  */
 
-import type { ChatMessage } from '$lib/api';
+import type { BackendOverride, ChatMessage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
 import { runTurnCore } from '$lib/agent/runTurn';
@@ -28,6 +28,12 @@ export interface EphemeralTurnOptions {
 	maxIterations?: number;
 	deepResearch?: boolean;
 	visionSupported?: boolean;
+	/** Pin the turn to an exact tool subset (by name). See `getToolSchemas`. */
+	toolAllowlist?: Iterable<string>;
+	/** Force the turn to end with a call to this tool. See `AgentLoopOptions`. */
+	forceFinalTool?: string;
+	/** Remote backend override for this turn's model calls. See `AgentLoopOptions`. */
+	backend?: BackendOverride;
 	signal?: AbortSignal;
 	onAssistantDelta?: (full: string) => void;
 	onToolStart?: (call: ResolvedToolCall) => void;
@@ -63,6 +69,9 @@ export async function runEphemeralTurn(
 			deepResearch: options.deepResearch ?? false,
 			expectsFileOutput,
 			visionSupported: options.visionSupported ?? true,
+			toolAllowlist: options.toolAllowlist,
+			forceFinalTool: options.forceFinalTool,
+			backend: options.backend,
 			signal: options.signal,
 			onToolStart: (call) => options.onToolStart?.(call),
 			onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) =>
