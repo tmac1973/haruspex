@@ -146,7 +146,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 # System libraries + Vulkan shader toolchain + Node.js
 sudo dnf install -y @development-tools cmake pkg-config \
   webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel alsa-lib-devel \
-  vulkan-headers spirv-headers glslc sonic-devel openssl-devel nodejs npm
+  vulkan-headers spirv-headers glslc sonic-devel pcaudiolib-devel openssl-devel nodejs npm
 
 # Rust (stable, via rustup)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -159,7 +159,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 # backend and is NOT pulled in by shaderc, so it must be listed explicitly.
 sudo pacman -S --needed base-devel cmake pkg-config \
   webkit2gtk-4.1 libappindicator-gtk3 librsvg alsa-lib \
-  vulkan-headers shaderc spirv-headers fuse2 rust nodejs npm
+  vulkan-headers shaderc spirv-headers fuse2 libsonic pcaudiolib rust nodejs npm
 ```
 
 #### Windows
@@ -191,10 +191,12 @@ brew install cmake pkg-config opus rust node
 git clone https://github.com/tmac1973/haruspex.git
 cd haruspex
 
-# Build sidecars and download models (first time only)
+# Required first run: builds the sidecars and downloads the rest of the
+# resources the app needs — ruff, PDFium, and the Pyodide runtime. `make dev`
+# only checks the sidecars, so it is NOT a substitute for this step.
 ./scripts/dev-setup.sh
 
-# Run the app
+# Run the app (on subsequent runs this is all you need)
 make dev
 ```
 
@@ -204,7 +206,7 @@ Run `make help` to see all targets:
 
 | Target               | Description                                                 |
 | -------------------- | ----------------------------------------------------------- |
-| `make dev`           | Run the app in dev mode (auto-checks sidecars)              |
+| `make dev`           | Run the app in dev mode (auto-checks sidecars; run `dev-setup.sh` first) |
 | `make check`         | Run all checks (lint, format, typecheck, test)              |
 | `make fmt`           | Auto-format all code (Prettier + cargo fmt)                 |
 | `make sidecars`      | Build sidecar binaries (llama-server, whisper-server, koko) |

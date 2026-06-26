@@ -29,6 +29,18 @@ ensure-resource-dirs:
 ensure-pyodide: ## Vendor the Pyodide runtime + wheels into static/pyodide/
 	@./scripts/fetch-pyodide.sh
 
+.PHONY: ensure-ruff
+ensure-ruff: ## Download the ruff Python-linter sidecar when missing
+	@./scripts/fetch-ruff.sh --target $(TARGET)
+
+.PHONY: ensure-pdfium
+ensure-pdfium: ## Download the PDFium shared library when missing
+	@./scripts/fetch-pdfium.sh --target $(TARGET)
+
+.PHONY: ensure-libs-linked
+ensure-libs-linked: ## Symlink sidecar shared libs next to the dev binary
+	@./scripts/link-sidecar-libs.sh
+
 .PHONY: ensure-node-modules
 ensure-node-modules: ## Install npm deps when package-lock.json is newer than the last install
 	@if [ ! -d node_modules ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then \
@@ -86,7 +98,7 @@ ensure-sidecars: ## Rebuild sidecars only when missing or their pinned version c
 	fi
 
 .PHONY: dev
-dev: ensure-sidecars ensure-pyodide ensure-node-modules ## Run the app in dev mode
+dev: ensure-sidecars ensure-pdfium ensure-ruff ensure-pyodide ensure-node-modules ensure-libs-linked ## Run the app in dev mode
 	GDK_BACKEND=x11 npm run tauri dev; stty sane
 
 .PHONY: check
