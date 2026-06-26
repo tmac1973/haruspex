@@ -230,7 +230,7 @@ export async function spillIfLarge(header: string, body: string): Promise<string
 	let overflowNote = '';
 	try {
 		const path = await invoke<string>('code_write_overflow', { content: body });
-		overflowNote = `\nFull output (${truncated.originalBytes} bytes) saved to ${path} — read it with fs_read_text.`;
+		overflowNote = `\nFull output (${truncated.originalBytes} bytes) saved to ${path} — read it with fs_read_text (offset/limit).`;
 	} catch {
 		// Temp-file write failed; the in-band truncation marker still stands.
 	}

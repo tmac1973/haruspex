@@ -5,13 +5,12 @@ import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { getSettings } from '$lib/stores/settings';
 import { classifyShellRisk } from '$lib/shell/risky-commands';
-import { truncateCapturedOutput } from '$lib/shell/truncate';
 import {
 	askCommandApproval,
 	isSessionApproved,
 	approveSession
 } from '$lib/stores/codeCommandApproval.svelte';
-import { runInPty, runInPtyBackground, shouldUsePty, RUN_OUTPUT_MAX_BYTES } from './pty-exec';
+import { runInPty, runInPtyBackground, shouldUsePty, spillIfLarge } from './pty-exec';
 import { registerWatch } from '$lib/shell/backgroundWatch';
 import type { RunCommandResult } from '$lib/ipc/gen/RunCommandResult';
 import type { GrepResult } from '$lib/ipc/gen/GrepResult';
@@ -104,19 +103,8 @@ async function formatRunResult(res: RunCommandResult): Promise<string> {
 		return `${header} (no output).`;
 	}
 
-	const truncated = truncateCapturedOutput(combined, RUN_OUTPUT_MAX_BYTES);
-	if (!truncated.truncated) {
-		return `${header}\n${truncated.text}`;
-	}
-	// Spill the full output so the model can read the dropped region on demand.
-	let overflowNote = '';
-	try {
-		const path = await invoke<string>('code_write_overflow', { content: combined });
-		overflowNote = `\nFull output (${truncated.originalBytes} bytes) saved to ${path} — read it with fs_read_text (offset/limit).`;
-	} catch {
-		// Temp-file write failed; the in-band truncation marker still stands.
-	}
-	return `${header}\n${truncated.text}${overflowNote}`;
+	// Truncate-and-spill is shared with the interactive shell tools.
+	return spillIfLarge(header, combined);
 }
 
 registerTool({
