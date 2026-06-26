@@ -36,19 +36,11 @@ pub struct SummarizerInput {
 /// the result into a `SummarizerInput`. Pure, no I/O.
 pub fn prepare(msg: &NormalizedMessage) -> SummarizerInput {
     let stripped = strip_quoted_replies(&msg.body);
-    let body = if stripped.chars().count() > SUMMARIZER_INPUT_CAP {
-        let mut s = String::with_capacity(SUMMARIZER_INPUT_CAP + 32);
-        for (n, c) in stripped.chars().enumerate() {
-            if n >= SUMMARIZER_INPUT_CAP {
-                break;
-            }
-            s.push(c);
-        }
-        s.push_str("\n\n[truncated for summarizer]");
-        s
-    } else {
-        stripped
-    };
+    let body = crate::text_util::truncate_chars(
+        stripped,
+        SUMMARIZER_INPUT_CAP,
+        "\n\n[truncated for summarizer]",
+    );
     SummarizerInput {
         subject: msg.subject.clone(),
         from_name: msg.from_name.clone(),
