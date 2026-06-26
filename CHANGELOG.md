@@ -1,5 +1,86 @@
 # Changelog
 
+## [0.1.51](https://github.com/tmac1973/haruspex/compare/v0.1.50...v0.1.51) (2026-06-26)
+
+
+### Features
+
+* **agent:** show why a turn stopped (turn limit vs gave up) with a Continue action ([#147](https://github.com/tmac1973/haruspex/issues/147)) ([479fb90](https://github.com/tmac1973/haruspex/commit/479fb9061092777ed3fa4d179b47ab13ccaa599f))
+* **code:** add exclude/count/files-only/context to code_grep ([5cbcd07](https://github.com/tmac1973/haruspex/commit/5cbcd07a4ce06c2c15fd30e2e60525d06a559952))
+* **inference:** consume llama-toolchest capability discovery ([#130](https://github.com/tmac1973/haruspex/issues/130)) ([9400c22](https://github.com/tmac1973/haruspex/commit/9400c22b5b895e46dfb30cd1047dbea8e06d3553))
+* **inference:** support multiple remote server URLs ([#129](https://github.com/tmac1973/haruspex/issues/129)) ([bef06be](https://github.com/tmac1973/haruspex/commit/bef06be59cdb946c7ec7a98ffee9c7c66bc3178b))
+* **jobs:** audit mode, prompt catalog, and per-job remote model overrides ([3481253](https://github.com/tmac1973/haruspex/commit/3481253ba29b4a823ad0a502927574eea4080aca))
+* **models:** Unsloth-only lineup, legacy migration, VRAM-aware context, correct sampling ([#142](https://github.com/tmac1973/haruspex/issues/142)) ([d005549](https://github.com/tmac1973/haruspex/commit/d005549ea62323e95e93fda578dbc4c0142244e8))
+* **search:** add Startpage + Yahoo (Google/Bing-sourced) to the no-browser rotation ([#151](https://github.com/tmac1973/haruspex/issues/151)) ([15119d8](https://github.com/tmac1973/haruspex/commit/15119d8fd8dbcf4866d6d73ddd3f6e62f4942720))
+* Shell-assistant Code mode — coding agent in the live terminal ([#132](https://github.com/tmac1973/haruspex/issues/132)) ([bb7eef6](https://github.com/tmac1973/haruspex/commit/bb7eef627e8f5ae2f781a1e4c1e1367568719f86))
+* **shell:** in-distro WSL context capture (17d-2) ([7d4f261](https://github.com/tmac1973/haruspex/commit/7d4f261d3b41108173d09d4d371fd1e515b07005))
+* **shell:** interactive terminal control tools (input, read, interrupt) ([#143](https://github.com/tmac1973/haruspex/issues/143)) ([c02eccc](https://github.com/tmac1973/haruspex/commit/c02ecccf6315e6d423b3aedbe005ab2af97c130d))
+* **shell:** open the Shell tab on Windows (17e) ([bcd01d8](https://github.com/tmac1973/haruspex/commit/bcd01d801acb163d0080e07372886b8641316ef9))
+* **shell:** PowerShell OSC 133 injection (17c capture) ([b36063f](https://github.com/tmac1973/haruspex/commit/b36063ffac9338e9c8cf60c71f8cd9c349deaf11))
+* **shell:** PowerShell variant of the Code-mode prompt (17c-3) ([f63a8b4](https://github.com/tmac1973/haruspex/commit/f63a8b4bfe5b03b6329d30b02a82d003c3dea720))
+* **shell:** PowerShell/Windows risk patterns ([d2d73c3](https://github.com/tmac1973/haruspex/commit/d2d73c31d60e2a072dbf67685f311298a2ea17f1))
+* **shell:** route spawn through ShellSelection (17b spawn rewiring) ([08b24bb](https://github.com/tmac1973/haruspex/commit/08b24bb63caa5d0856681d22e281078f04498388))
+* **shell:** run_command background/watch options + 30s default timeout ([#149](https://github.com/tmac1973/haruspex/issues/149)) ([6a10614](https://github.com/tmac1973/haruspex/commit/6a106146096d64e5e895a9bbac5ca42375db80bc))
+* **shell:** Run/Paste cards for PowerShell suggestions ([a187ae6](https://github.com/tmac1973/haruspex/commit/a187ae6bf3dec6527e86704454d1f81e6ef80ebd))
+* **shell:** shell catalog + selection model (17b backend) ([2da2536](https://github.com/tmac1973/haruspex/commit/2da2536614b6d1d82c01b0a7d0ca92b1bbd72f30))
+* **shell:** shell picker UI (completes 17b) ([fbd24bb](https://github.com/tmac1973/haruspex/commit/fbd24bb2ba188e2e5ea480a68aa8b80994619a43))
+* **shell:** Windows PTY baseline behind a dev flag (17a) ([a9cd117](https://github.com/tmac1973/haruspex/commit/a9cd1174a2b88725ea52b2c16b83292459b6a328))
+* **shell:** Windows session context for the badge (17c-2) ([c6831bc](https://github.com/tmac1973/haruspex/commit/c6831bc4aae2484753317736e6a023c28e3263b7))
+* **shell:** WSL OSC 133 injection (17d-1) ([df00cbc](https://github.com/tmac1973/haruspex/commit/df00cbc84a88e37f24555c4ebdb7a29cc0f3024a))
+* **vision:** terminal snapshot tool + drag-drop/paste image attachments ([#144](https://github.com/tmac1973/haruspex/issues/144)) ([29ff67b](https://github.com/tmac1973/haruspex/commit/29ff67b8d6b7db6cd7cc5e2ca00e84ba67aed117))
+
+
+### Bug Fixes
+
+* **build:** exclude src-tauri from the Vite dev watcher (Windows EBUSY) ([868a7fa](https://github.com/tmac1973/haruspex/commit/868a7fae6c2c0833ddb1cd9c7ac0e321d2b69d70))
+* **chat:** attach dropped images via Tauri's native drag-drop event ([#146](https://github.com/tmac1973/haruspex/issues/146)) ([4d475a2](https://github.com/tmac1973/haruspex/commit/4d475a25a396fc98db317ece013557c18cf0cfc6))
+* **chat:** stop a stray image drop from navigating the webview (app hang) ([#145](https://github.com/tmac1973/haruspex/issues/145)) ([49161d0](https://github.com/tmac1973/haruspex/commit/49161d02f65bd9244839e5aa9224c2fc4c1816d6))
+* **fs-tools:** reject '..' traversal lexically so it holds on Windows ([7521030](https://github.com/tmac1973/haruspex/commit/75210305087041464d7cd0f9bb3b292f9f5855c4))
+* **hardware:** detect NVIDIA VRAM and avoid iGPU shadowing ([362b30f](https://github.com/tmac1973/haruspex/commit/362b30f6569bb7a3df695e28dd17e3e31c0cc7b0))
+* **refactor:** address code-review findings on the dedup branch ([673c311](https://github.com/tmac1973/haruspex/commit/673c3115fb6541d843466c03836332b0021ea892))
+* **scripts:** dev-setup.sh delegates sidecar build to build-sidecars.sh ([631f0ff](https://github.com/tmac1973/haruspex/commit/631f0ffcef89a52525969ad03ed1c1604f116a50))
+* **scripts:** don't let rustup's stderr abort windows-setup.ps1 ([8d5b42d](https://github.com/tmac1973/haruspex/commit/8d5b42d26c76ee39220058ce704dfb84d7b9bee3))
+* **scripts:** install LLVM/libclang in windows-setup.ps1 for koko build ([0fa4db9](https://github.com/tmac1973/haruspex/commit/0fa4db92c68d19d55cc9ed32c2467f232ffa9deb))
+* **scripts:** make Pyodide wheel resolver work on Windows ([4f5e9ad](https://github.com/tmac1973/haruspex/commit/4f5e9ada197de6b4d88abd00724ac1d3fbe376d4))
+* **scripts:** make windows-setup.ps1 pure ASCII ([05169f0](https://github.com/tmac1973/haruspex/commit/05169f02496a8a275c578418cd7d775121467dd5))
+* **search:** stop the auto-rotation rate-limit death spiral ([#150](https://github.com/tmac1973/haruspex/issues/150)) ([2c29de7](https://github.com/tmac1973/haruspex/commit/2c29de7961e89da3c5eba490a8872d510672fd4d))
+* **shell:** dispose xterm input listeners on restart (keystroke duplication) ([00afccb](https://github.com/tmac1973/haruspex/commit/00afccb6dbe7629a34cad64c105ff122ed5ce91d))
+* **shell:** launch PowerShell with -ExecutionPolicy Bypass for the hook ([811c887](https://github.com/tmac1973/haruspex/commit/811c887da896085763f047f80d677dfc4d47d927))
+* **shell:** map WSL /mnt paths to Windows for the fs tools ([56c8815](https://github.com/tmac1973/haruspex/commit/56c8815e531be1d84d688aa59e9356c4ba4e4175))
+* **shell:** normalize Windows cwd from OSC 7 ('/C:/...' -&gt; 'C:\\...') ([2f2f710](https://github.com/tmac1973/haruspex/commit/2f2f710c5a8de895ae540f4dd2273a96eaaec529))
+* **shell:** reset command session-approval on New Chat ([47da02a](https://github.com/tmac1973/haruspex/commit/47da02af98d0988fa5428dca8745873a1f237c4e))
+* **shell:** resolve shell-integration dir from source first in dev ([c641375](https://github.com/tmac1973/haruspex/commit/c641375b0e0b73d333e3d1d575522a78ef3f4f1c))
+* **shell:** retain tool-call history across Code-mode turns ([f2f1309](https://github.com/tmac1973/haruspex/commit/f2f13092b2221281e3987012f7a0927c8ae4837d))
+* **shell:** route one-shot run_command through the session shell (17d-3) ([395b24d](https://github.com/tmac1973/haruspex/commit/395b24d604911deaa2169c94f00c19119b3c7ff1))
+* **shell:** run clipboard reads off the main thread ([#128](https://github.com/tmac1973/haruspex/issues/128)) ([77f61e1](https://github.com/tmac1973/haruspex/commit/77f61e1b35c05c33b42662a3de69ad6496131d03))
+* **shell:** tolerate CRLF in the WSL-sourced hook + force LF via gitattributes ([581d583](https://github.com/tmac1973/haruspex/commit/581d58304144b2ae760329f1b0663a27db5a5e11))
+
+
+### Code Refactoring
+
+* **agent:** dedup spill/overflow, sampling spread, recovery nudges ([c5e0ed7](https://github.com/tmac1973/haruspex/commit/c5e0ed728eb30202ec85f5f7fa149d3289232a95))
+* **fs_tools,code:** share dir-listing and file-walk loops ([0da5d3d](https://github.com/tmac1973/haruspex/commit/0da5d3d1cb4c3060c1dda4f05737a2eec6e43637))
+* **fs_tools,db:** dedup ODF manifest prologue + JobSummary query ([f208ee7](https://github.com/tmac1973/haruspex/commit/f208ee733ec129125c1a19deba0c473bfe0636f9))
+* **fs_tools:** dedup the document writers ([e3123e8](https://github.com/tmac1973/haruspex/commit/e3123e855f5074ddbe5311a5340ae13636d53d6e))
+* **fs_tools:** wrap_to_width delegates to wrap_styled_words ([016971e](https://github.com/tmac1973/haruspex/commit/016971e175453b409cafbac5ef9546f4928afe15))
+* **inference:** share probe types + model-pick precedence ([df7e8a1](https://github.com/tmac1973/haruspex/commit/df7e8a131abbc8fa69c591d81e1851c60cace103))
+* **jobs:** extract runJobTurn for the per-job inference-slot turn ([b84736c](https://github.com/tmac1973/haruspex/commit/b84736c10f21c30618cf665945a0351ef1d8b74d))
+* **models:** extract shared download_to_partial helper ([865dcb0](https://github.com/tmac1973/haruspex/commit/865dcb09889728ca7e74722bf3bab43666f66397))
+* **models:** share model-download progress listener lifecycle ([358567f](https://github.com/tmac1973/haruspex/commit/358567f5e9d196efdbd5959906099ff88f1f508c))
+* **proxy/search:** extract shared scrape_engine helper ([ec05995](https://github.com/tmac1973/haruspex/commit/ec059957e226573fc0eca28ba407bd3b863c50a2))
+* **proxy:** share fetch-client builder + non-2xx status mapper ([7dac3d5](https://github.com/tmac1973/haruspex/commit/7dac3d592649d09eec8a2399649ed1f293ff57ea))
+* **sandbox:** dedup worker respond, byte coercion, run guards ([111a7e6](https://github.com/tmac1973/haruspex/commit/111a7e64b767b64ee0cda9ce550d12c17e66c83d))
+* **shell,email:** share session spawn + text truncation/collapse ([9065126](https://github.com/tmac1973/haruspex/commit/90651268d4649545c165139e15dae19a92a585a3))
+* **stores:** centralize db_* IPC wrappers behind dbCall ([d519c4c](https://github.com/tmac1973/haruspex/commit/d519c4c30cc2c7558e31e3d2f1e056ee8d807fee))
+* **ui:** share stats-row builder + clickable-row a11y action ([c9d1175](https://github.com/tmac1973/haruspex/commit/c9d1175a029528f0a9f954e6b9f9c58033f05cb4))
+
+
+### Documentation
+
+* **audits:** code duplication audit (2026-06-25) ([473ea7c](https://github.com/tmac1973/haruspex/commit/473ea7c48c9cbc403c28034d4af8d74267989baa))
+* **plan:** account for Code mode in the phase-17 Windows plan ([2062df9](https://github.com/tmac1973/haruspex/commit/2062df9475090cd374a90244117766f5d82c9dd2))
+* **readme:** per-platform all-in-one dev setup commands ([#154](https://github.com/tmac1973/haruspex/issues/154)) ([94d4f35](https://github.com/tmac1973/haruspex/commit/94d4f35ce98f960604c4d8d5162f81689b0a24cc))
+
 ## [0.1.50](https://github.com/tmac1973/haruspex/compare/v0.1.49...v0.1.50) (2026-06-17)
 
 
