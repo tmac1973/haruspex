@@ -31,7 +31,11 @@ import {
 	buildVerifyPrompt,
 	DEFAULT_AUDIT_SYNTHESIS_PROMPT
 } from './auditPipeline';
-import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
+import {
+	runEphemeralTurn,
+	type EphemeralTurnOptions,
+	type EphemeralTurnResult
+} from '$lib/agent/runEphemeralTurn';
 import type { BackendOverride } from '$lib/api';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
@@ -97,6 +101,43 @@ function jobBackendOverride(job: JobWithSteps): BackendOverride | undefined {
 		apiKey: job.model_remote_api_key?.trim() || undefined,
 		modelId: job.model_remote_model_id?.trim() || undefined
 	};
+}
+
+/**
+ * Run one ephemeral agent turn for a job under the shared harness: flip
+ * `waitingForSlot` on the active run while it queues for an inference slot,
+ * auto-approve tool calls (jobs are unattended), and inject the per-job
+ * defaults — workspace dir (empty string from the DB → null so fs_* tools drop
+ * out), backend override, and abort signal — on top of `opts`. Used by the
+ * regular step, audit-sample, and cluster-verify turns.
+ */
+function runJobTurn(
+	job: JobWithSteps,
+	runId: number,
+	abort: AbortController,
+	opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'>
+): Promise<EphemeralTurnResult> {
+	if (current && current.id === runId) {
+		current = { ...current, waitingForSlot: true };
+	}
+	return withInferenceSlot(
+		{
+			consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
+			signal: abort.signal,
+			onAdmitted: () => {
+				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
+			}
+		},
+		() =>
+			runWithAutoApprove(() =>
+				runEphemeralTurn({
+					...opts,
+					workingDir: job.working_dir ? job.working_dir : null,
+					backend: jobBackendOverride(job),
+					signal: abort.signal
+				})
+			)
+	);
 }
 
 /**
@@ -424,40 +465,15 @@ async function runOneStep(
 	void markRunStepStarted(runId, stepIndex, startedAt, rendered);
 
 	const callbacks = buildStreamCallbacks(runId, stepIndex);
-	// Jobs run unattended — always auto-approve tool calls.
-	const wrap = runWithAutoApprove;
 
 	try {
-		if (current && current.id === runId) {
-			current = { ...current, waitingForSlot: true };
-		}
-		const { finalText } = await withInferenceSlot(
-			{
-				consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
-				signal: abort.signal,
-				onAdmitted: () => {
-					if (current && current.id === runId) {
-						current = { ...current, waitingForSlot: false };
-					}
-				}
-			},
-			() =>
-				wrap(() =>
-					runEphemeralTurn({
-						userMessage: rendered,
-						// Empty string from the DB means "no workdir for this job" —
-						// translate to null so the agent loop filters out fs_*
-						// tools entirely (same path as a chat with no workdir).
-						workingDir: job.working_dir ? job.working_dir : null,
-						contextSize,
-						deepResearch: step.deep_research,
-						backend: jobBackendOverride(job),
-						visionSupported,
-						signal: abort.signal,
-						...callbacks
-					})
-				)
-		);
+		const { finalText } = await runJobTurn(job, runId, abort, {
+			userMessage: rendered,
+			contextSize,
+			deepResearch: step.deep_research,
+			visionSupported,
+			...callbacks
+		});
 		const finishedAt = Date.now();
 		patchStep(runId, stepIndex, {
 			status: 'succeeded',
@@ -613,7 +629,7 @@ async function runAuditSampleStep(
 	const startedAt = Date.now();
 	const rendered = buildSamplePrompt(auditPrompt, job.audit_sample_instructions);
 	if (current && current.id === runId) {
-		current = { ...current, currentStepIndex: stepIndex, waitingForSlot: true };
+		current = { ...current, currentStepIndex: stepIndex };
 	}
 	patchStep(runId, stepIndex, { status: 'running', promptRendered: rendered, startedAt });
 	void markRunStepStarted(runId, stepIndex, startedAt, rendered);
@@ -631,35 +647,18 @@ async function runAuditSampleStep(
 		}
 	};
 
-	// Jobs run unattended — always auto-approve tool calls.
-	const wrap = runWithAutoApprove;
-	const { finalText } = await withInferenceSlot(
-		{
-			consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
-			signal: abort.signal,
-			onAdmitted: () => {
-				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
-			}
-		},
-		() =>
-			wrap(() =>
-				runEphemeralTurn({
-					userMessage: rendered,
-					workingDir: job.working_dir ? job.working_dir : null,
-					contextSize: jobContextSize(job),
-					visionSupported: jobVisionSupported(job),
-					toolAllowlist: SAMPLE_ALLOW,
-					// Guarantee the run records structured findings: if the model
-					// burns its whole budget exploring and never submits, force the
-					// submit_findings call rather than discarding a prose answer.
-					forceFinalTool: SUBMIT_FINDINGS_TOOL,
-					backend: jobBackendOverride(job),
-					maxIterations: auditSampleIterations(job),
-					signal: abort.signal,
-					...callbacks
-				})
-			)
-	);
+	const { finalText } = await runJobTurn(job, runId, abort, {
+		userMessage: rendered,
+		contextSize: jobContextSize(job),
+		visionSupported: jobVisionSupported(job),
+		toolAllowlist: SAMPLE_ALLOW,
+		// Guarantee the run records structured findings: if the model burns its
+		// whole budget exploring and never submits, force the submit_findings
+		// call rather than discarding a prose answer.
+		forceFinalTool: SUBMIT_FINDINGS_TOOL,
+		maxIterations: auditSampleIterations(job),
+		...callbacks
+	});
 
 	const finishedAt = Date.now();
 	const output =
@@ -697,31 +696,15 @@ async function verifyClusterTurn(
 			location = call.arguments.location.trim();
 	};
 
-	if (current && current.id === runId) current = { ...current, waitingForSlot: true };
-	await withInferenceSlot(
-		{
-			consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
-			signal: abort.signal,
-			onAdmitted: () => {
-				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
-			}
-		},
-		() =>
-			runWithAutoApprove(() =>
-				runEphemeralTurn({
-					userMessage: buildVerifyPrompt(cluster, job.audit_verify_instructions),
-					workingDir: job.working_dir ? job.working_dir : null,
-					contextSize: jobContextSize(job),
-					visionSupported: jobVisionSupported(job),
-					toolAllowlist: VERIFY_ALLOW,
-					forceFinalTool: SUBMIT_VERDICT_TOOL,
-					backend: jobBackendOverride(job),
-					maxIterations: AUDIT_VERIFY_MAX_ITERATIONS,
-					signal: abort.signal,
-					onToolStart
-				})
-			)
-	);
+	await runJobTurn(job, runId, abort, {
+		userMessage: buildVerifyPrompt(cluster, job.audit_verify_instructions),
+		contextSize: jobContextSize(job),
+		visionSupported: jobVisionSupported(job),
+		toolAllowlist: VERIFY_ALLOW,
+		forceFinalTool: SUBMIT_VERDICT_TOOL,
+		maxIterations: AUDIT_VERIFY_MAX_ITERATIONS,
+		onToolStart
+	});
 	return { verdict, evidence, location };
 }
 
