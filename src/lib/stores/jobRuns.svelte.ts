@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '$lib/debug-log';
+import { dbMutate, dbQuery } from './dbCall';
 
 export type JobRunStatus =
 	| 'queued'
@@ -54,71 +55,74 @@ export function getRunsForJob(jobId: number): JobRunSummary[] {
 }
 
 export async function loadRunsForJob(jobId: number): Promise<void> {
-	try {
-		const rows = await invoke<JobRunSummary[]>('db_list_job_runs', { jobId });
-		runsByJob[jobId] = rows;
-	} catch (e) {
-		logDebug('jobs', 'loadRunsForJob failed', { jobId, error: String(e) });
-		runsByJob[jobId] = [];
-	}
+	runsByJob[jobId] = await dbQuery<JobRunSummary[]>({
+		cmd: 'db_list_job_runs',
+		args: { jobId },
+		fallback: [],
+		onError: 'loadRunsForJob failed',
+		ctx: { jobId }
+	});
 }
 
-export async function getJobRun(runId: number): Promise<JobRunWithSteps | null> {
-	try {
-		return await invoke<JobRunWithSteps>('db_get_job_run', { runId });
-	} catch (e) {
-		logDebug('jobs', 'getJobRun failed', { runId, error: String(e) });
-		return null;
-	}
+export function getJobRun(runId: number): Promise<JobRunWithSteps | null> {
+	return dbQuery<JobRunWithSteps | null>({
+		cmd: 'db_get_job_run',
+		args: { runId },
+		fallback: null,
+		onError: 'getJobRun failed',
+		ctx: { runId }
+	});
 }
 
-export async function createJobRun(
+export function createJobRun(
 	jobId: number,
 	trigger: 'manual' | 'scheduled',
 	stepPrompts: string[]
 ): Promise<number | null> {
-	try {
-		const id = await invoke<number>('db_create_job_run', {
-			jobId,
-			trigger,
-			stepPrompts
-		});
-		void loadRunsForJob(jobId);
-		return id;
-	} catch (e) {
-		logDebug('jobs', 'createJobRun failed', { jobId, error: String(e) });
-		return null;
-	}
+	return dbQuery<number | null>({
+		cmd: 'db_create_job_run',
+		args: { jobId, trigger, stepPrompts },
+		fallback: null,
+		onError: 'createJobRun failed',
+		ctx: { jobId },
+		// Fire-and-forget refresh — the caller gets the id without waiting.
+		onSuccess: () => {
+			void loadRunsForJob(jobId);
+		}
+	});
 }
 
-export async function deleteJobRun(jobId: number, runId: number): Promise<boolean> {
-	try {
-		await invoke('db_delete_job_run', { runId });
-		runsByJob[jobId] = (runsByJob[jobId] ?? []).filter((r) => r.id !== runId);
-		return true;
-	} catch (e) {
-		logDebug('jobs', 'deleteJobRun failed', { jobId, runId, error: String(e) });
-		return false;
-	}
+export function deleteJobRun(jobId: number, runId: number): Promise<boolean> {
+	return dbMutate({
+		cmd: 'db_delete_job_run',
+		args: { runId },
+		onError: 'deleteJobRun failed',
+		ctx: { jobId, runId },
+		onSuccess: () => {
+			runsByJob[jobId] = (runsByJob[jobId] ?? []).filter((r) => r.id !== runId);
+		}
+	});
 }
 
-export async function deleteAllJobRuns(jobId: number): Promise<boolean> {
-	try {
-		await invoke<number>('db_delete_all_job_runs', { jobId });
-		runsByJob[jobId] = [];
-		return true;
-	} catch (e) {
-		logDebug('jobs', 'deleteAllJobRuns failed', { jobId, error: String(e) });
-		return false;
-	}
+export function deleteAllJobRuns(jobId: number): Promise<boolean> {
+	return dbMutate({
+		cmd: 'db_delete_all_job_runs',
+		args: { jobId },
+		onError: 'deleteAllJobRuns failed',
+		ctx: { jobId },
+		onSuccess: () => {
+			runsByJob[jobId] = [];
+		}
+	});
 }
 
 export async function markRunStarted(runId: number, startedAt: number): Promise<void> {
-	try {
-		await invoke('db_mark_run_started', { runId, startedAt });
-	} catch (e) {
-		logDebug('jobs', 'markRunStarted failed', { runId, error: String(e) });
-	}
+	await dbMutate({
+		cmd: 'db_mark_run_started',
+		args: { runId, startedAt },
+		onError: 'markRunStarted failed',
+		ctx: { runId }
+	});
 }
 
 export async function markRunFinished(
@@ -128,16 +132,14 @@ export async function markRunFinished(
 	finishedAt: number,
 	error: string | null
 ): Promise<void> {
-	try {
-		await invoke('db_mark_run_finished', {
-			runId,
-			status,
-			finishedAt,
-			error
-		});
-	} catch (e) {
-		logDebug('jobs', 'markRunFinished failed', { runId, error: String(e) });
-	}
+	// Reload regardless of success so a failed status write still refreshes the
+	// list off whatever the DB now holds.
+	await dbMutate({
+		cmd: 'db_mark_run_finished',
+		args: { runId, status, finishedAt, error },
+		onError: 'markRunFinished failed',
+		ctx: { runId }
+	});
 	void loadRunsForJob(jobId);
 }
 
@@ -147,16 +149,12 @@ export async function markRunStepStarted(
 	startedAt: number,
 	promptRendered: string
 ): Promise<void> {
-	try {
-		await invoke('db_mark_run_step_started', {
-			runId,
-			ordering,
-			startedAt,
-			promptRendered
-		});
-	} catch (e) {
-		logDebug('jobs', 'markRunStepStarted failed', { runId, ordering, error: String(e) });
-	}
+	await dbMutate({
+		cmd: 'db_mark_run_step_started',
+		args: { runId, ordering, startedAt, promptRendered },
+		onError: 'markRunStepStarted failed',
+		ctx: { runId, ordering }
+	});
 }
 
 /**
@@ -186,16 +184,10 @@ export async function markRunStepFinished(
 	error: string | null,
 	finishedAt: number
 ): Promise<void> {
-	try {
-		await invoke('db_mark_run_step_finished', {
-			runId,
-			ordering,
-			status,
-			output,
-			error,
-			finishedAt
-		});
-	} catch (e) {
-		logDebug('jobs', 'markRunStepFinished failed', { runId, ordering, error: String(e) });
-	}
+	await dbMutate({
+		cmd: 'db_mark_run_step_finished',
+		args: { runId, ordering, status, output, error, finishedAt },
+		onError: 'markRunStepFinished failed',
+		ctx: { runId, ordering }
+	});
 }
