@@ -1,5 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
-import { logDebug } from '$lib/debug-log';
+import { dbMutate, dbQuery } from './dbCall';
 
 export type ScheduleKind = 'manual' | 'hourly' | 'daily' | 'weekly' | 'interval';
 
@@ -259,85 +258,81 @@ export function isJobsLoaded(): boolean {
 }
 
 export async function loadJobs(): Promise<void> {
-	try {
-		jobs = await invoke<JobSummary[]>('db_list_jobs');
-		loaded = true;
-	} catch (e) {
-		logDebug('jobs', 'loadJobs failed', { error: String(e) });
-		jobs = [];
-		loaded = true;
-	}
+	jobs = await dbQuery<JobSummary[]>({
+		cmd: 'db_list_jobs',
+		fallback: [],
+		onError: 'loadJobs failed'
+	});
+	loaded = true;
 }
 
-export async function createJob(input: JobInput): Promise<number | null> {
-	try {
-		const id = await invoke<number>('db_create_job', { input });
-		await loadJobs();
-		return id;
-	} catch (e) {
-		logDebug('jobs', 'createJob failed', { error: String(e) });
-		return null;
-	}
+export function createJob(input: JobInput): Promise<number | null> {
+	return dbQuery<number | null>({
+		cmd: 'db_create_job',
+		args: { input },
+		fallback: null,
+		onError: 'createJob failed',
+		onSuccess: loadJobs
+	});
 }
 
-export async function updateJob(id: number, input: JobInput): Promise<boolean> {
-	try {
-		await invoke('db_update_job', { id, input });
-		await loadJobs();
-		return true;
-	} catch (e) {
-		logDebug('jobs', 'updateJob failed', { id, error: String(e) });
-		return false;
-	}
+export function updateJob(id: number, input: JobInput): Promise<boolean> {
+	return dbMutate({
+		cmd: 'db_update_job',
+		args: { id, input },
+		onError: 'updateJob failed',
+		ctx: { id },
+		onSuccess: loadJobs
+	});
 }
 
-export async function deleteJob(id: number): Promise<boolean> {
-	try {
-		await invoke('db_delete_job', { id });
-		await loadJobs();
-		return true;
-	} catch (e) {
-		logDebug('jobs', 'deleteJob failed', { id, error: String(e) });
-		return false;
-	}
+export function deleteJob(id: number): Promise<boolean> {
+	return dbMutate({
+		cmd: 'db_delete_job',
+		args: { id },
+		onError: 'deleteJob failed',
+		ctx: { id },
+		onSuccess: loadJobs
+	});
 }
 
-export async function getJob(id: number): Promise<JobWithSteps | null> {
-	try {
-		return await invoke<JobWithSteps>('db_get_job', { id });
-	} catch (e) {
-		logDebug('jobs', 'getJob failed', { id, error: String(e) });
-		return null;
-	}
+export function getJob(id: number): Promise<JobWithSteps | null> {
+	return dbQuery<JobWithSteps | null>({
+		cmd: 'db_get_job',
+		args: { id },
+		fallback: null,
+		onError: 'getJob failed',
+		ctx: { id }
+	});
 }
 
-export async function listDueJobs(nowMs: number): Promise<JobSummary[]> {
-	try {
-		return await invoke<JobSummary[]>('db_list_due_jobs', { nowMs });
-	} catch (e) {
-		logDebug('jobs', 'listDueJobs failed', { error: String(e) });
-		return [];
-	}
+export function listDueJobs(nowMs: number): Promise<JobSummary[]> {
+	return dbQuery<JobSummary[]>({
+		cmd: 'db_list_due_jobs',
+		args: { nowMs },
+		fallback: [],
+		onError: 'listDueJobs failed'
+	});
 }
 
 export async function setJobNextDueAt(jobId: number, nextDueAt: number | null): Promise<void> {
-	try {
-		await invoke('db_set_job_next_due_at', { jobId, nextDueAt });
-	} catch (e) {
-		logDebug('jobs', 'setJobNextDueAt failed', { jobId, error: String(e) });
-	}
+	await dbMutate({
+		cmd: 'db_set_job_next_due_at',
+		args: { jobId, nextDueAt },
+		onError: 'setJobNextDueAt failed',
+		ctx: { jobId }
+	});
 }
 
-export async function replaceJobSteps(jobId: number, steps: JobStepInput[]): Promise<boolean> {
-	try {
-		await invoke('db_replace_job_steps', { jobId, steps });
+export function replaceJobSteps(jobId: number, steps: JobStepInput[]): Promise<boolean> {
+	return dbMutate({
+		cmd: 'db_replace_job_steps',
+		args: { jobId, steps },
+		onError: 'replaceJobSteps failed',
+		ctx: { jobId },
 		// The list summary includes step_count — without this refresh the
 		// just-created job stays at step_count=0 in the list until something
 		// else triggers loadJobs, which disables its Run button.
-		await loadJobs();
-		return true;
-	} catch (e) {
-		logDebug('jobs', 'replaceJobSteps failed', { jobId, error: String(e) });
-		return false;
-	}
+		onSuccess: loadJobs
+	});
 }

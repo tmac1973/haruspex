@@ -4,9 +4,8 @@
  * `$lib/agent/jobs/promptCatalog` and are merged in at the UI layer.
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import type { PromptScope } from '$lib/agent/jobs/promptCatalog';
-import { logDebug } from '$lib/debug-log';
+import { dbMutate, dbQuery } from './dbCall';
 
 export interface SavedPrompt {
 	id: number;
@@ -36,34 +35,34 @@ export async function ensureSavedPromptsLoaded(): Promise<void> {
 }
 
 export async function reloadSavedPrompts(): Promise<void> {
-	try {
-		saved = await invoke<SavedPrompt[]>('db_list_prompts');
-		loaded = true;
-	} catch (e) {
-		logDebug('jobs', 'failed to load saved prompts', { error: String(e) });
-		saved = [];
-	}
+	// `loaded` flips only on success, so a failed load is retried next time
+	// ensureSavedPromptsLoaded() runs.
+	saved = await dbQuery<SavedPrompt[]>({
+		cmd: 'db_list_prompts',
+		fallback: [],
+		onError: 'failed to load saved prompts',
+		onSuccess: () => {
+			loaded = true;
+		}
+	});
 }
 
 /** Save a new prompt; returns its id (or null on failure). Refreshes the list. */
-export async function createSavedPrompt(input: SavedPromptInput): Promise<number | null> {
-	try {
-		const id = await invoke<number>('db_create_prompt', { input });
-		await reloadSavedPrompts();
-		return id;
-	} catch (e) {
-		logDebug('jobs', 'failed to save prompt', { error: String(e) });
-		return null;
-	}
+export function createSavedPrompt(input: SavedPromptInput): Promise<number | null> {
+	return dbQuery<number | null>({
+		cmd: 'db_create_prompt',
+		args: { input },
+		fallback: null,
+		onError: 'failed to save prompt',
+		onSuccess: reloadSavedPrompts
+	});
 }
 
-export async function deleteSavedPrompt(id: number): Promise<boolean> {
-	try {
-		await invoke('db_delete_prompt', { id });
-		await reloadSavedPrompts();
-		return true;
-	} catch (e) {
-		logDebug('jobs', 'failed to delete prompt', { error: String(e) });
-		return false;
-	}
+export function deleteSavedPrompt(id: number): Promise<boolean> {
+	return dbMutate({
+		cmd: 'db_delete_prompt',
+		args: { id },
+		onError: 'failed to delete prompt',
+		onSuccess: reloadSavedPrompts
+	});
 }
