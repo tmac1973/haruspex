@@ -294,18 +294,18 @@ pub(super) async fn write_bytes_to_workdir(resolved: &Path, bytes: &[u8]) -> Res
         .map_err(|e| format!("Failed to write file: {}", e))
 }
 
-#[tauri::command]
-pub async fn fs_list_dir(workdir: String, rel_path: String) -> Result<DirListing, String> {
-    let workdir = workdir_path(&workdir)?;
-    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
-
-    if !resolved.is_dir() {
-        return Err(format!("Not a directory: {}", rel_path));
-    }
-
+/// Read a directory's immediate children into `DirEntry`s sorted directories-
+/// first then case-insensitive by name, capped at [`MAX_DIR_ENTRIES`]. Returns
+/// the entries plus whether the cap truncated the listing. `include_hidden`
+/// controls dotfiles: the workdir listing hides them as noise; the absolute
+/// listing surfaces them since admin troubleshooting often needs `.ssh` etc.
+pub(super) async fn collect_dir_entries(
+    resolved: &Path,
+    include_hidden: bool,
+) -> Result<(Vec<DirEntry>, bool), String> {
     let mut entries = Vec::new();
     let mut truncated = false;
-    let mut read_dir = fs::read_dir(&resolved)
+    let mut read_dir = fs::read_dir(resolved)
         .await
         .map_err(|e| format!("Failed to read directory: {}", e))?;
 
@@ -319,8 +319,7 @@ pub async fn fs_list_dir(workdir: String, rel_path: String) -> Result<DirListing
             break;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        // Skip hidden files and common noise
-        if name.starts_with('.') {
+        if !include_hidden && name.starts_with('.') {
             continue;
         }
         let metadata = match entry.metadata().await {
@@ -334,12 +333,26 @@ pub async fn fs_list_dir(workdir: String, rel_path: String) -> Result<DirListing
         });
     }
 
-    // Sort: directories first, then alphabetical
+    // Sort: directories first, then alphabetical.
     entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
         _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
+
+    Ok((entries, truncated))
+}
+
+#[tauri::command]
+pub async fn fs_list_dir(workdir: String, rel_path: String) -> Result<DirListing, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_dir() {
+        return Err(format!("Not a directory: {}", rel_path));
+    }
+
+    let (entries, truncated) = collect_dir_entries(&resolved, false).await?;
 
     let display_path = resolved
         .strip_prefix(workdir.canonicalize().unwrap_or(workdir.clone()))
