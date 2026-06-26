@@ -14,13 +14,11 @@
 
 use super::fuzzy::{apply_edit, EditResult};
 use super::path::{
-    refuse_if_exists, render_text_read, DirEntry, DirListing, MAX_READ_LOAD_BYTES,
-    MAX_TEXT_READ_BYTES, MAX_WRITE_BYTES,
+    refuse_if_exists, render_text_read, DirListing, MAX_READ_LOAD_BYTES, MAX_TEXT_READ_BYTES,
+    MAX_WRITE_BYTES,
 };
 use std::path::PathBuf;
 use tokio::fs;
-
-const MAX_DIR_ENTRIES: usize = 500;
 
 fn require_absolute(path: &str) -> Result<PathBuf, String> {
     // WSL sessions hand us Linux paths. One under the Windows automount
@@ -144,40 +142,9 @@ pub async fn fs_list_dir_absolute(path: String) -> Result<DirListing, String> {
         ));
     }
 
-    let mut entries = Vec::new();
-    let mut truncated = false;
-    let mut read_dir = fs::read_dir(&resolved)
-        .await
-        .map_err(|e| format!("Failed to read directory: {}", e))?;
-
-    while let Some(entry) = read_dir
-        .next_entry()
-        .await
-        .map_err(|e| format!("Failed to read entry: {}", e))?
-    {
-        if entries.len() >= MAX_DIR_ENTRIES {
-            truncated = true;
-            break;
-        }
-        let name = entry.file_name().to_string_lossy().to_string();
-        // Unlike the workdir version, we surface hidden files — admin
-        // troubleshooting often needs to see .bashrc, .ssh, etc.
-        let metadata = match entry.metadata().await {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        entries.push(DirEntry {
-            name,
-            is_dir: metadata.is_dir(),
-            size: metadata.len(),
-        });
-    }
-
-    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-        (true, false) => std::cmp::Ordering::Less,
-        (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
+    // Surface hidden files (unlike the workdir listing) — admin troubleshooting
+    // often needs to see .bashrc, .ssh, etc.
+    let (entries, truncated) = super::path::collect_dir_entries(&resolved, true).await?;
 
     Ok(DirListing {
         path: resolved.to_string_lossy().to_string(),

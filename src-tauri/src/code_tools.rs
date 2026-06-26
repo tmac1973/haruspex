@@ -333,6 +333,33 @@ impl grep::searcher::Sink for ContextSink<'_> {
     }
 }
 
+/// Walk `walk_root` honoring .gitignore even outside a git checkout (like
+/// `rg --no-require-git`), yielding each regular file as `(relative_path,
+/// absolute_path)`. The relative path is derived against `strip_root` (which
+/// may differ from `walk_root` — `code_grep` walks a subdir but reports paths
+/// relative to the project root). Unreadable entries are skipped. Shared by
+/// `code_grep` and `code_glob` so they agree on traversal + path derivation.
+fn walk_files(walk_root: &Path, strip_root: &Path) -> impl Iterator<Item = (String, PathBuf)> {
+    use ignore::WalkBuilder;
+    let strip_root = strip_root.to_path_buf();
+    WalkBuilder::new(walk_root)
+        .require_git(false)
+        .build()
+        .filter_map(move |dent| {
+            let dent = dent.ok()?;
+            if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                return None;
+            }
+            let fpath = dent.path();
+            let rel = fpath
+                .strip_prefix(&strip_root)
+                .unwrap_or(fpath)
+                .to_string_lossy()
+                .into_owned();
+            Some((rel, fpath.to_path_buf()))
+        })
+}
+
 /// Search file *contents* under `root` (optionally narrowed to `path`),
 /// gitignore-aware, returning `file:line` locations — never whole bodies.
 /// Capped at `max_matches` (default 50), each line clamped to ~200 chars.
@@ -362,7 +389,6 @@ pub async fn code_grep(
     use grep::regex::RegexMatcherBuilder;
     use grep::searcher::sinks::UTF8;
     use grep::searcher::SearcherBuilder;
-    use ignore::WalkBuilder;
 
     let cap = max_matches.unwrap_or(GREP_DEFAULT_MAX).max(1);
     let search_root = match &path {
@@ -432,29 +458,14 @@ pub async fn code_grep(
             }
         };
 
-        // require_git(false) → honor .gitignore even when the project isn't a
-        // git checkout (matches `rg --no-require-git`).
-        for dent in WalkBuilder::new(&search_root).require_git(false).build() {
-            let dent = match dent {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-            if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                continue;
-            }
-            let fpath = dent.path();
-            let rel = fpath
-                .strip_prefix(&root_path)
-                .unwrap_or(fpath)
-                .to_string_lossy()
-                .into_owned();
+        for (rel, fpath) in walk_files(&search_root, &root_path) {
             if let Some(g) = &name_glob {
-                if !glob_hits(g, glob_is_path, &rel, fpath) {
+                if !glob_hits(g, glob_is_path, &rel, &fpath) {
                     continue;
                 }
             }
             if let Some(g) = &exclude_glob {
-                if glob_hits(g, exclude_is_path, &rel, fpath) {
+                if glob_hits(g, exclude_is_path, &rel, &fpath) {
                     continue;
                 }
             }
@@ -572,7 +583,6 @@ pub async fn code_glob(
     max_results: Option<usize>,
 ) -> Result<GlobResult, String> {
     use globset::Glob;
-    use ignore::WalkBuilder;
 
     let cap = max_results.unwrap_or(GLOB_DEFAULT_MAX).max(1);
 
@@ -583,20 +593,7 @@ pub async fn code_glob(
         let root_path = PathBuf::from(&root);
 
         let mut paths: Vec<String> = Vec::new();
-        for dent in WalkBuilder::new(&root_path).require_git(false).build() {
-            let dent = match dent {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-            if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                continue;
-            }
-            let rel = dent
-                .path()
-                .strip_prefix(&root_path)
-                .unwrap_or(dent.path())
-                .to_string_lossy()
-                .into_owned();
+        for (rel, _fpath) in walk_files(&root_path, &root_path) {
             if matcher.is_match(&rel) {
                 paths.push(rel);
             }
