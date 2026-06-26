@@ -141,6 +141,21 @@ fn detect_gpu() -> GpuInfo {
         };
     }
 
+    // Prefer nvidia-smi when a discrete NVIDIA GPU is present. NVIDIA's driver
+    // doesn't expose `mem_info_vram_total` in DRM sysfs, so the fallback below
+    // would skip the NVIDIA card entirely and instead read an AMD/Intel iGPU's
+    // small UMA carveout (e.g. a 2 GB Radeon iGPU shadowing a 16 GB RTX). Going
+    // through nvidia-smi keeps the reported name and VRAM tied to the same GPU.
+    if let Some((name, vram_mb)) = get_linux_nvidia_gpu() {
+        return GpuInfo {
+            available: true,
+            name: Some(name),
+            api: Some("Vulkan".to_string()),
+            vram_mb: Some(vram_mb),
+            integrated: false,
+        };
+    }
+
     let gpu_name = get_linux_gpu_name();
     let vram_mb = get_linux_vram_mb();
     let integrated = gpu_name.as_deref().map(is_integrated_gpu).unwrap_or(false);
@@ -190,20 +205,55 @@ fn get_linux_gpu_name() -> Option<String> {
     None
 }
 
+/// Query a discrete NVIDIA GPU's name and total VRAM via `nvidia-smi`.
+/// Returns `None` when nvidia-smi is absent or reports no GPU (i.e. there is
+/// no usable NVIDIA card), so callers fall back to the DRM/sysfs path.
+#[cfg(target_os = "linux")]
+fn get_linux_nvidia_gpu() -> Option<(String, u64)> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=name,memory.total",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_nvidia_smi(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Parse the first line of `nvidia-smi --query-gpu=name,memory.total
+/// --format=csv,noheader,nounits`, e.g. `NVIDIA GeForce RTX 5080, 16303`.
+/// `memory.total` is reported in MiB with `nounits`. Split from the right so a
+/// comma in the device name can't corrupt the memory field.
+#[cfg(target_os = "linux")]
+fn parse_nvidia_smi(stdout: &str) -> Option<(String, u64)> {
+    let line = stdout.lines().next()?.trim();
+    let (name, mem) = line.rsplit_once(',')?;
+    let vram_mb = mem.trim().parse::<u64>().ok()?;
+    if vram_mb == 0 {
+        return None;
+    }
+    Some((name.trim().to_string(), vram_mb))
+}
+
 #[cfg(target_os = "linux")]
 fn get_linux_vram_mb() -> Option<u64> {
-    // Try reading VRAM from DRM memory info
-    for i in 0..4 {
+    // Read VRAM from DRM memory info (amdgpu/i915/xe expose this; NVIDIA does
+    // not — that case is handled by nvidia-smi in detect_gpu). Take the largest
+    // value across cards so a discrete GPU isn't shadowed by an integrated
+    // GPU's small UMA carveout when both are present.
+    let mut best_bytes = 0u64;
+    for i in 0..8 {
         let path = format!("/sys/class/drm/card{}/device/mem_info_vram_total", i);
         if let Ok(contents) = std::fs::read_to_string(&path) {
             if let Ok(bytes) = contents.trim().parse::<u64>() {
-                if bytes > 0 {
-                    return Some(bytes / 1_048_576);
-                }
+                best_bytes = best_bytes.max(bytes);
             }
         }
     }
-    None
+    (best_bytes > 0).then_some(best_bytes / 1_048_576)
 }
 
 #[cfg(target_os = "macos")]
@@ -387,5 +437,24 @@ mod tests {
             "Unexpected quant: {}",
             info.recommended_quant
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parse_nvidia_smi_reads_name_and_vram() {
+        // memory.total is MiB under `nounits`.
+        assert_eq!(
+            parse_nvidia_smi("NVIDIA GeForce RTX 5080, 16303\n"),
+            Some(("NVIDIA GeForce RTX 5080".to_string(), 16303))
+        );
+        // Extra GPUs on later lines are ignored (first card wins).
+        assert_eq!(
+            parse_nvidia_smi("NVIDIA GeForce RTX 5080, 16303\nNVIDIA T1000, 4096\n"),
+            Some(("NVIDIA GeForce RTX 5080".to_string(), 16303))
+        );
+        // Empty / malformed output yields None so callers fall back to sysfs.
+        assert_eq!(parse_nvidia_smi(""), None);
+        assert_eq!(parse_nvidia_smi("no devices were found"), None);
+        assert_eq!(parse_nvidia_smi("Some GPU, 0"), None);
     }
 }
