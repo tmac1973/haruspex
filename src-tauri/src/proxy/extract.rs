@@ -35,14 +35,7 @@ pub(super) async fn fetch_and_extract(
     // Validate URL
     validate_url(url)?;
 
-    let client = apply_proxy(
-        reqwest::Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(validating_redirect_policy()),
-        proxy,
-    )?
-    .build()
-    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let client = build_fetch_client(proxy)?;
 
     let response = client
         .get(url)
@@ -137,6 +130,21 @@ pub(crate) fn validating_redirect_policy() -> reqwest::redirect::Policy {
             Err(reason) => attempt.error(format!("redirect blocked: {}", reason)),
         }
     })
+}
+
+/// Build the HTTP client every external page/image fetch uses: the shared fetch
+/// timeout plus the SSRF-[`validating_redirect_policy`]. Centralized so the
+/// redirect guard — what stops a 30x from bouncing a fetch to an internal
+/// address — can't be omitted by one call site.
+pub(super) fn build_fetch_client(proxy: Option<&ProxyConfig>) -> Result<reqwest::Client, String> {
+    apply_proxy(
+        reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(validating_redirect_policy()),
+        proxy,
+    )?
+    .build()
+    .map_err(|e| format!("Failed to create HTTP client: {}", e))
 }
 
 pub(super) fn is_private_ip(ip: &IpAddr) -> bool {
