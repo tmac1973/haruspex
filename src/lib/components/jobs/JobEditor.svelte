@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { invoke } from '@tauri-apps/api/core';
+	import { pickProbedModel, type NormalizedModel, type ProbeResult } from '$lib/inferenceProbe';
 	import JobScheduleField from '$lib/components/jobs/JobScheduleField.svelte';
 	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
 	import {
@@ -58,7 +59,7 @@
 	let modelVision = $state<'auto' | 'yes' | 'no'>('auto');
 	// Models returned by the last successful probe — populates the Model
 	// dropdown and lets a model pick update context/vision (like Settings).
-	let probedModels = $state<ProbeModel[]>([]);
+	let probedModels = $state<NormalizedModel[]>([]);
 	let probing = $state(false);
 	let probeError = $state<string | null>(null);
 	let probeNote = $state<string | null>(null);
@@ -201,19 +202,6 @@
 		].filter(Boolean)
 	);
 
-	/** Minimal shape of `probe_inference_server` — only the fields we use. */
-	interface ProbeModel {
-		id: string;
-		loaded: boolean | null;
-		vision_supported: boolean | null;
-		context_size: number | null;
-	}
-	interface ProbeResult {
-		base_url: string;
-		models: ProbeModel[];
-		default_context_size: number | null;
-	}
-
 	/** Picking a server URL invalidates the previously-probed model list. */
 	function onServerUrlChange(url: string) {
 		modelBaseUrl = url;
@@ -251,12 +239,7 @@
 			});
 			modelBaseUrl = result.base_url;
 			probedModels = result.models;
-			// Keep the current selection if the server still has it; else default
-			// to the loaded model, else the first one.
-			const pick =
-				result.models.find((m) => m.id === modelModelId) ??
-				result.models.find((m) => m.loaded === true) ??
-				result.models[0];
+			const pick = pickProbedModel(result.models, modelModelId);
 			if (pick) onModelChange(pick.id);
 			// Fall back to the server-level context if the picked model didn't
 			// carry its own (llama-server reports one n_ctx for all models).
