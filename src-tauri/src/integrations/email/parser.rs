@@ -113,8 +113,28 @@ fn clean(text: &str) -> String {
 /// of whitespace, cap to SNIPPET_LEN chars with an ellipsis suffix
 /// if we had to cut it.
 fn make_snippet(body: &str) -> String {
-    let collapsed = crate::text_util::collapse_whitespace(body.chars());
-    crate::text_util::truncate_chars(collapsed, SNIPPET_LEN, "…")
+    // Streamed collapse + cap: stop as soon as SNIPPET_LEN chars are kept (with
+    // an ellipsis if there was more), so a huge body isn't fully scanned just to
+    // build a 240-char preview. This interleaves the cap into the collapse, so
+    // it can't share collapse_whitespace the way html_to_plain does.
+    let mut out = String::with_capacity(SNIPPET_LEN + 1);
+    let mut last_was_space = true;
+    for ch in body.chars() {
+        if out.chars().count() >= SNIPPET_LEN {
+            out.push('…');
+            break;
+        }
+        if ch.is_whitespace() {
+            if !last_was_space {
+                out.push(' ');
+                last_was_space = true;
+            }
+        } else {
+            out.push(ch);
+            last_was_space = false;
+        }
+    }
+    out.trim().to_string()
 }
 
 /// Very small HTML → plaintext fallback used only when a message has

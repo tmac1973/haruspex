@@ -242,12 +242,15 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
 /// and — when parsing yields nothing — first consults `on_empty` (so an engine
 /// can recognize an anti-bot challenge and surface it as RateLimited) before
 /// logging an empty-result warning keyed by `empty_needles`. `label` tags every
-/// error and warning. DuckDuckGo is intentionally NOT routed through here: it
+/// error and warning. `send_accept` adds the browser-like `Accept: text/html…`
+/// header (Brave/Startpage/Yahoo send it; Mojeek historically does not, so it
+/// passes `false`). DuckDuckGo is intentionally NOT routed through here: it
 /// POSTs a form with a cookie store and its own bot-detection handling.
 async fn scrape_engine(
     url: &str,
     label: &str,
     proxy: Option<&ProxyConfig>,
+    send_accept: bool,
     parse: impl Fn(&str) -> Result<Vec<SearchResult>, String>,
     on_empty: impl Fn(&str) -> Option<SearchFailure>,
     empty_needles: &[&str],
@@ -262,13 +265,14 @@ async fn scrape_engine(
     .build()
     .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
 
-    let resp = client
-        .get(url)
-        .header("User-Agent", USER_AGENT)
-        .header(
+    let mut req = client.get(url).header("User-Agent", USER_AGENT);
+    if send_accept {
+        req = req.header(
             "Accept",
             "text/html,application/xhtml+xml,application/xml;q=0.9",
-        )
+        );
+    }
+    let resp = req
         .header("Accept-Language", "en-US,en;q=0.9")
         .send()
         .await
@@ -320,6 +324,7 @@ pub(super) async fn search_mojeek(
         &url,
         "Mojeek",
         proxy,
+        false,
         parse_mojeek_html,
         |_| None,
         &[
@@ -405,6 +410,7 @@ pub(super) async fn search_brave_html(
         &url,
         "Brave HTML",
         proxy,
+        true,
         parse_brave_html,
         |_| None,
         &[
@@ -494,6 +500,7 @@ pub(super) async fn search_startpage(
         &url,
         "Startpage",
         proxy,
+        true,
         parse_startpage_html,
         // No results + an anti-bot fingerprint means Startpage served its
         // challenge page rather than a SERP — surface it as rate-limited so the
@@ -603,6 +610,7 @@ pub(super) async fn search_yahoo(
         &url,
         "Yahoo",
         proxy,
+        true,
         parse_yahoo_html,
         // No results + a consent/captcha fingerprint means Yahoo bounced us to
         // its gate rather than a SERP — cool the engine down rather than report
