@@ -36,16 +36,18 @@ pub fn collapse_whitespace(chars: impl Iterator<Item = char>) -> String {
 }
 
 /// If `s` has more than `max_chars` characters, keep the first `max_chars` and
-/// append `marker`; otherwise return `s` unchanged (no allocation). Counts and
-/// cuts on `char` boundaries so multibyte text is never split mid-codepoint.
-pub fn truncate_chars(s: String, max_chars: usize, marker: &str) -> String {
-    if s.chars().count() > max_chars {
-        let mut out: String = s.chars().take(max_chars).collect();
-        out.push_str(marker);
-        out
-    } else {
-        s
+/// append `marker`; otherwise return `s` unchanged. Truncates in place (reusing
+/// the allocation) and stops scanning once past the cut, so a huge string isn't
+/// fully walked or re-collected to keep a small prefix. Cuts on a `char`
+/// boundary so multibyte text is never split mid-codepoint.
+pub fn truncate_chars(mut s: String, max_chars: usize, marker: &str) -> String {
+    // `nth(max_chars)` is the byte offset of the first char beyond the cap, and
+    // is `None` (no truncation) when `s` has `<= max_chars` chars.
+    if let Some((idx, _)) = s.char_indices().nth(max_chars) {
+        s.truncate(idx);
+        s.push_str(marker);
     }
+    s
 }
 
 #[cfg(test)]
