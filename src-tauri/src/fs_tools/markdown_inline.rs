@@ -330,58 +330,32 @@ pub(super) fn parse_standalone_image_line(line: &str) -> Option<(String, ImageOp
 /// Wrap `text` into lines that fit within `max_chars` characters, splitting
 /// on whitespace. Words longer than `max_chars` are hard-broken. Used by
 /// the table formatter so each cell stays within its allotted column width.
+///
+/// Thin adapter over [`wrap_styled_words`] (the greedy algorithm lives there):
+/// treat each whitespace-separated word as unstyled, wrap, then re-join each
+/// line's words with single spaces. `max_chars == 0` short-circuits to the
+/// original text so callers that disable wrapping keep its exact whitespace.
 pub(super) fn wrap_to_width(text: &str, max_chars: usize) -> Vec<String> {
     if max_chars == 0 {
         return vec![text.to_string()];
     }
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    let mut current_len = 0usize;
-    for word in text.split_whitespace() {
-        let wlen = word.chars().count();
-        if wlen > max_chars {
-            if !current.is_empty() {
-                lines.push(std::mem::take(&mut current));
-                current_len = 0;
-            }
-            let mut remaining: Vec<char> = word.chars().collect();
-            while remaining.len() > max_chars {
-                let head: String = remaining.iter().take(max_chars).collect();
-                lines.push(head);
-                remaining = remaining.into_iter().skip(max_chars).collect();
-            }
-            if !remaining.is_empty() {
-                let tail: String = remaining.into_iter().collect();
-                current_len = tail.chars().count();
-                current.push_str(&tail);
-            }
-            continue;
-        }
-        let candidate = if current_len == 0 {
-            wlen
-        } else {
-            current_len + 1 + wlen
-        };
-        if candidate > max_chars {
-            lines.push(std::mem::take(&mut current));
-            current.push_str(word);
-            current_len = wlen;
-        } else {
-            if current_len > 0 {
-                current.push(' ');
-                current_len += 1;
-            }
-            current.push_str(word);
-            current_len += wlen;
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-    lines
+    let words: Vec<StyledWord> = text
+        .split_whitespace()
+        .map(|w| StyledWord {
+            word: w.to_string(),
+            bold: false,
+            italic: false,
+        })
+        .collect();
+    wrap_styled_words(&words, max_chars)
+        .into_iter()
+        .map(|line| {
+            line.iter()
+                .map(|sw| sw.word.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
 }
 
 /// Right-pad a string to exactly `width` characters. If `s` is already
