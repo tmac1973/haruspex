@@ -429,11 +429,7 @@ async function forceFinalToolCall(
 				tools: offered,
 				backend: ctx.backend ?? undefined,
 				tool_choice: { type: 'function', function: { name } },
-				temperature: sampling.temperature,
-				top_p: sampling.top_p,
-				top_k: sampling.top_k,
-				min_p: sampling.min_p,
-				presence_penalty: sampling.presence_penalty,
+				...sampling,
 				max_tokens: ctx.maxResponseTokens,
 				chat_template_kwargs: templateKwargs
 			},
@@ -476,11 +472,7 @@ async function streamFinalSynthesis(
 			messages: ctx.messages,
 			tools,
 			backend: ctx.backend ?? undefined,
-			temperature: sampling.temperature,
-			top_p: sampling.top_p,
-			top_k: sampling.top_k,
-			min_p: sampling.min_p,
-			presence_penalty: sampling.presence_penalty,
+			...sampling,
 			max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
 			chat_template_kwargs: templateKwargs
 		},
@@ -531,11 +523,7 @@ async function runModelCall(
 		ctx,
 		tools,
 		{
-			temperature: sampling.temperature,
-			top_p: sampling.top_p,
-			top_k: sampling.top_k,
-			min_p: sampling.min_p,
-			presence_penalty: sampling.presence_penalty,
+			...sampling,
 			max_tokens: ctx.maxResponseTokens,
 			chat_template_kwargs: templateKwargs
 		},
@@ -646,6 +634,27 @@ export async function runIteration(
 }
 
 /**
+ * Echo the model's last assistant content back into `messages` and append a
+ * user `nudge`, returning the `'continue'` outcome. Shared by the no-tool-call
+ * recovery guards so they push the assistant/user pair the same way. Pass
+ * `stripArtifacts` for the malformed-tool-call case (strips stray `<tool_call>`
+ * fragments from the echoed content).
+ */
+function pushNudge(
+	messages: ChatMessage[],
+	response: ChatCompletionResponse,
+	nudge: string,
+	stripArtifacts = false
+): IterationOutcome {
+	const content = stripArtifacts
+		? stripToolCallArtifacts(response.content ?? '')
+		: (response.content ?? '');
+	messages.push({ role: 'assistant', content });
+	messages.push({ role: 'user', content: nudge });
+	return 'continue';
+}
+
+/**
  * Max-tokens truncation after tools: the model was cut off mid-response,
  * so continue the loop to let it finish generating. Precondition: caller
  * has already established `toolCalls.length === 0`.
@@ -658,9 +667,7 @@ function tryContinueOnLength(
 ): IterationOutcome | null {
 	if (state.usedTools && response.finish_reason === 'length') {
 		logDebug('agent', `iteration ${iteration} branch=continue-on-length nudge`);
-		ctx.messages.push({ role: 'assistant', content: response.content || '' });
-		ctx.messages.push({ role: 'user', content: 'Continue.' });
-		return 'continue';
+		return pushNudge(ctx.messages, response, 'Continue.');
 	}
 	return null;
 }
@@ -684,20 +691,16 @@ function tryMalformedToolCall(
 		logDebug('agent', `iteration ${iteration} branch=malformed-tool-call recovery`, {
 			rawContent: response.content
 		});
-		ctx.messages.push({
-			role: 'assistant',
-			content: stripToolCallArtifacts(response.content)
-		});
-		ctx.messages.push({
-			role: 'user',
-			content:
-				'Your previous message contained a malformed or incomplete tool call — ' +
+		return pushNudge(
+			ctx.messages,
+			response,
+			'Your previous message contained a malformed or incomplete tool call — ' +
 				"I couldn't parse it. If you meant to call a tool, retry with valid JSON " +
 				'arguments and a properly closed <tool_call>...</tool_call> block. If you ' +
 				'meant to write a final answer, write it as plain prose without any ' +
-				'<tool_call> tags.'
-		});
-		return 'continue';
+				'<tool_call> tags.',
+			true
+		);
 	}
 	return null;
 }
@@ -748,19 +751,14 @@ function tryNarrateRecovery(
 		logDebug('agent', `iteration ${iteration} branch=narrate-recovery`, {
 			assistantContent: response.content
 		});
-		ctx.messages.push({
-			role: 'assistant',
-			content: response.content || ''
-		});
-		ctx.messages.push({
-			role: 'user',
-			content:
-				'STOP. Your previous response described what you would do next but did not ' +
+		return pushNudge(
+			ctx.messages,
+			response,
+			'STOP. Your previous response described what you would do next but did not ' +
 				'actually emit a tool_calls block. Do not reply with more text explaining ' +
 				'your plan — your NEXT output must be the tool_calls block that performs ' +
 				'the action you just described.'
-		});
-		return 'continue';
+		);
 	}
 	return null;
 }
@@ -784,14 +782,11 @@ function tryFileWriteRecovery(
 				assistantContent: response.content
 			}
 		);
-		ctx.messages.push({
-			role: 'assistant',
-			content: response.content || ''
-		});
-		ctx.messages.push({
-			role: 'user',
-			content:
-				'STOP. You have not actually created any file yet — no fs_write_* tool call ' +
+		nudges.armNarrateRecovery();
+		return pushNudge(
+			ctx.messages,
+			response,
+			'STOP. You have not actually created any file yet — no fs_write_* tool call ' +
 				'was made, and the file you are describing does not exist on disk. You MUST ' +
 				'now emit a real fs_write_pdf tool call (or fs_write_docx / fs_write_xlsx / ' +
 				'fs_write_text, whichever matches the original request) with the complete ' +
@@ -799,9 +794,7 @@ function tryFileWriteRecovery(
 				'"report.pdf". Do NOT reply with more text describing the file — your NEXT ' +
 				'output must be a tool_calls block invoking the write tool. After the tool ' +
 				'runs successfully, then respond briefly confirming the file path.'
-		});
-		nudges.armNarrateRecovery();
-		return 'continue';
+		);
 	}
 	return null;
 }
@@ -829,13 +822,8 @@ async function finalizeNoToolCalls(
 		logDebug('agent', `iteration ${iteration} branch=diversity-nudge`, {
 			fetchedCount
 		});
-		messages.push({
-			role: 'assistant',
-			content: response.content || ''
-		});
-		messages.push({ role: 'user', content: diversityNudgePrompt(fetchedCount) });
 		nudges.armNarrateRecovery();
-		return 'continue';
+		return pushNudge(messages, response, diversityNudgePrompt(fetchedCount));
 	}
 
 	// Audit-style turns: the model is trying to answer in prose, but only a

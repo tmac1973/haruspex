@@ -101,11 +101,7 @@ export async function runSubAgent(
 	const response = await chatCompletion(
 		{
 			messages,
-			temperature: sampling.temperature,
-			top_p: sampling.top_p,
-			top_k: sampling.top_k,
-			min_p: sampling.min_p,
-			presence_penalty: sampling.presence_penalty,
+			...sampling,
 			max_tokens: maxTokens,
 			chat_template_kwargs: getChatTemplateKwargs()
 		},
