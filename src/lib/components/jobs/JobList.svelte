@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getJobs, type JobSummary } from '$lib/stores/jobs.svelte';
 	import { enqueue, getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
+	import { activatable } from '$lib/actions/activatable';
 
 	interface Props {
 		selectedId: number | 'new' | null;
@@ -93,15 +94,7 @@
 				<div
 					class="row"
 					class:selected={selectedId === job.id}
-					role="button"
-					tabindex="0"
-					onclick={() => onselect(job.id)}
-					onkeydown={(e) => {
-						if (e.key === 'Enter' || e.key === ' ') {
-							e.preventDefault();
-							onselect(job.id);
-						}
-					}}
+					use:activatable={() => onselect(job.id)}
 				>
 					<div class="row-main">
 						<span class="name">

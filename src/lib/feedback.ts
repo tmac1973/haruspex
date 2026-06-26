@@ -170,20 +170,29 @@ interface UnifiedStatsRow {
 	fallbackSuccesses: number;
 }
 
-function fromSession(e: SessionEngineStats): UnifiedStatsRow {
+/** Shared field copy for a UnifiedStatsRow. The session and lifetime stats
+ *  carry the same 10 non-failure fields under the same names; only the failure
+ *  counts are sourced differently, so each caller passes its own `failures`. */
+function toUnifiedRow(
+	e: {
+		engine: string;
+		attempts: number;
+		successes: number;
+		total_latency_ms: number;
+		max_latency_ms: number;
+		last_success_at: number | null;
+		last_failure_at: number | null;
+		first_choice_attempts: number;
+		fallback_attempts: number;
+		fallback_successes: number;
+	},
+	failures: Record<FailureKey, number>
+): UnifiedStatsRow {
 	return {
 		engine: e.engine,
 		attempts: e.attempts,
 		successes: e.successes,
-		failures: {
-			http: e.failures_by_kind.http ?? 0,
-			rate_limited: e.failures_by_kind.rate_limited ?? 0,
-			parse: e.failures_by_kind.parse ?? 0,
-			empty: e.failures_by_kind.empty ?? 0,
-			network: e.failures_by_kind.network ?? 0,
-			timeout: e.failures_by_kind.timeout ?? 0,
-			other: e.failures_by_kind.other ?? 0
-		},
+		failures,
 		totalLatencyMs: e.total_latency_ms,
 		maxLatencyMs: e.max_latency_ms,
 		lastSuccessAt: e.last_success_at,
@@ -194,28 +203,28 @@ function fromSession(e: SessionEngineStats): UnifiedStatsRow {
 	};
 }
 
+function fromSession(e: SessionEngineStats): UnifiedStatsRow {
+	return toUnifiedRow(e, {
+		http: e.failures_by_kind.http ?? 0,
+		rate_limited: e.failures_by_kind.rate_limited ?? 0,
+		parse: e.failures_by_kind.parse ?? 0,
+		empty: e.failures_by_kind.empty ?? 0,
+		network: e.failures_by_kind.network ?? 0,
+		timeout: e.failures_by_kind.timeout ?? 0,
+		other: e.failures_by_kind.other ?? 0
+	});
+}
+
 function fromLifetime(e: LifetimeEngineStats): UnifiedStatsRow {
-	return {
-		engine: e.engine,
-		attempts: e.attempts,
-		successes: e.successes,
-		failures: {
-			http: e.fail_http,
-			rate_limited: e.fail_rate_limited,
-			parse: e.fail_parse,
-			empty: e.fail_empty,
-			network: e.fail_network,
-			timeout: e.fail_timeout,
-			other: e.fail_other
-		},
-		totalLatencyMs: e.total_latency_ms,
-		maxLatencyMs: e.max_latency_ms,
-		lastSuccessAt: e.last_success_at,
-		lastFailureAt: e.last_failure_at,
-		firstChoiceAttempts: e.first_choice_attempts,
-		fallbackAttempts: e.fallback_attempts,
-		fallbackSuccesses: e.fallback_successes
-	};
+	return toUnifiedRow(e, {
+		http: e.fail_http,
+		rate_limited: e.fail_rate_limited,
+		parse: e.fail_parse,
+		empty: e.fail_empty,
+		network: e.fail_network,
+		timeout: e.fail_timeout,
+		other: e.fail_other
+	});
 }
 
 function lifetimeGlobals(g: Record<string, number>): SessionGlobals {
