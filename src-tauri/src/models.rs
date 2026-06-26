@@ -489,29 +489,29 @@ impl ModelManager {
         }
     }
 
-    /// Download a single file with resume support and progress events.
-    /// `stage_label` is included in the progress event so the UI can show
-    /// "Downloading model" vs "Downloading vision projector".
-    async fn download_file(
+    /// Core resumable download: streams `url` into `partial_path` (resuming from
+    /// any bytes already there when the server honors a `Range` request), emits
+    /// throttled `download-progress` events tagged `stage_label`, optionally
+    /// verifies a SHA-256 over the completed file, then atomically renames it to
+    /// `final_path`.
+    ///
+    /// Callers own the "already downloaded" short-circuit, creating the
+    /// destination directory, and resetting `cancel_flag` before the call.
+    /// `sha_check`, when `Some((hex, ui_label))`, is verified *before* the
+    /// rename so a corrupt partial is never promoted to the final path.
+    #[allow(clippy::too_many_arguments)]
+    async fn download_to_partial(
         &self,
         app: &AppHandle,
         url: &str,
-        filename: &str,
+        partial_path: &Path,
+        final_path: &Path,
         expected_size: u64,
         stage_label: &str,
-    ) -> Result<PathBuf, String> {
-        self.ensure_models_dir().await?;
-        let final_path = self.models_dir.join(filename);
-        let partial_path = self.models_dir.join(format!("{}.partial", filename));
-
-        // Skip if already downloaded
-        if final_path.exists() {
-            info!("{} already downloaded: {}", stage_label, filename);
-            return Ok(final_path);
-        }
-
+        sha_check: Option<(&str, &str)>,
+    ) -> Result<(), String> {
         let existing_size = if partial_path.exists() {
-            fs::metadata(&partial_path)
+            fs::metadata(partial_path)
                 .await
                 .map(|m| m.len())
                 .unwrap_or(0)
@@ -519,10 +519,7 @@ impl ModelManager {
             0
         };
 
-        info!(
-            "{}: {} (resume from {} bytes)",
-            stage_label, filename, existing_size
-        );
+        info!("{}: resume from {} bytes", stage_label, existing_size);
 
         let client = reqwest::Client::new();
         let mut request = client.get(url);
@@ -566,7 +563,7 @@ impl ModelManager {
             open_opts.write(true).truncate(true);
         }
         let mut file = open_opts
-            .open(&partial_path)
+            .open(partial_path)
             .await
             .map_err(|e| format!("Failed to open file: {}", e))?;
 
@@ -582,7 +579,7 @@ impl ModelManager {
                 let cancel = self.cancel_flag.lock().await;
                 if *cancel {
                     drop(file);
-                    info!("Download cancelled");
+                    info!("{}: cancelled", stage_label);
                     return Err("Download cancelled".to_string());
                 }
             }
@@ -626,9 +623,49 @@ impl ModelManager {
             },
         );
 
-        fs::rename(&partial_path, &final_path)
+        if let Some((expected_sha, verify_label)) = sha_check {
+            info!("{}: verifying SHA256...", stage_label);
+            verify_sha256(partial_path, expected_sha, app, verify_label).await?;
+        }
+
+        fs::rename(partial_path, final_path)
             .await
             .map_err(|e| format!("Failed to finalize download: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Download a single model file with resume support and progress events.
+    /// `stage_label` is included in the progress event so the UI can show
+    /// "Downloading model" vs "Downloading vision projector".
+    async fn download_file(
+        &self,
+        app: &AppHandle,
+        url: &str,
+        filename: &str,
+        expected_size: u64,
+        stage_label: &str,
+    ) -> Result<PathBuf, String> {
+        self.ensure_models_dir().await?;
+        let final_path = self.models_dir.join(filename);
+        let partial_path = self.models_dir.join(format!("{}.partial", filename));
+
+        // Skip if already downloaded
+        if final_path.exists() {
+            info!("{} already downloaded: {}", stage_label, filename);
+            return Ok(final_path);
+        }
+
+        self.download_to_partial(
+            app,
+            url,
+            &partial_path,
+            &final_path,
+            expected_size,
+            stage_label,
+            None,
+        )
+        .await?;
 
         info!("{} download complete: {}", stage_label, filename);
         Ok(final_path)
@@ -968,120 +1005,17 @@ pub async fn download_whisper_model(
         *cancel = false;
     }
 
-    let existing_size = if partial_path.exists() {
-        fs::metadata(&partial_path)
-            .await
-            .map(|m| m.len())
-            .unwrap_or(0)
-    } else {
-        0
-    };
-
-    info!(
-        "Downloading whisper model (resume from {} bytes)",
-        existing_size
-    );
-
-    let client = reqwest::Client::new();
-    let mut request = client.get(url);
-    if existing_size > 0 {
-        request = request.header("Range", format!("bytes={}-", existing_size));
-    }
-
-    let response = request
-        .send()
-        .await
-        .map_err(|e| format!("Download failed: {}", e))?;
-
-    if !response.status().is_success() && response.status().as_u16() != 206 {
-        return Err(format!(
-            "Download failed with status: {}",
-            response.status()
-        ));
-    }
-
-    // Only a 206 means the Range was honored; a 200 is the whole file and
-    // appending it to the partial would corrupt the model.
-    let resumed = existing_size > 0 && response.status().as_u16() == 206;
-    if existing_size > 0 && !resumed {
-        info!(
-            "Whisper download: server ignored Range (status {}), restarting from zero",
-            response.status()
-        );
-    }
-    let base_offset = if resumed { existing_size } else { 0 };
-
-    let total_size = resume_total_size(base_offset, response.content_length(), expected_size);
-
-    let mut open_opts = tokio::fs::OpenOptions::new();
-    open_opts.create(true);
-    if resumed {
-        open_opts.append(true);
-    } else {
-        open_opts.write(true).truncate(true);
-    }
-    let mut file = open_opts
-        .open(&partial_path)
-        .await
-        .map_err(|e| format!("Failed to open file: {}", e))?;
-
-    let mut downloaded = base_offset;
-    let start_time = std::time::Instant::now();
-    let mut last_progress_time = start_time;
-
-    use tokio::io::AsyncWriteExt;
-    let mut stream = response.bytes_stream();
-
-    while let Some(chunk_result) = StreamExt::next(&mut stream).await {
-        {
-            let cancel = state.cancel_flag.lock().await;
-            if *cancel {
-                drop(file);
-                info!("Whisper download cancelled");
-                return Err("Download cancelled".to_string());
-            }
-        }
-
-        let chunk = chunk_result.map_err(|e| format!("Download error: {}", e))?;
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| format!("Write error: {}", e))?;
-
-        downloaded += chunk.len() as u64;
-
-        let now = std::time::Instant::now();
-        if now.duration_since(last_progress_time).as_millis() >= 100 {
-            let elapsed = now.duration_since(start_time).as_secs_f64();
-            let _ = app.emit(
-                "download-progress",
-                DownloadProgress {
-                    downloaded,
-                    total: total_size,
-                    speed_bps: download_speed_bps(downloaded, base_offset, elapsed),
-                    stage: "Downloading speech model".to_string(),
-                },
-            );
-            last_progress_time = now;
-        }
-    }
-
-    file.flush()
-        .await
-        .map_err(|e| format!("Flush error: {}", e))?;
-    drop(file);
-
-    info!("Verifying whisper model SHA256...");
-    verify_sha256(
-        &partial_path,
-        WHISPER_SHA256,
-        &app,
-        "Verifying speech model",
-    )
-    .await?;
-
-    fs::rename(&partial_path, &final_path)
-        .await
-        .map_err(|e| format!("Failed to finalize download: {}", e))?;
+    state
+        .download_to_partial(
+            &app,
+            url,
+            &partial_path,
+            &final_path,
+            expected_size,
+            "Downloading speech model",
+            Some((WHISPER_SHA256, "Verifying speech model")),
+        )
+        .await?;
 
     info!("Whisper model downloaded successfully");
     Ok(final_path.to_string_lossy().to_string())
