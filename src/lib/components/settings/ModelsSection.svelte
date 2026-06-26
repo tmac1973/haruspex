@@ -12,7 +12,7 @@
 	 * `get_active_model_path` call on its own card.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
-	import { listen } from '@tauri-apps/api/event';
+	import { downloadModelWithProgress } from '$lib/models/download';
 	import { onMount } from 'svelte';
 	import { restartServerWhenIdle, stopServer } from '$lib/stores/server.svelte';
 	import {
@@ -74,20 +74,14 @@
 		downloadProgress = { downloaded: 0, total: 0, speed_bps: 0, stage: 'Starting...' };
 		downloadError = null;
 
-		const unlisten = await listen<DownloadProgress>('download-progress', (event) => {
-			downloadProgress = event.payload;
-		});
-
 		try {
-			const modelPath = await invoke<string>('download_model', { modelId });
-			unlisten();
+			const modelPath = await downloadModelWithProgress(modelId, (p) => (downloadProgress = p));
 			downloading = null;
 			downloadProgress = null;
 			await refreshModels();
 			// Auto-start server with the newly downloaded model
 			await switchModel(modelPath.split('/').pop()!);
 		} catch (e) {
-			unlisten();
 			downloading = null;
 			downloadProgress = null;
 			downloadError = String(e);
