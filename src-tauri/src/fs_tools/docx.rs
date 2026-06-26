@@ -2,17 +2,9 @@
 //! Hand-rolled OOXML packaging via the `zip` crate; markdown-shaped input
 //! preprocessing comes from `super::markdown_inline`.
 
-use super::images::{
-    build_image_index, fit_image_emu, image_pixel_dimensions, load_markdown_images, px_to_emu,
-    ImageIndex, LoadedImage,
-};
-use super::markdown_inline::{
-    escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
-};
-use super::path::{
-    refuse_if_exists, resolve_in_workdir, stat_within_limit, workdir_path, workdir_path_for_write,
-    write_bytes_to_workdir, MAX_DOC_READ_BYTES, MAX_WRITE_BYTES,
-};
+use super::images::LoadedImage;
+use super::markdown_inline::ImageAlignment;
+use super::path::{resolve_in_workdir, stat_within_limit, workdir_path, MAX_DOC_READ_BYTES};
 use std::path::Path;
 
 /// Extract text from a .docx file by reading word/document.xml from the zip
@@ -207,6 +199,31 @@ fn docx_text_paragraph(escaped_text: &str) -> String {
     )
 }
 
+/// DOCX paragraph emitter for the shared [`super::images::render_doc_body`]
+/// driver. DOCX uses the drawing `seq` for the `<wp:docPr>` id and ignores the
+/// image extension (the relationship already carries it).
+struct DocxBody;
+
+impl super::images::DocBodyEmitter for DocxBody {
+    fn image(
+        &self,
+        idx: usize,
+        w_emu: u64,
+        h_emu: u64,
+        seq: u32,
+        _ext: &str,
+        alignment: ImageAlignment,
+    ) -> String {
+        docx_image_paragraph(idx, w_emu, h_emu, seq, alignment)
+    }
+    fn heading(&self, level: usize, escaped: &str) -> String {
+        docx_heading_paragraph(level, escaped)
+    }
+    fn text(&self, escaped: &str) -> String {
+        docx_text_paragraph(escaped)
+    }
+}
+
 pub(super) fn build_docx(
     paragraphs: &[&str],
     images: &std::collections::HashMap<String, LoadedImage>,
@@ -214,30 +231,10 @@ pub(super) fn build_docx(
     use std::io::Write;
     use zip::write::SimpleFileOptions;
 
-    // Walk paragraphs once to assign stable media indices to each unique
-    // image path. Duplicate paths share a single word/media/imageN.{ext}.
-    let ImageIndex {
-        ordered: ordered_image_paths,
-        by_path: image_index,
-        unique_exts,
-    } = build_image_index(
-        paragraphs.iter().filter_map(|p| {
-            parse_standalone_image_line(p).and_then(|(path, _)| images.keys().find(|k| **k == path))
-        }),
-        images,
-    );
-    // Decode pixel dimensions for each image once. Each image's natural EMU
-    // size lives here; the per-paragraph rendering loop applies per-image
-    // ImageOptions (alignment, width%) on top of these natural dimensions.
-    let mut natural_emu: std::collections::HashMap<&String, (u64, u64)> =
-        std::collections::HashMap::new();
-    for path in &ordered_image_paths {
-        let img = images
-            .get(*path)
-            .ok_or_else(|| format!("Image {} missing from loaded map", path))?;
-        let (px_w, px_h) = image_pixel_dimensions(&img.bytes)?;
-        natural_emu.insert(*path, (px_to_emu(px_w), px_to_emu(px_h)));
-    }
+    // Resolve referenced images (first-appearance media numbering + natural
+    // EMU sizes) once. Shared with the ODT builder; per-reference alignment
+    // and width% are applied later by render_doc_body.
+    let (index, natural_emu) = super::images::prepare_doc_images(paragraphs, images)?;
 
     let mut buf = Vec::new();
     {
@@ -247,7 +244,7 @@ pub(super) fn build_docx(
 
         // [Content_Types].xml — shared prologue + Default entries for any
         // image extensions used, then the docx body Override.
-        let mut content_types = super::ooxml::content_types_prologue(&unique_exts);
+        let mut content_types = super::ooxml::content_types_prologue(&index.unique_exts);
         content_types.push_str(
             r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
 </Types>"#,
@@ -267,14 +264,14 @@ pub(super) fn build_docx(
         // least one image to reference. Word tolerates a missing file
         // when there are no images, and we'd rather not write empty
         // <Relationships> XML.
-        if !ordered_image_paths.is_empty() {
+        if !index.ordered.is_empty() {
             let mut rels = String::from(
                 r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 "#,
             );
-            for path in &ordered_image_paths {
-                let idx = image_index[*path];
+            for path in &index.ordered {
+                let idx = index.by_path[*path];
                 let ext = &images[*path].extension;
                 rels.push_str(&format!(
                     r#"<Relationship Id="rId{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image{}.{}"/>
@@ -289,8 +286,8 @@ pub(super) fn build_docx(
         }
 
         // word/media/imageN.{ext} — one per unique image.
-        for path in &ordered_image_paths {
-            let idx = image_index[*path];
+        for path in &index.ordered {
+            let idx = index.by_path[*path];
             let img = &images[*path];
             zip.start_file(
                 format!("word/media/image{}.{}", idx, img.extension),
@@ -308,37 +305,14 @@ pub(super) fn build_docx(
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
 <w:body>"#,
         );
-        let mut drawing_id: u32 = 0;
-        for para in paragraphs {
-            if let Some((path, opts)) = parse_standalone_image_line(para) {
-                if let Some(&idx) = image_index.get(&path) {
-                    let (nat_w, nat_h) = natural_emu[&path];
-                    // Apply width% if specified, else auto-fit to content
-                    // width (capping at MAX_DOC_IMAGE_WIDTH_EMU). Aspect
-                    // ratio is always preserved.
-                    let (target_w, target_h) = fit_image_emu(nat_w, nat_h, opts.width_fraction);
-                    drawing_id += 1;
-                    body_xml.push_str(&docx_image_paragraph(
-                        idx,
-                        target_w,
-                        target_h,
-                        drawing_id,
-                        opts.alignment,
-                    ));
-                    continue;
-                }
-                // Image referenced but not loaded — fall through and render
-                // the markdown verbatim as a paragraph so the user can see
-                // what went wrong instead of silently dropping content.
-            }
-            // Treat as a heading if the line starts with # (simple markdown-ish)
-            let (text, heading_level) = parse_heading(para);
-            let escaped = escape_xml(text);
-            match heading_level {
-                Some(level) => body_xml.push_str(&docx_heading_paragraph(level, &escaped)),
-                None => body_xml.push_str(&docx_text_paragraph(&escaped)),
-            }
-        }
+        super::images::render_doc_body(
+            &mut body_xml,
+            paragraphs,
+            images,
+            &index,
+            &natural_emu,
+            &DocxBody,
+        );
         body_xml.push_str("</w:body></w:document>");
 
         zip.start_file("word/document.xml", options)
@@ -359,26 +333,10 @@ pub async fn fs_write_docx(
     content: String,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
-    let workdir = workdir_path_for_write(&workdir)?;
-    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
-
-    if content.len() > MAX_WRITE_BYTES {
-        return Err(format!("Content too large ({} bytes)", content.len()));
-    }
-
-    refuse_if_exists(&resolved, overwrite, &rel_path)?;
-
-    let images = load_markdown_images(&workdir, &content)?;
-
-    // Split content into paragraphs on newlines, drop empty lines
-    let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        let paragraphs: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-        build_docx(&paragraphs, &images)
-    })
+    super::write_markdown_document(
+        workdir, rel_path, content, overwrite, "docx", false, build_docx,
+    )
     .await
-    .map_err(|e| format!("docx build task failed: {}", e))??;
-
-    write_bytes_to_workdir(&resolved, &bytes).await
 }
 
 #[tauri::command]

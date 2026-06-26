@@ -2,17 +2,8 @@
 //! contract as .docx but with the ODF first-entry-stored-mimetype
 //! convention.
 
-use super::images::{
-    build_image_index, fit_image_emu, image_pixel_dimensions, load_markdown_images, px_to_emu,
-    ImageIndex, LoadedImage,
-};
-use super::markdown_inline::{
-    escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
-};
-use super::path::{
-    refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
-    MAX_WRITE_BYTES,
-};
+use super::images::LoadedImage;
+use super::markdown_inline::ImageAlignment;
 
 /// `mimetype`, is stored uncompressed (`CompressionMethod::Stored`),
 /// has no extra field, and contains the exact ODF media-type string for
@@ -58,36 +49,43 @@ fn odt_text_paragraph(escaped_text: &str) -> String {
     format!("<text:p>{}</text:p>", escaped_text)
 }
 
+/// ODT paragraph emitter for the shared [`super::images::render_doc_body`]
+/// driver. ODF svg attributes use cm rather than EMU (1 cm = 360000 EMU) and
+/// reference the image extension; ODF has no per-drawing id so `seq` is unused.
+struct OdtBody;
+
+impl super::images::DocBodyEmitter for OdtBody {
+    fn image(
+        &self,
+        idx: usize,
+        w_emu: u64,
+        h_emu: u64,
+        _seq: u32,
+        ext: &str,
+        alignment: ImageAlignment,
+    ) -> String {
+        let cm_w = w_emu as f32 / 360000.0;
+        let cm_h = h_emu as f32 / 360000.0;
+        odt_image_paragraph(idx, cm_w, cm_h, ext, alignment)
+    }
+    fn heading(&self, level: usize, escaped: &str) -> String {
+        odt_heading_paragraph(level, escaped)
+    }
+    fn text(&self, escaped: &str) -> String {
+        odt_text_paragraph(escaped)
+    }
+}
+
 pub(super) fn build_odt(
     paragraphs: &[&str],
     images: &std::collections::HashMap<String, LoadedImage>,
 ) -> Result<Vec<u8>, String> {
     use std::io::Write;
 
-    // Walk paragraphs once to assign stable Pictures/imageN.{ext} indices
-    // to each unique image path referenced via standalone `![alt](path)`.
-    let ImageIndex {
-        ordered: ordered_image_paths,
-        by_path: image_index,
-        unique_exts,
-    } = build_image_index(
-        paragraphs.iter().filter_map(|p| {
-            parse_standalone_image_line(p).and_then(|(path, _)| images.keys().find(|k| **k == path))
-        }),
-        images,
-    );
-    // Per-image natural sizes, in EMU. Width%/auto-fit and aspect-ratio
-    // scaling happen in the body loop so per-reference options can apply.
-    // ODF svg attributes need cm (1 cm = 360000 EMU).
-    let mut natural_emu: std::collections::HashMap<&String, (u64, u64)> =
-        std::collections::HashMap::new();
-    for path in &ordered_image_paths {
-        let img = images
-            .get(*path)
-            .ok_or_else(|| format!("Image {} missing from loaded map", path))?;
-        let (px_w, px_h) = image_pixel_dimensions(&img.bytes)?;
-        natural_emu.insert(*path, (px_to_emu(px_w), px_to_emu(px_h)));
-    }
+    // Resolve referenced images (first-appearance Pictures/imageN.{ext}
+    // numbering + natural EMU sizes) once. Shared with the DOCX builder;
+    // render_doc_body applies per-reference alignment/width% (and EMU→cm).
+    let (index, natural_emu) = super::images::prepare_doc_images(paragraphs, images)?;
 
     let mut buf = Vec::new();
     {
@@ -114,14 +112,14 @@ pub(super) fn build_odt(
 <manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
 "#,
         );
-        if !ordered_image_paths.is_empty() {
+        if !index.ordered.is_empty() {
             manifest.push_str(
                 r#"<manifest:file-entry manifest:full-path="Pictures/" manifest:media-type=""/>
 "#,
             );
         }
-        for path in &ordered_image_paths {
-            let idx = image_index[*path];
+        for path in &index.ordered {
+            let idx = index.by_path[*path];
             let ext = &images[*path].extension;
             manifest.push_str(&format!(
                 r#"<manifest:file-entry manifest:full-path="Pictures/image{}.{}" manifest:media-type="image/{}"/>
@@ -130,7 +128,6 @@ pub(super) fn build_odt(
             ));
         }
         manifest.push_str("</manifest:manifest>");
-        let _ = unique_exts; // captured into manifest above; var kept for symmetry with DOCX path
         zip.start_file("META-INF/manifest.xml", deflated)
             .map_err(|e| e.to_string())?;
         zip.write_all(manifest.as_bytes())
@@ -163,8 +160,8 @@ pub(super) fn build_odt(
         // 6) Pictures/imageN.{ext} — embedded image binaries. ODF stores
         //    these in a top-level Pictures/ directory referenced by
         //    relative xlink:href from content.xml.
-        for path in &ordered_image_paths {
-            let idx = image_index[*path];
+        for path in &index.ordered {
+            let idx = index.by_path[*path];
             let img = &images[*path];
             zip.start_file(format!("Pictures/image{}.{}", idx, img.extension), deflated)
                 .map_err(|e| e.to_string())?;
@@ -184,28 +181,14 @@ pub(super) fn build_odt(
 </office:automatic-styles>
 <office:body><office:text>"#,
         );
-        for para in paragraphs {
-            if let Some((path, opts)) = parse_standalone_image_line(para) {
-                if let Some(&idx) = image_index.get(&path) {
-                    let (nat_w, nat_h) = natural_emu[&path];
-                    let (target_w_emu, target_h_emu) =
-                        fit_image_emu(nat_w, nat_h, opts.width_fraction);
-                    let cm_w = target_w_emu as f32 / 360000.0;
-                    let cm_h = target_h_emu as f32 / 360000.0;
-                    let ext = &images[&path].extension;
-                    body_xml.push_str(&odt_image_paragraph(idx, cm_w, cm_h, ext, opts.alignment));
-                    continue;
-                }
-                // Loaded-image lookup miss falls through to plain-text rendering
-                // of the markdown so the user can see what went wrong.
-            }
-            let (text, heading_level) = parse_heading(para);
-            let escaped = escape_xml(text);
-            match heading_level {
-                Some(level) => body_xml.push_str(&odt_heading_paragraph(level, &escaped)),
-                None => body_xml.push_str(&odt_text_paragraph(&escaped)),
-            }
-        }
+        super::images::render_doc_body(
+            &mut body_xml,
+            paragraphs,
+            images,
+            &index,
+            &natural_emu,
+            &OdtBody,
+        );
         body_xml.push_str("</office:text></office:body></office:document-content>");
 
         zip.start_file("content.xml", deflated)
@@ -226,27 +209,10 @@ pub async fn fs_write_odt(
     content: String,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
-    let workdir = workdir_path_for_write(&workdir)?;
-    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
-
-    if content.len() > MAX_WRITE_BYTES {
-        return Err(format!("Content too large ({} bytes)", content.len()));
-    }
-
-    refuse_if_exists(&resolved, overwrite, &rel_path)?;
-
-    let images = load_markdown_images(&workdir, &content)?;
-
-    // Same markdown-ish line model as fs_write_docx: split on newlines,
-    // drop empties, pass through build_odt for the zip+ODF packaging.
-    let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        let paragraphs: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-        build_odt(&paragraphs, &images)
-    })
+    super::write_markdown_document(
+        workdir, rel_path, content, overwrite, "odt", false, build_odt,
+    )
     .await
-    .map_err(|e| format!("odt build task failed: {}", e))??;
-
-    write_bytes_to_workdir(&resolved, &bytes).await
 }
 
 #[cfg(test)]
