@@ -7,6 +7,7 @@
 		type JobRunSummary
 	} from '$lib/stores/jobRuns.svelte';
 	import { formatDuration } from '$lib/utils/format';
+	import { activatable } from '$lib/actions/activatable';
 
 	interface Props {
 		jobId: number;
@@ -86,15 +87,7 @@
 				<div
 					class="row"
 					class:selected={selectedRunId === run.id}
-					role="button"
-					tabindex="0"
-					onclick={() => onselect(run.id)}
-					onkeydown={(e) => {
-						if (e.key === 'Enter' || e.key === ' ') {
-							e.preventDefault();
-							onselect(run.id);
-						}
-					}}
+					use:activatable={() => onselect(run.id)}
 				>
 					<div class="row-content">
 						<div class="row-top">
