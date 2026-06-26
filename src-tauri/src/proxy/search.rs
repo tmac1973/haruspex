@@ -218,13 +218,21 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
     }))
 }
 
-// Mojeek HTML search — small independent index, scrape-friendly, no API key.
-// Useful as a fallback when DDG/Qwant are rate-limited or broken.
-
-pub(super) async fn search_mojeek(
-    query: &str,
-    recency: &str,
+/// Shared skeleton for the plain-GET HTML scrape engines (Mojeek, Brave HTML,
+/// Startpage, Yahoo). Builds the proxied client, GETs `url` with the standard
+/// browser-like scrape headers, enforces a 2xx, reads the body, runs `parse`,
+/// and — when parsing yields nothing — first consults `on_empty` (so an engine
+/// can recognize an anti-bot challenge and surface it as RateLimited) before
+/// logging an empty-result warning keyed by `empty_needles`. `label` tags every
+/// error and warning. DuckDuckGo is intentionally NOT routed through here: it
+/// POSTs a form with a cookie store and its own bot-detection handling.
+async fn scrape_engine(
+    url: &str,
+    label: &str,
     proxy: Option<&ProxyConfig>,
+    parse: impl Fn(&str) -> Result<Vec<SearchResult>, String>,
+    on_empty: impl Fn(&str) -> Option<SearchFailure>,
+    empty_needles: &[&str],
 ) -> Result<Vec<SearchResult>, SearchFailure> {
     let client = apply_proxy(
         reqwest::Client::builder()
@@ -236,6 +244,50 @@ pub(super) async fn search_mojeek(
     .build()
     .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
 
+    let resp = client
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| classify_reqwest_err(e, &format!("{} search failed", label)))?;
+
+    if !resp.status().is_success() {
+        return Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("{} error: {}", label, resp.status()),
+        ));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| classify_reqwest_err(e, &format!("Failed to read {} response", label)))?;
+
+    let results = parse(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
+
+    if results.is_empty() {
+        if let Some(failure) = on_empty(&html) {
+            return Err(failure);
+        }
+        warn_empty_scrape(label, &html, empty_needles);
+    }
+
+    Ok(results)
+}
+
+// Mojeek HTML search — small independent index, scrape-friendly, no API key.
+// Useful as a fallback when DDG/Qwant are rate-limited or broken.
+
+pub(super) async fn search_mojeek(
+    query: &str,
+    recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, SearchFailure> {
     // Mojeek freshness: si=day|week|month|year (their "since" parameter)
     let since = match recency {
         "day" => "&si=day",
@@ -251,43 +303,20 @@ pub(super) async fn search_mojeek(
         since
     );
 
-    let resp = client
-        .get(&url)
-        .header("User-Agent", USER_AGENT)
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .send()
-        .await
-        .map_err(|e| classify_reqwest_err(e, "Mojeek search failed"))?;
-
-    if !resp.status().is_success() {
-        return Err(SearchFailure::new(
-            SearchFailureKind::Http,
-            format!("Mojeek error: {}", resp.status()),
-        ));
-    }
-
-    let html = resp
-        .text()
-        .await
-        .map_err(|e| classify_reqwest_err(e, "Failed to read Mojeek response"))?;
-
-    let results =
-        parse_mojeek_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
-
-    if results.is_empty() {
-        warn_empty_scrape(
-            "Mojeek",
-            &html,
-            &[
-                "results-standard",
-                "class=\"results",
-                "id=\"results",
-                "<main",
-            ],
-        );
-    }
-
-    Ok(results)
+    scrape_engine(
+        &url,
+        "Mojeek",
+        proxy,
+        parse_mojeek_html,
+        |_| None,
+        &[
+            "results-standard",
+            "class=\"results",
+            "id=\"results",
+            "<main",
+        ],
+    )
+    .await
 }
 
 pub(super) fn parse_mojeek_html(html: &str) -> Result<Vec<SearchResult>, String> {
@@ -344,16 +373,6 @@ pub(super) async fn search_brave_html(
     recency: &str,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<SearchResult>, SearchFailure> {
-    let client = apply_proxy(
-        reqwest::Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(5)),
-        proxy,
-    )
-    .map_err(SearchFailure::other)?
-    .build()
-    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
-
     // Brave time filter: tf=pd (past day), pw (week), pm (month), py (year)
     let tf = match recency {
         "day" => "&tf=pd",
@@ -369,47 +388,20 @@ pub(super) async fn search_brave_html(
         tf
     );
 
-    let resp = client
-        .get(&url)
-        .header("User-Agent", USER_AGENT)
-        .header(
-            "Accept",
-            "text/html,application/xhtml+xml,application/xml;q=0.9",
-        )
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .send()
-        .await
-        .map_err(|e| classify_reqwest_err(e, "Brave HTML search failed"))?;
-
-    if !resp.status().is_success() {
-        return Err(SearchFailure::new(
-            SearchFailureKind::Http,
-            format!("Brave HTML error: {}", resp.status()),
-        ));
-    }
-
-    let html = resp
-        .text()
-        .await
-        .map_err(|e| classify_reqwest_err(e, "Failed to read Brave HTML response"))?;
-
-    let results =
-        parse_brave_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
-
-    if results.is_empty() {
-        warn_empty_scrape(
-            "Brave HTML",
-            &html,
-            &[
-                "data-type=\"web\"",
-                "search-snippet-title",
-                "generic-snippet",
-                "result-wrapper",
-            ],
-        );
-    }
-
-    Ok(results)
+    scrape_engine(
+        &url,
+        "Brave HTML",
+        proxy,
+        parse_brave_html,
+        |_| None,
+        &[
+            "data-type=\"web\"",
+            "search-snippet-title",
+            "generic-snippet",
+            "result-wrapper",
+        ],
+    )
+    .await
 }
 
 pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> {
@@ -478,16 +470,6 @@ pub(super) async fn search_startpage(
     _recency: &str,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<SearchResult>, SearchFailure> {
-    let client = apply_proxy(
-        reqwest::Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(5)),
-        proxy,
-    )
-    .map_err(SearchFailure::other)?
-    .build()
-    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
-
     // Startpage's simple GET endpoint exposes no reliable date-filter param, so
     // recency is intentionally not applied here.
     let url = format!(
@@ -495,52 +477,25 @@ pub(super) async fn search_startpage(
         urlencoding::encode(query)
     );
 
-    let resp = client
-        .get(&url)
-        .header("User-Agent", USER_AGENT)
-        .header(
-            "Accept",
-            "text/html,application/xhtml+xml,application/xml;q=0.9",
-        )
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .send()
-        .await
-        .map_err(|e| classify_reqwest_err(e, "Startpage search failed"))?;
-
-    if !resp.status().is_success() {
-        return Err(SearchFailure::new(
-            SearchFailureKind::Http,
-            format!("Startpage error: {}", resp.status()),
-        ));
-    }
-
-    let html = resp
-        .text()
-        .await
-        .map_err(|e| classify_reqwest_err(e, "Failed to read Startpage response"))?;
-
-    let results =
-        parse_startpage_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
-
-    // No results + an anti-bot fingerprint means Startpage served its challenge
-    // page rather than a SERP — surface it as rate-limited so the engine cools
-    // down, instead of mistaking it for a genuine empty result set.
-    if results.is_empty() && is_startpage_challenge(&html) {
-        return Err(SearchFailure::new(
-            SearchFailureKind::RateLimited,
-            "Startpage served an anti-bot challenge — temporarily unavailable.".to_string(),
-        ));
-    }
-
-    if results.is_empty() {
-        warn_empty_scrape(
-            "Startpage",
-            &html,
-            &["gl-title-link", "result-title", "class=\"result", "w-gl"],
-        );
-    }
-
-    Ok(results)
+    scrape_engine(
+        &url,
+        "Startpage",
+        proxy,
+        parse_startpage_html,
+        // No results + an anti-bot fingerprint means Startpage served its
+        // challenge page rather than a SERP — surface it as rate-limited so the
+        // engine cools down, instead of mistaking it for a genuine empty set.
+        |html| {
+            is_startpage_challenge(html).then(|| {
+                SearchFailure::new(
+                    SearchFailureKind::RateLimited,
+                    "Startpage served an anti-bot challenge — temporarily unavailable.".to_string(),
+                )
+            })
+        },
+        &["gl-title-link", "result-title", "class=\"result", "w-gl"],
+    )
+    .await
 }
 
 /// Heuristic: does this look like Startpage's anti-bot / captcha page rather
@@ -624,16 +579,6 @@ pub(super) async fn search_yahoo(
     _recency: &str,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<SearchResult>, SearchFailure> {
-    let client = apply_proxy(
-        reqwest::Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(5)),
-        proxy,
-    )
-    .map_err(SearchFailure::other)?
-    .build()
-    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
-
     // Yahoo's freshness param isn't reliably documented on the HTML endpoint, so
     // recency is intentionally not applied here.
     let url = format!(
@@ -641,51 +586,25 @@ pub(super) async fn search_yahoo(
         urlencoding::encode(query)
     );
 
-    let resp = client
-        .get(&url)
-        .header("User-Agent", USER_AGENT)
-        .header(
-            "Accept",
-            "text/html,application/xhtml+xml,application/xml;q=0.9",
-        )
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .send()
-        .await
-        .map_err(|e| classify_reqwest_err(e, "Yahoo search failed"))?;
-
-    if !resp.status().is_success() {
-        return Err(SearchFailure::new(
-            SearchFailureKind::Http,
-            format!("Yahoo error: {}", resp.status()),
-        ));
-    }
-
-    let html = resp
-        .text()
-        .await
-        .map_err(|e| classify_reqwest_err(e, "Failed to read Yahoo response"))?;
-
-    let results =
-        parse_yahoo_html(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
-
-    // No results + a consent/captcha fingerprint means Yahoo bounced us to its
-    // gate rather than a SERP — cool the engine down rather than report empty.
-    if results.is_empty() && is_yahoo_challenge(&html) {
-        return Err(SearchFailure::new(
-            SearchFailureKind::RateLimited,
-            "Yahoo served a consent/anti-bot gate — temporarily unavailable.".to_string(),
-        ));
-    }
-
-    if results.is_empty() {
-        warn_empty_scrape(
-            "Yahoo",
-            &html,
-            &["class=\"algo", "compTitle", "h3 class=\"title", "compText"],
-        );
-    }
-
-    Ok(results)
+    scrape_engine(
+        &url,
+        "Yahoo",
+        proxy,
+        parse_yahoo_html,
+        // No results + a consent/captcha fingerprint means Yahoo bounced us to
+        // its gate rather than a SERP — cool the engine down rather than report
+        // empty.
+        |html| {
+            is_yahoo_challenge(html).then(|| {
+                SearchFailure::new(
+                    SearchFailureKind::RateLimited,
+                    "Yahoo served a consent/anti-bot gate — temporarily unavailable.".to_string(),
+                )
+            })
+        },
+        &["class=\"algo", "compTitle", "h3 class=\"title", "compText"],
+    )
+    .await
 }
 
 fn is_yahoo_challenge(html: &str) -> bool {
