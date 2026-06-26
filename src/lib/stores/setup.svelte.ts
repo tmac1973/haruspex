@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
+import { downloadModelWithProgress } from '$lib/models/download';
 import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
 import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
 import { errMessage } from '$lib/utils/error';
@@ -110,17 +110,11 @@ export async function startDownload(): Promise<void> {
 	downloadProgress = { downloaded: 0, total: 0, speed_bps: 0, stage: 'Starting...' };
 	downloadError = null;
 
-	const unlisten = await listen<DownloadProgress>('download-progress', (event) => {
-		downloadProgress = event.payload;
-	});
-
 	try {
-		await invoke('download_model', { modelId: selectedModel });
-		unlisten();
+		await downloadModelWithProgress(selectedModel, (p) => (downloadProgress = p));
 		step = 'test';
 		runTestQuery();
 	} catch (e) {
-		unlisten();
 		const msg = String(e);
 		if (msg.includes('cancelled')) {
 			downloadProgress = null;
