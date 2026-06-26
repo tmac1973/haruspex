@@ -123,29 +123,43 @@ Press **F1** (or click the **?** in the header) to see this list in the app anyt
 
 ### Build prerequisites
 
+Each block below installs **everything** needed to build Haruspex on that platform — system libraries, the Vulkan shader toolchain, Rust (stable), and Node.js (22+). Copy and run the whole block.
+
 #### Debian / Ubuntu
 
 ```bash
-sudo apt install build-essential cmake pkg-config \
+# System libraries + Vulkan shader toolchain
+sudo apt update && sudo apt install -y build-essential cmake pkg-config curl \
   libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev \
-  libvulkan-dev glslc libsonic-dev libpcaudio-dev libssl-dev libfuse2
+  libvulkan-dev glslc spirv-headers libsonic-dev libpcaudio-dev libssl-dev libfuse2
+
+# Node.js 22 (distro packages are usually too old)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs
+
+# Rust (stable, via rustup)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ```
 
 #### Fedora
 
 ```bash
-sudo dnf groupinstall "Development Tools"
-sudo dnf install cmake pkg-config \
+# System libraries + Vulkan shader toolchain + Node.js
+sudo dnf install -y @development-tools cmake pkg-config \
   webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel alsa-lib-devel \
-  vulkan-headers glslc sonic-devel openssl-devel
+  vulkan-headers spirv-headers glslc sonic-devel openssl-devel nodejs npm
+
+# Rust (stable, via rustup)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ```
 
 #### Arch / CachyOS
 
 ```bash
-sudo pacman -S base-devel cmake pkg-config \
+# Everything in one command. spirv-headers is required by llama.cpp's Vulkan
+# backend and is NOT pulled in by shaderc, so it must be listed explicitly.
+sudo pacman -S --needed base-devel cmake pkg-config \
   webkit2gtk-4.1 libappindicator-gtk3 librsvg alsa-lib \
-  vulkan-headers shaderc fuse2
+  vulkan-headers shaderc spirv-headers fuse2 rust nodejs npm
 ```
 
 #### Windows
@@ -164,14 +178,12 @@ If you'd rather install prerequisites yourself: [Visual Studio Build Tools](http
 #### macOS
 
 ```bash
+# Command Line Tools, then system libraries + Rust + Node via Homebrew
 xcode-select --install
-brew install cmake pkg-config opus
+brew install cmake pkg-config opus rust node
 ```
 
-#### All platforms
-
-- [Rust](https://rustup.rs/) (stable)
-- [Node.js](https://nodejs.org/) 22+
+> Prefer to manage Rust yourself? Skip `rust` above and use [rustup](https://rustup.rs/) instead.
 
 ### Dev setup
 
