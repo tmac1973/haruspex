@@ -4,9 +4,7 @@
 //! re-exported from `mod.rs` so the `lib.rs` invoke handler keeps using
 //! `proxy::proxy_image_search` / `proxy::proxy_fetch_url_images`.
 
-use super::bypass::apply_proxy;
-use super::config::FETCH_TIMEOUT;
-use super::extract::{strip_html_tags, validate_url, validating_redirect_policy, USER_AGENT};
+use super::extract::{strip_html_tags, validate_url, USER_AGENT};
 use super::ProxyConfig;
 use log::info;
 use scraper::{Html, Selector};
@@ -50,14 +48,7 @@ pub async fn proxy_fetch_url_images(
     validate_url(&url)?;
     info!("fetch_url_images: {}", url);
 
-    let client = apply_proxy(
-        reqwest::Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(validating_redirect_policy()),
-        proxy.as_ref(),
-    )?
-    .build()
-    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let client = super::extract::build_fetch_client(proxy.as_ref())?;
 
     let response = client
         .get(&url)
@@ -251,14 +242,7 @@ pub async fn proxy_image_search(
     let limit = max_results.unwrap_or(5).clamp(1, 20);
     info!("image_search (commons) q={:?} limit={}", query, limit);
 
-    let client = apply_proxy(
-        reqwest::Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(validating_redirect_policy()),
-        proxy.as_ref(),
-    )?
-    .build()
-    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let client = super::extract::build_fetch_client(proxy.as_ref())?;
 
     // Step 1: search for file titles in the File: namespace.
     let search_url = format!(

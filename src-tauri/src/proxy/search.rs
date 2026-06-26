@@ -30,6 +30,24 @@ fn classify_reqwest_err(e: reqwest::Error, context: &str) -> SearchFailure {
     }
 }
 
+/// Pass a response through unchanged on 2xx, else map it to a
+/// `SearchFailure::Http` tagged `"{label} error: {status}"`. The shared
+/// non-2xx form used by the scrape engines and SearXNG (DuckDuckGo and the
+/// Brave API word their status errors differently and stay bespoke).
+fn ensure_search_success(
+    resp: reqwest::Response,
+    label: &str,
+) -> Result<reqwest::Response, SearchFailure> {
+    if resp.status().is_success() {
+        Ok(resp)
+    } else {
+        Err(SearchFailure::new(
+            SearchFailureKind::Http,
+            format!("{} error: {}", label, resp.status()),
+        ))
+    }
+}
+
 // Shared result-collection skeletons (audit R-search). Engine quirks —
 // DDG's `uddg=` redirect decode, Mojeek's title-selector fallback, Brave's
 // link-text fallback — stay local to each engine's extraction closure.
@@ -256,12 +274,7 @@ async fn scrape_engine(
         .await
         .map_err(|e| classify_reqwest_err(e, &format!("{} search failed", label)))?;
 
-    if !resp.status().is_success() {
-        return Err(SearchFailure::new(
-            SearchFailureKind::Http,
-            format!("{} error: {}", label, resp.status()),
-        ));
-    }
+    let resp = ensure_search_success(resp, label)?;
 
     let html = resp
         .text()
@@ -897,12 +910,7 @@ pub(super) async fn search_searxng(
         .await
         .map_err(|e| classify_reqwest_err(e, "SearXNG search failed"))?;
 
-    if !resp.status().is_success() {
-        return Err(SearchFailure::new(
-            SearchFailureKind::Http,
-            format!("SearXNG error: {}", resp.status()),
-        ));
-    }
+    let resp = ensure_search_success(resp, "SearXNG")?;
 
     let data: serde_json::Value = resp.json().await.map_err(|e| {
         SearchFailure::new(
