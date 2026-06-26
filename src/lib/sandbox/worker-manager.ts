@@ -585,26 +585,25 @@ export class WorkerManager {
 		});
 	}
 
+	/** Post a `<kind>_response` envelope back to the worker for `msg`, guarding
+	 * against a torn-down worker. Shared by the host-bridge request handlers. */
+	private respondTo(
+		msg: { id: string; request_id: string },
+		kind: string,
+		resp: Record<string, unknown>
+	): void {
+		if (!this.worker) return;
+		this.worker.postMessage({ kind, id: msg.id, request_id: msg.request_id, ...resp });
+	}
+
 	private async handleSaveRequest(msg: {
 		id: string;
 		request_id: string;
 		filename: string;
 		content: Uint8Array | ArrayBuffer | string;
 	}): Promise<void> {
-		const respond = (resp: {
-			ok: boolean;
-			path?: string;
-			bytes?: number;
-			error?: string;
-		}): void => {
-			if (!this.worker) return;
-			this.worker.postMessage({
-				kind: 'save_response',
-				id: msg.id,
-				request_id: msg.request_id,
-				...resp
-			});
-		};
+		const respond = (resp: { ok: boolean; path?: string; bytes?: number; error?: string }): void =>
+			this.respondTo(msg, 'save_response', resp);
 		try {
 			let bytes: number[];
 			if (typeof msg.content === 'string') {
@@ -633,15 +632,8 @@ export class WorkerManager {
 		request_id: string;
 		filename: string;
 	}): Promise<void> {
-		const respond = (resp: { ok: boolean; path?: string; error?: string }): void => {
-			if (!this.worker) return;
-			this.worker.postMessage({
-				kind: 'delete_response',
-				id: msg.id,
-				request_id: msg.request_id,
-				...resp
-			});
-		};
+		const respond = (resp: { ok: boolean; path?: string; error?: string }): void =>
+			this.respondTo(msg, 'delete_response', resp);
 		try {
 			const result = await invoke<{ path: string }>('sandbox_delete_in_workdir', {
 				workdir: getWorkingDir(),
@@ -670,15 +662,7 @@ export class WorkerManager {
 			body: Uint8Array;
 			url: string;
 			error?: string;
-		}): void => {
-			if (!this.worker) return;
-			this.worker.postMessage({
-				kind: 'fetch_response',
-				id: msg.id,
-				request_id: msg.request_id,
-				...resp
-			});
-		};
+		}): void => this.respondTo(msg, 'fetch_response', resp);
 		try {
 			const bodyBytes = msg.init.body ? Array.from(msg.init.body) : undefined;
 			const proxy = getSettings().proxy;

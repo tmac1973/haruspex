@@ -938,6 +938,31 @@ function applyPendingInterruptBuffer(py: PyodideInterface): void {
 }
 
 /**
+ * Detach a possibly-Pyodide-owned value into a JS-owned `Uint8Array` or
+ * `string`, or `null` if it's neither. Pyodide auto-converts Python `bytes` to
+ * a `Uint8Array` that may view WASM memory — `postMessage` rejects those with
+ * DataCloneError — so we always copy into a fresh array; PyProxy values are
+ * unwrapped via `.toJs()`. Shared by the save and fetch bridges. (The image
+ * emit bridge keeps its own variant: it accepts only bytes and additionally
+ * coerces a `.toJs()` ArrayBuffer.)
+ */
+function coerceToOwnedBytes(value: unknown): Uint8Array | string | null {
+	if (typeof value === 'string') return value;
+	if (value instanceof Uint8Array) return new Uint8Array(value);
+	if (
+		value &&
+		typeof value === 'object' &&
+		'toJs' in value &&
+		typeof (value as { toJs: () => unknown }).toJs === 'function'
+	) {
+		const converted = (value as { toJs: () => unknown }).toJs();
+		if (converted instanceof Uint8Array) return new Uint8Array(converted);
+		if (typeof converted === 'string') return converted;
+	}
+	return null;
+}
+
+/**
  * Register the JS bridges Python calls into: image/HTML artifact emit,
  * proxied fetch, working-dir save/delete, and install-status reporting.
  * Each routes through the main thread via post()/the pending-request maps.
@@ -979,20 +1004,9 @@ function registerHostBridges(py: PyodideInterface): void {
 		(url: unknown, method: unknown, headers: unknown, body: unknown) => {
 			const requestId = crypto.randomUUID();
 			let bodyBytes: Uint8Array | undefined;
-			if (body == null) {
-				bodyBytes = undefined;
-			} else if (body instanceof Uint8Array) {
-				bodyBytes = new Uint8Array(body);
-			} else if (typeof body === 'string') {
-				bodyBytes = new TextEncoder().encode(body);
-			} else if (
-				typeof body === 'object' &&
-				body !== null &&
-				'toJs' in body &&
-				typeof (body as { toJs: () => unknown }).toJs === 'function'
-			) {
-				const c = (body as { toJs: () => unknown }).toJs();
-				if (c instanceof Uint8Array) bodyBytes = new Uint8Array(c);
+			if (body != null) {
+				const c = coerceToOwnedBytes(body);
+				if (c instanceof Uint8Array) bodyBytes = c;
 				else if (typeof c === 'string') bodyBytes = new TextEncoder().encode(c);
 			}
 			const headersObj: Record<string, string> = {};
@@ -1040,28 +1054,10 @@ function registerHostBridges(py: PyodideInterface): void {
 	});
 	py.globals.set('_haruspex_save', (filename: unknown, content: unknown) => {
 		const requestId = crypto.randomUUID();
-		let payload: Uint8Array | string;
-		if (typeof content === 'string') {
-			payload = content;
-		} else if (content instanceof Uint8Array) {
-			// Detach from any underlying WASM buffer so postMessage can
-			// structured-clone it (same fix as the artifact emit path).
-			payload = new Uint8Array(content);
-		} else if (
-			content &&
-			typeof content === 'object' &&
-			'toJs' in content &&
-			typeof (content as { toJs: () => unknown }).toJs === 'function'
-		) {
-			const converted = (content as { toJs: () => unknown }).toJs();
-			if (converted instanceof Uint8Array) {
-				payload = new Uint8Array(converted);
-			} else if (typeof converted === 'string') {
-				payload = converted;
-			} else {
-				return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
-			}
-		} else {
+		// Detaches Uint8Array/PyProxy bytes from any underlying WASM buffer so
+		// postMessage can structured-clone the payload.
+		const payload = coerceToOwnedBytes(content);
+		if (payload === null) {
 			return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
 		}
 		return new Promise<{ path: string; bytes: number }>((resolve, reject) => {
@@ -1449,13 +1445,21 @@ async function handleListGlobals(id: string): Promise<void> {
 	}
 }
 
+/** `done` envelope for a job that arrived before Pyodide finished loading. */
+function postNotLoaded(id: string): void {
+	post({ kind: 'done', id, result: emptyResult(0, 'Pyodide is not loaded') });
+}
+
+/** Map a thrown error to a `done` result, timed from `t0`. Shared catch body
+ * for the run/install handlers so a failure always becomes a `done`. */
+function postRunError(id: string, t0: number, err: unknown): void {
+	const message = err instanceof Error ? err.message : String(err);
+	post({ kind: 'done', id, result: emptyResult(Math.round(performance.now() - t0), message) });
+}
+
 async function handleRun(id: string, code: string): Promise<void> {
 	if (!pyodide) {
-		post({
-			kind: 'done',
-			id,
-			result: emptyResult(0, 'Pyodide is not loaded')
-		});
+		postNotLoaded(id);
 		return;
 	}
 	currentRunId = id;
@@ -1525,12 +1529,7 @@ async function handleRun(id: string, code: string): Promise<void> {
 		}
 		post({ kind: 'done', id, result });
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		post({
-			kind: 'done',
-			id,
-			result: emptyResult(Math.round(performance.now() - t0), message)
-		});
+		postRunError(id, t0, err);
 	} finally {
 		currentRunId = '';
 	}
@@ -1538,11 +1537,7 @@ async function handleRun(id: string, code: string): Promise<void> {
 
 async function handleInstall(id: string, packageName: string): Promise<void> {
 	if (!pyodide) {
-		post({
-			kind: 'done',
-			id,
-			result: emptyResult(0, 'Pyodide is not loaded')
-		});
+		postNotLoaded(id);
 		return;
 	}
 	const t0 = performance.now();
@@ -1560,12 +1555,7 @@ async function handleInstall(id: string, packageName: string): Promise<void> {
 		result.result = `installed ${packageName}`;
 		post({ kind: 'done', id, result });
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		post({
-			kind: 'done',
-			id,
-			result: emptyResult(Math.round(performance.now() - t0), message)
-		});
+		postRunError(id, t0, err);
 	} finally {
 		currentRunId = '';
 	}
