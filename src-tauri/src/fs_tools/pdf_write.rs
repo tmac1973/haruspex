@@ -4,14 +4,10 @@
 //! automatically and folds non-ASCII characters to ASCII so the built-in
 //! Helvetica font's WinAnsi encoding doesn't mojibake.
 
-use super::images::{load_markdown_images, LoadedImage};
+use super::images::LoadedImage;
 use super::markdown_inline::{
     ascii_fold_for_pdf, is_horizontal_rule, normalize_list_marker, parse_inline_markdown,
     preprocess_lines, runs_to_words, wrap_styled_words, DocumentBlock, ImageAlignment, InlineRun,
-};
-use super::path::{
-    refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
-    MAX_WRITE_BYTES,
 };
 use std::collections::HashMap;
 
@@ -501,27 +497,11 @@ pub async fn fs_write_pdf(
     content: String,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
-    let workdir = workdir_path_for_write(&workdir)?;
-    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
-
-    if content.len() > MAX_WRITE_BYTES {
-        return Err(format!("Content too large ({} bytes)", content.len()));
-    }
-
-    refuse_if_exists(&resolved, overwrite, &rel_path)?;
-
-    // Pre-load every `![alt](path)` image while we still have async runtime
-    // access. build_pdf itself does no I/O.
-    let images = load_markdown_images(&workdir, &content)?;
-
-    let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        let lines: Vec<&str> = content.lines().collect();
-        build_pdf(&lines, &images)
-    })
+    // PDF keeps blank lines: build_pdf treats them as paragraph breaks.
+    super::write_markdown_document(
+        workdir, rel_path, content, overwrite, "PDF", true, build_pdf,
+    )
     .await
-    .map_err(|e| format!("PDF build task failed: {}", e))??;
-
-    write_bytes_to_workdir(&resolved, &bytes).await
 }
 
 #[cfg(test)]

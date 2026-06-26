@@ -21,6 +21,59 @@ mod test_support;
 pub use path::resolve_in_workdir;
 pub use pdf_read::init_pdfium;
 
+use images::{load_markdown_images, LoadedImage};
+use path::{refuse_if_exists, workdir_path_for_write, write_bytes_to_workdir, MAX_WRITE_BYTES};
+use std::collections::HashMap;
+
+/// Shared command body for the markdown-text document writers (docx / odt /
+/// pdf). Resolves and guards the destination (write-size cap + overwrite
+/// refusal), pre-loads referenced `![](…)` images while the async runtime is
+/// available, then runs `build` on a blocking thread over the content lines —
+/// blank lines dropped unless `keep_blank_lines` — and writes the bytes.
+/// `format` names the build task in error messages.
+///
+/// The slide/sheet writers (pptx / odp / xlsx) don't share this: they take
+/// structured input rather than markdown text, use a different image loader,
+/// and carry their own "at least one slide/sheet" guards.
+pub(super) async fn write_markdown_document(
+    workdir: String,
+    rel_path: String,
+    content: String,
+    overwrite: Option<bool>,
+    format: &str,
+    keep_blank_lines: bool,
+    build: impl FnOnce(&[&str], &HashMap<String, LoadedImage>) -> Result<Vec<u8>, String>
+        + Send
+        + 'static,
+) -> Result<(), String> {
+    let workdir = workdir_path_for_write(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if content.len() > MAX_WRITE_BYTES {
+        return Err(format!("Content too large ({} bytes)", content.len()));
+    }
+
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
+
+    // Pre-load every `![alt](path)` image while we still have async runtime
+    // access; the build functions themselves do no I/O.
+    let images = load_markdown_images(&workdir, &content)?;
+
+    let format = format.to_string();
+    let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let lines: Vec<&str> = if keep_blank_lines {
+            content.lines().collect()
+        } else {
+            content.lines().filter(|l| !l.trim().is_empty()).collect()
+        };
+        build(&lines, &images)
+    })
+    .await
+    .map_err(|e| format!("{} build task failed: {}", format, e))??;
+
+    write_bytes_to_workdir(&resolved, &bytes).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::docx::build_docx;

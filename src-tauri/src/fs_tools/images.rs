@@ -5,6 +5,9 @@
 //! Everything that touches `LoadedImage` lives here so the doc-builder
 //! modules can stay focused on package layout rather than image I/O.
 
+use super::markdown_inline::{
+    escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
+};
 use super::path::{resolve_in_workdir, workdir_path};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use std::collections::{BTreeSet, HashMap};
@@ -136,6 +139,95 @@ pub(super) fn fit_image_emu(nat_w: u64, nat_h: u64, width_fraction: Option<f32>)
     .max(1);
     let h = (((nat_h as f64) * (w as f64) / (nat_w.max(1) as f64)) as u64).max(1);
     (w, h)
+}
+
+/// Each referenced image's natural size in EMU, keyed by the (borrowed) image
+/// path. Produced by [`prepare_doc_images`], consumed by [`render_doc_body`].
+pub(super) type NaturalEmu<'a> = HashMap<&'a String, (u64, u64)>;
+
+/// Pre-resolve the images a markdown-text document body references: build the
+/// [`ImageIndex`] (first-appearance media numbering) and decode each unique
+/// image's natural size in EMU. Shared by the DOCX and ODT builders so the two
+/// can't diverge on which lines count as images or how natural sizes are
+/// computed. Per-reference options (alignment, width%) are applied later in
+/// [`render_doc_body`].
+pub(super) fn prepare_doc_images<'a>(
+    paragraphs: &[&str],
+    images: &'a HashMap<String, LoadedImage>,
+) -> Result<(ImageIndex<'a>, NaturalEmu<'a>), String> {
+    let index = build_image_index(
+        paragraphs.iter().filter_map(|p| {
+            parse_standalone_image_line(p).and_then(|(path, _)| images.keys().find(|k| **k == path))
+        }),
+        images,
+    );
+    let mut natural_emu: NaturalEmu<'a> = HashMap::new();
+    for path in &index.ordered {
+        let img = images
+            .get(*path)
+            .ok_or_else(|| format!("Image {} missing from loaded map", path))?;
+        let (px_w, px_h) = image_pixel_dimensions(&img.bytes)?;
+        natural_emu.insert(*path, (px_to_emu(px_w), px_to_emu(px_h)));
+    }
+    Ok((index, natural_emu))
+}
+
+/// Format-specific paragraph emitters for [`render_doc_body`]. Each method
+/// returns the body XML for one classified line; the driver owns the shared
+/// classification (image vs heading vs plain) so DOCX and ODT can't drift.
+pub(super) trait DocBodyEmitter {
+    /// A standalone image paragraph. `w_emu`/`h_emu` are the fitted dimensions;
+    /// `seq` is a 1-based drawing counter (DOCX needs a unique `<wp:docPr>` id;
+    /// ODT ignores it and converts EMU→cm).
+    fn image(
+        &self,
+        idx: usize,
+        w_emu: u64,
+        h_emu: u64,
+        seq: u32,
+        ext: &str,
+        alignment: ImageAlignment,
+    ) -> String;
+    /// A heading paragraph at `level` (1–3) with already-XML-escaped text.
+    fn heading(&self, level: usize, escaped: &str) -> String;
+    /// A plain text paragraph with already-XML-escaped text.
+    fn text(&self, escaped: &str) -> String;
+}
+
+/// Walk a markdown-text document body, classifying each line as a standalone
+/// image, a heading, or plain text, and append the format-specific XML the
+/// `emit` callbacks produce to `body`. An image line whose path isn't in the
+/// loaded `index`/`images` falls through to plain text so a bad reference is
+/// visible rather than silently dropped.
+pub(super) fn render_doc_body(
+    body: &mut String,
+    paragraphs: &[&str],
+    images: &HashMap<String, LoadedImage>,
+    index: &ImageIndex<'_>,
+    natural_emu: &NaturalEmu<'_>,
+    emit: &dyn DocBodyEmitter,
+) {
+    let mut seq: u32 = 0;
+    for para in paragraphs {
+        if let Some((path, opts)) = parse_standalone_image_line(para) {
+            if let Some(&idx) = index.by_path.get(&path) {
+                let (nat_w, nat_h) = natural_emu[&path];
+                let (w_emu, h_emu) = fit_image_emu(nat_w, nat_h, opts.width_fraction);
+                seq += 1;
+                let ext = &images[&path].extension;
+                body.push_str(&emit.image(idx, w_emu, h_emu, seq, ext, opts.alignment));
+                continue;
+            }
+            // Referenced image not loaded — fall through to plain-text render
+            // so the user sees the markdown instead of a silent drop.
+        }
+        let (text, heading_level) = parse_heading(para);
+        let escaped = escape_xml(text);
+        match heading_level {
+            Some(level) => body.push_str(&emit.heading(level, &escaped)),
+            None => body.push_str(&emit.text(&escaped)),
+        }
+    }
 }
 
 /// Extract every `![alt](path)` image reference from a markdown-shaped
