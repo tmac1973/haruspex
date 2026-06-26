@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getSettings, updateSettings, isReasoningSupported } from '$lib/stores/settings';
+	import { clampInt } from '$lib/utils/clampInt';
 
 	let thinkingEnabled = $state(getSettings().thinkingEnabled);
 	// The active backend may report that its model has no reasoning mode (an
@@ -38,7 +39,7 @@
 	}
 
 	function setSandboxTimeout(seconds: number) {
-		const clamped = Math.max(5, Math.min(300, Math.round(seconds)));
+		const clamped = clampInt(seconds, 5, 300, Math.round);
 		sandboxTimeoutSeconds = clamped;
 		updateSettings({ sandboxTimeoutSeconds: clamped });
 	}

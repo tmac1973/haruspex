@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import { clampInt } from '$lib/utils/clampInt';
 
 	let shellBinary = $state(getSettings().shellBinary);
 	let shellHistoryTurnsForPrompt = $state(getSettings().shellHistoryTurnsForPrompt);
@@ -10,13 +11,13 @@
 	}
 
 	function persistHistoryTurns() {
-		const clamped = Math.max(0, Math.min(20, Math.floor(shellHistoryTurnsForPrompt)));
+		const clamped = clampInt(shellHistoryTurnsForPrompt, 0, 20);
 		shellHistoryTurnsForPrompt = clamped;
 		updateSettings({ shellHistoryTurnsForPrompt: clamped });
 	}
 
 	function persistMaxBytes() {
-		const clamped = Math.max(0, Math.min(1_048_576, Math.floor(shellMaxBytesPerCapture)));
+		const clamped = clampInt(shellMaxBytesPerCapture, 0, 1_048_576);
 		shellMaxBytesPerCapture = clamped;
 		updateSettings({ shellMaxBytesPerCapture: clamped });
 	}
@@ -34,7 +35,7 @@
 		updateSettings({ codeAutoApprove });
 	}
 	function persistCodeMaxIterations() {
-		const clamped = Math.max(5, Math.min(200, Math.floor(codeMaxIterations)));
+		const clamped = clampInt(codeMaxIterations, 5, 200);
 		codeMaxIterations = clamped;
 		updateSettings({ codeMaxIterations: clamped });
 	}
@@ -42,7 +43,7 @@
 		updateSettings({ codeCommandExec });
 	}
 	function persistCodeTimeout() {
-		const clamped = Math.max(5, Math.min(1800, Math.floor(codeRunCommandTimeoutSecs)));
+		const clamped = clampInt(codeRunCommandTimeoutSecs, 5, 1800);
 		codeRunCommandTimeoutSecs = clamped;
 		updateSettings({ codeRunCommandTimeoutSecs: clamped });
 	}
