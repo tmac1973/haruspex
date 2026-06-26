@@ -103,8 +103,7 @@ pub(super) fn build_odt(
         //    Each embedded image needs its own file-entry, and so does the
         //    Pictures/ directory entry that LibreOffice expects when any
         //    Pictures/* file is present.
-        let mut manifest =
-            super::odf::manifest_prologue("application/vnd.oasis.opendocument.text");
+        let mut manifest = super::odf::manifest_prologue("application/vnd.oasis.opendocument.text");
         if !index.ordered.is_empty() {
             manifest.push_str(
                 r#"<manifest:file-entry manifest:full-path="Pictures/" manifest:media-type=""/>
