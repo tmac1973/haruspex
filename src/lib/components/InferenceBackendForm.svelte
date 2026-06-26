@@ -12,32 +12,8 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { untrack } from 'svelte';
-	import type {
-		InferenceBackendConfig,
-		InferenceBackendKind,
-		RemoteReasoningCaps,
-		RemoteSamplingCaps
-	} from '$lib/stores/settings';
-
-	interface NormalizedModel {
-		id: string;
-		display_name: string;
-		context_size: number | null;
-		vision_supported: boolean | null;
-		loaded: boolean | null;
-		// llama-toolchest only — null for every other backend.
-		parallel: number | null;
-		reasoning: RemoteReasoningCaps | null;
-		sampling: RemoteSamplingCaps | null;
-	}
-
-	interface ProbeResult {
-		base_url: string;
-		kind: InferenceBackendKind;
-		models: NormalizedModel[];
-		default_context_size: number | null;
-		notes: string;
-	}
+	import type { InferenceBackendConfig, InferenceBackendKind } from '$lib/stores/settings';
+	import { pickProbedModel, type NormalizedModel, type ProbeResult } from '$lib/inferenceProbe';
 
 	interface Props {
 		config: InferenceBackendConfig;
@@ -181,9 +157,7 @@
 			// model: prefer the current selection if it's still in the
 			// list, otherwise take the first loaded model, otherwise the
 			// first model overall.
-			const existing = result.models.find((m) => m.id === modelId);
-			const firstLoaded = result.models.find((m) => m.loaded === true);
-			const pick = existing ?? firstLoaded ?? result.models[0];
+			const pick = pickProbedModel(result.models, modelId);
 			if (pick) {
 				modelId = pick.id;
 			}
