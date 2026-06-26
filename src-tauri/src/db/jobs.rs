@@ -1,6 +1,33 @@
 use super::*;
 use rusqlite::params;
 
+/// The `SELECT` column list backing every `JobSummary` query — kept in one
+/// place so `list_jobs` and `list_due_jobs` (which differ only in WHERE/ORDER
+/// BY) can't drift on column order, and so [`row_to_job_summary`]'s indices
+/// stay valid.
+const JOB_SUMMARY_COLS: &str = "j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
+                        j.job_type, j.schedule_kind, j.schedule_config, j.next_due_at,
+                        j.created_at, j.updated_at,
+                        (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count";
+
+/// Decode one row of a [`JOB_SUMMARY_COLS`] query into a [`JobSummary`].
+fn row_to_job_summary(row: &rusqlite::Row) -> rusqlite::Result<JobSummary> {
+    Ok(JobSummary {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        description: row.get(2)?,
+        working_dir: row.get(3)?,
+        auto_approve_tools: row.get::<_, i64>(4)? != 0,
+        job_type: row.get(5)?,
+        schedule_kind: row.get(6)?,
+        schedule_config: row.get(7)?,
+        next_due_at: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+        step_count: row.get(11)?,
+    })
+}
+
 impl Database {
     pub fn create_job(&self, input: &JobInput) -> Result<i64, String> {
         let conn = self.conn();
@@ -46,33 +73,15 @@ impl Database {
     pub fn list_jobs(&self) -> Result<Vec<JobSummary>, String> {
         let conn = self.conn();
         let mut stmt = conn
-            .prepare(
-                "SELECT j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
-                        j.job_type, j.schedule_kind, j.schedule_config, j.next_due_at,
-                        j.created_at, j.updated_at,
-                        (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count
+            .prepare(&format!(
+                "SELECT {JOB_SUMMARY_COLS}
                  FROM jobs j
-                 ORDER BY j.updated_at DESC",
-            )
+                 ORDER BY j.updated_at DESC"
+            ))
             .map_err(|e| format!("Jobs query failed: {}", e))?;
 
         let rows = stmt
-            .query_map([], |row| {
-                Ok(JobSummary {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    working_dir: row.get(3)?,
-                    auto_approve_tools: row.get::<_, i64>(4)? != 0,
-                    job_type: row.get(5)?,
-                    schedule_kind: row.get(6)?,
-                    schedule_config: row.get(7)?,
-                    next_due_at: row.get(8)?,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
-                    step_count: row.get(11)?,
-                })
-            })
+            .query_map([], row_to_job_summary)
             .map_err(|e| format!("Jobs query failed: {}", e))?;
 
         let mut jobs = Vec::new();
@@ -269,36 +278,18 @@ impl Database {
     pub fn list_due_jobs(&self, now_ms: i64) -> Result<Vec<JobSummary>, String> {
         let conn = self.conn();
         let mut stmt = conn
-            .prepare(
-                "SELECT j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
-                        j.job_type, j.schedule_kind, j.schedule_config, j.next_due_at,
-                        j.created_at, j.updated_at,
-                        (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count
+            .prepare(&format!(
+                "SELECT {JOB_SUMMARY_COLS}
                  FROM jobs j
                  WHERE j.schedule_kind != 'manual'
                    AND j.next_due_at IS NOT NULL
                    AND j.next_due_at <= ?1
-                 ORDER BY j.next_due_at ASC",
-            )
+                 ORDER BY j.next_due_at ASC"
+            ))
             .map_err(|e| format!("Due jobs query failed: {}", e))?;
 
         let rows = stmt
-            .query_map(params![now_ms], |row| {
-                Ok(JobSummary {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    working_dir: row.get(3)?,
-                    auto_approve_tools: row.get::<_, i64>(4)? != 0,
-                    job_type: row.get(5)?,
-                    schedule_kind: row.get(6)?,
-                    schedule_config: row.get(7)?,
-                    next_due_at: row.get(8)?,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
-                    step_count: row.get(11)?,
-                })
-            })
+            .query_map(params![now_ms], row_to_job_summary)
             .map_err(|e| format!("Due jobs query failed: {}", e))?;
 
         rows.collect::<Result<Vec<_>, _>>()
