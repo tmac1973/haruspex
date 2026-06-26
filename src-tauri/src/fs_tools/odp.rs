@@ -45,15 +45,8 @@ pub(super) fn build_odp(
 
         // 2) manifest.xml — enumerates every file in the package
         //    (core parts + one Pictures/ entry per image).
-        let mut manifest = String::from(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
-<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
-<manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="application/vnd.oasis.opendocument.presentation"/>
-<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
-<manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
-<manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
-"#,
-        );
+        let mut manifest =
+            super::odf::manifest_prologue("application/vnd.oasis.opendocument.presentation");
         for (i, path) in ordered_image_paths.iter().enumerate() {
             let img = images
                 .get(*path)

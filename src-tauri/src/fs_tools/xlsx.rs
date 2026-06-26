@@ -45,16 +45,13 @@ pub(super) fn build_ods(sheets: &[XlsxSheet]) -> Result<Vec<u8>, String> {
 
         zip.start_file("META-INF/manifest.xml", deflated)
             .map_err(|e| e.to_string())?;
-        zip.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
-<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
-<manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>
-<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
-<manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
-<manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
-</manifest:manifest>"#,
-        )
-        .map_err(|e| e.to_string())?;
+        // ODS has no embedded images, so the prologue + close is the whole file.
+        let manifest = format!(
+            "{}</manifest:manifest>",
+            super::odf::manifest_prologue("application/vnd.oasis.opendocument.spreadsheet")
+        );
+        zip.write_all(manifest.as_bytes())
+            .map_err(|e| e.to_string())?;
 
         zip.start_file("meta.xml", deflated)
             .map_err(|e| e.to_string())?;

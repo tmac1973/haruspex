@@ -11,6 +11,22 @@ pub(super) const ODF_META_XML: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?
 <office:meta><meta:generator>Haruspex</meta:generator></office:meta>
 </office:document-meta>"#;
 
+/// The opening of an ODF `META-INF/manifest.xml`: the `<manifest:manifest>`
+/// element plus the four fixed file-entries (root `/`, content.xml, styles.xml,
+/// meta.xml). `root_mime` is the document's media type. Callers append any
+/// image `file-entry` rows and the closing `</manifest:manifest>`.
+pub(super) fn manifest_prologue(root_mime: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
+<manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="{root_mime}"/>
+<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+<manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
+<manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
+"#
+    )
+}
+
 /// The two compression options every ODF writer uses: `Stored` for the
 /// leading `mimetype` entry (ODF requires it uncompressed) and `Deflated`
 /// for everything else.
