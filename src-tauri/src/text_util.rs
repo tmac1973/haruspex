@@ -15,6 +15,39 @@ pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
+/// Collapse every run of whitespace in `chars` to a single space and trim the
+/// ends; all other characters pass through unchanged. Useful for flattening
+/// tag-boundary or layout whitespace into inline text.
+pub fn collapse_whitespace(chars: impl Iterator<Item = char>) -> String {
+    let mut out = String::new();
+    let mut last_was_space = true;
+    for ch in chars {
+        if ch.is_whitespace() {
+            if !last_was_space {
+                out.push(' ');
+                last_was_space = true;
+            }
+        } else {
+            out.push(ch);
+            last_was_space = false;
+        }
+    }
+    out.trim().to_string()
+}
+
+/// If `s` has more than `max_chars` characters, keep the first `max_chars` and
+/// append `marker`; otherwise return `s` unchanged (no allocation). Counts and
+/// cuts on `char` boundaries so multibyte text is never split mid-codepoint.
+pub fn truncate_chars(s: String, max_chars: usize, marker: &str) -> String {
+    if s.chars().count() > max_chars {
+        let mut out: String = s.chars().take(max_chars).collect();
+        out.push_str(marker);
+        out
+    } else {
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

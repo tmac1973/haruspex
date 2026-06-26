@@ -46,6 +46,44 @@ impl ShellManager {
         self.next_id.fetch_add(1, Ordering::Relaxed) + 1
     }
 
+    /// Allocate an id, resolve the spawn target, start a `Session`, register it,
+    /// and return the spawn result. Shared by `shell_spawn` and `shell_restart`
+    /// (which only differs by first dropping the old session) so the 9-arg
+    /// `Session::spawn` call lives in one place.
+    fn spawn_session(
+        &self,
+        app: AppHandle,
+        cols: u16,
+        rows: u16,
+        shell_override: Option<String>,
+        selection: Option<kind::ShellSelection>,
+    ) -> Result<ShellSpawnResult, String> {
+        let id = self.alloc_id();
+        let (program, base_args, wsl_distro) = resolve_spawn_target(selection, shell_override);
+        let cwd = pty::resolve_cwd();
+        let integration_dir = integration_dir(&app);
+        let session = Session::spawn(
+            app,
+            id,
+            &program,
+            &cwd,
+            integration_dir.as_deref(),
+            &base_args,
+            wsl_distro.as_deref(),
+            cols,
+            rows,
+        )?;
+        let context = session.context.clone();
+        self.sessions
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(id, session);
+        Ok(ShellSpawnResult {
+            session_id: id,
+            context,
+        })
+    }
+
     pub fn shutdown_all(&self) {
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.clear();
@@ -130,31 +168,7 @@ pub fn shell_spawn(
     shell_override: Option<String>,
     selection: Option<kind::ShellSelection>,
 ) -> Result<ShellSpawnResult, String> {
-    let id = state.alloc_id();
-    let (program, base_args, wsl_distro) = resolve_spawn_target(selection, shell_override);
-    let cwd = pty::resolve_cwd();
-    let integration_dir = integration_dir(&app);
-    let session = Session::spawn(
-        app,
-        id,
-        &program,
-        &cwd,
-        integration_dir.as_deref(),
-        &base_args,
-        wsl_distro.as_deref(),
-        cols,
-        rows,
-    )?;
-    let context = session.context.clone();
-    state
-        .sessions
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(id, session);
-    Ok(ShellSpawnResult {
-        session_id: id,
-        context,
-    })
+    state.spawn_session(app, cols, rows, shell_override, selection)
 }
 
 #[tauri::command]
@@ -230,31 +244,7 @@ pub fn shell_restart(
         let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
         sessions.remove(&session_id);
     }
-    let new_id = state.alloc_id();
-    let (program, base_args, wsl_distro) = resolve_spawn_target(selection, shell_override);
-    let cwd = pty::resolve_cwd();
-    let integration_dir = integration_dir(&app);
-    let session = Session::spawn(
-        app,
-        new_id,
-        &program,
-        &cwd,
-        integration_dir.as_deref(),
-        &base_args,
-        wsl_distro.as_deref(),
-        cols,
-        rows,
-    )?;
-    let context = session.context.clone();
-    state
-        .sessions
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(new_id, session);
-    Ok(ShellSpawnResult {
-        session_id: new_id,
-        context,
-    })
+    state.spawn_session(app, cols, rows, shell_override, selection)
 }
 
 #[derive(Serialize, ts_rs::TS)]

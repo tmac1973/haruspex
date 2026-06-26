@@ -113,24 +113,8 @@ fn clean(text: &str) -> String {
 /// of whitespace, cap to SNIPPET_LEN chars with an ellipsis suffix
 /// if we had to cut it.
 fn make_snippet(body: &str) -> String {
-    let mut out = String::with_capacity(SNIPPET_LEN + 1);
-    let mut last_was_space = true;
-    for ch in body.chars() {
-        if out.chars().count() >= SNIPPET_LEN {
-            out.push('…');
-            break;
-        }
-        if ch.is_whitespace() {
-            if !last_was_space {
-                out.push(' ');
-                last_was_space = true;
-            }
-        } else {
-            out.push(ch);
-            last_was_space = false;
-        }
-    }
-    out.trim().to_string()
+    let collapsed = crate::text_util::collapse_whitespace(body.chars());
+    crate::text_util::truncate_chars(collapsed, SNIPPET_LEN, "…")
 }
 
 /// Very small HTML → plaintext fallback used only when a message has
@@ -146,20 +130,7 @@ fn html_to_plain(html: &str) -> String {
     let root = doc.root_element();
     let text: String = root.text().collect::<Vec<_>>().join(" ");
     // Collapse runs of whitespace introduced by tag boundaries.
-    let mut out = String::with_capacity(text.len());
-    let mut last_was_space = true;
-    for ch in text.chars() {
-        if ch.is_whitespace() {
-            if !last_was_space {
-                out.push(' ');
-                last_was_space = true;
-            }
-        } else {
-            out.push(ch);
-            last_was_space = false;
-        }
-    }
-    out.trim().to_string()
+    crate::text_util::collapse_whitespace(text.chars())
 }
 
 /// Best-effort quoted-reply stripper. Drops everything at or after a
@@ -233,19 +204,11 @@ pub fn parse_rfc5322(
 
     // Truncate absurdly long bodies so a single message can't blow
     // the sub-agent's input budget.
-    if body.chars().count() > MAX_BODY_CHARS {
-        let mut tail_idx = 0usize;
-        for (n, (i, _)) in body.char_indices().enumerate() {
-            if n == MAX_BODY_CHARS {
-                tail_idx = i;
-                break;
-            }
-        }
-        if tail_idx > 0 {
-            body.truncate(tail_idx);
-            body.push_str("\n\n[truncated — message body exceeded the ingest cap]");
-        }
-    }
+    body = crate::text_util::truncate_chars(
+        body,
+        MAX_BODY_CHARS,
+        "\n\n[truncated — message body exceeded the ingest cap]",
+    );
 
     // Attachment detection: any non-text part counts.
     let has_attachments = parsed.parts.iter().any(|p| {
