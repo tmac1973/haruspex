@@ -125,6 +125,7 @@ pub fn run() {
             inference_queue::inference_acquire,
             inference_queue::inference_cancel,
             inference_queue::inference_release,
+            inference_queue::inference_release_window,
             inference_queue::inference_heartbeat,
             inference_queue::inference_queue_snapshot,
             audio::start_recording,

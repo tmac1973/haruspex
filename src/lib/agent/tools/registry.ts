@@ -172,6 +172,19 @@ export async function executeTool(
 		return toolResult(toolError(`Unknown tool: ${name}${hint ? `. Did you mean ${hint}?` : ''}`));
 	}
 
+	// Hard gate on the sandbox master switch — enforced HERE, not just by
+	// filtering sandbox tools out of the schema in getToolSchemas(). A small
+	// model can still emit a `run_python` call it was never offered (a
+	// training-prior hallucination), and this function resolves the name
+	// against the FULL registry, so schema filtering alone doesn't actually
+	// stop execution. Without this check, disabling the sandbox in Settings
+	// fails to prevent code from running.
+	if (reg.category === 'sandbox' && !getSettings().sandboxEnabled) {
+		return toolResult(
+			toolError('Python sandbox is disabled. Enable it in Settings → Agent to run code.')
+		);
+	}
+
 	// Guard: fs/exec tools require a working directory in Chat/Code mode. In
 	// Shell mode the absolute-path variants are dispatched instead, so
 	// workingDir is allowed to be null.

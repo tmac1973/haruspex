@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ToolResult } from '$lib/sandbox/sandbox';
+import { updateSettings } from '$lib/stores/settings';
 
 const mocks = vi.hoisted(() => ({
 	runPython: vi.fn(),
@@ -52,6 +53,22 @@ describe('sandbox tools', () => {
 		mocks.resetSandbox.mockReset();
 		mocks.askApproval.mockReset();
 		mocks.askApproval.mockResolvedValue('allow_chat');
+		// executeTool hard-gates sandbox tools on this switch (see registry.ts),
+		// so the execution/formatting cases below need it on. The schema-filter
+		// cases at the bottom toggle it themselves.
+		updateSettings({ sandboxEnabled: true });
+	});
+
+	afterEach(() => {
+		updateSettings({ sandboxEnabled: false });
+	});
+
+	it('refuses run_python and skips runPython when the sandbox is disabled', async () => {
+		updateSettings({ sandboxEnabled: false });
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await executeTool('run_python', { code: '1+1' }, ctx);
+		expect(JSON.parse(out.result).error).toMatch(/sandbox is disabled/i);
+		expect(mocks.runPython).not.toHaveBeenCalled();
 	});
 
 	it('routes run_python to runPython and formats stdout + result', async () => {
