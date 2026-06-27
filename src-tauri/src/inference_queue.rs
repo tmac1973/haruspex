@@ -365,6 +365,23 @@ pub fn inference_release(app: AppHandle, state: tauri::State<'_, InferenceQueue>
     }
 }
 
+/// Reclaim every ticket attributed to `window_label`. Called by the frontend
+/// on startup so a renderer that crashed/reloaded (which destroys the JS
+/// context WITHOUT firing the OS window-destroyed listener) doesn't leave a
+/// phantom "running" ticket blocking the single slot until the lease expires.
+/// A freshly loaded renderer owns no in-flight turns, so dropping all of its
+/// window's tickets is always safe.
+#[tauri::command]
+pub fn inference_release_window(
+    app: AppHandle,
+    state: tauri::State<'_, InferenceQueue>,
+    window_label: String,
+) {
+    if state.release_window(&window_label) {
+        state.emit_snapshot(&app);
+    }
+}
+
 #[tauri::command]
 pub fn inference_heartbeat(state: tauri::State<'_, InferenceQueue>, req_id: String) {
     state.heartbeat(&req_id);

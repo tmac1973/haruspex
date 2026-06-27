@@ -10,6 +10,7 @@
 	import SettingsPanel from '$lib/components/settings/SettingsPanel.svelte';
 	import StartupNoticeDialog from '$lib/components/StartupNoticeDialog.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
+	import { reclaimOwnWindowSlots } from '$lib/agent/inferenceQueue.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
 	import { startScheduler } from '$lib/agent/jobs/scheduler.svelte';
 	import {
@@ -76,6 +77,11 @@
 
 	onMount(async () => {
 		applyTheme();
+		// Self-heal a stuck inference slot left by a previous renderer lifetime
+		// (a webview crash/reload doesn't fire the OS window-destroyed cleanup,
+		// so the Rust queue can hold a phantom "running" ticket). Runs for every
+		// window — including detached shells — before the bootstrap early-return.
+		void reclaimOwnWindowSlots();
 		if (page.route.id === '/shell/[id]') return;
 		initServerStore();
 		initChatStore();

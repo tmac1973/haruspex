@@ -123,6 +123,26 @@ function ensureSnapshotListener(): void {
 		.catch(() => {});
 }
 
+/**
+ * Reclaim any inference tickets the Rust queue still attributes to THIS
+ * window from a previous renderer lifetime. A renderer crash or reload
+ * (e.g. a webview blow-up while rendering a huge artifact) destroys the JS
+ * context without firing the OS window-destroyed listener, so neither the
+ * `inference_release` in withInferenceSlot's `finally` nor the primary
+ * window-cleanup path runs — leaving a phantom "running" ticket that blocks
+ * every new turn until the 5-min lease sweeper reclaims it. A freshly loaded
+ * renderer owns no in-flight turns, so dropping all of its window's tickets
+ * on startup is always safe and restores inference immediately. Call once
+ * from app bootstrap.
+ */
+export async function reclaimOwnWindowSlots(): Promise<void> {
+	try {
+		await invoke('inference_release_window', { windowLabel: getWindowLabel() });
+	} catch {
+		// Non-Tauri context (tests / dev browser) — nothing to reclaim.
+	}
+}
+
 export function getQueueSnapshot(): InferenceTicket[] {
 	return snapshot;
 }

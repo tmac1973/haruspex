@@ -110,6 +110,22 @@
 		event.stopPropagation();
 		copyAction.copy(stepId, text);
 	}
+
+	// Upper bound on artifact HTML we'll inject into the DOM (srcdoc iframe or
+	// {@html}). A normal interactive plot is a few MB (the bundled plotly.js +
+	// data); a runaway figure embedding a large dataset can balloon past what
+	// WebKitGTK will parse, blanking the whole webview ("white screen") with no
+	// way to recover. Beyond this cap we show a placeholder instead of crashing.
+	const MAX_ARTIFACT_HTML_BYTES = 16 * 1024 * 1024;
+
+	function artifactTooLarge(html: string | undefined): boolean {
+		return typeof html === 'string' && html.length > MAX_ARTIFACT_HTML_BYTES;
+	}
+
+	function artifactSizeLabel(html: string | undefined): string {
+		const mb = (html?.length ?? 0) / (1024 * 1024);
+		return `${mb.toFixed(1)} MB`;
+	}
 </script>
 
 {#if steps.length > 0}
@@ -241,6 +257,16 @@
 								title="Click to enlarge"
 								onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
 							/>
+						{:else if artifactTooLarge(artifact.html)}
+							<!--
+								Refuse to inject an oversized artifact: parsing it in WebKitGTK
+								can blank the entire webview with no recovery. Show a placeholder
+								instead so the chat stays alive.
+							-->
+							<div class="artifact-toolarge">
+								⚠ Plot too large to display ({artifactSizeLabel(artifact.html)}). Ask for a smaller
+								figure (fewer points, or save it to a file instead of rendering inline).
+							</div>
 						{:else if artifact.interactive}
 							<!--
 								Interactive HTML (plotly / bokeh / altair / folium output) renders
@@ -515,6 +541,16 @@
 		font-size: 0.8em;
 		color: var(--text-muted, #888);
 		margin-bottom: 4px;
+	}
+
+	.artifact-toolarge {
+		border: 1px solid var(--error-border, #c97);
+		border-radius: 6px;
+		padding: 10px 12px;
+		font-size: 0.82rem;
+		line-height: 1.4;
+		color: var(--error-text, #c97);
+		background: var(--error-bg, rgba(204, 153, 119, 0.08));
 	}
 
 	.spinner {

@@ -326,6 +326,20 @@ export async function rerunSandboxStep(stepId: string): Promise<void> {
 	if (!step || step.toolName !== 'run_python') return;
 	const code = step.args?.code;
 	if (typeof code !== 'string' || !code.trim()) return;
+	// This path runs Python directly (not via executeTool), so it has to
+	// honor the sandbox master switch itself — otherwise "Run again" would
+	// execute code after the user has disabled the sandbox in Settings.
+	if (!getSettings().sandboxEnabled) {
+		conv.searchSteps = conv.searchSteps.map((s) =>
+			s.id === stepId
+				? {
+						...s,
+						result: 'Python sandbox is disabled. Enable it in Settings → Agent to run code.'
+					}
+				: s
+		);
+		return;
+	}
 	// Flip to running; clear prior result/artifacts so the UI shows the
 	// spinner immediately.
 	conv.searchSteps = conv.searchSteps.map((s) =>
