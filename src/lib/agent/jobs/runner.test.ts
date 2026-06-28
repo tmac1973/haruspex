@@ -9,11 +9,16 @@ const mocks = vi.hoisted(() => ({
 	markRunStarted: vi.fn(),
 	markRunFinished: vi.fn(),
 	markRunStepStarted: vi.fn(),
-	markRunStepFinished: vi.fn()
+	markRunStepFinished: vi.fn(),
+	askUserQuestion: vi.fn()
 }));
 
 vi.mock('$lib/agent/runEphemeralTurn', () => ({
 	runEphemeralTurn: mocks.runEphemeralTurn
+}));
+
+vi.mock('$lib/stores/userQuestion.svelte', () => ({
+	askUserQuestion: mocks.askUserQuestion
 }));
 
 vi.mock('$lib/stores/jobs.svelte', () => ({
@@ -106,6 +111,8 @@ beforeEach(() => {
 	mocks.markRunFinished.mockReset().mockResolvedValue(undefined);
 	mocks.markRunStepStarted.mockReset().mockResolvedValue(undefined);
 	mocks.markRunStepFinished.mockReset().mockResolvedValue(undefined);
+	// Default: the guided_planning review checkpoint is approved immediately.
+	mocks.askUserQuestion.mockReset().mockResolvedValue({ kind: 'selected', labels: ['Approve'] });
 	// Default: createJobRun assigns sequential ids starting at 100 so the
 	// runner-issued ids never collide with the test's job ids (which start
 	// at 1) — easier to spot a "did the runner use the persisted id?" bug.
@@ -163,6 +170,7 @@ describe('jobs runner — guards', () => {
 		const runId = await enqueue(1);
 		expect(runId).not.toBeNull();
 		await tick();
+		await tick();
 
 		expect(getCurrentRun()?.status).toBe('succeeded');
 		const opts = mocks.runEphemeralTurn.mock.calls[0][0];
@@ -172,6 +180,8 @@ describe('jobs runner — guards', () => {
 		expect(opts.systemPrompt).toContain('plan/x/');
 		expect([...opts.toolAllowlist]).toContain('ask_user_question');
 		expect([...opts.toolAllowlist]).not.toContain('run_command');
+		// The overview review checkpoint was reached and approved.
+		expect(mocks.askUserQuestion).toHaveBeenCalled();
 	});
 
 	it('threads a per-job remote model override (backend + larger context) into the turn', async () => {

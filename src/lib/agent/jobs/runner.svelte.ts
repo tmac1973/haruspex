@@ -40,6 +40,7 @@ import type { BackendOverride } from '$lib/api';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps } from '$lib/stores/jobs.svelte';
+import { askUserQuestion } from '$lib/stores/userQuestion.svelte';
 import { getActiveContextSize, isVisionSupported } from '$lib/stores/settings';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { errMessage } from '$lib/utils/error';
@@ -605,48 +606,69 @@ function guidedPlanOutputDir(job: JobWithSteps): string {
 }
 
 /**
- * Phase 05 scaffolding prompt. Proves the interactive plumbing end to end — one
- * question + one markdown write into the output folder — so the runner, the
- * allowlist, the interactive question modal, and the plan-folder write all work
- * together. Phases 06/07 replace this with the real overview and planning
- * stages (exhaustive Q&A, review checkpoints, the verifier loop, phase files).
+ * Stage 1 (overview) system prompt: exhaustive, one-at-a-time, codebase-grounded
+ * questioning via the question tool, then write overview.md from a fixed
+ * template with a Decisions appendix. Planning only.
  */
-function guidedPlanningScaffoldPrompt(outDir: string): string {
+function overviewStagePrompt(outDir: string, overviewPath: string): string {
 	return [
-		'You are running an interactive guided-planning session: turning the user’s',
-		'idea into a written project overview and plan. Planning only — never write',
-		'or edit code.',
+		'You are running an interactive guided-planning session. This is STAGE 1 of',
+		'2: produce a project OVERVIEW. Planning only — never write or edit code.',
 		'',
-		'CRITICAL — HOW TO ASK THE USER ANYTHING:',
-		'The ONLY way to ask the user a question is to CALL the `ask_user_question`',
-		'tool. The user is not reading your text and CANNOT answer prose. If you write',
-		'a question — or list options — as text, it is discarded and the session',
-		'stalls. Every question you ask MUST be an `ask_user_question` tool call with',
-		'a `question` string and an `options` array of `{label, description}`. Never',
-		'put a question or its options in a normal message.',
+		'HOW TO ASK THE USER ANYTHING (critical):',
+		'The ONLY way to ask the user is to CALL the `ask_user_question` tool with a',
+		'`question` string and an `options` array of {label, description}. The user',
+		'cannot answer prose — if you write a question, or its options, as text it is',
+		'discarded and the session stalls. Ask EXACTLY ONE question per tool call.',
 		'',
-		'Do this now, in order:',
-		'1. Optionally read a few relevant files to ground yourself (fs_list_dir,',
-		'   fs_read_text).',
-		'2. CALL `ask_user_question` exactly once to confirm the single most important',
-		'   scope decision. Give 2–4 concise options; the user can also type their own.',
-		'   Do NOT write the question as text — call the tool.',
-		'3. After the tool returns the user’s answer, write a short stub overview to',
-		`   \`${outDir}overview.md\` with fs_write_text: a title, a one-paragraph`,
-		`   problem statement, and the confirmed decision. Write ONLY inside \`${outDir}\`.`,
-		'4. Then send a one-line summary of what you wrote, and stop.',
+		'Process:',
+		'1. If this is an existing project, briefly ground yourself in the working',
+		'   directory (fs_list_dir, fs_read_text, code_grep) so your questions and',
+		'   the overview fit the real code.',
+		'2. Interview the user ONE question at a time with `ask_user_question`,',
+		'   resolving every decision needed for a complete overview: the problem,',
+		'   goals, non-goals, the primary user flow, key constraints, and success',
+		'   criteria. Offer 2–4 concrete options each time (the user can also type',
+		'   their own answer). Keep going until the overview is fully specified. If',
+		'   the user answers "proceed", "that\'s enough", or similar, stop asking',
+		'   immediately and write the overview from what you have.',
+		`3. Write the overview to \`${overviewPath}\` with fs_write_text, using these`,
+		'   sections exactly: a top "# <Project> — Project Overview" heading, then',
+		'   ## Problem, ## Goals, ## Non-goals, ## Users & primary flow,',
+		'   ## Constraints, ## Success criteria, and finally ## Decisions — a list of',
+		'   each question you asked and the answer the user chose. Write ONLY inside',
+		`   \`${outDir}\` — never elsewhere, never code.`,
+		'4. Send a one-line summary naming the file you wrote, then stop. Do NOT start',
+		'   the implementation plan — that is stage 2, after the user reviews this.'
+	].join('\n');
+}
+
+/** Revise the already-written overview per the user's request (checkpoint loop). */
+function overviewRevisePrompt(outDir: string, overviewPath: string): string {
+	return [
+		'You are revising the project overview you already wrote. Planning only —',
+		'never write or edit code.',
 		'',
-		'Do not skip step 2, and never ask a question as plain text.'
+		`1. Read the current overview with fs_read_text from \`${overviewPath}\`.`,
+		'2. Apply the change the user asked for (in the user message). Keep the rest',
+		'   of the overview intact, and keep the same section structure.',
+		`3. Write the updated overview back to \`${overviewPath}\` with fs_write_text.`,
+		`   Write ONLY inside \`${outDir}\`.`,
+		'4. Send a one-line summary of what you changed, then stop.',
+		'If you must clarify the request, ask ONE question with the `ask_user_question`',
+		'tool — never as plain text.'
 	].join('\n');
 }
 
 /**
- * Guided-planning run (Phase 05 scaffolding). Drives a single interactive agent
- * turn: codebase-grounded, gated to the guided-planning toolset, with the
- * question modal live (interactive). Phases 06/07 expand this into the staged
- * overview → checkpoint → planning → verify → phase-files flow with milestone
- * persistence and needs-input/resume (which require the per-stage milestones to
- * be meaningful, so they land with the stages).
+ * Guided-planning run — Stage 1 (overview). Drives a codebase-grounded,
+ * interactive overview interview, writes overview.md, then runs the review
+ * checkpoint: the user approves, types a revision (which drives a revise turn),
+ * or signals they edited the file by hand (re-read and re-ask). Loops until
+ * approved.
+ *
+ * Stage 2 (planning Q&A, verifier loop, phase files) and milestone-persisted
+ * needs-input/resume are Phase 07+ — they build on this same shape.
  */
 async function runGuidedPlanningPipeline(
 	job: JobWithSteps,
@@ -656,26 +678,66 @@ async function runGuidedPlanningPipeline(
 	void markRunStarted(runId, Date.now());
 	const stepIndex = 0;
 	const outDir = guidedPlanOutputDir(job);
+	const overviewPath = `${outDir}overview.md`;
 	const startedAt = Date.now();
 	patchStep(runId, stepIndex, { status: 'running', promptRendered: outDir, startedAt });
 	if (current && current.id === runId) current = { ...current, currentStepIndex: 0 };
 	void markRunStepStarted(runId, stepIndex, startedAt, outDir);
 
 	const callbacks = buildStreamCallbacks(runId, stepIndex);
-	try {
-		const { finalText } = await runJobTurn(job, runId, abort, {
-			userMessage: job.initial_description?.trim() || 'Plan this project.',
+	const turn = (userMessage: string, systemPrompt: string, maxIterations: number) =>
+		runJobTurn(job, runId, abort, {
+			userMessage,
 			contextSize: jobContextSize(job),
 			visionSupported: jobVisionSupported(job),
-			maxIterations: 30,
+			maxIterations,
 			interactive: true,
-			systemPrompt: guidedPlanningScaffoldPrompt(outDir),
+			systemPrompt,
 			toolAllowlist: GUIDED_PLANNING_TOOLS,
 			...callbacks
 		});
+
+	try {
+		// Stage 1 — overview interview + write.
+		await turn(
+			job.initial_description?.trim() || 'Plan this project.',
+			overviewStagePrompt(outDir, overviewPath),
+			40
+		);
+
+		// Review checkpoint — approve / revise (free text) / re-read after a manual edit.
+		let approved = false;
+		while (!approved) {
+			if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+			const answer = await askUserQuestion({
+				question:
+					`I wrote the project overview to ${overviewPath}. Review it, then approve ` +
+					`to finish — or type what you'd like changed and I'll revise it.`,
+				options: [
+					{ label: 'Approve', description: 'The overview looks good.', recommended: true },
+					{
+						label: 'I edited it myself — re-read',
+						description: 'I changed the file on disk; re-read it before asking again.'
+					}
+				]
+			});
+			if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+			if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
+				approved = true;
+			} else if (answer.kind === 'freeText') {
+				await turn(
+					`Please revise the overview. The user asked for: ${answer.text}`,
+					overviewRevisePrompt(outDir, overviewPath),
+					20
+				);
+			}
+			// 'I edited it myself' → loop and re-present; a later revise re-reads the file.
+		}
+
 		const finishedAt = Date.now();
-		patchStep(runId, stepIndex, { status: 'succeeded', output: finalText, finishedAt });
-		void markRunStepFinished(runId, stepIndex, 'succeeded', finalText, null, finishedAt);
+		const summary = `Overview approved → ${overviewPath}`;
+		patchStep(runId, stepIndex, { status: 'succeeded', output: summary, finishedAt });
+		void markRunStepFinished(runId, stepIndex, 'succeeded', summary, null, finishedAt);
 		finalizeRun(runId, job.id, 'succeeded', null);
 	} catch (e) {
 		const aborted = e instanceof DOMException && e.name === 'AbortError';
