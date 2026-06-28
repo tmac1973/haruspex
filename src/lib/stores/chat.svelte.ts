@@ -1099,6 +1099,7 @@ export async function sendMessage(content: string, images: string[] = []): Promi
 					deepResearch: exhaustiveResearch,
 					expectsFileOutput,
 					visionSupported,
+					interactive: true,
 					signal,
 					...buildAgentLoopCallbacks(conversation, activeCtxSize, turnStats)
 				})
