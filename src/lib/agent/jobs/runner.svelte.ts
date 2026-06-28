@@ -613,19 +613,30 @@ function guidedPlanOutputDir(job: JobWithSteps): string {
  */
 function guidedPlanningScaffoldPrompt(outDir: string): string {
 	return [
-		'You are running a guided-planning session: turning the user’s idea into a',
-		'written project overview and, later, a phased implementation plan. Planning',
-		'only — never write or edit code.',
+		'You are running an interactive guided-planning session: turning the user’s',
+		'idea into a written project overview and plan. Planning only — never write',
+		'or edit code.',
 		'',
-		'For now:',
-		'1. Read any obviously-relevant files in the working directory to ground yourself.',
-		'2. Ask the user exactly ONE multiple-choice question with `ask_user_question`',
-		'   to confirm the single most important scope decision. Offer 2–4 options;',
-		'   the user can also type their own answer.',
-		`3. Write a brief stub overview to \`${outDir}overview.md\` with \`fs_write_text\`:`,
-		'   a title, a one-paragraph problem statement, and the decision you confirmed.',
-		`   Write ONLY inside \`${outDir}\` — never elsewhere, never code.`,
-		'4. Stop with a one-line summary of what you wrote.'
+		'CRITICAL — HOW TO ASK THE USER ANYTHING:',
+		'The ONLY way to ask the user a question is to CALL the `ask_user_question`',
+		'tool. The user is not reading your text and CANNOT answer prose. If you write',
+		'a question — or list options — as text, it is discarded and the session',
+		'stalls. Every question you ask MUST be an `ask_user_question` tool call with',
+		'a `question` string and an `options` array of `{label, description}`. Never',
+		'put a question or its options in a normal message.',
+		'',
+		'Do this now, in order:',
+		'1. Optionally read a few relevant files to ground yourself (fs_list_dir,',
+		'   fs_read_text).',
+		'2. CALL `ask_user_question` exactly once to confirm the single most important',
+		'   scope decision. Give 2–4 concise options; the user can also type their own.',
+		'   Do NOT write the question as text — call the tool.',
+		'3. After the tool returns the user’s answer, write a short stub overview to',
+		`   \`${outDir}overview.md\` with fs_write_text: a title, a one-paragraph`,
+		`   problem statement, and the confirmed decision. Write ONLY inside \`${outDir}\`.`,
+		'4. Then send a one-line summary of what you wrote, and stop.',
+		'',
+		'Do not skip step 2, and never ask a question as plain text.'
 	].join('\n');
 }
 
