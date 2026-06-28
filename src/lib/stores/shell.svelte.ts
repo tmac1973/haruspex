@@ -350,13 +350,22 @@ export class ShellSession {
 
 		const settings = getSettings();
 		const limit = Math.max(0, settings.shellHistoryTurnsForPrompt);
-		// Only attach commands that finished since our last attach — anything
-		// older is already in the chat history, so re-sending it just buries the
-		// new question. Cap at the user's configured limit.
+		// Only attach *completed* commands that finished since our last attach —
+		// anything older is already in the chat history, so re-sending it just
+		// buries the new question. Cap at the user's configured limit.
 		const newCommands = Math.max(0, live.completedTotal - this.lastAttachedCommandTotal);
 		const attachCount = Math.min(limit, newCommands);
+		// Fetch whenever attaching is enabled at all (limit > 0), not only when a
+		// command just completed: the user may be sitting *inside* an in-flight
+		// command — an `ssh` session, a `python`/`psql` REPL, `docker exec -it` —
+		// which emits a C (output-start) marker but no D until it exits, so it
+		// never bumps completedTotal. Its output-so-far is the terminal scrollback
+		// the user is almost certainly asking about. `shell_get_recent_commands`
+		// returns that pending region in addition to the `attachCount` completed
+		// ones (with attachCount === 0 it returns just the pending region), so a
+		// question asked mid-ssh-session no longer arrives with nothing attached.
 		const recent =
-			attachCount > 0
+			limit > 0
 				? await invoke<CapturedRegion[]>('shell_get_recent_commands', {
 						sessionId: this.activeSession.sessionId,
 						limit: attachCount

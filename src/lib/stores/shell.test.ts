@@ -220,8 +220,15 @@ describe('command auto-attach de-duplication', () => {
 	}
 
 	// Drives invoke by command name so we can vary completed_total per turn and
-	// observe whether shell_get_recent_commands gets called (i.e. an attach).
-	function installInvoke(state: { completedTotal: number; recentLimits: number[] }) {
+	// observe the limits shell_get_recent_commands is called with. When
+	// `state.pending` is set, the mock appends an in-flight region the way the
+	// backend's capture_recent_commands_with_pending does — so a query asked
+	// mid-`ssh`-session still has the session scrollback attached.
+	function installInvoke(state: {
+		completedTotal: number;
+		recentLimits: number[];
+		pending?: string;
+	}) {
 		vi.mocked(invoke).mockImplementation((async (cmd: string, args?: { limit: number }) => {
 			switch (cmd) {
 				case 'shell_get_context':
@@ -234,15 +241,28 @@ describe('command auto-attach de-duplication', () => {
 					};
 				case 'shell_get_recent_history':
 					return [];
-				case 'shell_get_recent_commands':
+				case 'shell_get_recent_commands': {
 					state.recentLimits.push(args!.limit);
-					return Array.from({ length: args!.limit }, () => ({
+					const regions = Array.from({ length: args!.limit }, () => ({
 						commandLine: 'cat hangman.py',
 						output: 'print("x")',
-						exitCode: 0,
+						exitCode: 0 as number | null,
 						cwd: '/home/tim',
-						truncated: false
+						truncated: false,
+						pending: false
 					}));
+					if (state.pending !== undefined) {
+						regions.push({
+							commandLine: 'ssh server',
+							output: state.pending,
+							exitCode: null,
+							cwd: '/home/tim',
+							truncated: false,
+							pending: true
+						});
+					}
+					return regions;
+				}
 				default:
 					return undefined;
 			}
@@ -266,16 +286,45 @@ describe('command auto-attach de-duplication', () => {
 		expect(s.messages[0].content).toContain('Recent shell activity');
 		expect(s.messages[0].content).toContain('what tools do you have available?');
 
-		// Turn 2: nothing new finished → no re-attach, just the bare question.
+		// Turn 2: nothing new finished → the backend is still polled (limit 0, to
+		// catch any in-flight command), but with no pending region it returns
+		// nothing, so no completed commands are re-attached — just the question.
 		await s.submitChatMessage('what about now?');
-		expect(state.recentLimits).toEqual([2]); // shell_get_recent_commands NOT called again
+		expect(state.recentLimits).toEqual([2, 0]);
 		expect(s.messages[2].content).toBe('what about now?');
 
 		// Turn 3: one more command finished → attach only that new one.
 		state.completedTotal = 3;
 		await s.submitChatMessage('and now?');
-		expect(state.recentLimits).toEqual([2, 1]); // min(limit, 3 - 2) = 1
+		expect(state.recentLimits).toEqual([2, 0, 1]); // min(limit, 3 - 2) = 1
 		expect(s.messages[4].content).toContain('Recent shell activity');
+	});
+
+	it('attaches an in-flight command (e.g. an ssh session) even when none completed', async () => {
+		// User is sitting inside `ssh server`: no command has *completed* since
+		// the last attach, but the in-flight session's scrollback is exactly what
+		// the question is about. It must still be attached.
+		const state = {
+			completedTotal: 2,
+			recentLimits: [] as number[],
+			pending: 'remote-host$ uname -a\nLinux remote-host 6.1.0\n'
+		};
+		installInvoke(state);
+		const s = createShellSession();
+		bindCtx(s, 12);
+
+		// Turn 1 consumes the 2 completed commands (and the pending region).
+		await s.submitChatMessage('connecting...');
+		// Turn 2: nothing newly finished (completedTotal unchanged), but the ssh
+		// session is still in flight → attachCount 0, yet the pending region still
+		// comes back and gets attached.
+		await s.submitChatMessage('why did that fail?');
+		expect(state.recentLimits).toEqual([2, 0]);
+		const q2 = s.messages[2].content;
+		expect(q2).toContain('Recent shell activity');
+		expect(q2).toContain('ssh server');
+		expect(q2).toContain('Linux remote-host');
+		expect(q2).toContain('still running, no exit code yet');
 	});
 });
 
