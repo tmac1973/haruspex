@@ -4,10 +4,12 @@
 	 * root layout — subscribes to the userQuestion store and opens whenever a
 	 * question is pending.
 	 *
-	 * Supports the full question shape: single- or multi-select options (each
-	 * with an optional description and a "recommended" highlight) plus an
-	 * always-present free-text answer. Selecting options and typing free text
-	 * are mutually exclusive — whichever the user touches last wins.
+	 * Supports single- or multi-select options (each with an optional description
+	 * and a "recommended" highlight) plus an always-present "Write your own
+	 * answer" choice. That choice is a member of the same selection group (the
+	 * "Other (please specify)" pattern), so exactly one thing is ever active and
+	 * submission is unambiguous: choosing it deselects the options and reveals a
+	 * text box; choosing an option hides it.
 	 *
 	 * Backdrop/Esc do NOT dismiss: a pending question must be answered.
 	 * Cancellation is the run's concern (job-cancel), not the modal's.
@@ -18,10 +20,13 @@
 	const pending = $derived(getPendingQuestion());
 
 	let selected = $state<string[]>([]);
+	// True when the "Write your own answer" option is chosen — mutually exclusive
+	// with the prefilled options.
+	let useFreeText = $state(false);
 	let freeText = $state('');
-	// Identity of the question the local form state belongs to; used to reset
-	// the form when a different question becomes pending (the modal instance is
-	// reused across questions).
+	let textareaEl = $state<HTMLTextAreaElement | undefined>();
+	// Identity of the question the local form state belongs to; used to reset the
+	// form when a different question becomes pending (the modal instance is reused).
 	let formFor = $state<unknown>(null);
 
 	$effect(() => {
@@ -29,14 +34,19 @@
 			formFor = pending;
 			selected = [];
 			freeText = '';
+			useFreeText = false;
 		}
 	});
 
-	function toggle(label: string) {
+	// Focus the text box the moment "Write your own answer" is chosen.
+	$effect(() => {
+		if (useFreeText) textareaEl?.focus();
+	});
+
+	function toggleOption(label: string) {
 		const p = pending;
 		if (!p) return;
-		// Picking an option supersedes any free-text the user started.
-		freeText = '';
+		useFreeText = false;
 		if (p.allowMultiple) {
 			selected = selected.includes(label)
 				? selected.filter((l) => l !== label)
@@ -46,19 +56,19 @@
 		}
 	}
 
-	function onFreeInput() {
-		// Typing a custom answer supersedes any selected options.
-		if (freeText.trim().length > 0) selected = [];
+	function chooseFreeText() {
+		useFreeText = true;
+		selected = [];
 	}
 
-	const canSubmit = $derived(selected.length > 0 || freeText.trim().length > 0);
+	const canSubmit = $derived(useFreeText ? freeText.trim().length > 0 : selected.length > 0);
 
 	function submit() {
 		if (!pending || !canSubmit) return;
-		if (selected.length > 0) {
-			resolveUserQuestion({ kind: 'selected', labels: selected });
-		} else {
+		if (useFreeText) {
 			resolveUserQuestion({ kind: 'freeText', text: freeText.trim() });
+		} else {
+			resolveUserQuestion({ kind: 'selected', labels: selected });
 		}
 	}
 </script>
@@ -67,7 +77,7 @@
 	{#if pending}
 		<h2 id="user-question-title">{pending.question}</h2>
 		{#if pending.allowMultiple}
-			<p class="hint">Select one or more.</p>
+			<p class="hint">Select one or more, or write your own answer.</p>
 		{/if}
 
 		<div class="options">
@@ -75,8 +85,8 @@
 				<button
 					type="button"
 					class="option"
-					class:selected={selected.includes(opt.label)}
-					onclick={() => toggle(opt.label)}
+					class:selected={!useFreeText && selected.includes(opt.label)}
+					onclick={() => toggleOption(opt.label)}
 				>
 					<span class="marker" class:multi={pending.allowMultiple} aria-hidden="true"></span>
 					<span class="body">
@@ -88,17 +98,28 @@
 					</span>
 				</button>
 			{/each}
+
+			<!-- "Other" — a member of the same group so selection stays unambiguous.
+			     Always a radio (round) marker: it's an exclusive alternative even when
+			     the prefilled options are multi-select checkboxes. -->
+			<button type="button" class="option" class:selected={useFreeText} onclick={chooseFreeText}>
+				<span class="marker" aria-hidden="true"></span>
+				<span class="body">
+					<span class="label">Write your own answer</span>
+					<span class="desc">Type a different answer instead of picking above.</span>
+				</span>
+			</button>
 		</div>
 
-		<label class="free">
-			<span class="free-title">Write your own answer</span>
+		{#if useFreeText}
 			<textarea
-				rows="2"
-				placeholder="Type a different answer…"
+				bind:this={textareaEl}
+				class="free-input"
+				rows="3"
+				placeholder="Type your answer…"
 				bind:value={freeText}
-				oninput={onFreeInput}
 			></textarea>
-		</label>
+		{/if}
 
 		<div class="actions">
 			<button type="button" class="submit" disabled={!canSubmit} onclick={submit}>Submit</button>
@@ -202,22 +223,11 @@
 		color: var(--text-secondary);
 	}
 
-	.free {
-		display: block;
-		margin-top: 16px;
-	}
-
-	.free-title {
-		display: block;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		margin-bottom: 4px;
-	}
-
-	textarea {
+	.free-input {
 		width: 100%;
 		box-sizing: border-box;
 		resize: vertical;
+		margin-top: 8px;
 		padding: 8px 10px;
 		border: 1px solid var(--border);
 		border-radius: 8px;
@@ -227,7 +237,7 @@
 		font-size: 0.86rem;
 	}
 
-	textarea:focus {
+	.free-input:focus {
 		outline: none;
 		border-color: var(--accent);
 	}
