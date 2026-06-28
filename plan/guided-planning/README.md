@@ -5,6 +5,41 @@ type and its reusable human-in-the-loop question primitive. See
 [`overview.md`](./overview.md) for the project definition and the full Decisions
 appendix.
 
+## Build status (as shipped on `feat/guided-planning`)
+
+Phases 1–9 are implemented and green (TypeScript + Rust test suites, clippy
+`-D warnings`). The feature runs end to end: overview interview → review
+checkpoint → planning interview → independent verifier loop → plan-approval
+checkpoint → dependency-ordered `phase-NN-*.md` files.
+
+**Architectural adaptations made during implementation (vs. this plan):**
+
+- **Stages over a single step.** The run advances through four named display
+  steps — Overview, Planning, Verification, Approval — each with a description
+  of what the model is doing. (Phase 08's run-view work folded into the runner.)
+- **Files are the dependency map.** Because turns are stateless (the markdown
+  files on disk are the run state), the planning stage writes draft phase files,
+  the verifier reviews them, and the user approves the *files* at the checkpoint
+  — rather than approving a separately-rendered in-app map before writing.
+- **Verifier is a text-signal read-only turn.** The independent verifier replies
+  `PLAN OK` when clean (else a problem list), bounded to a few revise rounds.
+  A structured-tool verdict (like the audit pipeline's `submit_verdict`) is a
+  possible future upgrade if the text signal proves unreliable on weak models.
+- **Tool-call forcing via prompt.** Local models sometimes wrote questions as
+  prose; the stage prompts forcefully require the `ask_user_question` tool. If
+  this proves flaky, force the tool on questioning turns (the audit pipeline's
+  `forceFinalTool` pattern).
+
+**Consciously descoped — needs-input parking + cross-restart resume.** The DB
+plumbing exists and is unused-but-ready (the `job_runs.planning_state` column,
+the `needs_input` run status, and the `set_run_planning_state` /
+`set_run_status` setters from Phase 03/05). It is *not* wired into a parking/
+resume flow, because it is only meaningful for scheduled/headless runs — which
+don't fit a manual, interactive desktop feature where the modal simply shows
+while the app is open. The produced artifacts (`overview.md`, phase files)
+persist on disk regardless of interruption. A future change can wire parking/
+resume using the existing plumbing if scheduled guided-planning is ever wanted.
+
 ## Phase map (strictly dependency-ordered)
 
 | # | File | Phase | Depends on |
