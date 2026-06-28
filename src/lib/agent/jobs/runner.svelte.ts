@@ -202,6 +202,12 @@ interface PlannedStep {
  * independently) plus a trailing synthesis step.
  */
 function planSteps(job: JobWithSteps): PlannedStep[] {
+	if (job.job_type === 'guided_planning') {
+		// One synthetic display step; the run is a single interactive session,
+		// not a step pipeline. The stages (overview / planning) are surfaced
+		// within it rather than as separate steps.
+		return [{ authored: 'Guided planning session', deepResearch: false }];
+	}
 	if (job.job_type === 'audit') {
 		const n = Math.max(1, Math.min(job.audit_num_runs ?? 3, MAX_AUDIT_RUNS));
 		const prompt = job.steps[0]?.prompt ?? '';
@@ -335,7 +341,9 @@ export async function enqueue(
 		logDebug('jobs', 'enqueue failed: job not found', { jobId, trigger });
 		return null;
 	}
-	if (job.steps.length === 0) {
+	// guided_planning jobs carry no authored steps — the run is driven by the
+	// initial description + interactive Q&A, not a step pipeline.
+	if (job.job_type !== 'guided_planning' && job.steps.length === 0) {
 		logDebug('jobs', 'enqueue failed: no steps', { jobId });
 		return null;
 	}
@@ -527,6 +535,9 @@ async function runPipeline(
 	abort: AbortController,
 	runId: number
 ): Promise<void> {
+	if (job.job_type === 'guided_planning') {
+		return runGuidedPlanningPipeline(job, abort, runId);
+	}
 	if (job.job_type === 'audit') {
 		return runAuditPipeline(job, abort, runId);
 	}
@@ -562,6 +573,110 @@ async function runPipeline(
 		if (pending.length > 0) {
 			queueMicrotask(drainNext);
 		}
+	}
+}
+
+/**
+ * Tools a guided_planning run may use: read-only codebase grounding, the single
+ * markdown write tool, and the interactive question tool. No code-editing,
+ * exec, sandbox, email, or web-write tools — planning writes markdown only.
+ */
+const GUIDED_PLANNING_TOOLS = [
+	'fs_read_text',
+	'fs_list_dir',
+	'fs_read_pdf',
+	'code_grep',
+	'code_glob',
+	'fs_write_text',
+	'ask_user_question'
+];
+
+/** A job's plan output folder, relative to working_dir (default plan/<slug>/). */
+function guidedPlanOutputDir(job: JobWithSteps): string {
+	const dir = job.plan_output_dir?.trim();
+	if (dir) return dir;
+	const slug =
+		job.name
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '') || 'plan';
+	return `plan/${slug}/`;
+}
+
+/**
+ * Phase 05 scaffolding prompt. Proves the interactive plumbing end to end — one
+ * question + one markdown write into the output folder — so the runner, the
+ * allowlist, the interactive question modal, and the plan-folder write all work
+ * together. Phases 06/07 replace this with the real overview and planning
+ * stages (exhaustive Q&A, review checkpoints, the verifier loop, phase files).
+ */
+function guidedPlanningScaffoldPrompt(outDir: string): string {
+	return [
+		'You are running a guided-planning session: turning the user’s idea into a',
+		'written project overview and, later, a phased implementation plan. Planning',
+		'only — never write or edit code.',
+		'',
+		'For now:',
+		'1. Read any obviously-relevant files in the working directory to ground yourself.',
+		'2. Ask the user exactly ONE multiple-choice question with `ask_user_question`',
+		'   to confirm the single most important scope decision. Offer 2–4 options;',
+		'   the user can also type their own answer.',
+		`3. Write a brief stub overview to \`${outDir}overview.md\` with \`fs_write_text\`:`,
+		'   a title, a one-paragraph problem statement, and the decision you confirmed.',
+		`   Write ONLY inside \`${outDir}\` — never elsewhere, never code.`,
+		'4. Stop with a one-line summary of what you wrote.'
+	].join('\n');
+}
+
+/**
+ * Guided-planning run (Phase 05 scaffolding). Drives a single interactive agent
+ * turn: codebase-grounded, gated to the guided-planning toolset, with the
+ * question modal live (interactive). Phases 06/07 expand this into the staged
+ * overview → checkpoint → planning → verify → phase-files flow with milestone
+ * persistence and needs-input/resume (which require the per-stage milestones to
+ * be meaningful, so they land with the stages).
+ */
+async function runGuidedPlanningPipeline(
+	job: JobWithSteps,
+	abort: AbortController,
+	runId: number
+): Promise<void> {
+	void markRunStarted(runId, Date.now());
+	const stepIndex = 0;
+	const outDir = guidedPlanOutputDir(job);
+	const startedAt = Date.now();
+	patchStep(runId, stepIndex, { status: 'running', promptRendered: outDir, startedAt });
+	if (current && current.id === runId) current = { ...current, currentStepIndex: 0 };
+	void markRunStepStarted(runId, stepIndex, startedAt, outDir);
+
+	const callbacks = buildStreamCallbacks(runId, stepIndex);
+	try {
+		const { finalText } = await runJobTurn(job, runId, abort, {
+			userMessage: job.initial_description?.trim() || 'Plan this project.',
+			contextSize: jobContextSize(job),
+			visionSupported: jobVisionSupported(job),
+			maxIterations: 30,
+			interactive: true,
+			systemPrompt: guidedPlanningScaffoldPrompt(outDir),
+			toolAllowlist: GUIDED_PLANNING_TOOLS,
+			...callbacks
+		});
+		const finishedAt = Date.now();
+		patchStep(runId, stepIndex, { status: 'succeeded', output: finalText, finishedAt });
+		void markRunStepFinished(runId, stepIndex, 'succeeded', finalText, null, finishedAt);
+		finalizeRun(runId, job.id, 'succeeded', null);
+	} catch (e) {
+		const aborted = e instanceof DOMException && e.name === 'AbortError';
+		const msg = aborted ? 'Cancelled by user' : errMessage(e);
+		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
+		const finishedAt = Date.now();
+		patchStep(runId, stepIndex, { status: stepStatus, error: msg, finishedAt });
+		void markRunStepFinished(runId, stepIndex, stepStatus, null, msg, finishedAt);
+		finalizeRun(runId, job.id, aborted ? 'cancelled' : 'failed', msg);
+	} finally {
+		if (activeAbort === abort) activeAbort = null;
+		if (pending.length > 0) queueMicrotask(drainNext);
 	}
 }
 

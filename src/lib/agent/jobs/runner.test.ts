@@ -147,6 +147,33 @@ describe('jobs runner — guards', () => {
 		expect(opts.backend).toBeUndefined();
 	});
 
+	it('runs a guided_planning job despite having no steps', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/'
+			})
+		);
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'wrote overview' });
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		const runId = await enqueue(1);
+		expect(runId).not.toBeNull();
+		await tick();
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		const opts = mocks.runEphemeralTurn.mock.calls[0][0];
+		// Interactive (modal-capable), driven by a guided-planning system prompt
+		// scoped to the output folder, and gated to the planning toolset.
+		expect(opts.interactive).toBe(true);
+		expect(opts.systemPrompt).toContain('plan/x/');
+		expect([...opts.toolAllowlist]).toContain('ask_user_question');
+		expect([...opts.toolAllowlist]).not.toContain('run_command');
+	});
+
 	it('threads a per-job remote model override (backend + larger context) into the turn', async () => {
 		mocks.getJob.mockResolvedValueOnce(
 			makeJob({
