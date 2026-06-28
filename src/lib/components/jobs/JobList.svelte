@@ -111,7 +111,7 @@
 						type="button"
 						class="job-run-btn"
 						title={running ? 'Queue this run after the active one' : 'Run now'}
-						disabled={job.step_count === 0}
+						disabled={job.step_count === 0 && job.job_type !== 'guided_planning'}
 						onclick={(e) => handleRun(e, job.id)}
 					>
 						▶
