@@ -5,6 +5,7 @@
 	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
 	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
 	import CommandApprovalModal from '$lib/components/CommandApprovalModal.svelte';
+	import UserQuestionModal from '$lib/components/UserQuestionModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import HelpModal from '$lib/components/HelpModal.svelte';
 	import SettingsPanel from '$lib/components/settings/SettingsPanel.svelte';
@@ -408,6 +409,7 @@
 	<FileConflictModal />
 	<SandboxApprovalModal />
 	<CommandApprovalModal />
+	<UserQuestionModal />
 {/if}
 
 <style>
