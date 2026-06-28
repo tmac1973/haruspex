@@ -39,7 +39,7 @@ import {
 import type { BackendOverride } from '$lib/api';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
-import { getJob, type JobWithSteps } from '$lib/stores/jobs.svelte';
+import { getJob, type JobWithSteps, type JobType } from '$lib/stores/jobs.svelte';
 import { askUserQuestion } from '$lib/stores/userQuestion.svelte';
 import { getActiveContextSize, isVisionSupported } from '$lib/stores/settings';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
@@ -204,10 +204,14 @@ interface PlannedStep {
  */
 function planSteps(job: JobWithSteps): PlannedStep[] {
 	if (job.job_type === 'guided_planning') {
-		// One synthetic display step; the run is a single interactive session,
-		// not a step pipeline. The stages (overview / planning) are surfaced
-		// within it rather than as separate steps.
-		return [{ authored: 'Guided planning session', deepResearch: false }];
+		// Display stages — the run advances through these so the UI shows where
+		// in the process it is. Indices must match GUIDED_STAGES in the pipeline.
+		return [
+			{ authored: 'Overview', deepResearch: false },
+			{ authored: 'Planning', deepResearch: false },
+			{ authored: 'Verification', deepResearch: false },
+			{ authored: 'Approval', deepResearch: false }
+		];
 	}
 	if (job.job_type === 'audit') {
 		const n = Math.max(1, Math.min(job.audit_num_runs ?? 3, MAX_AUDIT_RUNS));
@@ -272,6 +276,9 @@ export interface RunState {
 	id: number;
 	jobId: number;
 	jobName: string;
+	/** Job type, so the run view can render type-specific progress (e.g. the
+	 *  named guided_planning stages). */
+	jobType: JobType;
 	steps: RunStepState[];
 	currentStepIndex: number;
 	status: RunStatus;
@@ -387,6 +394,7 @@ function startRun(queued: QueuedRun): void {
 		id: runId,
 		jobId: job.id,
 		jobName: job.name,
+		jobType: job.job_type,
 		steps: planned.map((s, i) => ({
 			index: i,
 			promptAuthored: s.authored,
@@ -768,16 +776,29 @@ async function runGuidedPlanningPipeline(
 	runId: number
 ): Promise<void> {
 	void markRunStarted(runId, Date.now());
-	const stepIndex = 0;
 	const outDir = guidedPlanOutputDir(job);
 	const overviewPath = `${outDir}overview.md`;
-	const startedAt = Date.now();
-	patchStep(runId, stepIndex, { status: 'running', promptRendered: outDir, startedAt });
-	if (current && current.id === runId) current = { ...current, currentStepIndex: 0 };
-	void markRunStepStarted(runId, stepIndex, startedAt, outDir);
 
-	const callbacks = buildStreamCallbacks(runId, stepIndex);
+	// Step indices — must match the guided_planning display steps in planSteps.
+	const OVERVIEW = 0;
+	const PLANNING = 1;
+	const VERIFY = 2;
+	const APPROVAL = 3;
+
+	const startStep = (idx: number) => {
+		const startedAt = Date.now();
+		patchStep(runId, idx, { status: 'running', startedAt });
+		if (current && current.id === runId) current = { ...current, currentStepIndex: idx };
+		void markRunStepStarted(runId, idx, startedAt, current?.steps[idx]?.promptAuthored ?? '');
+	};
+	const finishStep = (idx: number, output: string) => {
+		const finishedAt = Date.now();
+		patchStep(runId, idx, { status: 'succeeded', output, finishedAt });
+		void markRunStepFinished(runId, idx, 'succeeded', output, null, finishedAt);
+	};
+
 	const turn = (
+		stepIdx: number,
 		userMessage: string,
 		systemPrompt: string,
 		maxIterations: number,
@@ -791,17 +812,18 @@ async function runGuidedPlanningPipeline(
 			interactive: true,
 			systemPrompt,
 			toolAllowlist: tools,
-			...callbacks
+			...buildStreamCallbacks(runId, stepIdx)
 		});
 
 	const abortIfCancelled = () => {
 		if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
 	};
 
-	// Run the independent verifier, then revise once if it reports problems.
-	// Returns when the plan is clean or no problems were reported.
+	// Independent verifier (shown on the Verification step); revise once if it
+	// reports problems. Returns true when the plan is clean.
 	const verifyOnce = async (): Promise<boolean> => {
 		const verdict = await turn(
+			VERIFY,
 			`Review the phase files in ${outDir} against ${overviewPath}.`,
 			verifierPrompt(outDir, overviewPath),
 			25,
@@ -809,6 +831,7 @@ async function runGuidedPlanningPipeline(
 		);
 		if (isPlanClean(verdict.finalText)) return true;
 		await turn(
+			VERIFY,
 			`A reviewer found problems with the phase files. Fix every one, keeping ` +
 				`strict dependency order:\n\n${verdict.finalText}`,
 			planRevisePrompt(outDir),
@@ -818,21 +841,21 @@ async function runGuidedPlanningPipeline(
 	};
 
 	try {
-		// Stage 1 — overview interview + write.
+		// Stage 1 — Overview: interview + write, then the review checkpoint loop.
+		startStep(OVERVIEW);
 		await turn(
+			OVERVIEW,
 			job.initial_description?.trim() || 'Plan this project.',
 			overviewStagePrompt(outDir, overviewPath),
 			40
 		);
-
-		// Review checkpoint — approve / revise (free text) / re-read after a manual edit.
 		let approved = false;
 		while (!approved) {
-			if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+			abortIfCancelled();
 			const answer = await askUserQuestion({
 				question:
 					`I wrote the project overview to ${overviewPath}. Review it, then approve ` +
-					`to finish — or type what you'd like changed and I'll revise it.`,
+					`to continue — or type what you'd like changed and I'll revise it.`,
 				options: [
 					{ label: 'Approve', description: 'The overview looks good.', recommended: true },
 					{
@@ -841,34 +864,41 @@ async function runGuidedPlanningPipeline(
 					}
 				]
 			});
-			if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+			abortIfCancelled();
 			if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
 				approved = true;
 			} else if (answer.kind === 'freeText') {
 				await turn(
+					OVERVIEW,
 					`Please revise the overview. The user asked for: ${answer.text}`,
 					overviewRevisePrompt(outDir, overviewPath),
 					20
 				);
 			}
-			// 'I edited it myself' → loop and re-present; a later revise re-reads the file.
 		}
+		finishStep(OVERVIEW, `Overview approved → ${overviewPath}`);
 
-		// Stage 2 — planning interview + draft phase files.
+		// Stage 2 — Planning: interview + write the phase files.
+		startStep(PLANNING);
 		await turn(
+			PLANNING,
 			`The overview at ${overviewPath} is approved. Now produce the phased ` +
 				`implementation plan.`,
 			planningStagePrompt(outDir, overviewPath),
 			50
 		);
+		finishStep(PLANNING, `Phase files written to ${outDir}`);
 
-		// Verifier loop — independent fresh-context review, revise until clean (bounded).
+		// Verification — independent fresh-context review, revise until clean (bounded).
+		startStep(VERIFY);
 		for (let round = 0; round < MAX_VERIFY_ROUNDS; round++) {
 			abortIfCancelled();
 			if (await verifyOnce()) break;
 		}
+		finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
 
-		// Plan / dependency-map approval checkpoint.
+		// Approval — plan / dependency-map approval checkpoint loop.
+		startStep(APPROVAL);
 		let planApproved = false;
 		while (!planApproved) {
 			abortIfCancelled();
@@ -890,27 +920,26 @@ async function runGuidedPlanningPipeline(
 				planApproved = true;
 			} else if (answer.kind === 'freeText') {
 				await turn(
+					APPROVAL,
 					`Please revise the phased plan. The user asked for: ${answer.text}`,
 					planRevisePrompt(outDir),
 					30
 				);
 				await verifyOnce(); // re-check after a user-driven revision
 			}
-			// 'I edited it myself' → loop and re-present.
 		}
+		finishStep(APPROVAL, `Plan approved → ${outDir}`);
 
-		const finishedAt = Date.now();
-		const summary = `Plan approved → ${outDir}`;
-		patchStep(runId, stepIndex, { status: 'succeeded', output: summary, finishedAt });
-		void markRunStepFinished(runId, stepIndex, 'succeeded', summary, null, finishedAt);
 		finalizeRun(runId, job.id, 'succeeded', null);
 	} catch (e) {
 		const aborted = e instanceof DOMException && e.name === 'AbortError';
 		const msg = aborted ? 'Cancelled by user' : errMessage(e);
 		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
 		const finishedAt = Date.now();
-		patchStep(runId, stepIndex, { status: stepStatus, error: msg, finishedAt });
-		void markRunStepFinished(runId, stepIndex, stepStatus, null, msg, finishedAt);
+		// Mark whichever stage was live when the error/cancel hit.
+		const idx = current && current.id === runId ? current.currentStepIndex : 0;
+		patchStep(runId, idx, { status: stepStatus, error: msg, finishedAt });
+		void markRunStepFinished(runId, idx, stepStatus, null, msg, finishedAt);
 		finalizeRun(runId, job.id, aborted ? 'cancelled' : 'failed', msg);
 	} finally {
 		if (activeAbort === abort) activeAbort = null;
