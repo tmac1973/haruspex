@@ -8,6 +8,7 @@
 	import WorkingDirButton from '$lib/components/WorkingDirButton.svelte';
 	import StopIndicator from '$lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '$lib/utils/imageDrop';
+	import { hasStreamingAnswer } from '$lib/agent/think-stream';
 	import { messageText } from '$lib/api';
 	import {
 		getActiveConversation,
@@ -368,7 +369,7 @@
 
 				{#if isWaitingForSlot}
 					<div class="compacting-indicator">Waiting for another inference request to finish…</div>
-				{:else if isGenerating && streamingContent}
+				{:else if isGenerating && hasStreamingAnswer(streamingContent)}
 					<div class="message" data-role="assistant">
 						<div class="message-label">Haruspex</div>
 						<div class="message-content">

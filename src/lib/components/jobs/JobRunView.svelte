@@ -1,7 +1,9 @@
 <script lang="ts">
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import SearchStepView from '$lib/components/SearchStep.svelte';
+	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
+	import { hasStreamingAnswer } from '$lib/agent/think-stream';
 	import {
 		cancel,
 		clearCurrentRun,
@@ -106,15 +108,16 @@
 
 					{#if isLiveStep(step) && run.waitingForSlot}
 						<p class="hint">Waiting for another inference request to finish…</p>
-					{:else if isLiveStep(step) && step.streaming}
+					{:else if isLiveStep(step) && hasStreamingAnswer(step.streaming)}
 						<ChatMessage
 							message={{ role: 'assistant', content: step.streaming }}
 							isStreaming={true}
 						/>
+					{:else if isLiveStep(step)}
+						<!-- Live but no visible answer yet (reasoning / before first token). -->
+						<ThinkingIndicator bare />
 					{:else if step.output}
 						<ChatMessage message={{ role: 'assistant', content: step.output }} />
-					{:else if isLiveStep(step)}
-						<p class="hint">Waiting for first token…</p>
 					{/if}
 
 					{#if step.error}
