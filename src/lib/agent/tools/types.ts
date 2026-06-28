@@ -68,6 +68,14 @@ export interface ToolContext {
 	 */
 	interactive?: boolean;
 	/**
+	 * When set, file writes are confined to this directory (a path prefix
+	 * relative to workingDir, e.g. `plan/my-feature/`). fs_write_text rejects any
+	 * write that resolves outside it. Used by guided-planning runs to guarantee
+	 * the agent only writes plan markdown into its output folder. Null/undefined
+	 * everywhere else (no restriction beyond the working dir).
+	 */
+	writeRoot?: string | null;
+	/**
 	 * The Shell tab's current working directory, captured at turn start.
 	 * Lets shell-mode fs_* tools resolve relative path arguments (the bare
 	 * `snake_game.py` a model naturally emits) against it instead of

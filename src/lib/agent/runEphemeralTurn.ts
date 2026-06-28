@@ -40,6 +40,8 @@ export interface EphemeralTurnOptions {
 	 * jobs don't hang on a question with no one present.
 	 */
 	interactive?: boolean;
+	/** Confine writes to this dir (relative to workingDir). See AgentLoopOptions. */
+	writeRoot?: string | null;
 	/**
 	 * Replace the default system prompt with this exact text. Used by the
 	 * guided-planning stages, which drive the turn with their own instructions
@@ -87,6 +89,7 @@ export async function runEphemeralTurn(
 			forceFinalTool: options.forceFinalTool,
 			backend: options.backend,
 			interactive: options.interactive,
+			writeRoot: options.writeRoot,
 			signal: options.signal,
 			onToolStart: (call) => options.onToolStart?.(call),
 			onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) =>

@@ -57,8 +57,16 @@ let pending = $state<PendingQuestion | null>(null);
  * Ask the user a multiple-choice question. Returns a Promise that resolves
  * to their answer when they submit the modal. Rejects synchronously if a
  * question is already pending (a caller bug — asks are serialized).
+ *
+ * Pass an `AbortSignal` to make the pending question cancellable: when the
+ * signal aborts (e.g. the user cancels a running job while it's parked at a
+ * checkpoint), the modal closes and the Promise rejects with an AbortError so
+ * the caller's loop unwinds instead of blocking forever on the modal.
  */
-export function askUserQuestion(req: UserQuestionRequest): Promise<UserAnswer> {
+export function askUserQuestion(
+	req: UserQuestionRequest,
+	signal?: AbortSignal
+): Promise<UserAnswer> {
 	if (pending !== null) {
 		return Promise.reject(
 			new Error(
@@ -66,8 +74,25 @@ export function askUserQuestion(req: UserQuestionRequest): Promise<UserAnswer> {
 			)
 		);
 	}
-	return new Promise<UserAnswer>((resolve) => {
-		pending = { ...req, resolve };
+	if (signal?.aborted) {
+		return Promise.reject(new DOMException('Aborted', 'AbortError'));
+	}
+	return new Promise<UserAnswer>((resolve, reject) => {
+		const entry: PendingQuestion = {
+			...req,
+			resolve: (answer) => {
+				signal?.removeEventListener('abort', onAbort);
+				resolve(answer);
+			}
+		};
+		function onAbort() {
+			// Only fires while this question is still pending (the resolve wrapper
+			// removes the listener), and asks are serialized — so clearing is safe.
+			pending = null;
+			reject(new DOMException('Aborted', 'AbortError'));
+		}
+		signal?.addEventListener('abort', onAbort, { once: true });
+		pending = entry;
 	});
 }
 

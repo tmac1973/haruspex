@@ -84,6 +84,8 @@ export interface LoopContext {
 	codeAutoApprove: boolean;
 	/** True when a live user can answer interactive tools (ask_user_question). */
 	interactive: boolean;
+	/** Confine file writes to this dir (relative to workingDir); null = no extra limit. */
+	writeRoot: string | null;
 	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
 	thinkingEnabled: boolean | null;
 	/** Per-call response token budget. */
@@ -130,6 +132,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		codeMode,
 		codeAutoApprove,
 		interactive: options.interactive ?? false,
+		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,
 		maxResponseTokens: options.maxResponseTokens ?? AGENT_LOOP_MAX_TOKENS,
 		shellCwd: options.shellCwd ?? null,
@@ -942,6 +945,7 @@ async function executeToolCalls(
 				codeMode: ctx.codeMode,
 				codeAutoApprove: ctx.codeAutoApprove,
 				interactive: ctx.interactive,
+				writeRoot: ctx.writeRoot,
 				shellCwd: ctx.shellCwd,
 				shellSessionId: ctx.shellSessionId,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,

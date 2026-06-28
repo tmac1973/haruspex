@@ -40,4 +40,24 @@ describe('userQuestion store', () => {
 		expect(() => resolveUserQuestion({ kind: 'freeText', text: 'x' })).not.toThrow();
 		expect(getPendingQuestion()).toBeNull();
 	});
+
+	it('rejects with AbortError and clears pending when the signal aborts', async () => {
+		const ctrl = new AbortController();
+		const p = askUserQuestion({ question: 'q', options: [{ label: 'A' }] }, ctrl.signal);
+		expect(getPendingQuestion()).not.toBeNull();
+
+		ctrl.abort();
+
+		await expect(p).rejects.toMatchObject({ name: 'AbortError' });
+		expect(getPendingQuestion()).toBeNull();
+	});
+
+	it('rejects immediately if the signal is already aborted', async () => {
+		const ctrl = new AbortController();
+		ctrl.abort();
+		await expect(
+			askUserQuestion({ question: 'q', options: [{ label: 'A' }] }, ctrl.signal)
+		).rejects.toMatchObject({ name: 'AbortError' });
+		expect(getPendingQuestion()).toBeNull();
+	});
 });

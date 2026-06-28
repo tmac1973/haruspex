@@ -10,6 +10,39 @@ import { isAutoApproveActive } from '$lib/stores/approvalOverride';
 import type { EditResult } from '$lib/ipc/gen/EditResult';
 
 /**
+ * True when a relative write path stays inside `root` (a relative dir prefix).
+ * Rejects absolute paths and `..` traversal. Backs ToolContext.writeRoot.
+ */
+export function isUnderWriteRoot(relPath: string, root: string): boolean {
+	if (relPath.startsWith('/')) return false;
+	const np = relPath
+		.replace(/\\/g, '/')
+		.replace(/^\.?\/+/, '')
+		.replace(/\/+/g, '/');
+	if (np.split('/').includes('..')) return false;
+	const nr = root
+		.replace(/\\/g, '/')
+		.replace(/^\.?\/+/, '')
+		.replace(/\/+/g, '/')
+		.replace(/\/+$/, '');
+	return np === nr || np.startsWith(`${nr}/`);
+}
+
+/** Guard a write against ctx.writeRoot; returns an error string if out of bounds. */
+function writeRootError(rawPath: unknown, ctx: ToolContext): string | null {
+	const root = ctx.writeRoot?.trim();
+	if (!root) return null;
+	const path = typeof rawPath === 'string' ? rawPath : '';
+	if (!isUnderWriteRoot(path, root)) {
+		return (
+			`This run may only write inside ${root}. Refusing to write ` +
+			`"${path || '(empty path)'}" — put the file under ${root}.`
+		);
+	}
+	return null;
+}
+
+/**
  * Compact edit confirmation from the Rust `EditResult` — the changed line
  * number plus a `[fuzzy]` note when the match needed the whitespace/quote
  * fuzzy fallback. Deliberately not a full diff (keeps tool output small).
@@ -337,6 +370,8 @@ function textWriteExecutor(
 function shellAwareWriteText() {
 	const chat = textWriteExecutor(IPC.fs_write_text, 'fs_write_text');
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const rootErr = writeRootError(args.path, ctx);
+		if (rootErr) return toolResult(toolError(rootErr));
 		// Shell-CWD (absolute) dispatch only in Code mode (which allows edits).
 		if (!(ctx.shellMode && ctx.codeMode)) return chat(args, ctx);
 		const err = validateTextContent(args, 'fs_write_text');

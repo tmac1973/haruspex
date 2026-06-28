@@ -810,6 +810,7 @@ async function runGuidedPlanningPipeline(
 			visionSupported: jobVisionSupported(job),
 			maxIterations,
 			interactive: true,
+			writeRoot: outDir,
 			systemPrompt,
 			toolAllowlist: tools,
 			...buildStreamCallbacks(runId, stepIdx)
@@ -852,18 +853,21 @@ async function runGuidedPlanningPipeline(
 		let approved = false;
 		while (!approved) {
 			abortIfCancelled();
-			const answer = await askUserQuestion({
-				question:
-					`I wrote the project overview to ${overviewPath}. Review it, then approve ` +
-					`to continue — or type what you'd like changed and I'll revise it.`,
-				options: [
-					{ label: 'Approve', description: 'The overview looks good.', recommended: true },
-					{
-						label: 'I edited it myself — re-read',
-						description: 'I changed the file on disk; re-read it before asking again.'
-					}
-				]
-			});
+			const answer = await askUserQuestion(
+				{
+					question:
+						`I wrote the project overview to ${overviewPath}. Review it, then approve ` +
+						`to continue — or type what you'd like changed and I'll revise it.`,
+					options: [
+						{ label: 'Approve', description: 'The overview looks good.', recommended: true },
+						{
+							label: 'I edited it myself — re-read',
+							description: 'I changed the file on disk; re-read it before asking again.'
+						}
+					]
+				},
+				abort.signal
+			);
 			abortIfCancelled();
 			if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
 				approved = true;
@@ -902,19 +906,22 @@ async function runGuidedPlanningPipeline(
 		let planApproved = false;
 		while (!planApproved) {
 			abortIfCancelled();
-			const answer = await askUserQuestion({
-				question:
-					`I wrote the phased implementation plan to ${outDir} (phase-NN-*.md), ` +
-					`ordered by dependency and checked for unresolved decisions. Review it, ` +
-					`then approve — or type what you'd like changed.`,
-				options: [
-					{ label: 'Approve', description: 'The plan looks good — finish.', recommended: true },
-					{
-						label: 'I edited it myself — re-check',
-						description: 'I changed files on disk; re-read them before asking again.'
-					}
-				]
-			});
+			const answer = await askUserQuestion(
+				{
+					question:
+						`I wrote the phased implementation plan to ${outDir} (phase-NN-*.md), ` +
+						`ordered by dependency and checked for unresolved decisions. Review it, ` +
+						`then approve — or type what you'd like changed.`,
+					options: [
+						{ label: 'Approve', description: 'The plan looks good — finish.', recommended: true },
+						{
+							label: 'I edited it myself — re-check',
+							description: 'I changed files on disk; re-read them before asking again.'
+						}
+					]
+				},
+				abort.signal
+			);
 			abortIfCancelled();
 			if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
 				planApproved = true;
