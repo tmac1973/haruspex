@@ -333,7 +333,11 @@
 				model_remote_vision_supported:
 					modelOverride && modelBaseUrl.trim() && modelVision !== 'auto'
 						? modelVision === 'yes'
-						: null
+						: null,
+				// Guided-planning fields are wired into the form in a later phase;
+				// null here so research/audit jobs persist unchanged.
+				initial_description: null,
+				plan_output_dir: null
 			};
 			// Audit jobs persist exactly one step (the audit prompt); research jobs
 			// persist their full pipeline.

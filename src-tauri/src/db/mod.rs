@@ -145,6 +145,12 @@ pub struct JobWithSteps {
     /// Whether the override model accepts image input. NULL = inherit the
     /// global Settings vision capability; Some(false) hides vision tools.
     pub model_remote_vision_supported: Option<bool>,
+    // Guided-planning config (NULL for other job types).
+    /// Initial idea/description seeding the run.
+    pub initial_description: Option<String>,
+    /// Output folder for plan artifacts, relative to working_dir (default
+    /// `plan/<slug>/`).
+    pub plan_output_dir: Option<String>,
 }
 
 fn default_job_type() -> String {
@@ -192,6 +198,10 @@ pub struct JobInput {
     pub model_remote_context_size: Option<i64>,
     #[serde(default)]
     pub model_remote_vision_supported: Option<bool>,
+    #[serde(default)]
+    pub initial_description: Option<String>,
+    #[serde(default)]
+    pub plan_output_dir: Option<String>,
 }
 
 /// A user-saved catalog prompt. `scope` is "audit" | "research" | "any".
@@ -221,6 +231,9 @@ pub struct JobRunSummary {
     pub started_at: Option<i64>,
     pub finished_at: Option<i64>,
     pub error: Option<String>,
+    /// Serialized guided_planning resume state (stage, milestone, approved
+    /// outline). NULL for non-guided runs.
+    pub planning_state: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -247,6 +260,7 @@ pub struct JobRunWithSteps {
     pub started_at: Option<i64>,
     pub finished_at: Option<i64>,
     pub error: Option<String>,
+    pub planning_state: Option<String>,
     pub steps: Vec<JobRunStep>,
 }
 
@@ -382,7 +396,9 @@ impl Database {
                 model_remote_api_key TEXT,
                 model_remote_model_id TEXT,
                 model_remote_context_size INTEGER,
-                model_remote_vision_supported INTEGER
+                model_remote_vision_supported INTEGER,
+                initial_description TEXT,
+                plan_output_dir TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_jobs_next_due
@@ -407,7 +423,8 @@ impl Database {
                 queued_at INTEGER NOT NULL,
                 started_at INTEGER,
                 finished_at INTEGER,
-                error TEXT
+                error TEXT,
+                planning_state TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_job_runs_job
@@ -460,6 +477,9 @@ impl Database {
             "ALTER TABLE jobs ADD COLUMN model_remote_model_id TEXT",
             "ALTER TABLE jobs ADD COLUMN model_remote_context_size INTEGER",
             "ALTER TABLE jobs ADD COLUMN model_remote_vision_supported INTEGER",
+            "ALTER TABLE jobs ADD COLUMN initial_description TEXT",
+            "ALTER TABLE jobs ADD COLUMN plan_output_dir TEXT",
+            "ALTER TABLE job_runs ADD COLUMN planning_state TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

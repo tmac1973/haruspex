@@ -235,6 +235,8 @@ fn sample_job_input(name: &str) -> JobInput {
         model_remote_model_id: None,
         model_remote_context_size: None,
         model_remote_vision_supported: None,
+        initial_description: None,
+        plan_output_dir: None,
     }
 }
 
@@ -353,6 +355,8 @@ fn update_job_changes_fields_and_bumps_timestamp() {
             model_remote_model_id: None,
             model_remote_context_size: None,
             model_remote_vision_supported: None,
+            initial_description: None,
+            plan_output_dir: None,
         },
     )
     .unwrap();
@@ -623,6 +627,8 @@ fn schedule_config_round_trips_as_opaque_json() {
             model_remote_model_id: None,
             model_remote_context_size: None,
             model_remote_vision_supported: None,
+            initial_description: None,
+            plan_output_dir: None,
         })
         .unwrap();
     let job = db.get_job(id).unwrap();
@@ -653,6 +659,8 @@ fn audit_job_config_round_trips() {
             model_remote_model_id: Some("qwen3.5-27b".to_string()),
             model_remote_context_size: Some(131072),
             model_remote_vision_supported: Some(true),
+            initial_description: None,
+            plan_output_dir: None,
         })
         .unwrap();
     let job = db.get_job(id).unwrap();
@@ -994,4 +1002,48 @@ fn prompt_catalog_crud() {
 
     db.delete_prompt(id).unwrap();
     assert!(db.list_prompts().unwrap().is_empty());
+}
+
+#[test]
+fn guided_planning_columns_and_run_state_round_trip() {
+    let db = test_db();
+    let id = db
+        .create_job(&JobInput {
+            job_type: "guided_planning".to_string(),
+            initial_description: Some("Build a guided planning feature".to_string()),
+            plan_output_dir: Some("plan/guided-planning".to_string()),
+            ..sample_job_input("Planner")
+        })
+        .unwrap();
+
+    let job = db.get_job(id).unwrap();
+    assert_eq!(job.job_type, "guided_planning");
+    assert_eq!(
+        job.initial_description.as_deref(),
+        Some("Build a guided planning feature")
+    );
+    assert_eq!(job.plan_output_dir.as_deref(), Some("plan/guided-planning"));
+
+    let run_id = db
+        .create_job_run(id, "manual", &["go".to_string()])
+        .unwrap();
+
+    // New runs start with no planning state.
+    assert_eq!(db.get_job_run(run_id).unwrap().planning_state, None);
+
+    // Persist a milestone blob and read it back via both run accessors.
+    let blob = r#"{"stage":"planning","milestone":"overview_written"}"#;
+    db.set_run_planning_state(run_id, Some(blob)).unwrap();
+    assert_eq!(
+        db.get_job_run(run_id).unwrap().planning_state.as_deref(),
+        Some(blob)
+    );
+    assert_eq!(
+        db.list_job_runs(id).unwrap()[0].planning_state.as_deref(),
+        Some(blob)
+    );
+
+    // Parking as needs_input is a non-terminal status change.
+    db.set_run_status(run_id, "needs_input").unwrap();
+    assert_eq!(db.get_job_run(run_id).unwrap().status, "needs_input");
 }

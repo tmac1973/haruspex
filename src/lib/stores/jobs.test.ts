@@ -34,7 +34,9 @@ const baseInput: JobInput = {
 	model_remote_api_key: null,
 	model_remote_model_id: null,
 	model_remote_context_size: null,
-	model_remote_vision_supported: null
+	model_remote_vision_supported: null,
+	initial_description: null,
+	plan_output_dir: null
 };
 
 const summary = (id: number, name: string, overrides: Partial<JobSummary> = {}): JobSummary => ({
@@ -280,7 +282,9 @@ describe('jobs store CRUD', () => {
 			model_remote_api_key: null,
 			model_remote_model_id: null,
 			model_remote_context_size: null,
-			model_remote_vision_supported: null
+			model_remote_vision_supported: null,
+			initial_description: null,
+			plan_output_dir: null
 		};
 		vi.mocked(invoke).mockResolvedValueOnce(full);
 

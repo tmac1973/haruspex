@@ -64,6 +64,40 @@ impl Database {
         Ok(())
     }
 
+    /// Persist (or clear) the guided_planning resume blob for a run. Called by
+    /// the runner at each milestone so a closed/crashed session can resume.
+    // Wired up by the guided_planning runner (Phase 05); unused until then.
+    #[allow(dead_code)]
+    pub fn set_run_planning_state(
+        &self,
+        run_id: i64,
+        planning_state: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE job_runs SET planning_state = ?1 WHERE id = ?2",
+            params![planning_state, run_id],
+        )
+        .map_err(|e| format!("planning_state update failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Set a run's status without touching its finished/started timestamps.
+    /// Used to park a guided_planning run as `needs_input` (and to un-park it
+    /// back to `running` on resume) — distinct from mark_run_finished, which is
+    /// terminal.
+    // Wired up by the guided_planning runner (Phase 05); unused until then.
+    #[allow(dead_code)]
+    pub fn set_run_status(&self, run_id: i64, status: &str) -> Result<(), String> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE job_runs SET status = ?1 WHERE id = ?2",
+            params![status, run_id],
+        )
+        .map_err(|e| format!("Run status update failed: {}", e))?;
+        Ok(())
+    }
+
     pub fn mark_run_step_started(
         &self,
         run_id: i64,
@@ -106,7 +140,8 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
-                "SELECT id, job_id, status, trigger, queued_at, started_at, finished_at, error
+                "SELECT id, job_id, status, trigger, queued_at, started_at, finished_at, error,
+                        planning_state
                  FROM job_runs WHERE job_id = ?1
                  ORDER BY queued_at DESC",
             )
@@ -123,6 +158,7 @@ impl Database {
                     started_at: row.get(5)?,
                     finished_at: row.get(6)?,
                     error: row.get(7)?,
+                    planning_state: row.get(8)?,
                 })
             })
             .map_err(|e| format!("Runs query failed: {}", e))?;
@@ -133,9 +169,10 @@ impl Database {
 
     pub fn get_job_run(&self, run_id: i64) -> Result<JobRunWithSteps, String> {
         let conn = self.conn();
-        let (job_id, status, trigger, queued_at, started_at, finished_at, error) = conn
-            .query_row(
-                "SELECT job_id, status, trigger, queued_at, started_at, finished_at, error
+        let (job_id, status, trigger, queued_at, started_at, finished_at, error, planning_state) =
+            conn.query_row(
+                "SELECT job_id, status, trigger, queued_at, started_at, finished_at, error,
+                        planning_state
                  FROM job_runs WHERE id = ?1",
                 params![run_id],
                 |row| {
@@ -147,6 +184,7 @@ impl Database {
                         row.get::<_, Option<i64>>(4)?,
                         row.get::<_, Option<i64>>(5)?,
                         row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<String>>(7)?,
                     ))
                 },
             )
@@ -189,6 +227,7 @@ impl Database {
             started_at,
             finished_at,
             error,
+            planning_state,
             steps,
         })
     }

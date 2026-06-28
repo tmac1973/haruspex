@@ -54,8 +54,33 @@ import {
 } from '$lib/stores/jobRuns.svelte';
 import { logDebug } from '$lib/debug-log';
 
-export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+/**
+ * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at
+ * each milestone so a closed/crashed session resumes from the last one. The
+ * runner re-enters the recorded stage; Q&A since the last milestone is re-done.
+ * Wired up by the guided_planning runner (Phase 05+).
+ */
+export type PlanningStage = 'overview' | 'planning' | 'done';
+
+export interface PhaseOutline {
+	id: string;
+	title: string;
+	dependsOn: string[];
+	summary: string;
+}
+
+export interface PlanningState {
+	stage: PlanningStage;
+	/** e.g. 'overview_written', 'phase_03_written'. */
+	milestone: string;
+	/** Set once the dependency map is approved; null before that. */
+	approvedOutline: PhaseOutline[] | null;
+	/** Checkpoint currently awaiting the user, if any. */
+	pendingCheckpoint: 'overview_review' | 'dep_map' | null;
+}
 
 /** Read-only investigation toolset shared by audit sample + verification turns. */
 const AUDIT_READ_TOOLS = ['code_grep', 'code_glob', 'fs_read_text', 'fs_list_dir'];

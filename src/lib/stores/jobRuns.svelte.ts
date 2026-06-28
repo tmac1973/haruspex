@@ -8,7 +8,10 @@ export type JobRunStatus =
 	| 'succeeded'
 	| 'failed'
 	| 'cancelled'
-	| 'interrupted';
+	| 'interrupted'
+	// Parked mid-run waiting on user input (guided_planning with no live user);
+	// resumes when the user answers. See the guided_planning runner.
+	| 'needs_input';
 
 export type JobRunStepStatus =
 	| 'pending'
@@ -27,6 +30,11 @@ export interface JobRunSummary {
 	started_at: number | null;
 	finished_at: number | null;
 	error: string | null;
+	/**
+	 * Serialized guided_planning resume state (stage, milestone, approved
+	 * outline). null for non-guided runs. Mirrors job_runs.planning_state.
+	 */
+	planning_state: string | null;
 }
 
 export interface JobRunStep {

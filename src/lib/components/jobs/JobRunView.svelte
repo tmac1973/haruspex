@@ -28,6 +28,8 @@
 				return 'Failed';
 			case 'cancelled':
 				return 'Cancelled';
+			case 'needs_input':
+				return 'Needs input';
 		}
 	}
 

@@ -40,9 +40,10 @@ impl Database {
                  audit_max_iterations, audit_sample_instructions, audit_verify_instructions,
                  model_remote_base_url, model_remote_api_key, model_remote_model_id,
                  model_remote_context_size, model_remote_vision_supported,
+                 initial_description, plan_output_dir,
                  created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                     ?15, ?16, ?17, ?18, ?19, ?20, ?20)",
+                     ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22)",
             params![
                 input.name,
                 input.description,
@@ -63,6 +64,8 @@ impl Database {
                 input.model_remote_model_id,
                 input.model_remote_context_size,
                 input.model_remote_vision_supported,
+                input.initial_description,
+                input.plan_output_dir,
                 now,
             ],
         )
@@ -116,6 +119,8 @@ impl Database {
             model_remote_model_id,
             model_remote_context_size,
             model_remote_vision_supported,
+            initial_description,
+            plan_output_dir,
         ) = conn
             .query_row(
                 "SELECT name, description, working_dir, auto_approve_tools, job_type,
@@ -125,7 +130,8 @@ impl Database {
                         audit_max_iterations,
                         audit_sample_instructions, audit_verify_instructions,
                         model_remote_base_url, model_remote_api_key, model_remote_model_id,
-                        model_remote_context_size, model_remote_vision_supported
+                        model_remote_context_size, model_remote_vision_supported,
+                        initial_description, plan_output_dir
                  FROM jobs WHERE id = ?1",
                 params![id],
                 |row| {
@@ -151,6 +157,8 @@ impl Database {
                         row.get::<_, Option<String>>(18)?,
                         row.get::<_, Option<i64>>(19)?,
                         row.get::<_, Option<bool>>(20)?,
+                        row.get::<_, Option<String>>(21)?,
+                        row.get::<_, Option<String>>(22)?,
                     ))
                 },
             )
@@ -200,6 +208,8 @@ impl Database {
             model_remote_model_id,
             model_remote_context_size,
             model_remote_vision_supported,
+            initial_description,
+            plan_output_dir,
         })
     }
 
@@ -228,8 +238,10 @@ impl Database {
                     model_remote_model_id = ?17,
                     model_remote_context_size = ?18,
                     model_remote_vision_supported = ?19,
-                    updated_at = ?20
-                 WHERE id = ?21",
+                    initial_description = ?20,
+                    plan_output_dir = ?21,
+                    updated_at = ?22
+                 WHERE id = ?23",
                 params![
                     input.name,
                     input.description,
@@ -250,6 +262,8 @@ impl Database {
                     input.model_remote_model_id,
                     input.model_remote_context_size,
                     input.model_remote_vision_supported,
+                    input.initial_description,
+                    input.plan_output_dir,
                     now,
                     id,
                 ],

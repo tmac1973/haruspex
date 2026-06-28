@@ -83,6 +83,8 @@ function makeJob(overrides: Partial<JobWithSteps> = {}): JobWithSteps {
 		model_remote_model_id: null,
 		model_remote_context_size: null,
 		model_remote_vision_supported: null,
+		initial_description: null,
+		plan_output_dir: null,
 		...overrides
 	};
 }
