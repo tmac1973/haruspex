@@ -164,7 +164,8 @@ describe('jobs runner — guards', () => {
 				plan_output_dir: 'plan/x/'
 			})
 		);
-		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'wrote overview' });
+		// Every turn returns a clean verifier verdict so the run completes.
+		mocks.runEphemeralTurn.mockResolvedValue({ finalText: 'PLAN OK' });
 
 		const { enqueue, getCurrentRun } = await freshRunner();
 		const runId = await enqueue(1);
@@ -180,7 +181,9 @@ describe('jobs runner — guards', () => {
 		expect(opts.systemPrompt).toContain('plan/x/');
 		expect([...opts.toolAllowlist]).toContain('ask_user_question');
 		expect([...opts.toolAllowlist]).not.toContain('run_command');
-		// The overview review checkpoint was reached and approved.
+		// Both stages ran (overview + planning + verifier ⇒ several turns), and
+		// the review/approval checkpoints were reached.
+		expect(mocks.runEphemeralTurn.mock.calls.length).toBeGreaterThan(1);
 		expect(mocks.askUserQuestion).toHaveBeenCalled();
 	});
 
