@@ -34,6 +34,20 @@ export interface EphemeralTurnOptions {
 	forceFinalTool?: string;
 	/** Remote backend override for this turn's model calls. See `AgentLoopOptions`. */
 	backend?: BackendOverride;
+	/**
+	 * True when a live user can answer interactive tools (ask_user_question) —
+	 * set by foreground guided-planning runs. Defaults to false so unattended
+	 * jobs don't hang on a question with no one present.
+	 */
+	interactive?: boolean;
+	/** Confine writes to this dir (relative to workingDir). See AgentLoopOptions. */
+	writeRoot?: string | null;
+	/**
+	 * Replace the default system prompt with this exact text. Used by the
+	 * guided-planning stages, which drive the turn with their own instructions
+	 * rather than the chat/agent system prompt.
+	 */
+	systemPrompt?: string;
 	signal?: AbortSignal;
 	onAssistantDelta?: (full: string) => void;
 	onToolStart?: (call: ResolvedToolCall) => void;
@@ -54,7 +68,9 @@ export async function runEphemeralTurn(
 	options: EphemeralTurnOptions
 ): Promise<EphemeralTurnResult> {
 	const messages: ChatMessage[] = [
-		buildSystemPrompt(options.workingDir),
+		options.systemPrompt != null
+			? { role: 'system', content: options.systemPrompt }
+			: buildSystemPrompt(options.workingDir),
 		{ role: 'user', content: options.userMessage }
 	];
 
@@ -72,6 +88,8 @@ export async function runEphemeralTurn(
 			toolAllowlist: options.toolAllowlist,
 			forceFinalTool: options.forceFinalTool,
 			backend: options.backend,
+			interactive: options.interactive,
+			writeRoot: options.writeRoot,
 			signal: options.signal,
 			onToolStart: (call) => options.onToolStart?.(call),
 			onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) =>

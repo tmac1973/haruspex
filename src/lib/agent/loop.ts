@@ -181,6 +181,19 @@ export interface AgentLoopOptions {
 	 */
 	codeMode?: boolean;
 	/**
+	 * True when a live user is present to answer interactive tools
+	 * (ask_user_question). Set by chat and by foreground guided-planning runs.
+	 * Defaults to false so background/scheduled jobs don't hang on a question
+	 * with no one to answer (the tool fails safe instead).
+	 */
+	interactive?: boolean;
+	/**
+	 * When set, file writes are confined to this directory (relative to the
+	 * working dir). fs_write_text rejects writes outside it. Used by
+	 * guided-planning runs to keep the agent inside its plan output folder.
+	 */
+	writeRoot?: string | null;
+	/**
 	 * Companion flag to codeMode: when true, `run_command` runs risky
 	 * commands without prompting. Defaults to false (the user opts in via
 	 * Settings → Code).

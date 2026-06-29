@@ -101,6 +101,7 @@ export const IPC = {
 	inference_heartbeat: 'inference_heartbeat',
 	inference_queue_snapshot: 'inference_queue_snapshot',
 	inference_release: 'inference_release',
+	inference_release_window: 'inference_release_window',
 	is_recording: 'is_recording',
 	lint_python_source: 'lint_python_source',
 	list_audio_input_devices: 'list_audio_input_devices',

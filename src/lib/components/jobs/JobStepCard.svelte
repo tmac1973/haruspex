@@ -16,12 +16,14 @@
 	interface Props {
 		stepNumber: number;
 		status: StepCardStatus;
+		/** Optional stage name shown after "Step N" (e.g. guided-planning stages). */
+		title?: string;
 		/** Optional extra content rendered inline after the status pill (e.g. a badge). */
 		headExtra?: Snippet;
 		children: Snippet;
 	}
 
-	const { stepNumber, status, headExtra, children }: Props = $props();
+	const { stepNumber, status, title, headExtra, children }: Props = $props();
 
 	function stepStatusLabel(s: StepCardStatus): string {
 		switch (s) {
@@ -44,6 +46,7 @@
 <div class="step" data-status={status}>
 	<div class="step-head">
 		<span class="step-num">Step {stepNumber}</span>
+		{#if title}<span class="step-title">{title}</span>{/if}
 		<span class="status-pill status-{status}">{stepStatusLabel(status)}</span>
 		{@render headExtra?.()}
 	</div>
@@ -77,5 +80,11 @@
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--text-secondary);
+	}
+
+	.step-title {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--text-primary);
 	}
 </style>

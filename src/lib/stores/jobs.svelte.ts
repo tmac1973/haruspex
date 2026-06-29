@@ -5,9 +5,10 @@ export type ScheduleKind = 'manual' | 'hourly' | 'daily' | 'weekly' | 'interval'
 /**
  * `research` = the original sequential multi-step pipeline. `audit` = run one
  * prompt N independent times, then cluster + source-verify the findings into a
- * single meta-report.
+ * single meta-report. `guided_planning` = an interactive run that asks the user
+ * questions and writes a project overview + phased implementation plan.
  */
-export type JobType = 'research' | 'audit';
+export type JobType = 'research' | 'audit' | 'guided_planning';
 
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
@@ -91,7 +92,17 @@ export interface ModelOverrideConfig {
 	model_remote_vision_supported: boolean | null;
 }
 
-export interface JobWithSteps extends AuditConfig, ModelOverrideConfig {
+/**
+ * Guided-planning config (null for other job types). `initial_description` is
+ * the seed idea; `plan_output_dir` is where the overview + phase files are
+ * written, relative to `working_dir` (default `plan/<slug>/`).
+ */
+export interface GuidedPlanningConfig {
+	initial_description: string | null;
+	plan_output_dir: string | null;
+}
+
+export interface JobWithSteps extends AuditConfig, ModelOverrideConfig, GuidedPlanningConfig {
 	id: number;
 	name: string;
 	description: string | null;
@@ -106,7 +117,7 @@ export interface JobWithSteps extends AuditConfig, ModelOverrideConfig {
 	steps: JobStep[];
 }
 
-export interface JobInput extends AuditConfig, ModelOverrideConfig {
+export interface JobInput extends AuditConfig, ModelOverrideConfig, GuidedPlanningConfig {
 	name: string;
 	description: string | null;
 	working_dir: string;

@@ -47,6 +47,13 @@
 	let auditMaxTurns = $state(200);
 	let auditSampleInstructions = $state(DEFAULT_SAMPLE_INSTRUCTIONS);
 	let auditVerifyInstructions = $state(DEFAULT_VERIFY_INSTRUCTIONS);
+	// Guided-planning config (only used when jobType === 'guided_planning').
+	// `initialDescription` is the seed idea; `planOutputDir` is where the
+	// overview + phase files are written (relative to workingDir). The output
+	// dir auto-derives from the name until the user edits it.
+	let initialDescription = $state('');
+	let planOutputDir = $state('');
+	let planOutputDirEdited = $state(false);
 	// Per-job remote model override (any job type). Off → the job uses the
 	// global Settings backend; on → it runs against this remote server/model.
 	let modelOverride = $state(false);
@@ -71,6 +78,23 @@
 		loadIntoForm(jobId);
 	});
 
+	function slugify(s: string): string {
+		return s
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '');
+	}
+
+	// Keep the guided-planning output folder in sync with the name
+	// (plan/<slug>/) until the user edits it by hand.
+	$effect(() => {
+		if (jobType === 'guided_planning' && !planOutputDirEdited) {
+			const s = slugify(name);
+			planOutputDir = s ? `plan/${s}/` : '';
+		}
+	});
+
 	async function loadIntoForm(id: number | 'new') {
 		error = null;
 		if (id === 'new') {
@@ -86,6 +110,9 @@
 			auditMaxTurns = 200;
 			auditSampleInstructions = DEFAULT_SAMPLE_INSTRUCTIONS;
 			auditVerifyInstructions = DEFAULT_VERIFY_INSTRUCTIONS;
+			initialDescription = '';
+			planOutputDir = '';
+			planOutputDirEdited = false;
 			modelOverride = false;
 			modelBaseUrl = '';
 			modelApiKey = '';
@@ -121,6 +148,11 @@
 			auditMaxTurns = job.audit_max_iterations ?? 200;
 			auditSampleInstructions = job.audit_sample_instructions ?? DEFAULT_SAMPLE_INSTRUCTIONS;
 			auditVerifyInstructions = job.audit_verify_instructions ?? DEFAULT_VERIFY_INSTRUCTIONS;
+			initialDescription = job.initial_description ?? '';
+			planOutputDir = job.plan_output_dir ?? '';
+			// Treat a loaded value as user-set so the name-sync effect doesn't
+			// clobber it on edit.
+			planOutputDirEdited = !!job.plan_output_dir;
 			modelOverride = !!job.model_remote_base_url;
 			modelBaseUrl = job.model_remote_base_url ?? '';
 			modelApiKey = job.model_remote_api_key ?? '';
@@ -265,6 +297,12 @@
 
 	function validate(): string | null {
 		if (!name.trim()) return 'Name is required.';
+		if (jobType === 'guided_planning') {
+			if (!workingDir.trim())
+				return 'Guided planning needs a working directory — the project to plan in.';
+			if (!initialDescription.trim()) return 'Describe what you want to build to start planning.';
+			return null;
+		}
 		if (jobType === 'audit') {
 			if (!steps[0]?.prompt.trim()) return 'An audit prompt is required.';
 			if (!workingDir.trim()) return 'Audit jobs need a working directory (the code to audit).';
@@ -333,7 +371,13 @@
 				model_remote_vision_supported:
 					modelOverride && modelBaseUrl.trim() && modelVision !== 'auto'
 						? modelVision === 'yes'
-						: null
+						: null,
+				initial_description:
+					jobType === 'guided_planning' && initialDescription.trim()
+						? initialDescription.trim()
+						: null,
+				plan_output_dir:
+					jobType === 'guided_planning' && planOutputDir.trim() ? planOutputDir.trim() : null
 			};
 			// Audit jobs persist exactly one step (the audit prompt); research jobs
 			// persist their full pipeline.
@@ -409,11 +453,27 @@
 				>
 					Audit
 				</button>
+				<button
+					type="button"
+					class:active={jobType === 'guided_planning'}
+					onclick={() => (jobType = 'guided_planning')}
+					title="Interactively turn an idea into a written project overview and a dependency-ordered, phased implementation plan. Asks you questions; writes markdown only (no code)."
+				>
+					Guided planning
+				</button>
 			</div>
 			<span class="hint">
-				{jobType === 'audit'
-					? 'Runs one prompt N times independently, then clusters and source-verifies the findings into a single meta-report — averaging out single-run noise.'
-					: 'A sequential pipeline of steps; each step runs as a fresh conversation and its output feeds the next.'}
+				{#if jobType === 'audit'}
+					Runs one prompt N times independently, then clusters and source-verifies the findings into
+					a single meta-report — averaging out single-run noise.
+				{:else if jobType === 'guided_planning'}
+					Asks you multiple-choice questions to define the project, then writes an overview and a
+					dependency-ordered, phased implementation plan as markdown. Planning only — it never
+					writes code.
+				{:else}
+					A sequential pipeline of steps; each step runs as a fresh conversation and its output
+					feeds the next.
+				{/if}
 			</span>
 		</div>
 
@@ -435,15 +495,15 @@
 
 		<div
 			class="field"
-			title={jobType === 'audit'
-				? 'Required. Absolute path to the codebase this audit reads and greps. Every run operates inside it.'
+			title={jobType === 'audit' || jobType === 'guided_planning'
+				? 'Required. Absolute path to the project this job reads and greps. Every run operates inside it.'
 				: "Optional. Absolute path to a folder this job operates in. When set, every step sees it as the agent's working directory — file reads, writes, Python sandbox cwd. Leave blank for jobs that don't touch the filesystem (research, summarization, etc.) — the model just won't have fs_* tools available."}
 		>
 			<span class="label">
 				Working directory
-				{#if jobType === 'audit'}<span class="required">(required)</span>{:else}<span
-						class="optional">(optional)</span
-					>{/if}
+				{#if jobType === 'audit' || jobType === 'guided_planning'}<span class="required"
+						>(required)</span
+					>{:else}<span class="optional">(optional)</span>{/if}
 			</span>
 			<div class="workdir-row">
 				<input
@@ -451,7 +511,9 @@
 					bind:value={workingDir}
 					placeholder={jobType === 'audit'
 						? 'Absolute path to the code to audit'
-						: "Leave blank if the job doesn't touch files"}
+						: jobType === 'guided_planning'
+							? 'Absolute path to the project to plan in'
+							: "Leave blank if the job doesn't touch files"}
 					class="workdir-input"
 				/>
 				<button
@@ -668,7 +730,7 @@
 					+ Add step
 				</button>
 			</div>
-		{:else}
+		{:else if jobType === 'audit'}
 			<div class="field" title="The instruction each sample run executes, independently.">
 				<div class="field-head">
 					<span class="label">Audit prompt</span>
@@ -770,6 +832,38 @@
 					<textarea bind:value={auditVerifyInstructions} rows="8"></textarea>
 				</div>
 			</details>
+		{:else}
+			<div
+				class="field"
+				title="The idea seeding this planning session. The agent asks follow-up questions from here, then writes the overview and phase files."
+			>
+				<span class="label">
+					What do you want to build? <span class="required">(required)</span>
+				</span>
+				<span class="hint">
+					Describe the project or feature in your own words. The agent interviews you from here —
+					you can always type your own answer to any question.
+				</span>
+				<textarea
+					bind:value={initialDescription}
+					rows="5"
+					placeholder="e.g. A guided-planning job type that interviews me one question at a time and writes a dependency-ordered, phased implementation plan."
+				></textarea>
+			</div>
+
+			<label
+				class="field"
+				title="Folder where the overview and phase markdown files are written, relative to the working directory. Auto-fills from the name until you edit it."
+			>
+				<span class="label">Output folder</span>
+				<input
+					type="text"
+					bind:value={planOutputDir}
+					oninput={() => (planOutputDirEdited = true)}
+					placeholder="plan/<name>/"
+				/>
+				<span class="hint">Relative to the working directory (e.g. plan/my-feature/).</span>
+			</label>
 		{/if}
 
 		{#if error}

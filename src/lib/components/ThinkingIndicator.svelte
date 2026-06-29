@@ -1,11 +1,33 @@
-<div class="thinking">
-	<div class="message-label">Haruspex</div>
-	<div class="dots">
+<script lang="ts">
+	/**
+	 * The "model is doing something" indicator (bouncing dots). Default form has
+	 * the chat "Haruspex" label + chrome; `bare` is a compact inline form (dots +
+	 * a small "Thinking…" caption) for embedding inside a job-run step card.
+	 */
+	interface Props {
+		bare?: boolean;
+	}
+
+	const { bare = false }: Props = $props();
+</script>
+
+{#if bare}
+	<div class="dots bare" role="status" aria-label="Thinking">
 		<span class="dot"></span>
 		<span class="dot"></span>
 		<span class="dot"></span>
+		<span class="caption">Thinking…</span>
 	</div>
-</div>
+{:else}
+	<div class="thinking">
+		<div class="message-label">Haruspex</div>
+		<div class="dots">
+			<span class="dot"></span>
+			<span class="dot"></span>
+			<span class="dot"></span>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.thinking {
@@ -26,6 +48,17 @@
 		display: flex;
 		gap: 4px;
 		padding: 4px 0;
+	}
+
+	.dots.bare {
+		align-items: center;
+	}
+
+	.caption {
+		margin-left: 6px;
+		font-size: 0.8rem;
+		font-style: italic;
+		color: var(--text-secondary);
 	}
 
 	.dot {

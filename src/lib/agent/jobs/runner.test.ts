@@ -9,11 +9,16 @@ const mocks = vi.hoisted(() => ({
 	markRunStarted: vi.fn(),
 	markRunFinished: vi.fn(),
 	markRunStepStarted: vi.fn(),
-	markRunStepFinished: vi.fn()
+	markRunStepFinished: vi.fn(),
+	askUserQuestion: vi.fn()
 }));
 
 vi.mock('$lib/agent/runEphemeralTurn', () => ({
 	runEphemeralTurn: mocks.runEphemeralTurn
+}));
+
+vi.mock('$lib/stores/userQuestion.svelte', () => ({
+	askUserQuestion: mocks.askUserQuestion
 }));
 
 vi.mock('$lib/stores/jobs.svelte', () => ({
@@ -83,6 +88,8 @@ function makeJob(overrides: Partial<JobWithSteps> = {}): JobWithSteps {
 		model_remote_model_id: null,
 		model_remote_context_size: null,
 		model_remote_vision_supported: null,
+		initial_description: null,
+		plan_output_dir: null,
 		...overrides
 	};
 }
@@ -104,6 +111,8 @@ beforeEach(() => {
 	mocks.markRunFinished.mockReset().mockResolvedValue(undefined);
 	mocks.markRunStepStarted.mockReset().mockResolvedValue(undefined);
 	mocks.markRunStepFinished.mockReset().mockResolvedValue(undefined);
+	// Default: the guided_planning review checkpoint is approved immediately.
+	mocks.askUserQuestion.mockReset().mockResolvedValue({ kind: 'selected', labels: ['Approve'] });
 	// Default: createJobRun assigns sequential ids starting at 100 so the
 	// runner-issued ids never collide with the test's job ids (which start
 	// at 1) — easier to spot a "did the runner use the persisted id?" bug.
@@ -143,6 +152,39 @@ describe('jobs runner — guards', () => {
 		expect(opts.workingDir).toBeNull();
 		// No model override configured → the turn inherits the Settings backend.
 		expect(opts.backend).toBeUndefined();
+	});
+
+	it('runs a guided_planning job despite having no steps', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/'
+			})
+		);
+		// Every turn returns a clean verifier verdict so the run completes.
+		mocks.runEphemeralTurn.mockResolvedValue({ finalText: 'PLAN OK' });
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		const runId = await enqueue(1);
+		expect(runId).not.toBeNull();
+		await tick();
+		await tick();
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		const opts = mocks.runEphemeralTurn.mock.calls[0][0];
+		// Interactive (modal-capable), driven by a guided-planning system prompt
+		// scoped to the output folder, and gated to the planning toolset.
+		expect(opts.interactive).toBe(true);
+		expect(opts.systemPrompt).toContain('plan/x/');
+		expect([...opts.toolAllowlist]).toContain('ask_user_question');
+		expect([...opts.toolAllowlist]).not.toContain('run_command');
+		// Both stages ran (overview + planning + verifier ⇒ several turns), and
+		// the review/approval checkpoints were reached.
+		expect(mocks.runEphemeralTurn.mock.calls.length).toBeGreaterThan(1);
+		expect(mocks.askUserQuestion).toHaveBeenCalled();
 	});
 
 	it('threads a per-job remote model override (backend + larger context) into the turn', async () => {

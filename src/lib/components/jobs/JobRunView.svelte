@@ -1,7 +1,9 @@
 <script lang="ts">
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import SearchStepView from '$lib/components/SearchStep.svelte';
+	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
+	import { hasStreamingAnswer } from '$lib/agent/think-stream';
 	import {
 		cancel,
 		clearCurrentRun,
@@ -16,6 +18,16 @@
 	const { ondone }: Props = $props();
 
 	const run = $derived(getCurrentRun());
+	const isGuided = $derived(run?.jobType === 'guided_planning');
+
+	// What each guided_planning stage is doing — so the tool calls and thinking
+	// have context. Indexed by step.index.
+	const GUIDED_STEP_DESC = [
+		'Interviewing you about the project, then writing overview.md. Answer “proceed” to any question to move on.',
+		'Interviewing you about the implementation, then writing the phase files.',
+		'An independent reviewer is reading the plan to check dependency ordering and catch any unresolved (“TBD”) decisions.',
+		'Waiting for you to review the phase files and approve — or request changes.'
+	];
 
 	function runStatusLabel(): string {
 		if (!run) return '';
@@ -28,6 +40,8 @@
 				return 'Failed';
 			case 'cancelled':
 				return 'Cancelled';
+			case 'needs_input':
+				return 'Needs input';
 		}
 	}
 
@@ -63,17 +77,25 @@
 
 		<div class="steps">
 			{#each run.steps as step (step.index)}
-				<JobStepCard stepNumber={step.index + 1} status={step.status}>
+				<JobStepCard
+					stepNumber={step.index + 1}
+					status={step.status}
+					title={isGuided ? step.promptAuthored : undefined}
+				>
 					{#snippet headExtra()}
 						{#if step.deepResearch}
 							<span class="badge">Deep research</span>
 						{/if}
 					{/snippet}
-					<pre class="prompt">{step.promptAuthored}</pre>
-					{#if step.index > 0 && step.status !== 'pending'}
-						<div class="prepend-note">
-							Prior step's output was prepended to this prompt at run time.
-						</div>
+					{#if isGuided}
+						<p class="stage-desc">{GUIDED_STEP_DESC[step.index] ?? ''}</p>
+					{:else}
+						<pre class="prompt">{step.promptAuthored}</pre>
+						{#if step.index > 0 && step.status !== 'pending'}
+							<div class="prepend-note">
+								Prior step's output was prepended to this prompt at run time.
+							</div>
+						{/if}
 					{/if}
 
 					{#if step.sizeWarning}
@@ -86,15 +108,16 @@
 
 					{#if isLiveStep(step) && run.waitingForSlot}
 						<p class="hint">Waiting for another inference request to finish…</p>
-					{:else if isLiveStep(step) && step.streaming}
+					{:else if isLiveStep(step) && hasStreamingAnswer(step.streaming)}
 						<ChatMessage
 							message={{ role: 'assistant', content: step.streaming }}
 							isStreaming={true}
 						/>
+					{:else if isLiveStep(step)}
+						<!-- Live but no visible answer yet (reasoning / before first token). -->
+						<ThinkingIndicator bare />
 					{:else if step.output}
 						<ChatMessage message={{ role: 'assistant', content: step.output }} />
-					{:else if isLiveStep(step)}
-						<p class="hint">Waiting for first token…</p>
 					{/if}
 
 					{#if step.error}
@@ -167,6 +190,13 @@
 		font-size: 0.75rem;
 		color: var(--text-secondary);
 		font-style: italic;
+	}
+
+	.stage-desc {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+		line-height: 1.4;
 	}
 
 	.hint {

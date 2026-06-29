@@ -16,6 +16,7 @@ const summary = (id: number, jobId = 1, overrides: Partial<JobRunSummary> = {}):
 	started_at: 2000 + id,
 	finished_at: 3000 + id,
 	error: null,
+	planning_state: null,
 	...overrides
 });
 
@@ -133,6 +134,7 @@ describe('jobRuns store', () => {
 			started_at: 2,
 			finished_at: 3,
 			error: null,
+			planning_state: null,
 			steps: [
 				{
 					id: 100,

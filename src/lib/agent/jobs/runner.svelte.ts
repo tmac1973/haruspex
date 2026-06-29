@@ -39,7 +39,8 @@ import {
 import type { BackendOverride } from '$lib/api';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
-import { getJob, type JobWithSteps } from '$lib/stores/jobs.svelte';
+import { getJob, type JobWithSteps, type JobType } from '$lib/stores/jobs.svelte';
+import { askUserQuestion } from '$lib/stores/userQuestion.svelte';
 import { getActiveContextSize, isVisionSupported } from '$lib/stores/settings';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { errMessage } from '$lib/utils/error';
@@ -54,8 +55,33 @@ import {
 } from '$lib/stores/jobRuns.svelte';
 import { logDebug } from '$lib/debug-log';
 
-export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+/**
+ * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at
+ * each milestone so a closed/crashed session resumes from the last one. The
+ * runner re-enters the recorded stage; Q&A since the last milestone is re-done.
+ * Wired up by the guided_planning runner (Phase 05+).
+ */
+export type PlanningStage = 'overview' | 'planning' | 'done';
+
+export interface PhaseOutline {
+	id: string;
+	title: string;
+	dependsOn: string[];
+	summary: string;
+}
+
+export interface PlanningState {
+	stage: PlanningStage;
+	/** e.g. 'overview_written', 'phase_03_written'. */
+	milestone: string;
+	/** Set once the dependency map is approved; null before that. */
+	approvedOutline: PhaseOutline[] | null;
+	/** Checkpoint currently awaiting the user, if any. */
+	pendingCheckpoint: 'overview_review' | 'dep_map' | null;
+}
 
 /** Read-only investigation toolset shared by audit sample + verification turns. */
 const AUDIT_READ_TOOLS = ['code_grep', 'code_glob', 'fs_read_text', 'fs_list_dir'];
@@ -177,6 +203,16 @@ interface PlannedStep {
  * independently) plus a trailing synthesis step.
  */
 function planSteps(job: JobWithSteps): PlannedStep[] {
+	if (job.job_type === 'guided_planning') {
+		// Display stages — the run advances through these so the UI shows where
+		// in the process it is. Indices must match GUIDED_STAGES in the pipeline.
+		return [
+			{ authored: 'Overview', deepResearch: false },
+			{ authored: 'Planning', deepResearch: false },
+			{ authored: 'Verification', deepResearch: false },
+			{ authored: 'Approval', deepResearch: false }
+		];
+	}
 	if (job.job_type === 'audit') {
 		const n = Math.max(1, Math.min(job.audit_num_runs ?? 3, MAX_AUDIT_RUNS));
 		const prompt = job.steps[0]?.prompt ?? '';
@@ -240,6 +276,9 @@ export interface RunState {
 	id: number;
 	jobId: number;
 	jobName: string;
+	/** Job type, so the run view can render type-specific progress (e.g. the
+	 *  named guided_planning stages). */
+	jobType: JobType;
 	steps: RunStepState[];
 	currentStepIndex: number;
 	status: RunStatus;
@@ -310,7 +349,9 @@ export async function enqueue(
 		logDebug('jobs', 'enqueue failed: job not found', { jobId, trigger });
 		return null;
 	}
-	if (job.steps.length === 0) {
+	// guided_planning jobs carry no authored steps — the run is driven by the
+	// initial description + interactive Q&A, not a step pipeline.
+	if (job.job_type !== 'guided_planning' && job.steps.length === 0) {
 		logDebug('jobs', 'enqueue failed: no steps', { jobId });
 		return null;
 	}
@@ -353,6 +394,7 @@ function startRun(queued: QueuedRun): void {
 		id: runId,
 		jobId: job.id,
 		jobName: job.name,
+		jobType: job.job_type,
 		steps: planned.map((s, i) => ({
 			index: i,
 			promptAuthored: s.authored,
@@ -502,6 +544,9 @@ async function runPipeline(
 	abort: AbortController,
 	runId: number
 ): Promise<void> {
+	if (job.job_type === 'guided_planning') {
+		return runGuidedPlanningPipeline(job, abort, runId);
+	}
 	if (job.job_type === 'audit') {
 		return runAuditPipeline(job, abort, runId);
 	}
@@ -537,6 +582,375 @@ async function runPipeline(
 		if (pending.length > 0) {
 			queueMicrotask(drainNext);
 		}
+	}
+}
+
+/**
+ * Tools a guided_planning run may use: read-only codebase grounding, the single
+ * markdown write tool, and the interactive question tool. No code-editing,
+ * exec, sandbox, email, or web-write tools — planning writes markdown only.
+ */
+const GUIDED_PLANNING_TOOLS = [
+	'fs_read_text',
+	'fs_list_dir',
+	'fs_read_pdf',
+	'code_grep',
+	'code_glob',
+	'fs_write_text',
+	'ask_user_question'
+];
+
+/** A job's plan output folder, relative to working_dir (default plan/<slug>/). */
+function guidedPlanOutputDir(job: JobWithSteps): string {
+	const dir = job.plan_output_dir?.trim();
+	if (dir) return dir;
+	const slug =
+		job.name
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '') || 'plan';
+	return `plan/${slug}/`;
+}
+
+/**
+ * Stage 1 (overview) system prompt: exhaustive, one-at-a-time, codebase-grounded
+ * questioning via the question tool, then write overview.md from a fixed
+ * template with a Decisions appendix. Planning only.
+ */
+function overviewStagePrompt(outDir: string, overviewPath: string): string {
+	return [
+		'You are running an interactive guided-planning session. This is STAGE 1 of',
+		'2: produce a project OVERVIEW. Planning only — never write or edit code.',
+		'',
+		'HOW TO ASK THE USER ANYTHING (critical):',
+		'The ONLY way to ask the user is to CALL the `ask_user_question` tool with a',
+		'`question` string and an `options` array of {label, description}. The user',
+		'cannot answer prose — if you write a question, or its options, as text it is',
+		'discarded and the session stalls. Ask EXACTLY ONE question per tool call.',
+		'',
+		'Process:',
+		'1. If this is an existing project, briefly ground yourself in the working',
+		'   directory (fs_list_dir, fs_read_text, code_grep) so your questions and',
+		'   the overview fit the real code.',
+		'2. Interview the user ONE question at a time with `ask_user_question`,',
+		'   resolving every decision needed for a complete overview: the problem,',
+		'   goals, non-goals, the primary user flow, key constraints, and success',
+		'   criteria. Offer 2–4 concrete options each time (the user can also type',
+		'   their own answer). Keep going until the overview is fully specified. If',
+		'   the user answers "proceed", "that\'s enough", or similar, stop asking',
+		'   immediately and write the overview from what you have.',
+		`3. Write the overview to \`${overviewPath}\` with fs_write_text, using these`,
+		'   sections exactly: a top "# <Project> — Project Overview" heading, then',
+		'   ## Problem, ## Goals, ## Non-goals, ## Users & primary flow,',
+		'   ## Constraints, ## Success criteria, and finally ## Decisions — a list of',
+		'   each question you asked and the answer the user chose. Write ONLY inside',
+		`   \`${outDir}\` — never elsewhere, never code.`,
+		'4. Send a one-line summary naming the file you wrote, then stop. Do NOT start',
+		'   the implementation plan — that is stage 2, after the user reviews this.'
+	].join('\n');
+}
+
+/** Revise the already-written overview per the user's request (checkpoint loop). */
+function overviewRevisePrompt(outDir: string, overviewPath: string): string {
+	return [
+		'You are revising the project overview you already wrote. Planning only —',
+		'never write or edit code.',
+		'',
+		`1. Read the current overview with fs_read_text from \`${overviewPath}\`.`,
+		'2. Apply the change the user asked for (in the user message). Keep the rest',
+		'   of the overview intact, and keep the same section structure.',
+		`3. Write the updated overview back to \`${overviewPath}\` with fs_write_text.`,
+		`   Write ONLY inside \`${outDir}\`.`,
+		'4. Send a one-line summary of what you changed, then stop.',
+		'If you must clarify the request, ask ONE question with the `ask_user_question`',
+		'tool — never as plain text.'
+	].join('\n');
+}
+
+/** Read-only toolset for the independent verifier (no write, no questions). */
+const VERIFIER_TOOLS = ['fs_read_text', 'fs_list_dir', 'fs_read_pdf', 'code_grep', 'code_glob'];
+
+/** Max verifier→revise rounds before proceeding to approval regardless. */
+const MAX_VERIFY_ROUNDS = 3;
+
+/**
+ * Stage 2 (planning) system prompt: read the approved overview, resolve every
+ * implementation decision via one-at-a-time questions, then write
+ * dependency-ordered phase-NN-*.md files from a fixed template.
+ */
+function planningStagePrompt(outDir: string, overviewPath: string): string {
+	return [
+		'You are running an interactive guided-planning session. This is STAGE 2 of',
+		'2: produce a phased IMPLEMENTATION PLAN from the approved overview. Planning',
+		'only — never write or edit code.',
+		'',
+		'HOW TO ASK THE USER ANYTHING (critical):',
+		'The ONLY way to ask is to CALL `ask_user_question` (a `question` string + an',
+		'`options` array). Text questions are discarded. Ask EXACTLY ONE per call.',
+		'',
+		'Process:',
+		`1. Read the approved overview from \`${overviewPath}\`, and ground yourself in`,
+		'   the working directory (fs_list_dir, fs_read_text, code_grep) so the plan',
+		'   fits the real code — correct file paths, existing patterns, real deps.',
+		'2. Resolve EVERY remaining implementation decision by asking the user ONE',
+		'   question at a time with `ask_user_question`. Do not defer decisions — if a',
+		'   choice is unresolved, ask it. If the user answers "proceed", stop asking.',
+		'3. Break the work into phases ordered STRICTLY by dependency: every phase may',
+		'   depend ONLY on earlier phases, never on a later one. Write each phase to',
+		`   \`${outDir}phase-NN-<slug>.md\` (NN = 01, 02, …) with fs_write_text, using`,
+		'   these sections: a "# Phase NN — <title>" heading, a "Depends on:" /',
+		'   "Enables:" line, then ## Goal, ## Files touched, ## Steps, ## Build gate,',
+		'   ## Test plan, ## Commit, ## Rollback. Resolve every decision in the text —',
+		'   never write "TBD", "decide later", or an unstated choice.',
+		`   Write ONLY inside \`${outDir}\`.`,
+		'4. Send a one-line summary listing the phase files you wrote, then stop.'
+	].join('\n');
+}
+
+/**
+ * Independent verifier system prompt. Fresh context (it reads the artifacts from
+ * disk, never the planning conversation), read-only, single job: flag ordering
+ * violations and deferred decisions. Signals "PLAN OK" when clean.
+ */
+function verifierPrompt(outDir: string, overviewPath: string): string {
+	return [
+		'You are an INDEPENDENT reviewer of a phased implementation plan. You did not',
+		'write it. Review it with fresh eyes and check ONLY two things.',
+		'',
+		`1. Read the overview at \`${overviewPath}\`, then list \`${outDir}\` and read`,
+		'   every phase-NN-*.md file in it.',
+		'2. Look for exactly two kinds of problem:',
+		'   a. ORDERING — any phase that depends on work introduced in a LATER phase',
+		'      (its "Depends on" names a higher-numbered phase, or its steps need',
+		'      something a later phase creates).',
+		'   b. DEFERRED DECISIONS — any "TBD", "decide later", "we’ll figure out", an',
+		'      unresolved either/or, or a step that does not say what to actually do.',
+		'',
+		'You write NOTHING to disk. Then respond:',
+		'- If there are NO problems, your ENTIRE reply must be exactly: PLAN OK',
+		'- Otherwise, reply with a short bulleted list — each bullet naming the phase',
+		'  file and the specific ordering/decision problem to fix.',
+		'Report only ordering violations and unresolved decisions — not style or',
+		'scope opinions.'
+	].join('\n');
+}
+
+/** Revise the phase files per reviewer findings or a user request (checkpoint). */
+function planRevisePrompt(outDir: string): string {
+	return [
+		'You are revising the phased implementation plan. Planning only — never write',
+		'or edit code.',
+		'',
+		`1. Read the relevant phase files in \`${outDir}\` (fs_list_dir, fs_read_text).`,
+		'2. Apply the fixes requested in the user message. Preserve STRICT dependency',
+		'   order (every phase depends only on earlier phases) and resolve every',
+		'   decision — no "TBD"/"decide later". Keep the same section structure.',
+		`3. Write the corrected phase files back with fs_write_text (only inside`,
+		`   \`${outDir}\`). If a fix changes ordering, renumber the files so NN still`,
+		'   reflects dependency order.',
+		'4. Send a one-line summary of what you changed, then stop.'
+	].join('\n');
+}
+
+/** The verifier reports a clean plan by replying with "PLAN OK". */
+function isPlanClean(verdict: string): boolean {
+	return verdict.trim().toUpperCase().startsWith('PLAN OK');
+}
+
+/**
+ * Guided-planning run. Stage 1 (overview): a codebase-grounded interactive
+ * interview writes overview.md, then a review checkpoint (approve / type a
+ * revision / re-read after a manual edit) loops until approved. Stage 2
+ * (planning): an interview writes dependency-ordered phase-NN-*.md files, an
+ * independent fresh-context verifier flags ordering violations and deferred
+ * decisions and drives revisions until clean, then a plan-approval checkpoint
+ * loops until approved.
+ *
+ * Milestone-persisted needs-input/resume is a later hardening pass — a
+ * foreground run completes fully; a killed run does not yet resume.
+ */
+async function runGuidedPlanningPipeline(
+	job: JobWithSteps,
+	abort: AbortController,
+	runId: number
+): Promise<void> {
+	void markRunStarted(runId, Date.now());
+	const outDir = guidedPlanOutputDir(job);
+	const overviewPath = `${outDir}overview.md`;
+
+	// Step indices — must match the guided_planning display steps in planSteps.
+	const OVERVIEW = 0;
+	const PLANNING = 1;
+	const VERIFY = 2;
+	const APPROVAL = 3;
+
+	const startStep = (idx: number) => {
+		const startedAt = Date.now();
+		patchStep(runId, idx, { status: 'running', startedAt });
+		if (current && current.id === runId) current = { ...current, currentStepIndex: idx };
+		void markRunStepStarted(runId, idx, startedAt, current?.steps[idx]?.promptAuthored ?? '');
+	};
+	const finishStep = (idx: number, output: string) => {
+		const finishedAt = Date.now();
+		patchStep(runId, idx, { status: 'succeeded', output, finishedAt });
+		void markRunStepFinished(runId, idx, 'succeeded', output, null, finishedAt);
+	};
+
+	const turn = (
+		stepIdx: number,
+		userMessage: string,
+		systemPrompt: string,
+		maxIterations: number,
+		tools: string[] = GUIDED_PLANNING_TOOLS
+	) =>
+		runJobTurn(job, runId, abort, {
+			userMessage,
+			contextSize: jobContextSize(job),
+			visionSupported: jobVisionSupported(job),
+			maxIterations,
+			interactive: true,
+			writeRoot: outDir,
+			systemPrompt,
+			toolAllowlist: tools,
+			...buildStreamCallbacks(runId, stepIdx)
+		});
+
+	const abortIfCancelled = () => {
+		if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+	};
+
+	// Independent verifier (shown on the Verification step); revise once if it
+	// reports problems. Returns true when the plan is clean.
+	const verifyOnce = async (): Promise<boolean> => {
+		const verdict = await turn(
+			VERIFY,
+			`Review the phase files in ${outDir} against ${overviewPath}.`,
+			verifierPrompt(outDir, overviewPath),
+			25,
+			VERIFIER_TOOLS
+		);
+		if (isPlanClean(verdict.finalText)) return true;
+		await turn(
+			VERIFY,
+			`A reviewer found problems with the phase files. Fix every one, keeping ` +
+				`strict dependency order:\n\n${verdict.finalText}`,
+			planRevisePrompt(outDir),
+			35
+		);
+		return false;
+	};
+
+	try {
+		// Stage 1 — Overview: interview + write, then the review checkpoint loop.
+		startStep(OVERVIEW);
+		await turn(
+			OVERVIEW,
+			job.initial_description?.trim() || 'Plan this project.',
+			overviewStagePrompt(outDir, overviewPath),
+			40
+		);
+		let approved = false;
+		while (!approved) {
+			abortIfCancelled();
+			const answer = await askUserQuestion(
+				{
+					question:
+						`I wrote the project overview to ${overviewPath}. Review it, then approve ` +
+						`to continue — or type what you'd like changed and I'll revise it.`,
+					options: [
+						{ label: 'Approve', description: 'The overview looks good.', recommended: true },
+						{
+							label: 'I edited it myself — re-read',
+							description: 'I changed the file on disk; re-read it before asking again.'
+						}
+					]
+				},
+				abort.signal
+			);
+			abortIfCancelled();
+			if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
+				approved = true;
+			} else if (answer.kind === 'freeText') {
+				await turn(
+					OVERVIEW,
+					`Please revise the overview. The user asked for: ${answer.text}`,
+					overviewRevisePrompt(outDir, overviewPath),
+					20
+				);
+			}
+		}
+		finishStep(OVERVIEW, `Overview approved → ${overviewPath}`);
+
+		// Stage 2 — Planning: interview + write the phase files.
+		startStep(PLANNING);
+		await turn(
+			PLANNING,
+			`The overview at ${overviewPath} is approved. Now produce the phased ` +
+				`implementation plan.`,
+			planningStagePrompt(outDir, overviewPath),
+			50
+		);
+		finishStep(PLANNING, `Phase files written to ${outDir}`);
+
+		// Verification — independent fresh-context review, revise until clean (bounded).
+		startStep(VERIFY);
+		for (let round = 0; round < MAX_VERIFY_ROUNDS; round++) {
+			abortIfCancelled();
+			if (await verifyOnce()) break;
+		}
+		finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
+
+		// Approval — plan / dependency-map approval checkpoint loop.
+		startStep(APPROVAL);
+		let planApproved = false;
+		while (!planApproved) {
+			abortIfCancelled();
+			const answer = await askUserQuestion(
+				{
+					question:
+						`I wrote the phased implementation plan to ${outDir} (phase-NN-*.md), ` +
+						`ordered by dependency and checked for unresolved decisions. Review it, ` +
+						`then approve — or type what you'd like changed.`,
+					options: [
+						{ label: 'Approve', description: 'The plan looks good — finish.', recommended: true },
+						{
+							label: 'I edited it myself — re-check',
+							description: 'I changed files on disk; re-read them before asking again.'
+						}
+					]
+				},
+				abort.signal
+			);
+			abortIfCancelled();
+			if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
+				planApproved = true;
+			} else if (answer.kind === 'freeText') {
+				await turn(
+					APPROVAL,
+					`Please revise the phased plan. The user asked for: ${answer.text}`,
+					planRevisePrompt(outDir),
+					30
+				);
+				await verifyOnce(); // re-check after a user-driven revision
+			}
+		}
+		finishStep(APPROVAL, `Plan approved → ${outDir}`);
+
+		finalizeRun(runId, job.id, 'succeeded', null);
+	} catch (e) {
+		const aborted = e instanceof DOMException && e.name === 'AbortError';
+		const msg = aborted ? 'Cancelled by user' : errMessage(e);
+		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
+		const finishedAt = Date.now();
+		// Mark whichever stage was live when the error/cancel hit.
+		const idx = current && current.id === runId ? current.currentStepIndex : 0;
+		patchStep(runId, idx, { status: stepStatus, error: msg, finishedAt });
+		void markRunStepFinished(runId, idx, stepStatus, null, msg, finishedAt);
+		finalizeRun(runId, job.id, aborted ? 'cancelled' : 'failed', msg);
+	} finally {
+		if (activeAbort === abort) activeAbort = null;
+		if (pending.length > 0) queueMicrotask(drainNext);
 	}
 }
 
