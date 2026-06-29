@@ -6,23 +6,23 @@ Click this screenshot to watch the explainer video:
 
 A cross-platform desktop AI web researcher and agent that runs entirely on your computer. No cloud, no accounts, no telemetry — your conversations never leave your device.
 
-Haruspex excels at researching information. Ask it a question and it will search the web and compile an answer. Turn on deep research mode for a more thorough job. Enable a working directory and ask it to produce a PDF, spreadsheet, or Word document from its results. It will even write and execute python in the UI in pursuit of your goals. 
+Haruspex excels at researching information. Ask it a question and it will search the web and compile an answer. Turn on deep research mode for a more thorough job. Enable a working directory and ask it to produce a PDF, spreadsheet, or Word document from its results. It will even write and execute python in the UI in pursuit of your goals.
 
 ## Goals
 
 The primary goals of this project are:
 
-- **Privacy** - Conversations and inference stay local. Searches themselves hit the web but web proxies and SearXNG are supported to anonymize your web searches. 
+- **Privacy** - Conversations and inference stay local. Searches themselves hit the web but web proxies and SearXNG are supported to anonymize your web searches.
 - **Open Source/Open Weight** - Use of open weight local models means no monthly bill.
-- **Minimal Hardware Requirements** - This project targets 8GB of Unified RAM/VRAM for LLM+Context. Currently the model used is Qwen-3.5-9B (though we do offer Qwen-3.5-4B if you are tight on memory). All project features are built with this target (and the inherit limitations of a small model) in mind. 
-- **Human Enablement, Not Human Replacement** - There are many projects that are building fully autonomous agents, this isn't one of them. This project aims to use AI to assist humans in learning, creation, and troubleshooting; not replace the human element completely. 
+- **Minimal Hardware Requirements** - This project targets 8GB of Unified RAM/VRAM for LLM+Context. Currently the model used is Qwen-3.5-9B (though we do offer Qwen-3.5-4B if you are tight on memory). All project features are built with this target (and the inherit limitations of a small model) in mind.
+- **Human Enablement, Not Human Replacement** - There are many projects that are building fully autonomous agents, this isn't one of them. This project aims to use AI to assist humans in learning, creation, and troubleshooting; not replace the human element completely.
 
 ## Features
 
 - **Private by design** — all inference runs on your hardware, nothing is sent to the cloud
 - **Web research** — searches the web and reads pages to answer questions about anything, with an optional **deep research mode** for multi-source synthesis
-- **Shell tab** _(Linux, macOS & Windows — PowerShell and WSL2 on Windows)_ — a real interactive terminal with a one-click "Submit to LLM" path: ask the assistant to analyze the last command's output or a selected range. The agent can read config files / logs anywhere on the system and suggest fix commands as click-to-paste cards (with red chips on risky patterns like `sudo`, `rm -rf`, `dd of=`, `curl | sh`, `Remove-Item -Recurse -Force`). The agent never executes — every command lands at the prompt for you to review and press Enter. The assistant can also edit files anywhere on disk, but those file-write tools are **off by default** — enable them under Settings → Shell. ⚠️ The model can suggest mistaken or destructive commands — read the [AI safety disclaimer](#ai-safety-disclaimer) before running anything it proposes.
-- **Jobs tab** — author, save, and **schedule** reusable prompts. A job is an ordered pipeline of single-objective steps that run unattended in sequence, with each step's output handed to the next. Schedule them by preset (hourly / daily / weekly) or interval while the app is open; runs stream live in a dedicated view, stop on the first error, and stay browsable in per-job run history.
+- **Shell tab** _(Linux, macOS & Windows — PowerShell and WSL2 on Windows)_ — a real interactive terminal with a one-click "Submit to LLM" path: ask the assistant to analyze the last command's output or a selected range. By default the assistant is a **read-only troubleshooting advisor**: it can read config files / logs anywhere on the system and suggest fix commands as click-to-paste cards (with red chips on risky patterns like `sudo`, `rm -rf`, `dd of=`, `curl | sh`, `Remove-Item -Recurse -Force`), but it never runs anything — every command lands at the prompt for you to review and press Enter. Flip on **Code mode** (per session, off by default) to turn it into a coding agent that edits files and **executes commands in your live terminal**; commands the risk classifier flags pause for your approval first, anything it considers safe runs automatically. ⚠️ Read the [AI safety disclaimer](#ai-safety-disclaimer) before enabling Code mode or running anything the model proposes.
+- **Jobs tab** — author, save, and **schedule** reusable prompts that run unattended. Three kinds: a **research** pipeline of sequential steps, an **audit** that samples a prompt many times and source-verifies the findings into a single report, and **guided planning** that turns a rough idea into a phased implementation plan through interactive Q&A. Each job can run against its own remote model. ([details](#jobs))
 - **Local file access (opt-in)** — pick a working directory and the model can read and write text, PDF, docx, xlsx, odt/ods/odp, pptx, and images, sandboxed to that directory ([details](#local-files))
 - **Python sandbox** — the model can write and execute Python in a sandboxed Pyodide environment running in the webview, with on-demand package installs (`install_package`) and HTTP via `pyfetch`; approval-gated with a per-call time limit. **Off by default** — enable it under Settings → Agent → Python Sandbox.
 - **Vision** — analyze images and form PDFs via the model's built-in mmproj projector
@@ -42,9 +42,10 @@ The primary goals of this project are:
 >
 > The language model can be confidently wrong. It may invent facts, misread a file or command output, and — especially relevant now that Haruspex has a **Shell tab** — suggest commands that are mistaken, dangerous, or destructive (deleting data, changing system configuration, exposing secrets, etc.). The smaller local models this project targets are more prone to these mistakes than large cloud models.
 >
-> Haruspex is built around **human enablement, not human replacement**: the agent **never executes shell commands on its own**. Every suggested command lands at your prompt for you to read and run yourself, and risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, …) are flagged — but these are aids, not guarantees. **You are the last line of defense.**
+> Haruspex is built around **human enablement, not human replacement**. By default the Shell assistant is **read-only** and never runs anything: every suggested command lands at your prompt for you to read and run yourself, with risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, …) flagged. But if you enable the Shell tab's **Code mode**, the agent **executes commands itself in your live terminal** — commands the risk classifier flags pause for your approval, but anything it considers safe runs automatically (and even the approval prompt can be turned off in Settings). Code mode is off by default and opt-in per session; only turn it on for machines and projects you're willing to let the model act on. These flags and prompts are aids, not guarantees. **You are the last line of defense.**
 >
 > Before running anything the model suggests:
+>
 > - Read and understand the command. If you don't, don't run it.
 > - Be especially careful with commands that delete files, modify system settings, pipe downloads into a shell, or touch credentials.
 > - Keep backups of anything you can't afford to lose.
@@ -106,18 +107,18 @@ Open the `.dmg` and drag Haruspex to Applications. Because the app is **not code
 
 Press **F1** (or click the **?** in the header) to see this list in the app anytime.
 
-| Shortcut | Action | Where |
-| --- | --- | --- |
-| `F1` | Show the keyboard-shortcuts help | Everywhere |
-| `F2` (hold) | Push-to-talk voice input — release to send | Main window |
-| `F3` | Read the last reply aloud (toggle) | Main window |
-| `F4` | Submit recent shell commands & output to the assistant (no prompt) | Shell tab |
-| `Ctrl`/`Cmd` + `N` | New conversation | Chat tab |
-| `Enter` / `Shift`+`Enter` | Send message / new line | Chat & Shell composers |
-| `Esc` | Stop generating · close dialogs | Everywhere |
-| `Ctrl`+`Shift`+`A` | Toggle the assistant sidebar | Shell tab |
-| `` Ctrl+` `` | Switch focus: terminal ↔ assistant | Shell tab |
-| `Ctrl`+`Shift`+`C` / `V` | Copy selection / paste | Shell tab |
+| Shortcut                  | Action                                                             | Where                  |
+| ------------------------- | ------------------------------------------------------------------ | ---------------------- |
+| `F1`                      | Show the keyboard-shortcuts help                                   | Everywhere             |
+| `F2` (hold)               | Push-to-talk voice input — release to send                         | Main window            |
+| `F3`                      | Read the last reply aloud (toggle)                                 | Main window            |
+| `F4`                      | Submit recent shell commands & output to the assistant (no prompt) | Shell tab              |
+| `Ctrl`/`Cmd` + `N`        | New conversation                                                   | Chat tab               |
+| `Enter` / `Shift`+`Enter` | Send message / new line                                            | Chat & Shell composers |
+| `Esc`                     | Stop generating · close dialogs                                    | Everywhere             |
+| `Ctrl`+`Shift`+`A`        | Toggle the assistant sidebar                                       | Shell tab              |
+| `` Ctrl+` ``              | Switch focus: terminal ↔ assistant                                 | Shell tab              |
+| `Ctrl`+`Shift`+`C` / `V`  | Copy selection / paste                                             | Shell tab              |
 
 ## Development
 
@@ -204,17 +205,17 @@ make dev
 
 Run `make help` to see all targets:
 
-| Target               | Description                                                 |
-| -------------------- | ----------------------------------------------------------- |
+| Target               | Description                                                              |
+| -------------------- | ------------------------------------------------------------------------ |
 | `make dev`           | Run the app in dev mode (auto-checks sidecars; run `dev-setup.sh` first) |
-| `make check`         | Run all checks (lint, format, typecheck, test)              |
-| `make fmt`           | Auto-format all code (Prettier + cargo fmt)                 |
-| `make sidecars`      | Build sidecar binaries (llama-server, whisper-server, koko) |
-| `make app`           | Build the Tauri app packages (requires sidecars)            |
-| `make release-local` | Build everything: sidecars + app packages                   |
-| `make clean`         | Remove built sidecars, forcing rebuild                      |
-| `make clean-all`     | Remove sidecars + Rust/frontend build artifacts             |
-| `make reset-data`    | Remove all app data (models, db) for a fresh start          |
+| `make check`         | Run all checks (lint, format, typecheck, test)                           |
+| `make fmt`           | Auto-format all code (Prettier + cargo fmt)                              |
+| `make sidecars`      | Build sidecar binaries (llama-server, whisper-server, koko)              |
+| `make app`           | Build the Tauri app packages (requires sidecars)                         |
+| `make release-local` | Build everything: sidecars + app packages                                |
+| `make clean`         | Remove built sidecars, forcing rebuild                                   |
+| `make clean-all`     | Remove sidecars + Rust/frontend build artifacts                          |
+| `make reset-data`    | Remove all app data (models, db) for a fresh start                       |
 
 ### Data directory
 
@@ -225,6 +226,22 @@ Run `make help` to see all targets:
 | Windows  | `%APPDATA%\com.haruspex.app\`                     |
 
 Use `make reset-data` to wipe this directory for a fresh start (Linux/macOS).
+
+## Jobs
+
+The Jobs tab runs reusable prompts unattended — on a schedule or on demand. Each run streams live in a dedicated view, halts on the first error, and stays browsable in per-job run history. Runs queue serially behind the active job.
+
+There are three job types:
+
+- **Research** — an ordered pipeline of single-objective steps. Each step runs as a fresh conversation with the previous step's output prepended, so you can chain "search → summarize → write a report" into one unattended run. A per-step toggle enables deep multi-source research for that step.
+- **Audit** — runs one prompt independently many times (sampling), then deterministically clusters the findings, re-checks each cluster against the source, and writes a single meta-report grouped by verdict (confirmed / refuted / uncertain). Sampling averages out the single-run noise a small model produces. Configurable: number of runs, per-sample turn budget, a read-only tool restriction, custom sample/verification instructions, and an optional output file.
+- **Guided planning** — interactively turns a rough idea into a written project **overview** and a dependency-ordered, **phased implementation plan**, asking one question at a time and grounding itself in your codebase. It writes an `overview.md` and `phase-NN-*.md` files, pausing at checkpoints for you to review or revise before continuing, and an independent verifier pass flags ordering gaps or unresolved decisions. Planning only — it never writes code. Long runs resume from the last milestone if the app restarts.
+
+**Scheduling.** Run a job manually, or on a preset (hourly / daily / weekly) or a fixed interval while the app is open.
+
+**Per-job model.** By default a job uses your global inference backend (Settings → Inference backend). Any job can instead point at its own remote OpenAI-compatible server — base URL, optional API key, model ID, context size, and vision capability — handy for routing a heavy audit or planning job to a larger-context or faster model. Because a remote job and the local `llama-server` are independent providers, a job running against a remote model **doesn't block the Chat or Shell tabs** from using your local model at the same time.
+
+Audit and guided-planning jobs need a working directory (the model reads your code and writes its reports there); research jobs can run with or without one.
 
 ## Local files
 
@@ -249,6 +266,8 @@ Haruspex normally manages its own `llama-server` sidecar with a downloaded model
 1. **First-run wizard** — pick "Connect to an existing server" instead of "Download a model".
 2. **Settings → Inference backend** — switch between Local and Remote at any time. Toggling to Remote stops the local sidecar immediately (no VRAM consumption); toggling back spawns it again with your previously-selected model.
 
+This is the global backend used by Chat and Shell. Individual [jobs](#jobs) can override it with their own remote server. If your server serves concurrent requests (vLLM, `llama-server -np N`, hosted APIs), enable **Allow parallel inference** here to let chat and job turns against it run at the same time instead of queuing.
+
 **Detection.** Haruspex probes the base URL you enter in this order, and the richest backend that responds wins:
 
 | Order | Endpoint                  | Matches                                                                                                |
@@ -268,13 +287,13 @@ Haruspex can optionally connect to your email over IMAP so the model can summari
 
 Every preset requires 2-factor authentication on the provider account plus an **app password** (a 16-character token the provider generates specifically for Haruspex — not your login password).
 
-| Provider    | IMAP host                  | Where to get an app password                                  |
-| ----------- | -------------------------- | ------------------------------------------------------------- |
-| Gmail       | `imap.gmail.com:993`       | <https://myaccount.google.com/apppasswords>                   |
-| Fastmail    | `imap.fastmail.com:993`    | <https://app.fastmail.com/settings/security/tokens>           |
-| iCloud Mail | `imap.mail.me.com:993`     | <https://account.apple.com/account/manage>                    |
-| Yahoo Mail  | `imap.mail.yahoo.com:993`  | <https://login.yahoo.com/account/security>                    |
-| Custom      | user-provided              | whatever your provider says                                   |
+| Provider    | IMAP host                 | Where to get an app password                        |
+| ----------- | ------------------------- | --------------------------------------------------- |
+| Gmail       | `imap.gmail.com:993`      | <https://myaccount.google.com/apppasswords>         |
+| Fastmail    | `imap.fastmail.com:993`   | <https://app.fastmail.com/settings/security/tokens> |
+| iCloud Mail | `imap.mail.me.com:993`    | <https://account.apple.com/account/manage>          |
+| Yahoo Mail  | `imap.mail.yahoo.com:993` | <https://login.yahoo.com/account/security>          |
+| Custom      | user-provided             | whatever your provider says                         |
 
 Microsoft 365 / Outlook.com is **not** supported — Microsoft disabled basic authentication for those accounts, so there's no app-password path. OAuth support is planned for a later phase.
 
@@ -308,12 +327,12 @@ All three are hidden from the model entirely unless at least one account is enab
 
 ## Search providers
 
-| Provider         | Setup                    | Notes                                                                                                                          |
-| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Provider         | Setup                    | Notes                                                                                                                           |
+| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | Auto (default)   | None                     | Rotates between Brave HTML scrape, DuckDuckGo, and Mojeek with round-robin scheduling, per-engine health tracking, and failover |
-| DuckDuckGo       | None                     | Single engine, may get rate limited                                                                                            |
-| Brave Search API | API key in Settings      | 2,000 free queries/month, most reliable                                                                                        |
-| SearXNG          | Instance URL in Settings | Unlimited (self-hosted)                                                                                                        |
+| DuckDuckGo       | None                     | Single engine, may get rate limited                                                                                             |
+| Brave Search API | API key in Settings      | 2,000 free queries/month, most reliable                                                                                         |
+| SearXNG          | Instance URL in Settings | Unlimited (self-hosted)                                                                                                         |
 
 When deep research mode is on, the Auto provider is selected, and no Brave API key is configured, the search proxy switches to **slow mode** (longer per-engine pacing, shorter cooldowns) so engines can recover within the same research turn. Configuring a Brave API key or a SearXNG instance bypasses slow mode entirely.
 
@@ -333,11 +352,11 @@ To build locally: `make release-local`.
 
 ### File-creation prompts usually need a follow-up
 
-When you ask the model to create a file in a single prompt — e.g. *"Create a PDF report on X"* — it will typically do the research and write a detailed answer to the chat, but **not** actually call `fs_write_pdf`. Sometimes it will even claim it created the file when it didn't.
+When you ask the model to create a file in a single prompt — e.g. _"Create a PDF report on X"_ — it will typically do the research and write a detailed answer to the chat, but **not** actually call `fs_write_pdf`. Sometimes it will even claim it created the file when it didn't.
 
 This is a model-behavior issue with small local models: after a multi-step research turn, the model strongly prefers ending with a natural-language synthesis instead of a final tool call. Haruspex mitigates this with imperative tool descriptions, per-turn reminders, and a recovery pass that nudges the model when a turn ends without the expected write — but the mitigations aren't complete.
 
-**Workaround:** if the model didn't create the file on the first try, just ask again (*"write that to a PDF"*). The second turn almost always succeeds because the report content is already in the conversation history.
+**Workaround:** if the model didn't create the file on the first try, just ask again (_"write that to a PDF"_). The second turn almost always succeeds because the report content is already in the conversation history.
 
 ### Presentation creation and image search are experimental
 
