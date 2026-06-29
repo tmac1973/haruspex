@@ -10,6 +10,7 @@ const HEARTBEAT_INTERVAL_MS = 60_000;
 
 const mocks = vi.hoisted(() => ({
 	mode: 'local' as 'local' | 'remote',
+	remoteBaseUrl: 'https://api.example.com',
 	allowParallelInference: false,
 	// reqId -> resolver for the pending inference_acquire promise
 	acquire: new Map<string, { resolve: () => void; reject: (e: unknown) => void }>(),
@@ -20,6 +21,7 @@ vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
 		inferenceBackend: {
 			mode: mocks.mode,
+			remoteBaseUrl: mocks.remoteBaseUrl,
 			allowParallelInference: mocks.allowParallelInference
 		}
 	})
@@ -95,6 +97,7 @@ function admit(reqId: string) {
 beforeEach(() => {
 	_resetForTests();
 	mocks.mode = 'local';
+	mocks.remoteBaseUrl = 'https://api.example.com';
 	mocks.allowParallelInference = false;
 	mocks.acquire.clear();
 	mocks.eventHandler = undefined;
@@ -118,6 +121,7 @@ describe('inferenceQueue client — protocol', () => {
 			expect.objectContaining({
 				reqId: 'main:1',
 				consumer: 'chat',
+				lane: 'local',
 				parallel: false,
 				windowLabel: 'main'
 			})
@@ -158,14 +162,30 @@ describe('inferenceQueue client — protocol', () => {
 		await Promise.all([a, b]);
 	});
 
-	it('passes parallel=true when remote parallel inference is enabled', async () => {
+	it('passes parallel=true on the remote lane when remote parallel inference is enabled', async () => {
 		mocks.mode = 'remote';
 		mocks.allowParallelInference = true;
 		const p = withInferenceSlot({ consumer: 'chat' }, async () => 'x');
 		await tick();
 		expect(invoke).toHaveBeenCalledWith(
 			'inference_acquire',
-			expect.objectContaining({ parallel: true })
+			expect.objectContaining({ lane: 'remote:https://api.example.com', parallel: true })
+		);
+		admit('main:1');
+		await p;
+	});
+
+	it('routes a turn with a remote backend override onto that provider lane', async () => {
+		// Settings stays local; the per-job override picks the lane. The local
+		// llama-server lane is untouched, so local chat/shell can run alongside.
+		const p = withInferenceSlot(
+			{ consumer: { kind: 'job', jobName: 'Audit' }, backend: { baseUrl: 'https://job.host/' } },
+			async () => 'x'
+		);
+		await tick();
+		expect(invoke).toHaveBeenCalledWith(
+			'inference_acquire',
+			expect.objectContaining({ lane: 'remote:https://job.host', parallel: false })
 		);
 		admit('main:1');
 		await p;

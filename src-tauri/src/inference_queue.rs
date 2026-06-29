@@ -1,16 +1,23 @@
 //! Process-wide admission control for inference turns.
 //!
-//! Every chat / shell / job turn POSTs to the single local `llama-server`
-//! (one slot). The frontend used to gate this with a per-webview JS
-//! semaphore, but that can't coordinate once shells are detached into
-//! their own windows — each webview has its own JS context. So the gate
-//! lives here, in Rust, shared across every window.
+//! Every chat / shell / job turn POSTs to an inference provider — the single
+//! local `llama-server` (one slot) or a remote OpenAI-compatible server. The
+//! frontend used to gate this with a per-webview JS semaphore, but that can't
+//! coordinate once shells are detached into their own windows — each webview
+//! has its own JS context. So the gate lives here, in Rust, shared across every
+//! window.
 //!
-//! Design (matches the old JS queue's observable behaviour):
-//!   - FIFO. Capacity is 1 for local mode, unbounded when the frontend
-//!     opts into remote parallel inference (`parallel = true`). The flag is
-//!     re-sent on every acquire, mirroring the old "re-read setting at every
-//!     acquire" semantics.
+//! Design:
+//!   - FIFO, but admission is scoped per *lane* — an opaque provider key the
+//!     frontend supplies (e.g. `"local"` for the single llama-server slot, or
+//!     `"remote:<baseUrl>"` for a remote server). Lanes are independent: a turn
+//!     in one lane never blocks a turn in another, so local chat/shell keep
+//!     running while a job streams against a remote provider.
+//!   - Each lane's capacity is 1 unless the frontend marks it parallel-capable
+//!     (`parallel = true`, from the Settings "provider supports parallel
+//!     inference" toggle), in which case it's unbounded. The flag is re-sent on
+//!     every acquire (last-writer-wins per lane), mirroring the old "re-read
+//!     setting at every acquire" semantics. The local lane is never parallel.
 //!   - Each waiter holds a client-supplied `req_id` (unique per window) so
 //!     it can be cancelled while still queued (abort-before-grant) and
 //!     heartbeated while held.
@@ -72,6 +79,10 @@ struct Ticket {
     /// or `{kind:"job", jobName}`). Rust never interprets it — just echoes
     /// it back in the snapshot.
     consumer: Value,
+    /// Opaque admission lane from the frontend (e.g. `"local"` or
+    /// `"remote:<baseUrl>"`). Tickets only contend for capacity within their
+    /// own lane. Rust never parses it beyond equality.
+    lane: String,
     state: TicketState,
     owner_window: String,
     enqueued_at: u64,
@@ -91,40 +102,61 @@ pub struct TicketDto {
 
 #[derive(Default)]
 struct Inner {
-    /// FIFO order is the vec order. Holds both waiting and running tickets.
+    /// FIFO order is the vec order. Holds both waiting and running tickets
+    /// across every lane.
     tickets: Vec<Ticket>,
     /// Wakeups for waiting tickets, keyed by req_id. Removed on admit /
     /// cancel / release. Dropping a sender (without sending) resolves the
     /// waiter's receiver with an error → acquire reports "cancelled".
     senders: HashMap<String, oneshot::Sender<()>>,
-    running: usize,
-    /// Last-writer-wins, mirroring the old per-acquire settings read.
-    parallel: bool,
+    /// Whether each lane admits concurrent turns. Updated on every acquire
+    /// (last-writer-wins per lane), mirroring the old per-acquire settings
+    /// read. A lane absent from the map defaults to serialized (capacity 1).
+    lane_parallel: HashMap<String, bool>,
 }
 
 impl Inner {
-    fn capacity(&self) -> usize {
-        if self.parallel {
+    /// Capacity for a single lane: unbounded when that lane was last acquired
+    /// with `parallel = true`, else 1. The frontend never marks the local
+    /// llama-server lane parallel, so it always serializes.
+    fn capacity(&self, lane: &str) -> usize {
+        if self.lane_parallel.get(lane).copied().unwrap_or(false) {
             usize::MAX
         } else {
             1
         }
     }
 
-    /// Admit waiting tickets in FIFO order while capacity allows, waking
-    /// each via its oneshot sender.
-    fn pump(&mut self) {
-        let cap = self.capacity();
-        for t in self.tickets.iter_mut() {
-            if self.running >= cap {
-                break;
+    /// Count currently-running tickets per lane.
+    fn running_by_lane(&self) -> HashMap<String, usize> {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for t in &self.tickets {
+            if t.state == TicketState::Running {
+                *counts.entry(t.lane.clone()).or_insert(0) += 1;
             }
-            if t.state == TicketState::Waiting {
-                t.state = TicketState::Running;
-                self.running += 1;
-                if let Some(tx) = self.senders.remove(&t.id) {
-                    let _ = tx.send(());
-                }
+        }
+        counts
+    }
+
+    /// Admit waiting tickets in FIFO order while their lane has capacity,
+    /// waking each via its oneshot sender. Lanes are independent: a full local
+    /// lane never blocks a waiting remote ticket and vice versa.
+    fn pump(&mut self) {
+        let mut running = self.running_by_lane();
+        for i in 0..self.tickets.len() {
+            if self.tickets[i].state != TicketState::Waiting {
+                continue;
+            }
+            let lane = self.tickets[i].lane.clone();
+            let cap = self.capacity(&lane);
+            if running.get(&lane).copied().unwrap_or(0) >= cap {
+                continue;
+            }
+            let id = self.tickets[i].id.clone();
+            self.tickets[i].state = TicketState::Running;
+            *running.entry(lane).or_insert(0) += 1;
+            if let Some(tx) = self.senders.remove(&id) {
+                let _ = tx.send(());
             }
         }
     }
@@ -159,6 +191,7 @@ impl InferenceQueue {
         &self,
         req_id: String,
         consumer: Value,
+        lane: String,
         parallel: bool,
         window_label: String,
     ) -> Result<oneshot::Receiver<()>, String> {
@@ -167,12 +200,13 @@ impl InferenceQueue {
             return Err("duplicate inference request id".into());
         }
         let now = now_ms();
-        inner.parallel = parallel;
+        inner.lane_parallel.insert(lane.clone(), parallel);
         let (tx, rx) = oneshot::channel();
         inner.senders.insert(req_id.clone(), tx);
         inner.tickets.push(Ticket {
             id: req_id,
             consumer,
+            lane,
             state: TicketState::Waiting,
             owner_window: window_label,
             enqueued_at: now,
@@ -204,7 +238,8 @@ impl InferenceQueue {
         }
     }
 
-    /// Release a held (or still-waiting) slot and admit the next waiter.
+    /// Release a held (or still-waiting) slot and admit the next waiter in the
+    /// freed lane.
     fn release(&self, req_id: &str) -> bool {
         let mut inner = match self.inner.lock() {
             Ok(i) => i,
@@ -213,12 +248,8 @@ impl InferenceQueue {
         let pos = inner.tickets.iter().position(|t| t.id == req_id);
         match pos {
             Some(pos) => {
-                let was_running = inner.tickets[pos].state == TicketState::Running;
                 inner.tickets.remove(pos);
                 inner.senders.remove(req_id);
-                if was_running {
-                    inner.running = inner.running.saturating_sub(1);
-                }
                 inner.pump();
                 true
             }
@@ -248,9 +279,9 @@ impl InferenceQueue {
         self.reclaim(|t| t.lease_expires_at < now)
     }
 
-    /// Shared removal core: drop every ticket matching `pred`, fixing the
-    /// running count and pumping the next waiter. Dropping the senders of
-    /// waiting victims resolves their receivers with an error.
+    /// Shared removal core: drop every ticket matching `pred`, then pump each
+    /// freed lane's next waiter. Dropping the senders of waiting victims
+    /// resolves their receivers with an error.
     fn reclaim(&self, pred: impl Fn(&Ticket) -> bool) -> bool {
         let mut inner = match self.inner.lock() {
             Ok(i) => i,
@@ -265,16 +296,10 @@ impl InferenceQueue {
         if victims.is_empty() {
             return false;
         }
-        let freed_running = inner
-            .tickets
-            .iter()
-            .filter(|t| pred(t) && t.state == TicketState::Running)
-            .count();
         inner.tickets.retain(|t| !pred(t));
         for id in &victims {
             inner.senders.remove(id);
         }
-        inner.running = inner.running.saturating_sub(freed_running);
         inner.pump();
         true
     }
@@ -335,10 +360,11 @@ pub async fn inference_acquire(
     state: tauri::State<'_, InferenceQueue>,
     req_id: String,
     consumer: Value,
+    lane: String,
     parallel: bool,
     window_label: String,
 ) -> Result<TicketDto, String> {
-    let rx = state.enqueue(req_id.clone(), consumer, parallel, window_label)?;
+    let rx = state.enqueue(req_id.clone(), consumer, lane, parallel, window_label)?;
     state.emit_snapshot(&app);
 
     match rx.await {
@@ -405,12 +431,17 @@ mod tests {
         matches!(rx.try_recv(), Err(oneshot::error::TryRecvError::Closed))
     }
 
+    /// Enqueue a serialized ticket on the `"local"` lane — the common case in
+    /// these tests. Lane-specific behaviour gets its own helpers inline.
+    fn enqueue_local(q: &InferenceQueue, id: &str, consumer: Value) -> oneshot::Receiver<()> {
+        q.enqueue(id.into(), consumer, "local".into(), false, "main".into())
+            .unwrap()
+    }
+
     #[test]
     fn admits_first_caller_immediately() {
         let q = InferenceQueue::new();
-        let mut rx = q
-            .enqueue("w-1".into(), json!("chat"), false, "main".into())
-            .unwrap();
+        let mut rx = enqueue_local(&q, "w-1", json!("chat"));
         assert!(admitted(&mut rx));
         assert_eq!(q.snapshot().len(), 1);
         assert_eq!(q.snapshot()[0].state, "running");
@@ -419,17 +450,8 @@ mod tests {
     #[test]
     fn serializes_second_caller_behind_first() {
         let q = InferenceQueue::new();
-        let mut a = q
-            .enqueue("a".into(), json!("chat"), false, "main".into())
-            .unwrap();
-        let mut b = q
-            .enqueue(
-                "b".into(),
-                json!({"kind":"job","jobName":"Headlines"}),
-                false,
-                "main".into(),
-            )
-            .unwrap();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        let mut b = enqueue_local(&q, "b", json!({"kind":"job","jobName":"Headlines"}));
         assert!(admitted(&mut a));
         assert!(!admitted(&mut b));
         let states: Vec<_> = q.snapshot().iter().map(|t| t.state).collect();
@@ -447,15 +469,9 @@ mod tests {
     #[test]
     fn fifo_admission_order() {
         let q = InferenceQueue::new();
-        let mut a = q
-            .enqueue("a".into(), json!("chat"), false, "main".into())
-            .unwrap();
-        let mut b = q
-            .enqueue("b".into(), json!("chat"), false, "main".into())
-            .unwrap();
-        let mut c = q
-            .enqueue("c".into(), json!("chat"), false, "main".into())
-            .unwrap();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        let mut b = enqueue_local(&q, "b", json!("chat"));
+        let mut c = enqueue_local(&q, "c", json!("chat"));
         assert!(admitted(&mut a));
         assert!(!admitted(&mut b));
         q.release("a");
@@ -468,12 +484,8 @@ mod tests {
     #[test]
     fn cancel_waiting_unblocks_nothing_but_clears_ticket() {
         let q = InferenceQueue::new();
-        let mut a = q
-            .enqueue("a".into(), json!("chat"), false, "main".into())
-            .unwrap();
-        let mut b = q
-            .enqueue("b".into(), json!("chat"), false, "main".into())
-            .unwrap();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        let mut b = enqueue_local(&q, "b", json!("chat"));
         assert!(admitted(&mut a));
         // Cancel the waiting one: its receiver closes, head keeps its slot.
         assert!(q.cancel("b"));
@@ -486,15 +498,9 @@ mod tests {
     #[test]
     fn release_admits_waiter_after_cancelled_sibling() {
         let q = InferenceQueue::new();
-        let mut a = q
-            .enqueue("a".into(), json!("chat"), false, "main".into())
-            .unwrap();
-        let mut b = q
-            .enqueue("b".into(), json!("chat"), false, "main".into())
-            .unwrap();
-        let mut c = q
-            .enqueue("c".into(), json!("chat"), false, "main".into())
-            .unwrap();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        let mut b = enqueue_local(&q, "b", json!("chat"));
+        let mut c = enqueue_local(&q, "c", json!("chat"));
         assert!(admitted(&mut a));
         q.cancel("b");
         assert!(cancelled(&mut b));
@@ -507,11 +513,15 @@ mod tests {
     fn release_window_drops_all_owned_tickets() {
         let q = InferenceQueue::new();
         let mut a = q
-            .enqueue("a".into(), json!("shell"), false, "win-2".into())
+            .enqueue(
+                "a".into(),
+                json!("shell"),
+                "local".into(),
+                false,
+                "win-2".into(),
+            )
             .unwrap();
-        let mut b = q
-            .enqueue("b".into(), json!("chat"), false, "main".into())
-            .unwrap();
+        let mut b = enqueue_local(&q, "b", json!("chat"));
         assert!(admitted(&mut a));
         assert!(!admitted(&mut b));
         // The window holding the running slot dies.
@@ -526,12 +536,8 @@ mod tests {
     #[test]
     fn lease_sweep_reclaims_expired_slot() {
         let q = InferenceQueue::new();
-        let mut a = q
-            .enqueue("a".into(), json!("chat"), false, "main".into())
-            .unwrap();
-        let mut b = q
-            .enqueue("b".into(), json!("chat"), false, "main".into())
-            .unwrap();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        let mut b = enqueue_local(&q, "b", json!("chat"));
         assert!(admitted(&mut a));
         // Far future: every lease is expired.
         let future = now_ms() + LEASE_TTL_MS + 1;
@@ -545,9 +551,7 @@ mod tests {
     #[test]
     fn heartbeat_prevents_reclaim() {
         let q = InferenceQueue::new();
-        let mut a = q
-            .enqueue("a".into(), json!("chat"), false, "main".into())
-            .unwrap();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
         assert!(admitted(&mut a));
         // Sweep at a time the original lease would cover (just after enqueue).
         // Heartbeat pushes the lease further out, so a sweep at "now" is a no-op.
@@ -557,13 +561,25 @@ mod tests {
     }
 
     #[test]
-    fn parallel_mode_admits_everyone() {
+    fn parallel_lane_admits_everyone() {
         let q = InferenceQueue::new();
         let mut a = q
-            .enqueue("a".into(), json!("chat"), true, "main".into())
+            .enqueue(
+                "a".into(),
+                json!("chat"),
+                "remote:x".into(),
+                true,
+                "main".into(),
+            )
             .unwrap();
         let mut b = q
-            .enqueue("b".into(), json!("chat"), true, "main".into())
+            .enqueue(
+                "b".into(),
+                json!("chat"),
+                "remote:x".into(),
+                true,
+                "main".into(),
+            )
             .unwrap();
         assert!(admitted(&mut a));
         assert!(admitted(&mut b));
@@ -574,11 +590,95 @@ mod tests {
     #[test]
     fn duplicate_id_rejected() {
         let q = InferenceQueue::new();
-        let _a = q
-            .enqueue("dup".into(), json!("chat"), false, "main".into())
-            .unwrap();
+        let _a = enqueue_local(&q, "dup", json!("chat"));
         assert!(q
-            .enqueue("dup".into(), json!("chat"), false, "main".into())
+            .enqueue(
+                "dup".into(),
+                json!("chat"),
+                "local".into(),
+                false,
+                "main".into()
+            )
             .is_err());
+    }
+
+    /// The core fix: a turn on one lane never blocks a turn on another, even
+    /// when both lanes are serialized (capacity 1). Local chat keeps running
+    /// while a job streams against a remote provider.
+    #[test]
+    fn distinct_lanes_run_concurrently_even_when_serialized() {
+        let q = InferenceQueue::new();
+        let mut local = enqueue_local(&q, "chat", json!("chat"));
+        let mut remote = q
+            .enqueue(
+                "job".into(),
+                json!({"kind":"job","jobName":"Audit"}),
+                "remote:https://api.example.com".into(),
+                false,
+                "main".into(),
+            )
+            .unwrap();
+        // Neither waits on the other despite both lanes being capacity 1.
+        assert!(admitted(&mut local));
+        assert!(admitted(&mut remote));
+        let states: Vec<_> = q.snapshot().iter().map(|t| t.state).collect();
+        assert_eq!(states, vec!["running", "running"]);
+    }
+
+    /// Capacity is enforced per lane: a second local turn waits behind the
+    /// first (one llama-server slot) while an unrelated remote turn runs.
+    #[test]
+    fn local_lane_serializes_independently_of_remote() {
+        let q = InferenceQueue::new();
+        let mut local_a = enqueue_local(&q, "chat", json!("chat"));
+        let mut local_b = enqueue_local(&q, "shell", json!("shell"));
+        let mut remote = q
+            .enqueue(
+                "job".into(),
+                json!("chat"),
+                "remote:y".into(),
+                false,
+                "main".into(),
+            )
+            .unwrap();
+        assert!(admitted(&mut local_a));
+        assert!(!admitted(&mut local_b)); // serialized behind local_a
+        assert!(admitted(&mut remote)); // different lane — runs anyway
+                                        // Freeing the local head admits the waiting local turn.
+        q.release("chat");
+        assert!(admitted(&mut local_b));
+    }
+
+    /// The parallel flag is scoped to its lane: turning it on for the remote
+    /// lane lets remote turns share, while the local lane still serializes.
+    #[test]
+    fn parallel_flag_is_per_lane() {
+        let q = InferenceQueue::new();
+        let mut remote_a = q
+            .enqueue(
+                "ra".into(),
+                json!("chat"),
+                "remote:z".into(),
+                true,
+                "main".into(),
+            )
+            .unwrap();
+        let mut remote_b = q
+            .enqueue(
+                "rb".into(),
+                json!("chat"),
+                "remote:z".into(),
+                true,
+                "main".into(),
+            )
+            .unwrap();
+        let mut local_a = enqueue_local(&q, "la", json!("chat"));
+        let mut local_b = enqueue_local(&q, "lb", json!("chat"));
+        // Remote lane is parallel — both run.
+        assert!(admitted(&mut remote_a));
+        assert!(admitted(&mut remote_b));
+        // Local lane is serialized — second waits.
+        assert!(admitted(&mut local_a));
+        assert!(!admitted(&mut local_b));
     }
 }

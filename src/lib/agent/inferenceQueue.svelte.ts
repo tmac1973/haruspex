@@ -26,6 +26,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
+import type { BackendOverride } from '$lib/api';
 import { getSettings } from '$lib/stores/settings';
 
 export type InferenceConsumer = 'chat' | 'shell' | { kind: 'job'; jobName: string };
@@ -40,6 +41,12 @@ export interface InferenceTicket {
 
 export interface WithSlotOptions {
 	consumer: InferenceConsumer;
+	/**
+	 * The remote backend this turn targets, if any (per-job remote model). When
+	 * omitted the turn follows the global Settings backend. Used only to pick
+	 * the admission lane — turns against different providers don't contend.
+	 */
+	backend?: BackendOverride;
 	signal?: AbortSignal;
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
@@ -74,9 +81,31 @@ function nextReqId(): string {
 	return `${getWindowLabel()}:${reqCounter}`;
 }
 
-function parallelAllowed(): boolean {
+/**
+ * Resolve which admission *lane* a turn belongs to, and whether that lane's
+ * provider admits concurrent turns. Lanes are scoped per inference provider so
+ * a turn against one provider never blocks a turn against another: the single
+ * local llama-server slot (`'local'` lane) is independent of any remote server.
+ *
+ *   - A turn with a remote `backend` override (per-job remote model) → that
+ *     remote URL's lane.
+ *   - Otherwise it follows Settings: remote mode → the Settings remote lane;
+ *     local mode → the `'local'` lane.
+ *
+ * Within-lane concurrency is gated by the Settings "provider supports parallel
+ * inference" toggle (`allowParallelInference`): remote lanes admit many turns
+ * at once when it's on, one at a time when off. The local lane always
+ * serializes — a single llama-server slot — regardless.
+ */
+function laneFor(backend?: BackendOverride): { lane: string; parallel: boolean } {
 	const inf = getSettings().inferenceBackend;
-	return inf.mode === 'remote' && inf.allowParallelInference;
+	const remoteUrl = (backend?.baseUrl ?? (inf.mode === 'remote' ? inf.remoteBaseUrl : '') ?? '')
+		.trim()
+		.replace(/\/+$/, '');
+	if (remoteUrl) {
+		return { lane: `remote:${remoteUrl}`, parallel: inf.allowParallelInference };
+	}
+	return { lane: 'local', parallel: false };
 }
 
 // --- cross-window queue snapshot (event-mirrored) -------------------------
@@ -167,10 +196,12 @@ export async function withInferenceSlot<T>(
 	options: WithSlotOptions,
 	fn: () => Promise<T>
 ): Promise<T> {
-	const { consumer, signal, onTicket, onAdmitted } = options;
+	const { consumer, backend, signal, onTicket, onAdmitted } = options;
 	if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 	ensureSnapshotListener();
+
+	const { lane, parallel } = laneFor(backend);
 
 	const reqId = nextReqId();
 	onTicket?.({ id: reqId, consumer, state: 'waiting', enqueuedAt: Date.now() });
@@ -194,7 +225,8 @@ export async function withInferenceSlot<T>(
 		await invoke('inference_acquire', {
 			reqId,
 			consumer,
-			parallel: parallelAllowed(),
+			lane,
+			parallel,
 			windowLabel: getWindowLabel()
 		});
 		// Abort could have raced in between the grant and here.

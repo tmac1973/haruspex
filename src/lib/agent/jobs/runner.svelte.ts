@@ -146,9 +146,11 @@ function runJobTurn(
 	if (current && current.id === runId) {
 		current = { ...current, waitingForSlot: true };
 	}
+	const backend = jobBackendOverride(job);
 	return withInferenceSlot(
 		{
 			consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
+			backend,
 			signal: abort.signal,
 			onAdmitted: () => {
 				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
@@ -159,7 +161,7 @@ function runJobTurn(
 				runEphemeralTurn({
 					...opts,
 					workingDir: job.working_dir ? job.working_dir : null,
-					backend: jobBackendOverride(job),
+					backend,
 					signal: abort.signal
 				})
 			)
