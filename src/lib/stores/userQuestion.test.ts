@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { askUserQuestion, getPendingQuestion, resolveUserQuestion } from './userQuestion.svelte';
+import {
+	askUserQuestion,
+	cancelUserQuestion,
+	getPendingQuestion,
+	resolveUserQuestion
+} from './userQuestion.svelte';
 
 describe('userQuestion store', () => {
 	it('sets pending and resolves with the selected labels', async () => {
@@ -59,5 +64,38 @@ describe('userQuestion store', () => {
 			askUserQuestion({ question: 'q', options: [{ label: 'A' }] }, ctrl.signal)
 		).rejects.toMatchObject({ name: 'AbortError' });
 		expect(getPendingQuestion()).toBeNull();
+	});
+
+	it('cancelUserQuestion rejects with AbortError and clears pending (the modal escape hatch)', async () => {
+		const p = askUserQuestion({ question: 'q', options: [{ label: 'A' }] });
+		expect(getPendingQuestion()).not.toBeNull();
+
+		cancelUserQuestion();
+
+		await expect(p).rejects.toMatchObject({ name: 'AbortError' });
+		expect(getPendingQuestion()).toBeNull();
+	});
+
+	it('cancelUserQuestion is a no-op when nothing is pending', () => {
+		expect(() => cancelUserQuestion()).not.toThrow();
+		expect(getPendingQuestion()).toBeNull();
+	});
+
+	it('cancelling a question does not later fire the abort listener', async () => {
+		// A manual cancel must remove the signal listener so a subsequent abort on
+		// the same controller can't double-reject or clear a fresh pending question.
+		const ctrl = new AbortController();
+		const p = askUserQuestion({ question: 'q', options: [{ label: 'A' }] }, ctrl.signal);
+
+		cancelUserQuestion();
+		await expect(p).rejects.toMatchObject({ name: 'AbortError' });
+
+		// A new question is now pending; aborting the old controller must not touch it.
+		const next = askUserQuestion({ question: 'q2', options: [{ label: 'B' }] });
+		ctrl.abort();
+		expect(getPendingQuestion()?.question).toBe('q2');
+
+		resolveUserQuestion({ kind: 'selected', labels: ['B'] });
+		await expect(next).resolves.toEqual({ kind: 'selected', labels: ['B'] });
 	});
 });

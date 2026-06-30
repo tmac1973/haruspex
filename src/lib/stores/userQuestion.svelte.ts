@@ -49,6 +49,14 @@ export type UserAnswer =
 
 interface PendingQuestion extends UserQuestionRequest {
 	resolve: (answer: UserAnswer) => void;
+	/**
+	 * Break out: reject the awaiting caller with an AbortError. Wired to the
+	 * modal's cancel control so the user can always escape a question they can't
+	 * (or don't want to) answer — the AbortError unwinds the caller's loop the
+	 * same way a job-cancel does, rather than feeding the model another answer it
+	 * can tunnel-vision on. Shares the abort path with the optional AbortSignal.
+	 */
+	cancel: () => void;
 }
 
 let pending = $state<PendingQuestion | null>(null);
@@ -78,16 +86,26 @@ export function askUserQuestion(
 		return Promise.reject(new DOMException('Aborted', 'AbortError'));
 	}
 	return new Promise<UserAnswer>((resolve, reject) => {
+		function cleanup() {
+			signal?.removeEventListener('abort', onAbort);
+		}
 		const entry: PendingQuestion = {
 			...req,
 			resolve: (answer) => {
-				signal?.removeEventListener('abort', onAbort);
+				cleanup();
 				resolve(answer);
+			},
+			cancel: () => {
+				// The user broke out via the modal. `cancelUserQuestion` has already
+				// cleared `pending`; just drop the abort listener and reject so the
+				// caller unwinds. Same AbortError the signal path uses.
+				cleanup();
+				reject(new DOMException('Aborted', 'AbortError'));
 			}
 		};
 		function onAbort() {
-			// Only fires while this question is still pending (the resolve wrapper
-			// removes the listener), and asks are serialized — so clearing is safe.
+			// Only fires while this question is still pending (resolve/cancel both
+			// remove the listener), and asks are serialized — so clearing is safe.
 			pending = null;
 			reject(new DOMException('Aborted', 'AbortError'));
 		}
@@ -113,4 +131,20 @@ export function resolveUserQuestion(answer: UserAnswer): void {
 	if (current === null) return;
 	pending = null;
 	current.resolve(answer);
+}
+
+/**
+ * Called by the modal's cancel control (the "×"/Esc escape hatch). Clears the
+ * pending question and rejects the awaiting caller with an AbortError, so a user
+ * who can't answer — or who is stuck in a checkpoint loop — can always break out
+ * instead of being trapped. The caller treats it like a job-cancel: a runner
+ * checkpoint finalizes the run as cancelled; an `ask_user_question` tool call
+ * unwinds the agent turn (the AbortError propagates rather than becoming a
+ * tool-result the model loops on). No-op when nothing is pending.
+ */
+export function cancelUserQuestion(): void {
+	const current = pending;
+	if (current === null) return;
+	pending = null;
+	current.cancel();
 }

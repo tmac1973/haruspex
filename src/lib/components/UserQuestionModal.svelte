@@ -11,11 +11,19 @@
 	 * submission is unambiguous: choosing it deselects the options and reveals a
 	 * text box; choosing an option hides it.
 	 *
-	 * Backdrop/Esc do NOT dismiss: a pending question must be answered.
-	 * Cancellation is the run's concern (job-cancel), not the modal's.
+	 * Escape hatch: a "×" in the corner, a "Cancel run" action, and the Esc key
+	 * all call `cancelUserQuestion`, which rejects the awaiting caller with an
+	 * AbortError — the same break-out a job-cancel triggers. This guarantees the
+	 * user is never trapped at a question (e.g. a checkpoint the model keeps
+	 * re-asking). Backdrop-click is deliberately NOT wired: cancelling discards
+	 * the run, so it must be an intentional click/keypress, not a stray one.
 	 */
 	import Modal from './Modal.svelte';
-	import { getPendingQuestion, resolveUserQuestion } from '$lib/stores/userQuestion.svelte';
+	import {
+		getPendingQuestion,
+		resolveUserQuestion,
+		cancelUserQuestion
+	} from '$lib/stores/userQuestion.svelte';
 
 	const pending = $derived(getPendingQuestion());
 
@@ -71,67 +79,118 @@
 			resolveUserQuestion({ kind: 'selected', labels: selected });
 		}
 	}
+
+	// Esc breaks out of the question (cancels the run/turn). Handled here rather
+	// than via Modal's `dismissable` so backdrop-click stays inert.
+	function onKeydown(e: KeyboardEvent) {
+		if (pending && e.key === 'Escape') {
+			e.preventDefault();
+			cancelUserQuestion();
+		}
+	}
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <Modal open={pending != null} maxWidth={580} labelledBy="user-question-title">
 	{#if pending}
-		<h2 id="user-question-title">{pending.question}</h2>
-		{#if pending.allowMultiple}
-			<p class="hint">Select one or more, or write your own answer.</p>
-		{/if}
+		<div class="qbody">
+			<button
+				type="button"
+				class="cancel-x"
+				onclick={() => cancelUserQuestion()}
+				aria-label="Cancel and stop the run"
+				title="Cancel and stop the run (Esc)"
+			>
+				×
+			</button>
+			<h2 id="user-question-title">{pending.question}</h2>
+			{#if pending.allowMultiple}
+				<p class="hint">Select one or more, or write your own answer.</p>
+			{/if}
 
-		<div class="options">
-			{#each pending.options as opt (opt.label)}
-				<button
-					type="button"
-					class="option"
-					class:selected={!useFreeText && selected.includes(opt.label)}
-					onclick={() => toggleOption(opt.label)}
-				>
-					<span class="marker" class:multi={pending.allowMultiple} aria-hidden="true"></span>
-					<span class="body">
-						<span class="label">
-							{opt.label}
-							{#if opt.recommended}<span class="badge">Recommended</span>{/if}
+			<div class="options">
+				{#each pending.options as opt (opt.label)}
+					<button
+						type="button"
+						class="option"
+						class:selected={!useFreeText && selected.includes(opt.label)}
+						onclick={() => toggleOption(opt.label)}
+					>
+						<span class="marker" class:multi={pending.allowMultiple} aria-hidden="true"></span>
+						<span class="body">
+							<span class="label">
+								{opt.label}
+								{#if opt.recommended}<span class="badge">Recommended</span>{/if}
+							</span>
+							{#if opt.description}<span class="desc">{opt.description}</span>{/if}
 						</span>
-						{#if opt.description}<span class="desc">{opt.description}</span>{/if}
-					</span>
-				</button>
-			{/each}
+					</button>
+				{/each}
 
-			<!-- "Other" — a member of the same group so selection stays unambiguous.
+				<!-- "Other" — a member of the same group so selection stays unambiguous.
 			     Always a radio (round) marker: it's an exclusive alternative even when
 			     the prefilled options are multi-select checkboxes. -->
-			<button type="button" class="option" class:selected={useFreeText} onclick={chooseFreeText}>
-				<span class="marker" aria-hidden="true"></span>
-				<span class="body">
-					<span class="label">Write your own answer</span>
-					<span class="desc">Type a different answer instead of picking above.</span>
-				</span>
-			</button>
-		</div>
+				<button type="button" class="option" class:selected={useFreeText} onclick={chooseFreeText}>
+					<span class="marker" aria-hidden="true"></span>
+					<span class="body">
+						<span class="label">Write your own answer</span>
+						<span class="desc">Type a different answer instead of picking above.</span>
+					</span>
+				</button>
+			</div>
 
-		{#if useFreeText}
-			<textarea
-				bind:this={textareaEl}
-				class="free-input"
-				rows="3"
-				placeholder="Type your answer…"
-				bind:value={freeText}
-			></textarea>
-		{/if}
+			{#if useFreeText}
+				<textarea
+					bind:this={textareaEl}
+					class="free-input"
+					rows="3"
+					placeholder="Type your answer…"
+					bind:value={freeText}
+				></textarea>
+			{/if}
 
-		<div class="actions">
-			<button type="button" class="submit" disabled={!canSubmit} onclick={submit}>Submit</button>
+			<div class="actions">
+				<button type="button" class="cancel" onclick={() => cancelUserQuestion()}>Cancel run</button
+				>
+				<button type="button" class="submit" disabled={!canSubmit} onclick={submit}>Submit</button>
+			</div>
 		</div>
 	{/if}
 </Modal>
 
 <style>
+	.qbody {
+		position: relative;
+	}
+
+	.cancel-x {
+		position: absolute;
+		top: -6px;
+		right: -8px;
+		background: none;
+		border: none;
+		color: var(--text-secondary);
+		font-size: 1.5rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0 4px;
+		border-radius: 4px;
+	}
+
+	.cancel-x:hover {
+		color: var(--text-primary);
+	}
+
 	h2 {
-		margin: 0 0 4px;
+		margin: 0 4px 4px 0;
+		/* Leave room for the corner × so a long question doesn't run under it. */
+		padding-right: 24px;
 		font-size: 1.05rem;
 		line-height: 1.35;
+		/* Honor the \n line breaks callers put in multi-line questions (e.g. the
+		   guided-planning outline) while still collapsing incidental whitespace. */
+		white-space: pre-line;
 	}
 
 	.hint {
@@ -244,8 +303,25 @@
 
 	.actions {
 		display: flex;
-		justify-content: flex-end;
+		justify-content: space-between;
+		align-items: center;
+		gap: 12px;
 		margin-top: 16px;
+	}
+
+	.cancel {
+		padding: 8px 14px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: transparent;
+		color: var(--text-secondary);
+		font-size: 0.88rem;
+		cursor: pointer;
+	}
+
+	.cancel:hover {
+		color: var(--text-primary);
+		border-color: var(--text-secondary);
 	}
 
 	.submit {

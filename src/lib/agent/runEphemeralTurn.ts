@@ -43,6 +43,15 @@ export interface EphemeralTurnOptions {
 	/** Confine writes to this dir (relative to workingDir). See AgentLoopOptions. */
 	writeRoot?: string | null;
 	/**
+	 * Force the file-write hallucination guard on for this turn, regardless of
+	 * the user message. The default heuristic sniffs the user message for binary
+	 * document keywords (PDF/docx/…) — but a caller that KNOWS the turn must
+	 * produce a file (e.g. a guided-planning write turn emitting markdown) can
+	 * assert it directly instead of relying on that sniff. Omit to keep the
+	 * heuristic (chat behavior unchanged).
+	 */
+	expectsFileOutput?: boolean;
+	/**
 	 * Replace the default system prompt with this exact text. Used by the
 	 * guided-planning stages, which drive the turn with their own instructions
 	 * rather than the chat/agent system prompt.
@@ -74,7 +83,11 @@ export async function runEphemeralTurn(
 		{ role: 'user', content: options.userMessage }
 	];
 
-	const expectsFileOutput = !!options.workingDir && looksLikeFileOutputRequest(options.userMessage);
+	// An explicit caller assertion wins; otherwise fall back to sniffing the user
+	// message for binary-document keywords (the chat default).
+	const expectsFileOutput =
+		options.expectsFileOutput ??
+		(!!options.workingDir && looksLikeFileOutputRequest(options.userMessage));
 
 	return runTurnCore(
 		{
