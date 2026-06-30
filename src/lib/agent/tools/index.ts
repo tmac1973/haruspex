@@ -7,6 +7,7 @@ import './sandbox';
 import './code';
 import './shell-interactive';
 import './audit';
+import './planning';
 import './user-question';
 
 // Re-export registry API

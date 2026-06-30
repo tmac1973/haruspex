@@ -10,7 +10,12 @@ const mocks = vi.hoisted(() => ({
 	markRunFinished: vi.fn(),
 	markRunStepStarted: vi.fn(),
 	markRunStepFinished: vi.fn(),
-	askUserQuestion: vi.fn()
+	askUserQuestion: vi.fn(),
+	invoke: vi.fn()
+}));
+
+vi.mock('@tauri-apps/api/core', () => ({
+	invoke: mocks.invoke
 }));
 
 vi.mock('$lib/agent/runEphemeralTurn', () => ({
@@ -103,6 +108,33 @@ function tick() {
 	return new Promise((r) => setTimeout(r, 0));
 }
 
+/**
+ * A `runEphemeralTurn` implementation for guided_planning runs: the outline turn
+ * (forceFinalTool === submit_plan_outline) emits the given phases by invoking the
+ * runner's onToolStart capture; every other turn returns a clean verifier verdict
+ * so the run drives to completion.
+ */
+function guidedTurns(
+	phases: Array<{ id: string; title: string; depends_on?: string[]; summary: string }>
+) {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	return async (opts: any) => {
+		if (opts.forceFinalTool === 'submit_plan_outline') {
+			opts.onToolStart?.({ id: 'outline', name: 'submit_plan_outline', arguments: { phases } });
+			return { finalText: 'outline submitted' };
+		}
+		return { finalText: 'PLAN OK' };
+	};
+}
+
+/** User messages of every phase-write turn the run issued. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function phaseWriteMessages(calls: any[]): string[] {
+	return calls
+		.map(([o]) => o.userMessage)
+		.filter((m: unknown): m is string => typeof m === 'string' && m.includes('write ONLY Phase'));
+}
+
 beforeEach(() => {
 	mocks.runEphemeralTurn.mockReset();
 	mocks.getJob.mockReset();
@@ -113,6 +145,20 @@ beforeEach(() => {
 	mocks.markRunStepFinished.mockReset().mockResolvedValue(undefined);
 	// Default: the guided_planning review checkpoint is approved immediately.
 	mocks.askUserQuestion.mockReset().mockResolvedValue({ kind: 'selected', labels: ['Approve'] });
+	// Default: the guided-planning write-verification sees the files on disk
+	// (overview.md exists, the plan dir has a phase file). Tests that exercise a
+	// hallucinated/missing write override this.
+	mocks.invoke.mockReset().mockImplementation(async (cmd: string) => {
+		if (cmd === 'fs_path_exists') return true;
+		if (cmd === 'fs_list_dir') {
+			return {
+				path: '',
+				entries: [{ name: 'phase-01-x.md', is_dir: false, size: 1 }],
+				truncated: false
+			};
+		}
+		return undefined;
+	});
 	// Default: createJobRun assigns sequential ids starting at 100 so the
 	// runner-issued ids never collide with the test's job ids (which start
 	// at 1) — easier to spot a "did the runner use the persisted id?" bug.
@@ -164,12 +210,18 @@ describe('jobs runner — guards', () => {
 				plan_output_dir: 'plan/x/'
 			})
 		);
-		// Every turn returns a clean verifier verdict so the run completes.
-		mocks.runEphemeralTurn.mockResolvedValue({ finalText: 'PLAN OK' });
+		// The outline turn emits two phases; every other turn returns a clean verdict.
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([
+				{ id: '01', title: 'Schema', depends_on: [], summary: 'db' },
+				{ id: '02', title: 'API', depends_on: ['01'], summary: 'api' }
+			])
+		);
 
 		const { enqueue, getCurrentRun } = await freshRunner();
 		const runId = await enqueue(1);
 		expect(runId).not.toBeNull();
+		await tick();
 		await tick();
 		await tick();
 
@@ -181,10 +233,100 @@ describe('jobs runner — guards', () => {
 		expect(opts.systemPrompt).toContain('plan/x/');
 		expect([...opts.toolAllowlist]).toContain('ask_user_question');
 		expect([...opts.toolAllowlist]).not.toContain('run_command');
-		// Both stages ran (overview + planning + verifier ⇒ several turns), and
+		// The overview-write turn arms the in-turn file-write hallucination guard
+		// (markdown output, so the user-message sniff would otherwise miss it).
+		expect(opts.expectsFileOutput).toBe(true);
+		// Both stages ran (overview + outline + per-phase writes + verifier), and
 		// the review/approval checkpoints were reached.
 		expect(mocks.runEphemeralTurn.mock.calls.length).toBeGreaterThan(1);
 		expect(mocks.askUserQuestion).toHaveBeenCalled();
+		// One focused write turn per outline phase — not a single "write them all".
+		expect(phaseWriteMessages(mocks.runEphemeralTurn.mock.calls).length).toBe(2);
+	});
+
+	it('writes one phase file per outline phase, with deterministic NN filenames', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				plan_output_dir: 'plan/x/'
+			})
+		);
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([
+				{ id: '01', title: 'One', summary: 'a' },
+				{ id: '02', title: 'Two', depends_on: ['01'], summary: 'b' },
+				{ id: '03', title: 'Three', depends_on: ['02'], summary: 'c' }
+			])
+		);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		await tick();
+		await tick();
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		const writes = phaseWriteMessages(mocks.runEphemeralTurn.mock.calls);
+		expect(writes.length).toBe(3);
+		// The runner controls numbering + slug, so each phase lands at its own path.
+		expect(writes.some((m) => m.includes('plan/x/phase-01-one.md'))).toBe(true);
+		expect(writes.some((m) => m.includes('plan/x/phase-02-two.md'))).toBe(true);
+		expect(writes.some((m) => m.includes('plan/x/phase-03-three.md'))).toBe(true);
+	});
+
+	it('fails honestly when the model never submits a plan outline', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				plan_output_dir: 'plan/x/'
+			})
+		);
+		// Overview writes fine (fs_path_exists true by default), but the outline turn
+		// only narrates — it never calls submit_plan_outline, so no phases land.
+		mocks.runEphemeralTurn.mockImplementation(async (opts: { forceFinalTool?: string }) => ({
+			finalText: opts.forceFinalTool === 'submit_plan_outline' ? 'I described the phases' : 'ok'
+		}));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		await tick();
+		await tick();
+
+		// No phantom plan, no per-phase writes against an empty outline — just fail.
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(phaseWriteMessages(mocks.runEphemeralTurn.mock.calls).length).toBe(0);
+	});
+
+	it('fails (not "approve a phantom") when the model never writes the overview', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/'
+			})
+		);
+		mocks.runEphemeralTurn.mockResolvedValue({ finalText: 'I wrote the overview!' });
+		// The file never appears on disk — the model hallucinated the write.
+		mocks.invoke.mockImplementation(async (cmd: string) =>
+			cmd === 'fs_path_exists' ? false : undefined
+		);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		await tick();
+
+		// The run fails honestly instead of parking at an approve-the-overview
+		// checkpoint, and the user is never asked to approve a non-existent file.
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(mocks.askUserQuestion).not.toHaveBeenCalled();
 	});
 
 	it('threads a per-job remote model override (backend + larger context) into the turn', async () => {

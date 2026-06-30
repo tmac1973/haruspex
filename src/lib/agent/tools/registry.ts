@@ -99,9 +99,10 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// `exec` (run_command) runs arbitrary host commands — Code mode only.
 	// Without this, the `return true` fall-through would leak it into Chat.
 	if (reg.category === 'exec') return false;
-	// `audit` tools (submit_findings/submit_verdict) are only ever exposed via
-	// an explicit toolAllowlist, never the default toolset.
-	if (reg.category === 'audit') return false;
+	// `audit` (submit_findings/submit_verdict) and `planning` (submit_plan_outline)
+	// structured-output tools are only ever exposed via an explicit toolAllowlist,
+	// never the default toolset.
+	if (reg.category === 'audit' || reg.category === 'planning') return false;
 	// code_grep / code_glob are Code-mode fs tools; keep them out of Chat.
 	if (CODE_ONLY_FS.has(name)) return false;
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;

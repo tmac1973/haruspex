@@ -21,10 +21,12 @@
 	const isGuided = $derived(run?.jobType === 'guided_planning');
 
 	// What each guided_planning stage is doing — so the tool calls and thinking
-	// have context. Indexed by step.index.
+	// have context. Indexed by step.index; must stay aligned with the stages in
+	// runGuidedPlanningPipeline (Overview, Outline, Planning, Verification, Approval).
 	const GUIDED_STEP_DESC = [
 		'Interviewing you about the project, then writing overview.md. Answer “proceed” to any question to move on.',
-		'Interviewing you about the implementation, then writing the phase files.',
+		'Interviewing you about the implementation, then proposing a dependency-ordered phase outline for you to approve.',
+		'Writing the phase files from the approved outline — one focused write per phase.',
 		'An independent reviewer is reading the plan to check dependency ordering and catch any unresolved (“TBD”) decisions.',
 		'Waiting for you to review the phase files and approve — or request changes.'
 	];
