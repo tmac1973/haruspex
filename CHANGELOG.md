@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.52](https://github.com/tmac1973/haruspex/compare/v0.1.51...v0.1.52) (2026-07-03)
+
+
+### Features
+
+* guided planning job type + reusable ask_user_question primitive ([#162](https://github.com/tmac1973/haruspex/issues/162)) ([b11c58c](https://github.com/tmac1973/haruspex/commit/b11c58ce4c088aa94e0cebbbc35cc975a5396a22))
+* **inference:** scope the admission queue per provider lane ([#163](https://github.com/tmac1973/haruspex/issues/163)) ([8eccdc6](https://github.com/tmac1973/haruspex/commit/8eccdc6b6d71f8936f9421383ade765909896d9b))
+
+
+### Bug Fixes
+
+* **agent:** don't count blocked web reads against the turn budget ([#166](https://github.com/tmac1973/haruspex/issues/166)) ([872956f](https://github.com/tmac1973/haruspex/commit/872956fa34ab47f6b14f9942b3d5e36f16b27193))
+* **guided-planning:** escape hatch, write verification, complete plans ([#165](https://github.com/tmac1973/haruspex/issues/165)) ([cf16373](https://github.com/tmac1973/haruspex/commit/cf1637347ea75f901dd7a27fd2627ebc8772eb25))
+* **sandbox:** enforce sandbox switch at execution + recover stuck inference ([#160](https://github.com/tmac1973/haruspex/issues/160)) ([06a5ad6](https://github.com/tmac1973/haruspex/commit/06a5ad6a6480652a66d2db409f171fd4898992e3))
+* **shell:** attach in-flight session scrollback to assistant context ([#161](https://github.com/tmac1973/haruspex/issues/161)) ([6c80c35](https://github.com/tmac1973/haruspex/commit/6c80c356b431b0565f31f5eb2c1ced6544807d0b))
+
+
+### Documentation
+
+* **readme:** correct shell execution claim; document Code mode + job types ([#164](https://github.com/tmac1973/haruspex/issues/164)) ([c940b35](https://github.com/tmac1973/haruspex/commit/c940b353dcd94a41432deaed49fc94b017b9aae7))
+
 ## [0.1.51](https://github.com/tmac1973/haruspex/compare/v0.1.50...v0.1.51) (2026-06-26)
 
 
