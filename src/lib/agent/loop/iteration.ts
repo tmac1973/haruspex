@@ -21,7 +21,7 @@ import {
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
 import { executeTool, getToolSchemas, type PendingImage } from '$lib/agent/tools';
-import { isFetchFailureResult } from '$lib/agent/tools/_helpers';
+import { isFetchFailureResult, isToolErrorResult } from '$lib/agent/tools/_helpers';
 import type { ToolDefinition } from '$lib/api';
 import {
 	fitMessagesToBudget,
@@ -58,12 +58,18 @@ export type IterationOutcome = 'continue' | 'break' | 'complete';
 
 /**
  * Per-turn state that needs to survive across iterations. NudgeState
- * owns nudge counters; this struct adds the one remaining mutable
- * flag — whether the model has actually called any tool yet, which
- * gates the post-tools final-synthesis branches.
+ * owns nudge counters; this struct adds two mutable flags:
+ *  - `usedTools`: whether the model has actually called any tool yet,
+ *    which gates the post-tools final-synthesis branches.
+ *  - `allWebReadsBlocked`: set fresh each iteration — true when the
+ *    iteration did nothing but web reads (fetch/research/search) that
+ *    were ALL externally blocked (403, bot detection, paywall, rate
+ *    limit). The driver reads this to grant a bounded "free" retry so a
+ *    blocked page doesn't burn the turn budget.
  */
 export class LoopState {
 	usedTools = false;
+	allWebReadsBlocked = false;
 }
 
 /**
@@ -587,6 +593,11 @@ export async function runIteration(
 	const { messages } = ctx;
 	logDebug('agent', `iteration ${iteration} start`, { messageCount: messages.length });
 
+	// Reset per-iteration; only the tool path below can set it true. Read by
+	// the driver on a 'continue' outcome to decide whether this turn counts
+	// against the iteration budget.
+	state.allWebReadsBlocked = false;
+
 	// If images were loaded on the previous iteration, attach them to the
 	// most recent user message before sending. This is how multimodal
 	// requests reach the vision model.
@@ -629,7 +640,8 @@ export async function runIteration(
 	// Model emitted real tool_calls — clear any pending narrate-recovery
 	// so we don't fire it spuriously on a later no-tool-calls iteration.
 	nudges.consumeNarrateRecovery();
-	await executeToolCalls(ctx, nudges, toolCalls);
+	const { allWebReadsBlocked } = await executeToolCalls(ctx, nudges, toolCalls);
+	state.allWebReadsBlocked = allWebReadsBlocked;
 	// Break out of a no-progress loop (same command re-run repeatedly) instead
 	// of cycling to the iteration cap; the final-synthesis path then wraps up.
 	if (nudges.shouldStopForCommandRepeat()) {
@@ -904,13 +916,23 @@ async function finalizeNoToolCalls(
  * message, then run each tool (raced against the abort signal), stream its
  * result back through the callbacks, update nudge bookkeeping, and append
  * the tool result message. Throws AbortError if the signal fires mid-tool.
+ *
+ * Returns `allWebReadsBlocked: true` when EVERY call this iteration was a web
+ * read (fetch_url / research_url / web_search) that came back externally
+ * blocked — a 403 / bot-detection / paywall page, or a rate-limited search.
+ * The driver uses this to grant a bounded free retry: a page the model could
+ * not have avoided failing on shouldn't consume the turn budget and force an
+ * incomplete answer.
  */
 async function executeToolCalls(
 	ctx: LoopContext,
 	nudges: NudgeState,
 	toolCalls: ResolvedToolCall[]
-): Promise<void> {
+): Promise<{ allWebReadsBlocked: boolean }> {
 	const { messages, signal, options } = ctx;
+	// Count calls that were web reads blocked by an external resource. When
+	// this equals toolCalls.length, the whole iteration was wasted on blocks.
+	let blockedWebReads = 0;
 
 	// Append assistant message with tool calls (but NOT the content —
 	// the model should regenerate its answer after seeing tool results)
@@ -977,10 +999,17 @@ async function executeToolCalls(
 		let toolContent = output.result;
 		if (call.name === 'web_search') {
 			nudges.markWebSearchUsed();
+			// A search that errored out (rate-limited engines, bot gate) left the
+			// model with nothing to work with — count it as an external block.
+			if (isToolErrorResult(toolContent)) blockedWebReads++;
 		}
 		if (call.name === 'fetch_url' || call.name === 'research_url') {
 			const url = call.arguments.url as string | undefined;
-			if (url && !isFetchFailureResult(toolContent)) {
+			if (isFetchFailureResult(toolContent)) {
+				// 403 / bot detection / paywall — the page is unreadable through
+				// no fault of the model. Don't let it cost the turn budget.
+				blockedWebReads++;
+			} else if (url) {
 				nudges.recordFetchedUrl(url);
 				toolContent = `[Source: ${url}]\n\n${toolContent}`;
 			}
@@ -1008,6 +1037,10 @@ async function executeToolCalls(
 			content: toolContent
 		});
 	}
+
+	// Whole iteration spent on web reads that were all blocked → signal the
+	// driver to grant a free retry. An empty toolCalls list never reaches here.
+	return { allWebReadsBlocked: blockedWebReads === toolCalls.length };
 }
 
 /**

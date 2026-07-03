@@ -252,19 +252,42 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 		messages: ctx.messages
 	});
 
-	// 'break' means the loop bailed early on degraded output; running out of
-	// the for-loop means we exhausted the iteration budget. Both fall through
+	// 'break' means the loop bailed early on degraded output; exhausting the
+	// iteration budget means we ran out of productive turns. Both fall through
 	// to the forced final synthesis but are reported as distinct stop reasons.
+	//
+	// The budget is consumed by *productive* turns, not raw loop passes. A turn
+	// whose only work was web reads that were all externally blocked (403, bot
+	// detection, paywall, rate limit) grants a "free" retry instead of spending
+	// the budget — so the agent can try another page rather than being forced
+	// to wrap up with an incomplete answer. A separate cap (`maxFreeRetries`)
+	// keeps a persistently-failing site from looping forever.
+	const maxFreeRetries = ctx.maxIterations;
 	let forcedBreak = false;
-	for (let iteration = 1; iteration <= ctx.maxIterations; iteration++) {
+	let consumed = 0;
+	let freeRetries = 0;
+	let iteration = 0;
+	while (consumed < ctx.maxIterations) {
 		if (ctx.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		iteration++;
 		const outcome = await runIteration(ctx, state, nudges, iteration);
 		if (outcome === 'complete') return;
 		if (outcome === 'break') {
 			forcedBreak = true;
 			break;
 		}
-		// outcome === 'continue': proceed to the next iteration.
+		// outcome === 'continue': a turn spent entirely on blocked web reads is
+		// a free retry (up to the cap); anything else consumes the budget.
+		if (state.allWebReadsBlocked && freeRetries < maxFreeRetries) {
+			freeRetries++;
+			logDebug('agent', 'free retry: turn spent only on blocked web reads', {
+				iteration,
+				freeRetries,
+				maxFreeRetries
+			});
+		} else {
+			consumed++;
+		}
 	}
 
 	await runMaxIterationsFinalSynthesis(

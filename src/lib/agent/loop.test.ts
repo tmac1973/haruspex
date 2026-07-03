@@ -719,3 +719,83 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		expect(cb.onComplete.mock.calls[0][0]).toBeUndefined();
 	});
 });
+
+describe('runAgentLoop: blocked web reads grant free retries', () => {
+	it('does not count a turn spent on a blocked (403) fetch against the budget', async () => {
+		// maxIterations is 2, but the first two fetches are blocked by a 403, so
+		// they must not consume the budget — the agent gets to try a third page
+		// that succeeds and produces a real answer instead of being forced to
+		// wrap up after two dead ends.
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }]),
+			toolCallResponse([{ id: 'c2', name: 'fetch_url', args: '{"url":"https://b.dev"}' }]),
+			toolCallResponse([{ id: 'c3', name: 'fetch_url', args: '{"url":"https://c.dev"}' }]),
+			textResponse('Answer sourced from c.dev.')
+		);
+		toolsMock.executeTool.mockImplementation(async (_name: string, args: { url: string }) => {
+			if (args.url === 'https://c.dev') return { result: 'Readable page text.' };
+			return { result: 'Failed to fetch URL: Fetch failed with status: 403 Forbidden' };
+		});
+		const { options, cb } = makeOptions({ maxIterations: 2 });
+
+		await runAgentLoop(options);
+
+		// All four model calls ran: two free (blocked) + the successful fetch +
+		// the final answer. No max-iterations synthesis was needed.
+		expect(api.chatCompletion).toHaveBeenCalledTimes(4);
+		expect(api.chatCompletionStream).not.toHaveBeenCalled();
+		expect(streamedText(cb)).toBe('Answer sourced from c.dev.');
+		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		// Natural completion — not forced to wrap up.
+		expect(cb.onComplete.mock.calls[0][0]).toBeUndefined();
+	});
+
+	it('caps free retries so a persistently blocked site still wraps up', async () => {
+		// Every fetch is blocked. Free retries are capped at maxIterations, so the
+		// loop runs maxIterations free + maxIterations counted passes and then
+		// wraps up at the cap rather than looping forever.
+		nonStreamQueue.push(
+			...Array.from({ length: 4 }, (_, i) =>
+				toolCallResponse([{ id: `c${i}`, name: 'fetch_url', args: `{"url":"https://x${i}.dev"}` }])
+			)
+		);
+		streamQueue.push([contentChunk('Could not reach any source.', 'stop')]);
+		toolsMock.executeTool.mockResolvedValue({
+			result: 'Failed to fetch URL: Fetch failed with status: 403 Forbidden'
+		});
+		const { options, cb } = makeOptions({ maxIterations: 2 });
+
+		await runAgentLoop(options);
+
+		// 2 free retries + 2 counted iterations = 4 tool-check calls, then the
+		// forced final synthesis.
+		expect(api.chatCompletion).toHaveBeenCalledTimes(4);
+		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
+	});
+
+	it('counts a turn that mixed a blocked fetch with a successful tool call', async () => {
+		// The fetch was blocked but the web_search succeeded — real progress was
+		// made, so this turn is NOT a free retry: with a one-iteration budget it
+		// exhausts the budget and wraps up. (A free retry would instead loop again
+		// and exhaust the scripted queue.)
+		nonStreamQueue.push(
+			toolCallResponse([
+				{ id: 's1', name: 'web_search', args: '{"query":"q"}' },
+				{ id: 'f1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }
+			])
+		);
+		streamQueue.push([contentChunk('Wrapped up.', 'stop')]);
+		toolsMock.executeTool.mockImplementation(async (name: string) => {
+			if (name === 'web_search') return { result: '[{"title":"t","url":"https://a.dev"}]' };
+			return { result: 'Failed to fetch URL: Fetch failed with status: 403 Forbidden' };
+		});
+		const { options, cb } = makeOptions({ maxIterations: 1 });
+
+		await runAgentLoop(options);
+
+		// The single mixed turn counted, exhausting the 1-iteration budget.
+		expect(api.chatCompletion).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
+	});
+});
