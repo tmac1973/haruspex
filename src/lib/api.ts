@@ -2,6 +2,9 @@
 import { getSettings, getApiKeyValue } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
 import { PORTS, baseUrl } from '$lib/ports';
+import { OPENROUTER_ATTRIBUTION_HEADERS } from '$lib/openrouter';
+import { isAbortError } from '$lib/utils/error';
+import { readErrorText } from '$lib/utils/http';
 
 let nextRequestId = 1;
 
@@ -252,8 +255,7 @@ function isOpenRouterUrl(baseUrl: string): boolean {
 
 /** Add the optional OpenRouter attribution headers (leaderboard visibility). */
 function applyOpenRouterAttribution(headers: Record<string, string>): void {
-	headers['HTTP-Referer'] = 'https://github.com/tmac1973/haruspex';
-	headers['X-Title'] = 'Haruspex';
+	Object.assign(headers, OPENROUTER_ATTRIBUTION_HEADERS);
 }
 
 function buildRequestBody(
@@ -390,7 +392,7 @@ async function sendChatRequest(
 	try {
 		response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
 	} catch (e) {
-		if (e instanceof DOMException && e.name === 'AbortError') {
+		if (isAbortError(e)) {
 			logDebug('api', `${label} request #${reqId} aborted before response`);
 			throw e;
 		}
@@ -398,7 +400,7 @@ async function sendChatRequest(
 		throw new ApiError('Failed to connect to the AI model. Is it still loading?');
 	}
 	if (!response.ok) {
-		const text = await response.text().catch(() => 'Unknown error');
+		const text = await readErrorText(response);
 		logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, { body: text });
 		throw new ApiError(`Server error: ${text}`, response.status);
 	}

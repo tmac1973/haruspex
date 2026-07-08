@@ -8,6 +8,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { sleep } from '$lib/utils/async';
 import { getSettings } from '$lib/stores/settings';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
 import { toBracketedPaste } from '$lib/shell/commandBlock';
@@ -116,7 +117,7 @@ export async function runInPty(
 				break;
 			}
 			if (Date.now() >= deadline) break;
-			await new Promise((r) => setTimeout(r, PTY_POLL_MS));
+			await sleep(PTY_POLL_MS);
 		}
 
 		// Release the terminal the instant the command is done (or timed out /

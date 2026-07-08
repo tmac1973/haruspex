@@ -9,6 +9,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { sleep } from '$lib/utils/async';
 import { getSettings } from '$lib/stores/settings';
 
 export type VoiceCaptureStatus = 'idle' | 'recording' | 'processing' | 'downloading';
@@ -99,7 +100,7 @@ async function ensureWhisperReady(): Promise<boolean> {
 		await invoke('start_whisper', { modelPath });
 
 		for (let i = 0; i < 30; i++) {
-			await new Promise((r) => setTimeout(r, 500));
+			await sleep(500);
 			const next = await invoke<WhisperStatusResponse>('get_whisper_status');
 			if (next.type === 'Ready') return true;
 			if (next.type === 'Error') return false;

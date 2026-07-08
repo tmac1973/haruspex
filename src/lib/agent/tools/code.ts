@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { isAbortError } from '$lib/utils/error';
 import { labelArg, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
@@ -169,7 +170,7 @@ registerTool({
 			const res = await runHostCommand(command, root, timeoutSecs, ctx.signal);
 			return toolResult(await formatRunResult(res));
 		} catch (e) {
-			if (e instanceof DOMException && e.name === 'AbortError') throw e;
+			if (isAbortError(e)) throw e;
 			return toolResult(toolInvokeError('run_command', e));
 		}
 	}

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { isAbortError } from '$lib/utils/error';
 import { type ChatMessage } from '$lib/api';
 import { detectPaywall } from '$lib/agent/paywall';
 import { getSettings, DEFAULT_SEARXNG_URL } from '$lib/stores/settings';
@@ -166,7 +167,7 @@ registerTool({
 			}
 			return toolResult(`Source: ${url}\nFocus: ${focus}\n\n${findings}`);
 		} catch (e) {
-			if (e instanceof DOMException && e.name === 'AbortError') throw e;
+			if (isAbortError(e)) throw e;
 			return toolResult(toolInvokeError(`research_url sub-agent for ${url}`, e));
 		}
 	}

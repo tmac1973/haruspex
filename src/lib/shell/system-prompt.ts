@@ -17,6 +17,7 @@
 import type { ChatMessage } from '$lib/api';
 import type { SessionContext } from '$lib/ipc/gen/SessionContext';
 import { getSettings } from '$lib/stores/settings';
+import { formatTodayLong } from '$lib/utils/format';
 
 /** Re-export of the ts-rs-generated Rust `SessionContext` under the
  *  name this module historically used. */
@@ -35,12 +36,7 @@ export interface BuildShellPromptOpts {
  * the lean code toolset rooted at the current directory.
  */
 export function buildShellCodeSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
-	const today = new Date().toLocaleDateString('en-US', {
-		weekday: 'long',
-		year: 'numeric',
-		month: 'long',
-		day: 'numeric'
-	});
+	const today = formatTodayLong();
 
 	const env = describeEnvironment(opts.sessionContext);
 	const cwd = opts.currentCwd ? `Current directory: ${opts.currentCwd}` : '';
@@ -100,12 +96,7 @@ HOW TO WORK:
 }
 
 export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
-	const today = new Date().toLocaleDateString('en-US', {
-		weekday: 'long',
-		year: 'numeric',
-		month: 'long',
-		day: 'numeric'
-	});
+	const today = formatTodayLong();
 
 	const env = describeEnvironment(opts.sessionContext);
 	const cwd = opts.currentCwd ? `Current working directory: ${opts.currentCwd}` : '';

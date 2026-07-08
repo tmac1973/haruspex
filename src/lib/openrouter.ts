@@ -20,6 +20,8 @@
  * a 24 h TTL; the form re-fetches on demand.
  */
 
+import { readErrorText } from '$lib/utils/http';
+
 /** Base URL for the OpenRouter API (no trailing slash, no `/v1` suffix). */
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api';
 
@@ -196,7 +198,7 @@ export async function fetchOpenRouterCatalog(signal?: AbortSignal): Promise<Open
 		signal
 	});
 	if (!res.ok) {
-		const text = await res.text().catch(() => 'Unknown error');
+		const text = await readErrorText(res);
 		throw new Error(`OpenRouter catalog fetch failed (${res.status}): ${text}`);
 	}
 	const data = await res.json();
@@ -220,7 +222,7 @@ export async function fetchOpenRouterKeyStatus(
 		signal
 	});
 	if (!res.ok) {
-		const text = await res.text().catch(() => 'Unknown error');
+		const text = await readErrorText(res);
 		throw new Error(`OpenRouter key check failed (${res.status}): ${text}`);
 	}
 	const data = await res.json();

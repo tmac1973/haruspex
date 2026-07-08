@@ -18,6 +18,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { sleep } from '$lib/utils/async';
 import { labelArg, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
@@ -36,8 +37,6 @@ interface CapturedRegion {
 	truncated: boolean;
 	pending?: boolean;
 }
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // settle/interrupt polling cadence (ms).
 const SETTLE_POLL_MS = 150;

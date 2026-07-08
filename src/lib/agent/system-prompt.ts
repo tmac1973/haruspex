@@ -1,5 +1,6 @@
 import { type ChatMessage, messageText } from '$lib/api';
 import { getResponseFormatPrompt, getSettings, hasEnabledEmailAccount } from '$lib/stores/settings';
+import { formatTodayLong } from '$lib/utils/format';
 
 const REVIEW_PATTERNS =
 	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
@@ -16,12 +17,7 @@ export function looksLikeFileOutputRequest(content: string): boolean {
 }
 
 export function buildSystemPrompt(workingDir: string | null): ChatMessage {
-	const today = new Date().toLocaleDateString('en-US', {
-		weekday: 'long',
-		year: 'numeric',
-		month: 'long',
-		day: 'numeric'
-	});
+	const today = formatTodayLong();
 
 	const fsSection = workingDir
 		? `

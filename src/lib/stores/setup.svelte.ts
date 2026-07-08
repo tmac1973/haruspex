@@ -3,7 +3,8 @@ import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
 import { downloadModelWithProgress } from '$lib/models/download';
 import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
 import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
-import { errMessage } from '$lib/utils/error';
+import { errMessage, isAbortError } from '$lib/utils/error';
+import { sleep } from '$lib/utils/async';
 import { PORTS, baseUrl } from '$lib/ports';
 import {
 	getActiveLocalModelFilename,
@@ -198,7 +199,7 @@ type ServerReadyOutcome = { ok: true } | { ok: false; message: string };
 async function waitForServerReady(alreadyReady: boolean): Promise<ServerReadyOutcome> {
 	if (alreadyReady) return { ok: true };
 	for (let i = 0; i < 600; i++) {
-		await new Promise((r) => setTimeout(r, 500));
+		await sleep(500);
 		const status = await invoke<SidecarStatus>('get_server_status');
 		if (status.type === 'Ready') return { ok: true };
 		if (status.type === 'Error') {
@@ -283,7 +284,7 @@ async function streamTestMessage(): Promise<void> {
 		}
 	} catch (e) {
 		clearTimeout(idleTimer);
-		if (e instanceof DOMException && e.name === 'AbortError') {
+		if (isAbortError(e)) {
 			testStatusMessage =
 				'The model is responding very slowly. This is normal for integrated graphics — you can skip the test and try chatting normally.';
 		} else {
