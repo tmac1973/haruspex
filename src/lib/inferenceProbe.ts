@@ -10,6 +10,8 @@
  * stays in each component — only the shared shape and the model-pick precedence
  * live here.
  */
+import { invoke } from '@tauri-apps/api/core';
+import { getApiKeyValue } from '$lib/stores/settings';
 import type {
 	InferenceBackendKind,
 	RemoteReasoningCaps,
@@ -50,4 +52,36 @@ export function pickProbedModel<M extends { id: string; loaded: boolean | null }
 	return (
 		models.find((m) => m.id === currentId) ?? models.find((m) => m.loaded === true) ?? models[0]
 	);
+}
+
+/**
+ * Run the `probe_inference_server` IPC with key material resolved the same
+ * way everywhere: a key-store reference wins over the inline legacy key;
+ * blank means no Authorization header. Shared by the Settings backend form
+ * and the per-job model override.
+ */
+export function probeInferenceServer(
+	baseUrl: string,
+	apiKeyId: string | null,
+	inlineKey = ''
+): Promise<ProbeResult> {
+	const resolvedKey = getApiKeyValue(apiKeyId) ?? inlineKey;
+	return invoke<ProbeResult>('probe_inference_server', {
+		baseUrl,
+		apiKey: resolvedKey || null
+	});
+}
+
+/**
+ * Context/vision capabilities a probed model reports (null = the model
+ * didn't say, leave the caller's manual value alone).
+ */
+export function probedModelCaps(m: NormalizedModel | undefined): {
+	contextSize: number | null;
+	vision: boolean | null;
+} {
+	return {
+		contextSize: typeof m?.context_size === 'number' && m.context_size > 0 ? m.context_size : null,
+		vision: m?.vision_supported ?? null
+	};
 }

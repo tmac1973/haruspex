@@ -1,11 +1,16 @@
 <script lang="ts">
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { invoke } from '@tauri-apps/api/core';
-	import { pickProbedModel, type NormalizedModel, type ProbeResult } from '$lib/inferenceProbe';
+	import {
+		pickProbedModel,
+		probeInferenceServer,
+		probedModelCaps,
+		type NormalizedModel
+	} from '$lib/inferenceProbe';
 	import {
 		OPENROUTER_BASE_URL,
 		fetchOpenRouterCatalog,
-		isOpenRouterVisionCapable,
+		openRouterModelCaps,
+		pickOpenRouterModel,
 		type OpenRouterModel
 	} from '$lib/openrouter';
 	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
@@ -30,7 +35,7 @@
 		DEFAULT_SAMPLE_INSTRUCTIONS,
 		DEFAULT_VERIFY_INSTRUCTIONS
 	} from '$lib/agent/jobs/auditPipeline';
-	import { getSettings, getApiKeyValue } from '$lib/stores/settings';
+	import { getSettings } from '$lib/stores/settings';
 
 	interface Props {
 		jobId: number | 'new';
@@ -286,10 +291,9 @@
 	/** Selecting a model adopts its probed context/vision caps (like Settings). */
 	function onModelChange(id: string) {
 		modelModelId = id;
-		const m = probedModels.find((x) => x.id === id);
-		if (!m) return;
-		if (typeof m.context_size === 'number' && m.context_size > 0) modelContextSize = m.context_size;
-		if (m.vision_supported != null) modelVision = m.vision_supported ? 'yes' : 'no';
+		const caps = probedModelCaps(probedModels.find((x) => x.id === id));
+		if (caps.contextSize !== null) modelContextSize = caps.contextSize;
+		if (caps.vision !== null) modelVision = caps.vision ? 'yes' : 'no';
 	}
 
 	/**
@@ -306,11 +310,11 @@
 		probeError = null;
 		probeNote = null;
 		try {
-			const resolvedKey = getApiKeyValue(modelApiKeyId) ?? modelApiKey.trim();
-			const result = await invoke<ProbeResult>('probe_inference_server', {
-				baseUrl: modelBaseUrl.trim(),
-				apiKey: resolvedKey || null
-			});
+			const result = await probeInferenceServer(
+				modelBaseUrl.trim(),
+				modelApiKeyId,
+				modelApiKey.trim()
+			);
 			modelBaseUrl = result.base_url;
 			probedModels = result.models;
 			const pick = pickProbedModel(result.models, modelModelId);
@@ -363,10 +367,10 @@
 		try {
 			const models = await fetchOpenRouterCatalog();
 			orCatalog = models;
-			if (!modelModelId || !models.some((m) => m.id === modelModelId)) {
-				const auto = models.find((m) => m.id === 'openrouter/auto');
-				onOpenRouterModelSelect(auto ? auto.id : (models[0]?.id ?? ''));
-			}
+			const pick = pickOpenRouterModel(models, modelModelId);
+			// Only re-adopt when the pick actually changed — a valid current
+			// selection keeps the user's manual context/vision edits.
+			if (pick !== modelModelId) onOpenRouterModelSelect(pick);
 		} catch (e) {
 			orError = String(e);
 		} finally {
@@ -379,10 +383,9 @@
 		modelModelId = id;
 		const m = orCatalog?.find((x) => x.id === id);
 		if (!m) return;
-		if (typeof m.context_length === 'number' && m.context_length > 0) {
-			modelContextSize = m.context_length;
-		}
-		modelVision = isOpenRouterVisionCapable(m) ? 'yes' : 'no';
+		const caps = openRouterModelCaps(m);
+		if (caps.contextSize !== null) modelContextSize = caps.contextSize;
+		modelVision = caps.vision ? 'yes' : 'no';
 	}
 
 	function validate(): string | null {
