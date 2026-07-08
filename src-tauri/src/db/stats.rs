@@ -1,5 +1,7 @@
 use super::*;
-use crate::proxy::stats::{EngineLifetimeStats, EngineStatDelta, LifetimeStatsSnapshot, StatSink};
+use crate::proxy::stats::{
+    EngineLifetimeStats, EngineStatDelta, EngineStatsCore, LifetimeStatsSnapshot, StatSink,
+};
 use log::warn;
 use rusqlite::params;
 use std::collections::HashMap;
@@ -130,9 +132,18 @@ impl Database {
         let engines = stmt
             .query_map([], |row| {
                 Ok(EngineLifetimeStats {
-                    engine: row.get(0)?,
-                    attempts: row.get::<_, i64>(1)? as u64,
-                    successes: row.get::<_, i64>(2)? as u64,
+                    core: EngineStatsCore {
+                        engine: row.get(0)?,
+                        attempts: row.get::<_, i64>(1)? as u64,
+                        successes: row.get::<_, i64>(2)? as u64,
+                        total_latency_ms: row.get::<_, i64>(10)? as u64,
+                        max_latency_ms: row.get::<_, i64>(11)? as u64,
+                        last_success_at: row.get::<_, Option<i64>>(12)?,
+                        last_failure_at: row.get::<_, Option<i64>>(13)?,
+                        first_choice_attempts: row.get::<_, i64>(14)? as u64,
+                        fallback_attempts: row.get::<_, i64>(15)? as u64,
+                        fallback_successes: row.get::<_, i64>(16)? as u64,
+                    },
                     fail_http: row.get::<_, i64>(3)? as u64,
                     fail_rate_limited: row.get::<_, i64>(4)? as u64,
                     fail_parse: row.get::<_, i64>(5)? as u64,
@@ -140,13 +151,6 @@ impl Database {
                     fail_network: row.get::<_, i64>(7)? as u64,
                     fail_timeout: row.get::<_, i64>(8)? as u64,
                     fail_other: row.get::<_, i64>(9)? as u64,
-                    total_latency_ms: row.get::<_, i64>(10)? as u64,
-                    max_latency_ms: row.get::<_, i64>(11)? as u64,
-                    last_success_at: row.get::<_, Option<i64>>(12)?,
-                    last_failure_at: row.get::<_, Option<i64>>(13)?,
-                    first_choice_attempts: row.get::<_, i64>(14)? as u64,
-                    fallback_attempts: row.get::<_, i64>(15)? as u64,
-                    fallback_successes: row.get::<_, i64>(16)? as u64,
                 })
             })
             .map_err(|e| format!("Snapshot query failed: {}", e))?

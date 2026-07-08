@@ -30,6 +30,29 @@ fn classify_reqwest_err(e: reqwest::Error, context: &str) -> SearchFailure {
     }
 }
 
+/// Build the HTTP client for one search-engine request: shared fetch
+/// timeout + the user's proxy, with per-engine extras (the scrape
+/// engines' 5-hop redirect cap, DDG's cookie store) layered on through
+/// `configure`. One seam instead of per-engine copies so the
+/// timeout/proxy handling can't silently drift. Unlike
+/// `extract::build_fetch_client` this does NOT install the SSRF
+/// redirect validator — search engines are fixed, operator-chosen
+/// hosts, not untrusted page URLs — so callers pick their own redirect
+/// policy and this helper must never be used for fetching arbitrary
+/// URLs.
+fn build_search_client(
+    proxy: Option<&ProxyConfig>,
+    configure: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder,
+) -> Result<reqwest::Client, SearchFailure> {
+    apply_proxy(
+        configure(reqwest::Client::builder().timeout(FETCH_TIMEOUT)),
+        proxy,
+    )
+    .map_err(SearchFailure::other)?
+    .build()
+    .map_err(|e| SearchFailure::other(format!("Failed to create HTTP client: {}", e)))
+}
+
 /// Pass a response through unchanged on 2xx, else map it to a
 /// `SearchFailure::Http` tagged `"{label} error: {status}"`. The shared
 /// non-2xx form used by the scrape engines and SearXNG (DuckDuckGo and the
@@ -120,16 +143,10 @@ pub(super) async fn search_duckduckgo(
     recency: &str,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<SearchResult>, SearchFailure> {
-    let client = apply_proxy(
-        reqwest::Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(5))
-            .cookie_store(true),
-        proxy,
-    )
-    .map_err(SearchFailure::other)?
-    .build()
-    .map_err(|e| SearchFailure::other(format!("Failed to create HTTP client: {}", e)))?;
+    let client = build_search_client(proxy, |b| {
+        b.redirect(reqwest::redirect::Policy::limited(5))
+            .cookie_store(true)
+    })?;
 
     // DDG date filter: df=d (day), df=w (week), df=m (month), df=y (year)
     let df = match recency {
@@ -255,15 +272,7 @@ async fn scrape_engine(
     on_empty: impl Fn(&str) -> Option<SearchFailure>,
     empty_needles: &[&str],
 ) -> Result<Vec<SearchResult>, SearchFailure> {
-    let client = apply_proxy(
-        reqwest::Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(5)),
-        proxy,
-    )
-    .map_err(SearchFailure::other)?
-    .build()
-    .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
+    let client = build_search_client(proxy, |b| b.redirect(reqwest::redirect::Policy::limited(5)))?;
 
     let mut req = client.get(url).header("User-Agent", USER_AGENT);
     if send_accept {
@@ -836,10 +845,7 @@ pub(super) async fn search_brave(
     recency: &str,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<SearchResult>, SearchFailure> {
-    let client = apply_proxy(reqwest::Client::builder().timeout(FETCH_TIMEOUT), proxy)
-        .map_err(SearchFailure::other)?
-        .build()
-        .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
+    let client = build_search_client(proxy, |b| b)?;
 
     // Brave freshness: pd (past day), pw (past week), pm (past month), py (past year)
     let freshness = match recency {
@@ -897,10 +903,7 @@ pub(super) async fn search_searxng(
     recency: &str,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<SearchResult>, SearchFailure> {
-    let client = apply_proxy(reqwest::Client::builder().timeout(FETCH_TIMEOUT), proxy)
-        .map_err(SearchFailure::other)?
-        .build()
-        .map_err(|e| SearchFailure::other(format!("HTTP client error: {}", e)))?;
+    let client = build_search_client(proxy, |b| b)?;
 
     let url = format!("{}/search", instance_url.trim_end_matches('/'));
 
