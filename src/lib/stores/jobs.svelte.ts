@@ -74,8 +74,14 @@ export interface AuditConfig {
 export interface ModelOverrideConfig {
 	/** Remote base URL (no trailing slash, no /v1). null/blank = use Settings. */
 	model_remote_base_url: string | null;
-	/** Optional Bearer token for the override server. */
+	/** Optional Bearer token for the override server (legacy inline key). */
 	model_remote_api_key: string | null;
+	/**
+	 * Reference to a key in the Settings API-key store (by id). When set,
+	 * the runner resolves the actual key value from the store at request
+	 * time. Takes precedence over the legacy inline `model_remote_api_key`.
+	 */
+	model_remote_api_key_id: string | null;
 	/** Model ID sent to the override server. */
 	model_remote_model_id: string | null;
 	/**

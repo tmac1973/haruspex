@@ -31,7 +31,11 @@ import {
 	parseContextOverflow,
 	getTokenCalibration
 } from '$lib/agent/context-budget';
-import { getChatTemplateKwargs, getSamplingParams } from '$lib/stores/settings';
+import {
+	getChatTemplateKwargs,
+	getSamplingParams,
+	getOpenRouterReasoningParam
+} from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
 import { logDebug } from '$lib/debug-log';
 import { NudgeState } from './nudges';
@@ -307,6 +311,8 @@ type CompletionParams = {
 	presence_penalty: number;
 	max_tokens: number;
 	chat_template_kwargs: ReturnType<typeof getChatTemplateKwargs>;
+	/** OpenRouter reasoning param; undefined for non-OpenRouter backends. */
+	reasoning?: { effort: string };
 };
 
 /**
@@ -430,6 +436,7 @@ async function forceFinalToolCall(
 		thinkingEnabled: ctx.thinkingEnabled
 	});
 	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
+	const reasoning = getOpenRouterReasoningParam(ctx.thinkingEnabled) ?? undefined;
 	const offered = tool ? [tool] : ctx.tools;
 	applyContextGuard(ctx, ctx.maxResponseTokens, offered);
 
@@ -443,7 +450,8 @@ async function forceFinalToolCall(
 				tool_choice: { type: 'function', function: { name } },
 				...sampling,
 				max_tokens: ctx.maxResponseTokens,
-				chat_template_kwargs: templateKwargs
+				chat_template_kwargs: templateKwargs,
+				reasoning
 			},
 			ctx.signal
 		);
@@ -479,6 +487,7 @@ async function streamFinalSynthesis(
 ): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
 	applyContextGuard(ctx, FINAL_SYNTHESIS_MAX_TOKENS, tools);
 	const sentEstimate = estimateMessagesTokens(ctx.messages, tools);
+	const reasoning = getOpenRouterReasoningParam(ctx.thinkingEnabled) ?? undefined;
 	const stream = chatCompletionStream(
 		{
 			messages: ctx.messages,
@@ -486,7 +495,8 @@ async function streamFinalSynthesis(
 			backend: ctx.backend ?? undefined,
 			...sampling,
 			max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
-			chat_template_kwargs: templateKwargs
+			chat_template_kwargs: templateKwargs,
+			reasoning
 		},
 		ctx.signal
 	);
@@ -527,6 +537,7 @@ async function runModelCall(
 	ctx: LoopContext,
 	sampling: ReturnType<typeof getSamplingParams>,
 	templateKwargs: ReturnType<typeof getChatTemplateKwargs>,
+	reasoning: { effort: string } | undefined,
 	iteration: number
 ): Promise<{ response: ChatCompletionResponse; toolCalls: ResolvedToolCall[] }> {
 	const { tools, options } = ctx;
@@ -537,7 +548,8 @@ async function runModelCall(
 		{
 			...sampling,
 			max_tokens: ctx.maxResponseTokens,
-			chat_template_kwargs: templateKwargs
+			chat_template_kwargs: templateKwargs,
+			reasoning
 		},
 		ctx.maxResponseTokens
 	);
@@ -611,7 +623,14 @@ export async function runIteration(
 		thinkingEnabled: ctx.thinkingEnabled
 	});
 	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
-	const { response, toolCalls } = await runModelCall(ctx, sampling, templateKwargs, iteration);
+	const reasoning = getOpenRouterReasoningParam(ctx.thinkingEnabled) ?? undefined;
+	const { response, toolCalls } = await runModelCall(
+		ctx,
+		sampling,
+		templateKwargs,
+		reasoning,
+		iteration
+	);
 
 	// No tool calls: run the recovery-guard chain in priority order, then
 	// fall through to the terminal no-tool-call handler. Each guard checks
@@ -640,7 +659,12 @@ export async function runIteration(
 	// Model emitted real tool_calls — clear any pending narrate-recovery
 	// so we don't fire it spuriously on a later no-tool-calls iteration.
 	nudges.consumeNarrateRecovery();
-	const { allWebReadsBlocked } = await executeToolCalls(ctx, nudges, toolCalls);
+	const { allWebReadsBlocked } = await executeToolCalls(
+		ctx,
+		nudges,
+		toolCalls,
+		response.reasoning_details
+	);
 	state.allWebReadsBlocked = allWebReadsBlocked;
 	// Break out of a no-progress loop (same command re-run repeatedly) instead
 	// of cycling to the iteration cap; the final-synthesis path then wraps up.
@@ -928,7 +952,8 @@ async function finalizeNoToolCalls(
 async function executeToolCalls(
 	ctx: LoopContext,
 	nudges: NudgeState,
-	toolCalls: ResolvedToolCall[]
+	toolCalls: ResolvedToolCall[],
+	reasoningDetails?: unknown[] | null
 ): Promise<{ allWebReadsBlocked: boolean }> {
 	const { messages, signal, options } = ctx;
 	// Count calls that were web reads blocked by an external resource. When
@@ -936,7 +961,10 @@ async function executeToolCalls(
 	let blockedWebReads = 0;
 
 	// Append assistant message with tool calls (but NOT the content —
-	// the model should regenerate its answer after seeing tool results)
+	// the model should regenerate its answer after seeing tool results).
+	// For OpenRouter reasoning models, echo `reasoning_details` back
+	// unmodified so multi-turn reasoning quality is preserved across the
+	// tool loop (OpenRouter docs: reasoning_details must be threaded verbatim).
 	messages.push({
 		role: 'assistant',
 		content: '',
@@ -944,7 +972,10 @@ async function executeToolCalls(
 			id: tc.id,
 			type: 'function' as const,
 			function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
-		}))
+		})),
+		...(reasoningDetails && reasoningDetails.length > 0
+			? { reasoning_details: reasoningDetails }
+			: {})
 	});
 
 	for (const call of toolCalls) {

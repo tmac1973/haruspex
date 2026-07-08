@@ -279,7 +279,9 @@ This is the global backend used by Chat and Shell. Individual [jobs](#jobs) can 
 
 **What gets populated.** Model list is always pulled. Context size and vision capability are auto-detected when the backend exposes them (llama-toolchest and stock llama-server do; generic OpenAI-compat backends usually don't, so you'll see editable fields).
 
-**Auth.** Every probe and chat request can send an optional `Authorization: Bearer <key>` header. Leave blank for self-hosted servers that don't require auth. Public cloud providers (OpenAI, Anthropic, OpenRouter) will technically work via the `/v1` endpoint, but they're not a supported configuration — Haruspex's whole design is "runs entirely on your hardware".
+**Auth.** Every probe and chat request can send an optional `Authorization: Bearer <key>` header. Leave blank for self-hosted servers that don't require auth.
+
+**OpenRouter (cloud).** In addition to self-hosted remote servers, Haruspex has a first-class [OpenRouter](https://openrouter.ai) option in Settings → Inference. Enter your API key and pick from the automatically populated model catalog (~300 models with context length, vision, tool support, and reasoning-effort metadata pulled from OpenRouter's `/v1/models` endpoint). ⚠️ Unlike the local and self-hosted remote modes, **OpenRouter is a cloud backend — your prompts leave your device** and go to OpenRouter's servers. It's opt-in and off by default; the local llama-server sidecar remains the recommended configuration.
 
 ## Email integration
 

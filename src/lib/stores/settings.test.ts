@@ -6,6 +6,7 @@ import {
 	getActiveContextSize,
 	getSamplingParams,
 	getChatTemplateKwargs,
+	getOpenRouterReasoningParam,
 	isReasoningSupported,
 	getActiveModelFamily,
 	setActiveLocalModel
@@ -318,5 +319,98 @@ describe('reasoning override (Code tab per-tab toggle)', () => {
 		expect(getChatTemplateKwargs()).toEqual({ enable_thinking: true });
 		expect(getChatTemplateKwargs(null)).toEqual({ enable_thinking: true });
 		expect(getSamplingParams({}).temperature).toBe(1.0);
+	});
+});
+
+describe('OpenRouter backend', () => {
+	beforeEach(() => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'https://openrouter.ai/api',
+			remoteApiKey: 'sk-or-test',
+			remoteModelId: 'openai/o3',
+			remoteContextSize: 200000,
+			remoteVisionSupported: false,
+			remoteBackendKind: 'openrouter',
+			openrouterCatalog: [
+				{
+					id: 'openai/o3',
+					name: 'o3',
+					context_length: 200000,
+					architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+					supported_parameters: ['tools', 'reasoning'],
+					pricing: { prompt: '0.001', completion: '0.003', request: '0' },
+					reasoning: {
+						supported_efforts: ['high', 'medium', 'low'],
+						default_effort: 'medium',
+						default_enabled: true,
+						mandatory: false
+					},
+					expiration_date: null
+				},
+				{
+					id: 'openai/gpt-4o',
+					name: 'GPT-4o',
+					context_length: 128000,
+					architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
+					supported_parameters: ['tools', 'temperature'],
+					pricing: { prompt: '0.00001', completion: '0.00003', request: '0' },
+					expiration_date: null
+				}
+			],
+			openrouterCatalogAt: Date.now(),
+			openrouterKeyStatus: null,
+			openrouterKeyStatusAt: null,
+			openrouterReasoningEffort: 'high'
+		});
+		updateSettings({ thinkingEnabled: true });
+	});
+
+	it('omits top_k and min_p from sampling params for OpenRouter', () => {
+		const params = getSamplingParams();
+		// top_k and min_p are 0 for OpenRouter (buildRequestBody skips them
+		// when isOpenRouter, so the value just needs to not interfere).
+		expect(params.top_k).toBe(0);
+		expect(params.min_p).toBe(0);
+		expect(params.temperature).toBe(1.0);
+		expect(params.top_p).toBe(0.95);
+	});
+
+	it('returns empty chat_template_kwargs for OpenRouter', () => {
+		expect(getChatTemplateKwargs()).toEqual({});
+		expect(getChatTemplateKwargs(true)).toEqual({});
+	});
+
+	it('reports reasoning supported when the OpenRouter model has reasoning caps', () => {
+		expect(isReasoningSupported()).toBe(true);
+	});
+
+	it('returns the configured reasoning effort', () => {
+		expect(getOpenRouterReasoningParam()).toEqual({ effort: 'high' });
+	});
+
+	it('returns effort none when thinking is disabled and the model is not mandatory', () => {
+		updateSettings({ thinkingEnabled: false });
+		expect(getOpenRouterReasoningParam()).toEqual({ effort: 'none' });
+	});
+
+	it('returns the default effort when thinking is disabled for a mandatory model', () => {
+		// Make the model mandatory.
+		const inf = getSettings().inferenceBackend;
+		const catalog = inf.openrouterCatalog ?? [];
+		catalog[0].reasoning!.mandatory = true;
+		updateInferenceBackend({ openrouterCatalog: catalog });
+		updateSettings({ thinkingEnabled: false });
+		expect(getOpenRouterReasoningParam()).toEqual({ effort: 'high' });
+	});
+
+	it('returns null when the selected model is not reasoning-capable', () => {
+		updateInferenceBackend({ remoteModelId: 'openai/gpt-4o', openrouterReasoningEffort: null });
+		expect(getOpenRouterReasoningParam()).toBeNull();
+	});
+
+	it('returns null for non-OpenRouter backends', () => {
+		updateInferenceBackend({ mode: 'local', remoteBackendKind: null });
+		expect(getOpenRouterReasoningParam()).toBeNull();
 	});
 });

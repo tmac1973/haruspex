@@ -2,6 +2,14 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { invoke } from '@tauri-apps/api/core';
 	import { pickProbedModel, type NormalizedModel, type ProbeResult } from '$lib/inferenceProbe';
+	import {
+		OPENROUTER_BASE_URL,
+		fetchOpenRouterCatalog,
+		isOpenRouterVisionCapable,
+		type OpenRouterModel
+	} from '$lib/openrouter';
+	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
+	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
 	import JobScheduleField from '$lib/components/jobs/JobScheduleField.svelte';
 	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
 	import {
@@ -22,7 +30,7 @@
 		DEFAULT_SAMPLE_INSTRUCTIONS,
 		DEFAULT_VERIFY_INSTRUCTIONS
 	} from '$lib/agent/jobs/auditPipeline';
-	import { getSettings } from '$lib/stores/settings';
+	import { getSettings, getApiKeyValue } from '$lib/stores/settings';
 
 	interface Props {
 		jobId: number | 'new';
@@ -59,6 +67,7 @@
 	let modelOverride = $state(false);
 	let modelBaseUrl = $state('');
 	let modelApiKey = $state('');
+	let modelApiKeyId = $state<string | null>(null);
 	let modelModelId = $state('');
 	let modelContextSize = $state<number | ''>('');
 	// Tri-state vision capability for the override model: 'auto' inherits the
@@ -70,6 +79,14 @@
 	let probing = $state(false);
 	let probeError = $state<string | null>(null);
 	let probeNote = $state<string | null>(null);
+	// OpenRouter-specific override state. When modelOverrideType is 'openrouter',
+	// the form shows a catalog-powered model picker instead of the generic
+	// probe flow. The catalog is fetched from OpenRouter's /v1/models (no
+	// Rust probe round-trip) and may reuse the cache from Settings.
+	let modelOverrideType = $state<'generic' | 'openrouter'>('generic');
+	let orCatalog = $state<OpenRouterModel[] | null>(null);
+	let orLoading = $state(false);
+	let orError = $state<string | null>(null);
 	let loading = $state(false);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
@@ -114,14 +131,18 @@
 			planOutputDir = '';
 			planOutputDirEdited = false;
 			modelOverride = false;
+			modelOverrideType = 'generic';
 			modelBaseUrl = '';
 			modelApiKey = '';
+			modelApiKeyId = null;
 			modelModelId = '';
 			modelContextSize = '';
 			modelVision = 'auto';
 			probedModels = [];
 			probeError = null;
 			probeNote = null;
+			orCatalog = null;
+			orError = null;
 			return;
 		}
 		loading = true;
@@ -156,6 +177,7 @@
 			modelOverride = !!job.model_remote_base_url;
 			modelBaseUrl = job.model_remote_base_url ?? '';
 			modelApiKey = job.model_remote_api_key ?? '';
+			modelApiKeyId = job.model_remote_api_key_id ?? null;
 			modelModelId = job.model_remote_model_id ?? '';
 			modelContextSize = job.model_remote_context_size ?? '';
 			modelVision =
@@ -164,9 +186,17 @@
 					: job.model_remote_vision_supported
 						? 'yes'
 						: 'no';
+			// Detect OpenRouter by URL so the right form renders on reload.
+			modelOverrideType = isOpenRouterUrl(modelBaseUrl) ? 'openrouter' : 'generic';
+			// Seed the OpenRouter catalog from the Settings cache so the picker
+			// has data immediately if the user already loaded models in Settings.
+			if (modelOverrideType === 'openrouter') {
+				orCatalog = getSettings().inferenceBackend.openrouterCatalog ?? null;
+			}
 			probedModels = [];
 			probeError = null;
 			probeNote = null;
+			orError = null;
 		} finally {
 			loading = false;
 		}
@@ -221,10 +251,21 @@
 
 	// Server URLs saved in Settings — the options for the URL dropdown. A job
 	// loaded with a URL no longer in Settings still shows it (union below) so
-	// editing doesn't silently drop it.
+	// editing doesn't silently drop it. OpenRouter URLs are hidden from the
+	// generic dropdown (they have a dedicated override type toggle above).
+	function isOpenRouterUrl(url: string): boolean {
+		try {
+			return new URL(url).hostname === 'openrouter.ai';
+		} catch {
+			return false;
+		}
+	}
+
 	const savedServerUrls = $derived(getSettings().inferenceBackend.remoteServerUrls ?? []);
 	const serverUrlOptions = $derived(
-		[...new Set([...savedServerUrls, ...(modelBaseUrl ? [modelBaseUrl] : [])])].filter(Boolean)
+		[...new Set([...savedServerUrls, ...(modelBaseUrl ? [modelBaseUrl] : [])])]
+			.filter(Boolean)
+			.filter((u) => !isOpenRouterUrl(u))
 	);
 	// Model dropdown options: the probed models, plus the currently-selected id
 	// so a saved job's model shows before you re-probe.
@@ -265,9 +306,10 @@
 		probeError = null;
 		probeNote = null;
 		try {
+			const resolvedKey = getApiKeyValue(modelApiKeyId) ?? modelApiKey.trim();
 			const result = await invoke<ProbeResult>('probe_inference_server', {
 				baseUrl: modelBaseUrl.trim(),
-				apiKey: modelApiKey.trim() || null
+				apiKey: resolvedKey || null
 			});
 			modelBaseUrl = result.base_url;
 			probedModels = result.models;
@@ -293,6 +335,54 @@
 		} finally {
 			probing = false;
 		}
+	}
+
+	/** Switching to OpenRouter override: pin the base URL + seed the catalog. */
+	function selectOpenRouterOverride() {
+		modelOverrideType = 'openrouter';
+		modelBaseUrl = OPENROUTER_BASE_URL;
+		orCatalog = getSettings().inferenceBackend.openrouterCatalog ?? null;
+		orError = null;
+		probedModels = [];
+		probeError = null;
+		probeNote = null;
+	}
+
+	/** Switching back to generic remote: clear OpenRouter state. */
+	function selectGenericOverride() {
+		modelOverrideType = 'generic';
+		if (modelBaseUrl === OPENROUTER_BASE_URL) modelBaseUrl = '';
+		orCatalog = null;
+		orError = null;
+	}
+
+	/** Fetch the OpenRouter catalog directly (no Rust probe round-trip). */
+	async function loadOpenRouterModels() {
+		orLoading = true;
+		orError = null;
+		try {
+			const models = await fetchOpenRouterCatalog();
+			orCatalog = models;
+			if (!modelModelId || !models.some((m) => m.id === modelModelId)) {
+				const auto = models.find((m) => m.id === 'openrouter/auto');
+				onOpenRouterModelSelect(auto ? auto.id : (models[0]?.id ?? ''));
+			}
+		} catch (e) {
+			orError = String(e);
+		} finally {
+			orLoading = false;
+		}
+	}
+
+	/** Selecting an OpenRouter model: update context + vision from the card. */
+	function onOpenRouterModelSelect(id: string) {
+		modelModelId = id;
+		const m = orCatalog?.find((x) => x.id === id);
+		if (!m) return;
+		if (typeof m.context_length === 'number' && m.context_length > 0) {
+			modelContextSize = m.context_length;
+		}
+		modelVision = isOpenRouterVisionCapable(m) ? 'yes' : 'no';
 	}
 
 	function validate(): string | null {
@@ -362,6 +452,8 @@
 				model_remote_base_url: modelOverride && modelBaseUrl.trim() ? modelBaseUrl.trim() : null,
 				model_remote_api_key:
 					modelOverride && modelBaseUrl.trim() && modelApiKey.trim() ? modelApiKey.trim() : null,
+				model_remote_api_key_id:
+					modelOverride && modelBaseUrl.trim() && modelApiKeyId ? modelApiKeyId : null,
 				model_remote_model_id:
 					modelOverride && modelBaseUrl.trim() && modelModelId.trim() ? modelModelId.trim() : null,
 				model_remote_context_size:
@@ -545,53 +637,120 @@
 			</span>
 			{#if modelOverride}
 				<div class="model-fields">
-					<div class="model-row">
-						<label class="model-field grow">
-							<span class="sublabel">Server URL</span>
-							<select
-								value={modelBaseUrl}
-								onchange={(e) => onServerUrlChange(e.currentTarget.value)}
-							>
-								{#if serverUrlOptions.length === 0}
-									<option value="" disabled selected>No servers saved — add one in Settings</option>
-								{:else}
-									<option value="" disabled>Select a server…</option>
-									{#each serverUrlOptions as url (url)}
-										<option value={url}>{url}</option>
-									{/each}
-								{/if}
-							</select>
-						</label>
+					<div class="override-type-toggle">
 						<button
 							type="button"
-							class="secondary probe-btn"
-							disabled={probing || !modelBaseUrl}
-							title="Connect to the selected server to list its models and detect context size + vision."
-							onclick={probeModel}>{probing ? 'Probing…' : 'Probe'}</button
+							class:active={modelOverrideType === 'generic'}
+							onclick={selectGenericOverride}
 						>
+							Remote server
+						</button>
+						<button
+							type="button"
+							class:active={modelOverrideType === 'openrouter'}
+							onclick={selectOpenRouterOverride}
+						>
+							OpenRouter (cloud)
+						</button>
 					</div>
-					<div class="model-row">
-						<label class="model-field grow">
-							<span class="sublabel">Model</span>
-							<select
-								value={modelModelId}
-								disabled={modelIdOptions.length === 0}
-								onchange={(e) => onModelChange(e.currentTarget.value)}
+
+					{#if modelOverrideType === 'openrouter'}
+						<div class="model-row">
+							<label class="model-field grow">
+								<span class="sublabel">API key</span>
+								<ApiKeyPicker
+									selectedId={modelApiKeyId}
+									onSelect={(id) => {
+										modelApiKeyId = id;
+									}}
+								/>
+							</label>
+							<button
+								type="button"
+								class="secondary probe-btn"
+								disabled={orLoading}
+								title="Fetch the OpenRouter model catalog."
+								onclick={loadOpenRouterModels}>{orLoading ? 'Loading…' : 'Load models'}</button
 							>
-								{#if modelIdOptions.length === 0}
-									<option value="" disabled selected>Probe the server to list models</option>
-								{:else}
-									{#each modelIdOptions as id (id)}
-										<option value={id}>{id}</option>
-									{/each}
-								{/if}
-							</select>
-						</label>
-						<label class="model-field grow">
-							<span class="sublabel">API key <span class="optional">(optional)</span></span>
-							<input type="password" bind:value={modelApiKey} placeholder="Bearer token" />
-						</label>
-					</div>
+						</div>
+						{#if orCatalog}
+							<div class="model-row">
+								<label class="model-field grow">
+									<span class="sublabel">Model</span>
+									<OpenRouterModelPicker
+										models={orCatalog}
+										selectedId={modelModelId}
+										onSelect={onOpenRouterModelSelect}
+										toolsOnly={false}
+									/>
+								</label>
+							</div>
+						{/if}
+						{#if orError}
+							<span class="probe-status error">{orError}</span>
+						{/if}
+					{:else}
+						<div class="model-row">
+							<label class="model-field grow">
+								<span class="sublabel">Server URL</span>
+								<select
+									value={modelBaseUrl}
+									onchange={(e) => onServerUrlChange(e.currentTarget.value)}
+								>
+									{#if serverUrlOptions.length === 0}
+										<option value="" disabled selected>
+											No servers saved — add one in Settings
+										</option>
+									{:else}
+										<option value="" disabled>Select a server…</option>
+										{#each serverUrlOptions as url (url)}
+											<option value={url}>{url}</option>
+										{/each}
+									{/if}
+								</select>
+							</label>
+							<button
+								type="button"
+								class="secondary probe-btn"
+								disabled={probing || !modelBaseUrl}
+								title="Connect to the selected server to list its models and detect context size + vision."
+								onclick={probeModel}>{probing ? 'Probing…' : 'Probe'}</button
+							>
+						</div>
+						<div class="model-row">
+							<label class="model-field grow">
+								<span class="sublabel">Model</span>
+								<select
+									value={modelModelId}
+									disabled={modelIdOptions.length === 0}
+									onchange={(e) => onModelChange(e.currentTarget.value)}
+								>
+									{#if modelIdOptions.length === 0}
+										<option value="" disabled selected>Probe the server to list models</option>
+									{:else}
+										{#each modelIdOptions as id (id)}
+											<option value={id}>{id}</option>
+										{/each}
+									{/if}
+								</select>
+							</label>
+							<label class="model-field grow">
+								<span class="sublabel">API key <span class="optional">(optional)</span></span>
+								<ApiKeyPicker
+									selectedId={modelApiKeyId}
+									onSelect={(id) => {
+										modelApiKeyId = id;
+									}}
+								/>
+							</label>
+						</div>
+						{#if probeError}
+							<span class="probe-status error">Probe failed: {probeError}</span>
+						{:else if probeNote}
+							<span class="probe-status">{probeNote}</span>
+						{/if}
+					{/if}
+
 					<div class="model-row">
 						<label
 							class="model-field grow"
@@ -618,11 +777,6 @@
 							</select>
 						</label>
 					</div>
-					{#if probeError}
-						<span class="probe-status error">Probe failed: {probeError}</span>
-					{:else if probeNote}
-						<span class="probe-status">{probeNote}</span>
-					{/if}
 				</div>
 			{/if}
 		</div>
@@ -1024,6 +1178,34 @@
 		flex-direction: column;
 		gap: 8px;
 		margin-top: 8px;
+	}
+
+	.override-type-toggle {
+		display: inline-flex;
+		gap: 0;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		overflow: hidden;
+		align-self: flex-start;
+	}
+
+	.override-type-toggle button {
+		padding: 4px 12px;
+		border: none;
+		border-radius: 0;
+		background: var(--bg-primary);
+		color: var(--text-secondary);
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	.override-type-toggle button:first-child {
+		border-right: 1px solid var(--border);
+	}
+
+	.override-type-toggle button.active {
+		background: var(--accent);
+		color: white;
 	}
 
 	.model-row {

@@ -7,9 +7,13 @@ import type { StreamChunk } from '$lib/api';
  * think-block bookkeeping lives in one place.
  */
 export function appendStreamDelta(buf: string, delta: StreamChunk['delta']): string {
-	if (delta.reasoning_content) {
+	// OpenRouter normalizes reasoning to `reasoning` (string) with an alias
+	// `reasoning_content`; take whichever is present so the think-stream panel
+	// renders for both local llama.cpp reasoning models and OpenRouter ones.
+	const reasoning = delta.reasoning_content ?? delta.reasoning;
+	if (reasoning) {
 		if (!buf.includes('<think>')) buf += '<think>';
-		buf += delta.reasoning_content;
+		buf += reasoning;
 	}
 	if (delta.content) {
 		if (buf.includes('<think>') && !buf.includes('</think>')) buf += '</think>\n\n';

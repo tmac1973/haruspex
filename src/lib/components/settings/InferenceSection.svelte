@@ -23,6 +23,9 @@
 	} from '$lib/stores/settings';
 	import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
+	import OpenRouterForm from '$lib/components/settings/OpenRouterForm.svelte';
+	import ApiKeysSection from '$lib/components/settings/ApiKeysSection.svelte';
+	import { OPENROUTER_BASE_URL } from '$lib/openrouter';
 	import ModelsSection from '$lib/components/settings/ModelsSection.svelte';
 
 	const serverState = $derived(getServerState());
@@ -30,12 +33,57 @@
 	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
 
 	const remoteMode = $derived(inferenceBackend.mode === 'remote');
+	const openrouterMode = $derived(
+		remoteMode && inferenceBackend.remoteBackendKind === 'openrouter'
+	);
+	const genericRemoteMode = $derived(remoteMode && !openrouterMode);
 	const pendingRestart = $derived(getPendingRestart());
 
-	async function setInferenceMode(mode: InferenceMode) {
-		if (mode === inferenceBackend.mode) return;
-		inferenceBackend = { ...inferenceBackend, mode };
-		updateInferenceBackend({ mode });
+	/**
+	 * The three UI-level backend choices. OpenRouter reuses `mode: 'remote'`
+	 * internally (the transport is identical) but gets its own radio option +
+	 * dedicated form; selecting it pins `remoteBaseUrl` to OpenRouter and
+	 * `remoteBackendKind` to `'openrouter'` so the rest of the app knows to
+	 * inject attribution headers and the `reasoning.effort` param.
+	 */
+	type ModeChoice = InferenceMode | 'openrouter';
+
+	async function setInferenceMode(mode: ModeChoice) {
+		if (mode === 'local' && inferenceBackend.mode === 'local') return;
+		if (mode === 'remote' && genericRemoteMode) return;
+		if (mode === 'openrouter' && openrouterMode) return;
+
+		if (mode === 'openrouter') {
+			// OpenRouter is a remote backend with a fixed URL + cloud kind.
+			const next: InferenceBackendConfig = {
+				...inferenceBackend,
+				mode: 'remote',
+				remoteBaseUrl: OPENROUTER_BASE_URL,
+				remoteBackendKind: 'openrouter',
+				allowParallelInference: true
+			};
+			inferenceBackend = next;
+			updateInferenceBackend(next);
+			setIndicatorContextSize(getActiveContextSize());
+			cancelPendingRestart();
+			try {
+				await stopServer();
+			} catch (e) {
+				console.warn('stopServer on openrouter toggle failed:', e);
+			}
+			enterRemoteMode(next.remoteBaseUrl, next.remoteModelId);
+			return;
+		}
+
+		// local or generic-remote: clear the OpenRouter kind so the generic
+		// remote form's probe-detection path takes over again.
+		const cleared: InferenceBackendConfig = {
+			...inferenceBackend,
+			mode,
+			...(mode === 'remote' ? { remoteBackendKind: null } : {})
+		};
+		inferenceBackend = cleared;
+		updateInferenceBackend({ mode, ...(mode === 'remote' ? { remoteBackendKind: null } : {}) });
 		// Refresh the header context indicator immediately so it reflects
 		// the new backend's ceiling instead of the previous one's stale value.
 		setIndicatorContextSize(getActiveContextSize());
@@ -82,6 +130,11 @@
 		if (next.mode === 'remote') {
 			enterRemoteMode(next.remoteBaseUrl, next.remoteModelId);
 		}
+	}
+
+	// Wrapper so OpenRouterForm can reuse the same commit path.
+	function onOpenRouterConfigChange(next: InferenceBackendConfig) {
+		onInferenceConfigChange(next);
 	}
 
 	async function setContextSize(size: number) {
@@ -147,12 +200,12 @@
 				<span>llama-server sidecar with a model managed by Haruspex. Recommended.</span>
 			</div>
 		</label>
-		<label class="backend-mode-option" class:selected={remoteMode}>
+		<label class="backend-mode-option" class:selected={genericRemoteMode}>
 			<input
 				type="radio"
 				name="inference-mode"
 				value="remote"
-				checked={remoteMode}
+				checked={genericRemoteMode}
 				onchange={() => setInferenceMode('remote')}
 			/>
 			<div>
@@ -160,15 +213,39 @@
 				<span>Point at an existing OpenAI-compatible inference server.</span>
 			</div>
 		</label>
+		<label class="backend-mode-option" class:selected={openrouterMode}>
+			<input
+				type="radio"
+				name="inference-mode"
+				value="openrouter"
+				checked={openrouterMode}
+				onchange={() => setInferenceMode('openrouter')}
+			/>
+			<div>
+				<strong>OpenRouter (cloud)</strong>
+				<span>
+					Cloud model router — your prompts leave your device and go to OpenRouter's servers.
+				</span>
+			</div>
+		</label>
 	</div>
-	{#if remoteMode}
+	{#if genericRemoteMode}
 		<div class="remote-form-wrapper">
 			<InferenceBackendForm config={inferenceBackend} onConfigChange={onInferenceConfigChange} />
 		</div>
+	{:else if openrouterMode}
+		<div class="remote-form-wrapper">
+			<OpenRouterForm config={inferenceBackend} onConfigChange={onOpenRouterConfigChange} />
+		</div>
+	{/if}
+
+	{#if remoteMode}
+		<ApiKeysSection />
 	{/if}
 </section>
 
 {#if !remoteMode}
+	<ApiKeysSection />
 	{#if pendingRestart}
 		<div class="restart-banner" role="status">
 			<span class="restart-spinner" aria-hidden="true"></span>

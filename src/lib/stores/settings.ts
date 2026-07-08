@@ -1,5 +1,7 @@
 // App settings — persisted to localStorage
 
+import type { OpenRouterModel, OpenRouterKeyStatus } from '$lib/openrouter';
+
 import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
 import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
@@ -9,6 +11,18 @@ import type { ShellSelection } from '$lib/ipc/gen/ShellSelection';
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type SearchProvider = 'auto' | 'duckduckgo' | 'brave' | 'searxng';
+
+/**
+ * A named API key in the shared key store. Keys are referenced by `id` from
+ * inference backends and per-job model overrides, so updating a key here
+ * propagates everywhere it's used. The `name` is a user-defined label
+ * (e.g. "OpenRouter personal", "Work vLLM"); `value` is the actual token.
+ */
+export interface StoredApiKey {
+	id: string;
+	name: string;
+	value: string;
+}
 
 /**
  * Which inference backend Haruspex is using.
@@ -33,6 +47,7 @@ export type InferenceBackendKind =
 	| 'llama-server'
 	| 'openai-compat'
 	| 'ollama'
+	| 'openrouter'
 	| null;
 
 /**
@@ -90,6 +105,12 @@ export interface InferenceBackendConfig {
 	remoteServerUrls: string[];
 	/** Optional Bearer token for servers that require auth. Blank for self-hosted. */
 	remoteApiKey: string;
+	/**
+	 * Reference to a key in the Settings API-key store (by id). When set,
+	 * `resolveChatEndpoint` resolves the actual key value from the store at
+	 * request time, taking precedence over the legacy inline `remoteApiKey`.
+	 */
+	remoteApiKeyId: string | null;
 	/** Model ID to include in chat completion requests when in remote mode. */
 	remoteModelId: string;
 	/** Remote-mode context size — detected from the probe or set manually. Falls back to `contextSize` when null. */
@@ -127,6 +148,27 @@ export interface InferenceBackendConfig {
 	 * "queued" indicator. Local mode always serializes regardless.
 	 */
 	allowParallelInference: boolean;
+	/**
+	 * Cached OpenRouter model catalog (`GET /api/v1/models`). `null` means
+	 * the catalog hasn't been fetched yet (or the user isn't on OpenRouter).
+	 * The dedicated OpenRouter form populates and refreshes this; the generic
+	 * remote form never touches it.
+	 */
+	openrouterCatalog: OpenRouterModel[] | null;
+	/** Epoch ms of the last successful catalog fetch. `null` when never fetched. */
+	openrouterCatalogAt: number | null;
+	/** Cached OpenRouter key status (`GET /api/v1/key`). `null` when unchecked. */
+	openrouterKeyStatus: OpenRouterKeyStatus | null;
+	/** Epoch ms of the last key-status fetch. `null` when never checked. */
+	openrouterKeyStatusAt: number | null;
+	/**
+	 * User-selected reasoning effort for the active OpenRouter model, or `null`
+	 * when the model isn't reasoning-capable or no backend is OpenRouter. One of
+	 * the model's `reasoning.supported_efforts` values; sent as
+	 * `{ reasoning: { effort } }` in chat completions instead of the
+	 * llama.cpp-specific `chat_template_kwargs`.
+	 */
+	openrouterReasoningEffort: string | null;
 }
 
 /**
@@ -250,6 +292,8 @@ export interface AppSettings {
 	 */
 	customSystemPrompt: string;
 	inferenceBackend: InferenceBackendConfig;
+	/** Named API keys shared across inference backends + per-job overrides. */
+	apiKeys: StoredApiKey[];
 	integrations: IntegrationsConfig;
 	proxy: ProxyConfig;
 	/**
@@ -330,6 +374,7 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	remoteBaseUrl: '',
 	remoteServerUrls: [],
 	remoteApiKey: '',
+	remoteApiKeyId: null,
 	remoteModelId: '',
 	remoteContextSize: null,
 	remoteVisionSupported: null,
@@ -337,7 +382,12 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	remoteSampling: null,
 	remoteReasoning: null,
 	remoteParallel: null,
-	allowParallelInference: false
+	allowParallelInference: false,
+	openrouterCatalog: null,
+	openrouterCatalogAt: null,
+	openrouterKeyStatus: null,
+	openrouterKeyStatusAt: null,
+	openrouterReasoningEffort: null
 };
 
 const defaultIntegrations: IntegrationsConfig = {
@@ -380,6 +430,7 @@ const defaults: AppSettings = {
 	thinkingEnabled: true,
 	customSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
+	apiKeys: [],
 	integrations: defaultIntegrations,
 	proxy: defaultProxy,
 	shellBinary: '',
@@ -406,6 +457,20 @@ function load(): AppSettings {
 				...defaultInferenceBackend,
 				...(parsed.inferenceBackend ?? {})
 			};
+			// Migrate a legacy inline remoteApiKey into the key store. If
+			// the user had a key saved before the key-store refactor and no
+			// key ID yet, create a "Migrated" entry and wire it up so the
+			// backend keeps working without re-entry.
+			const parsedApiKeys: StoredApiKey[] = parsed.apiKeys ?? [];
+			let apiKeys = parsedApiKeys;
+			if (mergedInference.remoteApiKey && !mergedInference.remoteApiKeyId) {
+				const migratedId = `key_migrated_${Date.now().toString(36)}`;
+				apiKeys = [
+					...parsedApiKeys,
+					{ id: migratedId, name: 'Migrated', value: mergedInference.remoteApiKey }
+				];
+				mergedInference.remoteApiKeyId = migratedId;
+			}
 			// Deep-merge integrations so upgrading users keep their
 			// other settings when new integration types are added.
 			const parsedIntegrations = (parsed.integrations ?? {}) as Partial<IntegrationsConfig>;
@@ -422,6 +487,7 @@ function load(): AppSettings {
 				...defaults,
 				...parsed,
 				inferenceBackend: mergedInference,
+				apiKeys,
 				integrations: mergedIntegrations,
 				proxy: mergedProxy
 			};
@@ -484,6 +550,59 @@ export function updateInferenceBackend(partial: Partial<InferenceBackendConfig>)
 	settings = {
 		...settings,
 		inferenceBackend: { ...current, ...partial }
+	};
+	save(settings);
+}
+
+// --- API key store -------------------------------------------------------
+
+let keyCounter = 0;
+
+/** Generate a stable-enough id for a new key entry. */
+function newKeyId(): string {
+	keyCounter++;
+	return `key_${Date.now().toString(36)}_${keyCounter.toString(36)}`;
+}
+
+/** All stored API keys. */
+export function getApiKeys(): StoredApiKey[] {
+	return settings.apiKeys;
+}
+
+/** Look up a key's value by id. Returns undefined when not found. */
+export function getApiKeyValue(id: string | null | undefined): string | undefined {
+	if (!id) return undefined;
+	return settings.apiKeys.find((k) => k.id === id)?.value;
+}
+
+/** Add a new key and return its id. */
+export function addApiKey(name: string, value: string): string {
+	const id = newKeyId();
+	settings = {
+		...settings,
+		apiKeys: [...settings.apiKeys, { id, name: name.trim() || 'Untitled', value }]
+	};
+	save(settings);
+	return id;
+}
+
+/** Update an existing key's name and/or value. */
+export function updateApiKey(
+	id: string,
+	patch: Partial<Pick<StoredApiKey, 'name' | 'value'>>
+): void {
+	settings = {
+		...settings,
+		apiKeys: settings.apiKeys.map((k) => (k.id === id ? { ...k, ...patch } : k))
+	};
+	save(settings);
+}
+
+/** Delete a key. Callers should clear any references to it first. */
+export function deleteApiKey(id: string): void {
+	settings = {
+		...settings,
+		apiKeys: settings.apiKeys.filter((k) => k.id !== id)
 	};
 	save(settings);
 }
@@ -557,15 +676,43 @@ function toolchestBackend(): InferenceBackendConfig | null {
 }
 
 /**
+ * The remote backend config iff it's OpenRouter. Used to gate OpenRouter-
+ * specific behavior: attribution headers, the `reasoning.effort` request
+ * param (instead of llama.cpp `chat_template_kwargs`), and omitting the
+ * llama.cpp-only `top_k` / `min_p` sampling params.
+ */
+function openrouterBackend(): InferenceBackendConfig | null {
+	const inf = settings.inferenceBackend;
+	return inf.mode === 'remote' && inf.remoteBackendKind === 'openrouter' ? inf : null;
+}
+
+/**
+ * The currently-selected OpenRouter model from the cached catalog, or
+ * `null` when the catalog isn't loaded / no model is picked. Used to read
+ * per-model capability metadata (reasoning caps, vision, context) without
+ * a second lookup at every call site.
+ */
+function openrouterSelectedModel(): OpenRouterModel | null {
+	const inf = openrouterBackend();
+	if (!inf?.openrouterCatalog) return null;
+	return inf.openrouterCatalog.find((m) => m.id === inf.remoteModelId) ?? null;
+}
+
+/**
  * Whether the active model exposes a reasoning / "thinking" mode. Drives
  * whether the Settings "Reasoning mode" toggle is shown. Local and
  * non-toolchest remote backends are assumed capable (existing behavior);
- * a toolchest model reports it explicitly.
+ * a toolchest model reports it explicitly. An OpenRouter model reports it
+ * via its `reasoning` caps from the cached catalog.
  */
 export function isReasoningSupported(): boolean {
 	const inf = toolchestBackend();
 	if (inf?.remoteReasoning) {
 		return inf.remoteReasoning.supported;
+	}
+	if (openrouterBackend()) {
+		const m = openrouterSelectedModel();
+		return !!m?.reasoning;
 	}
 	return true;
 }
@@ -589,6 +736,13 @@ export function isReasoningSupported(): boolean {
  */
 export function getChatTemplateKwargs(thinkingOverride?: boolean | null): Record<string, unknown> {
 	const thinking = thinkingOverride ?? settings.thinkingEnabled;
+	// OpenRouter reasoning is driven by the `reasoning.effort` request param
+	// (see getOpenRouterReasoningParam), not llama.cpp chat_template_kwargs.
+	// Sending `enable_thinking` to a Claude/o-series model is misleading, so
+	// return nothing here and let api.ts add the reasoning object instead.
+	if (openrouterBackend()) {
+		return {};
+	}
 	const inf = toolchestBackend();
 	const reasoning = inf?.remoteReasoning;
 	if (reasoning) {
@@ -598,6 +752,32 @@ export function getChatTemplateKwargs(thinkingOverride?: boolean | null): Record
 		return { [reasoning.kwarg]: thinking };
 	}
 	return { enable_thinking: thinking };
+}
+
+/**
+ * The OpenRouter reasoning effort for the active model, or `null`
+ * when reasoning is off / unsupported / not an OpenRouter backend. Returns
+ * the `{ effort }` value that `api.ts` injects as `body.reasoning = { effort }`
+ * (the `reasoning` key is added by `buildRequestBody`).
+ *
+ * When the user has disabled reasoning (via the global `thinkingEnabled`
+ * toggle or a per-turn override) and the model is NOT `mandatory` reasoning,
+ * we send `{ effort: 'none' }` to turn it off. For mandatory models we always
+ * send the configured effort (the model rejects `'none'`).
+ */
+export function getOpenRouterReasoningParam(
+	thinkingOverride?: boolean | null
+): { effort: string } | null {
+	const inf = openrouterBackend();
+	if (!inf) return null;
+	const m = openrouterSelectedModel();
+	if (!m?.reasoning) return null;
+	const thinking = thinkingOverride ?? settings.thinkingEnabled;
+	const effort = inf.openrouterReasoningEffort ?? m.reasoning.default_effort;
+	if (!thinking && !m.reasoning.mandatory) {
+		return { effort: 'none' };
+	}
+	return { effort };
 }
 
 export interface SamplingParams {
@@ -834,7 +1014,22 @@ export function getSamplingParams(opts: SamplingOptions = {}): SamplingParams {
 	if (inf?.remoteSampling) {
 		return toolchestSamplingParams(inf.remoteSampling, opts);
 	}
-	return builtinSamplingParams(opts);
+	const base = builtinSamplingParams(opts);
+	// OpenRouter speaks OpenAI's param set: it accepts `temperature` and
+	// `top_p` but the docs don't guarantee `top_k` / `min_p` won't 400 on
+	// stricter upstream providers. Omit both for OpenRouter entirely (safe;
+	// the router supplies sensible defaults). `presence_penalty` is in the
+	// OpenAI param set and is kept.
+	if (openrouterBackend()) {
+		return {
+			temperature: base.temperature,
+			top_p: base.top_p,
+			top_k: 0,
+			min_p: 0,
+			presence_penalty: base.presence_penalty
+		};
+	}
+	return base;
 }
 
 export function getResponseFormatPrompt(): string {
