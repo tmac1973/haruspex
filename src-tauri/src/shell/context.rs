@@ -91,11 +91,10 @@ fn uname_r() -> String {
 /// (e.g. "10.0.22631.4317") as the kernel field.
 #[cfg(windows)]
 fn uname_r() -> String {
-    use std::os::windows::process::CommandExt;
-    let out = Command::new("cmd")
-        .args(["/C", "ver"])
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-        .output();
+    let mut cmd = Command::new("cmd");
+    cmd.args(["/C", "ver"]);
+    platform::apply_no_window(&mut cmd);
+    let out = cmd.output();
     let text = out
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
@@ -140,11 +139,7 @@ fn probe_powershell_version(shell_path: &str) -> Option<String> {
         "-Command",
         "$PSVersionTable.PSVersion.ToString()",
     ]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
+    platform::apply_no_window(&mut cmd);
     let output = cmd.output().ok()?;
     let v = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if v.is_empty() {

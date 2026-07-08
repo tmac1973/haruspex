@@ -384,7 +384,7 @@
 
 	.step-status {
 		flex-shrink: 0;
-		color: #22c55e;
+		color: var(--success);
 	}
 
 	.status-err {
@@ -453,7 +453,7 @@
 	}
 
 	.code-toggle.errored {
-		color: var(--error, #c33);
+		color: var(--error-text);
 	}
 
 	.step-code {
@@ -553,20 +553,10 @@
 		background: var(--error-bg, rgba(204, 153, 119, 0.08));
 	}
 
+	/* Size override of the global .spinner — fits the step-status slot. */
 	.spinner {
-		display: inline-block;
 		width: 12px;
 		height: 12px;
-		border: 2px solid var(--border);
-		border-top-color: var(--accent);
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
 	}
 
 	.detail-block {

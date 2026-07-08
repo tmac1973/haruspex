@@ -31,8 +31,12 @@ export interface JobStepInput {
 	deep_research: boolean;
 }
 
-export interface JobSummary {
-	id: number;
+/**
+ * Fields common to every job shape (summary row, full row, create/update
+ * input). Mirrors the Rust job structs' shared columns — keep in step with
+ * `src-tauri/src/db/jobs.rs`.
+ */
+export interface JobCore {
 	name: string;
 	description: string | null;
 	working_dir: string;
@@ -41,6 +45,10 @@ export interface JobSummary {
 	schedule_kind: ScheduleKind;
 	schedule_config: string | null;
 	next_due_at: number | null;
+}
+
+export interface JobSummary extends JobCore {
+	id: number;
 	created_at: number;
 	updated_at: number;
 	step_count: number;
@@ -108,31 +116,15 @@ export interface GuidedPlanningConfig {
 	plan_output_dir: string | null;
 }
 
-export interface JobWithSteps extends AuditConfig, ModelOverrideConfig, GuidedPlanningConfig {
+export interface JobWithSteps
+	extends JobCore, AuditConfig, ModelOverrideConfig, GuidedPlanningConfig {
 	id: number;
-	name: string;
-	description: string | null;
-	working_dir: string;
-	auto_approve_tools: boolean;
-	job_type: JobType;
-	schedule_kind: ScheduleKind;
-	schedule_config: string | null;
-	next_due_at: number | null;
 	created_at: number;
 	updated_at: number;
 	steps: JobStep[];
 }
 
-export interface JobInput extends AuditConfig, ModelOverrideConfig, GuidedPlanningConfig {
-	name: string;
-	description: string | null;
-	working_dir: string;
-	auto_approve_tools: boolean;
-	job_type: JobType;
-	schedule_kind: ScheduleKind;
-	schedule_config: string | null;
-	next_due_at: number | null;
-}
+export type JobInput = JobCore & AuditConfig & ModelOverrideConfig & GuidedPlanningConfig;
 
 const WEEKDAY_INDEX: Record<Weekday, number> = {
 	sun: 0,

@@ -1,4 +1,4 @@
-import { runPython, installPackage, resetSandbox, type ToolResult } from '$lib/sandbox/sandbox';
+import { runPython, installPackage, resetSandbox } from '$lib/sandbox/sandbox';
 import { lintSandboxCode, formatLintFailure } from '$lib/sandbox/lint';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
@@ -11,35 +11,7 @@ import {
 } from '$lib/stores/sandboxApproval.svelte';
 import { isAutoApproveActive } from '$lib/stores/approvalOverride';
 import { errMessage } from '$lib/utils/error';
-
-function formatResult(r: ToolResult): string {
-	const lines: string[] = [];
-	if (r.error) {
-		lines.push(`Error: ${r.error}`);
-		if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
-		if (r.stdout.trim()) lines.push(`Stdout:\n${r.stdout.trim()}`);
-		lines.push(`(took ${r.duration_ms}ms)`);
-		return lines.join('\n\n');
-	}
-	if (r.stdout.trim()) lines.push(`Stdout:\n${r.stdout.trim()}`);
-	if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
-	if (r.result) lines.push(`Result: ${r.result}`);
-	if (r.artifacts > 0) {
-		// Be explicit and directive: small models otherwise read a vague
-		// "rendered in UI" and still try to "show" the figure by hand-writing
-		// markdown image links or <iframe> tags to invented file paths.
-		const s = r.artifacts === 1 ? '' : 's';
-		lines.push(
-			`(${r.artifacts} figure${s}/artifact${s} already rendered inline in the chat and ` +
-				`shown to the user automatically — do NOT embed them again, reference any file ` +
-				`path, or write image/iframe markup for them; just describe them in your reply.)`
-		);
-	}
-	if (r.notes.length > 0) lines.push(`Notes: ${r.notes.join('; ')}`);
-	if (lines.length === 0) lines.push('(no output)');
-	lines.push(`(took ${r.duration_ms}ms)`);
-	return lines.join('\n\n');
-}
+import { formatSandboxResult } from '$lib/sandbox/format-result';
 
 function firstLine(code: string, max = 60): string {
 	const line = code.split('\n')[0]?.trim() ?? '';
@@ -124,7 +96,7 @@ registerTool({
 						phase === 'bundled' ? `Setting up bundled package ${pkg}…` : `Installing ${pkg}…`
 					)
 			});
-			return { result: formatResult(r), artifacts: r.artifactsList };
+			return { result: formatSandboxResult(r), artifacts: r.artifactsList };
 		} catch (e) {
 			return toolResult(toolError(`Sandbox error: ${errMessage(e)}`));
 		}
@@ -182,7 +154,7 @@ registerTool({
 		try {
 			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
 			const r = await installPackage(pkg, { timeoutMs });
-			return toolResult(formatResult(r));
+			return toolResult(formatSandboxResult(r));
 		} catch (e) {
 			return toolResult(toolError(`Install failed: ${errMessage(e)}`));
 		}

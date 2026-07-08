@@ -3,7 +3,7 @@
 	// distinct from the confirmation Modal which deliberately resists
 	// dismissal.
 
-	import { onMount, onDestroy } from 'svelte';
+	import { dismissable } from '$lib/actions/dismissable';
 
 	interface Props {
 		src: string | null;
@@ -12,29 +12,11 @@
 	}
 
 	let { src, alt = 'image', onClose }: Props = $props();
-
-	function onKey(e: KeyboardEvent) {
-		if (e.key === 'Escape') onClose();
-	}
-
-	onMount(() => {
-		window.addEventListener('keydown', onKey);
-	});
-	onDestroy(() => {
-		window.removeEventListener('keydown', onKey);
-	});
-
-	function onBackdropClick(e: MouseEvent) {
-		// Only close when the actual backdrop is clicked, not the image.
-		if (e.target === e.currentTarget) onClose();
-	}
 </script>
 
 {#if src}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="viewer-backdrop" onclick={onBackdropClick}>
-		<button class="close" onclick={onClose} aria-label="Close">×</button>
+	<div class="viewer-backdrop" use:dismissable={onClose}>
+		<button class="modal-close viewer-close" onclick={onClose} aria-label="Close">×</button>
 		<img class="viewer-img" {src} {alt} />
 	</div>
 {/if}
@@ -58,21 +40,21 @@
 		cursor: default;
 		background: white;
 	}
-	.close {
+	/* Overrides of the global .modal-close: floats over a near-black
+	   backdrop, so it needs its own white-on-dark circular look. */
+	.viewer-close {
 		position: absolute;
 		top: 16px;
 		right: 16px;
 		width: 36px;
 		height: 36px;
 		border-radius: 50%;
-		border: none;
 		background: rgba(255, 255, 255, 0.15);
 		color: white;
 		font-size: 24px;
-		line-height: 1;
-		cursor: pointer;
 	}
-	.close:hover {
+	.viewer-close:hover {
+		color: white;
 		background: rgba(255, 255, 255, 0.25);
 	}
 </style>

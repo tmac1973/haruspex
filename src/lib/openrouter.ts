@@ -20,6 +20,34 @@
  * a 24 h TTL; the form re-fetches on demand.
  */
 
+import { readErrorText } from '$lib/utils/http';
+
+/**
+ * Default model after a catalog (re)load: keep the current selection if the
+ * catalog still lists it, else `openrouter/auto`, else the first model.
+ * Shared by the OpenRouter settings form and the per-job override.
+ */
+export function pickOpenRouterModel(
+	models: OpenRouterModel[],
+	currentId: string | null | undefined
+): string {
+	if (currentId && models.some((m) => m.id === currentId)) return currentId;
+	const auto = models.find((m) => m.id === 'openrouter/auto');
+	return auto ? auto.id : (models[0]?.id ?? '');
+}
+
+/** Context/vision capabilities read off a catalog model card. */
+export function openRouterModelCaps(m: OpenRouterModel): {
+	contextSize: number | null;
+	vision: boolean;
+} {
+	return {
+		contextSize:
+			typeof m.context_length === 'number' && m.context_length > 0 ? m.context_length : null,
+		vision: isOpenRouterVisionCapable(m)
+	};
+}
+
 /** Base URL for the OpenRouter API (no trailing slash, no `/v1` suffix). */
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api';
 
@@ -196,7 +224,7 @@ export async function fetchOpenRouterCatalog(signal?: AbortSignal): Promise<Open
 		signal
 	});
 	if (!res.ok) {
-		const text = await res.text().catch(() => 'Unknown error');
+		const text = await readErrorText(res);
 		throw new Error(`OpenRouter catalog fetch failed (${res.status}): ${text}`);
 	}
 	const data = await res.json();
@@ -220,7 +248,7 @@ export async function fetchOpenRouterKeyStatus(
 		signal
 	});
 	if (!res.ok) {
-		const text = await res.text().catch(() => 'Unknown error');
+		const text = await readErrorText(res);
 		throw new Error(`OpenRouter key check failed (${res.status}): ${text}`);
 	}
 	const data = await res.json();

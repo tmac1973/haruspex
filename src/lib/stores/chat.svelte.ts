@@ -20,7 +20,12 @@ import {
 } from '$lib/agent/system-prompt';
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
-import { getActiveContextSize, getSettings, isVisionSupported } from '$lib/stores/settings';
+import {
+	getActiveContextSize,
+	getSettings,
+	isVisionSupported,
+	SETTINGS_KEY
+} from '$lib/stores/settings';
 import {
 	getActiveConversationId,
 	setActiveConversationId,
@@ -34,7 +39,8 @@ import { approveChatSandbox, forgetChatSandboxApproval } from '$lib/stores/sandb
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
 import { appendStreamDelta } from '$lib/agent/think-stream';
 import { isFetchFailureResult } from '$lib/agent/tools/_helpers';
-import { errMessage } from '$lib/utils/error';
+import { errMessage, isAbortError } from '$lib/utils/error';
+import { formatSandboxResult } from '$lib/sandbox/format-result';
 import {
 	runPython,
 	installPackage,
@@ -144,7 +150,7 @@ function loadWorkingDir(): string | null {
 		const raw = localStorage.getItem(WORKING_DIR_KEY);
 		if (raw !== null) return raw || null;
 		// One-time migration from the legacy per-settings defaultWorkingDir.
-		const legacy = localStorage.getItem('haruspex-settings');
+		const legacy = localStorage.getItem(SETTINGS_KEY);
 		if (legacy) {
 			const parsed = JSON.parse(legacy);
 			if (typeof parsed.defaultWorkingDir === 'string' && parsed.defaultWorkingDir) {
@@ -348,7 +354,7 @@ export async function rerunSandboxStep(stepId: string): Promise<void> {
 	try {
 		const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
 		const r = await runPython(code, { timeoutMs });
-		const formatted = formatSandboxResultForChat(r);
+		const formatted = formatSandboxResult(r);
 		conv.searchSteps = conv.searchSteps.map((s) =>
 			s.id === stepId
 				? {
@@ -367,49 +373,6 @@ export async function rerunSandboxStep(stepId: string): Promise<void> {
 				: s
 		);
 	}
-}
-
-/**
- * Mirror of the tool's formatResult — duplicating here keeps the chat
- * store from importing the agent tools module (circular). Worth
- * folding into a shared helper if a third caller appears.
- */
-function formatSandboxResultForChat(r: {
-	stdout: string;
-	stderr: string;
-	result: string;
-	error: string | null;
-	artifacts: number;
-	notes: string[];
-	duration_ms: number;
-}): string {
-	const lines: string[] = [];
-	if (r.error) {
-		lines.push(`Error: ${r.error}`);
-		if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
-		if (r.stdout.trim()) lines.push(`Stdout:\n${r.stdout.trim()}`);
-		lines.push(`(took ${r.duration_ms}ms)`);
-		return lines.join('\n\n');
-	}
-	if (r.stdout.trim()) lines.push(`Stdout:\n${r.stdout.trim()}`);
-	if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
-	if (r.result) lines.push(`Result: ${r.result}`);
-	if (r.artifacts > 0) {
-		// Keep in sync with formatResult in agent/tools/sandbox.ts. Explicit and
-		// directive on purpose: small models otherwise read a vague "rendered in
-		// UI" and still try to "show" the figure by hand-writing markdown image
-		// links or <iframe> tags to invented file paths.
-		const s = r.artifacts === 1 ? '' : 's';
-		lines.push(
-			`(${r.artifacts} figure${s}/artifact${s} already rendered inline in the chat and ` +
-				`shown to the user automatically — do NOT embed them again, reference any file ` +
-				`path, or write image/iframe markup for them; just describe them in your reply.)`
-		);
-	}
-	if (r.notes.length > 0) lines.push(`Notes: ${r.notes.join('; ')}`);
-	if (lines.length === 0) lines.push('(no output)');
-	lines.push(`(took ${r.duration_ms}ms)`);
-	return lines.join('\n\n');
 }
 
 /**
@@ -1107,7 +1070,7 @@ export async function sendMessage(content: string, images: string[] = []): Promi
 
 		captureToolPairsForNextTurn(conversation, messagesForApi, baseMessageCount, keepRecentTools);
 	} catch (e) {
-		if (e instanceof DOMException && e.name === 'AbortError') {
+		if (isAbortError(e)) {
 			commitPartialOnAbort(conversation, turnStats);
 		} else {
 			handleTurnError(e);

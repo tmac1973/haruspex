@@ -83,6 +83,16 @@ pub fn new_log_buffer() -> LogBuffer {
     Arc::new(Mutex::new(VecDeque::with_capacity(LOG_RING_BUFFER_SIZE)))
 }
 
+/// Snapshot a sidecar's log ring buffer for the UI's log viewer.
+pub async fn snapshot_logs(buf: &LogBuffer) -> Vec<String> {
+    buf.lock().await.iter().cloned().collect()
+}
+
+/// Clear a sidecar's log ring buffer.
+pub async fn clear_logs(buf: &LogBuffer) {
+    buf.lock().await.clear();
+}
+
 /// Strip ANSI escape sequences (color codes, cursor moves) from a log
 /// line so the UI's log viewer doesn't render `[31m...[0m` literally.
 pub fn strip_ansi(s: &str) -> String {

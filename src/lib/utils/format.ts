@@ -18,6 +18,17 @@ export function formatBytesPerSecond(bytesPerSec: number): string {
 	return `${(bytesPerSec / 1048576).toFixed(1)} MB/s`;
 }
 
+/** Today's date as e.g. `Wednesday, July 8, 2026` — the form the system
+ * prompts embed. Previously re-spelled in three prompt builders. */
+export function formatTodayLong(): string {
+	return new Date().toLocaleDateString('en-US', {
+		weekday: 'long',
+		year: 'numeric',
+		month: 'long',
+		day: 'numeric'
+	});
+}
+
 /** Duration in ms → `Ns` / `Nm Ns` / `Nh Nm` (min 1s). */
 export function formatDuration(ms: number): string {
 	const sec = Math.max(1, Math.round(ms / 1000));

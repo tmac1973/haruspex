@@ -43,28 +43,3 @@
 		</div>
 	{/if}
 </Modal>
-
-<style>
-	.code-preview {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		padding: 10px 12px;
-		max-height: 280px;
-		overflow: auto;
-		font-size: 0.82rem;
-		line-height: 1.45;
-		margin: 8px 0 16px 0;
-	}
-
-	.code-preview code {
-		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-		white-space: pre;
-	}
-
-	.button-row {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-</style>

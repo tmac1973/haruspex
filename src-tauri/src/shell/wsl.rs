@@ -43,11 +43,7 @@ const PROBE: &str = "printf 'KERNEL=%s\\n' \"$(uname -r)\"; \
 pub fn capture_context(distro: &str) -> Option<SessionContext> {
     let mut cmd = std::process::Command::new("wsl.exe");
     cmd.args(["-d", distro, "--", "bash", "-c", PROBE]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
+    super::platform::apply_no_window(&mut cmd);
     let output = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     if text.trim().is_empty() {
@@ -91,13 +87,18 @@ fn build_context(text: &str) -> SessionContext {
         }
     }
 
-    let (distro_id, distro_name, distro_version) = parse_os_release(&os_release);
+    // Same parser as the Linux file-based capture in platform.rs, fed the
+    // os-release text we captured over the wsl.exe bridge. PRETTY_NAME
+    // ("Ubuntu 24.04 LTS") is preferred over NAME ("Ubuntu") regardless of
+    // the order they appear in the file.
+    let osr = super::platform::parse_os_release_str(&os_release);
+    let distro_name = osr.display_name();
     SessionContext {
         os: "linux".to_string(),
         kernel,
-        distro_id,
+        distro_id: osr.id,
         distro_name,
-        distro_version,
+        distro_version: osr.version_id,
         // We always launch the distro via bash (the injection shell).
         shell_path: "/bin/bash".to_string(),
         shell_name: "bash".to_string(),
@@ -105,32 +106,6 @@ fn build_context(text: &str) -> SessionContext {
         home,
         hostname,
     }
-}
-
-/// Parse `/etc/os-release` text for id / pretty name / version. Mirrors the
-/// file-based parser in `platform.rs`, but for a string we captured over the
-/// wsl.exe bridge.
-fn parse_os_release(text: &str) -> (Option<String>, Option<String>, Option<String>) {
-    let mut id = None;
-    let mut pretty = None;
-    let mut name = None;
-    let mut version = None;
-    for line in text.lines() {
-        let Some((k, v)) = line.split_once('=') else {
-            continue;
-        };
-        let v = v.trim().trim_matches('"').to_string();
-        match k {
-            "ID" => id = Some(v),
-            "PRETTY_NAME" => pretty = Some(v),
-            "NAME" => name = Some(v),
-            "VERSION_ID" => version = Some(v),
-            _ => {}
-        }
-    }
-    // Prefer PRETTY_NAME ("Ubuntu 24.04 LTS") over NAME ("Ubuntu") regardless of
-    // the order they appear in the file.
-    (id, pretty.or(name), version)
 }
 
 #[cfg(test)]

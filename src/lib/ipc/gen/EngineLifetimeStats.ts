@@ -4,4 +4,4 @@
  * Snapshot of a single engine's lifetime stats row. Mirrors the column
  * layout so the frontend can render it without re-fetching per row.
  */
-export type EngineLifetimeStats = { engine: string, attempts: number, successes: number, fail_http: number, fail_rate_limited: number, fail_parse: number, fail_empty: number, fail_network: number, fail_timeout: number, fail_other: number, total_latency_ms: number, max_latency_ms: number, last_success_at: number | null, last_failure_at: number | null, first_choice_attempts: number, fallback_attempts: number, fallback_successes: number, };
+export type EngineLifetimeStats = { fail_http: number, fail_rate_limited: number, fail_parse: number, fail_empty: number, fail_network: number, fail_timeout: number, fail_other: number, engine: string, attempts: number, successes: number, total_latency_ms: number, max_latency_ms: number, last_success_at: number | null, last_failure_at: number | null, first_choice_attempts: number, fallback_attempts: number, fallback_successes: number, };

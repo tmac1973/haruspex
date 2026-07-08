@@ -2,6 +2,9 @@
 import { getSettings, getApiKeyValue } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
 import { PORTS, baseUrl } from '$lib/ports';
+import { OPENROUTER_ATTRIBUTION_HEADERS } from '$lib/openrouter';
+import { isAbortError } from '$lib/utils/error';
+import { readErrorText } from '$lib/utils/http';
 
 let nextRequestId = 1;
 
@@ -252,8 +255,7 @@ function isOpenRouterUrl(baseUrl: string): boolean {
 
 /** Add the optional OpenRouter attribution headers (leaderboard visibility). */
 function applyOpenRouterAttribution(headers: Record<string, string>): void {
-	headers['HTTP-Referer'] = 'https://github.com/tmac1973/haruspex';
-	headers['X-Title'] = 'Haruspex';
+	Object.assign(headers, OPENROUTER_ATTRIBUTION_HEADERS);
 }
 
 function buildRequestBody(
@@ -312,23 +314,48 @@ function buildRequestBody(
 	return body;
 }
 
-/** Sentinel returned by parseSSELine for the `data: [DONE]` terminator. */
-const SSE_DONE = Symbol('sse-done');
+/**
+ * Low-level SSE reader: decode network chunks, split into lines, and yield
+ * each `data: ` payload string until the stream ends or the `[DONE]`
+ * terminator arrives. Non-data lines (like OpenRouter's
+ * `: OPENROUTER PROCESSING` comment keepalives) are skipped. `onChunk`
+ * fires once per network chunk — the setup wizard uses it to reset its
+ * idle watchdog. This is the single SSE framing implementation; layer
+ * payload parsing (parseSSE here, the setup store's delta reader) on top.
+ */
+export async function* readSseData(
+	reader: ReadableStreamDefaultReader<Uint8Array>,
+	onChunk?: () => void
+): AsyncGenerator<string> {
+	const decoder = new TextDecoder();
+	let buffer = '';
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			onChunk?.();
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop()!;
+			for (const line of lines) {
+				const trimmed = line.trim();
+				if (!trimmed.startsWith('data: ')) continue;
+				const data = trimmed.slice(6);
+				if (data === '[DONE]') return;
+				yield data;
+			}
+		}
+	} finally {
+		reader.releaseLock();
+	}
+}
 
 /**
- * Parse one SSE line into a StreamChunk, `SSE_DONE` for the terminator, or
- * null for non-data / empty-delta / malformed lines. Keeps parseSSE's loop
- * flat instead of nesting data/try/choices/usage four deep.
+ * Parse one SSE `data:` payload into a StreamChunk, or null for empty-delta /
+ * malformed payloads. Keeps parseSSE's loop flat instead of nesting
+ * data/try/choices/usage four deep.
  */
-function parseSSELine(line: string): StreamChunk | typeof SSE_DONE | null {
-	const trimmed = line.trim();
-	// OpenRouter sends `: OPENROUTER PROCESSING` comment keepalives during
-	// long upstream waits. They don't start with `data: `, so this branch
-	// already ignores them — but we keep the explicit early-return to make
-	// the intent obvious and guard against future shape changes.
-	if (!trimmed.startsWith('data: ')) return null;
-	const data = trimmed.slice(6);
-	if (data === '[DONE]') return SSE_DONE;
+function parseSSEData(data: string): StreamChunk | null {
 	try {
 		const parsed = JSON.parse(data);
 		// OpenRouter mid-stream error: after the first token, HTTP is already
@@ -390,7 +417,7 @@ async function sendChatRequest(
 	try {
 		response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
 	} catch (e) {
-		if (e instanceof DOMException && e.name === 'AbortError') {
+		if (isAbortError(e)) {
 			logDebug('api', `${label} request #${reqId} aborted before response`);
 			throw e;
 		}
@@ -398,7 +425,7 @@ async function sendChatRequest(
 		throw new ApiError('Failed to connect to the AI model. Is it still loading?');
 	}
 	if (!response.ok) {
-		const text = await response.text().catch(() => 'Unknown error');
+		const text = await readErrorText(response);
 		logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, { body: text });
 		throw new ApiError(`Server error: ${text}`, response.status);
 	}
@@ -406,27 +433,9 @@ async function sendChatRequest(
 }
 
 export async function* parseSSE(response: Response): AsyncGenerator<StreamChunk> {
-	const reader = response.body!.getReader();
-	const decoder = new TextDecoder();
-	let buffer = '';
-
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-
-			buffer += decoder.decode(value, { stream: true });
-			const lines = buffer.split('\n');
-			buffer = lines.pop()!;
-
-			for (const line of lines) {
-				const chunk = parseSSELine(line);
-				if (chunk === SSE_DONE) return;
-				if (chunk) yield chunk;
-			}
-		}
-	} finally {
-		reader.releaseLock();
+	for await (const data of readSseData(response.body!.getReader())) {
+		const chunk = parseSSEData(data);
+		if (chunk) yield chunk;
 	}
 }
 

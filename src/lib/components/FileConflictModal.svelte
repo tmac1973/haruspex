@@ -61,10 +61,8 @@
 		font-weight: 500;
 	}
 
+	/* Spacing override of the global .button-row. */
 	.button-row {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
 		margin-top: 12px;
 	}
 </style>

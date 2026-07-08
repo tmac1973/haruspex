@@ -131,8 +131,6 @@
 
 <style>
 	.hint {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
 		margin: 8px 0 0 0;
 	}
 
@@ -186,47 +184,8 @@
 		color-scheme: light dark;
 	}
 
+	/* Global .toggle-row supplies the base style; sections add row padding. */
 	.toggle-row {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
 		padding: 8px 0;
-		cursor: pointer;
-	}
-
-	.toggle-row input[type='checkbox'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.toggle-row strong {
-		display: block;
-		font-size: 0.9rem;
-	}
-
-	.toggle-row span {
-		display: block;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
-	.btn {
-		padding: 6px 14px;
-		border-radius: 6px;
-		font-size: 0.8rem;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-	}
-
-	.btn:hover {
-		opacity: 0.9;
-	}
-
-	.btn-small {
-		padding: 3px 10px;
-		font-size: 0.75rem;
 	}
 </style>

@@ -1,11 +1,16 @@
 <script lang="ts">
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { invoke } from '@tauri-apps/api/core';
-	import { pickProbedModel, type NormalizedModel, type ProbeResult } from '$lib/inferenceProbe';
+	import {
+		pickProbedModel,
+		probeInferenceServer,
+		probedModelCaps,
+		type NormalizedModel
+	} from '$lib/inferenceProbe';
 	import {
 		OPENROUTER_BASE_URL,
 		fetchOpenRouterCatalog,
-		isOpenRouterVisionCapable,
+		openRouterModelCaps,
+		pickOpenRouterModel,
 		type OpenRouterModel
 	} from '$lib/openrouter';
 	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
@@ -30,7 +35,7 @@
 		DEFAULT_SAMPLE_INSTRUCTIONS,
 		DEFAULT_VERIFY_INSTRUCTIONS
 	} from '$lib/agent/jobs/auditPipeline';
-	import { getSettings, getApiKeyValue } from '$lib/stores/settings';
+	import { getSettings } from '$lib/stores/settings';
 
 	interface Props {
 		jobId: number | 'new';
@@ -286,10 +291,9 @@
 	/** Selecting a model adopts its probed context/vision caps (like Settings). */
 	function onModelChange(id: string) {
 		modelModelId = id;
-		const m = probedModels.find((x) => x.id === id);
-		if (!m) return;
-		if (typeof m.context_size === 'number' && m.context_size > 0) modelContextSize = m.context_size;
-		if (m.vision_supported != null) modelVision = m.vision_supported ? 'yes' : 'no';
+		const caps = probedModelCaps(probedModels.find((x) => x.id === id));
+		if (caps.contextSize !== null) modelContextSize = caps.contextSize;
+		if (caps.vision !== null) modelVision = caps.vision ? 'yes' : 'no';
 	}
 
 	/**
@@ -306,11 +310,11 @@
 		probeError = null;
 		probeNote = null;
 		try {
-			const resolvedKey = getApiKeyValue(modelApiKeyId) ?? modelApiKey.trim();
-			const result = await invoke<ProbeResult>('probe_inference_server', {
-				baseUrl: modelBaseUrl.trim(),
-				apiKey: resolvedKey || null
-			});
+			const result = await probeInferenceServer(
+				modelBaseUrl.trim(),
+				modelApiKeyId,
+				modelApiKey.trim()
+			);
 			modelBaseUrl = result.base_url;
 			probedModels = result.models;
 			const pick = pickProbedModel(result.models, modelModelId);
@@ -363,10 +367,10 @@
 		try {
 			const models = await fetchOpenRouterCatalog();
 			orCatalog = models;
-			if (!modelModelId || !models.some((m) => m.id === modelModelId)) {
-				const auto = models.find((m) => m.id === 'openrouter/auto');
-				onOpenRouterModelSelect(auto ? auto.id : (models[0]?.id ?? ''));
-			}
+			const pick = pickOpenRouterModel(models, modelModelId);
+			// Only re-adopt when the pick actually changed — a valid current
+			// selection keeps the user's manual context/vision edits.
+			if (pick !== modelModelId) onOpenRouterModelSelect(pick);
 		} catch (e) {
 			orError = String(e);
 		} finally {
@@ -379,10 +383,9 @@
 		modelModelId = id;
 		const m = orCatalog?.find((x) => x.id === id);
 		if (!m) return;
-		if (typeof m.context_length === 'number' && m.context_length > 0) {
-			modelContextSize = m.context_length;
-		}
-		modelVision = isOpenRouterVisionCapable(m) ? 'yes' : 'no';
+		const caps = openRouterModelCaps(m);
+		if (caps.contextSize !== null) modelContextSize = caps.contextSize;
+		modelVision = caps.vision ? 'yes' : 'no';
 	}
 
 	function validate(): string | null {
@@ -610,7 +613,7 @@
 				/>
 				<button
 					type="button"
-					class="secondary"
+					class="btn"
 					onclick={pickWorkingDir}
 					title="Pick a folder using the system file dialog"
 				>
@@ -667,7 +670,7 @@
 							</label>
 							<button
 								type="button"
-								class="secondary probe-btn"
+								class="btn probe-btn"
 								disabled={orLoading}
 								title="Fetch the OpenRouter model catalog."
 								onclick={loadOpenRouterModels}>{orLoading ? 'Loading…' : 'Load models'}</button
@@ -687,7 +690,7 @@
 							</div>
 						{/if}
 						{#if orError}
-							<span class="probe-status error">{orError}</span>
+							<span class="probe-status error-text">{orError}</span>
 						{/if}
 					{:else}
 						<div class="model-row">
@@ -711,7 +714,7 @@
 							</label>
 							<button
 								type="button"
-								class="secondary probe-btn"
+								class="btn probe-btn"
 								disabled={probing || !modelBaseUrl}
 								title="Connect to the selected server to list its models and detect context size + vision."
 								onclick={probeModel}>{probing ? 'Probing…' : 'Probe'}</button
@@ -745,7 +748,7 @@
 							</label>
 						</div>
 						{#if probeError}
-							<span class="probe-status error">Probe failed: {probeError}</span>
+							<span class="probe-status error-text">Probe failed: {probeError}</span>
 						{:else if probeNote}
 							<span class="probe-status">{probeNote}</span>
 						{/if}
@@ -877,7 +880,7 @@
 				{/each}
 				<button
 					type="button"
-					class="secondary add-step"
+					class="btn add-step"
 					onclick={addStep}
 					title="Add another step to the pipeline. Runs after the previous step completes."
 				>
@@ -1021,7 +1024,7 @@
 		{/if}
 
 		{#if error}
-			<div class="error">{error}</div>
+			<div class="error-box">{error}</div>
 		{/if}
 
 		<div class="actions">
@@ -1029,7 +1032,7 @@
 				{#if jobId !== 'new'}
 					<button
 						type="button"
-						class="danger"
+						class="btn btn-danger"
 						onclick={confirmDelete}
 						disabled={saving}
 						title="Delete this job and its entire run history. Cannot be undone."
@@ -1041,7 +1044,7 @@
 			<div class="actions-right">
 				<button
 					type="button"
-					class="secondary"
+					class="btn"
 					onclick={oncancel}
 					disabled={saving}
 					title="Discard unsaved changes and return to the job list"
@@ -1050,7 +1053,7 @@
 				</button>
 				<button
 					type="button"
-					class="primary"
+					class="btn btn-primary"
 					onclick={save}
 					disabled={saving}
 					title="Save the job. Use the Run button in the job list to execute it manually."
@@ -1078,12 +1081,6 @@
 		font-size: 1rem;
 	}
 
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
 	.field.checkbox {
 		flex-direction: row;
 		align-items: flex-start;
@@ -1105,16 +1102,6 @@
 		font-weight: normal;
 		font-size: 0.82rem;
 		color: var(--accent);
-	}
-
-	input[type='text'],
-	input[type='number'] {
-		padding: 6px 10px;
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		font-size: 0.9rem;
 	}
 
 	.type-toggle {
@@ -1240,10 +1227,6 @@
 		color: var(--text-secondary);
 	}
 
-	.probe-status.error {
-		color: var(--error, #e5534b);
-	}
-
 	.advanced-prompts {
 		border: 1px solid var(--border);
 		border-radius: 4px;
@@ -1292,19 +1275,6 @@
 		cursor: not-allowed;
 	}
 
-	textarea {
-		padding: 8px 10px;
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		font-family: inherit;
-		font-size: 0.9rem;
-		line-height: 1.4;
-		resize: vertical;
-		min-height: 60px;
-	}
-
 	.workdir-row {
 		display: flex;
 		gap: 6px;
@@ -1316,8 +1286,6 @@
 	}
 
 	.hint {
-		font-size: 0.78rem;
-		color: var(--text-secondary);
 		font-style: italic;
 	}
 
@@ -1429,15 +1397,6 @@
 		align-self: flex-start;
 	}
 
-	.error {
-		padding: 8px 10px;
-		background: var(--error-bg);
-		color: var(--error-text);
-		border: 1px solid var(--error-border);
-		border-radius: 4px;
-		font-size: 0.85rem;
-	}
-
 	.actions {
 		display: flex;
 		justify-content: space-between;
@@ -1449,47 +1408,5 @@
 	.actions-right {
 		display: flex;
 		gap: 8px;
-	}
-
-	button {
-		padding: 6px 14px;
-		border-radius: 6px;
-		border: 1px solid var(--border);
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-
-	button:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	button.secondary {
-		background: var(--bg-primary);
-		color: var(--text-primary);
-	}
-
-	button.secondary:hover:not(:disabled) {
-		border-color: var(--text-secondary);
-	}
-
-	button.primary {
-		background: var(--accent);
-		color: white;
-		border-color: var(--accent);
-	}
-
-	button.primary:hover:not(:disabled) {
-		opacity: 0.9;
-	}
-
-	button.danger {
-		background: transparent;
-		color: var(--error-text);
-		border-color: var(--error-border);
-	}
-
-	button.danger:hover:not(:disabled) {
-		background: var(--error-bg);
 	}
 </style>

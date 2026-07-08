@@ -58,7 +58,7 @@
 		{:else}
 			{@html renderedContent}
 			{#if isStreaming}
-				<span class="cursor"></span>
+				<span class="streaming-caret"></span>
 			{/if}
 		{/if}
 	</div>
@@ -256,21 +256,5 @@
 		font-size: 0.75rem;
 		color: var(--text-secondary);
 		font-variant-numeric: tabular-nums;
-	}
-
-	.cursor {
-		display: inline-block;
-		width: 2px;
-		height: 1em;
-		background: var(--text-primary);
-		animation: blink 0.8s step-end infinite;
-		vertical-align: text-bottom;
-		margin-left: 1px;
-	}
-
-	@keyframes blink {
-		50% {
-			opacity: 0;
-		}
 	}
 </style>

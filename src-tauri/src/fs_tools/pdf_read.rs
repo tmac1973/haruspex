@@ -201,38 +201,35 @@ fn reconstruct_page_layout(page_text: &pdfium_render::prelude::PdfPageText) -> S
 
 #[tauri::command]
 pub async fn fs_read_pdf(workdir: String, rel_path: String) -> Result<String, String> {
-    let workdir = workdir_path(&workdir)?;
-    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
-
-    if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
-    }
-    read_pdf_at_path(&resolved).await
+    let text = super::read_document_blocking(workdir, rel_path, "PDF", extract_pdf_text).await?;
+    finish_pdf_text(text)
 }
 
-/// Extract text from a PDF at a fully-resolved path. Used by both the
-/// workdir-relative `fs_read_pdf` and the Shell-tab absolute-path
-/// variant.
+/// Extract text from a PDF at a fully-resolved path. Used by the Shell-tab
+/// absolute-path variant (`fs_read_pdf_absolute`); the workdir-relative
+/// `fs_read_pdf` runs the same extraction via `read_document_blocking`.
 pub(super) async fn read_pdf_at_path(resolved: &std::path::Path) -> Result<String, String> {
-    stat_within_limit(resolved, MAX_DOC_READ_BYTES, "PDF").await?;
+    let text = super::extract_document_blocking(resolved, "PDF", extract_pdf_text).await?;
+    finish_pdf_text(text)
+}
 
-    // Try pdfium first — it's the same library Chrome uses, handles forms
-    // and custom fonts correctly. Fall back to pdf-extract if pdfium isn't
-    // available (missing native lib).
-    let resolved_clone = resolved.to_path_buf();
-    let text = tokio::task::spawn_blocking(move || -> Result<String, String> {
-        if pdfium_available() {
-            match extract_pdf_with_pdfium(&resolved_clone) {
-                Ok(t) => return Ok(t),
-                Err(e) => log::warn!("pdfium extraction failed: {}; falling back", e),
-            }
+/// Blocking PDF text extraction. Try pdfium first — it's the same library
+/// Chrome uses, handles forms and custom fonts correctly. Fall back to
+/// pdf-extract if pdfium isn't available (missing native lib).
+fn extract_pdf_text(path: &Path) -> Result<String, String> {
+    if pdfium_available() {
+        match extract_pdf_with_pdfium(path) {
+            Ok(t) => return Ok(t),
+            Err(e) => log::warn!("pdfium extraction failed: {}; falling back", e),
         }
-        pdf_extract::extract_text(&resolved_clone)
-            .map_err(|e| format!("Failed to extract PDF text: {}", e))
-    })
-    .await
-    .map_err(|e| format!("PDF extraction task failed: {}", e))??;
+    }
+    pdf_extract::extract_text(path).map_err(|e| format!("Failed to extract PDF text: {}", e))
+}
 
+/// Post-process extracted PDF text: trim, reject empty extractions with a
+/// pointer at the visual reader, and cap the size so a huge PDF doesn't
+/// blow up the context.
+fn finish_pdf_text(text: String) -> Result<String, String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err(
@@ -242,15 +239,10 @@ pub(super) async fn read_pdf_at_path(resolved: &std::path::Path) -> Result<Strin
         );
     }
 
-    // Cap the extracted text to avoid blowing up the context
-    const MAX_PDF_TEXT_CHARS: usize = 500_000;
-    if trimmed.len() > MAX_PDF_TEXT_CHARS {
-        return Ok(format!(
-            "{}\n\n[... truncated: {} characters total, showing first {}]",
-            crate::text_util::truncate_at_char_boundary(trimmed, MAX_PDF_TEXT_CHARS),
-            trimmed.len(),
-            MAX_PDF_TEXT_CHARS
-        ));
+    if let Some(truncated) =
+        crate::text_util::truncate_with_note(trimmed, crate::text_util::MAX_EXTRACTED_TEXT_CHARS)
+    {
+        return Ok(truncated);
     }
 
     Ok(trimmed.to_string())

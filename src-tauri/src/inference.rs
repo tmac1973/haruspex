@@ -79,20 +79,16 @@ pub struct SamplingParams {
 
 /// A named sampling preset (e.g. "thinking", "non-thinking",
 /// "thinking-coding") — the params plus a stable `name` the client keys
-/// on and a human `label`.
+/// on and a human `label`. The params are flattened so the wire shape is
+/// unchanged: `{name, label?, temperature?, top_p?, top_k?,
+/// presence_penalty?}`.
 #[derive(Clone, Debug, Serialize)]
 pub struct SamplingPreset {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_p: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_k: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub presence_penalty: Option<f64>,
+    #[serde(flatten)]
+    pub params: SamplingParams,
 }
 
 /// A model's recommended sampling: a resolved `default` plus the named
@@ -586,17 +582,13 @@ fn parse_capabilities(v: Option<&serde_json::Value>) -> CapabilitiesParsed {
                 arr.iter()
                     .filter_map(|item| {
                         let name = item.get("name").and_then(|x| x.as_str())?.to_string();
-                        let p = parse_sampling_params(item);
                         Some(SamplingPreset {
                             name,
                             label: item
                                 .get("label")
                                 .and_then(|x| x.as_str())
                                 .map(|s| s.to_string()),
-                            temperature: p.temperature,
-                            top_p: p.top_p,
-                            top_k: p.top_k,
-                            presence_penalty: p.presence_penalty,
+                            params: parse_sampling_params(item),
                         })
                     })
                     .collect()
@@ -871,9 +863,9 @@ mod tests {
         assert_eq!(s.presets.len(), 2);
         assert_eq!(s.presets[0].name, "thinking");
         assert_eq!(s.presets[0].label.as_deref(), Some("Thinking mode"));
-        assert_eq!(s.presets[0].temperature, Some(0.6));
+        assert_eq!(s.presets[0].params.temperature, Some(0.6));
         // A preset that omits a field leaves it None for the client to fill.
-        assert_eq!(s.presets[1].top_k, None);
+        assert_eq!(s.presets[1].params.top_k, None);
     }
 
     #[test]

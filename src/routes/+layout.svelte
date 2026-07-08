@@ -428,6 +428,7 @@
 		--error-text: #dc2626;
 		--error-border: #fecaca;
 		--success: #16a34a;
+		--warning: #b45309;
 	}
 
 	@media (prefers-color-scheme: dark) {
@@ -446,6 +447,7 @@
 			--error-text: #f87171;
 			--error-border: #3b1111;
 			--success: #16a34a;
+			--warning: #f59e0b;
 		}
 	}
 
@@ -464,6 +466,7 @@
 		--error-text: #f87171;
 		--error-border: #3b1111;
 		--success: #16a34a;
+		--warning: #f59e0b;
 	}
 
 	:global(html),
@@ -541,6 +544,203 @@
 		background: var(--error-bg);
 		border-color: var(--error-border);
 		color: var(--error-text);
+	}
+
+	/* Button primitives — `class="btn"` plus optional `btn-primary` /
+	   `btn-danger` / `btn-small` modifiers. Canonical styling for the
+	   settings panels and forms; components keep only genuinely local
+	   overrides (widths, margins). */
+	:global(.btn) {
+		flex: none;
+		padding: 6px 14px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-secondary);
+		color: var(--text-primary);
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	:global(.btn:hover:not(:disabled)) {
+		opacity: 0.9;
+	}
+	:global(.btn:disabled) {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	:global(.btn-primary) {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: white;
+	}
+	:global(.btn-danger) {
+		color: var(--error-text);
+		border-color: var(--error-border);
+	}
+	:global(.btn-danger:hover:not(:disabled)) {
+		background: var(--error-bg);
+	}
+	:global(.btn-small) {
+		padding: 4px 10px;
+		font-size: 0.78rem;
+	}
+
+	/* Form field scaffolding — wrap a label + control in
+	   `<div class="field">`. Checkboxes/radios keep native sizing. */
+	:global(.field) {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	:global(.field label) {
+		font-size: 0.85rem;
+		font-weight: 500;
+	}
+	:global(.field input:not([type='checkbox']):not([type='radio'])),
+	:global(.field select),
+	:global(.field textarea) {
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		font-size: 0.9rem;
+		color-scheme: light dark;
+	}
+	:global(.field select option) {
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
+	}
+	:global(.field textarea) {
+		font-family: inherit;
+		line-height: 1.4;
+		resize: vertical;
+		min-height: 60px;
+	}
+
+	/* Secondary helper text under a control or heading. Components add
+	   their own margin/font-style overrides where the layout needs it. */
+	:global(.hint) {
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+		margin: 0;
+	}
+	:global(.hint a) {
+		color: var(--accent);
+	}
+	:global(.hint code) {
+		background: var(--bg-secondary);
+		padding: 1px 4px;
+		border-radius: 3px;
+		font-size: 0.72rem;
+	}
+
+	/* Inline loading spinner — a 2px ring rotating via the global `spin`
+	   keyframes. Size-override locally if 14px doesn't fit. */
+	:global(.spinner) {
+		display: inline-block;
+		width: 14px;
+		height: 14px;
+		border: 2px solid var(--border);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+	@keyframes -global-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	/* Error display — a bordered box for form/action failures, and a
+	   plain colored-text variant for inline status lines. */
+	:global(.error-box) {
+		padding: 8px 12px;
+		border: 1px solid var(--error-border);
+		border-radius: 6px;
+		background: var(--error-bg);
+		color: var(--error-text);
+		font-size: 0.85rem;
+		margin: 0;
+	}
+	:global(.error-text) {
+		color: var(--error-text);
+	}
+
+	/* Approval-modal helpers — the scrollable <pre> code preview and the
+	   stacked ModalButton column used by the approval/conflict modals. */
+	:global(.code-preview) {
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 10px 12px;
+		max-height: 280px;
+		overflow: auto;
+		font-size: 0.82rem;
+		line-height: 1.45;
+		margin: 8px 0 16px 0;
+	}
+	:global(.code-preview code) {
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		white-space: pre;
+	}
+	:global(.button-row) {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	/* The '×' close button used by modal-style overlays. */
+	:global(.modal-close) {
+		background: none;
+		border: none;
+		color: var(--text-secondary);
+		font-size: 1.4rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0 4px;
+		border-radius: 4px;
+	}
+	:global(.modal-close:hover) {
+		color: var(--text-primary);
+	}
+
+	/* Streaming caret shown at the end of in-progress assistant text. */
+	:global(.streaming-caret) {
+		display: inline-block;
+		width: 2px;
+		height: 1em;
+		background: var(--text-primary);
+		animation: blink 0.8s step-end infinite;
+		vertical-align: text-bottom;
+		margin-left: 1px;
+	}
+	@keyframes -global-blink {
+		50% {
+			opacity: 0;
+		}
+	}
+
+	/* Checkbox row with bold title + secondary description (ToggleField and
+	   the settings sections' inline toggles). */
+	:global(.toggle-row) {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		cursor: pointer;
+	}
+	:global(.toggle-row input[type='checkbox']) {
+		margin-top: 3px;
+		accent-color: var(--accent);
+	}
+	:global(.toggle-row strong) {
+		display: block;
+		font-size: 0.88rem;
+	}
+	:global(.toggle-row span) {
+		display: block;
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
 	}
 
 	header {

@@ -37,6 +37,7 @@ import {
 	getOpenRouterReasoningParam
 } from '$lib/stores/settings';
 import { stripToolCallArtifacts } from '$lib/markdown';
+import { isAbortError } from '$lib/utils/error';
 import { logDebug } from '$lib/debug-log';
 import { NudgeState } from './nudges';
 import type { AgentLoopOptions, CompletionMeta } from '../loop';
@@ -456,7 +457,7 @@ async function forceFinalToolCall(
 			ctx.signal
 		);
 	} catch (e) {
-		if (e instanceof DOMException && e.name === 'AbortError') throw e;
+		if (isAbortError(e)) throw e;
 		logDebug('agent', 'forced final tool call failed', { tool: name, error: String(e) });
 		ctx.options.onComplete(meta);
 		return;

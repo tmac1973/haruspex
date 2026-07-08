@@ -125,30 +125,17 @@ pub struct EngineStatDelta {
     pub fallback_success: bool,
 }
 
-/// Snapshot of a single engine's lifetime stats row. Mirrors the column
-/// layout so the frontend can render it without re-fetching per row.
+/// Per-engine stats fields shared by the session and lifetime rows.
+/// Embedded via `#[serde(flatten)]`/`#[ts(flatten)]` so the JSON wire shape
+/// and the generated TS types stay identical to when these fields were
+/// declared inline in both structs.
 #[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
-#[ts(export)]
-pub struct EngineLifetimeStats {
+pub struct EngineStatsCore {
     pub engine: String,
     #[ts(type = "number")]
     pub attempts: u64,
     #[ts(type = "number")]
     pub successes: u64,
-    #[ts(type = "number")]
-    pub fail_http: u64,
-    #[ts(type = "number")]
-    pub fail_rate_limited: u64,
-    #[ts(type = "number")]
-    pub fail_parse: u64,
-    #[ts(type = "number")]
-    pub fail_empty: u64,
-    #[ts(type = "number")]
-    pub fail_network: u64,
-    #[ts(type = "number")]
-    pub fail_timeout: u64,
-    #[ts(type = "number")]
-    pub fail_other: u64,
     #[ts(type = "number")]
     pub total_latency_ms: u64,
     #[ts(type = "number")]
@@ -163,6 +150,30 @@ pub struct EngineLifetimeStats {
     pub fallback_attempts: u64,
     #[ts(type = "number")]
     pub fallback_successes: u64,
+}
+
+/// Snapshot of a single engine's lifetime stats row. Mirrors the column
+/// layout so the frontend can render it without re-fetching per row.
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct EngineLifetimeStats {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub core: EngineStatsCore,
+    #[ts(type = "number")]
+    pub fail_http: u64,
+    #[ts(type = "number")]
+    pub fail_rate_limited: u64,
+    #[ts(type = "number")]
+    pub fail_parse: u64,
+    #[ts(type = "number")]
+    pub fail_empty: u64,
+    #[ts(type = "number")]
+    pub fail_network: u64,
+    #[ts(type = "number")]
+    pub fail_timeout: u64,
+    #[ts(type = "number")]
+    pub fail_other: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
@@ -284,27 +295,11 @@ pub(crate) fn record_global_both(stats: &SearchStats, sink: &dyn StatSink, count
 #[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
 #[ts(export)]
 pub struct EngineSessionStats {
-    pub engine: String,
-    #[ts(type = "number")]
-    pub attempts: u64,
-    #[ts(type = "number")]
-    pub successes: u64,
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub core: EngineStatsCore,
     #[ts(as = "HashMap<SearchFailureKind, u32>")]
     pub failures_by_kind: HashMap<SearchFailureKind, u64>,
-    #[ts(type = "number")]
-    pub total_latency_ms: u64,
-    #[ts(type = "number")]
-    pub max_latency_ms: u64,
-    #[ts(type = "number | null")]
-    pub last_success_at: Option<i64>,
-    #[ts(type = "number | null")]
-    pub last_failure_at: Option<i64>,
-    #[ts(type = "number")]
-    pub first_choice_attempts: u64,
-    #[ts(type = "number")]
-    pub fallback_attempts: u64,
-    #[ts(type = "number")]
-    pub fallback_successes: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
@@ -359,32 +354,36 @@ impl SearchStats {
         let entry = engines
             .entry(engine.to_string())
             .or_insert_with(|| EngineSessionStats {
-                engine: engine.to_string(),
+                core: EngineStatsCore {
+                    engine: engine.to_string(),
+                    ..Default::default()
+                },
                 ..Default::default()
             });
 
-        entry.attempts += 1;
+        let core = &mut entry.core;
+        core.attempts += 1;
         match outcome.position {
-            Some(AutoPosition::First) => entry.first_choice_attempts += 1,
-            Some(AutoPosition::Fallback) => entry.fallback_attempts += 1,
+            Some(AutoPosition::First) => core.first_choice_attempts += 1,
+            Some(AutoPosition::Fallback) => core.fallback_attempts += 1,
             None => {}
         }
 
         match outcome.result {
             Ok(latency_ms) => {
-                entry.successes += 1;
-                entry.total_latency_ms += latency_ms;
-                if latency_ms > entry.max_latency_ms {
-                    entry.max_latency_ms = latency_ms;
+                core.successes += 1;
+                core.total_latency_ms += latency_ms;
+                if latency_ms > core.max_latency_ms {
+                    core.max_latency_ms = latency_ms;
                 }
-                entry.last_success_at = Some(now);
+                core.last_success_at = Some(now);
                 if matches!(outcome.position, Some(AutoPosition::Fallback)) {
-                    entry.fallback_successes += 1;
+                    core.fallback_successes += 1;
                 }
             }
             Err(kind) => {
                 *entry.failures_by_kind.entry(kind).or_insert(0) += 1;
-                entry.last_failure_at = Some(now);
+                entry.core.last_failure_at = Some(now);
             }
         }
     }
@@ -393,7 +392,7 @@ impl SearchStats {
         let engines = self.engines.lock().unwrap();
         let globals = self.globals.lock().unwrap();
         let mut list: Vec<EngineSessionStats> = engines.values().cloned().collect();
-        list.sort_by(|a, b| a.engine.cmp(&b.engine));
+        list.sort_by(|a, b| a.core.engine.cmp(&b.core.engine));
         SessionStatsSnapshot {
             engines: list,
             globals: globals.clone(),
@@ -445,19 +444,23 @@ mod tests {
         );
 
         let snap = s.snapshot();
-        let e = snap.engines.iter().find(|e| e.engine == "ddg").unwrap();
-        assert_eq!(e.attempts, 3);
-        assert_eq!(e.successes, 2);
-        assert_eq!(e.total_latency_ms, 400);
-        assert_eq!(e.max_latency_ms, 300);
-        assert_eq!(e.first_choice_attempts, 3);
-        assert_eq!(e.fallback_attempts, 0);
+        let e = snap
+            .engines
+            .iter()
+            .find(|e| e.core.engine == "ddg")
+            .unwrap();
+        assert_eq!(e.core.attempts, 3);
+        assert_eq!(e.core.successes, 2);
+        assert_eq!(e.core.total_latency_ms, 400);
+        assert_eq!(e.core.max_latency_ms, 300);
+        assert_eq!(e.core.first_choice_attempts, 3);
+        assert_eq!(e.core.fallback_attempts, 0);
         assert_eq!(
             e.failures_by_kind.get(&SearchFailureKind::RateLimited),
             Some(&1)
         );
-        assert!(e.last_success_at.is_some());
-        assert!(e.last_failure_at.is_some());
+        assert!(e.core.last_success_at.is_some());
+        assert!(e.core.last_failure_at.is_some());
     }
 
     #[test]
@@ -467,10 +470,14 @@ mod tests {
         s.record_outcome("ddg", &success(200, Some(AutoPosition::Fallback)));
 
         let snap = s.snapshot();
-        let ddg = snap.engines.iter().find(|e| e.engine == "ddg").unwrap();
-        assert_eq!(ddg.fallback_attempts, 1);
-        assert_eq!(ddg.fallback_successes, 1);
-        assert_eq!(ddg.first_choice_attempts, 0);
+        let ddg = snap
+            .engines
+            .iter()
+            .find(|e| e.core.engine == "ddg")
+            .unwrap();
+        assert_eq!(ddg.core.fallback_attempts, 1);
+        assert_eq!(ddg.core.fallback_successes, 1);
+        assert_eq!(ddg.core.first_choice_attempts, 0);
     }
 
     #[test]
@@ -481,10 +488,18 @@ mod tests {
 
         let snap = s.snapshot();
         assert_eq!(snap.engines.len(), 2);
-        let ddg = snap.engines.iter().find(|e| e.engine == "ddg").unwrap();
-        let m = snap.engines.iter().find(|e| e.engine == "mojeek").unwrap();
-        assert_eq!(ddg.successes, 1);
-        assert_eq!(m.successes, 0);
+        let ddg = snap
+            .engines
+            .iter()
+            .find(|e| e.core.engine == "ddg")
+            .unwrap();
+        let m = snap
+            .engines
+            .iter()
+            .find(|e| e.core.engine == "mojeek")
+            .unwrap();
+        assert_eq!(ddg.core.successes, 1);
+        assert_eq!(m.core.successes, 0);
         assert_eq!(m.failures_by_kind.get(&SearchFailureKind::Parse), Some(&1));
     }
 

@@ -4,6 +4,7 @@
 //! sandboxed to the active working directory. The doc-builders, sandbox
 //! commands, and the python-lint helper all consume the same primitive.
 
+use super::fuzzy::{apply_edit, EditResult};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -132,7 +133,7 @@ fn resolve_nonexistent(candidate: &Path) -> Result<PathBuf, String> {
 /// `PathBuf`, validating that it actually points at a directory.
 /// Used as the first step in every fs_* read command — reads against a
 /// missing workdir should fail loudly rather than conjure an empty dir.
-pub(super) fn workdir_path(workdir: &str) -> Result<PathBuf, String> {
+pub(crate) fn workdir_path(workdir: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(workdir);
     if !path.is_dir() {
         return Err(format!("Working directory does not exist: {}", workdir));
@@ -259,6 +260,70 @@ pub(super) fn render_text_read(
     }
 
     Ok(out)
+}
+
+/// Shared command body for the text readers (`fs_read_text` /
+/// `fs_read_text_absolute`) after path resolution: stat against the load
+/// ceiling, read the bytes, then render via [`render_text_read`].
+/// `binary_msg` is the variant-specific rejection for binary input — the
+/// workdir and absolute commands suggest different format-specific tools.
+pub(super) async fn read_text_at(
+    resolved: &Path,
+    offset: Option<u32>,
+    limit: Option<u32>,
+    binary_msg: &str,
+) -> Result<String, String> {
+    let metadata = fs::metadata(resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_READ_LOAD_BYTES {
+        return Err(format!(
+            "File too large to load ({} bytes, max {} MB). Read it in slices with the offset/limit parameters or via the shell (head/sed).",
+            metadata.len(),
+            MAX_READ_LOAD_BYTES / 1_048_576
+        ));
+    }
+
+    let bytes = fs::read(resolved)
+        .await
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    render_text_read(bytes, offset, limit, binary_msg)
+}
+
+/// Shared command body for the text editors (`fs_edit_text` /
+/// `fs_edit_text_absolute`) after path resolution: stat against the edit
+/// cap, read, apply the fuzzy find-and-replace, and write back. `display`
+/// is the caller-facing path used in `apply_edit`'s error messages
+/// (workdir-relative for the chat tools, absolute for the shell tools).
+pub(super) async fn edit_text_at(
+    resolved: &Path,
+    old_str: &str,
+    new_str: &str,
+    display: &str,
+) -> Result<EditResult, String> {
+    let metadata = fs::metadata(resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_TEXT_READ_BYTES {
+        return Err(format!(
+            "File too large to edit ({} bytes). Maximum is {} bytes.",
+            metadata.len(),
+            MAX_TEXT_READ_BYTES
+        ));
+    }
+
+    let content = fs::read_to_string(resolved)
+        .await
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let outcome = apply_edit(&content, old_str, new_str, display)?;
+    fs::write(resolved, outcome.new_content)
+        .await
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+    Ok(outcome.result)
 }
 
 /// Stat `resolved` and error if it exceeds `max` bytes. `fmt` names the

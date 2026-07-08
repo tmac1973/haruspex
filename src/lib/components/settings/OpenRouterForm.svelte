@@ -17,11 +17,14 @@
 		FREE_MODEL_NO_CREDITS_RPD,
 		FREE_MODEL_HAS_CREDITS_RPD,
 		isOpenRouterVisionCapable,
+		openRouterModelCaps,
+		pickOpenRouterModel,
 		type OpenRouterModel,
 		type OpenRouterKeyStatus
 	} from '$lib/openrouter';
 	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
 	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
+	import ToggleField from '$lib/components/ToggleField.svelte';
 
 	interface Props {
 		config: InferenceBackendConfig;
@@ -59,10 +62,7 @@
 			const models = await fetchOpenRouterCatalog();
 			catalog = models;
 			// Default to openrouter/auto on first load, or keep the last-used model.
-			if (!modelId || !models.some((m) => m.id === modelId)) {
-				const auto = models.find((m) => m.id === 'openrouter/auto');
-				modelId = auto ? auto.id : (models[0]?.id ?? '');
-			}
+			modelId = pickOpenRouterModel(models, modelId);
 			commit({
 				openrouterCatalog: models,
 				openrouterCatalogAt: Date.now(),
@@ -78,9 +78,10 @@
 
 	function autoModelFields(m: OpenRouterModel | undefined): Partial<InferenceBackendConfig> {
 		if (!m) return {};
+		const caps = openRouterModelCaps(m);
 		const partial: Partial<InferenceBackendConfig> = {
-			remoteContextSize: m.context_length,
-			remoteVisionSupported: isOpenRouterVisionCapable(m)
+			remoteContextSize: caps.contextSize,
+			remoteVisionSupported: caps.vision
 		};
 		if (m.reasoning) {
 			partial.openrouterReasoningEffort = m.reasoning.default_effort;
@@ -249,44 +250,27 @@
 	</div>
 
 	<div class="field">
-		<label class="toggle-row">
-			<input
-				type="checkbox"
-				checked={config.remoteVisionSupported === true}
-				onchange={(e) => onVisionToggle((e.target as HTMLInputElement).checked)}
-			/>
-			<div>
-				<strong>This model supports vision (image input)</strong>
-				<span>
-					{#if selectedModel && isOpenRouterVisionCapable(selectedModel)}
-						Detected from the model's input modalities.
-					{:else}
-						Auto-detected; override only if you know the model is multimodal.
-					{/if}
-				</span>
-			</div>
-		</label>
+		<ToggleField
+			checked={config.remoteVisionSupported === true}
+			onchange={onVisionToggle}
+			title="This model supports vision (image input)"
+			description={selectedModel && isOpenRouterVisionCapable(selectedModel)
+				? "Detected from the model's input modalities."
+				: 'Auto-detected; override only if you know the model is multimodal.'}
+		/>
 	</div>
 
 	<div class="field">
-		<label class="toggle-row">
-			<input
-				type="checkbox"
-				checked={config.allowParallelInference}
-				onchange={(e) => onParallelToggle((e.target as HTMLInputElement).checked)}
-			/>
-			<div>
-				<strong>Allow parallel inference</strong>
-				<span>
-					OpenRouter is a hosted API and handles concurrent requests. On by default; turn off only
-					if you want chat and job turns serialized.
-				</span>
-			</div>
-		</label>
+		<ToggleField
+			checked={config.allowParallelInference}
+			onchange={onParallelToggle}
+			title="Allow parallel inference"
+			description="OpenRouter is a hosted API and handles concurrent requests. On by default; turn off only if you want chat and job turns serialized."
+		/>
 	</div>
 
 	{#if error}
-		<p class="error">✗ {error}</p>
+		<p class="error-box">✗ {error}</p>
 	{/if}
 </div>
 
@@ -307,42 +291,11 @@
 		margin: 0;
 	}
 
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.field label {
-		font-size: 0.85rem;
-		font-weight: 500;
-	}
-
-	.field input[type='number'],
-	.field select {
-		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		font-size: 0.85rem;
-	}
-
 	.hint-row {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		gap: 8px;
-	}
-
-	.hint {
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		margin: 0;
-	}
-
-	.hint a {
-		color: var(--accent);
 	}
 
 	.credits-badge {
@@ -375,69 +328,10 @@
 		flex: 1;
 	}
 
-	.toggle-row {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		cursor: pointer;
-	}
-
-	.toggle-row input[type='checkbox'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.toggle-row strong {
-		display: block;
-		font-size: 0.85rem;
-	}
-
-	.toggle-row span {
-		display: block;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
 	.toggle-row.small {
 		font-size: 0.78rem;
 		color: var(--text-secondary);
 		align-items: center;
 		margin-top: 4px;
-	}
-
-	.btn {
-		padding: 6px 14px;
-		border-radius: 6px;
-		font-size: 0.8rem;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-		flex: none;
-	}
-
-	.btn:hover:not(:disabled) {
-		opacity: 0.9;
-	}
-
-	.btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.btn-small {
-		padding: 4px 10px;
-		font-size: 0.78rem;
-	}
-
-	.error {
-		padding: 8px 12px;
-		border: 1px solid var(--error-border);
-		border-radius: 6px;
-		background: var(--error-bg);
-		color: var(--error-text);
-		font-size: 0.8rem;
-		margin: 0;
 	}
 </style>

@@ -17,6 +17,7 @@
 import type { ChatMessage } from '$lib/api';
 import type { SessionContext } from '$lib/ipc/gen/SessionContext';
 import { getSettings } from '$lib/stores/settings';
+import { formatTodayLong } from '$lib/utils/format';
 
 /** Re-export of the ts-rs-generated Rust `SessionContext` under the
  *  name this module historically used. */
@@ -34,20 +35,27 @@ export interface BuildShellPromptOpts {
  * shell (shared venv/env/cwd) and appear in the user's scrollback — and gets
  * the lean code toolset rooted at the current directory.
  */
-export function buildShellCodeSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
-	const today = new Date().toLocaleDateString('en-US', {
-		weekday: 'long',
-		year: 'numeric',
-		month: 'long',
-		day: 'numeric'
-	});
-
+/**
+ * Environment + cwd + recent-commands block shared by both shell prompts.
+ * The labels differ on purpose (the Code-mode prompt says "activity", the
+ * chat prompt says "history"), so they're parameters rather than constants.
+ */
+function buildSessionBlock(
+	opts: BuildShellPromptOpts,
+	cwdLabel: string,
+	historyLabel: string
+): string {
 	const env = describeEnvironment(opts.sessionContext);
-	const cwd = opts.currentCwd ? `Current directory: ${opts.currentCwd}` : '';
+	const cwd = opts.currentCwd ? `${cwdLabel}: ${opts.currentCwd}` : '';
 	const history = opts.recentHistory.length
-		? `Recent shell activity (most recent last):\n${opts.recentHistory.map((c) => `  ${c}`).join('\n')}`
+		? `${historyLabel} (most recent last):\n${opts.recentHistory.map((c) => `  ${c}`).join('\n')}`
 		: '';
-	const sessionBlock = [env, cwd, history].filter(Boolean).join('\n');
+	return [env, cwd, history].filter(Boolean).join('\n');
+}
+
+export function buildShellCodeSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
+	const today = formatTodayLong();
+	const sessionBlock = buildSessionBlock(opts, 'Current directory', 'Recent shell activity');
 
 	const custom = getSettings().customSystemPrompt?.trim();
 	const customBlock = custom ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}` : '';
@@ -100,20 +108,8 @@ HOW TO WORK:
 }
 
 export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
-	const today = new Date().toLocaleDateString('en-US', {
-		weekday: 'long',
-		year: 'numeric',
-		month: 'long',
-		day: 'numeric'
-	});
-
-	const env = describeEnvironment(opts.sessionContext);
-	const cwd = opts.currentCwd ? `Current working directory: ${opts.currentCwd}` : '';
-	const history = opts.recentHistory.length
-		? `Recent shell history (most recent last):\n${opts.recentHistory.map((c) => `  ${c}`).join('\n')}`
-		: '';
-
-	const sessionBlock = [env, cwd, history].filter(Boolean).join('\n');
+	const today = formatTodayLong();
+	const sessionBlock = buildSessionBlock(opts, 'Current working directory', 'Recent shell history');
 
 	// PowerShell sessions need PowerShell-flavored suggestions in a fenced
 	// `powershell` block (so the UI renders a Run/Paste card) and Windows

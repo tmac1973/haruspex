@@ -367,7 +367,8 @@ export interface AppSettings {
 	codeMaxIterations: number;
 }
 
-const SETTINGS_KEY = 'haruspex-settings';
+/** Exported for the chat store's one-time legacy working-dir migration. */
+export const SETTINGS_KEY = 'haruspex-settings';
 
 const defaultInferenceBackend: InferenceBackendConfig = {
 	mode: 'local',
@@ -821,6 +822,13 @@ interface ModelSamplingProfiles {
  * 27B, whose card uses `presence_penalty=0.0` (not 1.5) for thinking/general
  * — hence the separate `qwen3.6-27b` family.
  */
+// The published non-thinking profile is identical across the whole Qwen
+// lineup — shared so the two families can't drift apart silently.
+const QWEN_NONTHINKING: ModelSamplingProfiles['nonThinking'] = {
+	general: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 },
+	coding: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 }
+};
+
 const SAMPLING_PROFILES: Record<string, ModelSamplingProfiles> = {
 	// Qwen 3.5 4B/9B and Qwen 3.6 35B-A3B (sparse) — identical published profiles.
 	'qwen3.5': {
@@ -828,10 +836,7 @@ const SAMPLING_PROFILES: Record<string, ModelSamplingProfiles> = {
 			general: { temperature: 1.0, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 1.5 },
 			coding: { temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 0.0 }
 		},
-		nonThinking: {
-			general: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 },
-			coding: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 }
-		}
+		nonThinking: QWEN_NONTHINKING
 	},
 	// Qwen 3.6 dense 27B — thinking/general uses presence_penalty 0.0.
 	'qwen3.6-27b': {
@@ -839,10 +844,7 @@ const SAMPLING_PROFILES: Record<string, ModelSamplingProfiles> = {
 			general: { temperature: 1.0, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 0.0 },
 			coding: { temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 0.0 }
 		},
-		nonThinking: {
-			general: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 },
-			coding: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 }
-		}
+		nonThinking: QWEN_NONTHINKING
 	}
 };
 

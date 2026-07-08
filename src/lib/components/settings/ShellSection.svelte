@@ -249,8 +249,6 @@
 	}
 
 	.hint {
-		color: var(--text-secondary);
-		font-size: 0.78rem;
 		margin: 6px 0 0;
 		font-style: italic;
 	}

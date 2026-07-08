@@ -46,7 +46,7 @@
 			<input type="checkbox" bind:checked={dontShowAgain} />
 			Don't show this again
 		</label>
-		<button class="btn" onclick={dismiss}>Got it</button>
+		<button class="btn btn-primary" onclick={dismiss}>Got it</button>
 	</div>
 </Modal>
 
@@ -79,20 +79,5 @@
 
 	.checkbox-row input {
 		accent-color: var(--accent);
-	}
-
-	.btn {
-		padding: 8px 20px;
-		border-radius: 6px;
-		font-size: 0.85rem;
-		cursor: pointer;
-		border: none;
-		background: var(--accent);
-		color: white;
-		font-weight: 500;
-	}
-
-	.btn:hover {
-		opacity: 0.9;
 	}
 </style>

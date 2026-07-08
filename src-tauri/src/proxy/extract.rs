@@ -37,16 +37,7 @@ pub(super) async fn fetch_and_extract(
 
     let client = build_fetch_client(proxy)?;
 
-    let response = client
-        .get(url)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .map_err(|e| format!("Fetch failed: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("Fetch failed with status: {}", response.status()));
-    }
+    let response = fetch_ok(&client, url).await?;
 
     // Check content type
     let content_type = response
@@ -145,6 +136,28 @@ pub(super) fn build_fetch_client(proxy: Option<&ProxyConfig>) -> Result<reqwest:
     )?
     .build()
     .map_err(|e| format!("Failed to create HTTP client: {}", e))
+}
+
+/// GET `url` with the shared browser [`USER_AGENT`] and reject any
+/// non-2xx response. The page and image fetch paths share this so the
+/// send/status idiom (and its exact error strings, which reach the
+/// model/UI verbatim) can't drift between them.
+pub(super) async fn fetch_ok(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<reqwest::Response, String> {
+    let response = client
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+        .map_err(|e| format!("Fetch failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Fetch failed with status: {}", response.status()));
+    }
+
+    Ok(response)
 }
 
 pub(super) fn is_private_ip(ip: &IpAddr) -> bool {

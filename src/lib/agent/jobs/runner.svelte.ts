@@ -44,7 +44,7 @@ import { getJob, type JobWithSteps, type JobType } from '$lib/stores/jobs.svelte
 import { askUserQuestion } from '$lib/stores/userQuestion.svelte';
 import { getActiveContextSize, isVisionSupported } from '$lib/stores/settings';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
-import { errMessage } from '$lib/utils/error';
+import { errMessage, normalizeAbort } from '$lib/utils/error';
 import {
 	createJobRun,
 	markRunFinished,
@@ -530,8 +530,7 @@ async function runOneStep(
 		void markRunStepFinished(runId, stepIndex, 'succeeded', finalText, null, finishedAt);
 		return { ok: true, output: finalText };
 	} catch (e) {
-		const aborted = e instanceof DOMException && e.name === 'AbortError';
-		const msg = aborted ? 'Cancelled by user' : errMessage(e);
+		const { aborted, msg } = normalizeAbort(e);
 		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
 		const finishedAt = Date.now();
 		patchStep(runId, stepIndex, {
@@ -1227,8 +1226,7 @@ async function runGuidedPlanningPipeline(
 
 		finalizeRun(runId, job.id, 'succeeded', null);
 	} catch (e) {
-		const aborted = e instanceof DOMException && e.name === 'AbortError';
-		const msg = aborted ? 'Cancelled by user' : errMessage(e);
+		const { aborted, msg } = normalizeAbort(e);
 		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
 		const finishedAt = Date.now();
 		// Mark whichever stage was live when the error/cancel hit.
@@ -1305,8 +1303,7 @@ async function runAuditPipeline(
 		void markRunStepFinished(runId, synthesisIndex, 'succeeded', output, null, finishedAt);
 		finalizeRun(runId, job.id, 'succeeded', null);
 	} catch (e) {
-		const aborted = e instanceof DOMException && e.name === 'AbortError';
-		const msg = aborted ? 'Cancelled by user' : errMessage(e);
+		const { aborted, msg } = normalizeAbort(e);
 		const status: RunStatus = aborted ? 'cancelled' : 'failed';
 		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
 		const liveStep = current?.id === runId ? current.currentStepIndex : 0;

@@ -3,7 +3,9 @@ import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
 import { downloadModelWithProgress } from '$lib/models/download';
 import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
 import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
-import { errMessage } from '$lib/utils/error';
+import { errMessage, isAbortError } from '$lib/utils/error';
+import { sleep } from '$lib/utils/async';
+import { readSseData } from '$lib/api';
 import { PORTS, baseUrl } from '$lib/ports';
 import {
 	getActiveLocalModelFilename,
@@ -198,7 +200,7 @@ type ServerReadyOutcome = { ok: true } | { ok: false; message: string };
 async function waitForServerReady(alreadyReady: boolean): Promise<ServerReadyOutcome> {
 	if (alreadyReady) return { ok: true };
 	for (let i = 0; i < 600; i++) {
-		await new Promise((r) => setTimeout(r, 500));
+		await sleep(500);
 		const status = await invoke<SidecarStatus>('get_server_status');
 		if (status.type === 'Ready') return { ok: true };
 		if (status.type === 'Error') {
@@ -283,7 +285,7 @@ async function streamTestMessage(): Promise<void> {
 		}
 	} catch (e) {
 		clearTimeout(idleTimer);
-		if (e instanceof DOMException && e.name === 'AbortError') {
+		if (isAbortError(e)) {
 			testStatusMessage =
 				'The model is responding very slowly. This is normal for integrated graphics — you can skip the test and try chatting normally.';
 		} else {
@@ -305,26 +307,15 @@ async function readSseContent(
 	onChunk: () => void,
 	onFirstToken: () => void
 ): Promise<string> {
-	const decoder = new TextDecoder();
-	let buffer = '';
 	let collected = '';
 	let firstTokenSeen = false;
-
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		onChunk();
-		buffer += decoder.decode(value, { stream: true });
-		const lines = buffer.split('\n');
-		buffer = lines.pop() || '';
-		for (const line of lines) {
-			const text = parseSseDelta(line);
-			if (text) {
-				collected += text;
-				if (!firstTokenSeen) {
-					firstTokenSeen = true;
-					onFirstToken();
-				}
+	for await (const data of readSseData(reader, onChunk)) {
+		const text = parseSseDelta(data);
+		if (text) {
+			collected += text;
+			if (!firstTokenSeen) {
+				firstTokenSeen = true;
+				onFirstToken();
 			}
 		}
 	}
@@ -332,15 +323,11 @@ async function readSseContent(
 }
 
 /**
- * Extract the delta content (text or reasoning) from one SSE line, or
- * null for keep-alives, the `[DONE]` sentinel, non-data lines, empty
- * deltas, and malformed JSON.
+ * Extract the delta content (text or reasoning) from one SSE `data:`
+ * payload, or null for empty deltas and malformed JSON. Framing (keep-alives,
+ * `[DONE]`, non-data lines) is handled by `readSseData`.
  */
-function parseSseDelta(line: string): string | null {
-	const trimmed = line.trim();
-	if (!trimmed.startsWith('data: ')) return null;
-	const data = trimmed.slice(6);
-	if (data === '[DONE]') return null;
+function parseSseDelta(data: string): string | null {
 	try {
 		const parsed = JSON.parse(data);
 		const delta = parsed.choices?.[0]?.delta;

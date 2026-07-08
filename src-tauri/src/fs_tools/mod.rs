@@ -19,11 +19,16 @@ pub mod xlsx;
 mod test_support;
 
 pub use path::resolve_in_workdir;
+pub(crate) use path::workdir_path;
 pub use pdf_read::init_pdfium;
 
 use images::{load_markdown_images, LoadedImage};
-use path::{refuse_if_exists, workdir_path_for_write, write_bytes_to_workdir, MAX_WRITE_BYTES};
+use path::{
+    refuse_if_exists, stat_within_limit, workdir_path_for_write, write_bytes_to_workdir,
+    MAX_DOC_READ_BYTES, MAX_WRITE_BYTES,
+};
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Shared command body for the markdown-text document writers (docx / odt /
 /// pdf). Resolves and guards the destination (write-size cap + overwrite
@@ -72,6 +77,47 @@ pub(super) async fn write_markdown_document(
     .map_err(|e| format!("{} build task failed: {}", format, e))??;
 
     write_bytes_to_workdir(&resolved, &bytes).await
+}
+
+/// Shared command body for the document readers (docx / xlsx / pdf) — the
+/// read-side twin of [`write_markdown_document`]. Resolves and guards the
+/// source (must be a file, within the doc-read size cap), then runs
+/// `extract` on a blocking thread. `fmt` names the format in error
+/// messages (e.g. "PDF" / "xlsx" / "docx").
+///
+/// The image reader doesn't share this: it has its own (smaller) size cap
+/// and error phrasing.
+pub(super) async fn read_document_blocking(
+    workdir: String,
+    rel_path: String,
+    fmt: &str,
+    extract: impl FnOnce(&Path) -> Result<String, String> + Send + 'static,
+) -> Result<String, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    extract_document_blocking(&resolved, fmt, extract).await
+}
+
+/// Stat-guard + `spawn_blocking` tail of [`read_document_blocking`], split
+/// out so the absolute-path PDF reader (which resolves its own path) can
+/// share it.
+pub(super) async fn extract_document_blocking(
+    resolved: &Path,
+    fmt: &str,
+    extract: impl FnOnce(&Path) -> Result<String, String> + Send + 'static,
+) -> Result<String, String> {
+    stat_within_limit(resolved, MAX_DOC_READ_BYTES, fmt).await?;
+
+    let resolved = resolved.to_path_buf();
+    let fmt = fmt.to_string();
+    tokio::task::spawn_blocking(move || extract(&resolved))
+        .await
+        .map_err(|e| format!("{} extraction task failed: {}", fmt, e))?
 }
 
 #[cfg(test)]

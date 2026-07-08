@@ -122,6 +122,21 @@ fn is_integrated_gpu(name: &str) -> bool {
     false
 }
 
+/// Success tail shared by the Linux and Windows Vulkan probes: wrap a
+/// detected adapter into a `GpuInfo`, classifying integrated-vs-discrete
+/// from the adapter name.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn vulkan_gpu_info(name: Option<String>, vram_mb: Option<u64>) -> GpuInfo {
+    let integrated = name.as_deref().map(is_integrated_gpu).unwrap_or(false);
+    GpuInfo {
+        available: true,
+        name,
+        api: Some("Vulkan".to_string()),
+        vram_mb,
+        integrated,
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn detect_gpu() -> GpuInfo {
     let vulkan_available = Path::new("/usr/lib/libvulkan.so").exists()
@@ -156,17 +171,7 @@ fn detect_gpu() -> GpuInfo {
         };
     }
 
-    let gpu_name = get_linux_gpu_name();
-    let vram_mb = get_linux_vram_mb();
-    let integrated = gpu_name.as_deref().map(is_integrated_gpu).unwrap_or(false);
-
-    GpuInfo {
-        available: true,
-        name: gpu_name,
-        api: Some("Vulkan".to_string()),
-        vram_mb,
-        integrated,
-    }
+    vulkan_gpu_info(get_linux_gpu_name(), get_linux_vram_mb())
 }
 
 #[cfg(target_os = "linux")]
@@ -283,15 +288,7 @@ fn detect_gpu() -> GpuInfo {
     }
 
     let (gpu_name, vram_mb) = get_windows_gpu_info();
-    let integrated = gpu_name.as_deref().map(is_integrated_gpu).unwrap_or(false);
-
-    GpuInfo {
-        available: true,
-        name: gpu_name,
-        api: Some("Vulkan".to_string()),
-        vram_mb,
-        integrated,
-    }
+    vulkan_gpu_info(gpu_name, vram_mb)
 }
 
 #[cfg(target_os = "windows")]

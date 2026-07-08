@@ -10,8 +10,9 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use crate::sidecar_utils::{
-    base_url, http_client, kill_child, kill_process_on_port, new_log_buffer, poll_health, ports,
-    spawn_log_reader, timing, with_library_paths, LogBuffer, SidecarStatus, LOOPBACK,
+    base_url, clear_logs, http_client, kill_child, kill_process_on_port, new_log_buffer,
+    poll_health, ports, snapshot_logs, spawn_log_reader, timing, with_library_paths, LogBuffer,
+    SidecarStatus, LOOPBACK,
 };
 
 const TTS_PORT: u16 = ports::TTS;
@@ -213,13 +214,11 @@ impl TtsEngine {
     }
 
     pub async fn get_logs(&self) -> Vec<String> {
-        let buffer = self.log_buffer.lock().await;
-        buffer.iter().cloned().collect()
+        snapshot_logs(&self.log_buffer).await
     }
 
     pub async fn clear_logs(&self) {
-        let mut buffer = self.log_buffer.lock().await;
-        buffer.clear();
+        clear_logs(&self.log_buffer).await;
     }
 
     pub async fn synthesize_and_play(

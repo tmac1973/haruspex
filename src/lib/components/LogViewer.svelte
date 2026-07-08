@@ -2,6 +2,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { IPC } from '$lib/ipc/commands';
 	import { onMount } from 'svelte';
+	import { dismissable } from '$lib/actions/dismissable';
 	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
 	import { createCopyAction } from '$lib/utils/clipboard.svelte';
 	import type { CombinedSearchStats } from '$lib/ipc/gen/CombinedSearchStats';
@@ -271,18 +272,6 @@
 		startPolling();
 	}
 
-	function handleBackdropMousedown(e: MouseEvent) {
-		if (e.target === e.currentTarget) {
-			onclose();
-		}
-	}
-
-	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') {
-			onclose();
-		}
-	}
-
 	const copyLogs = createCopyAction();
 	let clearState = $state<'idle' | 'cleared'>('idle');
 
@@ -328,11 +317,8 @@
 	});
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
 {#if open}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="backdrop" onmousedown={handleBackdropMousedown}>
+	<div class="backdrop" use:dismissable={onclose}>
 		<div class="modal">
 			<div class="modal-header">
 				<div class="tabs">
@@ -375,7 +361,7 @@
 							{copyLogs.state === 'copied' ? 'Copied!' : 'Copy all'}
 						</button>
 					{/if}
-					<button class="close-btn" onclick={onclose} title="Close">&times;</button>
+					<button class="modal-close" onclick={onclose} title="Close">&times;</button>
 				</div>
 			</div>
 			<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
@@ -611,22 +597,6 @@
 		color: var(--accent);
 		border-color: var(--accent);
 		background: color-mix(in srgb, var(--accent) 10%, transparent);
-	}
-
-	.close-btn {
-		background: none;
-		border: none;
-		font-size: 1.4rem;
-		cursor: pointer;
-		color: var(--text-secondary);
-		padding: 4px 8px;
-		line-height: 1;
-		border-radius: 4px;
-	}
-
-	.close-btn:hover {
-		color: var(--text-primary);
-		background: var(--bg-secondary);
 	}
 
 	.log-area {

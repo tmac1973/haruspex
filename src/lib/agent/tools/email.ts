@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { isAbortError } from '$lib/utils/error';
 import { type ChatMessage } from '$lib/api';
 import { getSettings } from '$lib/stores/settings';
 import { runSubAgent, toolInvokeError } from './_helpers';
@@ -250,7 +251,7 @@ registerTool({
 				})
 			);
 		} catch (e) {
-			if (e instanceof DOMException && e.name === 'AbortError') throw e;
+			if (isAbortError(e)) throw e;
 			return toolResult(toolInvokeError('email_summarize_message sub-agent', e));
 		}
 	}

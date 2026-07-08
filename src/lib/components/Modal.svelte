@@ -12,12 +12,14 @@
 	 *  - `title`        → renders a header row (title + × close button) and
 	 *                     a scrollable body. Omit it to render children
 	 *                     directly in the padded box (the original layout).
-	 *  - `dismissable`  → Esc and backdrop-click call `onclose`.
+	 *  - `dismissable`  → Esc and backdrop mousedown call `onclose` (via the
+	 *                     shared `dismissable` action).
 	 *
 	 * Pair with ModalButton for the action row to keep button styling
 	 * consistent across modals.
 	 */
 	import type { Snippet } from 'svelte';
+	import { dismissable as dismissableAction } from '$lib/actions/dismissable';
 
 	interface Props {
 		open: boolean;
@@ -44,27 +46,15 @@
 		onclose,
 		children
 	}: Props = $props();
-
-	function onKeydown(e: KeyboardEvent) {
-		if (!open || !dismissable) return;
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			onclose?.();
-		}
-	}
-
-	function onBackdropClick(e: MouseEvent) {
-		if (!dismissable) return;
-		if (e.target === e.currentTarget) onclose?.();
-	}
 </script>
 
-<svelte:window onkeydown={onKeydown} />
-
 {#if open}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal-backdrop" onclick={onBackdropClick}>
+	<div
+		class="modal-backdrop"
+		use:dismissableAction={() => {
+			if (dismissable) onclose?.();
+		}}
+	>
 		<div
 			class="modal"
 			class:has-header={title}
@@ -132,21 +122,6 @@
 	.modal.has-header .modal-head h2 {
 		margin: 0;
 		font-size: 1.15rem;
-		color: var(--text-primary);
-	}
-
-	.modal-close {
-		background: none;
-		border: none;
-		color: var(--text-secondary);
-		font-size: 1.4rem;
-		line-height: 1;
-		cursor: pointer;
-		padding: 0 4px;
-		border-radius: 4px;
-	}
-
-	.modal-close:hover {
 		color: var(--text-primary);
 	}
 

@@ -4,7 +4,6 @@
 
 use super::images::LoadedImage;
 use super::markdown_inline::ImageAlignment;
-use super::path::{resolve_in_workdir, stat_within_limit, workdir_path, MAX_DOC_READ_BYTES};
 use std::path::Path;
 
 /// Extract text from a .docx file by reading word/document.xml from the zip
@@ -341,19 +340,7 @@ pub async fn fs_write_docx(
 
 #[tauri::command]
 pub async fn fs_read_docx(workdir: String, rel_path: String) -> Result<String, String> {
-    let workdir = workdir_path(&workdir)?;
-    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
-
-    if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
-    }
-
-    stat_within_limit(&resolved, MAX_DOC_READ_BYTES, "docx").await?;
-
-    let resolved_clone = resolved.clone();
-    let text = tokio::task::spawn_blocking(move || extract_docx_text(&resolved_clone))
-        .await
-        .map_err(|e| format!("docx extraction task failed: {}", e))??;
+    let text = super::read_document_blocking(workdir, rel_path, "docx", extract_docx_text).await?;
 
     if text.is_empty() {
         return Err("docx has no extractable text".to_string());
