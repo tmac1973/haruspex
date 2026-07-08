@@ -219,37 +219,29 @@ impl InferenceQueue {
     /// Cancel a still-waiting ticket (abort-before-grant). No-op once the
     /// ticket is running — that path goes through `release`.
     fn cancel(&self, req_id: &str) -> bool {
-        let mut inner = match self.inner.lock() {
-            Ok(i) => i,
-            Err(_) => return false,
-        };
-        let pos = inner
-            .tickets
-            .iter()
-            .position(|t| t.id == req_id && t.state == TicketState::Waiting);
-        match pos {
-            Some(pos) => {
-                inner.tickets.remove(pos);
-                inner.senders.remove(req_id); // drop -> receiver errors -> "cancelled"
-                inner.pump();
-                true
-            }
-            None => false,
-        }
+        self.remove_ticket_where(|t| t.id == req_id && t.state == TicketState::Waiting)
     }
 
     /// Release a held (or still-waiting) slot and admit the next waiter in the
     /// freed lane.
     fn release(&self, req_id: &str) -> bool {
+        self.remove_ticket_where(|t| t.id == req_id)
+    }
+
+    /// Shared removal core for `cancel` / `release`: drop the first ticket
+    /// matching `pred` (ids are unique, so there is at most one), drop its
+    /// sender (if it was still waiting, its receiver errors → "cancelled"),
+    /// and pump the freed lane. Returns whether a ticket was removed.
+    fn remove_ticket_where(&self, pred: impl Fn(&Ticket) -> bool) -> bool {
         let mut inner = match self.inner.lock() {
             Ok(i) => i,
             Err(_) => return false,
         };
-        let pos = inner.tickets.iter().position(|t| t.id == req_id);
+        let pos = inner.tickets.iter().position(pred);
         match pos {
             Some(pos) => {
-                inner.tickets.remove(pos);
-                inner.senders.remove(req_id);
+                let removed = inner.tickets.remove(pos);
+                inner.senders.remove(&removed.id);
                 inner.pump();
                 true
             }
