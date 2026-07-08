@@ -1,9 +1,8 @@
 /**
  * Render a sandbox run result as the text handed back to the model / stored
  * in the transcript. This is a leaf module (no imports) on purpose: both the
- * run_python tool (`$lib/agent/tools/sandbox`) and the chat store
- * (`$lib/stores/chat.svelte`) need it, and the chat store must not import
- * the agent tools module (circular).
+ * run_python tool (`$lib/agent/tools/sandbox`) and the chat store need it,
+ * and the chat store must not import the agent tools module (circular).
  */
 
 /** Structural subset of `ToolResult` (from `$lib/sandbox/sandbox`) needed to render. */
