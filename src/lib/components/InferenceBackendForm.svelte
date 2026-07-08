@@ -336,7 +336,7 @@
 			</span>
 		{/if}
 		{#if probeError}
-			<span class="probe-status error">✗ {probeError}</span>
+			<span class="probe-status error-text">✗ {probeError}</span>
 		{/if}
 	</div>
 
@@ -461,29 +461,6 @@
 		gap: 16px;
 	}
 
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.field label {
-		font-size: 0.85rem;
-		font-weight: 500;
-	}
-
-	.field input[type='text'],
-	.field input[type='number'],
-	.field select {
-		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		font-size: 0.9rem;
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
-		color-scheme: light dark;
-	}
-
 	.field input[readonly] {
 		opacity: 0.7;
 	}
@@ -548,23 +525,6 @@
 		min-width: 0;
 	}
 
-	.url-row .btn {
-		flex-shrink: 0;
-	}
-
-	.hint {
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		margin: 2px 0 0 0;
-	}
-
-	.hint code {
-		background: var(--bg-secondary);
-		padding: 1px 4px;
-		border-radius: 3px;
-		font-size: 0.72rem;
-	}
-
 	.test-row {
 		display: flex;
 		align-items: center;
@@ -577,32 +537,7 @@
 	}
 
 	.probe-status.detected {
-		color: #22c55e;
-	}
-
-	.probe-status.error {
-		color: var(--error-text);
-	}
-
-	.btn {
-		padding: 6px 14px;
-		border-radius: 6px;
-		font-size: 0.85rem;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-	}
-
-	.btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.btn-primary {
-		background: var(--accent);
-		color: white;
-		border-color: var(--accent);
+		color: var(--success);
 	}
 
 	.toggle-row {

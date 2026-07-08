@@ -53,7 +53,7 @@
 		<strong>Review everything before submitting</strong> — the snapshot is personal-to-your-install data.
 	</p>
 	<div class="actions">
-		<button class="btn primary" onclick={onSendFeedback} disabled={status.kind === 'busy'}>
+		<button class="btn btn-primary" onclick={onSendFeedback} disabled={status.kind === 'busy'}>
 			Open feedback issue…
 		</button>
 		<button class="btn" onclick={onSaveDiagnostics} disabled={status.kind === 'busy'}>
@@ -83,35 +83,8 @@
 		flex-wrap: wrap;
 	}
 
-	.btn {
-		padding: 8px 16px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		cursor: pointer;
-		font-size: 0.9rem;
-	}
-
-	.btn:hover:not(:disabled) {
-		border-color: var(--text-secondary);
-	}
-
-	.btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.btn.primary {
-		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 10%, transparent);
-		font-weight: 500;
-	}
-
 	.hint {
 		margin: 12px 0 0 0;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
 	}
 
 	.status {

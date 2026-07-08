@@ -161,8 +161,6 @@
 
 <style>
 	.hint {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
 		margin: 0 0 16px 0;
 	}
 

@@ -12,7 +12,7 @@
 
 	function barColor(pct: number): string {
 		if (pct >= 80) return 'var(--error-text)';
-		if (pct >= 60) return '#f59e0b';
+		if (pct >= 60) return 'var(--warning)';
 		return 'var(--accent)';
 	}
 </script>

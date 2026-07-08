@@ -519,15 +519,15 @@
 	}
 
 	.integration-badge.good {
-		color: #4ade80;
-		border-color: color-mix(in srgb, #4ade80 35%, transparent);
-		background: color-mix(in srgb, #4ade80 10%, transparent);
+		color: var(--success);
+		border-color: color-mix(in srgb, var(--success) 35%, transparent);
+		background: color-mix(in srgb, var(--success) 10%, transparent);
 	}
 
 	.integration-badge.warn {
-		color: #f59e0b;
-		border-color: color-mix(in srgb, #f59e0b 35%, transparent);
-		background: color-mix(in srgb, #f59e0b 10%, transparent);
+		color: var(--warning);
+		border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+		background: color-mix(in srgb, var(--warning) 10%, transparent);
 	}
 
 	.integration-badge.bad {

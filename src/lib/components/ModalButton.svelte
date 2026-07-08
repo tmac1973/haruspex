@@ -7,6 +7,9 @@
 	 *   - 'default'  → accent border on hover (the safe, common case)
 	 *   - 'danger'   → red border on hover (overwrite, deny — destructive)
 	 *   - 'subtle'   → text-secondary border on hover (cancel, secondary)
+	 *
+	 * Styled via its own `modal-btn` class (not `btn`) so the global .btn
+	 * primitives in +layout.svelte don't bleed into it.
 	 */
 	import type { Snippet } from 'svelte';
 
@@ -22,13 +25,13 @@
 	let { variant = 'default', onclick, title, subtitle }: Props = $props();
 </script>
 
-<button class="btn {variant}" {onclick}>
+<button class="modal-btn {variant}" {onclick}>
 	<strong>{@render title()}</strong>
 	{#if subtitle}<span>{@render subtitle()}</span>{/if}
 </button>
 
 <style>
-	.btn {
+	.modal-btn {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
@@ -42,27 +45,27 @@
 		transition: border-color 0.15s;
 	}
 
-	.btn:hover {
+	.modal-btn:hover {
 		border-color: var(--accent);
 	}
 
-	.btn strong {
+	.modal-btn strong {
 		display: block;
 		font-size: 0.92rem;
 		margin-bottom: 2px;
 	}
 
-	.btn span {
+	.modal-btn span {
 		display: block;
 		font-size: 0.78rem;
 		color: var(--text-secondary);
 	}
 
-	.btn.danger:hover {
-		border-color: #ef4444;
+	.modal-btn.danger:hover {
+		border-color: var(--error-text);
 	}
 
-	.btn.subtle:hover {
+	.modal-btn.subtle:hover {
 		border-color: var(--text-secondary);
 	}
 </style>

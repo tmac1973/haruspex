@@ -242,10 +242,7 @@
 		color: var(--text-primary);
 	}
 	.hint {
-		color: var(--text-secondary);
-		font-size: 0.85rem;
 		margin: 0 0 12px 0;
-		line-height: 1.5;
 	}
 	code {
 		background: var(--bg-secondary);
@@ -359,43 +356,6 @@
 		gap: 8px;
 		align-items: center;
 	}
-	.btn {
-		padding: 6px 14px;
-		border-radius: 6px;
-		border: 1px solid var(--border);
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-	.btn:hover:not(:disabled) {
-		background: var(--bg-secondary);
-	}
-	.btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-	.btn-primary {
-		background: var(--accent);
-		border-color: var(--accent);
-		color: white;
-	}
-	.btn-primary:hover:not(:disabled) {
-		opacity: 0.9;
-		background: var(--accent);
-	}
-	.btn-danger {
-		color: #ef4444;
-		border-color: #ef4444;
-	}
-	.btn-danger:hover {
-		background: #ef4444;
-		color: white;
-	}
-	.btn-small {
-		padding: 4px 10px;
-		font-size: 0.8rem;
-	}
 	.download-inline {
 		display: flex;
 		align-items: center;
@@ -419,13 +379,8 @@
 		color: var(--text-secondary);
 		white-space: nowrap;
 	}
+	/* Spacing override of the global .error-box. */
 	.error-box {
 		margin-top: 12px;
-		padding: 12px;
-		background: rgba(239, 68, 68, 0.1);
-		border: 1px solid rgba(239, 68, 68, 0.3);
-		border-radius: 6px;
-		color: #ef4444;
-		font-size: 0.85rem;
 	}
 </style>

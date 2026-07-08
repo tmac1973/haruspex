@@ -127,15 +127,6 @@
 		white-space: nowrap;
 	}
 
-	.spinner {
-		width: 14px;
-		height: 14px;
-		border: 2px solid var(--border);
-		border-top-color: var(--accent);
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-
 	@keyframes pulse-record {
 		0%,
 		100% {
@@ -143,12 +134,6 @@
 		}
 		50% {
 			transform: scale(1.1);
-		}
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
 		}
 	}
 </style>

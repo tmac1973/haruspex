@@ -231,14 +231,14 @@
 	</details>
 
 	<div class="test-row">
-		<button type="button" onclick={testConnection} disabled={testing}>
+		<button type="button" class="btn" onclick={testConnection} disabled={testing}>
 			{testing ? 'Testing…' : 'Test connection'}
 		</button>
 		{#if testOk}
 			<span class="ok">Connected successfully.</span>
 		{/if}
 		{#if testError}
-			<span class="err">Failed: {testError}</span>
+			<span class="error-text">Failed: {testError}</span>
 		{/if}
 	</div>
 </div>
@@ -266,31 +266,9 @@
 		font-weight: 500;
 	}
 
+	/* Spacing override of the global .field. */
 	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
 		margin-bottom: 0.75rem;
-	}
-
-	.field label {
-		font-size: 0.85rem;
-		color: var(--text-secondary);
-	}
-
-	.field input,
-	.field select {
-		padding: 0.4rem 0.5rem;
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		color-scheme: light dark;
-	}
-
-	.field select option {
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
 	}
 
 	.field-row {
@@ -318,13 +296,7 @@
 	}
 
 	.hint {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
 		margin: 0.25rem 0 0;
-	}
-
-	.hint a {
-		color: var(--accent);
 	}
 
 	.test-row {
@@ -332,20 +304,6 @@
 		align-items: center;
 		gap: 0.75rem;
 		margin-top: 0.75rem;
-	}
-
-	.test-row button {
-		padding: 0.4rem 0.9rem;
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		cursor: pointer;
-	}
-
-	.test-row button:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
 	}
 
 	.delete {
@@ -359,17 +317,12 @@
 	}
 
 	.delete:hover {
-		color: #c33;
-		border-color: #c33;
+		color: var(--error-text);
+		border-color: var(--error-border);
 	}
 
 	.ok {
-		color: #2a7;
-		font-size: 0.9rem;
-	}
-
-	.err {
-		color: #c33;
+		color: var(--success);
 		font-size: 0.9rem;
 	}
 </style>

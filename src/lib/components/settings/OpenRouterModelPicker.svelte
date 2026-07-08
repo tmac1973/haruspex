@@ -262,8 +262,8 @@
 	}
 
 	.badge.free {
-		background: color-mix(in srgb, #22c55e 20%, transparent);
-		color: #22c55e;
+		background: color-mix(in srgb, var(--success) 20%, transparent);
+		color: var(--success);
 	}
 
 	.badge.deprecated {

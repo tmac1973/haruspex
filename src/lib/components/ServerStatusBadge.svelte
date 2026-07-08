@@ -41,17 +41,17 @@
 	}
 
 	[data-status='ready'] .dot {
-		background: #22c55e;
-		box-shadow: 0 0 4px #22c55e80;
+		background: var(--success);
+		box-shadow: 0 0 4px color-mix(in srgb, var(--success) 50%, transparent);
 	}
 
 	[data-status='starting'] .dot {
-		background: #eab308;
+		background: var(--warning);
 		animation: pulse 1.2s ease-in-out infinite;
 	}
 
 	[data-status='error'] .dot {
-		background: #ef4444;
+		background: var(--error-text);
 	}
 
 	[data-status='stopped'] .dot {

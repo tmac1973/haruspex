@@ -92,8 +92,6 @@
 	}
 
 	.hint {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
 		margin: 0 0 12px 0;
 	}
 
@@ -141,45 +139,5 @@
 		background: var(--bg-primary);
 		color: var(--text-primary);
 		font-size: 0.82rem;
-	}
-
-	.btn {
-		padding: 4px 10px;
-		border-radius: 6px;
-		font-size: 0.78rem;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-		flex: none;
-	}
-
-	.btn:hover:not(:disabled) {
-		opacity: 0.9;
-	}
-
-	.btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.btn-primary {
-		background: var(--accent);
-		color: white;
-		border-color: var(--accent);
-	}
-
-	.btn-danger {
-		color: var(--error-text);
-		border-color: var(--error-border);
-	}
-
-	.btn-danger:hover {
-		background: var(--error-bg);
-	}
-
-	.btn-small {
-		padding: 4px 10px;
-		font-size: 0.78rem;
 	}
 </style>

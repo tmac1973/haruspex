@@ -374,7 +374,7 @@
 						<div class="message-label">Haruspex</div>
 						<div class="message-content">
 							{@html renderedStreamingContent}
-							<span class="cursor"></span>
+							<span class="streaming-caret"></span>
 						</div>
 					</div>
 				{:else if isGenerating}
@@ -571,22 +571,6 @@
 		margin-bottom: 0;
 	}
 
-	.cursor {
-		display: inline-block;
-		width: 2px;
-		height: 1em;
-		background: var(--text-primary);
-		animation: blink 0.8s step-end infinite;
-		vertical-align: text-bottom;
-		margin-left: 1px;
-	}
-
-	@keyframes blink {
-		50% {
-			opacity: 0;
-		}
-	}
-
 	.empty-state {
 		display: flex;
 		flex-direction: column;
@@ -609,7 +593,6 @@
 	}
 
 	.hint {
-		font-size: 0.85rem;
 		font-style: italic;
 	}
 

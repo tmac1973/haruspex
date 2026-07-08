@@ -168,10 +168,7 @@
 	}
 
 	.hint {
-		color: var(--text-secondary);
 		font-style: italic;
-		font-size: 0.85rem;
-		margin: 0;
 	}
 
 	.error {

@@ -370,8 +370,6 @@
 	}
 
 	.wizard-step.wide .hint {
-		font-size: 0.82rem;
-		color: var(--text-secondary);
 		margin-top: 16px;
 	}
 
@@ -735,14 +733,12 @@
 	}
 
 	.check {
-		color: #22c55e;
+		color: var(--success);
 		font-weight: 500;
 	}
 
+	/* Size overrides of the global .error-box for the wizard layout. */
 	.error-box {
-		background: var(--error-bg);
-		color: var(--error-text);
-		border: 1px solid var(--error-border);
 		border-radius: 8px;
 		padding: 16px;
 		margin: 16px 0;

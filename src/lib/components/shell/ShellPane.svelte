@@ -485,8 +485,6 @@
 	}
 
 	.hint {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
 		margin-bottom: 14px !important;
 	}
 

@@ -131,8 +131,6 @@
 
 <style>
 	.hint {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
 		margin: 8px 0 0 0;
 	}
 
@@ -209,24 +207,5 @@
 		font-size: 0.8rem;
 		color: var(--text-secondary);
 		margin-top: 2px;
-	}
-
-	.btn {
-		padding: 6px 14px;
-		border-radius: 6px;
-		font-size: 0.8rem;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-	}
-
-	.btn:hover {
-		opacity: 0.9;
-	}
-
-	.btn-small {
-		padding: 3px 10px;
-		font-size: 0.75rem;
 	}
 </style>

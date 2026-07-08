@@ -286,7 +286,7 @@
 	</div>
 
 	{#if error}
-		<p class="error">✗ {error}</p>
+		<p class="error-box">✗ {error}</p>
 	{/if}
 </div>
 
@@ -307,42 +307,11 @@
 		margin: 0;
 	}
 
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.field label {
-		font-size: 0.85rem;
-		font-weight: 500;
-	}
-
-	.field input[type='number'],
-	.field select {
-		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		font-size: 0.85rem;
-	}
-
 	.hint-row {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		gap: 8px;
-	}
-
-	.hint {
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		margin: 0;
-	}
-
-	.hint a {
-		color: var(--accent);
 	}
 
 	.credits-badge {
@@ -404,40 +373,5 @@
 		color: var(--text-secondary);
 		align-items: center;
 		margin-top: 4px;
-	}
-
-	.btn {
-		padding: 6px 14px;
-		border-radius: 6px;
-		font-size: 0.8rem;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-		flex: none;
-	}
-
-	.btn:hover:not(:disabled) {
-		opacity: 0.9;
-	}
-
-	.btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.btn-small {
-		padding: 4px 10px;
-		font-size: 0.78rem;
-	}
-
-	.error {
-		padding: 8px 12px;
-		border: 1px solid var(--error-border);
-		border-radius: 6px;
-		background: var(--error-bg);
-		color: var(--error-text);
-		font-size: 0.8rem;
-		margin: 0;
 	}
 </style>

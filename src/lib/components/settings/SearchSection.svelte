@@ -193,16 +193,7 @@
 
 <style>
 	.hint {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
 		margin: 0 0 16px 0;
-	}
-
-	.hint code {
-		background: var(--bg-secondary);
-		padding: 2px 6px;
-		border-radius: 3px;
-		font-size: 0.75rem;
 	}
 
 	.provider-nudge {

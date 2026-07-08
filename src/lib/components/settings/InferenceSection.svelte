@@ -248,7 +248,7 @@
 	<ApiKeysSection />
 	{#if pendingRestart}
 		<div class="restart-banner" role="status">
-			<span class="restart-spinner" aria-hidden="true"></span>
+			<span class="spinner restart-spinner" aria-hidden="true"></span>
 			<span class="restart-text">
 				{pendingRestart.reason === 'model' ? 'Model change' : 'Context size change'} queued — the server
 				will restart automatically once the in-progress response finishes.
@@ -307,8 +307,6 @@
 
 <style>
 	.hint {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
 		margin: 0 0 16px 0;
 	}
 
@@ -381,20 +379,9 @@
 		flex: 1;
 	}
 
+	/* Layout override of the global .spinner inside the flex banner. */
 	.restart-spinner {
 		flex: none;
-		width: 14px;
-		height: 14px;
-		border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
-		border-top-color: var(--accent);
-		border-radius: 50%;
-		animation: restart-spin 0.8s linear infinite;
-	}
-
-	@keyframes restart-spin {
-		to {
-			transform: rotate(360deg);
-		}
 	}
 
 	.context-options {
@@ -436,46 +423,6 @@
 		margin-top: 2px;
 	}
 
-	.btn {
-		padding: 6px 14px;
-		border-radius: 6px;
-		font-size: 0.8rem;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-	}
-
-	.btn:hover:not(:disabled) {
-		opacity: 0.9;
-	}
-
-	.btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.btn-primary {
-		background: var(--accent);
-		color: white;
-		border-color: var(--accent);
-	}
-
-	.btn-danger {
-		color: var(--error-text);
-		border-color: var(--error-border);
-	}
-
-	.btn-danger:hover {
-		background: var(--error-bg);
-	}
-
-	.btn-small {
-		flex: none;
-		padding: 4px 10px;
-		font-size: 0.78rem;
-	}
-
 	.server-actions {
 		display: flex;
 		gap: 8px;
@@ -491,10 +438,10 @@
 	}
 
 	.status-value[data-status='ready'] {
-		color: #22c55e;
+		color: var(--success);
 	}
 	.status-value[data-status='starting'] {
-		color: #eab308;
+		color: var(--warning);
 	}
 	.status-value[data-status='error'] {
 		color: var(--error-text);

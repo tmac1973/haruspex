@@ -196,8 +196,8 @@
 	.schedule-warning {
 		margin: 2px 0 0 0;
 		padding: 6px 10px;
-		background: color-mix(in srgb, #f59e0b 12%, transparent);
-		border: 1px solid color-mix(in srgb, #f59e0b 40%, var(--border));
+		background: color-mix(in srgb, var(--warning) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
 		border-radius: 4px;
 		font-size: 0.78rem;
 		color: var(--text-primary);

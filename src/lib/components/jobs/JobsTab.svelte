@@ -135,9 +135,4 @@
 	.empty-state p:last-child {
 		margin-bottom: 0;
 	}
-
-	.empty-state .hint {
-		font-size: 0.85rem;
-		color: var(--text-secondary);
-	}
 </style>

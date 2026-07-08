@@ -202,10 +202,7 @@
 	}
 
 	.hint {
-		color: var(--text-secondary);
 		font-style: italic;
-		font-size: 0.85rem;
-		margin: 0;
 	}
 
 	.error {
@@ -219,8 +216,8 @@
 
 	.warning {
 		padding: 6px 10px;
-		background: color-mix(in srgb, #f59e0b 12%, transparent);
-		border: 1px solid color-mix(in srgb, #f59e0b 40%, var(--border));
+		background: color-mix(in srgb, var(--warning) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
 		border-radius: 4px;
 		font-size: 0.8rem;
 		line-height: 1.35;

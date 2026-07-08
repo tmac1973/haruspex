@@ -120,18 +120,4 @@
 	.section-help.small {
 		font-size: 0.8rem;
 	}
-
-	.btn {
-		padding: 8px 16px;
-		border-radius: 6px;
-		border: 1px solid var(--border);
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-
-	.btn:hover {
-		background: var(--bg-secondary);
-	}
 </style>

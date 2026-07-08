@@ -97,7 +97,7 @@
 		<div class="qbody">
 			<button
 				type="button"
-				class="cancel-x"
+				class="modal-close cancel-x"
 				onclick={() => cancelUserQuestion()}
 				aria-label="Cancel and stop the run"
 				title="Cancel and stop the run (Esc)"
@@ -164,22 +164,11 @@
 		position: relative;
 	}
 
+	/* Position override of the global .modal-close. */
 	.cancel-x {
 		position: absolute;
 		top: -6px;
 		right: -8px;
-		background: none;
-		border: none;
-		color: var(--text-secondary);
-		font-size: 1.5rem;
-		line-height: 1;
-		cursor: pointer;
-		padding: 0 4px;
-		border-radius: 4px;
-	}
-
-	.cancel-x:hover {
-		color: var(--text-primary);
 	}
 
 	h2 {
@@ -195,8 +184,6 @@
 
 	.hint {
 		margin: 0 0 8px;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
 	}
 
 	.options {
