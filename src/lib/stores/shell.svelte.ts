@@ -333,6 +333,45 @@ export class ShellSession {
 	};
 
 	/**
+	 * Shared preamble for the composer submit paths: refuse while a turn is
+	 * in flight, require a live session (surfacing the not-ready error), and
+	 * fetch the live terminal context + the attach limit. Returns null when
+	 * submission can't proceed.
+	 */
+	private prepareSubmit = async (): Promise<{
+		session: NonNullable<ShellSession['activeSession']>;
+		live: NonNullable<Awaited<ReturnType<ShellSession['fetchLiveContext']>>>;
+		limit: number;
+	} | null> => {
+		if (this.isSubmitting) return null;
+		const session = this.activeSession;
+		if (!session) {
+			this.lastError = 'Shell session not ready yet.';
+			return null;
+		}
+		const live = await this.fetchLiveContext();
+		if (!live) return null;
+		return { session, live, limit: Math.max(0, getSettings().shellHistoryTurnsForPrompt) };
+	};
+
+	/**
+	 * Fetch the last `count` captured command regions (plus any pending
+	 * region) for a session; [] when attaching is disabled entirely
+	 * (`enabled` = the user's limit is 0).
+	 */
+	private loadRecent = async (
+		sessionId: number,
+		count: number,
+		enabled: boolean
+	): Promise<CapturedRegion[]> =>
+		enabled
+			? invoke<CapturedRegion[]>('shell_get_recent_commands', {
+					sessionId,
+					limit: count
+				})
+			: [];
+
+	/**
 	 * Submit a chat message from the sidebar composer. The user's text is
 	 * automatically prefixed with the last N captured commands (N from
 	 * settings.shellHistoryTurnsForPrompt) so the agent has fresh context
@@ -340,16 +379,10 @@ export class ShellSession {
 	 */
 	submitChatMessage = async (text: string, images: string[] = []): Promise<void> => {
 		const trimmed = text.trim();
-		if ((!trimmed && images.length === 0) || this.isSubmitting) return;
-		if (!this.activeSession) {
-			this.lastError = 'Shell session not ready yet.';
-			return;
-		}
-		const live = await this.fetchLiveContext();
-		if (!live) return;
-
-		const settings = getSettings();
-		const limit = Math.max(0, settings.shellHistoryTurnsForPrompt);
+		if (!trimmed && images.length === 0) return;
+		const pre = await this.prepareSubmit();
+		if (!pre) return;
+		const { session, live, limit } = pre;
 		// Only attach *completed* commands that finished since our last attach —
 		// anything older is already in the chat history, so re-sending it just
 		// buries the new question. Cap at the user's configured limit.
@@ -364,22 +397,16 @@ export class ShellSession {
 		// returns that pending region in addition to the `attachCount` completed
 		// ones (with attachCount === 0 it returns just the pending region), so a
 		// question asked mid-ssh-session no longer arrives with nothing attached.
-		const recent =
-			limit > 0
-				? await invoke<CapturedRegion[]>('shell_get_recent_commands', {
-						sessionId: this.activeSession.sessionId,
-						limit: attachCount
-					})
-				: [];
+		const recent = await this.loadRecent(session.sessionId, attachCount, limit > 0);
 		// Advance the watermark past every finished command (even any we skipped
 		// over because of the limit) so they aren't re-attached next turn.
 		this.lastAttachedCommandTotal = live.completedTotal;
-		const maxBytesPerCapture = Math.max(0, settings.shellMaxBytesPerCapture);
+		const maxBytesPerCapture = Math.max(0, getSettings().shellMaxBytesPerCapture);
 		const body = `${formatRecentCommands(recent, maxBytesPerCapture)}${trimmed}`;
 
 		await this.submitShell({
 			body,
-			sessionContext: this.activeSession.context,
+			sessionContext: session.context,
 			currentCwd: live.currentCwd,
 			recentHistory: live.recentHistory,
 			images
@@ -427,23 +454,10 @@ export class ShellSession {
 	 * has been captured yet.
 	 */
 	submitRecentCommands = async (): Promise<void> => {
-		if (this.isSubmitting) return;
-		if (!this.activeSession) {
-			this.lastError = 'Shell session not ready yet.';
-			return;
-		}
-		const live = await this.fetchLiveContext();
-		if (!live) return;
-
-		const settings = getSettings();
-		const limit = Math.max(0, settings.shellHistoryTurnsForPrompt);
-		const recent =
-			limit > 0
-				? await invoke<CapturedRegion[]>('shell_get_recent_commands', {
-						sessionId: this.activeSession.sessionId,
-						limit
-					})
-				: [];
+		const pre = await this.prepareSubmit();
+		if (!pre) return;
+		const { session, live, limit } = pre;
+		const recent = await this.loadRecent(session.sessionId, limit, limit > 0);
 		if (recent.length === 0) {
 			this.sidebarOpen = true;
 			this.lastError =
@@ -456,7 +470,7 @@ export class ShellSession {
 		// watermark — but advance the watermark past it so the composer's
 		// auto-attach doesn't immediately re-send the same commands next turn.
 		this.lastAttachedCommandTotal = live.completedTotal;
-		const maxBytesPerCapture = Math.max(0, settings.shellMaxBytesPerCapture);
+		const maxBytesPerCapture = Math.max(0, getSettings().shellMaxBytesPerCapture);
 		// Reuse the same preamble format as submitChatMessage (marker + blocks +
 		// trailing "---" separator) so the sidebar renders it as the collapsible
 		// shell-activity block; there's just no question after the separator.
@@ -464,7 +478,7 @@ export class ShellSession {
 
 		await this.submitShell({
 			body,
-			sessionContext: this.activeSession.context,
+			sessionContext: session.context,
 			currentCwd: live.currentCwd,
 			recentHistory: live.recentHistory
 		});
