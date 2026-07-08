@@ -12,11 +12,8 @@
 //! when they open the Shell tab and ask "what's in /etc/nginx?" is that
 //! the agent can answer.
 
-use super::fuzzy::{apply_edit, EditResult};
-use super::path::{
-    refuse_if_exists, render_text_read, DirListing, MAX_READ_LOAD_BYTES, MAX_TEXT_READ_BYTES,
-    MAX_WRITE_BYTES,
-};
+use super::fuzzy::EditResult;
+use super::path::{edit_text_at, read_text_at, refuse_if_exists, DirListing, MAX_WRITE_BYTES};
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -100,28 +97,13 @@ pub async fn fs_read_text_absolute(
         ));
     }
 
-    let metadata = fs::metadata(&resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_READ_LOAD_BYTES {
-        return Err(format!(
-            "File too large to load ({} bytes, max {} MB). Read it in slices with the offset/limit parameters or via the shell (head/sed).",
-            metadata.len(),
-            MAX_READ_LOAD_BYTES / 1_048_576
-        ));
-    }
-
-    let bytes = fs::read(&resolved)
-        .await
-        .map_err(|e| format!("Failed to read file: {}", e))?;
-
-    render_text_read(
-        bytes,
+    read_text_at(
+        &resolved,
         offset,
         limit,
         "File appears to be binary. Use a format-specific tool (fs_read_pdf_absolute, etc.)",
     )
+    .await
 }
 
 #[tauri::command]
@@ -217,27 +199,7 @@ pub async fn fs_edit_text_absolute(
         return Err(format!("Path is not a regular file: {}", path));
     }
 
-    let metadata = fs::metadata(&resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_TEXT_READ_BYTES {
-        return Err(format!(
-            "File too large to edit ({} bytes). Maximum is {} bytes.",
-            metadata.len(),
-            MAX_TEXT_READ_BYTES
-        ));
-    }
-
-    let content = fs::read_to_string(&resolved)
-        .await
-        .map_err(|e| format!("Failed to read file: {}", e))?;
-
-    let outcome = apply_edit(&content, &old_str, &new_str, &path)?;
-    fs::write(&resolved, outcome.new_content)
-        .await
-        .map_err(|e| format!("Failed to write file: {}", e))?;
-    Ok(outcome.result)
+    edit_text_at(&resolved, &old_str, &new_str, &path).await
 }
 
 #[cfg(test)]

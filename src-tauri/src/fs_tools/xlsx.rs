@@ -5,8 +5,7 @@
 
 use super::markdown_inline::escape_xml;
 use super::path::{
-    refuse_if_exists, resolve_in_workdir, stat_within_limit, workdir_path, workdir_path_for_write,
-    write_bytes_to_workdir, MAX_DOC_READ_BYTES,
+    refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
 };
 
 #[derive(serde::Deserialize)]
@@ -204,22 +203,11 @@ pub async fn fs_read_xlsx(
     rel_path: String,
     sheet: Option<String>,
 ) -> Result<String, String> {
-    let workdir = workdir_path(&workdir)?;
-    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
-
-    if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
-    }
-
-    stat_within_limit(&resolved, MAX_DOC_READ_BYTES, "xlsx").await?;
-
-    let resolved_clone = resolved.clone();
-    let sheet_name = sheet.clone();
-    let csv = tokio::task::spawn_blocking(move || -> Result<String, String> {
+    let csv = super::read_document_blocking(workdir, rel_path, "xlsx", move |resolved| {
         use calamine::{open_workbook_auto, Data, Reader};
 
-        let mut workbook = open_workbook_auto(&resolved_clone)
-            .map_err(|e| format!("Failed to open xlsx: {}", e))?;
+        let mut workbook =
+            open_workbook_auto(resolved).map_err(|e| format!("Failed to open xlsx: {}", e))?;
 
         let sheet_names = workbook.sheet_names().to_vec();
         if sheet_names.is_empty() {
@@ -228,7 +216,7 @@ pub async fn fs_read_xlsx(
 
         // Exact match first; fall back to a trimmed, ASCII-case-insensitive
         // match so a model asking for "summary" still hits "Summary".
-        let target_sheet = match sheet_name {
+        let target_sheet = match sheet {
             Some(name) => match sheet_names.iter().find(|s| *s == &name).or_else(|| {
                 sheet_names
                     .iter()
@@ -286,17 +274,12 @@ pub async fn fs_read_xlsx(
 
         Ok(out)
     })
-    .await
-    .map_err(|e| format!("xlsx extraction task failed: {}", e))??;
+    .await?;
 
-    const MAX_XLSX_CHARS: usize = 500_000;
-    if csv.len() > MAX_XLSX_CHARS {
-        return Ok(format!(
-            "{}\n\n[... truncated: {} characters total, showing first {}]",
-            crate::text_util::truncate_at_char_boundary(&csv, MAX_XLSX_CHARS),
-            csv.len(),
-            MAX_XLSX_CHARS
-        ));
+    if let Some(truncated) =
+        crate::text_util::truncate_with_note(&csv, crate::text_util::MAX_EXTRACTED_TEXT_CHARS)
+    {
+        return Ok(truncated);
     }
 
     Ok(csv)
@@ -448,8 +431,7 @@ mod tests {
 
     #[tokio::test]
     async fn fs_read_xlsx_truncates_multibyte_content_on_char_boundary() {
-        // MAX_XLSX_CHARS (500_000) is local to fs_read_xlsx.
-        const MAX: usize = 500_000;
+        const MAX: usize = crate::text_util::MAX_EXTRACTED_TEXT_CHARS;
         // One 3-byte header row ("ab\n") shifts every following row to an
         // odd byte offset; rows of 2-byte chars then guarantee the even
         // truncation index lands mid-codepoint. A raw `&csv[..MAX]` slice

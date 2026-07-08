@@ -1,15 +1,7 @@
 use std::path::PathBuf;
 use tauri_plugin_shell::ShellExt;
 
-use crate::fs_tools::resolve_in_workdir;
-
-fn workdir_path(workdir: &str) -> Result<PathBuf, String> {
-    let path = PathBuf::from(workdir);
-    if !path.is_dir() {
-        return Err(format!("Working directory does not exist: {}", workdir));
-    }
-    Ok(path)
-}
+use crate::fs_tools::{resolve_in_workdir, workdir_path};
 
 /// Run ruff against a single file inside `workdir` and return its raw JSON
 /// output (`[{"code":"F821", "message":"...", "location":{"row":..,"column":..}}, ...]`).

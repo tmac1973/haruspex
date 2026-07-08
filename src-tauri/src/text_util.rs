@@ -15,6 +15,26 @@ pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
+/// Cap on text extracted from a document (PDF / xlsx) before it's handed
+/// to the model, so one huge extraction can't blow up the context window.
+pub const MAX_EXTRACTED_TEXT_CHARS: usize = 500_000;
+
+/// If `s` exceeds `max_bytes` bytes, return a truncated copy (cut on a
+/// char boundary via [`truncate_at_char_boundary`]) with a trailing note
+/// stating the original size; otherwise return `None` so the caller can
+/// keep its existing allocation.
+pub fn truncate_with_note(s: &str, max_bytes: usize) -> Option<String> {
+    if s.len() <= max_bytes {
+        return None;
+    }
+    Some(format!(
+        "{}\n\n[... truncated: {} characters total, showing first {}]",
+        truncate_at_char_boundary(s, max_bytes),
+        s.len(),
+        max_bytes
+    ))
+}
+
 /// Collapse every run of whitespace in `chars` to a single space and trim the
 /// ends; all other characters pass through unchanged. Useful for flattening
 /// tag-boundary or layout whitespace into inline text.
@@ -87,5 +107,27 @@ mod tests {
     #[test]
     fn empty_input() {
         assert_eq!(truncate_at_char_boundary("", 5), "");
+    }
+
+    #[test]
+    fn truncate_with_note_passes_short_input_through() {
+        assert_eq!(truncate_with_note("abc", 10), None);
+        assert_eq!(truncate_with_note("abc", 3), None);
+    }
+
+    #[test]
+    fn truncate_with_note_appends_size_note() {
+        let out = truncate_with_note("abcdef", 4).unwrap();
+        assert_eq!(
+            out,
+            "abcd\n\n[... truncated: 6 characters total, showing first 4]"
+        );
+    }
+
+    #[test]
+    fn truncate_with_note_respects_char_boundaries() {
+        // "aé" = 3 bytes; cutting at 2 lands mid-'é' → back off to "a".
+        let out = truncate_with_note("aéxx", 2).unwrap();
+        assert!(out.starts_with("a\n\n[... truncated:"));
     }
 }
