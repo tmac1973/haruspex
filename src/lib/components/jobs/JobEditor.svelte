@@ -15,6 +15,7 @@
 	} from '$lib/openrouter';
 	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
 	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
+	import ModeSelector from '$lib/components/ModeSelector.svelte';
 	import JobScheduleField from '$lib/components/jobs/JobScheduleField.svelte';
 	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
 	import {
@@ -67,9 +68,12 @@
 	let initialDescription = $state('');
 	let planOutputDir = $state('');
 	let planOutputDirEdited = $state(false);
-	// Per-job remote model override (any job type). Off → the job uses the
-	// global Settings backend; on → it runs against this remote server/model.
-	let modelOverride = $state(false);
+	// Where this job's model calls go (any job type): 'settings' follows the
+	// app's active Settings backend; 'remote'/'openrouter' pin the job to a
+	// specific server/model configured below. One selection — mirrors the
+	// Settings → Inference backend mode picker.
+	type ModelSource = 'settings' | 'remote' | 'openrouter';
+	let modelSource = $state<ModelSource>('settings');
 	let modelBaseUrl = $state('');
 	let modelApiKey = $state('');
 	let modelApiKeyId = $state<string | null>(null);
@@ -84,11 +88,10 @@
 	let probing = $state(false);
 	let probeError = $state<string | null>(null);
 	let probeNote = $state<string | null>(null);
-	// OpenRouter-specific override state. When modelOverrideType is 'openrouter',
+	// OpenRouter-specific override state. When modelSource is 'openrouter',
 	// the form shows a catalog-powered model picker instead of the generic
 	// probe flow. The catalog is fetched from OpenRouter's /v1/models (no
 	// Rust probe round-trip) and may reuse the cache from Settings.
-	let modelOverrideType = $state<'generic' | 'openrouter'>('generic');
 	let orCatalog = $state<OpenRouterModel[] | null>(null);
 	let orLoading = $state(false);
 	let orError = $state<string | null>(null);
@@ -135,8 +138,7 @@
 			initialDescription = '';
 			planOutputDir = '';
 			planOutputDirEdited = false;
-			modelOverride = false;
-			modelOverrideType = 'generic';
+			modelSource = 'settings';
 			modelBaseUrl = '';
 			modelApiKey = '';
 			modelApiKeyId = null;
@@ -179,7 +181,6 @@
 			// Treat a loaded value as user-set so the name-sync effect doesn't
 			// clobber it on edit.
 			planOutputDirEdited = !!job.plan_output_dir;
-			modelOverride = !!job.model_remote_base_url;
 			modelBaseUrl = job.model_remote_base_url ?? '';
 			modelApiKey = job.model_remote_api_key ?? '';
 			modelApiKeyId = job.model_remote_api_key_id ?? null;
@@ -191,11 +192,16 @@
 					: job.model_remote_vision_supported
 						? 'yes'
 						: 'no';
-			// Detect OpenRouter by URL so the right form renders on reload.
-			modelOverrideType = isOpenRouterUrl(modelBaseUrl) ? 'openrouter' : 'generic';
+			// No saved base URL → the job follows Settings; otherwise detect
+			// OpenRouter by URL so the right form renders on reload.
+			modelSource = !modelBaseUrl
+				? 'settings'
+				: isOpenRouterUrl(modelBaseUrl)
+					? 'openrouter'
+					: 'remote';
 			// Seed the OpenRouter catalog from the Settings cache so the picker
 			// has data immediately if the user already loaded models in Settings.
-			if (modelOverrideType === 'openrouter') {
+			if (modelSource === 'openrouter') {
 				orCatalog = getSettings().inferenceBackend.openrouterCatalog ?? null;
 			}
 			probedModels = [];
@@ -341,23 +347,27 @@
 		}
 	}
 
-	/** Switching to OpenRouter override: pin the base URL + seed the catalog. */
-	function selectOpenRouterOverride() {
-		modelOverrideType = 'openrouter';
-		modelBaseUrl = OPENROUTER_BASE_URL;
-		orCatalog = getSettings().inferenceBackend.openrouterCatalog ?? null;
-		orError = null;
-		probedModels = [];
-		probeError = null;
-		probeNote = null;
-	}
-
-	/** Switching back to generic remote: clear OpenRouter state. */
-	function selectGenericOverride() {
-		modelOverrideType = 'generic';
-		if (modelBaseUrl === OPENROUTER_BASE_URL) modelBaseUrl = '';
-		orCatalog = null;
-		orError = null;
+	/**
+	 * Switch where the job's model calls go. OpenRouter pins the base URL and
+	 * seeds the catalog from the Settings cache; leaving it clears that state
+	 * so the generic probe flow takes over. Selecting 'settings' keeps the
+	 * fields as-is — they're simply not persisted (save() nulls them).
+	 */
+	function setModelSource(source: ModelSource) {
+		if (source === modelSource) return;
+		if (source === 'openrouter') {
+			modelBaseUrl = OPENROUTER_BASE_URL;
+			orCatalog = getSettings().inferenceBackend.openrouterCatalog ?? null;
+			orError = null;
+			probedModels = [];
+			probeError = null;
+			probeNote = null;
+		} else if (modelSource === 'openrouter') {
+			if (modelBaseUrl === OPENROUTER_BASE_URL) modelBaseUrl = '';
+			orCatalog = null;
+			orError = null;
+		}
+		modelSource = source;
 	}
 
 	/** Fetch the OpenRouter catalog directly (no Rust probe round-trip). */
@@ -424,6 +434,7 @@
 			// mental model — "every 30 minutes starting now" rather than
 			// "the next fire was scheduled at X, keep that".
 			const isAudit = jobType === 'audit';
+			const overrideActive = modelSource !== 'settings';
 			const input: JobInput = {
 				name: name.trim(),
 				description: description.trim() ? description.trim() : null,
@@ -450,21 +461,22 @@
 					auditVerifyInstructions.trim() !== DEFAULT_VERIFY_INSTRUCTIONS
 						? auditVerifyInstructions.trim()
 						: null,
-				// Per-job remote model override. Only persisted when enabled AND a
-				// base URL is set — otherwise the job follows the Settings backend.
-				model_remote_base_url: modelOverride && modelBaseUrl.trim() ? modelBaseUrl.trim() : null,
+				// Per-job remote model override. Only persisted when a specific
+				// source is selected AND a base URL is set — otherwise the job
+				// follows the Settings backend (all-null columns).
+				model_remote_base_url: overrideActive && modelBaseUrl.trim() ? modelBaseUrl.trim() : null,
 				model_remote_api_key:
-					modelOverride && modelBaseUrl.trim() && modelApiKey.trim() ? modelApiKey.trim() : null,
+					overrideActive && modelBaseUrl.trim() && modelApiKey.trim() ? modelApiKey.trim() : null,
 				model_remote_api_key_id:
-					modelOverride && modelBaseUrl.trim() && modelApiKeyId ? modelApiKeyId : null,
+					overrideActive && modelBaseUrl.trim() && modelApiKeyId ? modelApiKeyId : null,
 				model_remote_model_id:
-					modelOverride && modelBaseUrl.trim() && modelModelId.trim() ? modelModelId.trim() : null,
+					overrideActive && modelBaseUrl.trim() && modelModelId.trim() ? modelModelId.trim() : null,
 				model_remote_context_size:
-					modelOverride && modelBaseUrl.trim() && typeof modelContextSize === 'number'
+					overrideActive && modelBaseUrl.trim() && typeof modelContextSize === 'number'
 						? modelContextSize
 						: null,
 				model_remote_vision_supported:
-					modelOverride && modelBaseUrl.trim() && modelVision !== 'auto'
+					overrideActive && modelBaseUrl.trim() && modelVision !== 'auto'
 						? modelVision === 'yes'
 						: null,
 				initial_description:
@@ -626,38 +638,33 @@
 			<JobScheduleField {schedule} onchange={(s) => (schedule = s)} />
 		</div>
 
-		<div
-			class="field"
-			title="Run this job against a specific remote model instead of the app's current Settings backend."
-		>
-			<label class="model-toggle">
-				<input type="checkbox" bind:checked={modelOverride} />
-				<span class="label">Use a specific remote model for this job</span>
-			</label>
-			<span class="hint">
-				Off → uses whatever model Settings has active (local or remote). On → every run of this job
-				calls the remote server below instead. Remote only; local jobs follow Settings.
-			</span>
-			{#if modelOverride}
+		<div class="field">
+			<span class="label">Model</span>
+			<ModeSelector
+				name="job-model-source"
+				value={modelSource}
+				onchange={setModelSource}
+				options={[
+					{
+						value: 'settings',
+						title: 'Settings model (default)',
+						description: 'Uses whatever backend Settings has active (local or remote).'
+					},
+					{
+						value: 'remote',
+						title: 'Remote server',
+						description: "A specific OpenAI-compatible server for this job's runs."
+					},
+					{
+						value: 'openrouter',
+						title: 'OpenRouter (cloud)',
+						description: 'A specific OpenRouter model — prompts leave your device.'
+					}
+				]}
+			/>
+			{#if modelSource !== 'settings'}
 				<div class="model-fields">
-					<div class="override-type-toggle">
-						<button
-							type="button"
-							class:active={modelOverrideType === 'generic'}
-							onclick={selectGenericOverride}
-						>
-							Remote server
-						</button>
-						<button
-							type="button"
-							class:active={modelOverrideType === 'openrouter'}
-							onclick={selectOpenRouterOverride}
-						>
-							OpenRouter (cloud)
-						</button>
-					</div>
-
-					{#if modelOverrideType === 'openrouter'}
+					{#if modelSource === 'openrouter'}
 						<div class="model-row">
 							<label class="model-field grow">
 								<span class="sublabel">API key</span>
@@ -1149,50 +1156,11 @@
 		gap: 8px;
 	}
 
-	.model-toggle {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		cursor: pointer;
-	}
-
-	.model-toggle input {
-		width: auto;
-	}
-
 	.model-fields {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 		margin-top: 8px;
-	}
-
-	.override-type-toggle {
-		display: inline-flex;
-		gap: 0;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		overflow: hidden;
-		align-self: flex-start;
-	}
-
-	.override-type-toggle button {
-		padding: 4px 12px;
-		border: none;
-		border-radius: 0;
-		background: var(--bg-primary);
-		color: var(--text-secondary);
-		font-size: 0.8rem;
-		cursor: pointer;
-	}
-
-	.override-type-toggle button:first-child {
-		border-right: 1px solid var(--border);
-	}
-
-	.override-type-toggle button.active {
-		background: var(--accent);
-		color: white;
 	}
 
 	.model-row {
