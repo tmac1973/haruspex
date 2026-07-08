@@ -10,6 +10,21 @@ tokenize `.svelte`). Every finding below was verified by reading the cited code.
 Findings marked **✅ fixed in this audit** were remediated in the working-tree change
 that accompanies this report (see "Utilities module" at the end).
 
+> **Remediation status (updated later the same day):** every actionable finding
+> in this report has been implemented on `refactor/utils-dedup` (13 commits,
+> `28437fd`…`9b5fac8`) — T1–T13, S1–S9, S11, R1–R15 — verified with
+> `cargo test` 433/433, `cargo clippy`/`fmt` clean, `npm run check` 0 errors,
+> `npm run test` 764/764, `npm run lint` 0 errors, `npm run build` OK, IPC
+> bindings regenerated. Deliberately not done: **S10** (badge capsules differ
+> in shape/color-source — no trivial unification), **R16** (marginal DTO
+> flatten — left), **R17** (won't-fix idiom), the `images.rs` Commons fetch
+> sites in R13 (this report misdescribed them — they have no status guard and
+> different error strings, so unifying would change behavior), and the
+> `tmac1973/haruspex` slug in `feedback.ts` (T9 note). Two flagged caveats:
+> the `#[cfg(windows)]` halves of R7/R12 compile-check only on Linux (Windows
+> CI is the guard), and R7 unifies os-release parsing to prefer PRETTY_NAME
+> over NAME (previously first-occurrence on the platform.rs path).
+
 ## Measured duplication (jscpd)
 
 | Language   | Files | Lines  | Clones | Duplicated lines | Duplicated tokens |
