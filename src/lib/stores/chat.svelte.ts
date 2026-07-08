@@ -20,7 +20,12 @@ import {
 } from '$lib/agent/system-prompt';
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
-import { getActiveContextSize, getSettings, isVisionSupported } from '$lib/stores/settings';
+import {
+	getActiveContextSize,
+	getSettings,
+	isVisionSupported,
+	SETTINGS_KEY
+} from '$lib/stores/settings';
 import {
 	getActiveConversationId,
 	setActiveConversationId,
@@ -145,7 +150,7 @@ function loadWorkingDir(): string | null {
 		const raw = localStorage.getItem(WORKING_DIR_KEY);
 		if (raw !== null) return raw || null;
 		// One-time migration from the legacy per-settings defaultWorkingDir.
-		const legacy = localStorage.getItem('haruspex-settings');
+		const legacy = localStorage.getItem(SETTINGS_KEY);
 		if (legacy) {
 			const parsed = JSON.parse(legacy);
 			if (typeof parsed.defaultWorkingDir === 'string' && parsed.defaultWorkingDir) {
