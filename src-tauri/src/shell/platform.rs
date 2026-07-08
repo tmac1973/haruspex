@@ -27,6 +27,99 @@ pub struct OsInfo {
 
 pub use imp::{capture_os, default_shell, login_args, login_env, platform_supported};
 
+/// Fields parsed from an `os-release` document — the union of the keys the
+/// shell code cares about. Shared by the Linux file-based capture below and
+/// the WSL probe (`wsl.rs`), which reads the same format over the wsl.exe
+/// bridge. Each field holds the last occurrence of its key.
+#[derive(Debug, Default)]
+pub struct OsRelease {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub pretty_name: Option<String>,
+    pub version_id: Option<String>,
+}
+
+impl OsRelease {
+    /// Human distro name: prefer PRETTY_NAME ("Ubuntu 24.04 LTS") over NAME
+    /// ("Ubuntu") regardless of the order they appear in the file.
+    pub fn display_name(&self) -> Option<String> {
+        self.pretty_name.clone().or_else(|| self.name.clone())
+    }
+}
+
+/// Parse `os-release` text (`KEY=value` lines, values optionally quoted).
+pub fn parse_os_release_str(text: &str) -> OsRelease {
+    let mut out = OsRelease::default();
+    for line in text.lines() {
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let v = v.trim().trim_matches('"').to_string();
+        match k {
+            "ID" => out.id = Some(v),
+            "NAME" => out.name = Some(v),
+            "PRETTY_NAME" => out.pretty_name = Some(v),
+            "VERSION_ID" => out.version_id = Some(v),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Suppress the console window that would otherwise flash when we shell out
+/// (e.g. `cmd /c ver`, `wsl.exe -l -v`) from the GUI app.
+#[cfg(windows)]
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Apply `CREATE_NO_WINDOW` to a command on Windows. The cross-platform
+/// no-op variant lets call sites compiled on every platform (the WSL and
+/// PowerShell probes) skip their own `#[cfg(windows)]` blocks.
+#[cfg(windows)]
+pub fn apply_no_window(cmd: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+pub fn apply_no_window(_cmd: &mut std::process::Command) {}
+
+/// Search PATH for `exe`, returning its full path if found.
+#[cfg(windows)]
+pub fn find_on_path(exe: &str) -> Option<String> {
+    let paths = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&paths) {
+        let candidate = dir.join(exe);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod os_release_tests {
+    use super::parse_os_release_str;
+
+    #[test]
+    fn prefers_pretty_name_regardless_of_order() {
+        // NAME first (Fedora-style ordering) — PRETTY_NAME still wins.
+        let osr = parse_os_release_str(
+            "NAME=\"Fedora Linux\"\nVERSION_ID=44\nID=fedora\nPRETTY_NAME=\"Fedora Linux 44\"\n",
+        );
+        assert_eq!(osr.id.as_deref(), Some("fedora"));
+        assert_eq!(osr.display_name().as_deref(), Some("Fedora Linux 44"));
+        assert_eq!(osr.version_id.as_deref(), Some("44"));
+    }
+
+    #[test]
+    fn falls_back_to_name_and_tolerates_garbage() {
+        let osr = parse_os_release_str("no-equals-line\nNAME=Alpine\n");
+        assert_eq!(osr.display_name().as_deref(), Some("Alpine"));
+        assert_eq!(osr.id, None);
+        assert_eq!(osr.version_id, None);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Linux
 // ---------------------------------------------------------------------------
@@ -66,28 +159,15 @@ mod imp {
 
     /// Read `/etc/os-release` (or its `/usr/lib` fallback) for the distro
     /// id / pretty name / version. Returns all-None if neither file exists
-    /// or parses — the caller degrades to just the bare OS string.
+    /// or parses — the caller degrades to just the bare OS string. Parsing
+    /// is shared with the WSL probe (`super::parse_os_release_str`).
     fn parse_os_release() -> (Option<String>, Option<String>, Option<String>) {
         let candidates = ["/etc/os-release", "/usr/lib/os-release"];
         for path in candidates {
             if let Ok(text) = fs::read_to_string(path) {
-                let mut id = None;
-                let mut name = None;
-                let mut version = None;
-                for line in text.lines() {
-                    let Some((k, v)) = line.split_once('=') else {
-                        continue;
-                    };
-                    let v = v.trim().trim_matches('"').to_string();
-                    match k {
-                        "ID" => id = Some(v),
-                        "PRETTY_NAME" if name.is_none() => name = Some(v),
-                        "NAME" if name.is_none() => name = Some(v),
-                        "VERSION_ID" => version = Some(v),
-                        _ => {}
-                    }
-                }
-                return (id, name, version);
+                let osr = super::parse_os_release_str(&text);
+                let name = osr.display_name();
+                return (osr.id, name, osr.version_id);
             }
         }
         (None, None, None)
@@ -289,13 +369,8 @@ mod imp {
 // ---------------------------------------------------------------------------
 #[cfg(target_os = "windows")]
 mod imp {
-    use super::OsInfo;
-    use std::os::windows::process::CommandExt;
+    use super::{apply_no_window, find_on_path, OsInfo};
     use std::process::Command;
-
-    /// Suppress the console window that would otherwise flash when we shell
-    /// out (e.g. `cmd /c ver`) from the GUI app.
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     /// Prefer PowerShell 7 (`pwsh.exe`) when installed; otherwise fall back to
     /// Windows PowerShell 5.1 (`powershell.exe`), which ships in-box under
@@ -348,25 +423,12 @@ mod imp {
         }
     }
 
-    /// Search PATH for `exe`, returning its full path if found.
-    fn find_on_path(exe: &str) -> Option<String> {
-        let paths = std::env::var_os("PATH")?;
-        for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(exe);
-            if candidate.is_file() {
-                return Some(candidate.to_string_lossy().into_owned());
-            }
-        }
-        None
-    }
-
     /// Parse `cmd /c ver` → e.g. "10.0.22631.4317". None on any failure.
     fn windows_version() -> Option<String> {
-        let output = Command::new("cmd")
-            .args(["/C", "ver"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .ok()?;
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "ver"]);
+        apply_no_window(&mut cmd);
+        let output = cmd.output().ok()?;
         let text = String::from_utf8_lossy(&output.stdout);
         let start = text.find('[')?;
         let end = text[start..].find(']')? + start;

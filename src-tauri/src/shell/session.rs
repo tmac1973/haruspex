@@ -88,22 +88,19 @@ pub struct Session {
 /// bundled libs instead of the system ones — e.g. fish warning
 /// `libpcre2-8.so.0: no version information available`. No-op when not
 /// running inside an AppImage (APPDIR unset), so dev mode and .deb / .rpm
-/// installs are unaffected.
+/// installs are unaffected. The filtering itself lives in `env_util`
+/// (shared with the URL opener in `links.rs`); this just applies the
+/// decision to a portable_pty CommandBuilder.
 #[cfg(target_os = "linux")]
 fn sanitize_appimage_env(cmd: &mut CommandBuilder) {
-    let appdir = match std::env::var("APPDIR") {
-        Ok(v) if !v.is_empty() => v,
-        _ => return,
-    };
-    let current = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-    let cleaned: Vec<&str> = current
-        .split(':')
-        .filter(|p| !p.is_empty() && !p.starts_with(&appdir))
-        .collect();
-    if cleaned.is_empty() {
-        cmd.env_remove("LD_LIBRARY_PATH");
-    } else {
-        cmd.env("LD_LIBRARY_PATH", cleaned.join(":"));
+    match crate::env_util::appimage_cleaned_ld_path() {
+        None => {}
+        Some(None) => {
+            cmd.env_remove("LD_LIBRARY_PATH");
+        }
+        Some(Some(cleaned)) => {
+            cmd.env("LD_LIBRARY_PATH", cleaned);
+        }
     }
 }
 

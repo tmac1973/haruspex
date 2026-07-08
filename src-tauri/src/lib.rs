@@ -3,6 +3,7 @@ mod audio;
 mod clipboard;
 mod code_tools;
 mod db;
+mod env_util;
 mod feedback;
 mod fs_tools;
 mod hardware;

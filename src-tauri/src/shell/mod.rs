@@ -84,6 +84,21 @@ impl ShellManager {
         })
     }
 
+    /// Run `f` against the session for `id` under the sessions lock. Shared
+    /// by every read-only command; mutating commands (`shell_spawn`,
+    /// `shell_kill`, `shell_restart`) keep their own locking path.
+    fn with_session<T>(
+        &self,
+        id: SessionId,
+        f: impl FnOnce(&Session) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+        let session = sessions
+            .get(&id)
+            .ok_or_else(|| "shell session not found".to_string())?;
+        f(session)
+    }
+
     pub fn shutdown_all(&self) {
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.clear();
@@ -177,11 +192,7 @@ pub fn shell_write(
     session_id: SessionId,
     data: String,
 ) -> Result<(), String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| "shell session not found".to_string())?;
-    session.write(data.as_bytes())
+    state.with_session(session_id, |session| session.write(data.as_bytes()))
 }
 
 /// Called by the frontend once it has attached its `shell://output`
@@ -194,12 +205,10 @@ pub fn shell_mark_ready(
     state: State<'_, ShellManager>,
     session_id: SessionId,
 ) -> Result<(), String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| "shell session not found".to_string())?;
-    session.mark_ready(&app, session_id);
-    Ok(())
+    state.with_session(session_id, |session| {
+        session.mark_ready(&app, session_id);
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -209,11 +218,7 @@ pub fn shell_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| "shell session not found".to_string())?;
-    session.resize(cols, rows)
+    state.with_session(session_id, |session| session.resize(cols, rows))
 }
 
 #[tauri::command]
@@ -277,16 +282,14 @@ pub fn shell_get_context(
     state: State<'_, ShellManager>,
     session_id: SessionId,
 ) -> Result<ShellContextResponse, String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| "shell session not found".to_string())?;
-    Ok(ShellContextResponse {
-        context: session.context.clone(),
-        current_cwd: session.current_cwd(),
-        marker_count: session.marker_count(),
-        completed_commands: session.completed_command_count(),
-        completed_total: session.completed_command_total(),
+    state.with_session(session_id, |session| {
+        Ok(ShellContextResponse {
+            context: session.context.clone(),
+            current_cwd: session.current_cwd(),
+            marker_count: session.marker_count(),
+            completed_commands: session.completed_command_count(),
+            completed_total: session.completed_command_total(),
+        })
     })
 }
 
@@ -295,11 +298,7 @@ pub fn shell_get_last_command(
     state: State<'_, ShellManager>,
     session_id: SessionId,
 ) -> Result<Option<CapturedRegion>, String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| "shell session not found".to_string())?;
-    Ok(session.capture_last_command())
+    state.with_session(session_id, |session| Ok(session.capture_last_command()))
 }
 
 #[tauri::command]
@@ -308,13 +307,11 @@ pub fn shell_get_recent_commands(
     session_id: SessionId,
     limit: usize,
 ) -> Result<Vec<CapturedRegion>, String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| "shell session not found".to_string())?;
-    // Include the in-flight command so asking about something still
-    // running attaches its output-so-far, not just completed commands.
-    Ok(session.capture_recent_commands_with_pending(limit))
+    state.with_session(session_id, |session| {
+        // Include the in-flight command so asking about something still
+        // running attaches its output-so-far, not just completed commands.
+        Ok(session.capture_recent_commands_with_pending(limit))
+    })
 }
 
 #[tauri::command]
@@ -323,11 +320,9 @@ pub fn shell_get_recent_history(
     session_id: SessionId,
     limit: usize,
 ) -> Result<Vec<String>, String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| "shell session not found".to_string())?;
-    Ok(read_recent_history(&session.context.shell_name, limit))
+    state.with_session(session_id, |session| {
+        Ok(read_recent_history(&session.context.shell_name, limit))
+    })
 }
 
 /// Recent raw terminal output (base64) for the given session, used to
@@ -338,11 +333,7 @@ pub fn shell_get_scrollback(
     state: State<'_, ShellManager>,
     session_id: SessionId,
 ) -> Result<String, String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| "shell session not found".to_string())?;
-    Ok(session.scrollback_base64())
+    state.with_session(session_id, |session| Ok(session.scrollback_base64()))
 }
 
 /// Stash a shell tab's chat thread (JSON) so the window taking over the

@@ -39,11 +39,9 @@ pub fn enumerate_shells() -> Vec<ShellCatalogEntry> {
 mod imp {
     use super::ShellCatalogEntry;
     use crate::shell::kind::ShellSelection;
-    use std::os::windows::process::CommandExt;
+    use crate::shell::platform::{apply_no_window, find_on_path};
     use std::path::PathBuf;
     use std::process::Command;
-
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     pub fn enumerate_shells() -> Vec<ShellCatalogEntry> {
         let mut out = Vec::new();
@@ -109,25 +107,13 @@ mod imp {
         })
     }
 
-    fn find_on_path(exe: &str) -> Option<String> {
-        let paths = std::env::var_os("PATH")?;
-        for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(exe);
-            if candidate.is_file() {
-                return Some(candidate.to_string_lossy().into_owned());
-            }
-        }
-        None
-    }
-
     /// One entry per WSL2 distro, or a single greyed-out "No WSL distros found"
     /// entry when WSL isn't installed or has no v2 distros.
     fn enumerate_wsl() -> Vec<ShellCatalogEntry> {
-        let names = match Command::new("wsl.exe")
-            .args(["-l", "-v"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-        {
+        let mut cmd = Command::new("wsl.exe");
+        cmd.args(["-l", "-v"]);
+        apply_no_window(&mut cmd);
+        let names = match cmd.output() {
             Ok(o) if o.status.success() => parse_wsl_list(&decode_utf16le(&o.stdout)),
             _ => Vec::new(),
         };
