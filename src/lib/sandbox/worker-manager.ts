@@ -1,5 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Artifact, InstallPhase, MainToWorker, ToolResult, WorkerToMain } from './protocol';
+import type {
+	Artifact,
+	ArtifactMessage,
+	InstallPhase,
+	MainToWorker,
+	ToolResult,
+	WorkerToMain
+} from './protocol';
 import { getWorkingDir } from '$lib/stores/session.svelte';
 import { getSettings } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
@@ -83,13 +90,7 @@ const defaultWorkerFactory: WorkerFactory = () =>
  * straight into <img src=...> without further processing; HTML stays as a
  * string for the renderer to inject.
  */
-function toArtifact(msg: {
-	mime: string;
-	payload: { kind: 'bytes'; bytes: Uint8Array } | { kind: 'text'; text: string };
-	alt?: string;
-	truncated?: { shown: number; total: number };
-	interactive?: boolean;
-}): Artifact {
+function toArtifact(msg: ArtifactMessage): Artifact {
 	if (msg.payload.kind === 'bytes') {
 		const b64 = base64Encode(msg.payload.bytes);
 		return {
@@ -289,12 +290,29 @@ export class WorkerManager {
 		p.onInstall?.(msg.package, msg.phase);
 	}
 
-	private handleDone(msg: Extract<WorkerToMain, { kind: 'done' }>): void {
-		const p = this.pending.get(msg.id);
-		if (!p) return;
+	/** Clear all of a run's timers (exec timeout, install watchdog, terminate
+	 * fallback). clearTimeout on an already-fired id is a no-op, so callers on
+	 * a timeout path can clear unconditionally. */
+	private clearTimers(p: PendingRun): void {
 		if (p.timer) clearTimeout(p.timer);
 		if (p.installWatchdog) clearTimeout(p.installWatchdog);
 		if (p.terminateFallback) clearTimeout(p.terminateFallback);
+	}
+
+	/** Reject every in-flight run with `reason`, clearing its timers. */
+	private rejectAllPending(reason: Error): void {
+		const pending = Array.from(this.pending.values());
+		this.pending.clear();
+		pending.forEach((p) => {
+			this.clearTimers(p);
+			p.reject(reason);
+		});
+	}
+
+	private handleDone(msg: Extract<WorkerToMain, { kind: 'done' }>): void {
+		const p = this.pending.get(msg.id);
+		if (!p) return;
+		this.clearTimers(p);
 		this.pending.delete(msg.id);
 		p.resolve({ ...msg.result, artifacts: p.artifacts.length, artifactsList: p.artifacts });
 	}
@@ -325,14 +343,7 @@ export class WorkerManager {
 		const err = new Error(`worker error: ${message}`);
 		this.readyError = message;
 		this.readyWaiters.splice(0).forEach((fn) => fn());
-		const pending = Array.from(this.pending.values());
-		this.pending.clear();
-		pending.forEach((p) => {
-			if (p.timer) clearTimeout(p.timer);
-			if (p.installWatchdog) clearTimeout(p.installWatchdog);
-			if (p.terminateFallback) clearTimeout(p.terminateFallback);
-			p.reject(err);
-		});
+		this.rejectAllPending(err);
 	}
 
 	private send(msg: MainToWorker): void {
@@ -479,8 +490,7 @@ export class WorkerManager {
 		const p = this.pending.get(id);
 		if (!p) return;
 		this.pending.delete(id);
-		if (p.installWatchdog) clearTimeout(p.installWatchdog);
-		if (p.terminateFallback) clearTimeout(p.terminateFallback);
+		this.clearTimers(p);
 		this.respawn();
 		p.reject(new Error(`sandbox timeout after ${timeoutMs}ms`));
 	}
@@ -505,8 +515,7 @@ export class WorkerManager {
 		const p = this.pending.get(id);
 		if (!p) return;
 		this.pending.delete(id);
-		if (p.timer) clearTimeout(p.timer);
-		if (p.terminateFallback) clearTimeout(p.terminateFallback);
+		this.clearTimers(p);
 		this.respawn();
 		p.reject(
 			new Error(
@@ -563,14 +572,7 @@ export class WorkerManager {
 		}
 		this.ready = false;
 		this.readyError = null;
-		const pending = Array.from(this.pending.values());
-		this.pending.clear();
-		pending.forEach((p) => {
-			if (p.timer) clearTimeout(p.timer);
-			if (p.installWatchdog) clearTimeout(p.installWatchdog);
-			if (p.terminateFallback) clearTimeout(p.terminateFallback);
-			p.reject(new Error('sandbox reset'));
-		});
+		this.rejectAllPending(new Error('sandbox reset'));
 		// MEMFS is gone with the worker — drop our sync state so the next
 		// run does a full fresh sync of the working dir.
 		this.syncedFiles.clear();

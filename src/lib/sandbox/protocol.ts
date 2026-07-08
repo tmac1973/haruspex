@@ -88,6 +88,19 @@ export type MainToWorker =
 			error?: string;
 	  };
 
+/**
+ * Payload of a worker `artifact` message (minus the envelope's kind/run id).
+ * Exported so `worker-manager.ts`'s `toArtifact` types its parameter against
+ * the protocol instead of re-declaring the shape inline.
+ */
+export interface ArtifactMessage {
+	mime: string;
+	payload: { kind: 'bytes'; bytes: Uint8Array } | { kind: 'text'; text: string };
+	alt?: string;
+	truncated?: { shown: number; total: number };
+	interactive?: boolean;
+}
+
 export type WorkerToMain =
 	| { kind: 'ready' }
 	| { kind: 'load_error'; error: string }
@@ -95,15 +108,7 @@ export type WorkerToMain =
 	| { kind: 'sync_workdir_ack'; sync_id: string; error?: string }
 	| { kind: 'stdout'; id: string; data: string }
 	| { kind: 'stderr'; id: string; data: string }
-	| {
-			kind: 'artifact';
-			id: string;
-			mime: string;
-			payload: { kind: 'bytes'; bytes: Uint8Array } | { kind: 'text'; text: string };
-			alt?: string;
-			truncated?: { shown: number; total: number };
-			interactive?: boolean;
-	  }
+	| ({ kind: 'artifact'; id: string } & ArtifactMessage)
 	| { kind: 'install_progress'; id: string; package: string; phase: InstallPhase }
 	/**
 	 * Emitted by the worker when a run enters its package-resolution /
