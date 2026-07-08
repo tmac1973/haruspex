@@ -151,18 +151,18 @@ fn stats_upsert_creates_row_then_accumulates() {
     let snap = db.lifetime_stats_snapshot().unwrap();
     assert_eq!(snap.engines.len(), 1);
     let e = &snap.engines[0];
-    assert_eq!(e.engine, "duckduckgo");
-    assert_eq!(e.attempts, 3);
-    assert_eq!(e.successes, 2);
+    assert_eq!(e.core.engine, "duckduckgo");
+    assert_eq!(e.core.attempts, 3);
+    assert_eq!(e.core.successes, 2);
     assert_eq!(e.fail_rate_limited, 1);
     assert_eq!(e.fail_http, 0);
-    assert_eq!(e.total_latency_ms, 750);
-    assert_eq!(e.max_latency_ms, 500);
-    assert_eq!(e.last_success_at, Some(now + 1000));
-    assert_eq!(e.last_failure_at, Some(now + 2000));
-    assert_eq!(e.first_choice_attempts, 2);
-    assert_eq!(e.fallback_attempts, 1);
-    assert_eq!(e.fallback_successes, 1);
+    assert_eq!(e.core.total_latency_ms, 750);
+    assert_eq!(e.core.max_latency_ms, 500);
+    assert_eq!(e.core.last_success_at, Some(now + 1000));
+    assert_eq!(e.core.last_failure_at, Some(now + 2000));
+    assert_eq!(e.core.first_choice_attempts, 2);
+    assert_eq!(e.core.fallback_attempts, 1);
+    assert_eq!(e.core.fallback_successes, 1);
 }
 
 #[test]

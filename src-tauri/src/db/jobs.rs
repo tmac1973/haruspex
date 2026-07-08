@@ -10,6 +10,66 @@ const JOB_SUMMARY_COLS: &str = "j.id, j.name, j.description, j.working_dir, j.au
                         j.created_at, j.updated_at,
                         (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count";
 
+/// Every job column written from a [`JobInput`], in binding order. The
+/// INSERT (`create_job`), UPDATE (`update_job`), and full SELECT (`get_job`)
+/// all derive their SQL from this table, and [`job_write_params`] binds the
+/// input fields in the same order — so adding a job column means extending
+/// this list, `job_write_params`, and `get_job`'s row decode, with no
+/// hand-counted `?N` placeholders to renumber.
+const JOB_WRITE_COLS: &[&str] = &[
+    "name",
+    "description",
+    "working_dir",
+    "auto_approve_tools",
+    "job_type",
+    "schedule_kind",
+    "schedule_config",
+    "next_due_at",
+    "audit_num_runs",
+    "audit_output_file",
+    "audit_read_only",
+    "audit_max_iterations",
+    "audit_sample_instructions",
+    "audit_verify_instructions",
+    "model_remote_base_url",
+    "model_remote_api_key",
+    "model_remote_model_id",
+    "model_remote_context_size",
+    "model_remote_vision_supported",
+    "initial_description",
+    "plan_output_dir",
+    "model_remote_api_key_id",
+];
+
+/// A [`JobInput`]'s fields as SQL parameters, in [`JOB_WRITE_COLS`] order.
+/// (rusqlite encodes `bool` as INTEGER 0/1, matching the old `as i64` casts.)
+fn job_write_params(input: &JobInput) -> Vec<&dyn rusqlite::ToSql> {
+    vec![
+        &input.name,
+        &input.description,
+        &input.working_dir,
+        &input.auto_approve_tools,
+        &input.job_type,
+        &input.schedule_kind,
+        &input.schedule_config,
+        &input.next_due_at,
+        &input.audit_num_runs,
+        &input.audit_output_file,
+        &input.audit_read_only,
+        &input.audit_max_iterations,
+        &input.audit_sample_instructions,
+        &input.audit_verify_instructions,
+        &input.model_remote_base_url,
+        &input.model_remote_api_key,
+        &input.model_remote_model_id,
+        &input.model_remote_context_size,
+        &input.model_remote_vision_supported,
+        &input.initial_description,
+        &input.plan_output_dir,
+        &input.model_remote_api_key_id,
+    ]
+}
+
 /// Decode one row of a [`JOB_SUMMARY_COLS`] query into a [`JobSummary`].
 fn row_to_job_summary(row: &rusqlite::Row) -> rusqlite::Result<JobSummary> {
     Ok(JobSummary {
@@ -32,46 +92,20 @@ impl Database {
     pub fn create_job(&self, input: &JobInput) -> Result<i64, String> {
         let conn = self.conn();
         let now = chrono_now();
-        conn.execute(
-            "INSERT INTO jobs
-                (name, description, working_dir, auto_approve_tools, job_type,
-                 schedule_kind, schedule_config, next_due_at,
-                 audit_num_runs, audit_output_file, audit_read_only,
-                 audit_max_iterations, audit_sample_instructions, audit_verify_instructions,
-                 model_remote_base_url, model_remote_api_key, model_remote_model_id,
-                 model_remote_context_size, model_remote_vision_supported,
-                 initial_description, plan_output_dir,
-                 model_remote_api_key_id,
-                 created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                     ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?23)",
-            params![
-                input.name,
-                input.description,
-                input.working_dir,
-                input.auto_approve_tools as i64,
-                input.job_type,
-                input.schedule_kind,
-                input.schedule_config,
-                input.next_due_at,
-                input.audit_num_runs,
-                input.audit_output_file,
-                input.audit_read_only as i64,
-                input.audit_max_iterations,
-                input.audit_sample_instructions,
-                input.audit_verify_instructions,
-                input.model_remote_base_url,
-                input.model_remote_api_key,
-                input.model_remote_model_id,
-                input.model_remote_context_size,
-                input.model_remote_vision_supported,
-                input.initial_description,
-                input.plan_output_dir,
-                input.model_remote_api_key_id,
-                now,
-            ],
-        )
-        .map_err(|e| format!("Job insert failed: {}", e))?;
+        let n = JOB_WRITE_COLS.len();
+        let placeholders: Vec<String> = (1..=n).map(|i| format!("?{i}")).collect();
+        // created_at and updated_at both bind the trailing `now` param.
+        let sql = format!(
+            "INSERT INTO jobs ({}, created_at, updated_at) VALUES ({}, ?{}, ?{})",
+            JOB_WRITE_COLS.join(", "),
+            placeholders.join(", "),
+            n + 1,
+            n + 1
+        );
+        let mut params = job_write_params(input);
+        params.push(&now);
+        conn.execute(&sql, &params[..])
+            .map_err(|e| format!("Job insert failed: {}", e))?;
         Ok(conn.last_insert_rowid())
     }
 
@@ -99,6 +133,12 @@ impl Database {
     pub fn get_job(&self, id: i64) -> Result<JobWithSteps, String> {
         let conn = self.conn();
 
+        // Columns in JOB_WRITE_COLS order (indices 0..=21), then the two
+        // DB-assigned timestamps — decode indices below must match.
+        let sql = format!(
+            "SELECT {}, created_at, updated_at FROM jobs WHERE id = ?1",
+            JOB_WRITE_COLS.join(", ")
+        );
         let (
             name,
             description,
@@ -108,8 +148,6 @@ impl Database {
             schedule_kind,
             schedule_config,
             next_due_at,
-            created_at,
-            updated_at,
             audit_num_runs,
             audit_output_file,
             audit_read_only,
@@ -124,49 +162,37 @@ impl Database {
             initial_description,
             plan_output_dir,
             model_remote_api_key_id,
+            created_at,
+            updated_at,
         ) = conn
-            .query_row(
-                "SELECT name, description, working_dir, auto_approve_tools, job_type,
-                        schedule_kind, schedule_config, next_due_at,
-                        created_at, updated_at,
-                        audit_num_runs, audit_output_file, audit_read_only,
-                        audit_max_iterations,
-                        audit_sample_instructions, audit_verify_instructions,
-                        model_remote_base_url, model_remote_api_key, model_remote_model_id,
-                        model_remote_context_size, model_remote_vision_supported,
-                        initial_description, plan_output_dir,
-                        model_remote_api_key_id
-                 FROM jobs WHERE id = ?1",
-                params![id],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, i64>(3)? != 0,
-                        row.get::<_, String>(4)?,
-                        row.get::<_, String>(5)?,
-                        row.get::<_, Option<String>>(6)?,
-                        row.get::<_, Option<i64>>(7)?,
-                        row.get::<_, i64>(8)?,
-                        row.get::<_, i64>(9)?,
-                        row.get::<_, Option<i64>>(10)?,
-                        row.get::<_, Option<String>>(11)?,
-                        row.get::<_, i64>(12)? != 0,
-                        row.get::<_, Option<i64>>(13)?,
-                        row.get::<_, Option<String>>(14)?,
-                        row.get::<_, Option<String>>(15)?,
-                        row.get::<_, Option<String>>(16)?,
-                        row.get::<_, Option<String>>(17)?,
-                        row.get::<_, Option<String>>(18)?,
-                        row.get::<_, Option<i64>>(19)?,
-                        row.get::<_, Option<bool>>(20)?,
-                        row.get::<_, Option<String>>(21)?,
-                        row.get::<_, Option<String>>(22)?,
-                        row.get::<_, Option<String>>(23)?,
-                    ))
-                },
-            )
+            .query_row(&sql, params![id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)? != 0,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, i64>(10)? != 0,
+                    row.get::<_, Option<i64>>(11)?,
+                    row.get::<_, Option<String>>(12)?,
+                    row.get::<_, Option<String>>(13)?,
+                    row.get::<_, Option<String>>(14)?,
+                    row.get::<_, Option<String>>(15)?,
+                    row.get::<_, Option<String>>(16)?,
+                    row.get::<_, Option<i64>>(17)?,
+                    row.get::<_, Option<bool>>(18)?,
+                    row.get::<_, Option<String>>(19)?,
+                    row.get::<_, Option<String>>(20)?,
+                    row.get::<_, Option<String>>(21)?,
+                    row.get::<_, i64>(22)?,
+                    row.get::<_, i64>(23)?,
+                ))
+            })
             .map_err(|e| format!("Job not found: {}", e))?;
 
         let mut stmt = conn
@@ -222,60 +248,23 @@ impl Database {
     pub fn update_job(&self, id: i64, input: &JobInput) -> Result<(), String> {
         let conn = self.conn();
         let now = chrono_now();
+        let n = JOB_WRITE_COLS.len();
+        let assignments: Vec<String> = JOB_WRITE_COLS
+            .iter()
+            .enumerate()
+            .map(|(i, col)| format!("{} = ?{}", col, i + 1))
+            .collect();
+        let sql = format!(
+            "UPDATE jobs SET {}, updated_at = ?{} WHERE id = ?{}",
+            assignments.join(", "),
+            n + 1,
+            n + 2
+        );
+        let mut params = job_write_params(input);
+        params.push(&now);
+        params.push(&id);
         let affected = conn
-            .execute(
-                "UPDATE jobs SET
-                    name = ?1,
-                    description = ?2,
-                    working_dir = ?3,
-                    auto_approve_tools = ?4,
-                    job_type = ?5,
-                    schedule_kind = ?6,
-                    schedule_config = ?7,
-                    next_due_at = ?8,
-                    audit_num_runs = ?9,
-                    audit_output_file = ?10,
-                    audit_read_only = ?11,
-                    audit_max_iterations = ?12,
-                    audit_sample_instructions = ?13,
-                    audit_verify_instructions = ?14,
-                    model_remote_base_url = ?15,
-                    model_remote_api_key = ?16,
-                    model_remote_model_id = ?17,
-                    model_remote_context_size = ?18,
-                    model_remote_vision_supported = ?19,
-                    initial_description = ?20,
-                    plan_output_dir = ?21,
-                    model_remote_api_key_id = ?22,
-                    updated_at = ?23
-                 WHERE id = ?24",
-                params![
-                    input.name,
-                    input.description,
-                    input.working_dir,
-                    input.auto_approve_tools as i64,
-                    input.job_type,
-                    input.schedule_kind,
-                    input.schedule_config,
-                    input.next_due_at,
-                    input.audit_num_runs,
-                    input.audit_output_file,
-                    input.audit_read_only as i64,
-                    input.audit_max_iterations,
-                    input.audit_sample_instructions,
-                    input.audit_verify_instructions,
-                    input.model_remote_base_url,
-                    input.model_remote_api_key,
-                    input.model_remote_model_id,
-                    input.model_remote_context_size,
-                    input.model_remote_vision_supported,
-                    input.initial_description,
-                    input.plan_output_dir,
-                    input.model_remote_api_key_id,
-                    now,
-                    id,
-                ],
-            )
+            .execute(&sql, &params[..])
             .map_err(|e| format!("Job update failed: {}", e))?;
         if affected == 0 {
             return Err(format!("No job with id {}", id));
