@@ -6,6 +6,7 @@
 		type ResponseFormat,
 		type ThemeMode
 	} from '$lib/stores/settings';
+	import ModeSelector from '$lib/components/ModeSelector.svelte';
 
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);
@@ -39,47 +40,20 @@
 
 <section class="settings-section">
 	<h2>Response Format</h2>
-	<div class="format-options">
-		<label class="format-option" class:selected={responseFormat === 'minimal'}>
-			<input
-				type="radio"
-				name="format"
-				value="minimal"
-				checked={responseFormat === 'minimal'}
-				onchange={() => setResponseFormat('minimal')}
-			/>
-			<div>
-				<strong>Minimal</strong>
-				<span>Plain text, no formatting or emojis</span>
-			</div>
-		</label>
-		<label class="format-option" class:selected={responseFormat === 'standard'}>
-			<input
-				type="radio"
-				name="format"
-				value="standard"
-				checked={responseFormat === 'standard'}
-				onchange={() => setResponseFormat('standard')}
-			/>
-			<div>
-				<strong>Standard</strong>
-				<span>Clean markdown (headings, lists, code blocks)</span>
-			</div>
-		</label>
-		<label class="format-option" class:selected={responseFormat === 'rich'}>
-			<input
-				type="radio"
-				name="format"
-				value="rich"
-				checked={responseFormat === 'rich'}
-				onchange={() => setResponseFormat('rich')}
-			/>
-			<div>
-				<strong>Rich</strong>
-				<span>Full markdown with tables and emojis</span>
-			</div>
-		</label>
-	</div>
+	<ModeSelector
+		name="format"
+		value={responseFormat}
+		onchange={setResponseFormat}
+		options={[
+			{ value: 'minimal', title: 'Minimal', description: 'Plain text, no formatting or emojis' },
+			{
+				value: 'standard',
+				title: 'Standard',
+				description: 'Clean markdown (headings, lists, code blocks)'
+			},
+			{ value: 'rich', title: 'Rich', description: 'Full markdown with tables and emojis' }
+		]}
+	/>
 </section>
 
 <style>
@@ -107,48 +81,5 @@
 		border-color: var(--accent);
 		background: color-mix(in srgb, var(--accent) 10%, transparent);
 		font-weight: 500;
-	}
-
-	.format-options {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.format-option {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		padding: 10px 14px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		cursor: pointer;
-		transition: border-color 0.15s;
-	}
-
-	.format-option:hover {
-		border-color: var(--text-secondary);
-	}
-
-	.format-option.selected {
-		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 5%, transparent);
-	}
-
-	.format-option input[type='radio'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.format-option strong {
-		display: block;
-		font-size: 0.9rem;
-	}
-
-	.format-option span {
-		display: block;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
 	}
 </style>
