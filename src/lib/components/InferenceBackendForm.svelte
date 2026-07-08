@@ -13,7 +13,9 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { untrack } from 'svelte';
 	import type { InferenceBackendConfig, InferenceBackendKind } from '$lib/stores/settings';
+	import { getApiKeyValue } from '$lib/stores/settings';
 	import { pickProbedModel, type NormalizedModel, type ProbeResult } from '$lib/inferenceProbe';
+	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
 
 	interface Props {
 		config: InferenceBackendConfig;
@@ -41,6 +43,7 @@
 		})
 	);
 	let apiKey = $state(untrack(() => config.remoteApiKey));
+	let apiKeyId = $state<string | null>(untrack(() => config.remoteApiKeyId ?? null));
 	let modelId = $state(untrack(() => config.remoteModelId));
 	let manualContextSize = $state<number | ''>(untrack(() => config.remoteContextSize ?? ''));
 	let visionOverride = $state<boolean | null>(untrack(() => config.remoteVisionSupported));
@@ -57,12 +60,26 @@
 		probeResult?.models.some((m) => m.id === modelId && m.vision_supported !== null) ?? false
 	);
 
-	// Options shown in the Server URL dropdown. If the user has typed/edited
-	// a URL that isn't saved yet, surface it as the (selected) first option
-	// so the dropdown always reflects the active `baseUrl` — otherwise a
-	// `<select>` whose value matches no <option> renders blank.
+	// True when a URL points at openrouter.ai — filtered out of the generic
+	// remote server dropdown so OpenRouter isn't reachable from two places.
+	function isOpenRouterUrl(url: string): boolean {
+		try {
+			return new URL(url).hostname === 'openrouter.ai';
+		} catch {
+			return false;
+		}
+	}
+
+	// Options shown in the Server URL dropdown. OpenRouter URLs are hidden
+	// (they have a dedicated backend option in InferenceSection). If the user
+	// has typed/edited a URL that isn't saved yet, surface it as the
+	// (selected) first option so the dropdown always reflects the active
+	// `baseUrl` — otherwise a `<select>` whose value matches no <option>
+	// renders blank.
 	let urlOptions = $derived(
-		baseUrl && !serverUrls.includes(baseUrl) ? [baseUrl, ...serverUrls] : serverUrls
+		baseUrl && !serverUrls.includes(baseUrl)
+			? [baseUrl, ...serverUrls.filter((u) => !isOpenRouterUrl(u))]
+			: serverUrls.filter((u) => !isOpenRouterUrl(u))
 	);
 
 	function commit(partial: Partial<InferenceBackendConfig>) {
@@ -147,9 +164,10 @@
 		probing = true;
 		probeError = null;
 		try {
+			const resolvedKey = getApiKeyValue(apiKeyId) ?? apiKey;
 			const result = await invoke<ProbeResult>('probe_inference_server', {
 				baseUrl,
-				apiKey: apiKey || null
+				apiKey: resolvedKey || null
 			});
 			probeResult = result;
 			// Commit the normalized URL (the Rust side may have stripped
@@ -175,6 +193,7 @@
 			commit({
 				remoteBaseUrl: result.base_url,
 				remoteApiKey: apiKey,
+				remoteApiKeyId: apiKeyId,
 				remoteModelId: modelId,
 				remoteContextSize: typeof manualContextSize === 'number' ? manualContextSize : null,
 				remoteVisionSupported: visionOverride,
@@ -293,17 +312,17 @@
 	</div>
 
 	<div class="field">
-		<label for="inf-api-key">API Key (optional)</label>
-		<input
-			id="inf-api-key"
-			type="password"
-			placeholder="Leave blank for self-hosted servers"
-			bind:value={apiKey}
-			onblur={() => commit({ remoteApiKey: apiKey })}
+		<label for="inf-api-key">API Key</label>
+		<ApiKeyPicker
+			selectedId={apiKeyId}
+			onSelect={(id) => {
+				apiKeyId = id;
+				commit({ remoteApiKeyId: id });
+			}}
 		/>
 		<p class="hint">
 			Only needed for servers that require authentication. Sent as
-			<code>Authorization: Bearer …</code>.
+			<code>Authorization: Bearer …</code>. Managed in the API Keys section below.
 		</p>
 	</div>
 
@@ -454,7 +473,6 @@
 	}
 
 	.field input[type='text'],
-	.field input[type='password'],
 	.field input[type='number'],
 	.field select {
 		padding: 8px 12px;

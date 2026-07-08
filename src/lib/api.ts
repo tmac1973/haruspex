@@ -1,5 +1,5 @@
 // llama-server OpenAI-compatible API client wrapper
-import { getSettings } from '$lib/stores/settings';
+import { getSettings, getApiKeyValue } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
 import { PORTS, baseUrl } from '$lib/ports';
 
@@ -22,6 +22,14 @@ export interface ChatMessage {
 	content: MessageContent;
 	tool_calls?: ToolCall[];
 	tool_call_id?: string;
+	/**
+	 * OpenRouter reasoning items captured from a prior assistant response and
+	 * echoed back unmodified and in order for multi-turn reasoning quality
+	 * (OpenRouter docs: reasoning_details must be preserved across turns).
+	 * Typed loosely since the OpenRouter item shapes vary by provider format;
+	 * we never mutate them, just pass them through. Other backends ignore it.
+	 */
+	reasoning_details?: unknown[];
 }
 
 /**
@@ -84,6 +92,14 @@ export interface ChatCompletionOptions {
 	 */
 	tool_choice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };
 	/**
+	 * OpenRouter reasoning param `{ reasoning: { effort } }`. Added to the body
+	 * instead of the llama.cpp `chat_template_kwargs` when the active backend is
+	 * OpenRouter and the model is reasoning-capable. Built by
+	 * `getOpenRouterReasoningParam` in the settings store and threaded through
+	 * by the agent loop.
+	 */
+	reasoning?: { effort: string };
+	/**
 	 * Per-request remote backend override. When set (non-blank baseUrl), the
 	 * request routes to this server/model instead of the active Settings
 	 * backend — used so a single job can run against a different remote model
@@ -100,8 +116,14 @@ export interface ChatCompletionOptions {
 export interface BackendOverride {
 	/** Base URL of the remote server (no trailing slash, no /v1 suffix). */
 	baseUrl: string;
-	/** Optional Bearer token; blank for servers that need no auth. */
+	/** Optional Bearer token; blank for servers that need no auth (legacy inline). */
 	apiKey?: string;
+	/**
+	 * Reference to a key in the Settings API-key store (by id). When set,
+	 * resolved to the actual key value at request time, taking precedence
+	 * over the legacy inline `apiKey`.
+	 */
+	apiKeyId?: string;
 	/** Model ID sent in the request; falls back to 'default' when blank. */
 	modelId?: string;
 }
@@ -113,9 +135,17 @@ export interface Usage {
 }
 
 export interface StreamChunk {
-	delta: { content?: string; reasoning_content?: string; tool_calls?: ToolCallDelta[] };
+	delta: {
+		content?: string;
+		reasoning_content?: string;
+		/** OpenRouter-normalized reasoning text (alias for reasoning_content). */
+		reasoning?: string;
+		tool_calls?: ToolCallDelta[];
+	};
 	finish_reason: string | null;
 	usage?: Usage;
+	/** OpenRouter mid-stream error object (top-level `error` on the chunk). */
+	error?: { code?: number; message?: string; metadata?: { error_type?: string } };
 }
 
 export interface ChatCompletionResponse {
@@ -123,6 +153,13 @@ export interface ChatCompletionResponse {
 	tool_calls?: ToolCall[];
 	finish_reason: string;
 	usage?: Usage;
+	/**
+	 * OpenRouter-normalized reasoning items for multi-turn preservation. The
+	 * agent loop echoes these back into the next request's assistant message
+	 * (see `reasoning_details` on `ChatMessage`). `null` when the provider
+	 * didn't return any (local llama-server, non-reasoning models).
+	 */
+	reasoning_details?: unknown[] | null;
 }
 
 export class ApiError extends Error {
@@ -160,40 +197,69 @@ function resolveChatEndpoint(
 	url: string;
 	headers: Record<string, string>;
 	model: string;
+	isOpenRouter: boolean;
 } {
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 	// A per-request override short-circuits the Settings backend entirely.
 	if (override && override.baseUrl.trim().length > 0) {
-		if (override.apiKey && override.apiKey.trim().length > 0) {
-			headers['Authorization'] = `Bearer ${override.apiKey.trim()}`;
+		// Key-store reference takes precedence over the legacy inline apiKey.
+		const key = getApiKeyValue(override.apiKeyId) ?? override.apiKey;
+		if (key && key.trim().length > 0) {
+			headers['Authorization'] = `Bearer ${key.trim()}`;
 		}
+		const isOpenRouter = isOpenRouterUrl(override.baseUrl);
+		if (isOpenRouter) applyOpenRouterAttribution(headers);
 		return {
 			url: `${override.baseUrl.replace(/\/+$/, '')}/v1/chat/completions`,
 			headers,
-			model: override.modelId?.trim() || 'default'
+			model: override.modelId?.trim() || 'default',
+			isOpenRouter
 		};
 	}
 	const backend = getSettings().inferenceBackend;
 	if (backend.mode === 'remote' && backend.remoteBaseUrl) {
-		if (backend.remoteApiKey && backend.remoteApiKey.trim().length > 0) {
-			headers['Authorization'] = `Bearer ${backend.remoteApiKey.trim()}`;
+		// Key-store reference takes precedence over the legacy inline remoteApiKey.
+		const key = getApiKeyValue(backend.remoteApiKeyId) ?? backend.remoteApiKey;
+		if (key && key.trim().length > 0) {
+			headers['Authorization'] = `Bearer ${key.trim()}`;
 		}
+		const isOpenRouter =
+			backend.remoteBackendKind === 'openrouter' || isOpenRouterUrl(backend.remoteBaseUrl);
+		if (isOpenRouter) applyOpenRouterAttribution(headers);
 		return {
 			url: `${backend.remoteBaseUrl.replace(/\/+$/, '')}/v1/chat/completions`,
 			headers,
-			model: backend.remoteModelId || 'default'
+			model: backend.remoteModelId || 'default',
+			isOpenRouter
 		};
 	}
 	return {
 		url: `${getBaseUrl(port)}/v1/chat/completions`,
 		headers,
-		model: 'default'
+		model: 'default',
+		isOpenRouter: false
 	};
+}
+
+/** True when a base URL points at openrouter.ai (heuristic — host match). */
+function isOpenRouterUrl(baseUrl: string): boolean {
+	try {
+		return new URL(baseUrl).hostname === 'openrouter.ai';
+	} catch {
+		return false;
+	}
+}
+
+/** Add the optional OpenRouter attribution headers (leaderboard visibility). */
+function applyOpenRouterAttribution(headers: Record<string, string>): void {
+	headers['HTTP-Referer'] = 'https://github.com/tmac1973/haruspex';
+	headers['X-Title'] = 'Haruspex';
 }
 
 function buildRequestBody(
 	options: ChatCompletionOptions,
-	modelName: string = 'default'
+	modelName: string = 'default',
+	isOpenRouter = false
 ): Record<string, unknown> {
 	const isStream = options.stream ?? true;
 	const body: Record<string, unknown> = {
@@ -218,10 +284,13 @@ function buildRequestBody(
 	if (options.top_p !== undefined) {
 		body.top_p = options.top_p;
 	}
-	if (options.top_k !== undefined) {
+	// OpenRouter speaks OpenAI's param set; top_k and min_p are llama.cpp-only
+	// and aren't guaranteed to be tolerated by stricter upstream providers.
+	// Skip both entirely for OpenRouter requests.
+	if (!isOpenRouter && options.top_k !== undefined) {
 		body.top_k = options.top_k;
 	}
-	if (options.min_p !== undefined) {
+	if (!isOpenRouter && options.min_p !== undefined) {
 		body.min_p = options.min_p;
 	}
 	if (options.presence_penalty !== undefined) {
@@ -230,8 +299,14 @@ function buildRequestBody(
 	if (options.max_tokens !== undefined) {
 		body.max_tokens = options.max_tokens;
 	}
-	if (options.chat_template_kwargs !== undefined) {
+	// chat_template_kwargs is llama.cpp-specific (Qwen enable_thinking). For
+	// OpenRouter, reasoning is driven by the `reasoning.effort` param instead
+	// (injected below from getOpenRouterReasoningParam by the caller).
+	if (!isOpenRouter && options.chat_template_kwargs !== undefined) {
 		body.chat_template_kwargs = options.chat_template_kwargs;
+	}
+	if (isOpenRouter && options.reasoning !== undefined) {
+		body.reasoning = options.reasoning;
 	}
 
 	return body;
@@ -247,11 +322,26 @@ const SSE_DONE = Symbol('sse-done');
  */
 function parseSSELine(line: string): StreamChunk | typeof SSE_DONE | null {
 	const trimmed = line.trim();
+	// OpenRouter sends `: OPENROUTER PROCESSING` comment keepalives during
+	// long upstream waits. They don't start with `data: `, so this branch
+	// already ignores them — but we keep the explicit early-return to make
+	// the intent obvious and guard against future shape changes.
 	if (!trimmed.startsWith('data: ')) return null;
 	const data = trimmed.slice(6);
 	if (data === '[DONE]') return SSE_DONE;
 	try {
 		const parsed = JSON.parse(data);
+		// OpenRouter mid-stream error: after the first token, HTTP is already
+		// 200 and the error arrives in-band as a top-level `error` object with
+		// a sentinel `finish_reason: "error"` choice. Surface it so the chat
+		// store can render the typed message without dropping streamed content.
+		if (parsed.error) {
+			return {
+				delta: parsed.choices?.[0]?.delta ?? {},
+				finish_reason: parsed.choices?.[0]?.finish_reason ?? 'error',
+				error: parsed.error
+			};
+		}
 		if (parsed.choices && parsed.choices[0]) {
 			const chunk: StreamChunk = {
 				delta: parsed.choices[0].delta || {},
@@ -346,7 +436,11 @@ export async function* chatCompletionStream(
 	port?: number
 ): AsyncGenerator<StreamChunk> {
 	const endpoint = resolveChatEndpoint(port, options.backend);
-	const body = buildRequestBody({ ...options, stream: true }, endpoint.model);
+	const body = buildRequestBody(
+		{ ...options, stream: true },
+		endpoint.model,
+		endpoint.isOpenRouter
+	);
 	const reqId = nextRequestId++;
 	logDebug('api', `stream request #${reqId} → ${endpoint.url}`, body);
 
@@ -395,7 +489,11 @@ export async function chatCompletion(
 	port?: number
 ): Promise<ChatCompletionResponse> {
 	const endpoint = resolveChatEndpoint(port, options.backend);
-	const body = buildRequestBody({ ...options, stream: false }, endpoint.model);
+	const body = buildRequestBody(
+		{ ...options, stream: false },
+		endpoint.model,
+		endpoint.isOpenRouter
+	);
 	const reqId = nextRequestId++;
 	logDebug('api', `non-stream request #${reqId} → ${endpoint.url}`, body);
 
@@ -417,7 +515,14 @@ export async function chatCompletion(
 	}
 
 	const content = choice.message?.content ?? null;
-	const reasoning = choice.message?.reasoning_content;
+	// OpenRouter normalizes reasoning to `reasoning` (string) with an alias
+	// `reasoning_content`; take whichever is present so the think-stream
+	// panel renders for both local and OpenRouter reasoning models.
+	const reasoning = choice.message?.reasoning_content ?? choice.message?.reasoning;
+	const reasoningDetails =
+		Array.isArray(choice.message?.reasoning_details) && choice.message.reasoning_details.length > 0
+			? choice.message.reasoning_details
+			: null;
 	const fullContent = combineReasoningAndContent(reasoning, content);
 
 	logDebug('api', `non-stream request #${reqId} response`, {
@@ -434,6 +539,7 @@ export async function chatCompletion(
 		content: fullContent,
 		tool_calls: choice.message?.tool_calls,
 		finish_reason: choice.finish_reason ?? 'stop',
-		usage: data.usage
+		usage: data.usage,
+		reasoning_details: reasoningDetails
 	};
 }

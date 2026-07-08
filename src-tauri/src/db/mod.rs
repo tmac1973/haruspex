@@ -137,6 +137,11 @@ pub struct JobWithSteps {
     pub model_remote_base_url: Option<String>,
     /// Optional Bearer token for the override server.
     pub model_remote_api_key: Option<String>,
+    /// Reference to a key in the Settings API-key store (by id). When set,
+    /// the runner resolves the actual key value from the store at request
+    /// time. Takes precedence over the legacy inline `model_remote_api_key`.
+    /// New jobs use this; `model_remote_api_key` is kept for migration.
+    pub model_remote_api_key_id: Option<String>,
     /// Model ID sent to the override server.
     pub model_remote_model_id: Option<String>,
     /// Context window (tokens/request) of the override model, for budget +
@@ -192,6 +197,8 @@ pub struct JobInput {
     pub model_remote_base_url: Option<String>,
     #[serde(default)]
     pub model_remote_api_key: Option<String>,
+    #[serde(default)]
+    pub model_remote_api_key_id: Option<String>,
     #[serde(default)]
     pub model_remote_model_id: Option<String>,
     #[serde(default)]
@@ -474,6 +481,7 @@ impl Database {
             "ALTER TABLE jobs ADD COLUMN audit_verify_instructions TEXT",
             "ALTER TABLE jobs ADD COLUMN model_remote_base_url TEXT",
             "ALTER TABLE jobs ADD COLUMN model_remote_api_key TEXT",
+            "ALTER TABLE jobs ADD COLUMN model_remote_api_key_id TEXT",
             "ALTER TABLE jobs ADD COLUMN model_remote_model_id TEXT",
             "ALTER TABLE jobs ADD COLUMN model_remote_context_size INTEGER",
             "ALTER TABLE jobs ADD COLUMN model_remote_vision_supported INTEGER",

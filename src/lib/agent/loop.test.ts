@@ -63,6 +63,7 @@ vi.mock('$lib/stores/settings', () => ({
 		min_p: 0.0,
 		presence_penalty: 1.0
 	})),
+	getOpenRouterReasoningParam: vi.fn(() => null),
 	getSettings: vi.fn(() => ({ inferenceBackend: { mode: 'local' } })),
 	hasEnabledEmailAccount: vi.fn(() => false)
 }));

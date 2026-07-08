@@ -90,6 +90,7 @@ function makeJob(overrides: Partial<JobWithSteps> = {}): JobWithSteps {
 		audit_verify_instructions: null,
 		model_remote_base_url: null,
 		model_remote_api_key: null,
+		model_remote_api_key_id: null,
 		model_remote_model_id: null,
 		model_remote_context_size: null,
 		model_remote_vision_supported: null,
@@ -334,6 +335,7 @@ describe('jobs runner — guards', () => {
 			makeJob({
 				model_remote_base_url: 'http://compute:3000',
 				model_remote_api_key: 'sk-xyz',
+				model_remote_api_key_id: null,
 				model_remote_model_id: 'qwen3.5-27b',
 				model_remote_context_size: 131072,
 				model_remote_vision_supported: false

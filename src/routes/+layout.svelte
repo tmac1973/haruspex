@@ -414,6 +414,7 @@
 
 <style>
 	:global(:root) {
+		color-scheme: light;
 		--bg-primary: #ffffff;
 		--bg-secondary: #f9fafb;
 		--bg-chat: #ffffff;
@@ -431,6 +432,7 @@
 
 	@media (prefers-color-scheme: dark) {
 		:global(:root:not([data-theme='light'])) {
+			color-scheme: dark;
 			--bg-primary: #111111;
 			--bg-secondary: #1a1a1a;
 			--bg-chat: #111111;
@@ -448,6 +450,7 @@
 	}
 
 	:global(:root[data-theme='dark']) {
+		color-scheme: dark;
 		--bg-primary: #111111;
 		--bg-secondary: #1a1a1a;
 		--bg-chat: #111111;

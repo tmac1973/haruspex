@@ -1,6 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { parseSSE, chatCompletion, chatCompletionStream, ApiError } from '$lib/api';
 
+// Mock the settings module so resolveChatEndpoint sees the backend we want.
+// vi.hoisted ensures the mock fn is available when the hoisted vi.mock factory runs.
+const { getSettingsMock, getApiKeyValueMock } = vi.hoisted(() => ({
+	getSettingsMock: vi.fn<() => { inferenceBackend: Record<string, unknown> }>(() => ({
+		inferenceBackend: { mode: 'local' }
+	})),
+	getApiKeyValueMock: vi.fn<() => string | undefined>(() => undefined)
+}));
+vi.mock('$lib/stores/settings', () => ({
+	getSettings: getSettingsMock,
+	getApiKeyValue: getApiKeyValueMock
+}));
+
 // Helper to create a ReadableStream from SSE text
 function createSSEStream(chunks: string[]): ReadableStream<Uint8Array> {
 	const encoder = new TextEncoder();
@@ -258,6 +271,143 @@ describe('chatCompletion', () => {
 		expect((init.headers as Record<string, string>)['Authorization']).toBeUndefined();
 		// Blank model id falls back to the 'default' placeholder.
 		expect(JSON.parse(init.body as string).model).toBe('default');
+
+		vi.unstubAllGlobals();
+	});
+});
+
+describe('parseSSE — OpenRouter behaviors', () => {
+	it('ignores : OPENROUTER PROCESSING comment keepalives', async () => {
+		const response = createMockResponse([
+			': OPENROUTER PROCESSING\n\n',
+			'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}\n\n',
+			'data: [DONE]\n\n'
+		]);
+		const chunks = [];
+		for await (const chunk of parseSSE(response)) chunks.push(chunk);
+		expect(chunks).toHaveLength(1);
+		expect(chunks[0].delta.content).toBe('ok');
+	});
+
+	it('surfaces a mid-stream error chunk with the error field', async () => {
+		const response = createMockResponse([
+			'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}\n\n',
+			'data: {"error":{"code":429,"message":"Rate limit","metadata":{"error_type":"rate_limit_exceeded"}},"choices":[{"delta":{},"finish_reason":"error"}]}\n\n',
+			'data: [DONE]\n\n'
+		]);
+		const chunks = [];
+		for await (const chunk of parseSSE(response)) chunks.push(chunk);
+		expect(chunks).toHaveLength(2);
+		expect(chunks[1].error).toBeDefined();
+		expect(chunks[1].error?.code).toBe(429);
+		expect(chunks[1].finish_reason).toBe('error');
+	});
+});
+
+describe('chatCompletion — OpenRouter', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks();
+		getApiKeyValueMock.mockReturnValue('sk-or-v1-test');
+	});
+
+	it('injects attribution headers and routes to openrouter.ai', async () => {
+		getSettingsMock.mockReturnValue({
+			inferenceBackend: {
+				mode: 'remote',
+				remoteBaseUrl: 'https://openrouter.ai/api',
+				remoteApiKey: '',
+				remoteApiKeyId: 'key-test',
+				remoteModelId: 'anthropic/claude-sonnet-4.5',
+				remoteBackendKind: 'openrouter'
+			}
+		});
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ message: { content: 'ok', role: 'assistant' }, finish_reason: 'stop' }]
+			})
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		await chatCompletion({ messages: [] });
+
+		const [url, init] = fetchMock.mock.calls[0];
+		expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+		const headers = init.headers as Record<string, string>;
+		expect(headers['Authorization']).toBe('Bearer sk-or-v1-test');
+		expect(headers['HTTP-Referer']).toBeDefined();
+		expect(headers['X-Title']).toBe('Haruspex');
+		expect(JSON.parse(init.body as string).model).toBe('anthropic/claude-sonnet-4.5');
+		// top_k / min_p / chat_template_kwargs should NOT be in the body.
+		const body = JSON.parse(init.body as string);
+		expect(body.top_k).toBeUndefined();
+		expect(body.min_p).toBeUndefined();
+		expect(body.chat_template_kwargs).toBeUndefined();
+
+		vi.unstubAllGlobals();
+	});
+
+	it('captures reasoning_details from the response', async () => {
+		getSettingsMock.mockReturnValue({
+			inferenceBackend: {
+				mode: 'remote',
+				remoteBaseUrl: 'https://openrouter.ai/api',
+				remoteApiKey: '',
+				remoteApiKeyId: 'key-test',
+				remoteModelId: 'openai/o3',
+				remoteBackendKind: 'openrouter'
+			}
+		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({
+					choices: [
+						{
+							message: {
+								content: 'answer',
+								role: 'assistant',
+								reasoning: 'thinking…',
+								reasoning_details: [{ type: 'reasoning.text', text: 'thinking…' }]
+							},
+							finish_reason: 'stop'
+						}
+					]
+				})
+			})
+		);
+
+		const result = await chatCompletion({ messages: [] });
+		expect(result.reasoning_details).toHaveLength(1);
+		expect(result.reasoning_details?.[0]).toEqual({ type: 'reasoning.text', text: 'thinking…' });
+
+		vi.unstubAllGlobals();
+	});
+
+	it('includes the reasoning effort param when provided', async () => {
+		getSettingsMock.mockReturnValue({
+			inferenceBackend: {
+				mode: 'remote',
+				remoteBaseUrl: 'https://openrouter.ai/api',
+				remoteApiKey: '',
+				remoteApiKeyId: 'key-test',
+				remoteModelId: 'openai/o3',
+				remoteBackendKind: 'openrouter'
+			}
+		});
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ message: { content: 'ok', role: 'assistant' }, finish_reason: 'stop' }]
+			})
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		await chatCompletion({ messages: [], reasoning: { effort: 'high' } });
+
+		const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+		expect(body.reasoning).toEqual({ effort: 'high' });
 
 		vi.unstubAllGlobals();
 	});

@@ -233,6 +233,19 @@ export function enterRemoteMode(baseUrl: string, modelId: string): void {
 }
 
 function buildRemoteLabel(baseUrl: string, modelId: string): string {
+	// OpenRouter is a cloud backend — label it distinctly so the badge always
+	// makes the "prompts leave your device" status obvious at a glance.
+	const isOpenRouter = (() => {
+		try {
+			return new URL(baseUrl).hostname === 'openrouter.ai';
+		} catch {
+			return false;
+		}
+	})();
+	if (isOpenRouter) {
+		const model = modelId.trim();
+		return model ? `${model} @ OpenRouter (cloud)` : 'OpenRouter (cloud)';
+	}
 	let host = baseUrl;
 	try {
 		const u = new URL(baseUrl);

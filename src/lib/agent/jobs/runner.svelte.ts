@@ -126,6 +126,7 @@ function jobBackendOverride(job: JobWithSteps): BackendOverride | undefined {
 	return {
 		baseUrl: url,
 		apiKey: job.model_remote_api_key?.trim() || undefined,
+		apiKeyId: job.model_remote_api_key_id ?? undefined,
 		modelId: job.model_remote_model_id?.trim() || undefined
 	};
 }
