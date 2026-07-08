@@ -10,12 +10,17 @@
 	 * probe flow either way, so factoring it out keeps the two call
 	 * sites in sync.
 	 */
-	import { invoke } from '@tauri-apps/api/core';
 	import { untrack } from 'svelte';
 	import type { InferenceBackendConfig, InferenceBackendKind } from '$lib/stores/settings';
-	import { getApiKeyValue } from '$lib/stores/settings';
-	import { pickProbedModel, type NormalizedModel, type ProbeResult } from '$lib/inferenceProbe';
+	import {
+		pickProbedModel,
+		probeInferenceServer,
+		probedModelCaps,
+		type NormalizedModel,
+		type ProbeResult
+	} from '$lib/inferenceProbe';
 	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
+	import ToggleField from '$lib/components/ToggleField.svelte';
 
 	interface Props {
 		config: InferenceBackendConfig;
@@ -164,11 +169,7 @@
 		probing = true;
 		probeError = null;
 		try {
-			const resolvedKey = getApiKeyValue(apiKeyId) ?? apiKey;
-			const result = await invoke<ProbeResult>('probe_inference_server', {
-				baseUrl,
-				apiKey: resolvedKey || null
-			});
+			const result = await probeInferenceServer(baseUrl, apiKeyId, apiKey);
 			probeResult = result;
 			// Commit the normalized URL (the Rust side may have stripped
 			// a trailing slash or /v1 suffix), and pick a sensible default
@@ -187,8 +188,9 @@
 			// Vision: if the selected model carries a concrete flag, use it;
 			// otherwise leave the manual override alone.
 			const selectedModel = result.models.find((m) => m.id === modelId);
-			if (selectedModel?.vision_supported !== null && selectedModel !== undefined) {
-				visionOverride = selectedModel?.vision_supported ?? null;
+			const caps = probedModelCaps(selectedModel);
+			if (caps.vision !== null) {
+				visionOverride = caps.vision;
 			}
 			commit({
 				remoteBaseUrl: result.base_url,
@@ -213,13 +215,12 @@
 		// If the newly selected model has its own context/vision metadata,
 		// auto-fill those fields.
 		const m = probeResult?.models.find((x) => x.id === newId);
-		if (m) {
-			if (typeof m.context_size === 'number') {
-				manualContextSize = m.context_size;
-			}
-			if (m.vision_supported !== null) {
-				visionOverride = m.vision_supported;
-			}
+		const caps = probedModelCaps(m);
+		if (caps.contextSize !== null) {
+			manualContextSize = caps.contextSize;
+		}
+		if (caps.vision !== null) {
+			visionOverride = caps.vision;
 		}
 		commit({
 			remoteModelId: newId,
@@ -380,44 +381,27 @@
 		</div>
 
 		<div class="field">
-			<label class="toggle-row">
-				<input
-					type="checkbox"
-					checked={visionOverride === true}
-					onchange={(e) => onVisionToggle((e.target as HTMLInputElement).checked)}
-				/>
-				<div>
-					<strong>This model supports vision (image input)</strong>
-					<span>
-						{#if visionDetected}
-							Detected automatically from the backend.
-						{:else}
-							Haruspex couldn't auto-detect. Only enable if you know your model is multimodal —
-							sending images to a text-only model will error.
-						{/if}
-					</span>
-				</div>
-			</label>
+			<ToggleField
+				checked={visionOverride === true}
+				onchange={onVisionToggle}
+				title="This model supports vision (image input)"
+				description={visionDetected
+					? 'Detected automatically from the backend.'
+					: "Haruspex couldn't auto-detect. Only enable if you know your model is multimodal — sending images to a text-only model will error."}
+			/>
 		</div>
 
 		<div class="field">
-			<label class="toggle-row">
-				<input
-					type="checkbox"
-					checked={config.allowParallelInference}
-					onchange={(e) =>
-						commit({ allowParallelInference: (e.target as HTMLInputElement).checked })}
-				/>
-				<div>
-					<strong>Allow parallel inference</strong>
-					<span>
-						Skip the app's request queue and let chat + job turns run concurrently against this
-						server. Only enable if the server supports concurrent requests — e.g. vLLM, llama-server
-						launched with <code>-np N</code>, or hosted APIs. For single-slot servers leave this off
-						so a queued turn shows a "waiting" indicator instead of silently blocking.
-					</span>
-				</div>
-			</label>
+			<ToggleField
+				checked={config.allowParallelInference}
+				onchange={(val) => commit({ allowParallelInference: val })}
+				title="Allow parallel inference"
+			>
+				Skip the app's request queue and let chat + job turns run concurrently against this server.
+				Only enable if the server supports concurrent requests — e.g. vLLM, llama-server launched
+				with <code>-np N</code>, or hosted APIs. For single-slot servers leave this off so a queued
+				turn shows a "waiting" indicator instead of silently blocking.
+			</ToggleField>
 		</div>
 	{/if}
 
@@ -538,29 +522,5 @@
 
 	.probe-status.detected {
 		color: var(--success);
-	}
-
-	.toggle-row {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		cursor: pointer;
-	}
-
-	.toggle-row input[type='checkbox'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.toggle-row strong {
-		display: block;
-		font-size: 0.88rem;
-	}
-
-	.toggle-row span {
-		display: block;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
 	}
 </style>

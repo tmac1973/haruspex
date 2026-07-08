@@ -17,11 +17,14 @@
 		FREE_MODEL_NO_CREDITS_RPD,
 		FREE_MODEL_HAS_CREDITS_RPD,
 		isOpenRouterVisionCapable,
+		openRouterModelCaps,
+		pickOpenRouterModel,
 		type OpenRouterModel,
 		type OpenRouterKeyStatus
 	} from '$lib/openrouter';
 	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
 	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
+	import ToggleField from '$lib/components/ToggleField.svelte';
 
 	interface Props {
 		config: InferenceBackendConfig;
@@ -59,10 +62,7 @@
 			const models = await fetchOpenRouterCatalog();
 			catalog = models;
 			// Default to openrouter/auto on first load, or keep the last-used model.
-			if (!modelId || !models.some((m) => m.id === modelId)) {
-				const auto = models.find((m) => m.id === 'openrouter/auto');
-				modelId = auto ? auto.id : (models[0]?.id ?? '');
-			}
+			modelId = pickOpenRouterModel(models, modelId);
 			commit({
 				openrouterCatalog: models,
 				openrouterCatalogAt: Date.now(),
@@ -78,9 +78,10 @@
 
 	function autoModelFields(m: OpenRouterModel | undefined): Partial<InferenceBackendConfig> {
 		if (!m) return {};
+		const caps = openRouterModelCaps(m);
 		const partial: Partial<InferenceBackendConfig> = {
-			remoteContextSize: m.context_length,
-			remoteVisionSupported: isOpenRouterVisionCapable(m)
+			remoteContextSize: caps.contextSize,
+			remoteVisionSupported: caps.vision
 		};
 		if (m.reasoning) {
 			partial.openrouterReasoningEffort = m.reasoning.default_effort;
@@ -249,40 +250,23 @@
 	</div>
 
 	<div class="field">
-		<label class="toggle-row">
-			<input
-				type="checkbox"
-				checked={config.remoteVisionSupported === true}
-				onchange={(e) => onVisionToggle((e.target as HTMLInputElement).checked)}
-			/>
-			<div>
-				<strong>This model supports vision (image input)</strong>
-				<span>
-					{#if selectedModel && isOpenRouterVisionCapable(selectedModel)}
-						Detected from the model's input modalities.
-					{:else}
-						Auto-detected; override only if you know the model is multimodal.
-					{/if}
-				</span>
-			</div>
-		</label>
+		<ToggleField
+			checked={config.remoteVisionSupported === true}
+			onchange={onVisionToggle}
+			title="This model supports vision (image input)"
+			description={selectedModel && isOpenRouterVisionCapable(selectedModel)
+				? "Detected from the model's input modalities."
+				: 'Auto-detected; override only if you know the model is multimodal.'}
+		/>
 	</div>
 
 	<div class="field">
-		<label class="toggle-row">
-			<input
-				type="checkbox"
-				checked={config.allowParallelInference}
-				onchange={(e) => onParallelToggle((e.target as HTMLInputElement).checked)}
-			/>
-			<div>
-				<strong>Allow parallel inference</strong>
-				<span>
-					OpenRouter is a hosted API and handles concurrent requests. On by default; turn off only
-					if you want chat and job turns serialized.
-				</span>
-			</div>
-		</label>
+		<ToggleField
+			checked={config.allowParallelInference}
+			onchange={onParallelToggle}
+			title="Allow parallel inference"
+			description="OpenRouter is a hosted API and handles concurrent requests. On by default; turn off only if you want chat and job turns serialized."
+		/>
 	</div>
 
 	{#if error}
@@ -342,30 +326,6 @@
 
 	.model-row > :first-child {
 		flex: 1;
-	}
-
-	.toggle-row {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		cursor: pointer;
-	}
-
-	.toggle-row input[type='checkbox'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.toggle-row strong {
-		display: block;
-		font-size: 0.85rem;
-	}
-
-	.toggle-row span {
-		display: block;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
 	}
 
 	.toggle-row.small {

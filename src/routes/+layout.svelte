@@ -720,6 +720,29 @@
 		}
 	}
 
+	/* Checkbox row with bold title + secondary description (ToggleField and
+	   the settings sections' inline toggles). */
+	:global(.toggle-row) {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		cursor: pointer;
+	}
+	:global(.toggle-row input[type='checkbox']) {
+		margin-top: 3px;
+		accent-color: var(--accent);
+	}
+	:global(.toggle-row strong) {
+		display: block;
+		font-size: 0.88rem;
+	}
+	:global(.toggle-row span) {
+		display: block;
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
+	}
+
 	header {
 		display: flex;
 		align-items: center;
