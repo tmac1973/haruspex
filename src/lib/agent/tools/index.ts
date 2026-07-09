@@ -8,6 +8,7 @@ import './code';
 import './shell-interactive';
 import './audit';
 import './planning';
+import './coding';
 import './user-question';
 
 // Re-export registry API

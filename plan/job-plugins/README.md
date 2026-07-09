@@ -8,8 +8,18 @@ appendix.
 
 ## Build status
 
-Phases 1–4 are implemented and green on `feat/job-plugins` (TS suite +
-svelte-check + cargo test/clippy). All three built-in types are registered
+Phases 1–4 are implemented and green on `feat/job-plugins` (PR #174).
+Phase 05 is implemented on `feat/autonomous-coding` (stacked on #174):
+the `autonomous_coding` type registers with **zero core/Rust diffs beyond
+the contract's new `available()` gate** — the definition, editor
+(plan-dir field with guided-planning suggestions, verify command, max
+attempts), the `submit_preflight` structured tool (`coding` category),
+and the Stage-0 preflight interview all live in the type module. A
+`types/availability.svelte.ts` cache gives the picker and JobList
+synchronous reads of the `shell_platform_supported` probe; enqueue()
+re-checks the gate authoritatively. After a successful preflight the run
+fails on the Decompose stage with an explicit "Phase 06 not implemented"
+error — never a silent no-op. All three built-in types are registered
 plugins; the runner, JobList, JobRunView, and the whole JobEditor
 (picker, form sections, load/save/validate/persist-steps) dispatch purely
 through the registry. Per-type config lives in the JSON `type_config`

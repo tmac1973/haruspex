@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { getJobs, type JobSummary } from '$lib/stores/jobs.svelte';
 	import { enqueue, getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
-	import { getJobType } from '$lib/agent/jobs/types';
+	import {
+		ensureTypeAvailabilityLoaded,
+		getJobType,
+		isJobTypeAvailable
+	} from '$lib/agent/jobs/types';
 	import { activatable } from '$lib/actions/activatable';
+
+	void ensureTypeAvailabilityLoaded();
 
 	interface Props {
 		selectedId: number | 'new' | null;
@@ -110,8 +116,13 @@
 					<button
 						type="button"
 						class="job-run-btn"
-						title={running ? 'Queue this run after the active one' : 'Run now'}
-						disabled={job.step_count === 0 && def?.hasPlannedSteps !== false}
+						title={!isJobTypeAvailable(job.job_type)
+							? 'This job type is not available on this platform'
+							: running
+								? 'Queue this run after the active one'
+								: 'Run now'}
+						disabled={(job.step_count === 0 && def?.hasPlannedSteps !== false) ||
+							!isJobTypeAvailable(job.job_type)}
 						onclick={(e) => handleRun(e, job.id)}
 					>
 						▶

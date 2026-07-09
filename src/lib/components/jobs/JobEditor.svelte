@@ -32,7 +32,16 @@
 		type JobType
 	} from '$lib/stores/jobs.svelte';
 	import { getSettings } from '$lib/stores/settings';
-	import { getJobType, listJobTypes } from '$lib/agent/jobs/types';
+	import {
+		ensureTypeAvailabilityLoaded,
+		getJobType,
+		isJobTypeAvailable,
+		listJobTypes
+	} from '$lib/agent/jobs/types';
+
+	// Platform-gated types (autonomous coding) hide from the picker until
+	// their probe says otherwise; idempotent, so fire per mount.
+	void ensureTypeAvailabilityLoaded();
 
 	interface Props {
 		jobId: number | 'new';
@@ -456,11 +465,13 @@
 				name="job-type"
 				value={jobType}
 				onchange={setJobType}
-				options={listJobTypes().map((d) => ({
-					value: d.id,
-					title: d.label,
-					description: d.description
-				}))}
+				options={listJobTypes()
+					.filter((d) => isJobTypeAvailable(d.id) || d.id === jobType)
+					.map((d) => ({
+						value: d.id,
+						title: d.label,
+						description: d.description
+					}))}
 			/>
 		</div>
 

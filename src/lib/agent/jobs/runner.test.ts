@@ -144,6 +144,7 @@ beforeEach(() => {
 	// hallucinated/missing write override this.
 	mocks.invoke.mockReset().mockImplementation(async (cmd: string) => {
 		if (cmd === 'fs_path_exists') return true;
+		if (cmd === 'shell_platform_supported') return true;
 		if (cmd === 'fs_list_dir') {
 			return {
 				path: '',
@@ -927,5 +928,112 @@ describe('jobs runner — audit jobs', () => {
 		const synth = getCurrentRun()!.steps.at(-1)!;
 		expect(synth.output).toContain('_No findings survived source verification._');
 		expect(synth.output).toContain('Filtered out');
+	});
+});
+
+describe('jobs runner — autonomous coding (preflight, Phase 05)', () => {
+	function codingJob(over: Partial<JobWithSteps> = {}): JobWithSteps {
+		return makeJob({
+			job_type: 'autonomous_coding',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({ plan_dir: 'plan/x/' }),
+			...over
+		});
+	}
+
+	async function settle(getCurrentRun: () => { status: string } | null) {
+		for (let i = 0; i < 40 && getCurrentRun()?.status === 'running'; i++) await tick();
+	}
+
+	it('refuses to enqueue when the shell platform gate reports unsupported', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		mocks.invoke.mockImplementation(async (cmd: string) =>
+			cmd === 'shell_platform_supported' ? false : undefined
+		);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		expect(await enqueue(1)).toBeNull();
+		expect(getCurrentRun()).toBeNull();
+		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
+	});
+
+	it('runs an interactive preflight, then fails honestly before the unimplemented loop', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		mocks.runEphemeralTurn.mockImplementation(
+			async (opts: { forceFinalTool?: string; onToolStart?: (c: unknown) => void }) => {
+				if (opts.forceFinalTool === 'submit_preflight') {
+					opts.onToolStart?.({
+						id: 'p',
+						name: 'submit_preflight',
+						arguments: { ready: true, decisions_resolved: 2 }
+					});
+					return { finalText: 'ready' };
+				}
+				return { finalText: 'ok' };
+			}
+		);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		const runId = await enqueue(1);
+		expect(runId).not.toBeNull();
+		await settle(getCurrentRun);
+
+		const run = getCurrentRun()!;
+		// Preflight succeeded; the run fails with the explicit Phase 06 marker
+		// (never a silent no-op) on the live stage.
+		expect(run.status).toBe('failed');
+		expect(run.error).toContain('Phase 06');
+		expect(run.steps[0].status).toBe('succeeded');
+		expect(run.steps[0].output).toContain('2 decision(s)');
+
+		// The preflight turn: interactive (modal-capable), scoped to the plan
+		// dir, question tool + forced structured verdict, and NO shell/exec.
+		const opts = mocks.runEphemeralTurn.mock.calls[0][0];
+		expect(opts.interactive).toBe(true);
+		expect(opts.writeRoot).toBe('plan/x/');
+		expect(opts.forceFinalTool).toBe('submit_preflight');
+		expect([...opts.toolAllowlist]).toContain('ask_user_question');
+		expect([...opts.toolAllowlist]).toContain('submit_preflight');
+		expect([...opts.toolAllowlist]).not.toContain('run_command');
+		expect(opts.systemPrompt).toContain('FULLY UNATTENDED');
+	});
+
+	it('fails the run with the blockers when preflight reports not ready', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		mocks.runEphemeralTurn.mockImplementation(
+			async (opts: { forceFinalTool?: string; onToolStart?: (c: unknown) => void }) => {
+				if (opts.forceFinalTool === 'submit_preflight') {
+					opts.onToolStart?.({
+						id: 'p',
+						name: 'submit_preflight',
+						arguments: { ready: false, blockers: ['plan directory is empty'] }
+					});
+					return { finalText: 'blocked' };
+				}
+				return { finalText: 'ok' };
+			}
+		);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const run = getCurrentRun()!;
+		expect(run.status).toBe('failed');
+		expect(run.error).toContain('plan directory is empty');
+		expect(run.steps[0].status).toBe('failed');
+	});
+
+	it('fails cleanly when no plan directory is configured', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob({ type_config: null }));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain('No plan directory');
+		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
 	});
 });

@@ -226,6 +226,16 @@ export async function enqueue(
 		logDebug('jobs', 'enqueue failed: job type not registered', { jobId, type: job.job_type });
 		return null;
 	}
+	// Platform-gated types (autonomous coding needs the shell plumbing) — this
+	// await is the authoritative check; the UI's availability cache only hides
+	// the option.
+	if (def.available && !(await def.available())) {
+		logDebug('jobs', 'enqueue failed: job type unavailable on this platform', {
+			jobId,
+			type: job.job_type
+		});
+		return null;
+	}
 	// Types without planned steps (guided planning) drive their own stages —
 	// the run is driven by config + interactive Q&A, not a step pipeline.
 	if (def.hasPlannedSteps && job.steps.length === 0) {

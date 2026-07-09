@@ -105,6 +105,12 @@ export interface JobTypeDefinition {
 	/** Extra text after the schedule summary in the JobList row (research: step count). */
 	listMeta?: (job: JobSummary) => string;
 	/**
+	 * Platform gate. When it resolves false the type is hidden from the
+	 * picker (types/availability caches the answer for sync UI reads) and
+	 * enqueue refuses runs. Absent = available everywhere.
+	 */
+	available?: () => Promise<boolean>;
+	/**
 	 * When set, the working directory is required for this type and this
 	 * string is the field's placeholder. Absent = optional (research).
 	 */
