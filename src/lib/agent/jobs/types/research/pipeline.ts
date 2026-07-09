@@ -19,7 +19,12 @@ import type { RunStatus } from '../../runner.svelte';
 
 /** Research jobs map 1:1 to their authored steps. */
 export function planResearchSteps(job: JobWithSteps): PlannedStep[] {
-	return job.steps.map((s) => ({ authored: s.prompt, deepResearch: s.deep_research }));
+	return job.steps.map((s, i) => ({
+		authored: s.prompt,
+		deepResearch: s.deep_research,
+		// Step 0 has no prepend, so it displays as-authored before it runs.
+		initialRendered: i === 0 ? s.prompt : undefined
+	}));
 }
 
 /**

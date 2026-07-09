@@ -4,9 +4,9 @@ import {
 	buildSamplePrompt,
 	buildVerifyPrompt,
 	type AuditDeps
-} from '$lib/agent/jobs/auditPipeline';
+} from './auditPipeline';
 import type { AuditFinding } from '$lib/agent/tools/audit';
-import type { FindingCluster } from '$lib/agent/jobs/auditCluster';
+import type { FindingCluster } from './auditCluster';
 
 function find(file: string, lines: string, title: string): AuditFinding {
 	return { file, lines, title, severity: 'medium' };

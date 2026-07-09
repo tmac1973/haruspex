@@ -17,7 +17,6 @@
 	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
 	import ModeSelector from '$lib/components/ModeSelector.svelte';
 	import JobScheduleField from '$lib/components/jobs/JobScheduleField.svelte';
-	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
 	import {
 		createJob,
 		updateJob,
@@ -35,13 +34,16 @@
 	import {
 		DEFAULT_SAMPLE_INSTRUCTIONS,
 		DEFAULT_VERIFY_INSTRUCTIONS
-	} from '$lib/agent/jobs/auditPipeline';
+	} from '$lib/agent/jobs/types/audit/auditPipeline';
 	import { getSettings } from '$lib/stores/settings';
-	import { getJobType } from '$lib/agent/jobs/types';
+	import { getJobType, listJobTypes } from '$lib/agent/jobs/types';
 
-	// Registered job types render their own config form section (job-plugins
-	// Phase 02: research only; the rest convert in Phase 03).
+	// Registered job types render their own config form section. Each Editor
+	// declares its own bindable props until Phase 04 unifies them on a single
+	// type_config object.
 	const ResearchEditor = getJobType('research')!.Editor;
+	const AuditEditor = getJobType('audit')!.Editor;
+	const GuidedPlanningEditor = getJobType('guided_planning')!.Editor;
 
 	interface Props {
 		jobId: number | 'new';
@@ -106,23 +108,6 @@
 
 	$effect(() => {
 		loadIntoForm(jobId);
-	});
-
-	function slugify(s: string): string {
-		return s
-			.toLowerCase()
-			.trim()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '');
-	}
-
-	// Keep the guided-planning output folder in sync with the name
-	// (plan/<slug>/) until the user edits it by hand.
-	$effect(() => {
-		if (jobType === 'guided_planning' && !planOutputDirEdited) {
-			const s = slugify(name);
-			planOutputDir = s ? `plan/${s}/` : '';
-		}
 	});
 
 	async function loadIntoForm(id: number | 'new') {
@@ -231,14 +216,6 @@
 		} catch (e) {
 			console.error('Failed to pick directory:', e);
 		}
-	}
-
-	// The audit section reuses steps[0] as its prompt; the research step list
-	// itself is edited inside the research type's Editor component.
-	function updateStepPrompt(index: number, value: string) {
-		const next = [...steps];
-		next[index] = { ...next[index], prompt: value };
-		steps = next;
 	}
 
 	// Server URLs saved in Settings — the options for the URL dropdown. A job
@@ -524,45 +501,16 @@
 
 		<div class="field">
 			<span class="label">Job type</span>
-			<div class="type-toggle" role="group" aria-label="Job type">
-				<button
-					type="button"
-					class:active={jobType === 'research'}
-					onclick={() => (jobType = 'research')}
-					title="A sequential pipeline of steps; each step's output feeds the next."
-				>
-					Research
-				</button>
-				<button
-					type="button"
-					class:active={jobType === 'audit'}
-					onclick={() => (jobType = 'audit')}
-					title="Run one prompt N times independently, then cluster and source-verify the findings into one meta-report."
-				>
-					Audit
-				</button>
-				<button
-					type="button"
-					class:active={jobType === 'guided_planning'}
-					onclick={() => (jobType = 'guided_planning')}
-					title="Interactively turn an idea into a written project overview and a dependency-ordered, phased implementation plan. Asks you questions; writes markdown only (no code)."
-				>
-					Guided planning
-				</button>
-			</div>
-			<span class="hint">
-				{#if jobType === 'audit'}
-					Runs one prompt N times independently, then clusters and source-verifies the findings into
-					a single meta-report — averaging out single-run noise.
-				{:else if jobType === 'guided_planning'}
-					Asks you multiple-choice questions to define the project, then writes an overview and a
-					dependency-ordered, phased implementation plan as markdown. Planning only — it never
-					writes code.
-				{:else}
-					A sequential pipeline of steps; each step runs as a fresh conversation and its output
-					feeds the next.
-				{/if}
-			</span>
+			<ModeSelector
+				name="job-type"
+				value={jobType}
+				onchange={(v) => (jobType = v as JobType)}
+				options={listJobTypes().map((d) => ({
+					value: d.id,
+					title: d.label,
+					description: d.description
+				}))}
+			/>
 		</div>
 
 		<label
@@ -775,139 +723,22 @@
 		{#if jobType === 'research'}
 			<ResearchEditor bind:steps />
 		{:else if jobType === 'audit'}
-			<div class="field" title="The instruction each sample run executes, independently.">
-				<div class="field-head">
-					<span class="label">Audit prompt</span>
-					<PromptCatalog
-						jobType="audit"
-						current={steps[0]?.prompt ?? ''}
-						oninsert={(t) => updateStepPrompt(0, t)}
-					/>
-				</div>
-				<span class="hint">
-					Run {auditNumRuns}× independently. Ask for findings anchored to files and line ranges.
-				</span>
-				<textarea
-					value={steps[0]?.prompt ?? ''}
-					oninput={(e) => updateStepPrompt(0, (e.currentTarget as HTMLTextAreaElement).value)}
-					placeholder="e.g. Find every instance of duplicated logic in this codebase. Anchor each finding to a file and line range, with a short explanation."
-					rows="4"
-				></textarea>
-			</div>
-
-			<div class="audit-grid">
-				<label class="field" title="How many independent sample runs to execute (1–20).">
-					<span class="label">Number of runs</span>
-					<input type="number" min="1" max="20" bind:value={auditNumRuns} />
-				</label>
-				<label
-					class="field"
-					title="Agent-loop turn budget per run — how many read/grep steps each sample may take before it must report. A thorough audit of a large codebase can need 100+. Default 200, max 400."
-				>
-					<span class="label">Max turns per run</span>
-					<input type="number" min="1" max="400" step="10" bind:value={auditMaxTurns} />
-				</label>
-				<label
-					class="field span2"
-					title="File (relative to the working directory) the final meta-report is written to. Leave blank to only keep it in the run record."
-				>
-					<span class="label">Output file <span class="optional">(optional)</span></span>
-					<input type="text" bind:value={auditOutputFile} placeholder="AUDIT.md" />
-				</label>
-			</div>
-
-			<label
-				class="field checkbox"
-				title="When ON (recommended), sample and verification runs may read and grep the code but cannot modify files."
-			>
-				<input type="checkbox" bind:checked={auditReadOnly} />
-				<span>
-					Read-only runs
-					<span class="hint inline"
-						>(recommended — sample runs read/grep but never modify files)</span
-					>
-				</span>
-			</label>
-
-			<details class="advanced-prompts">
-				<summary>Advanced: edit the exact prompts sent to the model</summary>
-				<p class="hint">
-					Both are sent verbatim to the model. The <code>submit_findings</code> /
-					<code>submit_verdict</code> calls are enforced automatically, so editing won't break
-					capture — but a poor prompt can hurt result quality. Use <strong>Reset</strong> to restore the
-					default.
-				</p>
-
-				<div class="field">
-					<span class="label-row">
-						<span class="label">Per-run addendum</span>
-						<button
-							type="button"
-							class="reset-btn"
-							disabled={auditSampleInstructions === DEFAULT_SAMPLE_INSTRUCTIONS}
-							onclick={() => (auditSampleInstructions = DEFAULT_SAMPLE_INSTRUCTIONS)}
-						>
-							Reset
-						</button>
-					</span>
-					<span class="hint">
-						Appended after your audit prompt on every sample run (phase 1) — investigation guidance
-						plus how to report findings.
-					</span>
-					<textarea bind:value={auditSampleInstructions} rows="6"></textarea>
-				</div>
-
-				<div class="field">
-					<span class="label-row">
-						<span class="label">Verification instructions</span>
-						<button
-							type="button"
-							class="reset-btn"
-							disabled={auditVerifyInstructions === DEFAULT_VERIFY_INSTRUCTIONS}
-							onclick={() => (auditVerifyInstructions = DEFAULT_VERIFY_INSTRUCTIONS)}
-						>
-							Reset
-						</button>
-					</span>
-					<span class="hint">
-						Sent to the model that re-checks each finding against the source (phase 3) before it's
-						kept; the finding's location/claim is prepended automatically.
-					</span>
-					<textarea bind:value={auditVerifyInstructions} rows="8"></textarea>
-				</div>
-			</details>
-		{:else}
-			<div
-				class="field"
-				title="The idea seeding this planning session. The agent asks follow-up questions from here, then writes the overview and phase files."
-			>
-				<span class="label">
-					What do you want to build? <span class="required">(required)</span>
-				</span>
-				<span class="hint">
-					Describe the project or feature in your own words. The agent interviews you from here —
-					you can always type your own answer to any question.
-				</span>
-				<textarea
-					bind:value={initialDescription}
-					rows="5"
-					placeholder="e.g. A guided-planning job type that interviews me one question at a time and writes a dependency-ordered, phased implementation plan."
-				></textarea>
-			</div>
-
-			<label
-				class="field"
-				title="Folder where the overview and phase markdown files are written, relative to the working directory. Auto-fills from the name until you edit it."
-			>
-				<span class="label">Output folder</span>
-				<input
-					type="text"
-					bind:value={planOutputDir}
-					oninput={() => (planOutputDirEdited = true)}
-					placeholder="plan/<name>/"
-				/>
-				<span class="hint">Relative to the working directory (e.g. plan/my-feature/).</span>
-			</label>
+			<AuditEditor
+				bind:steps
+				bind:numRuns={auditNumRuns}
+				bind:outputFile={auditOutputFile}
+				bind:readOnly={auditReadOnly}
+				bind:maxTurns={auditMaxTurns}
+				bind:sampleInstructions={auditSampleInstructions}
+				bind:verifyInstructions={auditVerifyInstructions}
+			/>
+		{:else if jobType === 'guided_planning'}
+			<GuidedPlanningEditor
+				jobName={name}
+				bind:initialDescription
+				bind:planOutputDir
+				bind:planOutputDirEdited
+			/>
 		{/if}
 
 		{#if error}
@@ -968,13 +799,6 @@
 		font-size: 1rem;
 	}
 
-	.field.checkbox {
-		flex-direction: row;
-		align-items: flex-start;
-		gap: 8px;
-		font-size: 0.88rem;
-	}
-
 	.label {
 		font-size: 0.82rem;
 		color: var(--text-secondary);
@@ -989,51 +813,6 @@
 		font-weight: normal;
 		font-size: 0.82rem;
 		color: var(--accent);
-	}
-
-	.type-toggle {
-		display: inline-flex;
-		gap: 0;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		overflow: hidden;
-		align-self: flex-start;
-	}
-
-	.type-toggle button {
-		padding: 5px 16px;
-		border: none;
-		border-radius: 0;
-		background: var(--bg-primary);
-		color: var(--text-secondary);
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-
-	.type-toggle button:first-child {
-		border-right: 1px solid var(--border);
-	}
-
-	.type-toggle button.active {
-		background: var(--accent);
-		color: white;
-	}
-
-	.audit-grid {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 12px;
-	}
-
-	.audit-grid .span2 {
-		grid-column: 1 / -1;
-	}
-
-	.field-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
 	}
 
 	.model-fields {
@@ -1075,54 +854,6 @@
 		color: var(--text-secondary);
 	}
 
-	.advanced-prompts {
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		padding: 8px 10px;
-	}
-
-	.advanced-prompts > summary {
-		cursor: pointer;
-		font-size: 0.82rem;
-		color: var(--text-secondary);
-		user-select: none;
-	}
-
-	.advanced-prompts .field {
-		margin-top: 10px;
-	}
-
-	.advanced-prompts code {
-		font-size: 0.85em;
-	}
-
-	.label-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-	}
-
-	.reset-btn {
-		padding: 2px 8px;
-		font-size: 0.72rem;
-		border: 1px solid var(--border);
-		background: var(--bg-primary);
-		color: var(--text-secondary);
-		border-radius: 4px;
-		cursor: pointer;
-	}
-
-	.reset-btn:hover:not(:disabled) {
-		border-color: var(--text-secondary);
-		color: var(--text-primary);
-	}
-
-	.reset-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
 	.workdir-row {
 		display: flex;
 		gap: 6px;
@@ -1135,11 +866,6 @@
 
 	.hint {
 		font-style: italic;
-	}
-
-	.hint.inline {
-		font-style: normal;
-		margin-left: 4px;
 	}
 
 	.actions {

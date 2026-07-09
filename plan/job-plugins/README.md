@@ -6,7 +6,34 @@ type as the first new plugin. See [`overview.md`](./overview.md) for the
 project definition, the `JobTypeDefinition` contract, and the full Decisions
 appendix.
 
-**Status: planning only — nothing implemented yet.**
+## Build status
+
+Phases 1–3 are implemented and green on `feat/job-plugins` (TS suite +
+svelte-check). All three built-in types are registered plugins; the runner,
+JobList, JobRunView, and the JobEditor form sections + type picker dispatch
+purely through the registry.
+
+**Adaptations made during implementation (vs. this plan):**
+
+- **Editor mappers deferred to Phase 04.** JobEditor still owns per-type
+  load/save/validate plumbing (flat-field `jobType ===` conditionals) and the
+  working-dir field's per-type labels; building `fromJob`/`toJobInput` mappers
+  in Phase 02/03 only to delete them in Phase 04's `type_config` restructure
+  was judged wasted churn. The *form sections* and the picker are fully
+  registry-driven; the persistence plumbing converts with the config column.
+- **Tool-registry gating deferred to Phase 05.** The hard-coded
+  audit/planning category exclusion in `tools/registry.ts:105` stays; it gets
+  generalized when `autonomous_coding` adds the first new category
+  (`def.toolCategories` was speculative until then).
+- **Stage descriptions ride on PlannedStep.** Instead of a per-type run-view
+  component, `PlannedStep` gained optional `description` (named-stage types)
+  and `initialRendered` (pre-rendered step-0 prompts); JobRunView renders
+  generically off those. Guided planning's stage list + descriptions moved
+  from JobRunView into its definition.
+- **Guided-planning tests stayed in runner.test.ts.** They drive through the
+  public `enqueue` API, which is the right level for proving the conversions
+  behavior-identical; per-module deps-level tests can come with Phase 05's
+  new-type work if needed.
 
 ## Phase map (strictly dependency-ordered)
 

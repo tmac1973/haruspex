@@ -14,13 +14,24 @@
 
 import type { Component } from 'svelte';
 import type { EphemeralTurnOptions, EphemeralTurnResult } from '$lib/agent/runEphemeralTurn';
-import type { JobType, JobWithSteps } from '$lib/stores/jobs.svelte';
+import type { JobSummary, JobType, JobWithSteps } from '$lib/stores/jobs.svelte';
 import type { RunStatus, RunStepState } from '../runner.svelte';
 
 /** One planned display/execution step of a run (see the runner's planSteps). */
 export interface PlannedStep {
 	authored: string;
 	deepResearch: boolean;
+	/**
+	 * Prompt to display as "rendered" before the step runs. Research step 0 has
+	 * no prepend so it shows as-authored; steps that render at execution time
+	 * (audit sample wrapping, guided stages) leave this unset.
+	 */
+	initialRendered?: string;
+	/**
+	 * Stage description shown in the run view INSTEAD of the prompt text —
+	 * for types whose steps are named stages (guided planning), not prompts.
+	 */
+	description?: string;
 }
 
 /** Everything a pipeline needs from the runner, bound to one run. */
@@ -65,6 +76,18 @@ export interface JobTypeDefinition {
 	label: string;
 	/** Picker card / hint description. */
 	description: string;
+	/** JobList badge text; defaults to the raw job_type value. */
+	badgeLabel?: string;
+	/** Extra CSS class on the JobList badge (e.g. research's muted tone). */
+	badgeTone?: string;
+	/**
+	 * Whether runs execute the job's authored steps. True types can't run with
+	 * zero steps (enqueue guard + JobList run-button); false types (guided
+	 * planning) drive their own stages and ignore authored steps.
+	 */
+	hasPlannedSteps: boolean;
+	/** Extra text after the schedule summary in the JobList row (research: step count). */
+	listMeta?: (job: JobSummary) => string;
 	/** Type-specific section of the job editor form. */
 	Editor: JobTypeEditor;
 	/** The display/execution step list a fresh run starts with. */

@@ -13,6 +13,7 @@ function fakeDef(id: string, over: Partial<JobTypeDefinition> = {}): JobTypeDefi
 		id: id as JobTypeDefinition['id'],
 		label: id,
 		description: `${id} jobs`,
+		hasPlannedSteps: true,
 		Editor: (() => {}) as unknown as JobTypeDefinition['Editor'],
 		planSteps: () => [],
 		runPipeline: async () => {},
@@ -51,22 +52,51 @@ describe('job-type registry', () => {
 });
 
 describe('registration barrel', () => {
-	it('registers the research type with its planner and pipeline', async () => {
-		const { getJobType, listJobTypes } = await import('./index');
-		const research = getJobType('research');
-		expect(research).toBeDefined();
-		expect(listJobTypes().some((d) => d.id === 'research')).toBe(true);
+	it('registers all built-in types in picker order', async () => {
+		const { listJobTypes } = await import('./index');
+		expect(listJobTypes().map((d) => d.id)).toEqual(['research', 'audit', 'guided_planning']);
+	});
 
-		// planSteps maps authored steps 1:1, preserving deep_research.
+	it('research: planSteps maps authored steps 1:1, pre-rendering only step 0', async () => {
+		const { getJobType } = await import('./index');
 		const job = {
 			steps: [
 				{ id: 1, ordering: 0, prompt: 'gather', deep_research: false },
 				{ id: 2, ordering: 1, prompt: 'summarize', deep_research: true }
 			]
 		} as JobWithSteps;
-		expect(research!.planSteps(job)).toEqual([
-			{ authored: 'gather', deepResearch: false },
-			{ authored: 'summarize', deepResearch: true }
+		expect(getJobType('research')!.planSteps(job)).toEqual([
+			{ authored: 'gather', deepResearch: false, initialRendered: 'gather' },
+			{ authored: 'summarize', deepResearch: true, initialRendered: undefined }
 		]);
+	});
+
+	it('audit: planSteps expands to N samples plus a synthesis step, clamped to 20', async () => {
+		const { getJobType } = await import('./index');
+		const job = {
+			audit_num_runs: 3,
+			steps: [{ id: 1, ordering: 0, prompt: 'find dup', deep_research: false }]
+		} as JobWithSteps;
+		const planned = getJobType('audit')!.planSteps(job);
+		expect(planned).toHaveLength(4);
+		expect(planned.slice(0, 3).every((s) => s.authored === 'find dup')).toBe(true);
+
+		const clamped = getJobType('audit')!.planSteps({ ...job, audit_num_runs: 99 });
+		expect(clamped).toHaveLength(21);
+	});
+
+	it('guided planning: named stages with descriptions, no planned steps required', async () => {
+		const { getJobType } = await import('./index');
+		const guided = getJobType('guided_planning')!;
+		expect(guided.hasPlannedSteps).toBe(false);
+		const stages = guided.planSteps({ steps: [] } as unknown as JobWithSteps);
+		expect(stages.map((s) => s.authored)).toEqual([
+			'Overview',
+			'Outline',
+			'Planning',
+			'Verification',
+			'Approval'
+		]);
+		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
 	});
 });

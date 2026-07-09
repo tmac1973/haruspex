@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getJobs, type JobSummary } from '$lib/stores/jobs.svelte';
 	import { enqueue, getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
+	import { getJobType } from '$lib/agent/jobs/types';
 	import { activatable } from '$lib/actions/activatable';
 
 	interface Props {
@@ -91,6 +92,7 @@
 			</div>
 		{:else}
 			{#each jobs as job (job.id)}
+				{@const def = getJobType(job.job_type)}
 				<div
 					class="row"
 					class:selected={selectedId === job.id}
@@ -99,19 +101,17 @@
 					<div class="row-main">
 						<span class="name">
 							{job.name}
-							<span class="badge" class:research={job.job_type === 'research'}>{job.job_type}</span>
+							<span class="badge {def?.badgeTone ?? ''}">{def?.badgeLabel ?? job.job_type}</span>
 						</span>
 						<span class="meta">
-							{scheduleSummary(job)}{job.job_type === 'research'
-								? ` · ${job.step_count} step${job.step_count === 1 ? '' : 's'}`
-								: ''}
+							{scheduleSummary(job)}{def?.listMeta?.(job) ?? ''}
 						</span>
 					</div>
 					<button
 						type="button"
 						class="job-run-btn"
 						title={running ? 'Queue this run after the active one' : 'Run now'}
-						disabled={job.step_count === 0 && job.job_type !== 'guided_planning'}
+						disabled={job.step_count === 0 && def?.hasPlannedSteps !== false}
 						onclick={(e) => handleRun(e, job.id)}
 					>
 						▶

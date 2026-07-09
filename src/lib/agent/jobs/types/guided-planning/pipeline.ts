@@ -1,11 +1,10 @@
 /**
- * Guided-planning pipeline, extracted from the job runner (job-plugins Phase 01).
- *
- * The runner owns run lifecycle (reactive RunState, the queue, abort) and hands
- * this module the shared JobRunContext (types/types.ts). Everything guided-
- * planning-specific lives here: display stages, toolsets, prompts, the
- * interview/checkpoint/verify orchestration, and the write-verification guards.
- * Converts to a registered JobTypeDefinition in Phase 03.
+ * Guided-planning pipeline. The runner owns run lifecycle (reactive RunState,
+ * the queue, abort) and hands this module the shared JobRunContext
+ * (../types/types.ts). Everything guided-planning-specific lives here:
+ * toolsets, prompts, the interview/checkpoint/verify orchestration, and the
+ * write-verification guards. The display stages live in ./definition.ts —
+ * the stage index constants in the pipeline body must match their order.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -20,7 +19,7 @@ import {
 	markRunStepStarted,
 	type JobRunStepStatus
 } from '$lib/stores/jobRuns.svelte';
-import type { JobRunContext } from '../types/types';
+import type { JobRunContext } from '../types';
 
 /**
  * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at
@@ -47,19 +46,6 @@ export interface PlanningState {
 	/** Checkpoint currently awaiting the user, if any. */
 	pendingCheckpoint: 'overview_review' | 'dep_map' | null;
 }
-
-/**
- * Display stages a guided_planning run advances through, in step-index order —
- * the runner's planSteps derives the run's step list from this, and the stage
- * index constants below must match it.
- */
-export const GUIDED_PLANNING_STAGES = [
-	'Overview',
-	'Outline',
-	'Planning',
-	'Verification',
-	'Approval'
-] as const;
 
 /**
  * Tools a guided_planning run may use: read-only codebase grounding, the single
@@ -307,8 +293,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	const outDir = guidedPlanOutputDir(job);
 	const overviewPath = `${outDir}overview.md`;
 
-	// Step indices — must match GUIDED_PLANNING_STAGES (which the runner's
-	// planSteps turns into the run's display steps).
+	// Step indices — must match the GUIDED_STAGES order in ./definition.ts
+	// (which planSteps turns into the run's display steps).
 	const OVERVIEW = 0;
 	const OUTLINE = 1;
 	const PLANNING = 2;
