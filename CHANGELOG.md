@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.53](https://github.com/tmac1973/haruspex/compare/v0.1.52...v0.1.53) (2026-07-09)
+
+
+### Features
+
+* **inference:** add OpenRouter as a first-class cloud backend ([#168](https://github.com/tmac1973/haruspex/issues/168)) ([6d8c566](https://github.com/tmac1973/haruspex/commit/6d8c5667c687bb498f1cf6285bb2f8f0fe89ce75))
+* **jobs:** single model-source selector + shared ModeSelector radio cards ([#170](https://github.com/tmac1973/haruspex/issues/170)) ([84c541d](https://github.com/tmac1973/haruspex/commit/84c541de3462e6fbeffdd3cf84a3a907e143d98d))
+
+
+### Code Refactoring
+
+* dedup sweep — close out the 2026-07-08 duplication audit ([#169](https://github.com/tmac1973/haruspex/issues/169)) ([88190ad](https://github.com/tmac1973/haruspex/commit/88190ad7ba6d1caa3f51ccd86799ab4ade5b5338))
+
 ## [0.1.52](https://github.com/tmac1973/haruspex/compare/v0.1.51...v0.1.52) (2026-07-03)
 
 
