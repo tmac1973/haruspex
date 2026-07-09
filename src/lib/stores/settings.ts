@@ -781,17 +781,24 @@ export function getOpenRouterReasoningParam(
 	return { effort };
 }
 
+/**
+ * Sampling overrides for a completion request. Every field is optional:
+ * `undefined` means "don't send this parameter", letting the serving
+ * backend's own default win (buildRequestBody omits undefined fields).
+ * Known model families get fully-populated card-recommended values;
+ * unrecognized remote models get none.
+ */
 export interface SamplingParams {
-	temperature: number;
-	top_p: number;
-	top_k: number;
+	temperature?: number;
+	top_p?: number;
+	top_k?: number;
 	/**
 	 * Unsloth/Qwen cards specify `min_p=0.0` (disabled) for every profile.
 	 * We send it explicitly because llama.cpp defaults `min_p` to 0.05, which
 	 * would otherwise silently override the recommendation.
 	 */
-	min_p: number;
-	presence_penalty: number;
+	min_p?: number;
+	presence_penalty?: number;
 }
 
 interface SamplingProfile {
@@ -855,8 +862,8 @@ const DEFAULT_FAMILY = 'qwen3.5';
  * sampling-profile family. Falls back to `DEFAULT_FAMILY` for unknown
  * IDs so a misconfigured remote endpoint still gets reasonable values.
  */
-function modelFamilyFromId(id: string | null | undefined): string {
-	if (!id) return DEFAULT_FAMILY;
+function modelFamilyFromId(id: string | null | undefined): string | null {
+	if (!id) return null;
 	const lower = id.toLowerCase();
 	// The dense 27B is the one model whose published thinking/general
 	// presence_penalty differs (0.0 vs 1.5); give it its own profile.
@@ -870,7 +877,7 @@ function modelFamilyFromId(id: string | null | undefined): string {
 	) {
 		return 'qwen3.5';
 	}
-	return DEFAULT_FAMILY;
+	return null;
 }
 
 /**
@@ -942,9 +949,10 @@ export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
  * Identify the active model family — used by `getSamplingParams` to look
  * up the right profile. In remote mode the family comes from the
  * configured `remoteModelId`; in local mode it comes from the GGUF
- * filename most recently registered via `setActiveLocalModel`.
+ * filename most recently registered via `setActiveLocalModel`. Returns
+ * null when the model isn't from a recognized lineup.
  */
-export function getActiveModelFamily(): string {
+export function getActiveModelFamily(): string | null {
 	const inf = settings.inferenceBackend;
 	if (inf.mode === 'remote') return modelFamilyFromId(inf.remoteModelId);
 	return modelFamilyFromId(activeLocalModelFilename);
@@ -975,7 +983,15 @@ function resolveThinking(override?: boolean | null): boolean {
  * report its own recommendations (local mode, or any non-toolchest remote). */
 function builtinSamplingParams(opts: SamplingOptions): SamplingParams {
 	const family = getActiveModelFamily();
-	const profiles = SAMPLING_PROFILES[family] ?? SAMPLING_PROFILES[DEFAULT_FAMILY];
+	// Unknown family: local models all come from the managed (Qwen) lineup,
+	// so an unrecognized filename still gets the default profile. A remote
+	// model we don't recognize gets NO sampling overrides — undefined fields
+	// are omitted from the request, so the serving backend's own defaults
+	// win instead of Qwen's card values (presence_penalty 1.5 et al.).
+	if (family === null && settings.inferenceBackend.mode === 'remote') {
+		return {};
+	}
+	const profiles = SAMPLING_PROFILES[family ?? DEFAULT_FAMILY];
 	const mode = resolveThinking(opts.thinkingEnabled) ? profiles.thinking : profiles.nonThinking;
 	return opts.codeContext ? mode.coding : mode.general;
 }
@@ -1021,13 +1037,12 @@ export function getSamplingParams(opts: SamplingOptions = {}): SamplingParams {
 	// `top_p` but the docs don't guarantee `top_k` / `min_p` won't 400 on
 	// stricter upstream providers. Omit both for OpenRouter entirely (safe;
 	// the router supplies sensible defaults). `presence_penalty` is in the
-	// OpenAI param set and is kept.
+	// OpenAI param set and is kept — but only for recognized families,
+	// since `base` is already empty for unknown models.
 	if (openrouterBackend()) {
 		return {
 			temperature: base.temperature,
 			top_p: base.top_p,
-			top_k: 0,
-			min_p: 0,
 			presence_penalty: base.presence_penalty
 		};
 	}

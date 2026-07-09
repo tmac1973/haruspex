@@ -106,10 +106,73 @@ describe('sampling profile resolution', () => {
 		expect(getActiveModelFamily()).toBe('qwen3.5');
 	});
 
-	it('falls back to default family for an unknown local model', () => {
+	it('reports null family for an unknown local model but still uses default params', () => {
 		setActiveLocalModel('Mystery-Model.gguf');
-		// Default is qwen3.5 — unknown families get sane params, not a crash.
-		expect(getActiveModelFamily()).toBe('qwen3.5');
+		expect(getActiveModelFamily()).toBeNull();
+		// Locally-managed models are all from the Qwen lineup, so an
+		// unrecognized filename still gets the default (qwen3.5) profile.
+		updateSettings({ thinkingEnabled: false });
+		expect(getSamplingParams().presence_penalty).toBe(1.5);
+	});
+
+	it('sends NO sampling overrides to an unrecognized remote model', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://localhost:1234',
+			remoteModelId: 'llama-3.3-70b-instruct',
+			remoteBackendKind: null,
+			remoteSampling: null
+		});
+		// All fields undefined → buildRequestBody omits them and the serving
+		// backend's own defaults win (Qwen's presence_penalty 1.5 must NOT
+		// leak to non-Qwen models).
+		expect(getSamplingParams()).toEqual({});
+		expect(getSamplingParams({ codeContext: true })).toEqual({});
+	});
+
+	it('still sends Qwen params to a recognized Qwen remote model', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://localhost:1234',
+			remoteModelId: 'Qwen3.5-9B-Instruct',
+			remoteBackendKind: null,
+			remoteSampling: null
+		});
+		updateSettings({ thinkingEnabled: false });
+		expect(getSamplingParams().presence_penalty).toBe(1.5);
+		expect(getSamplingParams().top_k).toBe(20);
+	});
+
+	it('sends nothing but omitted top_k/min_p for an unrecognized OpenRouter model', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'https://openrouter.ai/api',
+			remoteModelId: 'anthropic/claude-sonnet-5',
+			remoteBackendKind: 'openrouter',
+			remoteSampling: null
+		});
+		const p = getSamplingParams();
+		expect(p.temperature).toBeUndefined();
+		expect(p.top_p).toBeUndefined();
+		expect(p.top_k).toBeUndefined();
+		expect(p.min_p).toBeUndefined();
+		expect(p.presence_penalty).toBeUndefined();
+	});
+
+	it('keeps temperature/top_p/presence for a Qwen model on OpenRouter, without top_k/min_p', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'https://openrouter.ai/api',
+			remoteModelId: 'qwen/qwen3.5-9b-instruct',
+			remoteBackendKind: 'openrouter',
+			remoteSampling: null
+		});
+		updateSettings({ thinkingEnabled: false });
+		const p = getSamplingParams();
+		expect(p.temperature).toBe(0.7);
+		expect(p.presence_penalty).toBe(1.5);
+		expect(p.top_k).toBeUndefined();
+		expect(p.min_p).toBeUndefined();
 	});
 
 	it('resolves family from remoteModelId in remote mode', () => {
@@ -187,8 +250,8 @@ describe('sampling profile resolution', () => {
 
 	it('clears active local model when set to null', () => {
 		setActiveLocalModel(null);
-		// Still resolves to default family, not crash.
-		expect(getActiveModelFamily()).toBe('qwen3.5');
+		// No filename → no detected family; local mode still gets default params.
+		expect(getActiveModelFamily()).toBeNull();
 	});
 });
 
@@ -366,14 +429,16 @@ describe('OpenRouter backend', () => {
 		updateSettings({ thinkingEnabled: true });
 	});
 
-	it('omits top_k and min_p from sampling params for OpenRouter', () => {
-		const params = getSamplingParams();
-		// top_k and min_p are 0 for OpenRouter (buildRequestBody skips them
-		// when isOpenRouter, so the value just needs to not interfere).
-		expect(params.top_k).toBe(0);
-		expect(params.min_p).toBe(0);
-		expect(params.temperature).toBe(1.0);
-		expect(params.top_p).toBe(0.95);
+	it('omits ALL sampling params for a non-Qwen OpenRouter model', () => {
+		// The fixture's model is openai/o3 — not a recognized family, so no
+		// sampling overrides at all: undefined fields are omitted from the
+		// request and OpenRouter/provider defaults win. (The Qwen-on-
+		// OpenRouter passthrough is covered in the sampling-profile suite.)
+		expect(getSamplingParams()).toEqual({
+			temperature: undefined,
+			top_p: undefined,
+			presence_penalty: undefined
+		});
 	});
 
 	it('returns empty chat_template_kwargs for OpenRouter', () => {
