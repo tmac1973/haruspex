@@ -23,6 +23,7 @@
 	} from '$lib/stores/settings';
 	import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
+	import ModeSelector from '$lib/components/ModeSelector.svelte';
 	import OpenRouterForm from '$lib/components/settings/OpenRouterForm.svelte';
 	import ApiKeysSection from '$lib/components/settings/ApiKeysSection.svelte';
 	import { OPENROUTER_BASE_URL } from '$lib/openrouter';
@@ -187,47 +188,29 @@
 		will route to your server.
 	</p>
 	<div class="backend-mode-row">
-		<label class="backend-mode-option" class:selected={!remoteMode}>
-			<input
-				type="radio"
-				name="inference-mode"
-				value="local"
-				checked={!remoteMode}
-				onchange={() => setInferenceMode('local')}
-			/>
-			<div>
-				<strong>Local (Haruspex-managed)</strong>
-				<span>llama-server sidecar with a model managed by Haruspex. Recommended.</span>
-			</div>
-		</label>
-		<label class="backend-mode-option" class:selected={genericRemoteMode}>
-			<input
-				type="radio"
-				name="inference-mode"
-				value="remote"
-				checked={genericRemoteMode}
-				onchange={() => setInferenceMode('remote')}
-			/>
-			<div>
-				<strong>Remote server (advanced)</strong>
-				<span>Point at an existing OpenAI-compatible inference server.</span>
-			</div>
-		</label>
-		<label class="backend-mode-option" class:selected={openrouterMode}>
-			<input
-				type="radio"
-				name="inference-mode"
-				value="openrouter"
-				checked={openrouterMode}
-				onchange={() => setInferenceMode('openrouter')}
-			/>
-			<div>
-				<strong>OpenRouter (cloud)</strong>
-				<span>
-					Cloud model router — your prompts leave your device and go to OpenRouter's servers.
-				</span>
-			</div>
-		</label>
+		<ModeSelector
+			name="inference-mode"
+			value={openrouterMode ? 'openrouter' : genericRemoteMode ? 'remote' : 'local'}
+			onchange={(mode) => setInferenceMode(mode)}
+			options={[
+				{
+					value: 'local',
+					title: 'Local (Haruspex-managed)',
+					description: 'llama-server sidecar with a model managed by Haruspex. Recommended.'
+				},
+				{
+					value: 'remote',
+					title: 'Remote server (advanced)',
+					description: 'Point at an existing OpenAI-compatible inference server.'
+				},
+				{
+					value: 'openrouter',
+					title: 'OpenRouter (cloud)',
+					description:
+						"Cloud model router — your prompts leave your device and go to OpenRouter's servers."
+				}
+			]}
+		/>
 	</div>
 	{#if genericRemoteMode}
 		<div class="remote-form-wrapper">
@@ -315,43 +298,6 @@
 		flex-direction: column;
 		gap: 8px;
 		margin-bottom: 12px;
-	}
-
-	.backend-mode-option {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		padding: 10px 14px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		cursor: pointer;
-		transition: border-color 0.15s;
-	}
-
-	.backend-mode-option:hover {
-		border-color: var(--text-secondary);
-	}
-
-	.backend-mode-option.selected {
-		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 5%, transparent);
-	}
-
-	.backend-mode-option input[type='radio'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.backend-mode-option strong {
-		display: block;
-		font-size: 0.9rem;
-	}
-
-	.backend-mode-option span {
-		display: block;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
 	}
 
 	.remote-form-wrapper {

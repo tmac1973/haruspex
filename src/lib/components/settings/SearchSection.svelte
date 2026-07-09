@@ -8,6 +8,7 @@
 		type SearchProvider,
 		type ProxyMode
 	} from '$lib/stores/settings';
+	import ModeSelector from '$lib/components/ModeSelector.svelte';
 
 	let searchProvider = $state<SearchProvider>(getSettings().searchProvider);
 	let searchRecency = $state(getSettings().searchRecency);
@@ -129,32 +130,16 @@
 		set to <strong>None</strong> to connect directly.
 	</p>
 	<div class="proxy-modes">
-		<label class="proxy-mode" class:selected={proxyMode === 'none'}>
-			<input
-				type="radio"
-				name="proxy-mode"
-				value="none"
-				checked={proxyMode === 'none'}
-				onchange={() => setProxyMode('none')}
-			/>
-			<div>
-				<strong>None</strong>
-				<span>Direct connection</span>
-			</div>
-		</label>
-		<label class="proxy-mode" class:selected={proxyMode === 'manual'}>
-			<input
-				type="radio"
-				name="proxy-mode"
-				value="manual"
-				checked={proxyMode === 'manual'}
-				onchange={() => setProxyMode('manual')}
-			/>
-			<div>
-				<strong>Manual</strong>
-				<span>Route all traffic through a proxy URL</span>
-			</div>
-		</label>
+		<ModeSelector
+			name="proxy-mode"
+			direction="row"
+			value={proxyMode}
+			onchange={setProxyMode}
+			options={[
+				{ value: 'none', title: 'None', description: 'Direct connection' },
+				{ value: 'manual', title: 'Manual', description: 'Route all traffic through a proxy URL' }
+			]}
+		/>
 	</div>
 
 	{#if proxyMode === 'manual'}
@@ -256,43 +241,5 @@
 		display: flex;
 		gap: 8px;
 		margin-bottom: 12px;
-	}
-
-	.proxy-mode {
-		flex: 1;
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		padding: 10px 14px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		cursor: pointer;
-		transition: border-color 0.15s;
-	}
-
-	.proxy-mode:hover {
-		border-color: var(--text-secondary);
-	}
-
-	.proxy-mode.selected {
-		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 5%, transparent);
-	}
-
-	.proxy-mode input[type='radio'] {
-		margin-top: 3px;
-		accent-color: var(--accent);
-	}
-
-	.proxy-mode strong {
-		display: block;
-		font-size: 0.9rem;
-	}
-
-	.proxy-mode span {
-		display: block;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
 	}
 </style>
