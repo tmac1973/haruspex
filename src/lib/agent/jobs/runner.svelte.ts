@@ -1,17 +1,12 @@
 /**
- * Multi-step job runner.
+ * Job runner: owns run lifecycle — the FIFO queue, the reactive RunState the
+ * UI subscribes to (getCurrentRun / currentStepIndex), abort, and persistence
+ * mirroring into `job_runs` / `job_run_steps` via the jobRuns store.
  *
- * Walks all steps in a job, prepending the previous step's output to each
- * subsequent step's prompt. On first failure the run halts; remaining
- * steps stay `pending`. Each transition is mirrored into `job_runs` /
- * `job_run_steps` via the jobRuns store, so past runs are browsable in
- * the right pane after the fact.
- *
- * No queue yet (lands in step 7). Crash recovery (orphaned `running`
- * rows on app restart) lands in step 6.
- *
- * The UI subscribes to `getCurrentRun()` and reads `currentStepIndex`
- * to know which step is live.
+ * What a run *does* is the job type's business: the runner builds a
+ * JobRunContext (run-scoped capabilities) and dispatches to the type's
+ * registered pipeline (./types). Audit and guided planning still dispatch
+ * through legacy branches until they convert in job-plugins Phase 03.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -42,6 +37,9 @@ import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps, type JobType } from '$lib/stores/jobs.svelte';
 import { getActiveContextSize, isVisionSupported } from '$lib/stores/settings';
 import { GUIDED_PLANNING_STAGES, runGuidedPlanningPipeline } from './guided-planning/pipeline';
+// The registration barrel, deliberately — importing it registers the built-in
+// job types before the first dispatch can happen.
+import { getJobType, type JobRunContext, type PlannedStep } from './types';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { errMessage, normalizeAbort } from '$lib/utils/error';
 import {
@@ -170,17 +168,15 @@ function jobVisionSupported(job: JobWithSteps): boolean {
 	return isVisionSupported();
 }
 
-interface PlannedStep {
-	authored: string;
-	deepResearch: boolean;
-}
-
 /**
- * The concrete steps a run executes. Research jobs map 1:1 to their authored
- * steps; audit jobs expand into N sample steps (the same prompt, run
- * independently) plus a trailing synthesis step.
+ * The concrete steps a run executes. Registered job types (research, so far)
+ * plan their own; the legacy branches below convert in Phase 03 — audit jobs
+ * expand into N sample steps (the same prompt, run independently) plus a
+ * trailing synthesis step.
  */
 function planSteps(job: JobWithSteps): PlannedStep[] {
+	const def = getJobType(job.job_type);
+	if (def) return def.planSteps(job);
 	if (job.job_type === 'guided_planning') {
 		// Display stages — the run advances through these so the UI shows where
 		// in the process it is. Stage indices in the pipeline must match.
@@ -220,28 +216,6 @@ export interface RunStepState {
 	sizeWarning: string | null;
 	startedAt: number | null;
 	finishedAt: number | null;
-}
-
-/**
- * Crude characters→tokens ratio. Llama-family BPEs land in the 3-4
- * range; we use 4 because over-estimating budget hurts more than
- * under-estimating (we'd rather warn too often than miss a too-big
- * prompt).
- */
-const CHARS_PER_TOKEN = 4;
-const PROMPT_BUDGET_FRACTION = 0.8;
-
-function estimateSizeWarning(rendered: string, contextSize: number): string | null {
-	if (contextSize <= 0) return null;
-	const estTokens = Math.ceil(rendered.length / CHARS_PER_TOKEN);
-	const budget = Math.floor(contextSize * PROMPT_BUDGET_FRACTION);
-	if (estTokens <= budget) return null;
-	return (
-		`Rendered prompt is roughly ${estTokens.toLocaleString()} tokens — ` +
-		`above ${Math.round(PROMPT_BUDGET_FRACTION * 100)}% of the ${contextSize.toLocaleString()}-token context. ` +
-		`The model may truncate, hallucinate, or run out of room for its reply. ` +
-		`Consider splitting this step further.`
-	);
 }
 
 export interface RunState {
@@ -441,74 +415,35 @@ function buildStreamCallbacks(runId: number, stepIndex: number) {
 	};
 }
 
-function renderPrompt(stepIndex: number, authored: string, priorOutput: string): string {
-	if (stepIndex === 0) return authored;
-	if (!priorOutput) return authored;
-	return `${priorOutput}\n\n${authored}`;
-}
-
-async function runOneStep(
-	job: JobWithSteps,
-	runId: number,
-	stepIndex: number,
-	rendered: string,
-	abort: AbortController
-): Promise<{ ok: true; output: string } | { ok: false; aborted: boolean; error: string }> {
-	const step = job.steps[stepIndex];
-	const visionSupported = jobVisionSupported(job);
-	const startedAt = Date.now();
-
-	const contextSize = jobContextSize(job);
-	const sizeWarning = estimateSizeWarning(rendered, contextSize);
-	if (sizeWarning) {
-		logDebug('jobs', 'step prompt over budget', {
-			runId,
-			stepIndex,
-			length: rendered.length,
-			contextSize
-		});
-	}
-	patchStep(runId, stepIndex, {
-		status: 'running',
-		promptRendered: rendered,
-		sizeWarning,
-		startedAt
-	});
-	if (current && current.id === runId) {
-		current = { ...current, currentStepIndex: stepIndex };
-	}
-	void markRunStepStarted(runId, stepIndex, startedAt, rendered);
-
-	const callbacks = buildStreamCallbacks(runId, stepIndex);
-
-	try {
-		const { finalText } = await runJobTurn(job, runId, abort, {
-			userMessage: rendered,
-			contextSize,
-			deepResearch: step.deep_research,
-			visionSupported,
-			...callbacks
-		});
-		const finishedAt = Date.now();
-		patchStep(runId, stepIndex, {
-			status: 'succeeded',
-			output: finalText,
-			finishedAt
-		});
-		void markRunStepFinished(runId, stepIndex, 'succeeded', finalText, null, finishedAt);
-		return { ok: true, output: finalText };
-	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
-		const finishedAt = Date.now();
-		patchStep(runId, stepIndex, {
-			status: stepStatus,
-			error: msg,
-			finishedAt
-		});
-		void markRunStepFinished(runId, stepIndex, stepStatus, null, msg, finishedAt);
-		return { ok: false, aborted, error: msg };
-	}
+/**
+ * The run-scoped capabilities a pipeline executes against — never the
+ * runner's module state. `onSettled` owns the post-pipeline transition: if
+ * there's a queued run it swaps the center pane straight into the next one;
+ * if the queue is empty, `current` stays on the terminal state so the user
+ * can read the result and dismiss it via Close (clearCurrentRun).
+ */
+function buildRunContext(job: JobWithSteps, runId: number, abort: AbortController): JobRunContext {
+	return {
+		job,
+		runId,
+		abort,
+		runJobTurn: (opts) => runJobTurn(job, runId, abort, opts),
+		patchStep: (stepIndex, patch) => patchStep(runId, stepIndex, patch),
+		buildStreamCallbacks: (stepIndex) => buildStreamCallbacks(runId, stepIndex),
+		setCurrentStepIndex: (stepIndex) => {
+			if (current && current.id === runId) current = { ...current, currentStepIndex: stepIndex };
+		},
+		liveStepIndex: () => (current && current.id === runId ? current.currentStepIndex : 0),
+		stepAuthored: (stepIndex) => current?.steps[stepIndex]?.promptAuthored ?? '',
+		isLive: () => current?.id === runId,
+		contextSize: () => jobContextSize(job),
+		visionSupported: () => jobVisionSupported(job),
+		finalizeRun: (status, error) => finalizeRun(runId, job.id, status, error),
+		onSettled: () => {
+			if (activeAbort === abort) activeAbort = null;
+			if (pending.length > 0) queueMicrotask(drainNext);
+		}
+	};
 }
 
 async function runPipeline(
@@ -516,66 +451,20 @@ async function runPipeline(
 	abort: AbortController,
 	runId: number
 ): Promise<void> {
+	const ctx = buildRunContext(job, runId, abort);
+	const def = getJobType(job.job_type);
+	if (def) return def.runPipeline(ctx);
+	// Legacy dispatch — these convert to registered types in Phase 03.
 	if (job.job_type === 'guided_planning') {
-		// Explicit deps object (rough draft of the Phase 02 JobRunContext): the
-		// pipeline gets run-scoped capabilities, never the runner's module state.
-		return runGuidedPlanningPipeline({
-			job,
-			runId,
-			abort,
-			runJobTurn: (opts) => runJobTurn(job, runId, abort, opts),
-			patchStep: (stepIndex, patch) => patchStep(runId, stepIndex, patch),
-			buildStreamCallbacks: (stepIndex) => buildStreamCallbacks(runId, stepIndex),
-			setCurrentStepIndex: (stepIndex) => {
-				if (current && current.id === runId) current = { ...current, currentStepIndex: stepIndex };
-			},
-			liveStepIndex: () => (current && current.id === runId ? current.currentStepIndex : 0),
-			stepAuthored: (stepIndex) => current?.steps[stepIndex]?.promptAuthored ?? '',
-			contextSize: () => jobContextSize(job),
-			visionSupported: () => jobVisionSupported(job),
-			finalizeRun: (status, error) => finalizeRun(runId, job.id, status, error),
-			onSettled: () => {
-				if (activeAbort === abort) activeAbort = null;
-				if (pending.length > 0) queueMicrotask(drainNext);
-			}
-		});
+		return runGuidedPlanningPipeline(ctx);
 	}
 	if (job.job_type === 'audit') {
 		return runAuditPipeline(job, abort, runId);
 	}
-	void markRunStarted(runId, Date.now());
-	let priorOutput = '';
-	try {
-		for (let i = 0; i < job.steps.length; i++) {
-			if (!current || current.id !== runId) return;
-			// If the user cancelled between steps, finalize cleanly without
-			// flickering the next step to 'running' before bailing.
-			if (abort.signal.aborted) {
-				finalizeRun(runId, job.id, 'cancelled', 'Cancelled by user');
-				return;
-			}
-			const authored = job.steps[i].prompt;
-			const rendered = renderPrompt(i, authored, priorOutput);
-			const result = await runOneStep(job, runId, i, rendered, abort);
-			if (!result.ok) {
-				const status: RunStatus = result.aborted ? 'cancelled' : 'failed';
-				finalizeRun(runId, job.id, status, result.error);
-				return;
-			}
-			priorOutput = result.output;
-		}
-		finalizeRun(runId, job.id, 'succeeded', null);
-	} finally {
-		if (activeAbort === abort) activeAbort = null;
-		// If there's a queued run, transition immediately so the center
-		// pane swaps from the just-finished run straight into the next
-		// one. If the queue is empty, leave `current` on the terminal
-		// state so the user can read the result and dismiss it manually
-		// via the Close button (clearCurrentRun).
-		if (pending.length > 0) {
-			queueMicrotask(drainNext);
-		}
-	}
+	// Unknown type: nothing this app wrote can produce one, but fail honestly
+	// rather than silently doing nothing if a foreign DB row shows up.
+	finalizeRun(runId, job.id, 'failed', `Job type "${job.job_type}" is not registered.`);
+	ctx.onSettled();
 }
 
 /**

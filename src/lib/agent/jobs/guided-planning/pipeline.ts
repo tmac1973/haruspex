@@ -2,16 +2,15 @@
  * Guided-planning pipeline, extracted from the job runner (job-plugins Phase 01).
  *
  * The runner owns run lifecycle (reactive RunState, the queue, abort) and hands
- * this module an explicit deps object — the rough draft of the JobRunContext
- * that the job-type registry (Phase 02) will formalize. Everything guided-
+ * this module the shared JobRunContext (types/types.ts). Everything guided-
  * planning-specific lives here: display stages, toolsets, prompts, the
  * interview/checkpoint/verify orchestration, and the write-verification guards.
+ * Converts to a registered JobTypeDefinition in Phase 03.
  */
 
 import { invoke } from '@tauri-apps/api/core';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '$lib/agent/tools/planning';
-import type { EphemeralTurnOptions, EphemeralTurnResult } from '$lib/agent/runEphemeralTurn';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
 import { askUserQuestion } from '$lib/stores/userQuestion.svelte';
 import { normalizeAbort } from '$lib/utils/error';
@@ -21,7 +20,7 @@ import {
 	markRunStepStarted,
 	type JobRunStepStatus
 } from '$lib/stores/jobRuns.svelte';
-import type { RunStatus, RunStepState } from '../runner.svelte';
+import type { JobRunContext } from '../types/types';
 
 /**
  * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at
@@ -61,30 +60,6 @@ export const GUIDED_PLANNING_STAGES = [
 	'Verification',
 	'Approval'
 ] as const;
-
-/** Everything the pipeline needs from the runner, bound to one run. */
-export interface GuidedPlanningDeps {
-	job: JobWithSteps;
-	runId: number;
-	abort: AbortController;
-	/** One ephemeral agent turn under the job harness (slot, auto-approve, backend). */
-	runJobTurn: (
-		opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'>
-	) => Promise<EphemeralTurnResult>;
-	patchStep: (stepIndex: number, patch: Partial<RunStepState>) => void;
-	buildStreamCallbacks: (
-		stepIndex: number
-	) => Pick<EphemeralTurnOptions, 'onAssistantDelta' | 'onToolStart' | 'onToolEnd'>;
-	setCurrentStepIndex: (stepIndex: number) => void;
-	/** The step that was live when an error/cancel propagated (0 if unknown). */
-	liveStepIndex: () => number;
-	stepAuthored: (stepIndex: number) => string;
-	contextSize: () => number;
-	visionSupported: () => boolean;
-	finalizeRun: (status: RunStatus, error: string | null) => void;
-	/** Runner-owned cleanup (clear the active abort, drain the queue). */
-	onSettled: () => void;
-}
 
 /**
  * Tools a guided_planning run may use: read-only codebase grounding, the single
@@ -326,7 +301,7 @@ function isPlanClean(verdict: string): boolean {
  * Milestone-persisted needs-input/resume is a later hardening pass — a
  * foreground run completes fully; a killed run does not yet resume.
  */
-export async function runGuidedPlanningPipeline(deps: GuidedPlanningDeps): Promise<void> {
+export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<void> {
 	const { job, runId, abort } = deps;
 	void markRunStarted(runId, Date.now());
 	const outDir = guidedPlanOutputDir(job);
