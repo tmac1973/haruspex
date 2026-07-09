@@ -22,6 +22,7 @@ import {
 	DEFAULT_AUDIT_SYNTHESIS_PROMPT
 } from './auditPipeline';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
+import { parseAuditConfig, type AuditConfig } from './config';
 import { errMessage, normalizeAbort } from '$lib/utils/error';
 import {
 	markRunStarted,
@@ -56,9 +57,9 @@ const MAX_AUDIT_SAMPLE_ITERATIONS = 400;
  */
 const AUDIT_VERIFY_MAX_ITERATIONS = 40;
 
-/** Resolve a job's configured sample budget to a sane, bounded turn count. */
-function auditSampleIterations(job: JobWithSteps): number {
-	const raw = job.audit_max_iterations ?? DEFAULT_AUDIT_SAMPLE_ITERATIONS;
+/** Resolve the configured sample budget to a sane, bounded turn count. */
+function auditSampleIterations(cfg: AuditConfig): number {
+	const raw = cfg.max_iterations ?? DEFAULT_AUDIT_SAMPLE_ITERATIONS;
 	return Math.max(1, Math.min(Math.floor(raw), MAX_AUDIT_SAMPLE_ITERATIONS));
 }
 
@@ -67,7 +68,8 @@ function auditSampleIterations(job: JobWithSteps): number {
  * plus a trailing synthesis step.
  */
 export function planAuditSteps(job: JobWithSteps): PlannedStep[] {
-	const n = Math.max(1, Math.min(job.audit_num_runs ?? 3, MAX_AUDIT_RUNS));
+	const cfg = parseAuditConfig(job.type_config);
+	const n = Math.max(1, Math.min(cfg.num_runs ?? 3, MAX_AUDIT_RUNS));
 	const prompt = job.steps[0]?.prompt ?? '';
 	const samples: PlannedStep[] = Array.from({ length: n }, () => ({
 		authored: prompt,
@@ -84,6 +86,7 @@ export function planAuditSteps(job: JobWithSteps): PlannedStep[] {
  */
 export async function runAuditPipeline(ctx: JobRunContext): Promise<void> {
 	const { job, runId, abort } = ctx;
+	const cfg = parseAuditConfig(job.type_config);
 	void markRunStarted(runId, Date.now());
 	const planned = planAuditSteps(job);
 	const synthesisIndex = planned.length - 1;
@@ -95,7 +98,7 @@ export async function runAuditPipeline(ctx: JobRunContext): Promise<void> {
 			numRuns,
 			jobName: job.name,
 			signal: abort.signal,
-			runSample: (i) => runAuditSampleStep(ctx, i, auditPrompt),
+			runSample: (i) => runAuditSampleStep(ctx, cfg, i, auditPrompt),
 			beginSynthesis: () => {
 				const startedAt = Date.now();
 				ctx.setCurrentStepIndex(synthesisIndex);
@@ -107,24 +110,24 @@ export async function runAuditPipeline(ctx: JobRunContext): Promise<void> {
 				void markRunStepStarted(runId, synthesisIndex, startedAt, planned[synthesisIndex].authored);
 			},
 			verifyCluster: (cluster, idx, total) =>
-				verifyClusterTurn(ctx, synthesisIndex, cluster, idx, total)
+				verifyClusterTurn(ctx, cfg, synthesisIndex, cluster, idx, total)
 		});
 
 		// Write the report to the configured file (best-effort; failure is noted
 		// in the step output but doesn't fail the run — the report is also saved
 		// to the step itself).
 		let note = '';
-		if (job.audit_output_file && job.working_dir) {
+		if (cfg.output_file && job.working_dir) {
 			try {
 				await invoke('fs_write_text', {
 					workdir: job.working_dir,
-					relPath: job.audit_output_file,
+					relPath: cfg.output_file,
 					content: result.report,
 					overwrite: true
 				});
-				note = `\n\n_Report written to ${job.audit_output_file}._`;
+				note = `\n\n_Report written to ${cfg.output_file}._`;
 			} catch (e) {
-				note = `\n\n_Could not write ${job.audit_output_file}: ${errMessage(e)}_`;
+				note = `\n\n_Could not write ${cfg.output_file}: ${errMessage(e)}_`;
 			}
 		}
 
@@ -150,12 +153,13 @@ export async function runAuditPipeline(ctx: JobRunContext): Promise<void> {
 /** Run one audit sample, returning the findings it submitted. Throws on failure. */
 async function runAuditSampleStep(
 	ctx: JobRunContext,
+	cfg: AuditConfig,
 	stepIndex: number,
 	auditPrompt: string
 ): Promise<AuditFinding[]> {
-	const { job, runId } = ctx;
+	const { runId } = ctx;
 	const startedAt = Date.now();
-	const rendered = buildSamplePrompt(auditPrompt, job.audit_sample_instructions);
+	const rendered = buildSamplePrompt(auditPrompt, cfg.sample_instructions);
 	ctx.setCurrentStepIndex(stepIndex);
 	ctx.patchStep(stepIndex, { status: 'running', promptRendered: rendered, startedAt });
 	void markRunStepStarted(runId, stepIndex, startedAt, rendered);
@@ -182,7 +186,7 @@ async function runAuditSampleStep(
 		// whole budget exploring and never submits, force the submit_findings
 		// call rather than discarding a prose answer.
 		forceFinalTool: SUBMIT_FINDINGS_TOOL,
-		maxIterations: auditSampleIterations(job),
+		maxIterations: auditSampleIterations(cfg),
 		...callbacks
 	});
 
@@ -199,12 +203,12 @@ async function runAuditSampleStep(
 /** Verify one cluster against source via a read-only submit_verdict turn. */
 async function verifyClusterTurn(
 	ctx: JobRunContext,
+	cfg: AuditConfig,
 	synthesisIndex: number,
 	cluster: FindingCluster,
 	idx: number,
 	total: number
 ): Promise<{ verdict: AuditVerdict; evidence: string | null; location: string | null }> {
-	const { job } = ctx;
 	ctx.patchStep(synthesisIndex, {
 		streaming: `Verifying ${idx + 1}/${total}: ${cluster.title}`
 	});
@@ -222,7 +226,7 @@ async function verifyClusterTurn(
 	};
 
 	await ctx.runJobTurn({
-		userMessage: buildVerifyPrompt(cluster, job.audit_verify_instructions),
+		userMessage: buildVerifyPrompt(cluster, cfg.verify_instructions),
 		contextSize: ctx.contextSize(),
 		visionSupported: ctx.visionSupported(),
 		toolAllowlist: VERIFY_ALLOW,

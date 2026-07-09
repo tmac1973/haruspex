@@ -20,6 +20,7 @@ import {
 	type JobRunStepStatus
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
+import { parseGuidedPlanningConfig, type GuidedPlanningConfig } from './config';
 
 /**
  * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at
@@ -84,8 +85,8 @@ const VERIFIER_TOOLS = ['fs_read_text', 'fs_list_dir', 'fs_read_pdf', 'code_grep
 const MAX_VERIFY_ROUNDS = 3;
 
 /** A job's plan output folder, relative to working_dir (default plan/<slug>/). */
-function guidedPlanOutputDir(job: JobWithSteps): string {
-	const dir = job.plan_output_dir?.trim();
+function guidedPlanOutputDir(job: JobWithSteps, cfg: GuidedPlanningConfig): string {
+	const dir = cfg.plan_output_dir?.trim();
 	if (dir) return dir;
 	const slug =
 		job.name
@@ -289,8 +290,9 @@ function isPlanClean(verdict: string): boolean {
  */
 export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<void> {
 	const { job, runId, abort } = deps;
+	const cfg = parseGuidedPlanningConfig(job.type_config);
 	void markRunStarted(runId, Date.now());
-	const outDir = guidedPlanOutputDir(job);
+	const outDir = guidedPlanOutputDir(job, cfg);
 	const overviewPath = `${outDir}overview.md`;
 
 	// Step indices — must match the GUIDED_STAGES order in ./definition.ts
@@ -516,7 +518,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		startStep(OVERVIEW);
 		await turn(
 			OVERVIEW,
-			job.initial_description?.trim() || 'Plan this project.',
+			cfg.initial_description?.trim() || 'Plan this project.',
 			overviewStagePrompt(outDir, overviewPath),
 			40,
 			{ expectsFileOutput: true }

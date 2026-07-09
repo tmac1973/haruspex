@@ -15,6 +15,9 @@ function fakeDef(id: string, over: Partial<JobTypeDefinition> = {}): JobTypeDefi
 		description: `${id} jobs`,
 		hasPlannedSteps: true,
 		Editor: (() => {}) as unknown as JobTypeDefinition['Editor'],
+		configDefaults: () => ({}),
+		configFromJob: () => ({}),
+		configToJson: () => null,
 		planSteps: () => [],
 		runPipeline: async () => {},
 		...over
@@ -74,14 +77,17 @@ describe('registration barrel', () => {
 	it('audit: planSteps expands to N samples plus a synthesis step, clamped to 20', async () => {
 		const { getJobType } = await import('./index');
 		const job = {
-			audit_num_runs: 3,
+			type_config: JSON.stringify({ num_runs: 3 }),
 			steps: [{ id: 1, ordering: 0, prompt: 'find dup', deep_research: false }]
 		} as JobWithSteps;
 		const planned = getJobType('audit')!.planSteps(job);
 		expect(planned).toHaveLength(4);
 		expect(planned.slice(0, 3).every((s) => s.authored === 'find dup')).toBe(true);
 
-		const clamped = getJobType('audit')!.planSteps({ ...job, audit_num_runs: 99 });
+		const clamped = getJobType('audit')!.planSteps({
+			...job,
+			type_config: JSON.stringify({ num_runs: 99 })
+		});
 		expect(clamped).toHaveLength(21);
 	});
 

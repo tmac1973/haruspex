@@ -11,6 +11,12 @@ export const researchJobType: JobTypeDefinition = {
 	hasPlannedSteps: true,
 	listMeta: (job) => ` · ${job.step_count} step${job.step_count === 1 ? '' : 's'}`,
 	Editor,
+	// Research has no type-specific config — the steps ARE the job.
+	configDefaults: () => ({}),
+	configFromJob: () => ({}),
+	configToJson: () => null,
+	validate: ({ steps }) =>
+		steps.some((s) => s.prompt.trim().length > 0) ? null : 'At least one step prompt is required.',
 	planSteps: planResearchSteps,
 	runPipeline: runResearchPipeline
 };

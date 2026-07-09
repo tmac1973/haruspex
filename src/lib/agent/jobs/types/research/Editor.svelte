@@ -2,10 +2,19 @@
 	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
 	import type { JobStepInput } from '$lib/stores/jobs.svelte';
 
-	// The research-specific section of the job editor: the step-pipeline list.
-	// `steps` stays owned by JobEditor (audit shares steps[0] as its prompt and
-	// the save path persists it) — this component only edits it in place.
-	let { steps = $bindable() }: { steps: JobStepInput[] } = $props();
+	// The research-specific section of the job editor: the step-pipeline list
+	// (see JobTypeEditorProps — research has no type config, so only `steps`
+	// is used; the other props are declared because JobEditor binds them on
+	// every type's editor).
+	let {
+		config = $bindable(),
+		steps = $bindable(),
+		jobName = ''
+	}: {
+		config: Record<string, unknown>;
+		steps: JobStepInput[];
+		jobName?: string;
+	} = $props();
 
 	function addStep() {
 		steps = [...steps, { prompt: '', deep_research: false }];

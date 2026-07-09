@@ -8,10 +8,24 @@ appendix.
 
 ## Build status
 
-Phases 1–3 are implemented and green on `feat/job-plugins` (TS suite +
-svelte-check). All three built-in types are registered plugins; the runner,
-JobList, JobRunView, and the JobEditor form sections + type picker dispatch
-purely through the registry.
+Phases 1–4 are implemented and green on `feat/job-plugins` (TS suite +
+svelte-check + cargo test/clippy). All three built-in types are registered
+plugins; the runner, JobList, JobRunView, and the whole JobEditor
+(picker, form sections, load/save/validate/persist-steps) dispatch purely
+through the registry. Per-type config lives in the JSON `type_config`
+column — **adding a job type now requires zero Rust changes** (verified:
+`grep audit_ src-tauri/src` hits only the schema/migration block). A
+one-time idempotent migration folds legacy per-type columns into JSON;
+the old columns are dead, not dropped.
+
+**Editor contract as built (supersedes the Phase 02/03 mapper notes):**
+every type Editor receives the same bindable props —
+`config` (the type's editor state object, from
+`configDefaults`/`configFromJob`, serialized back by `configToJson`),
+`steps`, and read-only `jobName` — and JobEditor mounts the selected
+type's Editor through one `{#key}`-wrapped dynamic component. Definitions
+also own `validate`, `persistSteps`, and `workingDirPlaceholder`
+(presence ⇒ the working dir is required).
 
 **Adaptations made during implementation (vs. this plan):**
 

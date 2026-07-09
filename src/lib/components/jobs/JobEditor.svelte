@@ -31,19 +31,8 @@
 		type JobStepInput,
 		type JobType
 	} from '$lib/stores/jobs.svelte';
-	import {
-		DEFAULT_SAMPLE_INSTRUCTIONS,
-		DEFAULT_VERIFY_INSTRUCTIONS
-	} from '$lib/agent/jobs/types/audit/auditPipeline';
 	import { getSettings } from '$lib/stores/settings';
 	import { getJobType, listJobTypes } from '$lib/agent/jobs/types';
-
-	// Registered job types render their own config form section. Each Editor
-	// declares its own bindable props until Phase 04 unifies them on a single
-	// type_config object.
-	const ResearchEditor = getJobType('research')!.Editor;
-	const AuditEditor = getJobType('audit')!.Editor;
-	const GuidedPlanningEditor = getJobType('guided_planning')!.Editor;
 
 	interface Props {
 		jobId: number | 'new';
@@ -60,21 +49,22 @@
 	let schedule = $state<Schedule>({ kind: 'manual' });
 	let steps = $state<JobStepInput[]>([{ prompt: '', deep_research: false }]);
 	let jobType = $state<JobType>('research');
-	// Audit-job config (only used when jobType === 'audit'). The audit prompt
-	// itself reuses steps[0].prompt so the persistence path stays shared.
-	let auditNumRuns = $state(5);
-	let auditOutputFile = $state('AUDIT.md');
-	let auditReadOnly = $state(true);
-	let auditMaxTurns = $state(200);
-	let auditSampleInstructions = $state(DEFAULT_SAMPLE_INSTRUCTIONS);
-	let auditVerifyInstructions = $state(DEFAULT_VERIFY_INSTRUCTIONS);
-	// Guided-planning config (only used when jobType === 'guided_planning').
-	// `initialDescription` is the seed idea; `planOutputDir` is where the
-	// overview + phase files are written (relative to workingDir). The output
-	// dir auto-derives from the name until the user edits it.
-	let initialDescription = $state('');
-	let planOutputDir = $state('');
-	let planOutputDirEdited = $state(false);
+	// The selected type's editor state, owned by its JobTypeDefinition
+	// (configDefaults / configFromJob / configToJson). Its Editor component
+	// mutates it in place; switching types stashes it so toggling back keeps
+	// unsaved edits.
+	let typeConfig = $state<Record<string, unknown>>({});
+	let typeConfigStash: Partial<Record<JobType, Record<string, unknown>>> = {};
+
+	const typeDef = $derived(getJobType(jobType)!);
+	const TypeEditor = $derived(typeDef.Editor);
+
+	function setJobType(next: JobType) {
+		if (next === jobType) return;
+		typeConfigStash[jobType] = typeConfig;
+		jobType = next;
+		typeConfig = typeConfigStash[next] ?? getJobType(next)!.configDefaults();
+	}
 	// Where this job's model calls go (any job type): 'settings' follows the
 	// app's active Settings backend; 'remote'/'openrouter' pin the job to a
 	// specific server/model configured below. One selection — mirrors the
@@ -119,15 +109,8 @@
 			schedule = { kind: 'manual' };
 			steps = [{ prompt: '', deep_research: false }];
 			jobType = 'research';
-			auditNumRuns = 5;
-			auditOutputFile = 'AUDIT.md';
-			auditReadOnly = true;
-			auditMaxTurns = 200;
-			auditSampleInstructions = DEFAULT_SAMPLE_INSTRUCTIONS;
-			auditVerifyInstructions = DEFAULT_VERIFY_INSTRUCTIONS;
-			initialDescription = '';
-			planOutputDir = '';
-			planOutputDirEdited = false;
+			typeConfigStash = {};
+			typeConfig = getJobType('research')!.configDefaults();
 			modelSource = 'settings';
 			modelBaseUrl = '';
 			modelApiKey = '';
@@ -160,17 +143,9 @@
 					? job.steps.map((s) => ({ prompt: s.prompt, deep_research: s.deep_research }))
 					: [{ prompt: '', deep_research: false }];
 			jobType = job.job_type;
-			auditNumRuns = job.audit_num_runs ?? 5;
-			auditOutputFile = job.audit_output_file ?? '';
-			auditReadOnly = job.audit_read_only;
-			auditMaxTurns = job.audit_max_iterations ?? 200;
-			auditSampleInstructions = job.audit_sample_instructions ?? DEFAULT_SAMPLE_INSTRUCTIONS;
-			auditVerifyInstructions = job.audit_verify_instructions ?? DEFAULT_VERIFY_INSTRUCTIONS;
-			initialDescription = job.initial_description ?? '';
-			planOutputDir = job.plan_output_dir ?? '';
-			// Treat a loaded value as user-set so the name-sync effect doesn't
-			// clobber it on edit.
-			planOutputDirEdited = !!job.plan_output_dir;
+			typeConfigStash = {};
+			typeConfig =
+				getJobType(job.job_type)?.configFromJob(job.type_config) ?? ({} as Record<string, unknown>);
 			modelBaseUrl = job.model_remote_base_url ?? '';
 			modelApiKey = job.model_remote_api_key ?? '';
 			modelApiKeyId = job.model_remote_api_key_id ?? null;
@@ -358,23 +333,21 @@
 
 	function validate(): string | null {
 		if (!name.trim()) return 'Name is required.';
-		if (jobType === 'guided_planning') {
-			if (!workingDir.trim())
-				return 'Guided planning needs a working directory — the project to plan in.';
-			if (!initialDescription.trim()) return 'Describe what you want to build to start planning.';
-			return null;
-		}
-		if (jobType === 'audit') {
-			if (!steps[0]?.prompt.trim()) return 'An audit prompt is required.';
-			if (!workingDir.trim()) return 'Audit jobs need a working directory (the code to audit).';
-			if (auditNumRuns < 1 || auditNumRuns > 20) return 'Number of runs must be between 1 and 20.';
-			if (!Number.isFinite(auditMaxTurns) || auditMaxTurns < 1 || auditMaxTurns > 400)
-				return 'Max turns per run must be between 1 and 400.';
-			return null;
-		}
-		const nonEmpty = steps.filter((s) => s.prompt.trim().length > 0);
-		if (nonEmpty.length === 0) return 'At least one step prompt is required.';
-		return null;
+		return (
+			typeDef.validate?.({
+				name,
+				workingDir,
+				steps: $state.snapshot(steps),
+				config: $state.snapshot(typeConfig)
+			}) ?? null
+		);
+	}
+
+	/** Default step persistence: prompts trimmed, empties dropped. */
+	function defaultPersistSteps(all: JobStepInput[]): JobStepInput[] {
+		return all
+			.map((s) => ({ prompt: s.prompt.trim(), deep_research: s.deep_research }))
+			.filter((s) => s.prompt.length > 0);
 	}
 
 	async function save() {
@@ -391,7 +364,6 @@
 			// a schedule is treated as a reset, which matches the user's
 			// mental model — "every 30 minutes starting now" rather than
 			// "the next fire was scheduled at X, keep that".
-			const isAudit = jobType === 'audit';
 			const overrideActive = modelSource !== 'settings';
 			const input: JobInput = {
 				name: name.trim(),
@@ -403,22 +375,9 @@
 				schedule_kind: schedule.kind,
 				schedule_config: scheduleToConfigJson(schedule),
 				next_due_at: computeNextDueAt(schedule, null),
-				audit_num_runs: isAudit ? auditNumRuns : null,
-				audit_output_file: isAudit && auditOutputFile.trim() ? auditOutputFile.trim() : null,
-				audit_read_only: auditReadOnly,
-				audit_max_iterations: isAudit ? auditMaxTurns : null,
-				audit_sample_instructions:
-					isAudit &&
-					auditSampleInstructions.trim() &&
-					auditSampleInstructions.trim() !== DEFAULT_SAMPLE_INSTRUCTIONS
-						? auditSampleInstructions.trim()
-						: null,
-				audit_verify_instructions:
-					isAudit &&
-					auditVerifyInstructions.trim() &&
-					auditVerifyInstructions.trim() !== DEFAULT_VERIFY_INSTRUCTIONS
-						? auditVerifyInstructions.trim()
-						: null,
+				// The type's own knobs, serialized by its definition — Rust
+				// stores this verbatim.
+				type_config: typeDef.configToJson($state.snapshot(typeConfig)),
 				// Per-job remote model override. Only persisted when a specific
 				// source is selected AND a base URL is set — otherwise the job
 				// follows the Settings backend (all-null columns).
@@ -436,19 +395,11 @@
 				model_remote_vision_supported:
 					overrideActive && modelBaseUrl.trim() && modelVision !== 'auto'
 						? modelVision === 'yes'
-						: null,
-				initial_description:
-					jobType === 'guided_planning' && initialDescription.trim()
-						? initialDescription.trim()
-						: null,
-				plan_output_dir:
-					jobType === 'guided_planning' && planOutputDir.trim() ? planOutputDir.trim() : null
+						: null
 			};
-			// Audit jobs persist exactly one step (the audit prompt); research jobs
-			// persist their full pipeline.
-			const stepsToSave: JobStepInput[] = (isAudit ? steps.slice(0, 1) : steps)
-				.map((s) => ({ prompt: s.prompt.trim(), deep_research: isAudit ? false : s.deep_research }))
-				.filter((s) => s.prompt.length > 0);
+			const stepsToSave: JobStepInput[] = (typeDef.persistSteps ?? defaultPersistSteps)(
+				$state.snapshot(steps)
+			);
 
 			let id: number;
 			if (jobId === 'new') {
@@ -504,7 +455,7 @@
 			<ModeSelector
 				name="job-type"
 				value={jobType}
-				onchange={(v) => (jobType = v as JobType)}
+				onchange={setJobType}
 				options={listJobTypes().map((d) => ({
 					value: d.id,
 					title: d.label,
@@ -531,25 +482,22 @@
 
 		<div
 			class="field"
-			title={jobType === 'audit' || jobType === 'guided_planning'
+			title={typeDef.workingDirPlaceholder
 				? 'Required. Absolute path to the project this job reads and greps. Every run operates inside it.'
 				: "Optional. Absolute path to a folder this job operates in. When set, every step sees it as the agent's working directory — file reads, writes, Python sandbox cwd. Leave blank for jobs that don't touch the filesystem (research, summarization, etc.) — the model just won't have fs_* tools available."}
 		>
 			<span class="label">
 				Working directory
-				{#if jobType === 'audit' || jobType === 'guided_planning'}<span class="required"
-						>(required)</span
-					>{:else}<span class="optional">(optional)</span>{/if}
+				{#if typeDef.workingDirPlaceholder}<span class="required">(required)</span>{:else}<span
+						class="optional">(optional)</span
+					>{/if}
 			</span>
 			<div class="workdir-row">
 				<input
 					type="text"
 					bind:value={workingDir}
-					placeholder={jobType === 'audit'
-						? 'Absolute path to the code to audit'
-						: jobType === 'guided_planning'
-							? 'Absolute path to the project to plan in'
-							: "Leave blank if the job doesn't touch files"}
+					placeholder={typeDef.workingDirPlaceholder ??
+						"Leave blank if the job doesn't touch files"}
 					class="workdir-input"
 				/>
 				<button
@@ -720,26 +668,13 @@
 			{/if}
 		</div>
 
-		{#if jobType === 'research'}
-			<ResearchEditor bind:steps />
-		{:else if jobType === 'audit'}
-			<AuditEditor
-				bind:steps
-				bind:numRuns={auditNumRuns}
-				bind:outputFile={auditOutputFile}
-				bind:readOnly={auditReadOnly}
-				bind:maxTurns={auditMaxTurns}
-				bind:sampleInstructions={auditSampleInstructions}
-				bind:verifyInstructions={auditVerifyInstructions}
-			/>
-		{:else if jobType === 'guided_planning'}
-			<GuidedPlanningEditor
-				jobName={name}
-				bind:initialDescription
-				bind:planOutputDir
-				bind:planOutputDirEdited
-			/>
-		{/if}
+		<!-- The selected type's own form section. Every editor gets the same
+		     props (JobTypeEditorProps) and declares the subset it uses; the
+		     key remounts it whenever the config object identity changes
+		     (load, type switch), so mount-time initialization stays safe. -->
+		{#key `${jobId}:${jobType}`}
+			<TypeEditor bind:config={typeConfig} bind:steps jobName={name} />
+		{/key}
 
 		{#if error}
 			<div class="error-box">{error}</div>

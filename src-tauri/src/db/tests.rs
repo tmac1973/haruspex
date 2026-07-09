@@ -224,20 +224,13 @@ fn sample_job_input(name: &str) -> JobInput {
         schedule_kind: "manual".to_string(),
         schedule_config: None,
         next_due_at: None,
-        audit_num_runs: None,
-        audit_output_file: None,
-        audit_read_only: true,
-        audit_max_iterations: None,
-        audit_sample_instructions: None,
-        audit_verify_instructions: None,
+        type_config: None,
         model_remote_base_url: None,
         model_remote_api_key: None,
         model_remote_api_key_id: None,
         model_remote_model_id: None,
         model_remote_context_size: None,
         model_remote_vision_supported: None,
-        initial_description: None,
-        plan_output_dir: None,
     }
 }
 
@@ -345,20 +338,13 @@ fn update_job_changes_fields_and_bumps_timestamp() {
             schedule_kind: "daily".to_string(),
             schedule_config: Some(r#"{"time":"09:00"}"#.to_string()),
             next_due_at: Some(1234567890),
-            audit_num_runs: None,
-            audit_output_file: None,
-            audit_read_only: true,
-            audit_max_iterations: None,
-            audit_sample_instructions: None,
-            audit_verify_instructions: None,
+            type_config: None,
             model_remote_base_url: None,
             model_remote_api_key: None,
             model_remote_api_key_id: None,
             model_remote_model_id: None,
             model_remote_context_size: None,
             model_remote_vision_supported: None,
-            initial_description: None,
-            plan_output_dir: None,
         },
     )
     .unwrap();
@@ -618,20 +604,13 @@ fn schedule_config_round_trips_as_opaque_json() {
             schedule_kind: "weekly".to_string(),
             schedule_config: Some(json.clone()),
             next_due_at: None,
-            audit_num_runs: None,
-            audit_output_file: None,
-            audit_read_only: true,
-            audit_max_iterations: None,
-            audit_sample_instructions: None,
-            audit_verify_instructions: None,
+            type_config: None,
             model_remote_base_url: None,
             model_remote_api_key: None,
             model_remote_api_key_id: None,
             model_remote_model_id: None,
             model_remote_context_size: None,
             model_remote_vision_supported: None,
-            initial_description: None,
-            plan_output_dir: None,
         })
         .unwrap();
     let job = db.get_job(id).unwrap();
@@ -639,8 +618,11 @@ fn schedule_config_round_trips_as_opaque_json() {
 }
 
 #[test]
-fn audit_job_config_round_trips() {
+fn type_config_and_model_override_round_trip() {
     let db = test_db();
+    // Rust treats type_config as opaque JSON — this is exactly what the
+    // frontend's audit module serializes, but any string must round-trip.
+    let cfg = r#"{"num_runs":5,"output_file":"AUDIT.md","max_iterations":250}"#;
     let id = db
         .create_job(&JobInput {
             name: "Dup audit".to_string(),
@@ -651,24 +633,18 @@ fn audit_job_config_round_trips() {
             schedule_kind: "manual".to_string(),
             schedule_config: None,
             next_due_at: None,
-            audit_num_runs: Some(5),
-            audit_output_file: Some("AUDIT.md".to_string()),
-            audit_read_only: true,
-            audit_max_iterations: Some(250),
-            audit_sample_instructions: Some("focus on concurrency".to_string()),
-            audit_verify_instructions: Some("be extra strict".to_string()),
+            type_config: Some(cfg.to_string()),
             model_remote_base_url: Some("http://compute:3000".to_string()),
             model_remote_api_key: Some("sk-test".to_string()),
             model_remote_api_key_id: None,
             model_remote_model_id: Some("qwen3.5-27b".to_string()),
             model_remote_context_size: Some(131072),
             model_remote_vision_supported: Some(true),
-            initial_description: None,
-            plan_output_dir: None,
         })
         .unwrap();
     let job = db.get_job(id).unwrap();
     assert_eq!(job.job_type, "audit");
+    assert_eq!(job.type_config.as_deref(), Some(cfg));
     assert_eq!(
         job.model_remote_base_url.as_deref(),
         Some("http://compute:3000")
@@ -677,18 +653,6 @@ fn audit_job_config_round_trips() {
     assert_eq!(job.model_remote_model_id.as_deref(), Some("qwen3.5-27b"));
     assert_eq!(job.model_remote_context_size, Some(131072));
     assert_eq!(job.model_remote_vision_supported, Some(true));
-    assert_eq!(job.audit_num_runs, Some(5));
-    assert_eq!(job.audit_output_file.as_deref(), Some("AUDIT.md"));
-    assert!(job.audit_read_only);
-    assert_eq!(job.audit_max_iterations, Some(250));
-    assert_eq!(
-        job.audit_sample_instructions.as_deref(),
-        Some("focus on concurrency")
-    );
-    assert_eq!(
-        job.audit_verify_instructions.as_deref(),
-        Some("be extra strict")
-    );
 
     // The list view carries the discriminator for badges.
     let summary = db
@@ -698,6 +662,80 @@ fn audit_job_config_round_trips() {
         .find(|j| j.id == id)
         .unwrap();
     assert_eq!(summary.job_type, "audit");
+}
+
+#[test]
+fn type_config_migration_folds_legacy_columns() {
+    let db = test_db();
+    // Simulate pre-migration rows: legacy per-type columns set, type_config
+    // NULL (as an old DB would have after the ALTER adds the column).
+    {
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO jobs (name, working_dir, auto_approve_tools, job_type,
+                               schedule_kind, audit_num_runs, audit_output_file,
+                               audit_read_only, audit_max_iterations, created_at, updated_at)
+             VALUES ('Legacy audit', '/repo', 0, 'audit', 'manual', 5, 'AUDIT.md', 1, 250, 0, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO jobs (name, working_dir, auto_approve_tools, job_type,
+                               schedule_kind, initial_description, plan_output_dir,
+                               created_at, updated_at)
+             VALUES ('Legacy planner', '/repo', 0, 'guided_planning',
+                     'manual', 'Build X', 'plan/x/', 0, 0)",
+            [],
+        )
+        .unwrap();
+        // Research rows never get a type_config from the migration.
+        conn.execute(
+            "INSERT INTO jobs (name, working_dir, auto_approve_tools, job_type,
+                               schedule_kind, created_at, updated_at)
+             VALUES ('Legacy research', '/repo', 0, 'research', 'manual', 0, 0)",
+            [],
+        )
+        .unwrap();
+    }
+
+    // Re-running the full migration folds the legacy columns into JSON.
+    db.migrate().unwrap();
+
+    let jobs = db.list_jobs().unwrap();
+    let audit = jobs.iter().find(|j| j.name == "Legacy audit").unwrap();
+    let cfg: serde_json::Value = serde_json::from_str(
+        db.get_job(audit.id)
+            .unwrap()
+            .type_config
+            .as_deref()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(cfg["num_runs"], 5);
+    assert_eq!(cfg["output_file"], "AUDIT.md");
+    assert_eq!(cfg["read_only"], true);
+    assert_eq!(cfg["max_iterations"], 250);
+
+    let planner = jobs.iter().find(|j| j.name == "Legacy planner").unwrap();
+    let cfg: serde_json::Value = serde_json::from_str(
+        db.get_job(planner.id)
+            .unwrap()
+            .type_config
+            .as_deref()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(cfg["initial_description"], "Build X");
+    assert_eq!(cfg["plan_output_dir"], "plan/x/");
+
+    let research = jobs.iter().find(|j| j.name == "Legacy research").unwrap();
+    assert_eq!(db.get_job(research.id).unwrap().type_config, None);
+
+    // Idempotent: a second migrate() leaves the folded JSON alone.
+    db.migrate().unwrap();
+    let again = db.get_job(audit.id).unwrap().type_config.unwrap();
+    let cfg: serde_json::Value = serde_json::from_str(&again).unwrap();
+    assert_eq!(cfg["num_runs"], 5);
 }
 
 #[test]
@@ -1009,24 +1047,20 @@ fn prompt_catalog_crud() {
 }
 
 #[test]
-fn guided_planning_columns_and_run_state_round_trip() {
+fn guided_planning_config_and_run_state_round_trip() {
     let db = test_db();
+    let cfg = r#"{"initial_description":"Build a guided planning feature","plan_output_dir":"plan/guided-planning"}"#;
     let id = db
         .create_job(&JobInput {
             job_type: "guided_planning".to_string(),
-            initial_description: Some("Build a guided planning feature".to_string()),
-            plan_output_dir: Some("plan/guided-planning".to_string()),
+            type_config: Some(cfg.to_string()),
             ..sample_job_input("Planner")
         })
         .unwrap();
 
     let job = db.get_job(id).unwrap();
     assert_eq!(job.job_type, "guided_planning");
-    assert_eq!(
-        job.initial_description.as_deref(),
-        Some("Build a guided planning feature")
-    );
-    assert_eq!(job.plan_output_dir.as_deref(), Some("plan/guided-planning"));
+    assert_eq!(job.type_config.as_deref(), Some(cfg));
 
     let run_id = db
         .create_job_run(id, "manual", &["go".to_string()])

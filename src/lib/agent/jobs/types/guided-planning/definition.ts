@@ -1,6 +1,13 @@
 import type { JobTypeDefinition, PlannedStep } from '../types';
 import { runGuidedPlanningPipeline } from './pipeline';
+import { parseGuidedPlanningConfig } from './config';
 import Editor from './Editor.svelte';
+
+/** The guided-planning editor's working state (concrete strings, '' = unset). */
+export interface GuidedPlanningEditorState {
+	initial_description: string;
+	plan_output_dir: string;
+}
 
 /**
  * Display stages a guided_planning run advances through, in step-index order.
@@ -50,7 +57,30 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 	// Runs are driven by the initial description + interactive Q&A, not a step
 	// pipeline — a guided job with zero authored steps is the normal case.
 	hasPlannedSteps: false,
+	workingDirPlaceholder: 'Absolute path to the project to plan in',
 	Editor,
+	configDefaults: () => ({ initial_description: '', plan_output_dir: '' }),
+	configFromJob: (typeConfig) => {
+		const c = parseGuidedPlanningConfig(typeConfig);
+		return {
+			initial_description: c.initial_description ?? '',
+			plan_output_dir: c.plan_output_dir ?? ''
+		};
+	},
+	configToJson: (config) => {
+		const s = config as unknown as GuidedPlanningEditorState;
+		return JSON.stringify({
+			initial_description: s.initial_description.trim() || undefined,
+			plan_output_dir: s.plan_output_dir.trim() || undefined
+		});
+	},
+	validate: ({ workingDir, config }) => {
+		const s = config as unknown as GuidedPlanningEditorState;
+		if (!workingDir.trim())
+			return 'Guided planning needs a working directory — the project to plan in.';
+		if (!s.initial_description.trim()) return 'Describe what you want to build to start planning.';
+		return null;
+	},
 	planSteps: planGuidedSteps,
 	runPipeline: runGuidedPlanningPipeline
 };

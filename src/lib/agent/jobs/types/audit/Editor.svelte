@@ -2,26 +2,24 @@
 	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
 	import type { JobStepInput } from '$lib/stores/jobs.svelte';
 	import { DEFAULT_SAMPLE_INSTRUCTIONS, DEFAULT_VERIFY_INSTRUCTIONS } from './auditPipeline';
+	import type { AuditEditorState } from './definition';
 
-	// The audit-specific section of the job editor. The audit prompt reuses
-	// steps[0].prompt so the persistence path stays shared with research.
+	// The audit-specific section of the job editor (see JobTypeEditorProps).
+	// The audit prompt reuses steps[0].prompt so the persistence path stays
+	// shared with research. `config` is JobEditor's deeply-reactive state for
+	// this type; the alias below narrows it (stable identity — JobEditor
+	// remounts this component whenever it swaps the object).
 	let {
+		config = $bindable(),
 		steps = $bindable(),
-		numRuns = $bindable(),
-		outputFile = $bindable(),
-		readOnly = $bindable(),
-		maxTurns = $bindable(),
-		sampleInstructions = $bindable(),
-		verifyInstructions = $bindable()
+		jobName = ''
 	}: {
+		config: Record<string, unknown>;
 		steps: JobStepInput[];
-		numRuns: number;
-		outputFile: string;
-		readOnly: boolean;
-		maxTurns: number;
-		sampleInstructions: string;
-		verifyInstructions: string;
+		jobName?: string;
 	} = $props();
+
+	const cfg = config as unknown as AuditEditorState;
 
 	function updatePrompt(value: string) {
 		const next = [...steps];
@@ -36,7 +34,7 @@
 		<PromptCatalog jobType="audit" current={steps[0]?.prompt ?? ''} oninsert={updatePrompt} />
 	</div>
 	<span class="hint">
-		Run {numRuns}× independently. Ask for findings anchored to files and line ranges.
+		Run {cfg.num_runs}× independently. Ask for findings anchored to files and line ranges.
 	</span>
 	<textarea
 		value={steps[0]?.prompt ?? ''}
@@ -49,21 +47,21 @@
 <div class="audit-grid">
 	<label class="field" title="How many independent sample runs to execute (1–20).">
 		<span class="label">Number of runs</span>
-		<input type="number" min="1" max="20" bind:value={numRuns} />
+		<input type="number" min="1" max="20" bind:value={cfg.num_runs} />
 	</label>
 	<label
 		class="field"
 		title="Agent-loop turn budget per run — how many read/grep steps each sample may take before it must report. A thorough audit of a large codebase can need 100+. Default 200, max 400."
 	>
 		<span class="label">Max turns per run</span>
-		<input type="number" min="1" max="400" step="10" bind:value={maxTurns} />
+		<input type="number" min="1" max="400" step="10" bind:value={cfg.max_iterations} />
 	</label>
 	<label
 		class="field span2"
 		title="File (relative to the working directory) the final meta-report is written to. Leave blank to only keep it in the run record."
 	>
 		<span class="label">Output file <span class="optional">(optional)</span></span>
-		<input type="text" bind:value={outputFile} placeholder="AUDIT.md" />
+		<input type="text" bind:value={cfg.output_file} placeholder="AUDIT.md" />
 	</label>
 </div>
 
@@ -71,7 +69,7 @@
 	class="field checkbox"
 	title="When ON (recommended), sample and verification runs may read and grep the code but cannot modify files."
 >
-	<input type="checkbox" bind:checked={readOnly} />
+	<input type="checkbox" bind:checked={cfg.read_only} />
 	<span>
 		Read-only runs
 		<span class="hint inline">(recommended — sample runs read/grep but never modify files)</span>
@@ -92,8 +90,8 @@
 			<button
 				type="button"
 				class="reset-btn"
-				disabled={sampleInstructions === DEFAULT_SAMPLE_INSTRUCTIONS}
-				onclick={() => (sampleInstructions = DEFAULT_SAMPLE_INSTRUCTIONS)}
+				disabled={cfg.sample_instructions === DEFAULT_SAMPLE_INSTRUCTIONS}
+				onclick={() => (cfg.sample_instructions = DEFAULT_SAMPLE_INSTRUCTIONS)}
 			>
 				Reset
 			</button>
@@ -102,7 +100,7 @@
 			Appended after your audit prompt on every sample run (phase 1) — investigation guidance plus
 			how to report findings.
 		</span>
-		<textarea bind:value={sampleInstructions} rows="6"></textarea>
+		<textarea bind:value={cfg.sample_instructions} rows="6"></textarea>
 	</div>
 
 	<div class="field">
@@ -111,8 +109,8 @@
 			<button
 				type="button"
 				class="reset-btn"
-				disabled={verifyInstructions === DEFAULT_VERIFY_INSTRUCTIONS}
-				onclick={() => (verifyInstructions = DEFAULT_VERIFY_INSTRUCTIONS)}
+				disabled={cfg.verify_instructions === DEFAULT_VERIFY_INSTRUCTIONS}
+				onclick={() => (cfg.verify_instructions = DEFAULT_VERIFY_INSTRUCTIONS)}
 			>
 				Reset
 			</button>
@@ -121,7 +119,7 @@
 			Sent to the model that re-checks each finding against the source (phase 3) before it's kept;
 			the finding's location/claim is prepended automatically.
 		</span>
-		<textarea bind:value={verifyInstructions} rows="8"></textarea>
+		<textarea bind:value={cfg.verify_instructions} rows="8"></textarea>
 	</div>
 </details>
 

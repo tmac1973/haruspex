@@ -114,21 +114,14 @@ pub struct JobWithSteps {
     pub created_at: i64,
     pub updated_at: i64,
     pub steps: Vec<JobStep>,
-    // Audit-job config (ignored when job_type != 'audit'). The audit prompt
-    // itself reuses the single job_steps row.
-    /// How many independent sample runs to execute.
-    pub audit_num_runs: Option<i64>,
-    /// File the final meta-report is written to (relative to working_dir).
-    pub audit_output_file: Option<String>,
-    /// Run sample + verification turns with a read-only tool subset.
-    pub audit_read_only: bool,
-    /// Per-sample agent-loop turn budget. NULL = runner default. The bigger
-    /// the codebase, the more grep/read turns a thorough audit needs.
-    pub audit_max_iterations: Option<i64>,
-    /// Custom sample-run instructions (appended to the audit prompt). NULL = default.
-    pub audit_sample_instructions: Option<String>,
-    /// Custom verification rubric. NULL = default.
-    pub audit_verify_instructions: Option<String>,
+    /// Type-specific config as opaque JSON, owned entirely by the frontend's
+    /// job-type modules (audit knobs, guided-planning seed, ...). Rust never
+    /// parses it — adding a job type requires no Rust changes. The legacy
+    /// per-type columns (audit_*, initial_description, plan_output_dir) were
+    /// folded into this by a one-time migration and are dead: never read or
+    /// written again, left in the schema because DROP COLUMN isn't worth the
+    /// risk on user DBs.
+    pub type_config: Option<String>,
     // Per-job remote model override (applies to every job type). When
     // `model_remote_base_url` is non-empty the job's model calls route to this
     // remote server/model instead of the global Settings backend. NULL/empty =
@@ -150,20 +143,10 @@ pub struct JobWithSteps {
     /// Whether the override model accepts image input. NULL = inherit the
     /// global Settings vision capability; Some(false) hides vision tools.
     pub model_remote_vision_supported: Option<bool>,
-    // Guided-planning config (NULL for other job types).
-    /// Initial idea/description seeding the run.
-    pub initial_description: Option<String>,
-    /// Output folder for plan artifacts, relative to working_dir (default
-    /// `plan/<slug>/`).
-    pub plan_output_dir: Option<String>,
 }
 
 fn default_job_type() -> String {
     "research".to_string()
-}
-
-fn default_true() -> bool {
-    true
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -181,18 +164,9 @@ pub struct JobInput {
     /// Rust side. NULL for `manual` schedules.
     #[serde(default)]
     pub next_due_at: Option<i64>,
+    /// Type-specific config JSON (see [`JobWithSteps::type_config`]).
     #[serde(default)]
-    pub audit_num_runs: Option<i64>,
-    #[serde(default)]
-    pub audit_output_file: Option<String>,
-    #[serde(default = "default_true")]
-    pub audit_read_only: bool,
-    #[serde(default)]
-    pub audit_max_iterations: Option<i64>,
-    #[serde(default)]
-    pub audit_sample_instructions: Option<String>,
-    #[serde(default)]
-    pub audit_verify_instructions: Option<String>,
+    pub type_config: Option<String>,
     #[serde(default)]
     pub model_remote_base_url: Option<String>,
     #[serde(default)]
@@ -205,10 +179,6 @@ pub struct JobInput {
     pub model_remote_context_size: Option<i64>,
     #[serde(default)]
     pub model_remote_vision_supported: Option<bool>,
-    #[serde(default)]
-    pub initial_description: Option<String>,
-    #[serde(default)]
-    pub plan_output_dir: Option<String>,
 }
 
 /// A user-saved catalog prompt. `scope` is "audit" | "research" | "any".
@@ -488,6 +458,7 @@ impl Database {
             "ALTER TABLE jobs ADD COLUMN initial_description TEXT",
             "ALTER TABLE jobs ADD COLUMN plan_output_dir TEXT",
             "ALTER TABLE job_runs ADD COLUMN planning_state TEXT",
+            "ALTER TABLE jobs ADD COLUMN type_config TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();
@@ -497,7 +468,62 @@ impl Database {
             }
         }
 
+        Self::migrate_type_config(&conn)?;
+
         info!("Database migration complete");
+        Ok(())
+    }
+
+    /// One-time data migration: fold the legacy per-type job columns into
+    /// `type_config` JSON. Only touches rows that predate the column
+    /// (`type_config IS NULL`), so it is idempotent; the JSON shapes must
+    /// match what the frontend job-type modules' `configFromJob` parsers
+    /// expect. The legacy columns are dead afterwards — never read or
+    /// written again (dropping them isn't worth the risk on user DBs).
+    fn migrate_type_config(conn: &Connection) -> Result<(), String> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, job_type, audit_num_runs, audit_output_file, audit_read_only,
+                        audit_max_iterations, audit_sample_instructions,
+                        audit_verify_instructions, initial_description, plan_output_dir
+                 FROM jobs
+                 WHERE type_config IS NULL AND job_type IN ('audit', 'guided_planning')",
+            )
+            .map_err(|e| format!("type_config migration query failed: {e}"))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let job_type: String = row.get(1)?;
+                let json = if job_type == "audit" {
+                    serde_json::json!({
+                        "num_runs": row.get::<_, Option<i64>>(2)?,
+                        "output_file": row.get::<_, Option<String>>(3)?,
+                        "read_only": row.get::<_, i64>(4)? != 0,
+                        "max_iterations": row.get::<_, Option<i64>>(5)?,
+                        "sample_instructions": row.get::<_, Option<String>>(6)?,
+                        "verify_instructions": row.get::<_, Option<String>>(7)?,
+                    })
+                } else {
+                    serde_json::json!({
+                        "initial_description": row.get::<_, Option<String>>(8)?,
+                        "plan_output_dir": row.get::<_, Option<String>>(9)?,
+                    })
+                };
+                Ok((id, json.to_string()))
+            })
+            .map_err(|e| format!("type_config migration read failed: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("type_config migration row failed: {e}"))?;
+        drop(stmt);
+
+        for (id, json) in rows {
+            conn.execute(
+                "UPDATE jobs SET type_config = ?1 WHERE id = ?2",
+                rusqlite::params![json, id],
+            )
+            .map_err(|e| format!("type_config migration update failed: {e}"))?;
+        }
         Ok(())
     }
 }

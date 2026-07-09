@@ -1,18 +1,25 @@
 <script lang="ts">
-	// The guided-planning-specific section of the job editor: the seed idea and
-	// the plan output folder. The output dir auto-derives from the job name
-	// (plan/<slug>/) until the user edits it by hand.
+	import type { GuidedPlanningEditorState } from './definition';
+
+	// The guided-planning section of the job editor (see JobTypeEditorProps):
+	// the seed idea and the plan output folder. The output dir auto-derives
+	// from the job name (plan/<slug>/) until the user edits it by hand.
 	let {
-		jobName,
-		initialDescription = $bindable(),
-		planOutputDir = $bindable(),
-		planOutputDirEdited = $bindable()
+		config = $bindable(),
+		steps = $bindable([]),
+		jobName = ''
 	}: {
-		jobName: string;
-		initialDescription: string;
-		planOutputDir: string;
-		planOutputDirEdited: boolean;
+		config: Record<string, unknown>;
+		steps?: import('$lib/stores/jobs.svelte').JobStepInput[];
+		jobName?: string;
 	} = $props();
+
+	const cfg = config as unknown as GuidedPlanningEditorState;
+
+	// A loaded value counts as user-set so the name-sync effect doesn't
+	// clobber it on edit. (JobEditor remounts this component per job/type,
+	// so initializing from the mount-time value is safe.)
+	let outputDirEdited = $state(!!cfg.plan_output_dir);
 
 	function slugify(s: string): string {
 		return s
@@ -23,9 +30,9 @@
 	}
 
 	$effect(() => {
-		if (!planOutputDirEdited) {
+		if (!outputDirEdited) {
 			const s = slugify(jobName);
-			planOutputDir = s ? `plan/${s}/` : '';
+			cfg.plan_output_dir = s ? `plan/${s}/` : '';
 		}
 	});
 </script>
@@ -42,7 +49,7 @@
 		always type your own answer to any question.
 	</span>
 	<textarea
-		bind:value={initialDescription}
+		bind:value={cfg.initial_description}
 		rows="5"
 		placeholder="e.g. A guided-planning job type that interviews me one question at a time and writes a dependency-ordered, phased implementation plan."
 	></textarea>
@@ -55,8 +62,8 @@
 	<span class="label">Output folder</span>
 	<input
 		type="text"
-		bind:value={planOutputDir}
-		oninput={() => (planOutputDirEdited = true)}
+		bind:value={cfg.plan_output_dir}
+		oninput={() => (outputDirEdited = true)}
 		placeholder="plan/<name>/"
 	/>
 	<span class="hint">Relative to the working directory (e.g. plan/my-feature/).</span>

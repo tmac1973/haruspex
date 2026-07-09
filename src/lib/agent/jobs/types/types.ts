@@ -14,7 +14,7 @@
 
 import type { Component } from 'svelte';
 import type { EphemeralTurnOptions, EphemeralTurnResult } from '$lib/agent/runEphemeralTurn';
-import type { JobSummary, JobType, JobWithSteps } from '$lib/stores/jobs.svelte';
+import type { JobStepInput, JobSummary, JobType, JobWithSteps } from '$lib/stores/jobs.svelte';
 import type { RunStatus, RunStepState } from '../runner.svelte';
 
 /** One planned display/execution step of a run (see the runner's planSteps). */
@@ -61,12 +61,28 @@ export interface JobRunContext {
 }
 
 /**
- * The editor-section props contract is intentionally loose until Phase 04
- * moves per-type config into `type_config` JSON — each definition documents
- * its own bindable props (research: `bind:steps`).
+ * Every type's editor section receives the same props (declare the subset it
+ * uses): `config` — the type's editor state, from configDefaults/configFromJob
+ * (bindable; mutate properties or reassign); `steps` — the job's authored
+ * steps (bindable); `jobName` — read-only, for types that derive defaults
+ * from it. Each editor casts `config` to its own state interface.
  */
+export interface JobTypeEditorProps {
+	config: Record<string, unknown>;
+	steps: JobStepInput[];
+	jobName: string;
+}
+// Loose component typing: editors declare a subset of JobTypeEditorProps.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type JobTypeEditor = Component<any>;
+
+/** What a type's `validate` sees on save — shared fields plus its own config. */
+export interface JobValidateInput {
+	name: string;
+	workingDir: string;
+	steps: JobStepInput[];
+	config: Record<string, unknown>;
+}
 
 /** One registered job type. */
 export interface JobTypeDefinition {
@@ -88,8 +104,26 @@ export interface JobTypeDefinition {
 	hasPlannedSteps: boolean;
 	/** Extra text after the schedule summary in the JobList row (research: step count). */
 	listMeta?: (job: JobSummary) => string;
-	/** Type-specific section of the job editor form. */
+	/**
+	 * When set, the working directory is required for this type and this
+	 * string is the field's placeholder. Absent = optional (research).
+	 */
+	workingDirPlaceholder?: string;
+	/** Type-specific section of the job editor form (see JobTypeEditorProps). */
 	Editor: JobTypeEditor;
+	/** Fresh editor state for a NEW job of this type. */
+	configDefaults: () => Record<string, unknown>;
+	/** Editor state from a persisted job's type_config JSON. */
+	configFromJob: (typeConfig: string | null) => Record<string, unknown>;
+	/** Editor state → the type_config column value (null = no config). */
+	configToJson: (config: Record<string, unknown>) => string | null;
+	/** Save-time validation; return the error message or null when valid. */
+	validate?: (input: JobValidateInput) => string | null;
+	/**
+	 * Authored steps to persist on save. Default: prompts trimmed, empties
+	 * dropped. Audit overrides to persist exactly one step (its prompt).
+	 */
+	persistSteps?: (steps: JobStepInput[]) => JobStepInput[];
 	/** The display/execution step list a fresh run starts with. */
 	planSteps: (job: JobWithSteps) => PlannedStep[];
 	/** Execute one run. Must finalize the run and call ctx.onSettled() when done. */
