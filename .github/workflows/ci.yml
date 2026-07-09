@@ -82,9 +82,17 @@ jobs:
           touch src-tauri/binaries/espeak-ng-data/lang/.placeholder
           touch src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder
 
+      # --locked turns a stale Cargo.lock into a hard failure instead of a
+      # silent in-CI regeneration. This is the guard that keeps release-please
+      # PRs from merging with an unsynced lockfile: the release PR bumps
+      # Cargo.toml, so this check stays red until release.yml's
+      # sync-cargo-lock job pushes the matching lockfile commit (merging
+      # inside that job's ~20s window is what let v0.1.53 land with a stale
+      # lock). It equally catches human PRs that bump a dep without
+      # committing the lockfile.
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       # ts-rs bindings freshness (audit finding X3): the committed
       # src/lib/ipc/gen/ types must match what the Rust structs generate.
       # cargo test above already ran the export tests (into the gitignored
@@ -160,5 +168,5 @@ jobs:
           Set-Content -Path src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder -Value ''
 
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
