@@ -346,11 +346,26 @@ describe('toolchest-discovered capabilities', () => {
 		expect(isReasoningSupported()).toBe(false);
 	});
 
-	it('keeps enable_thinking for non-toolchest backends regardless of discovery', () => {
+	it('keeps enable_thinking for a recognized Qwen remote regardless of discovery', () => {
 		updateSettings({ thinkingEnabled: false });
 		updateInferenceBackend({ remoteBackendKind: 'openai-compat', remoteReasoning: null });
+		// beforeEach sets remoteModelId 'qwen3.5' — a recognized family.
 		expect(getChatTemplateKwargs()).toEqual({ enable_thinking: false });
 		expect(isReasoningSupported()).toBe(true);
+	});
+
+	it('sends no template kwargs to an unrecognized remote model', () => {
+		// enable_thinking is a Qwen chat-template kwarg — an unknown remote
+		// model must not receive it (mirrors the sampling fallback rule),
+		// and the Settings reasoning toggle hides since it would be a no-op.
+		updateInferenceBackend({
+			remoteModelId: 'llama-3.3-70b-instruct',
+			remoteBackendKind: 'openai-compat',
+			remoteReasoning: null
+		});
+		expect(getChatTemplateKwargs()).toEqual({});
+		expect(getChatTemplateKwargs(true)).toEqual({});
+		expect(isReasoningSupported()).toBe(false);
 	});
 });
 

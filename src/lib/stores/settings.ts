@@ -700,11 +700,14 @@ function openrouterSelectedModel(): OpenRouterModel | null {
 }
 
 /**
- * Whether the active model exposes a reasoning / "thinking" mode. Drives
- * whether the Settings "Reasoning mode" toggle is shown. Local and
- * non-toolchest remote backends are assumed capable (existing behavior);
- * a toolchest model reports it explicitly. An OpenRouter model reports it
- * via its `reasoning` caps from the cached catalog.
+ * Whether the active model exposes a togglable reasoning / "thinking" mode.
+ * Drives whether the Settings "Reasoning mode" toggle is shown. A toolchest
+ * model reports it explicitly; an OpenRouter model reports it via its
+ * `reasoning` caps from the cached catalog. Otherwise the only toggle we
+ * know is Qwen's `enable_thinking` template kwarg — local models (managed
+ * Qwen lineup) and recognized remote Qwen IDs support it; an unrecognized
+ * remote model gets no kwarg (see getChatTemplateKwargs), so showing the
+ * switch would be a no-op lie.
  */
 export function isReasoningSupported(): boolean {
 	const inf = toolchestBackend();
@@ -714,6 +717,9 @@ export function isReasoningSupported(): boolean {
 	if (openrouterBackend()) {
 		const m = openrouterSelectedModel();
 		return !!m?.reasoning;
+	}
+	if (settings.inferenceBackend.mode === 'remote') {
+		return getActiveModelFamily() !== null;
 	}
 	return true;
 }
@@ -751,6 +757,14 @@ export function getChatTemplateKwargs(thinkingOverride?: boolean | null): Record
 			return {};
 		}
 		return { [reasoning.kwarg]: thinking };
+	}
+	// `enable_thinking` is a Qwen chat-template kwarg. Local models all come
+	// from the managed Qwen lineup and recognized remote Qwen IDs want it too,
+	// but an unrecognized remote model shouldn't receive Qwen-isms — send
+	// nothing and let its own template defaults apply (mirrors the sampling
+	// fallback rule in builtinSamplingParams).
+	if (settings.inferenceBackend.mode === 'remote' && getActiveModelFamily() === null) {
+		return {};
 	}
 	return { enable_thinking: thinking };
 }
