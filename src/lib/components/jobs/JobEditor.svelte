@@ -459,21 +459,22 @@
 	{:else}
 		<h3>{jobId === 'new' ? 'New job' : 'Edit job'}</h3>
 
-		<div class="field">
+		<!-- A dropdown, not radio cards: the registry keeps growing job types
+		     and the picker's screen cost must not grow with it. The selected
+		     type's description renders as the hint below. -->
+		<label class="field">
 			<span class="label">Job type</span>
-			<ModeSelector
-				name="job-type"
+			<select
+				class="type-select"
 				value={jobType}
-				onchange={setJobType}
-				options={listJobTypes()
-					.filter((d) => isJobTypeAvailable(d.id) || d.id === jobType)
-					.map((d) => ({
-						value: d.id,
-						title: d.label,
-						description: d.description
-					}))}
-			/>
-		</div>
+				onchange={(e) => setJobType(e.currentTarget.value as JobType)}
+			>
+				{#each listJobTypes().filter((d) => isJobTypeAvailable(d.id) || d.id === jobType) as d (d.id)}
+					<option value={d.id}>{d.label}</option>
+				{/each}
+			</select>
+			<span class="hint">{typeDef.description}</span>
+		</label>
 
 		<label
 			class="field"
@@ -748,6 +749,11 @@
 	.label {
 		font-size: 0.82rem;
 		color: var(--text-secondary);
+	}
+
+	.type-select {
+		align-self: flex-start;
+		min-width: 240px;
 	}
 
 	.optional {
