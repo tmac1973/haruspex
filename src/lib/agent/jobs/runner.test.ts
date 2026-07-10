@@ -82,20 +82,13 @@ function makeJob(overrides: Partial<JobWithSteps> = {}): JobWithSteps {
 		created_at: 0,
 		updated_at: 0,
 		steps: [{ id: 1, ordering: 0, prompt: 'do step 1', deep_research: false }],
-		audit_num_runs: null,
-		audit_output_file: null,
-		audit_read_only: true,
-		audit_max_iterations: null,
-		audit_sample_instructions: null,
-		audit_verify_instructions: null,
+		type_config: null,
 		model_remote_base_url: null,
 		model_remote_api_key: null,
 		model_remote_api_key_id: null,
 		model_remote_model_id: null,
 		model_remote_context_size: null,
 		model_remote_vision_supported: null,
-		initial_description: null,
-		plan_output_dir: null,
 		...overrides
 	};
 }
@@ -207,8 +200,10 @@ describe('jobs runner — guards', () => {
 				job_type: 'guided_planning',
 				steps: [],
 				working_dir: '/repo',
-				initial_description: 'Build X',
-				plan_output_dir: 'plan/x/'
+				type_config: JSON.stringify({
+					initial_description: 'Build X',
+					plan_output_dir: 'plan/x/'
+				})
 			})
 		);
 		// The outline turn emits two phases; every other turn returns a clean verdict.
@@ -251,7 +246,7 @@ describe('jobs runner — guards', () => {
 				job_type: 'guided_planning',
 				steps: [],
 				working_dir: '/repo',
-				plan_output_dir: 'plan/x/'
+				type_config: JSON.stringify({ plan_output_dir: 'plan/x/' })
 			})
 		);
 		mocks.runEphemeralTurn.mockImplementation(
@@ -283,7 +278,7 @@ describe('jobs runner — guards', () => {
 				job_type: 'guided_planning',
 				steps: [],
 				working_dir: '/repo',
-				plan_output_dir: 'plan/x/'
+				type_config: JSON.stringify({ plan_output_dir: 'plan/x/' })
 			})
 		);
 		// Overview writes fine (fs_path_exists true by default), but the outline turn
@@ -309,8 +304,10 @@ describe('jobs runner — guards', () => {
 				job_type: 'guided_planning',
 				steps: [],
 				working_dir: '/repo',
-				initial_description: 'Build X',
-				plan_output_dir: 'plan/x/'
+				type_config: JSON.stringify({
+					initial_description: 'Build X',
+					plan_output_dir: 'plan/x/'
+				})
 			})
 		);
 		mocks.runEphemeralTurn.mockResolvedValue({ finalText: 'I wrote the overview!' });
@@ -843,8 +840,7 @@ describe('jobs runner — audit jobs', () => {
 	function auditJob(over: Partial<JobWithSteps> = {}): JobWithSteps {
 		return makeJob({
 			job_type: 'audit',
-			audit_num_runs: 2,
-			audit_output_file: null,
+			type_config: JSON.stringify({ num_runs: 2 }),
 			steps: [{ id: 1, ordering: 0, prompt: 'Find duplication', deep_research: false }],
 			...over
 		});
@@ -921,7 +917,7 @@ describe('jobs runner — audit jobs', () => {
 	});
 
 	it('drops refuted findings from the verified set (verified-only)', async () => {
-		mocks.getJob.mockResolvedValueOnce(auditJob({ audit_num_runs: 1 }));
+		mocks.getJob.mockResolvedValueOnce(auditJob({ type_config: JSON.stringify({ num_runs: 1 }) }));
 		wireFindingsAndVerdict('refuted');
 
 		const { enqueue, getCurrentRun } = await freshRunner();

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clusterFindings, parseLineRange } from '$lib/agent/jobs/auditCluster';
+import { clusterFindings, parseLineRange } from './auditCluster';
 import type { AuditFinding } from '$lib/agent/tools/audit';
 
 function f(partial: Partial<AuditFinding> & { file: string; title: string }): AuditFinding {

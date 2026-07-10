@@ -17,7 +17,6 @@
 	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
 	import ModeSelector from '$lib/components/ModeSelector.svelte';
 	import JobScheduleField from '$lib/components/jobs/JobScheduleField.svelte';
-	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
 	import {
 		createJob,
 		updateJob,
@@ -32,11 +31,8 @@
 		type JobStepInput,
 		type JobType
 	} from '$lib/stores/jobs.svelte';
-	import {
-		DEFAULT_SAMPLE_INSTRUCTIONS,
-		DEFAULT_VERIFY_INSTRUCTIONS
-	} from '$lib/agent/jobs/auditPipeline';
 	import { getSettings } from '$lib/stores/settings';
+	import { getJobType, listJobTypes } from '$lib/agent/jobs/types';
 
 	interface Props {
 		jobId: number | 'new';
@@ -53,21 +49,22 @@
 	let schedule = $state<Schedule>({ kind: 'manual' });
 	let steps = $state<JobStepInput[]>([{ prompt: '', deep_research: false }]);
 	let jobType = $state<JobType>('research');
-	// Audit-job config (only used when jobType === 'audit'). The audit prompt
-	// itself reuses steps[0].prompt so the persistence path stays shared.
-	let auditNumRuns = $state(5);
-	let auditOutputFile = $state('AUDIT.md');
-	let auditReadOnly = $state(true);
-	let auditMaxTurns = $state(200);
-	let auditSampleInstructions = $state(DEFAULT_SAMPLE_INSTRUCTIONS);
-	let auditVerifyInstructions = $state(DEFAULT_VERIFY_INSTRUCTIONS);
-	// Guided-planning config (only used when jobType === 'guided_planning').
-	// `initialDescription` is the seed idea; `planOutputDir` is where the
-	// overview + phase files are written (relative to workingDir). The output
-	// dir auto-derives from the name until the user edits it.
-	let initialDescription = $state('');
-	let planOutputDir = $state('');
-	let planOutputDirEdited = $state(false);
+	// The selected type's editor state, owned by its JobTypeDefinition
+	// (configDefaults / configFromJob / configToJson). Its Editor component
+	// mutates it in place; switching types stashes it so toggling back keeps
+	// unsaved edits.
+	let typeConfig = $state<Record<string, unknown>>({});
+	let typeConfigStash: Partial<Record<JobType, Record<string, unknown>>> = {};
+
+	const typeDef = $derived(getJobType(jobType)!);
+	const TypeEditor = $derived(typeDef.Editor);
+
+	function setJobType(next: JobType) {
+		if (next === jobType) return;
+		typeConfigStash[jobType] = typeConfig;
+		jobType = next;
+		typeConfig = typeConfigStash[next] ?? getJobType(next)!.configDefaults();
+	}
 	// Where this job's model calls go (any job type): 'settings' follows the
 	// app's active Settings backend; 'remote'/'openrouter' pin the job to a
 	// specific server/model configured below. One selection — mirrors the
@@ -103,23 +100,6 @@
 		loadIntoForm(jobId);
 	});
 
-	function slugify(s: string): string {
-		return s
-			.toLowerCase()
-			.trim()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '');
-	}
-
-	// Keep the guided-planning output folder in sync with the name
-	// (plan/<slug>/) until the user edits it by hand.
-	$effect(() => {
-		if (jobType === 'guided_planning' && !planOutputDirEdited) {
-			const s = slugify(name);
-			planOutputDir = s ? `plan/${s}/` : '';
-		}
-	});
-
 	async function loadIntoForm(id: number | 'new') {
 		error = null;
 		if (id === 'new') {
@@ -129,15 +109,8 @@
 			schedule = { kind: 'manual' };
 			steps = [{ prompt: '', deep_research: false }];
 			jobType = 'research';
-			auditNumRuns = 5;
-			auditOutputFile = 'AUDIT.md';
-			auditReadOnly = true;
-			auditMaxTurns = 200;
-			auditSampleInstructions = DEFAULT_SAMPLE_INSTRUCTIONS;
-			auditVerifyInstructions = DEFAULT_VERIFY_INSTRUCTIONS;
-			initialDescription = '';
-			planOutputDir = '';
-			planOutputDirEdited = false;
+			typeConfigStash = {};
+			typeConfig = getJobType('research')!.configDefaults();
 			modelSource = 'settings';
 			modelBaseUrl = '';
 			modelApiKey = '';
@@ -170,17 +143,9 @@
 					? job.steps.map((s) => ({ prompt: s.prompt, deep_research: s.deep_research }))
 					: [{ prompt: '', deep_research: false }];
 			jobType = job.job_type;
-			auditNumRuns = job.audit_num_runs ?? 5;
-			auditOutputFile = job.audit_output_file ?? '';
-			auditReadOnly = job.audit_read_only;
-			auditMaxTurns = job.audit_max_iterations ?? 200;
-			auditSampleInstructions = job.audit_sample_instructions ?? DEFAULT_SAMPLE_INSTRUCTIONS;
-			auditVerifyInstructions = job.audit_verify_instructions ?? DEFAULT_VERIFY_INSTRUCTIONS;
-			initialDescription = job.initial_description ?? '';
-			planOutputDir = job.plan_output_dir ?? '';
-			// Treat a loaded value as user-set so the name-sync effect doesn't
-			// clobber it on edit.
-			planOutputDirEdited = !!job.plan_output_dir;
+			typeConfigStash = {};
+			typeConfig =
+				getJobType(job.job_type)?.configFromJob(job.type_config) ?? ({} as Record<string, unknown>);
 			modelBaseUrl = job.model_remote_base_url ?? '';
 			modelApiKey = job.model_remote_api_key ?? '';
 			modelApiKeyId = job.model_remote_api_key_id ?? null;
@@ -226,38 +191,6 @@
 		} catch (e) {
 			console.error('Failed to pick directory:', e);
 		}
-	}
-
-	function addStep() {
-		steps = [...steps, { prompt: '', deep_research: false }];
-	}
-
-	function removeStep(index: number) {
-		if (steps.length === 1) {
-			steps = [{ prompt: '', deep_research: false }];
-			return;
-		}
-		steps = steps.filter((_, i) => i !== index);
-	}
-
-	function moveStep(index: number, direction: -1 | 1) {
-		const target = index + direction;
-		if (target < 0 || target >= steps.length) return;
-		const next = [...steps];
-		[next[index], next[target]] = [next[target], next[index]];
-		steps = next;
-	}
-
-	function updateStepPrompt(index: number, value: string) {
-		const next = [...steps];
-		next[index] = { ...next[index], prompt: value };
-		steps = next;
-	}
-
-	function toggleStepDeepResearch(index: number) {
-		const next = [...steps];
-		next[index] = { ...next[index], deep_research: !next[index].deep_research };
-		steps = next;
 	}
 
 	// Server URLs saved in Settings — the options for the URL dropdown. A job
@@ -400,23 +333,21 @@
 
 	function validate(): string | null {
 		if (!name.trim()) return 'Name is required.';
-		if (jobType === 'guided_planning') {
-			if (!workingDir.trim())
-				return 'Guided planning needs a working directory — the project to plan in.';
-			if (!initialDescription.trim()) return 'Describe what you want to build to start planning.';
-			return null;
-		}
-		if (jobType === 'audit') {
-			if (!steps[0]?.prompt.trim()) return 'An audit prompt is required.';
-			if (!workingDir.trim()) return 'Audit jobs need a working directory (the code to audit).';
-			if (auditNumRuns < 1 || auditNumRuns > 20) return 'Number of runs must be between 1 and 20.';
-			if (!Number.isFinite(auditMaxTurns) || auditMaxTurns < 1 || auditMaxTurns > 400)
-				return 'Max turns per run must be between 1 and 400.';
-			return null;
-		}
-		const nonEmpty = steps.filter((s) => s.prompt.trim().length > 0);
-		if (nonEmpty.length === 0) return 'At least one step prompt is required.';
-		return null;
+		return (
+			typeDef.validate?.({
+				name,
+				workingDir,
+				steps: $state.snapshot(steps),
+				config: $state.snapshot(typeConfig)
+			}) ?? null
+		);
+	}
+
+	/** Default step persistence: prompts trimmed, empties dropped. */
+	function defaultPersistSteps(all: JobStepInput[]): JobStepInput[] {
+		return all
+			.map((s) => ({ prompt: s.prompt.trim(), deep_research: s.deep_research }))
+			.filter((s) => s.prompt.length > 0);
 	}
 
 	async function save() {
@@ -433,7 +364,6 @@
 			// a schedule is treated as a reset, which matches the user's
 			// mental model — "every 30 minutes starting now" rather than
 			// "the next fire was scheduled at X, keep that".
-			const isAudit = jobType === 'audit';
 			const overrideActive = modelSource !== 'settings';
 			const input: JobInput = {
 				name: name.trim(),
@@ -445,22 +375,9 @@
 				schedule_kind: schedule.kind,
 				schedule_config: scheduleToConfigJson(schedule),
 				next_due_at: computeNextDueAt(schedule, null),
-				audit_num_runs: isAudit ? auditNumRuns : null,
-				audit_output_file: isAudit && auditOutputFile.trim() ? auditOutputFile.trim() : null,
-				audit_read_only: auditReadOnly,
-				audit_max_iterations: isAudit ? auditMaxTurns : null,
-				audit_sample_instructions:
-					isAudit &&
-					auditSampleInstructions.trim() &&
-					auditSampleInstructions.trim() !== DEFAULT_SAMPLE_INSTRUCTIONS
-						? auditSampleInstructions.trim()
-						: null,
-				audit_verify_instructions:
-					isAudit &&
-					auditVerifyInstructions.trim() &&
-					auditVerifyInstructions.trim() !== DEFAULT_VERIFY_INSTRUCTIONS
-						? auditVerifyInstructions.trim()
-						: null,
+				// The type's own knobs, serialized by its definition — Rust
+				// stores this verbatim.
+				type_config: typeDef.configToJson($state.snapshot(typeConfig)),
 				// Per-job remote model override. Only persisted when a specific
 				// source is selected AND a base URL is set — otherwise the job
 				// follows the Settings backend (all-null columns).
@@ -478,19 +395,11 @@
 				model_remote_vision_supported:
 					overrideActive && modelBaseUrl.trim() && modelVision !== 'auto'
 						? modelVision === 'yes'
-						: null,
-				initial_description:
-					jobType === 'guided_planning' && initialDescription.trim()
-						? initialDescription.trim()
-						: null,
-				plan_output_dir:
-					jobType === 'guided_planning' && planOutputDir.trim() ? planOutputDir.trim() : null
+						: null
 			};
-			// Audit jobs persist exactly one step (the audit prompt); research jobs
-			// persist their full pipeline.
-			const stepsToSave: JobStepInput[] = (isAudit ? steps.slice(0, 1) : steps)
-				.map((s) => ({ prompt: s.prompt.trim(), deep_research: isAudit ? false : s.deep_research }))
-				.filter((s) => s.prompt.length > 0);
+			const stepsToSave: JobStepInput[] = (typeDef.persistSteps ?? defaultPersistSteps)(
+				$state.snapshot(steps)
+			);
 
 			let id: number;
 			if (jobId === 'new') {
@@ -543,45 +452,16 @@
 
 		<div class="field">
 			<span class="label">Job type</span>
-			<div class="type-toggle" role="group" aria-label="Job type">
-				<button
-					type="button"
-					class:active={jobType === 'research'}
-					onclick={() => (jobType = 'research')}
-					title="A sequential pipeline of steps; each step's output feeds the next."
-				>
-					Research
-				</button>
-				<button
-					type="button"
-					class:active={jobType === 'audit'}
-					onclick={() => (jobType = 'audit')}
-					title="Run one prompt N times independently, then cluster and source-verify the findings into one meta-report."
-				>
-					Audit
-				</button>
-				<button
-					type="button"
-					class:active={jobType === 'guided_planning'}
-					onclick={() => (jobType = 'guided_planning')}
-					title="Interactively turn an idea into a written project overview and a dependency-ordered, phased implementation plan. Asks you questions; writes markdown only (no code)."
-				>
-					Guided planning
-				</button>
-			</div>
-			<span class="hint">
-				{#if jobType === 'audit'}
-					Runs one prompt N times independently, then clusters and source-verifies the findings into
-					a single meta-report — averaging out single-run noise.
-				{:else if jobType === 'guided_planning'}
-					Asks you multiple-choice questions to define the project, then writes an overview and a
-					dependency-ordered, phased implementation plan as markdown. Planning only — it never
-					writes code.
-				{:else}
-					A sequential pipeline of steps; each step runs as a fresh conversation and its output
-					feeds the next.
-				{/if}
-			</span>
+			<ModeSelector
+				name="job-type"
+				value={jobType}
+				onchange={setJobType}
+				options={listJobTypes().map((d) => ({
+					value: d.id,
+					title: d.label,
+					description: d.description
+				}))}
+			/>
 		</div>
 
 		<label
@@ -602,25 +482,22 @@
 
 		<div
 			class="field"
-			title={jobType === 'audit' || jobType === 'guided_planning'
+			title={typeDef.workingDirPlaceholder
 				? 'Required. Absolute path to the project this job reads and greps. Every run operates inside it.'
 				: "Optional. Absolute path to a folder this job operates in. When set, every step sees it as the agent's working directory — file reads, writes, Python sandbox cwd. Leave blank for jobs that don't touch the filesystem (research, summarization, etc.) — the model just won't have fs_* tools available."}
 		>
 			<span class="label">
 				Working directory
-				{#if jobType === 'audit' || jobType === 'guided_planning'}<span class="required"
-						>(required)</span
-					>{:else}<span class="optional">(optional)</span>{/if}
+				{#if typeDef.workingDirPlaceholder}<span class="required">(required)</span>{:else}<span
+						class="optional">(optional)</span
+					>{/if}
 			</span>
 			<div class="workdir-row">
 				<input
 					type="text"
 					bind:value={workingDir}
-					placeholder={jobType === 'audit'
-						? 'Absolute path to the code to audit'
-						: jobType === 'guided_planning'
-							? 'Absolute path to the project to plan in'
-							: "Leave blank if the job doesn't touch files"}
+					placeholder={typeDef.workingDirPlaceholder ??
+						"Leave blank if the job doesn't touch files"}
 					class="workdir-input"
 				/>
 				<button
@@ -791,244 +668,13 @@
 			{/if}
 		</div>
 
-		{#if jobType === 'research'}
-			<div
-				class="field steps"
-				title="Each step is one prompt that runs as a fresh conversation with the model — no history between steps. The previous step's final reply is automatically prepended to the next step's prompt, so step 2 can act on step 1's output. Use this to decompose multi-objective work that a small model struggles to do in one shot."
-			>
-				<div class="steps-header">
-					<span class="label">Steps</span>
-					<span class="hint">
-						Each step runs in a fresh conversation. The previous step's output is automatically
-						prepended to the next step's prompt.
-					</span>
-				</div>
-				{#each steps as step, i (i)}
-					<div class="step">
-						<div class="step-head">
-							<div class="step-head-left">
-								<span class="step-num">Step {i + 1}</span>
-								<button
-									type="button"
-									class="research-toggle"
-									class:active={step.deep_research}
-									onclick={() => toggleStepDeepResearch(i)}
-									title={step.deep_research
-										? 'Deep research ON — this step will search more sources'
-										: 'Deep research OFF — normal search for this step'}
-									aria-pressed={step.deep_research}
-								>
-									<svg
-										width="14"
-										height="14"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									>
-										<circle cx="11" cy="11" r="8"></circle>
-										<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-										{#if step.deep_research}
-											<line x1="11" y1="8" x2="11" y2="14"></line>
-											<line x1="8" y1="11" x2="14" y2="11"></line>
-										{/if}
-									</svg>
-									<span>Deep research</span>
-								</button>
-							</div>
-							<div class="step-actions">
-								<PromptCatalog
-									jobType="research"
-									current={step.prompt}
-									oninsert={(t) => updateStepPrompt(i, t)}
-								/>
-								<button
-									type="button"
-									class="icon-btn"
-									title="Move up"
-									disabled={i === 0}
-									onclick={() => moveStep(i, -1)}
-								>
-									↑
-								</button>
-								<button
-									type="button"
-									class="icon-btn"
-									title="Move down"
-									disabled={i === steps.length - 1}
-									onclick={() => moveStep(i, 1)}
-								>
-									↓
-								</button>
-								<button
-									type="button"
-									class="icon-btn danger"
-									title="Remove step"
-									onclick={() => removeStep(i)}
-								>
-									×
-								</button>
-							</div>
-						</div>
-						<textarea
-							value={step.prompt}
-							oninput={(e) => updateStepPrompt(i, (e.currentTarget as HTMLTextAreaElement).value)}
-							placeholder={i === 0
-								? 'What should this step do?'
-								: 'Will receive the previous step’s output as context.'}
-							title={i === 0
-								? 'Plain instruction for this step. The model sees this verbatim as the user message in a fresh chat with full tool access (search, file ops, Python sandbox).'
-								: "Plain instruction. At run time the previous step's reply is automatically prepended, so you can write this assuming the prior output is already in front of the model (e.g. 'Turn the above headlines into a PDF')."}
-							rows="3"
-						></textarea>
-					</div>
-				{/each}
-				<button
-					type="button"
-					class="btn add-step"
-					onclick={addStep}
-					title="Add another step to the pipeline. Runs after the previous step completes."
-				>
-					+ Add step
-				</button>
-			</div>
-		{:else if jobType === 'audit'}
-			<div class="field" title="The instruction each sample run executes, independently.">
-				<div class="field-head">
-					<span class="label">Audit prompt</span>
-					<PromptCatalog
-						jobType="audit"
-						current={steps[0]?.prompt ?? ''}
-						oninsert={(t) => updateStepPrompt(0, t)}
-					/>
-				</div>
-				<span class="hint">
-					Run {auditNumRuns}× independently. Ask for findings anchored to files and line ranges.
-				</span>
-				<textarea
-					value={steps[0]?.prompt ?? ''}
-					oninput={(e) => updateStepPrompt(0, (e.currentTarget as HTMLTextAreaElement).value)}
-					placeholder="e.g. Find every instance of duplicated logic in this codebase. Anchor each finding to a file and line range, with a short explanation."
-					rows="4"
-				></textarea>
-			</div>
-
-			<div class="audit-grid">
-				<label class="field" title="How many independent sample runs to execute (1–20).">
-					<span class="label">Number of runs</span>
-					<input type="number" min="1" max="20" bind:value={auditNumRuns} />
-				</label>
-				<label
-					class="field"
-					title="Agent-loop turn budget per run — how many read/grep steps each sample may take before it must report. A thorough audit of a large codebase can need 100+. Default 200, max 400."
-				>
-					<span class="label">Max turns per run</span>
-					<input type="number" min="1" max="400" step="10" bind:value={auditMaxTurns} />
-				</label>
-				<label
-					class="field span2"
-					title="File (relative to the working directory) the final meta-report is written to. Leave blank to only keep it in the run record."
-				>
-					<span class="label">Output file <span class="optional">(optional)</span></span>
-					<input type="text" bind:value={auditOutputFile} placeholder="AUDIT.md" />
-				</label>
-			</div>
-
-			<label
-				class="field checkbox"
-				title="When ON (recommended), sample and verification runs may read and grep the code but cannot modify files."
-			>
-				<input type="checkbox" bind:checked={auditReadOnly} />
-				<span>
-					Read-only runs
-					<span class="hint inline"
-						>(recommended — sample runs read/grep but never modify files)</span
-					>
-				</span>
-			</label>
-
-			<details class="advanced-prompts">
-				<summary>Advanced: edit the exact prompts sent to the model</summary>
-				<p class="hint">
-					Both are sent verbatim to the model. The <code>submit_findings</code> /
-					<code>submit_verdict</code> calls are enforced automatically, so editing won't break
-					capture — but a poor prompt can hurt result quality. Use <strong>Reset</strong> to restore the
-					default.
-				</p>
-
-				<div class="field">
-					<span class="label-row">
-						<span class="label">Per-run addendum</span>
-						<button
-							type="button"
-							class="reset-btn"
-							disabled={auditSampleInstructions === DEFAULT_SAMPLE_INSTRUCTIONS}
-							onclick={() => (auditSampleInstructions = DEFAULT_SAMPLE_INSTRUCTIONS)}
-						>
-							Reset
-						</button>
-					</span>
-					<span class="hint">
-						Appended after your audit prompt on every sample run (phase 1) — investigation guidance
-						plus how to report findings.
-					</span>
-					<textarea bind:value={auditSampleInstructions} rows="6"></textarea>
-				</div>
-
-				<div class="field">
-					<span class="label-row">
-						<span class="label">Verification instructions</span>
-						<button
-							type="button"
-							class="reset-btn"
-							disabled={auditVerifyInstructions === DEFAULT_VERIFY_INSTRUCTIONS}
-							onclick={() => (auditVerifyInstructions = DEFAULT_VERIFY_INSTRUCTIONS)}
-						>
-							Reset
-						</button>
-					</span>
-					<span class="hint">
-						Sent to the model that re-checks each finding against the source (phase 3) before it's
-						kept; the finding's location/claim is prepended automatically.
-					</span>
-					<textarea bind:value={auditVerifyInstructions} rows="8"></textarea>
-				</div>
-			</details>
-		{:else}
-			<div
-				class="field"
-				title="The idea seeding this planning session. The agent asks follow-up questions from here, then writes the overview and phase files."
-			>
-				<span class="label">
-					What do you want to build? <span class="required">(required)</span>
-				</span>
-				<span class="hint">
-					Describe the project or feature in your own words. The agent interviews you from here —
-					you can always type your own answer to any question.
-				</span>
-				<textarea
-					bind:value={initialDescription}
-					rows="5"
-					placeholder="e.g. A guided-planning job type that interviews me one question at a time and writes a dependency-ordered, phased implementation plan."
-				></textarea>
-			</div>
-
-			<label
-				class="field"
-				title="Folder where the overview and phase markdown files are written, relative to the working directory. Auto-fills from the name until you edit it."
-			>
-				<span class="label">Output folder</span>
-				<input
-					type="text"
-					bind:value={planOutputDir}
-					oninput={() => (planOutputDirEdited = true)}
-					placeholder="plan/<name>/"
-				/>
-				<span class="hint">Relative to the working directory (e.g. plan/my-feature/).</span>
-			</label>
-		{/if}
+		<!-- The selected type's own form section. Every editor gets the same
+		     props (JobTypeEditorProps) and declares the subset it uses; the
+		     key remounts it whenever the config object identity changes
+		     (load, type switch), so mount-time initialization stays safe. -->
+		{#key `${jobId}:${jobType}`}
+			<TypeEditor bind:config={typeConfig} bind:steps jobName={name} />
+		{/key}
 
 		{#if error}
 			<div class="error-box">{error}</div>
@@ -1088,13 +734,6 @@
 		font-size: 1rem;
 	}
 
-	.field.checkbox {
-		flex-direction: row;
-		align-items: flex-start;
-		gap: 8px;
-		font-size: 0.88rem;
-	}
-
 	.label {
 		font-size: 0.82rem;
 		color: var(--text-secondary);
@@ -1109,51 +748,6 @@
 		font-weight: normal;
 		font-size: 0.82rem;
 		color: var(--accent);
-	}
-
-	.type-toggle {
-		display: inline-flex;
-		gap: 0;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		overflow: hidden;
-		align-self: flex-start;
-	}
-
-	.type-toggle button {
-		padding: 5px 16px;
-		border: none;
-		border-radius: 0;
-		background: var(--bg-primary);
-		color: var(--text-secondary);
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-
-	.type-toggle button:first-child {
-		border-right: 1px solid var(--border);
-	}
-
-	.type-toggle button.active {
-		background: var(--accent);
-		color: white;
-	}
-
-	.audit-grid {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 12px;
-	}
-
-	.audit-grid .span2 {
-		grid-column: 1 / -1;
-	}
-
-	.field-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
 	}
 
 	.model-fields {
@@ -1195,54 +789,6 @@
 		color: var(--text-secondary);
 	}
 
-	.advanced-prompts {
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		padding: 8px 10px;
-	}
-
-	.advanced-prompts > summary {
-		cursor: pointer;
-		font-size: 0.82rem;
-		color: var(--text-secondary);
-		user-select: none;
-	}
-
-	.advanced-prompts .field {
-		margin-top: 10px;
-	}
-
-	.advanced-prompts code {
-		font-size: 0.85em;
-	}
-
-	.label-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-	}
-
-	.reset-btn {
-		padding: 2px 8px;
-		font-size: 0.72rem;
-		border: 1px solid var(--border);
-		background: var(--bg-primary);
-		color: var(--text-secondary);
-		border-radius: 4px;
-		cursor: pointer;
-	}
-
-	.reset-btn:hover:not(:disabled) {
-		border-color: var(--text-secondary);
-		color: var(--text-primary);
-	}
-
-	.reset-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
 	.workdir-row {
 		display: flex;
 		gap: 6px;
@@ -1255,114 +801,6 @@
 
 	.hint {
 		font-style: italic;
-	}
-
-	.hint.inline {
-		font-style: normal;
-		margin-left: 4px;
-	}
-
-	.steps-header {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		margin-bottom: 4px;
-	}
-
-	.step {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		padding: 8px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-secondary);
-	}
-
-	.step-head {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.step-head-left {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		min-width: 0;
-	}
-
-	.step-num {
-		font-size: 0.78rem;
-		font-weight: 600;
-		color: var(--text-secondary);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-
-	.research-toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		padding: 2px 8px;
-		border: 1px solid var(--border);
-		background: var(--bg-primary);
-		color: var(--text-secondary);
-		border-radius: 999px;
-		font-size: 0.72rem;
-		cursor: pointer;
-	}
-
-	.research-toggle:hover {
-		color: var(--text-primary);
-		border-color: var(--text-secondary);
-	}
-
-	.research-toggle.active {
-		background: color-mix(in srgb, var(--accent) 15%, transparent);
-		border-color: var(--accent);
-		color: var(--accent);
-	}
-
-	.step-actions {
-		display: flex;
-		gap: 2px;
-	}
-
-	.icon-btn {
-		width: 24px;
-		height: 24px;
-		border: 1px solid var(--border);
-		background: var(--bg-primary);
-		color: var(--text-secondary);
-		border-radius: 4px;
-		cursor: pointer;
-		font-size: 0.85rem;
-		line-height: 1;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.icon-btn:hover:not(:disabled) {
-		color: var(--text-primary);
-		border-color: var(--text-secondary);
-	}
-
-	.icon-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.icon-btn.danger:hover:not(:disabled) {
-		color: var(--error-text);
-		border-color: var(--error-border);
-		background: var(--error-bg);
-	}
-
-	.add-step {
-		align-self: flex-start;
 	}
 
 	.actions {

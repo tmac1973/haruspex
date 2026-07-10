@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAuditReport, type VerifiedCluster } from '$lib/agent/jobs/auditReport';
+import { buildAuditReport, type VerifiedCluster } from './auditReport';
 
 function cluster(p: Partial<VerifiedCluster> & { title: string; file: string }): VerifiedCluster {
 	return {

@@ -18,18 +18,6 @@
 	const { ondone }: Props = $props();
 
 	const run = $derived(getCurrentRun());
-	const isGuided = $derived(run?.jobType === 'guided_planning');
-
-	// What each guided_planning stage is doing — so the tool calls and thinking
-	// have context. Indexed by step.index; must stay aligned with the stages in
-	// runGuidedPlanningPipeline (Overview, Outline, Planning, Verification, Approval).
-	const GUIDED_STEP_DESC = [
-		'Interviewing you about the project, then writing overview.md. Answer “proceed” to any question to move on.',
-		'Interviewing you about the implementation, then proposing a dependency-ordered phase outline for you to approve.',
-		'Writing the phase files from the approved outline — one focused write per phase.',
-		'An independent reviewer is reading the plan to check dependency ordering and catch any unresolved (“TBD”) decisions.',
-		'Waiting for you to review the phase files and approve — or request changes.'
-	];
 
 	function runStatusLabel(): string {
 		if (!run) return '';
@@ -82,15 +70,17 @@
 				<JobStepCard
 					stepNumber={step.index + 1}
 					status={step.status}
-					title={isGuided ? step.promptAuthored : undefined}
+					title={step.description ? step.promptAuthored : undefined}
 				>
 					{#snippet headExtra()}
 						{#if step.deepResearch}
 							<span class="badge">Deep research</span>
 						{/if}
 					{/snippet}
-					{#if isGuided}
-						<p class="stage-desc">{GUIDED_STEP_DESC[step.index] ?? ''}</p>
+					{#if step.description}
+						<!-- Named-stage step (guided planning): show what the stage is
+						     doing instead of a prompt — the title is the stage name. -->
+						<p class="stage-desc">{step.description}</p>
 					{:else}
 						<pre class="prompt">{step.promptAuthored}</pre>
 						{#if step.index > 0 && step.status !== 'pending'}

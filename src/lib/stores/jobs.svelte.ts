@@ -54,23 +54,13 @@ export interface JobSummary extends JobCore {
 	step_count: number;
 }
 
-/** Audit-job config (ignored when job_type !== 'audit'). */
-export interface AuditConfig {
-	/** Number of independent sample runs to execute. */
-	audit_num_runs: number | null;
-	/** File the meta-report is written to (relative to working_dir). */
-	audit_output_file: string | null;
-	/** Run sample + verification turns with a read-only tool subset. */
-	audit_read_only: boolean;
-	/**
-	 * Per-sample agent-loop turn budget (read/grep iterations). null = runner
-	 * default. Bigger codebases need more turns to grep thoroughly.
-	 */
-	audit_max_iterations: number | null;
-	/** Custom sample-run instructions (appended to the audit prompt). null = default. */
-	audit_sample_instructions: string | null;
-	/** Custom verification rubric. null = default. */
-	audit_verify_instructions: string | null;
+/**
+ * Type-specific config as opaque JSON, owned entirely by the job-type modules
+ * (`$lib/agent/jobs/types/<id>/`) — each parses and serializes its own shape.
+ * Rust stores it verbatim, so adding a job type requires no Rust changes.
+ */
+export interface TypeConfigColumn {
+	type_config: string | null;
 }
 
 /**
@@ -106,25 +96,14 @@ export interface ModelOverrideConfig {
 	model_remote_vision_supported: boolean | null;
 }
 
-/**
- * Guided-planning config (null for other job types). `initial_description` is
- * the seed idea; `plan_output_dir` is where the overview + phase files are
- * written, relative to `working_dir` (default `plan/<slug>/`).
- */
-export interface GuidedPlanningConfig {
-	initial_description: string | null;
-	plan_output_dir: string | null;
-}
-
-export interface JobWithSteps
-	extends JobCore, AuditConfig, ModelOverrideConfig, GuidedPlanningConfig {
+export interface JobWithSteps extends JobCore, TypeConfigColumn, ModelOverrideConfig {
 	id: number;
 	created_at: number;
 	updated_at: number;
 	steps: JobStep[];
 }
 
-export type JobInput = JobCore & AuditConfig & ModelOverrideConfig & GuidedPlanningConfig;
+export type JobInput = JobCore & TypeConfigColumn & ModelOverrideConfig;
 
 const WEEKDAY_INDEX: Record<Weekday, number> = {
 	sun: 0,

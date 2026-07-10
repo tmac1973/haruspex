@@ -24,20 +24,13 @@ const baseInput: JobInput = {
 	schedule_kind: 'manual',
 	schedule_config: null,
 	next_due_at: null,
-	audit_num_runs: null,
-	audit_output_file: null,
-	audit_read_only: true,
-	audit_max_iterations: null,
-	audit_sample_instructions: null,
-	audit_verify_instructions: null,
+	type_config: null,
 	model_remote_base_url: null,
 	model_remote_api_key: null,
 	model_remote_api_key_id: null,
 	model_remote_model_id: null,
 	model_remote_context_size: null,
-	model_remote_vision_supported: null,
-	initial_description: null,
-	plan_output_dir: null
+	model_remote_vision_supported: null
 };
 
 const summary = (id: number, name: string, overrides: Partial<JobSummary> = {}): JobSummary => ({
@@ -273,20 +266,13 @@ describe('jobs store CRUD', () => {
 			created_at: 0,
 			updated_at: 0,
 			steps: [{ id: 10, ordering: 0, prompt: 'do thing', deep_research: true }],
-			audit_num_runs: null,
-			audit_output_file: null,
-			audit_read_only: true,
-			audit_max_iterations: null,
-			audit_sample_instructions: null,
-			audit_verify_instructions: null,
+			type_config: null,
 			model_remote_base_url: null,
 			model_remote_api_key: null,
 			model_remote_api_key_id: null,
 			model_remote_model_id: null,
 			model_remote_context_size: null,
-			model_remote_vision_supported: null,
-			initial_description: null,
-			plan_output_dir: null
+			model_remote_vision_supported: null
 		};
 		vi.mocked(invoke).mockResolvedValueOnce(full);
 
