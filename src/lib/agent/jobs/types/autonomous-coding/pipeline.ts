@@ -36,15 +36,19 @@ import {
 	markRunStepStarted,
 	type JobRunStepStatus
 } from '$lib/stores/jobRuns.svelte';
+import { notify } from '$lib/notify';
 import type { JobRunContext } from '../types';
+import type { StepChecklistEntry } from '../../runner.svelte';
 import { normalizePlanDir, parseAutonomousCodingConfig } from './config';
 import {
+	clipNote,
 	isTerminal,
 	markDone,
 	nextActionable,
 	normalizeTaskList,
 	parseTodoMarkdown,
 	recordFailure,
+	renderOverview,
 	renderTodoMarkdown,
 	summarize,
 	type TaskItem
@@ -139,6 +143,24 @@ interface PreflightOutcome {
 	decisionsResolved: number | null;
 }
 
+/** The loop stage's live sub-checklist (attempt badges, blocked styling). */
+function toChecklist(
+	items: TaskItem[],
+	runningId: string | null,
+	maxAttempts: number
+): StepChecklistEntry[] {
+	return items.map((i) => ({
+		label: `${i.id}. ${i.title}`,
+		status: i.id === runningId ? 'running' : i.status,
+		detail:
+			i.status === 'blocked'
+				? `blocked after ${i.attempts} attempt(s)`
+				: i.attempts > 0 || i.id === runningId
+					? `attempt ${i.id === runningId ? i.attempts + 1 : i.attempts}/${maxAttempts}`
+					: undefined
+	}));
+}
+
 export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<void> {
 	const { job, runId, abort } = ctx;
 	const cfg = parseAutonomousCodingConfig(job.type_config);
@@ -160,6 +182,14 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 	};
 
 	try {
+		if (ctx.trigger === 'scheduled') {
+			// The preflight is interactive by design — a run with nobody present
+			// would park at the question modal indefinitely.
+			throw new Error(
+				'Autonomous coding runs start with an interactive preflight interview — ' +
+					'run this job manually, not on a schedule.'
+			);
+		}
 		if (!cfg.plan_dir) {
 			throw new Error('No plan directory configured — edit the job and set one.');
 		}
@@ -222,6 +252,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		const recentNotes: string[] = [];
 		let iteration = 0;
 
+		ctx.patchStep(LOOP, { checklist: toChecklist(items, null, maxAttempts) });
 		while (!isTerminal(items)) {
 			abortIfCancelled();
 			const target = nextActionable(items)!;
@@ -229,7 +260,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			ctx.patchStep(LOOP, {
 				streaming:
 					`Iteration ${iteration} — ${target.id}. ${target.title} ` +
-					`(attempt ${target.attempts + 1}/${maxAttempts})`
+					`(attempt ${target.attempts + 1}/${maxAttempts})`,
+				checklist: toChecklist(items, target.id, maxAttempts)
 			});
 
 			const headBefore = await gitHead(ctx);
@@ -262,9 +294,12 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			}
 
 			const entry = `## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${note.trim()}\n`;
-			recentNotes.push(entry);
+			recentNotes.push(
+				`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${clipNote(note)}\n`
+			);
 			if (recentNotes.length > PROGRESS_TAIL_ENTRIES) recentNotes.shift();
 			progress += `\n${entry}`;
+			ctx.patchStep(LOOP, { checklist: toChecklist(items, null, maxAttempts) });
 			await writePlanFile(ctx, todoPath, renderTodoMarkdown(items));
 			await writePlanFile(ctx, progressPath, progress);
 		}
@@ -293,6 +328,11 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		);
 
 		ctx.finalizeRun('succeeded', null);
+		// The morning-after signal: the user started this and walked away.
+		void notify(
+			'Autonomous coding finished',
+			`${job.name}: ${sum.done} done, ${sum.blocked} blocked — report in ${reportPath}`
+		);
 	} catch (e) {
 		const { aborted, msg } = normalizeAbort(e);
 		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
@@ -301,6 +341,9 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		ctx.patchStep(idx, { status: stepStatus, error: msg, finishedAt });
 		void markRunStepFinished(runId, idx, stepStatus, null, msg, finishedAt);
 		ctx.finalizeRun(aborted ? 'cancelled' : 'failed', msg);
+		if (!aborted) {
+			void notify('Autonomous coding failed', `${job.name}: ${msg.slice(0, 180)}`);
+		}
 	} finally {
 		ctx.onSettled();
 	}
@@ -415,7 +458,7 @@ async function runIterationTurn(
 		'',
 		'Current checklist:',
 		'```markdown',
-		renderTodoMarkdown(items).trim(),
+		renderOverview(items),
 		'```',
 		recentNotes.length ? `\nRecent progress notes (newest last):\n\n${recentNotes.join('\n')}` : ''
 	].join('\n');

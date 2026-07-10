@@ -159,3 +159,30 @@ export function summarize(items: TaskItem[]): LoopSummary {
 export function isTerminal(items: TaskItem[]): boolean {
 	return nextActionable(items) === null;
 }
+
+/**
+ * Compact one-line-per-item view for iteration prompts: statuses without the
+ * descriptions, so the prompt stays flat-sized on a 50-item run (the target
+ * item's description rides along separately).
+ */
+export function renderOverview(items: TaskItem[]): string {
+	return items
+		.map(
+			(i) =>
+				`- [${STATUS_MARK[i.status]}] ${i.id}. ${i.title}` +
+				(i.attempts > 0 ? ` (attempts: ${i.attempts})` : '')
+		)
+		.join('\n');
+}
+
+/**
+ * Bound one progress note for the prompt tail. Full notes still go to
+ * PROGRESS-coding.md; this only keeps a runaway diagnostic from blowing up
+ * every subsequent iteration's context.
+ */
+export function clipNote(note: string, maxChars = 1500): string {
+	const t = note.trim();
+	return t.length <= maxChars
+		? t
+		: `${t.slice(0, maxChars)}\n[… note truncated for the prompt tail]`;
+}

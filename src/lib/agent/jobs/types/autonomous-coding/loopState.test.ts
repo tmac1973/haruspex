@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
+	clipNote,
 	isTerminal,
 	markDone,
 	nextActionable,
 	normalizeTaskList,
 	parseTodoMarkdown,
 	recordFailure,
+	renderOverview,
 	renderTodoMarkdown,
 	summarize,
 	type TaskItem
@@ -122,5 +124,23 @@ describe('loop transitions', () => {
 		expect(isTerminal(items)).toBe(true);
 		expect(summarize(items)).toEqual({ done: 1, blocked: 1, todo: 0, total: 2 });
 		expect(isTerminal([...items, item({ id: '03' })])).toBe(false);
+	});
+});
+
+describe('prompt-size bounding', () => {
+	it('renderOverview is one line per item, no descriptions, attempts only when > 0', () => {
+		const overview = renderOverview([
+			item({ description: 'a very long description that must not appear' }),
+			item({ id: '02', title: 'Second', status: 'blocked', attempts: 3 })
+		]);
+		expect(overview).toBe('- [ ] 01. Scaffold the project\n- [!] 02. Second (attempts: 3)');
+		expect(overview).not.toContain('very long description');
+	});
+
+	it('clipNote passes short notes through and truncates runaway ones with a marker', () => {
+		expect(clipNote('  fine  ')).toBe('fine');
+		const clipped = clipNote('x'.repeat(5000));
+		expect(clipped.length).toBeLessThan(1600);
+		expect(clipped).toContain('truncated for the prompt tail');
 	});
 });

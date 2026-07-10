@@ -26,7 +26,31 @@ column — **adding a job type now requires zero Rust changes** (verified:
 one-time idempotent migration folds legacy per-type columns into JSON;
 the old columns are dead, not dropped.
 
-**Phase 06 (the loop engine) as built** — same branch as Phase 05:
+**Phases 06–07 (loop engine + run view/hardening) as built** — same branch
+as Phase 05. Phase 07 specifics:
+
+- **Generic sub-checklist instead of per-item steps or a runView slot.**
+  `RunStepState` gained a display-only `checklist` field (label / status /
+  detail); JobRunView renders it inside any step card with attempt badges
+  and blocked styling, and the loop stage patches it live each iteration.
+  The four persisted stages stay authoritative for history.
+- **Prompt-size bounding:** iteration prompts carry a one-line-per-item
+  overview (descriptions only for the target item) and progress notes are
+  clipped to ~1.5k chars for the tail (full notes still land in
+  PROGRESS-coding.md).
+- **Scheduled runs refused at pipeline start** with a clear "run manually"
+  error — `JobRunContext` gained `trigger` for this. The preflight is
+  interactive by design; parking-at-modal was the failure mode.
+- **Completion notification** via tauri-plugin-notification (new dep +
+  capability): "finished: N done, K blocked" on success, a failure notice
+  on errors, nothing on user cancel. `src/lib/notify.ts` is best-effort
+  and never throws.
+- Persistence pressure / verify-command review: TODO/PROGRESS writes are
+  awaited (not fire-and-forget) and bounded to two small files per
+  iteration; run_command's own timeout + kill plumbing covers hung verify
+  commands; fs sandboxing + pinned exec cwd cover working-dir escapes.
+
+**Phase 06 (the loop engine) as built:**
 
 - **Disk is the resume state, not the DB.** `TODO-coding.md` round-trips
   through `loopState.ts` (statuses + attempt counts encoded in the

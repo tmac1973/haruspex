@@ -1028,6 +1028,19 @@ describe('jobs runner — autonomous coding', () => {
 		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
 	});
 
+	it('refuses scheduled runs — the preflight needs a human at kickoff', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit();
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'scheduled');
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain('run this job manually');
+		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
+	});
+
 	it('fails cleanly when no plan directory is configured', async () => {
 		mocks.getJob.mockResolvedValueOnce(codingJob({ type_config: null }));
 
@@ -1097,6 +1110,12 @@ describe('jobs runner — autonomous coding', () => {
 		expect(commits.some((c) => c.includes('feat: One [ralph 01/02]'))).toBe(true);
 		expect(commits.some((c) => c.includes('feat: Two [ralph 02/02]'))).toBe(true);
 		expect(commits.some((c) => c.includes('docs'))).toBe(true);
+
+		// The loop stage's live sub-checklist ends with every item done.
+		expect(run.steps[2].checklist).toEqual([
+			{ label: '01. One', status: 'done', detail: undefined },
+			{ label: '02. Two', status: 'done', detail: undefined }
+		]);
 
 		// The runner owns the bookkeeping files.
 		const writes = mocks.invoke.mock.calls
