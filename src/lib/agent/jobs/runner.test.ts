@@ -931,7 +931,7 @@ describe('jobs runner — audit jobs', () => {
 	});
 });
 
-describe('jobs runner — autonomous coding (preflight, Phase 05)', () => {
+describe('jobs runner — autonomous coding', () => {
 	function codingJob(over: Partial<JobWithSteps> = {}): JobWithSteps {
 		return makeJob({
 			job_type: 'autonomous_coding',
@@ -943,7 +943,77 @@ describe('jobs runner — autonomous coding (preflight, Phase 05)', () => {
 	}
 
 	async function settle(getCurrentRun: () => { status: string } | null) {
-		for (let i = 0; i < 40 && getCurrentRun()?.status === 'running'; i++) await tick();
+		for (let i = 0; i < 300 && getCurrentRun()?.status === 'running'; i++) await tick();
+	}
+
+	/** Git-aware run_command_capture mock; `staged` controls the diff check. */
+	function wireGit(opts: { staged?: boolean } = {}) {
+		const commands: string[] = [];
+		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'fs_path_exists') return true;
+			if (cmd === 'shell_platform_supported') return true;
+			if (cmd === 'run_command_capture') {
+				const command = String(args?.command ?? '');
+				commands.push(command);
+				const ok = { stdout: '', stderr: '', exit_code: 0, duration_ms: 1, killed: false };
+				// `git diff --cached --quiet` exits 1 when changes are staged.
+				if (command.includes('--cached')) {
+					return { ...ok, exit_code: (opts.staged ?? true) ? 1 : 0 };
+				}
+				if (command.includes('rev-parse HEAD')) return { ...ok, stdout: 'headhash' };
+				return ok;
+			}
+			// fs_read_text (TODO/PROGRESS resume reads) → undefined = nothing on disk.
+			return undefined;
+		});
+		return commands;
+	}
+
+	/**
+	 * A runEphemeralTurn that drives the whole pipeline: preflight ready,
+	 * a two-item decompose, and per-item iteration results from `verdict`.
+	 */
+	function codingTurns(verdict: (itemId: string, attempt: number) => 'done' | 'failed') {
+		const attempts: Record<string, number> = {};
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		return async (opts: any) => {
+			if (opts.forceFinalTool === 'submit_preflight') {
+				opts.onToolStart?.({
+					id: 'p',
+					name: 'submit_preflight',
+					arguments: { ready: true, decisions_resolved: 2 }
+				});
+				return { finalText: 'ready' };
+			}
+			if (opts.forceFinalTool === 'submit_task_list') {
+				opts.onToolStart?.({
+					id: 't',
+					name: 'submit_task_list',
+					arguments: {
+						items: [
+							{ title: 'One', description: 'first thing' },
+							{ title: 'Two', description: 'second thing' }
+						]
+					}
+				});
+				return { finalText: 'list' };
+			}
+			if (opts.forceFinalTool === 'submit_iteration_result') {
+				const id = /checklist item: (\d+)\./.exec(opts.userMessage)?.[1] ?? '??';
+				attempts[id] = (attempts[id] ?? 0) + 1;
+				opts.onToolStart?.({
+					id: 'i',
+					name: 'submit_iteration_result',
+					arguments: {
+						item_id: id,
+						status: verdict(id, attempts[id]),
+						note: `attempt ${attempts[id]}`
+					}
+				});
+				return { finalText: 'iter' };
+			}
+			return { finalText: 'report written' }; // finalize
+		};
 	}
 
 	it('refuses to enqueue when the shell platform gate reports unsupported', async () => {
@@ -958,62 +1028,32 @@ describe('jobs runner — autonomous coding (preflight, Phase 05)', () => {
 		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
 	});
 
-	it('runs an interactive preflight, then fails honestly before the unimplemented loop', async () => {
-		mocks.getJob.mockResolvedValueOnce(codingJob());
-		mocks.runEphemeralTurn.mockImplementation(
-			async (opts: { forceFinalTool?: string; onToolStart?: (c: unknown) => void }) => {
-				if (opts.forceFinalTool === 'submit_preflight') {
-					opts.onToolStart?.({
-						id: 'p',
-						name: 'submit_preflight',
-						arguments: { ready: true, decisions_resolved: 2 }
-					});
-					return { finalText: 'ready' };
-				}
-				return { finalText: 'ok' };
-			}
-		);
+	it('fails cleanly when no plan directory is configured', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob({ type_config: null }));
 
 		const { enqueue, getCurrentRun } = await freshRunner();
-		const runId = await enqueue(1);
-		expect(runId).not.toBeNull();
+		await enqueue(1);
 		await settle(getCurrentRun);
 
-		const run = getCurrentRun()!;
-		// Preflight succeeded; the run fails with the explicit Phase 06 marker
-		// (never a silent no-op) on the live stage.
-		expect(run.status).toBe('failed');
-		expect(run.error).toContain('Phase 06');
-		expect(run.steps[0].status).toBe('succeeded');
-		expect(run.steps[0].output).toContain('2 decision(s)');
-
-		// The preflight turn: interactive (modal-capable), scoped to the plan
-		// dir, question tool + forced structured verdict, and NO shell/exec.
-		const opts = mocks.runEphemeralTurn.mock.calls[0][0];
-		expect(opts.interactive).toBe(true);
-		expect(opts.writeRoot).toBe('plan/x/');
-		expect(opts.forceFinalTool).toBe('submit_preflight');
-		expect([...opts.toolAllowlist]).toContain('ask_user_question');
-		expect([...opts.toolAllowlist]).toContain('submit_preflight');
-		expect([...opts.toolAllowlist]).not.toContain('run_command');
-		expect(opts.systemPrompt).toContain('FULLY UNATTENDED');
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain('No plan directory');
+		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
 	});
 
 	it('fails the run with the blockers when preflight reports not ready', async () => {
 		mocks.getJob.mockResolvedValueOnce(codingJob());
-		mocks.runEphemeralTurn.mockImplementation(
-			async (opts: { forceFinalTool?: string; onToolStart?: (c: unknown) => void }) => {
-				if (opts.forceFinalTool === 'submit_preflight') {
-					opts.onToolStart?.({
-						id: 'p',
-						name: 'submit_preflight',
-						arguments: { ready: false, blockers: ['plan directory is empty'] }
-					});
-					return { finalText: 'blocked' };
-				}
-				return { finalText: 'ok' };
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		mocks.runEphemeralTurn.mockImplementation(async (opts: any) => {
+			if (opts.forceFinalTool === 'submit_preflight') {
+				opts.onToolStart?.({
+					id: 'p',
+					name: 'submit_preflight',
+					arguments: { ready: false, blockers: ['plan directory is empty'] }
+				});
+				return { finalText: 'blocked' };
 			}
-		);
+			return { finalText: 'ok' };
+		});
 
 		const { enqueue, getCurrentRun } = await freshRunner();
 		await enqueue(1);
@@ -1025,15 +1065,131 @@ describe('jobs runner — autonomous coding (preflight, Phase 05)', () => {
 		expect(run.steps[0].status).toBe('failed');
 	});
 
-	it('fails cleanly when no plan directory is configured', async () => {
-		mocks.getJob.mockResolvedValueOnce(codingJob({ type_config: null }));
+	it('runs preflight → decompose → loop → finalize, committing each verified step', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		const commands = wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
 
 		const { enqueue, getCurrentRun } = await freshRunner();
 		await enqueue(1);
 		await settle(getCurrentRun);
 
-		expect(getCurrentRun()?.status).toBe('failed');
-		expect(getCurrentRun()?.error).toContain('No plan directory');
-		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
+		const run = getCurrentRun()!;
+		expect(run.status).toBe('succeeded');
+		expect(run.steps[0].status).toBe('succeeded'); // preflight
+		expect(run.steps[1].output).toContain('Decomposed the plan into 2 step(s)');
+		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
+		expect(run.steps[3].output).toContain('Done — plan/x/REPORT-coding.md');
+
+		// The preflight turn is the ONLY interactive one; the loop cannot ask.
+		const iterOpts = mocks.runEphemeralTurn.mock.calls
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			.map(([o]: any[]) => o)
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			.find((o: any) => o.forceFinalTool === 'submit_iteration_result');
+		expect(iterOpts.interactive).toBeUndefined();
+		expect([...iterOpts.toolAllowlist]).toContain('run_command');
+		expect([...iterOpts.toolAllowlist]).not.toContain('ask_user_question');
+		expect(iterOpts.systemPrompt).toContain('unattended coding loop');
+
+		// Runner-driven commits: one per verified step, then the report.
+		const commits = commands.filter((c) => c.startsWith('git commit'));
+		expect(commits.some((c) => c.includes('feat: One [ralph 01/02]'))).toBe(true);
+		expect(commits.some((c) => c.includes('feat: Two [ralph 02/02]'))).toBe(true);
+		expect(commits.some((c) => c.includes('docs'))).toBe(true);
+
+		// The runner owns the bookkeeping files.
+		const writes = mocks.invoke.mock.calls
+			.filter(([cmd]) => cmd === 'fs_write_text')
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			.map(([, a]: any[]) => a.relPath);
+		expect(writes).toContain('plan/x/TODO-coding.md');
+		expect(writes).toContain('plan/x/PROGRESS-coding.md');
+	});
+
+	it('blocks a step after max_attempts failures and finishes with blockers', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			codingJob({ type_config: JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 2 }) })
+		);
+		wireGit();
+		// Item 01 never succeeds; item 02 works first try.
+		mocks.runEphemeralTurn.mockImplementation(
+			codingTurns((id) => (id === '01' ? 'failed' : 'done'))
+		);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const run = getCurrentRun()!;
+		// Done-with-blockers is a SUCCEEDED run — maximum progress plus a list
+		// of what needs a human, not a failure.
+		expect(run.status).toBe('succeeded');
+		expect(run.steps[2].output).toContain('1 done, 1 blocked of 2');
+		expect(run.steps[3].output).toContain('Done with blockers (1)');
+		// 2 failed attempts at item 01 + 1 done for item 02 = 3 iterations.
+		const iterations = mocks.runEphemeralTurn.mock.calls.filter(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => o.forceFinalTool === 'submit_iteration_result'
+		);
+		expect(iterations).toHaveLength(3);
+	});
+
+	it('downgrades a "done" that changed nothing to a failed attempt', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			codingJob({ type_config: JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 1 }) })
+		);
+		wireGit({ staged: false }); // no diff, no new commit — nothing happened
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const run = getCurrentRun()!;
+		expect(run.status).toBe('succeeded');
+		// Every "done" was hollow → each item blocks after its 1 allowed attempt.
+		expect(run.steps[2].output).toContain('0 done, 2 blocked of 2');
+	});
+
+	it('resumes from an existing TODO-coding.md instead of re-decomposing', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		const existingTodo = [
+			'# Coding TODO',
+			'',
+			'- [x] 01. One (attempts: 1)',
+			'- [ ] 02. Two (attempts: 0)',
+			''
+		].join('\n');
+		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'fs_path_exists') return true;
+			if (cmd === 'shell_platform_supported') return true;
+			if (cmd === 'fs_read_text' && String(args?.relPath).includes('TODO')) return existingTodo;
+			if (cmd === 'run_command_capture') {
+				const command = String(args?.command ?? '');
+				const ok = { stdout: '', stderr: '', exit_code: 0, duration_ms: 1, killed: false };
+				if (command.includes('--cached')) return { ...ok, exit_code: 1 };
+				if (command.includes('rev-parse HEAD')) return { ...ok, stdout: 'headhash' };
+				return ok;
+			}
+			return undefined;
+		});
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const run = getCurrentRun()!;
+		expect(run.status).toBe('succeeded');
+		expect(run.steps[1].output).toContain('Resumed plan/x/TODO-coding.md');
+		// No decompose turn ran; only item 02 needed an iteration.
+		const byTool = mocks.runEphemeralTurn.mock.calls.map(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => o.forceFinalTool
+		);
+		expect(byTool).not.toContain('submit_task_list');
+		expect(byTool.filter((t: string) => t === 'submit_iteration_result')).toHaveLength(1);
+		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
 	});
 });

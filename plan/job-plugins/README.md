@@ -17,9 +17,7 @@ attempts), the `submit_preflight` structured tool (`coding` category),
 and the Stage-0 preflight interview all live in the type module. A
 `types/availability.svelte.ts` cache gives the picker and JobList
 synchronous reads of the `shell_platform_supported` probe; enqueue()
-re-checks the gate authoritatively. After a successful preflight the run
-fails on the Decompose stage with an explicit "Phase 06 not implemented"
-error — never a silent no-op. All three built-in types are registered
+re-checks the gate authoritatively. All three built-in types are registered
 plugins; the runner, JobList, JobRunView, and the whole JobEditor
 (picker, form sections, load/save/validate/persist-steps) dispatch purely
 through the registry. Per-type config lives in the JSON `type_config`
@@ -27,6 +25,30 @@ column — **adding a job type now requires zero Rust changes** (verified:
 `grep audit_ src-tauri/src` hits only the schema/migration block). A
 one-time idempotent migration folds legacy per-type columns into JSON;
 the old columns are dead, not dropped.
+
+**Phase 06 (the loop engine) as built** — same branch as Phase 05:
+
+- **Disk is the resume state, not the DB.** `TODO-coding.md` round-trips
+  through `loopState.ts` (statuses + attempt counts encoded in the
+  markdown), so a killed run resumes by re-running the job — the Decompose
+  stage adopts a parseable existing TODO instead of re-decomposing. The
+  planned `saveRunnerState` DB slot went unused, consistent with guided
+  planning's descoped parking.
+- **Per-item display steps deferred to Phase 07.** The run keeps its four
+  named stages; the loop stage streams "Iteration N — 03. Title (attempt
+  2/3)" live and finishes with the done/blocked tally. Replacing the
+  run's step list mid-run needs a new ctx capability — Phase 07's call.
+- **Runner-driven git via `run_command_capture`** (the Code-mode one-shot
+  exec, shell-selection aware): baseline (`git init` + `--allow-empty`
+  commit when unborn/dirty), one `feat: <title> [ralph NN/total]` commit
+  per verified step, report committed best-effort. A "done" with no diff
+  and no new HEAD downgrades to a failed attempt; a result for the wrong
+  item counts as a failed attempt of the assigned one.
+- Iteration turns are non-interactive with `ask_user_question` absent from
+  the toolset (enforced structurally, not by prompt); read-only web
+  (search/research) IS included for docs lookups.
+- "Done with blockers (k)" is a SUCCEEDED run — surfaced in the Finalize
+  step output and `REPORT-coding.md`, not as a run failure.
 
 **Editor contract as built (supersedes the Phase 02/03 mapper notes):**
 every type Editor receives the same bindable props —
