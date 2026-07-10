@@ -461,19 +461,33 @@
 
 		<!-- A dropdown, not radio cards: the registry keeps growing job types
 		     and the picker's screen cost must not grow with it. The selected
-		     type's description renders as the hint below. -->
-		<label class="field">
+		     type's description renders as the hint below.
+
+		     Locked after first save: type_config is one JSON column, so saving
+		     under a different type would overwrite the old type's config
+		     irrecoverably (and orphan the run history's semantics). Create a
+		     new job to use a different type. -->
+		<label
+			class="field"
+			title={jobId !== 'new'
+				? 'The job type is fixed after creation — create a new job to use a different type.'
+				: undefined}
+		>
 			<span class="label">Job type</span>
 			<select
 				class="type-select"
 				value={jobType}
+				disabled={jobId !== 'new'}
 				onchange={(e) => setJobType(e.currentTarget.value as JobType)}
 			>
 				{#each listJobTypes().filter((d) => isJobTypeAvailable(d.id) || d.id === jobType) as d (d.id)}
 					<option value={d.id}>{d.label}</option>
 				{/each}
 			</select>
-			<span class="hint">{typeDef.description}</span>
+			<span class="hint">
+				{typeDef.description}
+				{#if jobId !== 'new'}(Type is fixed after creation.){/if}
+			</span>
 		</label>
 
 		<label
