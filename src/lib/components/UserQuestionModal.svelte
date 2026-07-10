@@ -104,51 +104,61 @@
 			>
 				×
 			</button>
-			<h2 id="user-question-title">{pending.question}</h2>
-			{#if pending.allowMultiple}
-				<p class="hint">Select one or more, or write your own answer.</p>
-			{/if}
+			<!-- Everything except the action row scrolls: a long question (e.g.
+			     the guided-planning outline) or a tall option list must never
+			     push Submit off-screen. -->
+			<div class="scroll-region">
+				<h2 id="user-question-title">{pending.question}</h2>
+				{#if pending.allowMultiple}
+					<p class="hint">Select one or more, or write your own answer.</p>
+				{/if}
 
-			<div class="options">
-				{#each pending.options as opt (opt.label)}
+				<div class="options">
+					{#each pending.options as opt (opt.label)}
+						<button
+							type="button"
+							class="option"
+							class:selected={!useFreeText && selected.includes(opt.label)}
+							onclick={() => toggleOption(opt.label)}
+						>
+							<span class="marker" class:multi={pending.allowMultiple} aria-hidden="true"></span>
+							<span class="body">
+								<span class="label">
+									{opt.label}
+									{#if opt.recommended}<span class="badge">Recommended</span>{/if}
+								</span>
+								{#if opt.description}<span class="desc">{opt.description}</span>{/if}
+							</span>
+						</button>
+					{/each}
+
+					<!-- "Other" — a member of the same group so selection stays unambiguous.
+				     Always a radio (round) marker: it's an exclusive alternative even when
+				     the prefilled options are multi-select checkboxes. -->
 					<button
 						type="button"
 						class="option"
-						class:selected={!useFreeText && selected.includes(opt.label)}
-						onclick={() => toggleOption(opt.label)}
+						class:selected={useFreeText}
+						onclick={chooseFreeText}
 					>
-						<span class="marker" class:multi={pending.allowMultiple} aria-hidden="true"></span>
+						<span class="marker" aria-hidden="true"></span>
 						<span class="body">
-							<span class="label">
-								{opt.label}
-								{#if opt.recommended}<span class="badge">Recommended</span>{/if}
-							</span>
-							{#if opt.description}<span class="desc">{opt.description}</span>{/if}
+							<span class="label">Write your own answer</span>
+							<span class="desc">Type a different answer instead of picking above.</span>
 						</span>
 					</button>
-				{/each}
+				</div>
 
-				<!-- "Other" — a member of the same group so selection stays unambiguous.
-			     Always a radio (round) marker: it's an exclusive alternative even when
-			     the prefilled options are multi-select checkboxes. -->
-				<button type="button" class="option" class:selected={useFreeText} onclick={chooseFreeText}>
-					<span class="marker" aria-hidden="true"></span>
-					<span class="body">
-						<span class="label">Write your own answer</span>
-						<span class="desc">Type a different answer instead of picking above.</span>
-					</span>
-				</button>
+				{#if useFreeText}
+					<textarea
+						bind:this={textareaEl}
+						class="free-input"
+						rows="3"
+						placeholder="Type your answer…"
+						bind:value={freeText}
+					></textarea>
+				{/if}
 			</div>
-
-			{#if useFreeText}
-				<textarea
-					bind:this={textareaEl}
-					class="free-input"
-					rows="3"
-					placeholder="Type your answer…"
-					bind:value={freeText}
-				></textarea>
-			{/if}
 
 			<div class="actions">
 				<button type="button" class="cancel" onclick={() => cancelUserQuestion()}>Cancel run</button
@@ -162,6 +172,19 @@
 <style>
 	.qbody {
 		position: relative;
+		display: flex;
+		flex-direction: column;
+		/* Viewport-bounded (backdrop + modal padding ≈ 96px): the scroll
+		   region absorbs the overflow so the actions stay pinned below. */
+		max-height: calc(100vh - 100px);
+	}
+
+	.scroll-region {
+		overflow-y: auto;
+		min-height: 0;
+		/* Keep option-card hover borders from being clipped by the scrollbar. */
+		padding-right: 4px;
+		margin-right: -4px;
 	}
 
 	/* Position override of the global .modal-close. */
@@ -294,6 +317,7 @@
 		align-items: center;
 		gap: 12px;
 		margin-top: 16px;
+		flex-shrink: 0;
 	}
 
 	.cancel {

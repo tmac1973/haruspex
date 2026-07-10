@@ -239,6 +239,10 @@ describe('jobs runner — guards', () => {
 		expect(mocks.askUserQuestion).toHaveBeenCalled();
 		// One focused write turn per outline phase — not a single "write them all".
 		expect(phaseWriteMessages(mocks.runEphemeralTurn.mock.calls).length).toBe(2);
+		// The agent's stage notes persist into the step output (reviewable after
+		// the live streaming view is gone) — here the verifier's verdict.
+		const verifyStep = getCurrentRun()!.steps[3];
+		expect(verifyStep.output).toContain('PLAN OK');
 	});
 
 	it('writes one phase file per outline phase, with deterministic NN filenames', async () => {
@@ -1091,7 +1095,11 @@ describe('jobs runner — autonomous coding', () => {
 		expect(run.status).toBe('succeeded');
 		expect(run.steps[0].status).toBe('succeeded'); // preflight
 		expect(run.steps[1].output).toContain('Decomposed the plan into 2 step(s)');
+		expect(run.steps[1].output).toContain('01. One'); // the checklist persists
 		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
+		// Per-iteration notes persist into the loop step's output.
+		expect(run.steps[2].output).toContain('Iteration 1 — 01. One: done');
+		expect(run.steps[2].output).toContain('attempt 1');
 		expect(run.steps[3].output).toContain('Done — plan/x/REPORT-coding.md');
 
 		// The preflight turn is the ONLY interactive one; the loop cannot ask.

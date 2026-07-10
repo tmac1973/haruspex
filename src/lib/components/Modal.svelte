@@ -97,6 +97,11 @@
 		padding: 24px 28px;
 		width: 100%;
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+		/* Never taller than the window (vh tracks the live viewport, so this
+		   adapts to any screen/window size): overflowing content scrolls
+		   inside the box instead of pushing the action buttons off-screen. */
+		max-height: calc(100vh - 48px);
+		overflow-y: auto;
 	}
 
 	/* Header variant: the box becomes a flex column with a sticky-feeling

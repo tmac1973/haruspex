@@ -141,6 +141,17 @@ interface PreflightOutcome {
 	ready: boolean;
 	blockers: string[];
 	decisionsResolved: number | null;
+	/** The model's closing summary of the interview (kept in the step output). */
+	summaryText: string;
+}
+
+/** Persisted step outputs are capped from the FRONT (keep the summary line). */
+const STEP_OUTPUT_MAX_CHARS = 30_000;
+
+function capOutput(text: string): string {
+	return text.length <= STEP_OUTPUT_MAX_CHARS
+		? text
+		: `${text.slice(0, STEP_OUTPUT_MAX_CHARS)}\n\n[… output truncated — the full log lives in PROGRESS-coding.md]`;
 }
 
 /** The loop stage's live sub-checklist (attempt badges, blocked styling). */
@@ -221,7 +232,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		});
 		finishStep(
 			PREFLIGHT,
-			`Ready to code — ${outcome.decisionsResolved ?? 0} decision(s) resolved → ${decisionsPath}`
+			`Ready to code — ${outcome.decisionsResolved ?? 0} decision(s) resolved → ${decisionsPath}` +
+				(outcome.summaryText ? `\n\n---\n\n${outcome.summaryText}` : '')
 		);
 
 		// Stage 1 — Decompose, or resume: a parseable TODO-coding.md on disk IS
@@ -239,7 +251,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		} else {
 			items = await obtainTaskList(ctx, planDir, decisionsPath, abortIfCancelled);
 			await writePlanFile(ctx, todoPath, renderTodoMarkdown(items));
-			finishStep(DECOMPOSE, `Decomposed the plan into ${items.length} step(s) → ${todoPath}`);
+			finishStep(
+				DECOMPOSE,
+				`Decomposed the plan into ${items.length} step(s) → ${todoPath}\n\n${renderOverview(items)}`
+			);
 		}
 
 		// Stage 2 — the loop. Baseline commit first: nothing the loop does can
@@ -250,6 +265,9 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		const maxAttempts = Math.max(1, Math.min(cfg.max_attempts ?? DEFAULT_MAX_ATTEMPTS, 10));
 		let progress = (await readPlanFile(ctx, progressPath)) ?? '# Coding progress\n';
 		const recentNotes: string[] = [];
+		// Every entry from THIS run, so the loop step's persisted output keeps
+		// the per-iteration notes after the live streaming view is gone.
+		const runEntries: string[] = [];
 		let iteration = 0;
 
 		ctx.patchStep(LOOP, { checklist: toChecklist(items, null, maxAttempts) });
@@ -294,6 +312,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			}
 
 			const entry = `## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${note.trim()}\n`;
+			runEntries.push(entry);
 			recentNotes.push(
 				`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${clipNote(note)}\n`
 			);
@@ -306,7 +325,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		const sum = summarize(items);
 		finishStep(
 			LOOP,
-			`${sum.done} done, ${sum.blocked} blocked of ${sum.total} step(s), in ${iteration} iteration(s)`
+			capOutput(
+				`${sum.done} done, ${sum.blocked} blocked of ${sum.total} step(s), in ${iteration} iteration(s)` +
+					(runEntries.length ? `\n\n---\n\n${runEntries.join('\n')}` : '')
+			)
 		);
 
 		// Finalize — the morning-after report, write-verified and committed.
@@ -360,7 +382,7 @@ async function runPreflightTurn(
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
-	await ctx.runJobTurn({
+	const turnResult = await ctx.runJobTurn({
 		userMessage:
 			`Run the preflight for the plan in ${planDir}. Interview me about anything ` +
 			`unresolved — after this I will not be available.`,
@@ -386,7 +408,8 @@ async function runPreflightTurn(
 		return {
 			ready: false,
 			blockers: ['The model never reported a preflight verdict.'],
-			decisionsResolved: null
+			decisionsResolved: null,
+			summaryText: turnResult.finalText.trim()
 		};
 	}
 	const result = captured as PreflightResultArg;
@@ -396,7 +419,8 @@ async function runPreflightTurn(
 			? result.blockers.filter((b): b is string => typeof b === 'string')
 			: [],
 		decisionsResolved:
-			typeof result.decisions_resolved === 'number' ? result.decisions_resolved : null
+			typeof result.decisions_resolved === 'number' ? result.decisions_resolved : null,
+		summaryText: turnResult.finalText.trim()
 	};
 }
 
