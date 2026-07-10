@@ -303,13 +303,15 @@ function applyContextGuard(
 	}
 }
 
-/** Per-call sampling/output params shared by the guarded helper. */
+/** Per-call sampling/output params shared by the guarded helper. Sampling
+ * fields are optional — undefined means "don't send", so unrecognized
+ * remote models get the serving backend's own defaults. */
 type CompletionParams = {
-	temperature: number;
-	top_p: number;
-	top_k: number;
-	min_p: number;
-	presence_penalty: number;
+	temperature?: number;
+	top_p?: number;
+	top_k?: number;
+	min_p?: number;
+	presence_penalty?: number;
 	max_tokens: number;
 	chat_template_kwargs: ReturnType<typeof getChatTemplateKwargs>;
 	/** OpenRouter reasoning param; undefined for non-OpenRouter backends. */

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.54](https://github.com/tmac1973/haruspex/compare/v0.1.53...v0.1.54) (2026-07-09)
+
+
+### Bug Fixes
+
+* **inference:** stop leaking Qwen sampling params and template kwargs to non-Qwen remote models ([#172](https://github.com/tmac1973/haruspex/issues/172)) ([2c77bfe](https://github.com/tmac1973/haruspex/commit/2c77bfe7ef32b9e99835ae8144166cab1e2371ba))
+
 ## [0.1.53](https://github.com/tmac1973/haruspex/compare/v0.1.52...v0.1.53) (2026-07-09)
 
 
