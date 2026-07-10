@@ -11,12 +11,10 @@
 	// remounts this component whenever it swaps the object).
 	let {
 		config = $bindable(),
-		steps = $bindable(),
-		jobName = ''
+		steps = $bindable()
 	}: {
 		config: Record<string, unknown>;
 		steps: JobStepInput[];
-		jobName?: string;
 	} = $props();
 
 	const cfg = config as unknown as AuditEditorState;

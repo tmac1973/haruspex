@@ -8,13 +8,12 @@
 	// every type's editor).
 	let {
 		config = $bindable(),
-		steps = $bindable(),
-		jobName = ''
+		steps = $bindable()
 	}: {
 		config: Record<string, unknown>;
 		steps: JobStepInput[];
-		jobName?: string;
 	} = $props();
+	void config; // declared only because JobEditor binds it on every type's editor
 
 	function addStep() {
 		steps = [...steps, { prompt: '', deep_research: false }];
