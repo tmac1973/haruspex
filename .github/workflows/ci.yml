@@ -36,6 +36,10 @@ jobs:
       # constant must be current.
       - name: Check IPC command names
         run: node scripts/check-ipc.mjs
+      # Ports/loopback are hand-synced across the IPC boundary (no codegen);
+      # fail CI when src/lib/ports.ts and sidecar_utils.rs disagree.
+      - name: Check hand-synced constants
+        run: node scripts/check-constants.mjs
 
   backend:
     runs-on: ubuntu-latest

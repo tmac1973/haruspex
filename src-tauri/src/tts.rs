@@ -418,24 +418,3 @@ pub async fn clear_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<(), ()
     state.clear_logs().await;
     Ok(())
 }
-
-#[tauri::command]
-pub async fn tts_list_voices() -> Result<Vec<String>, ()> {
-    Ok(vec![
-        "af_heart".to_string(),
-        "af_sky".to_string(),
-        "af_nicole".to_string(),
-        "af_bella".to_string(),
-        "af_nova".to_string(),
-        "af_sarah".to_string(),
-        "af_alloy".to_string(),
-        "af_river".to_string(),
-        "am_adam".to_string(),
-        "am_michael".to_string(),
-        "am_echo".to_string(),
-        "am_eric".to_string(),
-        "am_liam".to_string(),
-        "ef_dora".to_string(),
-        "em_alex".to_string(),
-    ])
-}

@@ -237,10 +237,6 @@ impl AudioRecorder {
         let resampled = resample_linear(&samples, native_rate, WHISPER_SAMPLE_RATE);
         encode_wav(&resampled, WHISPER_SAMPLE_RATE)
     }
-
-    pub fn is_recording(&self) -> bool {
-        self.is_recording.load(Ordering::SeqCst)
-    }
 }
 
 fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
@@ -306,11 +302,6 @@ pub fn start_recording(
 #[tauri::command]
 pub fn stop_recording(state: tauri::State<'_, AudioRecorder>) -> Result<Vec<u8>, String> {
     state.stop_recording()
-}
-
-#[tauri::command]
-pub fn is_recording(state: tauri::State<'_, AudioRecorder>) -> bool {
-    state.is_recording()
 }
 
 #[tauri::command]
