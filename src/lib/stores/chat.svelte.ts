@@ -37,7 +37,7 @@ import {
 export { getActiveConversationId, getWorkingDir };
 import { approveChatSandbox, forgetChatSandboxApproval } from '$lib/stores/sandboxApproval.svelte';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
-import { appendStreamDelta } from '$lib/agent/think-stream';
+import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
 import { isFetchFailureResult } from '$lib/agent/tools/_helpers';
 import { errMessage, isAbortError } from '$lib/utils/error';
 import { formatSandboxResult } from '$lib/sandbox/format-result';
@@ -926,6 +926,7 @@ function buildAgentLoopCallbacks(
 	activeCtxSize: number,
 	turnStats: TurnStats
 ): AgentLoopCallbacks {
+	const thinkState = createThinkStreamState();
 	return {
 		onUsageUpdate: (u: Usage) => {
 			updateContextUsage(u, activeCtxSize);
@@ -959,7 +960,7 @@ function buildAgentLoopCallbacks(
 			);
 		},
 		onStreamChunk: (chunk) => {
-			streamingContent = appendStreamDelta(streamingContent, chunk.delta);
+			streamingContent = appendStreamDelta(streamingContent, chunk.delta, thinkState);
 		},
 		onComplete: (meta) => finalizeStreamedTurn(conversation, turnStats, meta?.stopReason),
 		onError: handleTurnError

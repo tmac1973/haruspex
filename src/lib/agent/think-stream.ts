@@ -1,22 +1,49 @@
 import type { StreamChunk } from '$lib/api';
 
 /**
+ * Per-turn memo of which think tags have already been appended, so
+ * `appendStreamDelta` doesn't have to `includes()`-scan the whole
+ * accumulated buffer on every delta (O(n²) over a long turn). Purely an
+ * optimization: with no state passed, behavior falls back to buffer scans.
+ */
+export interface ThinkStreamState {
+	sawThinkOpen: boolean;
+	sawThinkClose: boolean;
+}
+
+export function createThinkStreamState(): ThinkStreamState {
+	return { sawThinkOpen: false, sawThinkClose: false };
+}
+
+/**
  * Fold one streaming delta into an accumulating buffer, wrapping any
  * reasoning tokens in a single `<think>…</think>` block ahead of the visible
  * content. Shared by every turn driver (chat / shell / ephemeral) so the
  * think-block bookkeeping lives in one place.
  */
-export function appendStreamDelta(buf: string, delta: StreamChunk['delta']): string {
+export function appendStreamDelta(
+	buf: string,
+	delta: StreamChunk['delta'],
+	state?: ThinkStreamState
+): string {
 	// OpenRouter normalizes reasoning to `reasoning` (string) with an alias
 	// `reasoning_content`; take whichever is present so the think-stream panel
 	// renders for both local llama.cpp reasoning models and OpenRouter ones.
 	const reasoning = delta.reasoning_content ?? delta.reasoning;
 	if (reasoning) {
-		if (!buf.includes('<think>')) buf += '<think>';
+		if (state ? !state.sawThinkOpen : !buf.includes('<think>')) {
+			buf += '<think>';
+			if (state) state.sawThinkOpen = true;
+		}
 		buf += reasoning;
 	}
 	if (delta.content) {
-		if (buf.includes('<think>') && !buf.includes('</think>')) buf += '</think>\n\n';
+		const open = state ? state.sawThinkOpen : buf.includes('<think>');
+		const closed = state ? state.sawThinkClose : buf.includes('</think>');
+		if (open && !closed) {
+			buf += '</think>\n\n';
+			if (state) state.sawThinkClose = true;
+		}
 		buf += delta.content;
 	}
 	return buf;

@@ -204,6 +204,17 @@
 	let throttledStreamingContent = $state('');
 	let streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// Latched at the throttle cadence: once the buffer holds visible answer
+	// text it never un-holds it within a turn, so after the latch flips the
+	// O(n) hasStreamingAnswer regex scan stops running entirely (it used to
+	// re-run against the raw buffer on every token).
+	let streamingAnswerStarted = $state(false);
+	function latchStreamingAnswer(buf: string): void {
+		if (!streamingAnswerStarted && hasStreamingAnswer(buf)) {
+			streamingAnswerStarted = true;
+		}
+	}
+
 	$effect(() => {
 		// Track streamingContent reactively; everything else is untracked.
 		const current = streamingContent;
@@ -211,6 +222,7 @@
 			if (!current) {
 				// Stream ended — drop the preview and cancel any pending flush.
 				throttledStreamingContent = '';
+				streamingAnswerStarted = false;
 				if (streamRenderTimer !== null) {
 					clearTimeout(streamRenderTimer);
 					streamRenderTimer = null;
@@ -218,10 +230,13 @@
 			} else if (!throttledStreamingContent) {
 				// First chunk: render immediately so the cursor shows up fast.
 				throttledStreamingContent = current;
+				latchStreamingAnswer(current);
 			} else if (streamRenderTimer === null) {
 				// Subsequent chunks: coalesce into one render per window.
 				streamRenderTimer = setTimeout(() => {
-					throttledStreamingContent = getStreamingContent();
+					const flushed = getStreamingContent();
+					throttledStreamingContent = flushed;
+					latchStreamingAnswer(flushed);
 					streamRenderTimer = null;
 				}, STREAM_RENDER_MS);
 			}
@@ -369,7 +384,7 @@
 
 				{#if isWaitingForSlot}
 					<div class="compacting-indicator">Waiting for another inference request to finish…</div>
-				{:else if isGenerating && hasStreamingAnswer(streamingContent)}
+				{:else if isGenerating && streamingAnswerStarted}
 					<div class="message" data-role="assistant">
 						<div class="message-label">Haruspex</div>
 						<div class="message-content">
