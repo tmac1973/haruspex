@@ -10,6 +10,14 @@ export interface AutonomousCodingConfig {
 	verify_command: string | null;
 	/** Failed attempts per item before it's marked BLOCKED. null = default (3). */
 	max_attempts: number | null;
+	/**
+	 * What the runner does when commit signing fails mid-run (expired
+	 * 1Password/gpg-agent authorization): 'unsigned' commits with signing
+	 * disabled (re-sign before pushing); 'skip' never commits unsigned — the
+	 * work stays uncommitted in the working tree (for repos that reject
+	 * unsigned commits). null = default ('unsigned').
+	 */
+	signing_fallback: 'unsigned' | 'skip' | null;
 }
 
 export function parseAutonomousCodingConfig(json: string | null): AutonomousCodingConfig {
@@ -31,6 +39,10 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 		max_attempts:
 			typeof raw.max_attempts === 'number' && Number.isFinite(raw.max_attempts)
 				? raw.max_attempts
+				: null,
+		signing_fallback:
+			raw.signing_fallback === 'skip' || raw.signing_fallback === 'unsigned'
+				? raw.signing_fallback
 				: null
 	};
 }

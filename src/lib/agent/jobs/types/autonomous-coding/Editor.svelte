@@ -67,6 +67,21 @@
 </label>
 
 <label
+	class="field signing"
+	title="Commit signing agents (e.g. 1Password) need authorization. The run primes it with the baseline commit right after your preflight interview, but the authorization can expire overnight."
+>
+	<span class="label">If commit signing becomes unavailable mid-run</span>
+	<select bind:value={cfg.signing_fallback}>
+		<option value="unsigned">Commit unsigned — re-sign before pushing</option>
+		<option value="skip">Don't commit — leave work uncommitted</option>
+	</select>
+	<span class="hint">
+		Choose "Don't commit" for repos that reject unsigned commits; the loop keeps working and the
+		report notes what went uncommitted.
+	</span>
+</label>
+
+<label
 	class="field attempts"
 	title="How many failed attempts a single step gets before it's marked BLOCKED and the loop moves on to steps that don't depend on it."
 >
@@ -107,6 +122,11 @@
 
 	.attempts input {
 		max-width: 120px;
+	}
+
+	.signing select {
+		align-self: flex-start;
+		min-width: 300px;
 	}
 
 	.unattended-note {

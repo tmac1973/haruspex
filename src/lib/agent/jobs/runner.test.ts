@@ -950,8 +950,12 @@ describe('jobs runner — autonomous coding', () => {
 		for (let i = 0; i < 300 && getCurrentRun()?.status === 'running'; i++) await tick();
 	}
 
-	/** Git-aware run_command_capture mock; `staged` controls the diff check. */
-	function wireGit(opts: { staged?: boolean } = {}) {
+	/**
+	 * Git-aware run_command_capture mock; `staged` controls the diff check,
+	 * `signFails` makes `git commit` fail unless signing is disabled via
+	 * `-c commit.gpgsign=false` (an expired 1Password authorization).
+	 */
+	function wireGit(opts: { staged?: boolean; signFails?: boolean } = {}) {
 		const commands: string[] = [];
 		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
 			if (cmd === 'fs_path_exists') return true;
@@ -965,6 +969,13 @@ describe('jobs runner — autonomous coding', () => {
 					return { ...ok, exit_code: (opts.staged ?? true) ? 1 : 0 };
 				}
 				if (command.includes('rev-parse HEAD')) return { ...ok, stdout: 'headhash' };
+				if (
+					opts.signFails &&
+					command.includes('git commit') &&
+					!command.includes('commit.gpgsign=false')
+				) {
+					return { ...ok, exit_code: 128, stderr: 'error: gpg failed to sign the data' };
+				}
 				return ok;
 			}
 			// fs_read_text (TODO/PROGRESS resume reads) → undefined = nothing on disk.
@@ -1132,6 +1143,46 @@ describe('jobs runner — autonomous coding', () => {
 			.map(([, a]: any[]) => a.relPath);
 		expect(writes).toContain('plan/x/TODO-coding.md');
 		expect(writes).toContain('plan/x/PROGRESS-coding.md');
+	});
+
+	it('falls back to unsigned commits when signing authorization is gone, and says so', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		const commands = wireGit({ signFails: true });
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const run = getCurrentRun()!;
+		// The run survives the 3am signing expiry instead of dying at a commit.
+		expect(run.status).toBe('succeeded');
+		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
+		// The fallback is recorded in the iteration notes...
+		expect(run.steps[2].output).toContain('UNSIGNED');
+		// ...and the retries actually disabled signing for those commits.
+		expect(commands.some((c) => c.includes('-c commit.gpgsign=false commit'))).toBe(true);
+	});
+
+	it("skip mode: never commits unsigned — work continues uncommitted, and it's recorded", async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			codingJob({
+				type_config: JSON.stringify({ plan_dir: 'plan/x/', signing_fallback: 'skip' })
+			})
+		);
+		const commands = wireGit({ signFails: true });
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const run = getCurrentRun()!;
+		expect(run.status).toBe('succeeded');
+		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
+		// The skip is recorded per iteration, and no unsigned commit ever ran.
+		expect(run.steps[2].output).toContain('commit SKIPPED');
+		expect(commands.some((c) => c.includes('commit.gpgsign=false'))).toBe(false);
 	});
 
 	it('blocks a step after max_attempts failures and finishes with blockers', async () => {

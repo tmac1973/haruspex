@@ -9,6 +9,7 @@ export interface AutonomousCodingEditorState {
 	plan_dir: string;
 	verify_command: string;
 	max_attempts: number;
+	signing_fallback: 'unsigned' | 'skip';
 }
 
 /**
@@ -67,14 +68,16 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 	configDefaults: (): AutonomousCodingEditorState & Record<string, unknown> => ({
 		plan_dir: '',
 		verify_command: '',
-		max_attempts: 3
+		max_attempts: 3,
+		signing_fallback: 'unsigned'
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAutonomousCodingConfig(typeConfig);
 		return {
 			plan_dir: c.plan_dir ?? '',
 			verify_command: c.verify_command ?? '',
-			max_attempts: c.max_attempts ?? 3
+			max_attempts: c.max_attempts ?? 3,
+			signing_fallback: c.signing_fallback ?? 'unsigned'
 		};
 	},
 	configToJson: (config) => {
@@ -82,7 +85,8 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		return JSON.stringify({
 			plan_dir: s.plan_dir.trim() || undefined,
 			verify_command: s.verify_command.trim() || undefined,
-			max_attempts: s.max_attempts
+			max_attempts: s.max_attempts,
+			signing_fallback: s.signing_fallback
 		});
 	},
 	validate: ({ workingDir, config }) => {

@@ -236,6 +236,17 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				(outcome.summaryText ? `\n\n---\n\n${outcome.summaryText}` : '')
 		);
 
+		// Git baseline IMMEDIATELY after the preflight, not at loop start: the
+		// baseline commit is the signing warm-up. A 1Password/gpg-agent-backed
+		// signer prompts for authorization on the first commit — this way that
+		// prompt fires while the user is still at the keyboard (they just
+		// answered the interview), and an extended agent timeout covers the
+		// night. It also fails fast on broken git config before a decompose
+		// turn burns minutes of inference.
+		abortIfCancelled();
+		const signingFallback = cfg.signing_fallback ?? 'unsigned';
+		await ensureGitBaseline(ctx, signingFallback);
+
 		// Stage 1 — Decompose, or resume: a parseable TODO-coding.md on disk IS
 		// the loop state (attempt counts and all), so a crashed/killed run picks
 		// up where it left off by re-running the job.
@@ -257,11 +268,11 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			);
 		}
 
-		// Stage 2 — the loop. Baseline commit first: nothing the loop does can
-		// destroy pre-existing work, and every later step has a rollback point.
+		// Stage 2 — the loop. The baseline commit (made right after preflight)
+		// means nothing here can destroy pre-existing work, and every step has
+		// a rollback point.
 		startStep(LOOP);
 		abortIfCancelled();
-		await ensureGitBaseline(ctx);
 		const maxAttempts = Math.max(1, Math.min(cfg.max_attempts ?? DEFAULT_MAX_ATTEMPTS, 10));
 		let progress = (await readPlanFile(ctx, progressPath)) ?? '# Coding progress\n';
 		const recentNotes: string[] = [];
@@ -296,11 +307,15 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 					`item ${target.id} — counted as a failed attempt. Original note: ${note}`;
 			}
 			if (status === 'done') {
-				const commit = await commitStepWork(ctx, target, items.length, headBefore);
+				const commit = await commitStepWork(ctx, target, items.length, headBefore, signingFallback);
 				if (!commit.changed) {
 					// The minimal guard against checking items off on faith.
 					status = 'failed';
 					note = `Claimed done but changed nothing (no diff, no new commit). Original note: ${note}`;
+				} else if (commit.unsigned) {
+					note = `${note}\n\nNOTE: commit made UNSIGNED — the signing authorization (e.g. 1Password) was unavailable. Re-sign before pushing (e.g. git rebase --exec 'git commit --amend --no-edit -S').`;
+				} else if (commit.commitSkipped) {
+					note = `${note}\n\nNOTE: commit SKIPPED — the signing authorization was unavailable and this job never commits unsigned. The work remains uncommitted in the working tree.`;
 				}
 			}
 			if (status === 'done') {
@@ -343,7 +358,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			what: 'report',
 			abortIfCancelled
 		});
-		await commitBestEffort(ctx, 'docs: autonomous coding run report');
+		await commitBestEffort(ctx, 'docs: autonomous coding run report', signingFallback);
 		finishStep(
 			FINALIZE,
 			(sum.blocked > 0 ? `Done with blockers (${sum.blocked})` : 'Done') + ` — ${reportPath}`
@@ -655,7 +670,7 @@ async function gitHead(ctx: JobRunContext): Promise<string | null> {
  * dirty state (or an unborn HEAD) is committed so every loop step has a
  * rollback point and `commitStepWork`'s diff checks are meaningful.
  */
-async function ensureGitBaseline(ctx: JobRunContext): Promise<void> {
+async function ensureGitBaseline(ctx: JobRunContext, fallback: SigningFallback): Promise<void> {
 	const inRepo = (await execInWorkdir(ctx, 'git rev-parse --is-inside-work-tree')).exit_code === 0;
 	if (!inRepo) {
 		const init = await execInWorkdir(ctx, 'git init');
@@ -667,13 +682,69 @@ async function ensureGitBaseline(ctx: JobRunContext): Promise<void> {
 	const unborn = (await gitHead(ctx)) === null;
 	if (dirty || unborn) {
 		await execInWorkdir(ctx, 'git add -A');
-		const c = await execInWorkdir(ctx, 'git commit --allow-empty -m "chore: pre-ralph baseline"');
-		if (c.exit_code !== 0) {
+		const c = await gitCommit(ctx, 'chore: pre-ralph baseline', fallback, { allowEmpty: true });
+		if (c.skipped) {
+			// Skip mode + signing already broken at kickoff, while the user is
+			// still present: fail NOW with the fix, not at 3am with no commits.
 			throw new Error(
-				`Baseline commit failed — is git user.name/user.email configured? ${gitError(c)}`
+				'Baseline commit failed: commit signing is not authorized. Authorize your ' +
+					'signer (e.g. 1Password) and re-run — or switch this job to the unsigned-' +
+					'commit fallback.'
 			);
 		}
+		if (!c.committed) {
+			throw new Error(
+				`Baseline commit failed — is git user.name/user.email configured? ${c.error}`
+			);
+		}
+	} else {
+		// Clean repo → no baseline needed, but still warm up the signer NOW
+		// (while the user is present) with an empty, immediately-dropped
+		// commit — priming the signing authorization is the whole point of
+		// running this before the unattended stretch. Failure is fine: it
+		// just means no signing prompt was pending.
+		const warm = await execInWorkdir(ctx, 'git commit --allow-empty -m "ralph signing warm-up"');
+		if (warm.exit_code === 0) await execInWorkdir(ctx, 'git reset --soft HEAD~1');
 	}
+}
+
+export type SigningFallback = 'unsigned' | 'skip';
+
+/** Heuristic: did a commit fail because the signer refused/expired? */
+function looksLikeSigningFailure(r: ExecResult): boolean {
+	return /gpg|sign|ssh-keygen|agent/i.test(`${r.stderr} ${r.stdout}`);
+}
+
+/**
+ * Commit with a configurable signing fallback: an expired signing
+ * authorization (1Password, gpg-agent) must not kill an unattended run at
+ * 3am. 'unsigned' retries with signing disabled (the caller surfaces
+ * `unsigned` in the progress notes — re-sign before pushing); 'skip' never
+ * commits unsigned and reports `skipped` instead, leaving the work
+ * uncommitted (for repos that reject unsigned commits). A failure that is
+ * NOT signing-related reports the original error either way.
+ */
+async function gitCommit(
+	ctx: JobRunContext,
+	message: string,
+	fallback: SigningFallback,
+	opts: { allowEmpty?: boolean } = {}
+): Promise<{ committed: boolean; unsigned: boolean; skipped: boolean; error?: string }> {
+	const flags = opts.allowEmpty ? ' --allow-empty' : '';
+	const first = await execInWorkdir(ctx, `git commit${flags} -m "${message}"`);
+	if (first.exit_code === 0) return { committed: true, unsigned: false, skipped: false };
+	if (fallback === 'skip') {
+		if (looksLikeSigningFailure(first)) {
+			return { committed: false, unsigned: false, skipped: true };
+		}
+		return { committed: false, unsigned: false, skipped: false, error: gitError(first) };
+	}
+	const retry = await execInWorkdir(
+		ctx,
+		`git -c commit.gpgsign=false commit${flags} -m "${message}"`
+	);
+	if (retry.exit_code === 0) return { committed: true, unsigned: true, skipped: false };
+	return { committed: false, unsigned: false, skipped: false, error: gitError(first) };
 }
 
 /** Commit-safe title: no quotes/backticks/dollars/newlines, bounded length. */
@@ -698,33 +769,40 @@ async function commitStepWork(
 	ctx: JobRunContext,
 	target: TaskItem,
 	totalItems: number,
-	headBefore: string | null
-): Promise<{ changed: boolean }> {
+	headBefore: string | null,
+	fallback: SigningFallback
+): Promise<{ changed: boolean; unsigned: boolean; commitSkipped: boolean }> {
 	await execInWorkdir(ctx, 'git add -A');
 	const staged = (await execInWorkdir(ctx, 'git diff --cached --quiet')).exit_code !== 0;
 	const headNow = await gitHead(ctx);
-	if (!staged && headNow === headBefore) return { changed: false };
+	if (!staged && headNow === headBefore) {
+		return { changed: false, unsigned: false, commitSkipped: false };
+	}
 	if (staged) {
 		const total = String(totalItems).padStart(2, '0');
-		const c = await execInWorkdir(
+		const c = await gitCommit(
 			ctx,
-			`git commit -m "feat: ${commitTitle(target.title)} [ralph ${target.id}/${total}]"`
+			`feat: ${commitTitle(target.title)} [ralph ${target.id}/${total}]`,
+			fallback
 		);
-		if (c.exit_code !== 0) {
-			throw new Error(
-				`Step commit failed — is git user.name/user.email configured? ${gitError(c)}`
-			);
+		if (c.error) {
+			throw new Error(`Step commit failed — is git user.name/user.email configured? ${c.error}`);
 		}
+		return { changed: true, unsigned: c.unsigned, commitSkipped: c.skipped };
 	}
-	return { changed: true };
+	return { changed: true, unsigned: false, commitSkipped: false };
 }
 
 /** Stage + commit whatever is pending (report, final bookkeeping); never throws. */
-async function commitBestEffort(ctx: JobRunContext, message: string): Promise<void> {
+async function commitBestEffort(
+	ctx: JobRunContext,
+	message: string,
+	fallback: SigningFallback
+): Promise<void> {
 	try {
 		await execInWorkdir(ctx, 'git add -A');
 		const staged = (await execInWorkdir(ctx, 'git diff --cached --quiet')).exit_code !== 0;
-		if (staged) await execInWorkdir(ctx, `git commit -m "${commitTitle(message)}"`);
+		if (staged) await gitCommit(ctx, commitTitle(message), fallback);
 	} catch {
 		// The report exists on disk either way; a missing commit is cosmetic.
 	}

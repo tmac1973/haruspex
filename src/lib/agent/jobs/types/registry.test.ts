@@ -131,19 +131,26 @@ describe('registration barrel', () => {
 		expect(coding.configFromJob(JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 5 }))).toEqual({
 			plan_dir: 'plan/x/',
 			verify_command: '',
-			max_attempts: 5
+			max_attempts: 5,
+			signing_fallback: 'unsigned'
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
 			verify_command: '',
-			max_attempts: 3
+			max_attempts: 3,
+			signing_fallback: 'unsigned'
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
 			verify_command: '',
-			max_attempts: 3
+			max_attempts: 3,
+			signing_fallback: 'skip'
 		});
-		expect(JSON.parse(json!)).toEqual({ plan_dir: 'plan/x/', max_attempts: 3 });
+		expect(JSON.parse(json!)).toEqual({
+			plan_dir: 'plan/x/',
+			max_attempts: 3,
+			signing_fallback: 'skip'
+		});
 
 		// Validation: working dir and plan dir are required; attempts bounded.
 		const base = { name: 'x', steps: [], config: coding.configDefaults() };
