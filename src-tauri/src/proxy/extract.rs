@@ -61,7 +61,7 @@ fn reddit_fetch_candidates(raw: &str) -> Option<Vec<String>> {
     let old = variant("old.reddit.com")?;
     let www = variant("www.reddit.com")?;
     let mut candidates: Vec<String> = Vec::new();
-    let mut push = |c: String, list: &mut Vec<String>| {
+    let push = |c: String, list: &mut Vec<String>| {
         if !list.contains(&c) {
             list.push(c);
         }
