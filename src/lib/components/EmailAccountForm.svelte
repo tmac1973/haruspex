@@ -12,6 +12,7 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { untrack } from 'svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import type { EmailAccount, EmailProviderId, EmailTlsMode } from '$lib/stores/settings';
 	import type { EmailProviderPreset } from '$lib/ipc/gen/EmailProviderPreset';
 
@@ -43,6 +44,9 @@
 	let testing = $state(false);
 	let testError = $state<string | null>(null);
 	let testOk = $state(false);
+
+	// Delete awaits ConfirmDialog approval before firing the parent's onDelete.
+	let confirmingDelete = $state(false);
 
 	function currentPreset(): ProviderPreset | undefined {
 		return presets.find((p) => p.id === provider);
@@ -121,7 +125,9 @@
 			<input type="checkbox" bind:checked={enabled} onchange={commit} />
 			<span>Enabled</span>
 		</label>
-		<button type="button" class="delete" onclick={onDelete}>Delete account</button>
+		<button type="button" class="delete" onclick={() => (confirmingDelete = true)}>
+			Delete account
+		</button>
 	</div>
 
 	<div class="field">
@@ -242,6 +248,20 @@
 		{/if}
 	</div>
 </div>
+
+<ConfirmDialog
+	open={confirmingDelete}
+	title="Remove email account?"
+	message="{emailAddress ||
+		label ||
+		'This account'} and its app password will be removed from Haruspex."
+	confirmLabel="Remove account"
+	onconfirm={() => {
+		confirmingDelete = false;
+		onDelete();
+	}}
+	oncancel={() => (confirmingDelete = false)}
+/>
 
 <style>
 	.email-account {

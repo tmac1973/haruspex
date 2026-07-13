@@ -23,6 +23,7 @@
 		setLegacyModelNoticeDismissed
 	} from '$lib/stores/settings';
 	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
 	import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
 
@@ -88,6 +89,17 @@
 		}
 	}
 
+	// Model awaiting delete confirmation via ConfirmDialog.
+	let pendingDelete = $state<ModelInfo | null>(null);
+
+	const pendingDeleteMessage = $derived.by(() => {
+		if (!pendingDelete) return '';
+		const base = `${pendingDelete.filename} (${formatBytes(pendingDelete.size_bytes)}) will be removed from disk. You'll have to download it again to use it.`;
+		return activeFilename === pendingDelete.filename
+			? `${base} The inference server will be stopped first.`
+			: base;
+	});
+
 	async function removeModel(filename: string) {
 		const isActive = activeModelFilename() === filename;
 		if (isActive) {
@@ -95,6 +107,13 @@
 		}
 		await invoke('delete_model', { filename });
 		await refreshModels();
+	}
+
+	async function confirmRemoveModel() {
+		if (!pendingDelete) return;
+		const filename = pendingDelete.filename;
+		pendingDelete = null;
+		await removeModel(filename);
 	}
 
 	async function switchModel(filename: string) {
@@ -144,7 +163,7 @@
 					{/if}
 					<button
 						class="btn btn-danger"
-						onclick={() => removeModel(model.filename)}
+						onclick={() => (pendingDelete = model)}
 						title={model.legacy
 							? 'Delete this legacy model file (you can re-download it later)'
 							: 'Delete model file'}
@@ -231,6 +250,15 @@
 		<div class="error-box">{downloadError}</div>
 	{/if}
 </section>
+
+<ConfirmDialog
+	open={pendingDelete !== null}
+	title="Delete model?"
+	message={pendingDeleteMessage}
+	confirmLabel="Delete model"
+	onconfirm={confirmRemoveModel}
+	oncancel={() => (pendingDelete = null)}
+/>
 
 <style>
 	section {

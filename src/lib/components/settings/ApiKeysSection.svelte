@@ -6,10 +6,14 @@
 	 */
 	import { getApiKeys, addApiKey, updateApiKey, deleteApiKey } from '$lib/stores/settings';
 	import type { StoredApiKey } from '$lib/stores/settings';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
 	let keys = $state<StoredApiKey[]>(getApiKeys());
 	let newName = $state('');
 	let newValue = $state('');
+
+	// Key awaiting delete confirmation via ConfirmDialog.
+	let pendingDelete = $state<StoredApiKey | null>(null);
 
 	function refresh() {
 		keys = getApiKeys();
@@ -23,8 +27,10 @@
 		newValue = '';
 	}
 
-	function remove(id: string) {
-		deleteApiKey(id);
+	function confirmRemove() {
+		if (!pendingDelete) return;
+		deleteApiKey(pendingDelete.id);
+		pendingDelete = null;
 		refresh();
 	}
 
@@ -67,7 +73,9 @@
 						onblur={(e) => onValueBlur(k, (e.currentTarget as HTMLInputElement).value)}
 						placeholder="Key value"
 					/>
-					<button class="btn btn-danger btn-small" onclick={() => remove(k.id)}> Delete </button>
+					<button class="btn btn-danger btn-small" onclick={() => (pendingDelete = k)}>
+						Delete
+					</button>
 				</div>
 			{/each}
 		</div>
@@ -85,6 +93,17 @@
 		</button>
 	</div>
 </section>
+
+<ConfirmDialog
+	open={pendingDelete !== null}
+	title="Remove API key?"
+	message={pendingDelete
+		? `The ${pendingDelete.name} key will be removed. You can add it again later.`
+		: ''}
+	confirmLabel="Remove"
+	onconfirm={confirmRemove}
+	oncancel={() => (pendingDelete = null)}
+/>
 
 <style>
 	.settings-section {

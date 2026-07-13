@@ -18,10 +18,39 @@
 		renameConversation,
 		setActiveConversation
 	} from '$lib/stores/chat.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
 	let collapsed = $state(false);
 	let renamingId = $state<string | null>(null);
 	let renameText = $state('');
+
+	// Pending destructive action awaiting ConfirmDialog: a single
+	// conversation (id + title for the dialog copy) or the clear-all sweep.
+	type PendingDelete = { kind: 'one'; id: string; title: string } | { kind: 'all' };
+	let pendingDelete = $state<PendingDelete | null>(null);
+
+	const deleteDialog = $derived(
+		pendingDelete === null
+			? null
+			: pendingDelete.kind === 'all'
+				? {
+						title: 'Delete all conversations?',
+						message: 'All chat history will be permanently deleted.',
+						confirmLabel: 'Delete all'
+					}
+				: {
+						title: 'Delete conversation?',
+						message: `"${pendingDelete.title}" will be permanently deleted.`,
+						confirmLabel: 'Delete'
+					}
+	);
+
+	function confirmPendingDelete() {
+		if (!pendingDelete) return;
+		if (pendingDelete.kind === 'one') deleteConversation(pendingDelete.id);
+		else clearAllConversations();
+		pendingDelete = null;
+	}
 
 	const conversations = $derived(getConversations());
 	const activeId = $derived(getActiveConversationId());
@@ -91,7 +120,7 @@
 						class="delete-btn"
 						onclick={(e) => {
 							e.stopPropagation();
-							deleteConversation(conv.id);
+							pendingDelete = { kind: 'one', id: conv.id, title: conv.title };
 						}}
 						title="Delete conversation"
 					>
@@ -102,18 +131,24 @@
 		</div>
 		{#if conversations.length > 0}
 			<div class="sidebar-footer">
-				<button
-					class="clear-all-btn"
-					onclick={() => {
-						if (confirm('Delete all conversations?')) clearAllConversations();
-					}}
-				>
+				<button class="clear-all-btn" onclick={() => (pendingDelete = { kind: 'all' })}>
 					Clear all
 				</button>
 			</div>
 		{/if}
 	{/if}
 </aside>
+
+{#if deleteDialog}
+	<ConfirmDialog
+		open
+		title={deleteDialog.title}
+		message={deleteDialog.message}
+		confirmLabel={deleteDialog.confirmLabel}
+		onconfirm={confirmPendingDelete}
+		oncancel={() => (pendingDelete = null)}
+	/>
+{/if}
 
 <style>
 	.sidebar {
