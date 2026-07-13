@@ -52,6 +52,21 @@ export async function startVoiceCapture(): Promise<void> {
 }
 
 /**
+ * Abort the in-flight recording without transcribing — the audio is
+ * discarded. Used when the user backs out of a push-to-talk gesture
+ * (Esc, focus loss, or the pointer leaving the mic button).
+ */
+export async function cancelVoiceCapture(): Promise<void> {
+	if (status !== 'recording') return;
+	try {
+		await invoke('stop_recording');
+	} catch {
+		// Best-effort abort — the recording singleton resets either way.
+	}
+	status = 'idle';
+}
+
+/**
  * Stop the in-flight recording and return the transcribed text. Resolves
  * to null on no-speech-detected, whisper download failure, or any other
  * error path — the reason surfaces as an error toast.

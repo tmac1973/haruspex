@@ -19,7 +19,7 @@
 		<span class="caption">Thinking…</span>
 	</div>
 {:else}
-	<div class="thinking">
+	<div class="thinking" role="status" aria-label="Thinking">
 		<div class="message-label">Haruspex</div>
 		<div class="dots">
 			<span class="dot"></span>

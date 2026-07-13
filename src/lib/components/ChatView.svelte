@@ -407,29 +407,38 @@
 					<SearchStepComponent steps={searchSteps} slowMode={searchProviderSlowMode} />
 				{/if}
 
-				{#if queuedForStartup}
-					<div class="compacting-indicator">Waiting for the model to start…</div>
-				{:else if isWaitingForSlot}
-					<div class="compacting-indicator">Waiting for another inference request to finish…</div>
-				{:else if isGenerating && streamingAnswerStarted}
-					<div class="message" data-role="assistant">
-						<div class="message-label">Haruspex</div>
-						<div class="message-content">
-							{@html renderedStreamingContent}
-							<span class="streaming-caret"></span>
+				{#if isGenerating && !queuedForStartup && !isWaitingForSlot}
+					{#if streamingAnswerStarted}
+						<div class="message" data-role="assistant">
+							<div class="message-label">Haruspex</div>
+							<div class="message-content">
+								{@html renderedStreamingContent}
+								<span class="streaming-caret"></span>
+							</div>
 						</div>
-					</div>
-				{:else if isGenerating}
-					<ThinkingIndicator />
+					{:else}
+						<ThinkingIndicator />
+					{/if}
 				{/if}
 
-				{#if isCompacting}
-					<div class="compacting-indicator">Compacting conversation history...</div>
-				{/if}
+				<!-- Shared live region for generation-state notices: kept mounted
+				     (even when empty) so screen readers announce lines as they
+				     appear. One wrapper covers all four notice kinds. -->
+				<div role="status">
+					{#if queuedForStartup}
+						<div class="compacting-indicator">Waiting for the model to start…</div>
+					{:else if isWaitingForSlot}
+						<div class="compacting-indicator">Waiting for another inference request to finish…</div>
+					{/if}
 
-				{#if contextNotice}
-					<div class="compacting-indicator">ⓘ {contextNotice}</div>
-				{/if}
+					{#if isCompacting}
+						<div class="compacting-indicator">Compacting conversation history...</div>
+					{/if}
+
+					{#if contextNotice}
+						<div class="compacting-indicator">ⓘ {contextNotice}</div>
+					{/if}
+				</div>
 
 				{#if activeConversation?.isRestoringSession}
 					<div class="compacting-indicator">Restoring Python sandbox session…</div>

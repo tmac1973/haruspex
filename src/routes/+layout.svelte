@@ -337,7 +337,12 @@
 		<div class="header-right">
 			<ServerStatusBadge onOpenLogs={openLogViewer} />
 			<ContextIndicator />
-			<button class="header-icon-btn" title="Sidecar Logs" onclick={toggleLogViewer}>
+			<button
+				class="header-icon-btn"
+				title="Sidecar Logs"
+				aria-label="View logs"
+				onclick={toggleLogViewer}
+			>
 				<svg
 					width="18"
 					height="18"
@@ -355,6 +360,7 @@
 			<button
 				class="header-icon-btn"
 				title="Keyboard shortcuts (F1)"
+				aria-label="Keyboard shortcuts (F1)"
 				onclick={() => (showHelp = !showHelp)}
 			>
 				<svg
@@ -375,6 +381,7 @@
 			<button
 				class="header-icon-btn"
 				title={showSettings ? 'Close Settings' : 'Settings'}
+				aria-label="Settings"
 				aria-pressed={showSettings}
 				onclick={() => (showSettings = !showSettings)}
 			>
@@ -479,6 +486,21 @@
 		--error-border: #3b1111;
 		--success: #16a34a;
 		--warning: #f59e0b;
+	}
+
+	/* Accessibility: honor the OS "reduce motion" preference with one global
+	   override (decision locked — no per-component keyframe guards). Every
+	   animated element also conveys its state via text or color, so freezing
+	   animations on their first frame loses no information. */
+	@media (prefers-reduced-motion: reduce) {
+		:global(*),
+		:global(*::before),
+		:global(*::after) {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
 	}
 
 	:global(html),
