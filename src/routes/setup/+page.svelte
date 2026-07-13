@@ -80,6 +80,15 @@
 		runTestQuery();
 	}
 
+	// Escape hatch from the download step: abort the in-flight download the
+	// same way Cancel does, then return to the model picker. The hardware
+	// detection results live in the setup store, so no re-probe happens; the
+	// partial download stays on disk and resumes if they re-pick this model.
+	async function chooseDifferentModel() {
+		await cancelDownload();
+		setStep('hardware');
+	}
+
 	function goToChat() {
 		goto('/');
 	}
@@ -131,8 +140,11 @@
 				<div class="feature">
 					<span class="feature-icon">&#128274;</span>
 					<div>
-						<strong>Completely private</strong>
-						<p>Nothing you ask ever leaves your device.</p>
+						<strong>Your conversations and AI responses stay on your device.</strong>
+						<p>
+							Web research sends search queries to the web, and the optional cloud backend
+							(OpenRouter) is off by default and clearly labeled.
+						</p>
 					</div>
 				</div>
 				<div class="feature">
@@ -292,6 +304,12 @@
 					<button class="primary-btn" onclick={goToDownload}>Retry</button>
 				</div>
 			{/if}
+
+			<!-- Escape hatch shown during the download AND on error — e.g. to
+			     switch to the smaller model on a slow connection. -->
+			<div>
+				<button class="link-btn" onclick={chooseDifferentModel}>Choose a different model</button>
+			</div>
 		</div>
 	{:else if step === 'test'}
 		<div class="wizard-step">
@@ -336,7 +354,7 @@
 				</div>
 				<div class="feature">
 					<span class="feature-icon">&#128736;</span>
-					<p>All processing happens locally on your machine</p>
+					<p>Inference happens locally on your machine</p>
 				</div>
 			</div>
 			<button class="primary-btn" onclick={goToChat}>Start chatting</button>
@@ -511,6 +529,21 @@
 
 	.secondary-btn:hover {
 		background: var(--bg-secondary);
+	}
+
+	.link-btn {
+		background: none;
+		border: none;
+		padding: 4px;
+		margin-top: 16px;
+		color: var(--accent);
+		font-size: 0.85rem;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	.link-btn:hover {
+		opacity: 0.85;
 	}
 
 	.actions {

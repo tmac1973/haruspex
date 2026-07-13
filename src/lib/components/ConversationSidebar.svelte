@@ -6,8 +6,9 @@
 	 * Reads from and writes back to the chat store directly — no props,
 	 * no emitted events. The root route mounts this once and forgets it.
 	 *
-	 * Rename UX: double-click a row to enter rename mode, Enter to
-	 * commit, Escape (or blur) to cancel. Active row is highlighted.
+	 * Rename UX: click the pencil (visible on row hover / focus-within)
+	 * or double-click a row to enter rename mode, Enter to commit,
+	 * Escape (or blur) to cancel. Active row is highlighted.
 	 */
 	import {
 		clearAllConversations,
@@ -115,6 +116,17 @@
 						/>
 					{:else}
 						<span class="conv-title">{conv.title}</span>
+						<button
+							class="rename-btn"
+							onclick={(e) => {
+								e.stopPropagation();
+								startRename(conv.id, conv.title);
+							}}
+							aria-label="Rename conversation"
+							title="Rename"
+						>
+							&#9998;
+						</button>
 					{/if}
 					<button
 						class="delete-btn"
@@ -227,6 +239,10 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+	/* The rename pencil and delete × share the opacity-on-hover treatment:
+	   invisible until the row is hovered — or contains keyboard focus, so
+	   tabbing users can see what they've reached. */
+	.rename-btn,
 	.delete-btn {
 		background: none;
 		border: none;
@@ -239,8 +255,17 @@
 		transition: opacity 0.15s;
 		flex-shrink: 0;
 	}
-	.conversation-item:hover .delete-btn {
+	.rename-btn {
+		font-size: 0.85rem;
+	}
+	.conversation-item:hover .rename-btn,
+	.conversation-item:focus-within .rename-btn,
+	.conversation-item:hover .delete-btn,
+	.conversation-item:focus-within .delete-btn {
 		opacity: 1;
+	}
+	.rename-btn:hover {
+		color: var(--text-primary);
 	}
 	.delete-btn:hover {
 		color: var(--error-text);

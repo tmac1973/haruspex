@@ -4,7 +4,8 @@ import ConversationSidebar from './ConversationSidebar.svelte';
 import {
 	clearAllConversations,
 	deleteConversation,
-	getConversations
+	getConversations,
+	renameConversation
 } from '$lib/stores/chat.svelte';
 
 // The real chat store pulls in Tauri IPC; the sidebar only needs the
@@ -79,5 +80,25 @@ describe('ConversationSidebar delete confirmation', () => {
 		await fireEvent.click(screen.getByText('Delete all'));
 		expect(clearAllConversations).toHaveBeenCalledTimes(1);
 		expect(screen.queryByText('Delete all conversations?')).toBeNull();
+	});
+});
+
+describe('ConversationSidebar rename affordance', () => {
+	it('pencil button enters the inline rename state', async () => {
+		render(ConversationSidebar);
+		await fireEvent.click(screen.getAllByLabelText('Rename conversation')[0]);
+		const input = screen.getByDisplayValue('First chat');
+		expect(input).toBeTruthy();
+		expect(renameConversation).not.toHaveBeenCalled();
+	});
+
+	it('pencil-initiated rename commits on Enter', async () => {
+		render(ConversationSidebar);
+		await fireEvent.click(screen.getAllByLabelText('Rename conversation')[1]);
+		const input = screen.getByDisplayValue('Second chat');
+		await fireEvent.input(input, { target: { value: 'Renamed chat' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		expect(renameConversation).toHaveBeenCalledTimes(1);
+		expect(renameConversation).toHaveBeenCalledWith('c2', 'Renamed chat');
 	});
 });

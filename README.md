@@ -4,7 +4,7 @@ Click this screenshot to watch the explainer video:
 
 [![Watch the video](https://img.youtube.com/vi/VT-gGdOAonA/maxresdefault.jpg)](https://youtu.be/VT-gGdOAonA)
 
-A cross-platform desktop AI web researcher and agent that runs entirely on your computer. No cloud, no accounts, no telemetry — your conversations never leave your device.
+A cross-platform desktop AI web researcher and agent that runs entirely on your computer. No accounts, no telemetry — your conversations and AI responses stay on your device. Web research sends search queries to the web, and the optional cloud backend (OpenRouter) is off by default and clearly labeled.
 
 Haruspex excels at researching information. Ask it a question and it will search the web and compile an answer. Turn on deep research mode for a more thorough job. Enable a working directory and ask it to produce a PDF, spreadsheet, or Word document from its results. It will even write and execute python in the UI in pursuit of your goals.
 
@@ -19,7 +19,7 @@ The primary goals of this project are:
 
 ## Features
 
-- **Private by design** — all inference runs on your hardware, nothing is sent to the cloud
+- **Private by design** — inference runs on your hardware by default; the optional cloud backend (OpenRouter) is off by default and clearly labeled
 - **Web research** — searches the web and reads pages to answer questions about anything, with an optional **deep research mode** for multi-source synthesis
 - **Shell tab** _(Linux, macOS & Windows — PowerShell and WSL2 on Windows)_ — a real interactive terminal with a one-click "Submit to LLM" path: ask the assistant to analyze the last command's output or a selected range. By default the assistant is a **read-only troubleshooting advisor**: it can read config files / logs anywhere on the system and suggest fix commands as click-to-paste cards (with red chips on risky patterns like `sudo`, `rm -rf`, `dd of=`, `curl | sh`, `Remove-Item -Recurse -Force`), but it never runs anything — every command lands at the prompt for you to review and press Enter. Flip on **Code mode** (per session, off by default) to turn it into a coding agent that edits files and **executes commands in your live terminal**; commands the risk classifier flags pause for your approval first, anything it considers safe runs automatically. ⚠️ Read the [AI safety disclaimer](#ai-safety-disclaimer) before enabling Code mode or running anything the model proposes.
 - **Jobs tab** — author, save, and **schedule** reusable prompts that run unattended. Three kinds: a **research** pipeline of sequential steps, an **audit** that samples a prompt many times and source-verifies the findings into a single report, and **guided planning** that turns a rough idea into a phased implementation plan through interactive Q&A. Each job can run against its own remote model. ([details](#jobs))
