@@ -208,6 +208,62 @@ describe('ShellSession state independence', () => {
 	});
 });
 
+describe('rendered-thread trimming', () => {
+	it('bounds the thread: older turns trimmed behind a note, recent window + tool pairs kept', async () => {
+		// Every turn appends a tool_call/result pair before the prose answer —
+		// 4 entries per turn, like a Code-mode session.
+		runShellTurn.mockImplementation(
+			async (opts: { messages: { role: string }[]; onAdmitted?: () => void }) => {
+				opts.onAdmitted?.();
+				opts.messages.push(
+					{ role: 'assistant', content: '', tool_calls: [{ id: 'c' }] } as never,
+					{ role: 'tool', tool_call_id: 'c', content: 'out' } as never
+				);
+				return { finalText: 'answer', stopReason: 'complete' };
+			}
+		);
+		const s = createShellSession();
+		// 16 turns × 4 entries: crosses the 40-entry cap at turn 10 and again at
+		// turn 16, so the final state is freshly trimmed: one note + the last 8
+		// prose bubbles (4 exchanges) with their interleaved tool pairs.
+		for (let i = 0; i < 16; i++) {
+			await s.submitShell({
+				body: `q${i}`,
+				sessionContext: {} as never,
+				currentCwd: '/',
+				recentHistory: []
+			});
+		}
+
+		expect(s.messages[0].role).toBe('system');
+		expect(String(s.messages[0].content)).toContain('trimmed');
+		const prose = s.messages.filter(
+			(m) => m.role === 'user' || (m.role === 'assistant' && !m.tool_calls)
+		);
+		expect(prose).toHaveLength(8);
+		// Tool pairs inside the kept window survive (Continue replays them)…
+		expect(s.messages.some((m) => m.role === 'tool')).toBe(true);
+		// …and the thread is bounded instead of 16 × 4 = 64 entries.
+		expect(s.messages).toHaveLength(17);
+		// The newest turn is intact at the tail.
+		expect(s.messages.at(-1)).toMatchObject({ role: 'assistant', content: 'answer' });
+	});
+
+	it('never trims a short session', async () => {
+		const s = createShellSession();
+		for (let i = 0; i < 5; i++) {
+			await s.submitShell({
+				body: `q${i}`,
+				sessionContext: {} as never,
+				currentCwd: '/',
+				recentHistory: []
+			});
+		}
+		expect(s.messages.every((m) => m.role !== 'system')).toBe(true);
+		expect(s.messages).toHaveLength(10);
+	});
+});
+
 describe('command auto-attach de-duplication', () => {
 	function bindCtx(session: ShellSession, sessionId: number) {
 		session.bindSession({

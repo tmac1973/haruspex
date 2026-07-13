@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import StopIndicator from '$lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '$lib/utils/imageDrop';
@@ -219,11 +219,50 @@
 		window.addEventListener('mouseup', onUp);
 	}
 
+	// Throttle streaming renders (the ChatView pattern, ported): re-parsing
+	// the full accumulated answer through markdown on every chunk is O(N) in
+	// content length at 10-30 chunks/s — long Code-mode answers used to peg
+	// the main thread and freeze the sidebar. Flush at most once per window;
+	// the first chunk renders immediately, and the end-of-stream path
+	// (streamingContent = '') clears the preview so the committed message
+	// takes over without a stale frame.
+	const STREAM_RENDER_MS = 150;
+	let throttledStreamingContent = $state('');
+	let streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
+
+	$effect(() => {
+		// Track the raw stream reactively; everything else is untracked.
+		const current = streaming;
+		untrack(() => {
+			if (!current) {
+				throttledStreamingContent = '';
+				if (streamRenderTimer !== null) {
+					clearTimeout(streamRenderTimer);
+					streamRenderTimer = null;
+				}
+			} else if (!throttledStreamingContent) {
+				throttledStreamingContent = current;
+			} else if (streamRenderTimer === null) {
+				streamRenderTimer = setTimeout(() => {
+					throttledStreamingContent = session.streamingContent;
+					streamRenderTimer = null;
+				}, STREAM_RENDER_MS);
+			}
+		});
+	});
+
+	onDestroy(() => {
+		if (streamRenderTimer !== null) {
+			clearTimeout(streamRenderTimer);
+			streamRenderTimer = null;
+		}
+	});
+
 	const streamingMessage = $derived(
-		streaming
+		throttledStreamingContent
 			? {
 					role: 'assistant' as const,
-					content: streaming
+					content: throttledStreamingContent
 				}
 			: null
 	);
@@ -254,11 +293,14 @@
 	}
 
 	$effect(() => {
-		// Track every change that grows the thread (new message OR streaming
-		// delta) and pin the scroll position at the bottom. Reading the
-		// deps inside the effect tells Svelte's runes to re-fire.
+		// Track every change that grows the thread (new message OR a THROTTLED
+		// streaming flush — not raw deltas: reading scrollHeight forces a
+		// synchronous layout of the whole thread, so doing it per token made
+		// long sessions progressively slower) and pin the scroll position at
+		// the bottom. Reading the deps inside the effect tells Svelte's runes
+		// to re-fire.
 		void messages.length;
-		void streaming;
+		void throttledStreamingContent;
 		if (!threadEl) return;
 		queueMicrotask(() => {
 			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
