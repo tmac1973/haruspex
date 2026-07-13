@@ -16,11 +16,11 @@
 		getSettings,
 		updateSettings,
 		updateInferenceBackend,
-		getActiveContextSize,
 		setActiveLocalModel,
 		type InferenceBackendConfig,
 		type InferenceMode
 	} from '$lib/stores/settings';
+	import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
 	import { showToast } from '$lib/stores/toasts.svelte';
 	import { openLogViewer } from '$lib/stores/logViewer.svelte';
@@ -78,7 +78,7 @@
 			};
 			inferenceBackend = next;
 			updateInferenceBackend(next);
-			setIndicatorContextSize(getActiveContextSize());
+			setIndicatorContextSize(resolveBackendDescriptor().contextSize);
 			cancelPendingRestart();
 			try {
 				await stopServer();
@@ -101,7 +101,7 @@
 		updateInferenceBackend({ mode, ...(mode === 'remote' ? { remoteBackendKind: null } : {}) });
 		// Refresh the header context indicator immediately so it reflects
 		// the new backend's ceiling instead of the previous one's stale value.
-		setIndicatorContextSize(getActiveContextSize());
+		setIndicatorContextSize(resolveBackendDescriptor().contextSize);
 		if (mode === 'remote') {
 			// Drop any queued local restart — we're leaving local mode, so a
 			// deferred model/context restart would otherwise fire later and

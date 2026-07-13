@@ -20,12 +20,8 @@ import {
 } from '$lib/agent/system-prompt';
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
-import {
-	getActiveContextSize,
-	getSettings,
-	isVisionSupported,
-	SETTINGS_KEY
-} from '$lib/stores/settings';
+import { getSettings, SETTINGS_KEY } from '$lib/stores/settings';
+import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
 	getActiveConversationId,
 	setActiveConversationId,
@@ -421,7 +417,7 @@ async function compactIfNeeded(): Promise<void> {
 	// by the learned calibration so dense content (code/logs) triggers the
 	// summary as early as it should.
 	const estimated = estimateMessagesTokens(conversation.messages) * getTokenCalibration();
-	if (!shouldCompact(estimated, getActiveContextSize())) return;
+	if (!shouldCompact(estimated, resolveBackendDescriptor().contextSize)) return;
 
 	isCompacting = true;
 	try {
@@ -1176,9 +1172,10 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 			keepRecentTools
 		);
 
-		const activeCtxSize = getActiveContextSize();
-
-		const visionSupported = isVisionSupported();
+		// Chat always talks to the global Settings backend (no override).
+		const backendDescriptor = resolveBackendDescriptor();
+		const activeCtxSize = backendDescriptor.contextSize;
+		const visionSupported = backendDescriptor.vision;
 
 		isWaitingForSlot = true;
 		await withInferenceSlot(

@@ -13,6 +13,10 @@ import { getRunningCount } from '$lib/agent/inferenceQueue.svelte';
  * It's set when the user flips the inference backend to remote mode
  * and cleared when they flip back (at which point the real local
  * lifecycle resumes from `'stopped'` → `'starting'` → `'ready'`).
+ *
+ * `'remote'` is strictly a UI badge concern: no request-path or agent
+ * code may branch on server status or backend mode strings — that all
+ * goes through `resolveBackendDescriptor` in `$lib/inference/descriptor`.
  */
 export type ServerStatusType = 'stopped' | 'starting' | 'ready' | 'error' | 'remote';
 

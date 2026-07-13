@@ -24,7 +24,8 @@ import type { SearchStep, AgentStopReason } from '$lib/agent/loop';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { describeContextManaged } from '$lib/agent/context-budget';
 import { logDebug } from '$lib/debug-log';
-import { getActiveContextSize, getSettings } from '$lib/stores/settings';
+import { getSettings } from '$lib/stores/settings';
+import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import { remapIndexedRecords } from '$lib/agent/compaction';
 import { computeMessageStats, type MessageStats } from '$lib/stores/chat.svelte';
 import { errMessage } from '$lib/utils/error';
@@ -622,7 +623,7 @@ export class ShellSession {
 		try {
 			const result = await runShellTurn({
 				messages: turnMessages,
-				contextSize: getActiveContextSize(),
+				contextSize: resolveBackendDescriptor().contextSize,
 				visionSupported: true,
 				cwd: payload.currentCwd,
 				sessionId: this.boundSessionId,

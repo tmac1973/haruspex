@@ -36,6 +36,7 @@ import {
 	getSamplingParams,
 	getOpenRouterReasoningParam
 } from '$lib/stores/settings';
+import { resolveBackendDescriptor, type BackendDescriptor } from '$lib/inference/descriptor';
 import { stripToolCallArtifacts } from '$lib/markdown';
 import { isAbortError } from '$lib/utils/error';
 import { logDebug } from '$lib/debug-log';
@@ -111,6 +112,13 @@ export interface LoopContext {
 	forceFinalTool: string | null;
 	/** Remote backend override for every model call this turn; null = Settings. */
 	backend: BackendOverride | null;
+	/**
+	 * The backend this turn talks to, resolved ONCE at turn start (from the
+	 * override when present, else Settings). All per-call capability decisions
+	 * — sampling profile, chat_template_kwargs, OpenRouter reasoning — read
+	 * this instead of re-deriving from settings mode strings.
+	 */
+	descriptor: BackendDescriptor;
 	options: AgentLoopOptions;
 }
 
@@ -154,6 +162,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		maxIterations: options.maxIterations ?? 8,
 		forceFinalTool: options.forceFinalTool ?? null,
 		backend: options.backend ?? null,
+		descriptor: resolveBackendDescriptor(options.backend),
 		options
 	};
 }
@@ -434,12 +443,12 @@ async function forceFinalToolCall(
 			`with prose, and do not investigate further.`
 	});
 
-	const sampling = getSamplingParams({
+	const sampling = getSamplingParams(ctx.descriptor, {
 		codeContext: ctx.codeMode || isCodeContext(ctx.messages),
 		thinkingEnabled: ctx.thinkingEnabled
 	});
-	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
-	const reasoning = getOpenRouterReasoningParam(ctx.thinkingEnabled) ?? undefined;
+	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
+	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
 	const offered = tool ? [tool] : ctx.tools;
 	applyContextGuard(ctx, ctx.maxResponseTokens, offered);
 
@@ -490,7 +499,7 @@ async function streamFinalSynthesis(
 ): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
 	applyContextGuard(ctx, FINAL_SYNTHESIS_MAX_TOKENS, tools);
 	const sentEstimate = estimateMessagesTokens(ctx.messages, tools);
-	const reasoning = getOpenRouterReasoningParam(ctx.thinkingEnabled) ?? undefined;
+	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
 	const stream = chatCompletionStream(
 		{
 			messages: ctx.messages,
@@ -621,12 +630,12 @@ export async function runIteration(
 		ctx.pendingImages.length = 0;
 	}
 
-	const sampling = getSamplingParams({
+	const sampling = getSamplingParams(ctx.descriptor, {
 		codeContext: ctx.codeMode || isCodeContext(messages),
 		thinkingEnabled: ctx.thinkingEnabled
 	});
-	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
-	const reasoning = getOpenRouterReasoningParam(ctx.thinkingEnabled) ?? undefined;
+	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
+	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
 	const { response, toolCalls } = await runModelCall(
 		ctx,
 		sampling,
@@ -1112,11 +1121,11 @@ export async function runMaxIterationsFinalSynthesis(
 			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
 		ctx.messages.push({ role: 'user', content: finalPrompt });
 	}
-	const sampling = getSamplingParams({
+	const sampling = getSamplingParams(ctx.descriptor, {
 		codeContext: ctx.codeMode || isCodeContext(ctx.messages),
 		thinkingEnabled: ctx.thinkingEnabled
 	});
-	const templateKwargs = getChatTemplateKwargs(ctx.thinkingEnabled);
+	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
 	const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
 		ctx,
 		undefined,

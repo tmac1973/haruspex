@@ -64,7 +64,11 @@ vi.mock('$lib/stores/settings', () => ({
 		presence_penalty: 1.0
 	})),
 	getOpenRouterReasoningParam: vi.fn(() => null),
-	getSettings: vi.fn(() => ({ inferenceBackend: { mode: 'local' } })),
+	getSettings: vi.fn(() => ({ contextSize: 32768, inferenceBackend: { mode: 'local' } })),
+	// Read by the real resolveBackendDescriptor when buildLoopContext resolves
+	// the per-turn descriptor.
+	getActiveLocalModelFilename: vi.fn(() => ''),
+	getApiKeyValue: vi.fn(() => undefined),
 	hasEnabledEmailAccount: vi.fn(() => false)
 }));
 

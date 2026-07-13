@@ -9,6 +9,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { chatCompletion, type ChatMessage } from '$lib/api';
 import { getChatTemplateKwargs, getSamplingParams, getSettings } from '$lib/stores/settings';
+import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import { errMessage } from '$lib/utils/error';
 import { toolError } from './types';
 
@@ -97,13 +98,16 @@ export async function runSubAgent(
 	maxTokens: number,
 	signal?: AbortSignal
 ): Promise<string> {
-	const sampling = getSamplingParams();
+	// Sub-agent calls always run against the global Settings backend (they
+	// carry no per-request override), so resolve the global descriptor here.
+	const descriptor = resolveBackendDescriptor();
+	const sampling = getSamplingParams(descriptor);
 	const response = await chatCompletion(
 		{
 			messages,
 			...sampling,
 			max_tokens: maxTokens,
-			chat_template_kwargs: getChatTemplateKwargs()
+			chat_template_kwargs: getChatTemplateKwargs(descriptor)
 		},
 		signal
 	);

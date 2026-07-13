@@ -19,12 +19,16 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
+		contextSize: 32768,
 		inferenceBackend: {
 			mode: mocks.mode,
 			remoteBaseUrl: mocks.remoteBaseUrl,
 			allowParallelInference: mocks.allowParallelInference
 		}
-	})
+	}),
+	// Read by resolveBackendDescriptor, which laneFor now delegates to.
+	getActiveLocalModelFilename: () => '',
+	getApiKeyValue: () => undefined
 }));
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({

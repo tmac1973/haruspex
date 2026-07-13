@@ -27,7 +27,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 import type { BackendOverride } from '$lib/api';
-import { getSettings } from '$lib/stores/settings';
+import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 
 export type InferenceConsumer = 'chat' | 'shell' | { kind: 'job'; jobName: string };
 
@@ -87,25 +87,19 @@ function nextReqId(): string {
  * a turn against one provider never blocks a turn against another: the single
  * local llama-server slot (`'local'` lane) is independent of any remote server.
  *
- *   - A turn with a remote `backend` override (per-job remote model) → that
- *     remote URL's lane.
- *   - Otherwise it follows Settings: remote mode → the Settings remote lane;
- *     local mode → the `'local'` lane.
- *
- * Within-lane concurrency is gated by the Settings "provider supports parallel
- * inference" toggle (`allowParallelInference`): remote lanes admit many turns
- * at once when it's on, one at a time when off. The local lane always
- * serializes — a single llama-server slot — regardless.
+ * Which backend a turn targets (override vs Settings) is the descriptor
+ * resolver's business; here we only map the resolved backend to a lane:
+ * remote/OpenRouter backends get a per-URL lane whose concurrency follows
+ * `descriptor.allowParallel` (the Settings "provider supports parallel
+ * inference" toggle); the local lane always serializes — a single
+ * llama-server slot — regardless.
  */
 function laneFor(backend?: BackendOverride): { lane: string; parallel: boolean } {
-	const inf = getSettings().inferenceBackend;
-	const remoteUrl = (backend?.baseUrl ?? (inf.mode === 'remote' ? inf.remoteBaseUrl : '') ?? '')
-		.trim()
-		.replace(/\/+$/, '');
-	if (remoteUrl) {
-		return { lane: `remote:${remoteUrl}`, parallel: inf.allowParallelInference };
+	const descriptor = resolveBackendDescriptor(backend);
+	if (descriptor.kind === 'local') {
+		return { lane: 'local', parallel: false };
 	}
-	return { lane: 'local', parallel: false };
+	return { lane: `remote:${descriptor.baseUrl}`, parallel: descriptor.allowParallel };
 }
 
 // --- cross-window queue snapshot (event-mirrored) -------------------------
