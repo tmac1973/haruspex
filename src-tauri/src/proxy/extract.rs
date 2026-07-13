@@ -28,6 +28,80 @@ pub(super) fn diagnostic_snippet(html: &str, needles: &[&str], window: usize) ->
     html.chars().take(window).collect()
 }
 
+/// Equivalent fetch targets for a reddit URL, best first — or None for
+/// non-reddit URLs.
+///
+/// Reddit's unauthenticated access is a moving target (mid-2026): the JSON
+/// API (`….json`) 403s outright, and the endpoint families — www, old, RSS —
+/// meter separate, tight request budgets, so a multi-fetch research turn can
+/// exhaust one family and start drawing 403s mid-stream. On top of that, the
+/// www post pages are a client-side shell that our selector-based extractor
+/// gets little text from, while old.reddit.com is fully server-rendered AND
+/// was observed with a far larger budget. So for reddit we (a) rewrite dead
+/// `.json` forms back to their HTML page, (b) prefer old.reddit.com, and
+/// (c) keep the www form as a fallback when a family answers 403/429. Share
+/// links (`/r/x/s/<token>`) resolve their redirect on the original host
+/// first — the token may not resolve on other hosts.
+fn reddit_fetch_candidates(raw: &str) -> Option<Vec<String>> {
+    let parsed = url::Url::parse(raw).ok()?;
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    if host != "reddit.com" && !host.ends_with(".reddit.com") {
+        return None;
+    }
+    let mut path = parsed.path().to_string();
+    if let Some(stripped) = path.strip_suffix(".json") {
+        path = format!("{}/", stripped.trim_end_matches('/'));
+    }
+    let variant = |h: &str| -> Option<String> {
+        let mut u = parsed.clone();
+        u.set_host(Some(h)).ok()?;
+        u.set_path(&path);
+        Some(u.to_string())
+    };
+    let old = variant("old.reddit.com")?;
+    let www = variant("www.reddit.com")?;
+    let mut candidates: Vec<String> = Vec::new();
+    let mut push = |c: String, list: &mut Vec<String>| {
+        if !list.contains(&c) {
+            list.push(c);
+        }
+    };
+    if path.contains("/s/") {
+        push(raw.to_string(), &mut candidates);
+        push(old, &mut candidates);
+        push(www, &mut candidates);
+    } else {
+        push(old, &mut candidates);
+        push(www, &mut candidates);
+    }
+    Some(candidates)
+}
+
+/// True when a fetch error means "this endpoint family refused us" (blocked
+/// or over budget) — the cases where an equivalent reddit variant is worth
+/// trying. Matches fetch_ok's error string format.
+fn is_refusal(err: &str) -> bool {
+    err.contains("403") || err.contains("429")
+}
+
+/// Try each candidate in order; on a 403/429 refusal move to the next, on
+/// any other failure (timeout, DNS, 404) give up immediately — those aren't
+/// endpoint-family problems and every variant would just repeat them.
+async fn fetch_first_ok(
+    client: &reqwest::Client,
+    candidates: &[String],
+) -> Result<reqwest::Response, String> {
+    let mut refusal: Option<String> = None;
+    for candidate in candidates {
+        match fetch_ok(client, candidate).await {
+            Ok(r) => return Ok(r),
+            Err(e) if is_refusal(&e) => refusal = Some(e),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(refusal.unwrap_or_else(|| "Fetch failed: no candidate URLs".to_string()))
+}
+
 pub(super) async fn fetch_and_extract(
     url: &str,
     proxy: Option<&ProxyConfig>,
@@ -37,7 +111,10 @@ pub(super) async fn fetch_and_extract(
 
     let client = build_fetch_client(proxy)?;
 
-    let response = fetch_ok(&client, url).await?;
+    let response = match reddit_fetch_candidates(url) {
+        Some(candidates) => fetch_first_ok(&client, &candidates).await?,
+        None => fetch_ok(&client, url).await?,
+    };
 
     // Check content type
     let content_type = response
@@ -255,6 +332,58 @@ pub(super) fn strip_html_tags(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::reddit_fetch_candidates;
+
+    #[test]
+    fn reddit_candidates_prefer_old_then_www() {
+        let c =
+            reddit_fetch_candidates("https://www.reddit.com/r/rust/comments/abc123/some_title/")
+                .unwrap();
+        assert_eq!(
+            c,
+            vec![
+                "https://old.reddit.com/r/rust/comments/abc123/some_title/",
+                "https://www.reddit.com/r/rust/comments/abc123/some_title/",
+            ]
+        );
+    }
+
+    #[test]
+    fn reddit_candidates_rewrite_dead_json_forms() {
+        let c = reddit_fetch_candidates(
+            "https://www.reddit.com/r/rust/comments/abc123/some_title.json",
+        )
+        .unwrap();
+        // The unauthenticated JSON API always 403s now — never fetched as-is.
+        assert!(c.iter().all(|u| !u.ends_with(".json")));
+        assert_eq!(
+            c[0],
+            "https://old.reddit.com/r/rust/comments/abc123/some_title/"
+        );
+    }
+
+    #[test]
+    fn reddit_candidates_keep_query_and_bare_host() {
+        let c = reddit_fetch_candidates("https://reddit.com/r/rust/?f=1").unwrap();
+        assert_eq!(c[0], "https://old.reddit.com/r/rust/?f=1");
+        assert_eq!(c[1], "https://www.reddit.com/r/rust/?f=1");
+    }
+
+    #[test]
+    fn reddit_share_links_resolve_on_the_original_host_first() {
+        let c = reddit_fetch_candidates("https://www.reddit.com/r/rust/s/AbCdEf/").unwrap();
+        assert_eq!(c[0], "https://www.reddit.com/r/rust/s/AbCdEf/");
+        assert_eq!(c[1], "https://old.reddit.com/r/rust/s/AbCdEf/");
+    }
+
+    #[test]
+    fn non_reddit_urls_get_no_candidates() {
+        assert!(reddit_fetch_candidates("https://example.com/reddit.com/x").is_none());
+        assert!(reddit_fetch_candidates("https://notreddit.com/r/rust/").is_none());
+        // Suffix matching must not catch lookalike hosts.
+        assert!(reddit_fetch_candidates("https://evilreddit.com/r/rust/").is_none());
+    }
+
     use super::*;
 
     // -- validate_url / validate_parsed_url SSRF cases ----------------------
