@@ -147,8 +147,6 @@
 			const backend = getSettings().inferenceBackend;
 			if (backend.mode === 'remote' && backend.remoteBaseUrl) {
 				enterRemoteMode(backend.remoteBaseUrl, backend.remoteModelId);
-				// TTS is still local (not affected by the inference backend).
-				invoke('tts_initialize').catch((e) => console.warn('TTS init failed:', e));
 			} else {
 				const hasModel = await invoke<boolean>('has_any_model');
 				if (!hasModel && !page.url.pathname.startsWith('/setup')) {
@@ -165,8 +163,6 @@
 						setActiveLocalModel(modelPath);
 						startServer(modelPath, getSettings().contextSize);
 					}
-					// Eagerly start TTS in the background (non-blocking)
-					invoke('tts_initialize').catch((e) => console.warn('TTS init failed:', e));
 				}
 			}
 		} catch {
