@@ -8,8 +8,16 @@ appendix.
 
 ## Build status
 
-Phases 1–4 are implemented and green on `feat/job-plugins` (TS suite +
-svelte-check + cargo test/clippy). All three built-in types are registered
+Phases 1–4 are implemented and green on `feat/job-plugins` (PR #174).
+Phase 05 is implemented on `feat/autonomous-coding` (stacked on #174):
+the `autonomous_coding` type registers with **zero core/Rust diffs beyond
+the contract's new `available()` gate** — the definition, editor
+(plan-dir field with guided-planning suggestions, verify command, max
+attempts), the `submit_preflight` structured tool (`coding` category),
+and the Stage-0 preflight interview all live in the type module. A
+`types/availability.svelte.ts` cache gives the picker and JobList
+synchronous reads of the `shell_platform_supported` probe; enqueue()
+re-checks the gate authoritatively. All three built-in types are registered
 plugins; the runner, JobList, JobRunView, and the whole JobEditor
 (picker, form sections, load/save/validate/persist-steps) dispatch purely
 through the registry. Per-type config lives in the JSON `type_config`
@@ -17,6 +25,54 @@ column — **adding a job type now requires zero Rust changes** (verified:
 `grep audit_ src-tauri/src` hits only the schema/migration block). A
 one-time idempotent migration folds legacy per-type columns into JSON;
 the old columns are dead, not dropped.
+
+**Phases 06–07 (loop engine + run view/hardening) as built** — same branch
+as Phase 05. Phase 07 specifics:
+
+- **Generic sub-checklist instead of per-item steps or a runView slot.**
+  `RunStepState` gained a display-only `checklist` field (label / status /
+  detail); JobRunView renders it inside any step card with attempt badges
+  and blocked styling, and the loop stage patches it live each iteration.
+  The four persisted stages stay authoritative for history.
+- **Prompt-size bounding:** iteration prompts carry a one-line-per-item
+  overview (descriptions only for the target item) and progress notes are
+  clipped to ~1.5k chars for the tail (full notes still land in
+  PROGRESS-coding.md).
+- **Scheduled runs refused at pipeline start** with a clear "run manually"
+  error — `JobRunContext` gained `trigger` for this. The preflight is
+  interactive by design; parking-at-modal was the failure mode.
+- **Completion notification** via tauri-plugin-notification (new dep +
+  capability): "finished: N done, K blocked" on success, a failure notice
+  on errors, nothing on user cancel. `src/lib/notify.ts` is best-effort
+  and never throws.
+- Persistence pressure / verify-command review: TODO/PROGRESS writes are
+  awaited (not fire-and-forget) and bounded to two small files per
+  iteration; run_command's own timeout + kill plumbing covers hung verify
+  commands; fs sandboxing + pinned exec cwd cover working-dir escapes.
+
+**Phase 06 (the loop engine) as built:**
+
+- **Disk is the resume state, not the DB.** `TODO-coding.md` round-trips
+  through `loopState.ts` (statuses + attempt counts encoded in the
+  markdown), so a killed run resumes by re-running the job — the Decompose
+  stage adopts a parseable existing TODO instead of re-decomposing. The
+  planned `saveRunnerState` DB slot went unused, consistent with guided
+  planning's descoped parking.
+- **Per-item display steps deferred to Phase 07.** The run keeps its four
+  named stages; the loop stage streams "Iteration N — 03. Title (attempt
+  2/3)" live and finishes with the done/blocked tally. Replacing the
+  run's step list mid-run needs a new ctx capability — Phase 07's call.
+- **Runner-driven git via `run_command_capture`** (the Code-mode one-shot
+  exec, shell-selection aware): baseline (`git init` + `--allow-empty`
+  commit when unborn/dirty), one `feat: <title> [ralph NN/total]` commit
+  per verified step, report committed best-effort. A "done" with no diff
+  and no new HEAD downgrades to a failed attempt; a result for the wrong
+  item counts as a failed attempt of the assigned one.
+- Iteration turns are non-interactive with `ask_user_question` absent from
+  the toolset (enforced structurally, not by prompt); read-only web
+  (search/research) IS included for docs lookups.
+- "Done with blockers (k)" is a SUCCEEDED run — surfaced in the Finalize
+  step output and `REPORT-coding.md`, not as a run failure.
 
 **Editor contract as built (supersedes the Phase 02/03 mapper notes):**
 every type Editor receives the same bindable props —

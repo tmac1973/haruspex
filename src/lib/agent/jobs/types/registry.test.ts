@@ -57,7 +57,12 @@ describe('job-type registry', () => {
 describe('registration barrel', () => {
 	it('registers all built-in types in picker order', async () => {
 		const { listJobTypes } = await import('./index');
-		expect(listJobTypes().map((d) => d.id)).toEqual(['research', 'audit', 'guided_planning']);
+		expect(listJobTypes().map((d) => d.id)).toEqual([
+			'research',
+			'audit',
+			'guided_planning',
+			'autonomous_coding'
+		]);
 	});
 
 	it('research: planSteps maps authored steps 1:1, pre-rendering only step 0', async () => {
@@ -104,5 +109,66 @@ describe('registration barrel', () => {
 			'Approval'
 		]);
 		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
+	});
+
+	it('autonomous coding: platform-gated, staged, config round-trips', async () => {
+		const { getJobType } = await import('./index');
+		const coding = getJobType('autonomous_coding')!;
+		expect(coding.hasPlannedSteps).toBe(false);
+		// Full-shell type: must carry a platform gate (shell_platform_supported).
+		expect(typeof coding.available).toBe('function');
+
+		const stages = coding.planSteps({ steps: [] } as unknown as JobWithSteps);
+		expect(stages.map((s) => s.authored)).toEqual([
+			'Preflight',
+			'Decompose',
+			'Coding loop',
+			'Finalize'
+		]);
+		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
+
+		// Editor state round-trip: sparse JSON in, concrete defaults out, and back.
+		expect(coding.configFromJob(JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 5 }))).toEqual({
+			plan_dir: 'plan/x/',
+			verify_command: '',
+			max_attempts: 5,
+			signing_fallback: 'unsigned'
+		});
+		expect(coding.configFromJob(null)).toEqual({
+			plan_dir: '',
+			verify_command: '',
+			max_attempts: 3,
+			signing_fallback: 'unsigned'
+		});
+		const json = coding.configToJson({
+			plan_dir: ' plan/x/ ',
+			verify_command: '',
+			max_attempts: 3,
+			signing_fallback: 'skip'
+		});
+		expect(JSON.parse(json!)).toEqual({
+			plan_dir: 'plan/x/',
+			max_attempts: 3,
+			signing_fallback: 'skip'
+		});
+
+		// Validation: working dir and plan dir are required; attempts bounded.
+		const base = { name: 'x', steps: [], config: coding.configDefaults() };
+		expect(coding.validate!({ ...base, workingDir: '' })).toContain('working directory');
+		expect(coding.validate!({ ...base, workingDir: '/p' })).toContain('plan directory');
+		expect(
+			coding.validate!({
+				...base,
+				workingDir: '/p',
+				config: { plan_dir: 'plan/', verify_command: '', max_attempts: 99 }
+			})
+		).toContain('Max attempts');
+		expect(
+			coding.validate!({
+				...base,
+				workingDir: '/p',
+				config: { plan_dir: 'plan/', verify_command: 'npm test', max_attempts: 3 }
+			})
+		).toBeNull();
 	});
 });

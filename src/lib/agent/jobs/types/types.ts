@@ -15,7 +15,7 @@
 import type { Component } from 'svelte';
 import type { EphemeralTurnOptions, EphemeralTurnResult } from '$lib/agent/runEphemeralTurn';
 import type { JobStepInput, JobSummary, JobType, JobWithSteps } from '$lib/stores/jobs.svelte';
-import type { RunStatus, RunStepState } from '../runner.svelte';
+import type { RunStatus, RunStepState, RunTrigger } from '../runner.svelte';
 
 /** One planned display/execution step of a run (see the runner's planSteps). */
 export interface PlannedStep {
@@ -39,6 +39,9 @@ export interface JobRunContext {
 	job: JobWithSteps;
 	runId: number;
 	abort: AbortController;
+	/** How the run started — pipelines that need a human at kickoff (the
+	 *  coding preflight) refuse 'scheduled' runs with a clear error. */
+	trigger: RunTrigger;
 	/** One ephemeral agent turn under the job harness (slot, auto-approve, backend). */
 	runJobTurn: (
 		opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'>
@@ -104,6 +107,12 @@ export interface JobTypeDefinition {
 	hasPlannedSteps: boolean;
 	/** Extra text after the schedule summary in the JobList row (research: step count). */
 	listMeta?: (job: JobSummary) => string;
+	/**
+	 * Platform gate. When it resolves false the type is hidden from the
+	 * picker (types/availability caches the answer for sync UI reads) and
+	 * enqueue refuses runs. Absent = available everywhere.
+	 */
+	available?: () => Promise<boolean>;
 	/**
 	 * When set, the working directory is required for this type and this
 	 * string is the field's placeholder. Absent = optional (research).

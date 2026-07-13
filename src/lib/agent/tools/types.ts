@@ -109,7 +109,16 @@ export interface ToolRegistration {
 	schema: ToolDefinition;
 	execute: (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolExecOutput>;
 	displayLabel: (args: Record<string, unknown>) => string;
-	category: 'web' | 'fs' | 'email' | 'sandbox' | 'exec' | 'audit' | 'planning' | 'interaction';
+	category:
+		| 'web'
+		| 'fs'
+		| 'email'
+		| 'sandbox'
+		| 'exec'
+		| 'audit'
+		| 'planning'
+		| 'coding'
+		| 'interaction';
 	requiresVision?: boolean;
 }
 

@@ -90,6 +90,26 @@
 						{/if}
 					{/if}
 
+					{#if step.checklist?.length}
+						<ul class="checklist">
+							{#each step.checklist as entry, ci (ci)}
+								<li class="check-{entry.status}">
+									<span class="check-mark">
+										{entry.status === 'done'
+											? '✓'
+											: entry.status === 'blocked'
+												? '✗'
+												: entry.status === 'running'
+													? '▸'
+													: '·'}
+									</span>
+									<span class="check-label">{entry.label}</span>
+									{#if entry.detail}<span class="check-detail">{entry.detail}</span>{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+
 					{#if step.sizeWarning}
 						<div class="warning">⚠ {step.sizeWarning}</div>
 					{/if}
@@ -182,6 +202,47 @@
 		font-size: 0.75rem;
 		color: var(--text-secondary);
 		font-style: italic;
+	}
+
+	.checklist {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-size: 0.82rem;
+	}
+
+	.checklist li {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		color: var(--text-secondary);
+	}
+
+	.check-mark {
+		width: 1em;
+		text-align: center;
+		flex-shrink: 0;
+	}
+
+	.checklist .check-done .check-mark {
+		color: var(--success-text, #2da44e);
+	}
+
+	.checklist .check-blocked {
+		color: var(--error-text);
+	}
+
+	.checklist .check-running .check-label {
+		color: var(--text-primary);
+		font-weight: 600;
+	}
+
+	.check-detail {
+		font-size: 0.74rem;
+		opacity: 0.8;
 	}
 
 	.stage-desc {

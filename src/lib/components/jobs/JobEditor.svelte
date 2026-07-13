@@ -32,7 +32,16 @@
 		type JobType
 	} from '$lib/stores/jobs.svelte';
 	import { getSettings } from '$lib/stores/settings';
-	import { getJobType, listJobTypes } from '$lib/agent/jobs/types';
+	import {
+		ensureTypeAvailabilityLoaded,
+		getJobType,
+		isJobTypeAvailable,
+		listJobTypes
+	} from '$lib/agent/jobs/types';
+
+	// Platform-gated types (autonomous coding) hide from the picker until
+	// their probe says otherwise; idempotent, so fire per mount.
+	void ensureTypeAvailabilityLoaded();
 
 	interface Props {
 		jobId: number | 'new';
@@ -450,19 +459,36 @@
 	{:else}
 		<h3>{jobId === 'new' ? 'New job' : 'Edit job'}</h3>
 
-		<div class="field">
+		<!-- A dropdown, not radio cards: the registry keeps growing job types
+		     and the picker's screen cost must not grow with it. The selected
+		     type's description renders as the hint below.
+
+		     Locked after first save: type_config is one JSON column, so saving
+		     under a different type would overwrite the old type's config
+		     irrecoverably (and orphan the run history's semantics). Create a
+		     new job to use a different type. -->
+		<label
+			class="field"
+			title={jobId !== 'new'
+				? 'The job type is fixed after creation — create a new job to use a different type.'
+				: undefined}
+		>
 			<span class="label">Job type</span>
-			<ModeSelector
-				name="job-type"
+			<select
+				class="type-select"
 				value={jobType}
-				onchange={setJobType}
-				options={listJobTypes().map((d) => ({
-					value: d.id,
-					title: d.label,
-					description: d.description
-				}))}
-			/>
-		</div>
+				disabled={jobId !== 'new'}
+				onchange={(e) => setJobType(e.currentTarget.value as JobType)}
+			>
+				{#each listJobTypes().filter((d) => isJobTypeAvailable(d.id) || d.id === jobType) as d (d.id)}
+					<option value={d.id}>{d.label}</option>
+				{/each}
+			</select>
+			<span class="hint">
+				{typeDef.description}
+				{#if jobId !== 'new'}(Type is fixed after creation.){/if}
+			</span>
+		</label>
 
 		<label
 			class="field"
@@ -737,6 +763,11 @@
 	.label {
 		font-size: 0.82rem;
 		color: var(--text-secondary);
+	}
+
+	.type-select {
+		align-self: flex-start;
+		min-width: 240px;
 	}
 
 	.optional {

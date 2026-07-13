@@ -118,6 +118,19 @@ function planSteps(job: JobWithSteps): PlannedStep[] {
 	return getJobType(job.job_type)?.planSteps(job) ?? [];
 }
 
+/**
+ * One entry of a step's live sub-checklist (see RunStepState.checklist).
+ * Generic on purpose: any type whose stage fans out over enumerable work
+ * (the coding loop's TODO items, potentially audit's samples) can render
+ * per-entry progress without a custom run-view component.
+ */
+export interface StepChecklistEntry {
+	label: string;
+	status: 'todo' | 'running' | 'done' | 'blocked';
+	/** Short annotation shown after the label (e.g. "attempt 2/3"). */
+	detail?: string;
+}
+
 export interface RunStepState {
 	index: number;
 	promptAuthored: string;
@@ -127,6 +140,9 @@ export interface RunStepState {
 	/** Stage description for named-stage types (guided planning); null = the
 	 *  step is a prompt and the run view renders promptAuthored instead. */
 	description: string | null;
+	/** Live sub-checklist rendered inside the step card (display-only, not
+	 *  persisted); null for steps without enumerable sub-work. */
+	checklist: StepChecklistEntry[] | null;
 	status: StepStatus;
 	streaming: string;
 	output: string;
@@ -226,6 +242,16 @@ export async function enqueue(
 		logDebug('jobs', 'enqueue failed: job type not registered', { jobId, type: job.job_type });
 		return null;
 	}
+	// Platform-gated types (autonomous coding needs the shell plumbing) — this
+	// await is the authoritative check; the UI's availability cache only hides
+	// the option.
+	if (def.available && !(await def.available())) {
+		logDebug('jobs', 'enqueue failed: job type unavailable on this platform', {
+			jobId,
+			type: job.job_type
+		});
+		return null;
+	}
 	// Types without planned steps (guided planning) drive their own stages —
 	// the run is driven by config + interactive Q&A, not a step pipeline.
 	if (def.hasPlannedSteps && job.steps.length === 0) {
@@ -280,6 +306,7 @@ function startRun(queued: QueuedRun): void {
 			promptRendered: s.initialRendered ?? '',
 			deepResearch: s.deepResearch,
 			description: s.description ?? null,
+			checklist: null,
 			status: 'pending',
 			streaming: '',
 			output: '',
@@ -297,7 +324,7 @@ function startRun(queued: QueuedRun): void {
 		finishedAt: null
 	};
 
-	void runPipeline(job, abort, runId);
+	void runPipeline(queued, abort);
 }
 
 function drainNext(): void {
@@ -353,11 +380,17 @@ function buildStreamCallbacks(runId: number, stepIndex: number) {
  * if the queue is empty, `current` stays on the terminal state so the user
  * can read the result and dismiss it via Close (clearCurrentRun).
  */
-function buildRunContext(job: JobWithSteps, runId: number, abort: AbortController): JobRunContext {
+function buildRunContext(
+	job: JobWithSteps,
+	runId: number,
+	abort: AbortController,
+	trigger: RunTrigger
+): JobRunContext {
 	return {
 		job,
 		runId,
 		abort,
+		trigger,
 		runJobTurn: (opts) => runJobTurn(job, runId, abort, opts),
 		patchStep: (stepIndex, patch) => patchStep(runId, stepIndex, patch),
 		buildStreamCallbacks: (stepIndex) => buildStreamCallbacks(runId, stepIndex),
@@ -377,12 +410,9 @@ function buildRunContext(job: JobWithSteps, runId: number, abort: AbortControlle
 	};
 }
 
-async function runPipeline(
-	job: JobWithSteps,
-	abort: AbortController,
-	runId: number
-): Promise<void> {
-	const ctx = buildRunContext(job, runId, abort);
+async function runPipeline(queued: QueuedRun, abort: AbortController): Promise<void> {
+	const { job, runId, trigger } = queued;
+	const ctx = buildRunContext(job, runId, abort, trigger);
 	const def = getJobType(job.job_type);
 	if (def) return def.runPipeline(ctx);
 	// Unknown type: enqueue() guards against this, but fail honestly rather

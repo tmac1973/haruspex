@@ -309,13 +309,27 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		deps.setCurrentStepIndex(idx);
 		void markRunStepStarted(runId, idx, startedAt, deps.stepAuthored(idx));
 	};
-	const finishStep = (idx: number, output: string) => {
+	// What the model said during each stage's turns (interview summaries,
+	// verifier findings, revision notes). The live streaming buffer vanishes
+	// when a stage finishes, so this is folded into the stage's persisted
+	// output — reviewable in the run view and the run history afterwards.
+	const stageNotes = new Map<number, string[]>();
+	const recordNote = (idx: number, text: string) => {
+		const t = text.trim();
+		if (!t) return;
+		const notes = stageNotes.get(idx) ?? [];
+		notes.push(t);
+		stageNotes.set(idx, notes);
+	};
+	const finishStep = (idx: number, summary: string) => {
 		const finishedAt = Date.now();
+		const notes = stageNotes.get(idx);
+		const output = notes?.length ? `${summary}\n\n---\n\n${notes.join('\n\n---\n\n')}` : summary;
 		deps.patchStep(idx, { status: 'succeeded', output, finishedAt });
 		void markRunStepFinished(runId, idx, 'succeeded', output, null, finishedAt);
 	};
 
-	const turn = (
+	const turn = async (
 		stepIdx: number,
 		userMessage: string,
 		systemPrompt: string,
@@ -325,8 +339,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// `ensureWritten` retry). Set it on the turns whose job is to produce a file;
 		// leave it off for the read-only verifier turn.
 		opts: { tools?: string[]; expectsFileOutput?: boolean } = {}
-	) =>
-		deps.runJobTurn({
+	) => {
+		const result = await deps.runJobTurn({
 			userMessage,
 			contextSize: deps.contextSize(),
 			visionSupported: deps.visionSupported(),
@@ -338,6 +352,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			expectsFileOutput: opts.expectsFileOutput,
 			...deps.buildStreamCallbacks(stepIdx)
 		});
+		recordNote(stepIdx, result.finalText);
+		return result;
+	};
 
 	const abortIfCancelled = () => {
 		if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -467,7 +484,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	): Promise<PlanOutlinePhaseArg[]> => {
 		let captured: PlanOutlinePhaseArg[] = [];
 		const base = deps.buildStreamCallbacks(OUTLINE);
-		await deps.runJobTurn({
+		const outlineResult = await deps.runJobTurn({
 			userMessage,
 			contextSize: deps.contextSize(),
 			visionSupported: deps.visionSupported(),
@@ -485,6 +502,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				base.onToolStart?.(call);
 			}
 		});
+		recordNote(OUTLINE, outlineResult.finalText);
 		return captured;
 	};
 
