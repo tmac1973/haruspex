@@ -10,6 +10,7 @@
 	import HelpModal from '$lib/components/HelpModal.svelte';
 	import SettingsPanel from '$lib/components/settings/SettingsPanel.svelte';
 	import StartupNoticeDialog from '$lib/components/StartupNoticeDialog.svelte';
+	import Toasts from '$lib/components/Toasts.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { reclaimOwnWindowSlots } from '$lib/agent/inferenceQueue.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
@@ -407,6 +408,11 @@
 	<CommandApprovalModal />
 	<UserQuestionModal />
 {/if}
+
+<!-- Toast host lives outside the detached-shell branch: each webview
+     window has its own store instance, and errors surface in detached
+     shell windows too. -->
+<Toasts />
 
 <style>
 	:global(:root) {
