@@ -25,6 +25,7 @@ import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import { describeContextManaged } from '$lib/agent/context-budget';
 import { logDebug } from '$lib/debug-log';
 import { getActiveContextSize, getSettings } from '$lib/stores/settings';
+import { remapIndexedRecords } from '$lib/agent/compaction';
 import { computeMessageStats, type MessageStats } from '$lib/stores/chat.svelte';
 import { errMessage } from '$lib/utils/error';
 import {
@@ -114,6 +115,11 @@ function formatRecentCommands(regions: CapturedRegion[], maxBytesPerCapture: num
  * pane bound to this instance renders reactively; multiple instances are
  * fully independent (a background turn updates only its own thread).
  */
+/** Rendered-thread bound: past this many entries, trim to the recent window. */
+const THREAD_TRIM_AT = 40;
+/** How many prose bubbles (user + assistant answers) the trim keeps. */
+const THREAD_KEEP_PROSE = 8;
+
 export class ShellSession {
 	readonly id: string;
 	name = $state('');
@@ -492,7 +498,8 @@ export class ShellSession {
 	 * this turn actually did instead of re-investigating from scratch) and drop
 	 * the loop's synthetic recovery / "answer now" nudges, since the assistant
 	 * prose supersedes them. The context-budget fitter stubs and drops these as
-	 * the window fills, so the thread stays bounded and tool pairs never orphan.
+	 * the window fills, so the PAYLOAD stays bounded and tool pairs never
+	 * orphan; `trimThreadIfNeeded` separately bounds the RENDERED thread.
 	 */
 	private recordAssistantTurn(
 		turnMessages: ChatMessage[],
@@ -522,6 +529,46 @@ export class ShellSession {
 		if (result.stopReason !== 'complete') {
 			this.messageStops = { ...this.messageStops, [assistantIndex]: result.stopReason };
 		}
+		this.trimThreadIfNeeded();
+	}
+
+	/**
+	 * Bound the RENDERED thread. The context-budget fitter bounds what's sent
+	 * to the model, but nothing bounded what stayed mounted in the sidebar —
+	 * a marathon Code-mode session accumulated every bubble, step row, and
+	 * tool payload until each scroll reflow got slower and the UI froze.
+	 *
+	 * Mirrors the chat tab's compaction reshape (keep a recent window, remap
+	 * the index-keyed records), minus the LLM summary: the cut point is the
+	 * Nth-from-last prose bubble, and everything from there on — including
+	 * that window's interleaved tool_call/result pairs, which "Continue"
+	 * replays — survives intact. Older messages (and their messageSteps
+	 * payloads: 16KB command outputs, thumbnails, artifacts) are dropped and
+	 * become collectable.
+	 */
+	private trimThreadIfNeeded(): void {
+		if (this.messages.length < THREAD_TRIM_AT) return;
+		const proseIdxs = this.messages
+			.map((m, i) => (m.role === 'user' || (m.role === 'assistant' && !m.tool_calls) ? i : -1))
+			.filter((i) => i >= 0);
+		if (proseIdxs.length <= THREAD_KEEP_PROSE) return;
+		const cutIdx = proseIdxs[proseIdxs.length - THREAD_KEEP_PROSE];
+		if (cutIdx <= 0) return;
+		const kept = this.messages.slice(cutIdx);
+		const note: ChatMessage = {
+			role: 'system',
+			content:
+				`[Older shell-assistant history trimmed (${cutIdx} messages) to keep the UI ` +
+				`responsive. The terminal scrollback still has the full session.]`
+		};
+		const newMessages: ChatMessage[] = [note, ...kept];
+		// messageSteps / messageStats / messageStops are keyed by message INDEX —
+		// remap them against the rewritten array or they render under the wrong
+		// bubbles (the chat tab learned this the hard way).
+		this.messageSteps = remapIndexedRecords(this.messages, newMessages, this.messageSteps);
+		this.messageStats = remapIndexedRecords(this.messages, newMessages, this.messageStats);
+		this.messageStops = remapIndexedRecords(this.messages, newMessages, this.messageStops);
+		this.messages = newMessages;
 	}
 
 	/**
