@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import ServerStatusBadge from './ServerStatusBadge.svelte';
 import { getServerState, type ServerState } from '$lib/stores/server.svelte';
 
@@ -39,5 +39,25 @@ describe('ServerStatusBadge', () => {
 		mockState({ status: 'stopped' });
 		render(ServerStatusBadge);
 		expect(screen.getByText('Stopped')).toBeTruthy();
+	});
+
+	it('is a button that opens the log viewer on click', async () => {
+		mockState({ status: 'ready' });
+		const onOpenLogs = vi.fn();
+		render(ServerStatusBadge, { props: { onOpenLogs } });
+		await fireEvent.click(screen.getByRole('button'));
+		expect(onOpenLogs).toHaveBeenCalledTimes(1);
+	});
+
+	it('shows the View logs affordance only in the error state', () => {
+		mockState({ status: 'error', errorMessage: 'boom' });
+		render(ServerStatusBadge);
+		expect(screen.getByText('View logs')).toBeTruthy();
+	});
+
+	it('announces status changes politely', () => {
+		mockState({ status: 'starting' });
+		render(ServerStatusBadge);
+		expect(document.querySelector('.label')?.getAttribute('aria-live')).toBe('polite');
 	});
 });

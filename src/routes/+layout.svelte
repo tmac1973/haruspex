@@ -11,6 +11,13 @@
 	import SettingsPanel from '$lib/components/settings/SettingsPanel.svelte';
 	import StartupNoticeDialog from '$lib/components/StartupNoticeDialog.svelte';
 	import Toasts from '$lib/components/Toasts.svelte';
+	import { showToast } from '$lib/stores/toasts.svelte';
+	import {
+		isLogViewerOpen,
+		openLogViewer,
+		closeLogViewer,
+		toggleLogViewer
+	} from '$lib/stores/logViewer.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { reclaimOwnWindowSlots } from '$lib/agent/inferenceQueue.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
@@ -47,7 +54,9 @@
 	import { getActiveShellSession } from '$lib/stores/shell.svelte';
 
 	let { children } = $props();
-	let showLogs = $state(false);
+	// Log Viewer visibility lives in the logViewer store (not local state)
+	// so error toasts anywhere in the app can offer a "View logs" action.
+	const showLogs = $derived(isLogViewerOpen());
 	let showHelp = $state(false);
 	// Settings renders as an in-page overlay rather than a route navigation, so
 	// the Shell tab's PTY (and scrollback) survives opening/closing settings.
@@ -121,9 +130,10 @@
 			const href = anchor.getAttribute('href');
 			if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
 				e.preventDefault();
-				invoke('open_url', { url: href }).catch((err) =>
-					console.error('open_url failed:', href, err)
-				);
+				invoke('open_url', { url: href }).catch((err) => {
+					console.error('open_url failed:', href, err);
+					showToast("Couldn't open link in your browser", { kind: 'error' });
+				});
 			}
 		});
 
@@ -325,9 +335,9 @@
 			{/if}
 		</h1>
 		<div class="header-right">
-			<ServerStatusBadge />
+			<ServerStatusBadge onOpenLogs={openLogViewer} />
 			<ContextIndicator />
-			<button class="header-icon-btn" title="Sidecar Logs" onclick={() => (showLogs = !showLogs)}>
+			<button class="header-icon-btn" title="Sidecar Logs" onclick={toggleLogViewer}>
 				<svg
 					width="18"
 					height="18"
@@ -396,7 +406,7 @@
 		{/if}
 	</main>
 
-	<LogViewer open={showLogs} onclose={() => (showLogs = false)} />
+	<LogViewer open={showLogs} onclose={closeLogViewer} />
 	<HelpModal open={showHelp} onclose={() => (showHelp = false)} />
 
 	{#if showStartupNotice}

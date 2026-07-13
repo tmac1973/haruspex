@@ -14,8 +14,21 @@ vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
 	): Promise<T> => {
 		opts.onAdmitted?.();
 		return fn();
-	}
+	},
+	// Imported by the (real) server store the chat store now reads its
+	// send gate from; never called in these tests.
+	getRunningCount: () => 0
 }));
+
+/**
+ * The chat store gates sends on the server store's status (default
+ * 'stopped'), so tests that dispatch a turn first flip it to 'ready'.
+ * getServerState() returns the live $state proxy, so mutating it works.
+ */
+async function setServerReady(): Promise<void> {
+	const { getServerState } = await import('$lib/stores/server.svelte');
+	getServerState().status = 'ready';
+}
 
 vi.mock('$lib/api', () => ({
 	ApiError: class ApiError extends Error {
@@ -148,6 +161,7 @@ describe('chat store', () => {
 
 		const { sendMessage, getConversations, getActiveConversation } =
 			await import('$lib/stores/chat.svelte');
+		await setServerReady();
 
 		await sendMessage('Hello');
 
@@ -170,6 +184,7 @@ describe('chat store', () => {
 		});
 
 		const { sendMessage, getActiveConversation } = await import('$lib/stores/chat.svelte');
+		await setServerReady();
 
 		await sendMessage('What is the meaning of life?');
 
@@ -229,6 +244,7 @@ describe('chat store', () => {
 
 		const { sendMessage, getSearchSteps, getSourceUrls, getActiveConversation } =
 			await import('$lib/stores/chat.svelte');
+		await setServerReady();
 
 		await sendMessage('Search for something');
 

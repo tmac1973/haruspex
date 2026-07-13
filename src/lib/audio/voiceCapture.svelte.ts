@@ -11,6 +11,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { sleep } from '$lib/utils/async';
 import { getSettings } from '$lib/stores/settings';
+import { showToast } from '$lib/stores/toasts.svelte';
 
 export type VoiceCaptureStatus = 'idle' | 'recording' | 'processing' | 'downloading';
 
@@ -21,14 +22,18 @@ type WhisperStatusResponse =
 	| { type: 'Error'; message: string };
 
 let status = $state<VoiceCaptureStatus>('idle');
-let lastError = $state<string | null>(null);
+
+/**
+ * Every capture/transcription failure surfaces as an error toast — the old
+ * inline MicButton error span clipped messages at 200px, truncating exactly
+ * the errors ("Download whisper model first") the user needed to read.
+ */
+function toastError(message: string): void {
+	showToast(message, { kind: 'error' });
+}
 
 export function getVoiceCaptureStatus(): VoiceCaptureStatus {
 	return status;
-}
-
-export function getVoiceCaptureError(): string | null {
-	return lastError;
 }
 
 export function isVoiceCaptureActive(): boolean {
@@ -37,30 +42,28 @@ export function isVoiceCaptureActive(): boolean {
 
 export async function startVoiceCapture(): Promise<void> {
 	if (status !== 'idle') return;
-	lastError = null;
 	try {
 		const deviceName = getSettings().audioInputDevice || undefined;
 		await invoke('start_recording', { deviceName });
 		status = 'recording';
 	} catch (e) {
-		lastError = `Mic error: ${e}`;
+		toastError(`Mic error: ${e}`);
 	}
 }
 
 /**
  * Stop the in-flight recording and return the transcribed text. Resolves
  * to null on no-speech-detected, whisper download failure, or any other
- * error path — check `getVoiceCaptureError()` for the reason.
+ * error path — the reason surfaces as an error toast.
  */
 export async function stopAndTranscribe(): Promise<string | null> {
 	if (status !== 'recording') return null;
 	status = 'processing';
-	lastError = null;
 	try {
 		const audioData = await invoke<number[]>('stop_recording');
 		const ready = await ensureWhisperReady();
 		if (!ready) {
-			lastError = 'Speech recognition not available. Download whisper model first.';
+			toastError('Speech recognition not available. Download whisper model first.');
 			status = 'idle';
 			return null;
 		}
@@ -68,12 +71,12 @@ export async function stopAndTranscribe(): Promise<string | null> {
 		status = 'idle';
 		const trimmed = text?.trim() ?? '';
 		if (!trimmed) {
-			lastError = 'No speech detected';
+			toastError('No speech detected');
 			return null;
 		}
 		return trimmed;
 	} catch (e) {
-		lastError = `Transcription failed: ${e}`;
+		toastError(`Transcription failed: ${e}`);
 		status = 'idle';
 		return null;
 	}
@@ -90,7 +93,7 @@ async function ensureWhisperReady(): Promise<boolean> {
 			try {
 				modelPath = await invoke<string>('download_whisper_model');
 			} catch (e) {
-				lastError = `Whisper model download failed: ${e}`;
+				toastError(`Whisper model download failed: ${e}`);
 				return false;
 			} finally {
 				status = 'processing';

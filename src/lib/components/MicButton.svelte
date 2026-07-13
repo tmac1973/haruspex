@@ -1,6 +1,5 @@
 <script lang="ts">
 	import {
-		getVoiceCaptureError,
 		getVoiceCaptureStatus,
 		startVoiceCapture,
 		stopAndTranscribe
@@ -14,7 +13,6 @@
 	let { onTranscription, disabled = false }: Props = $props();
 
 	const status = $derived(getVoiceCaptureStatus());
-	const error = $derived(getVoiceCaptureError());
 	const recording = $derived(status === 'recording');
 	const processing = $derived(status === 'processing');
 	const downloading = $derived(status === 'downloading');
@@ -68,9 +66,6 @@
 			</svg>
 		{/if}
 	</button>
-	{#if error}
-		<span class="mic-error">{error}</span>
-	{/if}
 </div>
 
 <style>
@@ -116,15 +111,6 @@
 	.mic-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
-	}
-
-	.mic-error {
-		font-size: 0.75rem;
-		color: var(--error-text);
-		max-width: 200px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 
 	@keyframes pulse-record {
