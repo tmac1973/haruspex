@@ -31,7 +31,9 @@
 				{ keys: 'F1', action: 'Show this shortcuts help' },
 				{ keys: 'F2 (hold)', action: 'Push-to-talk — voice input, release to send' },
 				{ keys: 'F3', action: 'Read the last reply aloud (toggle)' },
-				{ keys: 'Ctrl / ⌘ + N', action: 'New conversation (Chat tab)' }
+				{ keys: 'Ctrl / ⌘ + N', action: 'New conversation (Chat tab)' },
+				{ keys: 'Ctrl / ⌘ + + / −', action: 'Zoom the UI in / out' },
+				{ keys: 'Ctrl / ⌘ + 0', action: 'Reset UI zoom' }
 			]
 		},
 		{

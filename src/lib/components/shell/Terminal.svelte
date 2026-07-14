@@ -101,6 +101,11 @@
 			if (event.key === 'F1' || event.key === 'F2' || event.key === 'F3' || event.key === 'F4') {
 				return false;
 			}
+			// Ctrl/⌘ +/-/0 is app-level UI zoom (handled in +layout) — don't
+			// also feed the chord to the PTY.
+			if ((event.ctrlKey || event.metaKey) && ['+', '=', '-', '_', '0'].includes(event.key)) {
+				return false;
+			}
 			if (
 				event.type === 'keydown' &&
 				event.ctrlKey &&

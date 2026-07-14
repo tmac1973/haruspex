@@ -1,5 +1,6 @@
 // App settings — persisted to localStorage
 
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import type { OpenRouterModel, OpenRouterKeyStatus } from '$lib/openrouter';
 // Type-only import — descriptor.ts imports this module's runtime values, so
 // keeping this side type-only avoids a circular runtime dependency.
@@ -13,7 +14,7 @@ import type { ShellSelection } from '$lib/ipc/gen/ShellSelection';
 
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type AccentColor = 'teal' | 'amber' | 'violet';
+export type AccentColor = 'teal' | 'amber' | 'violet' | 'blue';
 export type SearchProvider = 'auto' | 'duckduckgo' | 'brave' | 'searxng';
 
 /**
@@ -230,6 +231,8 @@ export interface AppSettings {
 	responseFormat: ResponseFormat;
 	theme: ThemeMode;
 	accentColor: AccentColor;
+	/** Browser-style UI zoom factor (1 = 100%). One of UI_SCALE_STEPS. */
+	uiScale: number;
 	ttsVoice: string;
 	searchProvider: SearchProvider;
 	braveApiKey: string;
@@ -418,6 +421,7 @@ const defaults: AppSettings = {
 	responseFormat: 'standard',
 	theme: 'system',
 	accentColor: 'teal',
+	uiScale: 1,
 	ttsVoice: DEFAULT_TTS_VOICE,
 	searchProvider: 'auto',
 	braveApiKey: '',
@@ -651,6 +655,53 @@ export function applyAccent(accent?: AccentColor): void {
 	} else {
 		root.setAttribute('data-accent', value);
 	}
+}
+
+// ---- UI scale (browser-style zoom) ----
+
+/** The browser zoom ladder — Ctrl/⌘ +/- walk it, Ctrl/⌘ 0 resets to 1. */
+export const UI_SCALE_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+
+function closestScaleIndex(scale: number): number {
+	let closest = 0;
+	for (let i = 1; i < UI_SCALE_STEPS.length; i++) {
+		if (Math.abs(UI_SCALE_STEPS[i] - scale) < Math.abs(UI_SCALE_STEPS[closest] - scale)) {
+			closest = i;
+		}
+	}
+	return closest;
+}
+
+/**
+ * Apply the UI zoom factor to this webview. The engines expose a zoom API
+ * but (outside WebView2) no built-in keybindings, so the layout's
+ * Ctrl/⌘ +/-/0 handlers call this. setZoom is real full-content zoom —
+ * WebKitGTK zoom-level on Linux, WKWebView pageZoom on macOS ≥ 11,
+ * WebView2 ZoomFactor on Windows. In browser dev mode (no Tauri) it
+ * rejects; fall back to CSS zoom, which is close enough for dev.
+ */
+export function applyUiScale(scale?: number): void {
+	const raw = scale ?? settings.uiScale;
+	const value = typeof raw === 'number' && raw >= 0.5 && raw <= 2 ? raw : 1;
+	getCurrentWebview()
+		.setZoom(value)
+		.catch(() => {
+			document.documentElement.style.setProperty('zoom', String(value));
+		});
+}
+
+/** Walk one step up (+1) or down (-1) the zoom ladder; persists + applies. */
+export function stepUiScale(direction: 1 | -1): number {
+	const idx = closestScaleIndex(settings.uiScale);
+	const next = UI_SCALE_STEPS[Math.min(UI_SCALE_STEPS.length - 1, Math.max(0, idx + direction))];
+	updateSettings({ uiScale: next });
+	applyUiScale(next);
+	return next;
+}
+
+export function resetUiScale(): void {
+	updateSettings({ uiScale: 1 });
+	applyUiScale(1);
 }
 
 /**

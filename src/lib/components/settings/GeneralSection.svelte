@@ -34,7 +34,8 @@
 	const accentOptions: { value: AccentColor; label: string }[] = [
 		{ value: 'teal', label: 'Teal' },
 		{ value: 'amber', label: 'Amber' },
-		{ value: 'violet', label: 'Violet' }
+		{ value: 'violet', label: 'Violet' },
+		{ value: 'blue', label: 'Blue' }
 	];
 </script>
 

@@ -31,9 +31,12 @@
 	import {
 		applyAccent,
 		applyTheme,
+		applyUiScale,
 		getActiveLocalModelFilename,
 		getSettings,
+		resetUiScale,
 		setActiveLocalModel,
+		stepUiScale,
 		updateSettings
 	} from '$lib/stores/settings';
 	import { checkForUpdate, type UpdateInfo } from '$lib/updates';
@@ -128,6 +131,9 @@
 	onMount(async () => {
 		applyTheme();
 		applyAccent();
+		// Every window applies its own zoom — including detached shells,
+		// which return early below.
+		applyUiScale();
 		// Self-heal a stuck inference slot left by a previous renderer lifetime
 		// (a webview crash/reload doesn't fire the OS window-destroyed cleanup,
 		// so the Rust queue can hold a phantom "running" ticket). Runs for every
@@ -300,7 +306,38 @@
 		void session.submitRecentCommands();
 	}
 
+	// Browser-style UI zoom: Cmd on macOS, Ctrl elsewhere — same convention
+	// as every browser. The webview engines expose the zoom API but don't
+	// ship the browser's keybindings, so we wire them here.
+	const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac');
+
+	function handleZoomKey(event: KeyboardEvent): boolean {
+		const modifier = isMac ? event.metaKey : event.ctrlKey;
+		if (!modifier || event.altKey) return false;
+		// '=' is the unshifted '+' key; '_' the shifted '-'. NumpadAdd /
+		// NumpadSubtract also report '+' / '-' in event.key.
+		if (event.key === '+' || event.key === '=') {
+			event.preventDefault();
+			if (!event.repeat) stepUiScale(1);
+			return true;
+		}
+		if (event.key === '-' || event.key === '_') {
+			event.preventDefault();
+			if (!event.repeat) stepUiScale(-1);
+			return true;
+		}
+		if (event.key === '0') {
+			event.preventDefault();
+			if (!event.repeat) resetUiScale();
+			return true;
+		}
+		return false;
+	}
+
 	function onGlobalKeydown(event: KeyboardEvent) {
+		// UI zoom works everywhere — every page, every window, before any
+		// page guard.
+		if (handleZoomKey(event)) return;
 		// F1 toggles the shortcuts help — available on every page (incl.
 		// settings), so it's handled before the main-page guard below.
 		if (event.key === 'F1' && hasNoModifiers(event)) {
@@ -531,12 +568,15 @@
 		--text-faint: #a29c91;
 		/* Accent options (Settings → General highlight color). Light-theme
 		   variants are darkened for contrast on white, like the teal. The
-		   data-accent override blocks below pick one; teal is the default. */
+		   data-accent override blocks below pick one; teal is the default.
+		   Blue is the pre-refresh accent, kept as an option. */
 		--accent-teal: #2f8f84;
 		--accent-amber: #a1722e;
 		--accent-violet: #4f5bd5;
+		--accent-blue: #3b82f6;
 		--accent-amber-contrast: #ffffff;
 		--accent-violet-contrast: #ffffff;
+		--accent-blue-contrast: #ffffff;
 		--accent: var(--accent-teal);
 		--accent-contrast: #ffffff;
 		--border: #e5e0d7;
@@ -569,12 +609,15 @@
 			--text-secondary: #a39d92;
 			--text-muted: #8f887c;
 			--text-faint: #6f6a61;
-			/* Bronze/indigo pairs from the design exploration board. */
+			/* Bronze/indigo pairs from the design exploration board; blue is
+			   the pre-refresh accent. */
 			--accent-teal: #4fb0a5;
 			--accent-amber: #cc9a52;
 			--accent-violet: #7c8cf8;
+			--accent-blue: #60a5fa;
 			--accent-amber-contrast: #0d0c0b;
 			--accent-violet-contrast: #ffffff;
+			--accent-blue-contrast: #0a2342;
 			--accent: var(--accent-teal);
 			--accent-contrast: #06201c;
 			--border: #2a2621;
@@ -598,8 +641,10 @@
 		--accent-teal: #4fb0a5;
 		--accent-amber: #cc9a52;
 		--accent-violet: #7c8cf8;
+		--accent-blue: #60a5fa;
 		--accent-amber-contrast: #0d0c0b;
 		--accent-violet-contrast: #ffffff;
+		--accent-blue-contrast: #0a2342;
 		--accent: var(--accent-teal);
 		--accent-contrast: #06201c;
 		--border: #2a2621;
@@ -620,6 +665,10 @@
 	:global(:root[data-accent='violet']) {
 		--accent: var(--accent-violet);
 		--accent-contrast: var(--accent-violet-contrast);
+	}
+	:global(:root[data-accent='blue']) {
+		--accent: var(--accent-blue);
+		--accent-contrast: var(--accent-blue-contrast);
 	}
 
 	/* Accessibility: honor the OS "reduce motion" preference with one global
