@@ -321,7 +321,7 @@
 		padding: 12px 14px;
 		border: 1px solid var(--border);
 		border-radius: 8px;
-		background: var(--bg-secondary);
+		background: var(--bg-raised);
 	}
 
 	.restart-banner {

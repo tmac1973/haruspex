@@ -7,7 +7,6 @@ export const researchJobType: JobTypeDefinition = {
 	label: 'Research',
 	description:
 		'A sequential pipeline of steps; each step runs as a fresh conversation and its output feeds the next.',
-	badgeTone: 'research',
 	hasPlannedSteps: true,
 	listMeta: (job) => ` · ${job.step_count} step${job.step_count === 1 ? '' : 's'}`,
 	Editor,

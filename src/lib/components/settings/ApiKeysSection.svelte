@@ -106,10 +106,6 @@
 />
 
 <style>
-	.settings-section {
-		margin-bottom: 24px;
-	}
-
 	.hint {
 		margin: 0 0 12px 0;
 	}

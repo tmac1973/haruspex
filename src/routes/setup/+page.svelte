@@ -505,11 +505,11 @@
 	.primary-btn {
 		padding: 10px 28px;
 		background: var(--accent);
-		color: white;
+		color: var(--accent-contrast);
 		border: none;
 		border-radius: 8px;
 		font-size: 1rem;
-		font-weight: 500;
+		font-weight: 600;
 		cursor: pointer;
 	}
 

@@ -49,8 +49,8 @@
 	}
 </script>
 
-<section class="card">
-	<h3>Shell binary</h3>
+<section class="settings-section">
+	<h2>Shell binary</h2>
 	<p class="help">
 		The Shell tab spawns this program for the interactive terminal. Leave blank to use your
 		<code>$SHELL</code>
@@ -69,8 +69,8 @@
 	<p class="hint">Takes effect the next time you open the Shell tab or restart the app.</p>
 </section>
 
-<section class="card">
-	<h3>Recent shell commands attached to each chat message</h3>
+<section class="settings-section">
+	<h2>Recent shell commands attached to each chat message</h2>
 	<label class="row">
 		<input
 			type="number"
@@ -90,8 +90,8 @@
 	</p>
 </section>
 
-<section class="card">
-	<h3>Max output bytes per captured command</h3>
+<section class="settings-section">
+	<h2>Max output bytes per captured command</h2>
 	<label class="row">
 		<input
 			type="number"
@@ -116,9 +116,9 @@
 
 <h2 class="group-heading">Code mode</h2>
 
-<section class="card">
-	<h3>Enable Code mode by default in new shells</h3>
-	<label class="row">
+<section class="settings-section">
+	<h2>Enable Code mode by default in new shells</h2>
+	<label class="toggle-row">
 		<input type="checkbox" bind:checked={shellCodeModeDefault} onchange={persistCodeModeDefault} />
 		<span>New Shell sessions start in Code mode</span>
 	</label>
@@ -130,8 +130,8 @@
 	</p>
 </section>
 
-<section class="card">
-	<h3>Command execution</h3>
+<section class="settings-section">
+	<h2>Command execution</h2>
 	<p class="help">
 		How the coding agent's <code>run_command</code> runs. <strong>Auto</strong> drives your live
 		interactive terminal (sharing the activated venv / env / cwd, visible in your scrollback) when
@@ -146,8 +146,8 @@
 	</select>
 </section>
 
-<section class="card">
-	<h3>run_command timeout</h3>
+<section class="settings-section">
+	<h2>run_command timeout</h2>
 	<label class="row">
 		<input
 			type="number"
@@ -169,8 +169,8 @@
 	</p>
 </section>
 
-<section class="card">
-	<h3>Max steps per task</h3>
+<section class="settings-section">
+	<h2>Max steps per task</h2>
 	<label class="row">
 		<input
 			type="number"
@@ -190,9 +190,9 @@
 	</p>
 </section>
 
-<section class="card danger" class:enabled={codeAutoApprove}>
-	<h3>Auto-approve commands</h3>
-	<label class="row">
+<section class="settings-section danger" class:enabled={codeAutoApprove}>
+	<h2>Auto-approve commands</h2>
+	<label class="toggle-row">
 		<input type="checkbox" bind:checked={codeAutoApprove} onchange={persistCodeAutoApprove} />
 		<span>Run risk-flagged commands without prompting</span>
 	</label>
@@ -204,41 +204,30 @@
 </section>
 
 <style>
+	/* Sub-group label between the terminal cards and the Code-mode cards. */
 	.group-heading {
-		margin: 8px 0 12px;
-		font-size: 1.05rem;
-		font-weight: 600;
-		padding-bottom: 6px;
-		border-bottom: 1px solid var(--border);
+		margin: 18px 0 12px;
+		font-size: 0.9rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--accent);
 	}
 
-	.card {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 16px;
-		margin-bottom: 16px;
+	/* Card chrome comes from the global .settings-section. */
+	section.danger.enabled {
+		border-color: var(--error-text);
 	}
 
-	.card select {
+	select {
 		width: 100%;
 		padding: 8px 10px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
 		font-size: 0.9rem;
-		background-color: var(--bg-primary);
+		background-color: var(--bg-input);
 		color: var(--text-primary);
 		color-scheme: light dark;
-	}
-
-	.card.danger.enabled {
-		border-color: var(--error-text, #c66);
-	}
-
-	.card h3 {
-		margin: 0 0 8px;
-		font-size: 0.95rem;
-		font-weight: 600;
 	}
 
 	.help {
@@ -254,7 +243,7 @@
 	}
 
 	code {
-		background: var(--bg-primary);
+		background: var(--bg-raised);
 		padding: 1px 6px;
 		border-radius: 4px;
 		font-size: 0.85em;
@@ -263,9 +252,9 @@
 	input[type='text'] {
 		width: 100%;
 		padding: 8px 10px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
+		background: var(--bg-input);
 		color: var(--text-primary);
 		font-family: ui-monospace, Menlo, Monaco, 'Cascadia Mono', 'Courier New', monospace;
 		font-size: 0.85rem;
@@ -280,9 +269,9 @@
 	input[type='number'] {
 		width: 70px;
 		padding: 6px 8px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
+		background: var(--bg-input);
 		color: var(--text-primary);
 		font-size: 0.9rem;
 		outline: none;

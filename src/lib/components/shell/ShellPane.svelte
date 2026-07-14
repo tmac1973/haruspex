@@ -473,7 +473,7 @@
 
 	.risky-cmd {
 		background: var(--code-bg);
-		color: #f87171;
+		color: var(--error-text);
 		padding: 10px 12px;
 		border-radius: 6px;
 		font-family: ui-monospace, Menlo, Monaco, 'Cascadia Mono', 'Courier New', monospace;

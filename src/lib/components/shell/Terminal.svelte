@@ -85,7 +85,7 @@
 			cursorBlink: true,
 			scrollback: 5000,
 			theme: {
-				background: '#1e1e1e',
+				background: '#0c0b0a',
 				foreground: '#d4d4d4',
 				cursor: '#ffffff',
 				selectionBackground: '#264f78'
@@ -99,6 +99,11 @@
 		// Ctrl+V).
 		t.attachCustomKeyEventHandler((event) => {
 			if (event.key === 'F1' || event.key === 'F2' || event.key === 'F3' || event.key === 'F4') {
+				return false;
+			}
+			// Ctrl/⌘ +/-/0 is app-level UI zoom (handled in +layout) — don't
+			// also feed the chord to the PTY.
+			if ((event.ctrlKey || event.metaKey) && ['+', '=', '-', '_', '0'].includes(event.key)) {
 				return false;
 			}
 			if (
@@ -452,7 +457,9 @@
 	.terminal-host {
 		position: absolute;
 		inset: 0;
-		background: #1e1e1e;
+		/* Matches the xterm theme background above — an always-dark surface
+		   in both app themes. */
+		background: #0c0b0a;
 		padding: 4px 0 0 4px;
 	}
 

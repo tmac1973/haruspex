@@ -231,7 +231,8 @@
 	.conversation-item.active {
 		background: var(--bg-primary);
 		font-weight: 500;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+		/* Inset accent edge (not border-left) so the row width doesn't shift. */
+		box-shadow: inset 2px 0 0 var(--accent);
 	}
 	.conv-title {
 		flex: 1;

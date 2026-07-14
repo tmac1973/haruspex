@@ -2,10 +2,14 @@
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "default",
 	"description": "enables the default permissions",
-	"windows": ["main", "shell-*"],
+	"windows": [
+		"main",
+		"shell-*"
+	],
 	"permissions": [
 		"core:default",
 		"core:webview:allow-create-webview-window",
+		"core:webview:allow-set-webview-zoom",
 		"core:window:allow-close",
 		"core:window:allow-destroy",
 		"core:window:allow-set-title",
@@ -34,7 +38,9 @@
 						"--exit-zero",
 						"--isolated",
 						"--select=E9,F",
-						{ "validator": "\\S+" }
+						{
+							"validator": "\\S+"
+						}
 					]
 				},
 				{
@@ -47,8 +53,12 @@
 						"--isolated",
 						"--select=F63,F82,B006",
 						"--config",
-						{ "validator": "builtins=\\[.*\\]" },
-						{ "validator": "\\S+" }
+						{
+							"validator": "builtins=\\[.*\\]"
+						},
+						{
+							"validator": "\\S+"
+						}
 					]
 				}
 			]
@@ -65,7 +75,9 @@
 						"--exit-zero",
 						"--isolated",
 						"--select=E9,F",
-						{ "validator": "\\S+" }
+						{
+							"validator": "\\S+"
+						}
 					]
 				},
 				{
@@ -78,8 +90,12 @@
 						"--isolated",
 						"--select=F63,F82,B006",
 						"--config",
-						{ "validator": "builtins=\\[.*\\]" },
-						{ "validator": "\\S+" }
+						{
+							"validator": "builtins=\\[.*\\]"
+						},
+						{
+							"validator": "\\S+"
+						}
 					]
 				}
 			]

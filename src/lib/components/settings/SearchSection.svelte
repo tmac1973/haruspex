@@ -237,9 +237,9 @@
 		margin-bottom: 12px;
 	}
 
+	/* Not a flex wrapper: that would shrink-wrap the segmented control to
+	   its content width instead of letting it fill the pane. */
 	.proxy-modes {
-		display: flex;
-		gap: 8px;
 		margin-bottom: 12px;
 	}
 </style>

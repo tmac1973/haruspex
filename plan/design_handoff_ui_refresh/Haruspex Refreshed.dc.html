@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  :root {
+    --bg:#100f0d; --surface:#16140f; --raised:#1e1c18; --input:#1b1914;
+    --border:#2a2621; --border2:#322e28; --border3:#3a352d; --off:#2e2a24;
+    --t1:#ece7dd; --t2:#a39d92; --t3:#8f887c; --t4:#6f6a61;
+    --accent:#4fb0a5; --accent-ink:#06201c;
+  }
+  .hx.light {
+    --bg:#ffffff; --surface:#f4f1ea; --raised:#ffffff; --input:#ffffff;
+    --border:#e5e0d7; --border2:#ece7dd; --border3:#d6cfc3; --off:#e2ddd3;
+    --t1:#1f1c17; --t2:#5f594f; --t3:#867f74; --t4:#a29c91;
+    --accent:#2f8f84; --accent-ink:#ffffff;
+  }
+  body { margin:0; background:#0d0c0b; }
+  * { box-sizing:border-box; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:5px; }
+  ::-webkit-scrollbar-thumb:hover { background:var(--border3); }
+  @keyframes blink { 50% { opacity:0; } }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</helmet>
+
+<div class="hx {{ themeClass }}" style="height:100vh;display:flex;flex-direction:column;background:var(--bg);color:var(--t1);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden;">
+
+  <!-- ===================== HEADER ===================== -->
+  <header style="display:flex;align-items:center;justify-content:space-between;padding:9px 16px;border-bottom:1px solid var(--border);flex-shrink:0;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:18px;height:18px;border-radius:5px;background:linear-gradient(135deg,var(--accent),#2f7a72);transform:rotate(45deg);"></div>
+      <span style="font-size:1.1rem;font-weight:600;">Haruspex</span>
+      <span style="font-size:0.8rem;font-weight:400;color:var(--t3);">0.42.0</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="display:inline-flex;align-items:center;gap:6px;font-size:0.76rem;color:var(--t2);background:var(--surface);border:1px solid var(--border);padding:4px 10px;border-radius:999px;"><span style="width:7px;height:7px;border-radius:50%;background:#6fae6a;box-shadow:0 0 6px #6fae6a;"></span>Model ready</span>
+      <span style="font-size:0.74rem;color:var(--t3);">4.1k / 8k</span>
+      <button onClick="{{ toggleTheme }}" style="background:none;border:none;color:var(--t3);display:flex;padding:4px;border-radius:5px;cursor:pointer;" title="Toggle light / dark">
+        <sc-if value="{{ themeIsLight }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></sc-if>
+        <sc-if value="{{ themeIsDark }}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg></sc-if>
+      </button>
+      <button onClick="{{ openLogs }}" style="background:none;border:none;color:var(--t3);display:flex;padding:4px;border-radius:5px;cursor:pointer;" title="Logs"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg></button>
+      <button onClick="{{ noop }}" style="background:none;border:none;color:var(--t3);display:flex;padding:4px;border-radius:5px;cursor:pointer;" title="Keyboard shortcuts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></button>
+      <button onClick="{{ openSettings }}" style="background:none;border:none;color:var(--t2);display:flex;padding:4px;border-radius:5px;cursor:pointer;" title="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+    </div>
+  </header>
+
+  <!-- ===================== TAB BAR ===================== -->
+  <div style="display:flex;align-items:stretch;border-bottom:1px solid var(--border);flex-shrink:0;">
+    <button onClick="{{ goChat }}" style="appearance:none;background:none;border:none;padding:9px 18px;font-size:0.85rem;font-weight:500;cursor:pointer;border-bottom:2px solid {{ tab_chat_border }};color:{{ tab_chat_color }};margin-bottom:-1px;">Chat</button>
+    <button onClick="{{ goJobs }}" style="appearance:none;background:none;border:none;padding:9px 18px;font-size:0.85rem;font-weight:500;cursor:pointer;border-bottom:2px solid {{ tab_jobs_border }};color:{{ tab_jobs_color }};margin-bottom:-1px;display:inline-flex;align-items:center;gap:7px;">Jobs<span style="min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:0.62rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;">1</span></button>
+    <button onClick="{{ goShell }}" style="appearance:none;background:none;border:none;padding:9px 18px;font-size:0.85rem;font-weight:500;cursor:pointer;border-bottom:2px solid {{ tab_shell_border }};color:{{ tab_shell_color }};margin-bottom:-1px;">Shell</button>
+  </div>
+
+  <!-- ===================== MAIN ===================== -->
+  <main style="flex:1;position:relative;overflow:hidden;min-height:0;">
+
+    <!-- ---------- CHAT TAB ---------- -->
+    <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;height:100%;">
+        <!-- conversation sidebar -->
+        <aside style="width:250px;flex-shrink:0;border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;">
+          <div style="display:flex;gap:6px;padding:10px;border-bottom:1px solid var(--border);">
+            <button onClick="{{ noop }}" style="flex:1;text-align:left;padding:7px 12px;border:1px solid var(--border3);border-radius:7px;background:var(--input);color:var(--t1);font-size:0.85rem;cursor:pointer;">+ New Chat</button>
+            <button onClick="{{ noop }}" style="background:none;border:none;color:var(--t3);cursor:pointer;padding:0 6px;font-size:0.7rem;">◀</button>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:6px;">
+            <div style="padding:9px 11px;border-radius:7px;background:var(--input);box-shadow:0 1px 2px rgba(0,0,0,.3);font-size:0.85rem;font-weight:500;border-left:2px solid var(--accent);margin-bottom:2px;">Renewable grid storage</div>
+            <div style="padding:9px 11px;border-radius:7px;font-size:0.85rem;color:var(--t1);margin-bottom:2px;">Rust async patterns</div>
+            <div style="padding:9px 11px;border-radius:7px;font-size:0.85rem;color:var(--t1);margin-bottom:2px;">Trip plan: Kyoto</div>
+            <div style="padding:9px 11px;border-radius:7px;font-size:0.85rem;color:var(--t1);">Tax deadlines 2026</div>
+          </div>
+          <div style="padding:8px;border-top:1px solid var(--border);"><button onClick="{{ noop }}" style="width:100%;padding:6px;border:none;border-radius:6px;background:none;color:var(--t3);font-size:0.8rem;cursor:pointer;">Clear all</button></div>
+        </aside>
+        <!-- chat main -->
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+          <div style="flex:1;overflow-y:auto;">
+            <!-- user message -->
+            <div style="padding:16px 22px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--accent) 6%,transparent);">
+              <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--t3);margin-bottom:5px;">You</div>
+              <div style="font-size:0.95rem;line-height:1.6;color:var(--t1);">How does grid-scale battery storage compare to pumped hydro for renewables?</div>
+            </div>
+            <!-- search steps chip -->
+            <div style="margin:12px 22px 0;">
+              <div style="display:inline-flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--t2);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                Searched 6 sources · read 4 pages
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+            </div>
+            <!-- assistant message -->
+            <div style="padding:14px 22px 18px;">
+              <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--t3);margin-bottom:6px;">Haruspex</div>
+              <div style="font-size:0.95rem;line-height:1.65;color:var(--t1);">
+                <p style="margin:0 0 12px;">Both store energy for the grid, but they differ sharply on siting, lifespan, and round-trip efficiency:</p>
+                <p style="margin:0 0 6px;font-weight:600;color:var(--t1);">Round-trip efficiency</p>
+                <p style="margin:0 0 12px;">Lithium-ion batteries return about 85–95% of stored energy, versus roughly 70–80% for pumped hydro <span style="color:var(--accent);">[1]</span>.</p>
+                <p style="margin:0 0 6px;font-weight:600;color:var(--t1);">Siting &amp; scale</p>
+                <div style="margin:0;padding-left:2px;">
+                  <div style="display:flex;gap:9px;margin-bottom:5px;"><span style="color:var(--accent);">•</span><span>Pumped hydro needs specific geography and huge upfront works <span style="color:var(--accent);">[2]</span>.</span></div>
+                  <div style="display:flex;gap:9px;"><span style="color:var(--accent);">•</span><span>Batteries are modular and deploy almost anywhere in months.</span></div>
+                </div>
+              </div>
+              <!-- sources -->
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;">
+                <span style="font-size:0.72rem;color:var(--t2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;">iea.org</span>
+                <span style="font-size:0.72rem;color:var(--t2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;">nrel.gov</span>
+                <span style="font-size:0.72rem;color:var(--t2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;">energy.gov</span>
+              </div>
+            </div>
+          </div>
+          <!-- composer -->
+          <div style="border-top:1px solid var(--border);padding:12px 16px;">
+            <div style="display:flex;gap:8px;align-items:flex-end;">
+              <div style="flex:1;border:1px solid var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent);border-radius:9px;padding:10px 12px;font-size:0.92rem;background:var(--input);color:var(--t2);min-height:40px;">Ask a follow-up…<span style="display:inline-block;width:2px;height:1em;background:var(--accent);vertical-align:text-bottom;margin-left:1px;animation:blink .8s step-end infinite;"></span></div>
+              <button onClick="{{ noop }}" title="Working directory" style="width:40px;height:40px;border-radius:9px;border:1px solid var(--border3);background:var(--input);color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></button>
+              <button onClick="{{ noop }}" title="Deep research" style="width:40px;height:40px;border-radius:50%;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>
+              <button onClick="{{ noop }}" title="Voice" style="width:40px;height:40px;border-radius:50%;border:1px solid var(--border3);background:var(--input);color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10a7 7 0 0 0 14 0"></path><line x1="12" y1="17" x2="12" y2="21"></line></svg></button>
+              <button onClick="{{ noop }}" style="padding:10px 20px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;cursor:pointer;font-size:0.9rem;font-weight:600;flex-shrink:0;">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ---------- JOBS TAB ---------- -->
+    <sc-if value="{{ isJobs }}">
+      <div style="display:flex;height:100%;">
+        <!-- job list -->
+        <div style="width:230px;flex-shrink:0;border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border-bottom:1px solid var(--border);">
+            <span style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--t3);font-weight:600;">Jobs</span>
+            <button onClick="{{ noop }}" style="font-size:0.76rem;border:1px solid var(--border3);border-radius:5px;padding:3px 9px;background:var(--input);color:var(--t1);cursor:pointer;">+ New</button>
+          </div>
+          <div style="flex:1;overflow-y:auto;">
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--border);border-left:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent);">
+              <div style="flex:1;min-width:0;"><div style="font-size:0.88rem;font-weight:500;">Morning headlines</div><div style="font-size:0.72rem;color:var(--t3);margin-top:2px;">Daily · 09:00</div></div>
+              <button onClick="{{ startRun }}" title="Run now" style="width:26px;height:26px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);border-radius:5px;font-size:0.72rem;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;">▶</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--border);">
+              <div style="flex:1;min-width:0;"><div style="font-size:0.88rem;font-weight:500;">Repo audit <span style="font-size:0.58rem;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);border-radius:999px;padding:1px 6px;text-transform:uppercase;letter-spacing:0.04em;">audit</span></div><div style="font-size:0.72rem;color:var(--t3);margin-top:2px;">Manual · 8 runs</div></div>
+              <button onClick="{{ startRun }}" title="Run now" style="width:26px;height:26px;border:1px solid var(--border3);background:var(--input);color:var(--accent);border-radius:5px;font-size:0.72rem;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;">▶</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--border);">
+              <div style="flex:1;min-width:0;"><div style="font-size:0.88rem;font-weight:500;">Plan: auth rewrite <span style="font-size:0.58rem;background:color-mix(in srgb,#7c8cf8 18%,transparent);color:#9aa6ff;border-radius:999px;padding:1px 6px;text-transform:uppercase;letter-spacing:0.04em;">plan</span></div><div style="font-size:0.72rem;color:var(--t3);margin-top:2px;">Manual</div></div>
+              <button onClick="{{ startRun }}" title="Run now" style="width:26px;height:26px;border:1px solid var(--border3);background:var(--input);color:var(--accent);border-radius:5px;font-size:0.72rem;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;">▶</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- run view -->
+        <sc-if value="{{ jobRun }}">
+        <div style="flex:1;min-width:0;padding:16px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="font-size:1rem;font-weight:600;">Morning headlines</span><span style="font-size:0.7rem;padding:2px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:0.04em;background:color-mix(in srgb,var(--accent) 15%,transparent);border:1px solid var(--accent);color:var(--accent);">Running…</span></div>
+            <button onClick="{{ closeRun }}" style="border:1px solid #47201d;color:#dd6b60;background:transparent;border-radius:7px;padding:6px 14px;font-size:0.82rem;cursor:pointer;">Cancel</button>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:11px 13px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--t3);">Step 1</span><span style="font-size:0.64rem;padding:2px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:0.04em;background:color-mix(in srgb,#6fae6a 15%,transparent);border:1px solid #6fae6a;color:#6fae6a;">Done</span><span style="font-size:0.68rem;padding:1px 7px;border-radius:999px;border:1px solid var(--accent);color:var(--accent);white-space:nowrap;">Deep research</span></div>
+            <div style="font-size:0.85rem;color:var(--t1);white-space:pre-wrap;">Search today's top tech &amp; world headlines and summarize the 10 most important.</div>
+            <div style="border-top:1px solid var(--border);padding-top:8px;font-size:0.85rem;line-height:1.55;color:var(--t1);">Compiled 10 headlines across tech, world &amp; markets with source links. ✓</div>
+          </div>
+          <div style="border:1px solid var(--accent);border-radius:8px;background:var(--surface);padding:11px 13px;display:flex;flex-direction:column;gap:8px;box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 25%,transparent);">
+            <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--t3);">Step 2</span><span style="font-size:0.64rem;padding:2px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:0.04em;background:color-mix(in srgb,var(--accent) 15%,transparent);border:1px solid var(--accent);color:var(--accent);">Running</span></div>
+            <div style="font-size:0.85rem;color:var(--t1);white-space:pre-wrap;">Turn the above into a formatted PDF in the working directory.</div>
+            <div style="font-size:0.75rem;color:var(--t3);font-style:italic;">Prior step's output was prepended to this prompt at run time.</div>
+            <div style="display:inline-flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--t2);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 11px;align-self:flex-start;"><span style="width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;display:inline-block;"></span>Writing headlines.pdf…</div>
+            <div style="font-size:0.85rem;line-height:1.55;color:var(--t1);">Generating the document<span style="display:inline-block;width:2px;height:1em;background:var(--accent);vertical-align:text-bottom;margin-left:1px;animation:blink .8s step-end infinite;"></span></div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:11px 13px;opacity:.55;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--t3);">Step 3</span><span style="font-size:0.64rem;padding:2px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:0.04em;background:var(--raised);border:1px solid var(--border2);color:var(--t3);">Pending</span></div>
+            <div style="font-size:0.85rem;color:var(--t2);white-space:pre-wrap;">Email me the PDF summary.</div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- editor (1b collapsible) -->
+        <sc-if value="{{ jobEdit }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:1;min-width:0;padding:16px 20px;overflow-y:auto;">
+          <div style="font-size:1rem;font-weight:600;margin-bottom:4px;">Edit job</div>
+          <div style="font-size:0.78rem;color:var(--t3);margin-bottom:16px;">Research · Daily 09:00 · Settings model</div>
+
+          <!-- Basics -->
+          <div style="border:1px solid var(--border);border-radius:9px;overflow:hidden;margin-bottom:10px;">
+            <button onClick="{{ toggleBasics }}" style="width:100%;display:flex;align-items:center;gap:9px;padding:11px 13px;background:var(--surface);border:none;border-bottom:1px solid var(--border);cursor:pointer;color:var(--t1);text-align:left;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rot_basics }}deg);transition:transform .15s;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              <span style="font-size:0.82rem;font-weight:600;">Basics</span>
+              <span style="margin-left:auto;font-size:0.74rem;color:var(--t3);">Morning headlines · Research</span>
+            </button>
+            <sc-if value="{{ basicsOpen }}" hint-placeholder-val="{{ true }}">
+              <div style="padding:13px;">
+                <div style="margin-bottom:10px;"><div style="font-size:0.76rem;color:var(--t3);margin-bottom:4px;">Name</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);">Morning headlines</div></div>
+                <div style="display:flex;gap:10px;"><div style="flex:1;"><div style="font-size:0.76rem;color:var(--t3);margin-bottom:4px;">Type</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);display:flex;justify-content:space-between;">Research<span style="color:var(--t3);">▾</span></div></div><div style="flex:1.3;"><div style="font-size:0.76rem;color:var(--t3);margin-bottom:4px;">Description</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);color:var(--t4);">Optional note</div></div></div>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- Where & when -->
+          <div style="border:1px solid var(--border);border-radius:9px;overflow:hidden;margin-bottom:10px;">
+            <button onClick="{{ toggleWhere }}" style="width:100%;display:flex;align-items:center;gap:9px;padding:12px 13px;background:var(--surface);border:none;cursor:pointer;color:var(--t1);text-align:left;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rot_where }}deg);transition:transform .15s;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              <span style="font-size:0.82rem;font-weight:600;">Where &amp; when</span>
+              <span style="margin-left:auto;font-size:0.74rem;color:var(--t3);">No folder · Daily 09:00</span>
+            </button>
+            <sc-if value="{{ whereOpen }}">
+              <div style="padding:0 13px 13px;border-top:1px solid var(--border);padding-top:13px;">
+                <div style="margin-bottom:10px;"><div style="font-size:0.76rem;color:var(--t3);margin-bottom:4px;">Working directory <span style="opacity:.65;">optional</span></div><div style="display:flex;gap:6px;"><div style="flex:1;border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);color:var(--t4);">Not set</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 12px;font-size:0.8rem;background:var(--raised);">Browse…</div></div></div>
+                <div style="display:flex;gap:8px;"><div style="flex:1;"><div style="font-size:0.76rem;color:var(--t3);margin-bottom:4px;">Schedule</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);display:flex;justify-content:space-between;">Daily<span style="color:var(--t3);">▾</span></div></div><div style="width:100px;"><div style="font-size:0.76rem;color:var(--t3);margin-bottom:4px;">At</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);">09:00</div></div></div>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- Model -->
+          <div style="border:1px solid var(--border);border-radius:9px;overflow:hidden;margin-bottom:10px;">
+            <button onClick="{{ toggleModel }}" style="width:100%;display:flex;align-items:center;gap:9px;padding:12px 13px;background:var(--surface);border:none;cursor:pointer;color:var(--t1);text-align:left;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rot_model }}deg);transition:transform .15s;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              <span style="font-size:0.82rem;font-weight:600;">Model</span>
+              <span style="margin-left:auto;font-size:0.72rem;color:var(--t3);background:var(--raised);border:1px solid var(--border2);border-radius:999px;padding:2px 9px;white-space:nowrap;">Settings default</span>
+            </button>
+            <sc-if value="{{ modelOpen }}">
+              <div style="padding:13px;border-top:1px solid var(--border);">
+                <div style="display:flex;background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:3px;gap:3px;">
+                  <button onClick="{{ setModelSettings }}" style="flex:1;border:none;cursor:pointer;padding:6px 4px;border-radius:6px;font-size:0.78rem;background:{{ seg_settings_bg }};color:{{ seg_settings_color }};font-weight:600;">Settings</button>
+                  <button onClick="{{ setModelRemote }}" style="flex:1;border:none;cursor:pointer;padding:6px 4px;border-radius:6px;font-size:0.78rem;background:{{ seg_remote_bg }};color:{{ seg_remote_color }};">Remote</button>
+                  <button onClick="{{ setModelOR }}" style="flex:1;border:none;cursor:pointer;padding:6px 4px;border-radius:6px;font-size:0.78rem;background:{{ seg_or_bg }};color:{{ seg_or_color }};">OpenRouter</button>
+                </div>
+                <sc-if value="{{ modelIsSettings }}" hint-placeholder-val="{{ true }}"><div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">Follows your active Settings backend — no per-job configuration needed.</div></sc-if>
+                <sc-if value="{{ modelIsRemote }}"><div style="margin-top:10px;display:flex;flex-direction:column;gap:9px;"><div style="display:flex;gap:8px;align-items:flex-end;"><div style="flex:1;"><div style="font-size:0.72rem;color:var(--t3);margin-bottom:4px;">Server URL</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.83rem;background:var(--input);display:flex;justify-content:space-between;">http://192.168.1.20:8080<span style="color:var(--t3);">▾</span></div></div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 13px;font-size:0.8rem;background:var(--raised);">Probe</div></div><div style="display:flex;gap:8px;"><div style="flex:1;"><div style="font-size:0.72rem;color:var(--t3);margin-bottom:4px;">Model</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.83rem;background:var(--input);color:var(--t2);">qwen3.5-32b</div></div><div style="width:120px;"><div style="font-size:0.72rem;color:var(--t3);margin-bottom:4px;">Context</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.83rem;background:var(--input);">131072</div></div></div></div></sc-if>
+                <sc-if value="{{ modelIsOR }}"><div style="margin-top:10px;display:flex;flex-direction:column;gap:9px;"><div style="display:flex;gap:8px;align-items:flex-end;"><div style="flex:1;"><div style="font-size:0.72rem;color:var(--t3);margin-bottom:4px;">API key</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.83rem;background:var(--input);color:var(--t2);">OpenRouter · •••• 4a2f</div></div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 13px;font-size:0.8rem;background:var(--raised);">Load models</div></div><div><div style="font-size:0.72rem;color:var(--t3);margin-bottom:4px;">Model</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.83rem;background:var(--input);color:var(--t2);">anthropic/claude · 200k · vision</div></div><div style="font-size:0.72rem;color:#d7a13f;">⚠ Prompts leave your device.</div></div></sc-if>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- Steps -->
+          <div style="border:1px solid var(--border);border-radius:9px;overflow:hidden;margin-bottom:16px;">
+            <button onClick="{{ toggleSteps }}" style="width:100%;display:flex;align-items:center;gap:9px;padding:11px 13px;background:var(--surface);border:none;border-bottom:1px solid var(--border);cursor:pointer;color:var(--t1);text-align:left;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rot_steps }}deg);transition:transform .15s;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              <span style="font-size:0.82rem;font-weight:600;">Steps</span>
+              <span style="margin-left:auto;font-size:0.72rem;color:var(--t3);">2 steps · runs in sequence</span>
+            </button>
+            <sc-if value="{{ stepsOpen }}" hint-placeholder-val="{{ true }}">
+              <div style="padding:13px;">
+                <div style="border:1px solid var(--border);border-radius:8px;background:var(--input);padding:10px;margin-bottom:8px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+                    <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--t3);">Step 1</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 15%,transparent);border:1px solid var(--accent);color:var(--accent);white-space:nowrap;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>Deep research</span></div>
+                    <div style="display:flex;gap:3px;color:var(--t3);align-items:center;"><span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;padding:3px 8px;border-radius:5px;border:1px solid var(--border3);color:var(--t2);"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"></path><line x1="8" y1="7" x2="14" y2="7"></line></svg>Catalog</span><span style="border:1px solid var(--border3);border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:0.8rem;">↓</span><span style="border:1px solid var(--border3);border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:0.8rem;">×</span></div>
+                  </div>
+                  <div style="border:1px solid var(--border3);border-radius:6px;padding:8px 10px;font-size:0.8rem;background:var(--bg);color:var(--t2);line-height:1.4;">Search today's top tech &amp; world headlines and summarize the 10 most important.</div>
+                </div>
+                <div style="border:1px dashed var(--border3);border-radius:7px;padding:8px;text-align:center;font-size:0.8rem;color:var(--accent);cursor:pointer;">+ Add step</div>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;justify-content:space-between;">
+            <button onClick="{{ noop }}" style="border:1px solid #47201d;color:#dd6b60;background:none;border-radius:7px;padding:7px 13px;font-size:0.82rem;cursor:pointer;">Delete</button>
+            <div style="display:flex;gap:8px;"><button onClick="{{ noop }}" style="border:1px solid var(--border3);background:var(--input);color:var(--t1);border-radius:7px;padding:7px 13px;font-size:0.82rem;cursor:pointer;">Cancel</button><button onClick="{{ noop }}" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:7px 16px;font-size:0.82rem;font-weight:600;cursor:pointer;">Save</button></div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- run history -->
+        <div style="width:230px;flex-shrink:0;border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;">
+          <div style="padding:11px 13px;border-bottom:1px solid var(--border);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--t3);font-weight:600;">Run history</div>
+          <div style="flex:1;overflow-y:auto;padding:8px;">
+            <div style="border:1px solid var(--border);border-radius:7px;padding:9px 11px;margin-bottom:7px;"><div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:0.78rem;">Today 09:00</span><span style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.04em;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,#6fae6a 15%,transparent);border:1px solid #6fae6a;color:#6fae6a;">done</span></div><div style="font-size:0.72rem;color:var(--t3);margin-top:3px;">42s · 2 steps</div></div>
+            <div style="border:1px solid var(--border);border-radius:7px;padding:9px 11px;margin-bottom:7px;"><div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:0.78rem;">Yesterday</span><span style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.04em;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,#6fae6a 15%,transparent);border:1px solid #6fae6a;color:#6fae6a;">done</span></div><div style="font-size:0.72rem;color:var(--t3);margin-top:3px;">39s · 2 steps</div></div>
+            <div style="border:1px solid var(--border);border-radius:7px;padding:9px 11px;"><div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:0.78rem;">Mon</span><span style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.04em;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,#dd6b60 14%,transparent);border:1px solid #dd6b60;color:#dd6b60;">failed</span></div><div style="font-size:0.72rem;color:var(--t3);margin-top:3px;">search timeout</div></div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ---------- SHELL TAB ---------- -->
+    <sc-if value="{{ isShell }}">
+      <div style="display:flex;flex-direction:column;height:100%;">
+        <div style="display:flex;align-items:stretch;gap:2px;padding:5px 8px 0;background:var(--surface);border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:7px;padding:6px 12px;font-size:0.78rem;background:var(--bg);color:var(--t1);border:1px solid var(--border);border-bottom:none;border-radius:7px 7px 0 0;">zsh · haruspex<span style="color:var(--accent);font-size:0.6rem;">●</span><span style="color:var(--t3);">⤢</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:6px 12px;font-size:0.78rem;color:var(--t3);">node<span style="opacity:.6;">×</span></div>
+          <button onClick="{{ noop }}" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:1rem;padding:0 8px;">+</button>
+        </div>
+        <div style="flex:1;display:flex;min-height:0;">
+          <!-- terminal -->
+          <div style="flex:1;background:#0c0b0a;padding:14px 16px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:0.82rem;line-height:1.6;overflow-y:auto;min-width:0;">
+            <div style="color:var(--t3);">~/code/haruspex on <span style="color:var(--accent);">main</span></div>
+            <div><span style="color:var(--accent);">❯</span> <span style="color:var(--t1);">cargo build --release</span></div>
+            <div style="color:var(--t2);">   Compiling haruspex v0.42.0</div>
+            <div style="color:#dd6b60;">error[E0599]: no method named `spawn_sidecar` found</div>
+            <div style="color:var(--t2);">  --&gt; src-tauri/src/inference.rs:214:18</div>
+            <div style="margin-top:4px;"><span style="color:var(--accent);">❯</span> <span style="display:inline-block;width:8px;height:1.05em;background:var(--t1);vertical-align:text-bottom;animation:blink .8s step-end infinite;"></span></div>
+          </div>
+          <!-- assistant sidebar -->
+          <div style="width:352px;flex-shrink:0;border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;">
+            <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:7px;">
+              <span style="font-size:0.83rem;font-weight:600;">Assistant</span>
+              <div style="display:flex;gap:5px;align-items:center;">
+                <span title="3 completed commands available — auto-attached to your next message" style="font-size:0.64rem;font-family:ui-monospace,Menlo,monospace;padding:2px 6px;border-radius:999px;color:#6fae6a;border:1px solid color-mix(in srgb,#6fae6a 35%,transparent);background:color-mix(in srgb,#6fae6a 10%,transparent);white-space:nowrap;">● 3</span>
+                <button onClick="{{ noop }}" title="Code mode OFF — troubleshooting advisor (read-only)" style="appearance:none;background:var(--input);border:1px solid var(--border3);color:var(--t2);padding:3px 8px;font-size:0.72rem;border-radius:5px;cursor:pointer;">Code</button>
+                <button onClick="{{ noop }}" title="Reasoning ON — the model thinks before acting" style="appearance:none;background:color-mix(in srgb,var(--accent) 18%,transparent);border:1px solid var(--accent);color:var(--accent);padding:3px 8px;font-size:0.72rem;border-radius:5px;cursor:pointer;">Think</button>
+                <button onClick="{{ noop }}" title="Clear chat" style="appearance:none;background:var(--input);border:1px solid var(--border3);color:var(--t1);padding:3px 8px;font-size:0.72rem;border-radius:5px;cursor:pointer;">New chat</button>
+                <button onClick="{{ noop }}" title="Collapse" style="appearance:none;background:var(--input);border:1px solid var(--border3);color:var(--t2);padding:3px 7px;font-size:0.8rem;border-radius:5px;cursor:pointer;">›</button>
+              </div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:13px;">
+              <div style="font-size:0.85rem;line-height:1.6;color:var(--t1);margin-bottom:12px;">The error means the method was renamed. Try updating the call site:</div>
+              <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--input);border-bottom:1px solid var(--border);"><span style="font-size:0.68rem;color:var(--t3);font-family:ui-monospace,monospace;">rust</span><button onClick="{{ noop }}" style="font-size:0.68rem;border:1px solid var(--accent);color:var(--accent);background:none;border-radius:4px;padding:2px 9px;cursor:pointer;">Paste</button></div>
+                <div style="padding:9px 11px;font-family:ui-monospace,monospace;font-size:0.76rem;color:#a5d6c9;background:#0c0b0a;">sidecar.spawn().await?;</div>
+              </div>
+              <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--input);border-bottom:1px solid var(--border);"><div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.68rem;color:var(--t3);font-family:ui-monospace,monospace;">bash</span><span style="font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#dd6b60;border:1px solid #dd6b60;background:color-mix(in srgb,#dd6b60 12%,transparent);border-radius:999px;padding:1px 6px;">risky</span></div><button onClick="{{ noop }}" style="font-size:0.68rem;background:var(--accent);color:var(--accent-ink);border:none;border-radius:4px;padding:2px 9px;cursor:pointer;font-weight:600;">Run</button></div>
+                <div style="padding:9px 11px;font-family:ui-monospace,monospace;font-size:0.76rem;color:var(--t1);background:#0c0b0a;">rm -rf target/release</div>
+              </div>
+            </div>
+            <div style="padding:9px 11px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:flex-end;">
+              <div style="flex:1;border:1px solid var(--border3);border-radius:7px;padding:7px 9px;font-size:0.82rem;background:var(--input);color:var(--t3);min-height:34px;">Ask the assistant…</div>
+              <button onClick="{{ noop }}" title="Submit recent shell commands &amp; output — no prompt (F4)" style="width:38px;height:38px;border-radius:50%;border:1px solid var(--border3);background:var(--input);color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg></button>
+              <button onClick="{{ noop }}" title="Voice (F2)" style="width:38px;height:38px;border-radius:50%;border:1px solid var(--border3);background:var(--input);color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10a7 7 0 0 0 14 0"></path><line x1="12" y1="17" x2="12" y2="21"></line></svg></button>
+              <button onClick="{{ noop }}" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:8px 15px;font-size:0.8rem;font-weight:600;cursor:pointer;flex-shrink:0;">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ---------- SETTINGS OVERLAY ---------- -->
+    <sc-if value="{{ showSettings }}">
+      <div style="position:absolute;inset:0;z-index:20;background:var(--bg);display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
+          <button onClick="{{ closeSettings }}" style="border:1px solid var(--border3);background:var(--input);color:var(--t1);border-radius:7px;padding:6px 13px;font-size:0.85rem;cursor:pointer;">← Back</button>
+          <span style="font-size:1.2rem;font-weight:600;">Settings</span>
+        </div>
+        <div style="flex:1;display:flex;min-height:0;">
+          <!-- rail -->
+          <nav style="width:190px;flex-shrink:0;border-right:1px solid var(--border);padding:14px 10px;background:var(--surface);overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
+            <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--t4);padding:4px 8px;">Core</div>
+            <button onClick="{{ catGeneralClick }}" style="text-align:left;border:none;cursor:pointer;padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:{{ cat_general_bg }};color:{{ cat_general_color }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>General</button>
+            <button onClick="{{ catInferenceClick }}" style="text-align:left;border:none;cursor:pointer;padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:{{ cat_inference_bg }};color:{{ cat_inference_color }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect></svg>Inference</button>
+            <button onClick="{{ catAgentClick }}" style="text-align:left;border:none;cursor:pointer;padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:{{ cat_agent_bg }};color:{{ cat_agent_color }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1 3 3 3 3 0 0 1 0 6 3 3 0 0 1-3 3v1a3 3 0 0 1-6 0v-1a3 3 0 0 1-3-3 3 3 0 0 1 0-6 3 3 0 0 1 3-3V5a3 3 0 0 1 3-3z"></path></svg>Agent</button>
+            <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--t4);padding:4px 8px;margin-top:10px;">Capabilities</div>
+            <button onClick="{{ catAudioClick }}" style="text-align:left;border:none;cursor:pointer;padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:{{ cat_audio_bg }};color:{{ cat_audio_color }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4M7 6v12M12 3v18M17 8v8M21 11v2"></path></svg>Audio</button>
+            <button onClick="{{ catSearchClick }}" style="text-align:left;border:none;cursor:pointer;padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:{{ cat_search_bg }};color:{{ cat_search_color }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>Search</button>
+            <button onClick="{{ catIntegrationsClick }}" style="text-align:left;border:none;cursor:pointer;padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:{{ cat_integrations_bg }};color:{{ cat_integrations_color }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m3 7 9 6 9-6"></path></svg>Integrations</button>
+            <button onClick="{{ catShellClick }}" style="text-align:left;border:none;cursor:pointer;padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:{{ cat_shell_bg }};color:{{ cat_shell_color }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 8 9 12 5 16"></polyline><line x1="12" y1="16" x2="18" y2="16"></line></svg>Shell</button>
+            <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--t4);padding:4px 8px;margin-top:10px;">About</div>
+            <button onClick="{{ catFeedbackClick }}" style="text-align:left;border:none;cursor:pointer;padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:{{ cat_feedback_bg }};color:{{ cat_feedback_color }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Feedback</button>
+          </nav>
+
+          <!-- pane -->
+          <div style="flex:1;overflow-y:auto;padding:18px 26px 60px;min-width:0;">
+
+            <sc-if value="{{ catAgent }}" hint-placeholder-val="{{ true }}">
+              <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Agent</div>
+              <div style="font-size:0.8rem;color:var(--t3);margin-bottom:18px;">How the model reasons, remembers, and runs code.</div>
+              <div style="max-width:640px;">
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+                  <div style="font-size:0.9rem;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Behavior</div>
+                  <div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:14px;"><div style="width:34px;height:20px;border-radius:999px;background:var(--accent);flex-shrink:0;position:relative;margin-top:1px;"><div style="width:16px;height:16px;border-radius:50%;background:var(--accent-ink);position:absolute;top:2px;right:2px;"></div></div><div><div style="font-size:0.86rem;font-weight:500;">Reasoning mode</div><div style="font-size:0.77rem;color:var(--t3);margin-top:2px;line-height:1.45;">Emit a &lt;think&gt; block before answering. Better on multi-step and code-heavy tasks.</div></div></div>
+                  <div style="display:flex;align-items:flex-start;gap:11px;"><div style="width:34px;height:20px;border-radius:999px;background:var(--off);border:1px solid var(--border3);flex-shrink:0;position:relative;margin-top:1px;"><div style="width:16px;height:16px;border-radius:50%;background:var(--t3);position:absolute;top:1px;left:2px;"></div></div><div><div style="font-size:0.86rem;font-weight:500;">Keep previous turn's tool results</div><div style="font-size:0.77rem;color:var(--t3);margin-top:2px;line-height:1.45;">Followups can reference raw research. Uses more context.</div></div></div>
+                </div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+                  <div style="font-size:0.9rem;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Custom system prompt</div>
+                  <div style="border:1px solid var(--border3);border-radius:7px;padding:10px;height:64px;background:var(--input);color:var(--t4);font-size:0.82rem;font-family:ui-monospace,Menlo,monospace;">Always answer in British English. Prefer Rust examples.</div>
+                </div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-size:0.9rem;font-weight:600;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Python sandbox <span style="font-size:0.62rem;border:1px solid var(--border3);border-radius:4px;padding:1px 6px;color:var(--t3);text-transform:uppercase;font-weight:600;">experimental</span></div><div style="width:34px;height:20px;border-radius:999px;background:var(--accent);position:relative;flex-shrink:0;"><div style="width:16px;height:16px;border-radius:50%;background:var(--accent-ink);position:absolute;top:2px;right:2px;"></div></div></div>
+                  <div style="font-size:0.77rem;color:var(--t3);margin-top:8px;line-height:1.45;">Let the model run Python in an in-app Pyodide sandbox (numpy, pandas, matplotlib, fpdf2, python-pptx).</div>
+                  <div style="display:flex;gap:10px;margin-top:12px;">
+                    <div style="flex:1;"><div style="font-size:0.76rem;color:var(--t3);margin-bottom:4px;">Approval prompt</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);display:flex;justify-content:space-between;">Once per chat (recommended)<span style="color:var(--t3);">▾</span></div></div>
+                    <div style="width:150px;"><div style="font-size:0.76rem;color:var(--t3);margin-bottom:4px;">Timeout (s)</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);">30</div></div>
+                  </div>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ catGeneral }}">
+              <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">General</div>
+              <div style="font-size:0.8rem;color:var(--t3);margin-bottom:18px;">Appearance and how replies are formatted.</div>
+              <div style="max-width:640px;">
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+                  <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Theme</div>
+                  <div style="display:flex;gap:8px;"><div style="flex:1;text-align:center;padding:8px;border:1px solid var(--border3);border-radius:7px;font-size:0.85rem;background:var(--input);">System</div><div style="flex:1;text-align:center;padding:8px;border:1px solid var(--border3);border-radius:7px;font-size:0.85rem;background:var(--input);">Light</div><div style="flex:1;text-align:center;padding:8px;border:1px solid var(--accent);border-radius:7px;font-size:0.85rem;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);font-weight:500;">Dark</div></div>
+                </div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;">
+                  <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Response format</div>
+                  <div style="display:flex;background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:3px;gap:3px;max-width:340px;"><div style="flex:1;text-align:center;padding:7px;border-radius:6px;font-size:0.8rem;color:var(--t2);">Minimal</div><div style="flex:1;text-align:center;padding:7px;border-radius:6px;font-size:0.8rem;background:var(--accent);color:var(--accent-ink);font-weight:600;">Standard</div><div style="flex:1;text-align:center;padding:7px;border-radius:6px;font-size:0.8rem;color:var(--t2);">Rich</div></div>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ catInference }}">
+              <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Inference</div>
+              <div style="font-size:0.8rem;color:var(--t3);margin-bottom:18px;">Where inference runs and how big the context is.</div>
+              <div style="max-width:640px;">
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+                  <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Backend</div>
+                  <div style="display:flex;background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:3px;gap:3px;max-width:300px;margin-bottom:10px;"><div style="flex:1;text-align:center;padding:7px;border-radius:6px;font-size:0.8rem;background:var(--accent);color:var(--accent-ink);font-weight:600;">Local</div><div style="flex:1;text-align:center;padding:7px;border-radius:6px;font-size:0.8rem;color:var(--t2);">Remote</div><div style="flex:1;text-align:center;padding:7px;border-radius:6px;font-size:0.8rem;color:var(--t2);">OpenRouter</div></div>
+                  <div style="font-size:0.77rem;color:var(--t3);line-height:1.5;">Runs the bundled llama-server on your GPU. Nothing leaves your device.</div>
+                </div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+                  <div style="font-size:0.9rem;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>API keys</div>
+                  <div style="font-size:0.76rem;color:var(--t3);margin-bottom:11px;line-height:1.5;">Named keys shared across inference backends and per-job model overrides.</div>
+                  <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+                    <div style="flex:1;border:1px solid var(--border3);border-radius:6px;padding:6px 10px;font-size:0.82rem;background:var(--input);">OpenRouter</div>
+                    <div style="flex:1;border:1px solid var(--border3);border-radius:6px;padding:6px 10px;font-size:0.82rem;background:var(--input);color:var(--t3);letter-spacing:2px;">••••••••4a2f</div>
+                    <div style="border:1px solid #47201d;color:#dd6b60;border-radius:6px;padding:6px 11px;font-size:0.78rem;">Delete</div>
+                  </div>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <div style="flex:1;border:1px solid var(--border3);border-radius:6px;padding:6px 10px;font-size:0.82rem;background:var(--input);color:var(--t4);">Name (e.g. OpenRouter)</div>
+                    <div style="flex:1;border:1px solid var(--border3);border-radius:6px;padding:6px 10px;font-size:0.82rem;background:var(--input);color:var(--t4);">Key value</div>
+                    <div style="background:var(--accent);color:var(--accent-ink);border-radius:6px;padding:6px 12px;font-size:0.78rem;font-weight:600;">Add key</div>
+                  </div>
+                </div>
+
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+                  <div style="font-size:0.9rem;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Models</div>
+                  <div style="font-size:0.74rem;color:var(--t3);margin-bottom:12px;">Stored in <span style="font-family:ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:1px 5px;">~/.local/share/com.haruspex.app/models</span></div>
+                  <div style="display:flex;flex-direction:column;gap:10px;">
+                    <div style="border:1px solid var(--accent);border-radius:8px;background:var(--raised);padding:12px 13px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                      <div style="min-width:0;"><div style="font-family:ui-monospace,Menlo,monospace;font-size:0.86rem;font-weight:500;display:flex;align-items:center;gap:7px;">qwen3.5-9b <span style="font-size:0.62rem;background:var(--accent);color:var(--accent-ink);padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px;">active</span></div><div style="font-size:0.8rem;color:var(--t2);margin-top:4px;">Qwen 3.5 9B · vision · Q4_K_M</div><div style="font-size:0.76rem;color:var(--t4);margin-top:3px;">5.4 GB</div></div>
+                      <div style="border:1px solid #47201d;color:#dd6b60;border-radius:6px;padding:6px 12px;font-size:0.8rem;flex-shrink:0;">Delete</div>
+                    </div>
+                    <div style="border:1px solid var(--border);border-radius:8px;background:var(--raised);padding:12px 13px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                      <div style="min-width:0;"><div style="font-family:ui-monospace,Menlo,monospace;font-size:0.86rem;font-weight:500;">qwen3.5-4b</div><div style="font-size:0.8rem;color:var(--t2);margin-top:4px;">Qwen 3.5 4B · vision · low VRAM</div><div style="font-size:0.76rem;color:var(--t4);margin-top:3px;">2.6 GB</div></div>
+                      <div style="background:var(--accent);color:var(--accent-ink);border-radius:6px;padding:6px 14px;font-size:0.8rem;font-weight:600;flex-shrink:0;">Download</div>
+                    </div>
+                  </div>
+                  <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><span style="font-size:0.82rem;color:var(--t2);">Legacy models</span><span style="font-size:0.74rem;border:1px solid var(--border3);border-radius:5px;padding:3px 9px;color:var(--t3);">Show 3 more</span></div>
+                </div>
+
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+                  <div style="font-size:0.9rem;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Context size</div>
+                  <div style="font-size:0.76rem;color:var(--t3);margin-bottom:12px;line-height:1.5;">Larger context allows longer conversations but uses more VRAM. Changing this restarts the server automatically.</div>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:80px;text-align:center;padding:8px 10px;border:1px solid var(--border3);border-radius:6px;background:var(--input);"><div style="font-size:0.95rem;font-weight:600;">8K</div><div style="font-size:0.68rem;color:var(--t3);margin-top:2px;">Low VRAM</div></div>
+                    <div style="flex:1;min-width:80px;text-align:center;padding:8px 10px;border:1px solid var(--border3);border-radius:6px;background:var(--input);"><div style="font-size:0.95rem;font-weight:600;">16K</div><div style="font-size:0.68rem;color:var(--t3);margin-top:2px;">Standard</div></div>
+                    <div style="flex:1;min-width:80px;text-align:center;padding:8px 10px;border:1px solid var(--accent);border-radius:6px;background:color-mix(in srgb,var(--accent) 12%,transparent);"><div style="font-size:0.95rem;font-weight:600;color:var(--accent);">32K</div><div style="font-size:0.68rem;color:var(--accent);margin-top:2px;">Recommended</div></div>
+                    <div style="flex:1;min-width:80px;text-align:center;padding:8px 10px;border:1px solid var(--border3);border-radius:6px;background:var(--input);"><div style="font-size:0.95rem;font-weight:600;">64K</div><div style="font-size:0.68rem;color:var(--t3);margin-top:2px;">16+ GB</div></div>
+                    <div style="flex:1;min-width:80px;text-align:center;padding:8px 10px;border:1px solid var(--border3);border-radius:6px;background:var(--input);"><div style="font-size:0.95rem;font-weight:600;">128K</div><div style="font-size:0.68rem;color:var(--t3);margin-top:2px;">Maximum</div></div>
+                  </div>
+                </div>
+
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;">
+                  <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Server</div>
+                  <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.86rem;"><span style="color:var(--t2);">Status</span><span style="color:#6fae6a;display:flex;align-items:center;gap:6px;"><span style="width:7px;height:7px;border-radius:50%;background:#6fae6a;"></span>ready</span></div>
+                  <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:0.86rem;"><span style="color:var(--t2);">Port</span><span style="font-family:ui-monospace,Menlo,monospace;">8033</span></div>
+                  <div style="display:flex;gap:8px;margin-top:12px;">
+                    <div style="background:var(--accent);color:var(--accent-ink);border-radius:7px;padding:7px 14px;font-size:0.82rem;font-weight:600;">Restart server</div>
+                    <div style="border:1px solid #47201d;color:#dd6b60;border-radius:7px;padding:7px 14px;font-size:0.82rem;">Stop server</div>
+                  </div>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ catSearch }}">
+              <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Search</div>
+              <div style="font-size:0.8rem;color:var(--t3);margin-bottom:18px;">Which provider answers web queries.</div>
+              <div style="max-width:640px;">
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Web search</div><div style="font-size:0.78rem;color:var(--t3);margin:0 0 4px;">Search provider</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);max-width:320px;display:flex;justify-content:space-between;">Auto (rotates free engines)<span style="color:var(--t3);">▾</span></div><div style="font-size:0.78rem;color:var(--t3);margin:12px 0 4px;">Result recency</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);max-width:220px;display:flex;justify-content:space-between;">Any time<span style="color:var(--t3);">▾</span></div><div style="font-size:0.78rem;color:var(--t3);margin:12px 0 4px;">Brave API key (optional)</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);color:var(--t3);">BSA••••••••••••••••</div></div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Network proxy</div><div style="display:flex;background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:3px;gap:3px;max-width:240px;"><div style="flex:1;text-align:center;padding:6px;border-radius:6px;font-size:0.8rem;background:var(--accent);color:var(--accent-ink);font-weight:600;">None</div><div style="flex:1;text-align:center;padding:6px;border-radius:6px;font-size:0.8rem;color:var(--t2);">Manual</div></div><div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">Route outbound web traffic (search, URL fetch, image search) through an HTTP/HTTPS proxy. Manual reveals a proxy URL plus a no-proxy list.</div></div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ catAudio }}">
+              <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Audio</div>
+              <div style="font-size:0.8rem;color:var(--t3);margin-bottom:18px;">Voice input and spoken replies.</div>
+              <div style="max-width:640px;">
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Voice</div><div style="font-size:0.78rem;color:var(--t3);margin:0 0 4px;">Text-to-speech voice</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);max-width:300px;display:flex;justify-content:space-between;">Heart (Female)<span style="color:var(--t3);">▾</span></div><div style="display:flex;align-items:flex-start;gap:11px;margin-top:14px;"><div style="width:34px;height:20px;border-radius:999px;background:var(--off);border:1px solid var(--border3);position:relative;flex-shrink:0;"><div style="width:16px;height:16px;border-radius:50%;background:var(--t3);position:absolute;top:1px;left:2px;"></div></div><div><div style="font-size:0.86rem;font-weight:500;">Read tables by subject</div><div style="font-size:0.77rem;color:var(--t3);margin-top:2px;">Read all data for each column subject, instead of row by row.</div></div></div><div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">Click the speaker icon on any assistant message to hear it read aloud.</div></div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Audio devices</div><div style="font-size:0.78rem;color:var(--t3);margin:0 0 4px;">Audio output (TTS playback)</div><div style="display:flex;gap:8px;align-items:center;"><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);display:flex;justify-content:space-between;">System Default<span style="color:var(--t3);">▾</span></div><div style="border:1px solid var(--border3);border-radius:6px;padding:7px 12px;font-size:0.78rem;background:var(--raised);flex-shrink:0;">Refresh</div></div><div style="font-size:0.78rem;color:var(--t3);margin:12px 0 4px;">Audio input (microphone)</div><div style="display:flex;gap:8px;align-items:center;"><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);display:flex;justify-content:space-between;">System Default<span style="color:var(--t3);">▾</span></div><div style="border:1px solid var(--border3);border-radius:6px;padding:7px 12px;font-size:0.78rem;background:var(--raised);flex-shrink:0;">Refresh</div></div></div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ catIntegrations }}">
+              <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Integrations</div>
+              <div style="font-size:0.8rem;color:var(--t3);margin-bottom:18px;">Read-only email over IMAP.</div>
+              <div style="max-width:640px;">
+                <div style="font-size:0.82rem;color:var(--t3);line-height:1.5;margin-bottom:14px;">Read-only IMAP access for reading and summarizing recent email (Gmail, Fastmail, iCloud, Yahoo, or custom). Each provider requires 2FA plus an <b style="color:var(--t2);">app password</b> — not your login password.</div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:12px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;"><div style="font-size:0.88rem;font-weight:600;">Personal — Gmail</div><div style="display:flex;align-items:center;gap:9px;"><span style="font-size:0.76rem;color:var(--t3);">Enabled</span><div style="width:34px;height:20px;border-radius:999px;background:var(--off);border:1px solid var(--border3);position:relative;flex-shrink:0;"><div style="width:16px;height:16px;border-radius:50%;background:var(--t3);position:absolute;top:1px;left:2px;"></div></div></div></div>
+                  <div style="display:flex;gap:10px;"><div style="width:150px;"><div style="font-size:0.78rem;color:var(--t3);margin:0 0 4px;">Provider</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);display:flex;justify-content:space-between;">Gmail<span style="color:var(--t3);">▾</span></div></div><div style="flex:1;"><div style="font-size:0.78rem;color:var(--t3);margin:0 0 4px;">Email address</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);color:var(--t2);">you@gmail.com</div></div></div>
+                  <div style="font-size:0.78rem;color:var(--t3);margin:12px 0 4px;">App password</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);color:var(--t3);">••••&nbsp;••••&nbsp;••••&nbsp;••••</div>
+                  <div style="display:flex;gap:8px;margin-top:12px;"><div style="border:1px solid var(--border3);border-radius:7px;padding:7px 13px;font-size:0.82rem;background:var(--raised);">Test connection</div><div style="border:1px solid #47201d;color:#dd6b60;border-radius:7px;padding:7px 13px;font-size:0.82rem;">Delete</div></div>
+                </div>
+                <div style="border:1px solid var(--border3);border-radius:8px;padding:9px 14px;font-size:0.83rem;color:var(--t2);display:inline-block;background:var(--raised);">+ Add email account</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ catShell }}">
+              <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Shell</div>
+              <div style="font-size:0.8rem;color:var(--t3);margin-bottom:18px;">Terminal and the shell assistant.</div>
+              <div style="max-width:640px;">
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Shell binary</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);color:var(--t4);">(auto-detect $SHELL)</div><div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">The Shell tab spawns this program. Leave blank to use your $SHELL. Bash and zsh get OSC 133 integration hooks.</div></div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Recent commands attached to each message</div><div style="display:flex;align-items:center;gap:9px;"><div style="width:82px;border:1px solid var(--border3);border-radius:6px;padding:7px 10px;font-size:0.85rem;background:var(--input);">3</div><span style="font-size:0.84rem;color:var(--t2);">commands included automatically</span></div><div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">Each assistant message is prefixed with the last N completed commands (command, output, exit code, cwd). 0 disables auto-attach.</div></div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:18px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Max output bytes per captured command</div><div style="display:flex;align-items:center;gap:9px;"><div style="width:82px;border:1px solid var(--border3);border-radius:6px;padding:7px 10px;font-size:0.85rem;background:var(--input);">8192</div><span style="font-size:0.84rem;color:var(--t2);">bytes (head + tail kept)</span></div><div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">Caps each captured command output. Over the cap keeps the first and last halves with a [middle truncated] marker.</div></div>
+                <div style="font-size:0.9rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent);margin:0 0 12px;">Code mode</div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;"><div style="display:flex;align-items:flex-start;gap:11px;"><div style="width:34px;height:20px;border-radius:999px;background:var(--off);border:1px solid var(--border3);position:relative;flex-shrink:0;"><div style="width:16px;height:16px;border-radius:50%;background:var(--t3);position:absolute;top:1px;left:2px;"></div></div><div><div style="font-size:0.86rem;font-weight:500;">Enable Code mode by default in new shells</div><div style="font-size:0.77rem;color:var(--t3);margin-top:2px;line-height:1.45;">New sessions start in Code mode (assistant can edit files and run commands). Off = read-only advisor.</div></div></div></div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Command execution</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);display:flex;justify-content:space-between;">Auto (PTY when available, else one-shot)<span style="color:var(--t3);">▾</span></div><div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">How run_command runs. Auto drives your live terminal when integration is available; Terminal forces PTY; One-shot always spawns a fresh process.</div></div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>run_command timeout</div><div style="display:flex;align-items:center;gap:9px;"><div style="width:82px;border:1px solid var(--border3);border-radius:6px;padding:7px 10px;font-size:0.85rem;background:var(--input);">30</div><span style="font-size:0.84rem;color:var(--t2);">seconds</span></div><div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">Default wall-clock limit for a single run_command call. 5 to 1800 seconds.</div></div>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;margin-bottom:14px;"><div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>Max steps per task</div><div style="display:flex;align-items:center;gap:9px;"><div style="width:82px;border:1px solid var(--border3);border-radius:6px;padding:7px 10px;font-size:0.85rem;background:var(--input);">40</div><span style="font-size:0.84rem;color:var(--t2);">tool/model steps before wrap-up</span></div><div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">Coding tasks chain many steps (grep, read, edit, test, fix). Raise if the agent gets cut off. 5 to 200.</div></div>
+                <div style="background:var(--surface);border:1px solid #47201d;border-radius:10px;padding:15px 16px;"><div style="display:flex;align-items:flex-start;gap:11px;"><div style="width:34px;height:20px;border-radius:999px;background:var(--off);border:1px solid var(--border3);position:relative;flex-shrink:0;"><div style="width:16px;height:16px;border-radius:50%;background:var(--t3);position:absolute;top:1px;left:2px;"></div></div><div><div style="font-size:0.86rem;font-weight:500;">Auto-approve commands</div><div style="font-size:0.77rem;color:var(--t3);margin-top:2px;line-height:1.45;">Run risk-flagged commands (sudo, destructive deletes, pipes to a shell) without prompting. Only enable if you fully trust the model on this machine.</div></div></div></div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ catFeedback }}">
+              <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Feedback</div>
+              <div style="font-size:0.8rem;color:var(--t3);margin-bottom:18px;">Report a bug or request a feature.</div>
+              <div style="max-width:640px;"><div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px;">
+                  <div style="font-size:0.88rem;color:var(--t2);line-height:1.5;margin-bottom:14px;">Opens a pre-filled GitHub issue in your browser. App version, system info, settings (with API keys redacted), and this session's search stats are filled in automatically. <b style="color:var(--t1);">Review everything before submitting.</b></div>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;"><div style="background:var(--accent);color:var(--accent-ink);border-radius:7px;padding:8px 15px;font-size:0.83rem;font-weight:600;">Open feedback issue…</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 15px;font-size:0.83rem;background:var(--raised);">Save Full Diagnostics…</div></div>
+                  <div style="font-size:0.76rem;color:var(--t3);margin-top:9px;line-height:1.5;">If logs would help, use Save Full Diagnostics to export the full bundle (logs plus lifetime search stats), then drag the file onto the GitHub issue.</div>
+                </div></div>
+            </sc-if>
+
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+  </main>
+
+  <!-- preview launcher for the first-run wizard -->
+  <button onClick="{{ openWizard }}" title="Preview the first-run wizard" style="position:fixed;left:16px;bottom:14px;z-index:40;background:var(--surface);border:1px solid var(--border3);color:var(--t2);border-radius:999px;padding:7px 14px;font-size:0.78rem;cursor:pointer;display:flex;align-items:center;gap:7px;box-shadow:0 6px 20px rgba(0,0,0,.4);"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);"></span>Preview first-run wizard</button>
+  <button onClick="{{ openDialogs }}" title="Preview the confirm / approval dialogs" style="position:fixed;left:16px;bottom:52px;z-index:40;background:var(--surface);border:1px solid var(--border3);color:var(--t2);border-radius:999px;padding:7px 14px;font-size:0.78rem;cursor:pointer;display:flex;align-items:center;gap:7px;box-shadow:0 6px 20px rgba(0,0,0,.4);"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);"></span>Preview dialogs</button>
+
+  <!-- DIALOG GALLERY -->
+  <sc-if value="{{ showDialogs }}">
+    <div style="position:fixed;inset:0;z-index:55;background:rgba(0,0,0,0.55);overflow-y:auto;padding:32px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;max-width:1000px;margin:0 auto 20px;color:var(--t1);">
+        <div style="font-size:1.1rem;font-weight:600;">Dialogs — confirm &amp; approval</div>
+        <button onClick="{{ closeDialogs }}" style="background:var(--surface);border:1px solid var(--border3);color:var(--t2);border-radius:7px;padding:6px 13px;font-size:0.82rem;cursor:pointer;">Close preview</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:20px;max-width:1000px;margin:0 auto;align-items:flex-start;justify-content:center;">
+
+        <div>
+          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--t3);margin-bottom:8px;font-family:ui-monospace,Menlo,monospace;">ConfirmDialog</div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:22px 24px;width:440px;box-shadow:0 8px 32px rgba(0,0,0,.4);color:var(--t1);">
+            <h2 style="margin:0 0 12px;font-size:1.15rem;">Delete conversation?</h2>
+            <p style="margin:0 0 10px;font-size:0.9rem;line-height:1.5;color:var(--t1);">"Renewable grid storage" will be permanently deleted.</p>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;">
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid #47201d;border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;color:#dd6b60;">Delete</strong></div>
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid var(--accent);border-radius:8px;background:var(--raised);cursor:pointer;box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent);"><strong style="font-size:0.92rem;">Cancel</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--t3);margin-bottom:8px;font-family:ui-monospace,Menlo,monospace;">FileConflictModal</div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:22px 24px;width:440px;box-shadow:0 8px 32px rgba(0,0,0,.4);color:var(--t1);">
+            <h2 style="margin:0 0 12px;font-size:1.15rem;">File already exists</h2>
+            <p style="margin:0 0 10px;font-size:0.9rem;line-height:1.5;">The model tried to write <span style="background:var(--surface);padding:2px 6px;border-radius:4px;font-size:0.82rem;font-family:ui-monospace,Menlo,monospace;">report.pdf</span>, but that file already exists in your working directory.</p>
+            <p style="margin:16px 0 0;font-size:0.9rem;font-weight:500;">What should happen?</p>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid #47201d;border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;color:#dd6b60;margin-bottom:2px;">Overwrite</strong><span style="font-size:0.78rem;color:var(--t3);">Replace the existing file</span></div>
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;margin-bottom:2px;">Keep both</strong><span style="font-size:0.78rem;color:var(--t3);">Save as a new name (e.g. -2)</span></div>
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;margin-bottom:2px;">Cancel</strong><span style="font-size:0.78rem;color:var(--t3);">Stop and let me decide</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--t3);margin-bottom:8px;font-family:ui-monospace,Menlo,monospace;">SandboxApprovalModal</div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:22px 24px;width:460px;box-shadow:0 8px 32px rgba(0,0,0,.4);color:var(--t1);">
+            <h2 style="margin:0 0 12px;font-size:1.15rem;">Allow code execution?</h2>
+            <p style="margin:0 0 4px;font-size:0.9rem;line-height:1.5;">The model wants to run Python in this chat:</p>
+            <pre style="background:#0c0b0a;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:0.78rem;font-family:ui-monospace,Menlo,monospace;color:#d4d4d4;margin:8px 0 4px;overflow:auto;white-space:pre;">import pandas as pd
+df = pd.read_csv("data.csv")
+print(df.describe())</pre>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;">
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;margin-bottom:2px;">Allow for this chat</strong><span style="font-size:0.78rem;color:var(--t3);">Don't ask again until I switch chats</span></div>
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;margin-bottom:2px;">Allow once</strong><span style="font-size:0.78rem;color:var(--t3);">Run this code, ask again next time</span></div>
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid #47201d;border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;color:#dd6b60;margin-bottom:2px;">Deny</strong><span style="font-size:0.78rem;color:var(--t3);">Don't run; the model will see an error</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--t3);margin-bottom:8px;font-family:ui-monospace,Menlo,monospace;">CommandApprovalModal</div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:22px 24px;width:460px;box-shadow:0 8px 32px rgba(0,0,0,.4);color:var(--t1);">
+            <h2 style="margin:0 0 12px;font-size:1.15rem;">Run this command?</h2>
+            <p style="margin:0 0 4px;font-size:0.9rem;line-height:1.5;">The coding agent wants to run a command <strong>on your machine</strong> — flagged: <span style="color:#dd6b60;">recursive delete</span>:</p>
+            <pre style="background:#0c0b0a;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:0.78rem;font-family:ui-monospace,Menlo,monospace;color:#d4d4d4;margin:8px 0 4px;overflow:auto;white-space:pre;">rm -rf ./build</pre>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;">
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;margin-bottom:2px;">Allow for this session</strong><span style="font-size:0.78rem;color:var(--t3);">Don't ask again until I restart or switch projects</span></div>
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;margin-bottom:2px;">Allow once</strong><span style="font-size:0.78rem;color:var(--t3);">Run this command, ask again next time</span></div>
+              <div style="display:flex;flex-direction:column;align-items:flex-start;padding:12px 16px;border:1px solid #47201d;border-radius:8px;background:var(--raised);cursor:pointer;"><strong style="font-size:0.92rem;color:#dd6b60;margin-bottom:2px;">Deny</strong><span style="font-size:0.78rem;color:var(--t3);">Don't run; the model will see a denial</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- LOG VIEWER -->
+  <sc-if value="{{ showLogs }}">
+    <div style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;">
+      <div style="width:min(80vw,900px);height:70vh;background:var(--bg);border:1px solid var(--border2);border-radius:10px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);color:var(--t1);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0;gap:8px;">
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <button onClick="{{ setLogapp }}" style="background:{{ logtab_app_bg }};border:1px solid {{ logtab_app_border }};border-radius:6px;padding:6px 13px;cursor:pointer;color:{{ logtab_app_color }};font-size:0.8rem;font-weight:500;">App</button>
+            <button onClick="{{ setLogllm }}" style="background:{{ logtab_llm_bg }};border:1px solid {{ logtab_llm_border }};border-radius:6px;padding:6px 13px;cursor:pointer;color:{{ logtab_llm_color }};font-size:0.8rem;font-weight:500;">LLM</button>
+            <button onClick="{{ setLogtts }}" style="background:{{ logtab_tts_bg }};border:1px solid {{ logtab_tts_border }};border-radius:6px;padding:6px 13px;cursor:pointer;color:{{ logtab_tts_color }};font-size:0.8rem;font-weight:500;">TTS</button>
+            <button onClick="{{ setLogwhisper }}" style="background:{{ logtab_whisper_bg }};border:1px solid {{ logtab_whisper_border }};border-radius:6px;padding:6px 13px;cursor:pointer;color:{{ logtab_whisper_color }};font-size:0.8rem;font-weight:500;">Whisper</button>
+            <button onClick="{{ setLogcrashes }}" style="background:{{ logtab_crashes_bg }};border:1px solid {{ logtab_crashes_border }};border-radius:6px;padding:6px 13px;cursor:pointer;color:{{ logtab_crashes_color }};font-size:0.8rem;font-weight:500;">Crashes</button>
+            <button onClick="{{ setLogdebug }}" style="background:{{ logtab_debug_bg }};border:1px solid {{ logtab_debug_border }};border-radius:6px;padding:6px 13px;cursor:pointer;color:{{ logtab_debug_color }};font-size:0.8rem;font-weight:500;">Debug</button>
+            <button onClick="{{ setLogtools }}" style="background:{{ logtab_tools_bg }};border:1px solid {{ logtab_tools_border }};border-radius:6px;padding:6px 13px;cursor:pointer;color:{{ logtab_tools_color }};font-size:0.8rem;font-weight:500;">Tools</button>
+            <button onClick="{{ setLogstats }}" style="background:{{ logtab_stats_bg }};border:1px solid {{ logtab_stats_border }};border-radius:6px;padding:6px 13px;cursor:pointer;color:{{ logtab_stats_color }};font-size:0.8rem;font-weight:500;">Stats</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <button onClick="{{ noop }}" style="background:var(--surface);border:1px solid var(--border3);border-radius:6px;padding:5px 12px;cursor:pointer;color:var(--t2);font-size:0.75rem;font-weight:500;">Clear</button>
+            <button onClick="{{ noop }}" style="background:var(--surface);border:1px solid var(--border3);border-radius:6px;padding:5px 12px;cursor:pointer;color:var(--t2);font-size:0.75rem;font-weight:500;">Copy all</button>
+            <button onClick="{{ closeLogs }}" style="background:none;border:none;color:var(--t3);font-size:1.4rem;line-height:1;cursor:pointer;padding:0 4px;">×</button>
+          </div>
+        </div>
+        <div style="flex:1;overflow-y:auto;background:#0c0b0a;padding:10px 12px;font-family:ui-monospace,'SF Mono','Fira Code',Consolas,monospace;font-size:0.72rem;line-height:1.55;">
+          <sc-if value="{{ logPlain }}" hint-placeholder-val="{{ true }}">
+            <div style="color:var(--t3);white-space:pre-wrap;">[12:34:56.789] <span style="color:#4ec9b0;">[server]</span> llama-server ready on 127.0.0.1:8033 (n_ctx=8192)</div>
+            <div style="color:#d4d4d4;white-space:pre-wrap;">[12:34:57.001] <span style="color:#4ec9b0;">[agent]</span> <span style="color:var(--accent);">turn 1</span> started · model=qwen3.5-9b</div>
+            <div style="color:#d4d4d4;white-space:pre-wrap;">[12:35:02.114] <span style="color:#4ec9b0;">[search]</span> auto → brave ok (412ms, 6 results)</div>
+            <div style="color:#d4d4d4;white-space:pre-wrap;">[12:35:03.220] <span style="color:#4ec9b0;">[agent]</span> tool start: research_url {"url":"https://iea.org/…"}</div>
+            <div style="color:#d4d4d4;white-space:pre-wrap;">[12:35:05.880] <span style="color:#4ec9b0;">[agent]</span> tool end: research_url (2.6s, 1.4k tokens)</div>
+            <div style="color:#d4d4d4;white-space:pre-wrap;">[12:35:06.340] <span style="color:#4ec9b0;">[inference]</span> streaming answer (38 tok/s)</div>
+            <div style="color:#d7a13f;white-space:pre-wrap;">[12:35:12.902] <span style="color:#4ec9b0;">[search]</span> mojeek rate-limited — backing off 30s</div>
+            <div style="color:#d4d4d4;white-space:pre-wrap;">[12:35:18.455] <span style="color:#4ec9b0;">[agent]</span> <span style="color:var(--accent);">turn 1</span> complete · 3 sources · 1,204 tokens</div>
+          </sc-if>
+          <sc-if value="{{ logStats }}">
+            <div style="padding:4px 0 14px;border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent);margin-bottom:14px;">
+              <h3 style="margin:4px 0 8px;font-size:0.85rem;font-weight:600;color:var(--accent);">Session <span style="color:var(--t3);font-weight:400;font-size:0.75rem;">(since app start)</span></h3>
+              <table style="width:100%;border-collapse:collapse;font-size:0.72rem;">
+                <thead><tr style="color:var(--t3);text-align:right;">
+                  <th style="text-align:left;padding:3px 8px;">Engine</th><th style="padding:3px 8px;">Att</th><th style="padding:3px 8px;">OK</th><th style="padding:3px 8px;">OK%</th><th style="padding:3px 8px;">Mean ms</th><th style="padding:3px 8px;">Last OK</th>
+                </tr></thead>
+                <tbody style="color:#d4d4d4;">
+                  <tr style="text-align:right;"><td style="text-align:left;padding:3px 8px;color:#4ec9b0;font-weight:500;">brave</td><td style="padding:3px 8px;">14</td><td style="padding:3px 8px;">13</td><td style="padding:3px 8px;">92.9%</td><td style="padding:3px 8px;">431</td><td style="padding:3px 8px;">8s ago</td></tr>
+                  <tr style="text-align:right;"><td style="text-align:left;padding:3px 8px;color:#4ec9b0;font-weight:500;">duckduckgo</td><td style="padding:3px 8px;">6</td><td style="padding:3px 8px;">5</td><td style="padding:3px 8px;">83.3%</td><td style="padding:3px 8px;">612</td><td style="padding:3px 8px;">2m ago</td></tr>
+                  <tr style="text-align:right;"><td style="text-align:left;padding:3px 8px;color:#4ec9b0;font-weight:500;">mojeek</td><td style="padding:3px 8px;">4</td><td style="padding:3px 8px;">3</td><td style="padding:3px 8px;">75.0%</td><td style="padding:3px 8px;">905</td><td style="padding:3px 8px;">5m ago</td></tr>
+                </tbody>
+              </table>
+              <div style="display:flex;gap:18px;flex-wrap:wrap;padding-top:8px;font-size:0.75rem;color:var(--t3);">
+                <div>Total queries: <b style="color:#d4d4d4;">24</b></div><div>Cache hits: <b style="color:#d4d4d4;">6</b> <span style="opacity:.7;">(25.0%)</span></div><div>All-engines failures: <b style="color:#d4d4d4;">1</b></div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- FIRST-RUN WIZARD -->
+  <sc-if value="{{ showWizard }}">
+    <div style="position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:32px;color:var(--t1);">
+      <button onClick="{{ closeWizard }}" title="Close preview" style="position:absolute;top:16px;right:18px;background:var(--surface);border:1px solid var(--border3);color:var(--t2);border-radius:7px;padding:5px 11px;font-size:0.8rem;cursor:pointer;">Close preview</button>
+
+      <sc-if value="{{ wizWelcome }}" hint-placeholder-val="{{ true }}">
+        <div style="max-width:520px;width:100%;text-align:center;">
+          <div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#2f7a72);transform:rotate(45deg);margin:0 auto 20px;"></div>
+          <h1 style="font-size:1.5rem;margin:0 0 8px;">Welcome to Haruspex</h1>
+          <p style="color:var(--t2);margin:0 0 28px;font-size:1.05rem;">Private AI that runs entirely on your computer.</p>
+          <div style="text-align:left;display:flex;flex-direction:column;gap:14px;margin-bottom:26px;">
+            <div style="display:flex;gap:12px;align-items:flex-start;"><span style="font-size:1.2rem;">🔒</span><div><strong style="display:block;margin-bottom:2px;">Your conversations stay on your device.</strong><span style="font-size:0.88rem;color:var(--t2);">Web research sends queries out; the cloud backend is off by default.</span></div></div>
+            <div style="display:flex;gap:12px;align-items:flex-start;"><span style="font-size:1.2rem;">🌐</span><div><strong style="display:block;margin-bottom:2px;">Web research</strong><span style="font-size:0.88rem;color:var(--t2);">Search the web for current information when needed.</span></div></div>
+            <div style="display:flex;gap:12px;align-items:flex-start;"><span style="font-size:1.2rem;">⚡</span><div><strong style="display:block;margin-bottom:2px;">No accounts needed</strong><span style="font-size:0.88rem;color:var(--t2);">No sign-up, no API keys, no subscriptions.</span></div></div>
+          </div>
+          <p style="color:var(--t2);font-size:0.95rem;margin:0 0 12px;">How do you want to run the model?</p>
+          <div style="display:flex;flex-direction:column;gap:10px;text-align:left;">
+            <button onClick="{{ wizGoHardware }}" style="display:flex;gap:12px;align-items:flex-start;padding:14px 18px;border:1px solid var(--accent);border-radius:10px;background:color-mix(in srgb,var(--accent) 9%,transparent);color:var(--t1);cursor:pointer;text-align:left;"><span style="font-size:1.5rem;">📥</span><div><strong style="display:block;font-size:0.95rem;margin-bottom:4px;">Download a model</strong><span style="font-size:0.82rem;color:var(--t2);">Recommended. Detects your GPU, picks a model that fits, and manages everything.</span></div></button>
+            <button onClick="{{ wizGoRemote }}" style="display:flex;gap:12px;align-items:flex-start;padding:14px 18px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--t1);cursor:pointer;text-align:left;"><span style="font-size:1.5rem;">🔌</span><div><strong style="display:block;font-size:0.95rem;margin-bottom:4px;">Connect to an existing server</strong><span style="font-size:0.82rem;color:var(--t2);">Advanced. Point at a server you already run (LM Studio, Ollama, llama.cpp…).</span></div></button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ wizHardware }}">
+        <div style="max-width:520px;width:100%;text-align:center;">
+          <h1 style="font-size:1.5rem;margin:0 0 8px;">Checking your hardware</h1>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin:20px 0;text-align:left;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;"><span style="font-weight:600;font-size:0.9rem;">GPU</span><span style="font-size:0.9rem;color:var(--t2);">AMD Radeon RX 7800 XT <span style="background:color-mix(in srgb,#6fae6a 15%,transparent);color:#6fae6a;border:1px solid color-mix(in srgb,#6fae6a 35%,transparent);border-radius:4px;padding:1px 7px;font-size:0.72rem;margin-left:4px;">Vulkan</span></span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);"><span style="font-weight:600;font-size:0.9rem;">VRAM</span><span style="font-size:0.9rem;color:var(--t2);">16 GB</span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);"><span style="font-weight:600;font-size:0.9rem;">RAM</span><span style="font-size:0.9rem;color:var(--t2);">22 GB available of 32 GB</span></div>
+          </div>
+          <div style="text-align:left;margin:16px 0 24px;">
+            <div style="font-size:0.85rem;font-weight:500;margin-bottom:6px;">Model to download:</div>
+            <div style="border:1px solid var(--border3);border-radius:6px;padding:8px 12px;font-size:0.9rem;background:var(--input);display:flex;justify-content:space-between;">(recommended) Qwen 3.5 9B — vision, 8GB+ VRAM<span style="color:var(--t3);">▾</span></div>
+          </div>
+          <div style="display:flex;gap:12px;justify-content:center;">
+            <button onClick="{{ wizGoDownload }}" style="padding:10px 28px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;">Download model</button>
+            <button onClick="{{ wizGoTest }}" style="padding:10px 24px;background:none;color:var(--t2);border:1px solid var(--border3);border-radius:8px;font-size:0.9rem;cursor:pointer;">Use existing GGUF</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ wizDownload }}">
+        <div style="max-width:520px;width:100%;text-align:center;">
+          <h1 style="font-size:1.5rem;margin:0 0 8px;">Downloading model</h1>
+          <div style="margin:24px 0;">
+            <div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;text-align:left;">Downloading Qwen3.5-9B-Q4_K_M.gguf</div>
+            <div style="height:8px;background:var(--surface);border-radius:4px;overflow:hidden;margin-bottom:12px;"><div style="height:100%;width:63%;background:var(--accent);border-radius:4px;"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:var(--t3);"><span>3.4 GB / 5.4 GB</span><span>18.2 MB/s</span><span>1m remaining</span></div>
+            <div style="font-size:1.5rem;font-weight:600;margin-top:8px;">63%</div>
+          </div>
+          <button onClick="{{ wizGoTest }}" style="padding:10px 24px;background:none;color:var(--t2);border:1px solid var(--border3);border-radius:8px;font-size:0.9rem;cursor:pointer;">Cancel</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ wizTest }}">
+        <div style="max-width:520px;width:100%;text-align:center;">
+          <h1 style="font-size:1.5rem;margin:0 0 8px;">Testing the model</h1>
+          <div style="text-align:left;">
+            <p style="font-size:0.85rem;color:var(--t3);margin-bottom:4px;">Test response:</p>
+            <blockquote style="background:var(--surface);border-left:3px solid var(--accent);padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-style:italic;color:var(--t2);">Hello! I'm running locally and ready to help you research anything.</blockquote>
+            <p style="color:#6fae6a;font-weight:500;text-align:center;">Everything is working!</p>
+          </div>
+          <button onClick="{{ wizGoDone }}" style="padding:10px 28px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;margin-top:12px;">Continue</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ wizDone }}">
+        <div style="max-width:520px;width:100%;text-align:center;">
+          <h1 style="font-size:1.5rem;margin:0 0 20px;">You're ready to use Haruspex!</h1>
+          <div style="text-align:left;display:flex;flex-direction:column;gap:16px;margin-bottom:28px;">
+            <div style="display:flex;gap:12px;align-items:center;"><span style="font-size:1.3rem;">💬</span><span style="color:var(--t2);font-size:0.92rem;">Ask questions and get helpful answers</span></div>
+            <div style="display:flex;gap:12px;align-items:center;"><span style="font-size:1.3rem;">🔍</span><span style="color:var(--t2);font-size:0.92rem;">Haruspex can search the web for current info</span></div>
+            <div style="display:flex;gap:12px;align-items:center;"><span style="font-size:1.3rem;">🛠️</span><span style="color:var(--t2);font-size:0.92rem;">Inference happens locally on your machine</span></div>
+          </div>
+          <button onClick="{{ closeWizard }}" style="padding:10px 28px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;">Start chatting</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ wizRemote }}">
+        <div style="max-width:600px;width:100%;text-align:left;">
+          <h1 style="font-size:1.5rem;margin:0 0 8px;">Connect to an inference server</h1>
+          <p style="color:var(--t2);margin:0 0 20px;">Haruspex will route chat requests to your server instead of running its own llama-server.</p>
+          <div style="display:flex;flex-direction:column;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;">
+            <div><div style="font-size:0.78rem;color:var(--t3);margin-bottom:4px;">Server URL</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);color:var(--t2);">http://localhost:1234/v1</div></div>
+            <div><div style="font-size:0.78rem;color:var(--t3);margin-bottom:4px;">Model</div><div style="border:1px solid var(--border3);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:var(--input);color:var(--t2);">qwen2.5-14b-instruct</div></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:16px;">
+            <button onClick="{{ wizBackWelcome }}" style="padding:10px 24px;background:none;color:var(--t2);border:1px solid var(--border3);border-radius:8px;font-size:0.9rem;cursor:pointer;">Back</button>
+            <button onClick="{{ wizGoDone }}" style="padding:10px 28px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;">Start chatting</button>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:820}}">
+class Component extends DCLogic {
+  state = {
+    tab: 'chat',
+    settings: false,
+    scat: 'agent',
+    model: 'settings',
+    sec: { basics: true, where: false, model: false, steps: true },
+    jobView: 'editor',
+    wiz: null,
+    logs: false,
+    logTab: 'app',
+    theme: 'dark',
+    dialogs: false
+  };
+
+  renderVals() {
+    const s = this.state;
+    const A = 'var(--accent)';
+    const out = {
+      noop: () => {},
+      themeClass: s.theme === 'light' ? 'light' : '',
+      themeIsLight: s.theme === 'light',
+      themeIsDark: s.theme !== 'light',
+      toggleTheme: () => this.setState({ theme: s.theme === 'light' ? 'dark' : 'light' }),
+      isChat: s.tab === 'chat',
+      isJobs: s.tab === 'jobs',
+      isShell: s.tab === 'shell',
+      showSettings: s.settings,
+      goChat: () => this.setState({ tab: 'chat', settings: false }),
+      goJobs: () => this.setState({ tab: 'jobs', settings: false }),
+      goShell: () => this.setState({ tab: 'shell', settings: false }),
+      openSettings: () => this.setState({ settings: true }),
+      closeSettings: () => this.setState({ settings: false })
+    };
+
+    // tab highlights
+    for (const t of ['chat', 'jobs', 'shell']) {
+      out['tab_' + t + '_color'] = s.tab === t ? 'var(--t1)' : 'var(--t3)';
+      out['tab_' + t + '_border'] = s.tab === t ? A : 'transparent';
+    }
+
+    // settings categories
+    const cats = ['general', 'inference', 'agent', 'audio', 'search', 'integrations', 'shell', 'feedback'];
+    for (const c of cats) {
+      const active = s.scat === c;
+      out['cat_' + c + '_bg'] = active ? 'color-mix(in srgb,var(--accent) 14%,transparent)' : 'transparent';
+      out['cat_' + c + '_color'] = active ? A : 'var(--t2)';
+      out['cat' + c.charAt(0).toUpperCase() + c.slice(1)] = active;
+      out['cat' + c.charAt(0).toUpperCase() + c.slice(1) + 'Click'] = () => this.setState({ scat: c });
+    }
+
+    // model segmented
+    const modes = { settings: 'settings', remote: 'remote', or: 'openrouter' };
+    for (const [key, val] of Object.entries(modes)) {
+      const active = s.model === val;
+      out['seg_' + key + '_bg'] = active ? A : 'transparent';
+      out['seg_' + key + '_color'] = active ? 'var(--accent-ink)' : 'var(--t2)';
+    }
+    out.modelIsSettings = s.model === 'settings';
+    out.modelIsRemote = s.model === 'remote';
+    out.modelIsOR = s.model === 'openrouter';
+    out.setModelSettings = () => this.setState({ model: 'settings' });
+    out.setModelRemote = () => this.setState({ model: 'remote' });
+    out.setModelOR = () => this.setState({ model: 'openrouter' });
+
+    // collapsible sections
+    for (const name of ['basics', 'where', 'model', 'steps']) {
+      out[name + 'Open'] = s.sec[name];
+      out['rot_' + name] = s.sec[name] ? 0 : -90;
+    }
+    out.toggleBasics = () => this.setState({ sec: { ...s.sec, basics: !s.sec.basics } });
+    out.toggleWhere = () => this.setState({ sec: { ...s.sec, where: !s.sec.where } });
+    out.toggleModel = () => this.setState({ sec: { ...s.sec, model: !s.sec.model } });
+    out.toggleSteps = () => this.setState({ sec: { ...s.sec, steps: !s.sec.steps } });
+
+    // running-job view
+    out.jobEdit = s.jobView === 'editor';
+    out.jobRun = s.jobView === 'run';
+    out.startRun = () => this.setState({ tab: 'jobs', settings: false, jobView: 'run' });
+    out.closeRun = () => this.setState({ jobView: 'editor' });
+
+    // first-run wizard
+    out.showWizard = !!s.wiz;
+    out.wizWelcome = s.wiz === 'welcome';
+    out.wizRemote = s.wiz === 'remote';
+    out.wizHardware = s.wiz === 'hardware';
+    out.wizDownload = s.wiz === 'download';
+    out.wizTest = s.wiz === 'test';
+    out.wizDone = s.wiz === 'done';
+    out.openWizard = () => this.setState({ wiz: 'welcome' });
+    out.closeWizard = () => this.setState({ wiz: null });
+    out.wizGoHardware = () => this.setState({ wiz: 'hardware' });
+    out.wizGoRemote = () => this.setState({ wiz: 'remote' });
+    out.wizGoDownload = () => this.setState({ wiz: 'download' });
+    out.wizGoTest = () => this.setState({ wiz: 'test' });
+    out.wizGoDone = () => this.setState({ wiz: 'done' });
+    out.wizBackWelcome = () => this.setState({ wiz: 'welcome' });
+
+    // dialog gallery
+    out.showDialogs = s.dialogs;
+    out.openDialogs = () => this.setState({ dialogs: true });
+    out.closeDialogs = () => this.setState({ dialogs: false });
+
+    // log viewer
+    out.showLogs = s.logs;
+    out.openLogs = () => this.setState({ logs: true });
+    out.closeLogs = () => this.setState({ logs: false });
+    out.logStats = s.logTab === 'stats';
+    out.logPlain = s.logTab !== 'stats';
+    for (const t of ['app', 'llm', 'tts', 'whisper', 'crashes', 'debug', 'tools', 'stats']) {
+      const active = s.logTab === t;
+      out['logtab_' + t + '_color'] = active ? 'var(--accent)' : 'var(--t2)';
+      out['logtab_' + t + '_bg'] = active ? 'color-mix(in srgb,var(--accent) 10%,transparent)' : 'transparent';
+      out['logtab_' + t + '_border'] = active ? 'var(--accent)' : 'transparent';
+      out['setLog' + t] = () => this.setState({ logTab: t });
+    }
+
+    return out;
+  }
+}
+</script>
+</body>
+</html>

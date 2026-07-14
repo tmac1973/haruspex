@@ -195,7 +195,7 @@
 
 	.new-btn.active {
 		background: var(--accent);
-		color: white;
+		color: var(--accent-contrast);
 		border-color: var(--accent);
 	}
 
@@ -261,13 +261,6 @@
 		vertical-align: middle;
 		background: color-mix(in srgb, var(--accent) 18%, transparent);
 		color: var(--accent);
-	}
-
-	/* Research is the default type — a muted, neutral badge keeps the accent
-	   reserved for the special audit type while staying visually consistent. */
-	.badge.research {
-		background: color-mix(in srgb, var(--text-secondary) 15%, transparent);
-		color: var(--text-secondary);
 	}
 
 	.meta {
