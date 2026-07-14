@@ -315,8 +315,9 @@ fn full_registry() -> Vec<ModelInfo> {
 // these models; the safety margins below exist to absorb that uncertainty
 // plus the linear-attention state and compute/graph buffers.
 
-/// Standard context sizes we'll recommend, ascending.
-const CONTEXT_LADDER: &[u32] = &[8192, 16384, 32768, 65536, 131072];
+/// Standard context sizes we'll recommend, ascending. 262144 is the
+/// architectural ceiling of the Qwen 3.5 / 3.6 models we ship.
+const CONTEXT_LADDER: &[u32] = &[8192, 16384, 32768, 65536, 131072, 262144];
 /// Floor: never recommend below this even on tight VRAM.
 pub const MIN_CONTEXT: u32 = 8192;
 /// VRAM left free for the display/compositor, driver, and fragmentation.
@@ -1113,7 +1114,7 @@ mod tests {
         // Results are real ladder rungs, never above the cap.
         for c in [c8, c16, c24] {
             assert!(CONTEXT_LADDER.contains(&c) || c == MIN_CONTEXT);
-            assert!(c <= 131072);
+            assert!(c <= 262144);
         }
 
         // Unknown model → floor, not a panic.

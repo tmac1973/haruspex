@@ -265,7 +265,7 @@
 			finishes.
 		</p>
 		<div class="context-options">
-			{#each [{ value: 8192, label: '8K', desc: 'Low VRAM' }, { value: 16384, label: '16K', desc: 'Standard' }, { value: 32768, label: '32K', desc: 'Recommended' }, { value: 65536, label: '64K', desc: '16+ GB VRAM' }, { value: 131072, label: '128K', desc: 'Maximum' }] as opt (opt.value)}
+			{#each [{ value: 8192, label: '8K', desc: 'Low VRAM' }, { value: 16384, label: '16K', desc: 'Standard' }, { value: 32768, label: '32K', desc: 'Recommended' }, { value: 65536, label: '64K', desc: '16+ GB VRAM' }, { value: 131072, label: '128K', desc: '24+ GB VRAM' }, { value: 262144, label: '256K', desc: 'Maximum' }] as opt (opt.value)}
 				<button
 					class="ctx-btn"
 					class:selected={contextSize === opt.value}
