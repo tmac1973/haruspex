@@ -16,6 +16,7 @@
 	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
 	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
 	import ModeSelector from '$lib/components/ModeSelector.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import JobScheduleField from '$lib/components/jobs/JobScheduleField.svelte';
 	import {
 		createJob,
@@ -438,10 +439,12 @@
 		}
 	}
 
-	async function confirmDelete() {
+	// Job delete awaits ConfirmDialog approval.
+	let confirmingDelete = $state(false);
+
+	async function deleteJobConfirmed() {
+		confirmingDelete = false;
 		if (jobId === 'new') return;
-		const ok = window.confirm(`Delete job "${name}"? This cannot be undone.`);
-		if (!ok) return;
 		saving = true;
 		try {
 			const deleted = await deleteJob(jobId);
@@ -712,7 +715,7 @@
 					<button
 						type="button"
 						class="btn btn-danger"
-						onclick={confirmDelete}
+						onclick={() => (confirmingDelete = true)}
 						disabled={saving}
 						title="Delete this job and its entire run history. Cannot be undone."
 					>
@@ -743,6 +746,15 @@
 		</div>
 	{/if}
 </div>
+
+<ConfirmDialog
+	open={confirmingDelete}
+	title="Delete job?"
+	message={`Delete job "${name}"? This cannot be undone.`}
+	confirmLabel="Delete job"
+	onconfirm={deleteJobConfirmed}
+	oncancel={() => (confirmingDelete = false)}
+/>
 
 <style>
 	.job-editor {

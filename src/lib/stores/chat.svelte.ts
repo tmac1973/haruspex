@@ -20,12 +20,8 @@ import {
 } from '$lib/agent/system-prompt';
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
-import {
-	getActiveContextSize,
-	getSettings,
-	isVisionSupported,
-	SETTINGS_KEY
-} from '$lib/stores/settings';
+import { getSettings, SETTINGS_KEY } from '$lib/stores/settings';
+import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
 	getActiveConversationId,
 	setActiveConversationId,
@@ -37,7 +33,7 @@ import {
 export { getActiveConversationId, getWorkingDir };
 import { approveChatSandbox, forgetChatSandboxApproval } from '$lib/stores/sandboxApproval.svelte';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
-import { appendStreamDelta } from '$lib/agent/think-stream';
+import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
 import { isFetchFailureResult } from '$lib/agent/tools/_helpers';
 import { errMessage, isAbortError } from '$lib/utils/error';
 import { formatSandboxResult } from '$lib/sandbox/format-result';
@@ -49,6 +45,8 @@ import {
 	cancelActiveRun
 } from '$lib/sandbox/sandbox';
 import { updateContextUsage, resetContextUsage, setContextUsage } from '$lib/stores/context.svelte';
+import { getServerState } from '$lib/stores/server.svelte';
+import { showToast } from '$lib/stores/toasts.svelte';
 import {
 	initDb,
 	dbSaveMessage,
@@ -193,6 +191,16 @@ let errorMessage = $state<string | null>(null);
 let errorTurnId = $state<number | null>(null);
 let currentTurnId: number | null = null;
 let exhaustiveResearch = $state(false);
+// Set when the last turn ended in a retryable failure (agent-loop error,
+// startup failure, cancel-while-queued). The user message is already in
+// history, so retryLastTurn() just re-runs the turn against it — no
+// duplicate user bubble.
+let lastTurnFailed = $state(false);
+// Conversation whose just-appended user message is waiting for the
+// llama-server sidecar to finish starting. Non-null means "queued for
+// startup"; the module-scope watcher below dispatches the turn when the
+// server reports ready, or converts it into the error banner on failure.
+let queuedConversation = $state<Conversation | null>(null);
 
 let abortController: AbortController | null = null;
 
@@ -281,6 +289,14 @@ export function getErrorMessage(): string | null {
 
 export function getErrorTurnId(): number | null {
 	return errorTurnId;
+}
+
+export function getLastTurnFailed(): boolean {
+	return lastTurnFailed;
+}
+
+export function getQueuedForStartup(): boolean {
+	return queuedConversation !== null;
 }
 
 export function getSearchSteps(): SearchStep[] {
@@ -401,7 +417,7 @@ async function compactIfNeeded(): Promise<void> {
 	// by the learned calibration so dense content (code/logs) triggers the
 	// summary as early as it should.
 	const estimated = estimateMessagesTokens(conversation.messages) * getTokenCalibration();
-	if (!shouldCompact(estimated, getActiveContextSize())) return;
+	if (!shouldCompact(estimated, resolveBackendDescriptor().contextSize)) return;
 
 	isCompacting = true;
 	try {
@@ -475,6 +491,7 @@ export function createConversation(): string {
 	setActiveConversationId(id);
 	errorMessage = null;
 	errorTurnId = null;
+	lastTurnFailed = false;
 	resetContextUsage();
 	dbCreateConversation(id, 'New chat');
 	return id;
@@ -494,6 +511,7 @@ export async function setActiveConversation(id: string): Promise<void> {
 		setActiveConversationId(id);
 		errorMessage = null;
 		errorTurnId = null;
+		lastTurnFailed = false;
 		restoreContextUsageFor(id);
 		await loadConversationMessages(id);
 		// Fire-and-forget; the replay updates conv.isRestoringSession so
@@ -624,6 +642,9 @@ async function restoreSandboxSession(id: string): Promise<void> {
 }
 
 export async function deleteConversation(id: string): Promise<void> {
+	// Drop a startup-queued send whose conversation is going away, so the
+	// watcher can't dispatch a turn against a deleted conversation later.
+	if (queuedConversation?.id === id) queuedConversation = null;
 	const wasActive = getActiveConversationId() === id;
 	conversations = conversations.filter((c) => c.id !== id);
 	if (wasActive) {
@@ -644,14 +665,26 @@ export async function renameConversation(id: string, title: string): Promise<voi
 
 export async function clearAllConversations(): Promise<void> {
 	if (isGenerating) cancelGeneration();
+	queuedConversation = null;
 	conversations = [];
 	setActiveConversationId(null);
 	errorMessage = null;
 	errorTurnId = null;
+	lastTurnFailed = false;
 	await dbClearAll();
 }
 
 export function cancelGeneration(): void {
+	// Cancelling a startup-queued send: nothing is running yet, so just
+	// unqueue it. The user message stays in history and the standard error
+	// banner (with Retry) lets the user re-dispatch it later.
+	if (queuedConversation) {
+		queuedConversation = null;
+		errorMessage = 'Cancelled before the model started.';
+		errorTurnId = null;
+		lastTurnFailed = true;
+		return;
+	}
 	if (abortController) {
 		abortController.abort();
 		abortController = null;
@@ -690,11 +723,21 @@ function computeStats(stats: TurnStats): MessageStats | null {
 /**
  * Validate the send precondition and ensure an active conversation
  * exists. Returns the conversation when sending is allowed, `null` if
- * the caller should silently no-op (empty input, already generating,
- * mid-compaction, or no conversation could be created).
+ * the caller should no-op (empty input, already generating,
+ * mid-compaction, backend down, or no conversation could be created).
+ * The backend-down rejection surfaces its own error toast; the caller
+ * must leave the composer text intact (nothing was consumed).
  */
 function ensureSendableConversation(content: string, hasImages: boolean): Conversation | null {
 	if ((!content.trim() && !hasImages) || isGenerating || isCompacting) return null;
+	// Don't append silently-doomed work: with the server stopped or errored
+	// the turn can only fail, so reject the send up front. 'starting' is
+	// accepted — the message queues and auto-sends once the server is ready.
+	const status = getServerState().status;
+	if (status === 'stopped' || status === 'error') {
+		showToast("The model isn't running. Check Settings → Inference backend.", { kind: 'error' });
+		return null;
+	}
 	if (!getActiveConversationId()) createConversation();
 	return getActiveConversation() ?? null;
 }
@@ -736,6 +779,7 @@ function resetTurnState(conversation: Conversation): AbortSignal {
 	streamingContent = '';
 	errorMessage = null;
 	errorTurnId = null;
+	lastTurnFailed = false;
 	currentTurnId = beginTurn();
 	conversation.searchSteps = [];
 	conversation.sourceUrls = [];
@@ -900,6 +944,9 @@ function handleTurnError(e: unknown): void {
 		errorMessage = 'An unexpected error occurred.';
 	}
 	errorTurnId = currentTurnId;
+	// The user message is already in history — nothing else to stash for a
+	// retry; retryLastTurn() just re-runs the turn against it.
+	lastTurnFailed = true;
 }
 
 /** The subset of AgentLoopOptions wired up per turn by sendMessage. */
@@ -926,6 +973,7 @@ function buildAgentLoopCallbacks(
 	activeCtxSize: number,
 	turnStats: TurnStats
 ): AgentLoopCallbacks {
+	const thinkState = createThinkStreamState();
 	return {
 		onUsageUpdate: (u: Usage) => {
 			updateContextUsage(u, activeCtxSize);
@@ -959,7 +1007,7 @@ function buildAgentLoopCallbacks(
 			);
 		},
 		onStreamChunk: (chunk) => {
-			streamingContent = appendStreamDelta(streamingContent, chunk.delta);
+			streamingContent = appendStreamDelta(streamingContent, chunk.delta, thinkState);
 		},
 		onComplete: (meta) => finalizeStreamedTurn(conversation, turnStats, meta?.stopReason),
 		onError: handleTurnError
@@ -1010,17 +1058,100 @@ function finalizeStreamedTurn(
 
 /** Resume after a turn-limit / forced stop — the Continue button on the stop
  *  indicator. Same as the user typing "continue". */
-export function continueTurn(): Promise<void> {
+export function continueTurn(): Promise<boolean> {
 	return sendMessage('Please continue from where you stopped.');
 }
 
-export async function sendMessage(content: string, images: string[] = []): Promise<void> {
+/** Text of the most recent user message — the turn being (re)run. */
+function lastUserText(conversation: Conversation): string {
+	for (let i = conversation.messages.length - 1; i >= 0; i--) {
+		const m = conversation.messages[i];
+		if (m.role === 'user') return messageText(m.content);
+	}
+	return '';
+}
+
+/** Park the turn until the sidecar finishes starting; clears stale errors. */
+function queueTurnForStartup(conversation: Conversation): void {
+	queuedConversation = conversation;
+	errorMessage = null;
+	errorTurnId = null;
+	lastTurnFailed = false;
+}
+
+// Watches the server lifecycle while a send is queued for startup. Lives in
+// a module-level $effect.root because this store is plain module state, not
+// a component. On 'ready'/'remote' the queued turn dispatches exactly once
+// (the queue slot is cleared before the run starts); on 'error'/'stopped'
+// it converts into the standard error banner with Retry.
+$effect.root(() => {
+	$effect(() => {
+		const { status, errorMessage: serverError } = getServerState();
+		if (!queuedConversation || status === 'starting') return;
+		const conversation = queuedConversation;
+		queuedConversation = null;
+		if (status === 'ready' || status === 'remote') {
+			void runCurrentTurn(conversation);
+		} else {
+			errorMessage = serverError
+				? `The model failed to start: ${serverError}`
+				: 'The model failed to start.';
+			errorTurnId = null;
+			lastTurnFailed = true;
+		}
+	});
+});
+
+/**
+ * Re-run the last failed turn. The user message is already in history, so
+ * this clears the error state and runs the turn again — no duplicate user
+ * bubble. If the server is (still) starting — e.g. retrying right after
+ * cancelling a queued send — the retry re-queues just like a fresh send.
+ */
+export async function retryLastTurn(): Promise<void> {
+	if (!lastTurnFailed || isGenerating || isCompacting) return;
+	const conversation = getActiveConversation();
+	if (!conversation || conversation.messages.length === 0) return;
+	if (getServerState().status === 'starting') {
+		queueTurnForStartup(conversation);
+		return;
+	}
+	await runCurrentTurn(conversation);
+}
+
+/**
+ * Append the user's message and dispatch the turn. Returns `true` when the
+ * message was accepted into history (turn started, or queued for startup)
+ * and `false` when the send was rejected without consuming anything — the
+ * caller keeps its composer text. The rejected path resolves synchronously
+ * (before any awaits), so callers can clear optimistically and restore.
+ */
+export async function sendMessage(content: string, images: string[] = []): Promise<boolean> {
 	const conversation = ensureSendableConversation(content, images.length > 0);
-	if (!conversation) return;
+	if (!conversation) return false;
 
 	contextNotice = null;
 	await compactIfNeeded();
 	finalizeUserTurn(conversation, content, images);
+
+	// Locked startup behavior: a send while llama-server is still starting
+	// stays visible in history and is auto-dispatched by the module-scope
+	// watcher above the moment the server reports ready.
+	if (getServerState().status === 'starting') {
+		queueTurnForStartup(conversation);
+		return true;
+	}
+
+	await runCurrentTurn(conversation);
+	return true;
+}
+
+/**
+ * Run one agent turn against the conversation's existing history (the user
+ * message is already appended). Shared by sendMessage, retryLastTurn and
+ * the queued-startup watcher.
+ */
+async function runCurrentTurn(conversation: Conversation): Promise<void> {
 	const signal = resetTurnState(conversation);
 
 	// Tok/s timing: the agent loop emits per-call timing via onCallStats.
@@ -1031,6 +1162,7 @@ export async function sendMessage(content: string, images: string[] = []): Promi
 
 	try {
 		const currentWorkingDir = getWorkingDir();
+		const content = lastUserText(conversation);
 		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
 
 		const keepRecentTools = getSettings().keepRecentToolResults;
@@ -1040,9 +1172,10 @@ export async function sendMessage(content: string, images: string[] = []): Promi
 			keepRecentTools
 		);
 
-		const activeCtxSize = getActiveContextSize();
-
-		const visionSupported = isVisionSupported();
+		// Chat always talks to the global Settings backend (no override).
+		const backendDescriptor = resolveBackendDescriptor();
+		const activeCtxSize = backendDescriptor.contextSize;
+		const visionSupported = backendDescriptor.vision;
 
 		isWaitingForSlot = true;
 		await withInferenceSlot(

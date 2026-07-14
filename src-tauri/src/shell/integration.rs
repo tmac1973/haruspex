@@ -331,6 +331,9 @@ impl Integration {
     }
 
     /// Find the most recent completed command cycle in the marker ring.
+    /// Production callers go through `capture_recent_commands`; this
+    /// convenience remains for the marker-capture test suite.
+    #[cfg(test)]
     pub fn capture_last_command(&self) -> Option<CapturedRegion> {
         self.capture_recent_commands(1).into_iter().next_back()
     }

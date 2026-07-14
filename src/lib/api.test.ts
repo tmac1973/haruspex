@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { parseSSE, chatCompletion, chatCompletionStream, ApiError } from '$lib/api';
 
-// Mock the settings module so resolveChatEndpoint sees the backend we want.
-// vi.hoisted ensures the mock fn is available when the hoisted vi.mock factory runs.
+// Mock the settings module so resolveChatEndpoint (via resolveBackendDescriptor)
+// sees the backend we want. vi.hoisted ensures the mock fns are available when
+// the hoisted vi.mock factory runs. The descriptor resolver also reads
+// getActiveLocalModelFilename for local model-family detection.
 const { getSettingsMock, getApiKeyValueMock } = vi.hoisted(() => ({
 	getSettingsMock: vi.fn<() => { inferenceBackend: Record<string, unknown> }>(() => ({
 		inferenceBackend: { mode: 'local' }
@@ -11,7 +13,8 @@ const { getSettingsMock, getApiKeyValueMock } = vi.hoisted(() => ({
 }));
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: getSettingsMock,
-	getApiKeyValue: getApiKeyValueMock
+	getApiKeyValue: getApiKeyValueMock,
+	getActiveLocalModelFilename: () => ''
 }));
 
 // Helper to create a ReadableStream from SSE text

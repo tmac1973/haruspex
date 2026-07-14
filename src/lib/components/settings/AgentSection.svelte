@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { getSettings, updateSettings, isReasoningSupported } from '$lib/stores/settings';
+	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import { clampInt } from '$lib/utils/clampInt';
 
 	let thinkingEnabled = $state(getSettings().thinkingEnabled);
@@ -7,7 +8,7 @@
 	// llama-toolchest non-reasoning model); hide the toggle in that case since
 	// it would have no effect. Local + other remote backends are assumed
 	// capable. Snapshot at mount, matching the rest of this section.
-	let reasoningSupported = $state(isReasoningSupported());
+	let reasoningSupported = $state(resolveBackendDescriptor().reasoningSupported);
 	let keepRecentToolResults = $state(getSettings().keepRecentToolResults);
 	let customSystemPrompt = $state(getSettings().customSystemPrompt);
 	let sandboxEnabled = $state(getSettings().sandboxEnabled);

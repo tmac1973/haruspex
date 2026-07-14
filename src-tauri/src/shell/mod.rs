@@ -294,14 +294,6 @@ pub fn shell_get_context(
 }
 
 #[tauri::command]
-pub fn shell_get_last_command(
-    state: State<'_, ShellManager>,
-    session_id: SessionId,
-) -> Result<Option<CapturedRegion>, String> {
-    state.with_session(session_id, |session| Ok(session.capture_last_command()))
-}
-
-#[tauri::command]
 pub fn shell_get_recent_commands(
     state: State<'_, ShellManager>,
     session_id: SessionId,

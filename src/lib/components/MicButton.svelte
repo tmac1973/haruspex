@@ -1,6 +1,6 @@
 <script lang="ts">
 	import {
-		getVoiceCaptureError,
+		cancelVoiceCapture,
 		getVoiceCaptureStatus,
 		startVoiceCapture,
 		stopAndTranscribe
@@ -14,7 +14,6 @@
 	let { onTranscription, disabled = false }: Props = $props();
 
 	const status = $derived(getVoiceCaptureStatus());
-	const error = $derived(getVoiceCaptureError());
 	const recording = $derived(status === 'recording');
 	const processing = $derived(status === 'processing');
 	const downloading = $derived(status === 'downloading');
@@ -29,6 +28,32 @@
 		const text = await stopAndTranscribe();
 		if (text) onTranscription(text);
 	}
+
+	// Backing out of the gesture (Esc, focus loss, pointer leaving the
+	// button) aborts the recording without transcribing.
+	function cancel() {
+		if (recording) void cancelVoiceCapture();
+	}
+
+	// Hold-to-talk on the keyboard mirrors the mouse gesture: Space/Enter
+	// down starts recording (the `repeat` guard ignores key auto-repeat
+	// while held), key up stops and transcribes. Esc aborts. Both
+	// preventDefault so the browser's synthetic button click never fires.
+	function onKeydown(event: KeyboardEvent) {
+		if (event.key === ' ' || event.key === 'Enter') {
+			event.preventDefault();
+			if (!event.repeat) void start();
+		} else if (event.key === 'Escape') {
+			cancel();
+		}
+	}
+
+	function onKeyup(event: KeyboardEvent) {
+		if (event.key === ' ' || event.key === 'Enter') {
+			event.preventDefault();
+			void stop();
+		}
+	}
 </script>
 
 <div class="mic-container">
@@ -37,18 +62,20 @@
 		class:recording
 		class:processing={processing || downloading}
 		disabled={disabled || downloading}
+		aria-pressed={recording}
 		onmousedown={start}
 		onmouseup={stop}
-		onmouseleave={() => {
-			if (recording) stop();
-		}}
+		onmouseleave={cancel}
+		onkeydown={onKeydown}
+		onkeyup={onKeyup}
+		onblur={cancel}
 		title={downloading
 			? 'Downloading speech model...'
 			: recording
 				? 'Release to send'
 				: processing
 					? 'Transcribing...'
-					: 'Hold to record (or hold F2 anywhere)'}
+					: 'Hold to talk (or hold F2)'}
 	>
 		{#if processing || downloading}
 			<span class="spinner"></span>
@@ -68,9 +95,6 @@
 			</svg>
 		{/if}
 	</button>
-	{#if error}
-		<span class="mic-error">{error}</span>
-	{/if}
 </div>
 
 <style>
@@ -116,15 +140,6 @@
 	.mic-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
-	}
-
-	.mic-error {
-		font-size: 0.75rem;
-		color: var(--error-text);
-		max-width: 200px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 
 	@keyframes pulse-record {

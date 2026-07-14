@@ -8,6 +8,7 @@
 	} from '$lib/stores/jobRuns.svelte';
 	import { formatDuration } from '$lib/utils/format';
 	import { activatable } from '$lib/actions/activatable';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
 	interface Props {
 		jobId: number;
@@ -43,25 +44,48 @@
 		return '';
 	}
 
-	async function confirmDeleteRun(run: JobRunSummary, e: MouseEvent) {
+	// Pending destructive action awaiting ConfirmDialog: one run or the
+	// whole history (count captured at request time for the dialog copy).
+	type PendingDelete = { kind: 'run'; run: JobRunSummary } | { kind: 'all'; count: number };
+	let pendingDelete = $state<PendingDelete | null>(null);
+
+	const deleteDialog = $derived.by(() => {
+		if (!pendingDelete) return null;
+		if (pendingDelete.kind === 'run') {
+			const label = `${formatWhen(pendingDelete.run.queued_at)} (${pendingDelete.run.status})`;
+			return {
+				title: 'Delete run?',
+				message: `Delete run from ${label}? This cannot be undone.`
+			};
+		}
+		const n = pendingDelete.count;
+		return {
+			title: 'Delete all runs?',
+			message: `Delete all ${n} run${n === 1 ? '' : 's'} for this job? This cannot be undone.`
+		};
+	});
+
+	function requestDeleteRun(run: JobRunSummary, e: MouseEvent) {
 		e.stopPropagation();
-		const label = `${formatWhen(run.queued_at)} (${run.status})`;
-		if (!window.confirm(`Delete run from ${label}? This cannot be undone.`)) return;
-		const ok = await deleteJobRun(jobId, run.id);
-		if (ok) onrundeleted?.(run.id);
+		pendingDelete = { kind: 'run', run };
 	}
 
-	async function confirmClearAll() {
-		const n = runs.length;
-		if (n === 0) return;
-		if (
-			!window.confirm(
-				`Delete all ${n} run${n === 1 ? '' : 's'} for this job? This cannot be undone.`
-			)
-		)
-			return;
-		const ok = await deleteAllJobRuns(jobId);
-		if (ok) onallrunsdeleted?.();
+	function requestClearAll() {
+		if (runs.length === 0) return;
+		pendingDelete = { kind: 'all', count: runs.length };
+	}
+
+	async function confirmPendingDelete() {
+		const pending = pendingDelete;
+		pendingDelete = null;
+		if (!pending) return;
+		if (pending.kind === 'run') {
+			const ok = await deleteJobRun(jobId, pending.run.id);
+			if (ok) onrundeleted?.(pending.run.id);
+		} else {
+			const ok = await deleteAllJobRuns(jobId);
+			if (ok) onallrunsdeleted?.();
+		}
 	}
 </script>
 
@@ -72,7 +96,7 @@
 			<button
 				type="button"
 				class="clear-all"
-				onclick={confirmClearAll}
+				onclick={requestClearAll}
 				title="Delete every run in this list. Cannot be undone."
 			>
 				Clear all
@@ -108,7 +132,7 @@
 						class="delete-btn"
 						aria-label="Delete run"
 						title="Delete this run"
-						onclick={(e) => confirmDeleteRun(run, e)}
+						onclick={(e) => requestDeleteRun(run, e)}
 					>
 						×
 					</button>
@@ -117,6 +141,17 @@
 		{/if}
 	</div>
 </div>
+
+{#if deleteDialog}
+	<ConfirmDialog
+		open
+		title={deleteDialog.title}
+		message={deleteDialog.message}
+		confirmLabel="Delete"
+		onconfirm={confirmPendingDelete}
+		oncancel={() => (pendingDelete = null)}
+	/>
+{/if}
 
 <style>
 	.history {

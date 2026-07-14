@@ -22,14 +22,20 @@
 		getSearchSteps,
 		getSourceUrls,
 		getExhaustiveResearch,
+		getLastTurnFailed,
+		getQueuedForStartup,
 		renderStreamingHtml,
 		setExhaustiveResearch,
 		createConversation,
 		sendMessage,
 		continueTurn,
-		cancelGeneration
+		cancelGeneration,
+		retryLastTurn
 	} from '$lib/stores/chat.svelte';
 	import { getServerState, startServer, stopServer } from '$lib/stores/server.svelte';
+	import { showToast } from '$lib/stores/toasts.svelte';
+	import { openLogViewer } from '$lib/stores/logViewer.svelte';
+	import { errMessage } from '$lib/utils/error';
 	import {
 		getActiveLocalModelFilename,
 		getSettings,
@@ -57,6 +63,7 @@
 				pendingImages = [...pendingImages, { id: imgSeq++, url }];
 			} catch (e) {
 				console.error('image attach failed', e);
+				showToast(`Couldn't attach image: ${errMessage(e)}`, { kind: 'error' });
 			}
 		}
 	}
@@ -81,12 +88,23 @@
 	/** Single send path for the button, Enter, and voice — folds in any
 	 *  attached images and clears the composer. */
 	async function doSend(text: string) {
-		const images = pendingImages.map((p) => p.url);
+		const images = pendingImages;
 		if ((!text.trim() && images.length === 0) || isGenerating || isCompacting) return;
+		// Clear optimistically so the composer empties the moment the send is
+		// accepted. When the store rejects the send without consuming it (the
+		// backend is down — it resolves `false` synchronously, before running
+		// the turn), the restore below puts the text back untouched.
 		inputText = '';
 		pendingImages = [];
 		autoScroll = true;
-		await sendMessage(text, images);
+		const accepted = await sendMessage(
+			text,
+			images.map((p) => p.url)
+		);
+		if (!accepted) {
+			inputText = text;
+			pendingImages = images;
+		}
 	}
 
 	const copyDebugLog = createCopyAction();
@@ -110,6 +128,8 @@
 	const errorTurnId = $derived(getErrorTurnId());
 	const searchSteps = $derived(getSearchSteps());
 	const sourceUrls = $derived(getSourceUrls());
+	const lastTurnFailed = $derived(getLastTurnFailed());
+	const queuedForStartup = $derived(getQueuedForStartup());
 	const serverState = $derived(getServerState());
 
 	// Chat is usable whenever a backend is ready to take requests. That
@@ -172,7 +192,7 @@
 			e.preventDefault();
 			handleSend();
 		}
-		if (e.key === 'Escape' && isGenerating) {
+		if (e.key === 'Escape' && (isGenerating || queuedForStartup)) {
 			cancelGeneration();
 		}
 	}
@@ -204,6 +224,17 @@
 	let throttledStreamingContent = $state('');
 	let streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// Latched at the throttle cadence: once the buffer holds visible answer
+	// text it never un-holds it within a turn, so after the latch flips the
+	// O(n) hasStreamingAnswer regex scan stops running entirely (it used to
+	// re-run against the raw buffer on every token).
+	let streamingAnswerStarted = $state(false);
+	function latchStreamingAnswer(buf: string): void {
+		if (!streamingAnswerStarted && hasStreamingAnswer(buf)) {
+			streamingAnswerStarted = true;
+		}
+	}
+
 	$effect(() => {
 		// Track streamingContent reactively; everything else is untracked.
 		const current = streamingContent;
@@ -211,6 +242,7 @@
 			if (!current) {
 				// Stream ended — drop the preview and cancel any pending flush.
 				throttledStreamingContent = '';
+				streamingAnswerStarted = false;
 				if (streamRenderTimer !== null) {
 					clearTimeout(streamRenderTimer);
 					streamRenderTimer = null;
@@ -218,10 +250,13 @@
 			} else if (!throttledStreamingContent) {
 				// First chunk: render immediately so the cursor shows up fast.
 				throttledStreamingContent = current;
+				latchStreamingAnswer(current);
 			} else if (streamRenderTimer === null) {
 				// Subsequent chunks: coalesce into one render per window.
 				streamRenderTimer = setTimeout(() => {
-					throttledStreamingContent = getStreamingContent();
+					const flushed = getStreamingContent();
+					throttledStreamingContent = flushed;
+					latchStreamingAnswer(flushed);
 					streamRenderTimer = null;
 				}, STREAM_RENDER_MS);
 			}
@@ -304,6 +339,11 @@
 			await startServer(modelPath, getSettings().contextSize);
 		} catch (e) {
 			console.error('Restart on GPU failed:', e);
+			showToast(`GPU restart failed: ${errMessage(e)}`, {
+				kind: 'error',
+				actionLabel: 'View logs',
+				onAction: openLogViewer
+			});
 		} finally {
 			restartingOnGpu = false;
 		}
@@ -367,27 +407,38 @@
 					<SearchStepComponent steps={searchSteps} slowMode={searchProviderSlowMode} />
 				{/if}
 
-				{#if isWaitingForSlot}
-					<div class="compacting-indicator">Waiting for another inference request to finish…</div>
-				{:else if isGenerating && hasStreamingAnswer(streamingContent)}
-					<div class="message" data-role="assistant">
-						<div class="message-label">Haruspex</div>
-						<div class="message-content">
-							{@html renderedStreamingContent}
-							<span class="streaming-caret"></span>
+				{#if isGenerating && !queuedForStartup && !isWaitingForSlot}
+					{#if streamingAnswerStarted}
+						<div class="message" data-role="assistant">
+							<div class="message-label">Haruspex</div>
+							<div class="message-content">
+								{@html renderedStreamingContent}
+								<span class="streaming-caret"></span>
+							</div>
 						</div>
-					</div>
-				{:else if isGenerating}
-					<ThinkingIndicator />
+					{:else}
+						<ThinkingIndicator />
+					{/if}
 				{/if}
 
-				{#if isCompacting}
-					<div class="compacting-indicator">Compacting conversation history...</div>
-				{/if}
+				<!-- Shared live region for generation-state notices: kept mounted
+				     (even when empty) so screen readers announce lines as they
+				     appear. One wrapper covers all four notice kinds. -->
+				<div role="status">
+					{#if queuedForStartup}
+						<div class="compacting-indicator">Waiting for the model to start…</div>
+					{:else if isWaitingForSlot}
+						<div class="compacting-indicator">Waiting for another inference request to finish…</div>
+					{/if}
 
-				{#if contextNotice}
-					<div class="compacting-indicator">ⓘ {contextNotice}</div>
-				{/if}
+					{#if isCompacting}
+						<div class="compacting-indicator">Compacting conversation history...</div>
+					{/if}
+
+					{#if contextNotice}
+						<div class="compacting-indicator">ⓘ {contextNotice}</div>
+					{/if}
+				</div>
 
 				{#if activeConversation?.isRestoringSession}
 					<div class="compacting-indicator">Restoring Python sandbox session…</div>
@@ -411,21 +462,33 @@
 				{#if errorMessage}
 					<div class="error-message">
 						<p>{errorMessage}</p>
-						{#if errorTurnId != null}
-							<button
-								class="copy-debug-btn"
-								onclick={copyDebugLogForError}
-								title="Copy the debug log for just this failed turn"
-							>
-								{#if copyDebugLog.state === 'copied'}
-									Copied!
-								{:else if copyDebugLog.state === 'failed'}
-									Nothing to copy
-								{:else}
-									Copy debug log
-								{/if}
-							</button>
-						{/if}
+						<div class="error-actions">
+							{#if lastTurnFailed}
+								<button
+									class="retry-btn"
+									onclick={() => retryLastTurn()}
+									disabled={isGenerating}
+									title="Run the failed turn again"
+								>
+									Retry
+								</button>
+							{/if}
+							{#if errorTurnId != null}
+								<button
+									class="copy-debug-btn"
+									onclick={copyDebugLogForError}
+									title="Copy the debug log for just this failed turn"
+								>
+									{#if copyDebugLog.state === 'copied'}
+										Copied!
+									{:else if copyDebugLog.state === 'failed'}
+										Nothing to copy
+									{:else}
+										Copy debug log
+									{/if}
+								</button>
+							{/if}
+						</div>
 					</div>
 				{/if}
 			{:else}
@@ -448,8 +511,10 @@
 			class:drag-over={dragOver}
 			use:imageDropTarget={{ onImages: addImageUrls, onDragChange: (over) => (dragOver = over) }}
 		>
-			{#if isGenerating}
-				<button class="stop-btn" onclick={() => cancelGeneration()}>Stop generating</button>
+			{#if isGenerating || queuedForStartup}
+				<button class="stop-btn" onclick={() => cancelGeneration()}>
+					{queuedForStartup ? 'Cancel queued message' : 'Stop generating'}
+				</button>
 			{/if}
 			{#if pendingImages.length}
 				<div class="attachments">
@@ -470,8 +535,10 @@
 					onpaste={onComposerPaste}
 					placeholder={serverReady
 						? 'Type a message… (drop or paste an image to attach)'
-						: 'Waiting for model to load...'}
-					disabled={!serverReady && !activeConversation}
+						: serverState.status === 'starting'
+							? "Model is starting — messages will send when it's ready"
+							: 'Waiting for model to load...'}
+					disabled={!serverReady && serverState.status !== 'starting' && !activeConversation}
 					rows="1"
 				></textarea>
 				<WorkingDirButton />
@@ -608,8 +675,34 @@
 		margin: 0;
 	}
 
-	.copy-debug-btn {
+	.error-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 		margin-top: 8px;
+	}
+
+	.retry-btn {
+		background: var(--error-text);
+		color: var(--bg-primary);
+		border: 1px solid var(--error-text);
+		border-radius: 4px;
+		padding: 3px 12px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.retry-btn:hover:not(:disabled) {
+		opacity: 0.85;
+	}
+
+	.retry-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.copy-debug-btn {
 		background: transparent;
 		color: var(--error-text);
 		border: 1px solid var(--error-border);

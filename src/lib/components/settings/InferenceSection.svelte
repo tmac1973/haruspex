@@ -16,12 +16,15 @@
 		getSettings,
 		updateSettings,
 		updateInferenceBackend,
-		getActiveContextSize,
 		setActiveLocalModel,
 		type InferenceBackendConfig,
 		type InferenceMode
 	} from '$lib/stores/settings';
+	import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
+	import { showToast } from '$lib/stores/toasts.svelte';
+	import { openLogViewer } from '$lib/stores/logViewer.svelte';
+	import { errMessage } from '$lib/utils/error';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
 	import ModeSelector from '$lib/components/ModeSelector.svelte';
 	import OpenRouterForm from '$lib/components/settings/OpenRouterForm.svelte';
@@ -39,6 +42,16 @@
 	);
 	const genericRemoteMode = $derived(remoteMode && !openrouterMode);
 	const pendingRestart = $derived(getPendingRestart());
+
+	/** Server stop/start failure → error toast with a View-logs action.
+	 *  The console.warn stays as the Log Viewer / devtools trail. */
+	function toastServerFailure(verb: 'start' | 'stop', e: unknown) {
+		showToast(`Couldn't ${verb} the inference server: ${errMessage(e)}`, {
+			kind: 'error',
+			actionLabel: 'View logs',
+			onAction: openLogViewer
+		});
+	}
 
 	/**
 	 * The three UI-level backend choices. OpenRouter reuses `mode: 'remote'`
@@ -65,12 +78,13 @@
 			};
 			inferenceBackend = next;
 			updateInferenceBackend(next);
-			setIndicatorContextSize(getActiveContextSize());
+			setIndicatorContextSize(resolveBackendDescriptor().contextSize);
 			cancelPendingRestart();
 			try {
 				await stopServer();
 			} catch (e) {
 				console.warn('stopServer on openrouter toggle failed:', e);
+				toastServerFailure('stop', e);
 			}
 			enterRemoteMode(next.remoteBaseUrl, next.remoteModelId);
 			return;
@@ -87,7 +101,7 @@
 		updateInferenceBackend({ mode, ...(mode === 'remote' ? { remoteBackendKind: null } : {}) });
 		// Refresh the header context indicator immediately so it reflects
 		// the new backend's ceiling instead of the previous one's stale value.
-		setIndicatorContextSize(getActiveContextSize());
+		setIndicatorContextSize(resolveBackendDescriptor().contextSize);
 		if (mode === 'remote') {
 			// Drop any queued local restart — we're leaving local mode, so a
 			// deferred model/context restart would otherwise fire later and
@@ -101,6 +115,7 @@
 				await stopServer();
 			} catch (e) {
 				console.warn('stopServer on remote toggle failed:', e);
+				toastServerFailure('stop', e);
 			}
 			enterRemoteMode(inferenceBackend.remoteBaseUrl, inferenceBackend.remoteModelId);
 		} else {
@@ -119,6 +134,7 @@
 				}
 			} catch (e) {
 				console.warn('startServer on local toggle failed:', e);
+				toastServerFailure('start', e);
 			}
 		}
 	}

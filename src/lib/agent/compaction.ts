@@ -1,5 +1,6 @@
 import { chatCompletion, messageText, type ChatMessage } from '$lib/api';
 import { getChatTemplateKwargs } from '$lib/stores/settings';
+import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 
 const COMPACTION_THRESHOLD = 0.8;
 const PROTECTED_TURNS = 4;
@@ -54,7 +55,8 @@ export async function compactConversation(
 			],
 			max_tokens: 1024,
 			temperature: 0.3,
-			chat_template_kwargs: getChatTemplateKwargs()
+			// Compaction always runs against the global Settings backend.
+			chat_template_kwargs: getChatTemplateKwargs(resolveBackendDescriptor())
 		},
 		signal
 	);

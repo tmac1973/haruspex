@@ -1,7 +1,7 @@
 // llama-server OpenAI-compatible API client wrapper
-import { getSettings, getApiKeyValue } from '$lib/stores/settings';
+import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import { logDebug } from '$lib/debug-log';
-import { PORTS, baseUrl } from '$lib/ports';
+import { baseUrl } from '$lib/ports';
 import { OPENROUTER_ATTRIBUTION_HEADERS } from '$lib/openrouter';
 import { isAbortError } from '$lib/utils/error';
 import { readErrorText } from '$lib/utils/http';
@@ -129,6 +129,19 @@ export interface BackendOverride {
 	apiKeyId?: string;
 	/** Model ID sent in the request; falls back to 'default' when blank. */
 	modelId?: string;
+	/**
+	 * Context window (tokens) of the override's model, when the caller knows
+	 * it (per-job overrides carry the job's configured size). Read only by
+	 * `resolveBackendDescriptor`; when absent/invalid the descriptor falls
+	 * back to the global active context size.
+	 */
+	contextSize?: number | null;
+	/**
+	 * Whether the override's model accepts image input, when known. Read only
+	 * by `resolveBackendDescriptor`; when null/absent the descriptor falls
+	 * back to the global backend's vision capability.
+	 */
+	visionSupported?: boolean | null;
 }
 
 export interface Usage {
@@ -175,23 +188,15 @@ export class ApiError extends Error {
 	}
 }
 
-const DEFAULT_PORT = PORTS.llama;
-
-function getBaseUrl(port: number = DEFAULT_PORT): string {
-	return baseUrl(port);
-}
-
 /**
- * Resolves the chat-completions endpoint + auth headers + model name
- * from the active inference backend config at request time. In local
- * mode it returns the managed sidecar URL unchanged (and a placeholder
- * model name, which llama-server ignores since it only serves one).
- * In remote mode it returns the user's configured base URL, Bearer
- * token, and selected model ID.
+ * Resolves the chat-completions endpoint + auth headers + model name from
+ * the resolved backend descriptor at request time. This is the single choke
+ * point for routing chat requests — the agent loop, chat store, and
+ * streaming helpers all go through it; which backend applies (Settings vs a
+ * per-request override) is entirely `resolveBackendDescriptor`'s business.
  *
- * This is the single choke point for routing chat requests — the agent
- * loop, chat store, and streaming helpers all go through it, so adding
- * a new backend mode later means only touching this function.
+ * `port` overrides the managed sidecar port for a local backend (kept for
+ * signature stability; no current caller passes it).
  */
 function resolveChatEndpoint(
 	port?: number,
@@ -202,55 +207,21 @@ function resolveChatEndpoint(
 	model: string;
 	isOpenRouter: boolean;
 } {
+	const descriptor = resolveBackendDescriptor(override);
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-	// A per-request override short-circuits the Settings backend entirely.
-	if (override && override.baseUrl.trim().length > 0) {
-		// Key-store reference takes precedence over the legacy inline apiKey.
-		const key = getApiKeyValue(override.apiKeyId) ?? override.apiKey;
-		if (key && key.trim().length > 0) {
-			headers['Authorization'] = `Bearer ${key.trim()}`;
-		}
-		const isOpenRouter = isOpenRouterUrl(override.baseUrl);
-		if (isOpenRouter) applyOpenRouterAttribution(headers);
-		return {
-			url: `${override.baseUrl.replace(/\/+$/, '')}/v1/chat/completions`,
-			headers,
-			model: override.modelId?.trim() || 'default',
-			isOpenRouter
-		};
+	if (descriptor.apiKey) {
+		headers['Authorization'] = `Bearer ${descriptor.apiKey}`;
 	}
-	const backend = getSettings().inferenceBackend;
-	if (backend.mode === 'remote' && backend.remoteBaseUrl) {
-		// Key-store reference takes precedence over the legacy inline remoteApiKey.
-		const key = getApiKeyValue(backend.remoteApiKeyId) ?? backend.remoteApiKey;
-		if (key && key.trim().length > 0) {
-			headers['Authorization'] = `Bearer ${key.trim()}`;
-		}
-		const isOpenRouter =
-			backend.remoteBackendKind === 'openrouter' || isOpenRouterUrl(backend.remoteBaseUrl);
-		if (isOpenRouter) applyOpenRouterAttribution(headers);
-		return {
-			url: `${backend.remoteBaseUrl.replace(/\/+$/, '')}/v1/chat/completions`,
-			headers,
-			model: backend.remoteModelId || 'default',
-			isOpenRouter
-		};
-	}
+	const isOpenRouter = descriptor.kind === 'openrouter';
+	if (isOpenRouter) applyOpenRouterAttribution(headers);
+	const base =
+		descriptor.kind === 'local' && port !== undefined ? baseUrl(port) : descriptor.baseUrl;
 	return {
-		url: `${getBaseUrl(port)}/v1/chat/completions`,
+		url: `${base}/v1/chat/completions`,
 		headers,
-		model: 'default',
-		isOpenRouter: false
+		model: descriptor.modelId,
+		isOpenRouter
 	};
-}
-
-/** True when a base URL points at openrouter.ai (heuristic — host match). */
-function isOpenRouterUrl(baseUrl: string): boolean {
-	try {
-		return new URL(baseUrl).hostname === 'openrouter.ai';
-	} catch {
-		return false;
-	}
 }
 
 /** Add the optional OpenRouter attribution headers (leaderboard visibility). */

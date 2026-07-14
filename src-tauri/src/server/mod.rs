@@ -689,12 +689,6 @@ pub fn get_llama_crash_log(app: AppHandle) -> String {
     crash_telemetry::read(&app)
 }
 
-/// Path to the crash log file, so the UI can point the user at it on disk.
-#[tauri::command]
-pub fn get_llama_crash_log_path(app: AppHandle) -> Option<String> {
-    crash_telemetry::crash_log_path(&app).map(|p| p.to_string_lossy().to_string())
-}
-
 /// Delete the persisted crash log.
 #[tauri::command]
 pub fn clear_llama_crash_log(app: AppHandle) {

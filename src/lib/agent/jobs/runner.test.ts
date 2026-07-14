@@ -39,11 +39,14 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
 }));
 
 vi.mock('$lib/stores/settings', () => ({
-	getActiveContextSize: () => 8192,
-	isVisionSupported: () => true,
 	getSettings: () => ({
+		contextSize: 8192,
 		inferenceBackend: { mode: 'local' as const }
-	})
+	}),
+	// Read by resolveBackendDescriptor, which the runner now maps job
+	// context-size / vision decisions through.
+	getActiveLocalModelFilename: () => '',
+	getApiKeyValue: () => undefined
 }));
 
 vi.mock('$lib/agent/tools', () => ({
@@ -353,7 +356,11 @@ describe('jobs runner — guards', () => {
 		expect(opts.backend).toEqual({
 			baseUrl: 'http://compute:3000',
 			apiKey: 'sk-xyz',
-			modelId: 'qwen3.5-27b'
+			modelId: 'qwen3.5-27b',
+			// The override now carries its own capability fields so the
+			// descriptor resolver can serve them without parallel plumbing.
+			contextSize: 131072,
+			visionSupported: false
 		});
 		// The override's own context window is used, not the 8192 Settings default.
 		expect(opts.contextSize).toBe(131072);

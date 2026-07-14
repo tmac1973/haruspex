@@ -17,8 +17,13 @@
 	 *
 	 * Pair with ModalButton for the action row to keep button styling
 	 * consistent across modals.
+	 *
+	 * Every consumer inherits focus management: on open the opener's focus
+	 * is saved and focus moves to the first `[autofocus]` element (falling
+	 * back to the first focusable, then the dialog itself), Tab/Shift+Tab
+	 * wrap at the boundary, and close restores the opener's focus.
 	 */
-	import type { Snippet } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import { dismissable as dismissableAction } from '$lib/actions/dismissable';
 
 	interface Props {
@@ -46,6 +51,57 @@
 		onclose,
 		children
 	}: Props = $props();
+
+	let dialogEl = $state<HTMLDivElement | undefined>();
+
+	const FOCUSABLE_SELECTOR =
+		'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+	function focusables(): HTMLElement[] {
+		return dialogEl ? Array.from(dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : [];
+	}
+
+	// Focus lifecycle: on open, save the opener's focus and move focus into
+	// the dialog — unless a child already claimed it (UserQuestionModal
+	// focuses its own textarea), in which case leave it alone. On close,
+	// hand focus back to the opener if it's still in the document. The
+	// after-a-tick check is what lets children self-focus first.
+	$effect(() => {
+		if (!open) return;
+		const opener = document.activeElement;
+		let cancelled = false;
+		void tick().then(() => {
+			if (cancelled || !dialogEl || dialogEl.contains(document.activeElement)) return;
+			const target =
+				dialogEl.querySelector<HTMLElement>('[autofocus]') ?? focusables()[0] ?? dialogEl;
+			target.focus();
+		});
+		return () => {
+			cancelled = true;
+			if (opener instanceof HTMLElement && document.contains(opener)) opener.focus();
+		};
+	});
+
+	// Tab/Shift+Tab trap: at the boundary focusable, wrap to the other end
+	// so keyboard focus can't escape behind the backdrop.
+	function trapTab(e: KeyboardEvent) {
+		if (e.key !== 'Tab') return;
+		const items = focusables();
+		if (items.length === 0) {
+			e.preventDefault();
+			return;
+		}
+		const first = items[0];
+		const last = items[items.length - 1];
+		const active = document.activeElement;
+		if (e.shiftKey && (active === first || active === dialogEl)) {
+			e.preventDefault();
+			last.focus();
+		} else if (!e.shiftKey && active === last) {
+			e.preventDefault();
+			first.focus();
+		}
+	}
 </script>
 
 {#if open}
@@ -56,12 +112,15 @@
 		}}
 	>
 		<div
+			bind:this={dialogEl}
 			class="modal"
 			class:has-header={title}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby={labelledBy}
 			style:max-width="{maxWidth}px"
+			tabindex="-1"
+			onkeydown={trapTab}
 		>
 			{#if title}
 				<div class="modal-head">

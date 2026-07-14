@@ -10,6 +10,14 @@
 	import HelpModal from '$lib/components/HelpModal.svelte';
 	import SettingsPanel from '$lib/components/settings/SettingsPanel.svelte';
 	import StartupNoticeDialog from '$lib/components/StartupNoticeDialog.svelte';
+	import Toasts from '$lib/components/Toasts.svelte';
+	import { showToast } from '$lib/stores/toasts.svelte';
+	import {
+		isLogViewerOpen,
+		openLogViewer,
+		closeLogViewer,
+		toggleLogViewer
+	} from '$lib/stores/logViewer.svelte';
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { reclaimOwnWindowSlots } from '$lib/agent/inferenceQueue.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
@@ -46,7 +54,9 @@
 	import { getActiveShellSession } from '$lib/stores/shell.svelte';
 
 	let { children } = $props();
-	let showLogs = $state(false);
+	// Log Viewer visibility lives in the logViewer store (not local state)
+	// so error toasts anywhere in the app can offer a "View logs" action.
+	const showLogs = $derived(isLogViewerOpen());
 	let showHelp = $state(false);
 	// Settings renders as an in-page overlay rather than a route navigation, so
 	// the Shell tab's PTY (and scrollback) survives opening/closing settings.
@@ -120,9 +130,10 @@
 			const href = anchor.getAttribute('href');
 			if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
 				e.preventDefault();
-				invoke('open_url', { url: href }).catch((err) =>
-					console.error('open_url failed:', href, err)
-				);
+				invoke('open_url', { url: href }).catch((err) => {
+					console.error('open_url failed:', href, err);
+					showToast("Couldn't open link in your browser", { kind: 'error' });
+				});
 			}
 		});
 
@@ -147,8 +158,6 @@
 			const backend = getSettings().inferenceBackend;
 			if (backend.mode === 'remote' && backend.remoteBaseUrl) {
 				enterRemoteMode(backend.remoteBaseUrl, backend.remoteModelId);
-				// TTS is still local (not affected by the inference backend).
-				invoke('tts_initialize').catch((e) => console.warn('TTS init failed:', e));
 			} else {
 				const hasModel = await invoke<boolean>('has_any_model');
 				if (!hasModel && !page.url.pathname.startsWith('/setup')) {
@@ -165,8 +174,6 @@
 						setActiveLocalModel(modelPath);
 						startServer(modelPath, getSettings().contextSize);
 					}
-					// Eagerly start TTS in the background (non-blocking)
-					invoke('tts_initialize').catch((e) => console.warn('TTS init failed:', e));
 				}
 			}
 		} catch {
@@ -328,9 +335,14 @@
 			{/if}
 		</h1>
 		<div class="header-right">
-			<ServerStatusBadge />
+			<ServerStatusBadge onOpenLogs={openLogViewer} />
 			<ContextIndicator />
-			<button class="header-icon-btn" title="Sidecar Logs" onclick={() => (showLogs = !showLogs)}>
+			<button
+				class="header-icon-btn"
+				title="Sidecar Logs"
+				aria-label="View logs"
+				onclick={toggleLogViewer}
+			>
 				<svg
 					width="18"
 					height="18"
@@ -348,6 +360,7 @@
 			<button
 				class="header-icon-btn"
 				title="Keyboard shortcuts (F1)"
+				aria-label="Keyboard shortcuts (F1)"
 				onclick={() => (showHelp = !showHelp)}
 			>
 				<svg
@@ -368,6 +381,7 @@
 			<button
 				class="header-icon-btn"
 				title={showSettings ? 'Close Settings' : 'Settings'}
+				aria-label="Settings"
 				aria-pressed={showSettings}
 				onclick={() => (showSettings = !showSettings)}
 			>
@@ -399,7 +413,7 @@
 		{/if}
 	</main>
 
-	<LogViewer open={showLogs} onclose={() => (showLogs = false)} />
+	<LogViewer open={showLogs} onclose={closeLogViewer} />
 	<HelpModal open={showHelp} onclose={() => (showHelp = false)} />
 
 	{#if showStartupNotice}
@@ -411,6 +425,11 @@
 	<CommandApprovalModal />
 	<UserQuestionModal />
 {/if}
+
+<!-- Toast host lives outside the detached-shell branch: each webview
+     window has its own store instance, and errors surface in detached
+     shell windows too. -->
+<Toasts />
 
 <style>
 	:global(:root) {
@@ -467,6 +486,21 @@
 		--error-border: #3b1111;
 		--success: #16a34a;
 		--warning: #f59e0b;
+	}
+
+	/* Accessibility: honor the OS "reduce motion" preference with one global
+	   override (decision locked — no per-component keyframe guards). Every
+	   animated element also conveys its state via text or color, so freezing
+	   animations on their first frame loses no information. */
+	@media (prefers-reduced-motion: reduce) {
+		:global(*),
+		:global(*::before),
+		:global(*::after) {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
 	}
 
 	:global(html),

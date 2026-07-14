@@ -20,7 +20,7 @@ import type { BackendOverride } from '$lib/api';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps, type JobType } from '$lib/stores/jobs.svelte';
-import { getActiveContextSize, isVisionSupported } from '$lib/stores/settings';
+import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 // The registration barrel, deliberately — importing it registers the built-in
 // job types before the first dispatch can happen.
 import { getJobType, type JobRunContext, type PlannedStep } from './types';
@@ -44,8 +44,21 @@ function jobBackendOverride(job: JobWithSteps): BackendOverride | undefined {
 		baseUrl: url,
 		apiKey: job.model_remote_api_key?.trim() || undefined,
 		apiKeyId: job.model_remote_api_key_id ?? undefined,
-		modelId: job.model_remote_model_id?.trim() || undefined
+		modelId: job.model_remote_model_id?.trim() || undefined,
+		contextSize: job.model_remote_context_size ?? undefined,
+		visionSupported: job.model_remote_vision_supported ?? undefined
 	};
+}
+
+/**
+ * The resolved backend a job's turns run against: the job's remote override
+ * when configured, otherwise the global Settings backend. Context size and
+ * vision capability are read off this descriptor — an override carries its
+ * own values (with global fallback when it omits them, matching the
+ * pre-descriptor runner), so there is no parallel capability plumbing here.
+ */
+function jobDescriptor(job: JobWithSteps) {
+	return resolveBackendDescriptor(jobBackendOverride(job));
 }
 
 /**
@@ -85,32 +98,6 @@ function runJobTurn(
 				})
 			)
 	);
-}
-
-/**
- * The context window (tokens) a job's turns should budget against. A remote
- * override carries its own size — usually much larger than the local default —
- * so we honour it when set; otherwise we fall back to the global active size.
- */
-function jobContextSize(job: JobWithSteps): number {
-	if (job.model_remote_base_url?.trim() && (job.model_remote_context_size ?? 0) > 0) {
-		return job.model_remote_context_size as number;
-	}
-	return getActiveContextSize();
-}
-
-/**
- * Whether a job's turns should expose vision (image) tools. A remote override
- * can carry its own capability — when set (non-null) it wins; otherwise we
- * inherit the global Settings vision support. Matters for research jobs whose
- * override model differs from Settings; audit turns gate tools via an allowlist
- * that already excludes vision, so this is a no-op there.
- */
-function jobVisionSupported(job: JobWithSteps): boolean {
-	if (job.model_remote_base_url?.trim() && job.model_remote_vision_supported !== null) {
-		return job.model_remote_vision_supported;
-	}
-	return isVisionSupported();
 }
 
 /** The concrete steps a run executes — each registered type plans its own. */
@@ -400,8 +387,8 @@ function buildRunContext(
 		liveStepIndex: () => (current && current.id === runId ? current.currentStepIndex : 0),
 		stepAuthored: (stepIndex) => current?.steps[stepIndex]?.promptAuthored ?? '',
 		isLive: () => current?.id === runId,
-		contextSize: () => jobContextSize(job),
-		visionSupported: () => jobVisionSupported(job),
+		contextSize: () => jobDescriptor(job).contextSize,
+		visionSupported: () => jobDescriptor(job).vision,
 		finalizeRun: (status, error) => finalizeRun(runId, job.id, status, error),
 		onSettled: () => {
 			if (activeAbort === abort) activeAbort = null;

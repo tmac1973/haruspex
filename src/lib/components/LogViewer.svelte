@@ -3,6 +3,7 @@
 	import { IPC } from '$lib/ipc/commands';
 	import { onMount } from 'svelte';
 	import { dismissable } from '$lib/actions/dismissable';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
 	import { createCopyAction } from '$lib/utils/clipboard.svelte';
 	import type { CombinedSearchStats } from '$lib/ipc/gen/CombinedSearchStats';
@@ -274,16 +275,34 @@
 
 	const copyLogs = createCopyAction();
 	let clearState = $state<'idle' | 'cleared'>('idle');
+	// Lifetime stats reset awaits ConfirmDialog approval.
+	let confirmingStatsReset = $state(false);
+
+	function markCleared() {
+		clearState = 'cleared';
+		setTimeout(() => {
+			clearState = 'idle';
+		}, 1200);
+	}
+
+	async function resetLifetimeStats() {
+		confirmingStatsReset = false;
+		try {
+			await invoke('reset_lifetime_search_stats');
+			await fetchLogs();
+		} catch (e) {
+			console.error('Failed to reset lifetime search stats:', e);
+		}
+		markCleared();
+	}
 
 	async function clearCurrentLog() {
+		if (activeTab === 'stats') {
+			confirmingStatsReset = true;
+			return;
+		}
 		try {
-			if (activeTab === 'stats') {
-				if (!confirm('Reset all lifetime search statistics? Session stats are not affected.')) {
-					return;
-				}
-				await invoke('reset_lifetime_search_stats');
-				await fetchLogs();
-			} else if (activeTab === 'crashes') {
+			if (activeTab === 'crashes') {
 				await invoke('clear_llama_crash_log');
 				logLines = [];
 			} else if (activeTab === 'debug' || activeTab === 'tools') {
@@ -298,10 +317,7 @@
 		} catch (e) {
 			console.error('Failed to clear logs:', e);
 		}
-		clearState = 'cleared';
-		setTimeout(() => {
-			clearState = 'idle';
-		}, 1200);
+		markCleared();
 	}
 
 	$effect(() => {
@@ -318,7 +334,14 @@
 </script>
 
 {#if open}
-	<div class="backdrop" use:dismissable={onclose}>
+	<!-- While the reset confirmation is up, Esc should cancel only the
+	     dialog (its own dismissable handles that), not close the viewer. -->
+	<div
+		class="backdrop"
+		use:dismissable={() => {
+			if (!confirmingStatsReset) onclose();
+		}}
+	>
 		<div class="modal">
 			<div class="modal-header">
 				<div class="tabs">
@@ -509,6 +532,15 @@
 			</div>
 		</div>
 	</div>
+
+	<ConfirmDialog
+		open={confirmingStatsReset}
+		title="Reset search statistics?"
+		message="Reset all lifetime search statistics? Session stats are not affected."
+		confirmLabel="Reset"
+		onconfirm={resetLifetimeStats}
+		oncancel={() => (confirmingStatsReset = false)}
+	/>
 {/if}
 
 <style>

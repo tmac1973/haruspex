@@ -254,10 +254,6 @@ impl Session {
         }
     }
 
-    pub fn capture_last_command(&self) -> Option<CapturedRegion> {
-        self.integration.lock().ok()?.capture_last_command()
-    }
-
     /// Recent completed commands plus the in-flight command (if one is
     /// running) so the auto-attach can include what the user just started.
     pub fn capture_recent_commands_with_pending(&self, limit: usize) -> Vec<CapturedRegion> {
@@ -319,31 +315,6 @@ impl Drop for Session {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ring_retains_recent_bytes_under_cap() {
-        let mut ring = ScrollbackRing::new();
-        ring.push(b"hello ");
-        ring.push(b"world");
-        assert_eq!(ring.snapshot(), b"hello world");
-    }
-
-    #[test]
-    fn ring_evicts_oldest_past_cap() {
-        let mut ring = ScrollbackRing::new();
-        ring.push(&vec![b'a'; SCROLLBACK_CAP]);
-        ring.push(&vec![b'b'; SCROLLBACK_CAP]);
-        let snap = ring.snapshot();
-        // Capped at SCROLLBACK_CAP; the first push is fully evicted by the
-        // second, so only the newest bytes ('b') remain.
-        assert_eq!(snap.len(), SCROLLBACK_CAP);
-        assert!(snap.iter().all(|&b| b == b'b'));
-    }
-}
-
 fn spawn_reader_thread(
     app: AppHandle,
     id: SessionId,
@@ -396,4 +367,29 @@ fn spawn_reader_thread(
         }
         let _ = app.emit("shell://exit", ExitEvent { session_id: id });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ring_retains_recent_bytes_under_cap() {
+        let mut ring = ScrollbackRing::new();
+        ring.push(b"hello ");
+        ring.push(b"world");
+        assert_eq!(ring.snapshot(), b"hello world");
+    }
+
+    #[test]
+    fn ring_evicts_oldest_past_cap() {
+        let mut ring = ScrollbackRing::new();
+        ring.push(&vec![b'a'; SCROLLBACK_CAP]);
+        ring.push(&vec![b'b'; SCROLLBACK_CAP]);
+        let snap = ring.snapshot();
+        // Capped at SCROLLBACK_CAP; the first push is fully evicted by the
+        // second, so only the newest bytes ('b') remain.
+        assert_eq!(snap.len(), SCROLLBACK_CAP);
+        assert!(snap.iter().all(|&b| b == b'b'));
+    }
 }

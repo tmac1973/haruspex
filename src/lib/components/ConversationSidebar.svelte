@@ -6,8 +6,9 @@
 	 * Reads from and writes back to the chat store directly — no props,
 	 * no emitted events. The root route mounts this once and forgets it.
 	 *
-	 * Rename UX: double-click a row to enter rename mode, Enter to
-	 * commit, Escape (or blur) to cancel. Active row is highlighted.
+	 * Rename UX: click the pencil (visible on row hover / focus-within)
+	 * or double-click a row to enter rename mode, Enter to commit,
+	 * Escape (or blur) to cancel. Active row is highlighted.
 	 */
 	import {
 		clearAllConversations,
@@ -18,10 +19,39 @@
 		renameConversation,
 		setActiveConversation
 	} from '$lib/stores/chat.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
 	let collapsed = $state(false);
 	let renamingId = $state<string | null>(null);
 	let renameText = $state('');
+
+	// Pending destructive action awaiting ConfirmDialog: a single
+	// conversation (id + title for the dialog copy) or the clear-all sweep.
+	type PendingDelete = { kind: 'one'; id: string; title: string } | { kind: 'all' };
+	let pendingDelete = $state<PendingDelete | null>(null);
+
+	const deleteDialog = $derived(
+		pendingDelete === null
+			? null
+			: pendingDelete.kind === 'all'
+				? {
+						title: 'Delete all conversations?',
+						message: 'All chat history will be permanently deleted.',
+						confirmLabel: 'Delete all'
+					}
+				: {
+						title: 'Delete conversation?',
+						message: `"${pendingDelete.title}" will be permanently deleted.`,
+						confirmLabel: 'Delete'
+					}
+	);
+
+	function confirmPendingDelete() {
+		if (!pendingDelete) return;
+		if (pendingDelete.kind === 'one') deleteConversation(pendingDelete.id);
+		else clearAllConversations();
+		pendingDelete = null;
+	}
 
 	const conversations = $derived(getConversations());
 	const activeId = $derived(getActiveConversationId());
@@ -86,12 +116,23 @@
 						/>
 					{:else}
 						<span class="conv-title">{conv.title}</span>
+						<button
+							class="rename-btn"
+							onclick={(e) => {
+								e.stopPropagation();
+								startRename(conv.id, conv.title);
+							}}
+							aria-label="Rename conversation"
+							title="Rename"
+						>
+							&#9998;
+						</button>
 					{/if}
 					<button
 						class="delete-btn"
 						onclick={(e) => {
 							e.stopPropagation();
-							deleteConversation(conv.id);
+							pendingDelete = { kind: 'one', id: conv.id, title: conv.title };
 						}}
 						title="Delete conversation"
 					>
@@ -102,18 +143,24 @@
 		</div>
 		{#if conversations.length > 0}
 			<div class="sidebar-footer">
-				<button
-					class="clear-all-btn"
-					onclick={() => {
-						if (confirm('Delete all conversations?')) clearAllConversations();
-					}}
-				>
+				<button class="clear-all-btn" onclick={() => (pendingDelete = { kind: 'all' })}>
 					Clear all
 				</button>
 			</div>
 		{/if}
 	{/if}
 </aside>
+
+{#if deleteDialog}
+	<ConfirmDialog
+		open
+		title={deleteDialog.title}
+		message={deleteDialog.message}
+		confirmLabel={deleteDialog.confirmLabel}
+		onconfirm={confirmPendingDelete}
+		oncancel={() => (pendingDelete = null)}
+	/>
+{/if}
 
 <style>
 	.sidebar {
@@ -192,6 +239,10 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+	/* The rename pencil and delete × share the opacity-on-hover treatment:
+	   invisible until the row is hovered — or contains keyboard focus, so
+	   tabbing users can see what they've reached. */
+	.rename-btn,
 	.delete-btn {
 		background: none;
 		border: none;
@@ -204,8 +255,17 @@
 		transition: opacity 0.15s;
 		flex-shrink: 0;
 	}
-	.conversation-item:hover .delete-btn {
+	.rename-btn {
+		font-size: 0.85rem;
+	}
+	.conversation-item:hover .rename-btn,
+	.conversation-item:focus-within .rename-btn,
+	.conversation-item:hover .delete-btn,
+	.conversation-item:focus-within .delete-btn {
 		opacity: 1;
+	}
+	.rename-btn:hover {
+		color: var(--text-primary);
 	}
 	.delete-btn:hover {
 		color: var(--error-text);

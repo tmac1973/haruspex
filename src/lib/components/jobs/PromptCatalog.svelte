@@ -11,6 +11,7 @@
 		createSavedPrompt,
 		deleteSavedPrompt
 	} from '$lib/stores/promptCatalog.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
 	interface Props {
 		jobType: 'audit' | 'research';
@@ -24,6 +25,8 @@
 
 	let open = $state(false);
 	let saving = $state(false);
+	// Prompt text waiting for "replace current?" ConfirmDialog approval.
+	let pendingInsert = $state<string | null>(null);
 
 	const builtins = $derived(builtinsFor(jobType));
 	const saved = $derived(getSavedPrompts().filter((p) => promptAppliesTo(p.scope, jobType)));
@@ -34,7 +37,15 @@
 	}
 
 	function insert(text: string) {
-		if (current.trim() && !window.confirm('Replace the current prompt with this one?')) return;
+		if (current.trim()) {
+			pendingInsert = text;
+			return;
+		}
+		applyInsert(text);
+	}
+
+	function applyInsert(text: string) {
+		pendingInsert = null;
 		oninsert(text);
 		open = false;
 	}
@@ -107,6 +118,19 @@
 		</div>
 	{/if}
 </div>
+
+{#if pendingInsert !== null}
+	{@const text = pendingInsert}
+	<ConfirmDialog
+		open
+		title="Replace prompt?"
+		message="Replace the current prompt with this one?"
+		confirmLabel="Replace"
+		destructive={false}
+		onconfirm={() => applyInsert(text)}
+		oncancel={() => (pendingInsert = null)}
+	/>
+{/if}
 
 <style>
 	.catalog {

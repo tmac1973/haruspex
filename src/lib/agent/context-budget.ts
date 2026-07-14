@@ -270,16 +270,15 @@ function dropOldestTurns(
 	const droppable = nonSystemIdx.slice(0, nonSystemIdx.length - protectedCount);
 	const toRemove = new Set<number>();
 	let dropped = 0;
+	// The estimate is a plain sum of per-message costs (plus a constant
+	// tools term), so keep a running subtotal and subtract each dropped
+	// message instead of re-estimating the survivors every iteration
+	// (which was O(n²) in conversation length).
+	let running = estimateMessagesTokens(messages, tools);
 	for (const idx of droppable) {
-		if (
-			estimateMessagesTokens(
-				messages.filter((_, i) => !toRemove.has(i)),
-				tools
-			) <= budget
-		) {
-			break;
-		}
+		if (running <= budget) break;
 		toRemove.add(idx);
+		running -= messageTokens(messages[idx]);
 		dropped++;
 	}
 	if (dropped === 0) return 0;

@@ -3,14 +3,24 @@ import {
 	getSettings,
 	updateInferenceBackend,
 	updateSettings,
-	getActiveContextSize,
 	getSamplingParams,
 	getChatTemplateKwargs,
 	getOpenRouterReasoningParam,
-	isReasoningSupported,
-	getActiveModelFamily,
-	setActiveLocalModel
+	setActiveLocalModel,
+	type SamplingOptions
 } from '$lib/stores/settings';
+import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+
+// The sampling/template/reasoning readers now take a resolved backend
+// descriptor instead of re-reading the settings mode themselves. These
+// tests still drive configuration through the real settings store and
+// resolve fresh — the resolver matrix itself is covered in
+// $lib/inference/descriptor.test.ts.
+const sampling = (opts?: SamplingOptions) => getSamplingParams(resolveBackendDescriptor(), opts);
+const kwargs = (thinking?: boolean | null) =>
+	getChatTemplateKwargs(resolveBackendDescriptor(), thinking);
+const reasoningParam = (thinking?: boolean | null) =>
+	getOpenRouterReasoningParam(resolveBackendDescriptor(), thinking);
 
 describe('inference backend settings', () => {
 	beforeEach(() => {
@@ -37,33 +47,6 @@ describe('inference backend settings', () => {
 		expect(s.inferenceBackend.remoteContextSize).toBeNull();
 		expect(s.inferenceBackend.remoteVisionSupported).toBeNull();
 		expect(s.inferenceBackend.remoteBackendKind).toBeNull();
-	});
-
-	it('getActiveContextSize falls back to contextSize in local mode', () => {
-		updateSettings({ contextSize: 16384 });
-		expect(getActiveContextSize()).toBe(16384);
-	});
-
-	it('getActiveContextSize uses remoteContextSize in remote mode', () => {
-		updateSettings({ contextSize: 32768 });
-		updateInferenceBackend({
-			mode: 'remote',
-			remoteBaseUrl: 'http://localhost:1234',
-			remoteContextSize: 8192
-		});
-		// In remote mode, the probed/manual size wins.
-		expect(getActiveContextSize()).toBe(8192);
-	});
-
-	it('getActiveContextSize falls back to contextSize when remoteContextSize is null', () => {
-		updateSettings({ contextSize: 32768 });
-		updateInferenceBackend({
-			mode: 'remote',
-			remoteBaseUrl: 'http://localhost:1234',
-			remoteContextSize: null
-		});
-		// Remote mode but no probed/manual value yet — use the local default.
-		expect(getActiveContextSize()).toBe(32768);
 	});
 
 	it('updateInferenceBackend preserves unmentioned fields', () => {
@@ -96,23 +79,12 @@ describe('sampling profile resolution', () => {
 		setActiveLocalModel('Qwen3.5-9B-Q4_K_M.gguf');
 	});
 
-	it('resolves family from a local GGUF filename', () => {
-		setActiveLocalModel('Qwen3.5-9B-Q4_K_M.gguf');
-		expect(getActiveModelFamily()).toBe('qwen3.5');
-	});
-
-	it('strips directory components when given a full path', () => {
-		setActiveLocalModel('/home/user/.local/share/com.haruspex.app/models/Qwen3.5-4B-Q6_K.gguf');
-		expect(getActiveModelFamily()).toBe('qwen3.5');
-	});
-
-	it('reports null family for an unknown local model but still uses default params', () => {
+	it('reports the default profile for an unknown local model', () => {
 		setActiveLocalModel('Mystery-Model.gguf');
-		expect(getActiveModelFamily()).toBeNull();
 		// Locally-managed models are all from the Qwen lineup, so an
 		// unrecognized filename still gets the default (qwen3.5) profile.
 		updateSettings({ thinkingEnabled: false });
-		expect(getSamplingParams().presence_penalty).toBe(1.5);
+		expect(sampling().presence_penalty).toBe(1.5);
 	});
 
 	it('sends NO sampling overrides to an unrecognized remote model', () => {
@@ -126,8 +98,8 @@ describe('sampling profile resolution', () => {
 		// All fields undefined → buildRequestBody omits them and the serving
 		// backend's own defaults win (Qwen's presence_penalty 1.5 must NOT
 		// leak to non-Qwen models).
-		expect(getSamplingParams()).toEqual({});
-		expect(getSamplingParams({ codeContext: true })).toEqual({});
+		expect(sampling()).toEqual({});
+		expect(sampling({ codeContext: true })).toEqual({});
 	});
 
 	it('still sends Qwen params to a recognized Qwen remote model', () => {
@@ -139,8 +111,8 @@ describe('sampling profile resolution', () => {
 			remoteSampling: null
 		});
 		updateSettings({ thinkingEnabled: false });
-		expect(getSamplingParams().presence_penalty).toBe(1.5);
-		expect(getSamplingParams().top_k).toBe(20);
+		expect(sampling().presence_penalty).toBe(1.5);
+		expect(sampling().top_k).toBe(20);
 	});
 
 	it('sends nothing but omitted top_k/min_p for an unrecognized OpenRouter model', () => {
@@ -151,7 +123,7 @@ describe('sampling profile resolution', () => {
 			remoteBackendKind: 'openrouter',
 			remoteSampling: null
 		});
-		const p = getSamplingParams();
+		const p = sampling();
 		expect(p.temperature).toBeUndefined();
 		expect(p.top_p).toBeUndefined();
 		expect(p.top_k).toBeUndefined();
@@ -168,26 +140,16 @@ describe('sampling profile resolution', () => {
 			remoteSampling: null
 		});
 		updateSettings({ thinkingEnabled: false });
-		const p = getSamplingParams();
+		const p = sampling();
 		expect(p.temperature).toBe(0.7);
 		expect(p.presence_penalty).toBe(1.5);
 		expect(p.top_k).toBeUndefined();
 		expect(p.min_p).toBeUndefined();
 	});
 
-	it('resolves family from remoteModelId in remote mode', () => {
-		updateInferenceBackend({
-			mode: 'remote',
-			remoteBaseUrl: 'http://localhost:1234',
-			remoteModelId: 'Qwen3.5-9B-Instruct'
-		});
-		expect(getActiveModelFamily()).toBe('qwen3.5');
-	});
-
 	it('thinking mode + general task uses Qwen 3.5 thinking general profile', () => {
 		updateSettings({ thinkingEnabled: true });
-		const p = getSamplingParams();
-		expect(p).toEqual({
+		expect(sampling()).toEqual({
 			temperature: 1.0,
 			top_p: 0.95,
 			top_k: 20,
@@ -198,8 +160,7 @@ describe('sampling profile resolution', () => {
 
 	it('thinking mode + code context uses Qwen 3.5 coding profile', () => {
 		updateSettings({ thinkingEnabled: true });
-		const p = getSamplingParams({ codeContext: true });
-		expect(p).toEqual({
+		expect(sampling({ codeContext: true })).toEqual({
 			temperature: 0.6,
 			top_p: 0.95,
 			top_k: 20,
@@ -210,8 +171,7 @@ describe('sampling profile resolution', () => {
 
 	it('non-thinking mode + general task uses Qwen 3.5 non-thinking profile', () => {
 		updateSettings({ thinkingEnabled: false });
-		const p = getSamplingParams();
-		expect(p).toEqual({
+		expect(sampling()).toEqual({
 			temperature: 0.7,
 			top_p: 0.8,
 			top_k: 20,
@@ -222,16 +182,16 @@ describe('sampling profile resolution', () => {
 
 	it('Qwen 3.6 35B-A3B (sparse) shares the qwen3.5 profile', () => {
 		setActiveLocalModel('Qwen3.6-35B-A3B-UD-IQ4_NL.gguf');
-		expect(getActiveModelFamily()).toBe('qwen3.5');
+		expect(resolveBackendDescriptor().samplingFamily).toBe('qwen3.5');
 		updateSettings({ thinkingEnabled: true });
-		expect(getSamplingParams().presence_penalty).toBe(1.5);
+		expect(sampling().presence_penalty).toBe(1.5);
 	});
 
 	it('Qwen 3.6 dense 27B uses presence_penalty 0.0 for thinking/general', () => {
 		setActiveLocalModel('Qwen3.6-27B-IQ4_NL.gguf');
-		expect(getActiveModelFamily()).toBe('qwen3.6-27b');
+		expect(resolveBackendDescriptor().samplingFamily).toBe('qwen3.6-27b');
 		updateSettings({ thinkingEnabled: true });
-		expect(getSamplingParams()).toEqual({
+		expect(sampling()).toEqual({
 			temperature: 1.0,
 			top_p: 0.95,
 			top_k: 20,
@@ -240,23 +200,23 @@ describe('sampling profile resolution', () => {
 		});
 		// Non-thinking general still matches the rest of the lineup.
 		updateSettings({ thinkingEnabled: false });
-		expect(getSamplingParams().presence_penalty).toBe(1.5);
+		expect(sampling().presence_penalty).toBe(1.5);
 	});
 
 	it('non-thinking mode + code context mirrors general (Qwen 3.5 has no published coding/non-thinking profile)', () => {
 		updateSettings({ thinkingEnabled: false });
-		expect(getSamplingParams({ codeContext: true })).toEqual(getSamplingParams());
+		expect(sampling({ codeContext: true })).toEqual(sampling());
 	});
 
-	it('clears active local model when set to null', () => {
+	it('clears active local model when set to null (default profile still applies)', () => {
 		setActiveLocalModel(null);
-		// No filename → no detected family; local mode still gets default params.
-		expect(getActiveModelFamily()).toBeNull();
+		// No filename → local models still get the default Qwen profile.
+		expect(resolveBackendDescriptor().samplingFamily).toBe('qwen3.5');
 	});
 });
 
 describe('toolchest-discovered capabilities', () => {
-	const sampling = {
+	const samplingCaps = {
 		default: { temperature: 1.0, top_p: 0.99, top_k: 99, presence_penalty: 9.0 },
 		presets: [
 			{ name: 'thinking', temperature: 0.6, top_p: 0.95, top_k: 20, presence_penalty: 0.5 },
@@ -271,6 +231,7 @@ describe('toolchest-discovered capabilities', () => {
 		// until a test opts in.
 		updateInferenceBackend({
 			mode: 'remote',
+			remoteBaseUrl: 'http://localhost:1234',
 			remoteModelId: 'qwen3.5',
 			remoteBackendKind: null,
 			remoteSampling: null,
@@ -279,8 +240,8 @@ describe('toolchest-discovered capabilities', () => {
 	});
 
 	it('uses the thinking preset for a toolchest backend', () => {
-		updateInferenceBackend({ remoteBackendKind: 'llama-toolchest', remoteSampling: sampling });
-		expect(getSamplingParams()).toEqual({
+		updateInferenceBackend({ remoteBackendKind: 'llama-toolchest', remoteSampling: samplingCaps });
+		expect(sampling()).toEqual({
 			temperature: 0.6,
 			top_p: 0.95,
 			top_k: 20,
@@ -290,8 +251,8 @@ describe('toolchest-discovered capabilities', () => {
 	});
 
 	it('uses the thinking-coding preset under code context', () => {
-		updateInferenceBackend({ remoteBackendKind: 'llama-toolchest', remoteSampling: sampling });
-		expect(getSamplingParams({ codeContext: true })).toEqual({
+		updateInferenceBackend({ remoteBackendKind: 'llama-toolchest', remoteSampling: samplingCaps });
+		expect(sampling({ codeContext: true })).toEqual({
 			temperature: 0.3,
 			top_p: 0.9,
 			top_k: 10,
@@ -302,8 +263,8 @@ describe('toolchest-discovered capabilities', () => {
 
 	it('uses the non-thinking preset when thinking is off', () => {
 		updateSettings({ thinkingEnabled: false });
-		updateInferenceBackend({ remoteBackendKind: 'llama-toolchest', remoteSampling: sampling });
-		expect(getSamplingParams().temperature).toBe(0.7);
+		updateInferenceBackend({ remoteBackendKind: 'llama-toolchest', remoteSampling: samplingCaps });
+		expect(sampling().temperature).toBe(0.7);
 	});
 
 	it('falls back to the built-in profile for fields a preset omits', () => {
@@ -311,7 +272,7 @@ describe('toolchest-discovered capabilities', () => {
 			remoteBackendKind: 'llama-toolchest',
 			remoteSampling: { default: {}, presets: [{ name: 'thinking', temperature: 0.42 }] }
 		});
-		const p = getSamplingParams();
+		const p = sampling();
 		expect(p.temperature).toBe(0.42); // from preset
 		expect(p.top_k).toBe(20); // from built-in qwen3.5 thinking/general
 		expect(p.presence_penalty).toBe(1.5); // from built-in
@@ -319,8 +280,8 @@ describe('toolchest-discovered capabilities', () => {
 
 	it('ignores discovered sampling for a non-toolchest backend', () => {
 		// Same sampling blob, but backend kind isn't toolchest → built-ins win.
-		updateInferenceBackend({ remoteBackendKind: 'openai-compat', remoteSampling: sampling });
-		expect(getSamplingParams().temperature).toBe(1.0); // Qwen 3.5 thinking/general
+		updateInferenceBackend({ remoteBackendKind: 'openai-compat', remoteSampling: samplingCaps });
+		expect(sampling().temperature).toBe(1.0); // Qwen 3.5 thinking/general
 	});
 
 	it('forwards the discovered reasoning kwarg', () => {
@@ -333,8 +294,8 @@ describe('toolchest-discovered capabilities', () => {
 				kwarg: 'enable_thinking'
 			}
 		});
-		expect(getChatTemplateKwargs()).toEqual({ enable_thinking: true });
-		expect(isReasoningSupported()).toBe(true);
+		expect(kwargs()).toEqual({ enable_thinking: true });
+		expect(resolveBackendDescriptor().reasoningSupported).toBe(true);
 	});
 
 	it('sends no template kwargs for a non-reasoning toolchest model', () => {
@@ -342,16 +303,16 @@ describe('toolchest-discovered capabilities', () => {
 			remoteBackendKind: 'llama-toolchest',
 			remoteReasoning: { supported: false, default_enabled: false, toggle: 'none', kwarg: null }
 		});
-		expect(getChatTemplateKwargs()).toEqual({});
-		expect(isReasoningSupported()).toBe(false);
+		expect(kwargs()).toEqual({});
+		expect(resolveBackendDescriptor().reasoningSupported).toBe(false);
 	});
 
 	it('keeps enable_thinking for a recognized Qwen remote regardless of discovery', () => {
 		updateSettings({ thinkingEnabled: false });
 		updateInferenceBackend({ remoteBackendKind: 'openai-compat', remoteReasoning: null });
 		// beforeEach sets remoteModelId 'qwen3.5' — a recognized family.
-		expect(getChatTemplateKwargs()).toEqual({ enable_thinking: false });
-		expect(isReasoningSupported()).toBe(true);
+		expect(kwargs()).toEqual({ enable_thinking: false });
+		expect(resolveBackendDescriptor().reasoningSupported).toBe(true);
 	});
 
 	it('sends no template kwargs to an unrecognized remote model', () => {
@@ -363,9 +324,9 @@ describe('toolchest-discovered capabilities', () => {
 			remoteBackendKind: 'openai-compat',
 			remoteReasoning: null
 		});
-		expect(getChatTemplateKwargs()).toEqual({});
-		expect(getChatTemplateKwargs(true)).toEqual({});
-		expect(isReasoningSupported()).toBe(false);
+		expect(kwargs()).toEqual({});
+		expect(kwargs(true)).toEqual({});
+		expect(resolveBackendDescriptor().reasoningSupported).toBe(false);
 	});
 });
 
@@ -382,21 +343,21 @@ describe('reasoning override (Code tab per-tab toggle)', () => {
 	});
 
 	it('forces thinking off regardless of the global setting', () => {
-		expect(getChatTemplateKwargs(false)).toEqual({ enable_thinking: false });
+		expect(kwargs(false)).toEqual({ enable_thinking: false });
 		// Non-thinking general profile (temp 0.7) despite the global setting being on.
-		expect(getSamplingParams({ thinkingEnabled: false }).temperature).toBe(0.7);
+		expect(sampling({ thinkingEnabled: false }).temperature).toBe(0.7);
 	});
 
 	it('forces thinking on when the global setting is off', () => {
 		updateSettings({ thinkingEnabled: false });
-		expect(getChatTemplateKwargs(true)).toEqual({ enable_thinking: true });
-		expect(getSamplingParams({ thinkingEnabled: true }).temperature).toBe(1.0);
+		expect(kwargs(true)).toEqual({ enable_thinking: true });
+		expect(sampling({ thinkingEnabled: true }).temperature).toBe(1.0);
 	});
 
 	it('falls back to the global setting when the override is null/undefined', () => {
-		expect(getChatTemplateKwargs()).toEqual({ enable_thinking: true });
-		expect(getChatTemplateKwargs(null)).toEqual({ enable_thinking: true });
-		expect(getSamplingParams({}).temperature).toBe(1.0);
+		expect(kwargs()).toEqual({ enable_thinking: true });
+		expect(kwargs(null)).toEqual({ enable_thinking: true });
+		expect(sampling({}).temperature).toBe(1.0);
 	});
 });
 
@@ -449,7 +410,7 @@ describe('OpenRouter backend', () => {
 		// sampling overrides at all: undefined fields are omitted from the
 		// request and OpenRouter/provider defaults win. (The Qwen-on-
 		// OpenRouter passthrough is covered in the sampling-profile suite.)
-		expect(getSamplingParams()).toEqual({
+		expect(sampling()).toEqual({
 			temperature: undefined,
 			top_p: undefined,
 			presence_penalty: undefined
@@ -457,21 +418,21 @@ describe('OpenRouter backend', () => {
 	});
 
 	it('returns empty chat_template_kwargs for OpenRouter', () => {
-		expect(getChatTemplateKwargs()).toEqual({});
-		expect(getChatTemplateKwargs(true)).toEqual({});
+		expect(kwargs()).toEqual({});
+		expect(kwargs(true)).toEqual({});
 	});
 
 	it('reports reasoning supported when the OpenRouter model has reasoning caps', () => {
-		expect(isReasoningSupported()).toBe(true);
+		expect(resolveBackendDescriptor().reasoningSupported).toBe(true);
 	});
 
 	it('returns the configured reasoning effort', () => {
-		expect(getOpenRouterReasoningParam()).toEqual({ effort: 'high' });
+		expect(reasoningParam()).toEqual({ effort: 'high' });
 	});
 
 	it('returns effort none when thinking is disabled and the model is not mandatory', () => {
 		updateSettings({ thinkingEnabled: false });
-		expect(getOpenRouterReasoningParam()).toEqual({ effort: 'none' });
+		expect(reasoningParam()).toEqual({ effort: 'none' });
 	});
 
 	it('returns the default effort when thinking is disabled for a mandatory model', () => {
@@ -481,16 +442,16 @@ describe('OpenRouter backend', () => {
 		catalog[0].reasoning!.mandatory = true;
 		updateInferenceBackend({ openrouterCatalog: catalog });
 		updateSettings({ thinkingEnabled: false });
-		expect(getOpenRouterReasoningParam()).toEqual({ effort: 'high' });
+		expect(reasoningParam()).toEqual({ effort: 'high' });
 	});
 
 	it('returns null when the selected model is not reasoning-capable', () => {
 		updateInferenceBackend({ remoteModelId: 'openai/gpt-4o', openrouterReasoningEffort: null });
-		expect(getOpenRouterReasoningParam()).toBeNull();
+		expect(reasoningParam()).toBeNull();
 	});
 
 	it('returns null for non-OpenRouter backends', () => {
 		updateInferenceBackend({ mode: 'local', remoteBackendKind: null });
-		expect(getOpenRouterReasoningParam()).toBeNull();
+		expect(reasoningParam()).toBeNull();
 	});
 });

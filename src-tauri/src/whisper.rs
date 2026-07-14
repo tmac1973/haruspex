@@ -183,11 +183,6 @@ pub async fn start_whisper(
 }
 
 #[tauri::command]
-pub async fn stop_whisper(state: tauri::State<'_, WhisperServer>) -> Result<(), String> {
-    state.stop().await
-}
-
-#[tauri::command]
 pub async fn get_whisper_status(
     state: tauri::State<'_, WhisperServer>,
 ) -> Result<WhisperStatus, ()> {

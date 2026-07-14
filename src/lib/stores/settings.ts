@@ -1,6 +1,9 @@
 // App settings — persisted to localStorage
 
 import type { OpenRouterModel, OpenRouterKeyStatus } from '$lib/openrouter';
+// Type-only import — descriptor.ts imports this module's runtime values, so
+// keeping this side type-only avoids a circular runtime dependency.
+import type { BackendDescriptor } from '$lib/inference/descriptor';
 
 import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
@@ -107,8 +110,8 @@ export interface InferenceBackendConfig {
 	remoteApiKey: string;
 	/**
 	 * Reference to a key in the Settings API-key store (by id). When set,
-	 * `resolveChatEndpoint` resolves the actual key value from the store at
-	 * request time, taking precedence over the legacy inline `remoteApiKey`.
+	 * `resolveBackendDescriptor` resolves the actual key value from the store
+	 * at request time, taking precedence over the legacy inline `remoteApiKey`.
 	 */
 	remoteApiKeyId: string | null;
 	/** Model ID to include in chat completion requests when in remote mode. */
@@ -620,40 +623,6 @@ export function updateProxy(partial: Partial<ProxyConfig>): void {
 	save(settings);
 }
 
-/**
- * Returns the context size that should be used for compaction threshold
- * calculations and agent-loop trimming. In remote mode this prefers the
- * probe-detected (or manually entered) `remoteContextSize`; in local
- * mode it falls back to the existing `contextSize` field.
- *
- * Returning the right value here is load-bearing: if we use the local
- * `contextSize` (default 32k) against a remote server that has an 8k
- * context, compaction won't fire until well past the real ceiling and
- * the request will error with "context length exceeded". If we use
- * `remoteContextSize` when it's valid, compaction kicks in correctly.
- */
-export function getActiveContextSize(): number {
-	const inf = settings.inferenceBackend;
-	if (
-		inf.mode === 'remote' &&
-		typeof inf.remoteContextSize === 'number' &&
-		inf.remoteContextSize > 0
-	) {
-		return inf.remoteContextSize;
-	}
-	return settings.contextSize;
-}
-
-/**
- * Whether the active backend can accept image inputs. Local llama-server
- * always can (multimodal projector handling is automatic); a remote backend
- * is assumed capable unless the user explicitly marked it otherwise.
- */
-export function isVisionSupported(): boolean {
-	const backend = settings.inferenceBackend;
-	return backend.mode === 'remote' ? backend.remoteVisionSupported !== false : true;
-}
-
 export function applyTheme(theme?: ThemeMode): void {
 	const mode = theme ?? settings.theme;
 	const root = document.documentElement;
@@ -666,114 +635,36 @@ export function applyTheme(theme?: ThemeMode): void {
 }
 
 /**
- * The remote backend config iff it's an llama-toolchest server that
- * reported capabilities. Everything capability-driven (sampling, reasoning)
- * is gated through this so other backends — vanilla llama.cpp, Ollama,
- * vLLM, OpenAI-compat — keep the built-in behavior.
- */
-function toolchestBackend(): InferenceBackendConfig | null {
-	const inf = settings.inferenceBackend;
-	return inf.mode === 'remote' && inf.remoteBackendKind === 'llama-toolchest' ? inf : null;
-}
-
-/**
- * The remote backend config iff it's OpenRouter. Used to gate OpenRouter-
- * specific behavior: attribution headers, the `reasoning.effort` request
- * param (instead of llama.cpp `chat_template_kwargs`), and omitting the
- * llama.cpp-only `top_k` / `min_p` sampling params.
- */
-function openrouterBackend(): InferenceBackendConfig | null {
-	const inf = settings.inferenceBackend;
-	return inf.mode === 'remote' && inf.remoteBackendKind === 'openrouter' ? inf : null;
-}
-
-/**
- * The currently-selected OpenRouter model from the cached catalog, or
- * `null` when the catalog isn't loaded / no model is picked. Used to read
- * per-model capability metadata (reasoning caps, vision, context) without
- * a second lookup at every call site.
- */
-function openrouterSelectedModel(): OpenRouterModel | null {
-	const inf = openrouterBackend();
-	if (!inf?.openrouterCatalog) return null;
-	return inf.openrouterCatalog.find((m) => m.id === inf.remoteModelId) ?? null;
-}
-
-/**
- * Whether the active model exposes a togglable reasoning / "thinking" mode.
- * Drives whether the Settings "Reasoning mode" toggle is shown. A toolchest
- * model reports it explicitly; an OpenRouter model reports it via its
- * `reasoning` caps from the cached catalog. Otherwise the only toggle we
- * know is Qwen's `enable_thinking` template kwarg — local models (managed
- * Qwen lineup) and recognized remote Qwen IDs support it; an unrecognized
- * remote model gets no kwarg (see getChatTemplateKwargs), so showing the
- * switch would be a no-op lie.
- */
-export function isReasoningSupported(): boolean {
-	const inf = toolchestBackend();
-	if (inf?.remoteReasoning) {
-		return inf.remoteReasoning.supported;
-	}
-	if (openrouterBackend()) {
-		const m = openrouterSelectedModel();
-		return !!m?.reasoning;
-	}
-	if (settings.inferenceBackend.mode === 'remote') {
-		return getActiveModelFamily() !== null;
-	}
-	return true;
-}
-
-/**
  * Returns chat_template_kwargs forwarded to the model's Jinja template.
  * `enable_thinking` toggles the reasoning/<think> block — driven by the
  * `thinkingEnabled` user setting (default on). Off skips the reasoning
  * block to save tokens; on improves quality on code-heavy and multi-step
  * tasks.
  *
- * For an llama-toolchest backend we honor the model's discovered reasoning
- * shape: send the server-reported kwarg name, or send nothing at all when
- * the model has no chat_template_kwargs toggle (a non-reasoning model, or
- * one that toggles via a different mechanism) so we don't push an
- * unsupported kwarg into its template.
+ * Which kwarg (if any) applies is entirely the descriptor's business
+ * (`reasoningMode`): OpenRouter and unrecognized remote models get nothing,
+ * a toolchest backend gets its server-reported kwarg, local + recognized
+ * remote Qwen get `enable_thinking`.
  *
  * `thinkingOverride` lets a caller (e.g. the Code tab) force reasoning on/off
  * for one turn regardless of the global setting. `null`/`undefined` uses the
  * global `thinkingEnabled`.
  */
-export function getChatTemplateKwargs(thinkingOverride?: boolean | null): Record<string, unknown> {
-	const thinking = thinkingOverride ?? settings.thinkingEnabled;
-	// OpenRouter reasoning is driven by the `reasoning.effort` request param
-	// (see getOpenRouterReasoningParam), not llama.cpp chat_template_kwargs.
-	// Sending `enable_thinking` to a Claude/o-series model is misleading, so
-	// return nothing here and let api.ts add the reasoning object instead.
-	if (openrouterBackend()) {
-		return {};
-	}
-	const inf = toolchestBackend();
-	const reasoning = inf?.remoteReasoning;
-	if (reasoning) {
-		if (!reasoning.supported || reasoning.toggle !== 'chat_template_kwargs' || !reasoning.kwarg) {
-			return {};
-		}
-		return { [reasoning.kwarg]: thinking };
-	}
-	// `enable_thinking` is a Qwen chat-template kwarg. Local models all come
-	// from the managed Qwen lineup and recognized remote Qwen IDs want it too,
-	// but an unrecognized remote model shouldn't receive Qwen-isms — send
-	// nothing and let its own template defaults apply (mirrors the sampling
-	// fallback rule in builtinSamplingParams).
-	if (settings.inferenceBackend.mode === 'remote' && getActiveModelFamily() === null) {
-		return {};
-	}
-	return { enable_thinking: thinking };
+export function getChatTemplateKwargs(
+	descriptor: BackendDescriptor,
+	thinkingOverride?: boolean | null
+): Record<string, unknown> {
+	const mode = descriptor.reasoningMode;
+	if (mode.kind !== 'template-kwarg') return {};
+	return { [mode.kwarg]: thinkingOverride ?? settings.thinkingEnabled };
 }
 
 /**
- * The OpenRouter reasoning effort for the active model, or `null`
- * when reasoning is off / unsupported / not an OpenRouter backend. Returns
- * the `{ effort }` value that `api.ts` injects as `body.reasoning = { effort }`
- * (the `reasoning` key is added by `buildRequestBody`).
+ * The OpenRouter reasoning effort for the descriptor's model, or `null`
+ * when the backend isn't OpenRouter / the model isn't reasoning-capable.
+ * Returns the `{ effort }` value that `api.ts` injects as
+ * `body.reasoning = { effort }` (the `reasoning` key is added by
+ * `buildRequestBody`).
  *
  * When the user has disabled reasoning (via the global `thinkingEnabled`
  * toggle or a per-turn override) and the model is NOT `mandatory` reasoning,
@@ -781,18 +672,16 @@ export function getChatTemplateKwargs(thinkingOverride?: boolean | null): Record
  * send the configured effort (the model rejects `'none'`).
  */
 export function getOpenRouterReasoningParam(
+	descriptor: BackendDescriptor,
 	thinkingOverride?: boolean | null
 ): { effort: string } | null {
-	const inf = openrouterBackend();
-	if (!inf) return null;
-	const m = openrouterSelectedModel();
-	if (!m?.reasoning) return null;
+	const mode = descriptor.reasoningMode;
+	if (mode.kind !== 'openrouter-effort') return null;
 	const thinking = thinkingOverride ?? settings.thinkingEnabled;
-	const effort = inf.openrouterReasoningEffort ?? m.reasoning.default_effort;
-	if (!thinking && !m.reasoning.mandatory) {
+	if (!thinking && !mode.mandatory) {
 		return { effort: 'none' };
 	}
-	return { effort };
+	return { effort: mode.effort };
 }
 
 /**
@@ -826,6 +715,13 @@ interface ModelSamplingProfiles {
 }
 
 /**
+ * The tuned sampling-profile families we ship. `BackendDescriptor.samplingFamily`
+ * is typed against this — the resolver in `$lib/inference/descriptor` is the
+ * only code that maps model identities to a family.
+ */
+export type QwenSamplingFamily = 'qwen3.5' | 'qwen3.6-27b';
+
+/**
  * Recommended sampling parameters per model family. Values are taken
  * verbatim from each model's published Unsloth/Qwen card ("We recommend the
  * following set of sampling parameters"). Every card specifies `min_p=0.0`
@@ -850,7 +746,7 @@ const QWEN_NONTHINKING: ModelSamplingProfiles['nonThinking'] = {
 	coding: { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0, presence_penalty: 1.5 }
 };
 
-const SAMPLING_PROFILES: Record<string, ModelSamplingProfiles> = {
+const SAMPLING_PROFILES: Record<QwenSamplingFamily, ModelSamplingProfiles> = {
 	// Qwen 3.5 4B/9B and Qwen 3.6 35B-A3B (sparse) — identical published profiles.
 	'qwen3.5': {
 		thinking: {
@@ -869,41 +765,6 @@ const SAMPLING_PROFILES: Record<string, ModelSamplingProfiles> = {
 	}
 };
 
-const DEFAULT_FAMILY = 'qwen3.5';
-
-/**
- * Map a model identity (local GGUF filename or remote model ID) to a
- * sampling-profile family. Falls back to `DEFAULT_FAMILY` for unknown
- * IDs so a misconfigured remote endpoint still gets reasonable values.
- */
-function modelFamilyFromId(id: string | null | undefined): string | null {
-	if (!id) return null;
-	const lower = id.toLowerCase();
-	// The dense 27B is the one model whose published thinking/general
-	// presence_penalty differs (0.0 vs 1.5); give it its own profile.
-	if (lower.includes('qwen3.6-27b') || lower.includes('qwen-3.6-27b')) return 'qwen3.6-27b';
-	// Everything else in the lineup (3.5 4B/9B, 3.6 35B-A3B) shares one profile.
-	if (
-		lower.includes('qwen3.5') ||
-		lower.includes('qwen-3.5') ||
-		lower.includes('qwen3.6') ||
-		lower.includes('qwen-3.6')
-	) {
-		return 'qwen3.5';
-	}
-	return null;
-}
-
-/**
- * Last-known active local model filename (e.g. "Qwen3.5-9B-Q4_K_M.gguf").
- * Set by the layout when the local sidecar is started, so sampling
- * resolution stays synchronous. Null until a model is loaded. Hydrated
- * from persisted settings on module load so sampling-profile lookup
- * works on the first render of a chat without waiting for the layout's
- * IPC round-trip.
- */
-let activeLocalModelFilename: string | null = settings.activeLocalModelFilename || null;
-
 /**
  * Tell the settings layer which local GGUF is currently loaded. Called
  * from places that invoke `get_active_model_path` immediately before
@@ -918,7 +779,6 @@ let activeLocalModelFilename: string | null = settings.activeLocalModelFilename 
  */
 export function setActiveLocalModel(filenameOrPath: string | null): void {
 	if (!filenameOrPath) {
-		activeLocalModelFilename = null;
 		if (settings.activeLocalModelFilename !== '') {
 			settings = { ...settings, activeLocalModelFilename: '' };
 			save(settings);
@@ -928,7 +788,6 @@ export function setActiveLocalModel(filenameOrPath: string | null): void {
 	// Accept either a bare filename or a full path; strip the directory.
 	const slash = Math.max(filenameOrPath.lastIndexOf('/'), filenameOrPath.lastIndexOf('\\'));
 	const basename = slash >= 0 ? filenameOrPath.slice(slash + 1) : filenameOrPath;
-	activeLocalModelFilename = basename;
 	if (settings.activeLocalModelFilename !== basename) {
 		settings = { ...settings, activeLocalModelFilename: basename };
 		save(settings);
@@ -938,7 +797,8 @@ export function setActiveLocalModel(filenameOrPath: string | null): void {
 /**
  * Persisted filename (basename) of the model the user last activated.
  * Empty string if no choice has been recorded yet — callers should
- * fall back to a disk scan in that case.
+ * fall back to a disk scan in that case. Also the resolver's input for
+ * local model-family detection (see `$lib/inference/descriptor`).
  */
 export function getActiveLocalModelFilename(): string {
 	return settings.activeLocalModelFilename;
@@ -957,19 +817,6 @@ export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
 		settings = { ...settings, legacyModelNoticeDismissed: dismissed };
 		save(settings);
 	}
-}
-
-/**
- * Identify the active model family — used by `getSamplingParams` to look
- * up the right profile. In remote mode the family comes from the
- * configured `remoteModelId`; in local mode it comes from the GGUF
- * filename most recently registered via `setActiveLocalModel`. Returns
- * null when the model isn't from a recognized lineup.
- */
-export function getActiveModelFamily(): string | null {
-	const inf = settings.inferenceBackend;
-	if (inf.mode === 'remote') return modelFamilyFromId(inf.remoteModelId);
-	return modelFamilyFromId(activeLocalModelFilename);
 }
 
 export interface SamplingOptions {
@@ -994,18 +841,20 @@ function resolveThinking(override?: boolean | null): boolean {
 }
 
 /** Built-in family-based sampling — the fallback when the backend doesn't
- * report its own recommendations (local mode, or any non-toolchest remote). */
-function builtinSamplingParams(opts: SamplingOptions): SamplingParams {
-	const family = getActiveModelFamily();
-	// Unknown family: local models all come from the managed (Qwen) lineup,
-	// so an unrecognized filename still gets the default profile. A remote
-	// model we don't recognize gets NO sampling overrides — undefined fields
-	// are omitted from the request, so the serving backend's own defaults
-	// win instead of Qwen's card values (presence_penalty 1.5 et al.).
-	if (family === null && settings.inferenceBackend.mode === 'remote') {
+ * report its own recommendations (local mode, or any non-toolchest remote).
+ * A backend without a resolved family (an unrecognized remote model) gets NO
+ * sampling overrides — undefined fields are omitted from the request, so the
+ * serving backend's own defaults win instead of Qwen's card values
+ * (presence_penalty 1.5 et al.). The resolver maps unrecognized LOCAL models
+ * to the default family, since local models all come from the managed lineup. */
+function builtinSamplingParams(
+	descriptor: BackendDescriptor,
+	opts: SamplingOptions
+): SamplingParams {
+	if (descriptor.samplingFamily === null) {
 		return {};
 	}
-	const profiles = SAMPLING_PROFILES[family ?? DEFAULT_FAMILY];
+	const profiles = SAMPLING_PROFILES[descriptor.samplingFamily];
 	const mode = resolveThinking(opts.thinkingEnabled) ? profiles.thinking : profiles.nonThinking;
 	return opts.codeContext ? mode.coding : mode.general;
 }
@@ -1021,7 +870,11 @@ function builtinSamplingParams(opts: SamplingOptions): SamplingParams {
  *   - thinking         → "thinking"
  *   - non-thinking     → "non-thinking"
  */
-function toolchestSamplingParams(caps: RemoteSamplingCaps, opts: SamplingOptions): SamplingParams {
+function toolchestSamplingParams(
+	descriptor: BackendDescriptor,
+	caps: RemoteSamplingCaps,
+	opts: SamplingOptions
+): SamplingParams {
 	const byName = (name: string) => caps.presets.find((p) => p.name === name);
 	let preset: RemoteSamplingParams | undefined;
 	if (resolveThinking(opts.thinkingEnabled)) {
@@ -1031,7 +884,7 @@ function toolchestSamplingParams(caps: RemoteSamplingCaps, opts: SamplingOptions
 	}
 	// Preset overrides the resolved default for whatever fields it carries.
 	const merged: RemoteSamplingParams = { ...caps.default, ...(preset ?? {}) };
-	const fallback = builtinSamplingParams(opts);
+	const fallback = builtinSamplingParams(descriptor, opts);
 	return {
 		temperature: merged.temperature ?? fallback.temperature,
 		top_p: merged.top_p ?? fallback.top_p,
@@ -1041,19 +894,21 @@ function toolchestSamplingParams(caps: RemoteSamplingCaps, opts: SamplingOptions
 	};
 }
 
-export function getSamplingParams(opts: SamplingOptions = {}): SamplingParams {
-	const inf = toolchestBackend();
-	if (inf?.remoteSampling) {
-		return toolchestSamplingParams(inf.remoteSampling, opts);
+export function getSamplingParams(
+	descriptor: BackendDescriptor,
+	opts: SamplingOptions = {}
+): SamplingParams {
+	if (descriptor.discoveredSampling) {
+		return toolchestSamplingParams(descriptor, descriptor.discoveredSampling, opts);
 	}
-	const base = builtinSamplingParams(opts);
+	const base = builtinSamplingParams(descriptor, opts);
 	// OpenRouter speaks OpenAI's param set: it accepts `temperature` and
 	// `top_p` but the docs don't guarantee `top_k` / `min_p` won't 400 on
 	// stricter upstream providers. Omit both for OpenRouter entirely (safe;
 	// the router supplies sensible defaults). `presence_penalty` is in the
 	// OpenAI param set and is kept — but only for recognized families,
 	// since `base` is already empty for unknown models.
-	if (openrouterBackend()) {
+	if (descriptor.kind === 'openrouter') {
 		return {
 			temperature: base.temperature,
 			top_p: base.top_p,

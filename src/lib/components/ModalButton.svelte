@@ -17,15 +17,21 @@
 
 	interface Props {
 		variant?: Variant;
+		/** Marks this button as the modal's initial-focus target (Modal.svelte
+		 *  focuses the first `[autofocus]` element when it opens). */
+		autofocus?: boolean;
 		onclick: () => void;
 		title: Snippet;
 		subtitle?: Snippet;
 	}
 
-	let { variant = 'default', onclick, title, subtitle }: Props = $props();
+	let { variant = 'default', autofocus = false, onclick, title, subtitle }: Props = $props();
 </script>
 
-<button class="modal-btn {variant}" {onclick}>
+<!-- Inside a modal, moving focus to the safe default action is the
+     accessible behavior, not a hijack. -->
+<!-- svelte-ignore a11y_autofocus -->
+<button class="modal-btn {variant}" {autofocus} {onclick}>
 	<strong>{@render title()}</strong>
 	{#if subtitle}<span>{@render subtitle()}</span>{/if}
 </button>

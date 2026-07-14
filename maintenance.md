@@ -555,7 +555,6 @@ src/lib/stores/shell.svelte.ts
 - `shell_resize(session_id, cols, rows)`
 - `shell_kill(session_id)` — also fired by `ShellManager::shutdown_all` on app exit
 - `shell_get_context(session_id)` → `{ context, current_cwd }`
-- `shell_get_last_command(session_id)` → captured last command + output
 - `shell_get_recent_commands(session_id, limit)` → up to N most recent completed B→C→D cycles in chronological order, used by `submitChatMessage` to auto-attach context
 - `shell_get_recent_history(session_id, limit)` → bash/zsh/fish history
 
