@@ -29,6 +29,7 @@
 		startServer
 	} from '$lib/stores/server.svelte';
 	import {
+		applyAccent,
 		applyTheme,
 		getActiveLocalModelFilename,
 		getSettings,
@@ -126,6 +127,7 @@
 
 	onMount(async () => {
 		applyTheme();
+		applyAccent();
 		// Self-heal a stuck inference slot left by a previous renderer lifetime
 		// (a webview crash/reload doesn't fire the OS window-destroyed cleanup,
 		// so the Rust queue can hold a phantom "running" ticket). Runs for every
@@ -527,7 +529,15 @@
 		--text-secondary: #5f594f;
 		--text-muted: #867f74;
 		--text-faint: #a29c91;
-		--accent: #2f8f84;
+		/* Accent options (Settings → General highlight color). Light-theme
+		   variants are darkened for contrast on white, like the teal. The
+		   data-accent override blocks below pick one; teal is the default. */
+		--accent-teal: #2f8f84;
+		--accent-amber: #a1722e;
+		--accent-violet: #4f5bd5;
+		--accent-amber-contrast: #ffffff;
+		--accent-violet-contrast: #ffffff;
+		--accent: var(--accent-teal);
 		--accent-contrast: #ffffff;
 		--border: #e5e0d7;
 		--border-mid: #ece7dd;
@@ -559,7 +569,13 @@
 			--text-secondary: #a39d92;
 			--text-muted: #8f887c;
 			--text-faint: #6f6a61;
-			--accent: #4fb0a5;
+			/* Bronze/indigo pairs from the design exploration board. */
+			--accent-teal: #4fb0a5;
+			--accent-amber: #cc9a52;
+			--accent-violet: #7c8cf8;
+			--accent-amber-contrast: #0d0c0b;
+			--accent-violet-contrast: #ffffff;
+			--accent: var(--accent-teal);
 			--accent-contrast: #06201c;
 			--border: #2a2621;
 			--border-mid: #322e28;
@@ -579,12 +595,31 @@
 		--text-secondary: #a39d92;
 		--text-muted: #8f887c;
 		--text-faint: #6f6a61;
-		--accent: #4fb0a5;
+		--accent-teal: #4fb0a5;
+		--accent-amber: #cc9a52;
+		--accent-violet: #7c8cf8;
+		--accent-amber-contrast: #0d0c0b;
+		--accent-violet-contrast: #ffffff;
+		--accent: var(--accent-teal);
 		--accent-contrast: #06201c;
 		--border: #2a2621;
 		--border-mid: #322e28;
 		--border-strong: #3a352d;
 		--toggle-off: #2e2a24;
+	}
+
+	/* Highlight-color override (Settings → General): `data-accent` on the
+	   root swaps which option feeds --accent. These share specificity with
+	   the theme blocks above, so they must come after them in source order;
+	   the option vars themselves are already theme-scoped, and every
+	   derived tint (--accent-soft, --user-bubble) follows automatically. */
+	:global(:root[data-accent='amber']) {
+		--accent: var(--accent-amber);
+		--accent-contrast: var(--accent-amber-contrast);
+	}
+	:global(:root[data-accent='violet']) {
+		--accent: var(--accent-violet);
+		--accent-contrast: var(--accent-violet-contrast);
 	}
 
 	/* Accessibility: honor the OS "reduce motion" preference with one global

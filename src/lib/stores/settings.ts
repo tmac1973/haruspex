@@ -13,6 +13,7 @@ import type { ShellSelection } from '$lib/ipc/gen/ShellSelection';
 
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
 export type ThemeMode = 'system' | 'light' | 'dark';
+export type AccentColor = 'teal' | 'amber' | 'violet';
 export type SearchProvider = 'auto' | 'duckduckgo' | 'brave' | 'searxng';
 
 /**
@@ -228,6 +229,7 @@ export type { ProxyConfig };
 export interface AppSettings {
 	responseFormat: ResponseFormat;
 	theme: ThemeMode;
+	accentColor: AccentColor;
 	ttsVoice: string;
 	searchProvider: SearchProvider;
 	braveApiKey: string;
@@ -415,6 +417,7 @@ export const DEFAULT_TTS_VOICE = 'af_heart';
 const defaults: AppSettings = {
 	responseFormat: 'standard',
 	theme: 'system',
+	accentColor: 'teal',
 	ttsVoice: DEFAULT_TTS_VOICE,
 	searchProvider: 'auto',
 	braveApiKey: '',
@@ -631,6 +634,22 @@ export function applyTheme(theme?: ThemeMode): void {
 		root.setAttribute('data-theme', 'light');
 	} else if (mode === 'dark') {
 		root.setAttribute('data-theme', 'dark');
+	}
+}
+
+/**
+ * Stamp the accent-color choice onto the root element. Mirrors applyTheme:
+ * the `data-accent` attribute selects the `--accent`/`--accent-contrast`
+ * override block in +layout.svelte. Teal is the default token set, so it
+ * uses no attribute.
+ */
+export function applyAccent(accent?: AccentColor): void {
+	const value = accent ?? settings.accentColor;
+	const root = document.documentElement;
+	if (value === 'teal') {
+		root.removeAttribute('data-accent');
+	} else {
+		root.setAttribute('data-accent', value);
 	}
 }
 
