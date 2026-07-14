@@ -45,7 +45,7 @@
 					checked={value === opt.value}
 					onchange={() => onchange(opt.value)}
 				/>
-				{opt.title}
+				<span class="option-title" data-title={opt.title}>{opt.title}</span>
 			</label>
 		{/each}
 	</div>
@@ -79,6 +79,23 @@
 	label:has(input:focus-visible) {
 		outline: 2px solid var(--accent);
 		outline-offset: 1px;
+	}
+
+	/* The active button renders its title bold, which is wider. Stack a
+	   hidden always-bold copy under the text so every button is measured
+	   at its bold width — selection can't change the buttons' sizes. */
+	.option-title {
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.option-title::after {
+		content: attr(data-title);
+		font-weight: 600;
+		height: 0;
+		overflow: hidden;
+		visibility: hidden;
 	}
 
 	.description {
