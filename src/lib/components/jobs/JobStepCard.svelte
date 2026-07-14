@@ -18,12 +18,14 @@
 		status: StepCardStatus;
 		/** Optional stage name shown after "Step N" (e.g. guided-planning stages). */
 		title?: string;
+		/** Optional pre-formatted elapsed time shown after the status pill (e.g. "1m 12s"). */
+		elapsed?: string;
 		/** Optional extra content rendered inline after the status pill (e.g. a badge). */
 		headExtra?: Snippet;
 		children: Snippet;
 	}
 
-	const { stepNumber, status, title, headExtra, children }: Props = $props();
+	const { stepNumber, status, title, elapsed, headExtra, children }: Props = $props();
 
 	function stepStatusLabel(s: StepCardStatus): string {
 		switch (s) {
@@ -48,6 +50,7 @@
 		<span class="step-num">Step {stepNumber}</span>
 		{#if title}<span class="step-title">{title}</span>{/if}
 		<span class="status-pill status-{status}">{stepStatusLabel(status)}</span>
+		{#if elapsed}<span class="step-elapsed">{elapsed}</span>{/if}
 		{@render headExtra?.()}
 	</div>
 	{@render children()}
@@ -86,5 +89,11 @@
 		font-size: 0.85rem;
 		font-weight: 600;
 		color: var(--text-primary);
+	}
+
+	.step-elapsed {
+		font-size: 0.74rem;
+		color: var(--text-secondary);
+		font-variant-numeric: tabular-nums;
 	}
 </style>
