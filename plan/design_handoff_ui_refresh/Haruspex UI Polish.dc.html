@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+  body { margin:0; background:#0d0c0b; color:#ece7dd; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#cc9a52; text-decoration:none; }
+  a:hover { color:#dcac66; }
+  * { box-sizing:border-box; }
+</style>
+</helmet>
+
+<div style="padding:48px 56px 20px; max-width:1180px;">
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+    <div style="width:26px;height:26px;border-radius:6px;background:linear-gradient(135deg,#cc9a52,#8a6a34);transform:rotate(45deg);"></div>
+    <h1 style="font-size:1.5rem;margin:0;font-weight:650;letter-spacing:-0.01em;">Haruspex — UI polish board</h1>
+  </div>
+  <p style="max-width:720px;color:#a39d92;line-height:1.6;margin:0 0 18px;font-size:0.95rem;">
+    A meaningful refresh that keeps your layout bones. Warmer neutral dark, a bronze accent that nods to the
+    app's namesake (reading the bronze liver), tighter grouping, and a much more compact model picker.
+    The muted <b style="color:#cebfa8;">Current</b> panels are your app today for comparison; the badged panels are
+    directions — call them out by id in chat (e.g. <span style="color:#cc9a52;">1a</span>).
+  </p>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:0.8rem;color:#a39d92;margin-bottom:10px;">
+    <span style="padding:4px 10px;border:1px solid #4fb0a5;color:#4fb0a5;border-radius:999px;font-weight:600;">Latest ↓ Turn 2 — teal &amp; indigo, 1b + 1c, all job types</span>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:0.8rem;color:#8f887c;">
+    <span style="padding:4px 10px;border:1px solid #302d29;border-radius:999px;">Turn 1 ↓ (bronze + all directions)</span>
+    <span style="padding:4px 10px;border:1px solid #302d29;border-radius:999px;">1a · Job editor — grouped cards</span>
+    <span style="padding:4px 10px;border:1px solid #322e28;border-radius:999px;">1b · Job editor — collapsible sections</span>
+    <span style="padding:4px 10px;border:1px solid #322e28;border-radius:999px;">1c · Settings — carded groups</span>
+    <span style="padding:4px 10px;border:1px solid #322e28;border-radius:999px;">1d · Settings — rail + section headers</span>
+    <span style="padding:4px 10px;border:1px solid #322e28;border-radius:999px;">1e · Global system</span>
+  </div>
+</div>
+
+<section style="padding:0 56px 40px;">
+  <div style="display:flex;align-items:center;gap:10px;margin:0 0 6px;">
+    <div style="width:8px;height:8px;border-radius:50%;background:#4fb0a5;"></div>
+    <h2 style="font-size:1.05rem;margin:0;font-weight:600;">Turn 2 — teal &amp; indigo · your picks (1b, 1c) · every job type</h2>
+  </div>
+  <p style="max-width:760px;color:#8f887c;line-height:1.6;margin:0 0 26px;font-size:0.9rem;">
+    Same warm-neutral dark base, accent swapped to <b style="color:#4fb0a5;">teal</b> and <b style="color:#7c8cf8;">indigo</b> so you can compare.
+    Job editor uses the <a href="#1b">1b</a> collapsible layout; settings use the <a href="#1c">1c</a> carded layout.
+    <a href="#2e">2e</a> shows the type-specific section for all four job types (Research / Audit / Guided planning / Autonomous coding).
+  </p>
+  <div style="display:flex;flex-wrap:wrap;gap:44px;align-items:flex-start;">
+
+    <!-- ================= 2a JOB EDITOR 1b — TEAL — RESEARCH ================= -->
+    <div id="2a" style="width:560px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:0.8rem;font-weight:700;color:#06201c;background:#4fb0a5;padding:3px 10px;border-radius:6px;">2a</span>
+        <span style="font-weight:600;">Job editor (1b) — Teal · Research</span>
+      </div>
+      <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;display:flex;height:640px;box-shadow:0 10px 34px rgba(0,0,0,.4);">
+        <div style="width:150px;flex-shrink:0;border-right:1px solid #2a2621;background:#16140f;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-bottom:1px solid #2a2621;">
+            <span style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:#8f887c;font-weight:600;">Jobs</span>
+            <span style="font-size:0.72rem;border:1px solid #3a352d;border-radius:5px;padding:2px 8px;">+ New</span>
+          </div>
+          <div style="padding:9px 12px;border-left:2px solid #4fb0a5;background:color-mix(in srgb,#4fb0a5 10%,transparent);"><div style="font-size:0.85rem;">Morning headlines</div><div style="font-size:0.7rem;color:#8f887c;margin-top:3px;">Daily · 09:00</div></div>
+          <div style="padding:9px 12px 9px 14px;"><div style="font-size:0.85rem;">Repo audit</div><div style="font-size:0.7rem;color:#8f887c;margin-top:3px;">Manual</div></div>
+        </div>
+        <div style="flex:1;padding:16px 18px;overflow-y:auto;">
+          <div style="font-size:1rem;font-weight:600;margin-bottom:4px;">Edit job</div>
+          <div style="font-size:0.78rem;color:#8f887c;margin-bottom:16px;">Research · Daily 09:00 · Settings model</div>
+
+          <div style="border:1px solid #2a2621;border-radius:9px;overflow:hidden;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:9px;padding:11px 13px;background:#16140f;border-bottom:1px solid #2a2621;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4fb0a5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <span style="font-size:0.82rem;font-weight:600;">Basics</span>
+            </div>
+            <div style="padding:13px;">
+              <div style="margin-bottom:10px;"><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Name</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;">Morning headlines</div></div>
+              <div style="display:flex;gap:10px;"><div style="flex:1;"><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Type</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;display:flex;justify-content:space-between;">Research<span style="color:#8f887c;">▾</span></div></div><div style="flex:1.3;"><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Description</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;color:#6f6a61;">Optional</div></div></div>
+            </div>
+          </div>
+
+          <div style="border:1px solid #2a2621;border-radius:9px;background:#16140f;display:flex;align-items:center;gap:9px;padding:12px 13px;margin-bottom:10px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <span style="font-size:0.82rem;font-weight:600;">Where &amp; when</span>
+            <span style="margin-left:auto;font-size:0.76rem;color:#8f887c;">No folder · Daily 09:00</span>
+          </div>
+
+          <div style="border:1px solid #2a2621;border-radius:9px;background:#16140f;display:flex;align-items:center;gap:9px;padding:12px 13px;margin-bottom:10px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <span style="font-size:0.82rem;font-weight:600;">Model</span>
+            <span style="margin-left:auto;font-size:0.72rem;color:#8f887c;background:#1e1c18;border:1px solid #322e28;border-radius:999px;padding:2px 9px;">Settings default</span>
+          </div>
+
+          <!-- Type section OPEN: Research steps -->
+          <div style="border:1px solid #2a2621;border-radius:9px;overflow:hidden;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:9px;padding:11px 13px;background:#16140f;border-bottom:1px solid #2a2621;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4fb0a5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <span style="font-size:0.82rem;font-weight:600;">Steps</span>
+              <span style="margin-left:auto;font-size:0.72rem;color:#8f887c;">2 steps · runs in sequence</span>
+            </div>
+            <div style="padding:13px;">
+              <div style="border:1px solid #2a2621;border-radius:8px;background:#1b1914;padding:10px;margin-bottom:8px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#8f887c;">Step 1</span>
+                    <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,#4fb0a5 15%,transparent);border:1px solid #4fb0a5;color:#4fb0a5;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Deep research</span>
+                  </div>
+                  <div style="display:flex;gap:3px;color:#8f887c;align-items:center;"><span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;padding:3px 8px;border-radius:5px;border:1px solid #3a352d;color:#a39d92;margin-right:2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"></path><line x1="8" y1="7" x2="14" y2="7"></line></svg>Catalog</span><span style="border:1px solid #3a352d;border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:0.8rem;">↑</span><span style="border:1px solid #3a352d;border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:0.8rem;">↓</span><span style="border:1px solid #3a352d;border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:0.8rem;">×</span></div>
+                </div>
+                <div style="border:1px solid #3a352d;border-radius:6px;padding:8px 10px;font-size:0.8rem;background:#100f0d;color:#a39d92;line-height:1.4;">Search today's top tech &amp; world headlines and summarize the 10 most important.</div>
+              </div>
+              <div style="border:1px solid #2a2621;border-radius:8px;background:#1b1914;padding:10px;margin-bottom:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#8f887c;">Step 2</span>
+                    <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;padding:2px 8px;border-radius:999px;border:1px solid #3a352d;color:#8f887c;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Deep research</span>
+                  </div>
+                  <div style="display:flex;gap:3px;color:#8f887c;align-items:center;"><span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;padding:3px 8px;border-radius:5px;border:1px solid #3a352d;color:#a39d92;margin-right:2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"></path><line x1="8" y1="7" x2="14" y2="7"></line></svg>Catalog</span><span style="border:1px solid #3a352d;border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:0.8rem;">↑</span><span style="border:1px solid #3a352d;border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:0.8rem;">↓</span><span style="border:1px solid #3a352d;border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:0.8rem;">×</span></div>
+                </div>
+                <div style="border:1px solid #3a352d;border-radius:6px;padding:8px 10px;font-size:0.8rem;background:#100f0d;color:#6f6a61;line-height:1.4;">Turn the above into a formatted PDF in the working directory.</div>
+              </div>
+              <div style="border:1px dashed #3a352d;border-radius:7px;padding:8px;text-align:center;font-size:0.8rem;color:#4fb0a5;">+ Add step</div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid #2a2621;padding-top:12px;display:flex;justify-content:space-between;">
+            <div style="border:1px solid #47201d;color:#dd6b60;border-radius:7px;padding:7px 13px;font-size:0.82rem;">Delete</div>
+            <div style="display:flex;gap:8px;"><div style="border:1px solid #3a352d;border-radius:7px;padding:7px 13px;font-size:0.82rem;">Cancel</div><div style="background:#4fb0a5;color:#06201c;border-radius:7px;padding:7px 16px;font-size:0.82rem;font-weight:600;">Save</div></div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:10px 2px 0;line-height:1.55;">Collapsible 1b layout with the <b style="color:#4fb0a5;">teal</b> accent. Research's step pipeline lives in an expandable <b style="color:#cebfa8;">Steps</b> section — deep-research pills, reorder, and add-step all intact.</p>
+    </div>
+
+    <!-- ================= 2b JOB EDITOR 1b — INDIGO — AUDIT ================= -->
+    <div id="2b" style="width:560px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:0.8rem;font-weight:700;color:#fff;background:#7c8cf8;padding:3px 10px;border-radius:6px;">2b</span>
+        <span style="font-weight:600;">Job editor (1b) — Indigo · Audit</span>
+      </div>
+      <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;display:flex;height:640px;box-shadow:0 10px 34px rgba(0,0,0,.4);">
+        <div style="width:150px;flex-shrink:0;border-right:1px solid #2a2621;background:#16140f;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-bottom:1px solid #2a2621;">
+            <span style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:#8f887c;font-weight:600;">Jobs</span>
+            <span style="font-size:0.72rem;border:1px solid #3a352d;border-radius:5px;padding:2px 8px;">+ New</span>
+          </div>
+          <div style="padding:9px 12px 9px 14px;"><div style="font-size:0.85rem;">Morning headlines</div><div style="font-size:0.7rem;color:#8f887c;margin-top:3px;">Daily · 09:00</div></div>
+          <div style="padding:9px 12px;border-left:2px solid #7c8cf8;background:color-mix(in srgb,#7c8cf8 12%,transparent);"><div style="font-size:0.85rem;">Repo audit <span style="font-size:0.58rem;background:color-mix(in srgb,#7c8cf8 20%,transparent);color:#7c8cf8;border-radius:999px;padding:1px 6px;text-transform:uppercase;letter-spacing:0.04em;">audit</span></div><div style="font-size:0.7rem;color:#8f887c;margin-top:3px;">Manual · 8 runs</div></div>
+        </div>
+        <div style="flex:1;padding:16px 18px;overflow-y:auto;">
+          <div style="font-size:1rem;font-weight:600;margin-bottom:4px;">Edit job</div>
+          <div style="font-size:0.78rem;color:#8f887c;margin-bottom:16px;">Audit · Manual · Settings model</div>
+
+          <div style="border:1px solid #2a2621;border-radius:9px;background:#16140f;display:flex;align-items:center;gap:9px;padding:12px 13px;margin-bottom:10px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <span style="font-size:0.82rem;font-weight:600;">Basics</span>
+            <span style="margin-left:auto;font-size:0.76rem;color:#8f887c;">Repo audit · Audit</span>
+          </div>
+          <div style="border:1px solid #2a2621;border-radius:9px;background:#16140f;display:flex;align-items:center;gap:9px;padding:12px 13px;margin-bottom:10px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <span style="font-size:0.82rem;font-weight:600;">Where &amp; when</span>
+            <span style="margin-left:auto;font-size:0.76rem;color:#8f887c;">~/code/haruspex · Manual</span>
+          </div>
+
+          <!-- Type section OPEN: Audit config -->
+          <div style="border:1px solid #2a2621;border-radius:9px;overflow:hidden;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:9px;padding:11px 13px;background:#16140f;border-bottom:1px solid #2a2621;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c8cf8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <span style="font-size:0.82rem;font-weight:600;">Audit setup</span>
+            </div>
+            <div style="padding:13px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><span style="font-size:0.76rem;color:#8f887c;">Audit prompt</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;padding:3px 8px;border-radius:5px;border:1px solid #3a352d;color:#a39d92;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"></path><line x1="8" y1="7" x2="14" y2="7"></line></svg>Catalog</span></div>
+              <div style="border:1px solid #3a352d;border-radius:7px;padding:9px 11px;font-size:0.8rem;background:#1b1914;color:#a39d92;line-height:1.45;margin-bottom:12px;">Find every instance of duplicated logic. Anchor each finding to a file and line range.</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+                <div><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Number of runs</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;">8</div></div>
+                <div><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Max turns / run</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;">200</div></div>
+                <div style="grid-column:1 / -1;"><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Output file <span style="opacity:.65;">optional</span></div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;">AUDIT.md</div></div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;">
+                <div style="width:16px;height:16px;border-radius:4px;background:#7c8cf8;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg></div>
+                <div style="font-size:0.82rem;">Read-only runs <span style="font-size:0.76rem;color:#8f887c;">— sample runs read/grep but never modify files</span></div>
+              </div>
+              <div style="border:1px solid #2a2621;border-radius:7px;background:#1b1914;display:flex;align-items:center;gap:9px;padding:9px 11px;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+                <span style="font-size:0.78rem;color:#a39d92;">Advanced — edit the exact prompts sent to the model</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid #2a2621;padding-top:12px;display:flex;justify-content:space-between;">
+            <div style="border:1px solid #47201d;color:#dd6b60;border-radius:7px;padding:7px 13px;font-size:0.82rem;">Delete</div>
+            <div style="display:flex;gap:8px;"><div style="border:1px solid #3a352d;border-radius:7px;padding:7px 13px;font-size:0.82rem;">Cancel</div><div style="background:#7c8cf8;color:#fff;border-radius:7px;padding:7px 16px;font-size:0.82rem;font-weight:600;">Save</div></div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:10px 2px 0;line-height:1.55;">Same 1b layout with the <b style="color:#7c8cf8;">indigo</b> accent, showing the <b style="color:#cebfa8;">Audit</b> type — runs/turns/output grid, read-only switch, and the advanced-prompts sub-section collapsed inside.</p>
+    </div>
+
+    <!-- ================= 2c SETTINGS 1c — TEAL ================= -->
+    <div id="2c" style="width:600px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:0.8rem;font-weight:700;color:#06201c;background:#4fb0a5;padding:3px 10px;border-radius:6px;">2c</span>
+        <span style="font-weight:600;">Settings (1c) — Teal</span>
+      </div>
+      <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;height:560px;box-shadow:0 10px 34px rgba(0,0,0,.4);">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid #2a2621;"><div style="border:1px solid #3a352d;border-radius:7px;padding:5px 11px;font-size:0.85rem;">← Back</div><div style="font-size:1.15rem;font-weight:600;">Settings</div></div>
+        <div style="display:flex;height:calc(560px - 51px);">
+          <div style="width:172px;flex-shrink:0;border-right:1px solid #2a2621;padding:14px 8px;display:flex;flex-direction:column;gap:2px;background:#16140f;">
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>General</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>Inference</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:color-mix(in srgb,#4fb0a5 14%,transparent);color:#4fb0a5;font-weight:500;border:1px solid color-mix(in srgb,#4fb0a5 35%,transparent);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1 3 3 3 3 0 0 1 0 6 3 3 0 0 1-3 3v1a3 3 0 0 1-6 0v-1a3 3 0 0 1-3-3 3 3 0 0 1 0-6 3 3 0 0 1 3-3V5a3 3 0 0 1 3-3z"/></svg>Agent</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4M7 6v12M12 3v18M17 8v8M21 11v2"/></svg>Audio</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>Integrations</div>
+          </div>
+          <div style="flex:1;padding:18px 22px;overflow-y:auto;">
+            <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Agent</div>
+            <div style="font-size:0.8rem;color:#8f887c;margin-bottom:16px;">How the model reasons, remembers, and runs code.</div>
+            <div style="background:#16140f;border:1px solid #2a2621;border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+              <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#4fb0a5;"></span>Behavior</div>
+              <div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:14px;">
+                <div style="width:34px;height:20px;border-radius:999px;background:#4fb0a5;flex-shrink:0;position:relative;margin-top:1px;"><div style="width:16px;height:16px;border-radius:50%;background:#06201c;position:absolute;top:2px;right:2px;"></div></div>
+                <div><div style="font-size:0.86rem;font-weight:500;">Reasoning mode</div><div style="font-size:0.77rem;color:#8f887c;margin-top:2px;line-height:1.45;">Emit a &lt;think&gt; block before answering. Better on multi-step tasks.</div></div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:11px;">
+                <div style="width:34px;height:20px;border-radius:999px;background:#2e2a24;border:1px solid #3a352d;flex-shrink:0;position:relative;margin-top:1px;"><div style="width:16px;height:16px;border-radius:50%;background:#8f887c;position:absolute;top:1px;left:2px;"></div></div>
+                <div><div style="font-size:0.86rem;font-weight:500;">Keep previous turn's tool results</div><div style="font-size:0.77rem;color:#8f887c;margin-top:2px;line-height:1.45;">Followups can reference raw research. Uses more context.</div></div>
+              </div>
+            </div>
+            <div style="background:#16140f;border:1px solid #2a2621;border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+              <div style="font-size:0.9rem;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#4fb0a5;"></span>Custom system prompt</div>
+              <div style="border:1px solid #3a352d;border-radius:7px;padding:10px;height:60px;background:#1b1914;color:#6f6a61;font-size:0.82rem;font-family:ui-monospace,Menlo,monospace;">Always answer in British English.</div>
+            </div>
+            <div style="background:#16140f;border:1px solid #2a2621;border-radius:10px;padding:15px 16px;">
+              <div style="font-size:0.9rem;font-weight:600;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#4fb0a5;"></span>Python sandbox <span style="font-size:0.62rem;border:1px solid #3a352d;border-radius:4px;padding:1px 6px;color:#8f887c;text-transform:uppercase;font-weight:600;">experimental</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:10px 2px 0;line-height:1.55;">Carded 1c settings in <b style="color:#4fb0a5;">teal</b>. Toggle switches and the active rail pill pick up the accent; group boundaries read at a glance.</p>
+    </div>
+
+    <!-- ================= 2d SETTINGS 1c — INDIGO ================= -->
+    <div id="2d" style="width:600px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:0.8rem;font-weight:700;color:#fff;background:#7c8cf8;padding:3px 10px;border-radius:6px;">2d</span>
+        <span style="font-weight:600;">Settings (1c) — Indigo</span>
+      </div>
+      <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;height:560px;box-shadow:0 10px 34px rgba(0,0,0,.4);">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid #2a2621;"><div style="border:1px solid #3a352d;border-radius:7px;padding:5px 11px;font-size:0.85rem;">← Back</div><div style="font-size:1.15rem;font-weight:600;">Settings</div></div>
+        <div style="display:flex;height:calc(560px - 51px);">
+          <div style="width:172px;flex-shrink:0;border-right:1px solid #2a2621;padding:14px 8px;display:flex;flex-direction:column;gap:2px;background:#16140f;">
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>General</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:color-mix(in srgb,#7c8cf8 16%,transparent);color:#9aa6ff;font-weight:500;border:1px solid color-mix(in srgb,#7c8cf8 38%,transparent);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>Inference</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1 3 3 3 3 0 0 1 0 6 3 3 0 0 1-3 3v1a3 3 0 0 1-6 0v-1a3 3 0 0 1-3-3 3 3 0 0 1 0-6 3 3 0 0 1 3-3V5a3 3 0 0 1 3-3z"/></svg>Agent</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4M7 6v12M12 3v18M17 8v8M21 11v2"/></svg>Audio</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>Integrations</div>
+          </div>
+          <div style="flex:1;padding:18px 22px;overflow-y:auto;">
+            <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Inference</div>
+            <div style="font-size:0.8rem;color:#8f887c;margin-bottom:16px;">Where inference runs and how big the context is.</div>
+            <div style="background:#16140f;border:1px solid #2a2621;border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+              <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#7c8cf8;"></span>Backend</div>
+              <div style="display:flex;background:#100f0d;border:1px solid #322e28;border-radius:8px;padding:3px;gap:3px;max-width:260px;margin-bottom:10px;">
+                <div style="flex:1;text-align:center;padding:6px;border-radius:6px;font-size:0.8rem;background:#7c8cf8;color:#fff;font-weight:600;">Local</div>
+                <div style="flex:1;text-align:center;padding:6px;border-radius:6px;font-size:0.8rem;color:#a39d92;">Remote</div>
+                <div style="flex:1;text-align:center;padding:6px;border-radius:6px;font-size:0.8rem;color:#a39d92;">OpenRouter</div>
+              </div>
+              <div style="font-size:0.77rem;color:#8f887c;line-height:1.5;">Runs the bundled llama-server on your GPU. Nothing leaves your device.</div>
+            </div>
+            <div style="background:#16140f;border:1px solid #2a2621;border-radius:10px;padding:15px 16px;">
+              <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#7c8cf8;"></span>Context &amp; model</div>
+              <div style="font-size:0.78rem;color:#8f887c;margin-bottom:4px;">Context size</div>
+              <div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;max-width:200px;">8,192 tokens</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:10px 2px 0;line-height:1.55;">Same carded layout with the <b style="color:#7c8cf8;">indigo</b> accent — shown on the Inference section with the backend segmented control.</p>
+    </div>
+
+    <!-- ================= 2e JOB TYPE GALLERY ================= -->
+    <div id="2e" style="width:1000px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:0.8rem;font-weight:700;color:#06201c;background:#4fb0a5;padding:3px 10px;border-radius:6px;">2e</span>
+        <span style="font-weight:600;">Job type gallery — the type-specific section for all four types</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+
+        <!-- Research -->
+        <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 14px;background:#16140f;border-bottom:1px solid #2a2621;"><span style="font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#4fb0a5;">Research</span><span style="font-size:0.76rem;color:#8f887c;">Sequential step pipeline</span></div>
+          <div style="padding:14px;">
+            <div style="border:1px solid #2a2621;border-radius:8px;background:#16140f;padding:10px;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#8f887c;">Step 1</span><span style="font-size:0.68rem;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,#4fb0a5 15%,transparent);border:1px solid #4fb0a5;color:#4fb0a5;">Deep research</span></div><div style="display:flex;gap:3px;color:#8f887c;align-items:center;"><span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;padding:3px 8px;border-radius:5px;border:1px solid #3a352d;color:#a39d92;margin-right:2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"></path><line x1="8" y1="7" x2="14" y2="7"></line></svg>Catalog</span><span style="border:1px solid #3a352d;border-radius:4px;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;">↓</span><span style="border:1px solid #3a352d;border-radius:4px;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;">×</span></div></div>
+              <div style="border:1px solid #3a352d;border-radius:6px;padding:8px 10px;font-size:0.78rem;background:#1b1914;color:#a39d92;">Search today's headlines and summarize the top 10.</div>
+            </div>
+            <div style="border:1px dashed #3a352d;border-radius:7px;padding:7px;text-align:center;font-size:0.78rem;color:#4fb0a5;">+ Add step</div>
+          </div>
+        </div>
+
+        <!-- Guided planning -->
+        <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 14px;background:#16140f;border-bottom:1px solid #2a2621;"><span style="font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#4fb0a5;">Guided planning</span><span style="font-size:0.76rem;color:#8f887c;">Interview → phased plan</span></div>
+          <div style="padding:14px;">
+            <div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">What do you want to build? <span style="color:#4fb0a5;">(required)</span></div>
+            <div style="border:1px solid #3a352d;border-radius:7px;padding:9px 11px;font-size:0.78rem;background:#1b1914;color:#a39d92;line-height:1.45;height:64px;margin-bottom:12px;">A job type that interviews me one question at a time and writes a dependency-ordered plan.</div>
+            <div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Output folder</div>
+            <div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.82rem;background:#1b1914;font-family:ui-monospace,Menlo,monospace;color:#a39d92;">plan/guided-planning/</div>
+          </div>
+        </div>
+
+        <!-- Audit -->
+        <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 14px;background:#16140f;border-bottom:1px solid #2a2621;"><span style="font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#4fb0a5;">Audit</span><span style="font-size:0.76rem;color:#8f887c;">Sample × N → verify → report</span></div>
+          <div style="padding:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><span style="font-size:0.76rem;color:#8f887c;">Audit prompt</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;padding:3px 8px;border-radius:5px;border:1px solid #3a352d;color:#a39d92;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"></path><line x1="8" y1="7" x2="14" y2="7"></line></svg>Catalog</span></div>
+            <div style="border:1px solid #3a352d;border-radius:7px;padding:8px 10px;font-size:0.78rem;background:#1b1914;color:#a39d92;margin-bottom:10px;">Find duplicated logic; anchor to file + line range.</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+              <div><div style="font-size:0.72rem;color:#8f887c;margin-bottom:3px;">Runs</div><div style="border:1px solid #3a352d;border-radius:6px;padding:6px 10px;font-size:0.82rem;background:#1b1914;">8</div></div>
+              <div><div style="font-size:0.72rem;color:#8f887c;margin-bottom:3px;">Max turns</div><div style="border:1px solid #3a352d;border-radius:6px;padding:6px 10px;font-size:0.82rem;background:#1b1914;">200</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px;"><div style="width:16px;height:16px;border-radius:4px;background:#4fb0a5;flex-shrink:0;display:flex;align-items:center;justify-content:center;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#06201c" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg></div><span style="font-size:0.78rem;color:#a39d92;">Read-only runs</span></div>
+            <div style="margin-top:10px;"><div style="font-size:0.72rem;color:#8f887c;margin-bottom:3px;">Output file <span style="opacity:.65;">optional</span></div><div style="border:1px solid #3a352d;border-radius:6px;padding:6px 10px;font-size:0.8rem;background:#1b1914;font-family:ui-monospace,Menlo,monospace;color:#a39d92;">AUDIT.md</div></div>
+            <div style="margin-top:10px;border:1px solid #2a2621;border-radius:7px;background:#16140f;display:flex;align-items:center;gap:8px;padding:8px 10px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg><span style="font-size:0.74rem;color:#a39d92;">Advanced — sample &amp; verify prompts</span></div>
+          </div>
+        </div>
+
+        <!-- Autonomous coding -->
+        <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 14px;background:#16140f;border-bottom:1px solid #2a2621;"><span style="font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#4fb0a5;">Autonomous coding</span><span style="font-size:0.76rem;color:#8f887c;">Unattended, step-by-step</span></div>
+          <div style="padding:14px;">
+            <div style="display:flex;gap:10px;margin-bottom:10px;">
+              <div style="flex:1;"><div style="font-size:0.72rem;color:#8f887c;margin-bottom:3px;">Plan directory <span style="color:#4fb0a5;">(required)</span></div><div style="border:1px solid #3a352d;border-radius:6px;padding:6px 10px;font-size:0.8rem;background:#1b1914;font-family:ui-monospace,Menlo,monospace;color:#a39d92;">plan/my-feature/</div></div>
+              <div style="width:96px;"><div style="font-size:0.72rem;color:#8f887c;margin-bottom:3px;">Max attempts</div><div style="border:1px solid #3a352d;border-radius:6px;padding:6px 10px;font-size:0.82rem;background:#1b1914;">3</div></div>
+            </div>
+            <div style="margin-bottom:10px;"><div style="font-size:0.72rem;color:#8f887c;margin-bottom:3px;">Verify command <span style="opacity:.65;">recommended</span></div><div style="border:1px solid #3a352d;border-radius:6px;padding:6px 10px;font-size:0.8rem;background:#1b1914;font-family:ui-monospace,Menlo,monospace;color:#a39d92;">npm test</div></div>
+            <div style="margin-bottom:10px;"><div style="font-size:0.72rem;color:#8f887c;margin-bottom:3px;">If commit signing fails mid-run</div><div style="border:1px solid #3a352d;border-radius:6px;padding:6px 10px;font-size:0.8rem;background:#1b1914;display:flex;justify-content:space-between;">Commit unsigned — re-sign before push<span style="color:#8f887c;">▾</span></div></div>
+            <div style="border:1px solid #2a2621;border-radius:7px;background:#16140f;padding:8px 10px;font-size:0.74rem;color:#8f887c;line-height:1.45;">Runs <b style="color:#cebfa8;">fully unattended</b> after a preflight interview — one atomic step at a time, verified and committed.</div>
+          </div>
+        </div>
+
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:12px 2px 0;line-height:1.55;">Each job type swaps in its own fields below the shared Basics / Where &amp; when / Model sections — Research's step list, Audit's sampling config, Guided planning's seed idea, and Autonomous coding's plan/verify/attempts. All restyled to the new system (shown in teal).</p>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:0 56px 80px;">
+  <div style="display:flex;align-items:center;gap:10px;margin:0 0 20px;">
+    <div style="width:8px;height:8px;border-radius:50%;background:#6f6a61;"></div>
+    <h2 style="font-size:1.05rem;margin:0;font-weight:600;color:#a39d92;">Turn 1 — bronze &amp; all directions (for reference)</h2>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:44px;align-items:flex-start;">
+
+    <!-- ================= REFERENCE: CURRENT JOB EDITOR ================= -->
+    <div style="width:560px;">
+      <div style="margin-bottom:12px;">
+        <span style="display:inline-block;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;color:#6f6a61;border:1px solid #302d29;padding:3px 8px;border-radius:5px;">Current</span>
+        <span style="margin-left:8px;color:#a39d92;font-size:0.9rem;">Job editor today</span>
+      </div>
+      <!-- current dark palette: bg #111, bg2 #1a1a1a, border #2e2e2e, accent #60a5fa, text2 #9ca3af -->
+      <div style="background:#111;border:1px solid #2e2e2e;border-radius:10px;overflow:hidden;display:flex;height:620px;">
+        <!-- job list -->
+        <div style="width:150px;flex-shrink:0;border-right:1px solid #2e2e2e;background:#1a1a1a;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #2e2e2e;">
+            <span style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;font-weight:600;">Jobs</span>
+            <span style="font-size:0.72rem;border:1px solid #2e2e2e;border-radius:4px;padding:2px 7px;color:#e5e5e5;">+ New</span>
+          </div>
+          <div style="padding:8px 12px;border-bottom:1px solid #2e2e2e;background:color-mix(in srgb,#60a5fa 12%,transparent);">
+            <div style="font-size:0.85rem;">Morning headlines</div>
+            <div style="font-size:0.72rem;color:#9ca3af;margin-top:2px;">Daily · 09:00</div>
+          </div>
+          <div style="padding:8px 12px;border-bottom:1px solid #2e2e2e;">
+            <div style="font-size:0.85rem;">Repo audit</div>
+            <div style="font-size:0.72rem;color:#9ca3af;margin-top:2px;">Manual</div>
+          </div>
+        </div>
+        <!-- editor -->
+        <div style="flex:1;padding:14px 16px;overflow-y:auto;">
+          <div style="font-size:0.95rem;font-weight:600;margin-bottom:12px;">Edit job</div>
+          <div style="margin-bottom:11px;"><div style="font-size:0.8rem;color:#9ca3af;margin-bottom:4px;">Job type</div><div style="border:1px solid #2e2e2e;border-radius:6px;padding:8px 10px;font-size:0.85rem;background:#111;">Research ▾</div></div>
+          <div style="margin-bottom:11px;"><div style="font-size:0.8rem;color:#9ca3af;margin-bottom:4px;">Name</div><div style="border:1px solid #2e2e2e;border-radius:6px;padding:8px 10px;font-size:0.85rem;background:#111;color:#9ca3af;">Morning headlines</div></div>
+          <div style="margin-bottom:11px;"><div style="font-size:0.8rem;color:#9ca3af;margin-bottom:4px;">Description</div><div style="border:1px solid #2e2e2e;border-radius:6px;padding:8px 10px;font-size:0.85rem;background:#111;color:#6f6a61;">Optional</div></div>
+          <div style="margin-bottom:11px;"><div style="font-size:0.8rem;color:#9ca3af;margin-bottom:4px;">Working directory <span style="color:#9ca3af;opacity:.7;">(optional)</span></div><div style="display:flex;gap:6px;"><div style="flex:1;border:1px solid #2e2e2e;border-radius:6px;padding:8px 10px;font-size:0.85rem;background:#111;color:#6f6a61;">Leave blank if…</div><div style="border:1px solid #2e2e2e;border-radius:6px;padding:8px 10px;font-size:0.8rem;">Browse…</div></div></div>
+          <div style="margin-bottom:11px;"><div style="font-size:0.8rem;color:#9ca3af;margin-bottom:4px;">Schedule</div><div style="border:1px solid #2e2e2e;border-radius:6px;padding:8px 10px;font-size:0.85rem;background:#111;">Daily ▾</div></div>
+          <div style="font-size:0.8rem;color:#9ca3af;margin-bottom:6px;">Model</div>
+          <!-- the 3 stacked radio cards = the space hog -->
+          <div style="border:1px solid #60a5fa;border-radius:6px;padding:9px 11px;margin-bottom:7px;display:flex;gap:9px;background:color-mix(in srgb,#60a5fa 8%,transparent);">
+            <div style="width:15px;height:15px;border-radius:50%;border:4px solid #60a5fa;flex-shrink:0;margin-top:1px;"></div>
+            <div><div style="font-size:0.83rem;font-weight:500;">Settings model (default)</div><div style="font-size:0.74rem;color:#9ca3af;margin-top:2px;">Uses whatever backend Settings has active.</div></div>
+          </div>
+          <div style="border:1px solid #2e2e2e;border-radius:6px;padding:9px 11px;margin-bottom:7px;display:flex;gap:9px;">
+            <div style="width:15px;height:15px;border-radius:50%;border:1px solid #6f6a61;flex-shrink:0;margin-top:1px;"></div>
+            <div><div style="font-size:0.83rem;font-weight:500;">Remote server</div><div style="font-size:0.74rem;color:#9ca3af;margin-top:2px;">A specific OpenAI-compatible server for this job.</div></div>
+          </div>
+          <div style="border:1px solid #2e2e2e;border-radius:6px;padding:9px 11px;margin-bottom:14px;display:flex;gap:9px;">
+            <div style="width:15px;height:15px;border-radius:50%;border:1px solid #6f6a61;flex-shrink:0;margin-top:1px;"></div>
+            <div><div style="font-size:0.83rem;font-weight:500;">OpenRouter (cloud)</div><div style="font-size:0.74rem;color:#9ca3af;margin-top:2px;">A specific OpenRouter model — prompts leave your device.</div></div>
+          </div>
+          <div style="border-top:1px solid #2e2e2e;padding-top:10px;display:flex;justify-content:space-between;">
+            <div style="border:1px solid #3b1111;color:#f87171;border-radius:6px;padding:6px 12px;font-size:0.82rem;">Delete</div>
+            <div style="display:flex;gap:8px;"><div style="border:1px solid #2e2e2e;border-radius:6px;padding:6px 12px;font-size:0.82rem;">Cancel</div><div style="background:#60a5fa;color:#fff;border-radius:6px;padding:6px 14px;font-size:0.82rem;">Save</div></div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#6f6a61;font-size:0.8rem;margin:10px 2px 0;line-height:1.5;">Flat stack of fields with no visual grouping; the three model-source cards dominate the pane and push the actions below the fold.</p>
+    </div>
+
+    <!-- ================= 1a JOB EDITOR — GROUPED CARDS ================= -->
+    <div id="1a" style="width:600px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="display:inline-block;font-size:0.8rem;font-weight:700;color:#0d0c0b;background:#cc9a52;padding:3px 10px;border-radius:6px;">1a</span>
+        <span style="font-weight:600;">Job editor — grouped cards</span>
+      </div>
+      <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;display:flex;height:620px;box-shadow:0 10px 34px rgba(0,0,0,.4);">
+        <!-- job list -->
+        <div style="width:158px;flex-shrink:0;border-right:1px solid #2a2621;background:#16140f;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-bottom:1px solid #2a2621;">
+            <span style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:#8f887c;font-weight:600;">Jobs</span>
+            <span style="font-size:0.72rem;border:1px solid #3a352d;border-radius:5px;padding:2px 8px;color:#ece7dd;">+ New</span>
+          </div>
+          <div style="padding:9px 12px;border-left:2px solid #cc9a52;background:color-mix(in srgb,#cc9a52 10%,transparent);">
+            <div style="font-size:0.85rem;display:flex;align-items:center;gap:6px;">Morning headlines</div>
+            <div style="font-size:0.7rem;color:#8f887c;margin-top:3px;display:flex;align-items:center;gap:5px;"><span style="width:5px;height:5px;border-radius:50%;background:#6fae6a;display:inline-block;"></span>Daily · 09:00</div>
+          </div>
+          <div style="padding:9px 12px 9px 14px;">
+            <div style="font-size:0.85rem;">Repo audit</div>
+            <div style="font-size:0.7rem;color:#8f887c;margin-top:3px;">Manual</div>
+          </div>
+        </div>
+        <!-- editor -->
+        <div style="flex:1;padding:16px 18px;overflow-y:auto;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="font-size:1rem;font-weight:600;">Edit job</div>
+            <span style="font-size:0.66rem;letter-spacing:0.05em;text-transform:uppercase;color:#8f887c;background:#1e1c18;border:1px solid #322e28;padding:3px 8px;border-radius:999px;">Research</span>
+          </div>
+
+          <!-- CARD: Basics -->
+          <div style="background:#16140f;border:1px solid #2a2621;border-radius:9px;padding:13px 14px;margin-bottom:12px;">
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:#cc9a52;font-weight:600;margin-bottom:11px;">Basics</div>
+            <div style="margin-bottom:10px;"><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Name</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;">Morning headlines</div></div>
+            <div style="display:flex;gap:10px;">
+              <div style="flex:1;"><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Type</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;display:flex;justify-content:space-between;">Research<span style="color:#8f887c;">▾</span></div></div>
+              <div style="flex:1.4;"><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Description</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;color:#6f6a61;">Optional note</div></div>
+            </div>
+          </div>
+
+          <!-- CARD: Where it runs -->
+          <div style="background:#16140f;border:1px solid #2a2621;border-radius:9px;padding:13px 14px;margin-bottom:12px;">
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:#cc9a52;font-weight:600;margin-bottom:11px;">Where &amp; when</div>
+            <div style="margin-bottom:10px;"><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Working directory <span style="opacity:.65;">optional</span></div>
+              <div style="display:flex;gap:6px;"><div style="flex:1;border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;color:#6f6a61;display:flex;align-items:center;gap:8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Not set</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 12px;font-size:0.8rem;background:#1e1c18;">Browse…</div></div>
+            </div>
+            <div><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Schedule</div>
+              <div style="display:flex;gap:8px;">
+                <div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;display:flex;align-items:center;gap:8px;flex:1;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>Daily<span style="color:#8f887c;margin-left:auto;">▾</span></div>
+                <div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;width:96px;">09:00</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD: Model (compact segmented) -->
+          <div style="background:#16140f;border:1px solid #2a2621;border-radius:9px;padding:13px 14px;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:#cc9a52;font-weight:600;">Model</div>
+            </div>
+            <div style="display:flex;background:#100f0d;border:1px solid #322e28;border-radius:8px;padding:3px;gap:3px;">
+              <div style="flex:1;text-align:center;padding:6px 4px;border-radius:6px;font-size:0.78rem;background:#cc9a52;color:#0d0c0b;font-weight:600;">Settings</div>
+              <div style="flex:1;text-align:center;padding:6px 4px;border-radius:6px;font-size:0.78rem;color:#a39d92;">Remote</div>
+              <div style="flex:1;text-align:center;padding:6px 4px;border-radius:6px;font-size:0.78rem;color:#a39d92;">OpenRouter</div>
+            </div>
+            <div style="font-size:0.76rem;color:#8f887c;margin-top:9px;line-height:1.5;display:flex;gap:7px;align-items:flex-start;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="2" style="margin-top:1px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Follows your active Settings backend. Pick Remote or OpenRouter to pin this job to a specific server — fields appear only then.</div>
+          </div>
+
+          <!-- sticky action bar -->
+          <div style="position:sticky;bottom:-16px;background:linear-gradient(#100f0d00,#100f0d 22%);padding:12px 0 2px;margin:0 -18px -16px;">
+            <div style="border-top:1px solid #2a2621;padding:12px 18px 0;display:flex;justify-content:space-between;">
+              <div style="border:1px solid #47201d;color:#dd6b60;border-radius:7px;padding:7px 13px;font-size:0.82rem;">Delete</div>
+              <div style="display:flex;gap:8px;"><div style="border:1px solid #3a352d;border-radius:7px;padding:7px 13px;font-size:0.82rem;color:#ece7dd;">Cancel</div><div style="background:#cc9a52;color:#0d0c0b;border-radius:7px;padding:7px 16px;font-size:0.82rem;font-weight:600;">Save job</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:10px 2px 0;line-height:1.55;">Fields grouped into three labeled cards (<b style="color:#cebfa8;">Basics</b>, <b style="color:#cebfa8;">Where &amp; when</b>, <b style="color:#cebfa8;">Model</b>). The model source collapses to a 3-way segmented control — no more three stacked cards — and expands inline only when you pick Remote/OpenRouter. Actions dock to a sticky footer.</p>
+    </div>
+
+    <!-- ================= 1b JOB EDITOR — COLLAPSIBLE ================= -->
+    <div id="1b" style="width:560px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="display:inline-block;font-size:0.8rem;font-weight:700;color:#0d0c0b;background:#cc9a52;padding:3px 10px;border-radius:6px;">1b</span>
+        <span style="font-weight:600;">Job editor — collapsible sections</span>
+      </div>
+      <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;display:flex;height:620px;box-shadow:0 10px 34px rgba(0,0,0,.4);">
+        <div style="width:150px;flex-shrink:0;border-right:1px solid #2a2621;background:#16140f;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-bottom:1px solid #2a2621;">
+            <span style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:#8f887c;font-weight:600;">Jobs</span>
+            <span style="font-size:0.72rem;border:1px solid #3a352d;border-radius:5px;padding:2px 8px;">+ New</span>
+          </div>
+          <div style="padding:9px 12px;border-left:2px solid #cc9a52;background:color-mix(in srgb,#cc9a52 10%,transparent);"><div style="font-size:0.85rem;">Morning headlines</div><div style="font-size:0.7rem;color:#8f887c;margin-top:3px;">Daily · 09:00</div></div>
+        </div>
+        <div style="flex:1;padding:16px 18px;overflow-y:auto;">
+          <div style="font-size:1rem;font-weight:600;margin-bottom:4px;">Edit job</div>
+          <div style="font-size:0.78rem;color:#8f887c;margin-bottom:16px;">Research · Daily 09:00 · Settings model</div>
+
+          <!-- open section -->
+          <div style="border:1px solid #2a2621;border-radius:9px;overflow:hidden;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:9px;padding:11px 13px;background:#16140f;border-bottom:1px solid #2a2621;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#cc9a52" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <span style="font-size:0.82rem;font-weight:600;">Basics</span>
+            </div>
+            <div style="padding:13px;">
+              <div style="margin-bottom:10px;"><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Name</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;">Morning headlines</div></div>
+              <div><div style="font-size:0.76rem;color:#8f887c;margin-bottom:4px;">Description</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;color:#6f6a61;">Optional</div></div>
+            </div>
+          </div>
+
+          <!-- collapsed rows: summary on the right -->
+          <div style="border:1px solid #2a2621;border-radius:9px;background:#16140f;display:flex;align-items:center;gap:9px;padding:12px 13px;margin-bottom:10px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <span style="font-size:0.82rem;font-weight:600;">Where &amp; when</span>
+            <span style="margin-left:auto;font-size:0.76rem;color:#8f887c;">No folder · Daily 09:00</span>
+          </div>
+
+          <!-- open Model section w/ segmented -->
+          <div style="border:1px solid #2a2621;border-radius:9px;overflow:hidden;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:9px;padding:11px 13px;background:#16140f;border-bottom:1px solid #2a2621;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#cc9a52" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <span style="font-size:0.82rem;font-weight:600;">Model</span>
+              <span style="margin-left:auto;font-size:0.72rem;color:#8f887c;background:#1e1c18;border:1px solid #322e28;border-radius:999px;padding:2px 9px;">Settings default</span>
+            </div>
+            <div style="padding:13px;">
+              <div style="display:flex;background:#100f0d;border:1px solid #322e28;border-radius:8px;padding:3px;gap:3px;">
+                <div style="flex:1;text-align:center;padding:6px 4px;border-radius:6px;font-size:0.78rem;background:#cc9a52;color:#0d0c0b;font-weight:600;">Settings</div>
+                <div style="flex:1;text-align:center;padding:6px 4px;border-radius:6px;font-size:0.78rem;color:#a39d92;">Remote</div>
+                <div style="flex:1;text-align:center;padding:6px 4px;border-radius:6px;font-size:0.78rem;color:#a39d92;">OpenRouter</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid #2a2621;border-radius:9px;background:#16140f;display:flex;align-items:center;gap:9px;padding:12px 13px;margin-bottom:16px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8f887c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <span style="font-size:0.82rem;font-weight:600;">Steps</span>
+            <span style="margin-left:auto;font-size:0.76rem;color:#8f887c;">1 step</span>
+          </div>
+
+          <div style="border-top:1px solid #2a2621;padding-top:12px;display:flex;justify-content:space-between;">
+            <div style="border:1px solid #47201d;color:#dd6b60;border-radius:7px;padding:7px 13px;font-size:0.82rem;">Delete</div>
+            <div style="display:flex;gap:8px;"><div style="border:1px solid #3a352d;border-radius:7px;padding:7px 13px;font-size:0.82rem;">Cancel</div><div style="background:#cc9a52;color:#0d0c0b;border-radius:7px;padding:7px 16px;font-size:0.82rem;font-weight:600;">Save</div></div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:10px 2px 0;line-height:1.55;">Same groups, but each is a collapsible section showing a one-line summary when closed — so a saved job opens to a short, scannable overview and you expand only what you're changing. Best if editing long jobs feels like a marathon scroll.</p>
+    </div>
+
+    <!-- ================= REFERENCE: CURRENT SETTINGS ================= -->
+    <div style="width:560px;">
+      <div style="margin-bottom:12px;">
+        <span style="display:inline-block;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;color:#6f6a61;border:1px solid #302d29;padding:3px 8px;border-radius:5px;">Current</span>
+        <span style="margin-left:8px;color:#a39d92;font-size:0.9rem;">Settings today</span>
+      </div>
+      <div style="background:#111;border:1px solid #2e2e2e;border-radius:10px;overflow:hidden;height:560px;">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid #2e2e2e;"><div style="border:1px solid #2e2e2e;border-radius:6px;padding:5px 11px;font-size:0.85rem;">← Back</div><div style="font-size:1.15rem;font-weight:600;">Settings</div></div>
+        <div style="display:flex;height:calc(560px - 51px);">
+          <div style="width:150px;flex-shrink:0;border-right:1px solid #2e2e2e;padding:14px 8px;display:flex;flex-direction:column;gap:2px;">
+            <div style="padding:7px 11px;border-radius:6px;font-size:0.85rem;background:color-mix(in srgb,#60a5fa 12%,transparent);color:#60a5fa;">General</div>
+            <div style="padding:7px 11px;font-size:0.85rem;color:#e5e5e5;">Inference</div>
+            <div style="padding:7px 11px;font-size:0.85rem;color:#e5e5e5;">Agent</div>
+            <div style="padding:7px 11px;font-size:0.85rem;color:#e5e5e5;">Audio</div>
+            <div style="padding:7px 11px;font-size:0.85rem;color:#e5e5e5;">Search</div>
+            <div style="padding:7px 11px;font-size:0.85rem;color:#e5e5e5;">Integrations</div>
+            <div style="padding:7px 11px;font-size:0.85rem;color:#e5e5e5;">Shell</div>
+          </div>
+          <div style="flex:1;padding:0 22px;overflow-y:auto;">
+            <div style="font-size:1.1rem;margin:18px 0 16px;padding-bottom:12px;border-bottom:1px solid #2e2e2e;">Agent</div>
+            <div style="font-size:1rem;margin-bottom:10px;">Behavior</div>
+            <div style="display:flex;gap:10px;margin-bottom:14px;"><div style="width:15px;height:15px;border:1px solid #60a5fa;border-radius:3px;background:#60a5fa;flex-shrink:0;margin-top:2px;"></div><div><div style="font-size:0.86rem;font-weight:600;">Reasoning mode</div><div style="font-size:0.76rem;color:#9ca3af;margin-top:2px;line-height:1.45;">Let the model emit a &lt;think&gt; block before its answer. Improves quality on multi-step tasks.</div></div></div>
+            <div style="display:flex;gap:10px;margin-bottom:14px;"><div style="width:15px;height:15px;border:1px solid #60a5fa;border-radius:3px;background:#60a5fa;flex-shrink:0;margin-top:2px;"></div><div><div style="font-size:0.86rem;font-weight:600;">Keep tool results from previous turn</div><div style="font-size:0.76rem;color:#9ca3af;margin-top:2px;line-height:1.45;">Lets followups reference raw research details. Increases context usage.</div></div></div>
+            <div style="font-size:0.85rem;font-weight:500;margin-bottom:6px;">Additional system prompt:</div>
+            <div style="border:1px solid #2e2e2e;border-radius:6px;padding:10px;height:70px;background:#111;color:#6f6a61;font-size:0.82rem;">e.g. "Always answer in British English."</div>
+            <div style="border-top:1px solid #2e2e2e;margin:20px 0;"></div>
+            <div style="font-size:1rem;margin-bottom:10px;">Python Sandbox <span style="font-size:0.62rem;border:1px solid #2e2e2e;border-radius:4px;padding:1px 6px;color:#9ca3af;text-transform:uppercase;">experimental</span></div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#6f6a61;font-size:0.8rem;margin:10px 2px 0;line-height:1.5;">Groups are divided only by a faint hairline rule — easy to miss, so where one section ends and the next begins isn't obvious.</p>
+    </div>
+
+    <!-- ================= 1c SETTINGS — CARDED GROUPS ================= -->
+    <div id="1c" style="width:600px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="display:inline-block;font-size:0.8rem;font-weight:700;color:#0d0c0b;background:#cc9a52;padding:3px 10px;border-radius:6px;">1c</span>
+        <span style="font-weight:600;">Settings — carded groups</span>
+      </div>
+      <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;height:560px;box-shadow:0 10px 34px rgba(0,0,0,.4);">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid #2a2621;"><div style="border:1px solid #3a352d;border-radius:7px;padding:5px 11px;font-size:0.85rem;">← Back</div><div style="font-size:1.15rem;font-weight:600;">Settings</div></div>
+        <div style="display:flex;height:calc(560px - 51px);">
+          <div style="width:172px;flex-shrink:0;border-right:1px solid #2a2621;padding:14px 8px;display:flex;flex-direction:column;gap:2px;background:#16140f;">
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>General</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>Inference</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;background:color-mix(in srgb,#cc9a52 13%,transparent);color:#cc9a52;font-weight:500;border:1px solid color-mix(in srgb,#cc9a52 35%,transparent);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1 3 3 3 3 0 0 1 0 6 3 3 0 0 1-3 3v1a3 3 0 0 1-6 0v-1a3 3 0 0 1-3-3 3 3 0 0 1 0-6 3 3 0 0 1 3-3V5a3 3 0 0 1 3-3z"/></svg>Agent</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4M7 6v12M12 3v18M17 8v8M21 11v2"/></svg>Audio</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>Integrations</div>
+            <div style="padding:8px 11px;border-radius:7px;font-size:0.85rem;display:flex;align-items:center;gap:9px;color:#a39d92;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 8 9 12 5 16"/><line x1="12" y1="16" x2="18" y2="16"/></svg>Shell</div>
+          </div>
+          <div style="flex:1;padding:18px 22px;overflow-y:auto;">
+            <div style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Agent</div>
+            <div style="font-size:0.8rem;color:#8f887c;margin-bottom:16px;">How the model reasons, remembers, and runs code.</div>
+
+            <!-- card 1 -->
+            <div style="background:#16140f;border:1px solid #2a2621;border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+              <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#cc9a52;"></span>Behavior</div>
+              <div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:14px;">
+                <div style="width:34px;height:20px;border-radius:999px;background:#cc9a52;flex-shrink:0;position:relative;margin-top:1px;"><div style="width:16px;height:16px;border-radius:50%;background:#0d0c0b;position:absolute;top:2px;right:2px;"></div></div>
+                <div><div style="font-size:0.86rem;font-weight:500;">Reasoning mode</div><div style="font-size:0.77rem;color:#8f887c;margin-top:2px;line-height:1.45;">Emit a &lt;think&gt; block before answering. Better on multi-step tasks.</div></div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:11px;">
+                <div style="width:34px;height:20px;border-radius:999px;background:#2e2a24;border:1px solid #3a352d;flex-shrink:0;position:relative;margin-top:1px;"><div style="width:16px;height:16px;border-radius:50%;background:#8f887c;position:absolute;top:1px;left:2px;"></div></div>
+                <div><div style="font-size:0.86rem;font-weight:500;">Keep previous turn's tool results</div><div style="font-size:0.77rem;color:#8f887c;margin-top:2px;line-height:1.45;">Followups can reference raw research. Uses more context.</div></div>
+              </div>
+            </div>
+
+            <!-- card 2 -->
+            <div style="background:#16140f;border:1px solid #2a2621;border-radius:10px;padding:15px 16px;margin-bottom:14px;">
+              <div style="font-size:0.9rem;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#cc9a52;"></span>Custom system prompt</div>
+              <div style="border:1px solid #3a352d;border-radius:7px;padding:10px;height:64px;background:#1b1914;color:#6f6a61;font-size:0.82rem;font-family:ui-monospace,Menlo,monospace;">Always answer in British English.</div>
+            </div>
+
+            <!-- card 3 -->
+            <div style="background:#16140f;border:1px solid #2a2621;border-radius:10px;padding:15px 16px;">
+              <div style="font-size:0.9rem;font-weight:600;display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#cc9a52;"></span>Python sandbox <span style="font-size:0.62rem;border:1px solid #3a352d;border-radius:4px;padding:1px 6px;color:#8f887c;text-transform:uppercase;font-weight:600;">experimental</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:10px 2px 0;line-height:1.55;">Each group becomes a bordered card with a dotted heading, so boundaries read instantly instead of relying on a hairline. Rail gets icons + an active pill; toggles become real switches. A one-line subtitle under the page title says what the section is for.</p>
+    </div>
+
+    <!-- ================= 1d SETTINGS — RAIL + SECTION HEADERS ================= -->
+    <div id="1d" style="width:560px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="display:inline-block;font-size:0.8rem;font-weight:700;color:#0d0c0b;background:#cc9a52;padding:3px 10px;border-radius:6px;">1d</span>
+        <span style="font-weight:600;">Settings — grouped rail + strong headers</span>
+      </div>
+      <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;overflow:hidden;height:560px;box-shadow:0 10px 34px rgba(0,0,0,.4);">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid #2a2621;"><div style="border:1px solid #3a352d;border-radius:7px;padding:5px 11px;font-size:0.85rem;">← Back</div><div style="font-size:1.15rem;font-weight:600;">Settings</div></div>
+        <div style="display:flex;height:calc(560px - 51px);">
+          <div style="width:172px;flex-shrink:0;border-right:1px solid #2a2621;padding:14px 10px;background:#16140f;overflow-y:auto;">
+            <div style="font-size:0.64rem;text-transform:uppercase;letter-spacing:0.08em;color:#6f6a61;padding:4px 8px;margin-bottom:2px;">Core</div>
+            <div style="padding:7px 10px;font-size:0.85rem;color:#a39d92;border-radius:6px;">General</div>
+            <div style="padding:7px 10px;font-size:0.85rem;color:#cc9a52;border-left:2px solid #cc9a52;background:color-mix(in srgb,#cc9a52 9%,transparent);border-radius:0 6px 6px 0;font-weight:500;">Inference</div>
+            <div style="padding:7px 10px;font-size:0.85rem;color:#a39d92;">Agent</div>
+            <div style="font-size:0.64rem;text-transform:uppercase;letter-spacing:0.08em;color:#6f6a61;padding:4px 8px;margin:10px 0 2px;">Capabilities</div>
+            <div style="padding:7px 10px;font-size:0.85rem;color:#a39d92;">Audio</div>
+            <div style="padding:7px 10px;font-size:0.85rem;color:#a39d92;">Search</div>
+            <div style="padding:7px 10px;font-size:0.85rem;color:#a39d92;">Integrations</div>
+            <div style="padding:7px 10px;font-size:0.85rem;color:#a39d92;">Shell</div>
+            <div style="font-size:0.64rem;text-transform:uppercase;letter-spacing:0.08em;color:#6f6a61;padding:4px 8px;margin:10px 0 2px;">About</div>
+            <div style="padding:7px 10px;font-size:0.85rem;color:#a39d92;">Feedback</div>
+          </div>
+          <div style="flex:1;padding:20px 24px;overflow-y:auto;">
+            <div style="font-size:1.15rem;font-weight:600;margin-bottom:20px;">Inference</div>
+            <!-- strong section header -->
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+              <span style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.07em;color:#cc9a52;font-weight:700;">Backend</span>
+              <span style="flex:1;height:1px;background:linear-gradient(90deg,#3a352d,transparent);"></span>
+            </div>
+            <div style="display:flex;background:#16140f;border:1px solid #322e28;border-radius:8px;padding:3px;gap:3px;margin-bottom:10px;max-width:280px;">
+              <div style="flex:1;text-align:center;padding:7px;border-radius:6px;font-size:0.8rem;background:#cc9a52;color:#0d0c0b;font-weight:600;">Local</div>
+              <div style="flex:1;text-align:center;padding:7px;border-radius:6px;font-size:0.8rem;color:#a39d92;">Remote</div>
+            </div>
+            <div style="font-size:0.78rem;color:#8f887c;margin-bottom:24px;line-height:1.5;">Runs the bundled llama-server on your GPU. Nothing leaves your device.</div>
+
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+              <span style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.07em;color:#cc9a52;font-weight:700;">Context</span>
+              <span style="flex:1;height:1px;background:linear-gradient(90deg,#3a352d,transparent);"></span>
+            </div>
+            <div style="font-size:0.8rem;color:#a39d92;margin-bottom:6px;">Context size</div>
+            <div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;max-width:200px;margin-bottom:8px;">8,192 tokens</div>
+            <div style="font-size:0.78rem;color:#8f887c;line-height:1.5;">Larger context uses more VRAM. The wizard picks a safe default for your hardware.</div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:10px 2px 0;line-height:1.55;">Lighter-weight alternative: no cards, but every group gets a bold uppercase accent header with a fading rule, and the rail itself is grouped (<b style="color:#cebfa8;">Core / Capabilities / About</b>) so long settings lists stay navigable. Keeps density closer to today.</p>
+    </div>
+
+    <!-- ================= 1e GLOBAL SYSTEM ================= -->
+    <div id="1e" style="width:640px;">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <span style="display:inline-block;font-size:0.8rem;font-weight:700;color:#0d0c0b;background:#cc9a52;padding:3px 10px;border-radius:6px;">1e</span>
+        <span style="font-weight:600;">Global system refresh</span>
+      </div>
+      <div style="background:#100f0d;border:1px solid #322e28;border-radius:10px;padding:20px 22px;box-shadow:0 10px 34px rgba(0,0,0,.4);">
+
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.07em;color:#cc9a52;font-weight:700;margin-bottom:12px;">Warm neutral dark</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+          <div style="text-align:center;"><div style="width:66px;height:44px;border-radius:7px;background:#0d0c0b;border:1px solid #322e28;"></div><div style="font-size:0.66rem;color:#8f887c;margin-top:4px;">app</div></div>
+          <div style="text-align:center;"><div style="width:66px;height:44px;border-radius:7px;background:#16140f;border:1px solid #322e28;"></div><div style="font-size:0.66rem;color:#8f887c;margin-top:4px;">surface</div></div>
+          <div style="text-align:center;"><div style="width:66px;height:44px;border-radius:7px;background:#1e1c18;border:1px solid #322e28;"></div><div style="font-size:0.66rem;color:#8f887c;margin-top:4px;">raised</div></div>
+          <div style="text-align:center;"><div style="width:66px;height:44px;border-radius:7px;background:#322e28;"></div><div style="font-size:0.66rem;color:#8f887c;margin-top:4px;">border</div></div>
+          <div style="text-align:center;"><div style="width:66px;height:44px;border-radius:7px;background:#a39d92;"></div><div style="font-size:0.66rem;color:#8f887c;margin-top:4px;">text-2</div></div>
+          <div style="text-align:center;"><div style="width:66px;height:44px;border-radius:7px;background:#ece7dd;"></div><div style="font-size:0.66rem;color:#8f887c;margin-top:4px;">text-1</div></div>
+        </div>
+        <div style="font-size:0.76rem;color:#8f887c;margin-bottom:18px;line-height:1.5;">Neutrals shifted a hair warm (vs today's cool <span style="color:#9ca3af;">#111 / #2e2e2e</span>) — easier on the eyes for a tool you stare at, and a better bed for the bronze accent.</div>
+
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.07em;color:#cc9a52;font-weight:700;margin-bottom:12px;">Accent — pick one</div>
+        <div style="display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap;">
+          <div style="text-align:center;"><div style="width:56px;height:56px;border-radius:50%;background:#cc9a52;box-shadow:0 0 0 3px #100f0d,0 0 0 4px #cc9a52;"></div><div style="font-size:0.68rem;margin-top:8px;font-weight:600;">Bronze</div><div style="font-size:0.62rem;color:#8f887c;">recommended</div></div>
+          <div style="text-align:center;"><div style="width:56px;height:56px;border-radius:50%;background:#4fb0a5;"></div><div style="font-size:0.68rem;margin-top:8px;color:#a39d92;">Teal</div></div>
+          <div style="text-align:center;"><div style="width:56px;height:56px;border-radius:50%;background:#7c8cf8;"></div><div style="font-size:0.68rem;margin-top:8px;color:#a39d92;">Indigo</div></div>
+          <div style="text-align:center;"><div style="width:56px;height:56px;border-radius:50%;background:#60a5fa;opacity:.6;"></div><div style="font-size:0.68rem;margin-top:8px;color:#8f887c;">Current blue</div></div>
+        </div>
+
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.07em;color:#cc9a52;font-weight:700;margin-bottom:12px;">Components</div>
+        <!-- buttons -->
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+          <div style="background:#cc9a52;color:#0d0c0b;border-radius:7px;padding:7px 15px;font-size:0.83rem;font-weight:600;">Primary</div>
+          <div style="border:1px solid #3a352d;color:#ece7dd;border-radius:7px;padding:7px 15px;font-size:0.83rem;background:#1b1914;">Secondary</div>
+          <div style="border:1px solid #47201d;color:#dd6b60;border-radius:7px;padding:7px 15px;font-size:0.83rem;">Danger</div>
+          <div style="color:#a39d92;padding:7px 12px;font-size:0.83rem;">Ghost</div>
+        </div>
+        <!-- input + field -->
+        <div style="display:flex;gap:10px;margin-bottom:12px;">
+          <div style="flex:1;"><div style="font-size:0.74rem;color:#8f887c;margin-bottom:4px;">Field label</div><div style="border:1px solid #cc9a52;box-shadow:0 0 0 2px color-mix(in srgb,#cc9a52 22%,transparent);border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;">Focused input<span style="color:#cc9a52;">│</span></div></div>
+          <div style="flex:1;"><div style="font-size:0.74rem;color:#8f887c;margin-bottom:4px;">Select</div><div style="border:1px solid #3a352d;border-radius:7px;padding:8px 11px;font-size:0.85rem;background:#1b1914;display:flex;justify-content:space-between;">Option<span style="color:#8f887c;">▾</span></div></div>
+        </div>
+        <!-- segmented + toggle + pills -->
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+          <div style="display:flex;background:#16140f;border:1px solid #322e28;border-radius:8px;padding:3px;gap:3px;">
+            <div style="padding:5px 13px;border-radius:6px;font-size:0.78rem;background:#cc9a52;color:#0d0c0b;font-weight:600;">On</div>
+            <div style="padding:5px 13px;border-radius:6px;font-size:0.78rem;color:#a39d92;">Off</div>
+          </div>
+          <div style="width:38px;height:22px;border-radius:999px;background:#cc9a52;position:relative;"><div style="width:18px;height:18px;border-radius:50%;background:#0d0c0b;position:absolute;top:2px;right:2px;"></div></div>
+          <div style="width:38px;height:22px;border-radius:999px;background:#2e2a24;border:1px solid #3a352d;position:relative;"><div style="width:18px;height:18px;border-radius:50%;background:#8f887c;position:absolute;top:1px;left:2px;"></div></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,#cc9a52 15%,transparent);border:1px solid #cc9a52;color:#cc9a52;">running</span>
+          <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,#6fae6a 15%,transparent);border:1px solid #6fae6a;color:#6fae6a;">succeeded</span>
+          <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,#dd6b60 14%,transparent);border:1px solid #dd6b60;color:#dd6b60;">failed</span>
+          <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em;padding:2px 9px;border-radius:999px;background:#1e1c18;border:1px solid #322e28;color:#8f887c;">queued</span>
+        </div>
+      </div>
+      <p style="color:#8f887c;font-size:0.8rem;margin:10px 2px 0;line-height:1.55;">The shared primitives (buttons, fields, toggles, pills, the new segmented control) restyled once in <span style="font-family:ui-monospace,monospace;font-size:0.75rem;">+layout.svelte</span> — every screen inherits it. Toggles become switches; the segmented control replaces stacked radio cards app-wide.</p>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+</body>
+</html>
