@@ -244,7 +244,6 @@
 </section>
 
 {#if !remoteMode}
-	<ApiKeysSection />
 	{#if pendingRestart}
 		<div class="restart-banner" role="status">
 			<span class="spinner restart-spinner" aria-hidden="true"></span>
@@ -302,6 +301,8 @@
 			{/if}
 		</div>
 	</section>
+
+	<ApiKeysSection />
 {/if}
 
 <style>
