@@ -97,7 +97,8 @@ export interface JobTypeDefinition {
 	description: string;
 	/** JobList badge text; defaults to the raw job_type value. */
 	badgeLabel?: string;
-	/** Extra CSS class on the JobList badge (e.g. research's muted tone). */
+	/** Extra CSS class on the JobList badge for a type-specific tint.
+	 *  Unset = the standard accent badge (all current types). */
 	badgeTone?: string;
 	/**
 	 * Whether runs execute the job's authored steps. True types can't run with
