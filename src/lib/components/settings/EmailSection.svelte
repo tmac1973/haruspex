@@ -74,7 +74,7 @@
 	onMount(loadEmailPresets);
 </script>
 
-<section>
+<section class="settings-section">
 	<h2>Email (read-only)</h2>
 	<p class="section-help">
 		Multi-provider IMAP access for reading recent email and summarizing it. Supports Gmail,
@@ -100,16 +100,6 @@
 </section>
 
 <style>
-	section {
-		margin-bottom: 32px;
-	}
-
-	h2 {
-		font-size: 1rem;
-		margin: 0 0 8px 0;
-		color: var(--text-primary);
-	}
-
 	.section-help {
 		color: var(--text-secondary);
 		font-size: 0.85rem;

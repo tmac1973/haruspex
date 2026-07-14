@@ -772,9 +772,9 @@
 		font-family: inherit;
 		font-size: 0.85rem;
 		line-height: 1.4;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
+		background: var(--bg-input);
 		color: var(--text-primary);
 		outline: none;
 	}
@@ -826,7 +826,7 @@
 
 	.composer .send {
 		background: var(--accent);
-		color: white;
+		color: var(--accent-contrast);
 		border: 1px solid var(--accent);
 	}
 

@@ -411,7 +411,7 @@
 		padding: 1px 8px;
 		font-size: 0.72rem;
 		color: var(--text-secondary);
-		background: rgba(120, 160, 220, 0.12);
+		background: var(--accent-soft);
 		border-radius: 3px;
 		white-space: nowrap;
 	}

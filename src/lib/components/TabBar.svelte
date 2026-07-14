@@ -59,7 +59,7 @@
 		appearance: none;
 		background: none;
 		border: none;
-		padding: 8px 16px;
+		padding: 9px 18px;
 		font-size: 0.85rem;
 		font-weight: 500;
 		color: var(--text-secondary);
@@ -90,9 +90,9 @@
 		margin-left: 6px;
 		border-radius: 999px;
 		background: var(--accent);
-		color: white;
+		color: var(--accent-contrast);
 		font-size: 0.66rem;
-		font-weight: 600;
+		font-weight: 700;
 		line-height: 1;
 		vertical-align: middle;
 	}

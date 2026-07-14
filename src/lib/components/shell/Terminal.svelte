@@ -85,7 +85,7 @@
 			cursorBlink: true,
 			scrollback: 5000,
 			theme: {
-				background: '#1e1e1e',
+				background: '#0c0b0a',
 				foreground: '#d4d4d4',
 				cursor: '#ffffff',
 				selectionBackground: '#264f78'
@@ -452,7 +452,9 @@
 	.terminal-host {
 		position: absolute;
 		inset: 0;
-		background: #1e1e1e;
+		/* Matches the xterm theme background above — an always-dark surface
+		   in both app themes. */
+		background: #0c0b0a;
 		padding: 4px 0 0 4px;
 	}
 

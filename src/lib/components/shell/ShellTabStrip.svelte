@@ -74,7 +74,7 @@
 		align-items: stretch;
 		gap: 2px;
 		padding: 4px 6px 0 6px;
-		background: var(--bg-secondary, #181818);
+		background: var(--bg-secondary);
 		border-bottom: 1px solid var(--border);
 		overflow-x: auto;
 		flex: 0 0 auto;
@@ -102,14 +102,17 @@
 		color: var(--text-primary);
 	}
 
+	/* The active tab connects visually to the terminal below, which is an
+	   always-dark surface — so it keeps the terminal background in both
+	   themes rather than the theme surface. */
 	.tab.active {
-		background: #1e1e1e;
+		background: var(--code-bg);
 		color: var(--text-primary);
 		border-color: var(--border);
 	}
 
 	.busy {
-		color: var(--accent, #4ea1ff);
+		color: var(--accent);
 		font-size: 0.6rem;
 		line-height: 1;
 	}

@@ -51,7 +51,7 @@
 		border-radius: 6px;
 		border: 1px solid var(--accent);
 		background: var(--accent);
-		color: white;
+		color: var(--accent-contrast);
 		font-size: 0.8rem;
 		cursor: pointer;
 	}

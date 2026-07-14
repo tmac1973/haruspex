@@ -126,8 +126,8 @@
 	}
 
 	.mic-btn.recording {
-		background: #ef4444;
-		border-color: #ef4444;
+		background: var(--error-text);
+		border-color: var(--error-text);
 		color: white;
 		animation: pulse-record 1s ease-in-out infinite;
 	}

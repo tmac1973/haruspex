@@ -741,9 +741,9 @@
 		margin: 8px 16px 0;
 		padding: 10px 14px;
 		border: 1px solid var(--border);
-		border-left: 3px solid #c69300;
+		border-left: 3px solid var(--warning);
 		border-radius: 6px;
-		background: color-mix(in srgb, #c69300 6%, var(--bg-primary));
+		background: color-mix(in srgb, var(--warning) 6%, var(--bg-primary));
 		color: var(--text-primary);
 		font-size: 0.82rem;
 		line-height: 1.45;
@@ -796,7 +796,7 @@
 	}
 
 	.cpu-fallback-retry:hover:not(:disabled) {
-		border-color: #c69300;
+		border-color: var(--warning);
 	}
 
 	.cpu-fallback-retry:disabled {
@@ -908,8 +908,8 @@
 	textarea {
 		flex: 1;
 		padding: 10px 12px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
+		border: 1px solid var(--border-strong);
+		border-radius: 9px;
 		resize: none;
 		font-family: inherit;
 		font-size: 0.95rem;
@@ -917,7 +917,7 @@
 		min-height: 40px;
 		max-height: 200px;
 		outline: none;
-		background: var(--bg-primary);
+		background: var(--bg-input);
 		color: var(--text-primary);
 	}
 
@@ -934,12 +934,12 @@
 	.send-btn {
 		padding: 10px 20px;
 		background: var(--accent);
-		color: white;
+		color: var(--accent-contrast);
 		border: none;
-		border-radius: 8px;
+		border-radius: 9px;
 		cursor: pointer;
 		font-size: 0.9rem;
-		font-weight: 500;
+		font-weight: 600;
 		white-space: nowrap;
 	}
 

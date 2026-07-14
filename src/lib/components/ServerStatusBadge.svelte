@@ -78,12 +78,12 @@
 	}
 
 	[data-status='stopped'] .dot {
-		background: #9ca3af;
+		background: var(--text-muted);
 	}
 
 	[data-status='remote'] .dot {
-		background: #3b82f6;
-		box-shadow: 0 0 4px #3b82f680;
+		background: var(--accent);
+		box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 50%, transparent);
 	}
 
 	.label {

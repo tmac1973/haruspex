@@ -32,7 +32,8 @@
 		applyTheme,
 		getActiveLocalModelFilename,
 		getSettings,
-		setActiveLocalModel
+		setActiveLocalModel,
+		updateSettings
 	} from '$lib/stores/settings';
 	import { checkForUpdate, type UpdateInfo } from '$lib/updates';
 	import { invoke } from '@tauri-apps/api/core';
@@ -74,6 +75,43 @@
 	// markdown (sanitization strips inline onclick). Installed in every
 	// window — the detached shell window renders markdown too.
 	onMount(() => installMarkdownActions());
+
+	// Effective theme for the header sun/moon toggle. The settings store
+	// isn't reactive, but applyTheme() is the only writer of `data-theme`,
+	// so observing that attribute + the OS preference covers every way the
+	// theme can change (header toggle, Settings → General, OS switch).
+	let effectiveDark = $state(false);
+
+	function computeEffectiveDark(): boolean {
+		const attr = document.documentElement.getAttribute('data-theme');
+		if (attr === 'dark') return true;
+		if (attr === 'light') return false;
+		return window.matchMedia('(prefers-color-scheme: dark)').matches;
+	}
+
+	onMount(() => {
+		effectiveDark = computeEffectiveDark();
+		const mq = window.matchMedia('(prefers-color-scheme: dark)');
+		const refresh = () => (effectiveDark = computeEffectiveDark());
+		mq.addEventListener('change', refresh);
+		const observer = new MutationObserver(refresh);
+		observer.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ['data-theme']
+		});
+		return () => {
+			mq.removeEventListener('change', refresh);
+			observer.disconnect();
+		};
+	});
+
+	// The header toggle pins an explicit light/dark choice (overriding
+	// 'system'); Settings → General still offers the three-way picker.
+	function toggleTheme() {
+		const next = effectiveDark ? 'light' : 'dark';
+		updateSettings({ theme: next });
+		applyTheme(next);
+	}
 
 	// A model switch or context-size change made while a turn is running is
 	// deferred rather than aborting the turn (see restartServerWhenIdle). This
@@ -339,6 +377,48 @@
 			<ContextIndicator />
 			<button
 				class="header-icon-btn"
+				title="Toggle light / dark"
+				aria-label="Toggle light / dark theme"
+				onclick={toggleTheme}
+			>
+				{#if effectiveDark}
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+					</svg>
+				{:else}
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<circle cx="12" cy="12" r="5"></circle>
+						<line x1="12" y1="1" x2="12" y2="3"></line>
+						<line x1="12" y1="21" x2="12" y2="23"></line>
+						<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+						<line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+						<line x1="1" y1="12" x2="3" y2="12"></line>
+						<line x1="21" y1="12" x2="23" y2="12"></line>
+						<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+						<line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+					</svg>
+				{/if}
+			</button>
+			<button
+				class="header-icon-btn"
 				title="Sidecar Logs"
 				aria-label="View logs"
 				onclick={toggleLogViewer}
@@ -432,60 +512,79 @@
 <Toasts />
 
 <style>
+	/* Warm-neutral palette + teal accent (UI refresh 2026-07). Light inverts
+	   the surface relationship: main content is white, side panels/cards are
+	   the tint. Status colors and the derived tints below are theme-
+	   independent — the dark/light blocks override only the base tokens. */
 	:global(:root) {
 		color-scheme: light;
 		--bg-primary: #ffffff;
-		--bg-secondary: #f9fafb;
+		--bg-secondary: #f4f1ea;
 		--bg-chat: #ffffff;
-		--text-primary: #1a1a1a;
-		--text-secondary: #6b7280;
-		--accent: #3b82f6;
-		--border: #e5e7eb;
-		--code-bg: #1e1e1e;
-		--user-bubble: #eff6ff;
-		--error-bg: #fef2f2;
-		--error-text: #dc2626;
-		--error-border: #fecaca;
-		--success: #16a34a;
-		--warning: #b45309;
+		--bg-raised: #ffffff;
+		--bg-input: #ffffff;
+		--text-primary: #1f1c17;
+		--text-secondary: #5f594f;
+		--text-muted: #867f74;
+		--text-faint: #a29c91;
+		--accent: #2f8f84;
+		--accent-contrast: #ffffff;
+		--border: #e5e0d7;
+		--border-mid: #ece7dd;
+		--border-strong: #d6cfc3;
+		--toggle-off: #e2ddd3;
+		/* Always-dark: code blocks/previews and terminals keep this bg in
+		   both themes. */
+		--code-bg: #0c0b0a;
+		/* Derived tints — resolve against the theme's --accent at use time,
+		   so they live only here. */
+		--user-bubble: color-mix(in srgb, var(--accent) 8%, var(--bg-chat));
+		--accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+		--error-bg: color-mix(in srgb, var(--error-text) 12%, transparent);
+		--error-text: #dd6b60;
+		--error-border: #47201d;
+		--success: #6fae6a;
+		--warning: #d7a13f;
 	}
 
 	@media (prefers-color-scheme: dark) {
 		:global(:root:not([data-theme='light'])) {
 			color-scheme: dark;
-			--bg-primary: #111111;
-			--bg-secondary: #1a1a1a;
-			--bg-chat: #111111;
-			--text-primary: #e5e5e5;
-			--text-secondary: #9ca3af;
-			--accent: #60a5fa;
-			--border: #2e2e2e;
-			--code-bg: #0d0d0d;
-			--user-bubble: #1e293b;
-			--error-bg: #1c1111;
-			--error-text: #f87171;
-			--error-border: #3b1111;
-			--success: #16a34a;
-			--warning: #f59e0b;
+			--bg-primary: #100f0d;
+			--bg-secondary: #16140f;
+			--bg-chat: #100f0d;
+			--bg-raised: #1e1c18;
+			--bg-input: #1b1914;
+			--text-primary: #ece7dd;
+			--text-secondary: #a39d92;
+			--text-muted: #8f887c;
+			--text-faint: #6f6a61;
+			--accent: #4fb0a5;
+			--accent-contrast: #06201c;
+			--border: #2a2621;
+			--border-mid: #322e28;
+			--border-strong: #3a352d;
+			--toggle-off: #2e2a24;
 		}
 	}
 
 	:global(:root[data-theme='dark']) {
 		color-scheme: dark;
-		--bg-primary: #111111;
-		--bg-secondary: #1a1a1a;
-		--bg-chat: #111111;
-		--text-primary: #e5e5e5;
-		--text-secondary: #9ca3af;
-		--accent: #60a5fa;
-		--border: #2e2e2e;
-		--code-bg: #0d0d0d;
-		--user-bubble: #1e293b;
-		--error-bg: #1c1111;
-		--error-text: #f87171;
-		--error-border: #3b1111;
-		--success: #16a34a;
-		--warning: #f59e0b;
+		--bg-primary: #100f0d;
+		--bg-secondary: #16140f;
+		--bg-chat: #100f0d;
+		--bg-raised: #1e1c18;
+		--bg-input: #1b1914;
+		--text-primary: #ece7dd;
+		--text-secondary: #a39d92;
+		--text-muted: #8f887c;
+		--text-faint: #6f6a61;
+		--accent: #4fb0a5;
+		--accent-contrast: #06201c;
+		--border: #2a2621;
+		--border-mid: #322e28;
+		--border-strong: #3a352d;
+		--toggle-off: #2e2a24;
 	}
 
 	/* Accessibility: honor the OS "reduce motion" preference with one global
@@ -513,24 +612,76 @@
 		color: var(--text-primary);
 	}
 
+	/* User-added links (markdown content, hints) — without this they render
+	   browser-blue, which clashes with the teal accent. Components that
+	   style their own anchors still win on specificity. */
+	:global(a) {
+		color: var(--accent);
+	}
+
 	/* Settings-section scaffolding — add `class="settings-section"` to a
-	   <section> in any settings panel for the shared divider + heading
-	   chrome. Only one section panel mounts at a time, so :last-child
-	   correctly drops the trailing divider per panel. */
+	   <section> in any settings panel for the shared card + dotted-heading
+	   chrome. */
 	:global(.settings-section) {
-		padding-bottom: 24px;
-		margin-bottom: 24px;
-		border-bottom: 1px solid var(--border);
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		padding: 15px 16px;
+		margin-bottom: 14px;
 	}
 	:global(.settings-section:last-child) {
-		border-bottom: none;
 		margin-bottom: 0;
-		padding-bottom: 0;
 	}
 	:global(.settings-section h2) {
-		font-size: 1rem;
-		margin: 0 0 8px 0;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		margin: 0 0 12px 0;
 		color: var(--text-primary);
+	}
+	:global(.settings-section h2::before) {
+		content: '';
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent);
+		flex: none;
+	}
+
+	/* Segmented control — a flex track of equal-width buttons; the active
+	   one fills with the accent. ModeSelector renders one, and standalone
+	   button groups (e.g. the theme picker) reuse the classes directly. */
+	:global(.segmented) {
+		display: flex;
+		background: var(--bg-primary);
+		border: 1px solid var(--border-mid);
+		border-radius: 8px;
+		padding: 3px;
+		gap: 3px;
+	}
+	:global(.segmented > button),
+	:global(.segmented > label) {
+		flex: 1;
+		border: none;
+		cursor: pointer;
+		padding: 7px 4px;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		text-align: center;
+		color: var(--text-secondary);
+		background: none;
+	}
+	:global(.segmented > button:hover:not(.active)),
+	:global(.segmented > label:hover:not(.active)) {
+		color: var(--text-primary);
+	}
+	:global(.segmented > button.active),
+	:global(.segmented > label.active) {
+		background: var(--accent);
+		color: var(--accent-contrast);
+		font-weight: 600;
 	}
 
 	/* Thin custom scrollbar — add `class="thin-scroll"` to any scroll
@@ -546,7 +697,7 @@
 		border-radius: 5px;
 	}
 	:global(.thin-scroll::-webkit-scrollbar-thumb:hover) {
-		background: var(--text-secondary);
+		background: var(--border-strong);
 	}
 
 	/* Status pill — a colored capsule for run / step state. Add
@@ -559,8 +710,9 @@
 		border-radius: 999px;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		border: 1px solid var(--border);
-		color: var(--text-secondary);
+		background: var(--bg-raised);
+		border: 1px solid var(--border-mid);
+		color: var(--text-muted);
 	}
 	:global(.status-pill.status-running) {
 		background: color-mix(in srgb, var(--accent) 15%, transparent);
@@ -576,7 +728,7 @@
 	:global(.status-pill.status-cancelled),
 	:global(.status-pill.status-interrupted) {
 		background: var(--error-bg);
-		border-color: var(--error-border);
+		border-color: var(--error-text);
 		color: var(--error-text);
 	}
 
@@ -587,9 +739,9 @@
 	:global(.btn) {
 		flex: none;
 		padding: 6px 14px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-secondary);
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
+		background: var(--bg-raised);
 		color: var(--text-primary);
 		font-size: 0.85rem;
 		cursor: pointer;
@@ -604,7 +756,8 @@
 	:global(.btn-primary) {
 		background: var(--accent);
 		border-color: var(--accent);
-		color: white;
+		color: var(--accent-contrast);
+		font-weight: 600;
 	}
 	:global(.btn-danger) {
 		color: var(--error-text);
@@ -633,12 +786,22 @@
 	:global(.field select),
 	:global(.field textarea) {
 		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
+		background: var(--bg-input);
 		color: var(--text-primary);
 		font-size: 0.9rem;
 		color-scheme: light dark;
+	}
+	:global(.field input:not([type='checkbox']):not([type='radio']):focus-visible),
+	:global(.field select:focus-visible),
+	:global(.field textarea:focus-visible) {
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+	}
+	:global(.field ::placeholder) {
+		color: var(--text-faint);
 	}
 	:global(.field select option) {
 		background-color: var(--bg-primary);
@@ -701,9 +864,11 @@
 	}
 
 	/* Approval-modal helpers — the scrollable <pre> code preview and the
-	   stacked ModalButton column used by the approval/conflict modals. */
+	   stacked ModalButton column used by the approval/conflict modals.
+	   Code previews are an always-dark surface (both themes). */
 	:global(.code-preview) {
-		background: var(--bg-secondary);
+		background: var(--code-bg);
+		color: #d4d4d4;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		padding: 10px 12px;
@@ -743,7 +908,7 @@
 		display: inline-block;
 		width: 2px;
 		height: 1em;
-		background: var(--text-primary);
+		background: var(--accent);
 		animation: blink 0.8s step-end infinite;
 		vertical-align: text-bottom;
 		margin-left: 1px;
@@ -754,17 +919,52 @@
 		}
 	}
 
-	/* Checkbox row with bold title + secondary description (ToggleField and
-	   the settings sections' inline toggles). */
+	/* Switch row with bold title + secondary description (ToggleField and
+	   the settings sections' inline toggles). The checkbox input stays in
+	   the DOM for semantics/keyboard; appearance:none restyles it as a
+	   34×20 pill switch. Checkboxes outside .toggle-row keep native look. */
 	:global(.toggle-row) {
 		display: flex;
 		align-items: flex-start;
-		gap: 10px;
+		gap: 11px;
 		cursor: pointer;
 	}
 	:global(.toggle-row input[type='checkbox']) {
-		margin-top: 3px;
-		accent-color: var(--accent);
+		appearance: none;
+		width: 34px;
+		height: 20px;
+		flex: none;
+		margin: 1px 0 0 0;
+		border-radius: 999px;
+		background: var(--toggle-off);
+		border: 1px solid var(--border-strong);
+		position: relative;
+		cursor: pointer;
+	}
+	:global(.toggle-row input[type='checkbox']::before) {
+		content: '';
+		position: absolute;
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		background: var(--text-muted);
+		top: 1px;
+		left: 2px;
+		transition:
+			transform 0.15s,
+			background 0.15s;
+	}
+	:global(.toggle-row input[type='checkbox']:checked) {
+		background: var(--accent);
+		border-color: var(--accent);
+	}
+	:global(.toggle-row input[type='checkbox']:checked::before) {
+		background: var(--accent-contrast);
+		transform: translateX(12px);
+	}
+	:global(.toggle-row input[type='checkbox']:focus-visible) {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
 	}
 	:global(.toggle-row strong) {
 		display: block;
@@ -781,7 +981,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 8px 16px;
+		padding: 9px 16px;
 		border-bottom: 1px solid var(--border);
 		background: var(--bg-primary);
 	}
@@ -887,9 +1087,9 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: #c44;
-		border: 1px solid #c44;
-		background: color-mix(in srgb, #c44 12%, transparent);
+		color: var(--error-text);
+		border: 1px solid var(--error-text);
+		background: var(--error-bg);
 	}
 
 	:global(.code-block .paste-btn),
@@ -910,7 +1110,7 @@
 
 	:global(.code-block .run-btn) {
 		background: var(--accent);
-		color: white;
+		color: var(--accent-contrast);
 	}
 
 	:global(.code-block .run-btn:hover) {

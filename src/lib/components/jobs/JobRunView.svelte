@@ -228,7 +228,7 @@
 	}
 
 	.checklist .check-done .check-mark {
-		color: var(--success-text, #2da44e);
+		color: var(--success);
 	}
 
 	.checklist .check-blocked {

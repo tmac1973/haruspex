@@ -203,7 +203,7 @@
 	</div>
 {/snippet}
 
-<section>
+<section class="settings-section">
 	<h2>Models</h2>
 	<p class="hint">Models are stored in: <code>{modelsDir}</code></p>
 
@@ -261,14 +261,6 @@
 />
 
 <style>
-	section {
-		margin-bottom: 32px;
-	}
-	h2 {
-		margin: 0 0 12px 0;
-		font-size: 1.1rem;
-		color: var(--text-primary);
-	}
 	.hint {
 		margin: 0 0 12px 0;
 	}
@@ -315,7 +307,7 @@
 	.active-badge {
 		font-size: 0.7rem;
 		background: var(--accent);
-		color: white;
+		color: var(--accent-contrast);
 		padding: 2px 6px;
 		border-radius: 3px;
 		text-transform: uppercase;
