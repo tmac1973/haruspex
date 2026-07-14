@@ -1,8 +1,9 @@
 //! Classify llama-server log lines into the small set of signals the
-//! supervisor cares about. Today that's just "is this a GPU-init
-//! failure?" — when the answer is yes, the supervisor stashes the
-//! line as the CPU-fallback reason and respawns on CPU after the
-//! child exits.
+//! supervisor cares about: "is this a GPU-init failure?" (the
+//! supervisor stashes the line as the CPU-fallback reason and respawns
+//! on CPU after the child exits) and "is this a context/KV-cache
+//! allocation failure?" (the supervisor backs the context size down
+//! one ladder rung and retries on the same device).
 //!
 //! Extracted as a free function so the output-reader task in mod.rs
 //! can match on a typed enum instead of an ad-hoc boolean, and so
@@ -23,11 +24,32 @@ const GPU_ERROR_PATTERNS: &[&str] = &[
     "out of memory",
 ];
 
+/// Substring patterns that flag a line as a *context-dependent*
+/// allocation failure — the KV cache and compute buffers are the parts
+/// of llama-server's memory footprint that scale with `--ctx-size`, so
+/// these are the failures a smaller context can actually fix. Weights
+/// that don't fit fail earlier with device-alloc lines that match only
+/// the GPU patterns, and keep going straight to CPU fallback.
+const CTX_ALLOC_ERROR_PATTERNS: &[&str] = &[
+    "kv cache",
+    "kv buffer",
+    "compute buffer",
+    "failed to initialize the context",
+    "failed to create context",
+];
+
 /// What a log line means to the supervisor. `None` is the common case
 /// (plain progress logs flow straight to the ring buffer without
 /// triggering any state change).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum LogSignal {
+    /// Line contains a context-allocation pattern AND a generic error
+    /// word. The supervisor backs the context size down one rung and
+    /// retries. Checked before `GpuError` — KV-cache failure lines
+    /// (e.g. "failed to initialize the context") also match the GPU
+    /// patterns, and retrying with a smaller context on the GPU beats
+    /// falling back to CPU.
+    CtxAllocError,
     /// Line contains a GPU-init pattern AND a generic error word
     /// ("error" / "fail" / "not found"). The supervisor uses this to
     /// (a) flag the current start as having tripped GPU init, and (b)
@@ -40,14 +62,18 @@ pub(super) enum LogSignal {
 /// Classify a single line of llama-server stderr/stdout.
 pub(super) fn classify(line: &str) -> LogSignal {
     let lower = line.to_lowercase();
-    let has_gpu_keyword = GPU_ERROR_PATTERNS.iter().any(|p| lower.contains(p));
     let has_error_word =
         lower.contains("error") || lower.contains("fail") || lower.contains("not found");
-    if has_gpu_keyword && has_error_word {
-        LogSignal::GpuError
-    } else {
-        LogSignal::None
+    if !has_error_word {
+        return LogSignal::None;
     }
+    if CTX_ALLOC_ERROR_PATTERNS.iter().any(|p| lower.contains(p)) {
+        return LogSignal::CtxAllocError;
+    }
+    if GPU_ERROR_PATTERNS.iter().any(|p| lower.contains(p)) {
+        return LogSignal::GpuError;
+    }
+    LogSignal::None
 }
 
 #[cfg(test)]
@@ -76,6 +102,44 @@ mod tests {
     }
 
     #[test]
+    fn detect_ctx_alloc_error() {
+        assert_eq!(
+            classify("llama_kv_cache_unified: failed to allocate buffer for kv cache"),
+            LogSignal::CtxAllocError
+        );
+        assert_eq!(
+            classify("llama_init_from_model: failed to initialize the context"),
+            LogSignal::CtxAllocError
+        );
+        assert_eq!(
+            classify(
+                "ggml_gallocr_reserve_n: failed to allocate Vulkan0 compute buffer of size 12345"
+            ),
+            LogSignal::CtxAllocError
+        );
+        assert_eq!(
+            classify("common_init_from_params: failed to create context with model 'foo.gguf'"),
+            LogSignal::CtxAllocError
+        );
+    }
+
+    #[test]
+    fn ctx_alloc_takes_priority_over_gpu() {
+        // A KV-cache failure on a GPU backend matches both pattern sets;
+        // the context signal must win so the supervisor retries smaller
+        // on the GPU instead of falling back to CPU.
+        assert_eq!(
+            classify("ggml_vulkan: failed to allocate buffer for kv cache"),
+            LogSignal::CtxAllocError
+        );
+        // Weights-don't-fit device alloc stays a plain GPU error.
+        assert_eq!(
+            classify("ggml_vulkan: Device memory allocation of size 999 failed"),
+            LogSignal::GpuError
+        );
+    }
+
+    #[test]
     fn detect_gpu_error_no_false_positives() {
         assert_eq!(classify("loading model from file"), LogSignal::None);
         assert_eq!(classify("server listening on port 8765"), LogSignal::None);
@@ -88,6 +152,11 @@ mod tests {
             classify("vulkan extension supported"),
             LogSignal::None,
             "GPU keyword without an error word should not match"
+        );
+        assert_eq!(
+            classify("llama_kv_cache: size = 1024.00 MiB"),
+            LogSignal::None,
+            "KV-cache progress line without an error word should not match"
         );
     }
 }

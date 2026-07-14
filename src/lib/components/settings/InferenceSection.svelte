@@ -36,6 +36,17 @@
 	let contextSize = $state(getSettings().contextSize);
 	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
 
+	// The Rust supervisor may back the context size down during startup
+	// (context-backoff: the configured size didn't fit in memory). The
+	// server store already persisted the smaller size; mirror it into the
+	// picker so the selected button matches what the server is running.
+	$effect(() => {
+		const backoff = serverState.ctxBackoff;
+		if (backoff && contextSize !== backoff.to) {
+			contextSize = backoff.to;
+		}
+	});
+
 	const remoteMode = $derived(inferenceBackend.mode === 'remote');
 	const openrouterMode = $derived(
 		remoteMode && inferenceBackend.remoteBackendKind === 'openrouter'

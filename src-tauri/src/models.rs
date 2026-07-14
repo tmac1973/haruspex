@@ -316,8 +316,10 @@ fn full_registry() -> Vec<ModelInfo> {
 // plus the linear-attention state and compute/graph buffers.
 
 /// Standard context sizes we'll recommend, ascending. 262144 is the
-/// architectural ceiling of the Qwen 3.5 / 3.6 models we ship.
-const CONTEXT_LADDER: &[u32] = &[8192, 16384, 32768, 65536, 131072, 262144];
+/// architectural ceiling of the Qwen 3.5 / 3.6 models we ship. Also the
+/// rungs the server supervisor walks down when a start attempt fails on
+/// context/KV allocation (see `server::mod` context backoff).
+pub(crate) const CONTEXT_LADDER: &[u32] = &[8192, 16384, 32768, 65536, 131072, 262144];
 /// Floor: never recommend below this even on tight VRAM.
 pub const MIN_CONTEXT: u32 = 8192;
 /// VRAM left free for the display/compositor, driver, and fragmentation.
