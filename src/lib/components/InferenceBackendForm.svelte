@@ -200,6 +200,7 @@
 				remoteContextSize: typeof manualContextSize === 'number' ? manualContextSize : null,
 				remoteVisionSupported: visionOverride,
 				remoteBackendKind: result.kind,
+				remoteServerUrls: serverUrls,
 				...capabilityCommit(selectedModel, result.kind)
 			});
 		} catch (e) {
