@@ -192,6 +192,15 @@
 			if (caps.vision !== null) {
 				visionOverride = caps.vision;
 			}
+			// A successful probe means this URL is a working server — make
+			// sure it's in the saved list (swapping out the pre-normalization
+			// spelling if that's what was there) so list consumers like the
+			// Jobs tab see it without requiring an explicit "Add".
+			const probedInput = baseUrl;
+			baseUrl = result.base_url;
+			if (!serverUrls.includes(result.base_url)) {
+				serverUrls = [...serverUrls.filter((u) => u !== probedInput), result.base_url];
+			}
 			commit({
 				remoteBaseUrl: result.base_url,
 				remoteApiKey: apiKey,

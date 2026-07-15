@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
 	getSettings,
 	updateInferenceBackend,
@@ -7,6 +7,7 @@ import {
 	getChatTemplateKwargs,
 	getOpenRouterReasoningParam,
 	setActiveLocalModel,
+	SETTINGS_KEY,
 	type SamplingOptions
 } from '$lib/stores/settings';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
@@ -453,5 +454,70 @@ describe('OpenRouter backend', () => {
 	it('returns null for non-OpenRouter backends', () => {
 		updateInferenceBackend({ mode: 'local', remoteBackendKind: null });
 		expect(reasoningParam()).toBeNull();
+	});
+});
+
+describe('load-time remoteServerUrls seeding', () => {
+	// The store is a module singleton, so exercising load() requires a
+	// fresh module instance: prime localStorage, reset the registry, and
+	// dynamically re-import. The static import used by the other suites
+	// keeps pointing at the original instance, so they're unaffected.
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) {
+			localStorage.removeItem(SETTINGS_KEY);
+		} else {
+			localStorage.setItem(SETTINGS_KEY, priorRaw);
+		}
+		vi.resetModules();
+	});
+
+	async function loadWith(inferenceBackend: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify({ inferenceBackend }));
+		vi.resetModules();
+		const fresh = await import('$lib/stores/settings');
+		return fresh.getSettings().inferenceBackend;
+	}
+
+	it('seeds the saved list from a legacy remoteBaseUrl', async () => {
+		const inf = await loadWith({ mode: 'remote', remoteBaseUrl: 'http://host:8080' });
+		expect(inf.remoteServerUrls).toEqual(['http://host:8080']);
+	});
+
+	it('does not duplicate a URL already in the list', async () => {
+		const inf = await loadWith({
+			mode: 'remote',
+			remoteBaseUrl: 'http://host:8080',
+			remoteServerUrls: ['http://host:8080', 'http://other:1234']
+		});
+		expect(inf.remoteServerUrls).toEqual(['http://host:8080', 'http://other:1234']);
+	});
+
+	it('appends an active URL missing from a non-empty list', async () => {
+		const inf = await loadWith({
+			mode: 'remote',
+			remoteBaseUrl: 'http://host:8080',
+			remoteServerUrls: ['http://other:1234']
+		});
+		expect(inf.remoteServerUrls).toEqual(['http://other:1234', 'http://host:8080']);
+	});
+
+	it('does not seed the OpenRouter URL', async () => {
+		const inf = await loadWith({
+			mode: 'remote',
+			remoteBaseUrl: 'https://openrouter.ai/api/v1',
+			remoteBackendKind: 'openrouter'
+		});
+		expect(inf.remoteServerUrls).toEqual([]);
+	});
+
+	it('leaves an empty config alone', async () => {
+		const inf = await loadWith({ mode: 'local', remoteBaseUrl: '' });
+		expect(inf.remoteServerUrls).toEqual([]);
 	});
 });
