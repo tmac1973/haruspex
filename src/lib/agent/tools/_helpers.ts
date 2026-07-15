@@ -89,9 +89,17 @@ export function toolInvokeError(command: string, e: unknown): string {
 
 /**
  * Run an internal LLM call (used by `research_url`, `email_summarize_message`)
- * with the user-configured sampling params and chat template kwargs.
- * Returns the assistant's content, trimmed. Callers decide what to do
- * with an empty string. The optional `signal` propagates user aborts.
+ * with the user-configured sampling params. Returns the assistant's content,
+ * trimmed, with any `<think>…</think>` reasoning block removed. Callers decide
+ * what to do with an empty string. The optional `signal` propagates user aborts.
+ *
+ * Thinking is forced OFF for sub-agents regardless of the global toggle. These
+ * are single-shot extraction/summarization tasks with a fixed token budget —
+ * reasoning here is pure waste: it burns the whole `maxTokens` on a `<think>`
+ * block (truncating the actual findings before they're emitted) and, because
+ * the combined content ships back verbatim as the tool result, dumps the raw
+ * chain-of-thought into the orchestrator's context. Disabling it makes the
+ * sub-agent answer directly and keeps the returned findings compact.
  */
 export async function runSubAgent(
 	messages: ChatMessage[],
@@ -107,11 +115,25 @@ export async function runSubAgent(
 			messages,
 			...sampling,
 			max_tokens: maxTokens,
-			chat_template_kwargs: getChatTemplateKwargs(descriptor)
+			// Force thinking off (second arg) rather than inheriting the global setting.
+			chat_template_kwargs: getChatTemplateKwargs(descriptor, false)
 		},
 		signal
 	);
-	return response.content?.trim() ?? '';
+	// Defensively strip any reasoning block: some models/backends emit an inline
+	// <think>…</think> even with the template kwarg set, and the API layer also
+	// packs a separate reasoning_content field into one. Either way the caller
+	// wants only the findings.
+	return stripThinkBlocks(response.content).trim();
+}
+
+/** Remove `<think>…</think>` reasoning blocks (closed or trailing-open) from a
+ *  sub-agent response so only the answer text remains. */
+function stripThinkBlocks(content: string | null | undefined): string {
+	if (!content) return '';
+	return content
+		.replace(/<think>[\s\S]*?<\/think>/g, '') // closed blocks
+		.replace(/<think>[\s\S]*$/, ''); // a truncated, never-closed block at the end
 }
 
 /**
