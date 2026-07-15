@@ -238,6 +238,14 @@ export interface AppSettings {
 	braveApiKey: string;
 	searxngUrl: string;
 	contextSize: number;
+	/**
+	 * Allow the local llama-server to run a context larger than fits in VRAM,
+	 * spilling the overflow into system RAM (GTT over PCIe on AMD). Off by
+	 * default: the Context Size picker disables sizes the model can't fit in
+	 * VRAM. On: those sizes become selectable but part of the context is
+	 * served from system RAM, which is slower. See `InferenceSection`.
+	 */
+	allowSpillToSystemRam: boolean;
 	ttsReadTablesByColumn: boolean;
 	searchRecency: 'any' | 'day' | 'week' | 'month' | 'year';
 	audioOutputDevice: string;
@@ -438,6 +446,7 @@ const defaults: AppSettings = {
 	braveApiKey: '',
 	searxngUrl: DEFAULT_SEARXNG_URL,
 	contextSize: DEFAULT_CONTEXT_SIZE,
+	allowSpillToSystemRam: false,
 	ttsReadTablesByColumn: true,
 	searchRecency: 'any' as const,
 	audioOutputDevice: '',

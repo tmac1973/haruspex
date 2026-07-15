@@ -17,6 +17,7 @@ export const IPC = {
 	code_glob: 'code_glob',
 	code_grep: 'code_grep',
 	code_write_overflow: 'code_write_overflow',
+	context_fit_ceiling: 'context_fit_ceiling',
 	db_clear_all_conversations: 'db_clear_all_conversations',
 	db_create_conversation: 'db_create_conversation',
 	db_create_job: 'db_create_job',

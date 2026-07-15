@@ -34,7 +34,80 @@
 
 	const serverState = $derived(getServerState());
 	let contextSize = $state(getSettings().contextSize);
+	let allowSpill = $state(getSettings().allowSpillToSystemRam);
 	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
+
+	// Predictive VRAM cap: detected total VRAM (MB) and the largest context the
+	// active model fits in it *without* spilling to system RAM. A `null` ceiling
+	// means "can't predict" (unknown VRAM or an unrecognized model) — in that
+	// case we leave every size selectable rather than ghosting choices we can't
+	// reason about.
+	let gpuVramMb = $state<number | null>(null);
+	let ctxCeiling = $state<number | null>(null);
+
+	function formatCtx(n: number): string {
+		return n >= 1024 ? `${Math.round(n / 1024)}K` : `${n}`;
+	}
+
+	/** Recompute the VRAM context ceiling for the currently-active local model.
+	 *  Best-effort: any failure leaves the ceiling null (picker unrestricted). */
+	async function refreshCtxCeiling() {
+		const filename = getActiveLocalModelFilename();
+		const modelId = filename ? filename.replace(/\.gguf$/i, '') : '';
+		if (!modelId || gpuVramMb === null) {
+			ctxCeiling = null;
+			return;
+		}
+		try {
+			ctxCeiling = await invoke<number | null>('context_fit_ceiling', {
+				modelId,
+				vramMb: gpuVramMb
+			});
+		} catch {
+			ctxCeiling = null;
+		}
+	}
+
+	// On mount: detect VRAM, derive the ceiling, and — when spill is off — snap a
+	// previously-saved oversized context down to what actually fits, so we never
+	// silently keep spilling just because the saved setting predates this cap.
+	$effect(() => {
+		void (async () => {
+			try {
+				const hw = await invoke<{ gpu_vram_mb: number | null }>('cmd_detect_hardware');
+				gpuVramMb = hw.gpu_vram_mb ?? null;
+			} catch {
+				gpuVramMb = null;
+			}
+			await refreshCtxCeiling();
+			if (!allowSpill && ctxCeiling !== null && contextSize > ctxCeiling) {
+				showToast(
+					`${formatCtx(contextSize)} context needs more VRAM than your GPU has — using ${formatCtx(ctxCeiling)}. Turn on "Allow spill to system RAM" below to keep the larger size.`,
+					{ kind: 'info' }
+				);
+				await setContextSize(ctxCeiling);
+			}
+		})();
+	});
+
+	// The active model can change while this panel is open (Models section),
+	// which restarts the server. Re-derive the ceiling when it comes back up so
+	// the picker reflects the new model's VRAM footprint.
+	$effect(() => {
+		if (serverState.status === 'ready') {
+			void refreshCtxCeiling();
+		}
+	});
+
+	function onToggleSpill(next: boolean) {
+		allowSpill = next;
+		updateSettings({ allowSpillToSystemRam: next });
+		// Turning spill off with an oversized selection: snap down to the cap so
+		// we're not left running a context the user just said shouldn't spill.
+		if (!next && ctxCeiling !== null && contextSize > ctxCeiling) {
+			void setContextSize(ctxCeiling);
+		}
+	}
 
 	// The Rust supervisor may back the context size down during startup
 	// (context-backoff: the configured size didn't fit in memory). The
@@ -277,16 +350,36 @@
 		</p>
 		<div class="context-options">
 			{#each [{ value: 8192, label: '8K', desc: 'Low VRAM' }, { value: 16384, label: '16K', desc: 'Standard' }, { value: 32768, label: '32K', desc: 'Recommended' }, { value: 65536, label: '64K', desc: '16+ GB VRAM' }, { value: 131072, label: '128K', desc: '24+ GB VRAM' }, { value: 262144, label: '256K', desc: 'Maximum' }] as opt (opt.value)}
+				{@const overCeiling = !allowSpill && ctxCeiling !== null && opt.value > ctxCeiling}
 				<button
 					class="ctx-btn"
 					class:selected={contextSize === opt.value}
+					class:over-ceiling={overCeiling}
+					disabled={overCeiling}
+					title={overCeiling
+						? "Exceeds your GPU's VRAM. Turn on “Allow spill to system RAM” to use this size."
+						: undefined}
 					onclick={() => setContextSize(opt.value)}
 				>
 					<strong>{opt.label}</strong>
-					<span>{opt.desc}</span>
+					<span>{overCeiling ? 'Needs more VRAM' : opt.desc}</span>
 				</button>
 			{/each}
 		</div>
+		<label class="spill-toggle">
+			<input
+				type="checkbox"
+				checked={allowSpill}
+				onchange={(e) => onToggleSpill(e.currentTarget.checked)}
+			/>
+			<span class="spill-label">
+				Allow spill to system RAM
+				<span class="spill-sub">
+					Lets you pick context sizes larger than your VRAM. The overflow runs from system RAM
+					(slower on every token). Off by default.
+				</span>
+			</span>
+		</label>
 	</section>
 
 	<section class="settings-section">
@@ -383,6 +476,41 @@
 	.ctx-btn.selected {
 		border-color: var(--accent);
 		background: color-mix(in srgb, var(--accent) 10%, transparent);
+	}
+
+	.ctx-btn.over-ceiling {
+		opacity: 0.45;
+		cursor: not-allowed;
+		border-style: dashed;
+	}
+
+	.ctx-btn.over-ceiling:hover {
+		border-color: var(--border);
+	}
+
+	.spill-toggle {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		margin-top: 12px;
+		cursor: pointer;
+	}
+
+	.spill-toggle input {
+		margin-top: 2px;
+		flex-shrink: 0;
+	}
+
+	.spill-label {
+		font-size: 0.85rem;
+		color: var(--text-primary);
+	}
+
+	.spill-sub {
+		display: block;
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
 	}
 
 	.ctx-btn strong {
