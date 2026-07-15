@@ -24,6 +24,15 @@ const GPU_ERROR_PATTERNS: &[&str] = &[
     "out of memory",
 ];
 
+/// Known-benign lines that contain error words but signal nothing wrong.
+/// llama.cpp's auto-fit step (`common_fit_params`) logs "failed to fit
+/// params to free device memory: n_gpu_layers already set by user to 99,
+/// abort" on every start because we pass --n-gpu-layers explicitly — the
+/// "abort" is the fit *step* declining to override our value, after which
+/// loading proceeds normally. Without this exclusion the line matches the
+/// GPU patterns ("gpu" + "fail") and arms a spurious CPU fallback.
+const BENIGN_PATTERNS: &[&str] = &["common_fit_params", "failed to fit params"];
+
 /// Substring patterns that flag a line as a *context-dependent*
 /// allocation failure — the KV cache and compute buffers are the parts
 /// of llama-server's memory footprint that scale with `--ctx-size`, so
@@ -65,6 +74,9 @@ pub(super) fn classify(line: &str) -> LogSignal {
     let has_error_word =
         lower.contains("error") || lower.contains("fail") || lower.contains("not found");
     if !has_error_word {
+        return LogSignal::None;
+    }
+    if BENIGN_PATTERNS.iter().any(|p| lower.contains(p)) {
         return LogSignal::None;
     }
     if CTX_ALLOC_ERROR_PATTERNS.iter().any(|p| lower.contains(p)) {
@@ -157,6 +169,20 @@ mod tests {
             classify("llama_kv_cache: size = 1024.00 MiB"),
             LogSignal::None,
             "KV-cache progress line without an error word should not match"
+        );
+    }
+
+    #[test]
+    fn fit_params_abort_is_benign() {
+        // Logged on every start by newer llama.cpp builds because we pass
+        // --n-gpu-layers explicitly; the model loads fine afterwards. Must
+        // not arm the CPU fallback (it contains "gpu" + "fail").
+        assert_eq!(
+            classify(
+                "common_fit_params: failed to fit params to free device memory: \
+                 n_gpu_layers already set by user to 99, abort"
+            ),
+            LogSignal::None
         );
     }
 }
