@@ -489,6 +489,23 @@ function load(): AppSettings {
 				...defaultInferenceBackend,
 				...(parsed.inferenceBackend ?? {})
 			};
+			// Seed the multi-URL server list from the active remoteBaseUrl.
+			// Configs written before the list existed — or via typing a URL
+			// and probing without clicking "Add" — have a working server in
+			// remoteBaseUrl that consumers of the list (e.g. the Jobs tab
+			// override dropdown) can't see. OpenRouter is excluded: it has a
+			// dedicated backend option and is filtered out of the generic
+			// server dropdowns.
+			if (
+				mergedInference.remoteBaseUrl &&
+				mergedInference.remoteBackendKind !== 'openrouter' &&
+				!mergedInference.remoteServerUrls.includes(mergedInference.remoteBaseUrl)
+			) {
+				mergedInference.remoteServerUrls = [
+					...mergedInference.remoteServerUrls,
+					mergedInference.remoteBaseUrl
+				];
+			}
 			// Migrate a legacy inline remoteApiKey into the key store. If
 			// the user had a key saved before the key-store refactor and no
 			// key ID yet, create a "Migrated" entry and wire it up so the

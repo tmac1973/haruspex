@@ -215,7 +215,16 @@
 		}
 	}
 
-	const savedServerUrls = $derived(getSettings().inferenceBackend.remoteServerUrls ?? []);
+	// Include the active server even if it was never explicitly added to
+	// the saved list (legacy configs / typed-URL-without-Add) so this
+	// dropdown always agrees with what Settings displays.
+	const savedServerUrls = $derived.by(() => {
+		const inf = getSettings().inferenceBackend;
+		const saved = inf.remoteServerUrls ?? [];
+		return inf.remoteBaseUrl && !saved.includes(inf.remoteBaseUrl)
+			? [...saved, inf.remoteBaseUrl]
+			: saved;
+	});
 	const serverUrlOptions = $derived(
 		[...new Set([...savedServerUrls, ...(modelBaseUrl ? [modelBaseUrl] : [])])]
 			.filter(Boolean)

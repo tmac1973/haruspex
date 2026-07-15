@@ -33,7 +33,8 @@
 				{ keys: 'F3', action: 'Read the last reply aloud (toggle)' },
 				{ keys: 'Ctrl / ⌘ + N', action: 'New conversation (Chat tab)' },
 				{ keys: 'Ctrl / ⌘ + + / −', action: 'Zoom the UI in / out' },
-				{ keys: 'Ctrl / ⌘ + 0', action: 'Reset UI zoom' }
+				{ keys: 'Ctrl / ⌘ + 0', action: 'Reset UI zoom' },
+				{ keys: 'Ctrl + Shift + I / ⌘ + ⌥ + I', action: 'Open the web inspector (devtools)' }
 			]
 		},
 		{
