@@ -310,13 +310,18 @@ fn full_registry() -> Vec<ModelInfo> {
 // architecture rather than parsing GGUF headers at runtime, since the set of
 // offered models is small and fixed.
 //
-// These are architecture-derived *estimates* (f16 KV cache, batch 1). They
-// should be calibrated against the VRAM llama-server actually reports for
-// these models; the safety margins below exist to absorb that uncertainty
-// plus the linear-attention state and compute/graph buffers.
+// These are architecture-derived *estimates* (q8_0 KV cache — the server
+// always passes --cache-type-k/v q8_0, see `ServerConfig::build_args` —
+// batch 1). They should be calibrated against the VRAM llama-server
+// actually reports for these models; the safety margins below exist to
+// absorb that uncertainty plus the linear-attention state and
+// compute/graph buffers.
 
-/// Standard context sizes we'll recommend, ascending.
-const CONTEXT_LADDER: &[u32] = &[8192, 16384, 32768, 65536, 131072];
+/// Standard context sizes we'll recommend, ascending. 262144 is the
+/// architectural ceiling of the Qwen 3.5 / 3.6 models we ship. Also the
+/// rungs the server supervisor walks down when a start attempt fails on
+/// context/KV allocation (see `server::mod` context backoff).
+pub(crate) const CONTEXT_LADDER: &[u32] = &[8192, 16384, 32768, 65536, 131072, 262144];
 /// Floor: never recommend below this even on tight VRAM.
 pub const MIN_CONTEXT: u32 = 8192;
 /// VRAM left free for the display/compositor, driver, and fragmentation.
@@ -325,22 +330,24 @@ const VRAM_RESERVE_BYTES: u64 = 1024 * 1024 * 1024;
 /// recurrent state (a few hundred MB across the linear layers).
 const COMPUTE_OVERHEAD_BYTES: u64 = 512 * 1024 * 1024;
 
-/// Per-token KV-cache growth in bytes (f16) for a model's full-attention
-/// layers, derived from config.json as
-/// `full_attn_layers × 2 (K+V) × n_kv_head × head_dim × 2 bytes`:
-///   4B / 9B : 8 × 2 × 4 × 256 × 2 = 32768
-///   27B     : 16 × 2 × 4 × 256 × 2 = 65536
-///   35B-A3B : 10 × 2 × 2 × 256 × 2 = 20480
+/// Per-token KV-cache growth in bytes (q8_0) for a model's full-attention
+/// layers. Element count comes from config.json as
+/// `full_attn_layers × 2 (K+V) × n_kv_head × head_dim`; q8_0 packs 32
+/// elements into 34 bytes (32 one-byte quants + one f16 scale), i.e.
+/// 1.0625 bytes per element:
+///   4B / 9B : 8 × 2 × 4 × 256 = 16384 elements × 34/32 = 17408
+///   27B     : 16 × 2 × 4 × 256 = 32768 elements × 34/32 = 34816
+///   35B-A3B : 10 × 2 × 2 × 256 = 10240 elements × 34/32 = 10880
 /// Matched by base-model substring so every quant (and legacy variant) of a
 /// model shares the same value.
 fn kv_bytes_per_token(id: &str) -> Option<u64> {
     // 4B and 9B share the same full-attention shape (8 layers × 4 kv heads).
     if id.contains("Qwen3.5-4B") || id.contains("Qwen3.5-9B") {
-        Some(32_768)
+        Some(17_408)
     } else if id.contains("Qwen3.6-27B") {
-        Some(65_536)
+        Some(34_816)
     } else if id.contains("Qwen3.6-35B-A3B") {
-        Some(20_480)
+        Some(10_880)
     } else {
         None
     }
@@ -1113,7 +1120,7 @@ mod tests {
         // Results are real ladder rungs, never above the cap.
         for c in [c8, c16, c24] {
             assert!(CONTEXT_LADDER.contains(&c) || c == MIN_CONTEXT);
-            assert!(c <= 131072);
+            assert!(c <= 262144);
         }
 
         // Unknown model → floor, not a panic.

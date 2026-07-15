@@ -4,6 +4,7 @@
 
 	let shellBinary = $state(getSettings().shellBinary);
 	let shellHistoryTurnsForPrompt = $state(getSettings().shellHistoryTurnsForPrompt);
+	let shellIncludeHistoryFile = $state(getSettings().shellIncludeHistoryFile);
 	let shellMaxBytesPerCapture = $state(getSettings().shellMaxBytesPerCapture);
 
 	function persistBinary() {
@@ -14,6 +15,10 @@
 		const clamped = clampInt(shellHistoryTurnsForPrompt, 0, 20);
 		shellHistoryTurnsForPrompt = clamped;
 		updateSettings({ shellHistoryTurnsForPrompt: clamped });
+	}
+
+	function persistIncludeHistoryFile() {
+		updateSettings({ shellIncludeHistoryFile });
 	}
 
 	function persistMaxBytes() {
@@ -87,6 +92,28 @@
 		completed commands captured from the terminal — including the command, output, exit code, and
 		cwd. Set to <code>0</code> to disable auto-attach and only send your typed question. Default
 		<code>3</code>.
+	</p>
+</section>
+
+<section class="settings-section">
+	<h2>Include your shell history file in prompts</h2>
+	<label class="toggle-row">
+		<input
+			type="checkbox"
+			bind:checked={shellIncludeHistoryFile}
+			onchange={persistIncludeHistoryFile}
+		/>
+		<span>Send recent lines from your shell history file as extra context</span>
+	</label>
+	<p class="help">
+		On by default. When on, the assistant's system prompt includes the last 10 lines of your shell
+		history file (<code>$HISTFILE</code>, <code>~/.bash_history</code>,
+		<code>~/.zsh_history</code>, or the fish history) as breadcrumbs about what you've been working
+		on. That file spans <strong>other terminals and previous sessions</strong> — not just the shell in
+		front of you — which is useful context but also a privacy consideration: turn this off to keep that
+		file out of prompts entirely. While on, the exact lines sent are disclosed above each of your messages
+		in the assistant sidebar. This is separate from the per-message command capture above, which only
+		ever covers the current session.
 	</p>
 </section>
 

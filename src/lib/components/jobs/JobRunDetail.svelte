@@ -1,7 +1,8 @@
 <script lang="ts">
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
-	import { getJobRun, type JobRunWithSteps } from '$lib/stores/jobRuns.svelte';
+	import { formatDuration } from '$lib/utils/format';
+	import { getJobRun, type JobRunStep, type JobRunWithSteps } from '$lib/stores/jobRuns.svelte';
 
 	interface Props {
 		runId: number;
@@ -35,6 +36,11 @@
 		return new Date(ms).toLocaleString();
 	}
 
+	function stepElapsed(step: JobRunStep): string | undefined {
+		if (step.started_at == null || step.finished_at == null) return undefined;
+		return formatDuration(step.finished_at - step.started_at);
+	}
+
 	function toggleRendered(idx: number) {
 		expandedRendered = { ...expandedRendered, [idx]: !expandedRendered[idx] };
 	}
@@ -66,7 +72,11 @@
 
 		<div class="steps">
 			{#each run.steps as step (step.id)}
-				<JobStepCard stepNumber={step.ordering + 1} status={step.status}>
+				<JobStepCard
+					stepNumber={step.ordering + 1}
+					status={step.status}
+					elapsed={stepElapsed(step)}
+				>
 					<pre class="prompt">{step.prompt_authored}</pre>
 
 					{#if step.ordering > 0 && step.prompt_rendered !== step.prompt_authored}

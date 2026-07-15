@@ -4,6 +4,7 @@
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
 	import { hasStreamingAnswer } from '$lib/agent/think-stream';
+	import { formatDuration } from '$lib/utils/format';
 	import {
 		cancel,
 		clearCurrentRun,
@@ -43,6 +44,24 @@
 		return step.status === 'running';
 	}
 
+	// Ticks once a second while the run is live so the running step's
+	// elapsed label counts up; finished steps use their fixed timestamps.
+	let now = $state(Date.now());
+	$effect(() => {
+		if (run?.status !== 'running') return;
+		const timer = setInterval(() => {
+			now = Date.now();
+		}, 1000);
+		return () => clearInterval(timer);
+	});
+
+	function stepElapsed(step: RunStepState): string | undefined {
+		if (step.startedAt == null) return undefined;
+		const end = step.finishedAt ?? (isLiveStep(step) ? now : null);
+		if (end == null) return undefined;
+		return formatDuration(end - step.startedAt);
+	}
+
 	function close() {
 		clearCurrentRun();
 		ondone();
@@ -71,6 +90,7 @@
 					stepNumber={step.index + 1}
 					status={step.status}
 					title={step.description ? step.promptAuthored : undefined}
+					elapsed={stepElapsed(step)}
 				>
 					{#snippet headExtra()}
 						{#if step.deepResearch}

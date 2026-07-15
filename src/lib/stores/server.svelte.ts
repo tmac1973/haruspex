@@ -1,8 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
+import type { ContextBackoffState } from '$lib/ipc/gen/ContextBackoffState';
 import { PORTS } from '$lib/ports';
-import { DEFAULT_CONTEXT_SIZE } from '$lib/stores/settings';
+import { DEFAULT_CONTEXT_SIZE, getSettings, updateSettings } from '$lib/stores/settings';
+import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
+import { showToast } from '$lib/stores/toasts.svelte';
 import { getRunningCount } from '$lib/agent/inferenceQueue.svelte';
 
 /**
@@ -44,6 +47,14 @@ export interface ServerState {
 	 * Cleared the next time `startServer` is called.
 	 */
 	cpuFallback?: { reason: string };
+	/**
+	 * Set when a start attempt died on a context/KV allocation failure
+	 * and the Rust supervisor is retrying with a smaller context. Holds
+	 * the *latest* backoff of the current start (several rungs may be
+	 * walked); the settings UI watches it to keep the selected context
+	 * button in sync. Cleared the next time `startServer` is called.
+	 */
+	ctxBackoff?: ContextBackoffState;
 }
 
 // Svelte 5 runes-based state
@@ -106,6 +117,29 @@ export async function initServerStore(): Promise<void> {
 	await listen('gpu-fallback-cleared', () => {
 		serverState.cpuFallback = undefined;
 	});
+
+	// The Rust supervisor detected a context/KV allocation failure during
+	// startup and is already retrying with the next smaller ladder rung.
+	// Surface what's happening and persist the smaller size so the settings
+	// UI, the header context indicator, and the *next* start all agree with
+	// what the server is actually running.
+	await listen<ContextBackoffState>('context-backoff', (event) => {
+		const { from, to } = event.payload;
+		serverState.ctxBackoff = event.payload;
+		if (getSettings().contextSize === from) {
+			updateSettings({ contextSize: to });
+		}
+		setIndicatorContextSize(to);
+		showToast(
+			`Context size ${formatCtx(from)} didn't fit in memory — retrying with ${formatCtx(to)}. Your context size setting was updated.`,
+			{ kind: 'info' }
+		);
+	});
+}
+
+/** 262144 → "256K"; sizes that aren't clean multiples fall back to digits. */
+function formatCtx(size: number): string {
+	return size % 1024 === 0 ? `${size / 1024}K` : String(size);
 }
 
 export async function startServer(
@@ -120,6 +154,7 @@ export async function startServer(
 	// banner disappears the moment the user clicks "Restart on GPU"
 	// instead of waiting for the IPC round-trip.
 	serverState.cpuFallback = undefined;
+	serverState.ctxBackoff = undefined;
 	try {
 		await invoke('start_server', {
 			modelPath,

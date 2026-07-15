@@ -35,6 +35,21 @@ pub struct GpuFallbackState {
     pub reason: String,
 }
 
+/// Emitted (as `context-backoff`) when a start attempt died on a
+/// context/KV-cache allocation failure and the supervisor is retrying
+/// with the next smaller ladder rung. The frontend surfaces it as a
+/// toast and persists `to` as the new context-size setting.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct ContextBackoffState {
+    /// Context size the failed attempt used.
+    pub from: u32,
+    /// Smaller size the retry is using.
+    pub to: u32,
+    /// First context-allocation error line from stderr (ANSI-stripped).
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct ServerConfig {
     pub port: u16,
@@ -112,6 +127,13 @@ struct ServerInner {
     /// Drives the "Running on CPU" banner. Cleared on the next manual
     /// `start()` call.
     cpu_fallback_active: bool,
+    /// A context/KV-cache allocation failure was seen during the current
+    /// start attempt — arms the context-backoff retry on exit. Cleared
+    /// on each backoff respawn (every retry re-detects for itself).
+    ctx_alloc_error_detected: bool,
+    /// First context-allocation error line for the current attempt,
+    /// surfaced as the backoff reason.
+    ctx_alloc_error_reason: Option<String>,
     generation: u64, // incremented on each start, used to ignore stale events
     /// When the current child process was spawned — used to report uptime in
     /// crash telemetry (how long it survived before dying).
@@ -119,23 +141,50 @@ struct ServerInner {
 }
 
 impl ServerInner {
-    /// Inspect a stderr line for a GPU-init failure and arm the CPU-fallback
-    /// path. Keeps the *first* matching line as the reason — it's almost
-    /// always the most informative root cause (e.g. `Device memory allocation
-    /// of size X failed`); subsequent lines are downstream effects (assert
+    /// Inspect a stderr line for a GPU-init or context-allocation failure
+    /// and arm the matching recovery path (CPU fallback / context backoff).
+    /// Keeps the *first* matching line as the reason — it's almost always
+    /// the most informative root cause (e.g. `Device memory allocation of
+    /// size X failed`); subsequent lines are downstream effects (assert
     /// aborts, buffer alloc retries) that read worse out of context.
-    fn note_stderr_gpu_error(&mut self, line_str: &str) {
-        if classify(line_str) == LogSignal::GpuError && !self.gpu_fallback_attempted {
-            warn!("GPU error detected, will attempt CPU fallback on exit");
-            self.gpu_error_detected = true;
-            if self.gpu_error_reason.is_none() {
-                let cleaned = strip_ansi(line_str).trim().to_string();
-                if !cleaned.is_empty() {
-                    self.gpu_error_reason = Some(cleaned);
+    fn note_stderr_signal(&mut self, line_str: &str) {
+        match classify(line_str) {
+            LogSignal::CtxAllocError => {
+                if !self.ctx_alloc_error_detected {
+                    warn!("context allocation error detected, will retry smaller on exit");
+                }
+                self.ctx_alloc_error_detected = true;
+                if self.ctx_alloc_error_reason.is_none() {
+                    let cleaned = strip_ansi(line_str).trim().to_string();
+                    if !cleaned.is_empty() {
+                        self.ctx_alloc_error_reason = Some(cleaned);
+                    }
                 }
             }
+            LogSignal::GpuError if !self.gpu_fallback_attempted => {
+                warn!("GPU error detected, will attempt CPU fallback on exit");
+                self.gpu_error_detected = true;
+                if self.gpu_error_reason.is_none() {
+                    let cleaned = strip_ansi(line_str).trim().to_string();
+                    if !cleaned.is_empty() {
+                        self.gpu_error_reason = Some(cleaned);
+                    }
+                }
+            }
+            _ => {}
         }
     }
+}
+
+/// Largest standard rung strictly below `ctx`, or `None` when `ctx` is
+/// already at (or below) the ladder floor. Custom sizes that fall between
+/// rungs back down to the nearest rung underneath them.
+fn next_lower_ctx(ctx: u32) -> Option<u32> {
+    crate::models::CONTEXT_LADDER
+        .iter()
+        .rev()
+        .find(|&&rung| rung < ctx)
+        .copied()
 }
 
 pub struct LlamaServer {
@@ -154,6 +203,8 @@ impl LlamaServer {
                 gpu_error_detected: false,
                 gpu_error_reason: None,
                 cpu_fallback_active: false,
+                ctx_alloc_error_detected: false,
+                ctx_alloc_error_reason: None,
                 generation: 0,
                 started_at: None,
             })),
@@ -195,6 +246,8 @@ impl LlamaServer {
             inner.gpu_error_detected = false;
             inner.gpu_error_reason = None;
             inner.cpu_fallback_active = false;
+            inner.ctx_alloc_error_detected = false;
+            inner.ctx_alloc_error_reason = None;
         }
         // Banner clears as soon as a fresh start begins, regardless of
         // whether this attempt ultimately ends up on GPU or falls back
@@ -307,7 +360,7 @@ impl LlamaServer {
                         warn!("llama-server stderr: {}", line_str);
                         let mut state = inner.lock().await;
                         push_log(&mut state.log_buffer, &format!("[stderr] {}", line_str));
-                        state.note_stderr_gpu_error(&line_str);
+                        state.note_stderr_signal(&line_str);
                     }
                     CommandEvent::Terminated(payload) => {
                         Self::handle_termination(
@@ -368,6 +421,14 @@ impl LlamaServer {
             Self::capture_crash_report(inner, code, signal, generation, model_path).await
         {
             crash_telemetry::record(app, &report);
+        }
+
+        // Context too big to allocate? Back down one ladder rung and retry
+        // on the same device before considering the CPU fallback — a smaller
+        // KV cache on the GPU beats the full context on the CPU.
+        if let Some(backoff) = Self::take_ctx_backoff(inner).await {
+            Self::respawn_ctx_backoff(inner, app, model_path, backoff).await;
+            return;
         }
 
         if Self::take_gpu_fallback(inner).await {
@@ -437,6 +498,78 @@ impl LlamaServer {
                 .cloned()
                 .collect(),
         })
+    }
+
+    /// Decide whether the exit that just happened should be retried with a
+    /// smaller context: a context/KV-allocation error was detected during a
+    /// `Starting` attempt and there's a ladder rung below the current size.
+    /// On yes, clears the dead child, drops `config.ctx_size` to the next
+    /// rung, and resets the per-attempt error flags (both context and GPU —
+    /// the GPU lines that accompany a KV overflow describe a failure the
+    /// smaller context may fix, so they must not arm the CPU fallback).
+    /// At the ladder floor this returns `None` and the normal GPU-fallback /
+    /// error paths take over.
+    async fn take_ctx_backoff(inner: &Arc<Mutex<ServerInner>>) -> Option<ContextBackoffState> {
+        let mut state = inner.lock().await;
+        if state.status != ServerStatus::Starting || !state.ctx_alloc_error_detected {
+            return None;
+        }
+        let from = state.config.ctx_size;
+        let to = next_lower_ctx(from)?;
+        state.child = None;
+        state.config.ctx_size = to;
+        state.ctx_alloc_error_detected = false;
+        state.gpu_error_detected = false;
+        state.gpu_error_reason = None;
+        let reason = state
+            .ctx_alloc_error_reason
+            .take()
+            .unwrap_or_else(|| "context allocation failed".to_string());
+        Some(ContextBackoffState { from, to, reason })
+    }
+
+    /// Respawn after a context-allocation failure with the (already lowered)
+    /// `config.ctx_size`. Bumps the generation so the retry gets its own
+    /// output reader and a fresh health-poll window — several rungs may be
+    /// walked in sequence, and each attempt reloads the model from scratch.
+    async fn respawn_ctx_backoff(
+        inner: &Arc<Mutex<ServerInner>>,
+        app: &AppHandle,
+        model_path: &str,
+        backoff: ContextBackoffState,
+    ) {
+        warn!(
+            "context size {} failed to allocate ({}) — retrying with {}",
+            backoff.from, backoff.reason, backoff.to
+        );
+        let _ = app.emit("context-backoff", &backoff);
+        let args = Self::build_llama_args(app, inner, model_path).await;
+        match Self::spawn_llama(app, &args) {
+            Ok((new_rx, new_child)) => {
+                let gen = {
+                    let mut state = inner.lock().await;
+                    state.child = Some(new_child);
+                    state.started_at = Some(Instant::now());
+                    state.generation += 1;
+                    state.generation
+                };
+                Self::spawn_output_reader(
+                    inner.clone(),
+                    app.clone(),
+                    model_path.to_string(),
+                    new_rx,
+                    gen,
+                );
+                Self::spawn_health_poller(inner.clone(), app.clone(), gen);
+            }
+            Err(e) => {
+                error!("Context-backoff respawn failed: {}", e);
+                let mut state = inner.lock().await;
+                state.status =
+                    ServerStatus::Error(format!("Context-backoff respawn failed: {}", e));
+                let _ = app.emit("server-status-changed", &state.status);
+            }
+        }
     }
 
     /// Clear the dead child and decide whether to attempt a one-shot CPU
@@ -700,6 +833,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn next_lower_ctx_walks_the_ladder() {
+        assert_eq!(next_lower_ctx(262144), Some(131072));
+        assert_eq!(next_lower_ctx(131072), Some(65536));
+        assert_eq!(next_lower_ctx(16384), Some(8192));
+        // Floor: nothing below the smallest rung.
+        assert_eq!(next_lower_ctx(8192), None);
+        assert_eq!(next_lower_ctx(4096), None);
+        // Custom off-ladder size backs down to the rung underneath it.
+        assert_eq!(next_lower_ctx(100_000), Some(65536));
+    }
+
+    #[test]
     fn default_config_values() {
         let config = ServerConfig::default();
         assert_eq!(config.port, 8765);
@@ -787,6 +932,8 @@ mod tests {
             gpu_error_detected: false,
             gpu_error_reason: None,
             cpu_fallback_active: false,
+            ctx_alloc_error_detected: false,
+            ctx_alloc_error_reason: None,
             generation: 0,
             started_at: None,
         };

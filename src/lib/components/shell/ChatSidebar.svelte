@@ -105,6 +105,7 @@
 	const messageSteps = $derived(session.messageSteps);
 	const messageStats = $derived(session.messageStats);
 	const messageStops = $derived(session.messageStops);
+	const messageHistorySent = $derived(session.messageHistorySent);
 	const markerCount = $derived(session.integrationMarkerCount);
 	const completedCommands = $derived(session.integrationCompletedCommands);
 	const codeMode = $derived(session.codeMode);
@@ -377,6 +378,23 @@
 					{/if}
 					{#if msg.role === 'user'}
 						{@const split = userMessageView(msg)}
+						{#if messageHistorySent[i]?.length}
+							<!-- Shell-history-file breadcrumbs that went into this turn's
+							     system prompt (opt-in via Settings → Shell). Disclosed here
+							     because they're sent invisibly otherwise — the history file
+							     spans other terminals and previous sessions. -->
+							<details class="shell-preamble">
+								<summary>
+									Sent with this message: {messageHistorySent[i].length} line{messageHistorySent[i]
+										.length === 1
+										? ''
+										: 's'} from your shell history file
+								</summary>
+								<div class="preamble-scroll">
+									<pre use:overflowFade>{messageHistorySent[i].join('\n')}</pre>
+								</div>
+							</details>
+						{/if}
 						{#if split.preamble}
 							<details class="shell-preamble">
 								<summary>{preambleSummary(split.preamble)}</summary>
