@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.55](https://github.com/tmac1973/haruspex/compare/v0.1.54...v0.1.55) (2026-07-15)
+
+
+### Features
+
+* **inference:** predictive VRAM context cap + allow-spill toggle ([#181](https://github.com/tmac1973/haruspex/issues/181)) ([d371857](https://github.com/tmac1973/haruspex/commit/d371857b5dbe6793d6979320ad9f12659097c5c0))
+* job-step timers, 256K context option, settings card order fix ([#180](https://github.com/tmac1973/haruspex/issues/180)) ([59ff503](https://github.com/tmac1973/haruspex/commit/59ff50352cd61c5d78f9275a9e3d9280864818d9))
+* **jobs:** autonomous_coding job type — unattended ralph loop over a plan directory ([#175](https://github.com/tmac1973/haruspex/issues/175)) ([4cfa4eb](https://github.com/tmac1973/haruspex/commit/4cfa4eb284d5aef08ca2bdc9c0810dba87066c5c))
+* **jobs:** convert job types to a plugin registry with a type_config column ([#174](https://github.com/tmac1973/haruspex/issues/174)) ([8c1f02c](https://github.com/tmac1973/haruspex/commit/8c1f02c1b70b84c91341ffe1ffcc27a4dd7e63a7))
+* review remediation 2026-07 — responsiveness, UX recovery, a11y, provider descriptor ([#178](https://github.com/tmac1973/haruspex/issues/178)) ([f5f6888](https://github.com/tmac1973/haruspex/commit/f5f68888a72fc1f0d4bf9fd3fedbd4edf06e6ac8))
+* **ui:** warm-neutral + teal UI refresh (design handoff implementation) ([#179](https://github.com/tmac1973/haruspex/issues/179)) ([ae744e4](https://github.com/tmac1973/haruspex/commit/ae744e493a45d7d1f8850bc9cd4c961a83f7c637))
+
+
+### Bug Fixes
+
+* **proxy:** reddit-aware fetch fallback — old.reddit first, dead .json rewritten ([#177](https://github.com/tmac1973/haruspex/issues/177)) ([51d78b9](https://github.com/tmac1973/haruspex/commit/51d78b9a84da51198316fedece78644d0d61ee22))
+* **shell:** stop the assistant sidebar from freezing on long Code-mode sessions ([#176](https://github.com/tmac1973/haruspex/issues/176)) ([e73e179](https://github.com/tmac1973/haruspex/commit/e73e179431794cb1aedffd1442b829d111ae45e5))
+
 ## [0.1.54](https://github.com/tmac1973/haruspex/compare/v0.1.53...v0.1.54) (2026-07-09)
 
 
