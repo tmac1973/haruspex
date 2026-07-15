@@ -324,6 +324,16 @@ export interface AppSettings {
 	 */
 	shellHistoryTurnsForPrompt: number;
 	/**
+	 * Include the tail of the user's shell *history file*
+	 * (`$HISTFILE` / `~/.bash_history` / `~/.zsh_history` / fish) as
+	 * breadcrumbs in the Shell assistant's system prompt. That file spans
+	 * other terminals and previous sessions — not just the current one —
+	 * so it can surface unrelated activity to the model. Off by default
+	 * for privacy. When on, the lines sent are shown above each message
+	 * in the sidebar.
+	 */
+	shellIncludeHistoryFile: boolean;
+	/**
 	 * Maximum size in bytes for the *output* of any single captured
 	 * shell command attached to a chat message. When a command's output
 	 * exceeds this, the middle is dropped — the head + tail of the
@@ -447,6 +457,7 @@ const defaults: AppSettings = {
 	shellBinary: '',
 	shellSelection: null,
 	shellHistoryTurnsForPrompt: 3,
+	shellIncludeHistoryFile: false,
 	shellMaxBytesPerCapture: 8192,
 	shellSidebarWidth: 480,
 	shellCodeModeDefault: false,

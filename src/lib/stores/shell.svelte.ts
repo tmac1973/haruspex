@@ -146,6 +146,11 @@ export class ShellSession {
 	// Per-assistant-message "the system stopped this turn" reason, keyed by
 	// message index — drives the turn-limit / forced-stop indicator + Continue.
 	messageStops = $state<Record<number, AgentStopReason>>({});
+	// Shell-history-file lines that went into the system prompt for the turn a
+	// user message started, keyed by that user message's index. Only populated
+	// when the shellIncludeHistoryFile setting is on; drives the "history sent"
+	// disclosure in the sidebar so the user can see exactly what left the app.
+	messageHistorySent = $state<Record<number, string[]>>({});
 	// Transient notice when the pre-send guard reduced history to fit the
 	// model's context window. Cleared at the start of each turn.
 	contextNotice = $state<string | null>(null);
@@ -303,6 +308,7 @@ export class ShellSession {
 		this.messageSteps = {};
 		this.messageStats = {};
 		this.messageStops = {};
+		this.messageHistorySent = {};
 		this.lastError = null;
 		this.contextNotice = null;
 		// A fresh chat is a fresh session: re-arm the per-command approval so an
@@ -328,10 +334,15 @@ export class ShellSession {
 		const ctxRes = await invoke<ShellContextResponse>('shell_get_context', {
 			sessionId: this.activeSession.sessionId
 		});
-		const history = await invoke<string[]>('shell_get_recent_history', {
-			sessionId: this.activeSession.sessionId,
-			limit: 10
-		});
+		// The shell *history file* (~/.bash_history etc.) spans other terminals
+		// and previous sessions, so it only goes into the system prompt when the
+		// user has opted in (Settings → Shell). Off by default for privacy.
+		const history = getSettings().shellIncludeHistoryFile
+			? await invoke<string[]>('shell_get_recent_history', {
+					sessionId: this.activeSession.sessionId,
+					limit: 10
+				})
+			: [];
 		return {
 			currentCwd: ctxRes.current_cwd,
 			recentHistory: history,
@@ -569,6 +580,11 @@ export class ShellSession {
 		this.messageSteps = remapIndexedRecords(this.messages, newMessages, this.messageSteps);
 		this.messageStats = remapIndexedRecords(this.messages, newMessages, this.messageStats);
 		this.messageStops = remapIndexedRecords(this.messages, newMessages, this.messageStops);
+		this.messageHistorySent = remapIndexedRecords(
+			this.messages,
+			newMessages,
+			this.messageHistorySent
+		);
 		this.messages = newMessages;
 	}
 
@@ -597,6 +613,12 @@ export class ShellSession {
 				: payload.body
 		};
 		this.messages = [...this.messages, userMsg];
+		if (payload.recentHistory.length) {
+			this.messageHistorySent = {
+				...this.messageHistorySent,
+				[this.messages.length - 1]: payload.recentHistory
+			};
+		}
 
 		const promptOpts = {
 			sessionContext: payload.sessionContext,
