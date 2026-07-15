@@ -328,9 +328,10 @@ export interface AppSettings {
 	 * (`$HISTFILE` / `~/.bash_history` / `~/.zsh_history` / fish) as
 	 * breadcrumbs in the Shell assistant's system prompt. That file spans
 	 * other terminals and previous sessions — not just the current one —
-	 * so it can surface unrelated activity to the model. Off by default
-	 * for privacy. When on, the lines sent are shown above each message
-	 * in the sidebar.
+	 * so it can surface unrelated activity to the model. On by default
+	 * (the continuity is usually helpful); the lines sent are disclosed
+	 * above each message in the sidebar, and this switch turns them off
+	 * entirely for privacy.
 	 */
 	shellIncludeHistoryFile: boolean;
 	/**
@@ -457,7 +458,7 @@ const defaults: AppSettings = {
 	shellBinary: '',
 	shellSelection: null,
 	shellHistoryTurnsForPrompt: 3,
-	shellIncludeHistoryFile: false,
+	shellIncludeHistoryFile: true,
 	shellMaxBytesPerCapture: 8192,
 	shellSidebarWidth: 480,
 	shellCodeModeDefault: false,

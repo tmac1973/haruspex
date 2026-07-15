@@ -106,13 +106,14 @@
 		<span>Send recent lines from your shell history file as extra context</span>
 	</label>
 	<p class="help">
-		Off by default. When on, the assistant's system prompt includes the last 10 lines of your shell
+		On by default. When on, the assistant's system prompt includes the last 10 lines of your shell
 		history file (<code>$HISTFILE</code>, <code>~/.bash_history</code>,
 		<code>~/.zsh_history</code>, or the fish history) as breadcrumbs about what you've been working
 		on. That file spans <strong>other terminals and previous sessions</strong> — not just the shell in
-		front of you — which is useful context but also a privacy consideration. When enabled, the exact lines
-		sent are disclosed above each of your messages in the assistant sidebar. This is separate from the
-		per-message command capture above, which only ever covers the current session.
+		front of you — which is useful context but also a privacy consideration: turn this off to keep that
+		file out of prompts entirely. While on, the exact lines sent are disclosed above each of your messages
+		in the assistant sidebar. This is separate from the per-message command capture above, which only
+		ever covers the current session.
 	</p>
 </section>
 

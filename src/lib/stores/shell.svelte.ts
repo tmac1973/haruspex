@@ -335,8 +335,8 @@ export class ShellSession {
 			sessionId: this.activeSession.sessionId
 		});
 		// The shell *history file* (~/.bash_history etc.) spans other terminals
-		// and previous sessions, so it only goes into the system prompt when the
-		// user has opted in (Settings → Shell). Off by default for privacy.
+		// and previous sessions, so it's gated behind a Settings → Shell switch
+		// (on by default; the sidebar disclosure shows exactly what was sent).
 		const history = getSettings().shellIncludeHistoryFile
 			? await invoke<string[]>('shell_get_recent_history', {
 					sessionId: this.activeSession.sessionId,
