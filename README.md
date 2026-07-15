@@ -119,6 +119,7 @@ Press **F1** (or click the **?** in the header) to see this list in the app anyt
 | `Ctrl`+`Shift`+`A`        | Toggle the assistant sidebar                                       | Shell tab              |
 | `` Ctrl+` ``              | Switch focus: terminal ↔ assistant                                 | Shell tab              |
 | `Ctrl`+`Shift`+`C` / `V`  | Copy selection / paste                                             | Shell tab              |
+| `Ctrl`+`Shift`+`I` (`Cmd`+`Opt`+`I` on macOS) | Open the web inspector (devtools)              | Everywhere             |
 
 ## Development
 
