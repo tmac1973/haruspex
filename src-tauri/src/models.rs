@@ -353,32 +353,43 @@ fn kv_bytes_per_token(id: &str) -> Option<u64> {
     }
 }
 
-/// Largest standard context size for `model_id` that should fit in
-/// `vram_bytes`, accounting for the model weights, vision projector, the
-/// per-token KV growth, and fixed runtime overhead. Returns [`MIN_CONTEXT`]
-/// when the model is unknown or VRAM is too tight to model meaningfully.
-pub fn recommended_context_for(model_id: &str, vram_bytes: u64) -> u32 {
+/// Largest ladder rung that fits in `vram_bytes` for `model_id` *without
+/// spilling KV/weights into system RAM*, or `None` when we can't model the
+/// fit (unrecognized model, or no per-token KV cost known). Accounts for the
+/// weights, vision projector, per-token KV growth, and fixed runtime
+/// overhead.
+///
+/// The predictive context cap in Settings needs to tell "doesn't fit" apart
+/// from "can't predict" so it can fail open on unknown models — hence the
+/// `Option`, unlike [`recommended_context_for`], which floors both cases to
+/// [`MIN_CONTEXT`].
+pub fn context_ceiling_for(model_id: &str, vram_bytes: u64) -> Option<u32> {
     let registry = full_registry();
-    let Some(model) = registry.iter().find(|m| m.id == model_id) else {
-        return MIN_CONTEXT;
-    };
-    let Some(kv_per_tok) = kv_bytes_per_token(model_id) else {
-        return MIN_CONTEXT;
-    };
+    let model = registry.iter().find(|m| m.id == model_id)?;
+    let kv_per_tok = kv_bytes_per_token(model_id)?;
     let fixed = model.size_bytes
         + model.mmproj_size_bytes.unwrap_or(0)
         + VRAM_RESERVE_BYTES
         + COMPUTE_OVERHEAD_BYTES;
     if vram_bytes <= fixed {
-        return MIN_CONTEXT;
+        return Some(MIN_CONTEXT);
     }
     let max_ctx_fit = ((vram_bytes - fixed) / kv_per_tok) as u32;
-    CONTEXT_LADDER
-        .iter()
-        .rev()
-        .find(|&&rung| rung <= max_ctx_fit)
-        .copied()
-        .unwrap_or(MIN_CONTEXT)
+    Some(
+        CONTEXT_LADDER
+            .iter()
+            .rev()
+            .find(|&&rung| rung <= max_ctx_fit)
+            .copied()
+            .unwrap_or(MIN_CONTEXT),
+    )
+}
+
+/// Largest standard context size for `model_id` that should fit in
+/// `vram_bytes`. Returns [`MIN_CONTEXT`] when the model is unknown or VRAM is
+/// too tight to model meaningfully.
+pub fn recommended_context_for(model_id: &str, vram_bytes: u64) -> u32 {
+    context_ceiling_for(model_id, vram_bytes).unwrap_or(MIN_CONTEXT)
 }
 
 pub struct ModelManager {
@@ -910,6 +921,21 @@ pub async fn recommended_context_size(model_id: String, vram_mb: Option<u64>) ->
     })
 }
 
+/// Predictive context cap for Settings: the largest size that fits in VRAM
+/// *without* spilling to system RAM. `None` means "don't restrict" — either
+/// VRAM is unknown or the model isn't one we can model — so the UI leaves
+/// every size selectable rather than ghosting choices we can't reason about.
+#[tauri::command]
+pub async fn context_fit_ceiling(
+    model_id: String,
+    vram_mb: Option<u64>,
+) -> Result<Option<u32>, ()> {
+    Ok(match vram_mb {
+        Some(mb) => context_ceiling_for(&model_id, mb * 1024 * 1024),
+        None => None,
+    })
+}
+
 #[tauri::command]
 pub async fn download_model(
     app: AppHandle,
@@ -1125,6 +1151,32 @@ mod tests {
 
         // Unknown model → floor, not a panic.
         assert_eq!(recommended_context_for("nope", 24 * gb), MIN_CONTEXT);
+    }
+
+    #[test]
+    fn context_ceiling_distinguishes_cant_predict_from_doesnt_fit() {
+        let gb = 1024 * 1024 * 1024u64;
+        let id = "Qwen3.5-9B-UD-Q8_K_XL";
+
+        // Unknown model → None ("can't predict" → UI leaves every size on).
+        assert_eq!(context_ceiling_for("nope", 24 * gb), None);
+
+        // Known model, tight VRAM → Some(floor), NOT None. This is the case
+        // that must ghost the big rungs rather than fail open.
+        assert_eq!(context_ceiling_for(id, 4 * gb), Some(MIN_CONTEXT));
+
+        // Known model, roomy VRAM → Some(rung) that's a real ladder entry and
+        // at least as large as the tight-VRAM ceiling.
+        let tight = context_ceiling_for(id, 12 * gb).unwrap();
+        let roomy = context_ceiling_for(id, 32 * gb).unwrap();
+        assert!(roomy >= tight, "{roomy} >= {tight}");
+        assert!(CONTEXT_LADDER.contains(&roomy) || roomy == MIN_CONTEXT);
+
+        // Ceiling and the recommendation stay in lockstep (one wraps the other).
+        assert_eq!(
+            recommended_context_for(id, 16 * gb),
+            context_ceiling_for(id, 16 * gb).unwrap()
+        );
     }
 
     #[test]
