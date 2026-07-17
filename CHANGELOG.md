@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.56](https://github.com/tmac1973/haruspex/compare/v0.1.55...v0.1.56) (2026-07-17)
+
+
+### Bug Fixes
+
+* **agent:** survive sidecar restarts + trim research_url context bloat ([#184](https://github.com/tmac1973/haruspex/issues/184)) ([a89da35](https://github.com/tmac1973/haruspex/commit/a89da35f79c4ea534fd5055b5da7162862af44c6))
+* **inference:** save remote server URLs to the list without requiring Add ([#183](https://github.com/tmac1973/haruspex/issues/183)) ([bc279e8](https://github.com/tmac1973/haruspex/commit/bc279e8e6014de2a8e4d36973b0e0c57478b4920))
+
 ## [0.1.55](https://github.com/tmac1973/haruspex/compare/v0.1.54...v0.1.55) (2026-07-15)
 
 
