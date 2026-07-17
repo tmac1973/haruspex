@@ -2514,7 +2514,7 @@ dependencies = [
 
 [[package]]
 name = "haruspex"
-version = "0.1.55"
+version = "0.1.56"
 dependencies = [
  "arboard",
  "async-imap",
