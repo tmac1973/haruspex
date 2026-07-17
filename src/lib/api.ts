@@ -9,6 +9,51 @@ import { readErrorText } from '$lib/utils/http';
 let nextRequestId = 1;
 
 /**
+ * Transient-failure retry policy for chat requests. A chat completion is
+ * idempotent (no server-side side effects), so retrying a failed attempt is
+ * safe. This exists mainly to survive a sidecar/router restart mid-turn: a
+ * GPU crash or model reload surfaces as a 5xx or a dropped connection, the
+ * server respawns within seconds, and a retry lands on the healthy instance
+ * instead of throwing away the whole turn's work.
+ */
+const MAX_TRANSIENT_RETRIES = 3; // attempts after the first → 4 tries total
+const RETRY_BASE_DELAY_MS = 800; // 0.8s, 1.6s, 3.2s exponential backoff
+
+/**
+ * Whether an HTTP status is worth retrying. 5xx covers server/proxy/upstream
+ * failures (including the router's own 500 when its llama-server child dies);
+ * 408 (request timeout) and 429 (rate limit) are transient by nature. 4xx
+ * otherwise — notably the context-overflow 400 handled in the agent loop — is
+ * a client error the same request will keep hitting, so never retried.
+ */
+function isRetriableStatus(status: number): boolean {
+	return status >= 500 || status === 408 || status === 429;
+}
+
+/**
+ * Sleep that rejects with AbortError the moment the signal fires, so a user
+ * cancel during backoff is honored immediately instead of waiting out the
+ * delay. Clears its timer/listener on either outcome.
+ */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new DOMException('Aborted', 'AbortError'));
+			return;
+		}
+		const timer = setTimeout(() => {
+			signal?.removeEventListener('abort', onAbort);
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(new DOMException('Aborted', 'AbortError'));
+		};
+		signal?.addEventListener('abort', onAbort, { once: true });
+	});
+}
+
+/**
  * A message content can be a plain string (most common) or an array of
  * content parts. Content arrays are used when a user message includes
  * images alongside text (multimodal). Assistant, system, and tool messages
@@ -384,23 +429,50 @@ async function sendChatRequest(
 	reqId: number,
 	label: string
 ): Promise<Response> {
-	let response: Response;
-	try {
-		response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
-	} catch (e) {
-		if (isAbortError(e)) {
-			logDebug('api', `${label} request #${reqId} aborted before response`);
-			throw e;
+	const payload = JSON.stringify(body);
+	let lastError: ApiError | undefined;
+	for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
+		if (attempt > 0) {
+			const delay = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+			logDebug(
+				'api',
+				`${label} request #${reqId} retry ${attempt}/${MAX_TRANSIENT_RETRIES} after ${delay}ms`,
+				{ reason: lastError?.message }
+			);
+			await abortableDelay(delay, signal); // rejects on abort → propagates out
 		}
-		logDebug('api', `${label} request #${reqId} fetch failed`, { error: String(e) });
-		throw new ApiError('Failed to connect to the AI model. Is it still loading?');
+
+		let response: Response;
+		try {
+			response = await fetch(url, { method: 'POST', headers, body: payload, signal });
+		} catch (e) {
+			if (isAbortError(e)) {
+				logDebug('api', `${label} request #${reqId} aborted before response`);
+				throw e;
+			}
+			// A dropped/refused connection is transient (sidecar restarting) — retry.
+			logDebug('api', `${label} request #${reqId} fetch failed`, { error: String(e), attempt });
+			lastError = new ApiError('Failed to connect to the AI model. Is it still loading?');
+			continue;
+		}
+
+		if (!response.ok) {
+			const text = await readErrorText(response);
+			logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, {
+				body: text,
+				attempt
+			});
+			const err = new ApiError(`Server error: ${text}`, response.status);
+			if (isRetriableStatus(response.status)) {
+				lastError = err;
+				continue;
+			}
+			throw err; // client error (4xx) — retrying won't help
+		}
+		return response;
 	}
-	if (!response.ok) {
-		const text = await readErrorText(response);
-		logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, { body: text });
-		throw new ApiError(`Server error: ${text}`, response.status);
-	}
-	return response;
+	// Exhausted all attempts on a transient failure.
+	throw lastError ?? new ApiError('Failed to connect to the AI model. Is it still loading?');
 }
 
 export async function* parseSSE(response: Response): AsyncGenerator<StreamChunk> {

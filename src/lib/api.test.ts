@@ -141,29 +141,60 @@ describe('chatCompletionStream', () => {
 		vi.restoreAllMocks();
 	});
 
-	it('throws ApiError on connection failure', async () => {
-		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+	it('throws ApiError on connection failure after exhausting retries', async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+		vi.stubGlobal('fetch', fetchMock);
 
 		const stream = chatCompletionStream({ messages: [] });
-		await expect(async () => {
+		const run = (async () => {
 			// eslint-disable-next-line @typescript-eslint/no-unused-vars
 			for await (const _chunk of stream) {
 				// consume
 			}
-		}).rejects.toThrow(ApiError);
+		})();
+		const assertion = expect(run).rejects.toThrow(ApiError);
+		await vi.runAllTimersAsync(); // flush the backoff delays between retries
+		await assertion;
+		// 1 initial attempt + 3 retries.
+		expect(fetchMock).toHaveBeenCalledTimes(4);
 
+		vi.useRealTimers();
 		vi.unstubAllGlobals();
 	});
 
-	it('throws on non-200 response', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: false,
-				status: 500,
-				text: async () => 'Internal error'
-			})
-		);
+	it('retries a 5xx response then throws Server error', async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 500,
+			text: async () => 'Internal error'
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const stream = chatCompletionStream({ messages: [] });
+		const run = (async () => {
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			for await (const _chunk of stream) {
+				// consume
+			}
+		})();
+		const assertion = expect(run).rejects.toThrow('Server error');
+		await vi.runAllTimersAsync();
+		await assertion;
+		expect(fetchMock).toHaveBeenCalledTimes(4);
+
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+
+	it('does not retry a 4xx response', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 400,
+			text: async () => 'n_ctx exceeded'
+		});
+		vi.stubGlobal('fetch', fetchMock);
 
 		const stream = chatCompletionStream({ messages: [] });
 		await expect(async () => {
@@ -172,6 +203,8 @@ describe('chatCompletionStream', () => {
 				// consume
 			}
 		}).rejects.toThrow('Server error');
+		// Client errors are not transient — a single attempt, no retries.
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 
 		vi.unstubAllGlobals();
 	});
@@ -217,6 +250,32 @@ describe('chatCompletion', () => {
 		expect(result.content).toBe('Hello!');
 		expect(result.finish_reason).toBe('stop');
 
+		vi.unstubAllGlobals();
+	});
+
+	it('retries a transient 5xx then returns the recovered response', async () => {
+		vi.useFakeTimers();
+		// First attempt: router 500 (sidecar crashed). Second: healthy instance.
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: false, status: 503, text: async () => 'restarting' })
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					choices: [
+						{ message: { content: 'Recovered!', role: 'assistant' }, finish_reason: 'stop' }
+					]
+				})
+			});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const promise = chatCompletion({ messages: [] });
+		await vi.runAllTimersAsync(); // flush the one backoff delay
+		const result = await promise;
+		expect(result.content).toBe('Recovered!');
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+
+		vi.useRealTimers();
 		vi.unstubAllGlobals();
 	});
 
