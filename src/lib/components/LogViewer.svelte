@@ -65,9 +65,66 @@
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let wasAtBottom = true;
 	let humanReadable = $state(false);
+	let filterText = $state('');
+	let turnFilter = $state('');
+	let categoryFilter = $state('');
+	let filterInput: HTMLInputElement | undefined = $state();
 
 	const STRUCTURED_TABS: ReadonlySet<LogTab> = new Set(['debug', 'tools']);
 	const PREFIX_RE = /^\[([^\]]+)\](?:\s+\[turn (\d+)\])?\s+\[([^\]]+)\]\s+/;
+
+	const filtersActive = $derived(
+		filterText.trim() !== '' || turnFilter !== '' || categoryFilter !== ''
+	);
+
+	/**
+	 * Turn / category facets, read straight off the line prefix.
+	 *
+	 * Deliberately uses PREFIX_RE alone rather than `parseLine` — the latter
+	 * brute-forces `JSON.parse` at every `{` in the line looking for the data
+	 * payload, which is far too costly to run across a full 5000-entry buffer
+	 * on every 2s poll. The prefix regex gives us everything the facets need.
+	 */
+	/** Collect the distinct values of one PREFIX_RE capture group. */
+	function distinctPrefixField(group: 2 | 3): string[] {
+		const seen: Record<string, true> = {};
+		for (const l of logLines) {
+			const m = l.match(PREFIX_RE);
+			const v = m?.[group];
+			if (v) seen[v] = true;
+		}
+		return Object.keys(seen);
+	}
+
+	const availableTurns = $derived(distinctPrefixField(2).sort((a, b) => Number(a) - Number(b)));
+	const availableCategories = $derived(distinctPrefixField(3).sort());
+
+	const filteredLines = $derived.by(() => {
+		if (!filtersActive) return logLines;
+		const needle = filterText.trim().toLowerCase();
+		return logLines.filter((l) => {
+			if (turnFilter || categoryFilter) {
+				const m = l.match(PREFIX_RE);
+				if (turnFilter && m?.[2] !== turnFilter) return false;
+				if (categoryFilter && m?.[3] !== categoryFilter) return false;
+			}
+			return !needle || l.toLowerCase().includes(needle);
+		});
+	});
+
+	function clearFilters() {
+		filterText = '';
+		turnFilter = '';
+		categoryFilter = '';
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+			e.preventDefault();
+			filterInput?.focus();
+			filterInput?.select();
+		}
+	}
 
 	interface ParsedLine {
 		timestamp?: string;
@@ -270,6 +327,11 @@
 		activeTab = tab;
 		logLines = [];
 		wasAtBottom = true;
+		// Turn/category ids don't carry across tabs, so a stale facet would
+		// silently filter everything out. Free-text search is kept — searching
+		// the same string across tabs is a normal thing to want.
+		turnFilter = '';
+		categoryFilter = '';
 		startPolling();
 	}
 
@@ -342,7 +404,7 @@
 			if (!confirmingStatsReset) onclose();
 		}}
 	>
-		<div class="modal">
+		<div class="modal" role="dialog" tabindex="-1" onkeydown={handleKeydown}>
 			<div class="modal-header">
 				<div class="tabs">
 					{#each ['app', 'llm', 'tts', 'whisper', 'crashes', 'debug', 'tools', 'stats'] as const as tab (tab)}
@@ -378,15 +440,50 @@
 					{#if activeTab !== 'stats'}
 						<button
 							class="copy-btn"
-							onclick={() => copyLogs.copy(logLines.join('\n'))}
-							title="Copy current log tab to clipboard for bug reports"
+							onclick={() => copyLogs.copy(filteredLines.join('\n'))}
+							title={filtersActive
+								? 'Copy the filtered lines to clipboard'
+								: 'Copy current log tab to clipboard for bug reports'}
 						>
-							{copyLogs.state === 'copied' ? 'Copied!' : 'Copy all'}
+							{copyLogs.state === 'copied'
+								? 'Copied!'
+								: filtersActive
+									? `Copy ${filteredLines.length}`
+									: 'Copy all'}
 						</button>
 					{/if}
 					<button class="modal-close" onclick={onclose} title="Close">&times;</button>
 				</div>
 			</div>
+			{#if activeTab !== 'stats'}
+				<div class="filter-bar">
+					<input
+						class="filter-input"
+						type="text"
+						placeholder="Find in log…"
+						bind:this={filterInput}
+						bind:value={filterText}
+					/>
+					{#if STRUCTURED_TABS.has(activeTab)}
+						<select class="filter-select" bind:value={turnFilter} title="Filter by agent turn">
+							<option value="">All turns</option>
+							{#each availableTurns as t (t)}
+								<option value={t}>turn {t}</option>
+							{/each}
+						</select>
+						<select class="filter-select" bind:value={categoryFilter} title="Filter by category">
+							<option value="">All categories</option>
+							{#each availableCategories as c (c)}
+								<option value={c}>{c}</option>
+							{/each}
+						</select>
+					{/if}
+					{#if filtersActive}
+						<span class="filter-count">{filteredLines.length} / {logLines.length}</span>
+						<button class="filter-clear" onclick={clearFilters} title="Clear filters">Clear</button>
+					{/if}
+				</div>
+			{/if}
 			<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
 				{#snippet engineTable(rows: UnifiedRow[], globals: GlobalCounters)}
 					{#if rows.length === 0}
@@ -500,7 +597,7 @@
 						<div class="log-line log-empty">Loading stats…</div>
 					{/if}
 				{:else if humanReadable && STRUCTURED_TABS.has(activeTab)}
-					{#each logLines as line, i (`${activeTab}-${i}`)}
+					{#each filteredLines as line, i (`${activeTab}-${i}`)}
 						{@const parsed = parseLine(line)}
 						{#if parsed.timestamp}
 							<div class="log-entry">
@@ -520,13 +617,17 @@
 							<div class="log-entry"><div class="entry-message">{line}</div></div>
 						{/if}
 					{:else}
-						<div class="log-line log-empty">No log output yet.</div>
+						<div class="log-line log-empty">
+							{filtersActive ? 'No lines match the filter.' : 'No log output yet.'}
+						</div>
 					{/each}
 				{:else}
-					{#each logLines as line, i (`${activeTab}-${i}`)}
+					{#each filteredLines as line, i (`${activeTab}-${i}`)}
 						<div class="log-line">{line}</div>
 					{:else}
-						<div class="log-line log-empty">No log output yet.</div>
+						<div class="log-line log-empty">
+							{filtersActive ? 'No lines match the filter.' : 'No log output yet.'}
+						</div>
 					{/each}
 				{/if}
 			</div>
@@ -629,6 +730,66 @@
 		color: var(--accent);
 		border-color: var(--accent);
 		background: color-mix(in srgb, var(--accent) 10%, transparent);
+	}
+
+	.filter-bar {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		border-bottom: 1px solid var(--border);
+		flex-shrink: 0;
+	}
+
+	.filter-input {
+		flex: 1;
+		min-width: 0;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 5px 10px;
+		color: var(--text-primary);
+		font-size: 0.75rem;
+		font-family: inherit;
+	}
+
+	.filter-input:focus {
+		outline: none;
+		border-color: var(--accent);
+	}
+
+	.filter-select {
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 5px 8px;
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+		font-family: inherit;
+		cursor: pointer;
+		max-width: 140px;
+	}
+
+	.filter-count {
+		color: var(--text-secondary);
+		font-size: 0.72rem;
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.filter-clear {
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 4px 10px;
+		cursor: pointer;
+		color: var(--text-secondary);
+		font-size: 0.72rem;
+	}
+
+	.filter-clear:hover {
+		color: var(--text-primary);
+		border-color: var(--text-secondary);
 	}
 
 	.log-area {

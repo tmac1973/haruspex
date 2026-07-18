@@ -580,7 +580,17 @@ async function runModelCall(
 		response.usage &&
 		response.usage.prompt_tokens / ctx.contextSize >= IN_LOOP_TRIM_THRESHOLD
 	) {
-		trimOldToolMessages(ctx.messages);
+		// Logged because this is otherwise an invisible mutation: it silently
+		// stubs earlier tool results, and the only trace was the `[Trimmed:`
+		// marker buried inside a later prompt dump. When a run degrades in
+		// quality rather than failing outright, this is the line that says why.
+		if (trimOldToolMessages(ctx.messages)) {
+			logDebug('agent', 'in-loop trim stubbed older tool results', {
+				promptTokens: response.usage.prompt_tokens,
+				contextSize: ctx.contextSize,
+				ratio: +(response.usage.prompt_tokens / ctx.contextSize).toFixed(3)
+			});
+		}
 	}
 
 	let toolCalls: ResolvedToolCall[] = [];
