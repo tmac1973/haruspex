@@ -13,9 +13,10 @@
 //! the agent can answer.
 
 use super::fuzzy::EditResult;
-use super::path::{edit_text_at, read_text_at, refuse_if_exists, DirListing, MAX_WRITE_BYTES};
+use super::path::{
+    edit_text_at, read_text_at, refuse_if_exists, write_atomic, DirListing, MAX_WRITE_BYTES,
+};
 use std::path::PathBuf;
-use tokio::fs;
 
 fn require_absolute(path: &str) -> Result<PathBuf, String> {
     // WSL sessions hand us Linux paths. One under the Windows automount
@@ -174,9 +175,9 @@ pub async fn fs_write_text_absolute(
         }
     }
 
-    fs::write(&resolved, content)
-        .await
-        .map_err(|e| format!("Failed to write file: {}", e))?;
+    // Atomic: a failed write must leave the previous file intact rather than
+    // truncating it. See `write_atomic`.
+    write_atomic(&resolved, content.as_bytes()).await?;
     Ok(())
 }
 
