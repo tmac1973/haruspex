@@ -104,9 +104,16 @@ The end-to-end flow this work protects:
   unclosed-tag fallbacks at `:215`, `:228`, `:250` and `:262`.
 - A verifier reply of `<think>…</think>\n\nPLAN OK` is recognised as clean by
   `isPlanClean`, verified by a unit test.
-- A guided-planning run against a reasoning model completes verification in one
-  round, and its `review-summary.md` "no files modified" claim is consistent with
-  the phase files' mtimes.
+- A guided-planning run against a reasoning model whose plan is **already clean**
+  ends verification after one round — i.e. `PLAN OK` is recognised the first time
+  it is emitted, rather than being missed so every `MAX_VERIFY_ROUNDS` is burned.
+  A run that finds real problems is expected to take two rounds (find, revise,
+  re-verify clean); rewriting an incongruous phase file is the revise path
+  working as designed, not a defect.
+- The verifier's account of what it changed matches what changed on disk. The
+  failure this catches is a *contradiction* — run 19 rewrote all five phase files
+  during Verification while its `review-summary.md` claimed "No files were
+  modified" — not the mere fact that a file was rewritten.
 - A second `fs_write_text` to the same path within one turn returns an error, not
   a success — verified by a test.
 - A write that fails partway leaves the original file byte-identical, verified by
