@@ -532,6 +532,32 @@ describe('runAgentLoop: recovery nudges', () => {
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 	});
 
+	it('tells a model whose write was truncated how to proceed, not just to retry', async () => {
+		// A truncated tool call is refused, never salvaged. The retry nudge has to
+		// carry real guidance: chunking is now blocked (a second write to the same
+		// path replaces the first), so a file too large to emit whole can only be
+		// changed with fs_edit_text. Without that pointer the model burns both
+		// retries re-emitting the same oversized call.
+		nonStreamQueue.push(
+			{
+				content:
+					'<function=fs_write_text><parameter=path>big.md<parameter=content># Title\nstart of a very long file that gets cut off mid-sen',
+				finish_reason: 'length'
+			},
+			textResponse('Understood.')
+		);
+		const { options } = makeOptions();
+
+		await runAgentLoop(options);
+
+		const nudge = flattenText(nonStreamSnapshots[1]).join('\n');
+		expect(nudge).toContain('was not run');
+		expect(nudge).toContain('Nothing was written');
+		// The two things that make the guidance actionable rather than circular.
+		expect(nudge).toContain('fs_edit_text');
+		expect(nudge).toContain('replaces the first');
+	});
+
 	it('pushes the diversity nudge after a web_search turn that fetched no pages', async () => {
 		nonStreamQueue.push(
 			toolCallResponse([{ id: 'c1', name: 'web_search', args: '{"query":"x"}' }]),

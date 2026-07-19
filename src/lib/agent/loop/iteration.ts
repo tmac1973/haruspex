@@ -29,7 +29,8 @@ import {
 	estimateMessagesTokens,
 	recordTokenCalibration,
 	parseContextOverflow,
-	getTokenCalibration
+	getTokenCalibration,
+	TOKEN_BYTES_RATIO
 } from '$lib/agent/context-budget';
 import {
 	getChatTemplateKwargs,
@@ -898,8 +899,15 @@ function handleRejectedToolCall(
 				`action was taken. Emit the call again as a single complete tool_calls ` +
 				`block, with the whole value of each argument present — do not split an ` +
 				`argument across repeated parameters, and do not describe the call in ` +
-				`prose. If the content is too long to emit in one response, write less ` +
-				`of it rather than sending a partial value.`,
+				`prose.\n\n` +
+				`If the content is too long to fit in one response, do NOT send it in ` +
+				`pieces — a second write to the same path replaces the first rather than ` +
+				`appending, so chunking loses everything but the last chunk. Instead:\n` +
+				`- To change part of an existing file, use fs_edit_text with a targeted ` +
+				`old_str/new_str. It never requires emitting the whole file, so it works ` +
+				`at any file size.\n` +
+				`- To create a new file, write less content, or split the material across ` +
+				`separate files with different paths.`,
 			true
 		);
 	}
@@ -916,9 +924,13 @@ function handleRejectedToolCall(
 		new ApiError(
 			`The model's tool call was cut off before it finished (${reason}), and it ` +
 				`could not re-send it within ${MAX_TRUNCATION_RETRIES} attempts. Nothing ` +
-				`was written. The response hit its ${ctx.maxResponseTokens}-token ceiling — ` +
-				`raise Settings → Inference → ${settingLabel}, or ask for a smaller piece ` +
-				`of work.`
+				`was written — no file was created or partially overwritten. The response ` +
+				`hit its ${ctx.maxResponseTokens}-token ceiling, which is roughly ` +
+				`${Math.round((ctx.maxResponseTokens * TOKEN_BYTES_RATIO) / 1024)} KB of ` +
+				`content before the model's reasoning is subtracted. Raise Settings → ` +
+				`Agent → Response Length → ${settingLabel}, or ask for a smaller piece of ` +
+				`work. Note that editing an existing file (fs_edit_text) has no such limit ` +
+				`— only rewriting one whole does.`
 		)
 	);
 	return 'complete';
