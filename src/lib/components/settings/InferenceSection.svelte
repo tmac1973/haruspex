@@ -581,6 +581,47 @@
 		margin-top: 2px;
 	}
 
+	/* Mirrors .spill-* above, but lays the control out as label-left /
+	   input-right rather than checkbox-first. */
+	.tokens-row {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16px;
+		margin-top: 12px;
+	}
+
+	.tokens-label {
+		font-size: 0.85rem;
+		color: var(--text-primary);
+	}
+
+	.tokens-sub {
+		display: block;
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
+		max-width: 46ch;
+	}
+
+	.tokens-row input {
+		flex-shrink: 0;
+		width: 9ch;
+		padding: 6px 8px;
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+		color: var(--text-primary);
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+	}
+
+	.tokens-row input:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+
 	.ctx-btn strong {
 		display: block;
 		font-size: 0.95rem;
