@@ -52,25 +52,44 @@ function formatEditResult(path: string, r: EditResult): string {
 }
 
 /**
- * Outcome of pre-write conflict resolution. `null` means the user
- * canceled and the caller should return an error to the model.
+ * Outcome of pre-write conflict resolution.
+ *  - `ok`       proceed with the write.
+ *  - `canceled` the user declined at the conflict modal.
+ *  - `rejected` we refused the write outright; `message` explains why.
  */
-interface ResolvedWritePath {
-	finalPath: string;
-	overwrite: boolean;
-}
+type WriteResolution =
+	| { kind: 'ok'; finalPath: string; overwrite: boolean }
+	| { kind: 'canceled' }
+	| { kind: 'rejected'; message: string };
 
 /**
  * Check whether a write to `relPath` would clobber an existing file,
  * and if so, show the file-conflict modal to let the user pick.
+ *
+ * Exported for tests: the repeat-write guard below is the whole reason a
+ * chunked write can't silently lose its prefix, so it is worth asserting
+ * directly rather than only through a tool executor.
  */
-async function resolveWritePathInteractive(
+export async function resolveWritePathInteractive(
 	workdir: string,
 	relPath: string,
 	filesWrittenThisTurn: Set<string>
-): Promise<ResolvedWritePath | null> {
+): Promise<WriteResolution> {
+	// Second write to the same path in one turn. This used to short-circuit to
+	// overwrite:true and still report "Wrote: <path>", so a model emitting a
+	// long document as several sequential writes saw N successes and left only
+	// the LAST chunk on disk — the prefix-loss half of the "middle slice"
+	// corruption, reachable with no truncation involved at all. There is no
+	// append mode, so refusing is the only honest answer.
 	if (filesWrittenThisTurn.has(relPath)) {
-		return { finalPath: relPath, overwrite: true };
+		return {
+			kind: 'rejected',
+			message:
+				`"${relPath}" was already written in this turn, and writing it again would ` +
+				`replace what you just wrote rather than add to it. Do not write a file in ` +
+				`pieces: emit a single fs_write_* call containing the file's complete ` +
+				`content. To change part of a file you already wrote, use fs_edit_text.`
+		};
 	}
 
 	let exists = false;
@@ -80,30 +99,30 @@ async function resolveWritePathInteractive(
 		exists = false;
 	}
 	if (!exists) {
-		return { finalPath: relPath, overwrite: false };
+		return { kind: 'ok', finalPath: relPath, overwrite: false };
 	}
 
 	// Unattended runs (jobs) can't show a modal, so we treat existing-file
 	// conflicts as "overwrite". The job authoring UI surfaces this so the
 	// user knows what they're opting into.
 	if (isAutoApproveActive()) {
-		return { finalPath: relPath, overwrite: true };
+		return { kind: 'ok', finalPath: relPath, overwrite: true };
 	}
 
 	const { askFileConflict } = await import('$lib/stores/fileConflict.svelte');
 	const choice = await askFileConflict(relPath);
 	if (choice === 'cancel') {
-		return null;
+		return { kind: 'canceled' };
 	}
 	if (choice === 'overwrite') {
-		return { finalPath: relPath, overwrite: true };
+		return { kind: 'ok', finalPath: relPath, overwrite: true };
 	}
 	try {
 		const newPath = await invoke<string>('fs_find_available_path', { workdir, relPath });
-		return { finalPath: newPath, overwrite: false };
+		return { kind: 'ok', finalPath: newPath, overwrite: false };
 	} catch (e) {
 		console.error('fs_find_available_path failed:', e);
-		return { finalPath: relPath, overwrite: true };
+		return { kind: 'ok', finalPath: relPath, overwrite: true };
 	}
 }
 
@@ -127,7 +146,8 @@ async function fsWriteWithConflictCheck(
 	filesWrittenThisTurn: Set<string>
 ): Promise<ToolExecOutput> {
 	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
-	if (!resolved) return userCanceledWriteError(relPath, command);
+	if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, command);
+	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 	try {
 		await invoke(command, {
 			workdir,
@@ -832,7 +852,8 @@ registerTool({
 			relPath,
 			ctx.filesWrittenThisTurn
 		);
-		if (!resolved) return userCanceledWriteError(relPath, 'fs_download_url');
+		if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, 'fs_download_url');
+		if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 		try {
 			const message = await invoke<string>('fs_download_url', {
 				workdir: ctx.workingDir,

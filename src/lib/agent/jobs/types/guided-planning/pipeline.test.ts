@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { phaseFileProblem } from './pipeline';
+import { finalizeStreamText } from '$lib/markdown';
+import { isPlanClean, phaseFileProblem } from './pipeline';
 
 /** A phase file with everything the write-time gate cares about. */
 function goodPhase(extra = ''): string {
@@ -30,6 +31,10 @@ function goodPhase(extra = ''): string {
 		'## Build gate',
 		'',
 		'The page renders with the full palette applied and no unstyled flash.',
+		'',
+		'## Rollback',
+		'',
+		'Revert the commit; no later phase builds on it yet.',
 		extra
 	].join('\n');
 }
@@ -123,5 +128,72 @@ describe('phaseFileProblem', () => {
 		for (const v of variations) {
 			expect(phaseFileProblem('phase-02.md', v), v.slice(0, 40)).toBeNull();
 		}
+	});
+});
+
+describe('isPlanClean', () => {
+	it('accepts a bare clean verdict', () => {
+		expect(isPlanClean('PLAN OK')).toBe(true);
+	});
+
+	it('accepts a clean verdict that reached it through finalizeStreamText', () => {
+		// The regression. A reasoning model wraps its verdict in a <think>
+		// block; finalText retained it, so startsWith('PLAN OK') could never
+		// match. Every run then burned all MAX_VERIFY_ROUNDS and fired a revise
+		// turn against files that were already correct. Observed in job run 19:
+		// the verifier emitted PLAN OK and all five phase files were rewritten
+		// during Verification anyway.
+		const verdict = finalizeStreamText(
+			'<think>Checking each phase for ordering violations...</think>\n\nPLAN OK'
+		).content;
+		expect(isPlanClean(verdict)).toBe(true);
+	});
+
+	it('still rejects a verdict that reports problems', () => {
+		const verdict = finalizeStreamText(
+			'<think>Phase 3 needs something from phase 5.</think>\n\n' +
+				'ORDERING: phase 03 depends on phase 05'
+		).content;
+		expect(isPlanClean(verdict)).toBe(false);
+	});
+
+	it('does not match "PLAN OK" mentioned mid-sentence', () => {
+		// Guards against a looser match: a verifier explaining why it cannot
+		// say PLAN OK must not be read as a pass.
+		const verdict = "I can't say PLAN OK because phase 02 is truncated";
+		expect(isPlanClean(verdict)).toBe(false);
+	});
+});
+
+describe('phaseFileProblem — tail truncation', () => {
+	it('rejects a file whose tail is missing', () => {
+		// The blind spot the original gate had: it read only the first 1000
+		// lines and checked a size floor, a heading and a "Depends on" line, so
+		// a file missing everything after the middle passed identically to a
+		// complete one. It caught the original incident only because that
+		// fragment lost its prefix too.
+		const truncated = goodPhase().replace(/\n## Rollback[\s\S]*$/, '\n');
+		const problem = phaseFileProblem('phase-02.md', truncated);
+		expect(problem).toContain('Rollback');
+		expect(problem).toContain('truncated');
+	});
+
+	it('accepts heading case and spacing variations of the closing section', () => {
+		const variations = [
+			goodPhase().replace('## Rollback', '## rollback'),
+			goodPhase().replace('## Rollback', '##   Rollback'),
+			goodPhase().replace('## Rollback', '## Rollback Plan')
+		];
+		for (const v of variations) {
+			expect(phaseFileProblem('phase-02.md', v), v.slice(0, 40)).toBeNull();
+		}
+	});
+
+	it('still rejects the original corrupt fragment by the heading check', () => {
+		// Unchanged behaviour: that fragment fails /^#\s/ before the tail check
+		// is ever reached, so the two guards cover different defects.
+		const fragment = '### 9. Score panel\n\n' + 'x'.repeat(500);
+		const problem = phaseFileProblem('phase-02.md', fragment);
+		expect(problem).toContain('heading');
 	});
 });

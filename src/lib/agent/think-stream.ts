@@ -1,4 +1,5 @@
 import type { StreamChunk } from '$lib/api';
+import { stripThinkBlocks } from '$lib/markdown';
 
 /**
  * Per-turn memo of which think tags have already been appended, so
@@ -58,8 +59,5 @@ export function appendStreamDelta(
  * empty blinking cursor, and to switch to the streamed answer only once it exists.
  */
 export function hasStreamingAnswer(buf: string): boolean {
-	const withoutThink = buf
-		.replace(/<think>[\s\S]*?<\/think>/g, '') // closed reasoning blocks
-		.replace(/<think>[\s\S]*$/, ''); // a still-open reasoning block at the end
-	return withoutThink.trim().length > 0;
+	return stripThinkBlocks(buf).trim().length > 0;
 }

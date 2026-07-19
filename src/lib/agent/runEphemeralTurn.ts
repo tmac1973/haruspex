@@ -43,6 +43,12 @@ export interface EphemeralTurnOptions {
 	/** Confine writes to this dir (relative to workingDir). See AgentLoopOptions. */
 	writeRoot?: string | null;
 	/**
+	 * Per-call output token ceiling. Omit to resolve it from Settings → Agent →
+	 * Response Length: the file-write cap when `expectsFileOutput` is set, the
+	 * base cap otherwise. Set it only to pin a turn to an exact budget.
+	 */
+	maxResponseTokens?: number;
+	/**
 	 * Force the file-write hallucination guard on for this turn, regardless of
 	 * the user message. The default heuristic sniffs the user message for binary
 	 * document keywords (PDF/docx/…) — but a caller that KNOWS the turn must
@@ -70,7 +76,10 @@ export interface EphemeralTurnOptions {
 }
 
 export interface EphemeralTurnResult {
+	/** Visible answer text: reasoning and tool-call artifacts stripped. */
 	finalText: string;
+	/** The unstripped buffer, `<think>` blocks intact, for UI that renders them. */
+	rawText: string;
 }
 
 export async function runEphemeralTurn(
@@ -94,6 +103,9 @@ export async function runEphemeralTurn(
 			messages,
 			workingDir: options.workingDir,
 			contextSize: options.contextSize,
+			// Left undefined unless the caller pinned one: `buildLoopContext`
+			// resolves the ceiling from settings for every entry point.
+			maxResponseTokens: options.maxResponseTokens,
 			maxIterations: options.maxIterations ?? (options.deepResearch ? 25 : 10),
 			deepResearch: options.deepResearch ?? false,
 			expectsFileOutput,

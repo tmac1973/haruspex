@@ -29,28 +29,29 @@ import {
 	estimateMessagesTokens,
 	recordTokenCalibration,
 	parseContextOverflow,
-	getTokenCalibration
+	getTokenCalibration,
+	TOKEN_BYTES_RATIO
 } from '$lib/agent/context-budget';
 import {
 	getChatTemplateKwargs,
 	getSamplingParams,
-	getOpenRouterReasoningParam
+	getOpenRouterReasoningParam,
+	getSettings
 } from '$lib/stores/settings';
 import { resolveBackendDescriptor, type BackendDescriptor } from '$lib/inference/descriptor';
 import { stripToolCallArtifacts } from '$lib/markdown';
 import { isAbortError } from '$lib/utils/error';
 import { logDebug } from '$lib/debug-log';
-import { NudgeState } from './nudges';
+import { MAX_TRUNCATION_RETRIES, NudgeState } from './nudges';
 import type { AgentLoopOptions, CompletionMeta } from '../loop';
 
 // Trim older tool results when context usage crosses this fraction.
 // Lower than the conversation-level compaction threshold (0.8) so we
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
-// Per-call output token cap. Used for both agent-loop iterations (where
-// the model may emit a large `fs_write_pdf` tool call containing an
-// entire report as its content argument) and the final streaming
-// synthesis.
+// Last-resort per-call output cap, used only if the settings store can't be
+// read. The operative values come from Settings → Agent → Response Length,
+// resolved per turn by `resolveMaxResponseTokens` below.
 const AGENT_LOOP_MAX_TOKENS = 8192;
 const FINAL_SYNTHESIS_MAX_TOKENS = 8192;
 
@@ -123,6 +124,24 @@ export interface LoopContext {
 }
 
 /**
+ * Per-turn output ceiling, resolved for EVERY caller of the agent loop —
+ * chat, shell and jobs alike — because this is the one place all three pass
+ * through. Resolving it in `runEphemeralTurn` instead would have covered
+ * jobs only, leaving the chat tab (which calls `runAgentLoop` directly, and
+ * can itself be a file-writing turn) pinned to the fallback constant.
+ *
+ * An explicit per-call value always wins: shell code mode pins its own.
+ */
+function resolveMaxResponseTokens(options: AgentLoopOptions, expectsFileOutput: boolean): number {
+	if (options.maxResponseTokens != null) return options.maxResponseTokens;
+	const settings = getSettings();
+	const fromSettings = expectsFileOutput
+		? settings.maxResponseTokensFileWrite
+		: settings.maxResponseTokens;
+	return fromSettings ?? AGENT_LOOP_MAX_TOKENS;
+}
+
+/**
  * Build the per-turn LoopContext from the public `AgentLoopOptions`.
  * Applies defaults for optional fields and asks the tool registry for
  * the schema list filtered by working-dir presence, deep-research
@@ -133,6 +152,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const shellMode = options.shellMode ?? false;
 	const codeMode = options.codeMode ?? false;
 	const codeAutoApprove = options.codeAutoApprove ?? false;
+	const expectsFileOutput = options.expectsFileOutput ?? false;
 	return {
 		messages: options.messages,
 		tools: getToolSchemas({
@@ -153,10 +173,10 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		interactive: options.interactive ?? false,
 		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,
-		maxResponseTokens: options.maxResponseTokens ?? AGENT_LOOP_MAX_TOKENS,
+		maxResponseTokens: resolveMaxResponseTokens(options, expectsFileOutput),
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
-		expectsFileOutput: options.expectsFileOutput ?? false,
+		expectsFileOutput,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
 		maxIterations: options.maxIterations ?? 8,
@@ -474,7 +494,10 @@ async function forceFinalToolCall(
 		return;
 	}
 
-	const calls = resolveToolCalls(response).filter((c) => c.name === name);
+	// A rejected resolution has no usable call either — this path has no retry
+	// budget, so it ends the turn the same way an empty result does.
+	const resolution = resolveToolCalls(response);
+	const calls = resolution.kind === 'calls' ? resolution.calls.filter((c) => c.name === name) : [];
 	if (calls.length === 0) {
 		logDebug('agent', 'forced final tool call returned no usable call', { tool: name });
 		ctx.options.onComplete(meta);
@@ -551,7 +574,11 @@ async function runModelCall(
 	templateKwargs: ReturnType<typeof getChatTemplateKwargs>,
 	reasoning: { effort: string } | undefined,
 	iteration: number
-): Promise<{ response: ChatCompletionResponse; toolCalls: ResolvedToolCall[] }> {
+): Promise<{
+	response: ChatCompletionResponse;
+	toolCalls: ResolvedToolCall[];
+	rejection: string | null;
+}> {
 	const { tools, options } = ctx;
 	const callStartMs = Date.now();
 	const response = await sendGuardedCompletion(
@@ -594,20 +621,27 @@ async function runModelCall(
 	}
 
 	let toolCalls: ResolvedToolCall[] = [];
+	// Non-null when the model attempted a call we refused (truncated or
+	// ambiguous). Distinct from "no calls" — the caller must retry, not treat
+	// the turn as prose.
+	let rejection: string | null = null;
 	let parseError: unknown = null;
 	try {
-		toolCalls = resolveToolCalls(response);
+		const resolution = resolveToolCalls(response);
+		if (resolution.kind === 'calls') toolCalls = resolution.calls;
+		else if (resolution.kind === 'rejected') rejection = resolution.reason;
 	} catch (e) {
 		parseError = e;
 	}
 	logDebug('agent', `iteration ${iteration} parsed`, {
 		toolCallCount: toolCalls.length,
+		rejection,
 		finish_reason: response.finish_reason,
 		content_len: response.content ? response.content.length : 0,
 		parseError: parseError ? String(parseError) : null
 	});
 
-	return { response, toolCalls };
+	return { response, toolCalls, rejection };
 }
 
 /**
@@ -646,13 +680,21 @@ export async function runIteration(
 	});
 	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
 	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
-	const { response, toolCalls } = await runModelCall(
+	const { response, toolCalls, rejection } = await runModelCall(
 		ctx,
 		sampling,
 		templateKwargs,
 		reasoning,
 		iteration
 	);
+
+	// A refused call is handled before the no-tool-calls chain: the model DID
+	// attempt a call, so treating this as prose would let a truncated write
+	// pass silently as the turn's answer.
+	if (rejection) {
+		const rejected = handleRejectedToolCall(ctx, nudges, response, rejection, iteration);
+		if (rejected) return rejected;
+	}
 
 	// No tool calls: run the recovery-guard chain in priority order, then
 	// fall through to the terminal no-tool-call handler. Each guard checks
@@ -827,6 +869,73 @@ function tryNarrateRecovery(
 	return null;
 }
 
+/**
+ * A tool call was refused — truncated mid-generation, or ambiguous. Ask the
+ * model to re-emit it whole while there is retry budget left; when that runs
+ * out, end the turn with an error naming the ceiling that caused it.
+ *
+ * Returning null is not an option here: falling through to the no-tool-calls
+ * chain would treat a refused write as the turn's prose answer, which is the
+ * silent half-success this guard exists to prevent.
+ */
+function handleRejectedToolCall(
+	ctx: LoopContext,
+	nudges: NudgeState,
+	response: ChatCompletionResponse,
+	reason: string,
+	iteration: number
+): IterationOutcome {
+	if (nudges.needsTruncationRetry()) {
+		nudges.consumeTruncationRetry();
+		logDebug('agent', `iteration ${iteration} branch=tool-call-rejected retry`, {
+			reason,
+			retry: nudges.truncationRetryCount,
+			finish_reason: response.finish_reason
+		});
+		return pushNudge(
+			ctx.messages,
+			response,
+			`Your last tool call was not run: ${reason}. Nothing was written and no ` +
+				`action was taken. Emit the call again as a single complete tool_calls ` +
+				`block, with the whole value of each argument present — do not split an ` +
+				`argument across repeated parameters, and do not describe the call in ` +
+				`prose.\n\n` +
+				`If the content is too long to fit in one response, do NOT send it in ` +
+				`pieces — a second write to the same path replaces the first rather than ` +
+				`appending, so chunking loses everything but the last chunk. Instead:\n` +
+				`- To change part of an existing file, use fs_edit_text with a targeted ` +
+				`old_str/new_str. It never requires emitting the whole file, so it works ` +
+				`at any file size.\n` +
+				`- To create a new file, write less content, or split the material across ` +
+				`separate files with different paths.`,
+			true
+		);
+	}
+
+	logDebug('agent', `iteration ${iteration} branch=tool-call-rejected exhausted`, {
+		reason,
+		finish_reason: response.finish_reason
+	});
+	ctx.options.onComplete();
+	const settingLabel = ctx.expectsFileOutput
+		? 'Max response tokens (file writes)'
+		: 'Max response tokens';
+	ctx.options.onError(
+		new ApiError(
+			`The model's tool call was cut off before it finished (${reason}), and it ` +
+				`could not re-send it within ${MAX_TRUNCATION_RETRIES} attempts. Nothing ` +
+				`was written — no file was created or partially overwritten. The response ` +
+				`hit its ${ctx.maxResponseTokens}-token ceiling, which is roughly ` +
+				`${Math.round((ctx.maxResponseTokens * TOKEN_BYTES_RATIO) / 1024)} KB of ` +
+				`content before the model's reasoning is subtracted. Raise Settings → ` +
+				`Agent → Response Length → ${settingLabel}, or ask for a smaller piece of ` +
+				`work. Note that editing an existing file (fs_edit_text) has no such limit ` +
+				`— only rewriting one whole does.`
+		)
+	);
+	return 'complete';
+}
+
 /** File-write hallucination recovery. */
 function tryFileWriteRecovery(
 	ctx: LoopContext,
@@ -850,15 +959,14 @@ function tryFileWriteRecovery(
 		return pushNudge(
 			ctx.messages,
 			response,
-			'STOP. You have not actually created any file yet — no fs_write_* tool call ' +
-				'was made, and the file you are describing does not exist on disk. You MUST ' +
-				'now emit a real fs_write_* tool call that matches the requested format: ' +
-				'fs_write_text for markdown or plain text, or fs_write_pdf / fs_write_docx / ' +
-				'fs_write_xlsx for a binary document — with the complete content as the ' +
-				'`content` argument and a short relative path. Do NOT reply with more text ' +
-				'describing the file — your NEXT output must be a tool_calls block invoking ' +
-				'the write tool. After the tool runs successfully, then respond briefly ' +
-				'confirming the file path.'
+			'You have not emitted an fs_write_* tool call this turn, so nothing has been ' +
+				'written or changed. If the file needs writing or changing, emit that call ' +
+				'now — fs_write_text for markdown or plain text, or fs_write_pdf / ' +
+				'fs_write_docx / fs_write_xlsx for a binary document — with the complete ' +
+				'content as the `content` argument and a short relative path, as a ' +
+				'tool_calls block rather than a description of one. If the file is already ' +
+				'correct and genuinely needs no change, say so directly instead of ' +
+				'describing a write you did not make.'
 		);
 	}
 	return null;

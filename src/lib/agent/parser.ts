@@ -151,6 +151,27 @@ function coerceFunctionStyleValue(raw: string): unknown {
  * around values is stripped.
  */
 export function extractFunctionStyleToolCalls(content: string): ParsedToolCall[] {
+	const result = parseFunctionStyleToolCalls(content);
+	return result.kind === 'calls' ? result.calls : [];
+}
+
+/** Either the parsed calls, or the reason the content was refused outright. */
+type FunctionStyleResult =
+	| { kind: 'calls'; calls: ParsedToolCall[] }
+	| { kind: 'rejected'; reason: string };
+
+/**
+ * The checked form of `extractFunctionStyleToolCalls`. Same grammar, but it
+ * reports *why* it refused instead of returning a silently lossy result.
+ *
+ * A repeated `<parameter=KEY>` used to overwrite: `args[key] = …` kept only
+ * the last occurrence, so a model chunking a long file body across several
+ * `<parameter=content>` blocks lost everything but the final chunk — the
+ * prefix half of the "middle slice" corruption. Concatenating would be a
+ * guess (chunking, restating and self-correction are indistinguishable), so
+ * we refuse the call instead and let the loop retry.
+ */
+function parseFunctionStyleToolCalls(content: string): FunctionStyleResult {
 	const calls: ParsedToolCall[] = [];
 	// Match each <function=NAME>...<end> block. End-of-block is the
 	// next <function=...>, a </function>, or end of input.
@@ -160,6 +181,8 @@ export function extractFunctionStyleToolCalls(content: string): ParsedToolCall[]
 		const name = match[1];
 		const body = match[2];
 
+		// Scoped per function block, not across the response: one response can
+		// legitimately carry several calls that each use the same parameter name.
 		const args: Record<string, unknown> = {};
 		// Match each <parameter=KEY>value pair within the function block.
 		// The value ends at the next <parameter=, </parameter>,
@@ -170,12 +193,18 @@ export function extractFunctionStyleToolCalls(content: string): ParsedToolCall[]
 		while ((p = paramRegex.exec(body)) !== null) {
 			const key = p[1];
 			const raw = p[2];
+			if (Object.prototype.hasOwnProperty.call(args, key)) {
+				return {
+					kind: 'rejected',
+					reason: `duplicate parameter '${key}' in call to '${name}' — ambiguous, refusing to guess`
+				};
+			}
 			args[key] = coerceFunctionStyleValue(raw);
 		}
 
 		calls.push({ name, arguments: args });
 	}
-	return calls;
+	return { kind: 'calls', calls };
 }
 
 // Monotonic id for tool calls recovered from text content. The structured
@@ -187,31 +216,79 @@ function nextToolCallId(): string {
 	return `call_${(toolCallSeq++).toString(36)}`;
 }
 
-export function resolveToolCalls(response: ChatCompletionResponse): ResolvedToolCall[] {
-	// Prefer structured tool_calls if present — this is the path a
-	// well-configured server takes and it's always the most reliable.
-	// A remote/quantized model can still emit truncated or invalid
-	// `arguments`; parse each defensively so one bad call falls through
-	// to the content-based fallbacks (and ultimately malformed-tool-call
-	// recovery) instead of throwing synchronously out of this function.
-	if (response.tool_calls && response.tool_calls.length > 0) {
-		const parsed: ResolvedToolCall[] = [];
-		for (const tc of response.tool_calls) {
-			const raw = tc.function.arguments;
-			let args: Record<string, unknown>;
-			try {
-				// Many servers send "" for a no-arg tool; treat that as {}.
-				args = raw.trim() === '' ? {} : JSON.parse(raw);
-			} catch {
-				continue;
-			}
-			parsed.push({ id: tc.id, name: tc.function.name, arguments: args });
+/**
+ * The outcome of resolving a response's tool calls.
+ *
+ * `rejected` is distinct from `none`: the model tried to call a tool and we
+ * refused the attempt, so the caller must surface that and retry rather than
+ * treat the turn as prose.
+ */
+export type ToolCallResolution =
+	| { kind: 'calls'; calls: ResolvedToolCall[] }
+	| { kind: 'rejected'; reason: string }
+	| { kind: 'none' };
+
+/** A generation cut off mid-call — anything salvaged from it is a fragment. */
+function wasTruncated(response: ChatCompletionResponse): boolean {
+	return response.finish_reason === 'length';
+}
+
+/**
+ * The structured `tool_calls` path — what a well-configured server takes, and
+ * always the most reliable. Returns null to mean "nothing usable here, try the
+ * text fallbacks"; a non-null result is final.
+ *
+ * A remote/quantized model can still emit truncated or invalid `arguments`, so
+ * each entry is parsed defensively rather than throwing out of the function.
+ */
+function resolveStructuredCalls(response: ChatCompletionResponse): ToolCallResolution | null {
+	if (!response.tool_calls || response.tool_calls.length === 0) return null;
+
+	const parsed: ResolvedToolCall[] = [];
+	let anyUnparseable = false;
+	for (const tc of response.tool_calls) {
+		const raw = tc.function.arguments;
+		let args: Record<string, unknown>;
+		try {
+			// Many servers send "" for a no-arg tool; treat that as {}.
+			args = raw.trim() === '' ? {} : JSON.parse(raw);
+		} catch {
+			anyUnparseable = true;
+			continue;
 		}
-		if (parsed.length > 0) return parsed;
-		// All structured calls were unparseable — drop to the fallbacks below.
+		parsed.push({ id: tc.id, name: tc.function.name, arguments: args });
 	}
 
+	// Truncated generation: refuse the WHOLE response if any entry failed to
+	// parse, including the entries that parsed cleanly. The realistic shape is a
+	// final entry cut off while earlier ones are intact — executing the good
+	// prefix and dropping the tail is a half-success the model has no way to
+	// detect (it believes all N calls ran).
+	if (anyUnparseable && wasTruncated(response)) {
+		return { kind: 'rejected', reason: 'truncated tool call arguments' };
+	}
+	// Every entry parsed: the calls are structurally complete even if the
+	// generation was cut afterwards.
+	if (parsed.length > 0) return { kind: 'calls', calls: parsed };
+	// All structured calls were unparseable — let the caller try the fallbacks.
+	return null;
+}
+
+export function resolveToolCalls(response: ChatCompletionResponse): ToolCallResolution {
+	const structured = resolveStructuredCalls(response);
+	if (structured) return structured;
+
 	if (response.content) {
+		// The text fallbacks below salvage a call out of prose using regexes
+		// that tolerate unclosed tags — a real emission shape for some models
+		// (see the loose-grammar cases in parser.test.ts), so we keep accepting
+		// it. But under a `length` finish an unclosed tag means the generation
+		// was cut, not that the model writes that way, and salvaging then
+		// manufactures a plausible-looking call out of a fragment. Refuse.
+		if (wasTruncated(response) && hasAnyToolCallSyntax(response.content)) {
+			return { kind: 'rejected', reason: 'response truncated mid tool call' };
+		}
+
 		// Fallback 1: Qwen-native <tool_call>{json}</tool_call>. Falls
 		// through if no parseable call was found (e.g. a stray opener
 		// with no body, or a malformed inner payload) so the next
@@ -220,11 +297,14 @@ export function resolveToolCalls(response: ChatCompletionResponse): ResolvedTool
 		if (hasToolCalls(response.content)) {
 			const calls = extractToolCalls(response.content);
 			if (calls.length > 0) {
-				return calls.map((tc) => ({
-					id: nextToolCallId(),
-					name: tc.name,
-					arguments: tc.arguments
-				}));
+				return {
+					kind: 'calls',
+					calls: calls.map((tc) => ({
+						id: nextToolCallId(),
+						name: tc.name,
+						arguments: tc.arguments
+					}))
+				};
 			}
 		}
 
@@ -233,13 +313,23 @@ export function resolveToolCalls(response: ChatCompletionResponse): ResolvedTool
 		// native tool-call tokens into this Hermes-ish text form
 		// instead of into the OpenAI tool_calls JSON.
 		if (hasFunctionStyleToolCalls(response.content)) {
-			return extractFunctionStyleToolCalls(response.content).map((tc) => ({
-				id: nextToolCallId(),
-				name: tc.name,
-				arguments: tc.arguments
-			}));
+			const result = parseFunctionStyleToolCalls(response.content);
+			if (result.kind === 'rejected') return result;
+			return {
+				kind: 'calls',
+				calls: result.calls.map((tc) => ({
+					id: nextToolCallId(),
+					name: tc.name,
+					arguments: tc.arguments
+				}))
+			};
 		}
 	}
 
-	return [];
+	return { kind: 'none' };
+}
+
+/** Either tool-call syntax the text fallbacks would try to salvage. */
+function hasAnyToolCallSyntax(content: string): boolean {
+	return hasToolCalls(content) || hasFunctionStyleToolCalls(content);
 }

@@ -32,6 +32,12 @@
  */
 
 export const MAX_FILE_WRITE_RETRIES = 2;
+/**
+ * Retries allowed after a tool call is refused for being truncated. Bounded so
+ * a model that keeps hitting the token ceiling fails with an actionable error
+ * instead of burning every iteration re-emitting the same oversized call.
+ */
+export const MAX_TRUNCATION_RETRIES = 2;
 export const RUN_PYTHON_FAILURE_NUDGE_THRESHOLD = 3;
 /** Consecutive identical run_command calls before we hint, then hard-stop. */
 export const RUN_COMMAND_REPEAT_NUDGE_THRESHOLD = 2;
@@ -56,6 +62,8 @@ export class NudgeState {
 	private fileWritten = false;
 	/** Bounded retry counter for the file-write hallucination nudge. */
 	private fileWriteRetries = 0;
+	/** Bounded retry counter for refused (truncated) tool calls. */
+	private truncationRetries = 0;
 	/** Set to true on the first web_search tool call this turn. */
 	private webSearchUsed = false;
 	/** Distinct URLs fetched via fetch_url / research_url this turn. */
@@ -108,6 +116,21 @@ export class NudgeState {
 	/** Read back the current retry counter for log lines. */
 	get fileWriteRetryCount(): number {
 		return this.fileWriteRetries;
+	}
+
+	/** Can we ask the model to re-emit a refused tool call, or is it time to fail? */
+	needsTruncationRetry(): boolean {
+		return this.truncationRetries < MAX_TRUNCATION_RETRIES;
+	}
+
+	/** Increment the truncation counter; call when emitting the retry nudge. */
+	consumeTruncationRetry(): void {
+		this.truncationRetries++;
+	}
+
+	/** Read back the truncation retry counter for log lines. */
+	get truncationRetryCount(): number {
+		return this.truncationRetries;
 	}
 
 	/**

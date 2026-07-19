@@ -25,7 +25,7 @@ import { truncateCapturedOutput } from '$lib/shell/truncate';
 
 // Bytes per token. Real English is ~4 bytes/token; dividing by a smaller
 // number over-estimates tokens, so we trim a touch early — safe.
-const TOKEN_BYTES_RATIO = 3.5;
+export const TOKEN_BYTES_RATIO = 3.5;
 // Per-message framing overhead (role tags, delimiters) the server adds
 // that isn't in the content itself.
 const PER_MESSAGE_OVERHEAD_TOKENS = 4;

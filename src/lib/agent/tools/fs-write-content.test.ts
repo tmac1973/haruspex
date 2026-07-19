@@ -25,6 +25,10 @@ const ctx = {
 
 beforeEach(() => {
 	mocks.invoke.mockReset();
+	// Each test is its own turn. Several of them write the same path (d.pptx),
+	// and fs-write refuses a repeat write within a turn — so a set carried over
+	// between tests would make every case after the first fail.
+	ctx.filesWrittenThisTurn.clear();
 });
 
 async function call(tool: string, args: unknown) {

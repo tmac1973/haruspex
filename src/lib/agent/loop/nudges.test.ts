@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { NudgeState, RUN_PYTHON_FAILURE_NUDGE_THRESHOLD } from './nudges';
+import { MAX_TRUNCATION_RETRIES, NudgeState, RUN_PYTHON_FAILURE_NUDGE_THRESHOLD } from './nudges';
 
 const HINT_MARKER = '[Haruspex hint]';
 
@@ -74,5 +74,27 @@ describe('NudgeState.maybeAppendRunPythonHint', () => {
 		n.maybeAppendRunPythonHint('Stdout:\nok'); // success resets
 		const after = n.maybeAppendRunPythonHint('Error: boom again');
 		expect(after).not.toContain(HINT_MARKER);
+	});
+});
+
+describe('NudgeState truncation retry budget', () => {
+	it('allows exactly MAX_TRUNCATION_RETRIES retries, then refuses', () => {
+		const n = new NudgeState();
+		for (let i = 0; i < MAX_TRUNCATION_RETRIES; i++) {
+			expect(n.needsTruncationRetry()).toBe(true);
+			n.consumeTruncationRetry();
+		}
+		// Budget exhausted: the loop must stop asking and fail the turn instead
+		// of burning every remaining iteration on the same oversized call.
+		expect(n.needsTruncationRetry()).toBe(false);
+		expect(n.truncationRetryCount).toBe(MAX_TRUNCATION_RETRIES);
+	});
+
+	it('tracks truncation and file-write budgets independently', () => {
+		const n = new NudgeState();
+		n.consumeTruncationRetry();
+		expect(n.fileWriteRetryCount).toBe(0);
+		n.consumeFileWriteNudge();
+		expect(n.truncationRetryCount).toBe(1);
 	});
 });

@@ -246,6 +246,20 @@ export interface AppSettings {
 	 * served from system RAM, which is slower. See `InferenceSection`.
 	 */
 	allowSpillToSystemRam: boolean;
+	/**
+	 * Max output tokens for a normal agent turn. Distinct from `contextSize`,
+	 * which bounds the whole window — this bounds only what the model generates
+	 * in one response.
+	 */
+	maxResponseTokens: number;
+	/**
+	 * Max output tokens for a turn whose job is to write a file. Needs far more
+	 * headroom than a normal turn: an 18 KB markdown document is ~5k tokens
+	 * before JSON escaping, and a reasoning model spends the same budget on its
+	 * `<think>` block first. Too low and the write is cut off mid-content —
+	 * which the parser now refuses outright rather than salvaging.
+	 */
+	maxResponseTokensFileWrite: number;
 	ttsReadTablesByColumn: boolean;
 	searchRecency: 'any' | 'day' | 'week' | 'month' | 'year';
 	audioOutputDevice: string;
@@ -433,6 +447,23 @@ const defaultProxy: ProxyConfig = {
 // caller always resolves to these before invoking, so the Rust command no
 // longer carries its own divergent fallback literal (audit X4/X5).
 export const DEFAULT_CONTEXT_SIZE = 32768;
+/** Output cap for a normal agent turn. Historically the only cap, hardcoded. */
+export const DEFAULT_MAX_RESPONSE_TOKENS = 8192;
+/** Output cap for file-writing turns — see `maxResponseTokensFileWrite`. */
+export const DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE = 32768;
+/** Bounds for both caps, so a typo can't wedge every turn. */
+export const MIN_MAX_RESPONSE_TOKENS = 512;
+export const MAX_MAX_RESPONSE_TOKENS = 131072;
+
+/**
+ * Clamp a response-token cap into the supported range. Coerces rather than
+ * rejects: the clamped value is what gets shown and persisted, so the setting
+ * always matches the number the agent loop actually uses.
+ */
+export function clampResponseTokens(n: number): number {
+	if (!Number.isFinite(n)) return DEFAULT_MAX_RESPONSE_TOKENS;
+	return Math.min(MAX_MAX_RESPONSE_TOKENS, Math.max(MIN_MAX_RESPONSE_TOKENS, Math.trunc(n)));
+}
 export const DEFAULT_SEARXNG_URL = 'http://localhost:8080';
 export const DEFAULT_TTS_VOICE = 'af_heart';
 
@@ -447,6 +478,8 @@ const defaults: AppSettings = {
 	searxngUrl: DEFAULT_SEARXNG_URL,
 	contextSize: DEFAULT_CONTEXT_SIZE,
 	allowSpillToSystemRam: false,
+	maxResponseTokens: DEFAULT_MAX_RESPONSE_TOKENS,
+	maxResponseTokensFileWrite: DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
 	ttsReadTablesByColumn: true,
 	searchRecency: 'any' as const,
 	audioOutputDevice: '',

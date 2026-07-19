@@ -7,9 +7,80 @@
 use super::fuzzy::{apply_edit, EditResult};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::fs;
 
 const MAX_DIR_ENTRIES: usize = 500;
+
+/// Distinguishes concurrent writes racing on the same target within one
+/// process. Not a determinism device — `cargo test` runs tests in parallel
+/// threads, so the value depends on scheduling; tests assert that no temp
+/// file *remains*, never that a particular name was used.
+static TMP_WRITE_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Prefix for staged temp files. Callers that list a directory filter on this
+/// so a write in flight is never mistaken for user content.
+pub(super) const TMP_WRITE_PREFIX: &str = ".haruspex-";
+pub(super) const TMP_WRITE_SUFFIX: &str = ".tmp";
+
+/// True for a temp file staged by [`write_atomic`] — a write in progress, not
+/// something the user put there.
+pub(super) fn is_staged_tmp_name(name: &str) -> bool {
+    name.starts_with(TMP_WRITE_PREFIX) && name.ends_with(TMP_WRITE_SUFFIX)
+}
+
+/// Write `bytes` to `target` atomically: stage them in a sibling temp file,
+/// then rename over the target.
+///
+/// A bare `fs::write` is `File::create` (O_TRUNC) followed by `write_all`, so
+/// the target is emptied the instant the write begins and a write that fails
+/// partway destroys the previously-good file. Staging and renaming means the
+/// target either has its old contents or its new ones, never a prefix.
+///
+/// The temp file is a *sibling* so the rename stays within one filesystem and
+/// is therefore atomic; a temp in /tmp would make it a cross-device copy and
+/// lose the guarantee.
+///
+/// Deliberately no `fsync`: the threat here is a failed write, not power loss,
+/// and syncing the temp plus the parent directory costs a syscall round-trip
+/// on every write in a run that writes many files.
+pub(super) async fn write_atomic(target: &Path, bytes: &[u8]) -> Result<(), String> {
+    // `rename` needs write permission on the DIRECTORY, not on the target, so
+    // it will happily replace a read-only file that a direct `fs::write` would
+    // have refused. Preserve the old refusal: a read-only file is the user
+    // saying "don't change this", and a write tool driven by a model should not
+    // quietly acquire the power to ignore that.
+    if let Ok(meta) = fs::metadata(target).await {
+        if meta.permissions().readonly() {
+            return Err(format!(
+                "Failed to write file: {} is read-only",
+                target.display()
+            ));
+        }
+    }
+
+    let parent = target.parent().unwrap_or_else(|| Path::new("."));
+    let stem = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unnamed");
+    let seq = TMP_WRITE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp = parent.join(format!(
+        "{}{}-{}{}",
+        TMP_WRITE_PREFIX, stem, seq, TMP_WRITE_SUFFIX
+    ));
+
+    if let Err(e) = fs::write(&tmp, bytes).await {
+        // Best-effort cleanup; report the original failure, not the cleanup's.
+        let _ = fs::remove_file(&tmp).await;
+        return Err(format!("Failed to write file: {}", e));
+    }
+    if let Err(e) = fs::rename(&tmp, target).await {
+        let _ = fs::remove_file(&tmp).await;
+        return Err(format!("Failed to write file: {}", e));
+    }
+    Ok(())
+}
 
 #[derive(Serialize)]
 pub struct DirEntry {
@@ -320,9 +391,9 @@ pub(super) async fn edit_text_at(
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
     let outcome = apply_edit(&content, old_str, new_str, display)?;
-    fs::write(resolved, outcome.new_content)
-        .await
-        .map_err(|e| format!("Failed to write file: {}", e))?;
+    // Read-modify-write: an interrupted write here destroys the original just
+    // as badly as a fresh write would.
+    write_atomic(resolved, outcome.new_content.as_bytes()).await?;
     Ok(outcome.result)
 }
 
@@ -346,6 +417,9 @@ pub(super) async fn stat_within_limit(resolved: &Path, max: u64, fmt: &str) -> R
 
 /// Create the parent directory if needed, then write `bytes` to `resolved`.
 /// The mkdir-then-write tail every document writer ends with.
+///
+/// Shared by every writer in this module (text, pdf, docx, xlsx, odt, pptx,
+/// odp), so the atomicity guarantee in [`write_atomic`] reaches all of them.
 pub(super) async fn write_bytes_to_workdir(resolved: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = resolved.parent() {
         if !parent.exists() {
@@ -354,9 +428,7 @@ pub(super) async fn write_bytes_to_workdir(resolved: &Path, bytes: &[u8]) -> Res
                 .map_err(|e| format!("Failed to create parent directory: {}", e))?;
         }
     }
-    fs::write(resolved, bytes)
-        .await
-        .map_err(|e| format!("Failed to write file: {}", e))
+    write_atomic(resolved, bytes).await
 }
 
 /// Read a directory's immediate children into `DirEntry`s sorted directories-
@@ -385,6 +457,13 @@ pub(super) async fn collect_dir_entries(
         }
         let name = entry.file_name().to_string_lossy().to_string();
         if !include_hidden && name.starts_with('.') {
+            continue;
+        }
+        // A write staged by `write_atomic` and not yet renamed. Never user
+        // content, and it vanishes moments later — reporting it would be
+        // misleading. Note this is narrower than hiding all dotfiles: the
+        // absolute listing deliberately surfaces those (.ssh and friends).
+        if is_staged_tmp_name(&name) {
             continue;
         }
         let metadata = match entry.metadata().await {
@@ -762,6 +841,129 @@ mod tests {
         let result = resolve_in_workdir(&dir, "nope/../inside.txt");
         assert!(result.is_err());
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn write_replaces_an_existing_file_exactly() {
+        let dir = make_temp_dir("write_replaces");
+        let resolved = resolve_in_workdir(&dir, "a.txt").unwrap();
+        write_bytes_to_workdir(&resolved, b"old contents")
+            .await
+            .unwrap();
+        write_bytes_to_workdir(&resolved, b"new").await.unwrap();
+        assert_eq!(fs::read(dir.join("a.txt")).unwrap(), b"new");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn failed_write_cleans_up_and_touches_nothing_else() {
+        // NOTE ON WHAT THIS DOES AND DOESN'T PROVE. The guarantee we want is
+        // "a write that fails partway leaves the target's old contents", which
+        // a bare fs::write violates because File::create(O_TRUNC) empties the
+        // target before any new bytes land. Forcing a genuine mid-write failure
+        // needs a full disk or a signal, so it isn't portably unit-testable —
+        // this test does NOT discriminate against the old implementation.
+        //
+        // What it does pin down: the failure path cleans up its staged temp and
+        // leaves unrelated files alone. The atomicity itself rests on rename(2)
+        // being atomic within a filesystem, which is why the temp is a sibling.
+        let dir = make_temp_dir("write_atomic_fail");
+        let good = dir.join("keep.txt");
+        fs::write(&good, b"precious").unwrap();
+
+        // Renaming a file over a non-empty directory fails on every platform
+        // we support.
+        let blocked = dir.join("blocked");
+        fs::create_dir(&blocked).unwrap();
+        fs::write(blocked.join("child"), b"x").unwrap();
+        let err = write_atomic(&blocked, b"replacement").await;
+        assert!(err.is_err(), "write over a non-empty dir must fail");
+
+        // The unrelated good file is untouched, and no staged temp is left.
+        assert_eq!(fs::read(&good).unwrap(), b"precious");
+        assert!(
+            !has_staged_tmp(&dir),
+            "temp file must be cleaned up on failure"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn successful_write_leaves_no_temp_file_behind() {
+        let dir = make_temp_dir("write_atomic_clean");
+        let resolved = resolve_in_workdir(&dir, "out.txt").unwrap();
+        write_bytes_to_workdir(&resolved, b"content").await.unwrap();
+        assert!(!has_staged_tmp(&dir));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn concurrent_writes_to_different_paths_do_not_collide() {
+        let dir = make_temp_dir("write_atomic_concurrent");
+        let a = resolve_in_workdir(&dir, "a.txt").unwrap();
+        let b = resolve_in_workdir(&dir, "b.txt").unwrap();
+        let (ra, rb) = tokio::join!(
+            write_bytes_to_workdir(&a, b"aaa"),
+            write_bytes_to_workdir(&b, b"bbb")
+        );
+        ra.unwrap();
+        rb.unwrap();
+        assert_eq!(fs::read(dir.join("a.txt")).unwrap(), b"aaa");
+        assert_eq!(fs::read(dir.join("b.txt")).unwrap(), b"bbb");
+        assert!(!has_staged_tmp(&dir));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn staged_temp_files_are_hidden_from_directory_listings() {
+        // A write in flight must never be reported as user content — not even
+        // by the absolute listing, which deliberately shows dotfiles.
+        let dir = make_temp_dir("write_atomic_listing");
+        fs::write(dir.join(".haruspex-out.txt-7.tmp"), b"staged").unwrap();
+        fs::write(dir.join(".sshconfig"), b"real dotfile").unwrap();
+        let (entries, _) = collect_dir_entries(&dir, true).await.unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(!names.contains(&".haruspex-out.txt-7.tmp"));
+        assert!(
+            names.contains(&".sshconfig"),
+            "real dotfiles must still show"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn refuses_to_replace_a_read_only_file() {
+        // rename(2) only needs write permission on the directory, so without an
+        // explicit guard the atomic path would replace a read-only file that a
+        // direct fs::write refuses. Preserve the refusal.
+        let dir = make_temp_dir("write_atomic_readonly");
+        let target = dir.join("locked.txt");
+        fs::write(&target, b"precious").unwrap();
+        let mut perms = fs::metadata(&target).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&target, perms).unwrap();
+
+        let result = write_atomic(&target, b"clobber").await;
+        assert!(result.is_err(), "read-only target must not be replaced");
+        assert!(result.unwrap_err().contains("read-only"));
+        assert_eq!(fs::read(&target).unwrap(), b"precious");
+        assert!(
+            !has_staged_tmp(&dir),
+            "no temp should be staged for a refused write"
+        );
+
+        // Removing a read-only file needs write permission on the DIRECTORY,
+        // which we have — no need to clear the bit first (and clearing it via
+        // set_readonly(false) would chmod 0o777 on Unix).
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// True if any staged `write_atomic` temp file is still sitting in `dir`.
+    fn has_staged_tmp(dir: &Path) -> bool {
+        fs::read_dir(dir).unwrap().any(|e| {
+            let name = e.unwrap().file_name().to_string_lossy().to_string();
+            is_staged_tmp_name(&name)
+        })
     }
 
     #[tokio::test]

@@ -27,10 +27,13 @@ export interface TurnHooks {
 export async function runTurnCore(
 	loop: TurnLoopOptions,
 	hooks: TurnHooks
-): Promise<{ finalText: string; stopReason: AgentStopReason }> {
+): Promise<{ finalText: string; rawText: string; stopReason: AgentStopReason }> {
 	let streamingContent = '';
 	const thinkState = createThinkStreamState();
 	let finalText = '';
+	// The unstripped buffer. `finalText` has reasoning removed so callers can
+	// pattern-match on it; `rawText` keeps `<think>` blocks for the UI to render.
+	let rawText = '';
 	let stopReason: AgentStopReason = 'complete';
 	let runError: Error | null = null;
 
@@ -42,6 +45,7 @@ export async function runTurnCore(
 		},
 		onComplete: (meta) => {
 			finalText = hooks.finalize(streamingContent);
+			rawText = streamingContent;
 			stopReason = meta?.stopReason ?? 'complete';
 		},
 		onError: (err) => {
@@ -50,5 +54,5 @@ export async function runTurnCore(
 	});
 
 	if (runError) throw runError;
-	return { finalText, stopReason };
+	return { finalText, rawText, stopReason };
 }
