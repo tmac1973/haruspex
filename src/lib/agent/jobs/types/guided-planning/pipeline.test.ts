@@ -31,6 +31,10 @@ function goodPhase(extra = ''): string {
 		'## Build gate',
 		'',
 		'The page renders with the full palette applied and no unstyled flash.',
+		'',
+		'## Rollback',
+		'',
+		'Revert the commit; no later phase builds on it yet.',
 		extra
 	].join('\n');
 }
@@ -158,5 +162,38 @@ describe('isPlanClean', () => {
 		// say PLAN OK must not be read as a pass.
 		const verdict = "I can't say PLAN OK because phase 02 is truncated";
 		expect(isPlanClean(verdict)).toBe(false);
+	});
+});
+
+describe('phaseFileProblem — tail truncation', () => {
+	it('rejects a file whose tail is missing', () => {
+		// The blind spot the original gate had: it read only the first 1000
+		// lines and checked a size floor, a heading and a "Depends on" line, so
+		// a file missing everything after the middle passed identically to a
+		// complete one. It caught the original incident only because that
+		// fragment lost its prefix too.
+		const truncated = goodPhase().replace(/\n## Rollback[\s\S]*$/, '\n');
+		const problem = phaseFileProblem('phase-02.md', truncated);
+		expect(problem).toContain('Rollback');
+		expect(problem).toContain('truncated');
+	});
+
+	it('accepts heading case and spacing variations of the closing section', () => {
+		const variations = [
+			goodPhase().replace('## Rollback', '## rollback'),
+			goodPhase().replace('## Rollback', '##   Rollback'),
+			goodPhase().replace('## Rollback', '## Rollback Plan')
+		];
+		for (const v of variations) {
+			expect(phaseFileProblem('phase-02.md', v), v.slice(0, 40)).toBeNull();
+		}
+	});
+
+	it('still rejects the original corrupt fragment by the heading check', () => {
+		// Unchanged behaviour: that fragment fails /^#\s/ before the tail check
+		// is ever reached, so the two guards cover different defects.
+		const fragment = '### 9. Score panel\n\n' + 'x'.repeat(500);
+		const problem = phaseFileProblem('phase-02.md', fragment);
+		expect(problem).toContain('heading');
 	});
 });

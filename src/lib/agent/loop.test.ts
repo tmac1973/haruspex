@@ -605,9 +605,12 @@ describe('runAgentLoop: recovery nudges', () => {
 			(m) =>
 				m.role === 'user' &&
 				typeof m.content === 'string' &&
-				m.content.includes('You have not actually created any file yet')
+				m.content.includes('You have not emitted an fs_write_* tool call this turn')
 		);
 		expect(nudge).toBeDefined();
+		// The nudge must not assert anything about disk state — it never checks,
+		// and the claim is false whenever a turn correctly has nothing to write.
+		expect(nudge?.content).not.toContain('does not exist on disk');
 		expect(toolsMock.executeTool).toHaveBeenCalledWith(
 			'fs_write_pdf',
 			{ path: 'report.pdf' },

@@ -929,15 +929,14 @@ function tryFileWriteRecovery(
 		return pushNudge(
 			ctx.messages,
 			response,
-			'STOP. You have not actually created any file yet — no fs_write_* tool call ' +
-				'was made, and the file you are describing does not exist on disk. You MUST ' +
-				'now emit a real fs_write_* tool call that matches the requested format: ' +
-				'fs_write_text for markdown or plain text, or fs_write_pdf / fs_write_docx / ' +
-				'fs_write_xlsx for a binary document — with the complete content as the ' +
-				'`content` argument and a short relative path. Do NOT reply with more text ' +
-				'describing the file — your NEXT output must be a tool_calls block invoking ' +
-				'the write tool. After the tool runs successfully, then respond briefly ' +
-				'confirming the file path.'
+			'You have not emitted an fs_write_* tool call this turn, so nothing has been ' +
+				'written or changed. If the file needs writing or changing, emit that call ' +
+				'now — fs_write_text for markdown or plain text, or fs_write_pdf / ' +
+				'fs_write_docx / fs_write_xlsx for a binary document — with the complete ' +
+				'content as the `content` argument and a short relative path, as a ' +
+				'tool_calls block rather than a description of one. If the file is already ' +
+				'correct and genuinely needs no change, say so directly instead of ' +
+				'describing a write you did not make.'
 		);
 	}
 	return null;

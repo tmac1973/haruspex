@@ -282,7 +282,12 @@ function planRevisePrompt(outDir: string): string {
 
 const MIN_PHASE_FILE_CHARS = 400;
 const REQUIRED_PHASE_SECTIONS: { label: string; re: RegExp }[] = [
-	{ label: 'a "Depends on:" line', re: /depends\s+on\b/i }
+	{ label: 'a "Depends on:" line', re: /depends\s+on\b/i },
+	// The LAST section of the template, and the only cheap way to notice a file
+	// whose tail is missing. Safe to assert where the free-form matchers below
+	// were not: "## Rollback" is fixed by the template this pipeline authors,
+	// not a heading the model chooses.
+	{ label: 'a "## Rollback" section (the file looks truncated)', re: /^##\s+rollback\b/im }
 ];
 
 /**
@@ -444,14 +449,20 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		}
 	};
 
-	/** Read a workdir file for validation, or null if it can't be read. */
+	/**
+	 * Read a workdir file for validation, or null if it can't be read.
+	 *
+	 * No `limit`: the gate has to see the END of the file to notice a missing
+	 * tail, and a windowed read would make tail truncation invisible by
+	 * construction. Phase files run 13-20 KB, well inside the read path's own
+	 * size cap.
+	 */
 	const readWorkdirFile = async (relPath: string): Promise<string | null> => {
 		if (!job.working_dir) return null;
 		try {
 			return await invoke<string>('fs_read_text', {
 				workdir: job.working_dir,
-				relPath,
-				limit: 1000
+				relPath
 			});
 		} catch {
 			return null;
