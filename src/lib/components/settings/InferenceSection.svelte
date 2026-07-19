@@ -17,11 +17,6 @@
 		updateSettings,
 		updateInferenceBackend,
 		setActiveLocalModel,
-		clampResponseTokens,
-		DEFAULT_MAX_RESPONSE_TOKENS,
-		DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
-		MIN_MAX_RESPONSE_TOKENS,
-		MAX_MAX_RESPONSE_TOKENS,
 		type InferenceBackendConfig,
 		type InferenceMode
 	} from '$lib/stores/settings';
@@ -40,29 +35,6 @@
 	const serverState = $derived(getServerState());
 	let contextSize = $state(getSettings().contextSize);
 	let allowSpill = $state(getSettings().allowSpillToSystemRam);
-	let maxResponseTokens = $state(getSettings().maxResponseTokens);
-	let maxResponseTokensFileWrite = $state(getSettings().maxResponseTokensFileWrite);
-
-	/**
-	 * Persist a response-token cap, clamped to the supported range. Clamping
-	 * rather than rejecting: an out-of-range entry snaps to the nearest bound
-	 * and the snapped value is what shows and persists, so the field can never
-	 * be left holding a number the agent loop won't actually use.
-	 */
-	function onTokensChange(
-		key: 'maxResponseTokens' | 'maxResponseTokensFileWrite',
-		raw: string
-	): void {
-		const parsed = Number.parseInt(raw, 10);
-		const fallback =
-			key === 'maxResponseTokens'
-				? DEFAULT_MAX_RESPONSE_TOKENS
-				: DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE;
-		const clamped = clampResponseTokens(Number.isNaN(parsed) ? fallback : parsed);
-		if (key === 'maxResponseTokens') maxResponseTokens = clamped;
-		else maxResponseTokensFileWrite = clamped;
-		updateSettings({ [key]: clamped });
-	}
 	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
 
 	// Predictive VRAM cap: detected total VRAM (MB) and the largest context the
@@ -411,46 +383,6 @@
 	</section>
 
 	<section class="settings-section">
-		<h2>Response Length</h2>
-		<p class="hint">
-			How many tokens the model may generate in a single response. This is separate from Context
-			Size, which bounds the whole conversation. A turn cut off by these limits is refused rather
-			than written, so a file is never left half-written.
-		</p>
-		<label class="tokens-row">
-			<span class="tokens-label">
-				Max response tokens
-				<span class="tokens-sub">Normal chat and agent turns.</span>
-			</span>
-			<input
-				type="number"
-				min={MIN_MAX_RESPONSE_TOKENS}
-				max={MAX_MAX_RESPONSE_TOKENS}
-				step="512"
-				value={maxResponseTokens}
-				onchange={(e) => onTokensChange('maxResponseTokens', e.currentTarget.value)}
-			/>
-		</label>
-		<label class="tokens-row">
-			<span class="tokens-label">
-				Max response tokens (file writes)
-				<span class="tokens-sub">
-					Turns whose job is to write a file. Needs more headroom: the whole document must fit in
-					one response, and a reasoning model spends part of the budget thinking first.
-				</span>
-			</span>
-			<input
-				type="number"
-				min={MIN_MAX_RESPONSE_TOKENS}
-				max={MAX_MAX_RESPONSE_TOKENS}
-				step="512"
-				value={maxResponseTokensFileWrite}
-				onchange={(e) => onTokensChange('maxResponseTokensFileWrite', e.currentTarget.value)}
-			/>
-		</label>
-	</section>
-
-	<section class="settings-section">
 		<h2>Server</h2>
 		<div class="info-row">
 			<span>Status</span>
@@ -579,47 +511,6 @@
 		font-size: 0.7rem;
 		color: var(--text-secondary);
 		margin-top: 2px;
-	}
-
-	/* Mirrors .spill-* above, but lays the control out as label-left /
-	   input-right rather than checkbox-first. */
-	.tokens-row {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 16px;
-		margin-top: 12px;
-	}
-
-	.tokens-label {
-		font-size: 0.85rem;
-		color: var(--text-primary);
-	}
-
-	.tokens-sub {
-		display: block;
-		font-size: 0.7rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-		max-width: 46ch;
-	}
-
-	.tokens-row input {
-		flex-shrink: 0;
-		width: 9ch;
-		padding: 6px 8px;
-		font-size: 0.85rem;
-		font-variant-numeric: tabular-nums;
-		text-align: right;
-		color: var(--text-primary);
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: 6px;
-	}
-
-	.tokens-row input:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: 1px;
 	}
 
 	.ctx-btn strong {

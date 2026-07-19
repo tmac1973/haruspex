@@ -34,7 +34,8 @@ import {
 import {
 	getChatTemplateKwargs,
 	getSamplingParams,
-	getOpenRouterReasoningParam
+	getOpenRouterReasoningParam,
+	getSettings
 } from '$lib/stores/settings';
 import { resolveBackendDescriptor, type BackendDescriptor } from '$lib/inference/descriptor';
 import { stripToolCallArtifacts } from '$lib/markdown';
@@ -47,11 +48,9 @@ import type { AgentLoopOptions, CompletionMeta } from '../loop';
 // Lower than the conversation-level compaction threshold (0.8) so we
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
-// Last-resort per-call output cap, for a caller that bypasses
-// `runEphemeralTurn` and passes no `maxResponseTokens` of its own. The
-// operative values now come from Settings → Inference: a base cap and a
-// larger one for file-writing turns (see `maxResponseTokensFileWrite`),
-// resolved per turn in runEphemeralTurn. Kept so no path is uncapped.
+// Last-resort per-call output cap, used only if the settings store can't be
+// read. The operative values come from Settings → Agent → Response Length,
+// resolved per turn by `resolveMaxResponseTokens` below.
 const AGENT_LOOP_MAX_TOKENS = 8192;
 const FINAL_SYNTHESIS_MAX_TOKENS = 8192;
 
@@ -124,6 +123,24 @@ export interface LoopContext {
 }
 
 /**
+ * Per-turn output ceiling, resolved for EVERY caller of the agent loop —
+ * chat, shell and jobs alike — because this is the one place all three pass
+ * through. Resolving it in `runEphemeralTurn` instead would have covered
+ * jobs only, leaving the chat tab (which calls `runAgentLoop` directly, and
+ * can itself be a file-writing turn) pinned to the fallback constant.
+ *
+ * An explicit per-call value always wins: shell code mode pins its own.
+ */
+function resolveMaxResponseTokens(options: AgentLoopOptions, expectsFileOutput: boolean): number {
+	if (options.maxResponseTokens != null) return options.maxResponseTokens;
+	const settings = getSettings();
+	const fromSettings = expectsFileOutput
+		? settings.maxResponseTokensFileWrite
+		: settings.maxResponseTokens;
+	return fromSettings ?? AGENT_LOOP_MAX_TOKENS;
+}
+
+/**
  * Build the per-turn LoopContext from the public `AgentLoopOptions`.
  * Applies defaults for optional fields and asks the tool registry for
  * the schema list filtered by working-dir presence, deep-research
@@ -134,6 +151,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const shellMode = options.shellMode ?? false;
 	const codeMode = options.codeMode ?? false;
 	const codeAutoApprove = options.codeAutoApprove ?? false;
+	const expectsFileOutput = options.expectsFileOutput ?? false;
 	return {
 		messages: options.messages,
 		tools: getToolSchemas({
@@ -154,10 +172,10 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		interactive: options.interactive ?? false,
 		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,
-		maxResponseTokens: options.maxResponseTokens ?? AGENT_LOOP_MAX_TOKENS,
+		maxResponseTokens: resolveMaxResponseTokens(options, expectsFileOutput),
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
-		expectsFileOutput: options.expectsFileOutput ?? false,
+		expectsFileOutput,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
 		maxIterations: options.maxIterations ?? 8,

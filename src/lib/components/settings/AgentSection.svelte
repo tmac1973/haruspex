@@ -1,5 +1,13 @@
 <script lang="ts">
-	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import {
+		getSettings,
+		updateSettings,
+		clampResponseTokens,
+		DEFAULT_MAX_RESPONSE_TOKENS,
+		DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
+		MIN_MAX_RESPONSE_TOKENS,
+		MAX_MAX_RESPONSE_TOKENS
+	} from '$lib/stores/settings';
 	import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import { clampInt } from '$lib/utils/clampInt';
 
@@ -14,6 +22,29 @@
 	let sandboxEnabled = $state(getSettings().sandboxEnabled);
 	let sandboxApproval = $state(getSettings().sandboxApproval);
 	let sandboxTimeoutSeconds = $state(getSettings().sandboxTimeoutSeconds);
+	let maxResponseTokens = $state(getSettings().maxResponseTokens);
+	let maxResponseTokensFileWrite = $state(getSettings().maxResponseTokensFileWrite);
+
+	/**
+	 * Persist a response-token cap, clamped to the supported range. Clamping
+	 * rather than rejecting: an out-of-range entry snaps to the nearest bound
+	 * and the snapped value is what shows and persists, so the field can never
+	 * be left holding a number the agent loop won't actually use.
+	 */
+	function onTokensChange(
+		key: 'maxResponseTokens' | 'maxResponseTokensFileWrite',
+		raw: string
+	): void {
+		const parsed = Number.parseInt(raw, 10);
+		const fallback =
+			key === 'maxResponseTokens'
+				? DEFAULT_MAX_RESPONSE_TOKENS
+				: DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE;
+		const clamped = clampResponseTokens(Number.isNaN(parsed) ? fallback : parsed);
+		if (key === 'maxResponseTokens') maxResponseTokens = clamped;
+		else maxResponseTokensFileWrite = clamped;
+		updateSettings({ [key]: clamped });
+	}
 
 	function toggleThinkingEnabled() {
 		thinkingEnabled = !thinkingEnabled;
@@ -90,6 +121,46 @@
 			box to revert to defaults.
 		</p>
 	</div>
+</section>
+
+<section class="settings-section">
+	<h2>Response Length</h2>
+	<p class="hint">
+		How many tokens the model may generate in a single response, across every tab and every
+		inference backend. Separate from Context Size, which bounds the whole conversation. A response
+		cut off by these limits is refused rather than written, so a file is never left half-written.
+	</p>
+	<label class="tokens-row">
+		<span class="tokens-label">
+			Max response tokens
+			<span class="tokens-sub">Normal chat, shell, and agent turns.</span>
+		</span>
+		<input
+			type="number"
+			min={MIN_MAX_RESPONSE_TOKENS}
+			max={MAX_MAX_RESPONSE_TOKENS}
+			step="512"
+			value={maxResponseTokens}
+			onchange={(e) => onTokensChange('maxResponseTokens', e.currentTarget.value)}
+		/>
+	</label>
+	<label class="tokens-row">
+		<span class="tokens-label">
+			Max response tokens (file writes)
+			<span class="tokens-sub">
+				Turns whose job is to write a file. Needs more headroom: the whole document must fit in one
+				response, and a reasoning model spends part of the budget thinking first.
+			</span>
+		</span>
+		<input
+			type="number"
+			min={MIN_MAX_RESPONSE_TOKENS}
+			max={MAX_MAX_RESPONSE_TOKENS}
+			step="512"
+			value={maxResponseTokensFileWrite}
+			onchange={(e) => onTokensChange('maxResponseTokensFileWrite', e.currentTarget.value)}
+		/>
+	</label>
 </section>
 
 <section class="settings-section">
@@ -216,5 +287,43 @@
 
 	.search-field {
 		margin-bottom: 12px;
+	}
+	.tokens-row {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16px;
+		margin-top: 12px;
+	}
+
+	.tokens-label {
+		font-size: 0.85rem;
+		color: var(--text-primary);
+	}
+
+	.tokens-sub {
+		display: block;
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
+		max-width: 46ch;
+	}
+
+	.tokens-row input {
+		flex-shrink: 0;
+		width: 9ch;
+		padding: 6px 8px;
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+		color: var(--text-primary);
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+	}
+
+	.tokens-row input:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
 	}
 </style>

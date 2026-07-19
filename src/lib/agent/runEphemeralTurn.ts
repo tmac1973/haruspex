@@ -20,7 +20,6 @@ import type { Artifact, LintIssue } from '$lib/agent/tools';
 import { runTurnCore } from '$lib/agent/runTurn';
 import { buildSystemPrompt, looksLikeFileOutputRequest } from '$lib/agent/system-prompt';
 import { finalizeStreamText } from '$lib/markdown';
-import { getSettings } from '$lib/stores/settings';
 
 export interface EphemeralTurnOptions {
 	userMessage: string;
@@ -44,9 +43,9 @@ export interface EphemeralTurnOptions {
 	/** Confine writes to this dir (relative to workingDir). See AgentLoopOptions. */
 	writeRoot?: string | null;
 	/**
-	 * Per-call output token ceiling. Omit to resolve it from Settings →
-	 * Inference: the file-write cap when `expectsFileOutput` is set, the base
-	 * cap otherwise. Set it only to pin a turn to an exact budget.
+	 * Per-call output token ceiling. Omit to resolve it from Settings → Agent →
+	 * Response Length: the file-write cap when `expectsFileOutput` is set, the
+	 * base cap otherwise. Set it only to pin a turn to an exact budget.
 	 */
 	maxResponseTokens?: number;
 	/**
@@ -99,20 +98,14 @@ export async function runEphemeralTurn(
 		options.expectsFileOutput ??
 		(!!options.workingDir && looksLikeFileOutputRequest(options.userMessage));
 
-	// A file-writing turn gets its own, larger ceiling: the whole document has
-	// to fit in one response, after the model's reasoning has already spent part
-	// of the budget. An explicit per-call override still wins (shell code mode).
-	const settings = getSettings();
-	const maxResponseTokens =
-		options.maxResponseTokens ??
-		(expectsFileOutput ? settings.maxResponseTokensFileWrite : settings.maxResponseTokens);
-
 	return runTurnCore(
 		{
 			messages,
 			workingDir: options.workingDir,
 			contextSize: options.contextSize,
-			maxResponseTokens,
+			// Left undefined unless the caller pinned one: `buildLoopContext`
+			// resolves the ceiling from settings for every entry point.
+			maxResponseTokens: options.maxResponseTokens,
 			maxIterations: options.maxIterations ?? (options.deepResearch ? 25 : 10),
 			deepResearch: options.deepResearch ?? false,
 			expectsFileOutput,
