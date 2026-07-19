@@ -90,12 +90,7 @@ export function iterationPrompt(verifyCommand: string | null): string {
 		'   more. Resist fixing unrelated things; later items will get their turn.',
 		'2. Read before you write: check the relevant files and the progress notes',
 		'   (earlier attempts of this item may have left diagnostics for you).',
-		verifyCommand
-			? `3. Verify with \`${verifyCommand}\` (run_command). The step is "done" ONLY`
-			: '3. Verify by your own judgment (run_command): build it, run it, or test',
-		verifyCommand
-			? '   when it passes. If it fails, that is a "failed" iteration — say why.'
-			: '   it — whatever proves this step actually works. Unverified ≠ done.',
+		...verifyRule(verifyCommand),
 		'4. Do NOT run git commit, git init, or any history-rewriting command — the',
 		'   runner commits your work after each verified step.',
 		'5. Do NOT edit TODO-coding.md or PROGRESS-coding.md — the runner owns them.',
@@ -105,6 +100,51 @@ export function iterationPrompt(verifyCommand: string | null): string {
 		'   were given, "done" or "failed", and a note. A useful failure note names',
 		'   the error, the evidence, and what the next attempt should try instead.'
 	].join('\n');
+}
+
+/**
+ * Rule 3 — how this iteration proves its step works.
+ *
+ * The no-command branch used to read "Verify by your own judgment … whatever
+ * proves this step actually works. Unverified ≠ done." That is an obligation
+ * with no constraints, and rule 1 pins each iteration to a fresh context that
+ * cannot know a harness already exists. A real run took the only route left
+ * open to it: 13 single-use verification scripts totalling ~1.5x the size of
+ * the product, 21% of whose assertions were `source.includes("<text I just
+ * wrote>")` — which cannot fail, and so proves nothing.
+ *
+ * So the freedom is kept (some projects genuinely have no test command) but
+ * bounded: one shared artifact, no throwaway scripts, and no assertion that
+ * passes by finding text this iteration authored.
+ */
+function verifyRule(verifyCommand: string | null): string[] {
+	if (verifyCommand) {
+		return [
+			`3. Verify with \`${verifyCommand}\` (run_command). The step is "done" ONLY`,
+			'   when it passes. If it fails, that is a "failed" iteration — say why.',
+			'   If the step needs new test coverage, add it to the existing test files',
+			'   that command already runs — do not create a separate one-off script.'
+		];
+	}
+	return [
+		'3. Verify by your own judgment (run_command): build it, run it, or test it —',
+		'   whatever proves this step actually works. Unverified ≠ done. Bounded by',
+		'   three rules, because verification you throw away is verification the',
+		'   user cannot re-run:',
+		'   a. ONE shared verification file for the whole run. Look for an existing',
+		'      one first (fs_list_dir) and APPEND to it. Never create a per-step',
+		'      script like verify_04.js — the next iteration cannot see it, will',
+		'      rebuild the same scaffolding from scratch, and the repo ends up with',
+		'      more verification code than product code.',
+		'   b. Assert BEHAVIOUR, never source text. Checks of the form "the file',
+		'      contains the string I just wrote" cannot fail and prove nothing.',
+		'      Execute the code and assert on what it does. If a step genuinely',
+		'      cannot be executed (pure CSS, static markup), say so plainly in your',
+		'      note instead of inventing a check that always passes.',
+		'   c. Leave nothing behind. Any temporary file you create to run a check',
+		'      must be deleted before you finish, unless it IS the shared',
+		'      verification file.'
+	];
 }
 
 /**
