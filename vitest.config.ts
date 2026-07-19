@@ -10,6 +10,9 @@ export default defineConfig({
 	test: {
 		include: ['src/**/*.test.ts'],
 		environment: 'jsdom',
-		globals: true
+		globals: true,
+		// Repairs `localStorage` when Node's own inert Web Storage global
+		// shadows jsdom's (Node >= 24). No-op on CI's Node 22 — see the file.
+		setupFiles: ['./vitest.setup.ts']
 	}
 });
