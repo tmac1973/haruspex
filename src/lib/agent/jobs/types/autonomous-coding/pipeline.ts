@@ -63,7 +63,18 @@ export const FINALIZE = 3;
 /**
  * Preflight toolset: read-only grounding, the one write (the decisions file,
  * held to the plan dir via writeRoot), the question modal, and the forced
- * structured verdict. No shell — nothing executes before the loop.
+ * structured verdict.
+ *
+ * `run_command` is included deliberately, reversing an earlier "no shell before
+ * the loop" rule. Preflight has to settle the verification contract for the
+ * whole unattended run, and a contract it never executed is a guess: `npm test`
+ * looks right in a repo whose package.json has no test script, and the run
+ * would then fail every step at 3am. Trying the candidate once, here, is what
+ * makes the recorded command trustworthy.
+ *
+ * This is not a new capability class for the job — the loop already runs shell
+ * commands unattended and auto-approved. It is the same capability, moved to
+ * the one stage where the user is still present to see it.
  */
 const PREFLIGHT_TOOLS = [
 	'fs_read_text',
@@ -72,6 +83,7 @@ const PREFLIGHT_TOOLS = [
 	'code_grep',
 	'code_glob',
 	'fs_write_text',
+	'run_command',
 	'ask_user_question',
 	SUBMIT_PREFLIGHT_TOOL
 ];
@@ -214,7 +226,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		// decision via the question modal, record them, and get a structured
 		// ready/blocked verdict before anything runs unattended.
 		startStep(PREFLIGHT);
-		const outcome = await runPreflightTurn(ctx, planDir, decisionsPath);
+		const outcome = await runPreflightTurn(ctx, planDir, decisionsPath, cfg.verify_command);
 		abortIfCancelled();
 		if (!outcome.ready) {
 			const why = outcome.blockers.length
@@ -225,7 +237,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		await ensureFileWritten(ctx, PREFLIGHT, {
 			relPath: decisionsPath,
 			writeRoot: planDir,
-			systemPrompt: preflightPrompt(planDir, decisionsPath),
+			systemPrompt: preflightPrompt(planDir, decisionsPath, cfg.verify_command),
 			toolAllowlist: PREFLIGHT_TOOLS,
 			what: 'decisions file',
 			abortIfCancelled
@@ -393,7 +405,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 async function runPreflightTurn(
 	ctx: JobRunContext,
 	planDir: string,
-	decisionsPath: string
+	decisionsPath: string,
+	verifyCommand: string | null
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
@@ -406,7 +419,7 @@ async function runPreflightTurn(
 		maxIterations: PREFLIGHT_MAX_ITERATIONS,
 		interactive: true,
 		writeRoot: planDir,
-		systemPrompt: preflightPrompt(planDir, decisionsPath),
+		systemPrompt: preflightPrompt(planDir, decisionsPath, verifyCommand),
 		toolAllowlist: PREFLIGHT_TOOLS,
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,
 		...base,
@@ -665,6 +678,81 @@ async function gitHead(ctx: JobRunContext): Promise<string | null> {
 }
 
 /**
+ * Dependency and build directories that must never enter git, keyed by the
+ * marker file that proves the stack is in play. Deliberately narrow: only
+ * things that are always regenerable and always large.
+ */
+const IGNORE_BY_MARKER: { marker: string; entries: string[] }[] = [
+	{ marker: 'package.json', entries: ['node_modules/'] },
+	{ marker: 'Cargo.toml', entries: ['target/'] },
+	{ marker: 'pyproject.toml', entries: ['__pycache__/', '.venv/', 'venv/'] },
+	{ marker: 'requirements.txt', entries: ['__pycache__/', '.venv/', 'venv/'] },
+	{ marker: 'go.mod', entries: ['vendor/'] }
+];
+
+/**
+ * Ensure a `.gitignore` covers the regenerable directories for whatever stacks
+ * this repo actually uses, BEFORE the baseline commit.
+ *
+ * Both the baseline and every step commit stage with `git add -A`, so without
+ * this anything the run installs mid-flight is committed. A real run did
+ * exactly that: of 2,220 tracked files, 2,194 were `node_modules` and one was
+ * the product.
+ *
+ * Never clobbers an existing `.gitignore` — missing entries are appended, and a
+ * repo that already ignores everything relevant is left untouched.
+ */
+async function ensureGitignore(ctx: JobRunContext): Promise<void> {
+	if (!ctx.job.working_dir) return;
+
+	const wanted = new Set<string>();
+	for (const { marker, entries } of IGNORE_BY_MARKER) {
+		let present = false;
+		try {
+			present = await invoke<boolean>('fs_path_exists', {
+				workdir: ctx.job.working_dir,
+				relPath: marker
+			});
+		} catch {
+			present = false;
+		}
+		if (present) for (const e of entries) wanted.add(e);
+	}
+	if (wanted.size === 0) return;
+
+	const existing = (await readPlanFile(ctx, '.gitignore')) ?? '';
+	const merged = mergeGitignore(existing, [...wanted]);
+	if (merged === null) return;
+	await writePlanFile(ctx, '.gitignore', merged);
+}
+
+/**
+ * Merge `wanted` ignore entries into an existing `.gitignore`, returning the
+ * new contents — or null when everything is already covered and the file should
+ * be left alone.
+ *
+ * Existing content is preserved verbatim and appended to; this runs against the
+ * user's own repo, so clobbering their file would be unacceptable. Entries are
+ * compared with any trailing slash removed, so a repo that already ignores
+ * `node_modules` does not gain a duplicate `node_modules/`.
+ */
+export function mergeGitignore(existing: string, wanted: string[]): string | null {
+	const key = (s: string) => s.trim().replace(/\/+$/, '');
+	const have = new Set(
+		existing
+			.split('\n')
+			.map(key)
+			.filter((l) => l && !l.startsWith('#'))
+	);
+	const missing = wanted.filter((e) => !have.has(key(e)));
+	if (missing.length === 0) return null;
+
+	const header = '# Added by the autonomous coding run: regenerable, never commit.';
+	const block = `${header}\n${missing.join('\n')}\n`;
+	return existing.trim() ? `${existing.trimEnd()}\n\n${block}` : block;
+}
+
+/**
  * Make sure the working dir is a git repo with a clean baseline commit before
  * the loop touches anything: `git init` when needed, and any pre-existing
  * dirty state (or an unborn HEAD) is committed so every loop step has a
@@ -678,6 +766,9 @@ async function ensureGitBaseline(ctx: JobRunContext, fallback: SigningFallback):
 			throw new Error(`git init failed in the working directory: ${gitError(init)}`);
 		}
 	}
+	// Before ANY `git add -A` — including the baseline below and every step
+	// commit — so regenerable directories can never be staged.
+	await ensureGitignore(ctx);
 	const dirty = (await execInWorkdir(ctx, 'git status --porcelain')).stdout.trim().length > 0;
 	const unborn = (await gitHead(ctx)) === null;
 	if (dirty || unborn) {
@@ -772,6 +863,11 @@ async function commitStepWork(
 	headBefore: string | null,
 	fallback: SigningFallback
 ): Promise<{ changed: boolean; unsigned: boolean; commitSkipped: boolean }> {
+	// Re-check every step, not just at baseline: a run can INTRODUCE a stack
+	// mid-flight (the observed failure was a bare directory where the model ran
+	// `npm install` at step 12, so no package.json existed when the baseline was
+	// taken). Idempotent and cheap — a few existence checks.
+	await ensureGitignore(ctx);
 	await execInWorkdir(ctx, 'git add -A');
 	const staged = (await execInWorkdir(ctx, 'git diff --cached --quiet')).exit_code !== 0;
 	const headNow = await gitHead(ctx);

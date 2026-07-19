@@ -56,15 +56,42 @@
 
 <label
 	class="field"
-	title="Command run to prove each step works (in the working directory). Leave blank to let the model verify by its own judgment — a concrete test command makes 'done' much more trustworthy."
+	title="Command run in the working directory to prove each step works. A step only counts as done when it exits 0. Leave blank and preflight will inspect the repo, propose a command, try it, and confirm it with you before the run starts."
 >
-	<span class="label">Verify command <span class="optional">(recommended)</span></span>
-	<input type="text" bind:value={cfg.verify_command} placeholder="e.g. npm test" />
+	<span class="label">Verify command <span class="optional">(optional)</span></span>
+	<input
+		type="text"
+		bind:value={cfg.verify_command}
+		placeholder="Leave blank and preflight will work it out with you"
+	/>
 	<span class="hint">
-		Run after each step; a step only counts as done when it passes. Blank = the model decides how to
-		verify.
+		Run after every step; the step is only done when it exits 0. <strong
+			>Not sure? Leave it blank.</strong
+		> Preflight reads your repo, proposes a command, runs it once to check it actually works, and asks
+		you to confirm — before the unattended run starts.
 	</span>
 </label>
+
+<!-- Outside the <label> on purpose: a <summary> nested in a label activates the
+	 label too, focusing the input on every expand/collapse. -->
+<details class="verify-examples">
+	<summary>Verify command examples</summary>
+	<ul>
+		<li>
+			<code>npm test</code> — or <code>npm run check &amp;&amp; npm test</code> to typecheck too
+		</li>
+		<li><code>cargo test</code> · <code>pytest</code> · <code>go test ./...</code></li>
+		<li>
+			<strong>Several languages?</strong> Chain them with <code>&amp;&amp;</code> so any failure
+			fails the step — <code>npm test &amp;&amp; cargo test</code>. Preflight composes this for you
+			if you leave the field blank.
+		</li>
+		<li>
+			<strong>No tests yet?</strong> A build or syntax check still beats nothing —
+			<code>tsc --noEmit</code>, <code>cargo check</code>, <code>node --check index.js</code>.
+		</li>
+	</ul>
+</details>
 
 <label
 	class="field signing"
@@ -137,5 +164,29 @@
 		background: var(--bg-secondary);
 		font-size: 0.82rem;
 		color: var(--text-secondary);
+	}
+
+	.verify-examples {
+		margin-top: 6px;
+		font-size: 0.8rem;
+	}
+
+	.verify-examples summary {
+		cursor: pointer;
+		color: var(--text-secondary);
+		user-select: none;
+	}
+
+	.verify-examples ul {
+		margin: 6px 0 0;
+		padding-left: 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		color: var(--text-secondary);
+	}
+
+	.verify-examples code {
+		font-size: 0.78rem;
 	}
 </style>
