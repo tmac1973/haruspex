@@ -1,6 +1,6 @@
 // llama-server OpenAI-compatible API client wrapper
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
-import { logDebug } from '$lib/debug-log';
+import { logDebug, isVerbosePayloads } from '$lib/debug-log';
 import { baseUrl } from '$lib/ports';
 import { OPENROUTER_ATTRIBUTION_HEADERS } from '$lib/openrouter';
 import { isAbortError } from '$lib/utils/error';
@@ -274,6 +274,64 @@ function applyOpenRouterAttribution(headers: Record<string, string>): void {
 	Object.assign(headers, OPENROUTER_ATTRIBUTION_HEADERS);
 }
 
+/**
+ * Reduce an outbound request body to a compact, greppable digest.
+ *
+ * The full body is the message array plus every tool schema; serialized it
+ * routinely runs to several hundred KB even for a prompt comfortably under
+ * the context limit. Logging that verbatim made the debug buffer unusable
+ * — a single entry buried the surrounding agent-loop lines and blew past
+ * `logDebug`'s 20k display clip, so the interesting tail was never even
+ * visible. The digest keeps what's diagnostically useful (how many
+ * messages, of what roles, how big, which tools were offered) and drops
+ * the bulk text.
+ *
+ * Set `setVerbosePayloads(true)` to get the raw body back when a digest
+ * isn't enough (malformed content parts, tool-schema bugs).
+ *
+ * Sizes are reported in characters, not tokens: the token estimator lives
+ * in `context-budget.ts`, which imports from this module, so calling it
+ * here would create an import cycle. Chars are sufficient for spotting
+ * runaway growth; use the `pre-send context guard` entries for token math.
+ */
+function summarizeRequestBody(body: Record<string, unknown>): unknown {
+	if (isVerbosePayloads()) return body;
+
+	const messages = (body.messages as ChatMessage[] | undefined) ?? [];
+	const tools = body.tools as ToolDefinition[] | undefined;
+
+	let totalChars = 0;
+	const shape = messages.map((m) => {
+		const chars = messageText(m.content).length;
+		totalChars += chars;
+		const entry: Record<string, unknown> = { role: m.role, chars };
+		// Tool call *names* are cheap and are usually what you're scanning
+		// for when reconstructing what the loop did; the arguments are not.
+		if (m.tool_calls?.length) entry.calls = m.tool_calls.map((c) => c.function.name);
+		if (m.tool_call_id) entry.tool_call_id = m.tool_call_id;
+		return entry;
+	});
+
+	return {
+		model: body.model,
+		stream: body.stream,
+		messages: shape,
+		message_count: messages.length,
+		total_content_chars: totalChars,
+		tools: tools?.map((t) => t.function.name),
+		temperature: body.temperature,
+		max_tokens: body.max_tokens,
+		tool_choice: body.tool_choice
+	};
+}
+
+/** Clip a long string for logging, preserving the length signal. */
+function previewText(s: string | null, max = 800): string | null {
+	if (s == null) return null;
+	if (isVerbosePayloads() || s.length <= max) return s;
+	return `${s.slice(0, max)}… (+${s.length - max} more chars)`;
+}
+
 function buildRequestBody(
 	options: ChatCompletionOptions,
 	modelName: string = 'default',
@@ -494,7 +552,7 @@ export async function* chatCompletionStream(
 		endpoint.isOpenRouter
 	);
 	const reqId = nextRequestId++;
-	logDebug('api', `stream request #${reqId} → ${endpoint.url}`, body);
+	logDebug('api', `stream request #${reqId} → ${endpoint.url}`, summarizeRequestBody(body));
 
 	const response = await sendChatRequest(
 		endpoint.url,
@@ -547,7 +605,7 @@ export async function chatCompletion(
 		endpoint.isOpenRouter
 	);
 	const reqId = nextRequestId++;
-	logDebug('api', `non-stream request #${reqId} → ${endpoint.url}`, body);
+	logDebug('api', `non-stream request #${reqId} → ${endpoint.url}`, summarizeRequestBody(body));
 
 	const response = await sendChatRequest(
 		endpoint.url,
@@ -583,7 +641,7 @@ export async function chatCompletion(
 		has_reasoning: !!reasoning,
 		tool_call_count: choice.message?.tool_calls?.length ?? 0,
 		tool_calls: choice.message?.tool_calls,
-		content,
+		content: previewText(content),
 		usage: data.usage
 	});
 

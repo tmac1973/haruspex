@@ -234,19 +234,27 @@ function verifierPrompt(outDir: string, overviewPath: string): string {
 		'',
 		`1. Read the overview at \`${overviewPath}\`, then list \`${outDir}\` and read`,
 		'   every phase-NN-*.md file in it.',
-		'2. Look for exactly two kinds of problem:',
+		'2. Look for exactly three kinds of problem:',
 		'   a. ORDERING — any phase that depends on work introduced in a LATER phase',
 		'      (its "Depends on" names a higher-numbered phase, or its steps need',
 		'      something a later phase creates).',
 		'   b. DEFERRED DECISIONS — any "TBD", "decide later", "we’ll figure out", an',
 		'      unresolved either/or, or a step that does not say what to actually do.',
+		'   c. MALFORMED FILE — a phase file that is empty, truncated, starts partway',
+		'      through the document instead of at its "# Phase NN" heading, or is',
+		'      missing whole sections.',
+		'',
+		'IMPORTANT: if a file is MALFORMED, report it under (c) and move straight on',
+		'to the next file. Do NOT try to decide whether it also counts as an ordering',
+		'or deferred-decision problem, and do NOT try to infer what its missing parts',
+		'would have said — a malformed file cannot be checked for (a) or (b) at all,',
+		'and re-reading it will not fix that. One bullet, then move on.',
 		'',
 		'You write NOTHING to disk. Then respond:',
 		'- If there are NO problems, your ENTIRE reply must be exactly: PLAN OK',
 		'- Otherwise, reply with a short bulleted list — each bullet naming the phase',
-		'  file and the specific ordering/decision problem to fix.',
-		'Report only ordering violations and unresolved decisions — not style or',
-		'scope opinions.'
+		'  file and the specific ordering / decision / malformed problem to fix.',
+		'Report only those three kinds of problem — not style or scope opinions.'
 	].join('\n');
 }
 
@@ -260,11 +268,60 @@ function planRevisePrompt(outDir: string): string {
 		'2. Apply the fixes requested in the user message. Preserve STRICT dependency',
 		'   order (every phase depends only on earlier phases) and resolve every',
 		'   decision — no "TBD"/"decide later". Keep the same section structure.',
-		`3. Write the corrected phase files back with fs_write_text (only inside`,
-		`   \`${outDir}\`). If a fix changes ordering, renumber the files so NN still`,
+		'   If a file is reported as MALFORMED (empty, truncated, or missing its',
+		'   heading or sections), rewrite that file COMPLETELY from its',
+		'   "# Phase NN — <title>" heading through every section — do not try to',
+		'   patch or continue the fragment that is there.',
+		`3. Write the corrected phase files back with fs_write_text, passing`,
+		`   overwrite: true (it refuses to replace an existing file otherwise), only`,
+		`   inside \`${outDir}\`. If a fix changes ordering, renumber the files so NN still`,
 		'   reflects dependency order.',
 		'4. Send a one-line summary of what you changed, then stop.'
 	].join('\n');
+}
+
+const MIN_PHASE_FILE_CHARS = 400;
+const REQUIRED_PHASE_SECTIONS: { label: string; re: RegExp }[] = [
+	{ label: 'a "Depends on:" line', re: /depends\s+on\b/i }
+];
+
+/**
+ * Structural gate for a written phase file. Returns null when the file looks
+ * acceptable, or a human-readable description of what's wrong.
+ *
+ * This exists because "the file is on disk" turned out to be far too weak a
+ * guarantee. A phase file was once written as a bare 1,170-byte fragment — no
+ * title, starting mid-document at "### 9", cut off mid-CSS — and passed the
+ * old existence-only check identically to a complete 18 KB file. The corrupt
+ * artifact then flowed into Verification, where the verifier (which had no
+ * category for "this file is malformed") spent its entire budget looping on
+ * it instead of reporting anything. Catching it at write time turns a silent
+ * 20-minute stall into a bounded, targeted rewrite.
+ *
+ * Deliberately checks only what is decisive and unambiguous: a plausible size,
+ * a top-level heading, and a "Depends on" line (which Verification needs to
+ * check ordering at all). Asserting the full `phaseWritePrompt` section list
+ * was tried and rejected — matchers like /^##\s+steps/ fail on a perfectly
+ * good "## Implementation Steps", which would burn all three retries and
+ * hard-fail a run that was never actually broken. A false reject here is far
+ * more costly than a missed one, since a missed one still has the verifier
+ * behind it.
+ */
+export function phaseFileProblem(relPath: string, text: string): string | null {
+	const trimmed = text.trim();
+	if (trimmed.length < MIN_PHASE_FILE_CHARS) {
+		return `${relPath} is only ${trimmed.length} characters long — it looks truncated or empty`;
+	}
+	const firstLine = trimmed.split('\n', 1)[0].trim();
+	if (!/^#\s/.test(firstLine)) {
+		return (
+			`${relPath} starts with "${firstLine.slice(0, 60)}" instead of a ` +
+			`"# Phase NN — <title>" heading — the beginning of the file is missing`
+		);
+	}
+	const missing = REQUIRED_PHASE_SECTIONS.filter((s) => !s.re.test(text)).map((s) => s.label);
+	if (missing.length > 0) return `${relPath} is missing ${missing.join(', ')}`;
+	return null;
 }
 
 /** The verifier reports a clean plan by replying with "PLAN OK". */
@@ -380,22 +437,57 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		}
 	};
 
-	// Verify `exists()`; if not, re-prompt the model to actually write (bounded),
-	// then throw a clear, honest error if the file still never lands.
-	const ensureWritten = async (
-		exists: () => Promise<boolean>,
-		stepIdx: number,
-		retryMessage: string,
-		retryPrompt: string,
-		missingError: string
-	): Promise<void> => {
-		for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
-			abortIfCancelled();
-			if (await exists()) return;
-			await turn(stepIdx, retryMessage, retryPrompt, 15, { expectsFileOutput: true });
+	/** Read a workdir file for validation, or null if it can't be read. */
+	const readWorkdirFile = async (relPath: string): Promise<string | null> => {
+		if (!job.working_dir) return null;
+		try {
+			return await invoke<string>('fs_read_text', {
+				workdir: job.working_dir,
+				relPath,
+				limit: 1000
+			});
+		} catch {
+			return null;
 		}
+	};
+
+	const checkPhaseFile = (relPath: string) => async (): Promise<string | null> => {
+		if (!(await fileExists(relPath))) return `${relPath} is not on disk`;
+		const text = await readWorkdirFile(relPath);
+		// Unreadable, no sandbox root, or anything that isn't actually a string
+		// → fall back to the existence result rather than failing a file that
+		// may well be fine. The typeof guard matters: a backend that resolves
+		// with undefined would otherwise reach phaseFileProblem and throw,
+		// turning an unreadable file into a failed run.
+		if (typeof text !== 'string') return null;
+		return phaseFileProblem(relPath, text);
+	};
+
+	/** Existence-only gate, for artifacts with no fixed section contract. */
+	const checkFileExists = (relPath: string) => async (): Promise<string | null> =>
+		(await fileExists(relPath)) ? null : `${relPath} is not on disk`;
+
+	// Run `check`; while it reports a problem, re-prompt the model to fix it
+	// (bounded), then throw a clear, honest error if it never comes good.
+	// `check` returns null when the artifact is acceptable, or a human-readable
+	// description of what's wrong — which is fed back to the model so the retry
+	// is targeted at the actual defect rather than a generic "write the file".
+	const ensureWritten = async (
+		check: () => Promise<string | null>,
+		stepIdx: number,
+		retryMessage: (problem: string) => string,
+		retryPrompt: string,
+		failureError: (problem: string) => string
+	): Promise<void> => {
 		abortIfCancelled();
-		if (!(await exists())) throw new Error(missingError);
+		let problem = await check();
+		for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS && problem !== null; attempt++) {
+			abortIfCancelled();
+			await turn(stepIdx, retryMessage(problem), retryPrompt, 15, { expectsFileOutput: true });
+			abortIfCancelled();
+			problem = await check();
+		}
+		if (problem !== null) throw new Error(failureError(problem));
 	};
 
 	// Independent verifier (shown on the Verification step); revise once if it
@@ -542,13 +634,15 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			{ expectsFileOutput: true }
 		);
 		await ensureWritten(
-			() => fileExists(overviewPath),
+			checkFileExists(overviewPath),
 			OVERVIEW,
-			`I don't see ${overviewPath} on disk yet — you may have described writing the ` +
+			() =>
+				`I don't see ${overviewPath} on disk yet — you may have described writing the ` +
 				`overview without actually calling the fs_write_text tool. Do NOT ask any more ` +
 				`questions; call fs_write_text now to write the overview to ${overviewPath}, then stop.`,
 			overviewStagePrompt(outDir, overviewPath),
-			`The overview was never written to ${overviewPath} after ${MAX_WRITE_ATTEMPTS} attempts. ` +
+			() =>
+				`The overview was never written to ${overviewPath} after ${MAX_WRITE_ATTEMPTS} attempts. ` +
 				`The selected model may be too small to follow the write step reliably — try a larger model.`
 		);
 		let approved = false;
@@ -642,15 +736,19 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				expectsFileOutput: true
 			});
 			await ensureWritten(
-				() => fileExists(phase.relPath),
+				checkPhaseFile(phase.relPath),
 				PLANNING,
-				`I don't see ${phase.relPath} on disk yet — you may have described writing it ` +
-					`without calling fs_write_text. Do NOT ask questions; write Phase ${phase.nn} to ` +
-					`${phase.relPath} now with fs_write_text, then stop.`,
+				(problem) =>
+					`Phase ${phase.nn} is not correctly written: ${problem}. Do NOT ask questions. ` +
+					`Write the COMPLETE file to ${phase.relPath} now with fs_write_text (pass ` +
+					`overwrite: true to replace what's there) — the whole document from its ` +
+					`"# Phase ${phase.nn} — <title>" heading through every required section, not ` +
+					`a fragment or a continuation. Then stop.`,
 				phaseWritePrompt(outDir, overviewPath),
-				`Phase ${phase.nn} (${phase.relPath}) was never written after ${MAX_WRITE_ATTEMPTS} ` +
-					`attempts. The selected model may be too small to follow the write step reliably — ` +
-					`try a larger model.`
+				(problem) =>
+					`Phase ${phase.nn} (${phase.relPath}) was still not written correctly after ` +
+					`${MAX_WRITE_ATTEMPTS} attempts — ${problem}. The selected model may be too small ` +
+					`to follow the write step reliably — try a larger model.`
 			);
 		}
 		finishStep(PLANNING, `Wrote ${outline.length} phase file(s) to ${outDir}`);

@@ -19,6 +19,25 @@
 
 const RING_CAPACITY = 5000;
 
+/**
+ * When false (the default), call sites that would otherwise dump a whole
+ * outbound request body log a compact digest instead — see
+ * `summarizeRequestBody` in `api.ts`. Full payloads are occasionally the
+ * only way to diagnose a malformed request, so they stay available, but
+ * they're opt-in: a single agent turn's worth of full prompts is hundreds
+ * of KB, which buries every other entry and makes the buffer impossible
+ * to read or paste anywhere.
+ */
+let verbosePayloads = false;
+
+export function setVerbosePayloads(on: boolean): void {
+	verbosePayloads = on;
+}
+
+export function isVerbosePayloads(): boolean {
+	return verbosePayloads;
+}
+
 let nextTurnId = 1;
 let activeTurnId: number | null = null;
 interface DebugEntry {
