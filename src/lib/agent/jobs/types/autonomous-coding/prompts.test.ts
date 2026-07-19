@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { iterationPrompt } from './prompts';
+import { iterationPrompt, preflightPrompt } from './prompts';
 
 /**
  * The prompt is hard-wrapped for readability, so a phrase can straddle a line
@@ -77,6 +77,80 @@ describe('iterationPrompt — invariants across both branches', () => {
 			// verifyRule() emits rule 3 as several lines; a regression there is
 			// easy to miss by eye and would leave the model with a broken list.
 			for (const n of [1, 2, 3, 4, 5, 6, 7]) {
+				expect(prompt).toMatch(new RegExp(`^${n}\\. `, 'm'));
+			}
+		});
+	}
+});
+
+describe('preflightPrompt — settling the verification contract', () => {
+	const withCmd = flat(preflightPrompt('plan/x', 'plan/x/DECISIONS-coding.md', 'npm test'));
+	const blank = flat(preflightPrompt('plan/x', 'plan/x/DECISIONS-coding.md', null));
+
+	it('confirms a user-supplied command by actually running it', () => {
+		// A command that fails at preflight fails every step all night. Preflight
+		// is the only stage that can catch that while the user is present.
+		expect(withCmd).toContain('`npm test`');
+		expect(withCmd).toContain('run it once with run_command');
+	});
+
+	it('does not let a failing user command be silently swapped out', () => {
+		expect(withCmd).toContain('do NOT silently');
+		expect(withCmd).toContain('ask ONE');
+	});
+
+	it('makes preflight settle a blank command rather than deferring to the loop', () => {
+		expect(blank).toContain('the loop cannot ask later');
+		expect(blank).toContain('Detect the stack(s)');
+	});
+
+	it('composes multi-stack repos into one && command', () => {
+		expect(blank).toContain('joining with `&&`');
+		expect(blank).toContain('One command, one exit code');
+	});
+
+	it('requires the composed command to be executed, not guessed', () => {
+		expect(blank).toContain('RUN IT with run_command');
+		expect(blank).toContain('never executed is a guess');
+	});
+
+	it('offers scaffold / syntax-check / shared-file when there is no test setup', () => {
+		expect(blank).toContain('scaffold a minimal harness');
+		expect(blank).toContain('syntax/build check');
+		expect(blank).toContain('one shared file');
+	});
+
+	it('forbids scaffolding a test framework without asking', () => {
+		// Imposing dependencies on a project that may not want them is how the
+		// observed run ended up with node_modules in git.
+		expect(blank).toContain('NOT scaffold a test framework without asking');
+	});
+
+	it('keeps preflight from writing code itself', () => {
+		expect(blank).toContain('Preflight writes no code');
+	});
+
+	for (const [label, prompt] of [
+		['with command', withCmd],
+		['blank', blank]
+	] as const) {
+		it(`${label}: records the contract where the unattended run can read it`, () => {
+			expect(prompt).toContain('## Verification command');
+			expect(prompt).toContain('submit_preflight');
+		});
+	}
+});
+
+describe('preflightPrompt — step numbering', () => {
+	// verificationContractStep() emits step 3 as many lines; a regression would
+	// silently leave the interview with a broken process list.
+	for (const [label, cmd] of [
+		['with command', 'npm test'],
+		['blank', null]
+	] as const) {
+		it(`${label}: numbers the process 1-5 with no gaps`, () => {
+			const prompt = preflightPrompt('plan/x', 'plan/x/D.md', cmd);
+			for (const n of [1, 2, 3, 4, 5]) {
 				expect(prompt).toMatch(new RegExp(`^${n}\\. `, 'm'));
 			}
 		});

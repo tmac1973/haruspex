@@ -6,7 +6,11 @@
  * the user via ask_user_question, record the answers, then report readiness
  * via submit_preflight.
  */
-export function preflightPrompt(planDir: string, decisionsPath: string): string {
+export function preflightPrompt(
+	planDir: string,
+	decisionsPath: string,
+	verifyCommand: string | null
+): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
 		'session the run is FULLY UNATTENDED — the user starts it and walks away, and',
@@ -33,15 +37,70 @@ export function preflightPrompt(planDir: string, decisionsPath: string): string 
 		'   options). Do not batch. Do not proceed while any decision is open. If the',
 		'   user answers "proceed" or similar, stop asking and settle the rest with',
 		'   sensible defaults, recording each default you chose.',
-		`3. Write \`${decisionsPath}\` with fs_write_text: a "# Coding decisions"`,
+		...verificationContractStep(verifyCommand),
+		`4. Write \`${decisionsPath}\` with fs_write_text: a "# Coding decisions"`,
 		'   heading, then one "## <question>" section per decision with the chosen',
 		'   answer (including defaults you settled). If there were genuinely no open',
-		'   decisions, write the file saying so. Write ONLY inside',
-		`   \`${planDir}\` — no code, no other files.`,
-		'4. Call `submit_preflight` exactly once: ready=true when nothing is left',
+		'   decisions, write the file saying so. It MUST also contain a',
+		'   "## Verification command" section holding the exact command string the',
+		'   loop should run — this is how the contract survives into the unattended',
+		`   run. Write ONLY inside \`${planDir}\` — no code, no other files.`,
+		'5. Call `submit_preflight` exactly once: ready=true when nothing is left',
 		'   ambiguous; ready=false with concrete blockers when the run cannot start',
 		'   (e.g. the plan directory is empty or the plans contradict each other).'
 	].join('\n');
+}
+
+/**
+ * Preflight step 3 — settle how every loop step will prove itself.
+ *
+ * This exists because a blank verify command used to leave the decision to
+ * each iteration, in a fresh context, 25 times over. The result was 13
+ * single-use verification scripts and a fifth of their assertions matching
+ * source text the model had just written.
+ *
+ * Preflight is the only stage that can fix this: it can see the whole repo, it
+ * can run a candidate command to check it actually works, and the user is still
+ * present to confirm. A command that was never executed is a guess, and an
+ * unattended run built on a guess fails every step.
+ */
+function verificationContractStep(verifyCommand: string | null): string[] {
+	if (verifyCommand) {
+		return [
+			`3. The user supplied a verify command: \`${verifyCommand}\`. CONFIRM it works`,
+			'   before the run depends on it — run it once with run_command. If it passes,',
+			'   record it and move on. If it fails or the tool is missing, do NOT silently',
+			'   substitute your own: show the user what happened and ask ONE',
+			'   `ask_user_question` offering a corrected command, a fallback, or running',
+			'   anyway. A verify command that fails at preflight fails all night.'
+		];
+	}
+	return [
+		'3. The user left the verify command BLANK, so YOU must settle it now — the',
+		'   loop cannot ask later, and an iteration left to improvise builds a',
+		'   throwaway harness per step. Work it out and get it confirmed:',
+		'   a. Detect the stack(s) from what is actually in the working directory —',
+		'      package.json (check its "scripts"), Cargo.toml, pyproject.toml,',
+		'      requirements.txt, go.mod, Makefile, and any existing test directory.',
+		'      A repo can have SEVERAL; find them all.',
+		'   b. Compose ONE command covering every stack found, joining with `&&` so',
+		'      any failure fails the step (e.g. `npm run check && npm test && cargo',
+		'      test`). One command, one exit code — that is what the loop consumes.',
+		'   c. RUN IT with run_command. A command you never executed is a guess. If',
+		'      it fails because nothing is wired up yet, that is information, not a',
+		'      dead end — carry it into the question below.',
+		'   d. Ask the user ONE `ask_user_question` presenting what you found and',
+		'      what you propose, with concrete options. When the repo has NO test',
+		'      setup at all, the options should be: scaffold a minimal harness (say',
+		'      exactly what you would add), a cheap syntax/build check that needs no',
+		'      new dependencies (e.g. `node --check`, `tsc --noEmit`, `cargo check`),',
+		'      or the model verifying by its own judgment into one shared file. Do',
+		'      NOT scaffold a test framework without asking — it adds dependencies to',
+		'      a project that may not want them.',
+		'   e. If they choose scaffolding, the scaffold itself is work the RUN does,',
+		'      not you: note it in the decisions file so it becomes the first thing',
+		'      the loop builds. Preflight writes no code.'
+	];
 }
 
 /**

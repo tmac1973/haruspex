@@ -63,7 +63,18 @@ export const FINALIZE = 3;
 /**
  * Preflight toolset: read-only grounding, the one write (the decisions file,
  * held to the plan dir via writeRoot), the question modal, and the forced
- * structured verdict. No shell — nothing executes before the loop.
+ * structured verdict.
+ *
+ * `run_command` is included deliberately, reversing an earlier "no shell before
+ * the loop" rule. Preflight has to settle the verification contract for the
+ * whole unattended run, and a contract it never executed is a guess: `npm test`
+ * looks right in a repo whose package.json has no test script, and the run
+ * would then fail every step at 3am. Trying the candidate once, here, is what
+ * makes the recorded command trustworthy.
+ *
+ * This is not a new capability class for the job — the loop already runs shell
+ * commands unattended and auto-approved. It is the same capability, moved to
+ * the one stage where the user is still present to see it.
  */
 const PREFLIGHT_TOOLS = [
 	'fs_read_text',
@@ -72,6 +83,7 @@ const PREFLIGHT_TOOLS = [
 	'code_grep',
 	'code_glob',
 	'fs_write_text',
+	'run_command',
 	'ask_user_question',
 	SUBMIT_PREFLIGHT_TOOL
 ];
@@ -214,7 +226,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		// decision via the question modal, record them, and get a structured
 		// ready/blocked verdict before anything runs unattended.
 		startStep(PREFLIGHT);
-		const outcome = await runPreflightTurn(ctx, planDir, decisionsPath);
+		const outcome = await runPreflightTurn(ctx, planDir, decisionsPath, cfg.verify_command);
 		abortIfCancelled();
 		if (!outcome.ready) {
 			const why = outcome.blockers.length
@@ -225,7 +237,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		await ensureFileWritten(ctx, PREFLIGHT, {
 			relPath: decisionsPath,
 			writeRoot: planDir,
-			systemPrompt: preflightPrompt(planDir, decisionsPath),
+			systemPrompt: preflightPrompt(planDir, decisionsPath, cfg.verify_command),
 			toolAllowlist: PREFLIGHT_TOOLS,
 			what: 'decisions file',
 			abortIfCancelled
@@ -393,7 +405,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 async function runPreflightTurn(
 	ctx: JobRunContext,
 	planDir: string,
-	decisionsPath: string
+	decisionsPath: string,
+	verifyCommand: string | null
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
@@ -406,7 +419,7 @@ async function runPreflightTurn(
 		maxIterations: PREFLIGHT_MAX_ITERATIONS,
 		interactive: true,
 		writeRoot: planDir,
-		systemPrompt: preflightPrompt(planDir, decisionsPath),
+		systemPrompt: preflightPrompt(planDir, decisionsPath, verifyCommand),
 		toolAllowlist: PREFLIGHT_TOOLS,
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,
 		...base,
