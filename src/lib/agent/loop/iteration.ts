@@ -47,10 +47,11 @@ import type { AgentLoopOptions, CompletionMeta } from '../loop';
 // Lower than the conversation-level compaction threshold (0.8) so we
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
-// Per-call output token cap. Used for both agent-loop iterations (where
-// the model may emit a large `fs_write_pdf` tool call containing an
-// entire report as its content argument) and the final streaming
-// synthesis.
+// Last-resort per-call output cap, for a caller that bypasses
+// `runEphemeralTurn` and passes no `maxResponseTokens` of its own. The
+// operative values now come from Settings → Inference: a base cap and a
+// larger one for file-writing turns (see `maxResponseTokensFileWrite`),
+// resolved per turn in runEphemeralTurn. Kept so no path is uncapped.
 const AGENT_LOOP_MAX_TOKENS = 8192;
 const FINAL_SYNTHESIS_MAX_TOKENS = 8192;
 
@@ -890,13 +891,16 @@ function handleRejectedToolCall(
 		finish_reason: response.finish_reason
 	});
 	ctx.options.onComplete();
+	const settingLabel = ctx.expectsFileOutput
+		? 'Max response tokens (file writes)'
+		: 'Max response tokens';
 	ctx.options.onError(
 		new ApiError(
 			`The model's tool call was cut off before it finished (${reason}), and it ` +
 				`could not re-send it within ${MAX_TRUNCATION_RETRIES} attempts. Nothing ` +
-				`was written. This usually means the response hit the token ceiling — ` +
-				`raise the max response tokens in Settings → Inference, or ask for a ` +
-				`smaller piece of work.`
+				`was written. The response hit its ${ctx.maxResponseTokens}-token ceiling — ` +
+				`raise Settings → Inference → ${settingLabel}, or ask for a smaller piece ` +
+				`of work.`
 		)
 	);
 	return 'complete';

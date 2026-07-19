@@ -8,6 +8,11 @@ import {
 	getOpenRouterReasoningParam,
 	setActiveLocalModel,
 	SETTINGS_KEY,
+	clampResponseTokens,
+	DEFAULT_MAX_RESPONSE_TOKENS,
+	DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
+	MIN_MAX_RESPONSE_TOKENS,
+	MAX_MAX_RESPONSE_TOKENS,
 	type SamplingOptions
 } from '$lib/stores/settings';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
@@ -519,5 +524,59 @@ describe('load-time remoteServerUrls seeding', () => {
 	it('leaves an empty config alone', async () => {
 		const inf = await loadWith({ mode: 'local', remoteBaseUrl: '' });
 		expect(inf.remoteServerUrls).toEqual([]);
+	});
+});
+
+describe('response token ceilings', () => {
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) {
+			localStorage.removeItem(SETTINGS_KEY);
+		} else {
+			localStorage.setItem(SETTINGS_KEY, priorRaw);
+		}
+		vi.resetModules();
+	});
+
+	it('defaults to 8192 for normal turns and 32768 for file writes', () => {
+		const s = getSettings();
+		expect(s.maxResponseTokens).toBe(DEFAULT_MAX_RESPONSE_TOKENS);
+		expect(s.maxResponseTokensFileWrite).toBe(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE);
+		expect(DEFAULT_MAX_RESPONSE_TOKENS).toBe(8192);
+		expect(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE).toBe(32768);
+	});
+
+	// The migration-safety check. An existing install's persisted blob predates
+	// both fields; if the store's load-time merge applies defaults, no versioned
+	// migration is needed. This test is what decides that.
+	it('applies defaults to a settings blob saved before these fields existed', async () => {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify({ contextSize: 65536, braveApiKey: 'kept' }));
+		vi.resetModules();
+		const fresh = await import('$lib/stores/settings');
+		const s = fresh.getSettings();
+		expect(s.maxResponseTokens).toBe(DEFAULT_MAX_RESPONSE_TOKENS);
+		expect(s.maxResponseTokensFileWrite).toBe(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE);
+		// And nothing else was lost in the process.
+		expect(s.contextSize).toBe(65536);
+		expect(s.braveApiKey).toBe('kept');
+	});
+
+	it('clamps out-of-range values to the nearest bound', () => {
+		expect(clampResponseTokens(0)).toBe(MIN_MAX_RESPONSE_TOKENS);
+		expect(clampResponseTokens(-1)).toBe(MIN_MAX_RESPONSE_TOKENS);
+		expect(clampResponseTokens(999999)).toBe(MAX_MAX_RESPONSE_TOKENS);
+	});
+
+	it('leaves an in-range value untouched', () => {
+		expect(clampResponseTokens(16384)).toBe(16384);
+	});
+
+	it('falls back to the base default for a non-numeric entry', () => {
+		expect(clampResponseTokens(Number.NaN)).toBe(DEFAULT_MAX_RESPONSE_TOKENS);
 	});
 });
