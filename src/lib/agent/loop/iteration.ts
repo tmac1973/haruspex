@@ -40,7 +40,7 @@ import { resolveBackendDescriptor, type BackendDescriptor } from '$lib/inference
 import { stripToolCallArtifacts } from '$lib/markdown';
 import { isAbortError } from '$lib/utils/error';
 import { logDebug } from '$lib/debug-log';
-import { NudgeState } from './nudges';
+import { MAX_TRUNCATION_RETRIES, NudgeState } from './nudges';
 import type { AgentLoopOptions, CompletionMeta } from '../loop';
 
 // Trim older tool results when context usage crosses this fraction.
@@ -474,7 +474,10 @@ async function forceFinalToolCall(
 		return;
 	}
 
-	const calls = resolveToolCalls(response).filter((c) => c.name === name);
+	// A rejected resolution has no usable call either — this path has no retry
+	// budget, so it ends the turn the same way an empty result does.
+	const resolution = resolveToolCalls(response);
+	const calls = resolution.kind === 'calls' ? resolution.calls.filter((c) => c.name === name) : [];
 	if (calls.length === 0) {
 		logDebug('agent', 'forced final tool call returned no usable call', { tool: name });
 		ctx.options.onComplete(meta);
@@ -551,7 +554,11 @@ async function runModelCall(
 	templateKwargs: ReturnType<typeof getChatTemplateKwargs>,
 	reasoning: { effort: string } | undefined,
 	iteration: number
-): Promise<{ response: ChatCompletionResponse; toolCalls: ResolvedToolCall[] }> {
+): Promise<{
+	response: ChatCompletionResponse;
+	toolCalls: ResolvedToolCall[];
+	rejection: string | null;
+}> {
 	const { tools, options } = ctx;
 	const callStartMs = Date.now();
 	const response = await sendGuardedCompletion(
@@ -594,20 +601,27 @@ async function runModelCall(
 	}
 
 	let toolCalls: ResolvedToolCall[] = [];
+	// Non-null when the model attempted a call we refused (truncated or
+	// ambiguous). Distinct from "no calls" — the caller must retry, not treat
+	// the turn as prose.
+	let rejection: string | null = null;
 	let parseError: unknown = null;
 	try {
-		toolCalls = resolveToolCalls(response);
+		const resolution = resolveToolCalls(response);
+		if (resolution.kind === 'calls') toolCalls = resolution.calls;
+		else if (resolution.kind === 'rejected') rejection = resolution.reason;
 	} catch (e) {
 		parseError = e;
 	}
 	logDebug('agent', `iteration ${iteration} parsed`, {
 		toolCallCount: toolCalls.length,
+		rejection,
 		finish_reason: response.finish_reason,
 		content_len: response.content ? response.content.length : 0,
 		parseError: parseError ? String(parseError) : null
 	});
 
-	return { response, toolCalls };
+	return { response, toolCalls, rejection };
 }
 
 /**
@@ -646,13 +660,21 @@ export async function runIteration(
 	});
 	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
 	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
-	const { response, toolCalls } = await runModelCall(
+	const { response, toolCalls, rejection } = await runModelCall(
 		ctx,
 		sampling,
 		templateKwargs,
 		reasoning,
 		iteration
 	);
+
+	// A refused call is handled before the no-tool-calls chain: the model DID
+	// attempt a call, so treating this as prose would let a truncated write
+	// pass silently as the turn's answer.
+	if (rejection) {
+		const rejected = handleRejectedToolCall(ctx, nudges, response, rejection, iteration);
+		if (rejected) return rejected;
+	}
 
 	// No tool calls: run the recovery-guard chain in priority order, then
 	// fall through to the terminal no-tool-call handler. Each guard checks
@@ -825,6 +847,59 @@ function tryNarrateRecovery(
 		);
 	}
 	return null;
+}
+
+/**
+ * A tool call was refused — truncated mid-generation, or ambiguous. Ask the
+ * model to re-emit it whole while there is retry budget left; when that runs
+ * out, end the turn with an error naming the ceiling that caused it.
+ *
+ * Returning null is not an option here: falling through to the no-tool-calls
+ * chain would treat a refused write as the turn's prose answer, which is the
+ * silent half-success this guard exists to prevent.
+ */
+function handleRejectedToolCall(
+	ctx: LoopContext,
+	nudges: NudgeState,
+	response: ChatCompletionResponse,
+	reason: string,
+	iteration: number
+): IterationOutcome {
+	if (nudges.needsTruncationRetry()) {
+		nudges.consumeTruncationRetry();
+		logDebug('agent', `iteration ${iteration} branch=tool-call-rejected retry`, {
+			reason,
+			retry: nudges.truncationRetryCount,
+			finish_reason: response.finish_reason
+		});
+		return pushNudge(
+			ctx.messages,
+			response,
+			`Your last tool call was not run: ${reason}. Nothing was written and no ` +
+				`action was taken. Emit the call again as a single complete tool_calls ` +
+				`block, with the whole value of each argument present — do not split an ` +
+				`argument across repeated parameters, and do not describe the call in ` +
+				`prose. If the content is too long to emit in one response, write less ` +
+				`of it rather than sending a partial value.`,
+			true
+		);
+	}
+
+	logDebug('agent', `iteration ${iteration} branch=tool-call-rejected exhausted`, {
+		reason,
+		finish_reason: response.finish_reason
+	});
+	ctx.options.onComplete();
+	ctx.options.onError(
+		new ApiError(
+			`The model's tool call was cut off before it finished (${reason}), and it ` +
+				`could not re-send it within ${MAX_TRUNCATION_RETRIES} attempts. Nothing ` +
+				`was written. This usually means the response hit the token ceiling — ` +
+				`raise the max response tokens in Settings → Inference, or ask for a ` +
+				`smaller piece of work.`
+		)
+	);
+	return 'complete';
 }
 
 /** File-write hallucination recovery. */

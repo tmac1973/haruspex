@@ -5,9 +5,21 @@ import {
 	hasFunctionStyleToolCalls,
 	hasToolCalls,
 	stripToolCallXml,
-	resolveToolCalls
+	resolveToolCalls,
+	type ToolCallResolution
 } from '$lib/agent/parser';
 import type { ChatCompletionResponse } from '$lib/api';
+
+/**
+ * Unwrap a resolution to its calls, so the assertions below read the same as
+ * they did when `resolveToolCalls` returned a bare array. A `rejected` result
+ * is deliberately NOT flattened to `[]` — tests that expect a rejection assert
+ * on it directly, and silently treating one as "no calls" is exactly the
+ * conflation the resolution type exists to prevent.
+ */
+function callsOf(resolution: ToolCallResolution) {
+	return resolution.kind === 'calls' ? resolution.calls : [];
+}
 
 describe('extractToolCalls', () => {
 	it('extracts a single tool call', () => {
@@ -104,7 +116,7 @@ describe('resolveToolCalls', () => {
 			],
 			finish_reason: 'tool_calls'
 		};
-		const calls = resolveToolCalls(response);
+		const calls = callsOf(resolveToolCalls(response));
 		expect(calls).toHaveLength(1);
 		expect(calls[0].name).toBe('structured_tool');
 		expect(calls[0].id).toBe('call_1');
@@ -115,7 +127,7 @@ describe('resolveToolCalls', () => {
 			content: '<tool_call>{"name":"web_search","arguments":{"query":"test"}}</tool_call>',
 			finish_reason: 'stop'
 		};
-		const calls = resolveToolCalls(response);
+		const calls = callsOf(resolveToolCalls(response));
 		expect(calls).toHaveLength(1);
 		expect(calls[0].name).toBe('web_search');
 		expect(calls[0].id).toMatch(/^call_/);
@@ -126,7 +138,7 @@ describe('resolveToolCalls', () => {
 			content: 'Just a normal response',
 			finish_reason: 'stop'
 		};
-		expect(resolveToolCalls(response)).toHaveLength(0);
+		expect(callsOf(resolveToolCalls(response))).toHaveLength(0);
 	});
 
 	it('returns empty for null content and no tool_calls', () => {
@@ -134,7 +146,7 @@ describe('resolveToolCalls', () => {
 			content: null,
 			finish_reason: 'stop'
 		};
-		expect(resolveToolCalls(response)).toHaveLength(0);
+		expect(callsOf(resolveToolCalls(response))).toHaveLength(0);
 	});
 
 	it('does not throw on malformed structured arguments, falls through to XML', () => {
@@ -152,7 +164,7 @@ describe('resolveToolCalls', () => {
 			],
 			finish_reason: 'tool_calls'
 		};
-		const calls = resolveToolCalls(response);
+		const calls = callsOf(resolveToolCalls(response));
 		expect(calls).toHaveLength(1);
 		expect(calls[0].name).toBe('web_search');
 	});
@@ -170,7 +182,7 @@ describe('resolveToolCalls', () => {
 			finish_reason: 'tool_calls'
 		};
 		expect(() => resolveToolCalls(response)).not.toThrow();
-		expect(resolveToolCalls(response)).toHaveLength(0);
+		expect(callsOf(resolveToolCalls(response))).toHaveLength(0);
 	});
 
 	it('treats empty-string structured arguments as {}', () => {
@@ -185,7 +197,7 @@ describe('resolveToolCalls', () => {
 			],
 			finish_reason: 'tool_calls'
 		};
-		const calls = resolveToolCalls(response);
+		const calls = callsOf(resolveToolCalls(response));
 		expect(calls).toHaveLength(1);
 		expect(calls[0].name).toBe('list_dir');
 		expect(calls[0].arguments).toEqual({});
@@ -200,7 +212,7 @@ describe('resolveToolCalls', () => {
 			],
 			finish_reason: 'tool_calls'
 		};
-		const calls = resolveToolCalls(response);
+		const calls = callsOf(resolveToolCalls(response));
 		expect(calls).toHaveLength(1);
 		expect(calls[0].name).toBe('good_tool');
 		expect(calls[0].id).toBe('c1');
@@ -215,7 +227,7 @@ describe('resolveToolCalls', () => {
 				'<function=email_summarize_message> <parameter=accountId> abc-123 <parameter=messageId> 22893',
 			finish_reason: 'stop'
 		};
-		const calls = resolveToolCalls(response);
+		const calls = callsOf(resolveToolCalls(response));
 		expect(calls).toHaveLength(1);
 		expect(calls[0].name).toBe('email_summarize_message');
 		expect(calls[0].arguments).toEqual({ accountId: 'abc-123', messageId: 22893 });
@@ -321,5 +333,143 @@ describe('extractToolCalls function-style fallback', () => {
 		expect(calls).toHaveLength(1);
 		expect(calls[0].name).toBe('fs_read_text');
 		expect(calls[0].arguments.path).toBe('/home/tim/projects/planets/main.py');
+	});
+});
+
+describe('resolveToolCalls — truncated and ambiguous calls', () => {
+	// The shape observed in the real incident: a phase file emitted as a
+	// <function=…> block, chunked across repeated <parameter=content> blocks
+	// and then cut off mid-CSS-property with no closing tag. Salvaging this
+	// produced a 1,170-byte "middle slice" — prefix lost to the duplicate-key
+	// overwrite, suffix lost to the unclosed-tag match — which was then written
+	// to disk and reported as a successful write.
+	const incidentPayload =
+		'<function=fs_write_text>' +
+		'<parameter=path>plan/phase-02-css.md' +
+		'<parameter=content># Phase 02 — CSS Styling\n\nDepends on: 01\n' +
+		'<parameter=content>### 9. Score panel\n\n```css\n#score-panel {\n  display: flex;\n  align-items';
+
+	it('rejects a truncated function-style call instead of salvaging a fragment', () => {
+		const response: ChatCompletionResponse = {
+			content: incidentPayload,
+			finish_reason: 'length'
+		};
+		const result = resolveToolCalls(response);
+		expect(result.kind).toBe('rejected');
+		// The critical property: no executable call is produced at all.
+		expect(callsOf(result)).toHaveLength(0);
+	});
+
+	it('rejects the incident payload under stop, for the duplicate-parameter reason', () => {
+		// Same bytes, complete generation. The truncation gate does not apply,
+		// but the repeated <parameter=content> is still ambiguous.
+		const response: ChatCompletionResponse = {
+			content: incidentPayload,
+			finish_reason: 'stop'
+		};
+		const result = resolveToolCalls(response);
+		expect(result.kind).toBe('rejected');
+		if (result.kind === 'rejected') {
+			expect(result.reason).toContain('duplicate parameter');
+			expect(result.reason).toContain('content');
+		}
+	});
+
+	it('still accepts a complete unclosed-tag call under stop', () => {
+		// The loose grammar is a real emission shape, not a defect — a
+		// duplicate-free call with no closing tags must keep working.
+		const response: ChatCompletionResponse = {
+			content: '<function=web_search> <parameter=query> current weather',
+			finish_reason: 'stop'
+		};
+		const result = resolveToolCalls(response);
+		expect(result.kind).toBe('calls');
+		expect(callsOf(result)).toHaveLength(1);
+		expect(callsOf(result)[0].arguments).toEqual({ query: 'current weather' });
+	});
+
+	it('rejects truncated structured arguments rather than falling through to salvage', () => {
+		const response: ChatCompletionResponse = {
+			content: '<function=fs_write_text> <parameter=path> a.md <parameter=content> partial',
+			tool_calls: [
+				{
+					id: 'call_1',
+					type: 'function',
+					function: { name: 'fs_write_text', arguments: '{"path":"a.md","content":"# Titl' }
+				}
+			],
+			finish_reason: 'length'
+		};
+		const result = resolveToolCalls(response);
+		expect(result.kind).toBe('rejected');
+		expect(callsOf(result)).toHaveLength(0);
+	});
+
+	it('rejects the whole response when only the LAST structured call is truncated', () => {
+		// The realistic truncation shape. Executing the good prefix and dropping
+		// the cut-off tail is a half-success the model cannot detect: it believes
+		// both calls ran.
+		const response: ChatCompletionResponse = {
+			tool_calls: [
+				{
+					id: 'call_1',
+					type: 'function',
+					function: { name: 'fs_read_text', arguments: '{"path":"overview.md"}' }
+				},
+				{
+					id: 'call_2',
+					type: 'function',
+					function: { name: 'fs_write_text', arguments: '{"path":"a.md","conte' }
+				}
+			],
+			content: null,
+			finish_reason: 'length'
+		};
+		const result = resolveToolCalls(response);
+		expect(result.kind).toBe('rejected');
+		expect(callsOf(result)).toHaveLength(0);
+	});
+
+	it('executes structured calls that all parse, even under a length finish', () => {
+		// Valid JSON means the calls themselves are complete; the cut fell after
+		// them. The reject is keyed on parse failure, not on `length` alone.
+		const response: ChatCompletionResponse = {
+			tool_calls: [
+				{
+					id: 'call_1',
+					type: 'function',
+					function: { name: 'fs_read_text', arguments: '{"path":"overview.md"}' }
+				}
+			],
+			content: null,
+			finish_reason: 'length'
+		};
+		const result = resolveToolCalls(response);
+		expect(result.kind).toBe('calls');
+		expect(callsOf(result)).toHaveLength(1);
+	});
+
+	it('leaves a truncated response with no tool-call syntax alone', () => {
+		// Plain prose cut off by the ceiling is not a refused call — the
+		// existing continue-on-length recovery handles that.
+		const response: ChatCompletionResponse = {
+			content: 'Here is the first half of my answer and then it just st',
+			finish_reason: 'length'
+		};
+		expect(resolveToolCalls(response).kind).toBe('none');
+	});
+
+	it('allows the same parameter name in two different calls', () => {
+		// Duplicate detection is scoped per function block: one response can
+		// legitimately carry several calls that each use the same argument name.
+		const response: ChatCompletionResponse = {
+			content:
+				'<function=fs_read_text> <parameter=path> a.md ' +
+				'<function=fs_read_text> <parameter=path> b.md',
+			finish_reason: 'stop'
+		};
+		const result = resolveToolCalls(response);
+		expect(result.kind).toBe('calls');
+		expect(callsOf(result)).toHaveLength(2);
 	});
 });
