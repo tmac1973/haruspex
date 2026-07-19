@@ -11,6 +11,7 @@ import { chatCompletion, type ChatMessage } from '$lib/api';
 import { getChatTemplateKwargs, getSamplingParams, getSettings } from '$lib/stores/settings';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import { errMessage } from '$lib/utils/error';
+import { stripThinkBlocks } from '$lib/markdown';
 import { toolError } from './types';
 
 /**
@@ -125,15 +126,6 @@ export async function runSubAgent(
 	// packs a separate reasoning_content field into one. Either way the caller
 	// wants only the findings.
 	return stripThinkBlocks(response.content).trim();
-}
-
-/** Remove `<think>…</think>` reasoning blocks (closed or trailing-open) from a
- *  sub-agent response so only the answer text remains. */
-function stripThinkBlocks(content: string | null | undefined): string {
-	if (!content) return '';
-	return content
-		.replace(/<think>[\s\S]*?<\/think>/g, '') // closed blocks
-		.replace(/<think>[\s\S]*$/, ''); // a truncated, never-closed block at the end
 }
 
 /**

@@ -260,6 +260,24 @@ function fixMalformedTables(text: string): string {
  * time (via renderMarkdown) so the artifacts never reach the DOM and
  * never get sent back to the model as history on the next turn.
  */
+/**
+ * Remove `<think>…</think>` reasoning blocks from model output.
+ *
+ * Both replacements are needed: `appendStreamDelta` closes the block once
+ * real content arrives, but a turn that only ever reasons leaves it open at
+ * the end of the buffer.
+ *
+ * Used by `finalizeStreamText` so `finalText` carries visible text only —
+ * callers that pattern-match on it (e.g. the guided-planning verifier's
+ * "PLAN OK") would otherwise never match for a reasoning model. Callers that
+ * want the reasoning back (the shell tab's collapsible UI) use `rawText`.
+ */
+export function stripThinkBlocks(text: string | null | undefined): string {
+	return (text ?? '')
+		.replace(/<think>[\s\S]*?<\/think>/g, '') // closed reasoning blocks
+		.replace(/<think>[\s\S]*$/, ''); // a still-open block at the end
+}
+
 export function stripToolCallArtifacts(text: string): string {
 	let out = text.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '');
 	out = out.replace(/<\/tool_call>/g, '');
@@ -600,7 +618,9 @@ export function finalizeStreamText(
 	raw: string,
 	fetchedUrls: readonly string[] = []
 ): ProcessedCitations {
-	return processCitations(stripToolCallArtifacts(raw).trim(), fetchedUrls);
+	// Strip reasoning BEFORE tool-call artifacts: a `<tool_call>` emitted inside
+	// a reasoning block goes with the block, rather than leaving a stray fragment.
+	return processCitations(stripToolCallArtifacts(stripThinkBlocks(raw)).trim(), fetchedUrls);
 }
 
 export function renderMarkdown(text: string): string {

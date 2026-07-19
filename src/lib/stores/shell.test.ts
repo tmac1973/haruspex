@@ -57,7 +57,7 @@ beforeEach(() => {
 	runShellTurn.mockReset();
 	runShellTurn.mockImplementation(async (opts: { onAdmitted?: () => void }) => {
 		opts.onAdmitted?.();
-		return { finalText: 'done' };
+		return { finalText: 'done', rawText: 'done' };
 	});
 	vi.mocked(invoke).mockClear();
 	resetSessionApproval();
@@ -163,7 +163,7 @@ describe('ShellSession state independence', () => {
 					{ role: 'tool', tool_call_id: 'c1', content: 'grep hit' } as never,
 					{ role: 'user', content: 'Now please provide your complete answer.' } as never
 				);
-				return { finalText: 'answer', stopReason: 'max_iterations' };
+				return { finalText: 'answer', rawText: 'answer', stopReason: 'max_iterations' };
 			}
 		);
 		const s = createShellSession();
@@ -187,7 +187,7 @@ describe('ShellSession state independence', () => {
 			async (opts: { messages: { role: string }[]; onAdmitted?: () => void }) => {
 				opts.onAdmitted?.();
 				seenRoles = opts.messages.map((m) => m.role);
-				return { finalText: 'continued', stopReason: 'complete' };
+				return { finalText: 'continued', rawText: 'continued', stopReason: 'complete' };
 			}
 		);
 		await s.submitShell({
@@ -224,7 +224,7 @@ describe('rendered-thread trimming', () => {
 					{ role: 'assistant', content: '', tool_calls: [{ id: 'c' }] } as never,
 					{ role: 'tool', tool_call_id: 'c', content: 'out' } as never
 				);
-				return { finalText: 'answer', stopReason: 'complete' };
+				return { finalText: 'answer', rawText: 'answer', stopReason: 'complete' };
 			}
 		);
 		const s = createShellSession();

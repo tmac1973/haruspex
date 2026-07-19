@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+	finalizeStreamText,
 	processCitations,
 	renderMarkdown,
 	splitShellCommands,
 	stripMarkdownForTTS,
+	stripThinkBlocks,
 	stripToolCallArtifacts
 } from '$lib/markdown';
 
@@ -509,5 +511,46 @@ describe('processCitations', () => {
 		const html = renderMarkdown(content);
 		expect(html).toContain('href="https://alpha.example"');
 		expect(html).toContain('[1]');
+	});
+});
+
+describe('stripThinkBlocks', () => {
+	it('removes a closed reasoning block', () => {
+		expect(stripThinkBlocks('<think>weighing options</think>PLAN OK')).toBe('PLAN OK');
+	});
+
+	it('removes a still-open reasoning block at the end', () => {
+		// A turn that only ever reasons never gets its closing tag appended.
+		expect(stripThinkBlocks('answer <think>still reasoning...')).toBe('answer ');
+	});
+
+	it('removes several blocks in one string', () => {
+		expect(stripThinkBlocks('<think>a</think>one<think>b</think>two')).toBe('onetwo');
+	});
+
+	it('leaves content with no reasoning untouched', () => {
+		expect(stripThinkBlocks('just an answer')).toBe('just an answer');
+	});
+
+	it('treats null and undefined as empty', () => {
+		expect(stripThinkBlocks(null)).toBe('');
+		expect(stripThinkBlocks(undefined)).toBe('');
+	});
+});
+
+describe('finalizeStreamText reasoning handling', () => {
+	it('strips a reasoning block so the verdict is left bare', () => {
+		// The guided-planning verifier's "PLAN OK" is matched with startsWith,
+		// so a retained <think> block made a clean verdict unrecognisable.
+		expect(finalizeStreamText('<think>checking ordering</think>\n\nPLAN OK').content).toBe(
+			'PLAN OK'
+		);
+	});
+
+	it('strips a tool_call emitted inside a reasoning block, leaving no fragment', () => {
+		// Reasoning is stripped before tool-call artifacts, so the nested call
+		// goes with its block rather than leaving a stray tag behind.
+		const raw = '<think>maybe <tool_call>{"name":"x"}</tool_call></think>done';
+		expect(finalizeStreamText(raw).content).toBe('done');
 	});
 });

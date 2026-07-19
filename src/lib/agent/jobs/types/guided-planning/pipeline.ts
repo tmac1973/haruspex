@@ -324,8 +324,15 @@ export function phaseFileProblem(relPath: string, text: string): string | null {
 	return null;
 }
 
-/** The verifier reports a clean plan by replying with "PLAN OK". */
-function isPlanClean(verdict: string): boolean {
+/**
+ * The verifier reports a clean plan by replying with "PLAN OK".
+ *
+ * Relies on `finalText` having reasoning stripped: a model that emits a
+ * `<think>` block would otherwise never match this prefix, so every run
+ * burned all MAX_VERIFY_ROUNDS and fired a revise turn against files that
+ * were already correct. See `stripThinkBlocks` in $lib/markdown.
+ */
+export function isPlanClean(verdict: string): boolean {
 	return verdict.trim().toUpperCase().startsWith('PLAN OK');
 }
 

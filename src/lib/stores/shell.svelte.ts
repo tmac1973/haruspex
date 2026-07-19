@@ -516,13 +516,16 @@ export class ShellSession {
 	private recordAssistantTurn(
 		turnMessages: ChatMessage[],
 		baseTurnLen: number,
-		result: { finalText: string; stopReason: AgentStopReason },
+		result: { finalText: string; rawText: string; stopReason: AgentStopReason },
 		lastCallStats: { durationMs: number; completionTokens: number } | null
 	): void {
 		const toolPairs = turnMessages
 			.slice(baseTurnLen)
 			.filter((m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls));
-		const assistantMsg: ChatMessage = { role: 'assistant', content: result.finalText };
+		// `rawText`, not `finalText`: the renderer turns `<think>` blocks into the
+		// collapsible reasoning UI (convertThinkingBlocks), which finalizeStreamText
+		// now strips. Storing finalText here would silently drop reasoning display.
+		const assistantMsg: ChatMessage = { role: 'assistant', content: result.rawText };
 		// Steps/stats/stops are keyed by the prose message's final index, which
 		// now sits after any spliced-in tool pairs.
 		const assistantIndex = this.messages.length + toolPairs.length;

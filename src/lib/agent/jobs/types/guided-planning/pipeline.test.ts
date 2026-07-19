@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { phaseFileProblem } from './pipeline';
+import { finalizeStreamText } from '$lib/markdown';
+import { isPlanClean, phaseFileProblem } from './pipeline';
 
 /** A phase file with everything the write-time gate cares about. */
 function goodPhase(extra = ''): string {
@@ -123,5 +124,39 @@ describe('phaseFileProblem', () => {
 		for (const v of variations) {
 			expect(phaseFileProblem('phase-02.md', v), v.slice(0, 40)).toBeNull();
 		}
+	});
+});
+
+describe('isPlanClean', () => {
+	it('accepts a bare clean verdict', () => {
+		expect(isPlanClean('PLAN OK')).toBe(true);
+	});
+
+	it('accepts a clean verdict that reached it through finalizeStreamText', () => {
+		// The regression. A reasoning model wraps its verdict in a <think>
+		// block; finalText retained it, so startsWith('PLAN OK') could never
+		// match. Every run then burned all MAX_VERIFY_ROUNDS and fired a revise
+		// turn against files that were already correct. Observed in job run 19:
+		// the verifier emitted PLAN OK and all five phase files were rewritten
+		// during Verification anyway.
+		const verdict = finalizeStreamText(
+			'<think>Checking each phase for ordering violations...</think>\n\nPLAN OK'
+		).content;
+		expect(isPlanClean(verdict)).toBe(true);
+	});
+
+	it('still rejects a verdict that reports problems', () => {
+		const verdict = finalizeStreamText(
+			'<think>Phase 3 needs something from phase 5.</think>\n\n' +
+				'ORDERING: phase 03 depends on phase 05'
+		).content;
+		expect(isPlanClean(verdict)).toBe(false);
+	});
+
+	it('does not match "PLAN OK" mentioned mid-sentence', () => {
+		// Guards against a looser match: a verifier explaining why it cannot
+		// say PLAN OK must not be read as a pass.
+		const verdict = "I can't say PLAN OK because phase 02 is truncated";
+		expect(isPlanClean(verdict)).toBe(false);
 	});
 });

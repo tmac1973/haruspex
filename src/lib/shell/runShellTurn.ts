@@ -55,7 +55,10 @@ export interface ShellTurnOptions {
 }
 
 export interface ShellTurnResult {
+	/** Visible answer text: reasoning and tool-call artifacts stripped. */
 	finalText: string;
+	/** The unstripped buffer, `<think>` blocks intact, for UI that renders them. */
+	rawText: string;
 	stopReason: AgentStopReason;
 }
 

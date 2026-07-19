@@ -70,7 +70,10 @@ export interface EphemeralTurnOptions {
 }
 
 export interface EphemeralTurnResult {
+	/** Visible answer text: reasoning and tool-call artifacts stripped. */
 	finalText: string;
+	/** The unstripped buffer, `<think>` blocks intact, for UI that renders them. */
+	rawText: string;
 }
 
 export async function runEphemeralTurn(
