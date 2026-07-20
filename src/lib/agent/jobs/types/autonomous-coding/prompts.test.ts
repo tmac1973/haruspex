@@ -237,3 +237,28 @@ describe('decomposePrompt — no repo-setup busywork', () => {
 		expect(prompt).toContain('UNLESS the decisions file explicitly says');
 	});
 });
+
+describe('decomposePrompt — anchoring granularity to the plan', () => {
+	const prompt = flat(decomposePrompt('plan/x', 'plan/x/D.md'));
+
+	it("takes the checklist from the plan's own numbered steps", () => {
+		// Two runs over a byte-identical plan produced 25 items and 43 items.
+		// The count was unanchored, and it multiplies every per-step cost.
+		expect(prompt).toContain("FOLLOW THE PLAN'S OWN STRUCTURE");
+		expect(prompt).toContain('one item per plan step');
+	});
+
+	it('cites the variance it exists to remove', () => {
+		expect(prompt).toContain('25 items and 43 items');
+	});
+
+	it('allows merge and split only as justified exceptions', () => {
+		expect(prompt).toContain('too trivial to commit alone');
+		expect(prompt).toContain('genuinely bundles two deliverables');
+		expect(prompt).toContain('say which you applied and why');
+	});
+
+	it('still lets the model decompose a phase that has no numbered steps', () => {
+		expect(prompt).toContain('A phase with no numbered steps is yours to break down');
+	});
+});
