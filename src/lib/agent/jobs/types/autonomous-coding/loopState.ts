@@ -23,7 +23,47 @@ export interface TaskItem {
 	status: TaskStatus;
 	/** Failed attempts so far (a blocked item sits at the max). */
 	attempts: number;
+	/** Id of the phase this item belongs to; undefined on a phaseless legacy list. */
+	phase?: string;
+	/** True for a runner-injected repair item (single attempt, fixes a phase). */
+	repair?: boolean;
 }
+
+export type PhaseVerifyStatus = 'pending' | 'passed' | 'blocked';
+
+/**
+ * A verification boundary. Deep verification runs once per phase — when its
+ * last item lands — instead of once per item, because per-item verification
+ * cost is multiplied by the item count (an observed run maintained a 271-line
+ * validator against a 93-line program, re-running it every step).
+ */
+export interface PhaseInfo {
+	/** Runner-assigned two-digit id ("01", "02", …), in plan order. */
+	id: string;
+	title: string;
+	verify: PhaseVerifyStatus;
+	/** Repair cycles consumed (repair item + re-verification = one cycle). */
+	repairs: number;
+}
+
+/**
+ * The loop's whole persisted state: phases plus the flat, ordered item list.
+ * `phases` empty ⇒ a legacy phaseless checklist; everything falls back to the
+ * old per-item behaviour and the markdown round-trip emits the old format.
+ */
+export interface LoopPlan {
+	phases: PhaseInfo[];
+	items: TaskItem[];
+}
+
+/**
+ * Repair cycles allowed per phase before it is marked blocked. Each cycle is
+ * one injected repair item (single attempt — the CYCLE is the retry mechanism)
+ * followed by a fresh verification run. Verification re-runs after every
+ * repair regardless of what the repair reported, since a "failed" repair may
+ * still have fixed part of the problem.
+ */
+export const MAX_PHASE_REPAIR_CYCLES = 5;
 
 /** Normalize a submit_task_list payload: position ids, trimmed, empties dropped. */
 export function normalizeTaskList(raw: unknown): TaskItem[] {
@@ -58,6 +98,17 @@ const MARK_STATUS: Record<string, TaskStatus> = { ' ': 'todo', x: 'done', '!': '
  * Marks: `[ ]` todo, `[x]` done, `[!]` blocked.
  */
 export function renderTodoMarkdown(items: TaskItem[]): string {
+	return renderTodoPlan({ phases: [], items });
+}
+
+/**
+ * Render the full plan. With phases, items are grouped under `## Phase` headings
+ * that carry the verification status and repair count — this file IS the resume
+ * path, so everything the loop needs to continue must survive the round trip.
+ * With no phases the output is byte-identical to the historical format, so a
+ * phaseless run (or an old TODO file) is unaffected.
+ */
+export function renderTodoPlan(plan: LoopPlan): string {
 	const lines: string[] = [
 		'# Coding TODO',
 		'',
@@ -65,18 +116,39 @@ export function renderTodoMarkdown(items: TaskItem[]): string {
 		'Marks: [ ] todo · [x] done · [!] blocked.',
 		''
 	];
-	for (const item of items) {
-		lines.push(
-			`- [${STATUS_MARK[item.status]}] ${item.id}. ${item.title} (attempts: ${item.attempts})`
-		);
+	const pushItem = (item: TaskItem) => {
+		const flags = `attempts: ${item.attempts}${item.repair ? ', repair' : ''}`;
+		lines.push(`- [${STATUS_MARK[item.status]}] ${item.id}. ${item.title} (${flags})`);
 		for (const dline of item.description.split('\n')) {
 			if (dline.trim()) lines.push(`  ${dline.trimEnd()}`);
+		}
+	};
+	if (plan.phases.length === 0) {
+		for (const item of plan.items) pushItem(item);
+		return lines.join('\n') + '\n';
+	}
+	// Items whose phase id matches no heading would otherwise vanish from the
+	// file — and this file is the resume path, so a vanished item is a lost
+	// item. Render them first, un-headed, like the legacy format.
+	const known = new Set(plan.phases.map((p) => p.id));
+	for (const item of plan.items) {
+		if (!item.phase || !known.has(item.phase)) pushItem(item);
+	}
+	for (const phase of plan.phases) {
+		lines.push(
+			'',
+			`## Phase ${phase.id} — ${phase.title} (verify: ${phase.verify}, repairs: ${phase.repairs})`,
+			''
+		);
+		for (const item of plan.items) {
+			if (item.phase === phase.id) pushItem(item);
 		}
 	}
 	return lines.join('\n') + '\n';
 }
 
-const ITEM_RE = /^- \[([ x!])\] (\d{2,})\. (.+?)(?: \(attempts: (\d+)\))?$/;
+const ITEM_RE = /^- \[([ x!])\] (\d{2,})\. (.+?)(?: \(attempts: (\d+)(, repair)?\))?$/;
+const PHASE_RE = /^## Phase (\d{2,}) — (.+?) \(verify: (pending|passed|blocked), repairs: (\d+)\)$/;
 
 /**
  * Parse a TODO-coding.md back into items. Returns null when the text has no
@@ -85,9 +157,32 @@ const ITEM_RE = /^- \[([ x!])\] (\d{2,})\. (.+?)(?: \(attempts: (\d+)\))?$/;
  * items that did parse.
  */
 export function parseTodoMarkdown(text: string): TaskItem[] | null {
+	const plan = parseTodoPlan(text);
+	return plan ? plan.items : null;
+}
+
+/**
+ * Full-plan parse: phase headings assign the items that follow them; items
+ * before any heading (or in a legacy file with no headings) are phaseless.
+ */
+export function parseTodoPlan(text: string): LoopPlan | null {
+	const phases: PhaseInfo[] = [];
 	const items: TaskItem[] = [];
+	let currentPhase: string | undefined;
 	let current: TaskItem | null = null;
 	for (const line of text.split('\n')) {
+		const ph = PHASE_RE.exec(line);
+		if (ph) {
+			currentPhase = ph[1];
+			phases.push({
+				id: ph[1],
+				title: ph[2].trim(),
+				verify: ph[3] as PhaseVerifyStatus,
+				repairs: parseInt(ph[4], 10)
+			});
+			current = null;
+			continue;
+		}
 		const m = ITEM_RE.exec(line);
 		if (m) {
 			current = {
@@ -95,7 +190,9 @@ export function parseTodoMarkdown(text: string): TaskItem[] | null {
 				title: m[3].trim(),
 				description: '',
 				status: MARK_STATUS[m[1]] ?? 'todo',
-				attempts: m[4] ? parseInt(m[4], 10) : 0
+				attempts: m[4] ? parseInt(m[4], 10) : 0,
+				...(currentPhase !== undefined ? { phase: currentPhase } : {}),
+				...(m[5] ? { repair: true } : {})
 			};
 			items.push(current);
 			continue;
@@ -107,7 +204,7 @@ export function parseTodoMarkdown(text: string): TaskItem[] | null {
 			current = null;
 		}
 	}
-	return items.length > 0 ? items : null;
+	return items.length > 0 ? { phases, items } : null;
 }
 
 /** The item the next iteration should work on: the first 'todo', in order. */
@@ -137,6 +234,78 @@ export function recordFailure(
 		return { ...i, attempts, status: (blocked ? 'blocked' : 'todo') as TaskStatus };
 	});
 	return { items: next, blocked };
+}
+
+/**
+ * The phase whose deep verification should run now: verification still
+ * pending, it has items, and none of them is still actionable. "No todo
+ * items" rather than "all done" on purpose — a repair item that failed its
+ * single attempt is blocked, and verification must still re-run after it
+ * (the user's contract: re-verify after every repair regardless of what the
+ * repair reported, because a partial fix is still a fix).
+ */
+export function phaseNeedingVerify(plan: LoopPlan): PhaseInfo | null {
+	for (const phase of plan.phases) {
+		if (phase.verify !== 'pending') continue;
+		const members = plan.items.filter((i) => i.phase === phase.id);
+		if (members.length === 0) continue;
+		if (members.every((i) => i.status !== 'todo')) return phase;
+	}
+	return null;
+}
+
+/** Set a phase's verification outcome. */
+export function setPhaseVerify(
+	plan: LoopPlan,
+	phaseId: string,
+	verify: PhaseVerifyStatus
+): LoopPlan {
+	return {
+		...plan,
+		phases: plan.phases.map((p) => (p.id === phaseId ? { ...p, verify } : p))
+	};
+}
+
+/**
+ * Start a repair cycle: bump the phase's cycle count and append a repair item
+ * carrying the verification failure, placed directly after the phase's last
+ * item so `nextActionable` picks it up next.
+ *
+ * The new id continues from the highest numeric id in the list — existing ids
+ * are NEVER renumbered, because PROGRESS notes and commit messages already
+ * reference them.
+ */
+export function beginRepairCycle(
+	plan: LoopPlan,
+	phaseId: string,
+	failureOutput: string
+): { plan: LoopPlan; item: TaskItem } {
+	const phase = plan.phases.find((p) => p.id === phaseId);
+	const cycle = (phase?.repairs ?? 0) + 1;
+	const maxId = plan.items.reduce((m, i) => Math.max(m, parseInt(i.id, 10) || 0), 0);
+	const item: TaskItem = {
+		id: String(maxId + 1).padStart(2, '0'),
+		title: `Repair phase ${phaseId} (cycle ${cycle}/${MAX_PHASE_REPAIR_CYCLES})`,
+		description:
+			`Phase ${phaseId} verification failed. Diagnose from the output below, fix the ` +
+			`cause, and make the phase verification pass. Verification re-runs after this ` +
+			`item regardless of the outcome you report.\n\n` +
+			`Verification output:\n${clipNote(failureOutput, 3000)}`,
+		status: 'todo',
+		attempts: 0,
+		phase: phaseId,
+		repair: true
+	};
+	const lastIdx = plan.items.reduce((last, i, idx) => (i.phase === phaseId ? idx : last), -1);
+	const items = [...plan.items];
+	items.splice(lastIdx + 1, 0, item);
+	return {
+		plan: {
+			phases: plan.phases.map((p) => (p.id === phaseId ? { ...p, repairs: cycle } : p)),
+			items
+		},
+		item
+	};
 }
 
 export interface LoopSummary {
