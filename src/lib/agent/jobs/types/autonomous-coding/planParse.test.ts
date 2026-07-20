@@ -1,0 +1,167 @@
+import { describe, it, expect } from 'vitest';
+import { extractStepTitles, parseGuidedPlan, type PlanFile } from './planParse';
+
+/**
+ * Fixtures model the two emission shapes seen in real guided-planning output.
+ * Validated against the real hangman plan before these were written: 5 phases,
+ * 40 items, titles taken verbatim from the step subheadings.
+ */
+
+/** The shape real runs produce: `### Step N — Title` with fenced code below. */
+function subheadingPhase(n: string, title: string): PlanFile {
+	return {
+		name: `phase-${n}-something.md`,
+		content: [
+			`# Phase ${n} — ${title}`,
+			'',
+			'Depends on: nothing',
+			'',
+			'## Goal',
+			'',
+			'Deliver the thing.',
+			'',
+			'## Steps',
+			'',
+			'### Step 1 — Define constants',
+			'',
+			'Add constants:',
+			'',
+			'```javascript',
+			'const MAX = 6;',
+			'1. this numbered line lives in code and must not become a step',
+			'### neither must this fake heading',
+			'```',
+			'',
+			'### Step 2 — Implement the class',
+			'',
+			'Body text.',
+			'',
+			'## Build gate',
+			'',
+			'1. This numbered line is OUTSIDE Steps and must not count.',
+			'',
+			'## Rollback',
+			'',
+			'Revert.'
+		].join('\n')
+	};
+}
+
+/** The shape the template literally shows: column-0 numbered lines. */
+const numberedPhase: PlanFile = {
+	name: 'phase-02-engine.md',
+	content: [
+		'# Phase 02 — Engine',
+		'',
+		'## Steps',
+		'',
+		'1. Create the GameState class.',
+		'   Continuation line, indented.',
+		'2. Wire it into the script block.',
+		'',
+		'## Rollback',
+		'',
+		'Revert.'
+	].join('\n')
+};
+
+describe('extractStepTitles', () => {
+	it('takes ### subheadings and strips the "Step N —" prefix', () => {
+		expect(extractStepTitles(subheadingPhase('01', 'Scaffold').content)).toEqual([
+			'Define constants',
+			'Implement the class'
+		]);
+	});
+
+	it('falls back to column-0 numbered lines', () => {
+		expect(extractStepTitles(numberedPhase.content)).toEqual([
+			'Create the GameState class.',
+			'Wire it into the script block.'
+		]);
+	});
+
+	it('ignores numbered lines and headings inside fenced code', () => {
+		const titles = extractStepTitles(subheadingPhase('01', 'Scaffold').content);
+		expect(titles).not.toContain('this numbered line lives in code and must not become a step');
+		expect(titles.some((t) => t.includes('fake heading'))).toBe(false);
+	});
+
+	it('never reads steps from other sections (Build gate, Test plan)', () => {
+		const titles = extractStepTitles(subheadingPhase('01', 'Scaffold').content);
+		expect(titles.some((t) => t.includes('OUTSIDE Steps'))).toBe(false);
+	});
+
+	it('returns [] when there is no Steps section', () => {
+		expect(extractStepTitles('# Phase 01 — X\n\n## Goal\n\nProse only.')).toEqual([]);
+	});
+});
+
+describe('parseGuidedPlan', () => {
+	it('builds phases and items from conforming phase files, in filename order', () => {
+		const plan = parseGuidedPlan([
+			numberedPhase,
+			subheadingPhase('01', 'Scaffold'),
+			{ name: 'overview.md', content: '# Overview\n\nIgnored.' },
+			{ name: 'DECISIONS-coding.md', content: 'ignored' }
+		])!;
+		expect(plan.phases.map((p) => p.title)).toEqual(['Scaffold', 'Engine']);
+		expect(plan.items.map((i) => [i.id, i.phase])).toEqual([
+			['01', '01'],
+			['02', '01'],
+			['03', '02'],
+			['04', '02']
+		]);
+		expect(plan.phases.every((p) => p.verify === 'pending' && p.repairs === 0)).toBe(true);
+	});
+
+	it('is deterministic — the same input twice gives identical output', () => {
+		// The property this parser exists for: model decomposition of one plan
+		// produced 25 items one run and 43 the next.
+		const files = [subheadingPhase('01', 'Scaffold'), numberedPhase];
+		expect(parseGuidedPlan(files)).toEqual(parseGuidedPlan(files));
+	});
+
+	it('points items at the plan file rather than inlining step bodies', () => {
+		// Step bodies contain fenced code with blank lines, which the TODO
+		// round-trip would corrupt; the plan file stays the source of truth.
+		const plan = parseGuidedPlan([subheadingPhase('01', 'Scaffold')])!;
+		expect(plan.items[0].description).toContain('phase-01-something.md');
+		expect(plan.items[0].description).not.toContain('const MAX = 6');
+	});
+
+	it('turns a phase with an unstructured Steps section into one whole-phase item', () => {
+		const plan = parseGuidedPlan([
+			{
+				name: 'phase-01-x.md',
+				content: '# Phase 01 — Freeform\n\n## Steps\n\nJust prose, no structure.\n'
+			}
+		])!;
+		expect(plan.items).toHaveLength(1);
+		expect(plan.items[0].title).toContain('Implement Phase 01');
+	});
+
+	it('returns null when there are no phase files (→ model decomposition)', () => {
+		expect(parseGuidedPlan([{ name: 'spec.md', content: '# My hand-written spec' }])).toBeNull();
+	});
+
+	it('returns null when any phase file lacks the template heading', () => {
+		// Half a plan parsed deterministically and half guessed would be worse
+		// than either — one non-conforming file sends the whole job to the model.
+		expect(
+			parseGuidedPlan([
+				subheadingPhase('01', 'Scaffold'),
+				{ name: 'phase-02-rogue.md', content: '# Not a template heading\n\n## Steps\n\n1. x' }
+			])
+		).toBeNull();
+	});
+
+	it('clips runaway titles', () => {
+		const plan = parseGuidedPlan([
+			{
+				name: 'phase-01-x.md',
+				content: `# Phase 01 — T\n\n## Steps\n\n1. ${'word '.repeat(60)}\n`
+			}
+		])!;
+		expect(plan.items[0].title.length).toBeLessThanOrEqual(90);
+	});
+});
