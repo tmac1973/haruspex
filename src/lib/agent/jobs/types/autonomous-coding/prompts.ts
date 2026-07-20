@@ -72,7 +72,8 @@ function verificationContractStep(verifyCommand: string | null): string[] {
 			'   record it and move on. If it fails or the tool is missing, do NOT silently',
 			'   substitute your own: show the user what happened and ask ONE',
 			'   `ask_user_question` offering a corrected command, a fallback, or running',
-			'   anyway. A verify command that fails at preflight fails all night.'
+			'   anyway. A verify command that fails at preflight fails all night.',
+			...VERIFY_COMMAND_RULES
 		];
 	}
 	return [
@@ -89,19 +90,50 @@ function verificationContractStep(verifyCommand: string | null): string[] {
 		'   c. RUN IT with run_command. A command you never executed is a guess. If',
 		'      it fails because nothing is wired up yet, that is information, not a',
 		'      dead end — carry it into the question below.',
-		'   d. Ask the user ONE `ask_user_question` presenting what you found and',
-		'      what you propose, with concrete options. When the repo has NO test',
-		'      setup at all, the options should be: scaffold a minimal harness (say',
-		'      exactly what you would add), a cheap syntax/build check that needs no',
-		'      new dependencies (e.g. `node --check`, `tsc --noEmit`, `cargo check`),',
-		'      or the model verifying by its own judgment into one shared file. Do',
-		'      NOT scaffold a test framework without asking — it adds dependencies to',
-		'      a project that may not want them.',
-		'   e. If they choose scaffolding, the scaffold itself is work the RUN does,',
+		'   d. PREFER THE CHEAPEST CHECK THAT WOULD CATCH A REAL BREAKAGE. This',
+		'      command runs after EVERY step, so its cost is multiplied by the number',
+		'      of steps, and any harness the run has to hand-write is code it must',
+		'      also maintain — in parallel with the product, using the same budget.',
+		'      An observed run wrote a 271-line validator for a 93-line program and',
+		'      spent much of its time editing and re-running it. Order of preference:',
+		'      1) a test command the project ALREADY has;',
+		'      2) a build / typecheck / syntax check that ships with the toolchain',
+		'         (`node --check`, `tsc --noEmit`, `cargo check`, `python -m py_compile`)',
+		'         — near-zero cost per step, catches the breakages that actually',
+		'         recur, and needs nothing written or maintained;',
+		'      3) a scaffolded test framework, when the project is big enough to earn',
+		'         one and the user agrees to the dependency;',
+		'      4) a hand-written validation script — LAST resort. Choose it only if',
+		'         nothing above can catch this project breaking, and say why.',
+		'      For a small greenfield project (2) is almost always right. Depth of',
+		'      verification should match what exists, not be maximal from step one.',
+		'   e. Ask the user ONE `ask_user_question` presenting what you found and what',
+		'      you propose, with concrete options drawn from the order above, cheapest',
+		'      first. Do NOT scaffold a test framework without asking — it adds',
+		'      dependencies to a project that may not want them.',
+		'   f. If they choose scaffolding, the scaffold itself is work the RUN does,',
 		'      not you: note it in the decisions file so it becomes the first thing',
-		'      the loop builds. Preflight writes no code.'
+		'      the loop builds. Preflight writes no code.',
+		...VERIFY_COMMAND_RULES
 	];
 }
+
+/**
+ * Constraints on the recorded command itself, whoever proposed it.
+ *
+ * The side-effect rule is not hypothetical: preflight once recorded
+ * `git init && node --check validate-words.js 2>/dev/null; node validate-words.js`
+ * — so every step of the run re-ran `git init`. A verify command executes once
+ * per step and must be safe to execute any number of times.
+ */
+const VERIFY_COMMAND_RULES = [
+	'   The recorded command MUST be:',
+	'   - READ-ONLY and free of side effects. No `git` commands, no installs, no',
+	'     file writes, no servers, no network. It runs once per step; running it',
+	'     20 times in a row must leave the repo exactly as it found it.',
+	'   - Fast. Seconds, not minutes — its cost is paid on every step.',
+	'   - Idempotent and order-independent: no `&&`-chained setup, only checks.'
+];
 
 /**
  * Stage 1 system prompt: decompose the (fully decided) plan into the atomic
@@ -122,8 +154,13 @@ export function decomposePrompt(planDir: string, decisionsPath: string): string 
 		'   dependency (each step may rely only on earlier steps). Atomic means: one',
 		'   sitting of work, independently verifiable, and committable on its own.',
 		'   Split anything that bundles two deliverables. Cover the plan end to end.',
-		'3. If the project has no runnable build/test harness yet, make establishing',
-		'   one the FIRST step — later verification depends on it.',
+		'3. Steps must be PRODUCT work. The runner already owns the repository and the',
+		'   commits: it initializes git, takes a baseline, writes .gitignore, and',
+		'   commits after every verified step. Never emit a step for `git init`,',
+		'   committing, branching, or repo setup — such a step wastes an iteration',
+		'   doing work that is already done. Likewise do not emit a step to set up',
+		'   verification UNLESS the decisions file explicitly says a harness is to be',
+		'   scaffolded; if it does, that is the FIRST step.',
 		'4. Give each step a description that says the concrete deliverable AND how',
 		'   the loop should verify it works.',
 		'5. Report the checklist by calling `submit_task_list` exactly once, with',
@@ -202,7 +239,14 @@ function verifyRule(verifyCommand: string | null): string[] {
 		'      note instead of inventing a check that always passes.',
 		'   c. Leave nothing behind. Any temporary file you create to run a check',
 		'      must be deleted before you finish, unless it IS the shared',
-		'      verification file.'
+		'      verification file.',
+		'   d. Keep it CHEAP. This file is re-read, re-edited and re-run on every',
+		'      remaining step, so its cost is multiplied by the steps left. Verify',
+		'      what THIS step changed; do not re-prove earlier steps that already',
+		'      passed and have not been touched. If the verification file is',
+		'      approaching the size of the code it checks, stop growing it — that is',
+		'      the signal you are building a test framework instead of shipping the',
+		'      feature. Say so in your note rather than expanding it further.'
 	];
 }
 

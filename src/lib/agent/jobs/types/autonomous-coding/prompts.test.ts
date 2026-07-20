@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { iterationPrompt, preflightPrompt } from './prompts';
+import { decomposePrompt, iterationPrompt, preflightPrompt } from './prompts';
 
 /**
  * The prompt is hard-wrapped for readability, so a phrase can straddle a line
@@ -114,10 +114,15 @@ describe('preflightPrompt — settling the verification contract', () => {
 		expect(blank).toContain('never executed is a guess');
 	});
 
-	it('offers scaffold / syntax-check / shared-file when there is no test setup', () => {
-		expect(blank).toContain('scaffold a minimal harness');
-		expect(blank).toContain('syntax/build check');
-		expect(blank).toContain('one shared file');
+	it('offers a ranked set of options when there is no test setup', () => {
+		// Ordered cheapest-first: an existing test command, then a toolchain
+		// check, then a scaffolded framework, then a hand-written validator.
+		// They used to be presented as peers, and the most expensive won.
+		expect(blank).toContain('a test command the project ALREADY has');
+		expect(blank).toContain('build / typecheck / syntax check');
+		expect(blank).toContain('a scaffolded test framework');
+		expect(blank).toContain('a hand-written validation script');
+		expect(blank).toContain('cheapest first');
 	});
 
 	it('forbids scaffolding a test framework without asking', () => {
@@ -155,4 +160,80 @@ describe('preflightPrompt — step numbering', () => {
 			}
 		});
 	}
+});
+
+describe('verify command constraints', () => {
+	// Preflight once recorded `git init && node --check validate-words.js ...`,
+	// so every step of the run re-ran `git init`. A verify command executes once
+	// per step and must be safe to run any number of times.
+	for (const [label, cmd] of [
+		['with command', 'npm test'],
+		['blank', null]
+	] as const) {
+		const prompt = flat(preflightPrompt('plan/x', 'plan/x/D.md', cmd));
+
+		it(`${label}: forbids side effects in the recorded command`, () => {
+			expect(prompt).toContain('READ-ONLY and free of side effects');
+			expect(prompt).toContain('No `git` commands');
+			expect(prompt).toContain('leave the repo exactly as it found it');
+		});
+
+		it(`${label}: requires the command to be fast`, () => {
+			expect(prompt).toContain('Seconds, not minutes');
+		});
+	}
+});
+
+describe('preflightPrompt — cost of the chosen check', () => {
+	const blank = flat(preflightPrompt('plan/x', 'plan/x/D.md', null));
+
+	it('ranks a hand-written validator LAST, not as a peer option', () => {
+		// The observed failure: a 271-line validator for a 93-line program, edited
+		// and re-run every step. It was offered as an equal option and chosen.
+		expect(blank).toContain('PREFER THE CHEAPEST CHECK');
+		expect(blank).toContain('hand-written validation script — LAST resort');
+	});
+
+	it('explains why cost multiplies', () => {
+		expect(blank).toContain('runs after EVERY step');
+		expect(blank).toContain('271-line validator for a 93-line program');
+	});
+
+	it('names the cheap toolchain checks concretely', () => {
+		expect(blank).toContain('node --check');
+		expect(blank).toContain('tsc --noEmit');
+		expect(blank).toContain('cargo check');
+	});
+
+	it('says depth should match what exists', () => {
+		expect(blank).toContain('not be maximal from step one');
+	});
+});
+
+describe('iterationPrompt — keeping the shared harness cheap', () => {
+	const blank = flat(iterationPrompt(null));
+
+	it('tells the model to verify only what this step changed', () => {
+		expect(blank).toContain('do not re-prove earlier steps');
+	});
+
+	it('caps harness growth against the size of the code it checks', () => {
+		expect(blank).toContain('approaching the size of the code it checks');
+		expect(blank).toContain('stop growing it');
+	});
+});
+
+describe('decomposePrompt — no repo-setup busywork', () => {
+	const prompt = flat(decomposePrompt('plan/x', 'plan/x/D.md'));
+
+	it('forbids git steps, since the runner owns the repository', () => {
+		// "Initialize git repository" was emitted as step 01 of 43, duplicating
+		// what ensureGitBaseline already does before the loop starts.
+		expect(prompt).toContain('Never emit a step for `git init`');
+		expect(prompt).toContain('The runner already owns the repository');
+	});
+
+	it('only allows a harness step when the decisions file called for one', () => {
+		expect(prompt).toContain('UNLESS the decisions file explicitly says');
+	});
 });
