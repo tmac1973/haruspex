@@ -65,25 +65,60 @@ export interface LoopPlan {
  */
 export const MAX_PHASE_REPAIR_CYCLES = 5;
 
-/** Normalize a submit_task_list payload: position ids, trimmed, empties dropped. */
-export function normalizeTaskList(raw: unknown): TaskItem[] {
-	if (!Array.isArray(raw)) return [];
+/**
+ * Normalize a submit_task_list payload into a full plan, grouping items into
+ * phases by their `phase` title (first-appearance order).
+ *
+ * Every plan ends up with at least one phase: items the model left unphased
+ * are gathered into a catch-all, because a phaseless item would never sit
+ * inside a verification boundary and deep verification would simply never run
+ * for it.
+ */
+export function normalizeTaskListPlan(raw: unknown): LoopPlan {
+	if (!Array.isArray(raw)) return { phases: [], items: [] };
+	const phases: PhaseInfo[] = [];
+	const phaseIdByTitle = new Map<string, string>();
 	const items: TaskItem[] = [];
+	const phaseFor = (title: string): string => {
+		const key = title.replace(/\s+/g, ' ').trim();
+		const existing = phaseIdByTitle.get(key.toLowerCase());
+		if (existing) return existing;
+		const id = String(phases.length + 1).padStart(2, '0');
+		phases.push({ id, title: key, verify: 'pending', repairs: 0 });
+		phaseIdByTitle.set(key.toLowerCase(), id);
+		return id;
+	};
 	for (const entry of raw) {
 		if (!entry || typeof entry !== 'object') continue;
 		const e = entry as Record<string, unknown>;
 		const title = typeof e.title === 'string' ? e.title.replace(/\s+/g, ' ').trim() : '';
 		if (!title) continue;
 		const description = typeof e.description === 'string' ? e.description.trim() : '';
+		const phaseTitle =
+			typeof e.phase === 'string' && e.phase.trim() ? e.phase : 'Whole plan (unphased)';
 		items.push({
 			id: String(items.length + 1).padStart(2, '0'),
 			title,
 			description,
 			status: 'todo',
-			attempts: 0
+			attempts: 0,
+			phase: phaseFor(phaseTitle)
 		});
 	}
-	return items;
+	return { phases, items };
+}
+
+/**
+ * Give a phaseless plan (a legacy resume, or a normalize edge case) a single
+ * catch-all phase so deep verification runs at least once, at the end.
+ */
+export function ensurePhased(plan: LoopPlan): LoopPlan {
+	if (plan.phases.length > 0 || plan.items.length === 0) return plan;
+	const id = '01';
+	return {
+		phases: [{ id, title: 'Whole plan', verify: 'pending', repairs: 0 }],
+		items: plan.items.map((i) => ({ ...i, phase: id }))
+	};
 }
 
 const STATUS_MARK: Record<TaskStatus, string> = { todo: ' ', done: 'x', blocked: '!' };

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { extractStepTitles, parseGuidedPlan, type PlanFile } from './planParse';
+import {
+	extractDecisionCommand,
+	extractStepTitles,
+	parseGuidedPlan,
+	type PlanFile
+} from './planParse';
 
 /**
  * Fixtures model the two emission shapes seen in real guided-planning output.
@@ -163,5 +168,57 @@ describe('parseGuidedPlan', () => {
 			}
 		])!;
 		expect(plan.items[0].title.length).toBeLessThanOrEqual(90);
+	});
+});
+
+describe('extractDecisionCommand', () => {
+	// The runner EXECUTES what this returns, so the tests pin exactly what is
+	// and is not accepted from a model-written decisions file.
+	const decisions = [
+		'# Coding decisions',
+		'',
+		'## Some question',
+		'',
+		'The answer.',
+		'',
+		'## Step check command',
+		'',
+		'```bash',
+		'npm run lint',
+		'```',
+		'',
+		'## Verification command',
+		'',
+		'Rationale prose the runner must not execute.',
+		'',
+		'```',
+		'npm test && cargo test',
+		'```'
+	].join('\n');
+
+	it('takes the first non-empty line of the fenced block in the named section', () => {
+		expect(extractDecisionCommand(decisions, 'Step check command')).toBe('npm run lint');
+		expect(extractDecisionCommand(decisions, 'Verification command')).toBe(
+			'npm test && cargo test'
+		);
+	});
+
+	it('never leaks prose or another section into the command', () => {
+		expect(extractDecisionCommand(decisions, 'Verification command')).not.toContain('Rationale');
+		expect(extractDecisionCommand(decisions, 'Step check command')).not.toContain('npm test');
+	});
+
+	it('falls back to a bare or inline-code line when there is no fence', () => {
+		const noFence = '## Verification command\n\n`pytest -q`\n';
+		expect(extractDecisionCommand(noFence, 'Verification command')).toBe('pytest -q');
+	});
+
+	it('returns null for a missing section or an empty one', () => {
+		expect(extractDecisionCommand(decisions, 'Nonexistent')).toBeNull();
+		expect(extractDecisionCommand('## Step check command\n\n', 'Step check command')).toBeNull();
+	});
+
+	it('matches the heading case-insensitively', () => {
+		expect(extractDecisionCommand(decisions, 'step check COMMAND')).toBe('npm run lint');
 	});
 });

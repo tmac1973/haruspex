@@ -4,7 +4,7 @@ import {
 	isTerminal,
 	markDone,
 	nextActionable,
-	normalizeTaskList,
+	normalizeTaskListPlan,
 	parseTodoMarkdown,
 	recordFailure,
 	renderOverview,
@@ -24,29 +24,46 @@ function item(over: Partial<TaskItem> = {}): TaskItem {
 	};
 }
 
-describe('normalizeTaskList', () => {
+describe('normalizeTaskListPlan', () => {
 	it('assigns two-digit position ids and drops junk entries', () => {
-		const items = normalizeTaskList([
-			{ title: '  Scaffold  the   project ', description: ' desc ' },
+		const plan = normalizeTaskListPlan([
+			{ title: '  Scaffold  the   project ', description: ' desc ', phase: 'Setup' },
 			{ title: '' },
 			'not an object',
 			{ description: 'no title' },
-			{ title: 'Add router' }
+			{ title: 'Add router', phase: 'Setup' }
 		]);
-		expect(items).toHaveLength(2);
-		expect(items[0]).toEqual({
+		expect(plan.items).toHaveLength(2);
+		expect(plan.items[0]).toMatchObject({
 			id: '01',
 			title: 'Scaffold the project',
 			description: 'desc',
 			status: 'todo',
 			attempts: 0
 		});
-		expect(items[1].id).toBe('02');
+		expect(plan.items[1].id).toBe('02');
 	});
 
-	it('returns [] for non-arrays', () => {
-		expect(normalizeTaskList(null)).toEqual([]);
-		expect(normalizeTaskList({ items: [] })).toEqual([]);
+	it('groups items into phases by title, first-appearance order', () => {
+		const plan = normalizeTaskListPlan([
+			{ title: 'a', phase: 'Engine' },
+			{ title: 'b', phase: 'UI' },
+			{ title: 'c', phase: 'engine' } // case-insensitive match
+		]);
+		expect(plan.phases.map((p) => p.title)).toEqual(['Engine', 'UI']);
+		expect(plan.items.map((i) => i.phase)).toEqual(['01', '02', '01']);
+	});
+
+	it('gathers unphased items into a catch-all so verification still runs', () => {
+		// A phaseless item would never sit inside a verification boundary.
+		const plan = normalizeTaskListPlan([{ title: 'a' }, { title: 'b', phase: 'Real' }]);
+		expect(plan.items[0].phase).toBeDefined();
+		expect(plan.phases).toHaveLength(2);
+	});
+
+	it('returns an empty plan for non-arrays', () => {
+		expect(normalizeTaskListPlan(null)).toEqual({ phases: [], items: [] });
+		expect(normalizeTaskListPlan({ items: [] })).toEqual({ phases: [], items: [] });
 	});
 });
 

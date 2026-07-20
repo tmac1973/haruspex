@@ -8,6 +8,7 @@ import Editor from './Editor.svelte';
 export interface AutonomousCodingEditorState {
 	plan_dir: string;
 	verify_command: string;
+	step_check_command: string;
 	max_attempts: number;
 	signing_fallback: 'unsigned' | 'skip';
 }
@@ -25,12 +26,13 @@ const CODING_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 	},
 	{
 		title: 'Decompose',
-		description: 'Breaking the plan into small atomic coding steps (TODO-coding.md).'
+		description:
+			"Reading the plan's own phases and steps into the checklist (TODO-coding.md) — parsed directly when the plan follows the guided-planning template, decomposed by the model otherwise."
 	},
 	{
 		title: 'Coding loop',
 		description:
-			'Implementing one step per fresh-context iteration — verify, commit, check it off — until every step is done or blocked.'
+			'Implementing one step per fresh-context iteration — checked, committed, and deep-verified at each phase boundary — until every step is done or blocked.'
 	},
 	{
 		title: 'Finalize',
@@ -68,6 +70,7 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 	configDefaults: (): AutonomousCodingEditorState & Record<string, unknown> => ({
 		plan_dir: '',
 		verify_command: '',
+		step_check_command: '',
 		max_attempts: 3,
 		signing_fallback: 'unsigned'
 	}),
@@ -76,6 +79,7 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		return {
 			plan_dir: c.plan_dir ?? '',
 			verify_command: c.verify_command ?? '',
+			step_check_command: c.step_check_command ?? '',
 			max_attempts: c.max_attempts ?? 3,
 			signing_fallback: c.signing_fallback ?? 'unsigned'
 		};
@@ -85,6 +89,7 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		return JSON.stringify({
 			plan_dir: s.plan_dir.trim() || undefined,
 			verify_command: s.verify_command.trim() || undefined,
+			step_check_command: s.step_check_command.trim() || undefined,
 			max_attempts: s.max_attempts,
 			signing_fallback: s.signing_fallback
 		});

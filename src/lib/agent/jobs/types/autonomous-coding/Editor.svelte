@@ -56,39 +56,61 @@
 
 <label
 	class="field"
-	title="Command run in the working directory to prove each step works. A step only counts as done when it exits 0. Leave blank and preflight will inspect the repo, propose a command, try it, and confirm it with you before the run starts."
+	title="Cheap static check (lint / typecheck / syntax) the runner executes before every commit, so a broken file never lands. Leave blank and preflight will settle it with you."
 >
-	<span class="label">Verify command <span class="optional">(optional)</span></span>
+	<span class="label"
+		>Step check — before every commit <span class="optional">(optional)</span></span
+	>
+	<input
+		type="text"
+		bind:value={cfg.step_check_command}
+		placeholder="Leave blank and preflight will work it out with you"
+	/>
+	<span class="hint">
+		A cheap lint / typecheck / syntax check, run by the runner before each step is committed. Its
+		cost is paid on every step, so keep it fast. <strong>Not sure? Leave it blank.</strong>
+	</span>
+</label>
+
+<label
+	class="field"
+	title="Deep verification (the test suite) the runner executes when each PHASE of the plan completes — not after every step. Leave blank and preflight will settle it with you."
+>
+	<span class="label">Phase verification — tests <span class="optional">(optional)</span></span>
 	<input
 		type="text"
 		bind:value={cfg.verify_command}
 		placeholder="Leave blank and preflight will work it out with you"
 	/>
 	<span class="hint">
-		Run after every step; the step is only done when it exits 0. <strong
-			>Not sure? Leave it blank.</strong
-		> Preflight reads your repo, proposes a command, runs it once to check it actually works, and asks
-		you to confirm — before the unattended run starts.
+		The real proof — typically your test suite — run by the runner when each phase of the plan
+		completes, not per step. If it fails, the run injects bounded repair steps until it passes or
+		the phase is marked blocked. <strong>Not sure? Leave it blank.</strong> Preflight reads your repo,
+		proposes both commands, runs them once to check they work, and asks you to confirm.
 	</span>
 </label>
 
 <!-- Outside the <label> on purpose: a <summary> nested in a label activates the
 	 label too, focusing the input on every expand/collapse. -->
 <details class="verify-examples">
-	<summary>Verify command examples</summary>
+	<summary>Command examples</summary>
 	<ul>
 		<li>
-			<code>npm test</code> — or <code>npm run check &amp;&amp; npm test</code> to typecheck too
-		</li>
-		<li><code>cargo test</code> · <code>pytest</code> · <code>go test ./...</code></li>
-		<li>
-			<strong>Several languages?</strong> Chain them with <code>&amp;&amp;</code> so any failure
-			fails the step — <code>npm test &amp;&amp; cargo test</code>. Preflight composes this for you
-			if you leave the field blank.
+			<strong>Step check:</strong> <code>npm run lint</code> · <code>tsc --noEmit</code> ·
+			<code>cargo check</code> · <code>node --check index.js</code> — fast and read-only.
 		</li>
 		<li>
-			<strong>No tests yet?</strong> A build or syntax check still beats nothing —
-			<code>tsc --noEmit</code>, <code>cargo check</code>, <code>node --check index.js</code>.
+			<strong>Phase verification:</strong> <code>npm test</code> · <code>cargo test</code> ·
+			<code>pytest</code> · <code>go test ./...</code>
+		</li>
+		<li>
+			<strong>Several languages?</strong> Chain with <code>&amp;&amp;</code> so any failure fails
+			the check — <code>npm test &amp;&amp; cargo test</code>. Preflight composes this for you if
+			you leave the fields blank.
+		</li>
+		<li>
+			<strong>No tests yet?</strong> A build or syntax check still beats nothing — and preflight will
+			offer to scaffold a real suite if the project warrants one.
 		</li>
 	</ul>
 </details>

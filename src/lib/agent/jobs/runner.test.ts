@@ -1112,7 +1112,7 @@ describe('jobs runner — autonomous coding', () => {
 		const run = getCurrentRun()!;
 		expect(run.status).toBe('succeeded');
 		expect(run.steps[0].status).toBe('succeeded'); // preflight
-		expect(run.steps[1].output).toContain('Decomposed the plan into 2 step(s)');
+		expect(run.steps[1].output).toContain('1 phase(s) / 2 step(s)');
 		expect(run.steps[1].output).toContain('01. One'); // the checklist persists
 		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
 		// Per-iteration notes persist into the loop step's output.

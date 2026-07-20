@@ -9,7 +9,8 @@
 export function preflightPrompt(
 	planDir: string,
 	decisionsPath: string,
-	verifyCommand: string | null
+	verifyCommand: string | null,
+	stepCheckCommand: string | null
 ): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
@@ -37,14 +38,16 @@ export function preflightPrompt(
 		'   options). Do not batch. Do not proceed while any decision is open. If the',
 		'   user answers "proceed" or similar, stop asking and settle the rest with',
 		'   sensible defaults, recording each default you chose.',
-		...verificationContractStep(verifyCommand),
+		...verificationContractStep(verifyCommand, stepCheckCommand),
 		`4. Write \`${decisionsPath}\` with fs_write_text: a "# Coding decisions"`,
 		'   heading, then one "## <question>" section per decision with the chosen',
 		'   answer (including defaults you settled). If there were genuinely no open',
-		'   decisions, write the file saying so. It MUST also contain a',
-		'   "## Verification command" section holding the exact command string the',
-		'   loop should run — this is how the contract survives into the unattended',
-		`   run. Write ONLY inside \`${planDir}\` — no code, no other files.`,
+		'   decisions, write the file saying so. It MUST also contain these two',
+		'   sections, each holding EXACTLY ONE fenced code block whose only content',
+		'   is the command — the RUNNER parses them mechanically and executes them:',
+		'   "## Step check command" (run before every commit) and',
+		'   "## Verification command" (run when each phase completes).',
+		`   Write ONLY inside \`${planDir}\` — no code, no other files.`,
 		'5. Call `submit_preflight` exactly once: ready=true when nothing is left',
 		'   ambiguous; ready=false with concrete blockers when the run cannot start',
 		'   (e.g. the plan directory is empty or the plans contradict each other).'
@@ -52,88 +55,72 @@ export function preflightPrompt(
 }
 
 /**
- * Preflight step 3 — settle how every loop step will prove itself.
+ * Preflight step 3 — settle the run's TWO verification commands.
  *
- * This exists because a blank verify command used to leave the decision to
- * each iteration, in a fresh context, 25 times over. The result was 13
- * single-use verification scripts and a fifth of their assertions matching
- * source text the model had just written.
+ * This exists because a blank verify command used to leave verification to
+ * each iteration, in a fresh context, N times over. One run built 13
+ * single-use scripts whose assertions string-matched their own source; after
+ * that was forbidden, the next maintained a single 271-line validator against
+ * a 93-line program, editing and re-running it every step. The commands are
+ * therefore settled ONCE, here, and executed by the RUNNER — the model never
+ * owns verification again.
  *
- * Preflight is the only stage that can fix this: it can see the whole repo, it
- * can run a candidate command to check it actually works, and the user is still
- * present to confirm. A command that was never executed is a guess, and an
- * unattended run built on a guess fails every step.
+ * Preflight is the only stage that can do this: it can see the whole repo, it
+ * can run a candidate command to check it actually works, and the user is
+ * still present to confirm. A command that was never executed is a guess, and
+ * an unattended run built on a guess fails all night.
  */
-function verificationContractStep(verifyCommand: string | null): string[] {
-	if (verifyCommand) {
-		return [
-			`3. The user supplied a verify command: \`${verifyCommand}\`. CONFIRM it works`,
-			'   before the run depends on it — run it once with run_command. If it passes,',
-			'   record it and move on. If it fails or the tool is missing, do NOT silently',
-			'   substitute your own: show the user what happened and ask ONE',
-			'   `ask_user_question` offering a corrected command, a fallback, or running',
-			'   anyway. A verify command that fails at preflight fails all night.',
-			...VERIFY_COMMAND_RULES
-		];
-	}
+function verificationContractStep(
+	verifyCommand: string | null,
+	stepCheckCommand: string | null
+): string[] {
 	return [
-		'3. The user left the verify command BLANK, so YOU must settle it now — the',
-		'   loop cannot ask later, and an iteration left to improvise builds a',
-		'   throwaway harness per step. Work it out and get it confirmed:',
+		'3. Settle the TWO commands the runner executes mechanically all night:',
+		'   - STEP CHECK: runs before EVERY commit. A cheap static check — its only',
+		'     job is "no broken file ever lands". Its cost is multiplied by the',
+		'     step count, so: an existing lint/check script if the project has one,',
+		'     else a toolchain check (`node --check`, `tsc --noEmit`, `cargo check`,',
+		'     `python -m py_compile`). Near-zero cost, nothing written or maintained.',
+		'   - PHASE VERIFICATION: runs when each phase of the plan completes — NOT',
+		'     per step. The real proof: the test suite if one exists.',
+		stepCheckCommand
+			? `   The user supplied a step check: \`${stepCheckCommand}\`.`
+			: '   The user left the step check blank — settle it yourself.',
+		verifyCommand
+			? `   The user supplied a phase verification command: \`${verifyCommand}\`.`
+			: '   The user left phase verification blank — settle it yourself.',
 		'   a. Detect the stack(s) from what is actually in the working directory —',
 		'      package.json (check its "scripts"), Cargo.toml, pyproject.toml,',
 		'      requirements.txt, go.mod, Makefile, and any existing test directory.',
-		'      A repo can have SEVERAL; find them all.',
-		'   b. Compose ONE command covering every stack found, joining with `&&` so',
-		'      any failure fails the step (e.g. `npm run check && npm test && cargo',
-		'      test`). One command, one exit code — that is what the loop consumes.',
-		'   c. RUN IT with run_command. A command you never executed is a guess. If',
-		'      it fails because nothing is wired up yet, that is information, not a',
-		'      dead end — carry it into the question below.',
-		'   d. PREFER THE CHEAPEST CHECK THAT WOULD CATCH A REAL BREAKAGE. This',
-		'      command runs after EVERY step, so its cost is multiplied by the number',
-		'      of steps, and any harness the run has to hand-write is code it must',
-		'      also maintain — in parallel with the product, using the same budget.',
-		'      An observed run wrote a 271-line validator for a 93-line program and',
-		'      spent much of its time editing and re-running it. Order of preference:',
-		'      1) a test command the project ALREADY has;',
-		'      2) a build / typecheck / syntax check that ships with the toolchain',
-		'         (`node --check`, `tsc --noEmit`, `cargo check`, `python -m py_compile`)',
-		'         — near-zero cost per step, catches the breakages that actually',
-		'         recur, and needs nothing written or maintained;',
-		'      3) a scaffolded test framework, when the project is big enough to earn',
-		'         one and the user agrees to the dependency;',
-		'      4) a hand-written validation script — LAST resort. Choose it only if',
-		'         nothing above can catch this project breaking, and say why.',
-		'      For a small greenfield project (2) is almost always right. Depth of',
+		'      A repo can have SEVERAL; cover every stack found, joining with `&&`',
+		'      so any failure fails the check. One command, one exit code.',
+		'   b. RUN each candidate once with run_command — including any the user',
+		'      supplied. A command you never executed is a guess. If a user-supplied',
+		'      command fails, do NOT silently substitute your own: show what',
+		'      happened and ask ONE `ask_user_question` offering a corrected',
+		'      command, a fallback, or running anyway.',
+		'   c. PREFER THE CHEAPEST CHECK THAT WOULD CATCH A REAL BREAKAGE. Depth of',
 		'      verification should match what exists, not be maximal from step one.',
-		'   e. Ask the user ONE `ask_user_question` presenting what you found and what',
-		'      you propose, with concrete options drawn from the order above, cheapest',
-		'      first. Do NOT scaffold a test framework without asking — it adds',
-		'      dependencies to a project that may not want them.',
-		'   f. If they choose scaffolding, the scaffold itself is work the RUN does,',
+		'      When the repo has NO test suite, the honest options for phase',
+		'      verification are: a scaffolded test framework (only if the project is',
+		'      big enough to earn the dependency), the same toolchain check as the',
+		'      step check (fine for a small project), or — LAST resort, and say',
+		'      why — a hand-written validation script.',
+		'   d. Ask the user ONE `ask_user_question` presenting both proposals with',
+		'      concrete options, cheapest first. Do NOT scaffold a test framework',
+		'      without asking — it adds dependencies to a project that may not want',
+		'      them.',
+		'   e. If they choose scaffolding, the scaffold itself is work the RUN does,',
 		'      not you: note it in the decisions file so it becomes the first thing',
 		'      the loop builds. Preflight writes no code.',
-		...VERIFY_COMMAND_RULES
+		'   Both recorded commands MUST be:',
+		'   - READ-ONLY and free of side effects. No `git` commands, no installs, no',
+		'     file writes, no servers, no network. They run over and over; running',
+		'     one 20 times in a row must leave the repo exactly as it found it.',
+		'   - Fast. Seconds, not minutes — the step check is paid on every step.',
+		'   - Idempotent and order-independent: no `&&`-chained setup, only checks.'
 	];
 }
-
-/**
- * Constraints on the recorded command itself, whoever proposed it.
- *
- * The side-effect rule is not hypothetical: preflight once recorded
- * `git init && node --check validate-words.js 2>/dev/null; node validate-words.js`
- * — so every step of the run re-ran `git init`. A verify command executes once
- * per step and must be safe to execute any number of times.
- */
-const VERIFY_COMMAND_RULES = [
-	'   The recorded command MUST be:',
-	'   - READ-ONLY and free of side effects. No `git` commands, no installs, no',
-	'     file writes, no servers, no network. It runs once per step; running it',
-	'     20 times in a row must leave the repo exactly as it found it.',
-	'   - Fast. Seconds, not minutes — its cost is paid on every step.',
-	'   - Idempotent and order-independent: no `&&`-chained setup, only checks.'
-];
 
 /**
  * Stage 1 system prompt: decompose the (fully decided) plan into the atomic
@@ -165,6 +152,11 @@ export function decomposePrompt(planDir: string, decisionsPath: string): string 
 		'   - split a plan step that genuinely bundles two deliverables.',
 		"   Both are exceptions — say which you applied and why in that item's",
 		'   description. A phase with no numbered steps is yours to break down.',
+		'   Assign EVERY step a `phase` — the verification group it belongs to. Deep',
+		"   verification runs when a phase's last step lands, not per step. Reuse the",
+		"   plan's own phase titles when it has them; for an unphased document,",
+		'   invent 3–7 coherent groups in dependency order (e.g. "Scaffold",',
+		'   "Core engine", "UI", "Polish").',
 		'3. Steps must be PRODUCT work. The runner already owns the repository and the',
 		'   commits: it initializes git, takes a baseline, writes .gitignore, and',
 		'   commits after every verified step. Never emit a step for `git init`,',
@@ -185,7 +177,10 @@ export function decomposePrompt(planDir: string, decisionsPath: string): string 
  * picks the item, owns TODO/PROGRESS bookkeeping, and makes the git commits —
  * the model implements and verifies exactly one item, then reports.
  */
-export function iterationPrompt(verifyCommand: string | null): string {
+export function iterationPrompt(
+	stepCheckCommand: string | null,
+	phaseVerifyCommand: string | null
+): string {
 	return [
 		'You are ONE iteration of an unattended coding loop. There is NO human',
 		'available — never ask questions; make the call yourself using the plan,',
@@ -197,7 +192,7 @@ export function iterationPrompt(verifyCommand: string | null): string {
 		'   more. Resist fixing unrelated things; later items will get their turn.',
 		'2. Read before you write: check the relevant files and the progress notes',
 		'   (earlier attempts of this item may have left diagnostics for you).',
-		...verifyRule(verifyCommand),
+		...verifyRule(stepCheckCommand, phaseVerifyCommand),
 		'4. Do NOT run git commit, git init, or any history-rewriting command — the',
 		'   runner commits your work after each verified step.',
 		'5. Do NOT edit TODO-coding.md or PROGRESS-coding.md — the runner owns them.',
@@ -210,27 +205,43 @@ export function iterationPrompt(verifyCommand: string | null): string {
 }
 
 /**
- * Rule 3 — how this iteration proves its step works.
+ * Rule 3 — how this iteration's work gets verified.
  *
- * The no-command branch used to read "Verify by your own judgment … whatever
- * proves this step actually works. Unverified ≠ done." That is an obligation
- * with no constraints, and rule 1 pins each iteration to a fresh context that
- * cannot know a harness already exists. A real run took the only route left
- * open to it: 13 single-use verification scripts totalling ~1.5x the size of
- * the product, 21% of whose assertions were `source.includes("<text I just
- * wrote>")` — which cannot fail, and so proves nothing.
+ * With settled commands, verification is RUNNER-EXECUTED: the runner runs the
+ * step check before committing and the phase verification when a phase's last
+ * item lands. The model neither owns nor improvises verification — earlier
+ * contracts that trusted it to did not survive contact: one run built 13
+ * single-use scripts whose assertions string-matched their own source; the
+ * next maintained one 271-line validator against a 93-line program, editing
+ * and re-running it every step.
  *
- * So the freedom is kept (some projects genuinely have no test command) but
- * bounded: one shared artifact, no throwaway scripts, and no assertion that
- * passes by finding text this iteration authored.
+ * The no-commands branch (preflight could not settle any) keeps the old
+ * bounded self-judgment as a last resort.
  */
-function verifyRule(verifyCommand: string | null): string[] {
-	if (verifyCommand) {
+function verifyRule(stepCheckCommand: string | null, phaseVerifyCommand: string | null): string[] {
+	if (stepCheckCommand || phaseVerifyCommand) {
 		return [
-			`3. Verify with \`${verifyCommand}\` (run_command). The step is "done" ONLY`,
-			'   when it passes. If it fails, that is a "failed" iteration — say why.',
-			'   If the step needs new test coverage, add it to the existing test files',
-			'   that command already runs — do not create a separate one-off script.'
+			"3. Verification is the RUNNER's job, not yours — do not build or maintain",
+			'   verification machinery of any kind:',
+			...(stepCheckCommand
+				? [
+						`   - Before committing your work the runner runs \`${stepCheckCommand}\`.`,
+						'     If it fails, this iteration is recorded as failed with its output.',
+						'     Run it yourself (run_command) just before finishing so you are not',
+						'     surprised.'
+					]
+				: []),
+			...(phaseVerifyCommand
+				? [
+						`   - Deep verification (\`${phaseVerifyCommand}\`) runs automatically when`,
+						"     the phase's last item lands — NOT after every item. Do not run the",
+						'     full suite per item, and do not re-prove earlier steps.',
+						'     If your step needs new TEST coverage, add it to the suite that',
+						'     command already runs — never a standalone verification script.'
+					]
+				: []),
+			'   A quick sanity check of what you just changed (run_command) is fine;',
+			'   bespoke harnesses, validators and verify scripts are not.'
 		];
 	}
 	return [
@@ -274,9 +285,11 @@ export function finalizePrompt(planDir: string, reportPath: string): string {
 		`1. Read \`${planDir}TODO-coding.md\` and \`${planDir}PROGRESS-coding.md\`,`,
 		'   and skim the working directory / recent git log for what was built.',
 		`2. Write \`${reportPath}\` with fs_write_text, with these sections:`,
-		'   "# Coding report", "## What was built", "## Verification status",',
-		'   "## Blocked items" (each blocked item with its failure history and your',
-		'   best diagnosis), and "## Suggested next steps" (concrete, for a human).',
+		'   "# Coding report", "## What was built", "## Verification status" (per',
+		'   PHASE: verified, blocked after how many repair cycles, or never reached —',
+		'   the TODO file\'s phase headings carry this), "## Blocked items" (each',
+		'   blocked item or phase with its failure history and your best diagnosis),',
+		'   and "## Suggested next steps" (concrete, for a human).',
 		`   Write ONLY that one file, inside \`${planDir}\`. Then stop.`
 	].join('\n');
 }

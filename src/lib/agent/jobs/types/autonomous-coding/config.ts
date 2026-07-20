@@ -4,10 +4,17 @@ export interface AutonomousCodingConfig {
 	/** Folder of .md plan files, relative to working_dir. Required to run. */
 	plan_dir: string | null;
 	/**
-	 * Command that proves a step works (e.g. `npm test`). null = the model
-	 * verifies by its own judgment (build/run what it changed).
+	 * Deep verification command (e.g. `npm test`), run by the RUNNER when each
+	 * phase's last item lands — not per item, and not by the model. null = the
+	 * preflight settles it (recorded in DECISIONS-coding.md).
 	 */
 	verify_command: string | null;
+	/**
+	 * Cheap static check (e.g. `npm run lint`, `tsc --noEmit`), run by the
+	 * RUNNER before every step commit so a broken file never lands. null = the
+	 * preflight settles it.
+	 */
+	step_check_command: string | null;
 	/** Failed attempts per item before it's marked BLOCKED. null = default (3). */
 	max_attempts: number | null;
 	/**
@@ -35,6 +42,10 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 		verify_command:
 			typeof raw.verify_command === 'string' && raw.verify_command.length > 0
 				? raw.verify_command
+				: null,
+		step_check_command:
+			typeof raw.step_check_command === 'string' && raw.step_check_command.length > 0
+				? raw.step_check_command
 				: null,
 		max_attempts:
 			typeof raw.max_attempts === 'number' && Number.isFinite(raw.max_attempts)

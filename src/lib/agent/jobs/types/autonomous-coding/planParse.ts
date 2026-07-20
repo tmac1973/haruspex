@@ -129,3 +129,36 @@ function stepsSection(content: string): string | null {
 	const next = rest.match(/^##\s/m);
 	return next && next.index !== undefined ? rest.slice(0, next.index) : rest;
 }
+
+/**
+ * Extract a command the preflight recorded in DECISIONS-coding.md under a
+ * `## <heading>` section — the runner executes what this returns, so it is
+ * deliberately strict: the first fenced code block's first non-empty line,
+ * or (fallback) the section's first non-empty, non-heading line stripped of
+ * inline backticks. Null when the section or command is absent.
+ *
+ * User-set job config always wins over this; it only fills the blanks the
+ * preflight settled.
+ */
+export function extractDecisionCommand(text: string, heading: string): string | null {
+	const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const start = text.match(new RegExp(`^##\\s+${escaped}\\s*$`, 'im'));
+	if (!start || start.index === undefined) return null;
+	const rest = text.slice(start.index + start[0].length);
+	const next = rest.match(/^##?\s/m);
+	const section = next && next.index !== undefined ? rest.slice(0, next.index) : rest;
+
+	const fence = section.match(/^```[^\n]*\n([\s\S]*?)^```/m);
+	if (fence) {
+		const line = fence[1]
+			.split('\n')
+			.map((l) => l.trim())
+			.find((l) => l.length > 0);
+		return line ?? null;
+	}
+	const line = section
+		.split('\n')
+		.map((l) => l.trim())
+		.find((l) => l.length > 0 && !l.startsWith('#'));
+	return line ? line.replace(/^`|`$/g, '').trim() || null : null;
+}
