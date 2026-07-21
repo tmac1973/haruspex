@@ -196,10 +196,30 @@ describe('extractDecisionCommand', () => {
 		'```'
 	].join('\n');
 
-	it('takes the first non-empty line of the fenced block in the named section', () => {
+	it('takes the fenced block content of the named section', () => {
 		expect(extractDecisionCommand(decisions, 'Step check command')).toBe('npm run lint');
 		expect(extractDecisionCommand(decisions, 'Verification command')).toBe(
 			'npm test && cargo test'
+		);
+	});
+
+	it('returns a multi-line fence VERBATIM, never just its first line', () => {
+		// The regression that killed a real run: preflight recorded a multi-line
+		// `python3 -c "…"` command; taking only line 1 produced an
+		// unbalanced-quote fragment, so every phase verification died with
+		// `sh: unexpected EOF` — a shell parse error, not a test failure — and
+		// the repair cycle looped against a command nobody was executing.
+		const multi = [
+			'## Verification command',
+			'',
+			'```bash',
+			'python3 -c "',
+			'import sys',
+			'sys.exit(0)"',
+			'```'
+		].join('\n');
+		expect(extractDecisionCommand(multi, 'Verification command')).toBe(
+			'python3 -c "\nimport sys\nsys.exit(0)"'
 		);
 	});
 

@@ -279,16 +279,6 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		const signingFallback = cfg.signing_fallback ?? 'unsigned';
 		await ensureGitBaseline(ctx, signingFallback);
 
-		// Both verification commands, resolved once for the whole run: explicit
-		// job config wins; blanks are filled from what the preflight recorded in
-		// DECISIONS-coding.md. Missing entirely → that tier of verification is
-		// skipped (and phases stay 'pending', which the report calls out).
-		const decisionsText = (await readPlanFile(ctx, decisionsPath)) ?? '';
-		const stepCheckCommand =
-			cfg.step_check_command ?? extractDecisionCommand(decisionsText, 'Step check command');
-		const phaseVerifyCommand =
-			cfg.verify_command ?? extractDecisionCommand(decisionsText, 'Verification command');
-
 		// Stage 1 — Decompose, or resume: a parseable TODO-coding.md on disk IS
 		// the loop state (attempt counts, phases, repair cycles and all), so a
 		// crashed/killed run picks up where it left off by re-running the job.
@@ -352,19 +342,60 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			await writePlanFile(ctx, progressPath, progress);
 		};
 
+		// Both verification commands, resolved FRESH at every use: explicit job
+		// config wins; blanks come from what the preflight recorded in
+		// DECISIONS-coding.md, re-read each time. Fresh matters — a repair item
+		// may legitimately FIX a broken command by editing that file, and
+		// executing a cached copy makes such a repair unwinnable (observed: a
+		// repair corrected a shell-broken command in DECISIONS, the runner kept
+		// running the stale original, and the phase looped to cancellation).
+		// The flip side — a model could WEAKEN a command mid-run — is surfaced
+		// by logging every change loudly into PROGRESS rather than forbidding it.
+		let knownCommands: { step: string | null; phase: string | null } | null = null;
+		const currentCommands = async (): Promise<{ step: string | null; phase: string | null }> => {
+			const text = (await readPlanFile(ctx, decisionsPath)) ?? '';
+			const cmds = {
+				step: cfg.step_check_command ?? extractDecisionCommand(text, 'Step check command'),
+				phase: cfg.verify_command ?? extractDecisionCommand(text, 'Verification command')
+			};
+			if (
+				knownCommands &&
+				(knownCommands.step !== cmds.step || knownCommands.phase !== cmds.phase)
+			) {
+				const diff = [
+					knownCommands.step !== cmds.step
+						? `- step check: \`${knownCommands.step ?? '(none)'}\` → \`${cmds.step ?? '(none)'}\``
+						: '',
+					knownCommands.phase !== cmds.phase
+						? `- phase verification: \`${knownCommands.phase ?? '(none)'}\` → \`${cmds.phase ?? '(none)'}\``
+						: ''
+				]
+					.filter(Boolean)
+					.join('\n');
+				knownCommands = cmds;
+				await record(
+					`## Verification commands changed mid-run\n\n${diff}\n\nA repair item may ` +
+						`legitimately fix a broken command; review this change when the run finishes.\n`
+				);
+			}
+			knownCommands = cmds;
+			return cmds;
+		};
+
 		ctx.patchStep(LOOP, { checklist: toChecklist(plan.items, null, maxAttempts) });
 		for (;;) {
 			abortIfCancelled();
+			const cmds = await currentCommands();
 
 			// Phase verification outranks the next item: a phase whose last item
 			// just landed is verified before any new work starts, so a breakage
 			// is caught while the culprit set is still one phase wide.
-			const phase = phaseVerifyCommand ? phaseNeedingVerify(plan) : null;
-			if (phase && phaseVerifyCommand) {
+			const phase = cmds.phase ? phaseNeedingVerify(plan) : null;
+			if (phase && cmds.phase) {
 				ctx.patchStep(LOOP, {
-					streaming: `Verifying phase ${phase.id} — ${phase.title} (\`${phaseVerifyCommand}\`)`
+					streaming: `Verifying phase ${phase.id} — ${phase.title} (\`${cmds.phase}\`)`
 				});
-				const v = await runCheckCommand(ctx, phaseVerifyCommand);
+				const v = await runCheckCommand(ctx, cmds.phase);
 				abortIfCancelled();
 				if (v.passed) {
 					plan = setPhaseVerify(plan, phase.id, 'passed');
@@ -401,14 +432,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			});
 
 			const headBefore = await gitHead(ctx);
-			const result = await runIterationTurn(
-				ctx,
-				stepCheckCommand,
-				phaseVerifyCommand,
-				plan,
-				target,
-				recentNotes
-			);
+			const result = await runIterationTurn(ctx, cmds.step, cmds.phase, plan, target, recentNotes);
 			abortIfCancelled();
 
 			let { status, note } = result;
@@ -420,14 +444,17 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 					`Reported a result for "${result.itemId}" instead of the assigned ` +
 					`item ${target.id} — counted as a failed attempt. Original note: ${note}`;
 			}
-			if (status === 'done' && stepCheckCommand) {
+			// Re-resolve before the check: the iteration itself may have repaired a
+			// broken command in DECISIONS-coding.md.
+			const checkCmds = await currentCommands();
+			if (status === 'done' && checkCmds.step) {
 				// Runner-enforced, not model-trusted: no broken file ever lands.
-				const check = await runCheckCommand(ctx, stepCheckCommand);
+				const check = await runCheckCommand(ctx, checkCmds.step);
 				abortIfCancelled();
 				if (!check.passed) {
 					status = 'failed';
 					note =
-						`Step check failed (\`${stepCheckCommand}\`) — the work is NOT committed ` +
+						`Step check failed (\`${checkCmds.step}\`) — the work is NOT committed ` +
 						`until it passes.\n\n${clipNote(check.output, 3000)}\n\nOriginal note: ${note}`;
 				}
 			}

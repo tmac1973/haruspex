@@ -118,7 +118,13 @@ function verificationContractStep(
 		'     file writes, no servers, no network. They run over and over; running',
 		'     one 20 times in a row must leave the repo exactly as it found it.',
 		'   - Fast. Seconds, not minutes — the step check is paid on every step.',
-		'   - Idempotent and order-independent: no `&&`-chained setup, only checks.'
+		'   - Idempotent and order-independent: no `&&`-chained setup, only checks.',
+		'   - PHASE-AGNOSTIC: the verification command runs for EVERY phase of the',
+		'     plan, so never scope or name it to a single phase.',
+		'   - A real command, not an embedded program: no inline `-c "…"` code',
+		'     strings — that is a hand-written validator smuggled into a command.',
+		'     If a small helper script is genuinely required, that is scaffold work',
+		'     for the RUN (ask, as above) — preflight writes no code.'
 	];
 }
 
@@ -241,7 +247,11 @@ function verifyRule(stepCheckCommand: string | null, phaseVerifyCommand: string 
 					]
 				: []),
 			'   A quick sanity check of what you just changed (run_command) is fine;',
-			'   bespoke harnesses, validators and verify scripts are not.'
+			'   bespoke harnesses, validators and verify scripts are not.',
+			'   This includes checklist items that are THEMSELVES "validate/verify X"',
+			'   steps from the plan: satisfy them by RUNNING the recorded checks',
+			'   (run_command) and reporting the result in your note — do not write a',
+			'   validation script for them.'
 		];
 	}
 	return [

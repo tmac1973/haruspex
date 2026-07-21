@@ -324,7 +324,9 @@ export function beginRepairCycle(
 		description:
 			`Phase ${phaseId} verification failed. Diagnose from the output below, fix the ` +
 			`cause, and make the phase verification pass. Verification re-runs after this ` +
-			`item regardless of the outcome you report.\n\n` +
+			`item regardless of the outcome you report. If the verification COMMAND itself ` +
+			`is broken (shell errors, wrong path), fix it under "## Verification command" in ` +
+			`DECISIONS-coding.md — the runner re-reads it before every check.\n\n` +
 			`Verification output:\n${clipNote(failureOutput, 3000)}`,
 		status: 'todo',
 		attempts: 0,

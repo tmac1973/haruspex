@@ -132,10 +132,17 @@ function stepsSection(content: string): string | null {
 
 /**
  * Extract a command the preflight recorded in DECISIONS-coding.md under a
- * `## <heading>` section — the runner executes what this returns, so it is
- * deliberately strict: the first fenced code block's first non-empty line,
+ * `## <heading>` section: the ENTIRE content of the first fenced code block,
  * or (fallback) the section's first non-empty, non-heading line stripped of
  * inline backticks. Null when the section or command is absent.
+ *
+ * The whole fence, not its first line. This function once returned only the
+ * first line, which truncated a recorded multi-line `python3 -c "…"` into an
+ * unbalanced-quote fragment — every phase verification then died with a shell
+ * parse error while the command preflight had actually tested worked fine.
+ * Multi-line strings are legal shell; silently executing a DIFFERENT command
+ * than the one recorded is the failure mode, so the runner takes the fence
+ * verbatim.
  *
  * User-set job config always wins over this; it only fills the blanks the
  * preflight settled.
@@ -150,11 +157,8 @@ export function extractDecisionCommand(text: string, heading: string): string | 
 
 	const fence = section.match(/^```[^\n]*\n([\s\S]*?)^```/m);
 	if (fence) {
-		const line = fence[1]
-			.split('\n')
-			.map((l) => l.trim())
-			.find((l) => l.length > 0);
-		return line ?? null;
+		const body = fence[1].trim();
+		return body.length > 0 ? body : null;
 	}
 	const line = section
 		.split('\n')
