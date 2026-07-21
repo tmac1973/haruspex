@@ -18,6 +18,12 @@ export interface AutonomousCodingConfig {
 	/** Failed attempts per item before it's marked BLOCKED. null = default (3). */
 	max_attempts: number | null;
 	/**
+	 * Loop context strategy: 'step' (default) = a fresh context per checklist
+	 * item; 'phase' = one continuous context per plan phase, with the runner
+	 * checking and committing each item mid-turn via submit_step_result.
+	 */
+	context_mode: 'step' | 'phase' | null;
+	/**
 	 * What the runner does when commit signing fails mid-run (expired
 	 * 1Password/gpg-agent authorization): 'unsigned' commits with signing
 	 * disabled (re-sign before pushing); 'skip' never commits unsigned — the
@@ -51,11 +57,16 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 			typeof raw.max_attempts === 'number' && Number.isFinite(raw.max_attempts)
 				? raw.max_attempts
 				: null,
+		context_mode: parseContextMode(raw.context_mode),
 		signing_fallback:
 			raw.signing_fallback === 'skip' || raw.signing_fallback === 'unsigned'
 				? raw.signing_fallback
 				: null
 	};
+}
+
+function parseContextMode(v: unknown): 'step' | 'phase' | null {
+	return v === 'phase' || v === 'step' ? v : null;
 }
 
 /** The plan dir with a guaranteed trailing slash (path-building convenience). */

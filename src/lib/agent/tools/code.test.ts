@@ -65,6 +65,31 @@ describe('run_command risk gate', () => {
 		expect(out.result).toContain('hello');
 	});
 
+	it('denies a risky command WITHOUT prompting during an unattended run', async () => {
+		// A real unattended run parked ~15 minutes on the rm approval modal.
+		// Under runWithAutoApprove (how every job turn executes) the gate must
+		// deny-with-guidance, never open a modal — and never auto-run: shell
+		// commands are not sandboxed to the working dir the way fs writes are.
+		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await runWithAutoApprove(() =>
+			executeTool('run_command', { command: 'rm -rf build' }, codeCtx)
+		);
+		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
+		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(out.result).toContain('unattended');
+		expect(out.result).toContain('Do not retry');
+	});
+
+	it('still runs SAFE commands in an unattended run', async () => {
+		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await runWithAutoApprove(() =>
+			executeTool('run_command', { command: 'ls -la' }, codeCtx)
+		);
+		expect(out.result).toContain('Exit code: 0');
+	});
+
 	it('prompts on a risky command and aborts on deny', async () => {
 		mocks.askCommandApproval.mockResolvedValue('deny');
 		const { executeTool } = await import('$lib/agent/tools');

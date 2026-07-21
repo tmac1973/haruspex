@@ -139,6 +139,107 @@ registerTool({
 	}
 });
 
+export const SUBMIT_STEP_RESULT_TOOL = 'submit_step_result';
+
+/** Arguments of a phase-context turn's per-step `submit_step_result` call. */
+export interface StepResultArg {
+	item_id: string;
+	status: 'done' | 'failed';
+	note: string;
+}
+
+/**
+ * Installed by the pipeline for the duration of ONE phase-context turn. The
+ * executor delegates to it so the runner can do real work MID-TURN — run the
+ * step check, commit, update TODO/PROGRESS — and feed the outcome straight
+ * back into the model's context (a failed check is fixed in-context instead of
+ * by a fresh-context retry). Null outside a phase turn: the tool then only
+ * acknowledges, so a stray call can never commit anything.
+ */
+type StepResultHandler = (arg: StepResultArg) => Promise<string>;
+let stepResultHandler: StepResultHandler | null = null;
+
+export function setStepResultHandler(handler: StepResultHandler | null): void {
+	stepResultHandler = handler;
+}
+
+registerTool({
+	category: 'coding',
+	schema: {
+		type: 'function',
+		function: {
+			name: SUBMIT_STEP_RESULT_TOOL,
+			description:
+				'Report ONE checklist item finished (phase-context runs). Call it after ' +
+				'each item, then WAIT for its result before touching the next item: the ' +
+				'runner checks and commits your work and the result tells you whether it ' +
+				'landed and what to work on next. Report status "done" only when the item ' +
+				'is implemented; "failed" with a diagnostic note otherwise.',
+			parameters: {
+				type: 'object',
+				properties: {
+					item_id: {
+						type: 'string',
+						description: 'The id of the one item this report is for, e.g. "07".'
+					},
+					status: {
+						type: 'string',
+						enum: ['done', 'failed'],
+						description: '"done" = implemented; "failed" = anything less.'
+					},
+					note: {
+						type: 'string',
+						description: 'One line: what was built, or what broke and the evidence.'
+					}
+				},
+				required: ['item_id', 'status', 'note']
+			}
+		}
+	},
+	displayLabel: (args) => `step: ${args.item_id ?? '?'} ${args.status ?? ''}`,
+	async execute(args) {
+		const a: StepResultArg = {
+			item_id: typeof args.item_id === 'string' ? args.item_id.trim() : '',
+			status: args.status === 'done' ? 'done' : 'failed',
+			note: typeof args.note === 'string' && args.note.trim() ? args.note.trim() : '(no note given)'
+		};
+		if (!stepResultHandler) return toolResult('Step result recorded.');
+		try {
+			return toolResult(await stepResultHandler(a));
+		} catch (e) {
+			return toolResult(`Step result handling failed: ${String(e)}`);
+		}
+	}
+});
+
+export const SUBMIT_PHASE_RESULT_TOOL = 'submit_phase_result';
+
+registerTool({
+	category: 'coding',
+	schema: {
+		type: 'function',
+		function: {
+			name: SUBMIT_PHASE_RESULT_TOOL,
+			description:
+				'End a phase-context turn. Call exactly once, at the very end — after the ' +
+				'runner has confirmed the last item of the phase committed (the ' +
+				'submit_step_result reply says so), or when you cannot make further ' +
+				'progress. The note should summarise the phase or say what is stuck.',
+			parameters: {
+				type: 'object',
+				properties: {
+					note: { type: 'string', description: 'One-paragraph phase summary, or what is stuck.' }
+				},
+				required: ['note']
+			}
+		}
+	},
+	displayLabel: () => 'phase turn finished',
+	async execute() {
+		return toolResult('Phase result recorded.');
+	}
+});
+
 export const SUBMIT_ITERATION_RESULT_TOOL = 'submit_iteration_result';
 
 /** Arguments of an iteration turn's `submit_iteration_result` call. */

@@ -218,7 +218,17 @@ function phaseWritePrompt(outDir: string, overviewPath: string): string {
 		'sections: a "# Phase NN — <title>" heading, a "Depends on:" / "Enables:" line,',
 		'then ## Goal, ## Files touched, ## Steps, ## Build gate, ## Test plan,',
 		'## Commit, ## Rollback. Resolve every decision in the text — never "TBD" or',
-		`"decide later". Write ONLY that one file, inside \`${outDir}\`. Then stop.`
+		'"decide later".',
+		'',
+		'Steps are IMPLEMENTATION actions only — things that create or change the',
+		'product. Never write a step like "Validate X", "Test Y in the browser", or',
+		'"Verify Z works": verification belongs in ## Build gate (the checks that',
+		'must pass) and ## Test plan (how a human confirms it). An autonomous run',
+		'executes Steps literally — a "validate manually in a browser" step once sent',
+		'one off installing headless-browser packages and embedding a 50-test harness',
+		'into the shipped product file.',
+		'',
+		`Write ONLY that one file, inside \`${outDir}\`. Then stop.`
 	].join('\n');
 }
 

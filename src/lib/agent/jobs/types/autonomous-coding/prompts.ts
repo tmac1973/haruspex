@@ -214,6 +214,48 @@ export function iterationPrompt(
 }
 
 /**
+ * Phase-context turn: one continuous context implements a whole plan phase,
+ * item by item. The runner stays in charge of the ground truth mid-turn — the
+ * submit_step_result executor runs the step check, commits, and updates
+ * TODO/PROGRESS, and its reply tells the model whether the item landed and
+ * what to work on next. Per-step commits and phase verification are identical
+ * to per-step mode; only the context strategy differs.
+ */
+export function phaseTurnPrompt(
+	stepCheckCommand: string | null,
+	phaseVerifyCommand: string | null,
+	planDir: string
+): string {
+	return [
+		'You are implementing ONE PHASE of an unattended coding run, in a single',
+		'continuous session. There is NO human available — never ask questions;',
+		'make the call yourself using the plan files in ' + `\`${planDir}\`` + ',',
+		`\`${planDir}DECISIONS-coding.md\`, and the notes, and record it in your`,
+		'step notes. All plan files live under ' + `\`${planDir}\`` + ' — use that',
+		'prefix when reading them.',
+		'',
+		'Rules:',
+		"1. Work the phase's items STRICTLY IN THE ORDER GIVEN, one at a time.",
+		'   Implement exactly one item, then call `submit_step_result` for it and',
+		'   WAIT for the reply before touching the next item. The runner checks and',
+		'   commits your work at each report — the reply says whether it landed,',
+		'   what to fix if it did not, and which item is next.',
+		'2. Read before you write. You keep your context for the whole phase, so do',
+		'   NOT re-read files you have already seen and that have not changed.',
+		...verifyRule(stepCheckCommand, phaseVerifyCommand),
+		'4. Do NOT run git commit, git init, or any history-rewriting command — the',
+		'   runner commits after each verified step, via your submit_step_result.',
+		`5. Do NOT edit \`${planDir}TODO-coding.md\` or \`${planDir}PROGRESS-coding.md\``,
+		'   — the runner owns them.',
+		'6. If an item cannot proceed, report it "failed" with a diagnostic note and',
+		'   continue with the next item the reply names.',
+		'7. When the reply to your last report says the phase is complete — or you',
+		'   genuinely cannot progress — call `submit_phase_result` exactly once and',
+		'   stop.'
+	].join('\n');
+}
+
+/**
  * Rule 3 — how this iteration's work gets verified.
  *
  * With settled commands, verification is RUNNER-EXECUTED: the runner runs the

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decomposePrompt, iterationPrompt, preflightPrompt } from './prompts';
+import { decomposePrompt, iterationPrompt, phaseTurnPrompt, preflightPrompt } from './prompts';
 
 /**
  * The prompt is hard-wrapped for readability, so a phrase can straddle a line
@@ -217,5 +217,34 @@ describe('decomposePrompt — anchoring granularity to the plan', () => {
 		// unstructured input — the deterministic parser handles structured plans.
 		expect(prompt).toContain('Assign EVERY step a `phase`');
 		expect(prompt).toContain('invent 3–7 coherent groups');
+	});
+});
+
+describe('phaseTurnPrompt — continuous context, runner-owned ground truth', () => {
+	const prompt = flat(phaseTurnPrompt('npm run lint', 'npm test', 'plan/x/'));
+
+	it('requires reporting each item and waiting for the reply', () => {
+		expect(prompt).toContain('one at a time');
+		expect(prompt).toContain('`submit_step_result`');
+		expect(prompt).toContain('WAIT for the reply');
+	});
+
+	it('keeps the runner in charge of commits and the TODO files', () => {
+		expect(prompt).toContain('Do NOT run git commit');
+		expect(prompt).toContain('`plan/x/TODO-coding.md`');
+	});
+
+	it('tells the model not to re-read what its context already holds', () => {
+		// The whole point of the mode: the re-grounding cost per item goes away.
+		expect(prompt).toContain('do NOT re-read files you have already seen');
+	});
+
+	it('ends the turn via submit_phase_result', () => {
+		expect(prompt).toContain('`submit_phase_result`');
+	});
+
+	it('carries the same runner-executed verification rules as per-step mode', () => {
+		expect(prompt).toContain("Verification is the RUNNER's job");
+		expect(prompt).toContain('`npm run lint`');
 	});
 });

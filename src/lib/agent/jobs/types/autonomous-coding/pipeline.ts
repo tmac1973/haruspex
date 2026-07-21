@@ -22,8 +22,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import {
+	setStepResultHandler,
 	SUBMIT_ITERATION_RESULT_TOOL,
+	SUBMIT_PHASE_RESULT_TOOL,
 	SUBMIT_PREFLIGHT_TOOL,
+	SUBMIT_STEP_RESULT_TOOL,
 	SUBMIT_TASK_LIST_TOOL,
 	type IterationResultArg,
 	type PreflightResultArg
@@ -59,7 +62,13 @@ import {
 	type TaskItem
 } from './loopState';
 import { extractDecisionCommand, parseGuidedPlan, type PlanFile } from './planParse';
-import { decomposePrompt, finalizePrompt, iterationPrompt, preflightPrompt } from './prompts';
+import {
+	decomposePrompt,
+	finalizePrompt,
+	iterationPrompt,
+	phaseTurnPrompt,
+	preflightPrompt
+} from './prompts';
 
 export const PREFLIGHT = 0;
 export const DECOMPOSE = 1;
@@ -110,6 +119,22 @@ const DECOMPOSE_TOOLS = [
  * ask_user_question — after preflight the run cannot ask, by toolset, not by
  * prompt.
  */
+/** Phase-context turn toolset: per-step reporting replaces the per-item result. */
+const PHASE_LOOP_TOOLS = [
+	'fs_read_text',
+	'fs_list_dir',
+	'fs_read_pdf',
+	'fs_edit_text',
+	'fs_write_text',
+	'code_grep',
+	'code_glob',
+	'run_command',
+	'web_search',
+	'research_url',
+	SUBMIT_STEP_RESULT_TOOL,
+	SUBMIT_PHASE_RESULT_TOOL
+];
+
 const LOOP_TOOLS = [
 	'fs_read_text',
 	'fs_list_dir',
@@ -382,6 +407,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			return cmds;
 		};
 
+		// Phases that fell back to per-step turns after a no-progress phase turn,
+		// so a model that bails out of continuous mode cannot loop forever.
+		const phaseStepFallback = new Set<string>();
+
 		ctx.patchStep(LOOP, { checklist: toChecklist(plan.items, null, maxAttempts) });
 		for (;;) {
 			abortIfCancelled();
@@ -420,6 +449,38 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 
 			const target = nextActionable(plan.items);
 			if (!target) break;
+			if (
+				cfg.context_mode === 'phase' &&
+				!target.repair &&
+				target.phase &&
+				!phaseStepFallback.has(target.phase)
+			) {
+				await runPhaseContextTurn(
+					{
+						ctx,
+						planDir,
+						maxAttempts,
+						signingFallback,
+						getPlan: () => plan,
+						setPlan: (p) => {
+							plan = p;
+						},
+						currentCommands,
+						record,
+						nextIteration: () => ++iteration,
+						abortIfCancelled,
+						markNoProgress: async (phaseId) => {
+							phaseStepFallback.add(phaseId);
+							await record(
+								`## Phase ${phaseId}: continuous-context turn made no progress — ` +
+									`falling back to per-step iterations for this phase.\n`
+							);
+						}
+					},
+					target.phase
+				);
+				continue;
+			}
 			// A repair item gets ONE attempt: the repair CYCLE is the retry
 			// mechanism (verify → repair → re-verify, bounded per phase).
 			const attemptCap = target.repair ? 1 : maxAttempts;
@@ -645,6 +706,152 @@ async function obtainTaskList(
 			`${MAX_WRITE_ATTEMPTS} attempts. The selected model may be too small for ` +
 			`autonomous coding — try a larger model.`
 	);
+}
+
+/** Everything a phase-context turn needs from the running pipeline. */
+interface PhaseTurnDeps {
+	ctx: JobRunContext;
+	planDir: string;
+	maxAttempts: number;
+	signingFallback: SigningFallback;
+	getPlan: () => LoopPlan;
+	setPlan: (p: LoopPlan) => void;
+	currentCommands: () => Promise<{ step: string | null; phase: string | null }>;
+	record: (entry: string, clipped?: string) => Promise<void>;
+	nextIteration: () => number;
+	abortIfCancelled: () => void;
+	markNoProgress: (phaseId: string) => Promise<void>;
+}
+
+/**
+ * Runner-side settlement of a phase-turn step report: run the step check, then
+ * commit — downgrading "done" to "failed" when either disproves the claim.
+ */
+async function settleStepReport(
+	deps: PhaseTurnDeps,
+	target: TaskItem,
+	arg: { status: 'done' | 'failed'; note: string }
+): Promise<{ status: 'done' | 'failed'; note: string }> {
+	let { status } = arg;
+	let note = arg.note;
+	const fresh = await deps.currentCommands();
+	if (status === 'done' && fresh.step) {
+		const check = await runCheckCommand(deps.ctx, fresh.step);
+		if (!check.passed) {
+			status = 'failed';
+			note = `Step check failed (\`${fresh.step}\`).\n\n${clipNote(check.output, 3000)}\n\nOriginal note: ${note}`;
+		}
+	}
+	if (status === 'done') {
+		const headBefore = await gitHead(deps.ctx);
+		const commit = await commitStepWork(
+			deps.ctx,
+			target,
+			deps.getPlan().items.length,
+			headBefore,
+			deps.signingFallback
+		);
+		if (!commit.changed) {
+			status = 'failed';
+			note = `Claimed done but changed nothing (no diff, no new commit). Original note: ${note}`;
+		}
+	}
+	return { status, note };
+}
+
+/**
+ * The submit_step_result handler for ONE phase-context turn: the runner does
+ * its per-step work MID-TURN — step check, commit, TODO/PROGRESS update — and
+ * the returned string lands in the model's context as the tool result, so a
+ * failed check is fixed in-context instead of by a fresh-context retry.
+ */
+function makePhaseStepHandler(deps: PhaseTurnDeps, phaseId: string) {
+	const remaining = () =>
+		deps.getPlan().items.filter((i) => i.phase === phaseId && i.status === 'todo');
+	return async (arg: { item_id: string; status: 'done' | 'failed'; note: string }) => {
+		deps.abortIfCancelled();
+		const target = remaining()[0] ?? null;
+		if (!target) {
+			return 'All items in this phase are already reported — call submit_phase_result now.';
+		}
+		if (arg.item_id !== target.id) {
+			return `Work items in order: the next item is ${target.id}. ${target.title}. Report that one.`;
+		}
+		const iteration = deps.nextIteration();
+		const settled = await settleStepReport(deps, target, arg);
+		const { status } = settled;
+		let note = settled.note;
+		if (status === 'done') {
+			deps.setPlan({ ...deps.getPlan(), items: markDone(deps.getPlan().items, target.id) });
+		} else {
+			const r = recordFailure(deps.getPlan().items, target.id, deps.maxAttempts);
+			deps.setPlan({ ...deps.getPlan(), items: r.items });
+			if (r.blocked) note = `BLOCKED after ${deps.maxAttempts} failed attempt(s). ${note}`;
+		}
+		await deps.record(
+			`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${note.trim()}\n`,
+			`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${clipNote(note)}\n`
+		);
+		const next = remaining()[0] ?? null;
+		const landed =
+			status === 'done'
+				? `Committed ${target.id}.`
+				: `Recorded ${target.id} as failed: ${clipNote(note, 600)}`;
+		deps.ctx.patchStep(LOOP, {
+			streaming: `Phase ${phaseId} (continuous) — ${next ? `next: ${next.id}. ${next.title}` : 'wrapping up'}`,
+			checklist: toChecklist(deps.getPlan().items, next?.id ?? null, deps.maxAttempts)
+		});
+		return next
+			? `${landed} NEXT item: ${next.id}. ${next.title} — implement it, then report it.`
+			: `${landed} That was the phase's last actionable item — call submit_phase_result now.`;
+	};
+}
+
+/**
+ * Phase-context mode: ONE continuous turn implements the phase's remaining
+ * items, with per-step commits, attempt bounds and phase verification
+ * identical to per-step mode — only the context strategy differs. A turn that
+ * moves nothing hands the phase to per-step mode via markNoProgress, so a
+ * bailing model cannot loop forever.
+ */
+async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promise<void> {
+	const phase = deps.getPlan().phases.find((p) => p.id === phaseId);
+	const remaining = () =>
+		deps.getPlan().items.filter((i) => i.phase === phaseId && i.status === 'todo');
+	const before = remaining().length;
+	const cmds = await deps.currentCommands();
+	const list = remaining()
+		.map((i) => `- ${i.id}. ${i.title}\n  ${i.description.replace(/\n/g, ' ')}`)
+		.join('\n');
+	const userMessage = [
+		`Implement the remaining items of Phase ${phaseId} — ${phase?.title ?? ''}, in order:`,
+		'',
+		list,
+		'',
+		'Current checklist:',
+		'```markdown',
+		renderOverview(deps.getPlan().items),
+		'```'
+	].join('\n');
+
+	setStepResultHandler(makePhaseStepHandler(deps, phaseId));
+	try {
+		await deps.ctx.runJobTurn({
+			userMessage,
+			contextSize: deps.ctx.contextSize(),
+			visionSupported: deps.ctx.visionSupported(),
+			maxIterations: Math.min(400, 40 + before * 20),
+			systemPrompt: phaseTurnPrompt(cmds.step, cmds.phase, deps.planDir),
+			toolAllowlist: PHASE_LOOP_TOOLS,
+			forceFinalTool: SUBMIT_PHASE_RESULT_TOOL,
+			...deps.ctx.buildStreamCallbacks(LOOP)
+		});
+	} finally {
+		setStepResultHandler(null);
+	}
+	if (remaining().length === before) {
+		await deps.markNoProgress(phaseId);
+	}
 }
 
 /** One fresh-context coding iteration; the result is forced + captured. */

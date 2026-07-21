@@ -116,6 +116,22 @@
 </details>
 
 <label
+	class="field context"
+	title="How much conversation context each unit of work gets. Fresh per step is the default: every checklist item runs in a clean context that re-reads what it needs. Continuous per phase keeps one context for a whole plan phase; the runner still checks and commits each step mid-turn."
+>
+	<span class="label">Context</span>
+	<select bind:value={cfg.context_mode}>
+		<option value="step">Fresh per step — clean context per checklist item (default)</option>
+		<option value="phase">Continuous per phase — one context per plan phase (experimental)</option>
+	</select>
+	<span class="hint">
+		Per-phase keeps everything the model just learned in view, avoiding per-step re-reading — at the
+		cost of a growing context. Per-step commits, checks, and phase verification are identical in
+		both modes.
+	</span>
+</label>
+
+<label
 	class="field signing"
 	title="Commit signing agents (e.g. 1Password) need authorization. The run primes it with the baseline commit right after your preflight interview, but the authorization can expire overnight."
 >
@@ -173,7 +189,8 @@
 		max-width: 120px;
 	}
 
-	.signing select {
+	.signing select,
+	.context select {
 		align-self: flex-start;
 		min-width: 300px;
 	}

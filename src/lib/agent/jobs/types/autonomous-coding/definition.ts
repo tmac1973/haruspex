@@ -10,6 +10,7 @@ export interface AutonomousCodingEditorState {
 	verify_command: string;
 	step_check_command: string;
 	max_attempts: number;
+	context_mode: 'step' | 'phase';
 	signing_fallback: 'unsigned' | 'skip';
 }
 
@@ -72,6 +73,7 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		verify_command: '',
 		step_check_command: '',
 		max_attempts: 3,
+		context_mode: 'step',
 		signing_fallback: 'unsigned'
 	}),
 	configFromJob: (typeConfig) => {
@@ -81,6 +83,7 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			verify_command: c.verify_command ?? '',
 			step_check_command: c.step_check_command ?? '',
 			max_attempts: c.max_attempts ?? 3,
+			context_mode: c.context_mode ?? 'step',
 			signing_fallback: c.signing_fallback ?? 'unsigned'
 		};
 	},
@@ -91,6 +94,7 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			verify_command: s.verify_command.trim() || undefined,
 			step_check_command: s.step_check_command.trim() || undefined,
 			max_attempts: s.max_attempts,
+			context_mode: s.context_mode,
 			signing_fallback: s.signing_fallback
 		});
 	},

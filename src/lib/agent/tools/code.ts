@@ -6,6 +6,7 @@ import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { getSettings } from '$lib/stores/settings';
 import { classifyShellRisk } from '$lib/shell/risky-commands';
+import { isAutoApproveActive } from '$lib/stores/approvalOverride';
 import {
 	askCommandApproval,
 	isSessionApproved,
@@ -37,6 +38,23 @@ async function ensureCommandApproved(
 	if (ctx.codeAutoApprove || isSessionApproved()) return 'ok';
 	const risk = classifyShellRisk(command);
 	if (!risk.matched) return 'ok';
+	// Unattended job turns (runWithAutoApprove) must never park on a modal —
+	// an approval prompt with nobody at the keyboard stalled a real run for
+	// 15 minutes on an `rm`. Risky commands are DENIED with guidance rather
+	// than auto-approved: file writes are sandboxed to the working dir, but a
+	// shell command can touch anything the user can, so the job's overwrite
+	// auto-approve does not extend to it.
+	if (isAutoApproveActive()) {
+		return {
+			message: toolError(
+				`Command blocked (${risk.reasons.join('; ')}): risky commands are unavailable ` +
+					`in unattended runs — there is nobody present to approve them. Take a safer ` +
+					`route: prefer the fs_* tools for file work, avoid destructive commands, and ` +
+					`leave temp files alone (never create them where possible; .gitignore covers ` +
+					`regenerable ones). Do not retry this command.`
+			)
+		};
+	}
 	let choice;
 	try {
 		choice = await askCommandApproval({ command, reasons: risk.reasons });
