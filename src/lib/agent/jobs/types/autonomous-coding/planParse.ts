@@ -35,7 +35,7 @@ const MAX_TITLE_CHARS = 90;
  * Null rather than best-effort on a non-conforming phase file: half a plan
  * parsed deterministically and half guessed would be worse than either.
  */
-export function parseGuidedPlan(files: PlanFile[]): LoopPlan | null {
+export function parseGuidedPlan(files: PlanFile[], planDir = ''): LoopPlan | null {
 	const phaseFiles = files
 		.filter((f) => PHASE_FILE_RE.test(f.name))
 		.sort((a, b) => a.name.localeCompare(b.name));
@@ -59,8 +59,8 @@ export function parseGuidedPlan(files: PlanFile[]): LoopPlan | null {
 					items.length,
 					phaseId,
 					clipTitle(`Implement Phase ${phaseId} — ${phaseTitle}`),
-					`Implement this phase in full as specified in ${file.name}. Its Steps section ` +
-						`has no individually numbered steps — read the file end to end before writing code.`
+					`Implement this phase in full as specified in ${planDir}${file.name}. Its Steps ` +
+						`section has no individually numbered steps — read the file end to end before writing code.`
 				)
 			);
 			continue;
@@ -72,8 +72,8 @@ export function parseGuidedPlan(files: PlanFile[]): LoopPlan | null {
 					phaseId,
 					clipTitle(stepTitle),
 					`Step ${k + 1} of ${steps.length} in Phase ${phaseId} ("${phaseTitle}"). Implement ` +
-						`EXACTLY this step as specified — read it in full under "## Steps" in ${file.name} ` +
-						`before writing code.`
+						`EXACTLY this step as specified — read it in full under "## Steps" in ` +
+						`${planDir}${file.name} before writing code.`
 				)
 			);
 		});

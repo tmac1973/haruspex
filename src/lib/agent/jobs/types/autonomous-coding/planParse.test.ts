@@ -134,6 +134,14 @@ describe('parseGuidedPlan', () => {
 		expect(plan.items[0].description).not.toContain('const MAX = 6');
 	});
 
+	it('prefixes the plan-dir onto the referenced file path', () => {
+		// A run read bare "phase-01-….md" at the project root, got "Not a file",
+		// and had to glob for the real location — the description must carry the
+		// full path the read tools actually accept.
+		const plan = parseGuidedPlan([subheadingPhase('01', 'Scaffold')], 'plan/test-plan/')!;
+		expect(plan.items[0].description).toContain('plan/test-plan/phase-01-something.md');
+	});
+
 	it('turns a phase with an unstructured Steps section into one whole-phase item', () => {
 		const plan = parseGuidedPlan([
 			{

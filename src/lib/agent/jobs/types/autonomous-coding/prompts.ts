@@ -185,13 +185,15 @@ export function decomposePrompt(planDir: string, decisionsPath: string): string 
  */
 export function iterationPrompt(
 	stepCheckCommand: string | null,
-	phaseVerifyCommand: string | null
+	phaseVerifyCommand: string | null,
+	planDir: string
 ): string {
 	return [
 		'You are ONE iteration of an unattended coding loop. There is NO human',
-		'available — never ask questions; make the call yourself using the plan,',
-		'DECISIONS-coding.md, and the progress notes, and record it in your result',
-		'note.',
+		'available — never ask questions; make the call yourself using the plan',
+		`files in \`${planDir}\`, \`${planDir}DECISIONS-coding.md\`, and the progress`,
+		'notes, and record it in your result note. All plan files live under',
+		`\`${planDir}\` — use that prefix when reading them.`,
 		'',
 		'Rules:',
 		'1. Implement EXACTLY the one checklist item named in the message — nothing',
@@ -201,7 +203,8 @@ export function iterationPrompt(
 		...verifyRule(stepCheckCommand, phaseVerifyCommand),
 		'4. Do NOT run git commit, git init, or any history-rewriting command — the',
 		'   runner commits your work after each verified step.',
-		'5. Do NOT edit TODO-coding.md or PROGRESS-coding.md — the runner owns them.',
+		`5. Do NOT edit \`${planDir}TODO-coding.md\` or \`${planDir}PROGRESS-coding.md\``,
+		'   — the runner owns them.',
 		'6. If this item cannot proceed because it depends on a BLOCKED item, report',
 		'   "failed" with a note starting "depends on blocked <id>".',
 		'7. Finish by calling `submit_iteration_result` exactly once: the item id you',

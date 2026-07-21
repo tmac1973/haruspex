@@ -20,7 +20,7 @@ function flat(s: string): string {
  * per-phase deep verification — and the model never owns it.
  */
 describe('iterationPrompt — runner-executed verification (both commands set)', () => {
-	const prompt = flat(iterationPrompt('npm run lint', 'npm test'));
+	const prompt = flat(iterationPrompt('npm run lint', 'npm test', 'plan/x/'));
 
 	it('names the step check and who runs it', () => {
 		expect(prompt).toContain('`npm run lint`');
@@ -45,7 +45,7 @@ describe('iterationPrompt — runner-executed verification (both commands set)',
 });
 
 describe('iterationPrompt — no commands settled (bounded self-judgment fallback)', () => {
-	const prompt = flat(iterationPrompt(null, null));
+	const prompt = flat(iterationPrompt(null, null, 'plan/x/'));
 
 	it('still requires verification', () => {
 		expect(prompt).toContain('Unverified ≠ done');
@@ -75,15 +75,25 @@ describe('iterationPrompt — no commands settled (bounded self-judgment fallbac
 
 describe('iterationPrompt — invariants across branches', () => {
 	for (const [label, prompt] of [
-		['both commands', iterationPrompt('lint', 'test')],
-		['step check only', iterationPrompt('lint', null)],
-		['no commands', iterationPrompt(null, null)]
+		['both commands', iterationPrompt('lint', 'test', 'plan/x/')],
+		['step check only', iterationPrompt('lint', null, 'plan/x/')],
+		['no commands', iterationPrompt(null, null, 'plan/x/')]
 	] as const) {
 		it(`${label}: keeps the runner's ownership rules intact`, () => {
 			const f = flat(prompt);
 			expect(f).toContain('Do NOT run git commit');
-			expect(f).toContain('Do NOT edit TODO-coding.md');
 			expect(f).toContain('submit_iteration_result');
+		});
+
+		it(`${label}: references plan files by their FULL plan-dir path`, () => {
+			// A run failed to find TODO-coding.md because the prompt referenced
+			// bare filenames — the model read them at the project root, got "Not
+			// a file", and burned turns globbing for the real locations.
+			const f = flat(prompt);
+			expect(f).toContain('`plan/x/TODO-coding.md`');
+			expect(f).toContain('`plan/x/PROGRESS-coding.md`');
+			expect(f).toContain('`plan/x/DECISIONS-coding.md`');
+			expect(f).not.toMatch(/[^/]\bTODO-coding\.md/);
 		});
 
 		it(`${label}: numbers the rules 1-7 with no gaps`, () => {

@@ -432,7 +432,15 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			});
 
 			const headBefore = await gitHead(ctx);
-			const result = await runIterationTurn(ctx, cmds.step, cmds.phase, plan, target, recentNotes);
+			const result = await runIterationTurn(
+				ctx,
+				planDir,
+				cmds.step,
+				cmds.phase,
+				plan,
+				target,
+				recentNotes
+			);
 			abortIfCancelled();
 
 			let { status, note } = result;
@@ -642,6 +650,7 @@ async function obtainTaskList(
 /** One fresh-context coding iteration; the result is forced + captured. */
 async function runIterationTurn(
 	ctx: JobRunContext,
+	planDir: string,
 	stepCheckCommand: string | null,
 	phaseVerifyCommand: string | null,
 	plan: LoopPlan,
@@ -671,7 +680,7 @@ async function runIterationTurn(
 		contextSize: ctx.contextSize(),
 		visionSupported: ctx.visionSupported(),
 		maxIterations: ITERATION_MAX_TURNS,
-		systemPrompt: iterationPrompt(stepCheckCommand, phaseVerifyCommand),
+		systemPrompt: iterationPrompt(stepCheckCommand, phaseVerifyCommand, planDir),
 		toolAllowlist: LOOP_TOOLS,
 		forceFinalTool: SUBMIT_ITERATION_RESULT_TOOL,
 		...base,
@@ -874,7 +883,7 @@ async function tryParsePlanDir(ctx: JobRunContext, planDir: string): Promise<Loo
 		if (content === null) return null;
 		files.push({ name, content });
 	}
-	return parseGuidedPlan(files);
+	return parseGuidedPlan(files, planDir);
 }
 
 /**

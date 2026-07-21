@@ -730,6 +730,17 @@ export async function runIteration(
 		response.reasoning_details
 	);
 	state.allWebReadsBlocked = allWebReadsBlocked;
+	// The forced-final tool IS the turn's terminus: its arguments are the
+	// result, and the contract every caller states is "call it exactly once,
+	// at the end". End the turn the moment the model calls it — without this,
+	// nothing stops the model after submitting, and a model that doesn't fall
+	// silent on its own keeps working and re-submitting (observed: ~20
+	// submit_iteration_result calls in one coding iteration before the user
+	// cancelled the run).
+	if (ctx.forceFinalTool && toolCalls.some((c) => c.name === ctx.forceFinalTool)) {
+		ctx.options.onComplete();
+		return 'complete';
+	}
 	// Break out of a no-progress loop (same command re-run repeatedly) instead
 	// of cycling to the iteration cap; the final-synthesis path then wraps up.
 	if (nudges.shouldStopForCommandRepeat()) {
