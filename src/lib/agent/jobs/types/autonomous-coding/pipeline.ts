@@ -22,11 +22,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import {
-	setStepResultHandler,
 	SUBMIT_ITERATION_RESULT_TOOL,
 	SUBMIT_PHASE_RESULT_TOOL,
 	SUBMIT_PREFLIGHT_TOOL,
-	SUBMIT_STEP_RESULT_TOOL,
 	SUBMIT_TASK_LIST_TOOL,
 	type IterationResultArg,
 	type PreflightResultArg
@@ -48,6 +46,7 @@ import {
 	clipNote,
 	ensurePhased,
 	markDone,
+	markPhaseItemsDone,
 	nextActionable,
 	normalizeTaskListPlan,
 	parseTodoPlan,
@@ -131,7 +130,6 @@ const PHASE_LOOP_TOOLS = [
 	'run_command',
 	'web_search',
 	'research_url',
-	SUBMIT_STEP_RESULT_TOOL,
 	SUBMIT_PHASE_RESULT_TOOL
 ];
 
@@ -404,10 +402,6 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			return cmds;
 		};
 
-		// Phases that fell back to per-step turns after a no-progress phase turn,
-		// so a model that bails out of continuous mode cannot loop forever.
-		const phaseStepFallback = new Set<string>();
-
 		ctx.patchStep(LOOP, { checklist: toChecklist(plan.items, null, maxAttempts) });
 		for (;;) {
 			abortIfCancelled();
@@ -425,12 +419,20 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				abortIfCancelled();
 				if (v.passed) {
 					plan = setPhaseVerify(plan, phase.id, 'passed');
-					await record(`## Phase ${phase.id} — ${phase.title}: verification PASSED\n`);
+					const c = await commitPhaseOutcome(ctx, phase, true, signingFallback);
+					await record(
+						`## Phase ${phase.id} — ${phase.title}: verification PASSED` +
+							`${c.committed ? ' — phase committed' : ''}\n`
+					);
 				} else if (phase.repairs >= MAX_PHASE_REPAIR_CYCLES) {
 					plan = setPhaseVerify(plan, phase.id, 'blocked');
+					// Commit the unverified work anyway, loudly marked: losing it
+					// would be worse, and the history stays honest.
+					const c = await commitPhaseOutcome(ctx, phase, false, signingFallback);
 					await record(
 						`## Phase ${phase.id} — ${phase.title}: verification still failing after ` +
-							`${MAX_PHASE_REPAIR_CYCLES} repair cycle(s) — phase BLOCKED\n\n${clipNote(v.output, 3000)}\n`
+							`${MAX_PHASE_REPAIR_CYCLES} repair cycle(s) — phase BLOCKED` +
+							`${c.committed ? ' (work committed, marked UNVERIFIED)' : ''}\n\n${clipNote(v.output, 3000)}\n`
 					);
 				} else {
 					const r = beginRepairCycle(plan, phase.id, v.output);
@@ -446,33 +448,18 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 
 			const target = nextActionable(plan.items);
 			if (!target) break;
-			if (
-				cfg.context_mode === 'phase' &&
-				!target.repair &&
-				target.phase &&
-				!phaseStepFallback.has(target.phase)
-			) {
+			if (cfg.context_mode === 'phase' && !target.repair && target.phase) {
 				await runPhaseContextTurn(
 					{
 						ctx,
 						planDir,
-						maxAttempts,
-						signingFallback,
 						getPlan: () => plan,
 						setPlan: (p) => {
 							plan = p;
 						},
 						currentCommands,
 						record,
-						nextIteration: () => ++iteration,
-						abortIfCancelled,
-						markNoProgress: async (phaseId, unfinished) => {
-							phaseStepFallback.add(phaseId);
-							await record(
-								`## Phase ${phaseId}: continuous-context turn ended with ${unfinished} ` +
-									`unfinished item(s) — handing this phase to per-step iterations.\n`
-							);
-						}
+						abortIfCancelled
 					},
 					target.phase
 				);
@@ -721,164 +708,91 @@ function formatCommandChange(
 	return lines.length > 0 ? lines.join('\n') : null;
 }
 
+/**
+ * Commit whatever the phase left staged-able, as a unit, on its verification
+ * outcome. In phase-context mode this IS the phase's commit (the build turn
+ * commits nothing); in per-step mode the work is already committed per item
+ * and this quietly picks up strays (repair leftovers), or does nothing.
+ */
+async function commitPhaseOutcome(
+	ctx: JobRunContext,
+	phase: { id: string; title: string },
+	verified: boolean,
+	fallback: SigningFallback
+): Promise<{ committed: boolean }> {
+	await execInWorkdir(ctx, 'git add -A');
+	const staged = (await execInWorkdir(ctx, 'git diff --cached --quiet')).exit_code !== 0;
+	if (!staged) return { committed: false };
+	const marker = verified ? '' : ' [UNVERIFIED — phase verification failed]';
+	const c = await gitCommit(ctx, `feat: Phase ${phase.id} — ${phase.title}${marker}`, fallback);
+	return { committed: c.committed };
+}
+
 /** Everything a phase-context turn needs from the running pipeline. */
 export interface PhaseTurnDeps {
 	ctx: JobRunContext;
 	planDir: string;
-	maxAttempts: number;
-	signingFallback: SigningFallback;
 	getPlan: () => LoopPlan;
 	setPlan: (p: LoopPlan) => void;
 	currentCommands: () => Promise<{ step: string | null; phase: string | null }>;
 	record: (entry: string, clipped?: string) => Promise<void>;
-	nextIteration: () => number;
 	abortIfCancelled: () => void;
-	markNoProgress: (phaseId: string, unfinished: number) => Promise<void>;
 }
 
 /**
- * Runner-side settlement of a phase-turn step report: run the step check, then
- * commit — downgrading "done" to "failed" when either disproves the claim.
- */
-async function settleStepReport(
-	deps: PhaseTurnDeps,
-	target: TaskItem,
-	arg: { status: 'done' | 'failed'; note: string }
-): Promise<{ status: 'done' | 'failed'; note: string }> {
-	let { status } = arg;
-	let note = arg.note;
-	const fresh = await deps.currentCommands();
-	if (status === 'done' && fresh.step) {
-		const check = await runCheckCommand(deps.ctx, fresh.step);
-		if (!check.passed) {
-			status = 'failed';
-			note = `Step check failed (\`${fresh.step}\`).\n\n${clipNote(check.output, 3000)}\n\nOriginal note: ${note}`;
-		}
-	}
-	if (status === 'done') {
-		const headBefore = await gitHead(deps.ctx);
-		const commit = await commitStepWork(
-			deps.ctx,
-			target,
-			deps.getPlan().items.length,
-			headBefore,
-			deps.signingFallback
-		);
-		if (!commit.changed) {
-			status = 'failed';
-			note = `Claimed done but changed nothing (no diff, no new commit). Original note: ${note}`;
-		}
-	}
-	return { status, note };
-}
-
-/**
- * The submit_step_result handler for ONE phase-context turn: the runner does
- * its per-step work MID-TURN — step check, commit, TODO/PROGRESS update — and
- * the returned string lands in the model's context as the tool result, so a
- * failed check is fixed in-context instead of by a fresh-context retry.
- */
-export function makePhaseStepHandler(deps: PhaseTurnDeps, phaseId: string) {
-	const remaining = () =>
-		deps.getPlan().items.filter((i) => i.phase === phaseId && i.status === 'todo');
-	return async (arg: { item_id: string; status: 'done' | 'failed'; note: string }) => {
-		deps.abortIfCancelled();
-		const target = remaining()[0] ?? null;
-		if (!target) {
-			return 'All items in this phase are already reported — call submit_phase_result now.';
-		}
-		if (arg.item_id !== target.id) {
-			// Recorded: a run's phase turn once ended with zero visible settles,
-			// leaving no trace of WHY nothing landed.
-			await deps.record(
-				`## Phase ${phaseId} turn: out-of-order report for ${arg.item_id} ` +
-					`(expected ${target.id}) — redirected.\n`
-			);
-			return `Work items in order: the next item is ${target.id}. ${target.title}. Report that one.`;
-		}
-		const iteration = deps.nextIteration();
-		const settled = await settleStepReport(deps, target, arg);
-		const { status, note } = settled;
-		if (status === 'done') {
-			deps.setPlan({ ...deps.getPlan(), items: markDone(deps.getPlan().items, target.id) });
-		}
-		// A failed settle leaves the item todo with NO attempt charged: in a
-		// continuous context the fix-and-re-report cycle IS the retry mechanism,
-		// and it is bounded by the turn budget — not by per-item attempts, which
-		// belong to per-step mode. A garbage step check once blocked three items
-		// in a row at 3 "attempts" each while the model's work was fine.
-
-		await deps.record(
-			`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${note.trim()}\n`,
-			`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${clipNote(note)}\n`
-		);
-		const next = remaining()[0] ?? null;
-		deps.ctx.patchStep(LOOP, {
-			streaming: `Phase ${phaseId} (continuous) — ${next ? `next: ${next.id}. ${next.title}` : 'wrapping up'}`,
-			checklist: toChecklist(deps.getPlan().items, next?.id ?? null, deps.maxAttempts)
-		});
-		if (status !== 'done') {
-			return (
-				`Recorded ${target.id} as failed — it stays the CURRENT item. Fix the cause and ` +
-				`report it again (details above in this reply). If you are genuinely stuck on it, ` +
-				`call submit_phase_result and the runner will hand the rest of the phase to ` +
-				`per-step iterations.`
-			);
-		}
-		return next
-			? `Committed ${target.id}. NEXT item: ${next.id}. ${next.title} — implement it, then report it.`
-			: `Committed ${target.id}. That was the phase's last actionable item — call submit_phase_result now.`;
-	};
-}
-
-/**
- * Phase-context mode: ONE continuous turn implements the phase's remaining
- * items, with per-step commits, attempt bounds and phase verification
- * identical to per-step mode — only the context strategy differs. A turn that
- * moves nothing hands the phase to per-step mode via markNoProgress, so a
- * bailing model cannot loop forever.
+ * Phase-context mode: ONE continuous turn builds the whole phase — no
+ * per-item checks or reports (an earlier step-report protocol interleaved
+ * bookkeeping with building and real models treated it as an obstacle; it
+ * failed twice). When the turn ends, every item of the phase is marked done
+ * ("the work happened") and the SHARED verification machinery takes over:
+ * phaseNeedingVerify fires, the runner runs the verification command, repair
+ * cycles backstop failures, and the phase is committed as a unit on its
+ * verification outcome.
  */
 async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promise<void> {
 	const phase = deps.getPlan().phases.find((p) => p.id === phaseId);
-	const remaining = () =>
-		deps.getPlan().items.filter((i) => i.phase === phaseId && i.status === 'todo');
-	const before = remaining().length;
+	const items = deps.getPlan().items.filter((i) => i.phase === phaseId && i.status === 'todo');
 	const cmds = await deps.currentCommands();
-	const list = remaining()
+	const list = items
 		.map((i) => `- ${i.id}. ${i.title}\n  ${i.description.replace(/\n/g, ' ')}`)
 		.join('\n');
 	const userMessage = [
-		`Implement the remaining items of Phase ${phaseId} — ${phase?.title ?? ''}, in order:`,
+		`Implement ALL of Phase ${phaseId} — ${phase?.title ?? ''}:`,
 		'',
 		list,
 		'',
-		'Current checklist:',
-		'```markdown',
-		renderOverview(deps.getPlan().items),
-		'```'
+		cmds.phase
+			? `The runner will verify the phase with: \`${cmds.phase}\``
+			: 'No verification command is configured for this run.'
 	].join('\n');
 
-	setStepResultHandler(makePhaseStepHandler(deps, phaseId));
-	try {
-		await deps.ctx.runJobTurn({
-			userMessage,
-			contextSize: deps.ctx.contextSize(),
-			visionSupported: deps.ctx.visionSupported(),
-			maxIterations: Math.min(400, 40 + before * 20),
-			systemPrompt: phaseTurnPrompt(cmds.step, cmds.phase, deps.planDir),
-			toolAllowlist: PHASE_LOOP_TOOLS,
-			forceFinalTool: SUBMIT_PHASE_RESULT_TOOL,
-			...deps.ctx.buildStreamCallbacks(LOOP)
-		});
-	} finally {
-		setStepResultHandler(null);
-	}
-	// ONE continuous shot per phase: anything still unfinished is handed to
-	// per-step iterations, which carry real attempt accounting. Re-running an
-	// identical continuous turn would just replay the same conversation.
-	if (remaining().length > 0) {
-		await deps.markNoProgress(phaseId, remaining().length);
-	}
+	let phaseNote = '';
+	const base = deps.ctx.buildStreamCallbacks(LOOP);
+	deps.ctx.patchStep(LOOP, {
+		streaming: `Phase ${phaseId} — ${phase?.title ?? ''} (continuous build)`
+	});
+	await deps.ctx.runJobTurn({
+		userMessage,
+		contextSize: deps.ctx.contextSize(),
+		visionSupported: deps.ctx.visionSupported(),
+		maxIterations: Math.min(400, 40 + items.length * 20),
+		systemPrompt: phaseTurnPrompt(cmds.phase, deps.planDir),
+		toolAllowlist: PHASE_LOOP_TOOLS,
+		forceFinalTool: SUBMIT_PHASE_RESULT_TOOL,
+		...base,
+		onToolStart: (call: ResolvedToolCall) => {
+			if (call.name === SUBMIT_PHASE_RESULT_TOOL && typeof call.arguments?.note === 'string') {
+				phaseNote = call.arguments.note;
+			}
+			base.onToolStart?.(call);
+		}
+	});
+	deps.setPlan(markPhaseItemsDone(deps.getPlan(), phaseId));
+	await deps.record(
+		`## Phase ${phaseId} — ${phase?.title ?? ''}: build turn finished\n\n${clipNote(
+			phaseNote || '(no summary given)'
+		)}\n`
+	);
 }
 
 /** One fresh-context coding iteration; the result is forced + captured. */

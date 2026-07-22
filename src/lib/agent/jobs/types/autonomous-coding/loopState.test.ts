@@ -168,6 +168,7 @@ describe('prompt-size bounding', () => {
 
 import {
 	beginRepairCycle,
+	markPhaseItemsDone,
 	parseTodoPlan,
 	phaseNeedingVerify,
 	renderTodoPlan,
@@ -325,5 +326,15 @@ describe('beginRepairCycle', () => {
 	it('clips a runaway failure output', () => {
 		const { item } = beginRepairCycle(planFixture(), '01', 'x'.repeat(20_000));
 		expect(item.description.length).toBeLessThan(4000);
+	});
+});
+
+describe('markPhaseItemsDone', () => {
+	it("transitions only the phase's todo items, leaving blocked ones alone", () => {
+		const p = planFixture();
+		p.items[1].status = 'blocked';
+		p.items[0].status = 'todo';
+		const out = markPhaseItemsDone(p, '01');
+		expect(out.items.map((i) => i.status)).toEqual(['done', 'blocked', 'todo']);
 	});
 });

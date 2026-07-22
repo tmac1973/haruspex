@@ -247,6 +247,20 @@ export function nextActionable(items: TaskItem[]): TaskItem | null {
 	return items.find((i) => i.status === 'todo') ?? null;
 }
 
+/**
+ * Mark every item of a phase done — phase-context mode's bulk transition when
+ * its build turn ends. "Done" records that the work happened; whether it
+ * WORKS is the phase's `verify` status, settled by verification afterwards.
+ */
+export function markPhaseItemsDone(plan: LoopPlan, phaseId: string): LoopPlan {
+	return {
+		...plan,
+		items: plan.items.map((i) =>
+			i.phase === phaseId && i.status === 'todo' ? { ...i, status: 'done' as TaskStatus } : i
+		)
+	};
+}
+
 /** Mark an item done (attempts kept as a record of how hard it was). */
 export function markDone(items: TaskItem[], id: string): TaskItem[] {
 	return items.map((i) => (i.id === id ? { ...i, status: 'done' as TaskStatus } : i));

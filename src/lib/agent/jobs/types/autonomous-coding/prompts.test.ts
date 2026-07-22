@@ -220,31 +220,38 @@ describe('decomposePrompt — anchoring granularity to the plan', () => {
 	});
 });
 
-describe('phaseTurnPrompt — continuous context, runner-owned ground truth', () => {
-	const prompt = flat(phaseTurnPrompt('npm run lint', 'npm test', 'plan/x/'));
+describe('phaseTurnPrompt — build whole phase, runner verifies and commits', () => {
+	const prompt = flat(phaseTurnPrompt('npm test', 'plan/x/'));
 
-	it('requires reporting each item and waiting for the reply', () => {
-		expect(prompt).toContain('one at a time');
-		expect(prompt).toContain('`submit_step_result`');
-		expect(prompt).toContain('WAIT for the reply');
+	it('says build everything with no per-item reporting', () => {
+		// The step-report protocol interleaved bookkeeping with building and
+		// real models treated it as an obstacle — it failed on two runs.
+		expect(prompt).toContain("Implement ALL of the phase's items");
+		expect(prompt).toContain('No per-item reporting');
+	});
+
+	it('tells the model to run the verification itself and fix failures first', () => {
+		expect(prompt).toContain('run `npm test` yourself');
+		expect(prompt).toContain('FIX whatever fails until it passes');
+		expect(prompt).toContain('come back as repair turns');
 	});
 
 	it('keeps the runner in charge of commits and the TODO files', () => {
 		expect(prompt).toContain('Do NOT run git commit');
+		expect(prompt).toContain('commits the phase as a unit');
 		expect(prompt).toContain('`plan/x/TODO-coding.md`');
 	});
 
-	it('tells the model not to re-read what its context already holds', () => {
-		// The whole point of the mode: the re-grounding cost per item goes away.
-		expect(prompt).toContain('do NOT re-read files you have already seen');
+	it('forbids bespoke validation machinery', () => {
+		expect(prompt).toContain('Do not write validation scripts');
 	});
 
 	it('ends the turn via submit_phase_result', () => {
 		expect(prompt).toContain('`submit_phase_result`');
 	});
 
-	it('carries the same runner-executed verification rules as per-step mode', () => {
-		expect(prompt).toContain("Verification is the RUNNER's job");
-		expect(prompt).toContain('`npm run lint`');
+	it('degrades honestly when no verification command exists', () => {
+		const bare = flat(phaseTurnPrompt(null, 'plan/x/'));
+		expect(bare).toContain('your own check is the only one');
 	});
 });

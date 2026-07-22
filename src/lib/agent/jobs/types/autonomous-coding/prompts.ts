@@ -215,45 +215,47 @@ export function iterationPrompt(
 
 /**
  * Phase-context turn: one continuous context implements a whole plan phase,
- * item by item. The runner stays in charge of the ground truth mid-turn — the
- * submit_step_result executor runs the step check, commits, and updates
- * TODO/PROGRESS, and its reply tells the model whether the item landed and
- * what to work on next. Per-step commits and phase verification are identical
- * to per-step mode; only the context strategy differs.
+ * then the RUNNER verifies and commits it as a unit. No per-item checks, no
+ * per-item reporting — an earlier protocol that interleaved bookkeeping with
+ * building was treated by real models as an obstacle and failed twice. The
+ * model is told to run the phase verification itself and fix failures
+ * in-context before finishing; the runner re-verifies afterwards and only
+ * commits a verified phase (repair cycles are the backstop).
  */
-export function phaseTurnPrompt(
-	stepCheckCommand: string | null,
-	phaseVerifyCommand: string | null,
-	planDir: string
-): string {
+export function phaseTurnPrompt(phaseVerifyCommand: string | null, planDir: string): string {
 	return [
 		'You are implementing ONE PHASE of an unattended coding run, in a single',
 		'continuous session. There is NO human available — never ask questions;',
-		'make the call yourself using the plan files in ' + `\`${planDir}\`` + ',',
-		`\`${planDir}DECISIONS-coding.md\`, and the notes, and record it in your`,
-		'step notes. All plan files live under ' + `\`${planDir}\`` + ' — use that',
-		'prefix when reading them.',
+		'make the call yourself using the plan files in ' + `\`${planDir}\`` + ' and',
+		`\`${planDir}DECISIONS-coding.md\`, and note it in your summary. All plan`,
+		'files live under ' + `\`${planDir}\`` + ' — use that prefix when reading them.',
 		'',
 		'Rules:',
-		"1. Work the phase's items STRICTLY IN THE ORDER GIVEN, one at a time.",
-		'   Implement exactly one item, then call `submit_step_result` for it and',
-		'   WAIT for the reply before touching the next item. The runner checks and',
-		'   commits your work at each report — the reply says whether it landed,',
-		'   what to fix if it did not, and which item is next.',
+		"1. Implement ALL of the phase's items, in the order given. No per-item",
+		'   reporting — just build the phase.',
 		'2. Read before you write. You keep your context for the whole phase, so do',
 		'   NOT re-read files you have already seen and that have not changed.',
-		...verifyRule(stepCheckCommand, phaseVerifyCommand),
+		...(phaseVerifyCommand
+			? [
+					`3. Before finishing, run \`${phaseVerifyCommand}\` yourself (run_command)`,
+					'   and FIX whatever fails until it passes. The runner re-runs exactly',
+					'   that command after you finish and will not commit the phase until it',
+					'   passes — failures you leave behind come back as repair turns.'
+				]
+			: [
+					'3. Before finishing, sanity-check your work (run_command): build or run',
+					'   what you changed. No verification command is configured, so your own',
+					'   check is the only one.'
+				]),
 		'4. Do NOT run git commit, git init, or any history-rewriting command — the',
-		'   runner commits after each verified step, via your submit_step_result.',
+		'   runner commits the phase as a unit once it verifies.',
 		`5. Do NOT edit \`${planDir}TODO-coding.md\` or \`${planDir}PROGRESS-coding.md\``,
 		'   — the runner owns them.',
-		'6. If an item cannot proceed, report it "failed" with a diagnostic note. It',
-		'   stays the current item — fix it and report again; the turn budget, not',
-		'   an attempt counter, bounds you. Genuinely stuck: call',
-		'   `submit_phase_result` and the runner hands the rest to per-step mode.',
-		'7. When the reply to your last report says the phase is complete — or you',
-		'   genuinely cannot progress — call `submit_phase_result` exactly once and',
-		'   stop.'
+		'6. Do not write validation scripts or test harnesses; verification is the',
+		'   recorded command, nothing else.',
+		'7. When the phase is implemented and verification passes — or you are',
+		'   genuinely stuck — call `submit_phase_result` exactly once with a summary',
+		'   and stop.'
 	].join('\n');
 }
 
