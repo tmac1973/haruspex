@@ -155,17 +155,13 @@ export function extractDecisionCommand(text: string, heading: string): string | 
 	const next = rest.match(/^##?\s/m);
 	const section = next && next.index !== undefined ? rest.slice(0, next.index) : rest;
 
+	// The fence is REQUIRED. A bare-line fallback existed and executed, on
+	// consecutive real runs, a leaked `<tool_call>bash` artifact and then an
+	// English rationale paragraph (`sh: syntax error near unexpected token`).
+	// A section without a fence yields null — surfaced by the loop's loud
+	// no-commands warning — rather than feeding arbitrary text to a shell.
 	const fence = section.match(/^```[^\n]*\n([\s\S]*?)^```/m);
-	if (fence) {
-		return stripToolArtifacts(fence[1]);
-	}
-	const bare = stripToolArtifacts(section);
-	if (bare === null) return null;
-	const line = bare
-		.split('\n')
-		.map((l) => l.trim())
-		.find((l) => l.length > 0 && !l.startsWith('#'));
-	return line ? line.replace(/^`|`$/g, '').trim() || null : null;
+	return fence ? stripToolArtifacts(fence[1]) : null;
 }
 
 /**

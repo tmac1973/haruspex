@@ -63,12 +63,15 @@ beforeEach(() => {
 
 describe('makePhaseStepHandler', () => {
 	it('enforces in-order reporting without charging anything', async () => {
-		const { deps, plan: current } = makeDeps(plan());
+		const { deps, plan: current, recorded } = makeDeps(plan());
 		const handler = makePhaseStepHandler(deps, '01');
 		const reply = await handler({ item_id: '02', status: 'done', note: 'skipped ahead' });
 		expect(reply).toContain('the next item is 01');
 		expect(current().items[0].status).toBe('todo');
 		expect(mocks.invoke).not.toHaveBeenCalled();
+		// Visible in PROGRESS: a real phase turn once ended with zero visible
+		// settles and no trace of why nothing had landed.
+		expect(recorded.join('\n')).toContain('out-of-order report for 02');
 	});
 
 	it('keeps a failed item as the CURRENT item, todo, with no attempt charged', async () => {

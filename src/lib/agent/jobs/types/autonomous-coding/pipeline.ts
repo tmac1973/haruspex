@@ -788,6 +788,12 @@ export function makePhaseStepHandler(deps: PhaseTurnDeps, phaseId: string) {
 			return 'All items in this phase are already reported — call submit_phase_result now.';
 		}
 		if (arg.item_id !== target.id) {
+			// Recorded: a run's phase turn once ended with zero visible settles,
+			// leaving no trace of WHY nothing landed.
+			await deps.record(
+				`## Phase ${phaseId} turn: out-of-order report for ${arg.item_id} ` +
+					`(expected ${target.id}) — redirected.\n`
+			);
 			return `Work items in order: the next item is ${target.id}. ${target.title}. Report that one.`;
 		}
 		const iteration = deps.nextIteration();

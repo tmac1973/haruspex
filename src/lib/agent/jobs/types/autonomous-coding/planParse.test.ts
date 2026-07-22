@@ -236,9 +236,15 @@ describe('extractDecisionCommand', () => {
 		expect(extractDecisionCommand(decisions, 'Step check command')).not.toContain('npm test');
 	});
 
-	it('falls back to a bare or inline-code line when there is no fence', () => {
+	it('returns null when there is no fence — bare text is never executed', () => {
+		// The bare-line fallback executed, on consecutive real runs, a leaked
+		// `<tool_call>bash` artifact and then an English rationale paragraph
+		// (`sh: syntax error near unexpected token`). No fence, no command.
 		const noFence = '## Verification command\n\n`pytest -q`\n';
-		expect(extractDecisionCommand(noFence, 'Verification command')).toBe('pytest -q');
+		expect(extractDecisionCommand(noFence, 'Verification command')).toBeNull();
+		const prose =
+			'## Step check command\n\nThe project is a single vanilla HTML/JS file with no build tools.\n';
+		expect(extractDecisionCommand(prose, 'Step check command')).toBeNull();
 	});
 
 	it('returns null for a missing section or an empty one', () => {
@@ -250,7 +256,7 @@ describe('extractDecisionCommand', () => {
 		expect(extractDecisionCommand(decisions, 'step check COMMAND')).toBe('npm run lint');
 	});
 
-	it('strips leaked tool-call artifact lines and keeps the real command', () => {
+	it('unfenced artifact leakage yields null, never execution', () => {
 		// Byte-for-byte the failure from a real run: no fence, and the model's
 		// tool-call wrapper written as literal text on the line above the actual
 		// command. The runner executed `<tool_call>bash` — every step check died
@@ -262,9 +268,7 @@ describe('extractDecisionCommand', () => {
 			'<tool_call>bash',
 			"node -e \"new Function(require('fs').readFileSync('index.html','utf8'))\""
 		].join('\n');
-		const cmd = extractDecisionCommand(leaked, 'Step check command');
-		expect(cmd).not.toContain('<tool_call');
-		expect(cmd).toContain('node -e');
+		expect(extractDecisionCommand(leaked, 'Step check command')).toBeNull();
 	});
 
 	it('strips artifacts inside a fenced block too', () => {
