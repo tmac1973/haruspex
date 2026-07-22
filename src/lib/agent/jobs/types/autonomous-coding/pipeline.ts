@@ -284,7 +284,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			),
 			toolAllowlist: PREFLIGHT_TOOLS,
 			what: 'decisions file',
-			abortIfCancelled
+			abortIfCancelled,
+			mayAskUser: true
 		});
 		finishStep(
 			PREFLIGHT,
@@ -921,6 +922,15 @@ async function ensureFileWritten(
 		toolAllowlist: string[];
 		what: string;
 		abortIfCancelled: () => void;
+		/**
+		 * The retry turn may ask the user questions. True for the PREFLIGHT
+		 * decisions file — the user is by definition present during preflight,
+		 * and its system prompt requires resolving open decisions before
+		 * writing; without this the retry turn inherited that prompt and the
+		 * ask_user_question tool but not interactivity, and a real run died on
+		 * "No interactive user is available" mid-interview.
+		 */
+		mayAskUser?: boolean;
 	}
 ): Promise<void> {
 	const exists = async (): Promise<boolean> => {
@@ -940,11 +950,16 @@ async function ensureFileWritten(
 		await ctx.runJobTurn({
 			userMessage:
 				`I don't see ${opts.relPath} on disk yet — you may have described writing it ` +
-				`without actually calling fs_write_text. Do NOT do anything else; write the ` +
-				`${opts.what} to ${opts.relPath} now with fs_write_text, then stop.`,
+				`without actually calling fs_write_text. ` +
+				(opts.mayAskUser
+					? `If a decision is still unresolved, ask the user now (ask_user_question), ` +
+						`then write the ${opts.what} to ${opts.relPath} with fs_write_text and stop.`
+					: `Do NOT do anything else; write the ${opts.what} to ${opts.relPath} now ` +
+						`with fs_write_text, then stop.`),
 			contextSize: ctx.contextSize(),
 			visionSupported: ctx.visionSupported(),
-			maxIterations: 10,
+			maxIterations: opts.mayAskUser ? 30 : 10,
+			interactive: opts.mayAskUser ?? false,
 			writeRoot: opts.writeRoot,
 			systemPrompt: opts.systemPrompt,
 			toolAllowlist: opts.toolAllowlist,
