@@ -131,24 +131,31 @@ describe('registration barrel', () => {
 		expect(coding.configFromJob(JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 5 }))).toEqual({
 			plan_dir: 'plan/x/',
 			verify_command: '',
+			step_check_command: '',
 			max_attempts: 5,
+			context_mode: 'phase',
 			signing_fallback: 'unsigned'
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
 			verify_command: '',
+			step_check_command: '',
 			max_attempts: 3,
+			context_mode: 'phase',
 			signing_fallback: 'unsigned'
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
 			verify_command: '',
+			step_check_command: '',
 			max_attempts: 3,
+			context_mode: 'phase',
 			signing_fallback: 'skip'
 		});
 		expect(JSON.parse(json!)).toEqual({
 			plan_dir: 'plan/x/',
 			max_attempts: 3,
+			context_mode: 'phase',
 			signing_fallback: 'skip'
 		});
 

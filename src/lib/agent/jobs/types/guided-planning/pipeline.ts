@@ -21,6 +21,7 @@ import {
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
 import { parseGuidedPlanningConfig, type GuidedPlanningConfig } from './config';
+import { VERIFICATION_COMMAND_HEADING } from '../autonomous-coding/planParse';
 
 /**
  * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at
@@ -124,13 +125,25 @@ function overviewStagePrompt(outDir: string, overviewPath: string): string {
 		'   their own answer). Keep going until the overview is fully specified. If',
 		'   the user answers "proceed", "that\'s enough", or similar, stop asking',
 		'   immediately and write the overview from what you have.',
-		`3. Write the overview to \`${overviewPath}\` with fs_write_text, using these`,
+		'3. Settle HOW THE IMPLEMENTATION WILL BE VERIFIED. You know the tech stack',
+		'   this plan chooses — the user may not, so PROPOSE a concrete shell command',
+		'   and confirm it with ONE question (recommended option first). It must be a',
+		'   real runnable command, not instructions or prose: the autonomous coding',
+		'   runner executes it mechanically when each implementation phase completes.',
+		'   Prefer the cheapest check that catches real breakage for this stack: the',
+		'   test suite the plan sets up, else a build/typecheck/syntax check; for a',
+		'   browser app a headless DOM smoke check beats a bare syntax parse. It must',
+		'   be READ-ONLY, fast, idempotent, and phase-agnostic (no `git`, no',
+		'   installs, no servers, no inline `-c "…"` program strings).',
+		`4. Write the overview to \`${overviewPath}\` with fs_write_text, using these`,
 		'   sections exactly: a top "# <Project> — Project Overview" heading, then',
 		'   ## Problem, ## Goals, ## Non-goals, ## Users & primary flow,',
-		'   ## Constraints, ## Success criteria, and finally ## Decisions — a list of',
-		'   each question you asked and the answer the user chose. Write ONLY inside',
-		`   \`${outDir}\` — never elsewhere, never code.`,
-		'4. Send a one-line summary naming the file you wrote, then stop. Do NOT start',
+		`   ## Constraints, ## Success criteria, then ## ${VERIFICATION_COMMAND_HEADING} — ONE`,
+		'   fenced code block whose only content is the command from step 3 (the',
+		'   coding runner parses this section mechanically) — and finally',
+		'   ## Decisions — a list of each question you asked and the answer the user',
+		`   chose. Write ONLY inside \`${outDir}\` — never elsewhere, never code.`,
+		'5. Send a one-line summary naming the file you wrote, then stop. Do NOT start',
 		'   the implementation plan — that is stage 2, after the user reviews this.'
 	].join('\n');
 }
@@ -218,7 +231,17 @@ function phaseWritePrompt(outDir: string, overviewPath: string): string {
 		'sections: a "# Phase NN — <title>" heading, a "Depends on:" / "Enables:" line,',
 		'then ## Goal, ## Files touched, ## Steps, ## Build gate, ## Test plan,',
 		'## Commit, ## Rollback. Resolve every decision in the text — never "TBD" or',
-		`"decide later". Write ONLY that one file, inside \`${outDir}\`. Then stop.`
+		'"decide later".',
+		'',
+		'Steps are IMPLEMENTATION actions only — things that create or change the',
+		'product. Never write a step like "Validate X", "Test Y in the browser", or',
+		'"Verify Z works": verification belongs in ## Build gate (the checks that',
+		'must pass) and ## Test plan (how a human confirms it). An autonomous run',
+		'executes Steps literally — a "validate manually in a browser" step once sent',
+		'one off installing headless-browser packages and embedding a 50-test harness',
+		'into the shipped product file.',
+		'',
+		`Write ONLY that one file, inside \`${outDir}\`. Then stop.`
 	].join('\n');
 }
 
@@ -452,15 +475,14 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	/**
 	 * Read a workdir file for validation, or null if it can't be read.
 	 *
-	 * No `limit`: the gate has to see the END of the file to notice a missing
-	 * tail, and a windowed read would make tail truncation invisible by
-	 * construction. Phase files run 13-20 KB, well inside the read path's own
-	 * size cap.
+	 * Full-fidelity read: the gate has to see the END of the file to notice a
+	 * missing tail, and a windowed read (fs_read_text defaults to 2000 lines)
+	 * would make tail truncation invisible by construction.
 	 */
 	const readWorkdirFile = async (relPath: string): Promise<string | null> => {
 		if (!job.working_dir) return null;
 		try {
-			return await invoke<string>('fs_read_text', {
+			return await invoke<string>('fs_read_text_full', {
 				workdir: job.working_dir,
 				relPath
 			});

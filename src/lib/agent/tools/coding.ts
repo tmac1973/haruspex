@@ -74,6 +74,11 @@ export interface TaskListItemArg {
 	title: string;
 	/** What "done" means: concrete deliverable + how to verify it. */
 	description?: string;
+	/**
+	 * Title of the phase (verification group) this step belongs to. Steps
+	 * sharing a phase are deep-verified together when the last of them lands.
+	 */
+	phase?: string;
 }
 
 registerTool({
@@ -106,6 +111,15 @@ registerTool({
 								description: {
 									type: 'string',
 									description: '1–3 sentences: the concrete deliverable and how to verify it works.'
+								},
+								phase: {
+									type: 'string',
+									description:
+										'Phase (verification group) this step belongs to, e.g. "Game engine". ' +
+										'Steps sharing a phase are deep-verified together when the last of them ' +
+										"completes. Reuse the plan's own phase titles when it has them; for an " +
+										'unphased plan, invent 3–7 coherent groups in dependency order. Give ' +
+										'EVERY step a phase.'
 								}
 							},
 							required: ['title']
@@ -122,6 +136,34 @@ registerTool({
 	},
 	async execute() {
 		return toolResult('Task list recorded.');
+	}
+});
+
+export const SUBMIT_PHASE_RESULT_TOOL = 'submit_phase_result';
+
+registerTool({
+	category: 'coding',
+	schema: {
+		type: 'function',
+		function: {
+			name: SUBMIT_PHASE_RESULT_TOOL,
+			description:
+				'End a phase-context turn. Call exactly once, at the very end — after the ' +
+				'whole phase is implemented and the verification command passes (run it ' +
+				'yourself), or when you are genuinely stuck. The note should summarise ' +
+				'what was built or say what is stuck.',
+			parameters: {
+				type: 'object',
+				properties: {
+					note: { type: 'string', description: 'One-paragraph phase summary, or what is stuck.' }
+				},
+				required: ['note']
+			}
+		}
+	},
+	displayLabel: () => 'phase turn finished',
+	async execute() {
+		return toolResult('Phase result recorded.');
 	}
 });
 

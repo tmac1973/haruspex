@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { iterationPrompt, preflightPrompt } from './prompts';
+import { decomposePrompt, iterationPrompt, phaseTurnPrompt, preflightPrompt } from './prompts';
 
 /**
  * The prompt is hard-wrapped for readability, so a phrase can straddle a line
@@ -11,38 +11,49 @@ function flat(s: string): string {
 }
 
 /**
- * These assert the *constraints* the iteration prompt places on verification,
- * not its prose. They exist because a real run (126 min, 25 iterations) left
- * behind 13 single-use verification scripts totalling ~1.5x the size of the
- * product, 21% of whose assertions matched source text the same iteration had
- * just written. The prompt is the only thing standing between a blank verify
- * command and that outcome, so the guarantees are pinned here.
+ * These pin the *constraints* the prompts express, not their prose. History
+ * that produced them: a run with no verification contract built 13 single-use
+ * scripts whose assertions string-matched their own source; after that was
+ * forbidden, the next run maintained one 271-line validator against a 93-line
+ * program, editing and re-running it every step. Verification is therefore
+ * settled once at preflight and EXECUTED BY THE RUNNER — per-step cheap check,
+ * per-phase deep verification — and the model never owns it.
  */
-describe('iterationPrompt — with a verify command', () => {
-	const prompt = flat(iterationPrompt('npm test'));
+describe('iterationPrompt — runner-executed verification (both commands set)', () => {
+	const prompt = flat(iterationPrompt('npm run lint', 'npm test', 'plan/x/'));
 
-	it('names the command and makes it the sole done criterion', () => {
-		expect(prompt).toContain('`npm test`');
-		expect(prompt).toContain('"done" ONLY');
+	it('names the step check and who runs it', () => {
+		expect(prompt).toContain('`npm run lint`');
+		expect(prompt).toContain("Verification is the RUNNER's job");
+		expect(prompt).toContain('recorded as failed');
 	});
 
-	it('directs new coverage into the existing suite rather than a new script', () => {
-		expect(prompt).toContain('do not create a separate one-off script');
+	it('says deep verification is per phase, not per item', () => {
+		expect(prompt).toContain('`npm test`');
+		expect(prompt).toContain("when the phase's last item lands");
+		expect(prompt).toContain('NOT after every item');
+	});
+
+	it('forbids bespoke verification machinery', () => {
+		expect(prompt).toContain('do not build or maintain verification machinery');
+		expect(prompt).toContain('never a standalone verification script');
+	});
+
+	it('directs new coverage into the suite the phase command runs', () => {
+		expect(prompt).toContain('add it to the suite that command already runs');
 	});
 });
 
-describe('iterationPrompt — with no verify command', () => {
-	const prompt = flat(iterationPrompt(null));
+describe('iterationPrompt — no commands settled (bounded self-judgment fallback)', () => {
+	const prompt = flat(iterationPrompt(null, null, 'plan/x/'));
 
 	it('still requires verification', () => {
-		// The freedom is kept: some projects genuinely have no test command.
 		expect(prompt).toContain('Unverified ≠ done');
 	});
 
 	it('requires one shared file and forbids per-step scripts', () => {
 		expect(prompt).toContain('ONE shared verification file');
 		expect(prompt).toContain('APPEND to it');
-		// Named concretely, because the abstract instruction was not enough.
 		expect(prompt).toContain('verify_04.js');
 	});
 
@@ -52,30 +63,40 @@ describe('iterationPrompt — with no verify command', () => {
 	});
 
 	it('gives an honest out for steps that cannot be executed', () => {
-		// Without this the model invents an always-passing check for CSS steps
-		// rather than admitting the step is not executable.
 		expect(prompt).toContain('say so plainly in your note');
 	});
 
-	it('requires cleanup of temporary files', () => {
+	it('requires cleanup and caps harness growth', () => {
 		expect(prompt).toContain('Leave nothing behind');
+		expect(prompt).toContain('do not re-prove earlier steps');
+		expect(prompt).toContain('approaching the size of the code it checks');
 	});
 });
 
-describe('iterationPrompt — invariants across both branches', () => {
+describe('iterationPrompt — invariants across branches', () => {
 	for (const [label, prompt] of [
-		['with command', iterationPrompt('cargo test')],
-		['without command', iterationPrompt(null)]
+		['both commands', iterationPrompt('lint', 'test', 'plan/x/')],
+		['step check only', iterationPrompt('lint', null, 'plan/x/')],
+		['no commands', iterationPrompt(null, null, 'plan/x/')]
 	] as const) {
 		it(`${label}: keeps the runner's ownership rules intact`, () => {
-			expect(prompt).toContain('Do NOT run git commit');
-			expect(prompt).toContain('Do NOT edit TODO-coding.md');
-			expect(prompt).toContain('submit_iteration_result');
+			const f = flat(prompt);
+			expect(f).toContain('Do NOT run git commit');
+			expect(f).toContain('submit_iteration_result');
+		});
+
+		it(`${label}: references plan files by their FULL plan-dir path`, () => {
+			// A run failed to find TODO-coding.md because the prompt referenced
+			// bare filenames — the model read them at the project root, got "Not
+			// a file", and burned turns globbing for the real locations.
+			const f = flat(prompt);
+			expect(f).toContain('`plan/x/TODO-coding.md`');
+			expect(f).toContain('`plan/x/PROGRESS-coding.md`');
+			expect(f).toContain('`plan/x/DECISIONS-coding.md`');
+			expect(f).not.toMatch(/[^/]\bTODO-coding\.md/);
 		});
 
 		it(`${label}: numbers the rules 1-7 with no gaps`, () => {
-			// verifyRule() emits rule 3 as several lines; a regression there is
-			// easy to miss by eye and would leave the model with a broken list.
 			for (const n of [1, 2, 3, 4, 5, 6, 7]) {
 				expect(prompt).toMatch(new RegExp(`^${n}\\. `, 'm'));
 			}
@@ -83,76 +104,186 @@ describe('iterationPrompt — invariants across both branches', () => {
 	}
 });
 
-describe('preflightPrompt — settling the verification contract', () => {
-	const withCmd = flat(preflightPrompt('plan/x', 'plan/x/DECISIONS-coding.md', 'npm test'));
-	const blank = flat(preflightPrompt('plan/x', 'plan/x/DECISIONS-coding.md', null));
+describe('preflightPrompt — settling the two-command contract', () => {
+	const bothBlankRaw = preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step');
+	const bothSetRaw = preflightPrompt('plan/x', 'plan/x/D.md', 'npm test', 'npm run lint', 'step');
+	const bothBlank = flat(bothBlankRaw);
+	const bothSet = flat(bothSetRaw);
 
-	it('confirms a user-supplied command by actually running it', () => {
-		// A command that fails at preflight fails every step all night. Preflight
-		// is the only stage that can catch that while the user is present.
-		expect(withCmd).toContain('`npm test`');
-		expect(withCmd).toContain('run it once with run_command');
+	it('defines both tiers and their cadence', () => {
+		expect(bothBlank).toContain('STEP CHECK: runs before EVERY commit');
+		expect(bothBlank).toContain('PHASE VERIFICATION: runs when each phase of the plan completes');
+		expect(bothBlank).toContain('NOT per step');
+	});
+
+	it('tells preflight to settle blanks itself', () => {
+		expect(bothBlank).toContain('settle it yourself');
+	});
+
+	it('echoes user-supplied commands and requires trying them', () => {
+		expect(bothSet).toContain('`npm test`');
+		expect(bothSet).toContain('`npm run lint`');
+		expect(bothSet).toContain('RUN each candidate once with run_command');
+		expect(bothSet).toContain('never executed is a guess');
 	});
 
 	it('does not let a failing user command be silently swapped out', () => {
-		expect(withCmd).toContain('do NOT silently');
-		expect(withCmd).toContain('ask ONE');
-	});
-
-	it('makes preflight settle a blank command rather than deferring to the loop', () => {
-		expect(blank).toContain('the loop cannot ask later');
-		expect(blank).toContain('Detect the stack(s)');
+		expect(bothSet).toContain('do NOT silently substitute');
+		expect(bothSet).toContain('ask ONE `ask_user_question`');
 	});
 
 	it('composes multi-stack repos into one && command', () => {
-		expect(blank).toContain('joining with `&&`');
-		expect(blank).toContain('One command, one exit code');
+		expect(bothBlank).toContain('joining with `&&`');
+		expect(bothBlank).toContain('One command, one exit code');
 	});
 
-	it('requires the composed command to be executed, not guessed', () => {
-		expect(blank).toContain('RUN IT with run_command');
-		expect(blank).toContain('never executed is a guess');
+	it('prefers the cheapest check that catches a real breakage', () => {
+		expect(bothBlank).toContain('PREFER THE CHEAPEST CHECK');
+		expect(bothBlank).toContain('not be maximal from step one');
+		expect(bothBlank).toContain('`node --check`');
 	});
 
-	it('offers scaffold / syntax-check / shared-file when there is no test setup', () => {
-		expect(blank).toContain('scaffold a minimal harness');
-		expect(blank).toContain('syntax/build check');
-		expect(blank).toContain('one shared file');
+	it('ranks a hand-written validator last and forbids unasked scaffolding', () => {
+		expect(bothBlank).toContain('LAST resort');
+		expect(bothBlank).toContain('hand-written validation script');
+		expect(bothBlank).toContain('NOT scaffold a test framework without asking');
+		expect(bothBlank).toContain('Preflight writes no code');
 	});
 
-	it('forbids scaffolding a test framework without asking', () => {
-		// Imposing dependencies on a project that may not want them is how the
-		// observed run ended up with node_modules in git.
-		expect(blank).toContain('NOT scaffold a test framework without asking');
-	});
-
-	it('keeps preflight from writing code itself', () => {
-		expect(blank).toContain('Preflight writes no code');
-	});
-
-	for (const [label, prompt] of [
-		['with command', withCmd],
-		['blank', blank]
+	for (const [label, prompt, raw] of [
+		['blank', bothBlank, bothBlankRaw],
+		['set', bothSet, bothSetRaw]
 	] as const) {
-		it(`${label}: records the contract where the unattended run can read it`, () => {
+		it(`${label}: requires side-effect-free, fast, idempotent commands`, () => {
+			// Preflight once recorded `git init && node --check ...`, so every
+			// step of the run re-ran git init.
+			expect(prompt).toContain('READ-ONLY and free of side effects');
+			expect(prompt).toContain('No `git` commands');
+			expect(prompt).toContain('Seconds, not minutes');
+		});
+
+		it(`${label}: records both commands where the RUNNER parses them`, () => {
+			expect(prompt).toContain('## Step check command');
 			expect(prompt).toContain('## Verification command');
+			expect(prompt).toContain('EXACTLY ONE fenced code block');
 			expect(prompt).toContain('submit_preflight');
+		});
+
+		it(`${label}: numbers the process 1-5 with no gaps`, () => {
+			for (const n of [1, 2, 3, 4, 5]) {
+				expect(raw).toMatch(new RegExp(`^${n}\\. `, 'm'));
+			}
 		});
 	}
 });
 
-describe('preflightPrompt — step numbering', () => {
-	// verificationContractStep() emits step 3 as many lines; a regression would
-	// silently leave the interview with a broken process list.
-	for (const [label, cmd] of [
-		['with command', 'npm test'],
-		['blank', null]
-	] as const) {
-		it(`${label}: numbers the process 1-5 with no gaps`, () => {
-			const prompt = preflightPrompt('plan/x', 'plan/x/D.md', cmd);
-			for (const n of [1, 2, 3, 4, 5]) {
-				expect(prompt).toMatch(new RegExp(`^${n}\\. `, 'm'));
-			}
-		});
-	}
+describe('decomposePrompt — no repo-setup busywork', () => {
+	const prompt = flat(decomposePrompt('plan/x', 'plan/x/D.md'));
+
+	it('forbids git steps, since the runner owns the repository', () => {
+		expect(prompt).toContain('Never emit a step for `git init`');
+		expect(prompt).toContain('The runner already owns the repository');
+	});
+
+	it('only allows a harness step when the decisions file called for one', () => {
+		expect(prompt).toContain('UNLESS the decisions file explicitly says');
+	});
+});
+
+describe('decomposePrompt — anchoring granularity to the plan', () => {
+	const prompt = flat(decomposePrompt('plan/x', 'plan/x/D.md'));
+
+	it("takes the checklist from the plan's own numbered steps", () => {
+		expect(prompt).toContain("FOLLOW THE PLAN'S OWN STRUCTURE");
+		expect(prompt).toContain('one item per plan step');
+	});
+
+	it('cites the variance it exists to remove', () => {
+		expect(prompt).toContain('25 items and 43 items');
+	});
+
+	it('allows merge and split only as justified exceptions', () => {
+		expect(prompt).toContain('too trivial to commit alone');
+		expect(prompt).toContain('genuinely bundles two deliverables');
+		expect(prompt).toContain('say which you applied and why');
+	});
+
+	it('still lets the model decompose a phase that has no numbered steps', () => {
+		expect(prompt).toContain('A phase with no numbered steps is yours to break down');
+	});
+
+	it('requires a phase (verification group) on every step', () => {
+		// This is what makes phase-boundary verification possible for
+		// unstructured input — the deterministic parser handles structured plans.
+		expect(prompt).toContain('Assign EVERY step a `phase`');
+		expect(prompt).toContain('invent 3–7 coherent groups');
+	});
+});
+
+describe('phaseTurnPrompt — build whole phase, runner verifies and commits', () => {
+	const prompt = flat(phaseTurnPrompt('npm test', 'plan/x/'));
+
+	it('says build everything with no per-item reporting', () => {
+		// The step-report protocol interleaved bookkeeping with building and
+		// real models treated it as an obstacle — it failed on two runs.
+		expect(prompt).toContain("Implement ALL of the phase's items");
+		expect(prompt).toContain('No per-item reporting');
+	});
+
+	it('tells the model to run the verification itself and fix failures first', () => {
+		expect(prompt).toContain('run `npm test` yourself');
+		expect(prompt).toContain('FIX whatever fails until it passes');
+		expect(prompt).toContain('come back as repair turns');
+	});
+
+	it('keeps the runner in charge of commits and the TODO files', () => {
+		expect(prompt).toContain('Do NOT run git commit');
+		expect(prompt).toContain('commits the phase as a unit');
+		expect(prompt).toContain('`plan/x/TODO-coding.md`');
+	});
+
+	it('forbids bespoke validation machinery', () => {
+		expect(prompt).toContain('Do not write validation scripts');
+	});
+
+	it('ends the turn via submit_phase_result', () => {
+		expect(prompt).toContain('`submit_phase_result`');
+	});
+
+	it('degrades honestly when no verification command exists', () => {
+		const bare = flat(phaseTurnPrompt(null, 'plan/x/'));
+		expect(bare).toContain('your own check is the only one');
+	});
+});
+
+describe('preflightPrompt — per-phase context mode', () => {
+	const phase = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'phase'));
+
+	it('settles only the verification command — no step check exists to ask about', () => {
+		// A real preflight asked the user "what should the step check be?" in a
+		// mode that no longer has per-step checks.
+		expect(phase).toContain('Settle the ONE command');
+		expect(phase).toContain('NO per-step check in this mode');
+		expect(phase).toContain('do not ask the user about one');
+		expect(phase).not.toContain('STEP CHECK: runs before EVERY commit');
+	});
+
+	it('records only the verification section', () => {
+		expect(phase).toContain('"## Verification command"');
+		expect(phase).not.toContain('"## Step check command"');
+	});
+
+	it('keeps the run-it-first and command-hygiene rules', () => {
+		expect(phase).toContain('RUN the candidate once with run_command');
+		expect(phase).toContain('READ-ONLY and side-effect free');
+		expect(phase).toContain('phase-agnostic');
+	});
+
+	it('uses the two-command contract for per-step mode', () => {
+		// The mode parameter is required on purpose: a defaulted param once let
+		// the preflight RETRY turn silently receive the step contract while the
+		// main turn ran the phase contract.
+		const step = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step'));
+		expect(step).toContain('Settle the TWO commands');
+	});
 });

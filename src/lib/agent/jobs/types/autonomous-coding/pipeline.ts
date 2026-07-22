@@ -23,6 +23,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import {
 	SUBMIT_ITERATION_RESULT_TOOL,
+	SUBMIT_PHASE_RESULT_TOOL,
 	SUBMIT_PREFLIGHT_TOOL,
 	SUBMIT_TASK_LIST_TOOL,
 	type IterationResultArg,
@@ -39,21 +40,45 @@ import {
 import { notify } from '$lib/notify';
 import type { JobRunContext } from '../types';
 import type { StepChecklistEntry } from '../../runner.svelte';
-import { normalizePlanDir, parseAutonomousCodingConfig } from './config';
 import {
+	normalizePlanDir,
+	parseAutonomousCodingConfig,
+	type AutonomousCodingConfig
+} from './config';
+import {
+	beginRepairCycle,
 	clipNote,
-	isTerminal,
+	ensurePhased,
 	markDone,
+	markPhaseItemsDone,
 	nextActionable,
-	normalizeTaskList,
-	parseTodoMarkdown,
+	normalizeTaskListPlan,
+	parseTodoPlan,
+	phaseNeedingVerify,
 	recordFailure,
 	renderOverview,
-	renderTodoMarkdown,
+	renderTodoPlan,
+	setPhaseVerify,
 	summarize,
+	MAX_PHASE_REPAIR_CYCLES,
+	type LoopPlan,
 	type TaskItem
 } from './loopState';
-import { decomposePrompt, finalizePrompt, iterationPrompt, preflightPrompt } from './prompts';
+import {
+	extractDecisionCommand,
+	parseGuidedPlan,
+	PHASE_FILE_RE,
+	STEP_CHECK_HEADING,
+	VERIFICATION_COMMAND_HEADING,
+	type PlanFile
+} from './planParse';
+import {
+	decomposePrompt,
+	finalizePrompt,
+	iterationPrompt,
+	phaseTurnPrompt,
+	preflightPrompt
+} from './prompts';
 
 export const PREFLIGHT = 0;
 export const DECOMPOSE = 1;
@@ -104,7 +129,8 @@ const DECOMPOSE_TOOLS = [
  * ask_user_question — after preflight the run cannot ask, by toolset, not by
  * prompt.
  */
-const LOOP_TOOLS = [
+/** Shared working toolset for coding turns; each mode appends its result tool. */
+const CODING_TURN_TOOLS = [
 	'fs_read_text',
 	'fs_list_dir',
 	'fs_read_pdf',
@@ -114,9 +140,12 @@ const LOOP_TOOLS = [
 	'code_glob',
 	'run_command',
 	'web_search',
-	'research_url',
-	SUBMIT_ITERATION_RESULT_TOOL
+	'research_url'
 ];
+
+const LOOP_TOOLS = [...CODING_TURN_TOOLS, SUBMIT_ITERATION_RESULT_TOOL];
+/** Phase-context turn: same tools, but the turn ends with submit_phase_result. */
+const PHASE_LOOP_TOOLS = [...CODING_TURN_TOOLS, SUBMIT_PHASE_RESULT_TOOL];
 
 /** Finalize: read + shell (git log) + the one report write (writeRoot-scoped). */
 const FINALIZE_TOOLS = [
@@ -148,6 +177,9 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 const PROGRESS_TAIL_ENTRIES = 12;
 /** Timeout for runner-driven git commands. */
 const GIT_TIMEOUT_SECS = 120;
+/** Timeout for the runner-driven step check / phase verification commands.
+ *  Generous: a phase verification may run a real test suite. */
+const VERIFY_TIMEOUT_SECS = 600;
 
 interface PreflightOutcome {
 	ready: boolean;
@@ -184,9 +216,53 @@ function toChecklist(
 	}));
 }
 
+/**
+ * Resolve both verification commands. Precedence per command: explicit job
+ * config > the preflight's DECISIONS file > (phase only) the guided-planning
+ * overview, where planning settled the command with the user present — the
+ * runner reading it directly means the contract survives a preflight that
+ * fumbles the transcription. Files are read fresh at every call (a repair item
+ * may fix a broken command there), but only when something still needs them —
+ * explicit job config makes the reads dead weight. In phase mode the step
+ * check is null by design (the Editor hides the field and the preflight
+ * contract forbids recording one) — resolved here so the runner agrees with
+ * both.
+ */
+async function resolveCommands(
+	ctx: JobRunContext,
+	contextMode: 'step' | 'phase',
+	cfg: AutonomousCodingConfig,
+	planDir: string,
+	decisionsPath: string
+): Promise<{ step: string | null; phase: string | null }> {
+	const wantStep = contextMode !== 'phase' && cfg.step_check_command == null;
+	const wantPhase = cfg.verify_command == null;
+	const text = wantStep || wantPhase ? ((await readPlanFile(ctx, decisionsPath)) ?? '') : '';
+	const phaseFromDecisions = wantPhase
+		? extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING)
+		: null;
+	const overviewText =
+		wantPhase && phaseFromDecisions === null
+			? ((await readPlanFile(ctx, `${planDir}overview.md`)) ?? '')
+			: '';
+	return {
+		step:
+			contextMode === 'phase'
+				? null
+				: (cfg.step_check_command ?? extractDecisionCommand(text, STEP_CHECK_HEADING)),
+		phase:
+			cfg.verify_command ??
+			phaseFromDecisions ??
+			extractDecisionCommand(overviewText, VERIFICATION_COMMAND_HEADING)
+	};
+}
+
 export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<void> {
 	const { job, runId, abort } = ctx;
 	const cfg = parseAutonomousCodingConfig(job.type_config);
+	// Resolved once — the single source of the mode default. Every consumer
+	// (preflight contract, loop branch, command resolution) reads this.
+	const contextMode: 'step' | 'phase' = cfg.context_mode ?? 'phase';
 	void markRunStarted(runId, Date.now());
 
 	const startStep = (idx: number) => {
@@ -226,7 +302,14 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		// decision via the question modal, record them, and get a structured
 		// ready/blocked verdict before anything runs unattended.
 		startStep(PREFLIGHT);
-		const outcome = await runPreflightTurn(ctx, planDir, decisionsPath, cfg.verify_command);
+		const outcome = await runPreflightTurn(
+			ctx,
+			planDir,
+			decisionsPath,
+			cfg.verify_command,
+			cfg.step_check_command,
+			contextMode
+		);
 		abortIfCancelled();
 		if (!outcome.ready) {
 			const why = outcome.blockers.length
@@ -237,10 +320,17 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		await ensureFileWritten(ctx, PREFLIGHT, {
 			relPath: decisionsPath,
 			writeRoot: planDir,
-			systemPrompt: preflightPrompt(planDir, decisionsPath, cfg.verify_command),
+			systemPrompt: preflightPrompt(
+				planDir,
+				decisionsPath,
+				cfg.verify_command,
+				cfg.step_check_command,
+				contextMode
+			),
 			toolAllowlist: PREFLIGHT_TOOLS,
 			what: 'decisions file',
-			abortIfCancelled
+			abortIfCancelled,
+			mayAskUser: true
 		});
 		finishStep(
 			PREFLIGHT,
@@ -260,24 +350,43 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		await ensureGitBaseline(ctx, signingFallback);
 
 		// Stage 1 — Decompose, or resume: a parseable TODO-coding.md on disk IS
-		// the loop state (attempt counts and all), so a crashed/killed run picks
-		// up where it left off by re-running the job.
+		// the loop state (attempt counts, phases, repair cycles and all), so a
+		// crashed/killed run picks up where it left off by re-running the job.
 		startStep(DECOMPOSE);
 		abortIfCancelled();
-		let items = parseTodoMarkdown((await readPlanFile(ctx, todoPath)) ?? '');
-		if (items) {
-			const s = summarize(items);
+		const resumed = parseTodoPlan((await readPlanFile(ctx, todoPath)) ?? '');
+		let plan: LoopPlan;
+		if (resumed) {
+			// A legacy phaseless TODO gets one catch-all phase so deep
+			// verification still runs (once, at the end) instead of never.
+			plan = ensurePhased(resumed);
+			const s = summarize(plan.items);
 			finishStep(
 				DECOMPOSE,
 				`Resumed ${todoPath} — ${s.total} step(s): ${s.done} done, ${s.blocked} blocked, ${s.todo} to do`
 			);
 		} else {
-			items = await obtainTaskList(ctx, planDir, decisionsPath, abortIfCancelled);
-			await writePlanFile(ctx, todoPath, renderTodoMarkdown(items));
-			finishStep(
-				DECOMPOSE,
-				`Decomposed the plan into ${items.length} step(s) → ${todoPath}\n\n${renderOverview(items)}`
-			);
+			// Deterministic first: a plan that follows the guided-planning
+			// template is parsed, not decomposed — instant, free, and identical
+			// every run (model decomposition of one plan gave 25 items, then 43).
+			const parsed = await tryParsePlanDir(ctx, planDir);
+			if (parsed) {
+				plan = parsed;
+				finishStep(
+					DECOMPOSE,
+					`Parsed the plan's own structure — ${plan.phases.length} phase(s), ` +
+						`${plan.items.length} step(s), no model decomposition needed → ${todoPath}\n\n` +
+						renderOverview(plan.items)
+				);
+			} else {
+				plan = ensurePhased(await obtainTaskList(ctx, planDir, decisionsPath, abortIfCancelled));
+				finishStep(
+					DECOMPOSE,
+					`Decomposed the plan into ${plan.phases.length} phase(s) / ${plan.items.length} ` +
+						`step(s) → ${todoPath}\n\n${renderOverview(plan.items)}`
+				);
+			}
+			await writePlanFile(ctx, todoPath, renderTodoPlan(plan));
 		}
 
 		// Stage 2 — the loop. The baseline commit (made right after preflight)
@@ -293,20 +402,135 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		const runEntries: string[] = [];
 		let iteration = 0;
 
-		ctx.patchStep(LOOP, { checklist: toChecklist(items, null, maxAttempts) });
-		while (!isTerminal(items)) {
+		const record = async (entry: string, clipped?: string, opts?: { logOnly?: boolean }) => {
+			runEntries.push(entry);
+			recentNotes.push(clipped ?? entry);
+			if (recentNotes.length > PROGRESS_TAIL_ENTRIES) recentNotes.shift();
+			progress += `\n${entry}`;
+			ctx.patchStep(LOOP, { checklist: toChecklist(plan.items, null, maxAttempts) });
+			// logOnly: the entry is progress commentary (command warnings/changes);
+			// the plan didn't change, so skip the byte-identical TODO rewrite.
+			if (!opts?.logOnly) await writePlanFile(ctx, todoPath, renderTodoPlan(plan));
+			await writePlanFile(ctx, progressPath, progress);
+		};
+
+		// Commands re-resolved fresh at every use (see resolveCommands). Fresh
+		// matters — executing a cached copy makes a command-fixing repair
+		// unwinnable (observed: a repair corrected a shell-broken command in
+		// DECISIONS, the runner kept running the stale original, and the phase
+		// looped to cancellation). The flip side — a model could WEAKEN a
+		// command mid-run — is surfaced by logging every change loudly into
+		// PROGRESS rather than forbidding it.
+		let knownCommands: { step: string | null; phase: string | null } | null = null;
+		const currentCommands = async (): Promise<{ step: string | null; phase: string | null }> => {
+			const cmds = await resolveCommands(ctx, contextMode, cfg, planDir, decisionsPath);
+			if (!knownCommands && !cmds.step && !cmds.phase) {
+				await record(
+					'## No verification commands available\n\nNeither a step check nor a phase ' +
+						'verification command could be resolved from job config or ' +
+						'DECISIONS-coding.md — steps will commit unchecked and phases will NOT be ' +
+						'verified. If this is unexpected, check the two command sections in the ' +
+						'decisions file.\n',
+					undefined,
+					{ logOnly: true }
+				);
+			}
+			const diff = knownCommands ? formatCommandChange(knownCommands, cmds) : null;
+			if (diff) {
+				await record(
+					`## Verification commands changed mid-run\n\n${diff}\n\nA repair item may ` +
+						`legitimately fix a broken command; review this change when the run finishes.\n`,
+					undefined,
+					{ logOnly: true }
+				);
+			}
+			knownCommands = cmds;
+			return cmds;
+		};
+
+		ctx.patchStep(LOOP, { checklist: toChecklist(plan.items, null, maxAttempts) });
+		for (;;) {
 			abortIfCancelled();
-			const target = nextActionable(items)!;
+			const cmds = await currentCommands();
+
+			// Phase verification outranks the next item: a phase whose last item
+			// just landed is verified before any new work starts, so a breakage
+			// is caught while the culprit set is still one phase wide.
+			const phase = cmds.phase ? phaseNeedingVerify(plan) : null;
+			if (phase && cmds.phase != null) {
+				ctx.patchStep(LOOP, {
+					streaming: `Verifying phase ${phase.id} — ${phase.title} (\`${cmds.phase}\`)`
+				});
+				const v = await runCheckCommand(ctx, cmds.phase);
+				abortIfCancelled();
+				if (v.passed) {
+					plan = setPhaseVerify(plan, phase.id, 'passed');
+					const c = await commitPhaseOutcome(ctx, phase, true, signingFallback);
+					await record(
+						`## Phase ${phase.id} — ${phase.title}: verification PASSED` +
+							`${c.committed ? ' — phase committed' : ''}\n`
+					);
+				} else if (phase.repairs >= MAX_PHASE_REPAIR_CYCLES) {
+					plan = setPhaseVerify(plan, phase.id, 'blocked');
+					// Commit the unverified work anyway, loudly marked: losing it
+					// would be worse, and the history stays honest.
+					const c = await commitPhaseOutcome(ctx, phase, false, signingFallback);
+					await record(
+						`## Phase ${phase.id} — ${phase.title}: verification still failing after ` +
+							`${MAX_PHASE_REPAIR_CYCLES} repair cycle(s) — phase BLOCKED` +
+							`${c.committed ? ' (work committed, marked UNVERIFIED)' : ''}\n\n${clipNote(v.output, 3000)}\n`
+					);
+				} else {
+					const r = beginRepairCycle(plan, phase.id, v.output);
+					plan = r.plan;
+					await record(
+						`## Phase ${phase.id} — ${phase.title}: verification FAILED (repair cycle ` +
+							`${plan.phases.find((ph) => ph.id === phase.id)?.repairs}/${MAX_PHASE_REPAIR_CYCLES} ` +
+							`→ injected ${r.item.id})\n\n${clipNote(v.output)}\n`
+					);
+				}
+				continue;
+			}
+
+			const target = nextActionable(plan.items);
+			if (!target) break;
+			if (contextMode === 'phase' && !target.repair && target.phase) {
+				await runPhaseContextTurn(
+					{
+						ctx,
+						planDir,
+						phaseVerifyCommand: cmds.phase,
+						getPlan: () => plan,
+						setPlan: (p) => {
+							plan = p;
+						},
+						record
+					},
+					target.phase
+				);
+				continue;
+			}
+			// A repair item gets ONE attempt: the repair CYCLE is the retry
+			// mechanism (verify → repair → re-verify, bounded per phase).
+			const attemptCap = target.repair ? 1 : maxAttempts;
 			iteration++;
 			ctx.patchStep(LOOP, {
 				streaming:
 					`Iteration ${iteration} — ${target.id}. ${target.title} ` +
-					`(attempt ${target.attempts + 1}/${maxAttempts})`,
-				checklist: toChecklist(items, target.id, maxAttempts)
+					`(attempt ${target.attempts + 1}/${attemptCap})`,
+				checklist: toChecklist(plan.items, target.id, maxAttempts)
 			});
 
 			const headBefore = await gitHead(ctx);
-			const result = await runIterationTurn(ctx, cfg.verify_command, items, target, recentNotes);
+			const result = await runIterationTurn(
+				ctx,
+				planDir,
+				cmds.step,
+				cmds.phase,
+				plan,
+				target,
+				recentNotes
+			);
 			abortIfCancelled();
 
 			let { status, note } = result;
@@ -318,8 +542,28 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 					`Reported a result for "${result.itemId}" instead of the assigned ` +
 					`item ${target.id} — counted as a failed attempt. Original note: ${note}`;
 			}
+			// Re-resolve before the check: the iteration itself may have repaired a
+			// broken command in DECISIONS-coding.md.
+			const checkCmds = await currentCommands();
+			if (status === 'done' && checkCmds.step) {
+				// Runner-enforced, not model-trusted: no broken file ever lands.
+				const check = await runCheckCommand(ctx, checkCmds.step);
+				abortIfCancelled();
+				if (!check.passed) {
+					status = 'failed';
+					note =
+						`Step check failed (\`${checkCmds.step}\`) — the work is NOT committed ` +
+						`until it passes.\n\n${clipNote(check.output, 3000)}\n\nOriginal note: ${note}`;
+				}
+			}
 			if (status === 'done') {
-				const commit = await commitStepWork(ctx, target, items.length, headBefore, signingFallback);
+				const commit = await commitStepWork(
+					ctx,
+					target,
+					plan.items.length,
+					headBefore,
+					signingFallback
+				);
 				if (!commit.changed) {
 					// The minimal guard against checking items off on faith.
 					status = 'failed';
@@ -331,29 +575,26 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				}
 			}
 			if (status === 'done') {
-				items = markDone(items, target.id);
+				plan = { ...plan, items: markDone(plan.items, target.id) };
 			} else {
-				const r = recordFailure(items, target.id, maxAttempts);
-				items = r.items;
-				if (r.blocked) note = `BLOCKED after ${maxAttempts} failed attempt(s). ${note}`;
+				const r = recordFailure(plan.items, target.id, attemptCap);
+				plan = { ...plan, items: r.items };
+				if (r.blocked) note = `BLOCKED after ${attemptCap} failed attempt(s). ${note}`;
 			}
 
-			const entry = `## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${note.trim()}\n`;
-			runEntries.push(entry);
-			recentNotes.push(
+			await record(
+				`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${note.trim()}\n`,
 				`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${clipNote(note)}\n`
 			);
-			if (recentNotes.length > PROGRESS_TAIL_ENTRIES) recentNotes.shift();
-			progress += `\n${entry}`;
-			ctx.patchStep(LOOP, { checklist: toChecklist(items, null, maxAttempts) });
-			await writePlanFile(ctx, todoPath, renderTodoMarkdown(items));
-			await writePlanFile(ctx, progressPath, progress);
 		}
-		const sum = summarize(items);
+		const sum = summarize(plan.items);
 		finishStep(
 			LOOP,
 			capOutput(
-				`${sum.done} done, ${sum.blocked} blocked of ${sum.total} step(s), in ${iteration} iteration(s)` +
+				`${sum.done} done, ${sum.blocked} blocked of ${sum.total} step(s), in ${iteration} iteration(s); ` +
+					`phases: ${plan.phases.filter((p) => p.verify === 'passed').length} verified, ` +
+					`${plan.phases.filter((p) => p.verify === 'blocked').length} blocked, ` +
+					`${plan.phases.filter((p) => p.verify === 'pending').length} unverified` +
 					(runEntries.length ? `\n\n---\n\n${runEntries.join('\n')}` : '')
 			)
 		);
@@ -406,7 +647,9 @@ async function runPreflightTurn(
 	ctx: JobRunContext,
 	planDir: string,
 	decisionsPath: string,
-	verifyCommand: string | null
+	verifyCommand: string | null,
+	stepCheckCommand: string | null,
+	contextMode: 'step' | 'phase'
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
@@ -419,7 +662,13 @@ async function runPreflightTurn(
 		maxIterations: PREFLIGHT_MAX_ITERATIONS,
 		interactive: true,
 		writeRoot: planDir,
-		systemPrompt: preflightPrompt(planDir, decisionsPath, verifyCommand),
+		systemPrompt: preflightPrompt(
+			planDir,
+			decisionsPath,
+			verifyCommand,
+			stepCheckCommand,
+			contextMode
+		),
 		toolAllowlist: PREFLIGHT_TOOLS,
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,
 		...base,
@@ -458,7 +707,7 @@ async function obtainTaskList(
 	planDir: string,
 	decisionsPath: string,
 	abortIfCancelled: () => void
-): Promise<TaskItem[]> {
+): Promise<LoopPlan> {
 	let userMessage =
 		`The plan in ${planDir} is fully decided (see ${decisionsPath}). ` +
 		`Decompose it into the atomic coding checklist.`;
@@ -482,8 +731,8 @@ async function obtainTaskList(
 				base.onToolStart?.(call);
 			}
 		});
-		const items = normalizeTaskList(captured);
-		if (items.length > 0) return items;
+		const plan = normalizeTaskListPlan(captured);
+		if (plan.items.length > 0) return plan;
 		userMessage =
 			`You did not call submit_task_list, so no checklist was recorded. Call it now ` +
 			`with the COMPLETE dependency-ordered step list for the whole plan.`;
@@ -495,22 +744,147 @@ async function obtainTaskList(
 	);
 }
 
+/** Human-readable diff of the two verification commands, or null when unchanged. */
+function formatCommandChange(
+	prev: { step: string | null; phase: string | null },
+	next: { step: string | null; phase: string | null }
+): string | null {
+	const lines = [
+		prev.step !== next.step
+			? `- step check: \`${prev.step ?? '(none)'}\` → \`${next.step ?? '(none)'}\``
+			: '',
+		prev.phase !== next.phase
+			? `- phase verification: \`${prev.phase ?? '(none)'}\` → \`${next.phase ?? '(none)'}\``
+			: ''
+	].filter(Boolean);
+	return lines.length > 0 ? lines.join('\n') : null;
+}
+
+/**
+ * Commit whatever the phase left staged-able, as a unit, on its verification
+ * outcome. In phase-context mode this IS the phase's commit (the build turn
+ * commits nothing); in per-step mode the work is already committed per item
+ * and this quietly picks up strays (repair leftovers), or does nothing.
+ */
+/**
+ * Refresh .gitignore for any stack introduced since the last commit, stage
+ * everything, and report whether anything is actually staged. The single
+ * staging path for step commits, phase commits, and best-effort commits — a
+ * fix applied here (ensureGitignore already proved the point) reaches all
+ * three.
+ */
+async function stagePending(ctx: JobRunContext): Promise<boolean> {
+	await ensureGitignore(ctx);
+	await execInWorkdir(ctx, 'git add -A');
+	return (await execInWorkdir(ctx, 'git diff --cached --quiet')).exit_code !== 0;
+}
+
+async function commitPhaseOutcome(
+	ctx: JobRunContext,
+	phase: { id: string; title: string },
+	verified: boolean,
+	fallback: SigningFallback
+): Promise<{ committed: boolean }> {
+	if (!(await stagePending(ctx))) return { committed: false };
+	const marker = verified ? '' : ' [UNVERIFIED — phase verification failed]';
+	// commitTitle: phase.title is model-authored — sanitize before it is
+	// interpolated into `git commit -m "…"`, exactly like the step path does.
+	const c = await gitCommit(
+		ctx,
+		`feat: ${commitTitle(`Phase ${phase.id} — ${phase.title}`)}${marker}`,
+		fallback
+	);
+	return { committed: c.committed };
+}
+
+/** Everything a phase-context turn needs from the running pipeline. */
+interface PhaseTurnDeps {
+	ctx: JobRunContext;
+	planDir: string;
+	/** Resolved by the loop pass that invoked the turn — no re-resolution here. */
+	phaseVerifyCommand: string | null;
+	getPlan: () => LoopPlan;
+	setPlan: (p: LoopPlan) => void;
+	record: (entry: string, clipped?: string) => Promise<void>;
+}
+
+/**
+ * Phase-context mode: ONE continuous turn builds the whole phase — no
+ * per-item checks or reports (an earlier step-report protocol interleaved
+ * bookkeeping with building and real models treated it as an obstacle; it
+ * failed twice). When the turn ends, every item of the phase is marked done
+ * ("the work happened") and the SHARED verification machinery takes over:
+ * phaseNeedingVerify fires, the runner runs the verification command, repair
+ * cycles backstop failures, and the phase is committed as a unit on its
+ * verification outcome.
+ */
+async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promise<void> {
+	const phase = deps.getPlan().phases.find((p) => p.id === phaseId);
+	const items = deps.getPlan().items.filter((i) => i.phase === phaseId && i.status === 'todo');
+	const list = items
+		.map((i) => `- ${i.id}. ${i.title}\n  ${i.description.replace(/\n/g, ' ')}`)
+		.join('\n');
+	const userMessage = [
+		`Implement ALL of Phase ${phaseId} — ${phase?.title ?? ''}:`,
+		'',
+		list,
+		'',
+		deps.phaseVerifyCommand
+			? `The runner will verify the phase with: \`${deps.phaseVerifyCommand}\``
+			: 'No verification command is configured for this run.'
+	].join('\n');
+
+	let phaseNote = '';
+	const base = deps.ctx.buildStreamCallbacks(LOOP);
+	deps.ctx.patchStep(LOOP, {
+		streaming: `Phase ${phaseId} — ${phase?.title ?? ''} (continuous build)`
+	});
+	await deps.ctx.runJobTurn({
+		userMessage,
+		contextSize: deps.ctx.contextSize(),
+		visionSupported: deps.ctx.visionSupported(),
+		maxIterations: Math.min(400, 40 + items.length * 20),
+		systemPrompt: phaseTurnPrompt(deps.phaseVerifyCommand, deps.planDir),
+		toolAllowlist: PHASE_LOOP_TOOLS,
+		forceFinalTool: SUBMIT_PHASE_RESULT_TOOL,
+		...base,
+		onToolStart: (call: ResolvedToolCall) => {
+			if (call.name === SUBMIT_PHASE_RESULT_TOOL && typeof call.arguments?.note === 'string') {
+				phaseNote = call.arguments.note;
+			}
+			base.onToolStart?.(call);
+		}
+	});
+	deps.setPlan(markPhaseItemsDone(deps.getPlan(), phaseId));
+	await deps.record(
+		`## Phase ${phaseId} — ${phase?.title ?? ''}: build turn finished\n\n${clipNote(
+			phaseNote || '(no summary given)'
+		)}\n`
+	);
+}
+
 /** One fresh-context coding iteration; the result is forced + captured. */
 async function runIterationTurn(
 	ctx: JobRunContext,
-	verifyCommand: string | null,
-	items: TaskItem[],
+	planDir: string,
+	stepCheckCommand: string | null,
+	phaseVerifyCommand: string | null,
+	plan: LoopPlan,
 	target: TaskItem,
 	recentNotes: string[]
 ): Promise<{ itemId: string; status: 'done' | 'failed'; note: string }> {
+	const phase = plan.phases.find((p) => p.id === target.phase);
 	const userMessage = [
 		`Work on EXACTLY ONE checklist item: ${target.id}. ${target.title}`,
+		phase ? `(Phase ${phase.id} — ${phase.title})` : '',
 		target.description ? `\nWhat "done" means: ${target.description}` : '',
-		verifyCommand ? `\nVerify command: \`${verifyCommand}\`` : '',
+		stepCheckCommand
+			? `\nThe runner runs \`${stepCheckCommand}\` before committing your work.`
+			: '',
 		'',
 		'Current checklist:',
 		'```markdown',
-		renderOverview(items),
+		renderOverview(plan.items),
 		'```',
 		recentNotes.length ? `\nRecent progress notes (newest last):\n\n${recentNotes.join('\n')}` : ''
 	].join('\n');
@@ -522,7 +896,7 @@ async function runIterationTurn(
 		contextSize: ctx.contextSize(),
 		visionSupported: ctx.visionSupported(),
 		maxIterations: ITERATION_MAX_TURNS,
-		systemPrompt: iterationPrompt(verifyCommand),
+		systemPrompt: iterationPrompt(stepCheckCommand, phaseVerifyCommand, planDir),
 		toolAllowlist: LOOP_TOOLS,
 		forceFinalTool: SUBMIT_ITERATION_RESULT_TOOL,
 		...base,
@@ -574,10 +948,13 @@ async function runFinalizeTurn(
 async function readPlanFile(ctx: JobRunContext, relPath: string): Promise<string | null> {
 	if (!ctx.job.working_dir) return null;
 	try {
-		return await invoke<string>('fs_read_text', {
+		// Full-fidelity read, NOT the model-facing windowed fs_read_text: these
+		// files are read-modify-written by the runner (PROGRESS grows every
+		// iteration), and a head-truncated read rewritten to disk would
+		// silently destroy the tail of a long run's log.
+		return await invoke<string>('fs_read_text_full', {
 			workdir: ctx.job.working_dir,
-			relPath,
-			limit: 10000
+			relPath
 		});
 	} catch {
 		return null;
@@ -607,6 +984,15 @@ async function ensureFileWritten(
 		toolAllowlist: string[];
 		what: string;
 		abortIfCancelled: () => void;
+		/**
+		 * The retry turn may ask the user questions. True for the PREFLIGHT
+		 * decisions file — the user is by definition present during preflight,
+		 * and its system prompt requires resolving open decisions before
+		 * writing; without this the retry turn inherited that prompt and the
+		 * ask_user_question tool but not interactivity, and a real run died on
+		 * "No interactive user is available" mid-interview.
+		 */
+		mayAskUser?: boolean;
 	}
 ): Promise<void> {
 	const exists = async (): Promise<boolean> => {
@@ -626,11 +1012,16 @@ async function ensureFileWritten(
 		await ctx.runJobTurn({
 			userMessage:
 				`I don't see ${opts.relPath} on disk yet — you may have described writing it ` +
-				`without actually calling fs_write_text. Do NOT do anything else; write the ` +
-				`${opts.what} to ${opts.relPath} now with fs_write_text, then stop.`,
+				`without actually calling fs_write_text. ` +
+				(opts.mayAskUser
+					? `If a decision is still unresolved, ask the user now (ask_user_question), ` +
+						`then write the ${opts.what} to ${opts.relPath} with fs_write_text and stop.`
+					: `Do NOT do anything else; write the ${opts.what} to ${opts.relPath} now ` +
+						`with fs_write_text, then stop.`),
 			contextSize: ctx.contextSize(),
 			visionSupported: ctx.visionSupported(),
-			maxIterations: 10,
+			maxIterations: opts.mayAskUser ? 30 : 10,
+			interactive: opts.mayAskUser ?? false,
 			writeRoot: opts.writeRoot,
 			systemPrompt: opts.systemPrompt,
 			toolAllowlist: opts.toolAllowlist,
@@ -660,11 +1051,15 @@ interface ExecResult {
 	killed: boolean;
 }
 
-function execInWorkdir(ctx: JobRunContext, command: string): Promise<ExecResult> {
+function execInWorkdir(
+	ctx: JobRunContext,
+	command: string,
+	timeoutSecs: number = GIT_TIMEOUT_SECS
+): Promise<ExecResult> {
 	return invoke<ExecResult>('run_command_capture', {
 		command,
 		cwd: ctx.job.working_dir,
-		timeoutSecs: GIT_TIMEOUT_SECS,
+		timeoutSecs,
 		commandId: crypto.randomUUID(),
 		// Route through the session's shell selection (WSL/PowerShell on
 		// Windows); null on Linux/macOS → host default shell.
@@ -675,6 +1070,51 @@ function execInWorkdir(ctx: JobRunContext, command: string): Promise<ExecResult>
 async function gitHead(ctx: JobRunContext): Promise<string | null> {
 	const r = await execInWorkdir(ctx, 'git rev-parse HEAD');
 	return r.exit_code === 0 ? r.stdout.trim() : null;
+}
+
+/**
+ * Run a verification/check command (runner-executed — the model never owns
+ * verification). Longer timeout than git plumbing: a phase verification may
+ * run a real test suite.
+ */
+async function runCheckCommand(
+	ctx: JobRunContext,
+	command: string
+): Promise<{ passed: boolean; output: string }> {
+	try {
+		const r = await execInWorkdir(ctx, command, VERIFY_TIMEOUT_SECS);
+		const output = [r.stdout, r.stderr].filter(Boolean).join('\n').trim();
+		return { passed: r.exit_code === 0, output: output || `(no output, exit ${r.exit_code})` };
+	} catch (e) {
+		return { passed: false, output: `Check command failed to run: ${String(e)}` };
+	}
+}
+
+/**
+ * Deterministic decompose: read the plan dir and, when it follows the
+ * guided-planning template, parse phases + steps straight out of it. Null →
+ * fall back to model decomposition.
+ */
+async function tryParsePlanDir(ctx: JobRunContext, planDir: string): Promise<LoopPlan | null> {
+	if (!ctx.job.working_dir) return null;
+	let names: string[] = [];
+	try {
+		const listing = await invoke<{ entries: { name: string; is_dir: boolean }[] }>('fs_list_dir', {
+			workdir: ctx.job.working_dir,
+			relPath: planDir
+		});
+		names = listing.entries.filter((e) => !e.is_dir).map((e) => e.name);
+	} catch {
+		return null;
+	}
+	const files: PlanFile[] = [];
+	for (const name of names) {
+		if (!PHASE_FILE_RE.test(name)) continue;
+		const content = await readPlanFile(ctx, `${planDir}${name}`);
+		if (content === null) return null;
+		files.push({ name, content });
+	}
+	return parseGuidedPlan(files, planDir);
 }
 
 /**
@@ -863,13 +1303,10 @@ async function commitStepWork(
 	headBefore: string | null,
 	fallback: SigningFallback
 ): Promise<{ changed: boolean; unsigned: boolean; commitSkipped: boolean }> {
-	// Re-check every step, not just at baseline: a run can INTRODUCE a stack
-	// mid-flight (the observed failure was a bare directory where the model ran
-	// `npm install` at step 12, so no package.json existed when the baseline was
-	// taken). Idempotent and cheap — a few existence checks.
-	await ensureGitignore(ctx);
-	await execInWorkdir(ctx, 'git add -A');
-	const staged = (await execInWorkdir(ctx, 'git diff --cached --quiet')).exit_code !== 0;
+	// stagePending re-checks .gitignore every step, not just at baseline: a run
+	// can INTRODUCE a stack mid-flight (observed: `npm install` at step 12 in a
+	// directory that had no package.json at baseline).
+	const staged = await stagePending(ctx);
 	const headNow = await gitHead(ctx);
 	if (!staged && headNow === headBefore) {
 		return { changed: false, unsigned: false, commitSkipped: false };
