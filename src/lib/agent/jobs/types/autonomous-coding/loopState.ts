@@ -12,6 +12,8 @@
  * tests live.
  */
 
+import { VERIFICATION_COMMAND_HEADING } from './planParse';
+
 export type TaskStatus = 'todo' | 'done' | 'blocked';
 
 export interface TaskItem {
@@ -94,8 +96,7 @@ export function normalizeTaskListPlan(raw: unknown): LoopPlan {
 		const title = typeof e.title === 'string' ? e.title.replace(/\s+/g, ' ').trim() : '';
 		if (!title) continue;
 		const description = typeof e.description === 'string' ? e.description.trim() : '';
-		const phaseTitle =
-			typeof e.phase === 'string' && e.phase.trim() ? e.phase : 'Whole plan (unphased)';
+		const phaseTitle = typeof e.phase === 'string' && e.phase.trim() ? e.phase : 'Whole plan';
 		items.push({
 			id: String(items.length + 1).padStart(2, '0'),
 			title,
@@ -123,18 +124,6 @@ export function ensurePhased(plan: LoopPlan): LoopPlan {
 
 const STATUS_MARK: Record<TaskStatus, string> = { todo: ' ', done: 'x', blocked: '!' };
 const MARK_STATUS: Record<string, TaskStatus> = { ' ': 'todo', x: 'done', '!': 'blocked' };
-
-/**
- * Render the checklist. Format (one item):
- *
- *     - [ ] 01. Title (attempts: 0)
- *       description line(s), indented two spaces
- *
- * Marks: `[ ]` todo, `[x]` done, `[!]` blocked.
- */
-export function renderTodoMarkdown(items: TaskItem[]): string {
-	return renderTodoPlan({ phases: [], items });
-}
 
 /**
  * Render the full plan. With phases, items are grouped under `## Phase` headings
@@ -186,19 +175,12 @@ const ITEM_RE = /^- \[([ x!])\] (\d{2,})\. (.+?)(?: \(attempts: (\d+)(, repair)?
 const PHASE_RE = /^## Phase (\d{2,}) — (.+?) \(verify: (pending|passed|blocked), repairs: (\d+)\)$/;
 
 /**
- * Parse a TODO-coding.md back into items. Returns null when the text has no
+ * Parse a TODO-coding.md back into a plan. Returns null when the text has no
  * parseable items at all (missing/foreign file → not a resumable state).
  * Unknown lines are ignored, so a read-truncation marker can't corrupt the
- * items that did parse.
- */
-export function parseTodoMarkdown(text: string): TaskItem[] | null {
-	const plan = parseTodoPlan(text);
-	return plan ? plan.items : null;
-}
-
-/**
- * Full-plan parse: phase headings assign the items that follow them; items
- * before any heading (or in a legacy file with no headings) are phaseless.
+ * items that did parse. Phase headings assign the items that follow them;
+ * items before any heading (or in a legacy file with no headings) are
+ * phaseless.
  */
 export function parseTodoPlan(text: string): LoopPlan | null {
 	const phases: PhaseInfo[] = [];
@@ -339,7 +321,7 @@ export function beginRepairCycle(
 			`Phase ${phaseId} verification failed. Diagnose from the output below, fix the ` +
 			`cause, and make the phase verification pass. Verification re-runs after this ` +
 			`item regardless of the outcome you report. If the verification COMMAND itself ` +
-			`is broken (shell errors, wrong path), fix it under "## Verification command" in ` +
+			`is broken (shell errors, wrong path), fix it under "## ${VERIFICATION_COMMAND_HEADING}" in ` +
 			`DECISIONS-coding.md — the runner re-reads it before every check.\n\n` +
 			`Verification output:\n${clipNote(failureOutput, 3000)}`,
 		status: 'todo',
@@ -373,11 +355,6 @@ export function summarize(items: TaskItem[]): LoopSummary {
 		todo: items.filter((i) => i.status === 'todo').length,
 		total: items.length
 	};
-}
-
-/** True when nothing is left to attempt (every item done or blocked). */
-export function isTerminal(items: TaskItem[]): boolean {
-	return nextActionable(items) === null;
 }
 
 /**

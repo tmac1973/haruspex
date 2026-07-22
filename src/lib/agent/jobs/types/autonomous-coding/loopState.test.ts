@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
 	clipNote,
-	isTerminal,
 	markDone,
 	nextActionable,
 	normalizeTaskListPlan,
-	parseTodoMarkdown,
 	recordFailure,
 	renderOverview,
-	renderTodoMarkdown,
 	summarize,
 	type TaskItem
 } from './loopState';
+
+/** The legacy item-only round trip, expressed through the plan API. */
+const renderTodoMarkdown = (items: TaskItem[]) => renderTodoPlan({ phases: [], items });
+const parseTodoMarkdown = (text: string) => parseTodoPlan(text)?.items ?? null;
+const isTerminal = (items: TaskItem[]) => nextActionable(items) === null;
 
 function item(over: Partial<TaskItem> = {}): TaskItem {
 	return {

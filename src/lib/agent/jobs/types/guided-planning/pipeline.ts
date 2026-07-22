@@ -21,6 +21,7 @@ import {
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
 import { parseGuidedPlanningConfig, type GuidedPlanningConfig } from './config';
+import { VERIFICATION_COMMAND_HEADING } from '../autonomous-coding/planParse';
 
 /**
  * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at
@@ -137,7 +138,7 @@ function overviewStagePrompt(outDir: string, overviewPath: string): string {
 		`4. Write the overview to \`${overviewPath}\` with fs_write_text, using these`,
 		'   sections exactly: a top "# <Project> — Project Overview" heading, then',
 		'   ## Problem, ## Goals, ## Non-goals, ## Users & primary flow,',
-		'   ## Constraints, ## Success criteria, then ## Verification command — ONE',
+		`   ## Constraints, ## Success criteria, then ## ${VERIFICATION_COMMAND_HEADING} — ONE`,
 		'   fenced code block whose only content is the command from step 3 (the',
 		'   coding runner parses this section mechanically) — and finally',
 		'   ## Decisions — a list of each question you asked and the answer the user',

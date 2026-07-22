@@ -105,8 +105,8 @@ describe('iterationPrompt — invariants across branches', () => {
 });
 
 describe('preflightPrompt — settling the two-command contract', () => {
-	const bothBlankRaw = preflightPrompt('plan/x', 'plan/x/D.md', null, null);
-	const bothSetRaw = preflightPrompt('plan/x', 'plan/x/D.md', 'npm test', 'npm run lint');
+	const bothBlankRaw = preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step');
+	const bothSetRaw = preflightPrompt('plan/x', 'plan/x/D.md', 'npm test', 'npm run lint', 'step');
 	const bothBlank = flat(bothBlankRaw);
 	const bothSet = flat(bothSetRaw);
 
@@ -279,8 +279,11 @@ describe('preflightPrompt — per-phase context mode', () => {
 		expect(phase).toContain('phase-agnostic');
 	});
 
-	it('defaults to the two-command contract for per-step mode', () => {
-		const step = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null));
+	it('uses the two-command contract for per-step mode', () => {
+		// The mode parameter is required on purpose: a defaulted param once let
+		// the preflight RETRY turn silently receive the step contract while the
+		// main turn ran the phase contract.
+		const step = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step'));
 		expect(step).toContain('Settle the TWO commands');
 	});
 });

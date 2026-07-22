@@ -1,5 +1,7 @@
 /** Autonomous-coding prompts: preflight, decompose, the loop, finalize. */
 
+import { STEP_CHECK_HEADING, VERIFICATION_COMMAND_HEADING } from './planParse';
+
 /**
  * Stage 0 system prompt: the last human checkpoint before a fully unattended
  * run. Hunt every deferred/ambiguous decision in the plan, resolve each with
@@ -11,7 +13,7 @@ export function preflightPrompt(
 	decisionsPath: string,
 	verifyCommand: string | null,
 	stepCheckCommand: string | null,
-	contextMode: 'step' | 'phase' = 'step'
+	contextMode: 'step' | 'phase'
 ): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
@@ -81,7 +83,6 @@ function verificationContractStep(
 	}
 	return [
 		'3. Settle the TWO commands the runner executes mechanically all night:',
-		'3. Settle the TWO commands the runner executes mechanically all night:',
 		'   - STEP CHECK: runs before EVERY commit. A cheap static check — its only',
 		'     job is "no broken file ever lands". Its cost is multiplied by the',
 		'     step count, so: an existing lint/check script if the project has one,',
@@ -96,7 +97,7 @@ function verificationContractStep(
 			? `   The user supplied a phase verification command: \`${verifyCommand}\`.`
 			: '   The user left phase verification blank — settle it yourself.',
 		"   For the phase verification, FIRST check the plan's overview.md for a",
-		'   "## Verification command" section — guided planning settles it during',
+		`   "## ${VERIFICATION_COMMAND_HEADING}" section — guided planning settles it during`,
 		'   the planning interview. If present, RUN it and adopt it unless it fails.',
 		'   a. Detect the stack(s) from what is actually in the working directory —',
 		'      package.json (check its "scripts"), Cargo.toml, pyproject.toml,',
@@ -122,7 +123,7 @@ function verificationContractStep(
 		'   e. If they choose scaffolding, the scaffold itself is work the RUN does,',
 		'      not you: note it in the decisions file so it becomes the first thing',
 		'      the loop builds. Preflight writes no code.',
-		'   Record them under "## Step check command" and "## Verification command"',
+		`   Record them under "## ${STEP_CHECK_HEADING}" and "## ${VERIFICATION_COMMAND_HEADING}"`,
 		'   — those exact section names.',
 		'   Both recorded commands MUST be:',
 		'   - READ-ONLY and free of side effects. No `git` commands, no installs, no',
@@ -163,7 +164,7 @@ function phaseContextContract(verifyCommand: string | null): string[] {
 		'   c. PREFER THE CHEAPEST CHECK THAT WOULD CATCH A REAL BREAKAGE; a',
 		'      hand-written validation script is the LAST resort, and scaffolding a',
 		'      test framework requires asking the user first.',
-		'   d. Record it under "## Verification command" — that section only.',
+		`   d. Record it under "## ${VERIFICATION_COMMAND_HEADING}" — that section only.`,
 		'   The recorded command MUST be READ-ONLY and side-effect free (no `git`,',
 		'   no installs, no file writes, no servers), fast, idempotent, and',
 		'   phase-agnostic (it runs for EVERY phase). No inline `-c "…"` program',

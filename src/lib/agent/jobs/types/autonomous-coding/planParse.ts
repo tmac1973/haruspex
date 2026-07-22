@@ -23,7 +23,18 @@ export interface PlanFile {
 	content: string;
 }
 
-const PHASE_FILE_RE = /^phase-\d+.*\.md$/i;
+/**
+ * The mechanical command contract, defined HERE because this module is its
+ * reader: prompts across guided planning and autonomous coding tell models to
+ * write these exact section headings, and extractDecisionCommand parses them.
+ * Interpolate the constants — a renamed heading in prose silently kills
+ * command extraction for a whole overnight run.
+ */
+export const VERIFICATION_COMMAND_HEADING = 'Verification command';
+export const STEP_CHECK_HEADING = 'Step check command';
+
+/** Filename shape of a guided-planning phase file (shared with the pipeline's dir filter). */
+export const PHASE_FILE_RE = /^phase-\d+.*\.md$/i;
 /** `# Phase 02 — Title` (em dash, en dash, hyphen or colon after the number). */
 const PHASE_HEADING_RE = /^#\s+Phase\s+0*(\d+)\s*[—–:-]\s*(\S.*?)\s*$/m;
 /** Longest a checklist title gets; the full step lives in the plan file. */
@@ -121,13 +132,24 @@ export function extractStepTitles(content: string): string[] {
 	return [...noCode.matchAll(/^(\d+)\.\s+(\S.*?)\s*$/gm)].map((m) => m[2]);
 }
 
+/**
+ * The text after the first heading matching `headingRe`, up to the next
+ * heading matching `endRe` (or EOF). `endRe` is a parameter because the two
+ * callers deliberately differ: step extraction stops only at `##` peers,
+ * while decision-command extraction also stops at stray `#` headings so a
+ * malformed decisions file cannot leak the next section into a command.
+ */
+function sectionAfter(text: string, headingRe: RegExp, endRe: RegExp): string | null {
+	const start = text.match(headingRe);
+	if (!start || start.index === undefined) return null;
+	const rest = text.slice(start.index + start[0].length);
+	const next = rest.match(endRe);
+	return next && next.index !== undefined ? rest.slice(0, next.index) : rest;
+}
+
 /** The text between `## Steps` and the next `## ` heading (or EOF). */
 function stepsSection(content: string): string | null {
-	const start = content.match(/^##\s+Steps\b.*$/m);
-	if (!start || start.index === undefined) return null;
-	const rest = content.slice(start.index + start[0].length);
-	const next = rest.match(/^##\s/m);
-	return next && next.index !== undefined ? rest.slice(0, next.index) : rest;
+	return sectionAfter(content, /^##\s+Steps\b.*$/m, /^##\s/m);
 }
 
 /**
@@ -149,11 +171,8 @@ function stepsSection(content: string): string | null {
  */
 export function extractDecisionCommand(text: string, heading: string): string | null {
 	const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	const start = text.match(new RegExp(`^##\\s+${escaped}\\s*$`, 'im'));
-	if (!start || start.index === undefined) return null;
-	const rest = text.slice(start.index + start[0].length);
-	const next = rest.match(/^##?\s/m);
-	const section = next && next.index !== undefined ? rest.slice(0, next.index) : rest;
+	const section = sectionAfter(text, new RegExp(`^##\\s+${escaped}\\s*$`, 'im'), /^##?\s/m);
+	if (section === null) return null;
 
 	// The fence is REQUIRED. A bare-line fallback existed and executed, on
 	// consecutive real runs, a leaked `<tool_call>bash` artifact and then an

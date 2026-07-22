@@ -90,6 +90,20 @@ describe('run_command risk gate', () => {
 		expect(out.result).toContain('Exit code: 0');
 	});
 
+	it('prompts (not denies) during an ATTENDED job turn — the preflight case', async () => {
+		// Preflight runs inside runWithAutoApprove like every job turn, but with
+		// the user present (interactive) and instructed to trial-run candidate
+		// commands. A real preflight was denied with "nobody is present to
+		// approve" while the user sat at the keyboard.
+		mocks.askCommandApproval.mockResolvedValue('deny');
+		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
+		const { executeTool } = await import('$lib/agent/tools');
+		await runWithAutoApprove(() =>
+			executeTool('run_command', { command: 'rm -rf build' }, { ...codeCtx, interactive: true })
+		);
+		expect(mocks.askCommandApproval).toHaveBeenCalled();
+	});
+
 	it('prompts on a risky command and aborts on deny', async () => {
 		mocks.askCommandApproval.mockResolvedValue('deny');
 		const { executeTool } = await import('$lib/agent/tools');

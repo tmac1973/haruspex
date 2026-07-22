@@ -38,13 +38,17 @@ async function ensureCommandApproved(
 	if (ctx.codeAutoApprove || isSessionApproved()) return 'ok';
 	const risk = classifyShellRisk(command);
 	if (!risk.matched) return 'ok';
-	// Unattended job turns (runWithAutoApprove) must never park on a modal —
-	// an approval prompt with nobody at the keyboard stalled a real run for
-	// 15 minutes on an `rm`. Risky commands are DENIED with guidance rather
-	// than auto-approved: file writes are sandboxed to the working dir, but a
-	// shell command can touch anything the user can, so the job's overwrite
-	// auto-approve does not extend to it.
-	if (isAutoApproveActive()) {
+	// UNATTENDED job turns must never park on a modal — an approval prompt
+	// with nobody at the keyboard stalled a real run for 15 minutes on an
+	// `rm`. Risky commands are DENIED with guidance rather than auto-approved:
+	// file writes are sandboxed to the working dir, but a shell command can
+	// touch anything the user can, so the job's overwrite auto-approve does
+	// not extend to it. `ctx.interactive` is the attendance signal — preflight
+	// runs inside the same auto-approve scope but WITH the user present (and
+	// is told to trial-run candidate commands), so it falls through to the
+	// normal modal instead of being denied by a message claiming nobody is
+	// there.
+	if (isAutoApproveActive() && !ctx.interactive) {
 		return {
 			message: toolError(
 				`Command blocked (${risk.reasons.join('; ')}): risky commands are unavailable ` +

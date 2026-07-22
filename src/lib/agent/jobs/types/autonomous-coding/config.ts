@@ -18,9 +18,10 @@ export interface AutonomousCodingConfig {
 	/** Failed attempts per item before it's marked BLOCKED. null = default (3). */
 	max_attempts: number | null;
 	/**
-	 * Loop context strategy: 'step' (default) = a fresh context per checklist
-	 * item; 'phase' = one continuous context per plan phase, with the runner
-	 * checking and committing each item mid-turn via submit_step_result.
+	 * Loop context strategy: 'phase' (default) = one continuous context builds
+	 * each plan phase, which the runner then verifies and commits as a unit;
+	 * 'step' = a fresh context per checklist item with per-item checks and
+	 * commits. null = default.
 	 */
 	context_mode: 'step' | 'phase' | null;
 	/**
