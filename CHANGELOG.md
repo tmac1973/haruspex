@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.57](https://github.com/tmac1973/haruspex/compare/v0.1.56...v0.1.57) (2026-07-22)
+
+
+### Features
+
+* phase-boundary verification, runner-executed, with repair cycles ([#190](https://github.com/tmac1973/haruspex/issues/190)) ([baafee4](https://github.com/tmac1973/haruspex/commit/baafee4f0b43bff1554a70b4f160e172c524f016))
+* settle the autonomous-coding verification contract in preflight ([#188](https://github.com/tmac1973/haruspex/issues/188)) ([a6e3c25](https://github.com/tmac1973/haruspex/commit/a6e3c25ab0ad63561d0cc19d4fa1fef22e1884c2))
+
+
+### Bug Fixes
+
+* debug-log digests + guided-planning phase-file validation ([#186](https://github.com/tmac1973/haruspex/issues/186)) ([a03a4fa](https://github.com/tmac1973/haruspex/commit/a03a4fadb3e6148afa3dc0fc167a523f07e5f87a))
+* stop truncated tool calls corrupting written files ([#187](https://github.com/tmac1973/haruspex/issues/187)) ([04db30c](https://github.com/tmac1973/haruspex/commit/04db30cac387573c4e7b3d73bdb58b344fb81ef7))
+
+
+### Documentation
+
+* track the futures list in-repo ([#191](https://github.com/tmac1973/haruspex/issues/191)) ([9cf9839](https://github.com/tmac1973/haruspex/commit/9cf9839ab79a7549bf652c2097ea48366b57064d))
+
 ## [0.1.56](https://github.com/tmac1973/haruspex/compare/v0.1.55...v0.1.56) (2026-07-17)
 
 
