@@ -948,10 +948,13 @@ async function runFinalizeTurn(
 async function readPlanFile(ctx: JobRunContext, relPath: string): Promise<string | null> {
 	if (!ctx.job.working_dir) return null;
 	try {
-		return await invoke<string>('fs_read_text', {
+		// Full-fidelity read, NOT the model-facing windowed fs_read_text: these
+		// files are read-modify-written by the runner (PROGRESS grows every
+		// iteration), and a head-truncated read rewritten to disk would
+		// silently destroy the tail of a long run's log.
+		return await invoke<string>('fs_read_text_full', {
 			workdir: ctx.job.working_dir,
-			relPath,
-			limit: 10000
+			relPath
 		});
 	} catch {
 		return null;

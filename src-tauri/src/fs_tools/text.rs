@@ -3,8 +3,8 @@
 
 use super::fuzzy::EditResult;
 use super::path::{
-    edit_text_at, read_text_at, refuse_if_exists, resolve_in_workdir, workdir_path,
-    workdir_path_for_write, write_bytes_to_workdir, MAX_WRITE_BYTES,
+    edit_text_at, read_text_at, read_text_full_at, refuse_if_exists, resolve_in_workdir,
+    workdir_path, workdir_path_for_write, write_bytes_to_workdir, MAX_WRITE_BYTES,
 };
 
 /// Read a text file, optionally windowed by 1-indexed `offset` (start line)
@@ -31,6 +31,22 @@ pub async fn fs_read_text(
         "File appears to be binary. Use a format-specific tool (fs_read_pdf, fs_read_image, etc.)",
     )
     .await
+}
+
+/// Full-fidelity read — exact content, no windowing, no truncation marker.
+/// NOT a model tool: the runner uses it for read-modify-write bookkeeping
+/// files and end-of-file validation, where `fs_read_text`'s head-truncation
+/// (default 2000 lines / 256 KB output budget) would silently lose the tail.
+#[tauri::command]
+pub async fn fs_read_text_full(workdir: String, rel_path: String) -> Result<String, String> {
+    let workdir = workdir_path(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+
+    if !resolved.is_file() {
+        return Err(format!("Not a file: {}", rel_path));
+    }
+
+    read_text_full_at(&resolved).await
 }
 
 #[tauri::command]

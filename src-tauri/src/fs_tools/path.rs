@@ -363,6 +363,30 @@ pub(super) async fn read_text_at(
     render_text_read(bytes, offset, limit, binary_msg)
 }
 
+/// Full-fidelity text read: exact file content, no line windowing and no
+/// truncation marker. For RUNNER-owned read-modify-write files (TODO/PROGRESS
+/// bookkeeping) and validation gates that must see the true end of a file —
+/// a windowed read would make tail truncation invisible by construction, and
+/// rewriting a windowed read back to disk destroys the tail. Model-facing
+/// reads stay on [`read_text_at`]'s windowing.
+pub(super) async fn read_text_full_at(resolved: &Path) -> Result<String, String> {
+    let metadata = fs::metadata(resolved)
+        .await
+        .map_err(|e| format!("Failed to stat file: {}", e))?;
+
+    if metadata.len() > MAX_READ_LOAD_BYTES {
+        return Err(format!(
+            "File too large to load ({} bytes, max {} MB).",
+            metadata.len(),
+            MAX_READ_LOAD_BYTES / 1_048_576
+        ));
+    }
+
+    fs::read_to_string(resolved)
+        .await
+        .map_err(|e| format!("Failed to read file: {}", e))
+}
+
 /// Shared command body for the text editors (`fs_edit_text` /
 /// `fs_edit_text_absolute`) after path resolution: stat against the edit
 /// cap, read, apply the fuzzy find-and-replace, and write back. `display`
@@ -618,6 +642,27 @@ mod tests {
             "got tail: {}",
             &out[out.len().saturating_sub(80)..]
         );
+    }
+
+    #[test]
+    fn read_text_full_round_trips_past_the_window_defaults() {
+        // A file longer than DEFAULT_READ_LINES and MAX_READ_OUTPUT_BYTES must
+        // come back byte-identical — this is the runner's read-modify-write
+        // path, where a truncated read rewritten to disk destroys the tail.
+        let dir = make_temp_dir("read_full");
+        let body = (1..=3000)
+            .map(|n| format!("entry {n}: {}", "x".repeat(100)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(body.len() > MAX_READ_OUTPUT_BYTES);
+        let file = dir.join("PROGRESS.md");
+        fs::write(&file, &body).unwrap();
+        let out = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(read_text_full_at(&file))
+            .unwrap();
+        assert_eq!(out, body);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -71,6 +71,7 @@ export const IPC = {
 	fs_read_pdf_bytes: 'fs_read_pdf_bytes',
 	fs_read_text: 'fs_read_text',
 	fs_read_text_absolute: 'fs_read_text_absolute',
+	fs_read_text_full: 'fs_read_text_full',
 	fs_read_xlsx: 'fs_read_xlsx',
 	fs_write_docx: 'fs_write_docx',
 	fs_write_odp: 'fs_write_odp',

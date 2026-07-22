@@ -988,7 +988,7 @@ describe('jobs runner — autonomous coding', () => {
 				}
 				return ok;
 			}
-			// fs_read_text (TODO/PROGRESS resume reads) → undefined = nothing on disk.
+			// fs_read_text_full (TODO/PROGRESS resume reads) → undefined = nothing on disk.
 			return undefined;
 		});
 		return commands;
@@ -1260,7 +1260,8 @@ describe('jobs runner — autonomous coding', () => {
 		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
 			if (cmd === 'fs_path_exists') return true;
 			if (cmd === 'shell_platform_supported') return true;
-			if (cmd === 'fs_read_text' && String(args?.relPath).includes('TODO')) return existingTodo;
+			if (cmd === 'fs_read_text_full' && String(args?.relPath).includes('TODO'))
+				return existingTodo;
 			if (cmd === 'run_command_capture') {
 				const command = String(args?.command ?? '');
 				const ok = { stdout: '', stderr: '', exit_code: 0, duration_ms: 1, killed: false };

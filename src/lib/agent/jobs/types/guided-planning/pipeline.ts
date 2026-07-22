@@ -475,15 +475,14 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	/**
 	 * Read a workdir file for validation, or null if it can't be read.
 	 *
-	 * No `limit`: the gate has to see the END of the file to notice a missing
-	 * tail, and a windowed read would make tail truncation invisible by
-	 * construction. Phase files run 13-20 KB, well inside the read path's own
-	 * size cap.
+	 * Full-fidelity read: the gate has to see the END of the file to notice a
+	 * missing tail, and a windowed read (fs_read_text defaults to 2000 lines)
+	 * would make tail truncation invisible by construction.
 	 */
 	const readWorkdirFile = async (relPath: string): Promise<string | null> => {
 		if (!job.working_dir) return null;
 		try {
-			return await invoke<string>('fs_read_text', {
+			return await invoke<string>('fs_read_text_full', {
 				workdir: job.working_dir,
 				relPath
 			});
