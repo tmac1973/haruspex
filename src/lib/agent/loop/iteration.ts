@@ -737,7 +737,16 @@ export async function runIteration(
 	// silent on its own keeps working and re-submitting (observed: ~20
 	// submit_iteration_result calls in one coding iteration before the user
 	// cancelled the run).
-	if (ctx.forceFinalTool && toolCalls.some((c) => c.name === ctx.forceFinalTool)) {
+	//
+	// ONLY when it is the response's sole call, though. A model can bundle the
+	// forced tool speculatively with other work — a real preflight bundled
+	// ask_user_question with a submit_preflight whose blocker text was its own
+	// to-do note ("need to present commands to user for confirmation"); the
+	// user answered the question, the turn ended on the speculative submit,
+	// and the run failed on a verdict the model never meant. Bundled calls all
+	// execute, then the turn continues so the model can act on their results;
+	// the runaway case still dies on its first solo submit.
+	if (ctx.forceFinalTool && toolCalls.every((c) => c.name === ctx.forceFinalTool)) {
 		ctx.options.onComplete();
 		return 'complete';
 	}

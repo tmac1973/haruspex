@@ -833,3 +833,38 @@ describe('runAgentLoop: blocked web reads grant free retries', () => {
 		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
 	});
 });
+
+describe('runAgentLoop: forced-final tool terminus', () => {
+	it('ends the turn on a SOLO forced-tool call', () => {
+		// The runaway case: a model that keeps working and re-submitting after
+		// its result call (~20 submits in one observed iteration) dies here.
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'c1', name: 'submit_thing', args: '{"ok":true}' }])
+		);
+		const { options, cb } = makeOptions({ forceFinalTool: 'submit_thing' });
+		return runAgentLoop(options).then(() => {
+			expect(api.chatCompletion).toHaveBeenCalledTimes(1);
+			expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it('keeps going when the forced tool is BUNDLED with other work', async () => {
+		// A real preflight bundled ask_user_question with a speculative
+		// submit_preflight whose blocker text was its own to-do note; ending the
+		// turn there failed the run on a verdict the model never meant. Bundled
+		// calls execute, then the model must get a chance to act on the results.
+		nonStreamQueue.push(
+			toolCallResponse([
+				{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' },
+				{ id: 'c2', name: 'submit_thing', args: '{"ok":false}' }
+			]),
+			toolCallResponse([{ id: 'c3', name: 'submit_thing', args: '{"ok":true}' }])
+		);
+		const { options, cb } = makeOptions({ forceFinalTool: 'submit_thing' });
+		await runAgentLoop(options);
+		// Second model call happened (the bundle did not end the turn); the
+		// solo re-submit then did.
+		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
+		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+	});
+});
