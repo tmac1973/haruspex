@@ -157,12 +157,38 @@ export function extractDecisionCommand(text: string, heading: string): string | 
 
 	const fence = section.match(/^```[^\n]*\n([\s\S]*?)^```/m);
 	if (fence) {
-		const body = fence[1].trim();
-		return body.length > 0 ? body : null;
+		return stripToolArtifacts(fence[1]);
 	}
-	const line = section
+	const bare = stripToolArtifacts(section);
+	if (bare === null) return null;
+	const line = bare
 		.split('\n')
 		.map((l) => l.trim())
 		.find((l) => l.length > 0 && !l.startsWith('#'));
 	return line ? line.replace(/^`|`$/g, '').trim() || null : null;
+}
+
+/**
+ * Tool-call syntax that has leaked into recorded text as literal content. A
+ * real run's decisions file carried `<tool_call>bash` on the line before the
+ * actual command — the model's invocation wrapper written out as prose — and
+ * the runner executed it verbatim: every step check died with
+ * `sh: tool_call: No such file or directory`, three items were blocked, and
+ * the model (whose work was fine) correctly diagnosed "bash tool invocation
+ * errors, not content issues" while being punished for them.
+ */
+const TOOL_ARTIFACT_RE = /<tool_call|<\/tool_call>|<function=|<\/function>|<parameter=/i;
+
+/**
+ * Drop artifact LINES rather than rejecting the whole body: the observed file
+ * had the junk on its own line directly above a perfectly good command, so
+ * stripping recovers the command instead of silently disabling verification.
+ */
+function stripToolArtifacts(body: string): string | null {
+	const kept = body
+		.split('\n')
+		.filter((l) => !TOOL_ARTIFACT_RE.test(l))
+		.join('\n')
+		.trim();
+	return kept.length > 0 ? kept : null;
 }

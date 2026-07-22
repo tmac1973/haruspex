@@ -33,7 +33,7 @@ const CODING_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 	{
 		title: 'Coding loop',
 		description:
-			'Implementing one step per fresh-context iteration — checked, committed, and deep-verified at each phase boundary — until every step is done or blocked.'
+			'Implementing the checklist — each step checked and committed, each phase deep-verified at its boundary — until every step is done or blocked.'
 	},
 	{
 		title: 'Finalize',

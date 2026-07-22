@@ -249,4 +249,39 @@ describe('extractDecisionCommand', () => {
 	it('matches the heading case-insensitively', () => {
 		expect(extractDecisionCommand(decisions, 'step check COMMAND')).toBe('npm run lint');
 	});
+
+	it('strips leaked tool-call artifact lines and keeps the real command', () => {
+		// Byte-for-byte the failure from a real run: no fence, and the model's
+		// tool-call wrapper written as literal text on the line above the actual
+		// command. The runner executed `<tool_call>bash` — every step check died
+		// with `sh: tool_call: No such file or directory` and three items were
+		// blocked while the model's work was fine.
+		const leaked = [
+			'## Step check command',
+			'',
+			'<tool_call>bash',
+			"node -e \"new Function(require('fs').readFileSync('index.html','utf8'))\""
+		].join('\n');
+		const cmd = extractDecisionCommand(leaked, 'Step check command');
+		expect(cmd).not.toContain('<tool_call');
+		expect(cmd).toContain('node -e');
+	});
+
+	it('strips artifacts inside a fenced block too', () => {
+		const leaked = [
+			'## Verification command',
+			'',
+			'```',
+			'<tool_call>bash',
+			'npm test',
+			'</tool_call>',
+			'```'
+		].join('\n');
+		expect(extractDecisionCommand(leaked, 'Verification command')).toBe('npm test');
+	});
+
+	it('returns null when the section is nothing but artifacts', () => {
+		const junk = '## Step check command\n\n<tool_call>bash\n</tool_call>\n';
+		expect(extractDecisionCommand(junk, 'Step check command')).toBeNull();
+	});
 });

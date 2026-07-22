@@ -247,8 +247,10 @@ export function phaseTurnPrompt(
 		'   runner commits after each verified step, via your submit_step_result.',
 		`5. Do NOT edit \`${planDir}TODO-coding.md\` or \`${planDir}PROGRESS-coding.md\``,
 		'   — the runner owns them.',
-		'6. If an item cannot proceed, report it "failed" with a diagnostic note and',
-		'   continue with the next item the reply names.',
+		'6. If an item cannot proceed, report it "failed" with a diagnostic note. It',
+		'   stays the current item — fix it and report again; the turn budget, not',
+		'   an attempt counter, bounds you. Genuinely stuck: call',
+		'   `submit_phase_result` and the runner hands the rest to per-step mode.',
 		'7. When the reply to your last report says the phase is complete — or you',
 		'   genuinely cannot progress — call `submit_phase_result` exactly once and',
 		'   stop.'

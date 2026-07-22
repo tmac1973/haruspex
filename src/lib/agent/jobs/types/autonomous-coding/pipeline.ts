@@ -383,20 +383,17 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				step: cfg.step_check_command ?? extractDecisionCommand(text, 'Step check command'),
 				phase: cfg.verify_command ?? extractDecisionCommand(text, 'Verification command')
 			};
-			if (
-				knownCommands &&
-				(knownCommands.step !== cmds.step || knownCommands.phase !== cmds.phase)
-			) {
-				const diff = [
-					knownCommands.step !== cmds.step
-						? `- step check: \`${knownCommands.step ?? '(none)'}\` → \`${cmds.step ?? '(none)'}\``
-						: '',
-					knownCommands.phase !== cmds.phase
-						? `- phase verification: \`${knownCommands.phase ?? '(none)'}\` → \`${cmds.phase ?? '(none)'}\``
-						: ''
-				]
-					.filter(Boolean)
-					.join('\n');
+			if (!knownCommands && !cmds.step && !cmds.phase) {
+				await record(
+					'## No verification commands available\n\nNeither a step check nor a phase ' +
+						'verification command could be resolved from job config or ' +
+						'DECISIONS-coding.md — steps will commit unchecked and phases will NOT be ' +
+						'verified. If this is unexpected, check the two command sections in the ' +
+						'decisions file.\n'
+				);
+			}
+			const diff = knownCommands ? formatCommandChange(knownCommands, cmds) : null;
+			if (diff) {
 				knownCommands = cmds;
 				await record(
 					`## Verification commands changed mid-run\n\n${diff}\n\nA repair item may ` +
@@ -469,11 +466,11 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 						record,
 						nextIteration: () => ++iteration,
 						abortIfCancelled,
-						markNoProgress: async (phaseId) => {
+						markNoProgress: async (phaseId, unfinished) => {
 							phaseStepFallback.add(phaseId);
 							await record(
-								`## Phase ${phaseId}: continuous-context turn made no progress — ` +
-									`falling back to per-step iterations for this phase.\n`
+								`## Phase ${phaseId}: continuous-context turn ended with ${unfinished} ` +
+									`unfinished item(s) — handing this phase to per-step iterations.\n`
 							);
 						}
 					},
@@ -708,8 +705,24 @@ async function obtainTaskList(
 	);
 }
 
+/** Human-readable diff of the two verification commands, or null when unchanged. */
+function formatCommandChange(
+	prev: { step: string | null; phase: string | null },
+	next: { step: string | null; phase: string | null }
+): string | null {
+	const lines = [
+		prev.step !== next.step
+			? `- step check: \`${prev.step ?? '(none)'}\` → \`${next.step ?? '(none)'}\``
+			: '',
+		prev.phase !== next.phase
+			? `- phase verification: \`${prev.phase ?? '(none)'}\` → \`${next.phase ?? '(none)'}\``
+			: ''
+	].filter(Boolean);
+	return lines.length > 0 ? lines.join('\n') : null;
+}
+
 /** Everything a phase-context turn needs from the running pipeline. */
-interface PhaseTurnDeps {
+export interface PhaseTurnDeps {
 	ctx: JobRunContext;
 	planDir: string;
 	maxAttempts: number;
@@ -720,7 +733,7 @@ interface PhaseTurnDeps {
 	record: (entry: string, clipped?: string) => Promise<void>;
 	nextIteration: () => number;
 	abortIfCancelled: () => void;
-	markNoProgress: (phaseId: string) => Promise<void>;
+	markNoProgress: (phaseId: string, unfinished: number) => Promise<void>;
 }
 
 /**
@@ -765,7 +778,7 @@ async function settleStepReport(
  * the returned string lands in the model's context as the tool result, so a
  * failed check is fixed in-context instead of by a fresh-context retry.
  */
-function makePhaseStepHandler(deps: PhaseTurnDeps, phaseId: string) {
+export function makePhaseStepHandler(deps: PhaseTurnDeps, phaseId: string) {
 	const remaining = () =>
 		deps.getPlan().items.filter((i) => i.phase === phaseId && i.status === 'todo');
 	return async (arg: { item_id: string; status: 'done' | 'failed'; note: string }) => {
@@ -779,31 +792,36 @@ function makePhaseStepHandler(deps: PhaseTurnDeps, phaseId: string) {
 		}
 		const iteration = deps.nextIteration();
 		const settled = await settleStepReport(deps, target, arg);
-		const { status } = settled;
-		let note = settled.note;
+		const { status, note } = settled;
 		if (status === 'done') {
 			deps.setPlan({ ...deps.getPlan(), items: markDone(deps.getPlan().items, target.id) });
-		} else {
-			const r = recordFailure(deps.getPlan().items, target.id, deps.maxAttempts);
-			deps.setPlan({ ...deps.getPlan(), items: r.items });
-			if (r.blocked) note = `BLOCKED after ${deps.maxAttempts} failed attempt(s). ${note}`;
 		}
+		// A failed settle leaves the item todo with NO attempt charged: in a
+		// continuous context the fix-and-re-report cycle IS the retry mechanism,
+		// and it is bounded by the turn budget — not by per-item attempts, which
+		// belong to per-step mode. A garbage step check once blocked three items
+		// in a row at 3 "attempts" each while the model's work was fine.
+
 		await deps.record(
 			`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${note.trim()}\n`,
 			`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${clipNote(note)}\n`
 		);
 		const next = remaining()[0] ?? null;
-		const landed =
-			status === 'done'
-				? `Committed ${target.id}.`
-				: `Recorded ${target.id} as failed: ${clipNote(note, 600)}`;
 		deps.ctx.patchStep(LOOP, {
 			streaming: `Phase ${phaseId} (continuous) — ${next ? `next: ${next.id}. ${next.title}` : 'wrapping up'}`,
 			checklist: toChecklist(deps.getPlan().items, next?.id ?? null, deps.maxAttempts)
 		});
+		if (status !== 'done') {
+			return (
+				`Recorded ${target.id} as failed — it stays the CURRENT item. Fix the cause and ` +
+				`report it again (details above in this reply). If you are genuinely stuck on it, ` +
+				`call submit_phase_result and the runner will hand the rest of the phase to ` +
+				`per-step iterations.`
+			);
+		}
 		return next
-			? `${landed} NEXT item: ${next.id}. ${next.title} — implement it, then report it.`
-			: `${landed} That was the phase's last actionable item — call submit_phase_result now.`;
+			? `Committed ${target.id}. NEXT item: ${next.id}. ${next.title} — implement it, then report it.`
+			: `Committed ${target.id}. That was the phase's last actionable item — call submit_phase_result now.`;
 	};
 }
 
@@ -849,8 +867,11 @@ async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promis
 	} finally {
 		setStepResultHandler(null);
 	}
-	if (remaining().length === before) {
-		await deps.markNoProgress(phaseId);
+	// ONE continuous shot per phase: anything still unfinished is handed to
+	// per-step iterations, which carry real attempt accounting. Re-running an
+	// identical continuous turn would just replay the same conversation.
+	if (remaining().length > 0) {
+		await deps.markNoProgress(phaseId, remaining().length);
 	}
 }
 
