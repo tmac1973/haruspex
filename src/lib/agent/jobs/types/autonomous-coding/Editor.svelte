@@ -123,8 +123,8 @@
 >
 	<span class="label">Context</span>
 	<select bind:value={cfg.context_mode}>
-		<option value="step">Fresh per step — clean context per checklist item (default)</option>
-		<option value="phase">Continuous per phase — one context per plan phase (experimental)</option>
+		<option value="phase">Continuous per phase — one context per plan phase (default)</option>
+		<option value="step">Fresh per step — clean context per checklist item</option>
 	</select>
 	<span class="hint">
 		Per-phase keeps everything the model just learned in view, avoiding per-step re-reading — at the

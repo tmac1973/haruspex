@@ -264,7 +264,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			decisionsPath,
 			cfg.verify_command,
 			cfg.step_check_command,
-			cfg.context_mode ?? 'step'
+			cfg.context_mode ?? 'phase'
 		);
 		abortIfCancelled();
 		if (!outcome.ready) {
@@ -379,9 +379,18 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		let knownCommands: { step: string | null; phase: string | null } | null = null;
 		const currentCommands = async (): Promise<{ step: string | null; phase: string | null }> => {
 			const text = (await readPlanFile(ctx, decisionsPath)) ?? '';
+			// Third source, after job config and the preflight's decisions file: a
+			// guided-planning overview now records the verification command settled
+			// during PLANNING — the stage that knows the stack and has the user
+			// present. The runner reads it directly so the contract survives even a
+			// preflight that fumbles the transcription.
+			const overviewText = (await readPlanFile(ctx, `${planDir}overview.md`)) ?? '';
 			const cmds = {
 				step: cfg.step_check_command ?? extractDecisionCommand(text, 'Step check command'),
-				phase: cfg.verify_command ?? extractDecisionCommand(text, 'Verification command')
+				phase:
+					cfg.verify_command ??
+					extractDecisionCommand(text, 'Verification command') ??
+					extractDecisionCommand(overviewText, 'Verification command')
 			};
 			if (!knownCommands && !cmds.step && !cmds.phase) {
 				await record(
@@ -450,7 +459,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 
 			const target = nextActionable(plan.items);
 			if (!target) break;
-			if (cfg.context_mode === 'phase' && !target.repair && target.phase) {
+			if ((cfg.context_mode ?? 'phase') === 'phase' && !target.repair && target.phase) {
 				await runPhaseContextTurn(
 					{
 						ctx,

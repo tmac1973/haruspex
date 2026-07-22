@@ -95,6 +95,9 @@ function verificationContractStep(
 		verifyCommand
 			? `   The user supplied a phase verification command: \`${verifyCommand}\`.`
 			: '   The user left phase verification blank — settle it yourself.',
+		"   For the phase verification, FIRST check the plan's overview.md for a",
+		'   "## Verification command" section — guided planning settles it during',
+		'   the planning interview. If present, RUN it and adopt it unless it fails.',
 		'   a. Detect the stack(s) from what is actually in the working directory —',
 		'      package.json (check its "scripts"), Cargo.toml, pyproject.toml,',
 		'      requirements.txt, go.mod, Makefile, and any existing test directory.',
@@ -147,6 +150,10 @@ function phaseContextContract(verifyCommand: string | null): string[] {
 		verifyCommand
 			? `   The user supplied a verification command: \`${verifyCommand}\`.`
 			: '   The user left the verification command blank — settle it yourself.',
+		'   FIRST check the plan\'s overview.md for a "## Verification command"',
+		'   section: guided planning settles this during the planning interview,',
+		'   and its choice was confirmed by the user. If present, RUN it; adopt it',
+		'   unless it fails. Only interview the user when the plan has none.',
 		'   a. Detect the stack(s) from what is actually in the working directory,',
 		'      cover every stack found joining with `&&`. One command, one exit code.',
 		'   b. RUN the candidate once with run_command — including one the user',

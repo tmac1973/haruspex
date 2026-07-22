@@ -73,7 +73,7 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		verify_command: '',
 		step_check_command: '',
 		max_attempts: 3,
-		context_mode: 'step',
+		context_mode: 'phase',
 		signing_fallback: 'unsigned'
 	}),
 	configFromJob: (typeConfig) => {
@@ -83,7 +83,7 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			verify_command: c.verify_command ?? '',
 			step_check_command: c.step_check_command ?? '',
 			max_attempts: c.max_attempts ?? 3,
-			context_mode: c.context_mode ?? 'step',
+			context_mode: c.context_mode ?? 'phase',
 			signing_fallback: c.signing_fallback ?? 'unsigned'
 		};
 	},

@@ -948,7 +948,10 @@ describe('jobs runner — autonomous coding', () => {
 			job_type: 'autonomous_coding',
 			steps: [],
 			working_dir: '/repo',
-			type_config: JSON.stringify({ plan_dir: 'plan/x/' }),
+			// These integration tests exercise the per-step machinery (iteration
+			// turns, per-item commits, attempts). Pin the mode: the job default is
+			// now 'phase'.
+			type_config: JSON.stringify({ plan_dir: 'plan/x/', context_mode: 'step' }),
 			...over
 		});
 	}
@@ -1174,7 +1177,11 @@ describe('jobs runner — autonomous coding', () => {
 	it("skip mode: never commits unsigned — work continues uncommitted, and it's recorded", async () => {
 		mocks.getJob.mockResolvedValueOnce(
 			codingJob({
-				type_config: JSON.stringify({ plan_dir: 'plan/x/', signing_fallback: 'skip' })
+				type_config: JSON.stringify({
+					plan_dir: 'plan/x/',
+					context_mode: 'step',
+					signing_fallback: 'skip'
+				})
 			})
 		);
 		const commands = wireGit({ signFails: true });
@@ -1194,7 +1201,9 @@ describe('jobs runner — autonomous coding', () => {
 
 	it('blocks a step after max_attempts failures and finishes with blockers', async () => {
 		mocks.getJob.mockResolvedValueOnce(
-			codingJob({ type_config: JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 2 }) })
+			codingJob({
+				type_config: JSON.stringify({ plan_dir: 'plan/x/', context_mode: 'step', max_attempts: 2 })
+			})
 		);
 		wireGit();
 		// Item 01 never succeeds; item 02 works first try.
@@ -1222,7 +1231,9 @@ describe('jobs runner — autonomous coding', () => {
 
 	it('downgrades a "done" that changed nothing to a failed attempt', async () => {
 		mocks.getJob.mockResolvedValueOnce(
-			codingJob({ type_config: JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 1 }) })
+			codingJob({
+				type_config: JSON.stringify({ plan_dir: 'plan/x/', context_mode: 'step', max_attempts: 1 })
+			})
 		);
 		wireGit({ staged: false }); // no diff, no new commit — nothing happened
 		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
