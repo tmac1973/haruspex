@@ -10,7 +10,8 @@ export function preflightPrompt(
 	planDir: string,
 	decisionsPath: string,
 	verifyCommand: string | null,
-	stepCheckCommand: string | null
+	stepCheckCommand: string | null,
+	contextMode: 'step' | 'phase' = 'step'
 ): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
@@ -38,15 +39,15 @@ export function preflightPrompt(
 		'   options). Do not batch. Do not proceed while any decision is open. If the',
 		'   user answers "proceed" or similar, stop asking and settle the rest with',
 		'   sensible defaults, recording each default you chose.',
-		...verificationContractStep(verifyCommand, stepCheckCommand),
+		...verificationContractStep(verifyCommand, stepCheckCommand, contextMode),
 		`4. Write \`${decisionsPath}\` with fs_write_text: a "# Coding decisions"`,
 		'   heading, then one "## <question>" section per decision with the chosen',
 		'   answer (including defaults you settled). If there were genuinely no open',
-		'   decisions, write the file saying so. It MUST also contain these two',
-		'   sections, each holding EXACTLY ONE fenced code block whose only content',
-		'   is the command — the RUNNER parses them mechanically and executes them:',
-		'   "## Step check command" (run before every commit) and',
-		'   "## Verification command" (run when each phase completes).',
+		'   decisions, write the file saying so. It MUST also contain the command',
+		'   section(s) named in step 3, each holding EXACTLY ONE fenced code block',
+		'   whose only content is the command — the RUNNER parses them mechanically',
+		'   and executes them. The heading must be exactly the section name with',
+		'   NOTHING appended to it.',
 		`   Write ONLY inside \`${planDir}\` — no code, no other files.`,
 		'5. Call `submit_preflight` exactly once: ready=true when nothing is left',
 		'   ambiguous; ready=false with concrete blockers when the run cannot start',
@@ -72,9 +73,14 @@ export function preflightPrompt(
  */
 function verificationContractStep(
 	verifyCommand: string | null,
-	stepCheckCommand: string | null
+	stepCheckCommand: string | null,
+	contextMode: 'step' | 'phase'
 ): string[] {
+	if (contextMode === 'phase') {
+		return phaseContextContract(verifyCommand);
+	}
 	return [
+		'3. Settle the TWO commands the runner executes mechanically all night:',
 		'3. Settle the TWO commands the runner executes mechanically all night:',
 		'   - STEP CHECK: runs before EVERY commit. A cheap static check — its only',
 		'     job is "no broken file ever lands". Its cost is multiplied by the',
@@ -113,6 +119,8 @@ function verificationContractStep(
 		'   e. If they choose scaffolding, the scaffold itself is work the RUN does,',
 		'      not you: note it in the decisions file so it becomes the first thing',
 		'      the loop builds. Preflight writes no code.',
+		'   Record them under "## Step check command" and "## Verification command"',
+		'   — those exact section names.',
 		'   Both recorded commands MUST be:',
 		'   - READ-ONLY and free of side effects. No `git` commands, no installs, no',
 		'     file writes, no servers, no network. They run over and over; running',
@@ -125,6 +133,34 @@ function verificationContractStep(
 		'     strings — that is a hand-written validator smuggled into a command.',
 		'     If a small helper script is genuinely required, that is scaffold work',
 		'     for the RUN (ask, as above) — preflight writes no code.'
+	];
+}
+
+/** The single-command contract for continuous per-phase context runs. */
+function phaseContextContract(verifyCommand: string | null): string[] {
+	return [
+		'3. Settle the ONE command the runner executes mechanically all night.',
+		'   This run uses continuous per-phase context: the model builds a whole',
+		'   phase, then the runner runs PHASE VERIFICATION — the real proof, the',
+		'   test suite if one exists. There is NO per-step check in this mode; do',
+		'   not ask the user about one and do not record one.',
+		verifyCommand
+			? `   The user supplied a verification command: \`${verifyCommand}\`.`
+			: '   The user left the verification command blank — settle it yourself.',
+		'   a. Detect the stack(s) from what is actually in the working directory,',
+		'      cover every stack found joining with `&&`. One command, one exit code.',
+		'   b. RUN the candidate once with run_command — including one the user',
+		'      supplied. A command you never executed is a guess. If a user-supplied',
+		'      command fails, do NOT silently substitute your own: show what',
+		'      happened and ask ONE `ask_user_question`.',
+		'   c. PREFER THE CHEAPEST CHECK THAT WOULD CATCH A REAL BREAKAGE; a',
+		'      hand-written validation script is the LAST resort, and scaffolding a',
+		'      test framework requires asking the user first.',
+		'   d. Record it under "## Verification command" — that section only.',
+		'   The recorded command MUST be READ-ONLY and side-effect free (no `git`,',
+		'   no installs, no file writes, no servers), fast, idempotent, and',
+		'   phase-agnostic (it runs for EVERY phase). No inline `-c "…"` program',
+		'   strings — that is a validator smuggled into a command.'
 	];
 }
 

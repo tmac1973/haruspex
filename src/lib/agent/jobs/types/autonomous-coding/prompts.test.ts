@@ -255,3 +255,32 @@ describe('phaseTurnPrompt — build whole phase, runner verifies and commits', (
 		expect(bare).toContain('your own check is the only one');
 	});
 });
+
+describe('preflightPrompt — per-phase context mode', () => {
+	const phase = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'phase'));
+
+	it('settles only the verification command — no step check exists to ask about', () => {
+		// A real preflight asked the user "what should the step check be?" in a
+		// mode that no longer has per-step checks.
+		expect(phase).toContain('Settle the ONE command');
+		expect(phase).toContain('NO per-step check in this mode');
+		expect(phase).toContain('do not ask the user about one');
+		expect(phase).not.toContain('STEP CHECK: runs before EVERY commit');
+	});
+
+	it('records only the verification section', () => {
+		expect(phase).toContain('"## Verification command"');
+		expect(phase).not.toContain('"## Step check command"');
+	});
+
+	it('keeps the run-it-first and command-hygiene rules', () => {
+		expect(phase).toContain('RUN the candidate once with run_command');
+		expect(phase).toContain('READ-ONLY and side-effect free');
+		expect(phase).toContain('phase-agnostic');
+	});
+
+	it('defaults to the two-command contract for per-step mode', () => {
+		const step = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null));
+		expect(step).toContain('Settle the TWO commands');
+	});
+});

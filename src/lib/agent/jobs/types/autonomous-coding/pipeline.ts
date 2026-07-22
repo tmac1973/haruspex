@@ -263,7 +263,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			planDir,
 			decisionsPath,
 			cfg.verify_command,
-			cfg.step_check_command
+			cfg.step_check_command,
+			cfg.context_mode ?? 'step'
 		);
 		abortIfCancelled();
 		if (!outcome.ready) {
@@ -603,7 +604,8 @@ async function runPreflightTurn(
 	planDir: string,
 	decisionsPath: string,
 	verifyCommand: string | null,
-	stepCheckCommand: string | null
+	stepCheckCommand: string | null,
+	contextMode: 'step' | 'phase'
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
@@ -616,7 +618,13 @@ async function runPreflightTurn(
 		maxIterations: PREFLIGHT_MAX_ITERATIONS,
 		interactive: true,
 		writeRoot: planDir,
-		systemPrompt: preflightPrompt(planDir, decisionsPath, verifyCommand, stepCheckCommand),
+		systemPrompt: preflightPrompt(
+			planDir,
+			decisionsPath,
+			verifyCommand,
+			stepCheckCommand,
+			contextMode
+		),
 		toolAllowlist: PREFLIGHT_TOOLS,
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,
 		...base,

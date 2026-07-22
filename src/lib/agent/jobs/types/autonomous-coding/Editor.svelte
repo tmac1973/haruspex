@@ -54,23 +54,25 @@
 	</span>
 </label>
 
-<label
-	class="field"
-	title="Cheap static check (lint / typecheck / syntax) the runner executes before every commit, so a broken file never lands. Leave blank and preflight will settle it with you."
->
-	<span class="label"
-		>Step check — before every commit <span class="optional">(optional)</span></span
+{#if cfg.context_mode !== 'phase'}
+	<label
+		class="field"
+		title="Cheap static check (lint / typecheck / syntax) the runner executes before every commit, so a broken file never lands. Leave blank and preflight will settle it with you."
 	>
-	<input
-		type="text"
-		bind:value={cfg.step_check_command}
-		placeholder="Leave blank and preflight will work it out with you"
-	/>
-	<span class="hint">
-		A cheap lint / typecheck / syntax check, run by the runner before each step is committed. Its
-		cost is paid on every step, so keep it fast. <strong>Not sure? Leave it blank.</strong>
-	</span>
-</label>
+		<span class="label"
+			>Step check — before every commit <span class="optional">(optional)</span></span
+		>
+		<input
+			type="text"
+			bind:value={cfg.step_check_command}
+			placeholder="Leave blank and preflight will work it out with you"
+		/>
+		<span class="hint">
+			A cheap lint / typecheck / syntax check, run by the runner before each step is committed. Its
+			cost is paid on every step, so keep it fast. <strong>Not sure? Leave it blank.</strong>
+		</span>
+	</label>
+{/if}
 
 <label
 	class="field"
