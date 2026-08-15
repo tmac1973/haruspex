@@ -82,24 +82,23 @@ pub struct Session {
     _tempdirs: Vec<PathBuf>,
 }
 
-/// Strip AppImage-bundled paths out of LD_LIBRARY_PATH for the spawned
-/// shell. Without this, an AppImage build leaks its munged LD_LIBRARY_PATH
-/// into the shell, so the shell (and tools it runs) load the AppImage's
-/// bundled libs instead of the system ones — e.g. fish warning
-/// `libpcre2-8.so.0: no version information available`. No-op when not
-/// running inside an AppImage (APPDIR unset), so dev mode and .deb / .rpm
-/// installs are unaffected. The filtering itself lives in `env_util`
-/// (shared with the URL opener in `links.rs`); this just applies the
-/// decision to a portable_pty CommandBuilder.
+/// Strip AppImage-mangled variables out of the spawned shell's env.
+/// Without this, an AppImage build leaks its munged LD_LIBRARY_PATH and
+/// PYTHONHOME / PYTHONPATH into the shell, so the shell (and tools it
+/// runs) load the AppImage's bundled libs instead of the system ones —
+/// e.g. fish warning `libpcre2-8.so.0: no version information available`,
+/// or `python` failing to start because PYTHONHOME points into the
+/// AppImage mount. No-op when not running inside an AppImage (APPDIR
+/// unset), so dev mode and .deb / .rpm installs are unaffected. The
+/// decisions live in `env_util` (shared with the URL opener in
+/// `links.rs`); this just applies them to a portable_pty CommandBuilder.
 #[cfg(target_os = "linux")]
 fn sanitize_appimage_env(cmd: &mut CommandBuilder) {
-    match crate::env_util::appimage_cleaned_ld_path() {
-        None => {}
-        Some(None) => {
-            cmd.env_remove("LD_LIBRARY_PATH");
-        }
-        Some(Some(cleaned)) => {
-            cmd.env("LD_LIBRARY_PATH", cleaned);
+    use crate::env_util::EnvFix;
+    for fix in crate::env_util::appimage_env_fixes() {
+        match fix {
+            EnvFix::Remove(var) => cmd.env_remove(var),
+            EnvFix::Set(var, value) => cmd.env(var, value),
         }
     }
 }

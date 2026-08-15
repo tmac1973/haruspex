@@ -6,14 +6,14 @@
 //!      diagnosing "the link did nothing" reports — the renderer's
 //!      console isn't piped to terminal stderr, and devtools are
 //!      disabled in release builds).
-//!   2. Sanitize `LD_LIBRARY_PATH` on Linux before launching the system
-//!      URL handler. AppImage's AppRun script prepends the bundled
-//!      `$APPDIR/usr/lib` to `LD_LIBRARY_PATH` so the main binary can
-//!      find its sidecar libs; that path is then inherited by every
-//!      child process, including `xdg-open`'s spawned browser, which
-//!      can fail silently when AppImage-bundled libs (libssl, libnss3,
-//!      etc.) ABI-collide with the browser's own. Stripping `$APPDIR`
-//!      entries from `LD_LIBRARY_PATH` for the child fixes the link
+//!   2. Sanitize AppImage-mangled env on Linux before launching the
+//!      system URL handler. AppImage's AppRun script points
+//!      `LD_LIBRARY_PATH` and the Python vars at the mounted `$APPDIR`
+//!      so the main binary can find its sidecar libs; those are then
+//!      inherited by every child process, including `xdg-open`'s
+//!      spawned browser, which can fail silently when AppImage-bundled
+//!      libs (libssl, libnss3, etc.) ABI-collide with the browser's
+//!      own. Stripping `$APPDIR` entries for the child fixes the link
 //!      handoff without touching the parent process.
 
 use log::{error, info};
@@ -65,20 +65,23 @@ fn spawn_url_handler(url: &str) -> Result<(), String> {
         .map_err(|e| format!("start spawn failed: {}", e))
 }
 
-/// Strip AppImage-bundled paths out of LD_LIBRARY_PATH for the child
-/// process. No-op when not running inside an AppImage (APPDIR unset),
-/// so dev mode and .deb / .rpm installs are unaffected. The filtering
-/// itself lives in `env_util` (shared with the PTY spawn in
-/// `shell/session.rs`); this just applies the decision to a std Command.
+/// Strip AppImage-mangled variables (LD_LIBRARY_PATH, PYTHONHOME /
+/// PYTHONPATH) out of the child process's env. No-op when not running
+/// inside an AppImage (APPDIR unset), so dev mode and .deb / .rpm
+/// installs are unaffected. The decisions live in `env_util` (shared
+/// with the PTY spawn in `shell/session.rs`); this just applies them to
+/// a std Command.
 #[cfg(target_os = "linux")]
 fn sanitize_appimage_env(cmd: &mut std::process::Command) {
-    match crate::env_util::appimage_cleaned_ld_path() {
-        None => {}
-        Some(None) => {
-            cmd.env_remove("LD_LIBRARY_PATH");
-        }
-        Some(Some(cleaned)) => {
-            cmd.env("LD_LIBRARY_PATH", cleaned);
+    use crate::env_util::EnvFix;
+    for fix in crate::env_util::appimage_env_fixes() {
+        match fix {
+            EnvFix::Remove(var) => {
+                cmd.env_remove(var);
+            }
+            EnvFix::Set(var, value) => {
+                cmd.env(var, value);
+            }
         }
     }
 }
