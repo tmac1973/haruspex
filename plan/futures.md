@@ -5,6 +5,12 @@ Running list of things to address. Status annotations added 2026-07-19.
 ## Open
 
 - When in jobs with a different model than the system settings the model and context size indicator in the top right corner show the model/context usage for the system settings, not the model used for the job. Ideally the indicator would change when viewing a running job to indicate the model/context for that running job, but change back to the system model/context when viewing the chat/shell tabs. Alternatively we could put that info in the job step card instead and just not show the model/context indicator in the upper right when on the jobs tab. This might be the more flexible option
+  - **Planned — `plan/job-observability/`, phase 02.** Doing both, not either:
+    per-step usage in the step cards (the durable per-step record, and the only
+    place that shows a per-phase context growing) plus retargeting the top-right
+    indicator while a live run is in view. Root cause of the missing numbers is
+    that `runEphemeralTurn` never exposed the loop's `onUsageUpdate` hook, so no
+    job turn has ever reported usage at all.
 
 - It would be nice to able to specify a different model for each phase of a job. I.E. do the planning with one model, verification with the next.
 
