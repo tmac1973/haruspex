@@ -16,6 +16,7 @@
 	import {
 		defaultModelAdvanced,
 		defaultSourceForCaps,
+		describeSamplingProfile,
 		parseModelAdvanced,
 		serializeModelAdvanced,
 		type DiscoveredCaps,
@@ -43,6 +44,7 @@
 		type JobType
 	} from '$lib/stores/jobs.svelte';
 	import { getSettings } from '$lib/stores/settings';
+	import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
@@ -285,6 +287,30 @@
 
 	// "Inherit" is only meaningful if you can see what it inherits.
 	const globalThinkingLabel = $derived(getSettings().thinkingEnabled ? 'on' : 'off');
+
+	/**
+	 * The tuned sampling family this job's model resolves to, or null when the
+	 * app has no card values for it. Resolved through the same function the
+	 * runner uses, so the editor cannot claim a tuning that won't be applied —
+	 * including the rule that local models always get the default family.
+	 */
+	const samplingFamily = $derived.by(() => {
+		const override =
+			modelSource !== 'settings' && modelBaseUrl.trim()
+				? {
+						baseUrl: modelBaseUrl.trim(),
+						modelId: modelModelId.trim() || undefined,
+						discovered: advDiscovered ?? undefined
+					}
+				: undefined;
+		return resolveBackendDescriptor(override).samplingFamily;
+	});
+
+	// What 'App-tuned profile' will actually send — four genuinely different
+	// outcomes, described by a tested pure function rather than inline prose.
+	const profileExplanation = $derived(
+		describeSamplingProfile(samplingFamily, !!advDiscovered?.sampling)
+	);
 
 	/**
 	 * Warn when the reasoning control can't actually reach this server. The
@@ -962,9 +988,7 @@
 												No sampling fields are sent, so whatever the server is configured with
 												stands.
 											{:else if advSamplingSource === 'profile'}
-												{advDiscovered?.sampling
-													? "The server's published recommendations, with the app's tuned values filling any gaps."
-													: "The app's tuned values for this model family. Unrecognized models get none."}
+												{profileExplanation}
 											{:else}
 												Exactly the values below. Leave a field blank to omit it.
 											{/if}
@@ -1019,7 +1043,7 @@
 				{#if openSections.type}
 					<div class="collapse-body">
 						{#key `${jobId}:${jobType}`}
-							<TypeEditor bind:config={typeConfig} bind:steps jobName={name} />
+							<TypeEditor bind:config={typeConfig} bind:steps jobName={name} {workingDir} />
 						{/key}
 					</div>
 				{/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import type { GuidedPlanningEditorState } from './definition';
 
 	// The guided-planning section of the job editor (see JobTypeEditorProps):
@@ -37,16 +38,13 @@
 	});
 </script>
 
-<div
-	class="field"
-	title="The idea seeding this planning session. The agent asks follow-up questions from here, then writes the overview and phase files."
->
+<div class="field">
 	<span class="label">
 		What do you want to build? <span class="required">(required)</span>
-	</span>
-	<span class="hint">
-		Describe the project or feature in your own words. The agent interviews you from here — you can
-		always type your own answer to any question.
+		<Tooltip
+			label="About the project description"
+			text="The idea seeding this planning session — describe it in your own words. The agent interviews you from here (you can always type your own answer to any question), then writes the overview and phase files."
+		/>
 	</span>
 	<textarea
 		bind:value={cfg.initial_description}
@@ -55,28 +53,30 @@
 	></textarea>
 </div>
 
-<label
-	class="field"
-	title="Folder where the overview and phase markdown files are written, relative to the working directory. Auto-fills from the name until you edit it."
->
-	<span class="label">Output folder</span>
+<div class="field">
+	<span class="label">
+		Output folder
+		<Tooltip
+			label="About the output folder"
+			text="Folder where the overview and phase markdown files are written, relative to the working directory (e.g. plan/my-feature/). Auto-fills from the job name until you edit it. An autonomous-coding job can point its plan directory straight at this folder."
+		/>
+	</span>
 	<input
 		type="text"
 		bind:value={cfg.plan_output_dir}
 		oninput={() => (outputDirEdited = true)}
 		placeholder="plan/<name>/"
+		aria-label="Output folder"
 	/>
-	<span class="hint">Relative to the working directory (e.g. plan/my-feature/).</span>
-</label>
+</div>
 
 <style>
 	.label {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
 		font-size: 0.82rem;
 		color: var(--text-secondary);
-	}
-
-	.hint {
-		font-style: italic;
 	}
 
 	.required {

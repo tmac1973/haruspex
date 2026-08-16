@@ -74,6 +74,14 @@ export interface JobTypeEditorProps {
 	config: Record<string, unknown>;
 	steps: JobStepInput[];
 	jobName: string;
+	/**
+	 * The job's working dir as currently typed in the shared section — live,
+	 * not the saved value. Types whose config is expressed relative to it (the
+	 * coding plan dir) need it to offer a directory picker rooted correctly and
+	 * to detect the project's stack. May be blank: the editor can be open
+	 * before a working dir is chosen.
+	 */
+	workingDir: string;
 }
 // Loose component typing: editors declare a subset of JobTypeEditorProps.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

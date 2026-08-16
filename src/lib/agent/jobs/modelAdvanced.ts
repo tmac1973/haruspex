@@ -187,3 +187,32 @@ function parseSamplingCaps(v: unknown): RemoteSamplingCaps | null {
 	if (presets.length === 0 && Object.keys(def).length === 0) return null;
 	return { default: def, presets };
 }
+
+/**
+ * Plain-English description of what the 'profile' sampling source will
+ * actually send, given the model's tuned family (null when the app has no
+ * card values for it) and whether the server published its own
+ * recommendations.
+ *
+ * Four genuinely different outcomes, and conflating them is how a control
+ * ends up lying: with no family AND no server caps, 'profile' sends nothing
+ * at all, making it identical to 'server'. An earlier version of this text
+ * promised "the app's tuned values filling any gaps" in that case, when there
+ * were no tuned values to fill anything with.
+ *
+ * Only llama-toolchest publishes sampling recommendations today — every other
+ * probe path (stock llama-server, LM Studio, Lemonade, vLLM, Ollama) returns a
+ * bare model list — so `hasServerCaps` is false for most users.
+ */
+export function describeSamplingProfile(family: string | null, hasServerCaps: boolean): string {
+	if (hasServerCaps && family) {
+		return `The server's published recommendations, picked per turn for thinking or coding mode, with the app's tuned ${family} values filling any parameter the server leaves unspecified.`;
+	}
+	if (hasServerCaps) {
+		return "The server's published recommendations, picked per turn for thinking or coding mode. The app has no tuned values for this model, so anything the server leaves unspecified is omitted and its own default applies.";
+	}
+	if (family) {
+		return `The app's tuned ${family} values, picked per turn for thinking or coding mode.`;
+	}
+	return 'The app has no tuned values for this model and the server published none, so nothing is sent — identical to Server defaults.';
+}

@@ -88,3 +88,41 @@ export function normalizePlanDir(dir: string): string {
 	const d = dir.trim();
 	return d.endsWith('/') ? d : `${d}/`;
 }
+
+/**
+ * Convert a directory chosen from the system file dialog into a path relative
+ * to the job's working dir, or explain why it can't be used.
+ *
+ * `plan_dir` is resolved relative to the working dir everywhere downstream —
+ * `tryParsePlanDir` passes it to `fs_list_dir` as `relPath` — so an absolute
+ * path, or one outside the tree, would fail at run time during preflight,
+ * hours after the mistake. Failing here means it is fixable while the editor
+ * is still open.
+ *
+ * Separators are normalized to '/', which is what the fs_* IPC layer expects
+ * on every platform.
+ */
+export function planDirFromPicked(
+	workingDir: string,
+	picked: string
+): { ok: true; relative: string } | { ok: false; error: string } {
+	const norm = (p: string) => p.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+	const root = norm(workingDir);
+	const target = norm(picked);
+	if (!root) {
+		return { ok: false, error: 'Set the job’s working directory first.' };
+	}
+	if (target === root) {
+		// The working dir itself is legal — a repo whose plans sit at its root.
+		return { ok: true, relative: '' };
+	}
+	// The trailing slash is the boundary check: without it "/repo-old" would
+	// count as inside "/repo".
+	if (!target.startsWith(`${root}/`)) {
+		return {
+			ok: false,
+			error: 'Pick a folder inside the working directory — plan paths are relative to it.'
+		};
+	}
+	return { ok: true, relative: normalizePlanDir(target.slice(root.length + 1)) };
+}

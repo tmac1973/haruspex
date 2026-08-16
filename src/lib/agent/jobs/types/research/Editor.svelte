@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
 	import type { JobStepInput } from '$lib/stores/jobs.svelte';
 
@@ -48,15 +49,14 @@
 	}
 </script>
 
-<div
-	class="field steps"
-	title="Each step is one prompt that runs as a fresh conversation with the model — no history between steps. The previous step's final reply is automatically prepended to the next step's prompt, so step 2 can act on step 1's output. Use this to decompose multi-objective work that a small model struggles to do in one shot."
->
+<div class="field steps">
 	<div class="steps-header">
-		<span class="label">Steps</span>
-		<span class="hint">
-			Each step runs in a fresh conversation. The previous step's output is automatically prepended
-			to the next step's prompt.
+		<span class="label">
+			Steps
+			<Tooltip
+				label="About steps"
+				text="Each step is one prompt that runs as a fresh conversation with the model — no history between steps. The previous step's final reply is automatically prepended to the next step's prompt, so step 2 can act on step 1's output. Use this to decompose multi-objective work that a small model struggles to do in one shot."
+			/>
 		</span>
 	</div>
 	{#each steps as step, i (i)}
@@ -153,12 +153,11 @@
 
 <style>
 	.label {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
 		font-size: 0.82rem;
 		color: var(--text-secondary);
-	}
-
-	.hint {
-		font-style: italic;
 	}
 
 	.steps-header {

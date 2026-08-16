@@ -3,6 +3,25 @@
 Three independent UX fixes to the job editors. Independent of phases 1 and 2 —
 could land in any order.
 
+## As built — notes
+
+- **Fields became `<div class="field">`.** They were `<label class="field">`
+  wrapping everything, which is what made the tooltip-inside-a-label trap
+  possible at all. The global scaffolding in `+layout.svelte` already documents
+  `<div class="field">` as the intended pattern, so this aligns rather than
+  diverges; controls get explicit `aria-label`s where the wrapping label was
+  doing that job.
+- **`JobTypeEditorProps` gained `workingDir`.** The coding editor needs the
+  live (not saved) value to root the directory picker and detect the stack.
+  Additive; other editors ignore it.
+- **The suggestion picker is a `<select>` beside the text box**, not a
+  replacement for it, plus a `<datalist>` on the input itself. The box stays
+  authoritative so bespoke commands remain typeable, and the select resets to
+  its placeholder after each pick so it can be used again.
+- **Suggestion reads are debounced 300ms.** Both inputs are text fields;
+  undebounced, typing a plan dir fired a listing, a read per plan file and four
+  existence probes per keystroke.
+
 ## Steps
 
 ### 1. A Tooltip component, and delete the duplicated prose
