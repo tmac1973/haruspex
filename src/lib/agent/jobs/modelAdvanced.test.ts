@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	defaultModelAdvanced,
 	defaultSourceForCaps,
+	describeSamplingProfile,
 	parseModelAdvanced,
 	parseSamplingParams,
 	serializeModelAdvanced,
@@ -144,5 +145,38 @@ describe('defaultSourceForCaps', () => {
 	it('falls back to the tuned profile when the server publishes none', () => {
 		expect(defaultSourceForCaps(null)).toBe('profile');
 		expect(defaultSourceForCaps({ reasoning: null, sampling: null })).toBe('profile');
+	});
+});
+
+/**
+ * What the "App-tuned profile" option promises the user. The four cases are
+ * genuinely different, and an earlier version conflated two of them: it
+ * promised "the app's tuned values filling any gaps" for a model the app has
+ * no tuned values for. Only llama-toolchest publishes sampling caps, so the
+ * no-caps branches are what most users see.
+ */
+describe('describeSamplingProfile', () => {
+	it('promises gap-filling only when there is a family to fill from', () => {
+		expect(describeSamplingProfile('qwen3.5', true)).toContain('qwen3.5');
+		expect(describeSamplingProfile('qwen3.5', true)).toContain('filling any parameter');
+	});
+
+	it('says the server wins outright when the app has no tuning', () => {
+		const text = describeSamplingProfile(null, true);
+		expect(text).not.toContain('filling any parameter');
+		expect(text).toContain('own default applies');
+	});
+
+	it('names the family when there are no server caps', () => {
+		expect(describeSamplingProfile('qwen3.6-27b', false)).toContain('qwen3.6-27b');
+	});
+
+	it('admits the no-op case rather than implying something is sent', () => {
+		// The case that matters: with neither source, 'profile' sends nothing,
+		// which makes it identical to 'server'. Saying anything else is a lie
+		// the user cannot check.
+		const text = describeSamplingProfile(null, false);
+		expect(text).toContain('nothing is sent');
+		expect(text).toContain('Server defaults');
 	});
 });
