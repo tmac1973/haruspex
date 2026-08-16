@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.58](https://github.com/tmac1973/haruspex/compare/v0.1.57...v0.1.58) (2026-08-16)
+
+
+### Features
+
+* declutter the job editors, pick the plan dir, suggest commands ([#197](https://github.com/tmac1973/haruspex/issues/197)) ([6664bde](https://github.com/tmac1973/haruspex/commit/6664bdea399e9b88c1c381bb0022cc3fb6672269))
+* give each autonomous-coding run its own working branch ([#194](https://github.com/tmac1973/haruspex/issues/194)) ([4477340](https://github.com/tmac1973/haruspex/commit/44773409717f8a7e5e348d51755edaf379ea5c5a))
+* per-job reasoning and sampling controls ([#195](https://github.com/tmac1973/haruspex/issues/195)) ([601d667](https://github.com/tmac1973/haruspex/commit/601d667a26919006de616d5e2a49c14f3f508d1f))
+* show reasoning and context usage during a job run ([#196](https://github.com/tmac1973/haruspex/issues/196)) ([2c6ffba](https://github.com/tmac1973/haruspex/commit/2c6ffba62090916d1b7a89d7f27eb7f7fc14e666))
+
+
+### Bug Fixes
+
+* strip AppImage-leaked Python env vars from spawned children ([#193](https://github.com/tmac1973/haruspex/issues/193)) ([56dd903](https://github.com/tmac1973/haruspex/commit/56dd90300621f8d03e9523c54ffa7afd3ba0a176))
+
 ## [0.1.57](https://github.com/tmac1973/haruspex/compare/v0.1.56...v0.1.57) (2026-07-22)
 
 
