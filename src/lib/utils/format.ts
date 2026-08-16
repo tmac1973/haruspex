@@ -39,3 +39,9 @@ export function formatDuration(ms: number): string {
 	const h = Math.floor(m / 60);
 	return `${h}h ${m % 60}m`;
 }
+
+/** Compact token count: 1234 → "1.2K". Shared by every context gauge. */
+export function formatTokens(n: number): string {
+	if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+	return n.toString();
+}

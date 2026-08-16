@@ -14,7 +14,8 @@
  *     wants a live preview (the runner does, the UI reflects it).
  */
 
-import type { BackendOverride, ChatMessage } from '$lib/api';
+import type { BackendOverride, ChatMessage, Usage } from '$lib/api';
+import type { CallStats } from '$lib/agent/loop';
 import type { SamplingParams } from '$lib/stores/settings';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
@@ -76,6 +77,19 @@ export interface EphemeralTurnOptions {
 	 */
 	systemPrompt?: string;
 	signal?: AbortSignal;
+	/**
+	 * Prompt/completion token usage as each model call reports it. Jobs use
+	 * this for a per-step context gauge; without it a job running against its
+	 * own model had no token numbers anywhere in the UI.
+	 */
+	onUsageUpdate?: (usage: Usage) => void;
+	/** Per-call timing and reasoning/answer split. See `CallStats`. */
+	onCallStats?: (stats: CallStats) => void;
+	/**
+	 * Reasoning text as each model call returns it. The only route for a
+	 * forced-tool turn, which never streams.
+	 */
+	onReasoning?: (reasoning: string) => void;
 	onAssistantDelta?: (full: string) => void;
 	onToolStart?: (call: ResolvedToolCall) => void;
 	onToolEnd?: (
@@ -127,6 +141,9 @@ export async function runEphemeralTurn(
 			backend: options.backend,
 			interactive: options.interactive,
 			writeRoot: options.writeRoot,
+			onUsageUpdate: options.onUsageUpdate,
+			onCallStats: options.onCallStats,
+			onReasoning: options.onReasoning,
 			thinkingEnabled: options.thinkingEnabled,
 			samplingSource: options.samplingSource,
 			samplingParams: options.samplingParams,

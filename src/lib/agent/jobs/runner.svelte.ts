@@ -10,13 +10,13 @@
 
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
-import type { SearchStep } from '$lib/agent/loop';
+import type { CallStats, SearchStep } from '$lib/agent/loop';
 import {
 	runEphemeralTurn,
 	type EphemeralTurnOptions,
 	type EphemeralTurnResult
 } from '$lib/agent/runEphemeralTurn';
-import type { BackendOverride } from '$lib/api';
+import type { BackendOverride, Usage } from '$lib/api';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps, type JobType } from '$lib/stores/jobs.svelte';
@@ -121,6 +121,10 @@ function runJobTurn(
 		() =>
 			runWithAutoApprove(() =>
 				runEphemeralTurn({
+					// Ordering is the contract: observability is a default a
+					// pipeline may replace, the job's policy outranks the
+					// pipeline, and the runner owns the last three outright.
+					...observabilityCallbacks(runId),
 					...opts,
 					...jobTurnPolicy(job),
 					workingDir: job.working_dir ? job.working_dir : null,
@@ -149,6 +153,34 @@ export interface StepChecklistEntry {
 	detail?: string;
 }
 
+/**
+ * How much of a step went to reasoning rather than answering.
+ *
+ * `totalMs` is the summed duration of the step's model calls, not its
+ * wall-clock elapsed time — tool execution, file writes and git commits
+ * happen between calls and are nobody's thinking. Comparing `reasoningMs`
+ * against step elapsed would understate the share.
+ */
+export interface StepThinkingStats {
+	reasoningMs: number;
+	totalMs: number;
+	reasoningTokens: number;
+	totalTokens: number;
+	/** Number of model calls folded in — the sample size behind the estimate. */
+	calls: number;
+}
+
+/** Fold one call's stats into a step's running totals. */
+export function addCallStats(prev: StepThinkingStats | null, call: CallStats): StepThinkingStats {
+	return {
+		reasoningMs: (prev?.reasoningMs ?? 0) + call.reasoningMs,
+		totalMs: (prev?.totalMs ?? 0) + call.durationMs,
+		reasoningTokens: (prev?.reasoningTokens ?? 0) + call.reasoningTokens,
+		totalTokens: (prev?.totalTokens ?? 0) + call.completionTokens,
+		calls: (prev?.calls ?? 0) + 1
+	};
+}
+
 export interface RunStepState {
 	index: number;
 	promptAuthored: string;
@@ -164,6 +196,21 @@ export interface RunStepState {
 	status: StepStatus;
 	streaming: string;
 	output: string;
+	/**
+	 * This step's reasoning, session-only — deliberately never persisted to
+	 * job_runs (an overnight run's traces are large and their value decays
+	 * fast). Accumulated across the step's model calls, since one step is a
+	 * multi-iteration agent loop.
+	 */
+	reasoning: string;
+	/** Latest prompt/completion token usage reported by this step's calls. */
+	usage: { promptTokens: number; completionTokens: number } | null;
+	/**
+	 * Thinking-vs-answering totals for the step, summed over its model calls.
+	 * Token and millisecond figures are apportioned estimates — see
+	 * `CallStats`. Display-only, like `checklist` below.
+	 */
+	thinking: StepThinkingStats | null;
 	error: string | null;
 	searchSteps: SearchStep[];
 	/**
@@ -185,6 +232,13 @@ export interface RunState {
 	/** Job type, so the run view can render type-specific progress (e.g. the
 	 *  named guided_planning stages). */
 	jobType: JobType;
+	/**
+	 * Context window of the model THIS run uses — the job's override when it
+	 * has one, else the Settings backend. Carried on the run so the UI can
+	 * gauge a step's token usage against the right ceiling instead of the
+	 * globally-active model's.
+	 */
+	contextSize: number;
 	steps: RunStepState[];
 	currentStepIndex: number;
 	status: RunStatus;
@@ -315,6 +369,7 @@ function startRun(queued: QueuedRun): void {
 		jobId: job.id,
 		jobName: job.name,
 		jobType: job.job_type,
+		contextSize: jobDescriptor(job).contextSize,
 		steps: planned.map((s, i) => ({
 			index: i,
 			promptAuthored: s.authored,
@@ -328,6 +383,9 @@ function startRun(queued: QueuedRun): void {
 			status: 'pending',
 			streaming: '',
 			output: '',
+			reasoning: '',
+			usage: null,
+			thinking: null,
 			error: null,
 			searchSteps: [],
 			sizeWarning: null,
@@ -354,6 +412,42 @@ function patchStep(runId: number, stepIndex: number, patch: Partial<RunStepState
 	if (!current || current.id !== runId) return;
 	const steps = current.steps.map((s, i) => (i === stepIndex ? { ...s, ...patch } : s));
 	current = { ...current, steps };
+}
+
+/**
+ * Observability hooks attached to every job turn, whatever the type and
+ * whether or not the pipeline opted into stream callbacks.
+ *
+ * Attribution follows `currentStepIndex` — the same "which step is live"
+ * signal the runner already uses to pin an error to a step — resolved at call
+ * time rather than captured, because one `runJobTurn` call can outlive the
+ * step index it started under. A pipeline that never calls
+ * `setCurrentStepIndex` folds everything into step 0, exactly as its errors
+ * already would.
+ */
+function observabilityCallbacks(runId: number) {
+	const liveStep = () => (current && current.id === runId ? current.currentStepIndex : 0);
+	return {
+		onUsageUpdate: (usage: Usage) =>
+			patchStep(runId, liveStep(), {
+				usage: { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens }
+			}),
+		onCallStats: (stats: CallStats) => {
+			if (!current || current.id !== runId) return;
+			const idx = liveStep();
+			patchStep(runId, idx, {
+				thinking: addCallStats(current.steps[idx]?.thinking ?? null, stats)
+			});
+		},
+		onReasoning: (reasoning: string) => {
+			if (!current || current.id !== runId) return;
+			const idx = liveStep();
+			const prev = current.steps[idx]?.reasoning ?? '';
+			// One step is many model calls; separate them so the disclosure
+			// reads as a sequence of thoughts rather than one run-on block.
+			patchStep(runId, idx, { reasoning: prev ? `${prev}\n\n---\n\n${reasoning}` : reasoning });
+		}
+	};
 }
 
 function buildStreamCallbacks(runId: number, stepIndex: number) {

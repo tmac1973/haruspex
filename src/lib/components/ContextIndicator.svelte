@@ -1,66 +1,48 @@
 <script lang="ts">
-	import { getContextUsage, getContextPercentage } from '$lib/stores/context.svelte';
+	// The app-header context indicator. Reads the global chat/shell usage store
+	// by default, but retargets to the live job step while a job run is in view
+	// — a job may run against a different model with a different window than
+	// Settings has active, and reporting the Settings numbers there was simply
+	// wrong (futures.md, open item #1).
+	import ContextGauge from '$lib/components/ContextGauge.svelte';
+	import { getContextUsage } from '$lib/stores/context.svelte';
+	import { getCurrentRun } from '$lib/agent/jobs/runner.svelte';
 
-	const usage = $derived(getContextUsage());
-	const percent = $derived(getContextPercentage());
-	const visible = $derived(usage.promptTokens > 0 && usage.contextSize > 0);
-
-	function formatTokens(n: number): string {
-		if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-		return n.toString();
+	interface Props {
+		/** True when the Jobs tab is the active view. */
+		jobsActive?: boolean;
 	}
 
-	function barColor(pct: number): string {
-		if (pct >= 80) return 'var(--error-text)';
-		if (pct >= 60) return 'var(--warning)';
-		return 'var(--accent)';
-	}
+	const { jobsActive = false }: Props = $props();
+
+	const globalUsage = $derived(getContextUsage());
+	const run = $derived(jobsActive ? getCurrentRun() : null);
+
+	// The step the numbers describe: the live one, else the last that reported.
+	const jobStep = $derived.by(() => {
+		if (!run) return null;
+		const live = run.steps[run.currentStepIndex];
+		if (live?.usage) return live;
+		return [...run.steps].reverse().find((s) => s.usage) ?? null;
+	});
+
+	const source = $derived(
+		jobStep?.usage
+			? {
+					promptTokens: jobStep.usage.promptTokens,
+					contextSize: run!.contextSize,
+					label: run!.jobName
+				}
+			: {
+					promptTokens: globalUsage.promptTokens,
+					contextSize: globalUsage.contextSize,
+					label: undefined
+				}
+	);
 </script>
 
-{#if visible}
-	<div
-		class="context-indicator"
-		title={`Prompt: ${usage.promptTokens.toLocaleString()} tokens | Context: ${usage.contextSize.toLocaleString()} tokens (${percent.toFixed(1)}%)`}
-	>
-		<span class="context-label">
-			{formatTokens(usage.promptTokens)} / {formatTokens(usage.contextSize)}
-		</span>
-		<div class="context-bar">
-			<div
-				class="context-fill"
-				style="width: {Math.min(percent, 100)}%; background: {barColor(percent)}"
-			></div>
-		</div>
-	</div>
-{/if}
-
-<style>
-	.context-indicator {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		cursor: default;
-	}
-
-	.context-label {
-		font-size: 0.7rem;
-		color: var(--text-secondary);
-		white-space: nowrap;
-	}
-
-	.context-bar {
-		width: 48px;
-		height: 4px;
-		background: var(--border);
-		border-radius: 2px;
-		overflow: hidden;
-	}
-
-	.context-fill {
-		height: 100%;
-		border-radius: 2px;
-		transition:
-			width 0.3s ease,
-			background 0.3s ease;
-	}
-</style>
+<ContextGauge
+	promptTokens={source.promptTokens}
+	contextSize={source.contextSize}
+	label={source.label}
+/>

@@ -72,7 +72,11 @@ vi.mock('$lib/stores/settings', () => ({
 	hasEnabledEmailAccount: vi.fn(() => false)
 }));
 
-vi.mock('$lib/markdown', () => ({
+vi.mock('$lib/markdown', async (importOriginal) => ({
+	// Keep the real reasoning splitter: it is pure, it defines the
+	// reasoning/answer contract the loop reports against, and faking it here
+	// would let the two drift without any test noticing.
+	...(await importOriginal<typeof import('$lib/markdown')>()),
 	stripToolCallArtifacts: (text: string) =>
 		text
 			.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
@@ -134,6 +138,7 @@ interface LoopCallbacks {
 	onError: ReturnType<typeof vi.fn>;
 	onUsageUpdate: ReturnType<typeof vi.fn>;
 	onCallStats: ReturnType<typeof vi.fn>;
+	onReasoning: ReturnType<typeof vi.fn>;
 }
 
 function makeOptions(overrides: Partial<AgentLoopOptions> = {}): {
@@ -147,7 +152,8 @@ function makeOptions(overrides: Partial<AgentLoopOptions> = {}): {
 		onComplete: vi.fn(),
 		onError: vi.fn(),
 		onUsageUpdate: vi.fn(),
-		onCallStats: vi.fn()
+		onCallStats: vi.fn(),
+		onReasoning: vi.fn()
 	};
 	const options: AgentLoopOptions = {
 		messages: [{ role: 'user', content: 'hi' }],
@@ -230,10 +236,17 @@ describe('runAgentLoop: plain answer paths', () => {
 		expect(cb.onError).not.toHaveBeenCalled();
 		// Usage / call-stats plumbing from the non-streaming tool check.
 		expect(cb.onUsageUpdate).toHaveBeenCalledWith(usage);
-		expect(cb.onCallStats).toHaveBeenCalledWith({
-			durationMs: expect.any(Number),
-			completionTokens: 5
-		});
+		expect(cb.onCallStats).toHaveBeenCalledWith(
+			expect.objectContaining({
+				durationMs: expect.any(Number),
+				completionTokens: 5,
+				// No reasoning in this response, so the split is all answer.
+				reasoningChars: 0,
+				reasoningTokens: 0,
+				reasoningMs: 0
+			})
+		);
+		expect(cb.onReasoning).not.toHaveBeenCalled();
 	});
 
 	it('re-streams the final answer when the tool check returns no content', async () => {
@@ -258,10 +271,15 @@ describe('runAgentLoop: plain answer paths', () => {
 		expect(cb.onError).not.toHaveBeenCalled();
 		// Usage / call-stats plumbing from the streamed usage chunk.
 		expect(cb.onUsageUpdate).toHaveBeenCalledWith(usage);
-		expect(cb.onCallStats).toHaveBeenCalledWith({
-			durationMs: expect.any(Number),
-			completionTokens: 7
-		});
+		expect(cb.onCallStats).toHaveBeenCalledWith(
+			expect.objectContaining({
+				durationMs: expect.any(Number),
+				completionTokens: 7,
+				reasoningChars: 0,
+				reasoningTokens: 0,
+				reasoningMs: 0
+			})
+		);
 	});
 
 	it('surfaces an out-of-tokens ApiError via onError after a length-truncated synthesis', async () => {
@@ -866,5 +884,154 @@ describe('runAgentLoop: forced-final tool terminus', () => {
 		// solo re-submit then did.
 		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+	});
+});
+
+/**
+ * The observability contract Phase 02 rests on. Autonomous-coding turns all
+ * set `forceFinalTool`, and that path answers with ONE non-streaming call and
+ * returns without ever reaching the final-synthesis stream — so a UI watching
+ * only `onStreamChunk` sees nothing for the entire turn. That is why these
+ * hooks exist and why they must fire off the non-streaming responses.
+ */
+describe('runAgentLoop: reasoning and call-stats reporting', () => {
+	// The shape every path converges on: the API layer's
+	// combineReasoningAndContent wraps a non-streamed response's reasoning in
+	// <think> tags, and llama.cpp without --reasoning-format emits them inline
+	// itself.
+	const withReasoning = '<think>weighing the options</think>Hello there!';
+
+	it('reports reasoning from a non-streaming answer', async () => {
+		const usage = { prompt_tokens: 10, completion_tokens: 100, total_tokens: 110 };
+		nonStreamQueue.push(textResponse(withReasoning, 'stop', usage));
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		expect(cb.onReasoning).toHaveBeenCalledWith('weighing the options');
+		const stats = cb.onCallStats.mock.calls[0][0];
+		expect(stats.reasoningChars).toBe('weighing the options'.length);
+		expect(stats.answerChars).toBe('Hello there!'.length);
+		// Apportioned by character ratio: 20 of 32 chars → ~63% of 100 tokens.
+		expect(stats.reasoningTokens).toBe(63);
+		expect(stats.reasoningMs).toBeLessThanOrEqual(stats.durationMs);
+	});
+
+	it('reports the forced-tool call, which is the whole turn', async () => {
+		// Every autonomous-coding turn looks like this. Missing it would leave
+		// a coding run with no reasoning and no stats at all.
+		const usage = { prompt_tokens: 10, completion_tokens: 40, total_tokens: 50 };
+		nonStreamQueue.push({
+			content: '<think>the tests pass, submitting</think>',
+			finish_reason: 'tool_calls',
+			usage,
+			tool_calls: [
+				{
+					id: 'c1',
+					type: 'function' as const,
+					function: { name: 'submit_thing', arguments: '{"ok":true}' }
+				}
+			]
+		});
+		const { options, cb } = makeOptions({ forceFinalTool: 'submit_thing' });
+
+		await runAgentLoop(options);
+
+		expect(api.chatCompletionStream).not.toHaveBeenCalled();
+		expect(cb.onReasoning).toHaveBeenCalledWith('the tests pass, submitting');
+		const stats = cb.onCallStats.mock.calls[0][0];
+		// Reasoning-only content: the whole call was thinking.
+		expect(stats.answerChars).toBe(0);
+		expect(stats.reasoningTokens).toBe(40);
+	});
+
+	it('reports the extra call the forced-tool fallback makes', async () => {
+		// When the model answers with prose instead of calling the forced tool,
+		// the loop makes a SECOND call to pin it. That call is real inference —
+		// unreported, its reasoning and cost would vanish from the step, and on
+		// a forced-tool turn it is often the call that actually produces the
+		// result.
+		const usage = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
+		nonStreamQueue.push(
+			// 1: prose, no tool call → triggers the fallback.
+			textResponse('<think>first pass</think>I think we are done.', 'stop', usage),
+			// 2: the forced call, with its own reasoning.
+			{
+				content: '<think>second pass</think>',
+				finish_reason: 'tool_calls',
+				usage,
+				tool_calls: [
+					{
+						id: 'c1',
+						type: 'function' as const,
+						function: { name: 'submit_thing', arguments: '{"ok":true}' }
+					}
+				]
+			}
+		);
+		const { options, cb } = makeOptions({ forceFinalTool: 'submit_thing' });
+
+		await runAgentLoop(options);
+
+		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
+		expect(cb.onReasoning).toHaveBeenCalledWith('first pass');
+		expect(cb.onReasoning).toHaveBeenCalledWith('second pass');
+		expect(cb.onCallStats).toHaveBeenCalledTimes(2);
+	});
+
+	it('reports the fallback call even when it yields no usable call', async () => {
+		// This path returns early. Skipping the report there would drop the
+		// reasoning that produced the dud, along with what it cost.
+		const usage = { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 };
+		nonStreamQueue.push(
+			textResponse('<think>first pass</think>Still prose.', 'stop', usage),
+			textResponse('<think>still no tool call</think>', 'stop', usage)
+		);
+		const { options, cb } = makeOptions({ forceFinalTool: 'submit_thing' });
+
+		await runAgentLoop(options);
+
+		expect(cb.onReasoning).toHaveBeenCalledWith('still no tool call');
+		expect(cb.onCallStats).toHaveBeenCalledTimes(2);
+	});
+
+	it('reports reasoning delivered over the streaming channel', async () => {
+		const usage = { prompt_tokens: 5, completion_tokens: 50, total_tokens: 55 };
+		nonStreamQueue.push(textResponse(null, 'stop'));
+		streamQueue.push([
+			{ delta: { reasoning_content: 'let me think' }, finish_reason: null },
+			contentChunk('Answer.'),
+			{ delta: {}, finish_reason: 'stop' },
+			usageChunk(usage)
+		]);
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		// Folded through appendStreamDelta into the same <think> shape the
+		// non-streaming path produces, so one splitter serves both.
+		expect(cb.onReasoning).toHaveBeenCalledWith('let me think');
+		const streamStats = cb.onCallStats.mock.calls.at(-1)![0];
+		expect(streamStats.reasoningChars).toBe('let me think'.length);
+		// The two-char separator both folders insert after `</think>` lands on
+		// the answer side. Identical on the non-streaming path
+		// (combineReasoningAndContent appends the same `\n\n`), so the two stay
+		// comparable, and it is noise against a real response.
+		expect(streamStats.answerChars).toBe('\n\nAnswer.'.length);
+	});
+
+	it('does not fire onReasoning for a response with none', async () => {
+		nonStreamQueue.push(
+			textResponse('Just an answer.', 'stop', {
+				prompt_tokens: 5,
+				completion_tokens: 3,
+				total_tokens: 8
+			})
+		);
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		expect(cb.onReasoning).not.toHaveBeenCalled();
 	});
 });

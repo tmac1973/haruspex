@@ -170,7 +170,14 @@ describe('runShellTurn', () => {
 				undefined,
 				[]
 			);
-			opts.onCallStats?.({ durationMs: 1200, completionTokens: 42 });
+			opts.onCallStats?.({
+				durationMs: 1200,
+				completionTokens: 42,
+				reasoningChars: 0,
+				answerChars: 100,
+				reasoningTokens: 0,
+				reasoningMs: 0
+			});
 			opts.onContextManaged?.({ kind: 'trim' } as unknown as Parameters<
 				NonNullable<AgentLoopOptions['onContextManaged']>
 			>[0]);
@@ -188,7 +195,9 @@ describe('runShellTurn', () => {
 
 		expect(onToolStart).toHaveBeenCalledWith(call);
 		expect(onToolEnd).toHaveBeenCalledWith(call, 'file contents', undefined, []);
-		expect(onCallStats).toHaveBeenCalledWith({ durationMs: 1200, completionTokens: 42 });
+		expect(onCallStats).toHaveBeenCalledWith(
+			expect.objectContaining({ durationMs: 1200, completionTokens: 42 })
+		);
 		expect(onContextManaged).toHaveBeenCalledWith({ kind: 'trim' });
 	});
 

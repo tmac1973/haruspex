@@ -413,7 +413,7 @@
 		</h1>
 		<div class="header-right">
 			<ServerStatusBadge onOpenLogs={openLogViewer} />
-			<ContextIndicator />
+			<ContextIndicator jobsActive={getActiveTab() === 'jobs'} />
 			<button
 				class="header-icon-btn"
 				title="Toggle light / dark"
