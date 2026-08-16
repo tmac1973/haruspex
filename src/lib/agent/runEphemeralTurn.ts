@@ -15,6 +15,7 @@
  */
 
 import type { BackendOverride, ChatMessage } from '$lib/api';
+import type { SamplingParams } from '$lib/stores/settings';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
 import { runTurnCore } from '$lib/agent/runTurn';
@@ -42,6 +43,17 @@ export interface EphemeralTurnOptions {
 	interactive?: boolean;
 	/** Confine writes to this dir (relative to workingDir). See AgentLoopOptions. */
 	writeRoot?: string | null;
+	/**
+	 * Per-job reasoning override. `undefined`/`null` inherits the global
+	 * `thinkingEnabled` setting — which was the only option jobs had before
+	 * this existed, and meant an unattended run could not be told to stop
+	 * reasoning without changing a global.
+	 */
+	thinkingEnabled?: boolean | null;
+	/** Where sampling values come from. See AgentLoopOptions. */
+	samplingSource?: 'server' | 'profile' | 'custom';
+	/** Values for `samplingSource: 'custom'`; ignored otherwise. */
+	samplingParams?: SamplingParams | null;
 	/**
 	 * Per-call output token ceiling. Omit to resolve it from Settings → Agent →
 	 * Response Length: the file-write cap when `expectsFileOutput` is set, the
@@ -115,6 +127,9 @@ export async function runEphemeralTurn(
 			backend: options.backend,
 			interactive: options.interactive,
 			writeRoot: options.writeRoot,
+			thinkingEnabled: options.thinkingEnabled,
+			samplingSource: options.samplingSource,
+			samplingParams: options.samplingParams,
 			signal: options.signal,
 			onToolStart: (call) => options.onToolStart?.(call),
 			onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) =>

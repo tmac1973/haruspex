@@ -974,6 +974,16 @@ export interface SamplingOptions {
 	 * reasoning toggle). `null`/`undefined` uses the global setting.
 	 */
 	thinkingEnabled?: boolean | null;
+	/**
+	 * Where this turn's sampling values come from. 'profile' (the default and
+	 * the historical behavior) resolves discovered presets over the built-in
+	 * family profile; 'server' sends nothing at all, leaving the serving
+	 * backend's own configuration untouched; 'custom' sends exactly
+	 * `samplingParams`. Set per job — see `$lib/agent/jobs/modelAdvanced`.
+	 */
+	samplingSource?: 'server' | 'profile' | 'custom';
+	/** The values for `samplingSource: 'custom'`; ignored otherwise. */
+	samplingParams?: SamplingParams | null;
 }
 
 /** Resolve the effective thinking state for a sampling/template call. */
@@ -1039,16 +1049,23 @@ export function getSamplingParams(
 	descriptor: BackendDescriptor,
 	opts: SamplingOptions = {}
 ): SamplingParams {
-	if (descriptor.discoveredSampling) {
-		return toolchestSamplingParams(descriptor, descriptor.discoveredSampling, opts);
-	}
-	const base = builtinSamplingParams(descriptor, opts);
+	// 'server' short-circuits everything: an empty object means every field is
+	// omitted from the request body, so whatever the operator configured on
+	// the serving side stands. Nothing below can reintroduce a value.
+	if (opts.samplingSource === 'server') return {};
+	const base =
+		opts.samplingSource === 'custom'
+			? (opts.samplingParams ?? {})
+			: descriptor.discoveredSampling
+				? toolchestSamplingParams(descriptor, descriptor.discoveredSampling, opts)
+				: builtinSamplingParams(descriptor, opts);
 	// OpenRouter speaks OpenAI's param set: it accepts `temperature` and
 	// `top_p` but the docs don't guarantee `top_k` / `min_p` won't 400 on
 	// stricter upstream providers. Omit both for OpenRouter entirely (safe;
 	// the router supplies sensible defaults). `presence_penalty` is in the
 	// OpenAI param set and is kept — but only for recognized families,
-	// since `base` is already empty for unknown models.
+	// since `base` is already empty for unknown models. Applies to
+	// hand-entered custom values too: a user-typed top_k must not 400 a run.
 	if (descriptor.kind === 'openrouter') {
 		return {
 			temperature: base.temperature,

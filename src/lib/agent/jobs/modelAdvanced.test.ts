@@ -1,0 +1,148 @@
+import { describe, it, expect } from 'vitest';
+import {
+	defaultModelAdvanced,
+	defaultSourceForCaps,
+	parseModelAdvanced,
+	parseSamplingParams,
+	serializeModelAdvanced,
+	type JobModelAdvanced
+} from './modelAdvanced';
+
+/**
+ * This JSON lives in user databases and is read at the start of every
+ * unattended run, so the parse contract is the whole point: anything
+ * unrecognized has to degrade to a working default rather than throw at 3am
+ * or — worse — resolve to a value nobody chose.
+ */
+describe('parseModelAdvanced', () => {
+	it('returns defaults for null, blank, and malformed input', () => {
+		const d = defaultModelAdvanced();
+		expect(parseModelAdvanced(null)).toEqual(d);
+		expect(parseModelAdvanced(undefined)).toEqual(d);
+		expect(parseModelAdvanced('')).toEqual(d);
+		expect(parseModelAdvanced('not json')).toEqual(d);
+		expect(parseModelAdvanced('[1,2,3]')).toEqual(d);
+		expect(parseModelAdvanced('"a string"')).toEqual(d);
+		expect(parseModelAdvanced('null')).toEqual(d);
+	});
+
+	it('defaults reasoning to inherit for anything but on/off', () => {
+		expect(parseModelAdvanced('{"reasoning":"on"}').reasoning).toBe('on');
+		expect(parseModelAdvanced('{"reasoning":"off"}').reasoning).toBe('off');
+		// A value from a future version, or a typo, must not silently mean "on".
+		expect(parseModelAdvanced('{"reasoning":"maybe"}').reasoning).toBe('inherit');
+		expect(parseModelAdvanced('{"reasoning":true}').reasoning).toBe('inherit');
+	});
+
+	it('defaults the sampling source to profile — the historical behavior', () => {
+		expect(parseModelAdvanced('{}').sampling.source).toBe('profile');
+		expect(parseModelAdvanced('{"sampling":{"source":"nonsense"}}').sampling.source).toBe(
+			'profile'
+		);
+		expect(parseModelAdvanced('{"sampling":{"source":"server"}}').sampling.source).toBe('server');
+	});
+
+	it('keeps custom params only under the custom source', () => {
+		const params = '{"temperature":0.4,"top_k":30}';
+		expect(
+			parseModelAdvanced(`{"sampling":{"source":"custom","params":${params}}}`).sampling.params
+		).toMatchObject({ temperature: 0.4, top_k: 30 });
+		// Stale params stored against a non-custom source must not resurface.
+		expect(
+			parseModelAdvanced(`{"sampling":{"source":"profile","params":${params}}}`).sampling.params
+		).toBeNull();
+	});
+
+	it('round-trips a fully-populated config', () => {
+		const cfg: JobModelAdvanced = {
+			reasoning: 'off',
+			sampling: {
+				source: 'custom',
+				params: {
+					temperature: 0.6,
+					top_p: 0.95,
+					top_k: 20,
+					min_p: 0,
+					presence_penalty: 1.5
+				}
+			},
+			discovered: {
+				reasoning: {
+					supported: true,
+					default_enabled: true,
+					toggle: 'chat_template_kwargs',
+					kwarg: 'enable_thinking'
+				},
+				sampling: { default: { temperature: 0.7 }, presets: [{ name: 'thinking', top_p: 0.95 }] }
+			}
+		};
+		const json = serializeModelAdvanced(cfg);
+		expect(json).not.toBeNull();
+		const back = parseModelAdvanced(json);
+		expect(back.reasoning).toBe('off');
+		expect(back.sampling.source).toBe('custom');
+		expect(back.sampling.params).toMatchObject({ temperature: 0.6, presence_penalty: 1.5 });
+		expect(back.discovered?.reasoning?.kwarg).toBe('enable_thinking');
+		expect(back.discovered?.sampling?.presets[0]).toMatchObject({ name: 'thinking', top_p: 0.95 });
+	});
+});
+
+describe('serializeModelAdvanced', () => {
+	it('stores NULL for an untouched config', () => {
+		// An all-defaults job should leave the column empty rather than
+		// writing a row of noise to every job in the database.
+		expect(serializeModelAdvanced(defaultModelAdvanced())).toBeNull();
+	});
+
+	it('drops custom params when the source is not custom', () => {
+		const json = serializeModelAdvanced({
+			reasoning: 'inherit',
+			sampling: { source: 'server', params: { temperature: 0.9 } },
+			discovered: null
+		});
+		expect(JSON.parse(json!).sampling.params).toBeNull();
+	});
+});
+
+describe('parseSamplingParams', () => {
+	it('keeps only finite numbers', () => {
+		const p = parseSamplingParams({
+			temperature: 0.6,
+			top_p: 'high',
+			top_k: null,
+			min_p: NaN,
+			presence_penalty: 0
+		});
+		expect(p).toEqual({
+			temperature: 0.6,
+			top_p: undefined,
+			top_k: undefined,
+			min_p: undefined,
+			// Zero is a real value, not an absent one — dropping it would
+			// silently re-enable llama.cpp's own default.
+			presence_penalty: 0
+		});
+	});
+
+	it('returns null when nothing numeric survives', () => {
+		expect(parseSamplingParams({ temperature: 'warm' })).toBeNull();
+		expect(parseSamplingParams({})).toBeNull();
+		expect(parseSamplingParams(null)).toBeNull();
+	});
+});
+
+describe('defaultSourceForCaps', () => {
+	it('defers to a server that publishes its own recommendations', () => {
+		expect(
+			defaultSourceForCaps({
+				reasoning: null,
+				sampling: { default: { temperature: 0.7 }, presets: [] }
+			})
+		).toBe('server');
+	});
+
+	it('falls back to the tuned profile when the server publishes none', () => {
+		expect(defaultSourceForCaps(null)).toBe('profile');
+		expect(defaultSourceForCaps({ reasoning: null, sampling: null })).toBe('profile');
+	});
+});

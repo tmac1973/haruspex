@@ -143,6 +143,12 @@ pub struct JobWithSteps {
     /// Whether the override model accepts image input. NULL = inherit the
     /// global Settings vision capability; Some(false) hides vision tools.
     pub model_remote_vision_supported: Option<bool>,
+    /// Advanced per-job model behavior as opaque JSON, owned entirely by the
+    /// frontend (`$lib/agent/jobs/modelAdvanced`): the reasoning override, the
+    /// sampling source + custom params, and the capabilities discovered by the
+    /// last probe of the override server. Rust never parses it — same contract
+    /// as [`JobWithSteps::type_config`]. NULL = every default.
+    pub model_advanced: Option<String>,
 }
 
 fn default_job_type() -> String {
@@ -179,6 +185,9 @@ pub struct JobInput {
     pub model_remote_context_size: Option<i64>,
     #[serde(default)]
     pub model_remote_vision_supported: Option<bool>,
+    /// Advanced model behavior JSON (see [`JobWithSteps::model_advanced`]).
+    #[serde(default)]
+    pub model_advanced: Option<String>,
 }
 
 /// A user-saved catalog prompt. `scope` is "audit" | "research" | "any".
@@ -460,6 +469,7 @@ impl Database {
             "ALTER TABLE jobs ADD COLUMN plan_output_dir TEXT",
             "ALTER TABLE job_runs ADD COLUMN planning_state TEXT",
             "ALTER TABLE jobs ADD COLUMN type_config TEXT",
+            "ALTER TABLE jobs ADD COLUMN model_advanced TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

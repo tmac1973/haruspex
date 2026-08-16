@@ -21,6 +21,8 @@ import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps, type JobType } from '$lib/stores/jobs.svelte';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+import type { SamplingParams } from '$lib/stores/settings';
+import { parseModelAdvanced } from './modelAdvanced';
 // The registration barrel, deliberately — importing it registers the built-in
 // job types before the first dispatch can happen.
 import { getJobType, type JobRunContext, type PlannedStep } from './types';
@@ -46,7 +48,32 @@ function jobBackendOverride(job: JobWithSteps): BackendOverride | undefined {
 		apiKeyId: job.model_remote_api_key_id ?? undefined,
 		modelId: job.model_remote_model_id?.trim() || undefined,
 		contextSize: job.model_remote_context_size ?? undefined,
-		visionSupported: job.model_remote_vision_supported ?? undefined
+		visionSupported: job.model_remote_vision_supported ?? undefined,
+		// What the editor's last probe of this server reported. Without it the
+		// descriptor can only guess the model's reasoning mechanism from its
+		// id, and guesses "none" for anything off the built-in Qwen list.
+		// Omitted rather than null when never probed — absent is what the
+		// descriptor reads as "fall back to the id guess".
+		discovered: parseModelAdvanced(job.model_advanced).discovered ?? undefined
+	};
+}
+
+/**
+ * The per-job model behavior every turn of this job runs under. Resolved
+ * here, once, rather than in each pipeline: `runJobTurn` already owns the
+ * workspace dir, backend and abort signal, and these belong in the same set —
+ * so all four job types get the controls and none can drift.
+ */
+function jobTurnPolicy(job: JobWithSteps): {
+	thinkingEnabled: boolean | null;
+	samplingSource: 'server' | 'profile' | 'custom';
+	samplingParams: SamplingParams | null;
+} {
+	const advanced = parseModelAdvanced(job.model_advanced);
+	return {
+		thinkingEnabled: advanced.reasoning === 'inherit' ? null : advanced.reasoning === 'on',
+		samplingSource: advanced.sampling.source,
+		samplingParams: advanced.sampling.params
 	};
 }
 
@@ -68,6 +95,9 @@ function jobDescriptor(job: JobWithSteps) {
  * defaults — workspace dir (empty string from the DB → null so fs_* tools drop
  * out), backend override, and abort signal — on top of `opts`. Used by the
  * regular step, audit-sample, and cluster-verify turns.
+ *
+ * `opts` is spread first so the job's own policy wins: a pipeline must not be
+ * able to re-enable reasoning on a job whose owner turned it off.
  */
 function runJobTurn(
 	job: JobWithSteps,
@@ -92,6 +122,7 @@ function runJobTurn(
 			runWithAutoApprove(() =>
 				runEphemeralTurn({
 					...opts,
+					...jobTurnPolicy(job),
 					workingDir: job.working_dir ? job.working_dir : null,
 					backend,
 					signal: abort.signal

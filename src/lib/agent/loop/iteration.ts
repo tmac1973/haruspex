@@ -36,7 +36,9 @@ import {
 	getChatTemplateKwargs,
 	getSamplingParams,
 	getOpenRouterReasoningParam,
-	getSettings
+	getSettings,
+	type SamplingOptions,
+	type SamplingParams
 } from '$lib/stores/settings';
 import { resolveBackendDescriptor, type BackendDescriptor } from '$lib/inference/descriptor';
 import { stripToolCallArtifacts } from '$lib/markdown';
@@ -101,6 +103,10 @@ export interface LoopContext {
 	writeRoot: string | null;
 	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
 	thinkingEnabled: boolean | null;
+	/** Where sampling values come from; see SamplingOptions. */
+	samplingSource: 'server' | 'profile' | 'custom';
+	/** Values for samplingSource 'custom'; ignored otherwise. */
+	samplingParams: SamplingParams | null;
 	/** Per-call response token budget. */
 	maxResponseTokens: number;
 	shellCwd: string | null;
@@ -173,6 +179,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		interactive: options.interactive ?? false,
 		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,
+		samplingSource: options.samplingSource ?? 'profile',
+		samplingParams: options.samplingParams ?? null,
 		maxResponseTokens: resolveMaxResponseTokens(options, expectsFileOutput),
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
@@ -252,6 +260,22 @@ export function isCodeContext(messages: ChatMessage[]): boolean {
 		if (msg.role === 'user') return false;
 	}
 	return false;
+}
+
+/**
+ * The sampling inputs for one model call. Every `getSamplingParams` call in
+ * this file goes through here: the four fields must agree across the
+ * tool-check, iteration, and final-synthesis calls of a single turn, and three
+ * hand-written copies of the same object is how a fifth field gets added to
+ * two of them.
+ */
+function samplingOptionsFor(ctx: LoopContext, messages: ChatMessage[]): SamplingOptions {
+	return {
+		codeContext: ctx.codeMode || isCodeContext(messages),
+		thinkingEnabled: ctx.thinkingEnabled,
+		samplingSource: ctx.samplingSource,
+		samplingParams: ctx.samplingParams
+	};
 }
 
 /**
@@ -463,10 +487,7 @@ async function forceFinalToolCall(
 			`with prose, and do not investigate further.`
 	});
 
-	const sampling = getSamplingParams(ctx.descriptor, {
-		codeContext: ctx.codeMode || isCodeContext(ctx.messages),
-		thinkingEnabled: ctx.thinkingEnabled
-	});
+	const sampling = getSamplingParams(ctx.descriptor, samplingOptionsFor(ctx, ctx.messages));
 	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
 	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
 	const offered = tool ? [tool] : ctx.tools;
@@ -674,10 +695,7 @@ export async function runIteration(
 		ctx.pendingImages.length = 0;
 	}
 
-	const sampling = getSamplingParams(ctx.descriptor, {
-		codeContext: ctx.codeMode || isCodeContext(messages),
-		thinkingEnabled: ctx.thinkingEnabled
-	});
+	const sampling = getSamplingParams(ctx.descriptor, samplingOptionsFor(ctx, messages));
 	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
 	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
 	const { response, toolCalls, rejection } = await runModelCall(
@@ -1259,10 +1277,7 @@ export async function runMaxIterationsFinalSynthesis(
 			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
 		ctx.messages.push({ role: 'user', content: finalPrompt });
 	}
-	const sampling = getSamplingParams(ctx.descriptor, {
-		codeContext: ctx.codeMode || isCodeContext(ctx.messages),
-		thinkingEnabled: ctx.thinkingEnabled
-	});
+	const sampling = getSamplingParams(ctx.descriptor, samplingOptionsFor(ctx, ctx.messages));
 	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
 	const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
 		ctx,

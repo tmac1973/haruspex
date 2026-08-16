@@ -32,6 +32,7 @@ const JOB_WRITE_COLS: &[&str] = &[
     "model_remote_context_size",
     "model_remote_vision_supported",
     "model_remote_api_key_id",
+    "model_advanced",
 ];
 
 /// A [`JobInput`]'s fields as SQL parameters, in [`JOB_WRITE_COLS`] order.
@@ -53,6 +54,7 @@ fn job_write_params(input: &JobInput) -> Vec<&dyn rusqlite::ToSql> {
         &input.model_remote_context_size,
         &input.model_remote_vision_supported,
         &input.model_remote_api_key_id,
+        &input.model_advanced,
     ]
 }
 
@@ -141,6 +143,7 @@ impl Database {
             model_remote_context_size,
             model_remote_vision_supported,
             model_remote_api_key_id,
+            model_advanced,
             created_at,
             updated_at,
         ) = conn
@@ -161,8 +164,9 @@ impl Database {
                     row.get::<_, Option<i64>>(12)?,
                     row.get::<_, Option<bool>>(13)?,
                     row.get::<_, Option<String>>(14)?,
-                    row.get::<_, i64>(15)?,
+                    row.get::<_, Option<String>>(15)?,
                     row.get::<_, i64>(16)?,
+                    row.get::<_, i64>(17)?,
                 ))
             })
             .map_err(|e| format!("Job not found: {}", e))?;
@@ -207,6 +211,7 @@ impl Database {
             model_remote_context_size,
             model_remote_vision_supported,
             model_remote_api_key_id,
+            model_advanced,
         })
     }
 

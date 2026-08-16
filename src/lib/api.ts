@@ -1,5 +1,6 @@
 // llama-server OpenAI-compatible API client wrapper
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+import type { RemoteReasoningCaps, RemoteSamplingCaps } from '$lib/stores/settings';
 import { logDebug, isVerbosePayloads } from '$lib/debug-log';
 import { baseUrl } from '$lib/ports';
 import { OPENROUTER_ATTRIBUTION_HEADERS } from '$lib/openrouter';
@@ -187,6 +188,18 @@ export interface BackendOverride {
 	 * back to the global backend's vision capability.
 	 */
 	visionSupported?: boolean | null;
+	/**
+	 * Capabilities discovered by probing this override's server, when the
+	 * caller has them (per-job overrides persist the last probe). Read only by
+	 * `resolveBackendDescriptor`, which otherwise has to guess a remote
+	 * model's reasoning mechanism from its id — and guesses `none` for
+	 * anything outside the built-in Qwen list, silently dropping the
+	 * `enable_thinking` kwarg. Absent = keep that id-based fallback.
+	 */
+	discovered?: {
+		reasoning?: RemoteReasoningCaps | null;
+		sampling?: RemoteSamplingCaps | null;
+	} | null;
 }
 
 export interface Usage {

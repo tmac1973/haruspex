@@ -334,6 +334,133 @@ describe('resolveBackendDescriptor — per-job override', () => {
 	});
 });
 
+/**
+ * The bug behind `plan/job-observability/`: an overnight coding job ran
+ * against a model whose id matched none of the built-in Qwen substrings, so
+ * the descriptor reported `reasoningMode: none` and the request carried no
+ * `enable_thinking` kwarg at all. The server's default (reasoning on) applied
+ * and nothing in the app could turn it off. The fix is that a job persists
+ * what its probe reported, and probe data outranks the id guess.
+ */
+describe('per-job override — discovered capabilities', () => {
+	const unknownModel = 'qwen3.8-27b-instruct';
+
+	it('sends the reported kwarg for a model no id-matching would recognize', () => {
+		const d = resolveBackendDescriptor({
+			baseUrl: 'http://toolchest:3000',
+			modelId: unknownModel,
+			discovered: {
+				reasoning: {
+					supported: true,
+					default_enabled: true,
+					toggle: 'chat_template_kwargs',
+					kwarg: 'enable_thinking'
+				}
+			}
+		});
+		// Still not a recognized family — the tuned sampling profile stays off.
+		expect(d.samplingFamily).toBeNull();
+		expect(d.qwenTuning).toBe(false);
+		// But reasoning is now drivable, which is the entire point.
+		expect(d.reasoningSupported).toBe(true);
+		expect(d.reasoningMode).toEqual({ kind: 'template-kwarg', kwarg: 'enable_thinking' });
+		expect(getChatTemplateKwargs(d, false)).toEqual({ enable_thinking: false });
+	});
+
+	it('honors a non-standard kwarg name rather than assuming enable_thinking', () => {
+		const d = resolveBackendDescriptor({
+			baseUrl: 'http://toolchest:3000',
+			modelId: unknownModel,
+			discovered: {
+				reasoning: {
+					supported: true,
+					default_enabled: false,
+					toggle: 'chat_template_kwargs',
+					kwarg: 'thinking'
+				}
+			}
+		});
+		expect(getChatTemplateKwargs(d, true)).toEqual({ thinking: true });
+	});
+
+	it('sends no kwarg when the server names a toggle we cannot drive', () => {
+		// Reporting support we can't actuate is worse than reporting none:
+		// guessing `enable_thinking` at a server that named `reasoning_effort`
+		// would send a kwarg it ignores while the UI claims the toggle works.
+		const d = resolveBackendDescriptor({
+			baseUrl: 'http://toolchest:3000',
+			modelId: unknownModel,
+			discovered: {
+				reasoning: { supported: true, default_enabled: true, toggle: 'reasoning_effort' }
+			}
+		});
+		expect(d.reasoningSupported).toBe(true);
+		expect(d.reasoningMode).toEqual({ kind: 'none' });
+		expect(getChatTemplateKwargs(d, false)).toEqual({});
+	});
+
+	it('probe data overrides the id guess, in both directions', () => {
+		// A Qwen-looking id whose server reports no reasoning support: believe
+		// the server, not the substring.
+		const d = resolveBackendDescriptor({
+			baseUrl: 'http://toolchest:3000',
+			modelId: 'qwen3.6-27b',
+			discovered: {
+				reasoning: { supported: false, default_enabled: false, toggle: 'none' }
+			}
+		});
+		expect(d.reasoningSupported).toBe(false);
+		expect(d.reasoningMode).toEqual({ kind: 'none' });
+		// The sampling family still comes from the id — it is a statement about
+		// which tuned profile fits, not about server capability.
+		expect(d.samplingFamily).toBe('qwen3.6-27b');
+	});
+
+	it('carries discovered sampling into the descriptor', () => {
+		const d = resolveBackendDescriptor({
+			baseUrl: 'http://toolchest:3000',
+			modelId: unknownModel,
+			discovered: {
+				sampling: {
+					default: { temperature: 0.42 },
+					presets: [{ name: 'thinking', temperature: 0.31 }]
+				}
+			}
+		});
+		expect(d.discoveredSampling?.default.temperature).toBe(0.42);
+		// And it is actually used: the server's preset, not a built-in.
+		expect(getSamplingParams(d, { thinkingEnabled: true }).temperature).toBe(0.31);
+	});
+
+	it('ignores discovered reasoning caps for an OpenRouter override', () => {
+		// OpenRouter drives reasoning with the `reasoning.effort` param, never
+		// chat_template_kwargs, so a discovered kwarg must not be sent there.
+		const d = resolveBackendDescriptor({
+			baseUrl: 'https://openrouter.ai/api',
+			modelId: 'some/model',
+			discovered: {
+				reasoning: {
+					supported: true,
+					default_enabled: true,
+					toggle: 'chat_template_kwargs',
+					kwarg: 'enable_thinking'
+				}
+			}
+		});
+		expect(d.reasoningMode).toEqual({ kind: 'none' });
+		expect(getChatTemplateKwargs(d, false)).toEqual({});
+	});
+
+	it('keeps the id-based fallback when the override was never probed', () => {
+		const d = resolveBackendDescriptor({
+			baseUrl: 'http://compute:3000',
+			modelId: 'qwen3.5-27b'
+		});
+		expect(d.reasoningMode).toEqual({ kind: 'template-kwarg', kwarg: 'enable_thinking' });
+		expect(d.discoveredSampling).toBeNull();
+	});
+});
+
 describe('#172 regression pin — remote non-Qwen gets no Qwen-isms', () => {
 	it('produces empty template kwargs and no sampling profile', () => {
 		// The exact bug class: Qwen-tuned sampling params + enable_thinking

@@ -336,6 +336,81 @@ describe('toolchest-discovered capabilities', () => {
 	});
 });
 
+/**
+ * Per-job sampling source. The motivating case: an operator configures
+ * sampling on their llama-toolchest server and does not want the client
+ * sending its own values over the top. 'server' has to mean *nothing sent*,
+ * not "nothing sent unless some other branch fills it in".
+ */
+describe('sampling source', () => {
+	beforeEach(() => {
+		updateSettings({ thinkingEnabled: true });
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://localhost:1234',
+			remoteModelId: 'qwen3.5',
+			remoteBackendKind: null,
+			remoteSampling: null,
+			remoteReasoning: null
+		});
+	});
+
+	it("sends nothing under 'server', even for a fully-tuned family", () => {
+		// The same descriptor under 'profile' produces a full parameter set;
+		// 'server' must suppress every one of them.
+		expect(sampling({ samplingSource: 'profile' })).not.toEqual({});
+		expect(sampling({ samplingSource: 'server' })).toEqual({});
+	});
+
+	it("sends nothing under 'server' even when the server published presets", () => {
+		updateInferenceBackend({
+			remoteBackendKind: 'llama-toolchest',
+			remoteSampling: { default: { temperature: 0.5 }, presets: [] }
+		});
+		// Echoing the server's own numbers back is harmless but pointless;
+		// the contract is that this source touches nothing.
+		expect(sampling({ samplingSource: 'server' })).toEqual({});
+	});
+
+	it("omitting the source keeps the historical 'profile' behavior", () => {
+		expect(sampling()).toEqual(sampling({ samplingSource: 'profile' }));
+	});
+
+	it("sends exactly the given values under 'custom'", () => {
+		expect(
+			sampling({ samplingSource: 'custom', samplingParams: { temperature: 0.15, top_k: 5 } })
+		).toEqual({ temperature: 0.15, top_k: 5 });
+	});
+
+	it("treats 'custom' with no params as sending nothing", () => {
+		expect(sampling({ samplingSource: 'custom', samplingParams: null })).toEqual({});
+	});
+
+	it("does not let a family profile leak into 'custom' values", () => {
+		// A blank field means "omit this parameter", so the tuned profile's
+		// value for it must not be substituted.
+		const out = sampling({ samplingSource: 'custom', samplingParams: { temperature: 0.15 } });
+		expect(out.top_p).toBeUndefined();
+		expect(out.presence_penalty).toBeUndefined();
+	});
+
+	it('still drops top_k/min_p for OpenRouter under custom values', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'https://openrouter.ai/api',
+			remoteBackendKind: 'openrouter',
+			remoteModelId: 'anthropic/claude-sonnet-5'
+		});
+		const out = sampling({
+			samplingSource: 'custom',
+			samplingParams: { temperature: 0.2, top_k: 40, min_p: 0.1, top_p: 0.9 }
+		});
+		// A hand-typed top_k must not 400 an overnight run on a stricter
+		// upstream provider.
+		expect(out).toEqual({ temperature: 0.2, top_p: 0.9, presence_penalty: undefined });
+	});
+});
+
 describe('reasoning override (Code tab per-tab toggle)', () => {
 	beforeEach(() => {
 		updateInferenceBackend({
