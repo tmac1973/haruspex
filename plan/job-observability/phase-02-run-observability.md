@@ -4,6 +4,41 @@ Makes a running job legible: what the model is thinking about right now, and
 how much of its context that is consuming. Closes open item #1 in
 `plan/futures.md`.
 
+## As built — three divergences from the plan below
+
+Reading the loop before writing it turned up a fact the plan had wrong, and
+the correction made the phase simpler rather than harder.
+
+**Job turns never stream.** A turn with `forceFinalTool` — which is every
+autonomous-coding turn (`pipeline.ts` sets one on preflight, decompose, each
+iteration, phase verification and finalize) — is answered by `runModelCall`
+and `forceFinalToolCall`, both non-streaming, and returns `'complete'` without
+ever reaching `streamFinalSynthesis`. So `step.streaming` stays empty for an
+entire coding run. The bouncing-dots problem was never that reasoning was
+hidden behind a `hasStreamingAnswer` check; it was that **nothing streams at
+all**. Consequences:
+
+1. **Reasoning is delivered per model call, not per token.** A new
+   `onReasoning` hook on `AgentLoopOptions` fires as each call returns. The
+   disclosure fills in one thought at a time — for a coding step, once per
+   iteration. Still the only window into a running step, and the honest one.
+2. **No delta state machine, no threaded timestamps.** `combineReasoningAndContent`
+   (`api.ts:480`) already wraps a non-streamed response's reasoning in
+   `<think>` tags, `appendStreamDelta` produces the same shape for streams, and
+   llama.cpp without `--reasoning-format` emits the tags itself. All three
+   converge, so one pure function — `splitThinkChannels` in `markdown.ts` —
+   is the entire reasoning/answer contract. Deterministic, trivially testable,
+   and the inline-tag case stops being a special path because it *is* the path.
+3. **Tokens and time are apportioned by character ratio, per call.** Exact
+   stream timing would have measured only the final-synthesis call, which a
+   coding job never makes. Character counts are exact; the token and
+   millisecond splits are estimates, labelled as such in the UI. Uniform across
+   streaming and non-streaming, so aggregates stay comparable.
+
+Step 2 below (carrying `rawText` to the finished step) turned out to be
+unnecessary: `onReasoning` accumulates the same text live, so the step already
+has it when it finishes.
+
 ## Steps
 
 ### 1. Extract reasoning instead of only stripping it

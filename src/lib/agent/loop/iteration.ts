@@ -41,7 +41,8 @@ import {
 	type SamplingParams
 } from '$lib/stores/settings';
 import { resolveBackendDescriptor, type BackendDescriptor } from '$lib/inference/descriptor';
-import { stripToolCallArtifacts } from '$lib/markdown';
+import { splitThinkChannels, stripToolCallArtifacts } from '$lib/markdown';
+import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
 import { isAbortError } from '$lib/utils/error';
 import { logDebug } from '$lib/debug-log';
 import { MAX_TRUNCATION_RETRIES, NudgeState } from './nudges';
@@ -269,6 +270,37 @@ export function isCodeContext(messages: ChatMessage[]): boolean {
  * hand-written copies of the same object is how a fifth field gets added to
  * two of them.
  */
+/**
+ * Report one model call's timing, tokens and reasoning to the turn's hooks.
+ *
+ * Every model call in this file funnels through here so the reasoning/answer
+ * split is defined once. `text` is the call's full output with reasoning still
+ * in `<think>` tags — which is what both paths hand back: the non-streaming
+ * response via `combineReasoningAndContent`, the streaming path via the buffer
+ * `appendStreamDelta` folds.
+ *
+ * The token and millisecond splits are apportioned by character ratio because
+ * no server reports either per channel. See `CallStats`.
+ */
+function reportCall(
+	ctx: LoopContext,
+	args: { durationMs: number; usage: Usage | undefined; text: string | null }
+): void {
+	const { reasoning, answer } = splitThinkChannels(args.text);
+	if (reasoning.trim().length > 0) ctx.options.onReasoning?.(reasoning);
+	if (!args.usage) return;
+	const total = reasoning.length + answer.length;
+	const share = total > 0 ? reasoning.length / total : 0;
+	ctx.options.onCallStats?.({
+		durationMs: args.durationMs,
+		completionTokens: args.usage.completion_tokens,
+		reasoningChars: reasoning.length,
+		answerChars: answer.length,
+		reasoningTokens: Math.round(args.usage.completion_tokens * share),
+		reasoningMs: Math.round(args.durationMs * share)
+	});
+}
+
 function samplingOptionsFor(ctx: LoopContext, messages: ChatMessage[]): SamplingOptions {
 	return {
 		codeContext: ctx.codeMode || isCodeContext(messages),
@@ -494,6 +526,7 @@ async function forceFinalToolCall(
 	applyContextGuard(ctx, ctx.maxResponseTokens, offered);
 
 	let response: ChatCompletionResponse;
+	const callStartMs = Date.now();
 	try {
 		response = await chatCompletion(
 			{
@@ -514,6 +547,17 @@ async function forceFinalToolCall(
 		ctx.options.onComplete(meta);
 		return;
 	}
+
+	// Reported before the early returns below: this is the ONLY model call a
+	// forced-tool turn makes (it returns without reaching final synthesis), so
+	// skipping it on the no-usable-call paths would leave the whole turn
+	// unaccounted for — including the reasoning that produced the dud.
+	if (response.usage) ctx.options.onUsageUpdate?.(response.usage);
+	reportCall(ctx, {
+		durationMs: Date.now() - callStartMs,
+		usage: response.usage,
+		text: response.content
+	});
 
 	// A rejected resolution has no usable call either — this path has no retry
 	// budget, so it ends the turn the same way an empty result does.
@@ -561,9 +605,15 @@ async function streamFinalSynthesis(
 	let totalContent = 0;
 	let streamUsage: Usage | null = null;
 	const streamStartMs = Date.now();
+	// Folded with the same helper the turn drivers use, so the accumulated
+	// text has reasoning in `<think>` tags exactly as the non-streaming path's
+	// response does — one shape for `reportCall` to split.
+	const thinkState = createThinkStreamState();
+	let accumulated = '';
 	for await (const chunk of stream) {
 		totalChunks++;
 		if (chunk.delta.content) totalContent += chunk.delta.content.length;
+		accumulated = appendStreamDelta(accumulated, chunk.delta, thinkState);
 		if (chunk.usage) {
 			ctx.options.onUsageUpdate?.(chunk.usage);
 			streamUsage = chunk.usage;
@@ -571,13 +621,12 @@ async function streamFinalSynthesis(
 		if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 		ctx.options.onStreamChunk(chunk);
 	}
-	if (streamUsage) {
-		recordTokenCalibration(sentEstimate, streamUsage.prompt_tokens);
-		ctx.options.onCallStats?.({
-			durationMs: Math.max(1, Date.now() - streamStartMs),
-			completionTokens: streamUsage.completion_tokens
-		});
-	}
+	if (streamUsage) recordTokenCalibration(sentEstimate, streamUsage.prompt_tokens);
+	reportCall(ctx, {
+		durationMs: Math.max(1, Date.now() - streamStartMs),
+		usage: streamUsage ?? undefined,
+		text: accumulated
+	});
 	return { lastFinish, totalChunks, totalContent };
 }
 
@@ -615,13 +664,12 @@ async function runModelCall(
 	);
 	const callDurationMs = Date.now() - callStartMs;
 
-	if (response.usage) {
-		options.onUsageUpdate?.(response.usage);
-		options.onCallStats?.({
-			durationMs: callDurationMs,
-			completionTokens: response.usage.completion_tokens
-		});
-	}
+	if (response.usage) options.onUsageUpdate?.(response.usage);
+	reportCall(ctx, {
+		durationMs: callDurationMs,
+		usage: response.usage,
+		text: response.content
+	});
 
 	if (
 		ctx.contextSize > 0 &&

@@ -278,6 +278,60 @@ export function stripThinkBlocks(text: string | null | undefined): string {
 		.replace(/<think>[\s\S]*$/, ''); // a still-open block at the end
 }
 
+const THINK_OPEN = '<think>';
+const THINK_CLOSE = '</think>';
+
+/**
+ * Split model output into its reasoning and answer halves.
+ *
+ * The inverse-and-complement of `stripThinkBlocks`: `answer` is what that
+ * function returns, and `reasoning` is everything it throws away. One pass so
+ * the two can't disagree about where a block ends.
+ *
+ * Works on every path the app has, because both converge on the same shape:
+ * the streaming folder (`appendStreamDelta`) wraps reasoning-channel deltas in
+ * `<think>` tags, the non-streaming path's `combineReasoningAndContent` does
+ * the same to a whole response, and a server that emits literal `<think>` tags
+ * inline in its content (llama.cpp without `--reasoning-format`, which is the
+ * common case) needs no conversion at all.
+ *
+ * An unterminated trailing `<think>` counts as reasoning rather than being
+ * discarded: mid-stream that is the live case, and at the end of a turn it is
+ * a model that reasoned its way to EOS.
+ */
+export function splitThinkChannels(text: string | null | undefined): {
+	reasoning: string;
+	answer: string;
+} {
+	if (!text) return { reasoning: '', answer: '' };
+	let reasoning = '';
+	let answer = '';
+	let i = 0;
+	while (i < text.length) {
+		const open = text.indexOf(THINK_OPEN, i);
+		if (open === -1) {
+			answer += text.slice(i);
+			break;
+		}
+		answer += text.slice(i, open);
+		const bodyStart = open + THINK_OPEN.length;
+		const close = text.indexOf(THINK_CLOSE, bodyStart);
+		if (close === -1) {
+			// Unclosed: everything after the tag is reasoning so far.
+			reasoning += text.slice(bodyStart);
+			break;
+		}
+		reasoning += text.slice(bodyStart, close);
+		i = close + THINK_CLOSE.length;
+	}
+	return { reasoning, answer };
+}
+
+/** The reasoning half alone — see `splitThinkChannels`. */
+export function extractThinkBlocks(text: string | null | undefined): string {
+	return splitThinkChannels(text).reasoning;
+}
+
 export function stripToolCallArtifacts(text: string): string {
 	let out = text.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '');
 	out = out.replace(/<\/tool_call>/g, '');

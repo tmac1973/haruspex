@@ -3,13 +3,15 @@
 	import SearchStepView from '$lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
+	import ContextGauge from '$lib/components/ContextGauge.svelte';
 	import { hasStreamingAnswer } from '$lib/agent/think-stream';
-	import { formatDuration } from '$lib/utils/format';
+	import { formatDuration, formatTokens } from '$lib/utils/format';
 	import {
 		cancel,
 		clearCurrentRun,
 		getCurrentRun,
-		type RunStepState
+		type RunStepState,
+		type StepThinkingStats
 	} from '$lib/agent/jobs/runner.svelte';
 
 	interface Props {
@@ -66,6 +68,39 @@
 		clearCurrentRun();
 		ondone();
 	}
+
+	/**
+	 * Per-step reasoning summary. Token and millisecond splits are apportioned
+	 * by character ratio (no server reports either per channel), so they are
+	 * labelled as estimates rather than presented as counts.
+	 */
+	function thinkingSummary(t: StepThinkingStats): string {
+		const pct = t.totalMs > 0 ? Math.round((t.reasoningMs / t.totalMs) * 100) : 0;
+		return `~${formatDuration(t.reasoningMs)} · ~${formatTokens(t.reasoningTokens)} tokens · ${pct}% of generation`;
+	}
+
+	/**
+	 * Run-level roll-up — the number that answers "why did last night take so
+	 * long". Summed over model calls only: the gap between that and the run's
+	 * wall clock is tool execution, checks and commits, which is not thinking.
+	 */
+	const runThinking = $derived.by(() => {
+		if (!run) return null;
+		const totals = run.steps.reduce(
+			(acc, s) =>
+				s.thinking
+					? {
+							reasoningMs: acc.reasoningMs + s.thinking.reasoningMs,
+							totalMs: acc.totalMs + s.thinking.totalMs,
+							reasoningTokens: acc.reasoningTokens + s.thinking.reasoningTokens,
+							totalTokens: acc.totalTokens + s.thinking.totalTokens,
+							calls: acc.calls + s.thinking.calls
+						}
+					: acc,
+			{ reasoningMs: 0, totalMs: 0, reasoningTokens: 0, totalTokens: 0, calls: 0 }
+		);
+		return totals.calls > 0 ? totals : null;
+	});
 </script>
 
 {#if run}
@@ -74,6 +109,15 @@
 			<div class="header-left">
 				<h3>{run.jobName}</h3>
 				<span class={runStatusClass()}>{runStatusLabel()}</span>
+				{#if runThinking}
+					<span
+						class="thinking-rollup"
+						title={`Thinking ${formatDuration(runThinking.reasoningMs)} of ${formatDuration(runThinking.totalMs)} spent generating, across ${runThinking.calls} model call${runThinking.calls === 1 ? '' : 's'}. Estimated by splitting each call's tokens and time by the reasoning/answer character ratio — no server reports either per channel. Excludes tool execution, checks and commits, which are not generation.`}
+					>
+						Thinking ~{Math.round((runThinking.reasoningMs / runThinking.totalMs) * 100)}% of
+						generation
+					</span>
+				{/if}
 			</div>
 			<div class="header-right">
 				{#if run.status === 'running'}
@@ -95,6 +139,14 @@
 					{#snippet headExtra()}
 						{#if step.deepResearch}
 							<span class="badge">Deep research</span>
+						{/if}
+						{#if step.usage}
+							<ContextGauge
+								promptTokens={step.usage.promptTokens}
+								contextSize={run.contextSize}
+								label={run.jobName}
+								compact
+							/>
 						{/if}
 					{/snippet}
 					{#if step.description}
@@ -138,6 +190,25 @@
 						<SearchStepView steps={step.searchSteps} />
 					{/if}
 
+					{#if step.reasoning}
+						<!-- Most job turns force a final tool, and that path never
+						     reaches the streaming synthesis — so this reasoning
+						     arrives one model call at a time, not token by token.
+						     It is still the only window into a running step. -->
+						<details
+							class="reasoning"
+							open={isLiveStep(step) && !hasStreamingAnswer(step.streaming)}
+						>
+							<summary>
+								<span class="reasoning-title">Reasoning</span>
+								{#if step.thinking}
+									<span class="reasoning-stat">{thinkingSummary(step.thinking)}</span>
+								{/if}
+							</summary>
+							<pre class="reasoning-body">{step.reasoning}</pre>
+						</details>
+					{/if}
+
 					{#if isLiveStep(step) && run.waitingForSlot}
 						<p class="hint">Waiting for another inference request to finish…</p>
 					{:else if isLiveStep(step) && hasStreamingAnswer(step.streaming)}
@@ -145,8 +216,8 @@
 							message={{ role: 'assistant', content: step.streaming }}
 							isStreaming={true}
 						/>
-					{:else if isLiveStep(step)}
-						<!-- Live but no visible answer yet (reasoning / before first token). -->
+					{:else if isLiveStep(step) && !step.reasoning}
+						<!-- Live, and nothing to show yet — not even reasoning. -->
 						<ThinkingIndicator bare />
 					{:else if step.output}
 						<ChatMessage message={{ role: 'assistant', content: step.output }} />
@@ -263,6 +334,52 @@
 	.check-detail {
 		font-size: 0.74rem;
 		opacity: 0.8;
+	}
+
+	.thinking-rollup {
+		font-size: 0.72rem;
+		color: var(--text-secondary);
+		white-space: nowrap;
+		cursor: default;
+	}
+
+	.reasoning {
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-secondary);
+		font-size: 0.8rem;
+	}
+
+	.reasoning summary {
+		cursor: pointer;
+		user-select: none;
+		padding: 5px 8px;
+		display: flex;
+		gap: 8px;
+		align-items: baseline;
+		color: var(--text-secondary);
+	}
+
+	.reasoning-title {
+		font-weight: 600;
+	}
+
+	.reasoning-stat {
+		font-size: 0.72rem;
+		opacity: 0.85;
+	}
+
+	.reasoning-body {
+		margin: 0;
+		padding: 0 8px 8px;
+		max-height: 320px;
+		overflow-y: auto;
+		white-space: pre-wrap;
+		word-break: break-word;
+		font-family: inherit;
+		font-size: 0.78rem;
+		line-height: 1.45;
+		color: var(--text-secondary);
 	}
 
 	.stage-desc {

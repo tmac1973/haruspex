@@ -41,6 +41,31 @@ export { isCodeContext } from './loop/iteration';
  */
 export type AgentStopReason = 'complete' | 'max_iterations' | 'forced_stop';
 
+/**
+ * Timing and token accounting for one model call, split into the reasoning
+ * and answer channels.
+ *
+ * Character counts are exact — every path converges on `<think>`-tagged text
+ * (see `splitThinkChannels`), so the boundary is known precisely. Tokens and
+ * milliseconds are NOT: the servers we talk to report one `completion_tokens`
+ * and one duration for the whole call, with no per-channel breakdown. Both are
+ * therefore apportioned by the character ratio, which holds up because
+ * generation rate is near-constant within a call. Consumers must present these
+ * as estimates.
+ */
+export interface CallStats {
+	durationMs: number;
+	completionTokens: number;
+	/** Exact. */
+	reasoningChars: number;
+	/** Exact. */
+	answerChars: number;
+	/** Apportioned by character ratio — an estimate. */
+	reasoningTokens: number;
+	/** Apportioned by character ratio — an estimate. */
+	reasoningMs: number;
+}
+
 /** Metadata passed to `onComplete` so callers can tell natural completion
  *  apart from a system-forced stop and label the turn accordingly. */
 export interface CompletionMeta {
@@ -135,7 +160,17 @@ export interface AgentLoopOptions {
 	 * message. The last invocation before onComplete corresponds to the
 	 * call whose content was committed.
 	 */
-	onCallStats?: (stats: { durationMs: number; completionTokens: number }) => void;
+	onCallStats?: (stats: CallStats) => void;
+	/**
+	 * Reasoning text from a model call, as soon as that call returns.
+	 *
+	 * Separate from `onStreamChunk` because most turns never stream: a turn
+	 * with `forceFinalTool` — which is every autonomous-coding turn — is
+	 * answered by a non-streaming call and returns without ever reaching the
+	 * final-synthesis stream. Its reasoning arrives in one piece at the end of
+	 * the call, and this is the only way a UI can see it.
+	 */
+	onReasoning?: (reasoning: string) => void;
 	signal?: AbortSignal;
 	maxIterations?: number;
 	/**

@@ -1403,3 +1403,116 @@ describe('jobs runner — autonomous coding', () => {
 		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
 	});
 });
+
+/**
+ * Per-step observability. The runner attaches these to every turn rather than
+ * leaving them to each pipeline, so a job type gets them without opting in —
+ * and cannot silently lose them.
+ */
+describe('jobs runner — run observability', () => {
+	it('accumulates reasoning across a step’s model calls', async () => {
+		// One step is a multi-iteration agent loop, so its reasoning arrives in
+		// pieces and has to be joined rather than overwritten.
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockImplementationOnce(async (opts: EphemeralTurnOptions) => {
+			opts.onReasoning?.('first thought');
+			opts.onReasoning?.('second thought');
+			return { finalText: 'ok', rawText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const step = getCurrentRun()!.steps[0];
+		expect(step.reasoning).toContain('first thought');
+		expect(step.reasoning).toContain('second thought');
+	});
+
+	it('sums call stats into the step total', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockImplementationOnce(async (opts: EphemeralTurnOptions) => {
+			opts.onCallStats?.({
+				durationMs: 1000,
+				completionTokens: 100,
+				reasoningChars: 60,
+				answerChars: 40,
+				reasoningTokens: 60,
+				reasoningMs: 600
+			});
+			opts.onCallStats?.({
+				durationMs: 500,
+				completionTokens: 50,
+				reasoningChars: 10,
+				answerChars: 40,
+				reasoningTokens: 10,
+				reasoningMs: 100
+			});
+			return { finalText: 'ok', rawText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(getCurrentRun()!.steps[0].thinking).toEqual({
+			reasoningMs: 700,
+			totalMs: 1500,
+			reasoningTokens: 70,
+			totalTokens: 150,
+			calls: 2
+		});
+	});
+
+	it('records token usage against the step', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockImplementationOnce(async (opts: EphemeralTurnOptions) => {
+			opts.onUsageUpdate?.({ prompt_tokens: 4096, completion_tokens: 200, total_tokens: 4296 });
+			return { finalText: 'ok', rawText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(getCurrentRun()!.steps[0].usage).toEqual({
+			promptTokens: 4096,
+			completionTokens: 200
+		});
+	});
+
+	it("carries the job's own context size on the run", async () => {
+		// The gauge must measure against the model the JOB uses, not whatever
+		// Settings has active — the whole point of futures item #1.
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				model_remote_base_url: 'http://compute:3000',
+				model_remote_model_id: 'big-model',
+				model_remote_context_size: 262144
+			})
+		);
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(getCurrentRun()!.contextSize).toBe(262144);
+	});
+
+	it('leaves observability fields empty when nothing reports', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const step = getCurrentRun()!.steps[0];
+		expect(step.reasoning).toBe('');
+		expect(step.usage).toBeNull();
+		// Null rather than a zeroed object, so the UI can tell "no data" from
+		// "measured zero thinking" and omit the rollup entirely.
+		expect(step.thinking).toBeNull();
+	});
+});

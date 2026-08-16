@@ -6,6 +6,8 @@ import {
 	splitShellCommands,
 	stripMarkdownForTTS,
 	stripThinkBlocks,
+	splitThinkChannels,
+	extractThinkBlocks,
 	stripToolCallArtifacts
 } from '$lib/markdown';
 
@@ -552,5 +554,79 @@ describe('finalizeStreamText reasoning handling', () => {
 		// goes with its block rather than leaving a stray tag behind.
 		const raw = '<think>maybe <tool_call>{"name":"x"}</tool_call></think>done';
 		expect(finalizeStreamText(raw).content).toBe('done');
+	});
+});
+
+/**
+ * The counterpart to stripThinkBlocks: same boundaries, both halves returned.
+ * Every model path converges on this shape — the streaming folder wraps
+ * reasoning deltas in tags, `combineReasoningAndContent` does the same to a
+ * non-streamed response, and llama.cpp without `--reasoning-format` emits the
+ * tags itself — so this one function is the whole reasoning/answer contract.
+ */
+describe('splitThinkChannels', () => {
+	it('splits a closed block from the answer', () => {
+		expect(splitThinkChannels('<think>weighing options</think>PLAN OK')).toEqual({
+			reasoning: 'weighing options',
+			answer: 'PLAN OK'
+		});
+	});
+
+	it('keeps a still-open trailing block as reasoning', () => {
+		// stripThinkBlocks discards this; here it is the live case — mid-stream
+		// the closing tag has not arrived, and it is the only thing to show.
+		expect(splitThinkChannels('answer <think>still reasoning...')).toEqual({
+			reasoning: 'still reasoning...',
+			answer: 'answer '
+		});
+	});
+
+	it('concatenates several blocks and the prose between them', () => {
+		expect(splitThinkChannels('<think>a</think>one<think>b</think>two')).toEqual({
+			reasoning: 'ab',
+			answer: 'onetwo'
+		});
+	});
+
+	it('treats text with no tags as all answer', () => {
+		expect(splitThinkChannels('just an answer')).toEqual({
+			reasoning: '',
+			answer: 'just an answer'
+		});
+	});
+
+	it('treats a reasoning-only response as all reasoning', () => {
+		// A model that reasoned its way to EOS. The answer half is empty, which
+		// is what makes the thinking share 100% rather than a divide-by-zero.
+		expect(splitThinkChannels('<think>and so I conclude</think>')).toEqual({
+			reasoning: 'and so I conclude',
+			answer: ''
+		});
+	});
+
+	it('agrees with stripThinkBlocks on the answer half', () => {
+		// The two must never disagree about where a block ends: one feeds the
+		// visible text, the other feeds the token accounting.
+		for (const raw of [
+			'<think>a</think>one<think>b</think>two',
+			'answer <think>open...',
+			'no tags at all',
+			'<think>only</think>'
+		]) {
+			expect(splitThinkChannels(raw).answer).toBe(stripThinkBlocks(raw));
+		}
+	});
+
+	it('treats null and undefined as empty', () => {
+		expect(splitThinkChannels(null)).toEqual({ reasoning: '', answer: '' });
+		expect(splitThinkChannels(undefined)).toEqual({ reasoning: '', answer: '' });
+	});
+});
+
+describe('extractThinkBlocks', () => {
+	it('returns the reasoning half, open block included', () => {
+		expect(extractThinkBlocks('<think>a</think>ans')).toBe('a');
+		expect(extractThinkBlocks('ans <think>b')).toBe('b');
+		expect(extractThinkBlocks('no reasoning')).toBe('');
 	});
 });
