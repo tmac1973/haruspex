@@ -231,6 +231,7 @@ fn sample_job_input(name: &str) -> JobInput {
         model_remote_model_id: None,
         model_remote_context_size: None,
         model_remote_vision_supported: None,
+        model_advanced: None,
     }
 }
 
@@ -345,6 +346,7 @@ fn update_job_changes_fields_and_bumps_timestamp() {
             model_remote_model_id: None,
             model_remote_context_size: None,
             model_remote_vision_supported: None,
+            model_advanced: None,
         },
     )
     .unwrap();
@@ -611,6 +613,7 @@ fn schedule_config_round_trips_as_opaque_json() {
             model_remote_model_id: None,
             model_remote_context_size: None,
             model_remote_vision_supported: None,
+            model_advanced: None,
         })
         .unwrap();
     let job = db.get_job(id).unwrap();
@@ -640,6 +643,7 @@ fn type_config_and_model_override_round_trip() {
             model_remote_model_id: Some("qwen3.5-27b".to_string()),
             model_remote_context_size: Some(131072),
             model_remote_vision_supported: Some(true),
+            model_advanced: Some(r#"{"reasoning":"off"}"#.to_string()),
         })
         .unwrap();
     let job = db.get_job(id).unwrap();
@@ -653,6 +657,11 @@ fn type_config_and_model_override_round_trip() {
     assert_eq!(job.model_remote_model_id.as_deref(), Some("qwen3.5-27b"));
     assert_eq!(job.model_remote_context_size, Some(131072));
     assert_eq!(job.model_remote_vision_supported, Some(true));
+    // Opaque to Rust — stored and returned verbatim, like type_config.
+    assert_eq!(
+        job.model_advanced.as_deref(),
+        Some(r#"{"reasoning":"off"}"#)
+    );
 
     // The list view carries the discriminator for badges.
     let summary = db

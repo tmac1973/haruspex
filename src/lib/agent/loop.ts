@@ -17,6 +17,7 @@ import type { BackendOverride, StreamChunk, Usage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
 import type { ContextManagedInfo } from './context-budget';
+import type { SamplingParams } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
 import { NudgeState } from './loop/nudges';
 import {
@@ -205,6 +206,17 @@ export interface AgentLoopOptions {
 	 * this turn (the Code tab's per-tab toggle).
 	 */
 	thinkingEnabled?: boolean | null;
+	/**
+	 * Where this turn's sampling values come from. Omitted = 'profile', the
+	 * historical behavior (discovered presets over the built-in family
+	 * profile). 'server' sends no sampling fields at all, so a server whose
+	 * operator configured its own values keeps them; 'custom' sends
+	 * `samplingParams` verbatim. Set per job — see
+	 * `$lib/agent/jobs/modelAdvanced`.
+	 */
+	samplingSource?: 'server' | 'profile' | 'custom';
+	/** Values for `samplingSource: 'custom'`; ignored otherwise. */
+	samplingParams?: SamplingParams | null;
 	/**
 	 * Override the per-call response token budget (`max_tokens`). Defaults to
 	 * the agent-loop default. Reasoning models that "think" extensively need a

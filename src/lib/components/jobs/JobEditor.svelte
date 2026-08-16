@@ -13,6 +13,16 @@
 		pickOpenRouterModel,
 		type OpenRouterModel
 	} from '$lib/openrouter';
+	import {
+		defaultModelAdvanced,
+		defaultSourceForCaps,
+		parseModelAdvanced,
+		serializeModelAdvanced,
+		type DiscoveredCaps,
+		type JobModelAdvanced,
+		type ReasoningOverride,
+		type SamplingSource
+	} from '$lib/agent/jobs/modelAdvanced';
 	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
 	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
 	import ModeSelector from '$lib/components/ModeSelector.svelte';
@@ -89,6 +99,24 @@
 	// Tri-state vision capability for the override model: 'auto' inherits the
 	// global Settings capability; 'yes'/'no' force it on/off for this job.
 	let modelVision = $state<'auto' | 'yes' | 'no'>('auto');
+	// Advanced model behavior (applies to every job, override or not — a job
+	// on the Settings backend still wants its own reasoning choice).
+	let advReasoning = $state<ReasoningOverride>('inherit');
+	let advSamplingSource = $state<SamplingSource>('profile');
+	// Custom sampling fields. '' means "don't send this parameter" — the
+	// request body omits undefined fields, so a blank is a real choice, not a
+	// missing value to be filled in with a default.
+	let advTemperature = $state<number | ''>('');
+	let advTopP = $state<number | ''>('');
+	let advTopK = $state<number | ''>('');
+	let advMinP = $state<number | ''>('');
+	let advPresencePenalty = $state<number | ''>('');
+	let advDiscovered = $state<DiscoveredCaps | null>(null);
+	// Whether the user has picked a sampling source by hand. Until they do, a
+	// probe that turns up server-published recommendations flips the source to
+	// 'server' — the server is the authority on its own tuning. After they do,
+	// their choice stands.
+	let advSourceTouched = $state(false);
 	// Models returned by the last successful probe — populates the Model
 	// dropdown and lets a model pick update context/vision (like Settings).
 	let probedModels = $state<NormalizedModel[]>([]);
@@ -128,6 +156,7 @@
 			modelModelId = '';
 			modelContextSize = '';
 			modelVision = 'auto';
+			applyModelAdvanced(defaultModelAdvanced());
 			probedModels = [];
 			probeError = null;
 			probeNote = null;
@@ -167,6 +196,14 @@
 					: job.model_remote_vision_supported
 						? 'yes'
 						: 'no';
+			applyModelAdvanced(parseModelAdvanced(job.model_advanced));
+			// A STORED config is the owner's decision, whatever it is, and a
+			// later probe must not quietly move it. A job saved before this
+			// column existed stored nothing, so its 'profile' is the absence of
+			// a choice rather than a choice — leave it adoptable, or every
+			// pre-existing job would keep sending the app's sampling values
+			// over a server that publishes its own.
+			advSourceTouched = job.model_advanced !== null;
 			// No saved base URL → the job follows Settings; otherwise detect
 			// OpenRouter by URL so the right form renders on reload.
 			modelSource = !modelBaseUrl
@@ -246,12 +283,80 @@
 		probeNote = null;
 	}
 
-	/** Selecting a model adopts its probed context/vision caps (like Settings). */
+	// "Inherit" is only meaningful if you can see what it inherits.
+	const globalThinkingLabel = $derived(getSettings().thinkingEnabled ? 'on' : 'off');
+
+	/**
+	 * Warn when the reasoning control can't actually reach this server. The
+	 * probe distinguishes "no reasoning" from "reasoning we can't drive from
+	 * here" (a toggle other than chat_template_kwargs), and silently offering
+	 * a switch that does nothing is how the original bug went unnoticed for a
+	 * whole overnight run.
+	 */
+	const reasoningCapsNote = $derived.by(() => {
+		if (advReasoning === 'inherit') return null;
+		const caps = advDiscovered?.reasoning;
+		if (caps && caps.supported && caps.toggle !== 'chat_template_kwargs') {
+			return `This server reports its reasoning toggle as "${caps.toggle}", which this app can't set. The choice above will not reach the model — configure it server-side.`;
+		}
+		if (caps && !caps.supported) {
+			return 'The last probe reported that this model has no reasoning mode to toggle.';
+		}
+		return null;
+	});
+
+	/** Load a parsed `model_advanced` into the form's flat field state. */
+	function applyModelAdvanced(cfg: JobModelAdvanced) {
+		advReasoning = cfg.reasoning;
+		advSamplingSource = cfg.sampling.source;
+		advDiscovered = cfg.discovered;
+		advSourceTouched = false;
+		const p = cfg.sampling.params;
+		advTemperature = p?.temperature ?? '';
+		advTopP = p?.top_p ?? '';
+		advTopK = p?.top_k ?? '';
+		advMinP = p?.min_p ?? '';
+		advPresencePenalty = p?.presence_penalty ?? '';
+	}
+
+	/** The form's advanced fields as the shape the column stores. */
+	function currentModelAdvanced(): JobModelAdvanced {
+		const n = (v: number | '') => (v === '' ? undefined : v);
+		return {
+			reasoning: advReasoning,
+			sampling: {
+				source: advSamplingSource,
+				params: {
+					temperature: n(advTemperature),
+					top_p: n(advTopP),
+					top_k: n(advTopK),
+					min_p: n(advMinP),
+					presence_penalty: n(advPresencePenalty)
+				}
+			},
+			discovered: advDiscovered
+		};
+	}
+
+	/**
+	 * Adopt what the probe reported about this model: context and vision as
+	 * before, plus its reasoning and sampling capabilities. The capabilities
+	 * are the point — without them the runner can only guess a remote model's
+	 * reasoning mechanism from its id, and guesses "none" for anything outside
+	 * the built-in Qwen list, so the job's reasoning toggle does nothing.
+	 */
 	function onModelChange(id: string) {
 		modelModelId = id;
-		const caps = probedModelCaps(probedModels.find((x) => x.id === id));
+		const picked = probedModels.find((x) => x.id === id);
+		const caps = probedModelCaps(picked);
 		if (caps.contextSize !== null) modelContextSize = caps.contextSize;
 		if (caps.vision !== null) modelVision = caps.vision ? 'yes' : 'no';
+		// Caps are per-model, not per-server, so re-picking must replace them
+		// rather than leave the previous model's behind.
+		advDiscovered = picked
+			? { reasoning: picked.reasoning ?? null, sampling: picked.sampling ?? null }
+			: null;
+		if (!advSourceTouched) advSamplingSource = defaultSourceForCaps(advDiscovered);
 	}
 
 	/**
@@ -417,7 +522,10 @@
 				model_remote_vision_supported:
 					overrideActive && modelBaseUrl.trim() && modelVision !== 'auto'
 						? modelVision === 'yes'
-						: null
+						: null,
+				// Not gated on `overrideActive`: the reasoning override applies
+				// to a job running on the Settings backend too.
+				model_advanced: serializeModelAdvanced(currentModelAdvanced())
 			};
 			const stepsToSave: JobStepInput[] = (typeDef.persistSteps ?? defaultPersistSteps)(
 				$state.snapshot(steps)
@@ -810,6 +918,91 @@
 									</div>
 								</div>
 							{/if}
+
+							<!-- Outside the override-only fields on purpose: a job
+							     running on the Settings backend still wants its own
+							     reasoning choice. -->
+							<details class="advanced">
+								<summary>Advanced model behavior</summary>
+								<div class="advanced-body">
+									<label class="model-field">
+										<span class="sublabel">Reasoning</span>
+										<select bind:value={advReasoning}>
+											<option value="inherit"
+												>Inherit global setting (currently {globalThinkingLabel})</option
+											>
+											<option value="on">Always on</option>
+											<option value="off">Always off</option>
+										</select>
+										<span class="adv-hint">
+											Reasoning models can spend most of a run thinking. Forcing it off here affects
+											this job only.
+										</span>
+									</label>
+
+									{#if reasoningCapsNote}
+										<p class="adv-note">{reasoningCapsNote}</p>
+									{/if}
+
+									<label class="model-field">
+										<span class="sublabel">Sampling parameters</span>
+										<select
+											value={advSamplingSource}
+											onchange={(e) => {
+												advSamplingSource = e.currentTarget.value as SamplingSource;
+												advSourceTouched = true;
+											}}
+										>
+											<option value="server">Server defaults — send nothing</option>
+											<option value="profile">App-tuned profile</option>
+											<option value="custom">Custom</option>
+										</select>
+										<span class="adv-hint">
+											{#if advSamplingSource === 'server'}
+												No sampling fields are sent, so whatever the server is configured with
+												stands.
+											{:else if advSamplingSource === 'profile'}
+												{advDiscovered?.sampling
+													? "The server's published recommendations, with the app's tuned values filling any gaps."
+													: "The app's tuned values for this model family. Unrecognized models get none."}
+											{:else}
+												Exactly the values below. Leave a field blank to omit it.
+											{/if}
+										</span>
+									</label>
+
+									{#if advSamplingSource === 'custom'}
+										<div class="model-row wrap">
+											<label class="model-field">
+												<span class="sublabel">Temperature</span>
+												<input type="number" step="0.05" min="0" bind:value={advTemperature} />
+											</label>
+											<label class="model-field">
+												<span class="sublabel">top_p</span>
+												<input type="number" step="0.05" min="0" max="1" bind:value={advTopP} />
+											</label>
+											<label class="model-field">
+												<span class="sublabel">top_k</span>
+												<input type="number" step="1" min="0" bind:value={advTopK} />
+											</label>
+											<label class="model-field">
+												<span class="sublabel">min_p</span>
+												<input type="number" step="0.01" min="0" max="1" bind:value={advMinP} />
+											</label>
+											<label class="model-field">
+												<span class="sublabel">presence_penalty</span>
+												<input type="number" step="0.1" bind:value={advPresencePenalty} />
+											</label>
+										</div>
+										{#if modelSource === 'openrouter'}
+											<p class="adv-note">
+												OpenRouter ignores top_k and min_p — they are dropped from the request
+												rather than risking a 400 from a stricter upstream provider.
+											</p>
+										{/if}
+									{/if}
+								</div>
+							</details>
 						</div>
 					</div>
 				{/if}
@@ -1013,6 +1206,51 @@
 	.model-field.grow {
 		flex: 1;
 		min-width: 0;
+	}
+
+	.model-row.wrap {
+		flex-wrap: wrap;
+	}
+
+	.model-row.wrap .model-field {
+		flex: 1 1 120px;
+		min-width: 0;
+	}
+
+	.advanced {
+		margin-top: 10px;
+		border-top: 1px solid var(--border);
+		padding-top: 8px;
+	}
+
+	.advanced summary {
+		cursor: pointer;
+		user-select: none;
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+	}
+
+	.advanced-body {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		margin-top: 8px;
+	}
+
+	.adv-hint {
+		font-size: 0.72rem;
+		color: var(--text-secondary);
+		font-style: italic;
+	}
+
+	.adv-note {
+		margin: 0;
+		padding: 6px 8px;
+		border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+		background: color-mix(in srgb, var(--warning) 12%, transparent);
+		border-radius: 4px;
+		font-size: 0.74rem;
+		line-height: 1.35;
 	}
 
 	.sublabel {

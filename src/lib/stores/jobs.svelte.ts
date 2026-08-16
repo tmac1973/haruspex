@@ -98,6 +98,14 @@ export interface ModelOverrideConfig {
 	 * Settings vision capability; false hides vision tools for this job's turns.
 	 */
 	model_remote_vision_supported: boolean | null;
+	/**
+	 * Advanced model behavior as opaque JSON — reasoning override, sampling
+	 * source, and the last probe's discovered capabilities. Parsed by
+	 * `$lib/agent/jobs/modelAdvanced`; null = every default. Applies to the
+	 * global backend too, not just overrides: the reasoning override is
+	 * meaningful for any job.
+	 */
+	model_advanced: string | null;
 }
 
 export interface JobWithSteps extends JobCore, TypeConfigColumn, ModelOverrideConfig {

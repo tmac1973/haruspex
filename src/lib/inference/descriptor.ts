@@ -23,6 +23,7 @@ import {
 	type AppSettings,
 	type InferenceBackendConfig,
 	type QwenSamplingFamily,
+	type RemoteReasoningCaps,
 	type RemoteSamplingCaps
 } from '$lib/stores/settings';
 
@@ -69,8 +70,8 @@ export interface BackendDescriptor {
 	samplingFamily: QwenSamplingFamily | null;
 	/**
 	 * Sampling recommendations discovered from the server (llama-toolchest
-	 * probe). Overrides the built-in profiles when present; null everywhere
-	 * else — including per-job overrides, which have no probe data.
+	 * probe). Overrides the built-in profiles when present; null when the
+	 * backend was never probed, or its probe reported none.
 	 */
 	discoveredSampling: RemoteSamplingCaps | null;
 	reasoningMode: ReasoningMode;
@@ -172,10 +173,11 @@ function globalVision(settings: AppSettings): boolean {
  * - Override with a non-blank base URL → a descriptor built from the
  *   override's own fields. Model quirks (Qwen tuning, template kwargs,
  *   discovered sampling, OpenRouter reasoning effort) are resolved from the
- *   override's model id alone — never inherited from the global backend, so
- *   a job pointed at server X can't pick up server Y's tuning. Context size
- *   and vision fall back to the global values when the override doesn't
- *   carry its own (matching the pre-descriptor job runner).
+ *   override's own data — its probe results when it carries them, else its
+ *   model id — and never inherited from the global backend, so a job pointed
+ *   at server X can't pick up server Y's tuning. Context size and vision fall
+ *   back to the global values when the override doesn't carry its own
+ *   (matching the pre-descriptor job runner).
  */
 export function resolveBackendDescriptor(override?: BackendOverride): BackendDescriptor {
 	const settings = getSettings();
@@ -263,6 +265,35 @@ function resolveRemoteDescriptor(
 	};
 }
 
+/**
+ * How an override drives reasoning: what its server's probe reported, falling
+ * back to the model-id guess when it was never probed.
+ *
+ * `supported` without a drivable mode is a real state, not a contradiction —
+ * a server can report a reasoning mechanism (say `reasoning_effort`) that this
+ * app cannot set through chat_template_kwargs. Sending `enable_thinking` at
+ * such a server would be a guess that silently does nothing, which is exactly
+ * how a whole overnight run ended up reasoning with no way to stop it.
+ */
+function overrideReasoning(
+	caps: RemoteReasoningCaps | null,
+	qwenKwargs: boolean
+): { reasoningMode: ReasoningMode; reasoningSupported: boolean } {
+	if (!caps) {
+		return {
+			reasoningMode: qwenKwargs
+				? { kind: 'template-kwarg', kwarg: 'enable_thinking' }
+				: { kind: 'none' },
+			reasoningSupported: qwenKwargs
+		};
+	}
+	const drivable = caps.supported && caps.toggle === 'chat_template_kwargs' && caps.kwarg;
+	return {
+		reasoningMode: drivable ? { kind: 'template-kwarg', kwarg: caps.kwarg! } : { kind: 'none' },
+		reasoningSupported: caps.supported
+	};
+}
+
 function resolveOverrideDescriptor(
 	settings: AppSettings,
 	override: BackendOverride
@@ -270,10 +301,19 @@ function resolveOverrideDescriptor(
 	const base = normalizeBaseUrl(override.baseUrl);
 	const openrouter = isOpenRouterUrl(base);
 	const family = modelFamilyFromId(override.modelId);
-	// Overrides have no probe/catalog metadata, so quirks come from the model
-	// id alone; a Qwen override keeps the tuned profile + enable_thinking
-	// (mirroring the remote-Qwen case), anything else gets server defaults.
+	// An override that carries no probe data falls back to the model id alone:
+	// a Qwen override keeps the tuned profile + enable_thinking (mirroring the
+	// remote-Qwen case), anything else gets server defaults.
 	const qwenKwargs = !openrouter && family !== null;
+
+	// OpenRouter is excluded from discovered reasoning: its reasoning is driven
+	// by the `reasoning.effort` request param, never chat_template_kwargs, so a
+	// discovered kwarg there would be sent to a server that ignores it.
+	const { reasoningMode, reasoningSupported } = overrideReasoning(
+		openrouter ? null : (override.discovered?.reasoning ?? null),
+		qwenKwargs
+	);
+
 	return {
 		kind: openrouter ? 'openrouter' : 'remote',
 		baseUrl: base,
@@ -286,11 +326,9 @@ function resolveOverrideDescriptor(
 		vision: override.visionSupported ?? globalVision(settings),
 		qwenTuning: family !== null,
 		samplingFamily: family,
-		discoveredSampling: null,
-		reasoningMode: qwenKwargs
-			? { kind: 'template-kwarg', kwarg: 'enable_thinking' }
-			: { kind: 'none' },
-		reasoningSupported: qwenKwargs,
+		discoveredSampling: override.discovered?.sampling ?? null,
+		reasoningMode,
+		reasoningSupported,
 		allowParallel: settings.inferenceBackend.allowParallelInference
 	};
 }
