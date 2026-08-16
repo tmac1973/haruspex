@@ -160,6 +160,17 @@
 	</span>
 </label>
 
+<label
+	class="field branch"
+	title="When enabled, creates a new branch (haruspex/autonomous-coding/<timestamp>) before starting work so all commits land on their own branch instead of your current one."
+>
+	<input type="checkbox" bind:checked={cfg.create_branch} />
+	<span
+		>Create a working branch for this run
+		<span class="hint inline">(recommended — keeps the loop's work off your current branch)</span>
+	</span>
+</label>
+
 <p class="unattended-note">
 	Runs are <strong>fully unattended</strong> after the preflight interview: the run starts by asking you
 	about anything the plan leaves open, then codes without interruption — one atomic step at a time, verified
@@ -189,6 +200,18 @@
 
 	.attempts input {
 		max-width: 120px;
+	}
+
+	.branch {
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 8px;
+		font-size: 0.88rem;
+	}
+
+	.hint.inline {
+		font-style: normal;
+		margin-left: 4px;
 	}
 
 	.signing select,

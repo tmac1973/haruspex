@@ -347,7 +347,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		// turn burns minutes of inference.
 		abortIfCancelled();
 		const signingFallback = cfg.signing_fallback ?? 'unsigned';
-		await ensureGitBaseline(ctx, signingFallback);
+		await ensureGitBaseline(ctx, signingFallback, cfg.create_branch ?? true);
 
 		// Stage 1 — Decompose, or resume: a parseable TODO-coding.md on disk IS
 		// the loop state (attempt counts, phases, repair cycles and all), so a
@@ -1197,13 +1197,43 @@ export function mergeGitignore(existing: string, wanted: string[]): string | nul
  * the loop touches anything: `git init` when needed, and any pre-existing
  * dirty state (or an unborn HEAD) is committed so every loop step has a
  * rollback point and `commitStepWork`'s diff checks are meaningful.
+ *
+ * When `createBranch` is set, the run first moves to a fresh
+ * `haruspex/autonomous-coding/<epoch_ms>` branch (off the current HEAD) so the
+ * whole run — baseline, every step commit, the report — lands on its own
+ * branch instead of the user's. The timestamped name makes a collision
+ * practically impossible, but the exit code is still checked so a real
+ * failure surfaces here, not as a confusing baseline error a step later.
  */
-async function ensureGitBaseline(ctx: JobRunContext, fallback: SigningFallback): Promise<void> {
+export async function ensureGitBaseline(
+	ctx: JobRunContext,
+	fallback: SigningFallback,
+	createBranch: boolean
+): Promise<void> {
 	const inRepo = (await execInWorkdir(ctx, 'git rev-parse --is-inside-work-tree')).exit_code === 0;
 	if (!inRepo) {
 		const init = await execInWorkdir(ctx, 'git init');
 		if (init.exit_code !== 0) {
 			throw new Error(`git init failed in the working directory: ${gitError(init)}`);
+		}
+	}
+	if (createBranch) {
+		// Existing work → move to the run's own branch. A fresh repo (no
+		// commits yet) stays on its default branch: its entire history is
+		// this run, and a timestamped branch name there would only surprise.
+		// A resumed run (already on a previous haruspex/autonomous-coding/*
+		// branch) stays put — creating a new branch would fork the work.
+		const head = await gitHead(ctx);
+		if (head !== null) {
+			const current = await execInWorkdir(ctx, 'git branch --show-current');
+			const onRunBranch = /^haruspex\/autonomous-coding\/\d+$/.test(current.stdout.trim());
+			if (!onRunBranch) {
+				const branchName = `haruspex/autonomous-coding/${Date.now()}`;
+				const branch = await execInWorkdir(ctx, `git checkout -b ${branchName}`);
+				if (branch.exit_code !== 0) {
+					throw new Error(`Could not create working branch ${branchName}: ${gitError(branch)}`);
+				}
+			}
 		}
 	}
 	// Before ANY `git add -A` — including the baseline below and every step
