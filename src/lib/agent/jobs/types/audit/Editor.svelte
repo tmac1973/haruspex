@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import type { JobStepInput } from '$lib/stores/jobs.svelte';
 	import { DEFAULT_SAMPLE_INSTRUCTIONS, DEFAULT_VERIFY_INSTRUCTIONS } from './auditPipeline';
 	import type { AuditEditorState } from './definition';
@@ -26,14 +27,18 @@
 	}
 </script>
 
-<div class="field" title="The instruction each sample run executes, independently.">
+<div class="field">
 	<div class="field-head">
-		<span class="label">Audit prompt</span>
+		<span class="label">
+			Audit prompt
+			<Tooltip
+				label="About the audit prompt"
+				text="The instruction each sample run executes, independently. Ask for findings anchored to files and line ranges — the verification phase re-checks each one against the source, and an unanchored finding cannot be checked."
+			/>
+		</span>
 		<PromptCatalog jobType="audit" current={steps[0]?.prompt ?? ''} oninsert={updatePrompt} />
 	</div>
-	<span class="hint">
-		Run {cfg.num_runs}× independently. Ask for findings anchored to files and line ranges.
-	</span>
+	<span class="hint">Run {cfg.num_runs}× independently.</span>
 	<textarea
 		value={steps[0]?.prompt ?? ''}
 		oninput={(e) => updatePrompt((e.currentTarget as HTMLTextAreaElement).value)}
@@ -43,48 +48,78 @@
 </div>
 
 <div class="audit-grid">
-	<label class="field" title="How many independent sample runs to execute (1–20).">
-		<span class="label">Number of runs</span>
-		<input type="number" min="1" max="20" bind:value={cfg.num_runs} />
-	</label>
-	<label
-		class="field"
-		title="Agent-loop turn budget per run — how many read/grep steps each sample may take before it must report. A thorough audit of a large codebase can need 100+. Default 200, max 400."
-	>
-		<span class="label">Max turns per run</span>
-		<input type="number" min="1" max="400" step="10" bind:value={cfg.max_iterations} />
-	</label>
-	<label
-		class="field span2"
-		title="File (relative to the working directory) the final meta-report is written to. Leave blank to only keep it in the run record."
-	>
-		<span class="label">Output file <span class="optional">(optional)</span></span>
-		<input type="text" bind:value={cfg.output_file} placeholder="AUDIT.md" />
-	</label>
+	<div class="field">
+		<span class="label">
+			Number of runs
+			<Tooltip
+				label="About the number of runs"
+				text="How many independent sample runs to execute (1–20). Findings that several runs agree on are the ones worth trusting, so more runs buy confidence at a proportional cost in time."
+			/>
+		</span>
+		<input type="number" min="1" max="20" bind:value={cfg.num_runs} aria-label="Number of runs" />
+	</div>
+	<div class="field">
+		<span class="label">
+			Max turns per run
+			<Tooltip
+				label="About the turn budget"
+				text="Agent-loop turn budget per run — how many read/grep steps each sample may take before it must report. A thorough audit of a large codebase can need 100+. Default 200, max 400."
+			/>
+		</span>
+		<input
+			type="number"
+			min="1"
+			max="400"
+			step="10"
+			bind:value={cfg.max_iterations}
+			aria-label="Max turns per run"
+		/>
+	</div>
+	<div class="field span2">
+		<span class="label">
+			Output file <span class="optional">(optional)</span>
+			<Tooltip
+				label="About the output file"
+				text="File, relative to the working directory, that the final meta-report is written to. Leave blank to keep it only in the run record."
+			/>
+		</span>
+		<input
+			type="text"
+			bind:value={cfg.output_file}
+			placeholder="AUDIT.md"
+			aria-label="Output file"
+		/>
+	</div>
 </div>
 
-<label
-	class="field checkbox"
-	title="When ON (recommended), sample and verification runs may read and grep the code but cannot modify files."
->
-	<input type="checkbox" bind:checked={cfg.read_only} />
-	<span>
-		Read-only runs
-		<span class="hint inline">(recommended — sample runs read/grep but never modify files)</span>
-	</span>
-</label>
+<div class="field checkbox">
+	<label class="check">
+		<input type="checkbox" bind:checked={cfg.read_only} />
+		<span>Read-only runs</span>
+	</label>
+	<Tooltip
+		label="About read-only runs"
+		text="When on (recommended), sample and verification runs may read and grep the code but cannot modify files. An audit that can edit is no longer an audit."
+	/>
+	<span class="hint inline">(recommended)</span>
+</div>
 
 <details class="advanced-prompts">
 	<summary>Advanced: edit the exact prompts sent to the model</summary>
 	<p class="hint">
-		Both are sent verbatim to the model. The <code>submit_findings</code> /
-		<code>submit_verdict</code> calls are enforced automatically, so editing won't break capture —
-		but a poor prompt can hurt result quality. Use <strong>Reset</strong> to restore the default.
+		Both are sent verbatim to the model. A poor prompt can hurt result quality; use
+		<strong>Reset</strong> to restore the default.
 	</p>
 
 	<div class="field">
 		<span class="label-row">
-			<span class="label">Per-run addendum</span>
+			<span class="label">
+				Per-run addendum
+				<Tooltip
+					label="About the per-run addendum"
+					text="Appended after your audit prompt on every sample run (phase 1) — investigation guidance plus how to report findings. The submit_findings call is enforced automatically, so editing this cannot break capture."
+				/>
+			</span>
 			<button
 				type="button"
 				class="reset-btn"
@@ -94,16 +129,18 @@
 				Reset
 			</button>
 		</span>
-		<span class="hint">
-			Appended after your audit prompt on every sample run (phase 1) — investigation guidance plus
-			how to report findings.
-		</span>
 		<textarea bind:value={cfg.sample_instructions} rows="6"></textarea>
 	</div>
 
 	<div class="field">
 		<span class="label-row">
-			<span class="label">Verification instructions</span>
+			<span class="label">
+				Verification instructions
+				<Tooltip
+					label="About verification instructions"
+					text="Sent to the model that re-checks each finding against the source (phase 3) before it is kept. The finding's location and claim are prepended automatically, and the submit_verdict call is enforced."
+				/>
+			</span>
 			<button
 				type="button"
 				class="reset-btn"
@@ -113,16 +150,15 @@
 				Reset
 			</button>
 		</span>
-		<span class="hint">
-			Sent to the model that re-checks each finding against the source (phase 3) before it's kept;
-			the finding's location/claim is prepended automatically.
-		</span>
 		<textarea bind:value={cfg.verify_instructions} rows="8"></textarea>
 	</div>
 </details>
 
 <style>
 	.label {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
 		font-size: 0.82rem;
 		color: var(--text-secondary);
 	}
@@ -143,9 +179,15 @@
 
 	.field.checkbox {
 		flex-direction: row;
-		align-items: flex-start;
-		gap: 8px;
+		align-items: center;
+		gap: 4px;
 		font-size: 0.88rem;
+	}
+
+	.check {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
 	}
 
 	.audit-grid {
@@ -180,10 +222,6 @@
 
 	.advanced-prompts .field {
 		margin-top: 10px;
-	}
-
-	.advanced-prompts code {
-		font-size: 0.85em;
 	}
 
 	.label-row {
