@@ -32,6 +32,14 @@ export interface AutonomousCodingConfig {
 	 * unsigned commits). null = default ('unsigned').
 	 */
 	signing_fallback: 'unsigned' | 'skip' | null;
+	/**
+	 * When true, create a new branch before starting the coding run. The branch
+	 * is named `haruspex/autonomous-coding/<epoch_ms>` and all run commits land
+	 * on it instead of the user's current branch. (A brand-new repo with no
+	 * commits stays on its default branch — its entire history IS the run.)
+	 * null = default (true).
+	 */
+	create_branch: boolean | null;
 }
 
 export function parseAutonomousCodingConfig(json: string | null): AutonomousCodingConfig {
@@ -62,12 +70,17 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 		signing_fallback:
 			raw.signing_fallback === 'skip' || raw.signing_fallback === 'unsigned'
 				? raw.signing_fallback
-				: null
+				: null,
+		create_branch: parseCreateBranch(raw.create_branch)
 	};
 }
 
 function parseContextMode(v: unknown): 'step' | 'phase' | null {
 	return v === 'phase' || v === 'step' ? v : null;
+}
+
+function parseCreateBranch(v: unknown): boolean | null {
+	return typeof v === 'boolean' ? v : null;
 }
 
 /** The plan dir with a guaranteed trailing slash (path-building convenience). */

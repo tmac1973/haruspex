@@ -134,7 +134,8 @@ describe('registration barrel', () => {
 			step_check_command: '',
 			max_attempts: 5,
 			context_mode: 'phase',
-			signing_fallback: 'unsigned'
+			signing_fallback: 'unsigned',
+			create_branch: true
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
@@ -142,7 +143,8 @@ describe('registration barrel', () => {
 			step_check_command: '',
 			max_attempts: 3,
 			context_mode: 'phase',
-			signing_fallback: 'unsigned'
+			signing_fallback: 'unsigned',
+			create_branch: true
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
@@ -150,13 +152,15 @@ describe('registration barrel', () => {
 			step_check_command: '',
 			max_attempts: 3,
 			context_mode: 'phase',
-			signing_fallback: 'skip'
+			signing_fallback: 'skip',
+			create_branch: false
 		});
 		expect(JSON.parse(json!)).toEqual({
 			plan_dir: 'plan/x/',
 			max_attempts: 3,
 			context_mode: 'phase',
-			signing_fallback: 'skip'
+			signing_fallback: 'skip',
+			create_branch: false
 		});
 
 		// Validation: working dir and plan dir are required; attempts bounded.
