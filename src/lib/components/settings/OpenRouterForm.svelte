@@ -8,7 +8,7 @@
 	 */
 	import { untrack } from 'svelte';
 	import type { InferenceBackendConfig } from '$lib/stores/settings';
-	import { getApiKeyValue } from '$lib/stores/settings';
+	import { getApiKeyValue, getSettings, updateSettings } from '$lib/stores/settings';
 	import {
 		fetchOpenRouterCatalog,
 		fetchOpenRouterKeyStatus,
@@ -83,10 +83,15 @@
 			remoteContextSize: caps.contextSize,
 			remoteVisionSupported: caps.vision
 		};
-		if (m.reasoning) {
-			partial.openrouterReasoningEffort = m.reasoning.default_effort;
-		} else {
-			partial.openrouterReasoningEffort = null;
+		// Effort now lives in one shared setting rather than per backend, so a
+		// model switch can leave a level the new model doesn't publish. Clear it
+		// in that case — the model's own default applies, which is exactly what
+		// `resolveEffort` would fall back to anyway. Keeping the stale value
+		// would leave the dropdown displaying a level that is never sent.
+		const levels = m.reasoning?.supported_efforts ?? [];
+		const current = getSettings().reasoningEffort;
+		if (current && !levels.includes(current)) {
+			updateSettings({ reasoningEffort: null });
 		}
 		return partial;
 	}
@@ -132,7 +137,7 @@
 	}
 
 	function onEffortChange(effort: string) {
-		commit({ openrouterReasoningEffort: effort });
+		updateSettings({ reasoningEffort: effort || null });
 	}
 
 	function onApiKeySelect(id: string | null) {
@@ -214,10 +219,11 @@
 			<label for="or-effort">Reasoning effort</label>
 			<select
 				id="or-effort"
-				value={config.openrouterReasoningEffort ?? selectedModel.reasoning.default_effort}
+				value={getSettings().reasoningEffort ?? ''}
 				onchange={(e) => onEffortChange((e.target as HTMLSelectElement).value)}
 				disabled={selectedModel.reasoning.mandatory}
 			>
+				<option value="">Model default ({selectedModel.reasoning.default_effort})</option>
 				{#each selectedModel.reasoning.supported_efforts as effort (effort)}
 					<option value={effort}>{effort}</option>
 				{/each}

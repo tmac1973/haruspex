@@ -23,10 +23,10 @@ import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 // resolve fresh — the resolver matrix itself is covered in
 // $lib/inference/descriptor.test.ts.
 const sampling = (opts?: SamplingOptions) => getSamplingParams(resolveBackendDescriptor(), opts);
-const kwargs = (thinking?: boolean | null) =>
-	getChatTemplateKwargs(resolveBackendDescriptor(), thinking);
-const reasoningParam = (thinking?: boolean | null) =>
-	getOpenRouterReasoningParam(resolveBackendDescriptor(), thinking);
+const kwargs = (thinking?: boolean | null, effort?: string | null) =>
+	getChatTemplateKwargs(resolveBackendDescriptor(), thinking, effort);
+const reasoningParam = (thinking?: boolean | null, effort?: string | null) =>
+	getOpenRouterReasoningParam(resolveBackendDescriptor(), thinking, effort);
 
 describe('inference backend settings', () => {
 	beforeEach(() => {
@@ -442,6 +442,62 @@ describe('reasoning override (Code tab per-tab toggle)', () => {
 	});
 });
 
+/**
+ * The rule this suite exists for: a level that the active model does not
+ * advertise must never reach the wire. Qwen 3.8's template calls
+ * `raise_exception` on an unknown value, so a stale selection left over from a
+ * different model would 500 the whole turn rather than degrade to a default.
+ */
+describe('reasoning effort', () => {
+	beforeEach(() => {
+		updateInferenceBackend({
+			mode: 'local',
+			remoteBackendKind: null,
+			remoteSampling: null,
+			remoteReasoning: null
+		});
+		setActiveLocalModel('Qwen3.8-27B-IQ4_NL.gguf');
+		updateSettings({ thinkingEnabled: true, reasoningEffort: null });
+	});
+
+	it('sends effort alongside the thinking kwarg, in one object', () => {
+		updateSettings({ reasoningEffort: 'medium' });
+		expect(kwargs()).toEqual({ enable_thinking: true, reasoning_effort: 'medium' });
+	});
+
+	it('sends no effort key at all when none is selected', () => {
+		// The default: the template applies its own xhigh, exactly as before
+		// this control existed. An upgrade must not change any job's behavior.
+		expect(kwargs()).toEqual({ enable_thinking: true });
+	});
+
+	it('drops a level the active model does not advertise', () => {
+		updateSettings({ reasoningEffort: 'high' }); // an OpenRouter level
+		expect(kwargs()).toEqual({ enable_thinking: true });
+	});
+
+	it('omits effort while reasoning is off — there is no block to shape', () => {
+		updateSettings({ reasoningEffort: 'low' });
+		expect(kwargs(false)).toEqual({ enable_thinking: false });
+		updateSettings({ thinkingEnabled: false });
+		expect(kwargs()).toEqual({ enable_thinking: false });
+	});
+
+	it('lets a per-turn override outrank the global selection', () => {
+		updateSettings({ reasoningEffort: 'xhigh' });
+		expect(kwargs(null, 'low')).toEqual({ enable_thinking: true, reasoning_effort: 'low' });
+		// An unusable override falls through to "send nothing", not to the
+		// global value — the override is a statement about this turn.
+		expect(kwargs(null, 'bogus')).toEqual({ enable_thinking: true });
+	});
+
+	it('sends nothing for a model with no effort axis', () => {
+		setActiveLocalModel('Qwen3.5-9B-IQ4_NL.gguf');
+		updateSettings({ reasoningEffort: 'medium' });
+		expect(kwargs()).toEqual({ enable_thinking: true });
+	});
+});
+
 describe('OpenRouter backend', () => {
 	beforeEach(() => {
 		updateInferenceBackend({
@@ -481,9 +537,9 @@ describe('OpenRouter backend', () => {
 			openrouterCatalogAt: Date.now(),
 			openrouterKeyStatus: null,
 			openrouterKeyStatusAt: null,
-			openrouterReasoningEffort: 'high'
+			openrouterReasoningEffort: null
 		});
-		updateSettings({ thinkingEnabled: true });
+		updateSettings({ thinkingEnabled: true, reasoningEffort: 'high' });
 	});
 
 	it('omits ALL sampling params for a non-Qwen OpenRouter model', () => {
@@ -527,13 +583,28 @@ describe('OpenRouter backend', () => {
 	});
 
 	it('returns null when the selected model is not reasoning-capable', () => {
-		updateInferenceBackend({ remoteModelId: 'openai/gpt-4o', openrouterReasoningEffort: null });
+		updateInferenceBackend({ remoteModelId: 'openai/gpt-4o' });
 		expect(reasoningParam()).toBeNull();
 	});
 
 	it('returns null for non-OpenRouter backends', () => {
 		updateInferenceBackend({ mode: 'local', remoteBackendKind: null });
 		expect(reasoningParam()).toBeNull();
+	});
+
+	it('falls back to the catalog default rather than omitting the param', () => {
+		// Deliberately asymmetric with getChatTemplateKwargs, which omits the
+		// kwarg entirely when nothing is selected. Each preserves what its
+		// backend did before the shared selector existed.
+		updateSettings({ reasoningEffort: null });
+		expect(reasoningParam()).toEqual({ effort: 'medium' });
+		// Same for a level this model doesn't publish.
+		updateSettings({ reasoningEffort: 'xhigh' });
+		expect(reasoningParam()).toEqual({ effort: 'medium' });
+	});
+
+	it('lets a per-turn override pick a published level', () => {
+		expect(reasoningParam(null, 'low')).toEqual({ effort: 'low' });
 	});
 });
 

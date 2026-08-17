@@ -15,11 +15,13 @@
  */
 
 import type { BackendOverride } from '$lib/api';
+import type { OpenRouterModel } from '$lib/openrouter';
 import { PORTS, baseUrl } from '$lib/ports';
 import {
 	getActiveLocalModelFilename,
 	getApiKeyValue,
 	getSettings,
+	resolveEffort,
 	type AppSettings,
 	type InferenceBackendConfig,
 	type QwenSamplingFamily,
@@ -44,6 +46,45 @@ export type ReasoningMode =
 	| { kind: 'none' }
 	| { kind: 'template-kwarg'; kwarg: string }
 	| { kind: 'openrouter-effort'; effort: string; mandatory: boolean };
+
+/**
+ * How hard the model should think, when it exposes that as a separate axis
+ * from on/off. Qwen 3.8's template reads a `reasoning_effort` variable from
+ * *inside* its `enable_thinking` branch, so effort is an addition to the
+ * thinking kwarg, never a replacement for it — and it has no `none` level.
+ *
+ * `levels` is the model's own vocabulary, and it is not advisory: Qwen 3.8's
+ * template calls `raise_exception` for any value outside
+ * `('xhigh', 'medium', 'low')`, which llama-server returns as a 500 for the
+ * whole request. Every value sent on the wire must come from this list —
+ * see `resolveEffort` in `stores/settings`.
+ */
+export interface EffortCaps {
+	/** How the level travels: a chat-template kwarg, or OpenRouter's param. */
+	transport: 'template-kwarg' | 'openrouter';
+	/** Kwarg name for `template-kwarg` transport; null for OpenRouter. */
+	kwarg: string | null;
+	/** Exactly the levels this model accepts, in display order. */
+	levels: string[];
+	/** What the model does when no level is sent — labels the default option. */
+	modelDefault: string | null;
+	/** OpenRouter only: model always reasons, rejects `none`, effort locked. */
+	mandatory: boolean;
+}
+
+/**
+ * Effort vocabulary for the models that ship one. Qwen 3.5 and 3.6 templates
+ * have no `reasoning_effort` variable at all — only `enable_thinking` — so
+ * they are deliberately absent rather than listed with an empty vocabulary.
+ */
+const QWEN_38_EFFORT: EffortCaps = {
+	transport: 'template-kwarg',
+	kwarg: 'reasoning_effort',
+	// Order is the template's own: cheapest first, its default last.
+	levels: ['low', 'medium', 'xhigh'],
+	modelDefault: 'xhigh',
+	mandatory: false
+};
 
 export interface BackendDescriptor {
 	kind: BackendKind;
@@ -82,6 +123,14 @@ export interface BackendDescriptor {
 	 * reasoning mechanism we can't drive via chat_template_kwargs.
 	 */
 	reasoningSupported: boolean;
+	/**
+	 * The model's effort vocabulary, or null when it has none — which is the
+	 * case for most models, and is what hides the effort selector. Independent
+	 * of `reasoningSupported`: a model can be togglable with no effort levels
+	 * (every Qwen 3.5/3.6) or advertise a mechanism whose levels the server
+	 * never enumerated (a toolchest model reporting bare `reasoning_effort`).
+	 */
+	reasoningEffort: EffortCaps | null;
 	/** Whether the inference queue may admit parallel turns on this backend's lane. */
 	allowParallel: boolean;
 }
@@ -89,6 +138,8 @@ export interface BackendDescriptor {
 /** What a recognized model identity implies. One entry per model shape. */
 interface ModelTraits {
 	family: QwenSamplingFamily;
+	/** Null when the model's template exposes no effort levels. */
+	effort: EffortCaps | null;
 }
 
 /**
@@ -112,11 +163,11 @@ function normalizeId(id: string): string {
  * everything else in the lineup (3.5 4B/9B, 3.6 35B-A3B) shares one.
  */
 const MODEL_TRAITS: readonly (readonly [string, ModelTraits])[] = [
-	['qwen3827b', { family: 'qwen-dense-27b' }],
-	['qwen3627b', { family: 'qwen-dense-27b' }],
-	['qwen38', { family: 'qwen3.5' }],
-	['qwen36', { family: 'qwen3.5' }],
-	['qwen35', { family: 'qwen3.5' }]
+	['qwen3827b', { family: 'qwen-dense-27b', effort: QWEN_38_EFFORT }],
+	['qwen3627b', { family: 'qwen-dense-27b', effort: null }],
+	['qwen38', { family: 'qwen3.5', effort: QWEN_38_EFFORT }],
+	['qwen36', { family: 'qwen3.5', effort: null }],
+	['qwen35', { family: 'qwen3.5', effort: null }]
 ];
 
 /**
@@ -129,10 +180,6 @@ function modelTraitsFromId(id: string | null | undefined): ModelTraits | null {
 	if (!id) return null;
 	const normalized = normalizeId(id);
 	return MODEL_TRAITS.find(([pattern]) => normalized.includes(pattern))?.[1] ?? null;
-}
-
-function modelFamilyFromId(id: string | null | undefined): QwenSamplingFamily | null {
-	return modelTraitsFromId(id)?.family ?? null;
 }
 
 /** Local models all come from the managed Qwen lineup — an unrecognized
@@ -216,7 +263,8 @@ export function resolveBackendDescriptor(override?: BackendOverride): BackendDes
 }
 
 function resolveLocalDescriptor(settings: AppSettings): BackendDescriptor {
-	const family = modelFamilyFromId(getActiveLocalModelFilename() || null) ?? LOCAL_DEFAULT_FAMILY;
+	const traits = modelTraitsFromId(getActiveLocalModelFilename() || null);
+	const family = traits?.family ?? LOCAL_DEFAULT_FAMILY;
 	return {
 		kind: 'local',
 		baseUrl: baseUrl(PORTS.llama),
@@ -230,7 +278,54 @@ function resolveLocalDescriptor(settings: AppSettings): BackendDescriptor {
 		discoveredSampling: null,
 		reasoningMode: { kind: 'template-kwarg', kwarg: 'enable_thinking' },
 		reasoningSupported: true,
+		// An unrecognized local GGUF keeps the default sampling family (see
+		// LOCAL_DEFAULT_FAMILY) but gets NO effort levels — a family is a guess
+		// about which tuned numbers fit, whereas an effort level is a string the
+		// model's template either accepts or throws on.
+		reasoningEffort: traits?.effort ?? null,
 		allowParallel: false
+	};
+}
+
+/**
+ * Effort vocabulary for a chat-template backend: what the server enumerated,
+ * falling back to what the model id implies.
+ *
+ * A server that names `reasoning_effort` without listing its levels has given
+ * us a mechanism and no vocabulary. The id table is the only other source, and
+ * when that misses too the answer is null — never a guessed list. Sending a
+ * level the template doesn't recognize is not a degraded response, it is a
+ * raised exception and a 500.
+ */
+function effortFromCaps(
+	caps: RemoteReasoningCaps | null,
+	traits: ModelTraits | null
+): EffortCaps | null {
+	const levels = caps?.effort_levels ?? [];
+	if (caps?.supported && levels.length > 0) {
+		return {
+			transport: 'template-kwarg',
+			kwarg:
+				caps.toggle === 'reasoning_effort'
+					? (caps.kwarg ?? 'reasoning_effort')
+					: 'reasoning_effort',
+			levels,
+			modelDefault: caps.default_effort ?? null,
+			mandatory: false
+		};
+	}
+	return traits?.effort ?? null;
+}
+
+/** OpenRouter's catalog already carries the whole vocabulary. */
+function effortFromOpenRouter(model: OpenRouterModel | null): EffortCaps | null {
+	if (!model?.reasoning) return null;
+	return {
+		transport: 'openrouter',
+		kwarg: null,
+		levels: model.reasoning.supported_efforts,
+		modelDefault: model.reasoning.default_effort,
+		mandatory: model.reasoning.mandatory
 	};
 }
 
@@ -240,22 +335,25 @@ function resolveRemoteDescriptor(
 	remoteBase: string
 ): BackendDescriptor {
 	const openrouter = inf.remoteBackendKind === 'openrouter' || isOpenRouterUrl(remoteBase);
-	const family = modelFamilyFromId(inf.remoteModelId);
+	const traits = modelTraitsFromId(inf.remoteModelId);
+	const family = traits?.family ?? null;
 	// Discovered capabilities are trusted only from a llama-toolchest probe;
 	// every other backend kind keeps the built-in behavior.
 	const toolchest = inf.remoteBackendKind === 'llama-toolchest';
 
 	let reasoningMode: ReasoningMode = { kind: 'none' };
 	let reasoningSupported = false;
+	let reasoningEffort: EffortCaps | null = null;
 	if (openrouter) {
 		// OpenRouter reasoning is driven by the `reasoning.effort` request
 		// param, never llama.cpp chat_template_kwargs.
 		const model = inf.openrouterCatalog?.find((m) => m.id === inf.remoteModelId) ?? null;
+		reasoningEffort = effortFromOpenRouter(model);
 		if (model?.reasoning) {
 			reasoningSupported = true;
 			reasoningMode = {
 				kind: 'openrouter-effort',
-				effort: inf.openrouterReasoningEffort ?? model.reasoning.default_effort,
+				effort: resolveEffort(reasoningEffort) ?? model.reasoning.default_effort,
 				mandatory: model.reasoning.mandatory
 			};
 		}
@@ -267,11 +365,13 @@ function resolveRemoteDescriptor(
 		if (caps.supported && caps.toggle === 'chat_template_kwargs' && caps.kwarg) {
 			reasoningMode = { kind: 'template-kwarg', kwarg: caps.kwarg };
 		}
+		reasoningEffort = effortFromCaps(caps, traits);
 	} else if (family !== null) {
 		// A recognized remote Qwen wants the same enable_thinking kwarg as the
 		// managed local lineup; an unrecognized remote model gets nothing.
 		reasoningSupported = true;
 		reasoningMode = { kind: 'template-kwarg', kwarg: 'enable_thinking' };
+		reasoningEffort = traits?.effort ?? null;
 	}
 
 	return {
@@ -286,6 +386,7 @@ function resolveRemoteDescriptor(
 		discoveredSampling: toolchest ? (inf.remoteSampling ?? null) : null,
 		reasoningMode,
 		reasoningSupported,
+		reasoningEffort,
 		allowParallel: inf.allowParallelInference
 	};
 }
@@ -325,7 +426,8 @@ function resolveOverrideDescriptor(
 ): BackendDescriptor {
 	const base = normalizeBaseUrl(override.baseUrl);
 	const openrouter = isOpenRouterUrl(base);
-	const family = modelFamilyFromId(override.modelId);
+	const traits = modelTraitsFromId(override.modelId);
+	const family = traits?.family ?? null;
 	// An override that carries no probe data falls back to the model id alone:
 	// a Qwen override keeps the tuned profile + enable_thinking (mirroring the
 	// remote-Qwen case), anything else gets server defaults.
@@ -338,6 +440,14 @@ function resolveOverrideDescriptor(
 		openrouter ? null : (override.discovered?.reasoning ?? null),
 		qwenKwargs
 	);
+
+	// A per-job override has no OpenRouter catalog to consult, so an OpenRouter
+	// override gets no effort vocabulary — the model's own default applies,
+	// exactly as it did before this control existed. Everything else resolves
+	// from its persisted probe caps, then its model id.
+	const reasoningEffort = openrouter
+		? null
+		: effortFromCaps(override.discovered?.reasoning ?? null, traits);
 
 	return {
 		kind: openrouter ? 'openrouter' : 'remote',
@@ -354,6 +464,7 @@ function resolveOverrideDescriptor(
 		discoveredSampling: override.discovered?.sampling ?? null,
 		reasoningMode,
 		reasoningSupported,
+		reasoningEffort,
 		allowParallel: settings.inferenceBackend.allowParallelInference
 	};
 }

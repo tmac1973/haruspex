@@ -51,6 +51,12 @@ export interface EphemeralTurnOptions {
 	 * reasoning without changing a global.
 	 */
 	thinkingEnabled?: boolean | null;
+	/**
+	 * Per-job reasoning effort. `undefined`/`null` inherits the global
+	 * selection; either way it is validated against the model's advertised
+	 * levels before anything is sent. See AgentLoopOptions.
+	 */
+	reasoningEffort?: string | null;
 	/** Where sampling values come from. See AgentLoopOptions. */
 	samplingSource?: 'server' | 'profile' | 'custom';
 	/** Values for `samplingSource: 'custom'`; ignored otherwise. */
@@ -145,6 +151,7 @@ export async function runEphemeralTurn(
 			onCallStats: options.onCallStats,
 			onReasoning: options.onReasoning,
 			thinkingEnabled: options.thinkingEnabled,
+			reasoningEffort: options.reasoningEffort,
 			samplingSource: options.samplingSource,
 			samplingParams: options.samplingParams,
 			signal: options.signal,

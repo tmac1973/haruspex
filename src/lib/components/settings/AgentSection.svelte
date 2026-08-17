@@ -17,6 +17,12 @@
 	// it would have no effect. Local + other remote backends are assumed
 	// capable. Snapshot at mount, matching the rest of this section.
 	let reasoningSupported = $state(resolveBackendDescriptor().reasoningSupported);
+	// Effort levels are the model's own vocabulary — Qwen 3.8 takes
+	// low/medium/xhigh, most OpenRouter models none/low/medium/high — so the
+	// options come from the backend, not from a fixed list. Null hides the
+	// control: most models expose no effort axis at all.
+	let effortCaps = $state(resolveBackendDescriptor().reasoningEffort);
+	let reasoningEffort = $state(getSettings().reasoningEffort);
 	let keepRecentToolResults = $state(getSettings().keepRecentToolResults);
 	let customSystemPrompt = $state(getSettings().customSystemPrompt);
 	let sandboxEnabled = $state(getSettings().sandboxEnabled);
@@ -49,6 +55,11 @@
 	function toggleThinkingEnabled() {
 		thinkingEnabled = !thinkingEnabled;
 		updateSettings({ thinkingEnabled });
+	}
+
+	function setReasoningEffort(value: string) {
+		reasoningEffort = value || null;
+		updateSettings({ reasoningEffort });
 	}
 
 	function toggleKeepRecentToolResults() {
@@ -94,6 +105,32 @@
 				</span>
 			</div>
 		</label>
+	{/if}
+	{#if effortCaps}
+		<div class="search-provider" style="margin-top: 4px">
+			<label for="reasoning-effort">Reasoning effort:</label>
+			<select
+				id="reasoning-effort"
+				value={reasoningEffort ?? ''}
+				onchange={(e) => setReasoningEffort(e.currentTarget.value)}
+				disabled={!thinkingEnabled}
+			>
+				<option value=""
+					>Model default{effortCaps.modelDefault ? ` (${effortCaps.modelDefault})` : ''}</option
+				>
+				{#each effortCaps.levels as level (level)}
+					<option value={level}>{level}</option>
+				{/each}
+			</select>
+			<p class="hint">
+				{#if !thinkingEnabled}
+					Only applies while reasoning mode is on.
+				{:else}
+					How hard the model thinks before answering. A lower level tells it up front to keep the
+					chain of thought short, so it still reaches a conclusion — nothing is cut off part-way.
+				{/if}
+			</p>
+		</div>
 	{/if}
 	<label class="toggle-row">
 		<input type="checkbox" checked={keepRecentToolResults} onchange={toggleKeepRecentToolResults} />

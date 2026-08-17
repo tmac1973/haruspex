@@ -4,7 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import type { OpenRouterModel, OpenRouterKeyStatus } from '$lib/openrouter';
 // Type-only import — descriptor.ts imports this module's runtime values, so
 // keeping this side type-only avoids a circular runtime dependency.
-import type { BackendDescriptor } from '$lib/inference/descriptor';
+import type { BackendDescriptor, EffortCaps } from '$lib/inference/descriptor';
 
 import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
@@ -94,6 +94,15 @@ export interface RemoteReasoningCaps {
 	default_enabled: boolean;
 	toggle: string;
 	kwarg?: string | null;
+	/**
+	 * The effort levels this model's template accepts, when the server
+	 * enumerates them. Absent means the server named a mechanism without
+	 * saying what it takes — the client must not guess, because an unknown
+	 * value is a raised template exception, not a degraded response.
+	 */
+	effort_levels?: string[] | null;
+	/** What the model does when no effort is sent. */
+	default_effort?: string | null;
 }
 
 export interface InferenceBackendConfig {
@@ -167,11 +176,10 @@ export interface InferenceBackendConfig {
 	/** Epoch ms of the last key-status fetch. `null` when never checked. */
 	openrouterKeyStatusAt: number | null;
 	/**
-	 * User-selected reasoning effort for the active OpenRouter model, or `null`
-	 * when the model isn't reasoning-capable or no backend is OpenRouter. One of
-	 * the model's `reasoning.supported_efforts` values; sent as
-	 * `{ reasoning: { effort } }` in chat completions instead of the
-	 * llama.cpp-specific `chat_template_kwargs`.
+	 * @deprecated Superseded by the top-level `reasoningEffort` setting, which
+	 * covers every backend that publishes levels rather than OpenRouter alone.
+	 * Read only by `load()`, which migrates it forward; nothing writes it and
+	 * no request path consults it. Remove a release after the migration ships.
 	 */
 	openrouterReasoningEffort: string | null;
 }
@@ -314,6 +322,20 @@ export interface AppSettings {
 	 * to save context on lighter chat workloads.
 	 */
 	thinkingEnabled: boolean;
+	/**
+	 * How hard the model should think, for models that expose effort as a
+	 * separate axis from on/off (Qwen 3.8: `low` / `medium` / `xhigh`).
+	 *
+	 * `null` means "let the model decide" — no effort is sent and the
+	 * template's own default applies. That is the default deliberately: an
+	 * upgrade must not silently change the behavior of every existing job.
+	 *
+	 * The value is validated against the active model's advertised levels at
+	 * request time (`resolveEffort`), so a level left over from a different
+	 * model is dropped rather than sent. Vocabularies are per-model and a
+	 * wrong value is a 500, not a fallback.
+	 */
+	reasoningEffort: string | null;
 	/**
 	 * Extra instructions appended to the built-in system prompt. Empty
 	 * string means "no addition". Free-form text edited in Settings; we
@@ -492,6 +514,7 @@ const defaults: AppSettings = {
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 60,
 	thinkingEnabled: true,
+	reasoningEffort: null,
 	customSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
 	apiKeys: [],
@@ -565,9 +588,16 @@ function load(): AppSettings {
 				...defaultProxy,
 				...(parsed.proxy ?? {})
 			};
+			// Effort used to be OpenRouter-only, stored inside the backend
+			// config. One selector now covers every backend that publishes
+			// levels, so adopt the old value rather than silently resetting an
+			// OpenRouter user to their model's default.
+			const reasoningEffort: string | null =
+				parsed.reasoningEffort ?? mergedInference.openrouterReasoningEffort ?? null;
 			return {
 				...defaults,
 				...parsed,
+				reasoningEffort,
 				inferenceBackend: mergedInference,
 				apiKeys,
 				integrations: mergedIntegrations,
@@ -787,17 +817,51 @@ export function resetUiScale(): void {
  * a toolchest backend gets its server-reported kwarg, local + recognized
  * remote Qwen get `enable_thinking`.
  *
+ * Models that expose an effort axis (Qwen 3.8's `reasoning_effort`) get a
+ * second key in the same object — the template reads it from inside its
+ * `enable_thinking` branch, so it is an addition to the thinking kwarg, not a
+ * replacement. Only levels the model advertises are ever sent; see
+ * `resolveEffort`.
+ *
  * `thinkingOverride` lets a caller (e.g. the Code tab) force reasoning on/off
- * for one turn regardless of the global setting. `null`/`undefined` uses the
- * global `thinkingEnabled`.
+ * for one turn regardless of the global setting, and `effortOverride` does the
+ * same for the level (a job carries its own). `null`/`undefined` uses the
+ * global `thinkingEnabled` / `reasoningEffort`.
  */
 export function getChatTemplateKwargs(
 	descriptor: BackendDescriptor,
-	thinkingOverride?: boolean | null
+	thinkingOverride?: boolean | null,
+	effortOverride?: string | null
 ): Record<string, unknown> {
 	const mode = descriptor.reasoningMode;
 	if (mode.kind !== 'template-kwarg') return {};
-	return { [mode.kwarg]: thinkingOverride ?? settings.thinkingEnabled };
+	const thinking = thinkingOverride ?? settings.thinkingEnabled;
+	const kwargs: Record<string, unknown> = { [mode.kwarg]: thinking };
+	// Effort lives inside the template's thinking branch — with reasoning off
+	// there is no block for it to shape, so sending it would be noise.
+	const caps = descriptor.reasoningEffort;
+	if (thinking && caps?.transport === 'template-kwarg' && caps.kwarg) {
+		const effort = resolveEffort(caps, effortOverride);
+		if (effort !== null) kwargs[caps.kwarg] = effort;
+	}
+	return kwargs;
+}
+
+/**
+ * The effort level to send, or `null` for "send nothing, model default".
+ *
+ * A stored level that isn't in `caps.levels` resolves to `null`. Vocabularies
+ * are per-model — Qwen 3.8 takes `low`/`medium`/`xhigh`, most OpenRouter
+ * models take `none`/`low`/`medium`/`high` — and Qwen 3.8's template calls
+ * `raise_exception` on an unknown value, which llama-server returns as a 500
+ * for the whole turn. Dropping an unusable level costs one setting; sending it
+ * costs the request.
+ */
+export function resolveEffort(caps: EffortCaps | null, override?: string | null): string | null {
+	if (!caps) return null;
+	const chosen = override ?? settings.reasoningEffort;
+	if (!chosen) return null;
+	return caps.levels.includes(chosen) ? chosen : null;
 }
 
 /**
@@ -811,10 +875,17 @@ export function getChatTemplateKwargs(
  * toggle or a per-turn override) and the model is NOT `mandatory` reasoning,
  * we send `{ effort: 'none' }` to turn it off. For mandatory models we always
  * send the configured effort (the model rejects `'none'`).
+ *
+ * Note the asymmetry with `getChatTemplateKwargs`: with no level selected,
+ * that one omits the kwarg entirely while this one falls back to the catalog's
+ * `default_effort` (already resolved into `mode.effort`). Both preserve what
+ * each backend did before the effort selector existed; changing OpenRouter's
+ * wire shape here would be an unrelated behavior change.
  */
 export function getOpenRouterReasoningParam(
 	descriptor: BackendDescriptor,
-	thinkingOverride?: boolean | null
+	thinkingOverride?: boolean | null,
+	effortOverride?: string | null
 ): { effort: string } | null {
 	const mode = descriptor.reasoningMode;
 	if (mode.kind !== 'openrouter-effort') return null;
@@ -822,7 +893,9 @@ export function getOpenRouterReasoningParam(
 	if (!thinking && !mode.mandatory) {
 		return { effort: 'none' };
 	}
-	return { effort: mode.effort };
+	// A per-turn override (a job's own level) outranks what the descriptor
+	// resolved from the global setting; an unadvertised level falls back to it.
+	return { effort: resolveEffort(descriptor.reasoningEffort, effortOverride) ?? mode.effort };
 }
 
 /**
