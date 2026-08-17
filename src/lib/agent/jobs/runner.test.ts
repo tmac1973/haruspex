@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	markRunFinished: vi.fn(),
 	markRunStepStarted: vi.fn(),
 	markRunStepFinished: vi.fn(),
+	setStepStatsProvider: vi.fn(),
 	askUserQuestion: vi.fn(),
 	invoke: vi.fn()
 }));
@@ -35,7 +36,10 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
 	markRunStarted: mocks.markRunStarted,
 	markRunFinished: mocks.markRunFinished,
 	markRunStepStarted: mocks.markRunStepStarted,
-	markRunStepFinished: mocks.markRunStepFinished
+	markRunStepFinished: mocks.markRunStepFinished,
+	// The runner registers its stats provider at module load; capturing it
+	// here is what lets the persistence test below call it directly.
+	setStepStatsProvider: mocks.setStepStatsProvider
 }));
 
 vi.mock('$lib/stores/settings', () => ({
@@ -1471,17 +1475,21 @@ describe('jobs runner — run observability', () => {
 			opts.onCallStats?.({
 				durationMs: 1000,
 				completionTokens: 100,
+				promptTokens: 4000,
 				reasoningChars: 60,
 				answerChars: 40,
 				reasoningTokens: 60,
+				reasoningExact: true,
 				reasoningMs: 600
 			});
 			opts.onCallStats?.({
 				durationMs: 500,
 				completionTokens: 50,
+				promptTokens: 9000,
 				reasoningChars: 10,
 				answerChars: 40,
 				reasoningTokens: 10,
+				reasoningExact: true,
 				reasoningMs: 100
 			});
 			return { finalText: 'ok', rawText: 'ok' };
@@ -1496,8 +1504,102 @@ describe('jobs runner — run observability', () => {
 			totalMs: 1500,
 			reasoningTokens: 70,
 			totalTokens: 150,
+			// Summed: every call re-sends its prompt, and a step is many
+			// independent turns, so this is tokens processed.
+			promptTokens: 13000,
+			// The peak is a max, not a sum — it is what compares against the
+			// context window, which the live gauge can never show because it
+			// resets between the turns inside a step.
+			peakPromptTokens: 9000,
+			reasoningExact: true,
 			calls: 2
 		});
+	});
+
+	/**
+	 * The provider is what carries the totals to the database, and it is
+	 * registered once at module load rather than passed at each of the nine
+	 * finish call sites across four pipelines — so this is the test that a new
+	 * job type records its tokens without doing anything.
+	 */
+	it('exposes the step totals to the persistence provider', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockImplementationOnce(async (opts: EphemeralTurnOptions) => {
+			opts.onCallStats?.({
+				durationMs: 1000,
+				completionTokens: 100,
+				promptTokens: 4000,
+				reasoningChars: 60,
+				answerChars: 40,
+				reasoningTokens: 60,
+				reasoningExact: false,
+				reasoningMs: 600
+			});
+			return { finalText: 'ok', rawText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const provider = mocks.setStepStatsProvider.mock.calls.at(-1)?.[0] as (
+			runId: number,
+			ordering: number
+		) => unknown;
+		const runId = getCurrentRun()!.id;
+		expect(provider(runId, 0)).toEqual({
+			tokens_prompt: 4000,
+			tokens_completion: 100,
+			tokens_reasoning: 60,
+			tokens_reasoning_exact: false,
+			peak_prompt_tokens: 4000,
+			model_calls: 1,
+			reasoning_ms: 600,
+			total_ms: 1000
+		});
+		// A step that made no model calls records nothing rather than zeros —
+		// otherwise a checkpoint stage waiting on the user reads as free work.
+		expect(provider(runId, 1)).toBeNull();
+		// And a step belonging to some other run is never guessed at.
+		expect(provider(runId + 999, 0)).toBeNull();
+	});
+
+	/**
+	 * One estimated call makes the whole step's figure an estimate. Getting
+	 * this backwards would let a stats card present character-ratio
+	 * apportionment as a number the backend reported.
+	 */
+	it('marks the step estimated as soon as one call estimates', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockImplementationOnce(async (opts: EphemeralTurnOptions) => {
+			opts.onCallStats?.({
+				durationMs: 100,
+				completionTokens: 10,
+				promptTokens: 100,
+				reasoningChars: 5,
+				answerChars: 5,
+				reasoningTokens: 5,
+				reasoningExact: true,
+				reasoningMs: 50
+			});
+			opts.onCallStats?.({
+				durationMs: 100,
+				completionTokens: 10,
+				promptTokens: 100,
+				reasoningChars: 5,
+				answerChars: 5,
+				reasoningTokens: 5,
+				reasoningExact: false,
+				reasoningMs: 50
+			});
+			return { finalText: 'ok', rawText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(getCurrentRun()!.steps[0].thinking?.reasoningExact).toBe(false);
 	});
 
 	it('records token usage against the step', async () => {

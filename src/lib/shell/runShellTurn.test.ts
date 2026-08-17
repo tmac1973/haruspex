@@ -173,9 +173,11 @@ describe('runShellTurn', () => {
 			opts.onCallStats?.({
 				durationMs: 1200,
 				completionTokens: 42,
+				promptTokens: 1200,
 				reasoningChars: 0,
 				answerChars: 100,
 				reasoningTokens: 0,
+				reasoningExact: false,
 				reasoningMs: 0
 			});
 			opts.onContextManaged?.({ kind: 'trim' } as unknown as Parameters<

@@ -27,7 +27,13 @@ import { parseModelAdvanced } from './modelAdvanced';
 // job types before the first dispatch can happen.
 import { getJobType, type JobRunContext, type PlannedStep } from './types';
 import { markStepDone, newRunningStep } from '$lib/agent/steps';
-import { createJobRun, markRunFinished, type JobRunStatus } from '$lib/stores/jobRuns.svelte';
+import {
+	createJobRun,
+	markRunFinished,
+	setStepStatsProvider,
+	type JobRunStatus,
+	type StepStats
+} from '$lib/stores/jobRuns.svelte';
 import { logDebug } from '$lib/debug-log';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';
@@ -169,6 +175,27 @@ export interface StepThinkingStats {
 	totalMs: number;
 	reasoningTokens: number;
 	totalTokens: number;
+	/**
+	 * Prompt tokens summed across the step's calls — tokens *processed*, not
+	 * context size. One step is many independent turns (guided planning writes
+	 * one phase file per turn), and every call re-sends its own prompt, so this
+	 * counts re-sends by design. Locally llama.cpp reuses the KV cache for a
+	 * shared prefix so they aren't recomputed; on a metered backend they are
+	 * real spend.
+	 */
+	promptTokens: number;
+	/**
+	 * Largest single call's prompt — the high-water mark against the context
+	 * window. The live gauge can't show this: it tracks the call in flight and
+	 * resets whenever the step starts a fresh turn.
+	 */
+	peakPromptTokens: number;
+	/**
+	 * True only while every call in the step reported its own reasoning split.
+	 * One estimated call makes the step's figure an estimate — the honest
+	 * reading, and what stops the UI marking a mixed step as exact.
+	 */
+	reasoningExact: boolean;
 	/** Number of model calls folded in — the sample size behind the estimate. */
 	calls: number;
 }
@@ -180,7 +207,55 @@ export function addCallStats(prev: StepThinkingStats | null, call: CallStats): S
 		totalMs: (prev?.totalMs ?? 0) + call.durationMs,
 		reasoningTokens: (prev?.reasoningTokens ?? 0) + call.reasoningTokens,
 		totalTokens: (prev?.totalTokens ?? 0) + call.completionTokens,
+		promptTokens: (prev?.promptTokens ?? 0) + call.promptTokens,
+		peakPromptTokens: Math.max(prev?.peakPromptTokens ?? 0, call.promptTokens),
+		reasoningExact: (prev?.reasoningExact ?? true) && call.reasoningExact,
 		calls: (prev?.calls ?? 0) + 1
+	};
+}
+
+/**
+ * The wire shape of a step's totals, or null when it ran no model calls —
+ * which is a real state (a checkpoint stage waiting on the user) and must
+ * persist as "not recorded" rather than as zeros.
+ */
+export function stepStatsWire(stats: StepThinkingStats | null): StepStats | null {
+	if (!stats || stats.calls === 0) return null;
+	return {
+		tokens_prompt: stats.promptTokens,
+		tokens_completion: stats.totalTokens,
+		tokens_reasoning: stats.reasoningTokens,
+		tokens_reasoning_exact: stats.reasoningExact,
+		peak_prompt_tokens: stats.peakPromptTokens,
+		model_calls: stats.calls,
+		reasoning_ms: stats.reasoningMs,
+		total_ms: stats.totalMs
+	};
+}
+
+// The store closes steps for every job type; the totals live here. Registering
+// once means a job type added later records its tokens without touching any of
+// the nine finish call sites. See `setStepStatsProvider`.
+setStepStatsProvider((runId, ordering) =>
+	current && current.id === runId ? stepStatsWire(current.steps[ordering]?.thinking ?? null) : null
+);
+
+/**
+ * The inverse of `stepStatsWire`: a persisted row read back into the same
+ * shape a live step carries. One shape means the stats card renders a finished
+ * run and a running one with one component, instead of two that drift.
+ */
+export function stepStatsFromWire(stats: StepStats | null): StepThinkingStats | null {
+	if (!stats) return null;
+	return {
+		reasoningMs: stats.reasoning_ms,
+		totalMs: stats.total_ms,
+		reasoningTokens: stats.tokens_reasoning,
+		totalTokens: stats.tokens_completion,
+		promptTokens: stats.tokens_prompt,
+		peakPromptTokens: stats.peak_prompt_tokens,
+		reasoningExact: stats.tokens_reasoning_exact,
+		calls: stats.model_calls
 	};
 }
 

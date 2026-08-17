@@ -294,12 +294,18 @@ function reportCall(
 	if (!args.usage) return;
 	const total = reasoning.length + answer.length;
 	const share = total > 0 ? reasoning.length / total : 0;
+	// Prefer what the backend actually counted. The character ratio is a
+	// reasonable proxy but it is still a proxy, and a UI marking every figure
+	// `~` when some of them are exact undersells the ones that aren't.
+	const exact = args.usage.completion_tokens_details?.reasoning_tokens;
 	ctx.options.onCallStats?.({
 		durationMs: args.durationMs,
 		completionTokens: args.usage.completion_tokens,
+		promptTokens: args.usage.prompt_tokens,
 		reasoningChars: reasoning.length,
 		answerChars: answer.length,
-		reasoningTokens: Math.round(args.usage.completion_tokens * share),
+		reasoningTokens: exact ?? Math.round(args.usage.completion_tokens * share),
+		reasoningExact: exact !== undefined,
 		reasoningMs: Math.round(args.durationMs * share)
 	});
 }

@@ -791,6 +791,74 @@ fn create_job_run_inserts_run_plus_pending_steps() {
     }
 }
 
+/// Token totals survive the round trip, and — the part that matters — a step
+/// with no totals reads back as `None` rather than as a row of zeros. A
+/// checkpoint stage that waits on the user spends nothing and records nothing,
+/// and a stats table must be able to tell those apart.
+#[test]
+fn step_stats_round_trip_and_absence_is_not_zero() {
+    let db = test_db();
+    let job_id = job_with_steps(&db, "Stats", &["a", "b"]);
+    let run_id = db
+        .create_job_run(job_id, "manual", &["a".to_string(), "b".to_string()])
+        .unwrap();
+
+    let stats = StepStats {
+        tokens_prompt: 186_000,
+        tokens_completion: 22_800,
+        tokens_reasoning: 14_100,
+        tokens_reasoning_exact: true,
+        peak_prompt_tokens: 31_700,
+        model_calls: 31,
+        reasoning_ms: 1_683_000,
+        total_ms: 2_712_000,
+    };
+    db.mark_run_step_finished(run_id, 0, "succeeded", Some("out"), None, 200, Some(&stats))
+        .unwrap();
+    // Second step ran no model calls at all.
+    db.mark_run_step_finished(run_id, 1, "succeeded", Some("out"), None, 300, None)
+        .unwrap();
+
+    let run = db.get_job_run(run_id).unwrap();
+    let recorded = run.steps[0].stats.as_ref().expect("step 0 recorded stats");
+    assert_eq!(recorded.tokens_prompt, 186_000);
+    assert_eq!(recorded.tokens_completion, 22_800);
+    assert_eq!(recorded.tokens_reasoning, 14_100);
+    assert!(recorded.tokens_reasoning_exact);
+    assert_eq!(recorded.peak_prompt_tokens, 31_700);
+    assert_eq!(recorded.model_calls, 31);
+    assert_eq!(recorded.reasoning_ms, 1_683_000);
+    assert_eq!(recorded.total_ms, 2_712_000);
+
+    assert!(
+        run.steps[1].stats.is_none(),
+        "a step that ran no model calls must read back as not-recorded, not as zeros"
+    );
+}
+
+/// The estimate flag is what lets the UI mark a `~`; it has to survive
+/// storage, including its false value.
+#[test]
+fn step_stats_preserve_the_estimated_flag() {
+    let db = test_db();
+    let job_id = job_with_steps(&db, "Estimated", &["a"]);
+    let run_id = db
+        .create_job_run(job_id, "manual", &["a".to_string()])
+        .unwrap();
+    let stats = StepStats {
+        tokens_reasoning_exact: false,
+        model_calls: 3,
+        ..Default::default()
+    };
+    db.mark_run_step_finished(run_id, 0, "succeeded", None, None, 10, Some(&stats))
+        .unwrap();
+
+    let run = db.get_job_run(run_id).unwrap();
+    let recorded = run.steps[0].stats.as_ref().unwrap();
+    assert!(!recorded.tokens_reasoning_exact);
+    assert_eq!(recorded.model_calls, 3);
+}
+
 #[test]
 fn run_lifecycle_transitions_persist_correctly() {
     let db = test_db();
@@ -801,11 +869,11 @@ fn run_lifecycle_transitions_persist_correctly() {
 
     db.mark_run_started(run_id, 100).unwrap();
     db.mark_run_step_started(run_id, 0, 100, "a").unwrap();
-    db.mark_run_step_finished(run_id, 0, "succeeded", Some("a-output"), None, 200)
+    db.mark_run_step_finished(run_id, 0, "succeeded", Some("a-output"), None, 200, None)
         .unwrap();
     db.mark_run_step_started(run_id, 1, 200, "a-output\n\nb")
         .unwrap();
-    db.mark_run_step_finished(run_id, 1, "succeeded", Some("b-output"), None, 300)
+    db.mark_run_step_finished(run_id, 1, "succeeded", Some("b-output"), None, 300, None)
         .unwrap();
     db.mark_run_finished(run_id, "succeeded", 300, None)
         .unwrap();
@@ -832,10 +900,10 @@ fn failure_path_records_error_on_run_and_step() {
 
     db.mark_run_started(run_id, 10).unwrap();
     db.mark_run_step_started(run_id, 0, 10, "a").unwrap();
-    db.mark_run_step_finished(run_id, 0, "succeeded", Some("ok"), None, 20)
+    db.mark_run_step_finished(run_id, 0, "succeeded", Some("ok"), None, 20, None)
         .unwrap();
     db.mark_run_step_started(run_id, 1, 20, "ok\n\nb").unwrap();
-    db.mark_run_step_finished(run_id, 1, "failed", None, Some("boom"), 30)
+    db.mark_run_step_finished(run_id, 1, "failed", None, Some("boom"), 30, None)
         .unwrap();
     db.mark_run_finished(run_id, "failed", 30, Some("boom"))
         .unwrap();
@@ -929,10 +997,10 @@ fn recover_orphan_runs_sweeps_running_and_queued() {
         .unwrap();
     db.mark_run_started(r3, 50).unwrap();
     db.mark_run_step_started(r3, 0, 50, "a").unwrap();
-    db.mark_run_step_finished(r3, 0, "succeeded", Some("out"), None, 60)
+    db.mark_run_step_finished(r3, 0, "succeeded", Some("out"), None, 60, None)
         .unwrap();
     db.mark_run_step_started(r3, 1, 60, "out\n\nb").unwrap();
-    db.mark_run_step_finished(r3, 1, "succeeded", Some("done"), None, 70)
+    db.mark_run_step_finished(r3, 1, "succeeded", Some("done"), None, 70, None)
         .unwrap();
     db.mark_run_finished(r3, "succeeded", 70, None).unwrap();
 
