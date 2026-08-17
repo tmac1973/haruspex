@@ -3,6 +3,8 @@
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
 	import { formatDuration } from '$lib/utils/format';
 	import { getJobRun, type JobRunStep, type JobRunWithSteps } from '$lib/stores/jobRuns.svelte';
+	import JobRunStats from '$lib/components/jobs/JobRunStats.svelte';
+	import { stepStatsFromWire } from '$lib/agent/jobs/runner.svelte';
 
 	interface Props {
 		runId: number;
@@ -15,6 +17,21 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let expandedRendered = $state<Record<number, boolean>>({});
+
+	/**
+	 * Persisted rows mapped into the shape a live step carries, so the stats
+	 * card is one component rather than two that drift. A run recorded before
+	 * token accounting existed has null throughout and the card says so.
+	 *
+	 * The context window isn't stored per run, so the peak column shows raw
+	 * token counts here rather than a percentage of a window we'd be guessing.
+	 */
+	const statsRows = $derived(
+		(run?.steps ?? []).map((s) => ({
+			label: `Step ${s.ordering + 1}`,
+			stats: stepStatsFromWire(s.stats)
+		}))
+	);
 
 	$effect(() => {
 		const id = runId;
@@ -101,6 +118,8 @@
 				</JobStepCard>
 			{/each}
 		</div>
+
+		<JobRunStats rows={statsRows} contextSize={null} />
 	{/if}
 </div>
 

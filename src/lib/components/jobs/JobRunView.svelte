@@ -5,6 +5,7 @@
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
 	import ContextGauge from '$lib/components/ContextGauge.svelte';
 	import { hasStreamingAnswer } from '$lib/agent/think-stream';
+	import JobRunStats from '$lib/components/jobs/JobRunStats.svelte';
 	import { formatDuration, formatTokens } from '$lib/utils/format';
 	import {
 		cancel,
@@ -80,27 +81,16 @@
 	}
 
 	/**
-	 * Run-level roll-up — the number that answers "why did last night take so
-	 * long". Summed over model calls only: the gap between that and the run's
-	 * wall clock is tool execution, checks and commits, which is not thinking.
+	 * Rows for the stats card. A named stage (guided planning) labels itself;
+	 * a plain prompt step is "Step N", because its prompt is already the card
+	 * above and repeating it here would make the table unreadable.
 	 */
-	const runThinking = $derived.by(() => {
-		if (!run) return null;
-		const totals = run.steps.reduce(
-			(acc, s) =>
-				s.thinking
-					? {
-							reasoningMs: acc.reasoningMs + s.thinking.reasoningMs,
-							totalMs: acc.totalMs + s.thinking.totalMs,
-							reasoningTokens: acc.reasoningTokens + s.thinking.reasoningTokens,
-							totalTokens: acc.totalTokens + s.thinking.totalTokens,
-							calls: acc.calls + s.thinking.calls
-						}
-					: acc,
-			{ reasoningMs: 0, totalMs: 0, reasoningTokens: 0, totalTokens: 0, calls: 0 }
-		);
-		return totals.calls > 0 ? totals : null;
-	});
+	const statsRows = $derived(
+		(run?.steps ?? []).map((s) => ({
+			label: s.description ? s.promptAuthored : `Step ${s.index + 1}`,
+			stats: s.thinking
+		}))
+	);
 </script>
 
 {#if run}
@@ -109,15 +99,6 @@
 			<div class="header-left">
 				<h3>{run.jobName}</h3>
 				<span class={runStatusClass()}>{runStatusLabel()}</span>
-				{#if runThinking}
-					<span
-						class="thinking-rollup"
-						title={`Thinking ${formatDuration(runThinking.reasoningMs)} of ${formatDuration(runThinking.totalMs)} spent generating, across ${runThinking.calls} model call${runThinking.calls === 1 ? '' : 's'}. Estimated by splitting each call's tokens and time by the reasoning/answer character ratio — no server reports either per channel. Excludes tool execution, checks and commits, which are not generation.`}
-					>
-						Thinking ~{Math.round((runThinking.reasoningMs / runThinking.totalMs) * 100)}% of
-						generation
-					</span>
-				{/if}
 			</div>
 			<div class="header-right">
 				{#if run.status === 'running'}
@@ -233,6 +214,10 @@
 		{#if run.error && run.steps.every((s) => s.status !== 'failed' && s.status !== 'cancelled')}
 			<div class="error">{run.error}</div>
 		{/if}
+
+		<!-- Supersedes the old header roll-up: same source, but the whole
+		     accounting rather than one percentage, and it updates live. -->
+		<JobRunStats rows={statsRows} contextSize={run.contextSize} />
 	</div>
 {/if}
 
@@ -334,13 +319,6 @@
 	.check-detail {
 		font-size: 0.74rem;
 		opacity: 0.8;
-	}
-
-	.thinking-rollup {
-		font-size: 0.72rem;
-		color: var(--text-secondary);
-		white-space: nowrap;
-		cursor: default;
 	}
 
 	.reasoning {
