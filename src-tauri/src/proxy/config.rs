@@ -20,13 +20,14 @@ pub(super) const ENGINE_COOLDOWN: Duration = Duration::from_secs(90); // cooldow
 pub(super) const RATE_LIMIT_INTERVAL_SLOW: Duration = Duration::from_secs(6);
 pub(super) const ENGINE_COOLDOWN_SLOW: Duration = Duration::from_secs(45);
 
-// Note: Bing, Qwant, Startpage and Mojeek were previously in this list but
-// have been removed — each gained a JS-execution bot wall that plain HTTP
-// scraping cannot pass.
+// Note: Qwant, Startpage and Mojeek were previously in this list but have been
+// removed — each gained a JS-execution bot wall that plain HTTP scraping cannot
+// pass. Bing was removed in April 2026 for the same reason and has since come
+// back: re-verified on 2026-08-17 across five varied queries, every one
+// server-rendering ten `li.b_algo` results in a 123-127 KB page, with no
+// Turnstile shell in sight. Walls come down as well as up, so the others are
+// worth re-testing occasionally rather than assumed dead forever.
 // As of April 2026:
-//   - Bing serves a JavaScript shell + Cloudflare Turnstile bot challenge
-//     for all `/search?q=...` requests; no result HTML exists in the
-//     initial response.
 //   - api.qwant.com is gated by DataDome (commercial JS-execution bot
 //     detection), and the www.qwant.com HTML page is a Next.js SPA shell
 //     with empty preloaded data — results are fetched client-side.
@@ -44,9 +45,11 @@ pub(super) const ENGINE_COOLDOWN_SLOW: Duration = Duration::from_secs(45);
 // a headless browser (Playwright/Puppeteer) or a paid API — Mojeek sells a
 // keyed Web Search API, which would fit the shape of the existing Brave
 // provider if it is ever worth the key.
-// See git history for the previous search_bing / search_qwant /
-// search_startpage / search_mojeek implementations.
-pub(super) const AUTO_ENGINES: &[&str] = &["yahoo", "brave_html", "duckduckgo"];
+// Qwant re-checked on 2026-08-17: still an SPA shell with no server-rendered
+// results (its markers appear only inside scripts), so it stays out.
+// See git history for the previous search_qwant / search_startpage /
+// search_mojeek implementations.
+pub(super) const AUTO_ENGINES: &[&str] = &["yahoo", "brave_html", "duckduckgo", "bing"];
 
 /// User-configured HTTP proxy. Mirrors the `ProxyConfig` TS type and is
 /// passed in as an optional argument on every egress command. `mode` is
