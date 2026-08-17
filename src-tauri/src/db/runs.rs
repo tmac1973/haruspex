@@ -116,6 +116,15 @@ impl Database {
         Ok(())
     }
 
+    /// `stats` is written once, here, rather than on every model callback: a
+    /// database write per call is a lot of churn for figures nobody reads
+    /// until the step ends. The accepted cost is that a run killed mid-step
+    /// leaves that step's row NULL.
+    ///
+    /// Wide by nature — it closes a row that has status, output, error, a
+    /// timestamp and now totals. Bundling them into a struct would only move
+    /// the same fields behind a name the single caller never reuses.
+    #[allow(clippy::too_many_arguments)]
     pub fn mark_run_step_finished(
         &self,
         run_id: i64,
@@ -124,13 +133,32 @@ impl Database {
         output: Option<&str>,
         error: Option<&str>,
         finished_at: i64,
+        stats: Option<&StepStats>,
     ) -> Result<(), String> {
         let conn = self.conn();
         conn.execute(
             "UPDATE job_run_steps
-                SET status = ?1, output = ?2, error = ?3, finished_at = ?4
+                SET status = ?1, output = ?2, error = ?3, finished_at = ?4,
+                    tokens_prompt = ?7, tokens_completion = ?8, tokens_reasoning = ?9,
+                    tokens_reasoning_exact = ?10, peak_prompt_tokens = ?11,
+                    model_calls = ?12, reasoning_ms = ?13, total_ms = ?14
                 WHERE run_id = ?5 AND ordering = ?6",
-            params![status, output, error, finished_at, run_id, ordering],
+            params![
+                status,
+                output,
+                error,
+                finished_at,
+                run_id,
+                ordering,
+                stats.map(|s| s.tokens_prompt),
+                stats.map(|s| s.tokens_completion),
+                stats.map(|s| s.tokens_reasoning),
+                stats.map(|s| i64::from(s.tokens_reasoning_exact)),
+                stats.map(|s| s.peak_prompt_tokens),
+                stats.map(|s| s.model_calls),
+                stats.map(|s| s.reasoning_ms),
+                stats.map(|s| s.total_ms),
+            ],
         )
         .map_err(|e| format!("Step finished update failed: {}", e))?;
         Ok(())
@@ -193,7 +221,10 @@ impl Database {
         let mut stmt = conn
             .prepare(
                 "SELECT id, run_id, ordering, prompt_authored, prompt_rendered,
-                        status, output, started_at, finished_at, error
+                        status, output, started_at, finished_at, error,
+                        tokens_prompt, tokens_completion, tokens_reasoning,
+                        tokens_reasoning_exact, peak_prompt_tokens, model_calls,
+                        reasoning_ms, total_ms
                  FROM job_run_steps WHERE run_id = ?1
                  ORDER BY ordering ASC",
             )
@@ -212,6 +243,21 @@ impl Database {
                     started_at: row.get(7)?,
                     finished_at: row.get(8)?,
                     error: row.get(9)?,
+                    // Any of the eight being NULL means this step was never
+                    // recorded (it predates token accounting, ran no model
+                    // calls, or was interrupted). Keyed on model_calls: it is
+                    // the one field that is never legitimately absent for a
+                    // step that did record.
+                    stats: row.get::<_, Option<i64>>(15)?.map(|model_calls| StepStats {
+                        tokens_prompt: row.get(10).unwrap_or(0),
+                        tokens_completion: row.get(11).unwrap_or(0),
+                        tokens_reasoning: row.get(12).unwrap_or(0),
+                        tokens_reasoning_exact: row.get::<_, i64>(13).unwrap_or(0) != 0,
+                        peak_prompt_tokens: row.get(14).unwrap_or(0),
+                        model_calls,
+                        reasoning_ms: row.get(16).unwrap_or(0),
+                        total_ms: row.get(17).unwrap_or(0),
+                    }),
                 })
             })
             .map_err(|e| format!("Run steps query failed: {}", e))?

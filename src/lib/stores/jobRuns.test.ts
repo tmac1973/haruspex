@@ -120,8 +120,35 @@ describe('jobRuns store', () => {
 			status: 'succeeded',
 			output: 'out',
 			error: null,
-			finishedAt: 600
+			finishedAt: 600,
+			// No provider registered in this suite: a step whose totals nobody
+			// can supply records as "not recorded", never as zeros.
+			stats: null
 		});
+	});
+
+	it('attaches the registered provider’s stats to the finish call', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce(undefined);
+		const mod = await import('$lib/stores/jobRuns.svelte');
+		const stats = {
+			tokens_prompt: 41200,
+			tokens_completion: 3100,
+			tokens_reasoning: 1900,
+			tokens_reasoning_exact: false,
+			peak_prompt_tokens: 12400,
+			model_calls: 7,
+			reasoning_ms: 251000,
+			total_ms: 412000
+		};
+		mod.setStepStatsProvider((runId, ordering) => (runId === 5 && ordering === 2 ? stats : null));
+		await mod.markRunStepFinished(5, 2, 'succeeded', 'out', null, 600);
+		expect(invoke).toHaveBeenCalledWith(
+			'db_mark_run_step_finished',
+			expect.objectContaining({ stats })
+		);
+		// Leave the module as we found it — the provider is module state and
+		// the suite order must not matter.
+		mod.setStepStatsProvider(() => null);
 	});
 
 	it('getJobRun returns the full payload', async () => {
@@ -146,7 +173,8 @@ describe('jobRuns store', () => {
 					output: 'done',
 					started_at: 2,
 					finished_at: 3,
-					error: null
+					error: null,
+					stats: null
 				}
 			]
 		};

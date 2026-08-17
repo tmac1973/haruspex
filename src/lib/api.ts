@@ -206,6 +206,13 @@ export interface Usage {
 	prompt_tokens: number;
 	completion_tokens: number;
 	total_tokens: number;
+	/**
+	 * OpenAI-shaped backends (OpenRouter included) report the reasoning share
+	 * of `completion_tokens` here. llama.cpp does not, which is why the loop
+	 * still carries a character-ratio estimate for the backends that stay
+	 * silent — see `reportCall`.
+	 */
+	completion_tokens_details?: { reasoning_tokens?: number };
 }
 
 export interface StreamChunk {

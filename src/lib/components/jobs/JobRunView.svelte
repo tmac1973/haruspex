@@ -5,6 +5,9 @@
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
 	import ContextGauge from '$lib/components/ContextGauge.svelte';
 	import { hasStreamingAnswer } from '$lib/agent/think-stream';
+	import JobRunStats from '$lib/components/jobs/JobRunStats.svelte';
+	import ThinkingPanel from '$lib/components/ThinkingPanel.svelte';
+	import { splitThinkChannels } from '$lib/markdown';
 	import { formatDuration, formatTokens } from '$lib/utils/format';
 	import {
 		cancel,
@@ -74,33 +77,34 @@
 	 * by character ratio (no server reports either per channel), so they are
 	 * labelled as estimates rather than presented as counts.
 	 */
+	/**
+	 * Reasoning already banked for the step, plus whatever is in flight.
+	 * `onReasoning` only fires when a model call completes, so on a streaming
+	 * turn the tail is the difference between watching and waiting; on a
+	 * tool-driven one there is no tail and this is just the banked text.
+	 */
+	function stepReasoning(step: RunStepState): string {
+		const live = splitThinkChannels(step.streaming).reasoning.trim();
+		if (!live) return step.reasoning;
+		return step.reasoning ? `${step.reasoning}\n\n---\n\n${live}` : live;
+	}
+
 	function thinkingSummary(t: StepThinkingStats): string {
 		const pct = t.totalMs > 0 ? Math.round((t.reasoningMs / t.totalMs) * 100) : 0;
 		return `~${formatDuration(t.reasoningMs)} · ~${formatTokens(t.reasoningTokens)} tokens · ${pct}% of generation`;
 	}
 
 	/**
-	 * Run-level roll-up — the number that answers "why did last night take so
-	 * long". Summed over model calls only: the gap between that and the run's
-	 * wall clock is tool execution, checks and commits, which is not thinking.
+	 * Rows for the stats card. A named stage (guided planning) labels itself;
+	 * a plain prompt step is "Step N", because its prompt is already the card
+	 * above and repeating it here would make the table unreadable.
 	 */
-	const runThinking = $derived.by(() => {
-		if (!run) return null;
-		const totals = run.steps.reduce(
-			(acc, s) =>
-				s.thinking
-					? {
-							reasoningMs: acc.reasoningMs + s.thinking.reasoningMs,
-							totalMs: acc.totalMs + s.thinking.totalMs,
-							reasoningTokens: acc.reasoningTokens + s.thinking.reasoningTokens,
-							totalTokens: acc.totalTokens + s.thinking.totalTokens,
-							calls: acc.calls + s.thinking.calls
-						}
-					: acc,
-			{ reasoningMs: 0, totalMs: 0, reasoningTokens: 0, totalTokens: 0, calls: 0 }
-		);
-		return totals.calls > 0 ? totals : null;
-	});
+	const statsRows = $derived(
+		(run?.steps ?? []).map((s) => ({
+			label: s.description ? s.promptAuthored : `Step ${s.index + 1}`,
+			stats: s.thinking
+		}))
+	);
 </script>
 
 {#if run}
@@ -109,15 +113,6 @@
 			<div class="header-left">
 				<h3>{run.jobName}</h3>
 				<span class={runStatusClass()}>{runStatusLabel()}</span>
-				{#if runThinking}
-					<span
-						class="thinking-rollup"
-						title={`Thinking ${formatDuration(runThinking.reasoningMs)} of ${formatDuration(runThinking.totalMs)} spent generating, across ${runThinking.calls} model call${runThinking.calls === 1 ? '' : 's'}. Estimated by splitting each call's tokens and time by the reasoning/answer character ratio — no server reports either per channel. Excludes tool execution, checks and commits, which are not generation.`}
-					>
-						Thinking ~{Math.round((runThinking.reasoningMs / runThinking.totalMs) * 100)}% of
-						generation
-					</span>
-				{/if}
 			</div>
 			<div class="header-right">
 				{#if run.status === 'running'}
@@ -190,23 +185,22 @@
 						<SearchStepView steps={step.searchSteps} />
 					{/if}
 
-					{#if step.reasoning}
-						<!-- Most job turns force a final tool, and that path never
-						     reaches the streaming synthesis — so this reasoning
-						     arrives one model call at a time, not token by token.
-						     It is still the only window into a running step. -->
-						<details
-							class="reasoning"
-							open={isLiveStep(step) && !hasStreamingAnswer(step.streaming)}
-						>
-							<summary>
-								<span class="reasoning-title">Reasoning</span>
-								{#if step.thinking}
-									<span class="reasoning-stat">{thinkingSummary(step.thinking)}</span>
-								{/if}
-							</summary>
-							<pre class="reasoning-body">{step.reasoning}</pre>
-						</details>
+					{#if stepReasoning(step)}
+						<!-- Only the final synthesis streams; every tool-driven
+						     iteration uses the non-streaming completion, so on a
+						     tool-driven turn (all of guided planning) this arrives
+						     one model call at a time rather than token by token.
+						     Where a turn does stream, the live tail shows here too.
+
+						     `defaultOpen`, not `open`: a derived attribute was
+						     overriding the user's click every time the expression
+						     flipped, which it does on every call. -->
+						<ThinkingPanel
+							text={stepReasoning(step)}
+							live={isLiveStep(step) && !hasStreamingAnswer(step.streaming)}
+							defaultOpen={isLiveStep(step) && !hasStreamingAnswer(step.streaming)}
+							stat={step.thinking ? thinkingSummary(step.thinking) : undefined}
+						/>
 					{/if}
 
 					{#if isLiveStep(step) && run.waitingForSlot}
@@ -233,6 +227,10 @@
 		{#if run.error && run.steps.every((s) => s.status !== 'failed' && s.status !== 'cancelled')}
 			<div class="error">{run.error}</div>
 		{/if}
+
+		<!-- Supersedes the old header roll-up: same source, but the whole
+		     accounting rather than one percentage, and it updates live. -->
+		<JobRunStats rows={statsRows} contextSize={run.contextSize} />
 	</div>
 {/if}
 
@@ -334,52 +332,6 @@
 	.check-detail {
 		font-size: 0.74rem;
 		opacity: 0.8;
-	}
-
-	.thinking-rollup {
-		font-size: 0.72rem;
-		color: var(--text-secondary);
-		white-space: nowrap;
-		cursor: default;
-	}
-
-	.reasoning {
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-secondary);
-		font-size: 0.8rem;
-	}
-
-	.reasoning summary {
-		cursor: pointer;
-		user-select: none;
-		padding: 5px 8px;
-		display: flex;
-		gap: 8px;
-		align-items: baseline;
-		color: var(--text-secondary);
-	}
-
-	.reasoning-title {
-		font-weight: 600;
-	}
-
-	.reasoning-stat {
-		font-size: 0.72rem;
-		opacity: 0.85;
-	}
-
-	.reasoning-body {
-		margin: 0;
-		padding: 0 8px 8px;
-		max-height: 320px;
-		overflow-y: auto;
-		white-space: pre-wrap;
-		word-break: break-word;
-		font-family: inherit;
-		font-size: 0.78rem;
-		line-height: 1.45;
-		color: var(--text-secondary);
 	}
 
 	.stage-desc {

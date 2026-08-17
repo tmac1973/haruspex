@@ -37,6 +37,26 @@ export interface JobRunSummary {
 	planning_state: string | null;
 }
 
+/**
+ * Token and timing totals for one finished step, as stored. Snake_case to
+ * match the Rust `StepStats` wire shape verbatim.
+ *
+ * `tokens_prompt` is tokens *processed*: a step is many independent turns and
+ * each re-sends its own prompt, so this counts re-sends by design. It is not
+ * context size — `peak_prompt_tokens` is what compares against the window.
+ */
+export interface StepStats {
+	tokens_prompt: number;
+	tokens_completion: number;
+	tokens_reasoning: number;
+	/** Whether the reasoning figure came from the backend or was estimated. */
+	tokens_reasoning_exact: boolean;
+	peak_prompt_tokens: number;
+	model_calls: number;
+	reasoning_ms: number;
+	total_ms: number;
+}
+
 export interface JobRunStep {
 	id: number;
 	run_id: number;
@@ -48,6 +68,12 @@ export interface JobRunStep {
 	started_at: number | null;
 	finished_at: number | null;
 	error: string | null;
+	/**
+	 * null for a step that ran no model calls, was interrupted, or predates
+	 * token accounting. Deliberately distinct from a row of zeros: "not
+	 * recorded" and "spent nothing" read very differently in a stats table.
+	 */
+	stats: StepStats | null;
 }
 
 export interface JobRunWithSteps extends JobRunSummary {
@@ -184,6 +210,24 @@ export async function recoverOrphanRuns(): Promise<number> {
 	}
 }
 
+/**
+ * How `markRunStepFinished` finds the token totals for the step it closes.
+ *
+ * Injected by the runner at module load rather than passed at each call site:
+ * the figures live in the runner's live run state, and there are nine finish
+ * calls across four pipelines. An argument threaded through nine places is one
+ * a fifth job type silently forgets — the same drift the runner's own
+ * `jobTurnPolicy` comment exists to prevent. One provider means every job type
+ * records, including ones not written yet.
+ */
+let stepStatsProvider: ((runId: number, ordering: number) => StepStats | null) | null = null;
+
+export function setStepStatsProvider(
+	provider: (runId: number, ordering: number) => StepStats | null
+): void {
+	stepStatsProvider = provider;
+}
+
 export async function markRunStepFinished(
 	runId: number,
 	ordering: number,
@@ -192,9 +236,12 @@ export async function markRunStepFinished(
 	error: string | null,
 	finishedAt: number
 ): Promise<void> {
+	// Resolved here, at the moment the step closes, so it reflects every call
+	// the step made. A step that ran no model calls resolves to null.
+	const stats = stepStatsProvider?.(runId, ordering) ?? null;
 	await dbMutate({
 		cmd: 'db_mark_run_step_finished',
-		args: { runId, ordering, status, output, error, finishedAt },
+		args: { runId, ordering, status, output, error, finishedAt, stats },
 		onError: 'markRunStepFinished failed',
 		ctx: { runId, ordering }
 	});

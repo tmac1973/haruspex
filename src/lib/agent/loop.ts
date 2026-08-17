@@ -56,13 +56,22 @@ export type AgentStopReason = 'complete' | 'max_iterations' | 'forced_stop';
 export interface CallStats {
 	durationMs: number;
 	completionTokens: number;
+	/** Prompt tokens this call sent. Summed across a step it is tokens
+	 *  *processed* — every call re-sends its prompt — not context size. */
+	promptTokens: number;
 	/** Exact. */
 	reasoningChars: number;
 	/** Exact. */
 	answerChars: number;
-	/** Apportioned by character ratio — an estimate. */
+	/** Exact when the backend reported the split, else apportioned by
+	 *  character ratio. `reasoningExact` says which, so the UI can mark an
+	 *  estimate as one instead of presenting arithmetic on a proxy as fact. */
 	reasoningTokens: number;
-	/** Apportioned by character ratio — an estimate. */
+	/** True when `reasoningTokens` came from the backend rather than the
+	 *  character-ratio estimate. */
+	reasoningExact: boolean;
+	/** Apportioned by character ratio — an estimate. No backend reports a
+	 *  per-channel duration, so this one is always an estimate. */
 	reasoningMs: number;
 }
 

@@ -249,6 +249,10 @@ pub async fn db_mark_run_step_started(
     .await
 }
 
+/// Flat parameters because that is the IPC boundary's shape: Tauri passes
+/// named args from the JS side, and nesting them behind a struct would change
+/// the wire contract for no gain on either side.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn db_mark_run_step_finished(
     state: tauri::State<'_, Database>,
@@ -258,6 +262,9 @@ pub async fn db_mark_run_step_finished(
     output: Option<String>,
     error: Option<String>,
     finished_at: i64,
+    // Token/timing totals for the step. `None` when it ran no model calls,
+    // which reads back as "not recorded" rather than as zeros.
+    stats: Option<StepStats>,
 ) -> Result<(), String> {
     let db = state.inner().clone();
     on_pool(db, move |db| {
@@ -268,6 +275,7 @@ pub async fn db_mark_run_step_finished(
             output.as_deref(),
             error.as_deref(),
             finished_at,
+            stats.as_ref(),
         )
     })
     .await

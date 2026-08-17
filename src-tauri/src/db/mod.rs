@@ -222,6 +222,29 @@ pub struct JobRunSummary {
     pub planning_state: Option<String>,
 }
 
+/// Token and timing totals for one finished step, summed across every model
+/// call it made. `None` throughout when the step ran no model calls — a
+/// checkpoint stage waiting on the user, say — so the UI can render "—"
+/// rather than a row of confident zeros.
+///
+/// `tokens_prompt` is tokens *processed*: one step is many independent turns
+/// and each re-sends its own prompt, so this counts re-sends by design. It is
+/// not context size, and `peak_prompt_tokens` is what answers "how close to
+/// the window did this get".
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct StepStats {
+    pub tokens_prompt: i64,
+    pub tokens_completion: i64,
+    pub tokens_reasoning: i64,
+    /// Whether `tokens_reasoning` came from the backend rather than the
+    /// client's character-ratio estimate.
+    pub tokens_reasoning_exact: bool,
+    pub peak_prompt_tokens: i64,
+    pub model_calls: i64,
+    pub reasoning_ms: i64,
+    pub total_ms: i64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct JobRunStep {
     pub id: i64,
@@ -234,6 +257,9 @@ pub struct JobRunStep {
     pub started_at: Option<i64>,
     pub finished_at: Option<i64>,
     pub error: Option<String>,
+    /// `None` for steps that ran no model calls, and for every step recorded
+    /// before token accounting existed.
+    pub stats: Option<StepStats>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -470,6 +496,17 @@ impl Database {
             "ALTER TABLE job_runs ADD COLUMN planning_state TEXT",
             "ALTER TABLE jobs ADD COLUMN type_config TEXT",
             "ALTER TABLE jobs ADD COLUMN model_advanced TEXT",
+            // Per-step token accounting. All nullable: rows written before
+            // this read back as "not recorded", which is a different thing
+            // from a step that ran no model calls and spent zero.
+            "ALTER TABLE job_run_steps ADD COLUMN tokens_prompt INTEGER",
+            "ALTER TABLE job_run_steps ADD COLUMN tokens_completion INTEGER",
+            "ALTER TABLE job_run_steps ADD COLUMN tokens_reasoning INTEGER",
+            "ALTER TABLE job_run_steps ADD COLUMN tokens_reasoning_exact INTEGER",
+            "ALTER TABLE job_run_steps ADD COLUMN peak_prompt_tokens INTEGER",
+            "ALTER TABLE job_run_steps ADD COLUMN model_calls INTEGER",
+            "ALTER TABLE job_run_steps ADD COLUMN reasoning_ms INTEGER",
+            "ALTER TABLE job_run_steps ADD COLUMN total_ms INTEGER",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

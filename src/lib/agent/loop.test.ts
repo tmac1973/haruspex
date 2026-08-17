@@ -917,6 +917,52 @@ describe('runAgentLoop: reasoning and call-stats reporting', () => {
 		expect(stats.reasoningMs).toBeLessThanOrEqual(stats.durationMs);
 	});
 
+	/**
+	 * The character ratio is a proxy, and a stats card that marks every figure
+	 * `~` when some are exact undersells the exact ones. OpenAI-shaped
+	 * backends report the real split; prefer it and say so.
+	 */
+	it('prefers the backend-reported reasoning split over the estimate', async () => {
+		const usage = {
+			prompt_tokens: 10,
+			completion_tokens: 100,
+			total_tokens: 110,
+			completion_tokens_details: { reasoning_tokens: 81 }
+		};
+		nonStreamQueue.push(textResponse(withReasoning, 'stop', usage));
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		const stats = cb.onCallStats.mock.calls[0][0];
+		// 81, not the 63 the character ratio would have produced.
+		expect(stats.reasoningTokens).toBe(81);
+		expect(stats.reasoningExact).toBe(true);
+	});
+
+	it('falls back to the estimate when the backend reports no split', async () => {
+		// llama.cpp never reports one, which is most local runs.
+		const usage = { prompt_tokens: 10, completion_tokens: 100, total_tokens: 110 };
+		nonStreamQueue.push(textResponse(withReasoning, 'stop', usage));
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		const stats = cb.onCallStats.mock.calls[0][0];
+		expect(stats.reasoningTokens).toBe(63);
+		expect(stats.reasoningExact).toBe(false);
+	});
+
+	it('reports the prompt tokens the call actually sent', async () => {
+		const usage = { prompt_tokens: 4096, completion_tokens: 100, total_tokens: 4196 };
+		nonStreamQueue.push(textResponse(withReasoning, 'stop', usage));
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		expect(cb.onCallStats.mock.calls[0][0].promptTokens).toBe(4096);
+	});
+
 	it('reports the forced-tool call, which is the whole turn', async () => {
 		// Every autonomous-coding turn looks like this. Missing it would leave
 		// a coding run with no reasoning and no stats at all.
