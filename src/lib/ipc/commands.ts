@@ -49,6 +49,7 @@ export const IPC = {
 	db_update_job: 'db_update_job',
 	db_update_last_message_steps: 'db_update_last_message_steps',
 	delete_model: 'delete_model',
+	detect_browser: 'detect_browser',
 	download_model: 'download_model',
 	download_whisper_model: 'download_whisper_model',
 	email_list_providers: 'email_list_providers',

@@ -121,6 +121,7 @@ pub fn run() {
             proxy::proxy_fetch,
             proxy::get_search_stats,
             proxy::reset_lifetime_search_stats,
+            proxy::detect_browser,
             proxy::images::proxy_image_search,
             proxy::images::proxy_fetch_url_images,
             inference::probe_inference_server,

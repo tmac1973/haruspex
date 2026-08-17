@@ -4,8 +4,11 @@
 //! `state` (`ProxyState` caches/rate-limit/rotation), `search` (engine
 //! backends), `extract`/`paywall`/`images` (page content), `bypass`
 //! (user proxy), `stats` (session counters + the `StatSink` persistence
-//! seam). This file holds the Tauri commands and orchestration only.
+//! seam), `browser` (driving an installed Chrome/Chromium for the engines
+//! that now require JS execution). This file holds the Tauri commands and
+//! orchestration only.
 
+mod browser;
 mod bypass;
 mod config;
 mod extract;
@@ -184,6 +187,30 @@ pub fn get_search_stats(
 #[tauri::command]
 pub fn reset_lifetime_search_stats(sink: tauri::State<'_, StatSinkHandle>) -> Result<(), String> {
     sink.0.reset_lifetime()
+}
+
+/// Look for a Chromium-family browser to drive for browser-assisted search.
+///
+/// Returns the browser on success, or the list of places it looked — a bare
+/// "not found" makes the Settings page useless for diagnosing why, and the
+/// answer is usually "it's installed somewhere unusual", which the list makes
+/// obvious.
+///
+/// Runs the search on a blocking thread: it stats a dozen paths and executes
+/// `--version` on the hits, which is filesystem and process work, not async
+/// work, and doing it on the async runtime would stall other egress.
+#[tauri::command]
+pub async fn detect_browser(
+    override_path: Option<String>,
+) -> Result<browser::DetectedBrowser, browser::detect::BrowserDetectionFailure> {
+    tauri::async_runtime::spawn_blocking(move || browser::detect(override_path.as_deref()))
+        .await
+        .unwrap_or_else(|e| {
+            Err(browser::detect::BrowserDetectionFailure {
+                searched: Vec::new(),
+                override_error: Some(format!("browser detection task failed: {e}")),
+            })
+        })
 }
 
 #[tauri::command]
