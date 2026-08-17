@@ -255,6 +255,13 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
     }))
 }
 
+/// A challenge interstitial is a small page. Real SERPs measured on 2026-08-17:
+/// DuckDuckGo's HTML endpoint is the smallest at ~33 KB (the same for a query
+/// with zero results), Bing ~124 KB, Brave ~317 KB, Yahoo ~430 KB. The
+/// challenge pages that took two engines out: Mojeek 5.5 KB, Startpage 10.3 KB.
+/// 24 KB sits between the two populations with roughly 2x margin either side.
+const MAX_CHALLENGE_PAGE_BYTES: usize = 24 * 1024;
+
 /// Does this page look like a bot wall rather than a SERP?
 ///
 /// Generic on purpose. Every engine that has gone dark did so by serving a
@@ -264,10 +271,21 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
 /// engine to fall over is recorded as blocked rather than as an engine that
 /// keeps returning nothing.
 ///
-/// Only ever consulted when a parse yielded zero results, which is what makes
-/// the false-positive risk acceptable: a real SERP that happens to mention
-/// captchas still has results and never reaches here.
+/// The size guard is not belt-and-braces, it is load-bearing. These needles
+/// are single words that appear in the scripts and markup of perfectly healthy
+/// pages: Brave's SERP contains "captcha" and Bing's contains "turnstile", both
+/// measured on a live query. Needles alone would therefore misreport a genuine
+/// zero-result search — or, worse, a parser broken by a markup change — as a
+/// bot wall, cooling the engine down and hiding the real cause behind a wrong
+/// diagnosis. Requiring a small page keeps the match on the population it was
+/// written for.
+///
+/// Even so this is only consulted when a parse yielded zero results, so a SERP
+/// with results never reaches here whatever its size.
 pub(super) fn looks_like_bot_challenge(html: &str) -> bool {
+    if html.len() > MAX_CHALLENGE_PAGE_BYTES {
+        return false;
+    }
     let lower = html.to_lowercase();
     [
         "captcha",
@@ -1031,6 +1049,45 @@ mod tests {
             "<html><body><div data-type=\"web\"><a href=\"https://example.com\">A result</a>\
              <div class=\"generic-snippet\">Some ordinary snippet text.</div></div></body></html>"
         ));
+    }
+
+    /// The needles are single words that live in healthy pages too: measured
+    /// on 2026-08-17, Brave's SERP contains "captcha" and Bing's contains
+    /// "turnstile". Without the size guard, a genuine zero-result query — or a
+    /// parser broken by a markup change — would be reported as a bot wall and
+    /// cool the engine down, hiding the real cause behind a wrong diagnosis.
+    #[test]
+    fn a_full_size_serp_is_never_a_challenge_however_it_reads() {
+        for needle in ["captcha", "turnstile", "enable javascript"] {
+            let page = format!(
+                "<html><body>{}<div class=\"result\">real result</div>{}</body></html>",
+                needle,
+                "x".repeat(MAX_CHALLENGE_PAGE_BYTES)
+            );
+            assert!(
+                !looks_like_bot_challenge(&page),
+                "full-size page containing {:?} must not read as a challenge",
+                needle
+            );
+        }
+    }
+
+    /// The two real interstitials sit far below the guard (5.5 KB and 10.3 KB
+    /// as served), and the smallest real SERP measured — DuckDuckGo's HTML
+    /// endpoint — is ~33 KB, so the threshold separates the populations rather
+    /// than splitting one of them.
+    #[test]
+    fn challenge_size_guard_has_headroom_over_real_interstitials() {
+        let mojeek_sized = format!(
+            "<html><body>JavaScript is required to complete this challenge{}</body></html>",
+            "x".repeat(5_500)
+        );
+        assert!(looks_like_bot_challenge(&mojeek_sized));
+        let startpage_sized = format!(
+            "<html><body>Verifying your request... anubis{}</body></html>",
+            "x".repeat(10_332)
+        );
+        assert!(looks_like_bot_challenge(&startpage_sized));
     }
 
     #[test]
