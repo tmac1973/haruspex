@@ -167,7 +167,7 @@ mod tests {
         assert!(!state.is_engine_healthy("brave_html", ENGINE_COOLDOWN));
         // Other engines unaffected
         assert!(state.is_engine_healthy("duckduckgo", ENGINE_COOLDOWN));
-        assert!(state.is_engine_healthy("mojeek", ENGINE_COOLDOWN));
+        assert!(state.is_engine_healthy(AUTO_ENGINES[0], ENGINE_COOLDOWN));
     }
 
     #[tokio::test]
@@ -178,51 +178,43 @@ mod tests {
             .rate_limit_engine("brave_html", RATE_LIMIT_INTERVAL)
             .await;
         // Different engine should also not block
-        state.rate_limit_engine("mojeek", RATE_LIMIT_INTERVAL).await;
+        state
+            .rate_limit_engine(AUTO_ENGINES[0], RATE_LIMIT_INTERVAL)
+            .await;
         // Verify both tracked independently
         let times = state.last_search_time.lock().unwrap();
         assert!(times.contains_key("brave_html"));
-        assert!(times.contains_key("mojeek"));
+        assert!(times.contains_key(AUTO_ENGINES[0]));
     }
 
     #[test]
-    fn rotation_starts_at_first_engine() {
+    fn rotation_starts_at_the_first_configured_engine() {
         let state = ProxyState::new();
-        let order = state.rotation_order();
-        assert_eq!(
-            order,
-            vec!["startpage", "yahoo", "brave_html", "duckduckgo", "mojeek"]
-        );
+        assert_eq!(state.rotation_order(), AUTO_ENGINES.to_vec());
     }
 
+    /// Asserted against `AUTO_ENGINES` rather than a hard-coded list: engines
+    /// come and go as they gain bot walls (Bing, Qwant, Startpage and Mojeek
+    /// have all been dropped), and a test that has to be rewritten each time
+    /// tests the literal, not the rotation.
     #[test]
-    fn rotation_advances_after_success() {
+    fn rotation_advances_one_engine_at_a_time_and_wraps() {
         let state = ProxyState::new();
-        // First search starts with startpage
-        assert_eq!(state.rotation_order()[0], "startpage");
+        let n = AUTO_ENGINES.len();
 
-        // After advancing, the next one starts with yahoo
-        state.advance_rotation_cursor();
-        assert_eq!(
-            state.rotation_order(),
-            vec!["yahoo", "brave_html", "duckduckgo", "mojeek", "startpage"]
-        );
-
-        // Advance through the rest of the cycle.
-        state.advance_rotation_cursor();
-        assert_eq!(
-            state.rotation_order(),
-            vec!["brave_html", "duckduckgo", "mojeek", "startpage", "yahoo"]
-        );
-
-        // And after a full lap, wraps back around to startpage.
-        for _ in 0..3 {
+        for offset in 0..n {
+            let expected: Vec<&str> = (0..n).map(|i| AUTO_ENGINES[(offset + i) % n]).collect();
+            assert_eq!(
+                state.rotation_order(),
+                expected,
+                "rotation wrong at offset {}",
+                offset
+            );
             state.advance_rotation_cursor();
         }
-        assert_eq!(
-            state.rotation_order(),
-            vec!["startpage", "yahoo", "brave_html", "duckduckgo", "mojeek"]
-        );
+
+        // A full lap returns to the start.
+        assert_eq!(state.rotation_order(), AUTO_ENGINES.to_vec());
     }
 
     #[test]
