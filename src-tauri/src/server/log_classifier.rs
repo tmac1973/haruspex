@@ -33,6 +33,14 @@ const GPU_ERROR_PATTERNS: &[&str] = &[
 /// GPU patterns ("gpu" + "fail") and arms a spurious CPU fallback.
 const BENIGN_PATTERNS: &[&str] = &["common_fit_params", "failed to fit params"];
 
+/// Substring patterns that name multi-token prediction / speculative
+/// decoding as the failing subsystem. Only reachable when the supervisor
+/// passed `--spec-type draft-mtp`, so a match means the one flag we can
+/// safely drop is implicated. `draft model` and `nextn` are included because
+/// llama.cpp reports MTP failures through the generic speculative-decoding
+/// paths (`common_speculative_impl_draft_mtp`, the `ctx_dft` assert).
+const MTP_ERROR_PATTERNS: &[&str] = &["mtp", "speculative", "draft model", "nextn", "spec-type"];
+
 /// Substring patterns that flag a line as a *context-dependent*
 /// allocation failure — the KV cache and compute buffers are the parts
 /// of llama-server's memory footprint that scale with `--ctx-size`, so
@@ -64,6 +72,11 @@ pub(super) enum LogSignal {
     /// (a) flag the current start as having tripped GPU init, and (b)
     /// preserve the first such line as the CPU-fallback reason.
     GpuError,
+    /// Line names MTP / speculative decoding as the failure. Checked
+    /// FIRST: these lines also match the GPU patterns (a Vulkan MTP
+    /// assert says both), and dropping one optional decode flag is a
+    /// smaller loss than falling back to CPU or shrinking the context.
+    MtpError,
     /// Nothing actionable — just append to the log ring buffer.
     None,
 }
@@ -79,6 +92,9 @@ pub(super) fn classify(line: &str) -> LogSignal {
     if BENIGN_PATTERNS.iter().any(|p| lower.contains(p)) {
         return LogSignal::None;
     }
+    if MTP_ERROR_PATTERNS.iter().any(|p| lower.contains(p)) {
+        return LogSignal::MtpError;
+    }
     if CTX_ALLOC_ERROR_PATTERNS.iter().any(|p| lower.contains(p)) {
         return LogSignal::CtxAllocError;
     }
@@ -91,6 +107,26 @@ pub(super) fn classify(line: &str) -> LogSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detect_mtp_error_ahead_of_the_gpu_and_ctx_signals() {
+        // The assert llama.cpp raises when the MTP draft context is missing —
+        // it names both MTP and the GPU backend, and MTP must win.
+        assert_eq!(
+            classify(
+                "GGML_ASSERT(ctx_tgt && ctx_dft && \"MTP requires ctx_tgt and ctx_dft\") failed"
+            ),
+            LogSignal::MtpError
+        );
+        assert_eq!(
+            classify("error: unknown speculative type: mtp"),
+            LogSignal::MtpError
+        );
+        assert_eq!(
+            classify("vulkan: failed to allocate MTP draft context"),
+            LogSignal::MtpError
+        );
+    }
 
     #[test]
     fn detect_gpu_error_vulkan() {

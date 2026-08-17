@@ -123,6 +123,18 @@ export async function initServerStore(): Promise<void> {
 	// Surface what's happening and persist the smaller size so the settings
 	// UI, the header context indicator, and the *next* start all agree with
 	// what the server is actually running.
+	// Multi-token prediction stopped the server from starting, and Rust has
+	// already relaunched without it. Persist the preference off as well as
+	// telling the user: the retry only covers this start, and leaving the
+	// setting on would fail the same way on the next launch.
+	await listen<string>('mtp-fallback-active', (event) => {
+		updateSettings({ mtpEnabled: false });
+		showToast(
+			`Multi-token prediction failed to start (${event.payload}) — restarted without it and turned it off in Settings.`,
+			{ kind: 'info' }
+		);
+	});
+
 	await listen<ContextBackoffState>('context-backoff', (event) => {
 		const { from, to } = event.payload;
 		serverState.ctxBackoff = event.payload;
@@ -159,7 +171,9 @@ export async function startServer(
 		await invoke('start_server', {
 			modelPath,
 			ctxSize: ctxSize ?? DEFAULT_CONTEXT_SIZE,
-			extraArgs: extraArgs || null
+			extraArgs: extraArgs || null,
+			// The preference only; Rust ANDs it with the model's own capability.
+			mtp: getSettings().mtpEnabled
 		});
 	} catch (e) {
 		serverState.status = 'error';

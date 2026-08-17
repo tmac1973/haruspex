@@ -41,6 +41,16 @@ pub struct ModelInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "number")]
     pub mmproj_size_bytes: Option<u64>,
+    /// True when this GGUF bundles a multi-token-prediction head that
+    /// llama-server can drive as a self-speculative draft (`--spec-type
+    /// draft-mtp`).
+    ///
+    /// Verified per file by reading the GGUF metadata for `blk.N.nextn.*`
+    /// tensors — the HF config declaring `mtp_num_hidden_layers` is NOT
+    /// sufficient. Qwen 3.5 9B and Qwen 3.6 27B both declare one upstream and
+    /// neither Unsloth GGUF carries it; only the 3.8 27B does (65 blocks to
+    /// the 3.6's 64).
+    pub mtp: bool,
     /// Per-token KV-cache growth in bytes (q8_0) for this model's
     /// full-attention layers — see the derivation note above
     /// [`CONTEXT_LADDER`]. Declared per entry rather than matched from the
@@ -165,6 +175,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_4b_mmproj_filename()),
             mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         // 8 GB VRAM — the default recommendation
@@ -182,6 +193,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         // 12 GB VRAM — the mid 9B, for cards that can't hold Q8
@@ -198,6 +210,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         // 16 GB VRAM — high-quality 9B
@@ -214,6 +227,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         // 24 GB VRAM — sparse MoE, the recommended large model
@@ -231,6 +245,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_35b_a3b_mmproj_filename()),
             mmproj_url: Some(QWEN_35B_A3B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_35B_A3B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_35B_A3B,
         },
         // 24 GB VRAM — dense alternative for those who want it
@@ -247,6 +262,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_38_27b_mmproj_filename()),
             mmproj_url: Some(QWEN_38_27B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_38_27B_MMPROJ_SIZE),
+            mtp: true,
             kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
         },
     ]
@@ -272,6 +288,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_4b_mmproj_filename()),
             mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
@@ -287,6 +304,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_4b_mmproj_filename()),
             mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
@@ -303,6 +321,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
@@ -319,6 +338,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
@@ -334,6 +354,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
@@ -349,6 +370,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         // Superseded by Qwen 3.8 27B, which is the same architecture at a
@@ -366,6 +388,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_27b_mmproj_filename()),
             mmproj_url: Some(QWEN_27B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_27B_MMPROJ_SIZE),
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
         },
     ]
@@ -377,6 +400,16 @@ fn full_registry() -> Vec<ModelInfo> {
     let mut all = model_registry();
     all.extend(legacy_registry());
     all
+}
+
+/// Whether the GGUF named `filename` is a lineup model with a bundled MTP
+/// head. Unknown filenames — anything the user imported themselves — return
+/// false: passing `--spec-type draft-mtp` to a model with no head fails the
+/// server's start, and we know nothing about a stranger's file.
+pub fn model_supports_mtp(filename: &str) -> bool {
+    full_registry()
+        .iter()
+        .any(|m| m.filename == filename && m.mtp)
 }
 
 // --- Context-size recommendation ----------------------------------------
@@ -409,6 +442,17 @@ const VRAM_RESERVE_BYTES: u64 = 1024 * 1024 * 1024;
 /// Non-KV runtime cost: compute/graph buffers plus the linear-attention
 /// recurrent state (a few hundred MB across the linear layers).
 const COMPUTE_OVERHEAD_BYTES: u64 = 512 * 1024 * 1024;
+/// Extra VRAM llama-server reserves for the MTP draft context when
+/// `--spec-type draft-mtp` is on. It builds a second context against the
+/// target model (`server-context.cpp`, "creating MTP draft context against
+/// the target model") and reserves for it before fitting the target.
+///
+/// UNCALIBRATED — a conservative placeholder, in the same spirit as the KV
+/// estimates above. Measure the reported buffer sizes with and without the
+/// flag on a 24 GB card and correct this, recording the measurement here.
+/// Erring high costs some context; erring low means recommending a size that
+/// no longer fits, which shows up as a silent walk down the backoff ladder.
+const MTP_OVERHEAD_BYTES: u64 = 512 * 1024 * 1024;
 
 // Per-token KV-cache growth in bytes (q8_0) for a model's full-attention
 // layers. Element count comes from config.json as
@@ -437,7 +481,7 @@ const COMPUTE_OVERHEAD_BYTES: u64 = 512 * 1024 * 1024;
 /// from "can't predict" so it can fail open on unknown models — hence the
 /// `Option`, unlike [`recommended_context_for`], which floors both cases to
 /// [`MIN_CONTEXT`].
-pub fn context_ceiling_for(model_id: &str, vram_bytes: u64) -> Option<u32> {
+pub fn context_ceiling_for(model_id: &str, vram_bytes: u64, mtp_enabled: bool) -> Option<u32> {
     let registry = full_registry();
     let model = registry.iter().find(|m| m.id == model_id)?;
     // 0 = architecture unknown (an imported model): can't predict, fail open.
@@ -445,10 +489,13 @@ pub fn context_ceiling_for(model_id: &str, vram_bytes: u64) -> Option<u32> {
         KV_PER_TOKEN_UNKNOWN => return None,
         n => n,
     };
+    // Both have to agree, matching how `start_server` resolves the flag.
+    let mtp_active = mtp_enabled && model.mtp;
     let fixed = model.size_bytes
         + model.mmproj_size_bytes.unwrap_or(0)
         + VRAM_RESERVE_BYTES
-        + COMPUTE_OVERHEAD_BYTES;
+        + COMPUTE_OVERHEAD_BYTES
+        + if mtp_active { MTP_OVERHEAD_BYTES } else { 0 };
     if vram_bytes <= fixed {
         return Some(MIN_CONTEXT);
     }
@@ -466,8 +513,8 @@ pub fn context_ceiling_for(model_id: &str, vram_bytes: u64) -> Option<u32> {
 /// Largest standard context size for `model_id` that should fit in
 /// `vram_bytes`. Returns [`MIN_CONTEXT`] when the model is unknown or VRAM is
 /// too tight to model meaningfully.
-pub fn recommended_context_for(model_id: &str, vram_bytes: u64) -> u32 {
-    context_ceiling_for(model_id, vram_bytes).unwrap_or(MIN_CONTEXT)
+pub fn recommended_context_for(model_id: &str, vram_bytes: u64, mtp_enabled: bool) -> u32 {
+    context_ceiling_for(model_id, vram_bytes, mtp_enabled).unwrap_or(MIN_CONTEXT)
 }
 
 pub struct ModelManager {
@@ -867,6 +914,7 @@ impl ModelManager {
             mmproj_url: None,
             mmproj_size_bytes: None,
             // Unknown architecture — nothing to predict a context fit from.
+            mtp: false,
             kv_bytes_per_token: KV_PER_TOKEN_UNKNOWN,
         })
     }
@@ -994,9 +1042,13 @@ pub async fn list_models(state: tauri::State<'_, ModelManager>) -> Result<Vec<Mo
 /// other than the hardware recommendation. `None` VRAM (integrated/unknown)
 /// yields the conservative floor.
 #[tauri::command]
-pub async fn recommended_context_size(model_id: String, vram_mb: Option<u64>) -> Result<u32, ()> {
+pub async fn recommended_context_size(
+    model_id: String,
+    vram_mb: Option<u64>,
+    mtp: Option<bool>,
+) -> Result<u32, ()> {
     Ok(match vram_mb {
-        Some(mb) => recommended_context_for(&model_id, mb * 1024 * 1024),
+        Some(mb) => recommended_context_for(&model_id, mb * 1024 * 1024, mtp.unwrap_or(true)),
         None => MIN_CONTEXT,
     })
 }
@@ -1009,9 +1061,10 @@ pub async fn recommended_context_size(model_id: String, vram_mb: Option<u64>) ->
 pub async fn context_fit_ceiling(
     model_id: String,
     vram_mb: Option<u64>,
+    mtp: Option<bool>,
 ) -> Result<Option<u32>, ()> {
     Ok(match vram_mb {
-        Some(mb) => context_ceiling_for(&model_id, mb * 1024 * 1024),
+        Some(mb) => context_ceiling_for(&model_id, mb * 1024 * 1024, mtp.unwrap_or(true)),
         None => None,
     })
 }
@@ -1212,13 +1265,60 @@ mod tests {
         }
     }
 
+    /// Only the 3.8 27B ships an MTP head. Verified by reading the GGUF
+    /// metadata of every lineup file: the 9B quants, the 3.6 27B and the
+    /// 35B-A3B carry no `nextn` tensors, even though two of their HF configs
+    /// declare `mtp_num_hidden_layers: 1`. A blanket `--spec-type draft-mtp`
+    /// would fail the server's start on all of them.
+    #[test]
+    fn only_the_dense_38_declares_an_mtp_head() {
+        for model in full_registry() {
+            assert_eq!(
+                model.mtp,
+                model.id == "Qwen3.8-27B-IQ4_NL",
+                "unexpected mtp flag on {}",
+                model.id
+            );
+        }
+        assert!(model_supports_mtp("Qwen3.8-27B-IQ4_NL.gguf"));
+        assert!(!model_supports_mtp("Qwen3.6-27B-IQ4_NL.gguf"));
+        assert!(!model_supports_mtp("Qwen3.5-9B-IQ4_NL.gguf"));
+        // A GGUF the user dropped in themselves: we know nothing about it.
+        assert!(!model_supports_mtp("Some-Imported-Model.gguf"));
+    }
+
+    /// llama-server reserves a second context for the MTP draft before fitting
+    /// the target, so the same VRAM buys less context with the flag on. Not
+    /// modelling that would recommend a size that no longer fits, which shows
+    /// up as a silent walk down the context-backoff ladder on every start.
+    #[test]
+    fn mtp_costs_context_only_for_the_model_that_uses_it() {
+        let vram = 24 * 1024 * 1024 * 1024;
+        let with = context_ceiling_for("Qwen3.8-27B-IQ4_NL", vram, true).unwrap();
+        let without = context_ceiling_for("Qwen3.8-27B-IQ4_NL", vram, false).unwrap();
+        assert!(
+            with <= without,
+            "MTP must not increase the predicted ceiling ({with} > {without})"
+        );
+
+        // A model with no head is unaffected by the preference either way.
+        for id in ["Qwen3.6-35B-A3B-UD-IQ4_NL", "Qwen3.5-9B-UD-Q6_K_XL"] {
+            assert_eq!(
+                context_ceiling_for(id, vram, true),
+                context_ceiling_for(id, vram, false),
+                "{} has no MTP head and must not pay for one",
+                id
+            );
+        }
+    }
+
     /// Both dense 27Bs share an architecture, so both must predict a real
     /// context — the 3.8 id matched none of the old substring arms.
     #[test]
     fn dense_27b_context_ceiling_is_predictable() {
         let vram = 24 * 1024 * 1024 * 1024;
         for id in ["Qwen3.8-27B-IQ4_NL", "Qwen3.6-27B-IQ4_NL"] {
-            let ceiling = context_ceiling_for(id, vram);
+            let ceiling = context_ceiling_for(id, vram, false);
             assert!(ceiling.is_some(), "{} should predict a context ceiling", id);
             assert!(ceiling.unwrap() > MIN_CONTEXT, "{} floored at MIN", id);
         }
@@ -1248,12 +1348,12 @@ mod tests {
         let id = "Qwen3.5-9B-IQ4_NL";
 
         // Too little to hold weights + overhead → floor.
-        assert_eq!(recommended_context_for(id, 4 * gb), MIN_CONTEXT);
+        assert_eq!(recommended_context_for(id, 4 * gb, false), MIN_CONTEXT);
 
         // More VRAM never recommends a smaller context.
-        let c8 = recommended_context_for(id, 8 * gb);
-        let c16 = recommended_context_for(id, 16 * gb);
-        let c24 = recommended_context_for(id, 24 * gb);
+        let c8 = recommended_context_for(id, 8 * gb, false);
+        let c16 = recommended_context_for(id, 16 * gb, false);
+        let c24 = recommended_context_for(id, 24 * gb, false);
         assert!(c8 <= c16 && c16 <= c24, "{c8} {c16} {c24}");
 
         // Results are real ladder rungs, never above the cap.
@@ -1263,7 +1363,7 @@ mod tests {
         }
 
         // Unknown model → floor, not a panic.
-        assert_eq!(recommended_context_for("nope", 24 * gb), MIN_CONTEXT);
+        assert_eq!(recommended_context_for("nope", 24 * gb, false), MIN_CONTEXT);
     }
 
     #[test]
@@ -1272,23 +1372,23 @@ mod tests {
         let id = "Qwen3.5-9B-UD-Q8_K_XL";
 
         // Unknown model → None ("can't predict" → UI leaves every size on).
-        assert_eq!(context_ceiling_for("nope", 24 * gb), None);
+        assert_eq!(context_ceiling_for("nope", 24 * gb, false), None);
 
         // Known model, tight VRAM → Some(floor), NOT None. This is the case
         // that must ghost the big rungs rather than fail open.
-        assert_eq!(context_ceiling_for(id, 4 * gb), Some(MIN_CONTEXT));
+        assert_eq!(context_ceiling_for(id, 4 * gb, false), Some(MIN_CONTEXT));
 
         // Known model, roomy VRAM → Some(rung) that's a real ladder entry and
         // at least as large as the tight-VRAM ceiling.
-        let tight = context_ceiling_for(id, 12 * gb).unwrap();
-        let roomy = context_ceiling_for(id, 32 * gb).unwrap();
+        let tight = context_ceiling_for(id, 12 * gb, false).unwrap();
+        let roomy = context_ceiling_for(id, 32 * gb, false).unwrap();
         assert!(roomy >= tight, "{roomy} >= {tight}");
         assert!(CONTEXT_LADDER.contains(&roomy) || roomy == MIN_CONTEXT);
 
         // Ceiling and the recommendation stay in lockstep (one wraps the other).
         assert_eq!(
-            recommended_context_for(id, 16 * gb),
-            context_ceiling_for(id, 16 * gb).unwrap()
+            recommended_context_for(id, 16 * gb, false),
+            context_ceiling_for(id, 16 * gb, false).unwrap()
         );
     }
 

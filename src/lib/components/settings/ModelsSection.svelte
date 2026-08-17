@@ -20,7 +20,8 @@
 		getLegacyModelNoticeDismissed,
 		getSettings,
 		setActiveLocalModel,
-		setLegacyModelNoticeDismissed
+		setLegacyModelNoticeDismissed,
+		updateSettings
 	} from '$lib/stores/settings';
 	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -38,6 +39,7 @@
 	// (so a deleted legacy model can still be re-downloaded).
 	let showLegacy = $state(false);
 	let noticeDismissed = $state(getLegacyModelNoticeDismissed());
+	let mtpEnabled = $state(getSettings().mtpEnabled);
 
 	const activeFilename = $derived(
 		activeModelPath ? activeModelPath.split('/').pop() || null : null
@@ -49,6 +51,10 @@
 	const hiddenLegacyCount = $derived(legacyModels.length - downloadedLegacy.length);
 	// The active model is one that's been retired from the lineup.
 	const activeIsLegacy = $derived(legacyModels.some((m) => m.filename === activeFilename));
+	// Only the models that actually bundle an MTP head get the toggle — for
+	// every other model the flag is never passed, so a control would do
+	// nothing but raise questions.
+	const activeSupportsMtp = $derived(models.some((m) => m.filename === activeFilename && m.mtp));
 	const showLegacyNotice = $derived(activeIsLegacy && !noticeDismissed);
 
 	async function refreshModels() {
@@ -206,6 +212,28 @@
 <section class="settings-section">
 	<h2>Models</h2>
 	<p class="hint">Models are stored in: <code>{modelsDir}</code></p>
+
+	{#if activeSupportsMtp}
+		<label class="toggle-row">
+			<input
+				type="checkbox"
+				checked={mtpEnabled}
+				onchange={() => {
+					mtpEnabled = !mtpEnabled;
+					updateSettings({ mtpEnabled });
+				}}
+			/>
+			<div>
+				<strong>Multi-token prediction</strong>
+				<span>
+					Predict several tokens at once using this model's built-in draft head, then verify them in
+					one pass — faster replies with identical output. Costs a little VRAM, so the largest
+					context sizes may no longer fit. Takes effect on the next model restart; turn it off if
+					output looks corrupted.
+				</span>
+			</div>
+		</label>
+	{/if}
 
 	{#if showLegacyNotice}
 		<div class="notice-box">

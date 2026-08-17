@@ -13,4 +13,16 @@ legacy: boolean,
  * When present, it is downloaded alongside the main weights and passed
  * to llama-server via --mmproj to enable vision support.
  */
-mmproj_filename?: string, mmproj_url?: string, mmproj_size_bytes?: number, };
+mmproj_filename?: string, mmproj_url?: string, mmproj_size_bytes?: number, 
+/**
+ * True when this GGUF bundles a multi-token-prediction head that
+ * llama-server can drive as a self-speculative draft (`--spec-type
+ * draft-mtp`).
+ *
+ * Verified per file by reading the GGUF metadata for `blk.N.nextn.*`
+ * tensors — the HF config declaring `mtp_num_hidden_layers` is NOT
+ * sufficient. Qwen 3.5 9B and Qwen 3.6 27B both declare one upstream and
+ * neither Unsloth GGUF carries it; only the 3.8 27B does (65 blocks to
+ * the 3.6's 64).
+ */
+mtp: boolean, };

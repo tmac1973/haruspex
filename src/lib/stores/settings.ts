@@ -323,6 +323,17 @@ export interface AppSettings {
 	 */
 	thinkingEnabled: boolean;
 	/**
+	 * Let llama-server drive the model's bundled multi-token-prediction head as
+	 * a self-speculative draft (`--spec-type draft-mtp`). Faster decoding on
+	 * the models that carry one; no effect on the ones that don't, since the
+	 * flag is gated on the registry's per-model capability.
+	 *
+	 * On by default, but switchable: llama.cpp's Vulkan MTP path is new, and a
+	 * bad interaction there reads as model corruption rather than as a decode
+	 * setting. Requires a server restart to take effect.
+	 */
+	mtpEnabled: boolean;
+	/**
 	 * How hard the model should think, for models that expose effort as a
 	 * separate axis from on/off (Qwen 3.8: `low` / `medium` / `xhigh`).
 	 *
@@ -514,6 +525,7 @@ const defaults: AppSettings = {
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 60,
 	thinkingEnabled: true,
+	mtpEnabled: true,
 	reasoningEffort: null,
 	customSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
