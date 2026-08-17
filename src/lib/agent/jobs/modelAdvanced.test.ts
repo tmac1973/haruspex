@@ -168,7 +168,7 @@ describe('describeSamplingProfile', () => {
 	});
 
 	it('names the family when there are no server caps', () => {
-		expect(describeSamplingProfile('qwen3.6-27b', false)).toContain('qwen3.6-27b');
+		expect(describeSamplingProfile('qwen-dense-27b', false)).toContain('qwen-dense-27b');
 	});
 
 	it('admits the no-op case rather than implying something is sent', () => {

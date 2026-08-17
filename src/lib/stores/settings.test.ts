@@ -193,9 +193,9 @@ describe('sampling profile resolution', () => {
 		expect(sampling().presence_penalty).toBe(1.5);
 	});
 
-	it('Qwen 3.6 dense 27B uses presence_penalty 0.0 for thinking/general', () => {
-		setActiveLocalModel('Qwen3.6-27B-IQ4_NL.gguf');
-		expect(resolveBackendDescriptor().samplingFamily).toBe('qwen3.6-27b');
+	it('the dense 27B uses presence_penalty 0.0 for thinking/general', () => {
+		setActiveLocalModel('Qwen3.8-27B-IQ4_NL.gguf');
+		expect(resolveBackendDescriptor().samplingFamily).toBe('qwen-dense-27b');
 		updateSettings({ thinkingEnabled: true });
 		expect(sampling()).toEqual({
 			temperature: 1.0,

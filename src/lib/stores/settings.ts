@@ -860,7 +860,7 @@ interface ModelSamplingProfiles {
  * is typed against this — the resolver in `$lib/inference/descriptor` is the
  * only code that maps model identities to a family.
  */
-export type QwenSamplingFamily = 'qwen3.5' | 'qwen3.6-27b';
+export type QwenSamplingFamily = 'qwen3.5' | 'qwen-dense-27b';
 
 /**
  * Recommended sampling parameters per model family. Values are taken
@@ -876,9 +876,11 @@ export type QwenSamplingFamily = 'qwen3.5' | 'qwen3.6-27b';
  * block, or a tool call against a Python file). The cards publish no
  * non-thinking *coding* profile, so that slot mirrors non-thinking general.
  *
- * Across the lineup the profiles are identical except the Qwen 3.6 dense
- * 27B, whose card uses `presence_penalty=0.0` (not 1.5) for thinking/general
- * — hence the separate `qwen3.6-27b` family.
+ * Across the lineup the profiles are identical except the dense 27B, whose
+ * card uses `presence_penalty=0.0` (not 1.5) for thinking/general — hence the
+ * separate `qwen-dense-27b` family. Qwen 3.6 and 3.8 publish the same numbers
+ * there, so one family covers both; the name is deliberately version-free so
+ * the next dense 27B doesn't need a third one.
  */
 // The published non-thinking profile is identical across the whole Qwen
 // lineup — shared so the two families can't drift apart silently.
@@ -896,8 +898,8 @@ const SAMPLING_PROFILES: Record<QwenSamplingFamily, ModelSamplingProfiles> = {
 		},
 		nonThinking: QWEN_NONTHINKING
 	},
-	// Qwen 3.6 dense 27B — thinking/general uses presence_penalty 0.0.
-	'qwen3.6-27b': {
+	// Dense 27B (Qwen 3.6 and 3.8) — thinking/general uses presence_penalty 0.0.
+	'qwen-dense-27b': {
 		thinking: {
 			general: { temperature: 1.0, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 0.0 },
 			coding: { temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.0, presence_penalty: 0.0 }

@@ -41,6 +41,17 @@ pub struct ModelInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "number")]
     pub mmproj_size_bytes: Option<u64>,
+    /// Per-token KV-cache growth in bytes (q8_0) for this model's
+    /// full-attention layers — see the derivation note above
+    /// [`CONTEXT_LADDER`]. Declared per entry rather than matched from the
+    /// id: a new model version that matches no arm used to silently return
+    /// `None`, which disables the whole context-fit prediction.
+    ///
+    /// Rust-internal — skipped from both the wire shape and the generated TS
+    /// type, so the frontend contract is unchanged.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub kv_bytes_per_token: u64,
 }
 
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
@@ -79,6 +90,14 @@ const QWEN_27B_MMPROJ_URL: &str =
 const QWEN_27B_MMPROJ_SIZE: u64 = 927_607_360;
 const QWEN_27B_MMPROJ_SHA256: &str =
     "eacf610d1ee4bd5ed0197a0777dd8f4fceb8eefa27009067c7d496cb68fbde45";
+// The Qwen 3.8 27B projector is a DIFFERENT file from the 3.6 one despite
+// landing within 128 bytes of the same size — reusing the constants above
+// would fail the sha check on download.
+const QWEN_38_27B_MMPROJ_URL: &str =
+    "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/mmproj-F16.gguf";
+const QWEN_38_27B_MMPROJ_SIZE: u64 = 927_607_488;
+const QWEN_38_27B_MMPROJ_SHA256: &str =
+    "cbb841a9ee0636b2ec172f5bb8df2ea8dfeb01e90fe7c6126581d662a0b4e43e";
 
 /// sha256 for the mmproj at `url`. Keyed by URL rather than stored per
 /// registry entry because several models share one projector file.
@@ -88,6 +107,7 @@ fn mmproj_sha256_for_url(url: &str) -> Option<&'static str> {
         QWEN_9B_MMPROJ_URL => Some(QWEN_9B_MMPROJ_SHA256),
         QWEN_35B_A3B_MMPROJ_URL => Some(QWEN_35B_A3B_MMPROJ_SHA256),
         QWEN_27B_MMPROJ_URL => Some(QWEN_27B_MMPROJ_SHA256),
+        QWEN_38_27B_MMPROJ_URL => Some(QWEN_38_27B_MMPROJ_SHA256),
         _ => None,
     }
 }
@@ -107,6 +127,22 @@ fn qwen_35b_a3b_mmproj_filename() -> String {
 fn qwen_27b_mmproj_filename() -> String {
     "Qwen3.6-27B-mmproj-F16.gguf".to_string()
 }
+
+fn qwen_38_27b_mmproj_filename() -> String {
+    "Qwen3.8-27B-mmproj-F16.gguf".to_string()
+}
+
+// Per-token KV-cache growth (bytes, q8_0) by model shape. Full derivation in
+// the note above `CONTEXT_LADDER`; every registry entry declares one of these.
+/// 4B and 9B: 8 full-attention layers × 4 KV heads.
+const KV_PER_TOKEN_SMALL: u64 = 17_408;
+/// Dense 27B (3.6 and 3.8 alike): 16 full-attention layers × 4 KV heads.
+const KV_PER_TOKEN_DENSE_27B: u64 = 34_816;
+/// 35B-A3B sparse MoE: 10 full-attention layers × 2 KV heads.
+const KV_PER_TOKEN_35B_A3B: u64 = 10_880;
+/// Architecture unknown — a model the user imported themselves. Makes
+/// `context_ceiling_for` report "can't predict" so the Settings cap fails open.
+const KV_PER_TOKEN_UNKNOWN: u64 = 0;
 
 /// The current recommended lineup — one model per VRAM tier, all Unsloth
 /// dynamic quants. The two 24 GB picks offer a choice of sparse (MoE, the
@@ -129,6 +165,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_4b_mmproj_filename()),
             mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         // 8 GB VRAM — the default recommendation
         ModelInfo {
@@ -145,6 +182,23 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+        },
+        // 12 GB VRAM — the mid 9B, for cards that can't hold Q8
+        ModelInfo {
+            id: "Qwen3.5-9B-UD-Q6_K_XL".to_string(),
+            filename: "Qwen3.5-9B-UD-Q6_K_XL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q6_K_XL.gguf"
+                .to_string(),
+            sha256: "33b0050fb9c19abcf815647a78464dad959a06dadaecb0b96af798669f9074d4".to_string(),
+            size_bytes: 8_756_929_760,
+            description: "Qwen 3.5 9B Q6 — recommended for 12 GB VRAM (~8.8 GB)".to_string(),
+            downloaded: false,
+            legacy: false,
+            mmproj_filename: Some(qwen_9b_mmproj_filename()),
+            mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         // 16 GB VRAM — high-quality 9B
         ModelInfo {
@@ -160,6 +214,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         // 24 GB VRAM — sparse MoE, the recommended large model
         ModelInfo {
@@ -176,21 +231,23 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_35b_a3b_mmproj_filename()),
             mmproj_url: Some(QWEN_35B_A3B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_35B_A3B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_35B_A3B,
         },
         // 24 GB VRAM — dense alternative for those who want it
         ModelInfo {
-            id: "Qwen3.6-27B-IQ4_NL".to_string(),
-            filename: "Qwen3.6-27B-IQ4_NL.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-IQ4_NL.gguf"
+            id: "Qwen3.8-27B-IQ4_NL".to_string(),
+            filename: "Qwen3.8-27B-IQ4_NL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-IQ4_NL.gguf"
                 .to_string(),
-            sha256: "239658ade790aa63812407ad91f6365d845e689009f70d302a59d65e9eec584e".to_string(),
-            size_bytes: 16_071_772_384,
-            description: "Qwen 3.6 27B — dense model for 24 GB VRAM, advanced (~16 GB)".to_string(),
+            sha256: "466c6714b0eca21c032690c801391a3c1e8f464ef01bbf420b70840027590c38".to_string(),
+            size_bytes: 16_337_628_128,
+            description: "Qwen 3.8 27B — dense model for 24 GB VRAM, advanced (~16 GB)".to_string(),
             downloaded: false,
             legacy: false,
-            mmproj_filename: Some(qwen_27b_mmproj_filename()),
-            mmproj_url: Some(QWEN_27B_MMPROJ_URL.to_string()),
-            mmproj_size_bytes: Some(QWEN_27B_MMPROJ_SIZE),
+            mmproj_filename: Some(qwen_38_27b_mmproj_filename()),
+            mmproj_url: Some(QWEN_38_27B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_38_27B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
         },
     ]
 }
@@ -215,6 +272,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_4b_mmproj_filename()),
             mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
             id: "Qwen3.5-4B-Q6_K".to_string(),
@@ -229,6 +287,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_4b_mmproj_filename()),
             mmproj_url: Some(QWEN_4B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q4_K_M".to_string(),
@@ -244,6 +303,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q5_K_M".to_string(),
@@ -259,6 +319,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q6_K".to_string(),
@@ -273,6 +334,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q8_0".to_string(),
@@ -287,6 +349,24 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_filename: Some(qwen_9b_mmproj_filename()),
             mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+        },
+        // Superseded by Qwen 3.8 27B, which is the same architecture at a
+        // near-identical footprint. Kept so a 16 GB download isn't lost.
+        ModelInfo {
+            id: "Qwen3.6-27B-IQ4_NL".to_string(),
+            filename: "Qwen3.6-27B-IQ4_NL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-IQ4_NL.gguf"
+                .to_string(),
+            sha256: "239658ade790aa63812407ad91f6365d845e689009f70d302a59d65e9eec584e".to_string(),
+            size_bytes: 16_071_772_384,
+            description: "Qwen 3.6 27B — legacy (~16 GB)".to_string(),
+            downloaded: false,
+            legacy: true,
+            mmproj_filename: Some(qwen_27b_mmproj_filename()),
+            mmproj_url: Some(QWEN_27B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_27B_MMPROJ_SIZE),
+            kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
         },
     ]
 }
@@ -330,33 +410,27 @@ const VRAM_RESERVE_BYTES: u64 = 1024 * 1024 * 1024;
 /// recurrent state (a few hundred MB across the linear layers).
 const COMPUTE_OVERHEAD_BYTES: u64 = 512 * 1024 * 1024;
 
-/// Per-token KV-cache growth in bytes (q8_0) for a model's full-attention
-/// layers. Element count comes from config.json as
-/// `full_attn_layers × 2 (K+V) × n_kv_head × head_dim`; q8_0 packs 32
-/// elements into 34 bytes (32 one-byte quants + one f16 scale), i.e.
-/// 1.0625 bytes per element:
-///   4B / 9B : 8 × 2 × 4 × 256 = 16384 elements × 34/32 = 17408
-///   27B     : 16 × 2 × 4 × 256 = 32768 elements × 34/32 = 34816
-///   35B-A3B : 10 × 2 × 2 × 256 = 10240 elements × 34/32 = 10880
-/// Matched by base-model substring so every quant (and legacy variant) of a
-/// model shares the same value.
-fn kv_bytes_per_token(id: &str) -> Option<u64> {
-    // 4B and 9B share the same full-attention shape (8 layers × 4 kv heads).
-    if id.contains("Qwen3.5-4B") || id.contains("Qwen3.5-9B") {
-        Some(17_408)
-    } else if id.contains("Qwen3.6-27B") {
-        Some(34_816)
-    } else if id.contains("Qwen3.6-35B-A3B") {
-        Some(10_880)
-    } else {
-        None
-    }
-}
+// Per-token KV-cache growth in bytes (q8_0) for a model's full-attention
+// layers. Element count comes from config.json as
+// `full_attn_layers × 2 (K+V) × n_kv_head × head_dim`; q8_0 packs 32
+// elements into 34 bytes (32 one-byte quants + one f16 scale), i.e.
+// 1.0625 bytes per element:
+//   4B / 9B : 8 × 2 × 4 × 256 = 16384 elements × 34/32 = 17408
+//   27B     : 16 × 2 × 4 × 256 = 32768 elements × 34/32 = 34816
+//   35B-A3B : 10 × 2 × 2 × 256 = 10240 elements × 34/32 = 10880
+// The dense 27B figures hold for Qwen 3.8 as well as 3.6 — same 64 layers,
+// same `full_attention_interval: 4`, same 4 KV heads at head_dim 256.
+//
+// Each registry entry declares its own value (`ModelInfo::kv_bytes_per_token`,
+// one of the `KV_PER_TOKEN_*` constants). This used to be a substring match on
+// the model id, which returned `None` for any model whose version string
+// wasn't in the list — silently disabling the context-fit prediction for the
+// next model added.
 
 /// Largest ladder rung that fits in `vram_bytes` for `model_id` *without
-/// spilling KV/weights into system RAM*, or `None` when we can't model the
-/// fit (unrecognized model, or no per-token KV cost known). Accounts for the
-/// weights, vision projector, per-token KV growth, and fixed runtime
+/// spilling KV/weights into system RAM*, or `None` when we can't model the fit
+/// (the model isn't in the registry, or its architecture is unknown). Accounts
+/// for the weights, vision projector, per-token KV growth, and fixed runtime
 /// overhead.
 ///
 /// The predictive context cap in Settings needs to tell "doesn't fit" apart
@@ -366,7 +440,11 @@ fn kv_bytes_per_token(id: &str) -> Option<u64> {
 pub fn context_ceiling_for(model_id: &str, vram_bytes: u64) -> Option<u32> {
     let registry = full_registry();
     let model = registry.iter().find(|m| m.id == model_id)?;
-    let kv_per_tok = kv_bytes_per_token(model_id)?;
+    // 0 = architecture unknown (an imported model): can't predict, fail open.
+    let kv_per_tok = match model.kv_bytes_per_token {
+        KV_PER_TOKEN_UNKNOWN => return None,
+        n => n,
+    };
     let fixed = model.size_bytes
         + model.mmproj_size_bytes.unwrap_or(0)
         + VRAM_RESERVE_BYTES
@@ -788,6 +866,8 @@ impl ModelManager {
             mmproj_filename: None,
             mmproj_url: None,
             mmproj_size_bytes: None,
+            // Unknown architecture — nothing to predict a context fit from.
+            kv_bytes_per_token: KV_PER_TOKEN_UNKNOWN,
         })
     }
 
@@ -1087,17 +1167,61 @@ mod tests {
     #[test]
     fn model_registry_has_expected_entries() {
         let models = model_registry();
-        assert_eq!(models.len(), 5);
+        assert_eq!(models.len(), 6);
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert!(ids.contains(&"Qwen3.5-4B-IQ4_NL"));
         assert!(ids.contains(&"Qwen3.5-9B-IQ4_NL"));
+        assert!(ids.contains(&"Qwen3.5-9B-UD-Q6_K_XL"));
         assert!(ids.contains(&"Qwen3.5-9B-UD-Q8_K_XL"));
         assert!(ids.contains(&"Qwen3.6-35B-A3B-UD-IQ4_NL"));
-        assert!(ids.contains(&"Qwen3.6-27B-IQ4_NL"));
+        assert!(ids.contains(&"Qwen3.8-27B-IQ4_NL"));
 
         // None of the current lineup is flagged legacy.
         assert!(models.iter().all(|m| !m.legacy));
+    }
+
+    /// The Qwen 3.6 27B was retired when 3.8 landed, but a user who already
+    /// downloaded 16 GB of it keeps it: still listed, still switchable, still
+    /// re-downloadable.
+    #[test]
+    fn retired_dense_27b_is_still_resolvable() {
+        let all = full_registry();
+        let retired = all
+            .iter()
+            .find(|m| m.id == "Qwen3.6-27B-IQ4_NL")
+            .expect("Qwen 3.6 27B must remain in the full registry");
+        assert!(retired.legacy);
+        assert!(!retired.url.is_empty() && !retired.sha256.is_empty());
+        assert!(!model_registry()
+            .iter()
+            .any(|m| m.id == "Qwen3.6-27B-IQ4_NL"));
+    }
+
+    /// The guard that earns the declared `kv_bytes_per_token` field: an entry
+    /// added without one used to fall through the old substring match to
+    /// `None`, which silently disabled context-fit prediction for that model.
+    #[test]
+    fn every_registry_entry_declares_kv_cost() {
+        for model in full_registry() {
+            assert_ne!(
+                model.kv_bytes_per_token, KV_PER_TOKEN_UNKNOWN,
+                "{} declares no per-token KV cost",
+                model.id
+            );
+        }
+    }
+
+    /// Both dense 27Bs share an architecture, so both must predict a real
+    /// context — the 3.8 id matched none of the old substring arms.
+    #[test]
+    fn dense_27b_context_ceiling_is_predictable() {
+        let vram = 24 * 1024 * 1024 * 1024;
+        for id in ["Qwen3.8-27B-IQ4_NL", "Qwen3.6-27B-IQ4_NL"] {
+            let ceiling = context_ceiling_for(id, vram);
+            assert!(ceiling.is_some(), "{} should predict a context ceiling", id);
+            assert!(ceiling.unwrap() > MIN_CONTEXT, "{} floored at MIN", id);
+        }
     }
 
     #[test]
@@ -1116,17 +1240,6 @@ mod tests {
         // full_registry is the union with no duplicate ids.
         let all = full_registry();
         assert_eq!(all.len(), current.len() + legacy.len());
-    }
-
-    #[test]
-    fn every_current_model_has_a_kv_cost() {
-        for model in model_registry() {
-            assert!(
-                kv_bytes_per_token(&model.id).is_some(),
-                "no kv_bytes_per_token for {}",
-                model.id
-            );
-        }
     }
 
     #[test]

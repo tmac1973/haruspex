@@ -49,8 +49,8 @@ describe('resolveBackendDescriptor — local', () => {
 	});
 
 	it('strips directory components from a full local model path', () => {
-		setActiveLocalModel('/home/user/.local/share/com.haruspex.app/models/Qwen3.6-27B-IQ4_NL.gguf');
-		expect(resolveBackendDescriptor().samplingFamily).toBe('qwen3.6-27b');
+		setActiveLocalModel('/home/user/.local/share/com.haruspex.app/models/Qwen3.8-27B-IQ4_NL.gguf');
+		expect(resolveBackendDescriptor().samplingFamily).toBe('qwen-dense-27b');
 	});
 
 	it('keeps the default Qwen tuning for an imported non-Qwen local model', () => {
@@ -110,6 +110,31 @@ describe('resolveBackendDescriptor — remote', () => {
 			remoteVisionSupported: null
 		});
 		expect(resolveBackendDescriptor().vision).toBe(true);
+	});
+
+	/**
+	 * The #195 regression, re-armed by every version bump: a remote 3.8 id
+	 * matched none of the hand-written `includes()` arms, so the descriptor
+	 * reported `qwenTuning: false` and `reasoningMode: none` — no
+	 * `enable_thinking` kwarg was sent at all and the job could not turn
+	 * reasoning off. Local-only coverage would not have caught it.
+	 */
+	it.each([
+		'Qwen3.8-27B-IQ4_NL',
+		'qwen-3.8-27b',
+		'unsloth-Qwen3.8-27B.IQ4_NL',
+		'Qwen3.8-27B-Instruct'
+	])('identifies remote dense 27B spelled %s', (remoteModelId) => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://localhost:1234',
+			remoteModelId
+		});
+		const d = resolveBackendDescriptor();
+		expect(d.qwenTuning).toBe(true);
+		expect(d.samplingFamily).toBe('qwen-dense-27b');
+		expect(d.reasoningSupported).toBe(true);
+		expect(d.reasoningMode).toEqual({ kind: 'template-kwarg', kwarg: 'enable_thinking' });
 	});
 
 	it('positively identifies a remote Qwen and keeps the tuning (the #172 keep-case)', () => {
@@ -343,7 +368,10 @@ describe('resolveBackendDescriptor — per-job override', () => {
  * what its probe reported, and probe data outranks the id guess.
  */
 describe('per-job override — discovered capabilities', () => {
-	const unknownModel = 'qwen3.8-27b-instruct';
+	// Deliberately outside every lineup pattern. This fixture used to be
+	// `qwen3.8-27b-instruct`, which stopped being unrecognized the moment the
+	// 3.8 lineup landed — the very drift these tests exist to catch.
+	const unknownModel = 'mixtral-8x22b-instruct';
 
 	it('sends the reported kwarg for a model no id-matching would recognize', () => {
 		const d = resolveBackendDescriptor({
@@ -413,7 +441,7 @@ describe('per-job override — discovered capabilities', () => {
 		expect(d.reasoningMode).toEqual({ kind: 'none' });
 		// The sampling family still comes from the id — it is a statement about
 		// which tuned profile fits, not about server capability.
-		expect(d.samplingFamily).toBe('qwen3.6-27b');
+		expect(d.samplingFamily).toBe('qwen-dense-27b');
 	});
 
 	it('carries discovered sampling into the descriptor', () => {

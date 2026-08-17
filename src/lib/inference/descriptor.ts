@@ -86,28 +86,53 @@ export interface BackendDescriptor {
 	allowParallel: boolean;
 }
 
+/** What a recognized model identity implies. One entry per model shape. */
+interface ModelTraits {
+	family: QwenSamplingFamily;
+}
+
 /**
- * Map a model identity (local GGUF filename or remote model ID) to a tuned
- * sampling-profile family. Returns null when the model isn't from a
- * recognized lineup. This is the ONLY model-name sniffing in the codebase;
- * it feeds the resolver and nothing else.
+ * Model ids arrive in many spellings — `Qwen3.8-27B`, `qwen-3.8-27b`,
+ * `unsloth-Qwen3.8-27B.IQ4_NL`, a bare GGUF filename. Normalizing away case
+ * and separators means one pattern per model instead of one per spelling,
+ * which is how a `qwen3.8` id previously matched none of the hand-written
+ * `includes()` arms and silently lost both its tuned sampling and its
+ * reasoning control (#195).
  */
-function modelFamilyFromId(id: string | null | undefined): QwenSamplingFamily | null {
+function normalizeId(id: string): string {
+	return id.toLowerCase().replace(/[.\-_ ]/g, '');
+}
+
+/**
+ * Ordered: the dense-27B patterns must come before the generic family ones,
+ * since `qwen38` is a prefix of `qwen3827b`.
+ *
+ * The dense 27B is the one model whose published thinking/general
+ * presence_penalty differs (0.0 vs 1.5), so it gets its own profile;
+ * everything else in the lineup (3.5 4B/9B, 3.6 35B-A3B) shares one.
+ */
+const MODEL_TRAITS: readonly (readonly [string, ModelTraits])[] = [
+	['qwen3827b', { family: 'qwen-dense-27b' }],
+	['qwen3627b', { family: 'qwen-dense-27b' }],
+	['qwen38', { family: 'qwen3.5' }],
+	['qwen36', { family: 'qwen3.5' }],
+	['qwen35', { family: 'qwen3.5' }]
+];
+
+/**
+ * Map a model identity (local GGUF filename or remote model ID) to its
+ * traits. Returns null when the model isn't from a recognized lineup. This is
+ * the ONLY model-name sniffing in the codebase; it feeds the resolver and
+ * nothing else.
+ */
+function modelTraitsFromId(id: string | null | undefined): ModelTraits | null {
 	if (!id) return null;
-	const lower = id.toLowerCase();
-	// The dense 27B is the one model whose published thinking/general
-	// presence_penalty differs (0.0 vs 1.5); give it its own profile.
-	if (lower.includes('qwen3.6-27b') || lower.includes('qwen-3.6-27b')) return 'qwen3.6-27b';
-	// Everything else in the lineup (3.5 4B/9B, 3.6 35B-A3B) shares one profile.
-	if (
-		lower.includes('qwen3.5') ||
-		lower.includes('qwen-3.5') ||
-		lower.includes('qwen3.6') ||
-		lower.includes('qwen-3.6')
-	) {
-		return 'qwen3.5';
-	}
-	return null;
+	const normalized = normalizeId(id);
+	return MODEL_TRAITS.find(([pattern]) => normalized.includes(pattern))?.[1] ?? null;
+}
+
+function modelFamilyFromId(id: string | null | undefined): QwenSamplingFamily | null {
+	return modelTraitsFromId(id)?.family ?? null;
 }
 
 /** Local models all come from the managed Qwen lineup — an unrecognized
