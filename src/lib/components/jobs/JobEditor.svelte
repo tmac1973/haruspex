@@ -44,7 +44,7 @@
 		type JobType
 	} from '$lib/stores/jobs.svelte';
 	import { getSettings } from '$lib/stores/settings';
-	import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
@@ -310,10 +310,18 @@
 
 	/**
 	 * The effort vocabulary for THIS job's backend, resolved through the same
-	 * descriptor the runner will use — so the dropdown can only ever offer
-	 * levels the model actually accepts. Null hides the control entirely.
+	 * descriptor the runner will use. Null means the model publishes none —
+	 * the control still shows (hiding it reads as a missing feature), falling
+	 * back to the known union so a job can carry a preference that applies if
+	 * its model is later pointed somewhere that understands it.
 	 */
 	const effortCaps = $derived(resolveBackendDescriptor(backendOverride).reasoningEffort);
+	const effortOptions = $derived.by(() => {
+		const levels = effortCaps?.levels ?? KNOWN_EFFORT_LEVELS;
+		return advEffort && !levels.includes(advEffort) ? [...levels, advEffort] : levels;
+	});
+	/** Whether this job's stored level actually reaches its model. */
+	const effortApplies = $derived(!advEffort || (effortCaps?.levels.includes(advEffort) ?? false));
 
 	// What 'App-tuned profile' will actually send — four genuinely different
 	// outcomes, described by a tested pure function rather than inline prose.
@@ -982,29 +990,34 @@
 										</span>
 									</label>
 
-									{#if effortCaps}
-										<label class="model-field">
-											<span class="sublabel">Reasoning effort</span>
-											<select
-												value={advEffort ?? ''}
-												onchange={(e) => (advEffort = e.currentTarget.value || null)}
-												disabled={advReasoning === 'off'}
+									<label class="model-field">
+										<span class="sublabel">Reasoning effort</span>
+										<select
+											value={advEffort ?? ''}
+											onchange={(e) => (advEffort = e.currentTarget.value || null)}
+											disabled={advReasoning === 'off'}
+										>
+											<option value=""
+												>Inherit global setting{effortCaps?.modelDefault
+													? ` (model default: ${effortCaps.modelDefault})`
+													: ''}</option
 											>
-												<option value=""
-													>Inherit global setting{effortCaps.modelDefault
-														? ` (model default: ${effortCaps.modelDefault})`
-														: ''}</option
-												>
-												{#each effortCaps.levels as level (level)}
-													<option value={level}>{level}</option>
-												{/each}
-											</select>
-											<span class="adv-hint">
-												How hard the model thinks when reasoning is on. Lower levels tell it up
-												front to keep the chain short, rather than cutting it off part-way.
-											</span>
-										</label>
-									{/if}
+											{#each effortOptions as level (level)}
+												<option value={level}>{level}</option>
+											{/each}
+										</select>
+										<span class="adv-hint">
+											How hard the model thinks when reasoning is on. Lower levels tell it up front
+											to keep the chain short, rather than cutting it off part-way.
+											{#if !effortCaps}
+												This job's model publishes no effort levels, so the choice is stored but not
+												sent to it.
+											{:else if !effortApplies}
+												This job's model accepts only {effortCaps.levels.join(', ')}, so it will use
+												its own default until you pick one of those.
+											{/if}
+										</span>
+									</label>
 
 									{#if reasoningCapsNote}
 										<p class="adv-note">{reasoningCapsNote}</p>

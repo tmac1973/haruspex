@@ -73,6 +73,22 @@ export interface EffortCaps {
 }
 
 /**
+ * Every effort level any backend we know about accepts, cheapest first — the
+ * union of Qwen 3.8's `low`/`medium`/`xhigh` and the `low`/`medium`/`high`
+ * most OpenRouter reasoning models publish.
+ *
+ * Only for populating the Settings control when the *active* model publishes
+ * no vocabulary of its own, so the user can still express a standing
+ * preference that applies wherever it's understood. Never a source of truth
+ * for what to send: `resolveEffort` validates against the active model's
+ * advertised levels, so a level from this list that the model doesn't accept
+ * is dropped rather than sent. `none` is deliberately absent — turning
+ * reasoning off is the `thinkingEnabled` toggle's job, and Qwen 3.8 has no
+ * such level.
+ */
+export const KNOWN_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'];
+
+/**
  * Effort vocabulary for the models that ship one. Qwen 3.5 and 3.6 templates
  * have no `reasoning_effort` variable at all — only `enable_thinking` — so
  * they are deliberately absent rather than listed with an empty vocabulary.
