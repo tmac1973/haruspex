@@ -72,7 +72,7 @@ fn ensure_search_success(
 }
 
 // Shared result-collection skeletons (audit R-search). Engine quirks —
-// DDG's `uddg=` redirect decode, Mojeek's title-selector fallback, Brave's
+// DDG's `uddg=` redirect decode, Yahoo's `RU=` decode, Brave's
 // link-text fallback — stay local to each engine's extraction closure.
 
 /// Trimmed text content of an element — the common title/snippet shape.
@@ -80,7 +80,7 @@ fn element_text(e: ElementRef) -> String {
     e.text().collect::<String>().trim().to_string()
 }
 
-/// HTML-scrape skeleton shared by DDG / Mojeek / Brave-HTML: iterate the
+/// HTML-scrape skeleton shared by DDG / Yahoo / Brave-HTML: iterate the
 /// per-result elements, let the engine-specific closure extract (and
 /// validate) a `SearchResult`, and stop once `MAX_RESULTS` are collected.
 fn scrape_results(
@@ -179,8 +179,10 @@ pub(super) async fn search_duckduckgo(
         .await
         .map_err(|e| classify_reqwest_err(e, "Failed to read response"))?;
 
-    // Detect bot/captcha page
-    if html.contains("cc=botnet") || html.contains("anomaly.js") {
+    // Detect bot/captcha page — DDG's own fingerprints, plus the generic
+    // challenge shapes so a new interstitial doesn't read as "no results".
+    if html.contains("cc=botnet") || html.contains("anomaly.js") || looks_like_bot_challenge(&html)
+    {
         warn!("DuckDuckGo returned a bot detection page — search temporarily unavailable");
         return Err(SearchFailure::new(
             SearchFailureKind::RateLimited,
@@ -253,15 +255,48 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
     }))
 }
 
-/// Shared skeleton for the plain-GET HTML scrape engines (Mojeek, Brave HTML,
-/// Startpage, Yahoo). Builds the proxied client, GETs `url` with the standard
+/// Does this page look like a bot wall rather than a SERP?
+///
+/// Generic on purpose. Every engine that has gone dark did so by serving a
+/// challenge with **HTTP 200**, and each one used wording nobody had a needle
+/// for yet — Mojeek's "JavaScript is required to complete this challenge" was
+/// the fourth variant in a row. Matching the *class* of page means the next
+/// engine to fall over is recorded as blocked rather than as an engine that
+/// keeps returning nothing.
+///
+/// Only ever consulted when a parse yielded zero results, which is what makes
+/// the false-positive risk acceptable: a real SERP that happens to mention
+/// captchas still has results and never reaches here.
+pub(super) fn looks_like_bot_challenge(html: &str) -> bool {
+    let lower = html.to_lowercase();
+    [
+        "captcha",
+        "javascript is required",
+        "enable javascript",
+        "verifying your request",
+        "checking your browser",
+        "unusual traffic",
+        "are you human",
+        "are you a human",
+        "anubis",
+        "cf-challenge",
+        "turnstile",
+        "datadome",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
+/// Shared skeleton for the plain-GET HTML scrape engines (Brave HTML, Yahoo).
+/// Builds the proxied client, GETs `url` with the standard
 /// browser-like scrape headers, enforces a 2xx, reads the body, runs `parse`,
 /// and — when parsing yields nothing — first consults `on_empty` (so an engine
 /// can recognize an anti-bot challenge and surface it as RateLimited) before
 /// logging an empty-result warning keyed by `empty_needles`. `label` tags every
 /// error and warning. `send_accept` adds the browser-like `Accept: text/html…`
-/// header (Brave/Startpage/Yahoo send it; Mojeek historically does not, so it
-/// passes `false`). DuckDuckGo is intentionally NOT routed through here: it
+/// header (both current engines send it; engines that tripped bot detection
+/// with it passed `false`). DuckDuckGo is intentionally NOT routed through
+/// here: it
 /// POSTs a form with a cookie store and its own bot-detection handling.
 async fn scrape_engine(
     url: &str,
@@ -306,87 +341,6 @@ async fn scrape_engine(
     Ok(results)
 }
 
-// Mojeek HTML search — small independent index, scrape-friendly, no API key.
-// Useful as a fallback when DDG/Qwant are rate-limited or broken.
-
-pub(super) async fn search_mojeek(
-    query: &str,
-    recency: &str,
-    proxy: Option<&ProxyConfig>,
-) -> Result<Vec<SearchResult>, SearchFailure> {
-    // Mojeek freshness: si=day|week|month|year (their "since" parameter)
-    let since = match recency {
-        "day" => "&si=day",
-        "week" => "&si=week",
-        "month" => "&si=month",
-        "year" => "&si=year",
-        _ => "",
-    };
-
-    let url = format!(
-        "https://www.mojeek.com/search?q={}{}",
-        urlencoding::encode(query),
-        since
-    );
-
-    scrape_engine(
-        &url,
-        "Mojeek",
-        proxy,
-        false,
-        parse_mojeek_html,
-        |_| None,
-        &[
-            "results-standard",
-            "class=\"results",
-            "id=\"results",
-            "<main",
-        ],
-    )
-    .await
-}
-
-pub(super) fn parse_mojeek_html(html: &str) -> Result<Vec<SearchResult>, String> {
-    let document = Html::parse_document(html);
-
-    // Mojeek's organic results historically live in `ul.results-standard > li`
-    // with an `<a class="ob">` for the title link and a `<p class="s">` for
-    // the snippet. Be tolerant of small markup changes by falling back to
-    // any `li > h2 a` inside the results list.
-    let result_selector = Selector::parse("ul.results-standard > li, ol.results-standard > li")
-        .map_err(|_| "Failed to parse mojeek result selector")?;
-    let title_selector_primary =
-        Selector::parse("a.ob").map_err(|_| "Failed to parse mojeek title selector")?;
-    let title_selector_fallback =
-        Selector::parse("h2 a").map_err(|_| "Failed to parse mojeek h2 selector")?;
-    let snippet_selector =
-        Selector::parse("p.s").map_err(|_| "Failed to parse mojeek snippet selector")?;
-
-    Ok(scrape_results(&document, &result_selector, |element| {
-        let title_el = element
-            .select(&title_selector_primary)
-            .next()
-            .or_else(|| element.select(&title_selector_fallback).next());
-
-        let title = title_el.map(element_text).unwrap_or_default();
-        let url = title_el
-            .and_then(|e| e.value().attr("href"))
-            .unwrap_or_default()
-            .to_string();
-        let snippet = element
-            .select(&snippet_selector)
-            .next()
-            .map(element_text)
-            .unwrap_or_default();
-
-        (!title.is_empty() && !url.is_empty() && url.starts_with("http")).then_some(SearchResult {
-            title,
-            url,
-            snippet,
-        })
-    }))
-}
-
 // Brave HTML search — scrapes search.brave.com directly without an API key.
 // This is distinct from the explicit `brave` provider which uses the paid
 // Brave Search API. Brave's HTML page returns server-rendered results with
@@ -421,7 +375,18 @@ pub(super) async fn search_brave_html(
         proxy,
         true,
         parse_brave_html,
-        |_| None,
+        // Brave has served plain SERPs so far, but it is the one rotation
+        // engine with no challenge of its own to fingerprint — so it leans on
+        // the generic detector rather than on nothing, which is how Mojeek
+        // stayed first choice for 55 days while never returning a result.
+        |html| {
+            looks_like_bot_challenge(html).then(|| {
+                SearchFailure::new(
+                    SearchFailureKind::RateLimited,
+                    "Brave served an anti-bot challenge — temporarily unavailable.".to_string(),
+                )
+            })
+        },
         &[
             "data-type=\"web\"",
             "search-snippet-title",
@@ -485,117 +450,6 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
     }))
 }
 
-// Startpage HTML search — Startpage proxies Google's results and serves them
-// server-rendered, so plain-HTTP scraping yields Google-quality results without
-// a browser, and without ever hitting Google's own bot wall. The markup is
-// Emotion CSS-in-JS, so we anchor on the stable `data-testid` (`gl-title-link`)
-// and the unhashed class tokens (`result`, `description`) rather than the
-// hashed `css-*` classes. Note: Emotion injects `<style>` tags *inside* the
-// result anchors, so titles/snippets must be read with `text_skipping_style`.
-
-pub(super) async fn search_startpage(
-    query: &str,
-    _recency: &str,
-    proxy: Option<&ProxyConfig>,
-) -> Result<Vec<SearchResult>, SearchFailure> {
-    // Startpage's simple GET endpoint exposes no reliable date-filter param, so
-    // recency is intentionally not applied here.
-    let url = format!(
-        "https://www.startpage.com/sp/search?query={}",
-        urlencoding::encode(query)
-    );
-
-    scrape_engine(
-        &url,
-        "Startpage",
-        proxy,
-        true,
-        parse_startpage_html,
-        // No results + an anti-bot fingerprint means Startpage served its
-        // challenge page rather than a SERP — surface it as rate-limited so the
-        // engine cools down, instead of mistaking it for a genuine empty set.
-        |html| {
-            is_startpage_challenge(html).then(|| {
-                SearchFailure::new(
-                    SearchFailureKind::RateLimited,
-                    "Startpage served an anti-bot challenge — temporarily unavailable.".to_string(),
-                )
-            })
-        },
-        &["gl-title-link", "result-title", "class=\"result", "w-gl"],
-    )
-    .await
-}
-
-/// Heuristic: does this look like Startpage's anti-bot / captcha page rather
-/// than a SERP? Only consulted when zero results parsed (a real SERP that
-/// happens to contain the word elsewhere never reaches this).
-fn is_startpage_challenge(html: &str) -> bool {
-    let lower = html.to_lowercase();
-    lower.contains("captcha")
-        || lower.contains("/sp/captcha")
-        || lower.contains("are you human")
-        || lower.contains("unusual traffic")
-        || lower.contains("anubis")
-}
-
-pub(super) fn parse_startpage_html(html: &str) -> Result<Vec<SearchResult>, String> {
-    let document = Html::parse_document(html);
-    // Each organic result is a div whose class list includes the unhashed
-    // token `result` (alongside an Emotion `css-*` hash we ignore).
-    let result_selector =
-        Selector::parse("div.result").map_err(|_| "Failed to parse startpage result selector")?;
-    // Stable test id on the title anchor; its href is the real destination
-    // (Startpage does not redirect-wrap organic result links).
-    let title_selector = Selector::parse(r#"a[data-testid="gl-title-link"]"#)
-        .map_err(|_| "Failed to parse startpage title selector")?;
-    let desc_selector = Selector::parse("p.description")
-        .map_err(|_| "Failed to parse startpage snippet selector")?;
-
-    Ok(scrape_results(&document, &result_selector, |element| {
-        let title_el = element.select(&title_selector).next();
-        let url = title_el
-            .and_then(|e| e.value().attr("href"))
-            .unwrap_or_default()
-            .to_string();
-        let title = title_el.map(text_skipping_style).unwrap_or_default();
-        let snippet = element
-            .select(&desc_selector)
-            .next()
-            .map(text_skipping_style)
-            .unwrap_or_default();
-
-        (!title.is_empty() && url.starts_with("http")).then_some(SearchResult {
-            title,
-            url,
-            snippet,
-        })
-    }))
-}
-
-/// Trimmed visible text of an element, ignoring the contents of any nested
-/// `<style>`/`<script>`. Startpage injects Emotion `<style>` tags inside its
-/// result anchors and snippets, whose CSS rules would otherwise pollute the
-/// extracted title/snippet.
-fn text_skipping_style(e: ElementRef) -> String {
-    let mut buf = String::new();
-    for node in e.descendants() {
-        let Some(text) = node.value().as_text() else {
-            continue;
-        };
-        let inside_style = node.ancestors().any(|a| {
-            a.value()
-                .as_element()
-                .map(|el| el.name() == "style" || el.name() == "script")
-                .unwrap_or(false)
-        });
-        if !inside_style {
-            buf.push_str(text);
-        }
-    }
-    buf.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 // Yahoo HTML search — Yahoo's web results are Bing-sourced and server-rendered,
 // so plain-HTTP scraping yields Bing-quality results without a browser. Organic
 // results live in `div.algo`; the clean page title is the nested `h3.title` (a
@@ -639,10 +493,9 @@ pub(super) async fn search_yahoo(
 
 fn is_yahoo_challenge(html: &str) -> bool {
     let lower = html.to_lowercase();
-    lower.contains("captcha")
-        || lower.contains("consent.yahoo")
+    lower.contains("consent.yahoo")
         || lower.contains("guce.yahoo")
-        || lower.contains("are you a human")
+        || looks_like_bot_challenge(html)
 }
 
 /// Decode the real destination URL from a `r.search.yahoo.com/...//RU=<enc>/RK=`
@@ -789,11 +642,9 @@ pub(super) async fn search_auto(
 
         let start = std::time::Instant::now();
         let result = match *engine {
-            "startpage" => search_startpage(query, recency, proxy).await,
             "yahoo" => search_yahoo(query, recency, proxy).await,
             "brave_html" => search_brave_html(query, recency, proxy).await,
             "duckduckgo" => search_duckduckgo(query, recency, proxy).await,
-            "mojeek" => search_mojeek(query, recency, proxy).await,
             _ => unreachable!(),
         };
         let elapsed = start.elapsed().as_millis() as u64;
@@ -1042,47 +893,41 @@ mod tests {
         assert!(results.is_empty());
     }
 
+    /// The exact pages that took Mojeek and Startpage out, captured by
+    /// replaying the request this code sends. Both answer **HTTP 200**, which
+    /// is why they read as "no results" rather than as a block — Mojeek did so
+    /// for 55 days while staying first choice in the rotation, because an
+    /// engine that returns an empty Ok never enters a cooldown.
     #[test]
-    fn parse_startpage_extracts_result_and_strips_emotion_style() {
-        // Mirrors Startpage's real markup: a `div.result` wrapper, a title anchor
-        // tagged `data-testid="gl-title-link"` with the real href, an Emotion
-        // <style> injected *inside* the anchor (whose CSS must NOT leak into the
-        // title), and a `p.description` snippet.
-        let html = r##"
-            <html><body>
-            <div class="result css-ocm99y">
-              <div class="wgl-title-link-container css-1gz2b5f">
-                <a class="result-title result-link css-1bggj8v"
-                   href="https://go.dev/doc/tutorial/generics"
-                   data-testid="gl-title-link"><style data-emotion="css i3irj7">.css-i3irj7{color:#2E39B3;}</style>Tutorial: Getting started with generics</a>
-              </div>
-              <p class="description css-abc">Create a folder for your code, then add generics.</p>
-            </div>
-            </body></html>
-        "##;
-        let results = parse_startpage_html(html).expect("parse ok");
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "Tutorial: Getting started with generics");
-        assert_eq!(results[0].url, "https://go.dev/doc/tutorial/generics");
-        assert!(results[0].snippet.contains("Create a folder"));
-        // The Emotion CSS rule must not have leaked into the title.
-        assert!(!results[0].title.contains("css-"));
-    }
-
-    #[test]
-    fn parse_startpage_handles_empty_input() {
-        let results =
-            parse_startpage_html("<html><body>nothing here</body></html>").expect("parse ok");
-        assert!(results.is_empty());
-    }
-
-    #[test]
-    fn startpage_challenge_detection() {
-        assert!(is_startpage_challenge(
-            "<html>Please solve the CAPTCHA to continue</html>"
+    fn generic_challenge_detection_catches_real_bot_walls() {
+        // Mojeek, August 2026.
+        assert!(looks_like_bot_challenge(
+            "<html><body>Captcha … JavaScript is required to complete this challenge. \
+             Please enable it and reload the page.</body></html>"
         ));
-        assert!(!is_startpage_challenge(
-            "<html><div class=\"result\">normal serp</div></html>"
+        // Startpage's Anubis proof-of-work interstitial, August 2026.
+        assert!(looks_like_bot_challenge(
+            "<html><body>Verifying your request... Loading...<script src=\"/anubis/\"></script></body></html>"
+        ));
+        // Shapes the others have used.
+        for page in [
+            "<html>Checking your browser before accessing</html>",
+            "<html>Our systems have detected unusual traffic</html>",
+            "<html><div id=\"cf-challenge\"></div></html>",
+            "<html>Please solve the CAPTCHA to continue</html>",
+        ] {
+            assert!(looks_like_bot_challenge(page), "missed: {}", page);
+        }
+    }
+
+    /// The guard that makes the generic matcher safe: it is only consulted
+    /// when a parse found nothing, so a real SERP — even one *about* captchas
+    /// — never reaches it. This asserts the ordinary page shape stays clean.
+    #[test]
+    fn generic_challenge_detection_ignores_an_ordinary_serp() {
+        assert!(!looks_like_bot_challenge(
+            "<html><body><div data-type=\"web\"><a href=\"https://example.com\">A result</a>\
+             <div class=\"generic-snippet\">Some ordinary snippet text.</div></div></body></html>"
         ));
     }
 
