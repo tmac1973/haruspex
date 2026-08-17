@@ -6,6 +6,8 @@
 	import ContextGauge from '$lib/components/ContextGauge.svelte';
 	import { hasStreamingAnswer } from '$lib/agent/think-stream';
 	import JobRunStats from '$lib/components/jobs/JobRunStats.svelte';
+	import ThinkingPanel from '$lib/components/ThinkingPanel.svelte';
+	import { splitThinkChannels } from '$lib/markdown';
 	import { formatDuration, formatTokens } from '$lib/utils/format';
 	import {
 		cancel,
@@ -75,6 +77,18 @@
 	 * by character ratio (no server reports either per channel), so they are
 	 * labelled as estimates rather than presented as counts.
 	 */
+	/**
+	 * Reasoning already banked for the step, plus whatever is in flight.
+	 * `onReasoning` only fires when a model call completes, so on a streaming
+	 * turn the tail is the difference between watching and waiting; on a
+	 * tool-driven one there is no tail and this is just the banked text.
+	 */
+	function stepReasoning(step: RunStepState): string {
+		const live = splitThinkChannels(step.streaming).reasoning.trim();
+		if (!live) return step.reasoning;
+		return step.reasoning ? `${step.reasoning}\n\n---\n\n${live}` : live;
+	}
+
 	function thinkingSummary(t: StepThinkingStats): string {
 		const pct = t.totalMs > 0 ? Math.round((t.reasoningMs / t.totalMs) * 100) : 0;
 		return `~${formatDuration(t.reasoningMs)} · ~${formatTokens(t.reasoningTokens)} tokens · ${pct}% of generation`;
@@ -171,23 +185,22 @@
 						<SearchStepView steps={step.searchSteps} />
 					{/if}
 
-					{#if step.reasoning}
-						<!-- Most job turns force a final tool, and that path never
-						     reaches the streaming synthesis — so this reasoning
-						     arrives one model call at a time, not token by token.
-						     It is still the only window into a running step. -->
-						<details
-							class="reasoning"
-							open={isLiveStep(step) && !hasStreamingAnswer(step.streaming)}
-						>
-							<summary>
-								<span class="reasoning-title">Reasoning</span>
-								{#if step.thinking}
-									<span class="reasoning-stat">{thinkingSummary(step.thinking)}</span>
-								{/if}
-							</summary>
-							<pre class="reasoning-body">{step.reasoning}</pre>
-						</details>
+					{#if stepReasoning(step)}
+						<!-- Only the final synthesis streams; every tool-driven
+						     iteration uses the non-streaming completion, so on a
+						     tool-driven turn (all of guided planning) this arrives
+						     one model call at a time rather than token by token.
+						     Where a turn does stream, the live tail shows here too.
+
+						     `defaultOpen`, not `open`: a derived attribute was
+						     overriding the user's click every time the expression
+						     flipped, which it does on every call. -->
+						<ThinkingPanel
+							text={stepReasoning(step)}
+							live={isLiveStep(step) && !hasStreamingAnswer(step.streaming)}
+							defaultOpen={isLiveStep(step) && !hasStreamingAnswer(step.streaming)}
+							stat={step.thinking ? thinkingSummary(step.thinking) : undefined}
+						/>
 					{/if}
 
 					{#if isLiveStep(step) && run.waitingForSlot}
@@ -319,45 +332,6 @@
 	.check-detail {
 		font-size: 0.74rem;
 		opacity: 0.8;
-	}
-
-	.reasoning {
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-secondary);
-		font-size: 0.8rem;
-	}
-
-	.reasoning summary {
-		cursor: pointer;
-		user-select: none;
-		padding: 5px 8px;
-		display: flex;
-		gap: 8px;
-		align-items: baseline;
-		color: var(--text-secondary);
-	}
-
-	.reasoning-title {
-		font-weight: 600;
-	}
-
-	.reasoning-stat {
-		font-size: 0.72rem;
-		opacity: 0.85;
-	}
-
-	.reasoning-body {
-		margin: 0;
-		padding: 0 8px 8px;
-		max-height: 320px;
-		overflow-y: auto;
-		white-space: pre-wrap;
-		word-break: break-word;
-		font-family: inherit;
-		font-size: 0.78rem;
-		line-height: 1.45;
-		color: var(--text-secondary);
 	}
 
 	.stage-desc {

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { renderMarkdown, stripMarkdownForTTS } from '$lib/markdown';
+	import { renderMarkdown, splitThinkChannels, stripMarkdownForTTS } from '$lib/markdown';
+	import ThinkingPanel from '$lib/components/ThinkingPanel.svelte';
 	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
 	import { getSettings } from '$lib/stores/settings';
 	import { createCopyAction } from '$lib/utils/clipboard.svelte';
@@ -31,9 +32,31 @@
 					)
 					.map((p) => p.image_url.url)
 	);
-	let renderedContent = $derived(textContent ? renderMarkdown(textContent) : '');
+	/**
+	 * Reasoning is split out and rendered as a component rather than left in
+	 * the markdown. Inside the HTML string it was a <details> destroyed and
+	 * rebuilt collapsed on every streaming delta, and an in-progress block —
+	 * which has no closing tag yet — rendered as nothing at all.
+	 *
+	 * `splitThinkChannels` already treats an unterminated trailing <think> as
+	 * reasoning, which is exactly the live case, so no separate live-tail
+	 * helper is needed.
+	 */
+	let channels = $derived(splitThinkChannels(textContent));
+	/**
+	 * A message that is ALL reasoning is its own answer: Qwen sometimes wraps
+	 * a whole response in <think> and emits EOS. Promote it to prose rather
+	 * than leaving an empty bubble with a disclosure hanging off it. While
+	 * streaming, the same shape means "still thinking" and belongs in the
+	 * panel instead.
+	 */
+	let thinkingOnly = $derived(
+		!isStreaming && channels.answer.trim() === '' && channels.reasoning.trim() !== ''
+	);
+	let answerText = $derived(thinkingOnly ? channels.reasoning : channels.answer);
+	let renderedContent = $derived(answerText ? renderMarkdown(answerText) : '');
 	let plainText = $derived(
-		textContent ? stripMarkdownForTTS(textContent, getSettings().ttsReadTablesByColumn) : ''
+		answerText ? stripMarkdownForTTS(answerText, getSettings().ttsReadTablesByColumn) : ''
 	);
 
 	const copy = createCopyAction();
@@ -56,6 +79,13 @@
 				<p>{textContent}</p>
 			{/if}
 		{:else}
+			{#if channels.reasoning.trim() && !thinkingOnly}
+				<ThinkingPanel
+					text={channels.reasoning}
+					live={isStreaming && channels.answer.trim() === ''}
+					defaultOpen={isStreaming && channels.answer.trim() === ''}
+				/>
+			{/if}
 			{@html renderedContent}
 			{#if isStreaming}
 				<span class="streaming-caret"></span>
