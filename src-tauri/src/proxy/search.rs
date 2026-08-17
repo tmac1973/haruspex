@@ -498,6 +498,107 @@ fn is_yahoo_challenge(html: &str) -> bool {
         || looks_like_bot_challenge(html)
 }
 
+// Bing HTML search — server-rendered organic results in `li.b_algo`, no API
+// key. Removed from the rotation in April 2026 when every `/search?q=...`
+// returned a Cloudflare Turnstile shell; re-verified working on 2026-08-17
+// (five varied queries, ten results each, 123-127 KB pages), so it is back.
+// Its bot-detection page is caught by the shared `looks_like_bot_challenge`
+// rather than by Bing-specific needles, which is what the earlier version had.
+
+pub(super) async fn search_bing(
+    query: &str,
+    recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    // Bing freshness: filters=ex1:"ez1|ez2|ez3" (day/week/month). It exposes
+    // no year filter, so "year" falls through to unfiltered.
+    let filters = match recency {
+        "day" => "&filters=ex1%3a%22ez1%22",
+        "week" => "&filters=ex1%3a%22ez2%22",
+        "month" => "&filters=ex1%3a%22ez3%22",
+        _ => "",
+    };
+
+    let url = format!(
+        "https://www.bing.com/search?q={}{}",
+        urlencoding::encode(query),
+        filters
+    );
+
+    scrape_engine(
+        &url,
+        "Bing",
+        proxy,
+        true,
+        parse_bing_html,
+        |html| {
+            looks_like_bot_challenge(html).then(|| {
+                SearchFailure::new(
+                    SearchFailureKind::RateLimited,
+                    "Bing served an anti-bot challenge — temporarily unavailable.".to_string(),
+                )
+            })
+        },
+        &["b_algo", "b_results", "b_caption"],
+    )
+    .await
+}
+
+/// Decode the real destination from a `bing.com/ck/a?...&u=a1<b64url>&ntb=1`
+/// tracking link. The payload is base64url after a two-character `a1` tag, and
+/// Bing omits the padding — which `base64::decode` rejects, hence the explicit
+/// re-pad. Every organic result on a live SERP used this form (10 of 10 on the
+/// page this was written against), so a result whose link fails to decode is
+/// dropped rather than reported with a bing.com URL the user didn't ask for.
+fn decode_bing_redirect(href: &str) -> Option<String> {
+    use base64::Engine as _;
+    let pos = href.find("u=a1")?;
+    let rest = &href[pos + 4..];
+    let end = rest.find('&').unwrap_or(rest.len());
+    let mut payload = rest[..end].to_string();
+    payload.push_str(&"=".repeat((4 - payload.len() % 4) % 4));
+    let bytes = base64::engine::general_purpose::URL_SAFE
+        .decode(payload)
+        .ok()?;
+    let decoded = String::from_utf8(bytes).ok()?;
+    decoded.starts_with("http").then_some(decoded)
+}
+
+pub(super) fn parse_bing_html(html: &str) -> Result<Vec<SearchResult>, String> {
+    let document = Html::parse_document(html);
+    // Organic results only — ads render as `li.b_ad`.
+    let result_selector =
+        Selector::parse("li.b_algo").map_err(|_| "Failed to parse bing result selector")?;
+    let title_selector =
+        Selector::parse("h2 a").map_err(|_| "Failed to parse bing title selector")?;
+    let snippet_selector = Selector::parse(".b_caption p, .b_algoSlug")
+        .map_err(|_| "Failed to parse bing snippet selector")?;
+
+    Ok(scrape_results(&document, &result_selector, |element| {
+        let title_el = element.select(&title_selector).next();
+        let title = title_el.map(element_text).unwrap_or_default();
+        let href = title_el.and_then(|e| e.value().attr("href")).unwrap_or("");
+        // Prefer the decoded destination; accept a direct link if Bing ever
+        // serves one, and drop anything still pointing at bing.com so a
+        // tracking URL can never reach the model as a citation.
+        let url = decode_bing_redirect(href)
+            .or_else(|| href.starts_with("http").then(|| href.to_string()))
+            .filter(|u| !u.contains("bing.com/ck/"))
+            .unwrap_or_default();
+        let snippet = element
+            .select(&snippet_selector)
+            .next()
+            .map(element_text)
+            .unwrap_or_default();
+
+        (!title.is_empty() && !url.is_empty()).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
+}
+
 /// Decode the real destination URL from a `r.search.yahoo.com/...//RU=<enc>/RK=`
 /// redirect link. The `RU=` value is percent-encoded (so it contains no literal
 /// `/`), which lets us slice it out up to the next path segment.
@@ -643,6 +744,7 @@ pub(super) async fn search_auto(
         let start = std::time::Instant::now();
         let result = match *engine {
             "yahoo" => search_yahoo(query, recency, proxy).await,
+            "bing" => search_bing(query, recency, proxy).await,
             "brave_html" => search_brave_html(query, recency, proxy).await,
             "duckduckgo" => search_duckduckgo(query, recency, proxy).await,
             _ => unreachable!(),
@@ -964,6 +1066,65 @@ mod tests {
     fn parse_yahoo_handles_empty_input() {
         let results = parse_yahoo_html("<html><body>nothing</body></html>").expect("parse ok");
         assert!(results.is_empty());
+    }
+
+    /// Mirrors Bing's live markup: organic results in `li.b_algo`, the title
+    /// anchor pointing at a `ck/a` tracking URL with the real destination
+    /// base64url-encoded (unpadded) after `u=a1`, and the snippet in
+    /// `.b_caption p`. The second item is an ad wrapper, which must be ignored.
+    #[test]
+    fn parse_bing_decodes_tracking_links_and_skips_ads() {
+        // base64url of "https://tokio.rs/", unpadded exactly as Bing sends it.
+        let html = r##"
+            <html><body><ol id="b_results">
+            <li class="b_algo">
+              <h2><a href="https://www.bing.com/ck/a?!&p=abc&u=a1aHR0cHM6Ly90b2tpby5ycy8&ntb=1">Tokio — An asynchronous Rust runtime</a></h2>
+              <div class="b_caption"><p>Tokio is an asynchronous runtime for the Rust programming language.</p></div>
+            </li>
+            <li class="b_ad"><h2><a href="https://example.com/ad">An advert</a></h2></li>
+            </ol></body></html>
+        "##;
+        let results = parse_bing_html(html).expect("parse ok");
+        assert_eq!(results.len(), 1, "ads must not be collected");
+        assert_eq!(results[0].url, "https://tokio.rs/");
+        assert!(results[0].title.starts_with("Tokio"));
+        assert!(results[0].snippet.contains("asynchronous runtime"));
+    }
+
+    /// A result whose link can't be decoded is dropped rather than reported
+    /// with a bing.com tracking URL — those reach the model as citations.
+    #[test]
+    fn parse_bing_drops_results_it_cannot_resolve() {
+        let html = r##"
+            <html><body><ol id="b_results">
+            <li class="b_algo"><h2><a href="https://www.bing.com/ck/a?!&p=abc&ntb=1">No destination</a></h2></li>
+            </ol></body></html>
+        "##;
+        assert!(parse_bing_html(html).expect("parse ok").is_empty());
+    }
+
+    #[test]
+    fn bing_redirect_decode() {
+        // Unpadded base64url, as served.
+        assert_eq!(
+            decode_bing_redirect("https://www.bing.com/ck/a?!&p=x&u=a1aHR0cHM6Ly9lbi53aWtpcGVkaWEub3JnL3dpa2kvVG9reW8&ntb=1")
+                .as_deref(),
+            Some("https://en.wikipedia.org/wiki/Tokyo")
+        );
+        // Not a redirect link at all.
+        assert_eq!(decode_bing_redirect("https://example.com/page"), None);
+        // Payload that decodes to something that isn't a URL.
+        assert_eq!(
+            decode_bing_redirect("https://www.bing.com/ck/a?u=a1bm90YXVybA"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_bing_handles_empty_input() {
+        assert!(parse_bing_html("<html><body>nothing here</body></html>")
+            .expect("parse ok")
+            .is_empty());
     }
 
     #[test]
