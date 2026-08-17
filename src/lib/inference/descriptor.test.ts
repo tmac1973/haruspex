@@ -10,7 +10,7 @@ import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 
 /** Reset the persisted settings store to a known local-mode baseline. */
 function resetToLocalDefaults(): void {
-	updateSettings({ contextSize: 32768, thinkingEnabled: true });
+	updateSettings({ contextSize: 32768, thinkingEnabled: true, reasoningEffort: null });
 	updateInferenceBackend({
 		mode: 'local',
 		remoteBaseUrl: '',
@@ -49,8 +49,8 @@ describe('resolveBackendDescriptor — local', () => {
 	});
 
 	it('strips directory components from a full local model path', () => {
-		setActiveLocalModel('/home/user/.local/share/com.haruspex.app/models/Qwen3.6-27B-IQ4_NL.gguf');
-		expect(resolveBackendDescriptor().samplingFamily).toBe('qwen3.6-27b');
+		setActiveLocalModel('/home/user/.local/share/com.haruspex.app/models/Qwen3.8-27B-IQ4_NL.gguf');
+		expect(resolveBackendDescriptor().samplingFamily).toBe('qwen-dense-27b');
 	});
 
 	it('keeps the default Qwen tuning for an imported non-Qwen local model', () => {
@@ -110,6 +110,31 @@ describe('resolveBackendDescriptor — remote', () => {
 			remoteVisionSupported: null
 		});
 		expect(resolveBackendDescriptor().vision).toBe(true);
+	});
+
+	/**
+	 * The #195 regression, re-armed by every version bump: a remote 3.8 id
+	 * matched none of the hand-written `includes()` arms, so the descriptor
+	 * reported `qwenTuning: false` and `reasoningMode: none` — no
+	 * `enable_thinking` kwarg was sent at all and the job could not turn
+	 * reasoning off. Local-only coverage would not have caught it.
+	 */
+	it.each([
+		'Qwen3.8-27B-IQ4_NL',
+		'qwen-3.8-27b',
+		'unsloth-Qwen3.8-27B.IQ4_NL',
+		'Qwen3.8-27B-Instruct'
+	])('identifies remote dense 27B spelled %s', (remoteModelId) => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://localhost:1234',
+			remoteModelId
+		});
+		const d = resolveBackendDescriptor();
+		expect(d.qwenTuning).toBe(true);
+		expect(d.samplingFamily).toBe('qwen-dense-27b');
+		expect(d.reasoningSupported).toBe(true);
+		expect(d.reasoningMode).toEqual({ kind: 'template-kwarg', kwarg: 'enable_thinking' });
 	});
 
 	it('positively identifies a remote Qwen and keeps the tuning (the #172 keep-case)', () => {
@@ -187,6 +212,123 @@ describe('resolveBackendDescriptor — remote', () => {
 	});
 });
 
+/**
+ * Effort is a second axis, not a second name for on/off: Qwen 3.8 reads
+ * `reasoning_effort` from inside its `enable_thinking` branch and has no
+ * `none` level. The vocabulary is per-model and enforced by the template —
+ * an unrecognized level raises, which llama-server returns as a 500 — so the
+ * resolver's job is to produce only vocabularies it can stand behind.
+ */
+describe('resolveBackendDescriptor — reasoning effort', () => {
+	it('offers the local dense 27B its three levels', () => {
+		setActiveLocalModel('Qwen3.8-27B-IQ4_NL.gguf');
+		expect(resolveBackendDescriptor().reasoningEffort).toEqual({
+			transport: 'template-kwarg',
+			kwarg: 'reasoning_effort',
+			levels: ['low', 'medium', 'xhigh'],
+			modelDefault: 'xhigh',
+			mandatory: false
+		});
+	});
+
+	it('offers no levels for models whose template has none', () => {
+		for (const model of ['Qwen3.5-9B-IQ4_NL.gguf', 'Qwen3.6-27B-IQ4_NL.gguf', 'Mystery.gguf']) {
+			setActiveLocalModel(model);
+			expect(resolveBackendDescriptor().reasoningEffort, model).toBeNull();
+		}
+	});
+
+	it('reads a toolchest probe vocabulary over the id guess', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://toolchest:3000',
+			remoteModelId: 'house-model-v2',
+			remoteBackendKind: 'llama-toolchest',
+			remoteReasoning: {
+				supported: true,
+				default_enabled: true,
+				toggle: 'reasoning_effort',
+				kwarg: null,
+				effort_levels: ['brief', 'thorough'],
+				default_effort: 'brief'
+			}
+		});
+		expect(resolveBackendDescriptor().reasoningEffort).toMatchObject({
+			transport: 'template-kwarg',
+			kwarg: 'reasoning_effort',
+			levels: ['brief', 'thorough'],
+			modelDefault: 'brief'
+		});
+	});
+
+	/**
+	 * The state that makes this a capability rather than a constant: the server
+	 * named a mechanism without saying what it accepts. The id table is the only
+	 * other source, and when it misses the answer is null — never a guessed
+	 * list, because a wrong level is a raised exception, not a fallback.
+	 */
+	it('falls back to the id when a toolchest server enumerates no levels', () => {
+		const remoteReasoning = {
+			supported: true,
+			default_enabled: true,
+			toggle: 'reasoning_effort',
+			kwarg: null
+		};
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://toolchest:3000',
+			remoteBackendKind: 'llama-toolchest',
+			remoteModelId: 'Qwen3.8-27B',
+			remoteReasoning
+		});
+		expect(resolveBackendDescriptor().reasoningEffort).toMatchObject({
+			levels: ['low', 'medium', 'xhigh']
+		});
+
+		updateInferenceBackend({ remoteModelId: 'house-model-v2' });
+		expect(resolveBackendDescriptor().reasoningEffort).toBeNull();
+	});
+
+	it('resolves levels from the model id on a plain remote server', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://localhost:1234',
+			remoteModelId: 'Qwen3.8-27B-IQ4_NL'
+		});
+		expect(resolveBackendDescriptor().reasoningEffort).toMatchObject({
+			levels: ['low', 'medium', 'xhigh']
+		});
+	});
+
+	it('resolves a per-job override from its own persisted probe caps', () => {
+		const d = resolveBackendDescriptor({
+			baseUrl: 'http://toolchest:3000',
+			modelId: 'house-model-v2',
+			discovered: {
+				reasoning: {
+					supported: true,
+					default_enabled: true,
+					toggle: 'reasoning_effort',
+					kwarg: null,
+					effort_levels: ['brief', 'thorough'],
+					default_effort: 'brief'
+				}
+			}
+		});
+		expect(d.reasoningEffort).toMatchObject({ levels: ['brief', 'thorough'] });
+	});
+
+	it('gives a per-job OpenRouter override no vocabulary to offer', () => {
+		// A job override carries no catalog, and OpenRouter levels only come
+		// from one. The model's own default applies, as it did before.
+		const d = resolveBackendDescriptor({
+			baseUrl: 'https://openrouter.ai/api',
+			modelId: 'openai/o3'
+		});
+		expect(d.reasoningEffort).toBeNull();
+	});
+});
+
 describe('resolveBackendDescriptor — OpenRouter', () => {
 	beforeEach(() => {
 		updateInferenceBackend({
@@ -214,8 +356,11 @@ describe('resolveBackendDescriptor — OpenRouter', () => {
 					expiration_date: null
 				}
 			],
-			openrouterReasoningEffort: 'high'
+			openrouterReasoningEffort: null
 		});
+		// Effort is one shared setting now; the per-backend field survives only
+		// as the load-time migration source.
+		updateSettings({ reasoningEffort: 'high' });
 	});
 
 	it('resolves catalog metadata into the descriptor', () => {
@@ -235,7 +380,7 @@ describe('resolveBackendDescriptor — OpenRouter', () => {
 	});
 
 	it('falls back to the model default effort when the user picked none', () => {
-		updateInferenceBackend({ openrouterReasoningEffort: null });
+		updateSettings({ reasoningEffort: null });
 		expect(resolveBackendDescriptor().reasoningMode).toEqual({
 			kind: 'openrouter-effort',
 			effort: 'medium',
@@ -343,7 +488,10 @@ describe('resolveBackendDescriptor — per-job override', () => {
  * what its probe reported, and probe data outranks the id guess.
  */
 describe('per-job override — discovered capabilities', () => {
-	const unknownModel = 'qwen3.8-27b-instruct';
+	// Deliberately outside every lineup pattern. This fixture used to be
+	// `qwen3.8-27b-instruct`, which stopped being unrecognized the moment the
+	// 3.8 lineup landed — the very drift these tests exist to catch.
+	const unknownModel = 'mixtral-8x22b-instruct';
 
 	it('sends the reported kwarg for a model no id-matching would recognize', () => {
 		const d = resolveBackendDescriptor({
@@ -413,7 +561,7 @@ describe('per-job override — discovered capabilities', () => {
 		expect(d.reasoningMode).toEqual({ kind: 'none' });
 		// The sampling family still comes from the id — it is a statement about
 		// which tuned profile fits, not about server capability.
-		expect(d.samplingFamily).toBe('qwen3.6-27b');
+		expect(d.samplingFamily).toBe('qwen-dense-27b');
 	});
 
 	it('carries discovered sampling into the descriptor', () => {

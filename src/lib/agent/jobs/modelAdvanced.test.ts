@@ -28,11 +28,50 @@ describe('parseModelAdvanced', () => {
 	});
 
 	it('defaults reasoning to inherit for anything but on/off', () => {
-		expect(parseModelAdvanced('{"reasoning":"on"}').reasoning).toBe('on');
-		expect(parseModelAdvanced('{"reasoning":"off"}').reasoning).toBe('off');
+		expect(parseModelAdvanced('{"reasoning":{"mode":"on"}}').reasoning.mode).toBe('on');
+		expect(parseModelAdvanced('{"reasoning":{"mode":"off"}}').reasoning.mode).toBe('off');
 		// A value from a future version, or a typo, must not silently mean "on".
-		expect(parseModelAdvanced('{"reasoning":"maybe"}').reasoning).toBe('inherit');
-		expect(parseModelAdvanced('{"reasoning":true}').reasoning).toBe('inherit');
+		expect(parseModelAdvanced('{"reasoning":{"mode":"maybe"}}').reasoning.mode).toBe('inherit');
+		expect(parseModelAdvanced('{"reasoning":true}').reasoning.mode).toBe('inherit');
+		expect(parseModelAdvanced('{"reasoning":{}}').reasoning).toEqual({
+			mode: 'inherit',
+			effort: null
+		});
+	});
+
+	/**
+	 * Jobs configured before effort existed are sitting in user databases with
+	 * a bare string here. Degrading one to `inherit` would silently turn
+	 * reasoning back ON for a job whose owner deliberately turned it off — at
+	 * 3am, with nobody watching.
+	 */
+	it('reads the legacy bare-string reasoning value', () => {
+		expect(parseModelAdvanced('{"reasoning":"off"}').reasoning).toEqual({
+			mode: 'off',
+			effort: null
+		});
+		expect(parseModelAdvanced('{"reasoning":"on"}').reasoning).toEqual({
+			mode: 'on',
+			effort: null
+		});
+		expect(parseModelAdvanced('{"reasoning":"nonsense"}').reasoning).toEqual({
+			mode: 'inherit',
+			effort: null
+		});
+	});
+
+	it('keeps an effort level and drops an unusable one', () => {
+		expect(parseModelAdvanced('{"reasoning":{"mode":"on","effort":"medium"}}').reasoning).toEqual({
+			mode: 'on',
+			effort: 'medium'
+		});
+		// Blank and non-string efforts mean "inherit", not a level named "".
+		expect(
+			parseModelAdvanced('{"reasoning":{"mode":"on","effort":""}}').reasoning.effort
+		).toBeNull();
+		expect(
+			parseModelAdvanced('{"reasoning":{"mode":"on","effort":3}}').reasoning.effort
+		).toBeNull();
 	});
 
 	it('defaults the sampling source to profile — the historical behavior', () => {
@@ -56,7 +95,7 @@ describe('parseModelAdvanced', () => {
 
 	it('round-trips a fully-populated config', () => {
 		const cfg: JobModelAdvanced = {
-			reasoning: 'off',
+			reasoning: { mode: 'off', effort: 'low' },
 			sampling: {
 				source: 'custom',
 				params: {
@@ -80,7 +119,7 @@ describe('parseModelAdvanced', () => {
 		const json = serializeModelAdvanced(cfg);
 		expect(json).not.toBeNull();
 		const back = parseModelAdvanced(json);
-		expect(back.reasoning).toBe('off');
+		expect(back.reasoning).toEqual({ mode: 'off', effort: 'low' });
 		expect(back.sampling.source).toBe('custom');
 		expect(back.sampling.params).toMatchObject({ temperature: 0.6, presence_penalty: 1.5 });
 		expect(back.discovered?.reasoning?.kwarg).toBe('enable_thinking');
@@ -97,7 +136,7 @@ describe('serializeModelAdvanced', () => {
 
 	it('drops custom params when the source is not custom', () => {
 		const json = serializeModelAdvanced({
-			reasoning: 'inherit',
+			reasoning: { mode: 'inherit', effort: null },
 			sampling: { source: 'server', params: { temperature: 0.9 } },
 			discovered: null
 		});
@@ -168,7 +207,7 @@ describe('describeSamplingProfile', () => {
 	});
 
 	it('names the family when there are no server caps', () => {
-		expect(describeSamplingProfile('qwen3.6-27b', false)).toContain('qwen3.6-27b');
+		expect(describeSamplingProfile('qwen-dense-27b', false)).toContain('qwen-dense-27b');
 	});
 
 	it('admits the no-op case rather than implying something is sent', () => {

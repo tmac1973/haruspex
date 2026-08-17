@@ -104,6 +104,8 @@ export interface LoopContext {
 	writeRoot: string | null;
 	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
 	thinkingEnabled: boolean | null;
+	/** Per-turn reasoning effort; null = use the global reasoningEffort. */
+	reasoningEffort: string | null;
 	/** Where sampling values come from; see SamplingOptions. */
 	samplingSource: 'server' | 'profile' | 'custom';
 	/** Values for samplingSource 'custom'; ignored otherwise. */
@@ -180,6 +182,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		interactive: options.interactive ?? false,
 		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,
+		reasoningEffort: options.reasoningEffort ?? null,
 		samplingSource: options.samplingSource ?? 'profile',
 		samplingParams: options.samplingParams ?? null,
 		maxResponseTokens: resolveMaxResponseTokens(options, expectsFileOutput),
@@ -520,8 +523,14 @@ async function forceFinalToolCall(
 	});
 
 	const sampling = getSamplingParams(ctx.descriptor, samplingOptionsFor(ctx, ctx.messages));
-	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
-	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
+	const templateKwargs = getChatTemplateKwargs(
+		ctx.descriptor,
+		ctx.thinkingEnabled,
+		ctx.reasoningEffort
+	);
+	const reasoning =
+		getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled, ctx.reasoningEffort) ??
+		undefined;
 	const offered = tool ? [tool] : ctx.tools;
 	applyContextGuard(ctx, ctx.maxResponseTokens, offered);
 
@@ -587,7 +596,9 @@ async function streamFinalSynthesis(
 ): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
 	applyContextGuard(ctx, FINAL_SYNTHESIS_MAX_TOKENS, tools);
 	const sentEstimate = estimateMessagesTokens(ctx.messages, tools);
-	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
+	const reasoning =
+		getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled, ctx.reasoningEffort) ??
+		undefined;
 	const stream = chatCompletionStream(
 		{
 			messages: ctx.messages,
@@ -744,8 +755,14 @@ export async function runIteration(
 	}
 
 	const sampling = getSamplingParams(ctx.descriptor, samplingOptionsFor(ctx, messages));
-	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
-	const reasoning = getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled) ?? undefined;
+	const templateKwargs = getChatTemplateKwargs(
+		ctx.descriptor,
+		ctx.thinkingEnabled,
+		ctx.reasoningEffort
+	);
+	const reasoning =
+		getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled, ctx.reasoningEffort) ??
+		undefined;
 	const { response, toolCalls, rejection } = await runModelCall(
 		ctx,
 		sampling,
@@ -1326,7 +1343,11 @@ export async function runMaxIterationsFinalSynthesis(
 		ctx.messages.push({ role: 'user', content: finalPrompt });
 	}
 	const sampling = getSamplingParams(ctx.descriptor, samplingOptionsFor(ctx, ctx.messages));
-	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, ctx.thinkingEnabled);
+	const templateKwargs = getChatTemplateKwargs(
+		ctx.descriptor,
+		ctx.thinkingEnabled,
+		ctx.reasoningEffort
+	);
 	const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
 		ctx,
 		undefined,

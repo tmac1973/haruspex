@@ -21,7 +21,7 @@
 		serializeModelAdvanced,
 		type DiscoveredCaps,
 		type JobModelAdvanced,
-		type ReasoningOverride,
+		type ReasoningMode,
 		type SamplingSource
 	} from '$lib/agent/jobs/modelAdvanced';
 	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
@@ -44,7 +44,7 @@
 		type JobType
 	} from '$lib/stores/jobs.svelte';
 	import { getSettings } from '$lib/stores/settings';
-	import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
@@ -103,7 +103,10 @@
 	let modelVision = $state<'auto' | 'yes' | 'no'>('auto');
 	// Advanced model behavior (applies to every job, override or not — a job
 	// on the Settings backend still wants its own reasoning choice).
-	let advReasoning = $state<ReasoningOverride>('inherit');
+	let advReasoning = $state<ReasoningMode>('inherit');
+	// null = inherit the global effort selection. Only ever set to a level the
+	// job's own model advertises.
+	let advEffort = $state<string | null>(null);
 	let advSamplingSource = $state<SamplingSource>('profile');
 	// Custom sampling fields. '' means "don't send this parameter" — the
 	// request body omits undefined fields, so a blank is a real choice, not a
@@ -294,17 +297,31 @@
 	 * runner uses, so the editor cannot claim a tuning that won't be applied —
 	 * including the rule that local models always get the default family.
 	 */
-	const samplingFamily = $derived.by(() => {
-		const override =
-			modelSource !== 'settings' && modelBaseUrl.trim()
-				? {
-						baseUrl: modelBaseUrl.trim(),
-						modelId: modelModelId.trim() || undefined,
-						discovered: advDiscovered ?? undefined
-					}
-				: undefined;
-		return resolveBackendDescriptor(override).samplingFamily;
+	const backendOverride = $derived(
+		modelSource !== 'settings' && modelBaseUrl.trim()
+			? {
+					baseUrl: modelBaseUrl.trim(),
+					modelId: modelModelId.trim() || undefined,
+					discovered: advDiscovered ?? undefined
+				}
+			: undefined
+	);
+	const samplingFamily = $derived(resolveBackendDescriptor(backendOverride).samplingFamily);
+
+	/**
+	 * The effort vocabulary for THIS job's backend, resolved through the same
+	 * descriptor the runner will use. Null means the model publishes none —
+	 * the control still shows (hiding it reads as a missing feature), falling
+	 * back to the known union so a job can carry a preference that applies if
+	 * its model is later pointed somewhere that understands it.
+	 */
+	const effortCaps = $derived(resolveBackendDescriptor(backendOverride).reasoningEffort);
+	const effortOptions = $derived.by(() => {
+		const levels = effortCaps?.levels ?? KNOWN_EFFORT_LEVELS;
+		return advEffort && !levels.includes(advEffort) ? [...levels, advEffort] : levels;
 	});
+	/** Whether this job's stored level actually reaches its model. */
+	const effortApplies = $derived(!advEffort || (effortCaps?.levels.includes(advEffort) ?? false));
 
 	// What 'App-tuned profile' will actually send — four genuinely different
 	// outcomes, described by a tested pure function rather than inline prose.
@@ -320,8 +337,14 @@
 	 * whole overnight run.
 	 */
 	const reasoningCapsNote = $derived.by(() => {
-		if (advReasoning === 'inherit') return null;
 		const caps = advDiscovered?.reasoning;
+		// A named mechanism with no vocabulary is its own state: the server told
+		// us effort exists but not what it takes, and guessing a level is a
+		// raised template exception rather than a degraded response.
+		if (caps?.supported && caps.toggle === 'reasoning_effort' && !effortCaps) {
+			return "This server reports a reasoning_effort control but doesn't say which levels it accepts, so effort can't be set from here.";
+		}
+		if (advReasoning === 'inherit') return null;
 		if (caps && caps.supported && caps.toggle !== 'chat_template_kwargs') {
 			return `This server reports its reasoning toggle as "${caps.toggle}", which this app can't set. The choice above will not reach the model — configure it server-side.`;
 		}
@@ -333,7 +356,8 @@
 
 	/** Load a parsed `model_advanced` into the form's flat field state. */
 	function applyModelAdvanced(cfg: JobModelAdvanced) {
-		advReasoning = cfg.reasoning;
+		advReasoning = cfg.reasoning.mode;
+		advEffort = cfg.reasoning.effort;
 		advSamplingSource = cfg.sampling.source;
 		advDiscovered = cfg.discovered;
 		advSourceTouched = false;
@@ -349,7 +373,7 @@
 	function currentModelAdvanced(): JobModelAdvanced {
 		const n = (v: number | '') => (v === '' ? undefined : v);
 		return {
-			reasoning: advReasoning,
+			reasoning: { mode: advReasoning, effort: advEffort },
 			sampling: {
 				source: advSamplingSource,
 				params: {
@@ -963,6 +987,35 @@
 										<span class="adv-hint">
 											Reasoning models can spend most of a run thinking. Forcing it off here affects
 											this job only.
+										</span>
+									</label>
+
+									<label class="model-field">
+										<span class="sublabel">Reasoning effort</span>
+										<select
+											value={advEffort ?? ''}
+											onchange={(e) => (advEffort = e.currentTarget.value || null)}
+											disabled={advReasoning === 'off'}
+										>
+											<option value=""
+												>Inherit global setting{effortCaps?.modelDefault
+													? ` (model default: ${effortCaps.modelDefault})`
+													: ''}</option
+											>
+											{#each effortOptions as level (level)}
+												<option value={level}>{level}</option>
+											{/each}
+										</select>
+										<span class="adv-hint">
+											How hard the model thinks when reasoning is on. Lower levels tell it up front
+											to keep the chain short, rather than cutting it off part-way.
+											{#if !effortCaps}
+												This job's model publishes no effort levels, so the choice is stored but not
+												sent to it.
+											{:else if !effortApplies}
+												This job's model accepts only {effortCaps.levels.join(', ')}, so it will use
+												its own default until you pick one of those.
+											{/if}
 										</span>
 									</label>
 

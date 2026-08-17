@@ -21,9 +21,10 @@ vi.mock('$lib/stores/server.svelte', () => ({
 vi.mock('$lib/stores/settings', () => ({
 	getActiveLocalModelFilename: vi.fn(() => 'a.gguf'),
 	getLegacyModelNoticeDismissed: vi.fn(() => true),
-	getSettings: vi.fn(() => ({ contextSize: 8192 })),
+	getSettings: vi.fn(() => ({ contextSize: 8192, mtpEnabled: true })),
 	setActiveLocalModel: vi.fn(),
-	setLegacyModelNoticeDismissed: vi.fn()
+	setLegacyModelNoticeDismissed: vi.fn(),
+	updateSettings: vi.fn()
 }));
 
 const models: ModelInfo[] = [
@@ -35,7 +36,8 @@ const models: ModelInfo[] = [
 		size_bytes: 5368709120,
 		description: 'Model A',
 		downloaded: true,
-		legacy: false
+		legacy: false,
+		mtp: false
 	},
 	{
 		id: 'model-b',
@@ -45,7 +47,8 @@ const models: ModelInfo[] = [
 		size_bytes: 3221225472,
 		description: 'Model B',
 		downloaded: true,
-		legacy: false
+		legacy: false,
+		mtp: false
 	}
 ];
 

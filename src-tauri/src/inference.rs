@@ -114,6 +114,16 @@ pub struct ReasoningCaps {
     pub toggle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kwarg: Option<String>,
+    /// The effort levels this model's template accepts, when the server
+    /// enumerates them. `None` means the server named a mechanism without
+    /// saying what it takes — the client must not guess a vocabulary, because
+    /// an unrecognized level is a raised template exception (a 500 for the
+    /// whole request), not a degraded response.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort_levels: Option<Vec<String>>,
+    /// What the model does when no effort is sent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_effort: Option<String>,
 }
 
 /// One model entry from a probe, normalized across all backend shapes.
@@ -553,6 +563,19 @@ fn parse_capabilities(v: Option<&serde_json::Value>) -> CapabilitiesParsed {
 
     let reasoning = v.get("reasoning").and_then(|r| {
         let toggle = r.get("toggle").and_then(|x| x.as_str())?.to_string();
+        // Both spellings accepted: the schema isn't nailed down, and the
+        // client's fallback for a missing list is "offer no effort control at
+        // all", so being strict here costs the user a working selector.
+        let effort_levels = r
+            .get("effort_levels")
+            .or_else(|| r.get("levels"))
+            .and_then(|x| x.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>()
+            })
+            .filter(|levels| !levels.is_empty());
         Some(ReasoningCaps {
             supported: r
                 .get("supported")
@@ -565,6 +588,12 @@ fn parse_capabilities(v: Option<&serde_json::Value>) -> CapabilitiesParsed {
             toggle,
             kwarg: r
                 .get("kwarg")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string()),
+            effort_levels,
+            default_effort: r
+                .get("default_effort")
+                .or_else(|| r.get("effort_default"))
                 .and_then(|x| x.as_str())
                 .map(|s| s.to_string()),
         })
@@ -866,6 +895,53 @@ mod tests {
         assert_eq!(s.presets[0].params.temperature, Some(0.6));
         // A preset that omits a field leaves it None for the client to fill.
         assert_eq!(s.presets[1].params.top_k, None);
+    }
+
+    #[test]
+    fn parse_capabilities_reads_effort_levels_in_both_spellings() {
+        for key in ["effort_levels", "levels"] {
+            let json = serde_json::json!({
+                "reasoning": {
+                    "supported": true,
+                    "toggle": "reasoning_effort",
+                    key: ["low", "medium", "xhigh"],
+                    "default_effort": "xhigh"
+                }
+            });
+            let r = parse_capabilities(Some(&json))
+                .reasoning
+                .expect("reasoning present");
+            assert_eq!(
+                r.effort_levels.as_deref(),
+                Some(["low".to_string(), "medium".to_string(), "xhigh".to_string()].as_slice()),
+                "levels not read from key {}",
+                key
+            );
+            assert_eq!(r.default_effort.as_deref(), Some("xhigh"));
+        }
+    }
+
+    /// A mechanism named without a vocabulary must stay `None` rather than
+    /// become an empty list — the client treats "no levels" as "offer no
+    /// effort control", and an empty Vec would read as an enumerated nothing.
+    #[test]
+    fn parse_capabilities_effort_levels_absent_or_unusable_stay_none() {
+        let cases = [
+            serde_json::json!({ "reasoning": { "supported": true, "toggle": "reasoning_effort" } }),
+            serde_json::json!({
+                "reasoning": { "supported": true, "toggle": "reasoning_effort", "effort_levels": [] }
+            }),
+            serde_json::json!({
+                "reasoning": { "supported": true, "toggle": "reasoning_effort", "effort_levels": [1, 2] }
+            }),
+        ];
+        for json in cases {
+            let r = parse_capabilities(Some(&json))
+                .reasoning
+                .expect("reasoning present");
+            assert!(r.effort_levels.is_none(), "unexpected levels for {}", json);
+            assert!(r.default_effort.is_none());
+        }
     }
 
     #[test]

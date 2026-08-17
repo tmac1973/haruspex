@@ -221,6 +221,24 @@ describe('jobs runner — guards', () => {
 
 		it('forces reasoning off for every turn of the job', async () => {
 			mocks.getJob.mockResolvedValueOnce(
+				makeJob({ model_advanced: JSON.stringify({ reasoning: { mode: 'off', effort: null } }) })
+			);
+			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+			const { enqueue } = await freshRunner();
+			await enqueue(1);
+			await tick();
+
+			expect(mocks.runEphemeralTurn.mock.calls[0][0].thinkingEnabled).toBe(false);
+		});
+
+		/**
+		 * Jobs written before effort existed store a bare string here. If that
+		 * degraded to 'inherit', a job whose owner turned reasoning off would
+		 * silently start reasoning again on the next unattended run.
+		 */
+		it('still honors the legacy bare-string reasoning value', async () => {
+			mocks.getJob.mockResolvedValueOnce(
 				makeJob({ model_advanced: JSON.stringify({ reasoning: 'off' }) })
 			);
 			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
@@ -230,6 +248,24 @@ describe('jobs runner — guards', () => {
 			await tick();
 
 			expect(mocks.runEphemeralTurn.mock.calls[0][0].thinkingEnabled).toBe(false);
+		});
+
+		it('carries the job effort level to the turn', async () => {
+			mocks.getJob.mockResolvedValueOnce(
+				makeJob({
+					model_advanced: JSON.stringify({ reasoning: { mode: 'inherit', effort: 'medium' } })
+				})
+			);
+			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+			const { enqueue } = await freshRunner();
+			await enqueue(1);
+			await tick();
+
+			const opts = mocks.runEphemeralTurn.mock.calls[0][0];
+			expect(opts.reasoningEffort).toBe('medium');
+			// Effort is independent of the on/off axis: inherit stays inherit.
+			expect(opts.thinkingEnabled).toBeNull();
 		});
 
 		it('carries the sampling source and custom params to the turn', async () => {

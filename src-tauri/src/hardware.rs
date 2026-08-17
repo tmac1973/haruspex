@@ -31,10 +31,18 @@ struct GpuInfo {
 /// Recommended quant by effective VRAM (MB) for a discrete GPU with known
 /// memory. Ascending thresholds; the first entry whose threshold the VRAM
 /// is *below* wins. The final `u64::MAX` row is the catch-all.
+///
+/// The thresholds sit ~1 GB *below* each nominal capacity on purpose. Cards do
+/// not report their nominal size — the figure is the device-local heap, which
+/// comes in some tens of MB short (a 12 GB card reports ~12,0xx MB). With a
+/// threshold of exactly 12288 such a card falls into the row below and gets a
+/// model sized for 8 GB, which is the bug this table has always had at the
+/// 8 GB and 16 GB boundaries.
 const QUANT_BY_VRAM_MB: &[(u64, &str)] = &[
-    (8192, "Qwen3.5-4B-IQ4_NL"),             // < 8 GB
-    (16384, "Qwen3.5-9B-IQ4_NL"),            // 8–16 GB (default tier)
-    (24576, "Qwen3.5-9B-UD-Q8_K_XL"),        // 16–24 GB
+    (7168, "Qwen3.5-4B-IQ4_NL"),             // < ~8 GB
+    (11264, "Qwen3.5-9B-IQ4_NL"),            // ~8–12 GB (default tier)
+    (15360, "Qwen3.5-9B-UD-Q6_K_XL"),        // ~12–16 GB
+    (23552, "Qwen3.5-9B-UD-Q8_K_XL"),        // ~16–24 GB
     (u64::MAX, "Qwen3.6-35B-A3B-UD-IQ4_NL"), // 24 GB+ → sparse MoE (dense 27B is opt-in only)
 ];
 
@@ -84,7 +92,9 @@ pub fn detect_hardware() -> HardwareInfo {
     // VRAM is unknown can't be modelled reliably, so they get the floor.
     let recommended_context_size = match gpu.vram_mb {
         Some(vram_mb) if !gpu.integrated => {
-            crate::models::recommended_context_for(recommended_quant, vram_mb * 1024 * 1024)
+            // First run has no saved preference, so assume the default (on).
+            // Models without an MTP head are unaffected either way.
+            crate::models::recommended_context_for(recommended_quant, vram_mb * 1024 * 1024, true)
         }
         _ => crate::models::MIN_CONTEXT,
     };
@@ -426,6 +436,7 @@ mod tests {
         let valid_quants = [
             "Qwen3.5-4B-IQ4_NL",
             "Qwen3.5-9B-IQ4_NL",
+            "Qwen3.5-9B-UD-Q6_K_XL",
             "Qwen3.5-9B-UD-Q8_K_XL",
             "Qwen3.6-35B-A3B-UD-IQ4_NL",
         ];
@@ -434,6 +445,46 @@ mod tests {
             "Unexpected quant: {}",
             info.recommended_quant
         );
+    }
+
+    /// Cards report the device-local heap, not their nominal capacity, so
+    /// every rung is checked with a figure a few hundred MB short of nominal —
+    /// that undershoot is exactly what used to drop a card into the tier
+    /// below and hand it a model sized for half its VRAM.
+    #[test]
+    fn quant_tiers_tolerate_under_nominal_vram_reports() {
+        let cases = [
+            (6144, "Qwen3.5-4B-IQ4_NL"),          // 6 GB
+            (8188, "Qwen3.5-9B-IQ4_NL"),          // "8 GB", reported short
+            (10240, "Qwen3.5-9B-IQ4_NL"),         // 10 GB
+            (12038, "Qwen3.5-9B-UD-Q6_K_XL"),     // "12 GB", reported short
+            (16303, "Qwen3.5-9B-UD-Q8_K_XL"),     // "16 GB", reported short
+            (24110, "Qwen3.6-35B-A3B-UD-IQ4_NL"), // "24 GB", reported short
+            (32768, "Qwen3.6-35B-A3B-UD-IQ4_NL"), // 32 GB
+        ];
+        for (vram_mb, expected) in cases {
+            assert_eq!(
+                tier_lookup(QUANT_BY_VRAM_MB, vram_mb),
+                expected,
+                "{} MB should recommend {}",
+                vram_mb,
+                expected
+            );
+        }
+    }
+
+    /// Every id the tier table can return has to resolve in the registry, or
+    /// first-run setup offers a download that goes nowhere and the context
+    /// recommendation silently falls back to the floor.
+    #[test]
+    fn quant_tier_ids_resolve_in_registry() {
+        for (_, id) in QUANT_BY_VRAM_MB {
+            assert!(
+                crate::models::context_ceiling_for(id, 24 * 1024 * 1024 * 1024, true).is_some(),
+                "tier table references a model id the registry can't size: {}",
+                id
+            );
+        }
     }
 
     #[cfg(target_os = "linux")]

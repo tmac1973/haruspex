@@ -8,7 +8,7 @@
 		MIN_MAX_RESPONSE_TOKENS,
 		MAX_MAX_RESPONSE_TOKENS
 	} from '$lib/stores/settings';
-	import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import { clampInt } from '$lib/utils/clampInt';
 
 	let thinkingEnabled = $state(getSettings().thinkingEnabled);
@@ -17,6 +17,30 @@
 	// it would have no effect. Local + other remote backends are assumed
 	// capable. Snapshot at mount, matching the rest of this section.
 	let reasoningSupported = $state(resolveBackendDescriptor().reasoningSupported);
+	// Effort levels are the model's own vocabulary — Qwen 3.8 takes
+	// low/medium/xhigh, most OpenRouter models none/low/medium/high. When the
+	// active model publishes a vocabulary those are the only options offered;
+	// otherwise we fall back to the known union so the user can still set a
+	// standing preference. The control is always visible: hiding it whenever
+	// the current backend has no effort axis is indistinguishable from the
+	// feature not existing.
+	let effortCaps = $state(resolveBackendDescriptor().reasoningEffort);
+	let reasoningEffort = $state(getSettings().reasoningEffort);
+
+	const effortOptions = $derived.by(() => {
+		const levels = effortCaps?.levels ?? KNOWN_EFFORT_LEVELS;
+		// A level chosen for a different model must stay visible and selected
+		// rather than silently reading as "Model default" — it IS still the
+		// stored preference, it just doesn't reach this backend.
+		return reasoningEffort && !levels.includes(reasoningEffort)
+			? [...levels, reasoningEffort]
+			: levels;
+	});
+
+	/** Whether the stored level actually reaches the active model. */
+	const effortApplies = $derived(
+		!reasoningEffort || (effortCaps?.levels.includes(reasoningEffort) ?? false)
+	);
 	let keepRecentToolResults = $state(getSettings().keepRecentToolResults);
 	let customSystemPrompt = $state(getSettings().customSystemPrompt);
 	let sandboxEnabled = $state(getSettings().sandboxEnabled);
@@ -49,6 +73,11 @@
 	function toggleThinkingEnabled() {
 		thinkingEnabled = !thinkingEnabled;
 		updateSettings({ thinkingEnabled });
+	}
+
+	function setReasoningEffort(value: string) {
+		reasoningEffort = value || null;
+		updateSettings({ reasoningEffort });
 	}
 
 	function toggleKeepRecentToolResults() {
@@ -95,6 +124,36 @@
 			</div>
 		</label>
 	{/if}
+	<div class="search-provider" style="margin-top: 4px">
+		<label for="reasoning-effort">Reasoning effort:</label>
+		<select
+			id="reasoning-effort"
+			value={reasoningEffort ?? ''}
+			onchange={(e) => setReasoningEffort(e.currentTarget.value)}
+			disabled={!thinkingEnabled}
+		>
+			<option value=""
+				>Model default{effortCaps?.modelDefault ? ` (${effortCaps.modelDefault})` : ''}</option
+			>
+			{#each effortOptions as level (level)}
+				<option value={level}>{level}</option>
+			{/each}
+		</select>
+		<p class="hint">
+			How hard the model thinks before answering. A lower level tells it up front to keep the chain
+			of thought short, so it still reaches a conclusion — nothing is cut off part-way.
+			{#if !thinkingEnabled}
+				Only applies while reasoning mode is on.
+			{:else if !effortCaps}
+				Only some models take an effort level, and the active one doesn't publish any — your choice
+				is kept and applied wherever it is understood (Qwen 3.8, most OpenRouter reasoning models),
+				and ignored elsewhere.
+			{:else if !effortApplies}
+				The active model accepts only {effortCaps.levels.join(', ')}, so it will use its own default
+				({effortCaps.modelDefault ?? 'unspecified'}) until you pick one of those.
+			{/if}
+		</p>
+	</div>
 	<label class="toggle-row">
 		<input type="checkbox" checked={keepRecentToolResults} onchange={toggleKeepRecentToolResults} />
 		<div>

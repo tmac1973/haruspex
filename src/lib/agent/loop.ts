@@ -242,6 +242,14 @@ export interface AgentLoopOptions {
 	 */
 	thinkingEnabled?: boolean | null;
 	/**
+	 * Per-turn reasoning effort — how hard to think, for models that expose
+	 * that as a separate axis from on/off. `undefined`/`null` uses the global
+	 * `reasoningEffort` setting. Validated against the model's advertised
+	 * levels at send time, so a level this backend's model doesn't know is
+	 * dropped rather than sent.
+	 */
+	reasoningEffort?: string | null;
+	/**
 	 * Where this turn's sampling values come from. Omitted = 'profile', the
 	 * historical behavior (discovered presets over the built-in family
 	 * profile). 'server' sends no sampling fields at all, so a server whose

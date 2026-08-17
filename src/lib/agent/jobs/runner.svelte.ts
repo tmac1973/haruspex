@@ -66,12 +66,15 @@ function jobBackendOverride(job: JobWithSteps): BackendOverride | undefined {
  */
 function jobTurnPolicy(job: JobWithSteps): {
 	thinkingEnabled: boolean | null;
+	reasoningEffort: string | null;
 	samplingSource: 'server' | 'profile' | 'custom';
 	samplingParams: SamplingParams | null;
 } {
 	const advanced = parseModelAdvanced(job.model_advanced);
+	const mode = advanced.reasoning.mode;
 	return {
-		thinkingEnabled: advanced.reasoning === 'inherit' ? null : advanced.reasoning === 'on',
+		thinkingEnabled: mode === 'inherit' ? null : mode === 'on',
+		reasoningEffort: advanced.reasoning.effort,
 		samplingSource: advanced.sampling.source,
 		samplingParams: advanced.sampling.params
 	};

@@ -33,8 +33,21 @@ import type { RemoteReasoningCaps, RemoteSamplingCaps, SamplingParams } from '$l
  */
 export type SamplingSource = 'server' | 'profile' | 'custom';
 
-/** Per-job reasoning: inherit the global setting, or force it either way. */
-export type ReasoningOverride = 'inherit' | 'on' | 'off';
+/** Per-job reasoning mode: inherit the global setting, or force it either way. */
+export type ReasoningMode = 'inherit' | 'on' | 'off';
+
+/**
+ * Per-job reasoning: whether to think, and how hard.
+ *
+ * Two axes because the model treats them as two — Qwen 3.8 reads its
+ * `reasoning_effort` from inside the `enable_thinking` branch, and has no
+ * "none" level to express off with.
+ */
+export interface ReasoningOverride {
+	mode: ReasoningMode;
+	/** null = inherit the global effort selection. */
+	effort: string | null;
+}
 
 /** Capabilities read from the last successful probe of the override server. */
 export interface DiscoveredCaps {
@@ -55,7 +68,7 @@ export interface JobModelAdvanced {
 
 export function defaultModelAdvanced(): JobModelAdvanced {
 	return {
-		reasoning: 'inherit',
+		reasoning: { mode: 'inherit', effort: null },
 		sampling: { source: 'profile', params: null },
 		discovered: null
 	};
@@ -97,7 +110,8 @@ export function parseModelAdvanced(json: string | null | undefined): JobModelAdv
  */
 export function serializeModelAdvanced(cfg: JobModelAdvanced): string | null {
 	const isDefault =
-		cfg.reasoning === 'inherit' &&
+		cfg.reasoning.mode === 'inherit' &&
+		cfg.reasoning.effort === null &&
 		cfg.sampling.source === 'profile' &&
 		cfg.sampling.params === null &&
 		cfg.discovered === null;
@@ -114,8 +128,22 @@ export function serializeModelAdvanced(cfg: JobModelAdvanced): string | null {
 	});
 }
 
+/**
+ * Accepts both shapes: the bare string this field used to be, and the
+ * `{mode, effort}` object it is now. Jobs configured before effort existed are
+ * sitting in user databases, and degrading one of them to `inherit` would
+ * silently turn reasoning back on for a job whose owner turned it off.
+ */
 function parseReasoning(v: unknown): ReasoningOverride {
-	return v === 'on' || v === 'off' ? v : 'inherit';
+	if (typeof v === 'string') {
+		return { mode: v === 'on' || v === 'off' ? v : 'inherit', effort: null };
+	}
+	if (!v || typeof v !== 'object') return { mode: 'inherit', effort: null };
+	const raw = v as Record<string, unknown>;
+	return {
+		mode: raw.mode === 'on' || raw.mode === 'off' ? raw.mode : 'inherit',
+		effort: typeof raw.effort === 'string' && raw.effort.length > 0 ? raw.effort : null
+	};
 }
 
 function parseSampling(v: unknown): JobModelAdvanced['sampling'] {
@@ -160,11 +188,18 @@ function parseReasoningCaps(v: unknown): RemoteReasoningCaps | null {
 	if (!v || typeof v !== 'object') return null;
 	const raw = v as Record<string, unknown>;
 	if (typeof raw.supported !== 'boolean') return null;
+	// Non-string members are dropped rather than coerced: every surviving level
+	// is sent to a template that raises on anything it doesn't recognize.
+	const levels = Array.isArray(raw.effort_levels)
+		? raw.effort_levels.filter((l): l is string => typeof l === 'string')
+		: [];
 	return {
 		supported: raw.supported,
 		default_enabled: raw.default_enabled === true,
 		toggle: typeof raw.toggle === 'string' ? raw.toggle : 'none',
-		kwarg: typeof raw.kwarg === 'string' ? raw.kwarg : null
+		kwarg: typeof raw.kwarg === 'string' ? raw.kwarg : null,
+		effort_levels: levels.length > 0 ? levels : null,
+		default_effort: typeof raw.default_effort === 'string' ? raw.default_effort : null
 	};
 }
 

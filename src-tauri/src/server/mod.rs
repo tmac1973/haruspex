@@ -56,6 +56,10 @@ pub struct ServerConfig {
     pub ctx_size: u32,
     pub n_gpu_layers: i32,
     pub flash_attn: bool,
+    /// Drive the model's bundled multi-token-prediction head as a
+    /// self-speculative draft. Only ever true for a model that actually
+    /// carries one — see `models::model_supports_mtp`.
+    pub mtp: bool,
     pub extra_args: Vec<String>,
 }
 
@@ -69,6 +73,7 @@ impl Default for ServerConfig {
             ctx_size: 16384,
             n_gpu_layers: 99,
             flash_attn: true,
+            mtp: false,
             extra_args: Vec::new(),
         }
     }
@@ -106,6 +111,16 @@ impl ServerConfig {
         args.push("--flash-attn".to_string());
         args.push(if self.flash_attn { "on" } else { "off" }.to_string());
 
+        if self.mtp {
+            // The head ships inside the weights file, so no draft model is
+            // needed: llama-server builds the MTP draft context against the
+            // target model itself. The type name is `draft-mtp` — a bare
+            // `mtp` is rejected as an unknown speculative type.
+            args.push("--spec-type".to_string());
+            args.push("draft-mtp".to_string());
+        }
+
+        // Last, so a power user's extra args can still override anything above.
         args.extend(self.extra_args.clone());
         args
     }
@@ -127,6 +142,15 @@ struct ServerInner {
     /// Drives the "Running on CPU" banner. Cleared on the next manual
     /// `start()` call.
     cpu_fallback_active: bool,
+    /// An MTP/speculative-decoding failure was seen during the current start
+    /// attempt — arms the one-shot retry without `--spec-type draft-mtp`.
+    mtp_error_detected: bool,
+    /// First MTP-related error line for the current attempt, surfaced as the
+    /// fallback reason.
+    mtp_error_reason: Option<String>,
+    /// Whether the MTP fallback has already fired for this start, so a model
+    /// that dies for an unrelated reason isn't retried forever.
+    mtp_fallback_attempted: bool,
     /// A context/KV-cache allocation failure was seen during the current
     /// start attempt — arms the context-backoff retry on exit. Cleared
     /// on each backoff respawn (every retry re-detects for itself).
@@ -158,6 +182,16 @@ impl ServerInner {
                     let cleaned = strip_ansi(line_str).trim().to_string();
                     if !cleaned.is_empty() {
                         self.ctx_alloc_error_reason = Some(cleaned);
+                    }
+                }
+            }
+            LogSignal::MtpError if !self.mtp_fallback_attempted => {
+                warn!("MTP error detected, will retry without speculative decoding on exit");
+                self.mtp_error_detected = true;
+                if self.mtp_error_reason.is_none() {
+                    let cleaned = strip_ansi(line_str).trim().to_string();
+                    if !cleaned.is_empty() {
+                        self.mtp_error_reason = Some(cleaned);
                     }
                 }
             }
@@ -203,6 +237,9 @@ impl LlamaServer {
                 gpu_error_detected: false,
                 gpu_error_reason: None,
                 cpu_fallback_active: false,
+                mtp_error_detected: false,
+                mtp_error_reason: None,
+                mtp_fallback_attempted: false,
                 ctx_alloc_error_detected: false,
                 ctx_alloc_error_reason: None,
                 generation: 0,
@@ -246,6 +283,9 @@ impl LlamaServer {
             inner.gpu_error_detected = false;
             inner.gpu_error_reason = None;
             inner.cpu_fallback_active = false;
+            inner.mtp_error_detected = false;
+            inner.mtp_error_reason = None;
+            inner.mtp_fallback_attempted = false;
             inner.ctx_alloc_error_detected = false;
             inner.ctx_alloc_error_reason = None;
         }
@@ -423,6 +463,17 @@ impl LlamaServer {
             crash_telemetry::record(app, &report);
         }
 
+        // Speculative decoding blamed? Drop that flag first. It is the one
+        // piece of the configuration that is pure optimization, so losing it
+        // costs only speed — where a smaller context costs the user's
+        // conversation length and CPU fallback costs an order of magnitude of
+        // throughput. Also catches the memory case at the ladder floor, where
+        // there is no smaller context left to try.
+        if let Some(reason) = Self::take_mtp_fallback(inner).await {
+            Self::respawn_without_mtp(inner, app, model_path, reason).await;
+            return;
+        }
+
         // Context too big to allocate? Back down one ladder rung and retry
         // on the same device before considering the CPU fallback — a smaller
         // KV cache on the GPU beats the full context on the CPU.
@@ -567,6 +618,84 @@ impl LlamaServer {
                 let mut state = inner.lock().await;
                 state.status =
                     ServerStatus::Error(format!("Context-backoff respawn failed: {}", e));
+                let _ = app.emit("server-status-changed", &state.status);
+            }
+        }
+    }
+
+    /// Clear the dead child and decide whether to retry once without
+    /// `--spec-type draft-mtp`, returning the reason to show the user.
+    ///
+    /// Fires when the start attempt had MTP on and either (a) a log line named
+    /// MTP/speculative decoding as the failure, or (b) memory allocation
+    /// failed with no smaller context rung left — at the ladder floor the
+    /// draft context is the only thing still worth giving up.
+    ///
+    /// This exists because llama.cpp's Vulkan MTP support is new (upstream
+    /// #26827, #27237 open at the time of writing) and a flag that stops the
+    /// app from starting needs the app to fix itself, not a settings edit the
+    /// user can't reach.
+    async fn take_mtp_fallback(inner: &Arc<Mutex<ServerInner>>) -> Option<String> {
+        let mut state = inner.lock().await;
+        if state.status != ServerStatus::Starting
+            || state.mtp_fallback_attempted
+            || !state.config.mtp
+        {
+            return None;
+        }
+        let out_of_rungs =
+            state.ctx_alloc_error_detected && next_lower_ctx(state.config.ctx_size).is_none();
+        if !state.mtp_error_detected && !out_of_rungs {
+            return None;
+        }
+        state.child = None;
+        state.mtp_fallback_attempted = true;
+        state.mtp_error_detected = false;
+        state.config.mtp = false;
+        // The retry is a different configuration, so the previous attempt's
+        // signals must not carry into it and trip a second recovery path.
+        state.ctx_alloc_error_detected = false;
+        state.gpu_error_detected = false;
+        state.gpu_error_reason = None;
+        Some(state.mtp_error_reason.take().unwrap_or_else(|| {
+            "Multi-token prediction failed to start — retrying without it.".to_string()
+        }))
+    }
+
+    /// Respawn with MTP off after `take_mtp_fallback` armed it. Bumps the
+    /// generation like the context backoff does: the model reloads from
+    /// scratch, so the retry needs its own reader and health-poll window.
+    async fn respawn_without_mtp(
+        inner: &Arc<Mutex<ServerInner>>,
+        app: &AppHandle,
+        model_path: &str,
+        reason: String,
+    ) {
+        warn!("multi-token prediction failed ({reason}) — retrying without it");
+        let args = Self::build_llama_args(app, inner, model_path).await;
+        match Self::spawn_llama(app, &args) {
+            Ok((new_rx, new_child)) => {
+                let gen = {
+                    let mut state = inner.lock().await;
+                    state.child = Some(new_child);
+                    state.started_at = Some(Instant::now());
+                    state.generation += 1;
+                    state.generation
+                };
+                let _ = app.emit("mtp-fallback-active", &reason);
+                Self::spawn_output_reader(
+                    inner.clone(),
+                    app.clone(),
+                    model_path.to_string(),
+                    new_rx,
+                    gen,
+                );
+                Self::spawn_health_poller(inner.clone(), app.clone(), gen);
+            }
+            Err(e) => {
+                error!("MTP fallback respawn failed: {}", e);
+                let mut state = inner.lock().await;
+                state.status = ServerStatus::Error(format!("MTP fallback respawn failed: {}", e));
                 let _ = app.emit("server-status-changed", &state.status);
             }
         }
@@ -779,9 +908,20 @@ pub async fn start_server(
     // before invoking, so there's a single user-facing default (audit X4).
     ctx_size: u32,
     extra_args: Option<Vec<String>>,
+    // The user's `mtpEnabled` preference. `None` (first-run setup, which
+    // doesn't read settings) means "no objection" — the model's own capability
+    // decides, which is the same answer the default preference gives.
+    mtp: Option<bool>,
 ) -> Result<(), String> {
+    let filename = Path::new(&model_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
     let config = ServerConfig {
         ctx_size,
+        // Both have to agree: the user hasn't turned it off AND this GGUF
+        // actually carries a head to draft from.
+        mtp: mtp.unwrap_or(true) && crate::models::model_supports_mtp(&filename),
         extra_args: extra_args.unwrap_or_default(),
         ..Default::default()
     };
@@ -844,6 +984,112 @@ mod tests {
         assert_eq!(next_lower_ctx(100_000), Some(65536));
     }
 
+    /// A `Starting` state with MTP on, as the supervisor would have it after
+    /// spawning the child that then died.
+    fn starting_with_mtp(ctx_size: u32) -> Arc<Mutex<ServerInner>> {
+        Arc::new(Mutex::new(ServerInner {
+            child: None,
+            status: ServerStatus::Starting,
+            config: ServerConfig {
+                ctx_size,
+                mtp: true,
+                ..Default::default()
+            },
+            log_buffer: VecDeque::new(),
+            gpu_fallback_attempted: false,
+            gpu_error_detected: false,
+            gpu_error_reason: None,
+            cpu_fallback_active: false,
+            mtp_error_detected: false,
+            mtp_error_reason: None,
+            mtp_fallback_attempted: false,
+            ctx_alloc_error_detected: false,
+            ctx_alloc_error_reason: None,
+            generation: 1,
+            started_at: None,
+        }))
+    }
+
+    #[tokio::test]
+    async fn mtp_fallback_fires_once_on_a_named_mtp_failure() {
+        let inner = starting_with_mtp(65536);
+        {
+            let mut state = inner.lock().await;
+            state.mtp_error_detected = true;
+            state.mtp_error_reason = Some("MTP requires ctx_tgt and ctx_dft".to_string());
+        }
+
+        let reason = LlamaServer::take_mtp_fallback(&inner).await;
+        assert_eq!(reason.as_deref(), Some("MTP requires ctx_tgt and ctx_dft"));
+        {
+            let state = inner.lock().await;
+            assert!(!state.config.mtp, "the flag must be dropped for the retry");
+            // Context is untouched: MTP is the suspect, not the size.
+            assert_eq!(state.config.ctx_size, 65536);
+        }
+
+        // One shot only — a model that keeps dying must not respawn forever.
+        let mut state = inner.lock().await;
+        state.mtp_error_detected = true;
+        state.config.mtp = true;
+        drop(state);
+        assert!(LlamaServer::take_mtp_fallback(&inner).await.is_none());
+    }
+
+    /// At the ladder floor there is no smaller context left to try, so the
+    /// draft context is the only thing still worth giving up before the
+    /// harsher CPU fallback.
+    #[tokio::test]
+    async fn mtp_fallback_covers_the_context_ladder_floor() {
+        let inner = starting_with_mtp(crate::models::MIN_CONTEXT);
+        {
+            let mut state = inner.lock().await;
+            state.ctx_alloc_error_detected = true;
+        }
+        assert!(LlamaServer::take_mtp_fallback(&inner).await.is_some());
+
+        // With a rung still below, the context backoff owns the retry instead.
+        let inner = starting_with_mtp(65536);
+        {
+            let mut state = inner.lock().await;
+            state.ctx_alloc_error_detected = true;
+        }
+        assert!(LlamaServer::take_mtp_fallback(&inner).await.is_none());
+    }
+
+    /// The retry runs a different configuration, so signals from the failed
+    /// attempt must not survive into it and trip a second recovery path —
+    /// that is how one bad start turns into a CPU fallback nobody asked for.
+    #[tokio::test]
+    async fn mtp_fallback_clears_sibling_signals() {
+        let inner = starting_with_mtp(crate::models::MIN_CONTEXT);
+        {
+            let mut state = inner.lock().await;
+            state.mtp_error_detected = true;
+            state.ctx_alloc_error_detected = true;
+            state.gpu_error_detected = true;
+            state.gpu_error_reason = Some("vulkan: something".to_string());
+        }
+
+        assert!(LlamaServer::take_mtp_fallback(&inner).await.is_some());
+        let state = inner.lock().await;
+        assert!(!state.ctx_alloc_error_detected);
+        assert!(!state.gpu_error_detected);
+        assert!(state.gpu_error_reason.is_none());
+    }
+
+    #[tokio::test]
+    async fn mtp_fallback_stays_out_of_the_way_when_mtp_is_off() {
+        let inner = starting_with_mtp(65536);
+        {
+            let mut state = inner.lock().await;
+            state.config.mtp = false;
+            // Even a line that named MTP: without the flag, it isn't ours.
+            state.mtp_error_detected = true;
+        }
+        assert!(LlamaServer::take_mtp_fallback(&inner).await.is_none());
+    }
+
     #[test]
     fn default_config_values() {
         let config = ServerConfig::default();
@@ -881,6 +1127,39 @@ mod tests {
         assert!(args.contains(&"--jinja".to_string()));
         assert!(args.contains(&"--host".to_string()));
         assert!(args.contains(&"127.0.0.1".to_string()));
+    }
+
+    /// `draft-mtp` is the exact type name — llama.cpp's name map has no bare
+    /// `mtp`, and an unknown speculative type throws rather than degrading.
+    #[test]
+    fn build_args_adds_the_mtp_spec_type_only_when_enabled() {
+        let off = ServerConfig::default().build_args("/path/to/model.gguf");
+        assert!(!off.contains(&"--spec-type".to_string()));
+
+        let on = ServerConfig {
+            mtp: true,
+            ..Default::default()
+        }
+        .build_args("/path/to/model.gguf");
+        let idx = on
+            .iter()
+            .position(|a| a == "--spec-type")
+            .expect("--spec-type present when mtp is on");
+        assert_eq!(on[idx + 1], "draft-mtp");
+    }
+
+    /// Extra args land last so a power user can still override anything the
+    /// config decided — including the MTP flag.
+    #[test]
+    fn build_args_keeps_extra_args_after_the_mtp_flag() {
+        let args = ServerConfig {
+            mtp: true,
+            extra_args: vec!["--spec-type".to_string(), "none".to_string()],
+            ..Default::default()
+        }
+        .build_args("/path/to/model.gguf");
+        let last = args.iter().rposition(|a| a == "--spec-type").unwrap();
+        assert_eq!(args[last + 1], "none");
     }
 
     #[test]
@@ -932,6 +1211,9 @@ mod tests {
             gpu_error_detected: false,
             gpu_error_reason: None,
             cpu_fallback_active: false,
+            mtp_error_detected: false,
+            mtp_error_reason: None,
+            mtp_fallback_attempted: false,
             ctx_alloc_error_detected: false,
             ctx_alloc_error_reason: None,
             generation: 0,
