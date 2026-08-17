@@ -68,10 +68,27 @@ If the browser cannot be found, cannot launch, or dies mid-search, browser mode
 **falls back to the plain `search_auto` rotation** and records that it did. An
 unattended 3am job must not fail because Chrome was uninstalled last week.
 
-The fallback is surfaced, not silent: the result carries a note the UI can show
-("Browser search unavailable — used the standard rotation"), and it increments
-a global counter so the Settings page can say browser mode is not actually
-working.
+**The fallback is loud.** A mode that has quietly been using the standard
+rotation for a week must not look healthy, so it announces itself at three
+levels:
+
+1. **Log** — `warn!` with the concrete reason (no browser found / launch
+   failed / crashed mid-search) and the paths searched, so a support question
+   is answerable from the log alone.
+2. **Event + toast** — Rust emits `browser-search-fallback` carrying the
+   reason, mirroring how `gpu-fallback-active` already drives the CPU-fallback
+   banner. The frontend shows a toast, but **only on transition into the
+   fallback state**, not per search: a research turn issues dozens of searches
+   and dozens of identical toasts is how people learn to ignore them.
+3. **Persistent card** — a banner in Settings → Search that stays until browser
+   mode works again (phase 03). The toast is missable; the card is the thing
+   that is still there tomorrow.
+
+A global counter (`GlobalCounter::BrowserFallback`) records occurrences so the
+stats can show it too.
+
+Recovery is silent by contrast: once a browser is found again, the state clears
+and the card disappears without another notification.
 
 ### 5. Keep the stats populations apart
 

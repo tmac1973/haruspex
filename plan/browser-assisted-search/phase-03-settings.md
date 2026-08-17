@@ -53,8 +53,23 @@ Two things the section should state plainly, because both are surprising:
 - **It is slower.** Roughly 2x per search, measured. Worth it for the engines
   it unlocks; not worth pretending otherwise.
 
-If phase 02's fallback has been firing, say that too — a mode that has silently
-been using the standard rotation for a week should not look healthy.
+### 4b. The fallback card
+
+When phase 02's fallback is active, Settings → Search shows a persistent
+warning card — not a hint, a card with the same weight as the CPU-fallback
+banner:
+
+> **Browser search is not working.** Searches are using the standard rotation
+> instead. *<reason>* — Chrome or Chromium was not found in any of: …
+
+It stays until browser mode works again, and carries the "Check again" action
+so the fix is one click from the complaint. Paired with the toast phase 02
+fires on transition, that covers both the person watching and the person who
+walked away.
+
+The card is deliberately not dismissible: dismissing it would restore exactly
+the silence the whole arrangement exists to prevent. It disappears when the
+condition clears, and only then.
 
 ### 5. Tests
 
