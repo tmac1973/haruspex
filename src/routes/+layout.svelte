@@ -46,6 +46,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import { syncRemoteServer } from '$lib/remote/service';
 	import { messageText, type ChatMessage } from '$lib/api';
 	import { installMarkdownActions } from '$lib/markdown-actions';
 	import {
@@ -149,6 +150,10 @@
 		// to clean up — we don't want the scheduler enqueuing while the
 		// runner thinks the DB has a stale 'running' row.
 		void recoverOrphanRuns().then(() => startScheduler());
+		// Remote web chat, if Settings has it on. Only the main window does
+		// this: the driver answers a process-wide event, so a second listener
+		// in a detached shell would race it for every guest prompt.
+		void syncRemoteServer();
 
 		try {
 			version = await getVersion();

@@ -29,7 +29,12 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type { BackendOverride } from '$lib/api';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 
-export type InferenceConsumer = 'chat' | 'shell' | { kind: 'job'; jobName: string };
+export type InferenceConsumer =
+	| 'chat'
+	| 'shell'
+	| { kind: 'job'; jobName: string }
+	/** A remote web-chat guest; `client` is their session id. See `remote/`. */
+	| { kind: 'remote'; client: string };
 
 export interface InferenceTicket {
 	/** `<windowLabel>:<n>` — unique across windows. */

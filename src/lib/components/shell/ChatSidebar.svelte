@@ -91,6 +91,7 @@
 		};
 	}
 	import type { ShellSession } from '$lib/stores/shell.svelte';
+	import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 
 	const { session }: { session: ShellSession } = $props();
 
@@ -99,6 +100,13 @@
 	const streaming = $derived(session.streamingContent);
 	const submitting = $derived(session.isSubmitting);
 	const ticket = $derived(session.ticket);
+
+	/** Names an inference consumer for the queue hint. */
+	function consumerLabel(consumer: InferenceTicket['consumer']): string {
+		if (consumer === 'chat') return 'a chat turn';
+		if (consumer === 'shell') return 'another shell turn';
+		return consumer.kind === 'job' ? `job "${consumer.jobName}"` : 'a remote guest';
+	}
 	const lastError = $derived(session.lastError);
 	const contextNotice = $derived(session.contextNotice);
 	const searchSteps = $derived(session.searchSteps);
@@ -430,11 +438,7 @@
 			{/if}
 			{#if ticket && ticket.state === 'waiting'}
 				<div class="queue-hint">
-					Waiting behind {ticket.consumer === 'chat'
-						? 'a chat turn'
-						: typeof ticket.consumer === 'object'
-							? `job "${ticket.consumer.jobName}"`
-							: 'another shell turn'}…
+					Waiting behind {consumerLabel(ticket.consumer)}…
 				</div>
 			{/if}
 			{#if contextNotice}

@@ -112,3 +112,48 @@ local serializes, parallel-capable remote backends do not.
 - Kill the browser mid-answer: the turn cancels rather than running to
   completion against a dead socket.
 - Wrong token: no chat box, no leak of whether the host is running anything.
+
+## As built (2026-08-17)
+
+Landed as `src-tauri/src/remote/` (relay, server, auth, commands) plus
+`src/lib/remote/` (driver, api, service). Six deviations from the plan above,
+each with its reason:
+
+**A disconnected client does not cancel the turn.** The plan said to drop the
+session when its SSE receiver goes away. That is wrong for the actual user: the
+target is someone on a phone, and a phone locks its screen mid-answer. Instead
+the relay keeps the answer buffer, replays it as a `snapshot` frame when the
+client reconnects, and only abandons a turn after [`ORPHAN_GRACE`] — 90s with no
+listener. A closed tab still gives back its inference slot, within 90 seconds
+instead of instantly.
+
+**The relay owns the answer buffer, not the driver.** The driver reports the
+whole answer so far on every update and the suffix is derived in Rust. That
+costs a slightly larger payload on an IPC hop that never leaves the process,
+and buys: one authoritative copy of the text, safe coalescing when updates
+outpace the channel (a superseded update can simply be dropped), and a lagged
+SSE subscriber that can be resynced with a snapshot rather than being fed a
+delta it would append to the wrong prefix. Tested in both directions.
+
+**`PromptSink` instead of an `AppHandle`.** The server takes a trait object for
+"deliver this prompt to something that can run it". Standing up an `AppHandle`
+in a test is not realistic, and the token check is exactly the kind of thing
+that should be tested as a client sees it — the interesting failure is a route
+wired up without the check, not a broken string comparison. Seven tests now
+drive a real socket on port 0 with `reqwest`, including the SSE stream.
+
+**Stopping a turn keeps what it wrote.** A cancelled turn reports `done` with
+the partial text rather than an error. The guest was already reading it;
+throwing it away to report the stop they asked for is the worse outcome.
+
+**Settings fields landed here, not in phase 04.** `remoteAccessEnabled`,
+`remoteAccessPort` and `remoteAccessToken`, defaulted off, plus
+`syncRemoteServer()` on startup. Phase 01 is not verifiable without a way to
+turn it on; phase 04 still owns the UI, the LAN address, the QR code and
+rotation.
+
+**Route syntax.** axum 0.8 uses `/api/stream/{session}`, not `:session`.
+
+Also worth knowing: the local UI already says "Waiting for another inference
+request to finish…" when queued, so contention with a guest is legible today
+without a change. Phase 04 can make it name the guest.

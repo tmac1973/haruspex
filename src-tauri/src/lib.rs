@@ -14,6 +14,7 @@ mod links;
 mod lint;
 mod models;
 mod proxy;
+mod remote;
 mod sandbox_fetch;
 mod sandbox_save;
 mod sandbox_sync;
@@ -31,6 +32,7 @@ use inference_queue::InferenceQueue;
 use models::ModelManager;
 use proxy::stats::{SearchStats, StatSinkHandle};
 use proxy::ProxyState;
+use remote::RemoteServer;
 use server::LlamaServer;
 use shell::ShellManager;
 use tauri::{Manager, RunEvent, WindowEvent};
@@ -90,6 +92,8 @@ pub fn run() {
         .manage(LlamaServer::new())
         .manage(InferenceQueue::new())
         .manage(ProxyState::new())
+        // Remote web chat's server: off until Settings turns it on.
+        .manage(RemoteServer::new())
         // One browser for the app's life: launched on demand by
         // browser-assisted search and dropped when idle, so nothing is
         // running unless that mode is in use.
@@ -126,6 +130,13 @@ pub fn run() {
             proxy::get_search_stats,
             proxy::reset_lifetime_search_stats,
             proxy::detect_browser,
+            remote::remote_start,
+            remote::remote_stop,
+            remote::remote_status,
+            remote::remote_turn_delta,
+            remote::remote_turn_running,
+            remote::remote_turn_done,
+            remote::remote_turn_error,
             proxy::images::proxy_image_search,
             proxy::images::proxy_fetch_url_images,
             inference::probe_inference_server,
@@ -260,6 +271,10 @@ pub fn run() {
                 // guaranteed to drop at process exit, so it is stopped here
                 // alongside the sidecars.
                 let browser = app.state::<proxy::BrowserSessionHandle>();
+                // Closing the listener matters on exit: a port still bound
+                // after the window is gone is the kind of thing that makes the
+                // next launch fail to bind.
+                app.state::<RemoteServer>().shutdown();
                 shell_mgr.shutdown_all();
                 tauri::async_runtime::block_on(async {
                     let _ = llama.stop().await;
