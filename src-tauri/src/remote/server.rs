@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Path, State};
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, SET_COOKIE};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
@@ -31,6 +32,15 @@ const REAP_INTERVAL: Duration = Duration::from_secs(15);
 /// Longest prompt a remote client may send. Generous for a chat box, small
 /// enough that a paste bomb is not a memory event.
 const MAX_MESSAGE_BYTES: usize = 32 * 1024;
+
+/// Longest answer read aloud in one request — around four minutes of speech.
+const MAX_SPEECH_CHARS: usize = 4000;
+
+/// The TTS sidecar's port, and the app's default voice. Kept local rather than
+/// threaded through the config so that changing the host's voice in Settings
+/// cannot restart the server and drop a guest mid-answer.
+const TTS_PORT: u16 = 3001;
+const DEFAULT_VOICE: &str = "af_heart";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,9 +131,12 @@ pub async fn start(
 
     let router = Router::new()
         .route("/", get(index))
+        .route("/app.css", get(stylesheet))
+        .route("/app.js", get(script))
         .route("/api/health", get(health))
         .route("/api/chat", post(chat))
         .route("/api/cancel", post(cancel))
+        .route("/api/speak", post(speak))
         .route("/api/stream/{session}", get(stream))
         .with_state(state);
 
@@ -192,14 +205,70 @@ async fn health() -> impl IntoResponse {
     Json(serde_json::json!({ "ok": true, "service": "haruspex" }))
 }
 
-/// Phase 02 replaces this with the real client. Until then it is a stub that
-/// proves the token path end to end.
 async fn index(State(state): State<AppState>, headers: HeaderMap, uri: Uri) -> Response {
     if unauthorised(&state, &headers, &uri).is_some() {
         // Deliberately says nothing about what is running here.
-        return Html(NO_TOKEN_PAGE).into_response();
+        return no_cache(Html(NO_TOKEN_PAGE).into_response());
     }
-    Html(PLACEHOLDER_PAGE).into_response()
+    let page = CLIENT_HTML.replace("{{host}}", &html_escape(&host_name()));
+    let mut response = no_cache(Html(page).into_response());
+    // So a guest who bookmarks the page, or adds it to their home screen
+    // without the query string, is not locked out of their own link.
+    if let Ok(cookie) = auth::token_cookie(&state.token).parse() {
+        response.headers_mut().insert(SET_COOKIE, cookie);
+    }
+    response
+}
+
+/// The client's assets are unauthenticated on purpose: they are a static page
+/// and a static script, identical for everyone, and gating them would only mean
+/// a guest whose cookie lapsed sees an unstyled page instead of a clear error
+/// from the API.
+async fn stylesheet() -> Response {
+    asset(CLIENT_CSS, "text/css; charset=utf-8")
+}
+
+async fn script() -> Response {
+    asset(CLIENT_JS, "text/javascript; charset=utf-8")
+}
+
+fn asset(body: &'static str, content_type: &'static str) -> Response {
+    let mut response = body.into_response();
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, content_type.parse().expect("static mime"));
+    no_cache(response)
+}
+
+/// Never cached. An app update changes these files, and a guest holding a
+/// months-old script that talks to a newer API is a bug nobody will diagnose
+/// from the other end of a phone call.
+fn no_cache(mut response: Response) -> Response {
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, "no-cache".parse().expect("static header"));
+    response
+}
+
+/// Whose computer this is, for the notice on the page. Best effort by design —
+/// the fallback still says something true.
+fn host_name() -> String {
+    std::env::var("COMPUTERNAME")
+        .ok()
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "this computer".to_string())
+}
+
+/// The hostname comes from the OS rather than from a request, but it is still
+/// interpolated into a page, and "trusted enough" is how injection happens.
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 #[derive(Debug, Deserialize)]
@@ -288,6 +357,115 @@ async fn cancel(
         // there is no turn running.
         None => StatusCode::NO_CONTENT.into_response(),
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct SpeakRequest {
+    text: String,
+}
+
+/// Reads an answer aloud, by relaying to the TTS sidecar the app already runs.
+///
+/// No synthesis happens here and no Tauri state is touched: koko listens on
+/// loopback and speaks an OpenAI-compatible dialect, so this is a proxy with a
+/// container swap. If the host has never turned TTS on, the sidecar is not
+/// running and the guest gets a plain "not available" rather than a hang.
+async fn speak(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Json(body): Json<SpeakRequest>,
+) -> Response {
+    if let Some(response) = unauthorised(&state, &headers, &uri) {
+        return response;
+    }
+    let text = body.text.trim();
+    if text.is_empty() {
+        return (StatusCode::BAD_REQUEST, "nothing to say").into_response();
+    }
+    // Long answers are truncated rather than refused: hearing the first part is
+    // more useful than an error, and synthesising ten minutes of audio to serve
+    // one tap is not.
+    let text = crate::text_util::truncate_at_char_boundary(text, MAX_SPEECH_CHARS);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build();
+    let Ok(client) = client else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not build a client",
+        )
+            .into_response();
+    };
+
+    let response = client
+        .post(format!("http://127.0.0.1:{TTS_PORT}/v1/audio/speech"))
+        .json(&serde_json::json!({
+            "model": "tts-1",
+            "input": text,
+            "voice": DEFAULT_VOICE,
+            "response_format": "pcm"
+        }))
+        .send()
+        .await;
+
+    let audio = match response {
+        Ok(response) if response.status().is_success() => response.bytes().await,
+        Ok(response) => {
+            log::warn!("[remote] speech failed: {}", response.status());
+            return (StatusCode::BAD_GATEWAY, "speech is not available").into_response();
+        }
+        Err(e) => {
+            log::info!("[remote] speech unavailable: {e}");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "the host has not turned on speech",
+            )
+                .into_response();
+        }
+    };
+    let Ok(audio) = audio else {
+        return (StatusCode::BAD_GATEWAY, "speech was cut off").into_response();
+    };
+    if audio.len() < 100 {
+        return (StatusCode::BAD_GATEWAY, "speech produced no audio").into_response();
+    }
+
+    let mut response = wav_from_pcm(&audio).into_response();
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, "audio/wav".parse().expect("static mime"));
+    no_cache(response)
+}
+
+/// Wrap koko's raw PCM in the 44-byte header a browser needs to play it.
+///
+/// The sidecar returns signed 16-bit mono at 24kHz — the same assumption the
+/// desktop playback path makes — and `<audio>` will not touch headerless PCM.
+fn wav_from_pcm(pcm: &[u8]) -> Vec<u8> {
+    const CHANNELS: u16 = 1;
+    const SAMPLE_RATE: u32 = 24_000;
+    const BITS: u16 = 16;
+    let byte_rate = SAMPLE_RATE * CHANNELS as u32 * (BITS / 8) as u32;
+    let block_align = CHANNELS * (BITS / 8);
+    let data_len = pcm.len() as u32;
+
+    let mut out = Vec::with_capacity(44 + pcm.len());
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes()); // PCM header size
+    out.extend_from_slice(&1u16.to_le_bytes()); // uncompressed
+    out.extend_from_slice(&CHANNELS.to_le_bytes());
+    out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    out.extend_from_slice(&byte_rate.to_le_bytes());
+    out.extend_from_slice(&block_align.to_le_bytes());
+    out.extend_from_slice(&BITS.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    out.extend_from_slice(pcm);
+    out
 }
 
 async fn stream(
@@ -386,14 +564,11 @@ const NO_TOKEN_PAGE: &str = r#"<!doctype html>
 including the part after the question mark.</p>
 "#;
 
-const PLACEHOLDER_PAGE: &str = r#"<!doctype html>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Haruspex</title>
-<style>body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:20vh auto;padding:0 1.5rem;color:#222}code{background:#eee;padding:0 4px}</style>
-<h1>Connected</h1>
-<p>Your link works. The chat client itself lands in the next phase; until then
-this page exists to prove the token and the server are wired up.</p>
-"#;
+// Served verbatim, so the client is editable without a build step and shows up
+// in a stack trace as itself.
+const CLIENT_HTML: &str = include_str!("client/index.html");
+const CLIENT_CSS: &str = include_str!("client/app.css");
+const CLIENT_JS: &str = include_str!("client/app.js");
 
 #[cfg(test)]
 mod tests {
@@ -533,10 +708,81 @@ mod http_tests {
     #[tokio::test]
     async fn an_unauthenticated_visitor_gets_no_chat_box_and_no_information() {
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
-        let body = reqwest::get(&base).await.unwrap().text().await.unwrap();
+        let response = reqwest::get(&base).await.unwrap();
+        // No cookie is handed out to someone who did not prove they had a link.
+        assert!(response.headers().get("set-cookie").is_none());
+        let body = response.text().await.unwrap();
         assert!(body.contains("You need a link"));
-        // Says nothing about what is running here, what model, or who owns it.
-        assert!(!body.to_lowercase().contains("connected"));
+        // No chat box, and nothing about the machine or who owns it.
+        assert!(!body.contains("id=\"composer\""));
+        assert!(!body.contains(&host_name()));
+        running.stop();
+    }
+
+    #[tokio::test]
+    async fn a_valid_link_serves_the_client_and_remembers_it() {
+        let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
+        let response = reqwest::get(format!("{base}/?t={TOKEN}")).await.unwrap();
+        let cookie = response
+            .headers()
+            .get("set-cookie")
+            .expect("a guest with a valid link gets a cookie")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(cookie.contains("SameSite=Strict"));
+
+        let body = response.text().await.unwrap();
+        assert!(body.contains("id=\"composer\""));
+        // The notice naming whose machine this is must survive templating.
+        assert!(body.contains(&host_name()), "hostname not interpolated");
+        assert!(!body.contains("{{host}}"));
+
+        // And the cookie alone is enough next time, which is what makes a
+        // bookmark or a home-screen shortcut work.
+        let client = reqwest::Client::new();
+        let bookmarked = client
+            .get(&base)
+            .header("Cookie", cookie)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(bookmarked.contains("id=\"composer\""));
+        running.stop();
+    }
+
+    #[tokio::test]
+    async fn the_client_assets_are_served_with_their_own_types() {
+        let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
+        for (path, expected) in [("/app.css", "text/css"), ("/app.js", "text/javascript")] {
+            let response = reqwest::get(format!("{base}{path}")).await.unwrap();
+            assert_eq!(response.status(), 200, "{path}");
+            let content_type = response
+                .headers()
+                .get("content-type")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string();
+            assert!(
+                content_type.starts_with(expected),
+                "{path} was {content_type}"
+            );
+            // A guest holding a stale script against a newer API is a bug
+            // nobody diagnoses over the phone.
+            assert_eq!(
+                response.headers().get("cache-control").unwrap(),
+                "no-cache",
+                "{path}"
+            );
+            assert!(
+                !response.text().await.unwrap().is_empty(),
+                "{path} was empty"
+            );
+        }
         running.stop();
     }
 
@@ -681,5 +927,32 @@ mod http_tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         panic!("server still answering after stop");
+    }
+}
+
+#[cfg(test)]
+mod wav_tests {
+    use super::*;
+
+    #[test]
+    fn pcm_is_wrapped_in_a_header_a_browser_will_play() {
+        let pcm = vec![0u8; 480]; // 10ms at 24kHz, 16-bit mono
+        let wav = wav_from_pcm(&pcm);
+
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(&wav[36..40], b"data");
+        assert_eq!(wav.len(), 44 + pcm.len());
+        // The two fields a player actually reads back, little-endian.
+        assert_eq!(u32::from_le_bytes(wav[4..8].try_into().unwrap()), 36 + 480);
+        assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 24_000);
+        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 480);
+    }
+
+    #[test]
+    fn an_empty_stream_still_produces_a_valid_header() {
+        let wav = wav_from_pcm(&[]);
+        assert_eq!(wav.len(), 44);
+        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 0);
     }
 }

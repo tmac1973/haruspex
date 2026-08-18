@@ -33,8 +33,18 @@ pub fn token_matches(expected: &str, provided: &str) -> bool {
     diff == 0
 }
 
-/// Pull a token from an `Authorization: Bearer` header, falling back to the
-/// query string of the request URI.
+/// Cookie set when a guest first opens a valid link, so the page still works
+/// from a bookmark or a home-screen shortcut that dropped the query string.
+///
+/// `SameSite=Strict` is what keeps this from becoming a CSRF hole: another site
+/// on the same network cannot make a browser attach it. The JSON content type
+/// the API requires is a second layer, since a cross-site form post cannot set
+/// one without a preflight.
+pub const TOKEN_COOKIE: &str = "haruspex_remote";
+
+/// Pull a token from an `Authorization: Bearer` header, then the query string,
+/// then the cookie. Explicit beats remembered: a fresh link always wins over a
+/// stale cookie, which is what makes rotation take effect immediately.
 pub fn extract_token(headers: &HeaderMap, query: Option<&str>) -> Option<String> {
     if let Some(value) = headers.get(axum::http::header::AUTHORIZATION) {
         if let Ok(text) = value.to_str() {
@@ -46,7 +56,13 @@ pub fn extract_token(headers: &HeaderMap, query: Option<&str>) -> Option<String>
             }
         }
     }
-    let query = query?;
+    if let Some(token) = query.and_then(query_token) {
+        return Some(token);
+    }
+    cookie_token(headers)
+}
+
+fn query_token(query: &str) -> Option<String> {
     for pair in query.split('&') {
         // A valueless parameter is skipped rather than ending the search — `?`
         // here would make `?debug&t=…` look like no token at all.
@@ -58,6 +74,26 @@ pub fn extract_token(headers: &HeaderMap, query: Option<&str>) -> Option<String>
         }
     }
     None
+}
+
+fn cookie_token(headers: &HeaderMap) -> Option<String> {
+    let cookies = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
+    for pair in cookies.split(';') {
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        if key.trim() == TOKEN_COOKIE {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
+}
+
+/// The `Set-Cookie` value handed to a guest whose link checked out.
+pub fn token_cookie(token: &str) -> String {
+    // A year: long enough that a phone shortcut keeps working, and revocation
+    // is rotation rather than expiry anyway.
+    format!("{TOKEN_COOKIE}={token}; Path=/; Max-Age=31536000; SameSite=Strict; HttpOnly")
 }
 
 #[cfg(test)]
@@ -101,6 +137,32 @@ mod tests {
             extract_token(&headers, Some("x=1&t=a%2Bb%3Dc")).as_deref(),
             Some("a+b=c")
         );
+    }
+
+    #[test]
+    fn a_cookie_stands_in_when_the_link_lost_its_query() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            HeaderValue::from_static("other=1; haruspex_remote=from-cookie"),
+        );
+        assert_eq!(
+            extract_token(&headers, None).as_deref(),
+            Some("from-cookie")
+        );
+        // But an explicit token still wins, so a rotated link takes effect
+        // without the guest having to clear anything.
+        assert_eq!(
+            extract_token(&headers, Some("t=from-query")).as_deref(),
+            Some("from-query")
+        );
+    }
+
+    #[test]
+    fn the_cookie_cannot_be_sent_cross_site() {
+        // SameSite=Strict is the whole CSRF story for the cookie path.
+        assert!(token_cookie("abc").contains("SameSite=Strict"));
+        assert!(token_cookie("abc").contains("HttpOnly"));
     }
 
     #[test]

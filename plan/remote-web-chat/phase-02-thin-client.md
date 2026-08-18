@@ -76,3 +76,52 @@ dropped without leaving a hole. If it slips, nothing else is blocked.
 - Ask while the host is mid-turn: waiting state appears, then the answer.
 - Read the page as someone who has never seen Haruspex — does it explain
   itself without a person standing next to you?
+
+## As built (2026-08-17)
+
+Three files under `src-tauri/src/remote/client/`, `include_str!`'d and served at
+`/`, `/app.css` and `/app.js`. No build step, no framework, no bundle — the
+page a guest gets is the file in the repo, byte for byte.
+
+**Tested as it ships.** `src/lib/remote/client.test.ts` loads the real
+`index.html` into jsdom and imports the real `app.js` from where Rust reads it,
+then drives the page with a fake transport: 12 tests covering escaping, link
+sanitising, streaming, the waiting state, reconnect-resume and the no-token
+state. A test against a copy of the client would have passed while the served
+page was broken.
+
+**Reload works, via a cookie.** The plan had the client stash the token in
+`localStorage`, which cannot work: the server gates `/` itself, so a reload
+without `?t=` never reaches the JavaScript that would remember anything. A valid
+link now sets `haruspex_remote` (`SameSite=Strict`, `HttpOnly`, one year), so a
+bookmark or a home-screen shortcut still opens. `SameSite=Strict` is what keeps
+that from being a CSRF hole; the JSON content type the API requires is the
+second layer. An explicit token still beats the cookie, so rotating a link takes
+effect immediately rather than after a guest clears their browser.
+
+**Speech landed after all** — it was cheaper than expected. koko already speaks
+an OpenAI-compatible dialect on loopback, so `POST /api/speak` is a proxy that
+touches no Tauri state at all: relay to `127.0.0.1:3001`, wrap the raw PCM in a
+44-byte WAV header (the sidecar returns headerless 16-bit mono at 24kHz, which
+no `<audio>` element will play), stream it back. A host who has never turned TTS
+on has no sidecar listening, and the guest gets "the host has not turned on
+speech" rather than a hang. The button appears only on finished answers —
+reading a half-written one aloud would synthesise a sentence about to change.
+
+**Transcript is client-side for now.** The page keeps the last 50 messages in
+`localStorage` so a reload is not amnesia. Phase 03 makes the conversation a
+real database row and supersedes this; until then it is the only history there
+is, and it is per-browser rather than per-host.
+
+**The type checker now covers the client.** Importing `app.js` into a test pulls
+it into the project's TypeScript program, which surfaced 51 findings. Rather
+than silencing them, the file carries JSDoc types and materialises its DOM
+lookups once behind an all-or-nothing guard — a page missing an element now
+fails at boot instead of throwing halfway through a guest's first message.
+
+## Still owed
+
+Everything in Verification above is a manual check on real hardware, and none of
+it has been done: no phone has opened this page. What the automated tests
+establish is that the page's logic is right, not that it is usable one-handed on
+a phone over WiFi.
