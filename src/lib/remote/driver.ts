@@ -16,11 +16,21 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+import {
+	dbCreateConversation,
+	dbLoadMessages,
+	dbReplaceMessages,
+	dbSaveMessage
+} from '$lib/stores/db';
+import { noteExternalConversation } from '$lib/stores/chat.svelte';
+import { conversationIdFor, prepareHistory, titleFor } from './conversation';
 
 export interface RemotePromptEvent {
 	sessionId: string;
 	turnId: string;
 	message: string;
+	/** What the guest calls themselves, for the conversation title. */
+	clientLabel?: string | null;
 }
 
 export interface RemoteCancelEvent {
@@ -89,6 +99,16 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 		await invoke('remote_turn_delta', { turnId, text });
 	});
 
+	// An ordinary conversation row, so the host sees the thread in their own
+	// sidebar and can read, rename or delete it like any other.
+	const conversationId = conversationIdFor(sessionId);
+	const title = titleFor(event.clientLabel);
+	await dbCreateConversation(conversationId, title);
+	noteExternalConversation(conversationId, title);
+
+	const history = await dbLoadMessages(conversationId);
+	await dbSaveMessage(conversationId, { role: 'user', content: message });
+
 	try {
 		const descriptor = resolveBackendDescriptor();
 		const result = await withInferenceSlot(
@@ -104,8 +124,19 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 					void invoke('remote_turn_running', { turnId }).catch(() => {});
 				}
 			},
-			() =>
-				runEphemeralTurn({
+			async () => {
+				// Inside the slot deliberately: summarising is itself a model
+				// call, and running it outside the queue would let a guest
+				// collide with the person at the keyboard.
+				const prepared = await prepareHistory(history, descriptor.contextSize, abort.signal);
+				if (prepared.rewritten) {
+					await dbReplaceMessages(conversationId, [
+						...prepared.messages,
+						{ role: 'user', content: message }
+					]);
+				}
+				return runEphemeralTurn({
+					history: prepared.messages,
 					userMessage: message,
 					// There is no remote working directory and never will be.
 					workingDir: null,
@@ -120,14 +151,20 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 						lastText = full;
 						pump.push(full);
 					}
-				})
+				});
+			}
 		);
+		await dbSaveMessage(conversationId, { role: 'assistant', content: result.finalText });
 		await invoke('remote_turn_done', { turnId, text: result.finalText });
 	} catch (error) {
 		if (abort.signal.aborted) {
-			// A stopped turn keeps what it had written. Throwing away a
-			// half-finished answer the guest was already reading would be a
-			// worse outcome than an answer that stops early.
+			// A stopped turn keeps what it had written, in the thread as well as
+			// on screen. Throwing away a half-finished answer the guest was
+			// already reading would be the worse outcome — and a history that
+			// omits it would make the next turn incoherent.
+			if (lastText) {
+				await dbSaveMessage(conversationId, { role: 'assistant', content: lastText });
+			}
 			await invoke('remote_turn_done', { turnId, text: lastText }).catch(() => {});
 		} else {
 			const messageText = error instanceof Error ? error.message : String(error);

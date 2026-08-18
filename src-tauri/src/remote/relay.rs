@@ -57,6 +57,11 @@ pub const IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// map keys. Bound them and keep them boring.
 const MAX_SESSION_ID_LEN: usize = 64;
 
+/// What a guest calls themselves, which ends up in the host's sidebar as a
+/// conversation title. Untrusted text: bounded here, stripped of control
+/// characters, and never allowed to be the only thing a title is made of.
+const MAX_LABEL_LEN: usize = 40;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnStatus {
@@ -203,6 +208,7 @@ pub struct PromptRequest {
     pub session_id: String,
     pub turn_id: String,
     pub message: String,
+    pub client_label: Option<String>,
 }
 
 impl Default for Relay {
@@ -272,6 +278,7 @@ impl Relay {
         &self,
         session_id: &str,
         message: String,
+        client_label: Option<String>,
     ) -> Result<PromptRequest, RelayError> {
         if !Self::valid_session_id(session_id) {
             return Err(RelayError::BadSessionId);
@@ -324,6 +331,7 @@ impl Relay {
             session_id: session_id.to_string(),
             turn_id,
             message,
+            client_label: client_label.and_then(|label| sanitise_label(&label)),
         })
     }
 
@@ -495,6 +503,28 @@ impl Relay {
     }
 }
 
+/// Guest-supplied names reach a conversation title and the host's UI. Strip
+/// anything that could disturb a log line or a layout, bound the length, and
+/// return `None` rather than an empty string so the caller's default applies.
+fn sanitise_label(label: &str) -> Option<String> {
+    let cleaned: String = label
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        return None;
+    }
+    Some(
+        cleaned
+            .chars()
+            .take(MAX_LABEL_LEN)
+            .collect::<String>()
+            .trim()
+            .to_string(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,7 +541,7 @@ mod tests {
     fn a_turn_streams_suffixes_not_whole_buffers() {
         let relay = Relay::new();
         let (mut rx, _) = relay.subscribe("s1").unwrap();
-        let req = relay.begin_turn("s1", "hi".into()).unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
 
         relay.push_text(&req.turn_id, "Hel").unwrap();
         relay.push_text(&req.turn_id, "Hello wor").unwrap();
@@ -531,7 +561,7 @@ mod tests {
     fn a_rewritten_buffer_resyncs_instead_of_corrupting() {
         let relay = Relay::new();
         let (mut rx, _) = relay.subscribe("s1").unwrap();
-        let req = relay.begin_turn("s1", "hi".into()).unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
         relay.push_text(&req.turn_id, "one two").unwrap();
         let _ = drain(&mut rx);
 
@@ -550,7 +580,7 @@ mod tests {
     fn reconnecting_replays_the_answer_so_far() {
         let relay = Relay::new();
         let (_rx, _) = relay.subscribe("s1").unwrap();
-        let req = relay.begin_turn("s1", "hi".into()).unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
         relay.push_text(&req.turn_id, "half an ans").unwrap();
 
         // A phone that locked its screen comes back mid-answer.
@@ -569,7 +599,7 @@ mod tests {
     fn a_finished_turn_is_still_readable_by_a_late_client() {
         let relay = Relay::new();
         let (_rx, _) = relay.subscribe("s1").unwrap();
-        let req = relay.begin_turn("s1", "hi".into()).unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
         relay.finish(&req.turn_id, "the answer".into()).unwrap();
         relay.unsubscribe("s1");
 
@@ -587,7 +617,7 @@ mod tests {
     fn late_deltas_from_a_finished_turn_are_dropped_not_panics() {
         let relay = Relay::new();
         let (_rx, _) = relay.subscribe("s1").unwrap();
-        let req = relay.begin_turn("s1", "hi".into()).unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
         relay.finish(&req.turn_id, "done".into()).unwrap();
 
         assert_eq!(
@@ -604,11 +634,14 @@ mod tests {
     fn one_turn_at_a_time_per_session() {
         let relay = Relay::new();
         let _ = relay.subscribe("s1").unwrap();
-        let first = relay.begin_turn("s1", "one".into()).unwrap();
-        assert_eq!(relay.begin_turn("s1", "two".into()), Err(RelayError::Busy));
+        let first = relay.begin_turn("s1", "one".into(), None).unwrap();
+        assert_eq!(
+            relay.begin_turn("s1", "two".into(), None),
+            Err(RelayError::Busy)
+        );
 
         relay.finish(&first.turn_id, "answered".into()).unwrap();
-        assert!(relay.begin_turn("s1", "two".into()).is_ok());
+        assert!(relay.begin_turn("s1", "two".into(), None).is_ok());
     }
 
     #[test]
@@ -633,16 +666,39 @@ mod tests {
         // it — this is the global cap.
         for i in 0..(MAX_TURNS_PER_MINUTE + 4) {
             let sid = format!("s{}", i % MAX_SESSIONS);
-            if let Ok(req) = relay.begin_turn(&sid, "hi".into()) {
+            if let Ok(req) = relay.begin_turn(&sid, "hi".into(), None) {
                 accepted += 1;
                 relay.finish(&req.turn_id, "ok".into()).unwrap();
             }
         }
         assert_eq!(accepted, MAX_TURNS_PER_MINUTE);
         assert_eq!(
-            relay.begin_turn("s0", "hi".into()),
+            relay.begin_turn("s0", "hi".into(), None),
             Err(RelayError::RateLimited)
         );
+    }
+
+    #[test]
+    fn a_guest_name_is_cleaned_before_it_reaches_a_title() {
+        let relay = Relay::new();
+        let named = relay
+            .begin_turn("s1", "hi".into(), Some("  Dave\n\u{7}  ".into()))
+            .unwrap();
+        assert_eq!(named.client_label.as_deref(), Some("Dave"));
+
+        // Nothing but whitespace is no name at all, so the caller's default
+        // wins rather than a title made of spaces.
+        relay.finish(&named.turn_id, "ok".into()).unwrap();
+        let blank = relay
+            .begin_turn("s1", "hi".into(), Some("   ".into()))
+            .unwrap();
+        assert_eq!(blank.client_label, None);
+
+        relay.finish(&blank.turn_id, "ok".into()).unwrap();
+        let long = relay
+            .begin_turn("s1", "hi".into(), Some("x".repeat(200)))
+            .unwrap();
+        assert_eq!(long.client_label.unwrap().chars().count(), MAX_LABEL_LEN);
     }
 
     #[test]
@@ -665,7 +721,7 @@ mod tests {
     fn a_subscribed_session_is_never_reaped() {
         let relay = Relay::new();
         let (_rx, _) = relay.subscribe("s1").unwrap();
-        let _req = relay.begin_turn("s1", "hi".into()).unwrap();
+        let _req = relay.begin_turn("s1", "hi".into(), None).unwrap();
         assert!(relay.reap().is_empty());
         assert_eq!(relay.session_count(), 1);
     }
@@ -674,7 +730,7 @@ mod tests {
     fn in_flight_turn_is_reported_only_while_running() {
         let relay = Relay::new();
         let _ = relay.subscribe("s1").unwrap();
-        let req = relay.begin_turn("s1", "hi".into()).unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
         assert_eq!(relay.in_flight_turn("s1"), Some(req.turn_id.clone()));
         relay.finish(&req.turn_id, "done".into()).unwrap();
         assert_eq!(relay.in_flight_turn("s1"), None);

@@ -276,6 +276,10 @@ fn html_escape(text: &str) -> String {
 struct ChatRequest {
     session_id: String,
     message: String,
+    /// What the guest calls themselves. Optional: a guest who skips the
+    /// question still gets a conversation, just a generically named one.
+    #[serde(default)]
+    client_label: Option<String>,
 }
 
 async fn chat(
@@ -295,7 +299,10 @@ async fn chat(
         return (StatusCode::PAYLOAD_TOO_LARGE, "message too long").into_response();
     }
 
-    match state.relay.begin_turn(&body.session_id, message) {
+    match state
+        .relay
+        .begin_turn(&body.session_id, message, body.client_label)
+    {
         Ok(request) => {
             let turn_id = request.turn_id.clone();
             // The frontend is the only thing that can run a turn; if the

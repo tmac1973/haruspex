@@ -80,8 +80,13 @@ impl Database {
     pub fn create_conversation(&self, id: &str, title: &str) -> Result<(), String> {
         let conn = self.conn();
         let now = chrono_now();
+        // Idempotent: a remote chat session derives its conversation id from
+        // its own id, so the same id legitimately recurs after a restart and
+        // "create it if it isn't there" is the honest operation. Local chat
+        // mints a fresh UUID per conversation and is unaffected.
         conn.execute(
-            "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR IGNORE INTO conversations (id, title, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4)",
             params![id, title, now, now],
         )
         .map_err(|e| format!("Insert failed: {}", e))?;

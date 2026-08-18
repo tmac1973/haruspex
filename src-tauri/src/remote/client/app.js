@@ -14,6 +14,7 @@
 const SESSION_KEY = 'haruspex-remote-session';
 const TOKEN_KEY = 'haruspex-remote-token';
 const TRANSCRIPT_KEY = 'haruspex-remote-transcript';
+const LABEL_KEY = 'haruspex-remote-label';
 
 /** Kept short: this is a courtesy copy for reloads, not a conversation store. */
 const TRANSCRIPT_LIMIT = 50;
@@ -182,10 +183,25 @@ export function boot(deps = {}) {
 	const inputEl = /** @type {HTMLTextAreaElement | null} */ (doc.getElementById('input'));
 	const sendEl = /** @type {HTMLButtonElement | null} */ (doc.getElementById('send'));
 	const stopEl = /** @type {HTMLButtonElement | null} */ (doc.getElementById('stop'));
+	const greetingEl = /** @type {HTMLFormElement | null} */ (doc.getElementById('greeting'));
+	const nameEl = /** @type {HTMLInputElement | null} */ (doc.getElementById('name'));
+	const skipEl = /** @type {HTMLButtonElement | null} */ (doc.getElementById('skip'));
 	// All or nothing: a page missing one of these is a page this script cannot
 	// drive, and failing here beats throwing halfway through a guest's first
 	// message.
-	if (!messagesEl || !statusEl || !composerEl || !inputEl || !sendEl || !stopEl) return null;
+	if (
+		!messagesEl ||
+		!statusEl ||
+		!composerEl ||
+		!inputEl ||
+		!sendEl ||
+		!stopEl ||
+		!greetingEl ||
+		!nameEl ||
+		!skipEl
+	) {
+		return null;
+	}
 
 	const ui = {
 		messages: messagesEl,
@@ -193,7 +209,10 @@ export function boot(deps = {}) {
 		composer: composerEl,
 		input: inputEl,
 		send: sendEl,
-		stop: stopEl
+		stop: stopEl,
+		greeting: greetingEl,
+		name: nameEl,
+		skip: skipEl
 	};
 
 	// The link the host shared carries the token; it is kept in the address bar
@@ -221,6 +240,12 @@ export function boot(deps = {}) {
 	} catch {
 		transcript = [];
 	}
+
+	/** @type {string | null} */
+	// Asked once and remembered, so the host's sidebar says who is talking to
+	// their machine rather than listing identical threads. `null` means the
+	// question has not been answered; an empty string means it was skipped.
+	let label = readStore(store, LABEL_KEY);
 
 	/** @type {string | null} */
 	let currentTurn = null;
@@ -463,7 +488,7 @@ export function boot(deps = {}) {
 			const response = await net(`/api/chat?t=${auth}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ sessionId, message: text })
+				body: JSON.stringify({ sessionId, message: text, clientLabel: label || null })
 			});
 			if (!response.ok) {
 				// The server's own words: "too many messages — slow down a
@@ -482,6 +507,28 @@ export function boot(deps = {}) {
 	function isTouch() {
 		return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 	}
+
+	function askForName() {
+		ui.greeting.hidden = false;
+		ui.composer.hidden = true;
+	}
+
+	/** @param {string} value */
+	function rememberName(value) {
+		label = value;
+		writeStore(store, LABEL_KEY, value);
+		ui.greeting.hidden = true;
+		ui.composer.hidden = false;
+		ui.input.focus();
+	}
+
+	ui.greeting.addEventListener('submit', (event) => {
+		event.preventDefault();
+		rememberName(ui.name.value.trim());
+	});
+
+	// A guest who would rather not give a name still gets an answer.
+	ui.skip.addEventListener('click', () => rememberName(''));
 
 	ui.composer.addEventListener('submit', (event) => {
 		event.preventDefault();
@@ -525,6 +572,7 @@ export function boot(deps = {}) {
 
 	render();
 	connect();
+	if (label === null) askForName();
 
 	// Returned for tests; the page itself is driven entirely by events.
 	return {

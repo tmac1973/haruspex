@@ -4,7 +4,12 @@ const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
 	runEphemeralTurn: vi.fn(),
 	withInferenceSlot: vi.fn(),
-	resolveBackendDescriptor: vi.fn()
+	resolveBackendDescriptor: vi.fn(),
+	dbCreateConversation: vi.fn(),
+	dbLoadMessages: vi.fn(),
+	dbSaveMessage: vi.fn(),
+	dbReplaceMessages: vi.fn(),
+	noteExternalConversation: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -16,11 +21,26 @@ vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
 vi.mock('$lib/inference/descriptor', () => ({
 	resolveBackendDescriptor: mocks.resolveBackendDescriptor
 }));
+vi.mock('$lib/stores/db', () => ({
+	dbCreateConversation: mocks.dbCreateConversation,
+	dbLoadMessages: mocks.dbLoadMessages,
+	dbSaveMessage: mocks.dbSaveMessage,
+	dbReplaceMessages: mocks.dbReplaceMessages
+}));
+vi.mock('$lib/stores/chat.svelte', () => ({
+	noteExternalConversation: mocks.noteExternalConversation
+}));
 
 import { runRemoteTurn, cancelRemoteTurn, REMOTE_TOOLS } from '$lib/remote/driver';
 import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
 
 const prompt = { sessionId: 'guest1', turnId: 'guest1#0', message: 'what is a haruspex?' };
+
+function saved(role: string) {
+	return mocks.dbSaveMessage.mock.calls
+		.filter(([, message]) => message.role === role)
+		.map(([id, message]) => ({ id, content: message.content }));
+}
 
 function turnOptions(): EphemeralTurnOptions {
 	return mocks.runEphemeralTurn.mock.calls[0][0] as EphemeralTurnOptions;
@@ -36,6 +56,11 @@ beforeEach(() => {
 		.mockReset()
 		.mockResolvedValue({ finalText: 'an answer', rawText: 'an answer' });
 	mocks.resolveBackendDescriptor.mockReturnValue({ contextSize: 8192 });
+	mocks.dbCreateConversation.mockReset().mockResolvedValue(undefined);
+	mocks.dbLoadMessages.mockReset().mockResolvedValue([]);
+	mocks.dbSaveMessage.mockReset().mockResolvedValue(undefined);
+	mocks.dbReplaceMessages.mockReset().mockResolvedValue(undefined);
+	mocks.noteExternalConversation.mockReset();
 	mocks.withInferenceSlot
 		.mockReset()
 		.mockImplementation(async (opts: { onAdmitted?: () => void }, fn: () => Promise<unknown>) => {
@@ -138,5 +163,62 @@ describe('the remote turn driver', () => {
 			return { finalText: 'text', rawText: 'text' };
 		});
 		await expect(runRemoteTurn(prompt)).resolves.toBeUndefined();
+	});
+});
+
+describe('a guest’s conversation', () => {
+	it('is a real conversation row the host can see', async () => {
+		await runRemoteTurn({ ...prompt, clientLabel: 'Dave' });
+		expect(mocks.dbCreateConversation).toHaveBeenCalledWith('remote-guest1', 'Remote — Dave');
+		// And it shows up in the host's own sidebar rather than only after a
+		// restart.
+		expect(mocks.noteExternalConversation).toHaveBeenCalledWith('remote-guest1', 'Remote — Dave');
+	});
+
+	it('keeps two guests in two threads', async () => {
+		await runRemoteTurn(prompt);
+		await runRemoteTurn({ sessionId: 'guest2', turnId: 'guest2#0', message: 'and me?' });
+
+		const ids = mocks.dbCreateConversation.mock.calls.map(([id]) => id);
+		expect(new Set(ids)).toEqual(new Set(['remote-guest1', 'remote-guest2']));
+		// Neither guest's message was written into the other's thread.
+		expect(saved('user')).toEqual([
+			{ id: 'remote-guest1', content: 'what is a haruspex?' },
+			{ id: 'remote-guest2', content: 'and me?' }
+		]);
+	});
+
+	it('carries earlier turns into the next one', async () => {
+		const earlier = [
+			{ role: 'user' as const, content: 'what is a haruspex?' },
+			{ role: 'assistant' as const, content: 'a reader of entrails' }
+		];
+		mocks.dbLoadMessages.mockResolvedValue(earlier);
+
+		await runRemoteTurn({ ...prompt, message: 'and where did they work?' });
+		expect(turnOptions().history).toEqual(earlier);
+	});
+
+	it('persists both sides of the turn', async () => {
+		await runRemoteTurn(prompt);
+		expect(saved('user')).toEqual([{ id: 'remote-guest1', content: 'what is a haruspex?' }]);
+		expect(saved('assistant')).toEqual([{ id: 'remote-guest1', content: 'an answer' }]);
+	});
+
+	it('keeps a stopped answer in the history, not just on screen', async () => {
+		mocks.runEphemeralTurn.mockImplementationOnce(async (options: EphemeralTurnOptions) => {
+			options.onAssistantDelta?.('half an ans');
+			cancelRemoteTurn(prompt.turnId);
+			throw new Error('aborted');
+		});
+		await runRemoteTurn(prompt);
+		// A history that omitted it would make the next turn incoherent.
+		expect(saved('assistant')).toEqual([{ id: 'remote-guest1', content: 'half an ans' }]);
+	});
+
+	it('records nothing for an answer that never started', async () => {
+		mocks.runEphemeralTurn.mockRejectedValueOnce(new Error('model is not running'));
+		await runRemoteTurn(prompt);
+		expect(saved('assistant')).toEqual([]);
 	});
 });

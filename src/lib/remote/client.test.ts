@@ -114,8 +114,43 @@ describe('a turn from the guest side', () => {
 		expect(url).toContain('/api/chat?t=link-token');
 		expect(JSON.parse(init.body as string)).toEqual({
 			sessionId: expect.any(String),
-			message: 'what is a haruspex?'
+			message: 'what is a haruspex?',
+			clientLabel: null
 		});
+	});
+
+	it('asks for a name once, then sends it with every message', async () => {
+		start();
+		// Before the first message, so the host's sidebar says who is asking
+		// instead of listing identical threads.
+		expect((document.getElementById('greeting') as HTMLFormElement).hidden).toBe(false);
+		expect((document.getElementById('composer') as HTMLFormElement).hidden).toBe(true);
+
+		(document.getElementById('name') as HTMLInputElement).value = 'Dave';
+		document.getElementById('greeting')!.dispatchEvent(new Event('submit', { cancelable: true }));
+		expect((document.getElementById('greeting') as HTMLFormElement).hidden).toBe(true);
+
+		// And it is remembered, so a reload does not ask again.
+		mountPage();
+		const { client, fetchMock } = start();
+		expect((document.getElementById('greeting') as HTMLFormElement).hidden).toBe(true);
+		await client.send('hello again');
+		const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+		expect(JSON.parse(init.body as string).clientLabel).toBe('Dave');
+	});
+
+	it('lets a guest skip the name and still get an answer', async () => {
+		start();
+		document.getElementById('skip')!.dispatchEvent(new Event('click'));
+		expect((document.getElementById('composer') as HTMLFormElement).hidden).toBe(false);
+
+		mountPage();
+		const { client, fetchMock } = start();
+		// Skipped is remembered as "asked and declined", not as "not asked yet".
+		expect((document.getElementById('greeting') as HTMLFormElement).hidden).toBe(true);
+		await client.send('hello');
+		const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+		expect(JSON.parse(init.body as string).clientLabel).toBeNull();
 	});
 
 	it('says it is waiting for the desktop rather than looking hung', () => {

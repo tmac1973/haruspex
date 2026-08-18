@@ -26,6 +26,18 @@
 			whoever is using that computer.
 		</p>
 
+		<!-- Asked once, before the first message: the host sees "Remote — Dave"
+		     rather than eight identical threads. Skippable, because a guest who
+		     does not want to give a name should still get an answer. -->
+		<form id="greeting" class="greeting" hidden>
+			<label for="name">What should we call you?</label>
+			<div class="greeting-row">
+				<input id="name" type="text" maxlength="40" autocomplete="given-name" placeholder="Your name" />
+				<button type="submit">Start</button>
+				<button id="skip" class="skip" type="button">Skip</button>
+			</div>
+		</form>
+
 		<form id="composer" class="composer">
 			<textarea
 				id="input"

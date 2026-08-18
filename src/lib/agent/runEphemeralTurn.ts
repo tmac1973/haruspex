@@ -25,6 +25,14 @@ import { finalizeStreamText } from '$lib/markdown';
 
 export interface EphemeralTurnOptions {
 	userMessage: string;
+	/**
+	 * Earlier turns in this conversation, oldest first, placed between the
+	 * system prompt and `userMessage`. Omit for a genuinely one-shot turn —
+	 * which is what every job does, and what this helper originally assumed.
+	 * Remote chat sessions are the exception: they are real conversations, and
+	 * the caller owns trimming them to fit (see `lib/remote/conversation.ts`).
+	 */
+	history?: ChatMessage[];
 	workingDir: string | null;
 	contextSize: number;
 	maxIterations?: number;
@@ -121,6 +129,7 @@ export async function runEphemeralTurn(
 		options.systemPrompt != null
 			? { role: 'system', content: options.systemPrompt }
 			: buildSystemPrompt(options.workingDir),
+		...(options.history ?? []),
 		{ role: 'user', content: options.userMessage }
 	];
 
