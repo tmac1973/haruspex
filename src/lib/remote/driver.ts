@@ -27,6 +27,7 @@ import {
 import { noteExternalConversation } from '$lib/stores/chat.svelte';
 import { conversationIdFor, prepareHistory, titleFor } from './conversation';
 import { noteAdmitted, noteAnswer, noteFinished, notePrompt } from './activity.svelte';
+import { logDebug } from '$lib/debug-log';
 
 export interface RemotePromptEvent {
 	sessionId: string;
@@ -227,20 +228,10 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 					// and would not understand.
 					askUser: askGuest(turnId, abort.signal),
 					onToolStart: (call) => {
-						void invoke('remote_turn_step', {
-							turnId,
-							step: { id: call.id, label: describeToolCall(call), status: 'running' }
-						}).catch(() => {});
+						reportStep(turnId, call, 'running');
 					},
 					onToolEnd: (call, result) => {
-						void invoke('remote_turn_step', {
-							turnId,
-							step: {
-								id: call.id,
-								label: describeToolCall(call),
-								status: isFailure(result) ? 'failed' : 'done'
-							}
-						}).catch(() => {});
+						reportStep(turnId, call, isFailure(result) ? 'failed' : 'done');
 					},
 					onAssistantDelta: (full) => {
 						lastText = full;
@@ -272,6 +263,24 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 	} finally {
 		inFlight.delete(turnId);
 	}
+}
+
+/**
+ * Tell the guest about a tool call.
+ *
+ * Logged rather than swallowed on failure: a silently dropped step is exactly
+ * the bug that looks like "the model isn't using any tools", and it took a
+ * wire-level test to rule out.
+ *
+ * @param status what to show against the step
+ */
+function reportStep(turnId: string, call: ResolvedToolCall, status: 'running' | 'done' | 'failed') {
+	void invoke('remote_turn_step', {
+		turnId,
+		step: { id: call.id, label: describeToolCall(call), status }
+	}).catch((error) => {
+		logDebug('remote', `could not report a tool call: ${String(error)}`);
+	});
 }
 
 /**
@@ -320,7 +329,9 @@ function askGuest(turnId: string, signal: AbortSignal): ToolContext['askUser'] {
 
 		const event = await answered;
 		pendingQuestions.delete(questionId);
-		void invoke('remote_turn_question_cleared', { turnId }).catch(() => {});
+		void invoke('remote_turn_question_cleared', { turnId }).catch((error) => {
+			logDebug('remote', `could not clear a question: ${String(error)}`);
+		});
 
 		if (!event) {
 			// The tool turns this into a result the model can act on, so an

@@ -258,13 +258,18 @@ fn asset(body: &'static str, content_type: &'static str) -> Response {
     no_cache(response)
 }
 
-/// Never cached. An app update changes these files, and a guest holding a
-/// months-old script that talks to a newer API is a bug nobody will diagnose
-/// from the other end of a phone call.
+/// Never stored, not merely revalidated.
+///
+/// An app update changes these files, and a guest holding an older script that
+/// talks to a newer API is a bug nobody will diagnose from the other end of a
+/// phone call. `no-cache` asks the browser to revalidate, but these responses
+/// carry no validator, and a phone's back-forward cache will happily keep a
+/// whole page anyway — so the instruction is not to keep it at all.
 fn no_cache(mut response: Response) -> Response {
-    response
-        .headers_mut()
-        .insert(CACHE_CONTROL, "no-cache".parse().expect("static header"));
+    response.headers_mut().insert(
+        CACHE_CONTROL,
+        "no-store, must-revalidate".parse().expect("static header"),
+    );
     response
 }
 
@@ -862,7 +867,7 @@ mod http_tests {
             // nobody diagnoses over the phone.
             assert_eq!(
                 response.headers().get("cache-control").unwrap(),
-                "no-cache",
+                "no-store, must-revalidate",
                 "{path}"
             );
             assert!(
@@ -905,6 +910,16 @@ mod http_tests {
 
         // Now play the part of the frontend driver.
         relay
+            .push_step(
+                &dispatched[0].turn_id,
+                super::super::relay::Step {
+                    id: "c1".into(),
+                    label: "Searching the web".into(),
+                    status: super::super::relay::StepStatus::Running,
+                },
+            )
+            .unwrap();
+        relay
             .push_text(&dispatched[0].turn_id, "a reader of")
             .unwrap();
         relay
@@ -918,6 +933,16 @@ mod http_tests {
                 None => panic!("stream ended before the answer: {seen}"),
             }
         }
+        // The wire format the client switches on, proven end to end rather
+        // than only in the relay's own tests.
+        assert!(
+            seen.contains("\"type\":\"step\""),
+            "no step event in {seen}"
+        );
+        assert!(
+            seen.contains("Searching the web"),
+            "no step label in {seen}"
+        );
         assert!(seen.contains("a reader of"), "no delta in {seen}");
         assert!(seen.contains("entrails"), "no final text in {seen}");
         running.stop();

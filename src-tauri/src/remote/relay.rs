@@ -1159,3 +1159,25 @@ mod tests {
         assert_eq!(relay.in_flight_turn("s1"), None);
     }
 }
+
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+
+    #[test]
+    fn every_event_serialises_to_the_shape_the_client_switches_on() {
+        let step = Step {
+            id: "c1".into(),
+            label: "Searching".into(),
+            status: StepStatus::Running,
+        };
+        let json = serde_json::to_string(&RemoteEvent::Step {
+            turn_id: "t1".into(),
+            step: step.clone(),
+        })
+        .expect("a step event must serialise");
+        assert!(json.contains("\"type\":\"step\""), "{json}");
+        assert!(json.contains("\"turnId\":\"t1\""), "{json}");
+        assert!(json.contains("\"status\":\"running\""), "{json}");
+    }
+}
