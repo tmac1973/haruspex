@@ -84,20 +84,26 @@ registerTool({
 			}))
 			.filter((o) => o.label.length > 0);
 
-		// No live user to answer — fail safe instead of hanging. Phase 05 upgrades
-		// this to a pause-to-needs-input signal for guided-planning jobs.
-		if (!ctx.interactive) {
+		// A caller with its own route to a human (a remote chat guest) supplies
+		// one; otherwise the modal in this window is the only route, and without
+		// somebody in front of it the tool fails safe rather than hanging.
+		// Phase 05 upgrades this to a pause-to-needs-input signal for
+		// guided-planning jobs.
+		if (!ctx.askUser && !ctx.interactive) {
 			return toolResult(
 				toolError('No interactive user is available to answer questions in this context.')
 			);
 		}
 
-		const { askUserQuestion } = await import('$lib/stores/userQuestion.svelte');
-		const answer = await askUserQuestion({
-			question,
-			options,
-			allowMultiple: args.allow_multiple === true
-		});
+		const ask = ctx.askUser ?? (await import('$lib/stores/userQuestion.svelte')).askUserQuestion;
+		const answer = await ask(
+			{
+				question,
+				options,
+				allowMultiple: args.allow_multiple === true
+			},
+			ctx.signal
+		);
 
 		const text =
 			answer.kind === 'freeText'

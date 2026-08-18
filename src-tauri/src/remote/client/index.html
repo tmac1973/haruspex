@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<!-- viewport-fit=cover so the composer can sit above a phone's home
+		     indicator rather than under it. -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="color-scheme" content="light dark" />
+		<meta name="theme-color" content="#0c0b0a" />
+		<title>Haruspex</title>
+		<link rel="stylesheet" href="/app.css" />
+	</head>
+	<body>
+		<header class="bar">
+			<span class="brand">Haruspex</span>
+			<span id="status" class="status" role="status">Connecting…</span>
+			<!-- A guest who changes the subject four times should not be paying
+			     for the first three. Starts a fresh conversation on the host;
+			     the old one stays in the host's sidebar. -->
+			<button id="new-chat" class="new-chat" type="button">New chat</button>
+		</header>
+
+		<main id="messages" class="messages" aria-live="polite" aria-label="Conversation"></main>
+
+		<!-- Permanent, not dismissible: a guest will assume this is a private
+		     chat window unless told otherwise, and it is cheaper to say now
+		     than to explain later. -->
+		<p class="notice">
+			Answers come from <strong>{{host}}</strong>. Conversations are saved there and visible to
+			whoever is using that computer.
+		</p>
+
+		<!-- Asked once, before the first message: the host sees "Remote — Dave"
+		     rather than eight identical threads. Skippable, because a guest who
+		     does not want to give a name should still get an answer. -->
+		<form id="greeting" class="greeting" hidden>
+			<label for="name">What should we call you?</label>
+			<div class="greeting-row">
+				<input id="name" type="text" maxlength="40" autocomplete="given-name" placeholder="Your name" />
+				<button type="submit">Start</button>
+				<button id="skip" class="skip" type="button">Skip</button>
+			</div>
+		</form>
+
+		<form id="composer" class="composer">
+			<textarea
+				id="input"
+				rows="1"
+				placeholder="Ask something…"
+				autocomplete="off"
+				autocapitalize="sentences"
+				enterkeyhint="send"
+			></textarea>
+			<button id="send" type="submit">Send</button>
+			<button id="stop" class="stop" type="button" hidden>Stop</button>
+		</form>
+
+		<script type="module">
+			import { boot } from '/app.js';
+			boot();
+		</script>
+	</body>
+</html>

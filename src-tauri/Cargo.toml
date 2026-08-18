@@ -27,7 +27,16 @@ tauri-plugin-shell = "2.3.5"
 # (drop the default image-data feature and its heavy `image` dependency).
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 reqwest = { version = "0.13.2", default-features = false, features = ["cookies", "json", "multipart", "query", "rustls", "stream"] }
-tokio = { version = "1.50.0", features = ["time", "rt", "fs", "sync", "macros", "process", "io-util"] }
+tokio = { version = "1.50.0", features = ["time", "rt", "fs", "sync", "macros", "process", "io-util", "net"] }
+# Remote web chat serves a small HTTP API + SSE to LAN browsers. Nothing in
+# the tree served HTTP before this (reqwest is a client; the sidecars run
+# their own servers), so axum is the one new dependency it costs.
+axum = { version = "0.8.4", default-features = false, features = ["http1", "json", "query", "tokio"] }
+# The remote link is long and carries a token, and the guest is holding a phone.
+# Typing it by hand is the step that would lose them, so it is offered as a QR
+# code. Default features off: only the raw module matrix is wanted, not the
+# image or SVG renderers it can also produce.
+qrcode = { version = "0.14.1", default-features = false }
 sha2 = "0.10.9"
 sysinfo = "0.36.1"
 tauri-plugin-dialog = "2.6.0"

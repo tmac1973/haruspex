@@ -249,6 +249,40 @@ async function loadConversationMessages(id: string): Promise<void> {
 	conv.messageSteps = steps as typeof conv.messageSteps;
 }
 
+/**
+ * Put a conversation created outside this store into the sidebar.
+ *
+ * Remote chat sessions are real conversation rows, but they are created by the
+ * remote driver rather than by `createConversation()` here — so without this
+ * they would not appear until the next launch, and the host would have no idea
+ * a guest was talking to their machine. Idempotent: a session that keeps
+ * chatting calls this on every turn.
+ */
+export function noteExternalConversation(id: string, title: string): void {
+	if (conversations.some((c) => c.id === id)) return;
+	const now = Date.now();
+	conversations = [
+		{
+			id,
+			title,
+			// Left empty: opening it loads the messages from the database, the
+			// same as any conversation restored at startup.
+			messages: [],
+			createdAt: now,
+			updatedAt: now,
+			contextUsage: null,
+			searchSteps: [],
+			messageSteps: {},
+			messageStats: {},
+			messageStops: {},
+			sourceUrls: [],
+			isRestoringSession: false,
+			sessionRestoreSkipped: false
+		},
+		...conversations
+	];
+}
+
 export function getConversations(): Conversation[] {
 	return conversations;
 }

@@ -20,7 +20,7 @@ import {
 	type Usage
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
-import { executeTool, getToolSchemas, type PendingImage } from '$lib/agent/tools';
+import { executeTool, getToolSchemas, type PendingImage, type ToolContext } from '$lib/agent/tools';
 import { isFetchFailureResult, isToolErrorResult } from '$lib/agent/tools/_helpers';
 import type { ToolDefinition } from '$lib/api';
 import {
@@ -100,6 +100,8 @@ export interface LoopContext {
 	codeAutoApprove: boolean;
 	/** True when a live user can answer interactive tools (ask_user_question). */
 	interactive: boolean;
+	/** Alternate route to a human for `ask_user_question`. See `ToolContext.askUser`. */
+	askUser?: ToolContext['askUser'];
 	/** Confine file writes to this dir (relative to workingDir); null = no extra limit. */
 	writeRoot: string | null;
 	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
@@ -180,6 +182,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		codeMode,
 		codeAutoApprove,
 		interactive: options.interactive ?? false,
+		askUser: options.askUser,
 		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,
 		reasoningEffort: options.reasoningEffort ?? null,
@@ -1238,6 +1241,7 @@ async function executeToolCalls(
 				codeMode: ctx.codeMode,
 				codeAutoApprove: ctx.codeAutoApprove,
 				interactive: ctx.interactive,
+				askUser: ctx.askUser,
 				writeRoot: ctx.writeRoot,
 				shellCwd: ctx.shellCwd,
 				shellSessionId: ctx.shellSessionId,

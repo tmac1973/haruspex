@@ -7,6 +7,7 @@
 	import SearchSection from '$lib/components/settings/SearchSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
 	import ShellSection from '$lib/components/settings/ShellSection.svelte';
+	import RemoteSection from '$lib/components/settings/RemoteSection.svelte';
 	import FeedbackSection from '$lib/components/settings/FeedbackSection.svelte';
 
 	// Rendered as an overlay over the main page (so the Shell tab's PTY stays
@@ -22,6 +23,7 @@
 		| 'search'
 		| 'integrations'
 		| 'shell'
+		| 'remote'
 		| 'feedback';
 
 	interface CategoryDef {
@@ -87,6 +89,12 @@
 					label: 'Shell',
 					subtitle: 'Terminal and the shell assistant.',
 					icon: '<polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line>'
+				},
+				{
+					id: 'remote',
+					label: 'Remote access',
+					subtitle: 'Let people on your network chat with this Haruspex.',
+					icon: '<circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>'
 				}
 			]
 		},
@@ -185,6 +193,8 @@
 				<EmailSection />
 			{:else if activeCategory === 'shell'}
 				<ShellSection />
+			{:else if activeCategory === 'remote'}
+				<RemoteSection />
 			{:else if activeCategory === 'feedback'}
 				<FeedbackSection />
 			{/if}

@@ -15,7 +15,7 @@
 
 import type { BackendOverride, StreamChunk, Usage } from '$lib/api';
 import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { Artifact, LintIssue } from '$lib/agent/tools';
+import type { Artifact, LintIssue, ToolContext } from '$lib/agent/tools';
 import type { ContextManagedInfo } from './context-budget';
 import type { SamplingParams } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
@@ -232,6 +232,12 @@ export interface AgentLoopOptions {
 	 * with no one to answer (the tool fails safe instead).
 	 */
 	interactive?: boolean;
+	/**
+	 * Where `ask_user_question` sends its question when the person who can
+	 * answer is not at this keyboard — a remote chat guest, say. See
+	 * `ToolContext.askUser`.
+	 */
+	askUser?: ToolContext['askUser'];
 	/**
 	 * When set, file writes are confined to this directory (relative to the
 	 * working dir). fs_write_text rejects writes outside it. Used by

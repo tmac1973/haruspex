@@ -1,0 +1,172 @@
+# Phase 00 — Answer the Question the Design Rests On
+
+Two questions, both cheap, both able to change what gets built. Neither ships
+code beyond a throwaway.
+
+## 1. Does a backgrounded webview keep running?
+
+**The assumption:** the local Haruspex sits minimised for hours while its
+webview keeps executing turns on behalf of remote users.
+
+**Why it might not hold:** WebKitGTK, WebView2 and WKWebView all throttle
+background work to some degree — timers coalesced, rendering suspended,
+sometimes whole processes frozen. macOS App Nap is the most aggressive. If the
+webview is throttled, remote turns stall in ways that look like random hangs,
+and the failure is worst on exactly the platforms this feature targets
+(Windows and macOS).
+
+**The test**, on Windows and macOS, in that order:
+
+1. Add a temporary `setInterval` in the app that logs a monotonic tick every
+   5s, and a second one that runs an actual model call every few minutes.
+2. Minimise the window. Leave it 30 minutes. Do not touch the machine.
+3. Read the log: are ticks evenly spaced, coalesced into bursts, or absent?
+   Did the model calls complete?
+
+Repeat with the window **fully occluded** by another maximised window rather
+than minimised — occlusion and minimisation are throttled differently, and a
+gaming PC user will do neither, but the *host* machine may well have its window
+covered.
+
+**If it holds:** nothing changes; phase 01 proceeds.
+
+**If it does not**, the mitigations are known and bounded — this is a risk, not
+a cliff:
+
+- Windows: WebView2 exposes background-throttling controls; Tauri passes
+  browser flags through.
+- macOS: App Nap can be disabled per-app via `NSAppSleepDisabled` in
+  `Info.plist`.
+- Failing both: keep a WebSocket or interval alive from the Rust side to hold
+  the page "active", or run remote sessions in a small always-visible window.
+
+What must *not* happen is discovering this after the server, relay and client
+are built. Hence phase 00.
+
+**Also worth watching:** the queue's 5-minute lease means a throttled webview
+releases its ticket rather than wedging inference for everyone — so the
+failure mode is a stalled remote turn, not a dead app. Confirm that is what
+actually happens.
+
+## 2. Cap parallel lanes at the server's advertised slots
+
+Independent of this feature, and worth landing first.
+
+`InferenceQueue` treats a parallel lane as **unbounded**: capacity is 1 or
+infinity (`inference_queue.rs`, `lane_parallel`). For OpenRouter that is right.
+For a self-hosted server it is not — llama-server launched with `-np 4`, or a
+toolchest model reporting four slots, will accept a fifth request and queue it
+*internally*, where the app cannot see or report it. The user loses the
+"waiting" signal precisely when contention starts, which is the moment this
+feature makes contention normal.
+
+The slot count is already collected: the toolchest probe reports it and it is
+stored as `remoteParallel`, used today only for display in the capabilities
+readout.
+
+**The change:** carry a capacity rather than a bool from `laneFor()` through
+`inference_acquire` into the lane's admission check. `remoteParallel` when
+known; unbounded for OpenRouter, whose concurrency is not ours to model; 1 for
+local.
+
+**Why first:** it is small, it improves the app whether or not remote chat ever
+ships, and it means phase 01 is not simultaneously introducing remote turns
+*and* changing how admission counts them.
+
+## Results
+
+### Linux / WebKitGTK 4.1 — passes cleanly (2026-08-17)
+
+The engine Tauri actually uses on Linux, in a GTK window that minimised itself
+after a 45s visible baseline, with every event timestamped by the server rather
+than the page (a frozen page cannot fake its own liveness):
+
+| | |
+|---|---|
+| ticks before minimising | 8, avg gap **5.00s** |
+| ticks after minimising | 135 over ~11 min, avg gap **5.01s**, worst **6.95s** |
+| slow fetches completed | 23, of which **22 after minimising** |
+
+135 ticks is exactly the expected count for the elapsed time, so essentially
+nothing was dropped, and the worst gap of 6.95s is a scheduling hiccup rather
+than throttling — throttling shows up as minute-long gaps, not a 2s one. The
+in-flight fetches, which are the shape a streaming model call has, all
+completed while backgrounded.
+
+**Weak evidence for the platforms that matter, though.** Linux is the least
+aggressive of the three, and the users this feature targets are on Windows and
+macOS. Wayland also made external window control unreliable, hence the
+self-minimising harness; occlusion by another window was not tested separately.
+
+### Windows — Edge throttles, Haruspex does not (2026-08-17)
+
+Measured twice. The second run overturned the first's conclusion, so both are
+recorded.
+
+**In a bare Edge window, throttling is real.** Edge 151 is the same Chromium
+engine WebView2 uses. Minimised for ~16 minutes, hidden timers averaged **35.7s
+against an expected 5s**, worst gap **60,013ms** — the exact signature of
+intensive throttling, which clamps hidden-page timers to one a minute after five
+minutes hidden. 27 ticks arrived where ~190 were due. Adding Chromium's three
+anti-throttling flags cured it completely: over 21.5 minutes hidden, **258 of
+258 expected ticks**, gaps of 5000ms average and 5003ms worst, and 245 network
+requests completed while hidden with zero errors.
+
+**Inside Haruspex, it never happens — because the page is never hidden.** The
+same measurement run in a released Windows build (DevTools is compiled in, so
+this needs no toolchain: `Ctrl+Shift+I`, close it before minimising, since an
+open inspector suppresses throttling on its own). Minimised for 15 minutes:
+
+| | |
+|---|---|
+| span | 910s |
+| worst gap between timer samples | **5013ms** against an expected 5000 |
+| samples where `document.hidden` was true | **0**, out of ~182 |
+
+Minimising a Tauri window on Windows does not flip the webview's visibility —
+wry leaves the WebView2 controller visible — so Chromium never classifies the
+page as hidden, and none of its hidden-page throttling applies. The webview
+keeps running at full speed while minimised precisely because the engine does
+not know the window is minimised.
+
+That answers phase 00's blocking question, and answers it better than the flags
+would have: the behaviour the feature depends on is the default.
+
+**The flags are still set, as insurance rather than as the fix.** They cost
+nothing and cover the case where a future wry or WebView2 version starts
+propagating window state to the controller. Note the trap in doing so: wry
+passes `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection` by
+default and setting `additionalBrowserArgs` *replaces* that list rather than
+appending, so those are re-included explicitly. Omitting them would have
+quietly changed SmartScreen behaviour as a side effect of a timer fix.
+
+**Correction.** On the Edge evidence alone this was written up as a shipped bug
+— that the job scheduler's 30s `setInterval` (`scheduler.svelte.ts:29`) was
+being clamped to ~60s, making scheduled jobs on Windows fire late whenever the
+window was not visible. The in-app measurement says otherwise: the timer held
+5000ms throughout. Scheduled jobs are not late on Windows.
+
+**Where this could still bite.** The result covers *minimising*. A window hidden
+programmatically — a tray icon, close-to-tray — goes through a different path
+that likely does set the controller invisible, at which point the page really is
+hidden and the flags stop being inert. Worth re-measuring if such a feature is
+ever added.
+
+### macOS / WKWebView — still owed
+
+No machine available. App Nap is the aggressive one here, and
+`NSAppSleepDisabled` in `Info.plist` is the documented mitigation if it bites.
+
+### macOS / WKWebView — still owed
+
+App Nap is the aggressive one here, and `NSAppSleepDisabled` in `Info.plist`
+is the documented mitigation if it bites.
+
+## Verification
+
+- A written answer to question 1 for **macOS**, added above, before phase 01
+  starts. Linux and Windows are done.
+- A re-measurement on Windows if the app ever gains a hide-to-tray path, which
+  is the one case the in-app run did not cover.
+- For question 2: a test that a lane with capacity 2 admits two and queues the
+  third, and that an unknown slot count still behaves as it does today.

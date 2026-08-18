@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Haruspex — background webview test</title>
+    <style>
+      body {
+        font: 15px/1.5 system-ui, sans-serif;
+        max-width: 48rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        color: #111;
+      }
+      h1 { font-size: 1.3rem; margin-bottom: 0.2rem; }
+      h2 { font-size: 1rem; margin: 1.4rem 0 0.4rem; }
+      button { font: inherit; padding: 0.5rem 1rem; cursor: pointer; }
+      input { font: inherit; padding: 0.35rem 0.5rem; }
+      #cmd, #cmd2 {
+        white-space: pre-wrap;
+        word-break: break-all;
+        background: #f4f4f4;
+        padding: 0.6rem;
+        border-radius: 6px;
+        font-size: 0.82rem;
+      }
+      #result { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 6px; }
+      .verdict { font-weight: 600; padding: 0.4rem 0; }
+      .ok { color: #1a7f37; }
+      .bad { color: #b42318; }
+      .warn { color: #9a6700; }
+      ol { padding-left: 1.2rem; }
+      code { background: #f0f0f0; padding: 0 3px; }
+      .row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin: 0.4rem 0; }
+      label { font-size: 0.9rem; }
+      .note { font-size: 0.9rem; color: #555; }
+    </style>
+  </head>
+  <body>
+    <h1>Does a backgrounded webview keep running?</h1>
+    <p class="note">
+      Remote web chat assumes Haruspex keeps working while its window is minimised. Windows renders
+      it in WebView2 — the same Chromium engine as Edge — and Chromium throttles hidden pages.
+    </p>
+
+    <p>
+      Two things are measured separately, <strong>because they fail separately</strong>: timer
+      cadence (what Chromium clamps first) and whether network requests still complete (what the
+      agent loop actually depends on, since turns are driven by streaming responses, not timers).
+      The network probe chains each request from the previous one's completion rather than from a
+      timer, so a throttled timer cannot make a healthy network look broken.
+    </p>
+
+    <h2>Run it</h2>
+    <ol>
+      <li>Optionally set a label so two runs are easy to tell apart.</li>
+      <li>Press <strong>Start</strong>, then <strong>minimise the window</strong>.</li>
+      <li>Leave it <strong>at least 15 minutes</strong> — Chromium's harshest throttling only
+        engages after 5 minutes hidden.</li>
+      <li>Restore, press <strong>Copy result</strong>, paste it back.</li>
+    </ol>
+
+    <h2>Second run: with the fix</h2>
+    <p class="note">
+      To check whether Chromium's anti-throttling flags cure it — the same flags Tauri can pass to
+      WebView2 via <code>additionalBrowserArgs</code> — run this in <strong>PowerShell</strong>
+      from the folder holding this file, then repeat the steps above. One line, because pasted
+      line-continuations break. <code>msedge.exe</code> is not on <code>PATH</code>, hence the full
+      path — and the throwaway profile forces a fresh browser process, without which the flags are
+      silently ignored when Edge is already running.
+    </p>
+    <pre id="cmd">&amp; "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --no-first-run --no-default-browser-check --user-data-dir="$env:TEMP\thtest" "$PWD\webview-throttle-test.html"</pre>
+    <p class="note">
+      If Edge is not at that path, this finds it — also one line:
+    </p>
+    <pre id="cmd2">&amp; (@("$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe","${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe") | Where-Object {Test-Path $_} | Select-Object -First 1) --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --no-first-run --no-default-browser-check --user-data-dir="$env:TEMP\thtest" "$PWD\webview-throttle-test.html"</pre>
+
+    <div class="row">
+      <label>Label <input id="label" placeholder="e.g. baseline / with-flags" size="22" /></label>
+      <label>Probe URL <input id="url" size="34" /></label>
+    </div>
+    <div class="row">
+      <button id="start">Start</button>
+      <button id="copy" disabled>Copy result</button>
+    </div>
+
+    <div id="verdictTimers" class="verdict"></div>
+    <div id="verdictNet" class="verdict"></div>
+    <pre id="result">Not started.</pre>
+
+    <script>
+      const TICK_MS = 5000;
+      // A deliberately slow endpoint: the network probe is paced by the server
+      // rather than by a timer, so its cadence stays meaningful on a page whose
+      // timers are clamped. Editable in case this one is unreachable.
+      const DEFAULT_URL = 'https://httpbin.org/delay/5';
+      const MAX_PROBES = 400; // runaway guard
+      const MAX_CONSECUTIVE_ERRORS = 5;
+
+      const el = (id) => document.getElementById(id);
+      const ticks = []; // {t, hidden}
+      const probes = []; // {start, ms, hidden, ok}
+      const vis = []; // {t, hidden}
+      let started = 0;
+      let running = false;
+      let netStopped = null;
+
+      const isHidden = () => document.visibilityState === 'hidden';
+
+      /**
+       * Gaps between consecutive samples, but only *within* a run of the same
+       * visibility. The first version of this filtered by visibility and then
+       * diffed the filtered list, so the "visible" gaps included one that
+       * spanned the entire hidden period — it measured the bug, not the browser.
+       */
+      function gapsWithinRuns(samples, wantHidden) {
+        const out = [];
+        for (let i = 1; i < samples.length; i++) {
+          const a = samples[i - 1];
+          const b = samples[i];
+          if (a.hidden === wantHidden && b.hidden === wantHidden) out.push(b.t - a.t);
+        }
+        return out;
+      }
+
+      const avg = (a) => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null);
+      const max = (a) => (a.length ? Math.max(...a) : null);
+
+      /** Hidden time from the visibility log itself, never inferred from ticks. */
+      function hiddenSeconds() {
+        let total = 0;
+        let since = null;
+        for (const v of vis) {
+          if (v.hidden && since === null) since = v.t;
+          else if (!v.hidden && since !== null) {
+            total += v.t - since;
+            since = null;
+          }
+        }
+        if (since !== null) total += Date.now() - since;
+        return Math.round(total / 1000);
+      }
+
+      function tick() {
+        ticks.push({ t: Date.now(), hidden: isHidden() });
+        render();
+      }
+
+      /**
+       * Chained network probe. Each request starts when the previous one
+       * finishes — no timer anywhere in the loop — so if requests keep
+       * completing while hidden, the network path is alive even when timers are
+       * clamped. `no-cors` keeps this working from a file:// page.
+       */
+      async function probeLoop() {
+        const url = el('url').value || DEFAULT_URL;
+        let consecutiveErrors = 0;
+        while (running && probes.length < MAX_PROBES) {
+          const start = Date.now();
+          const hidden = isHidden();
+          try {
+            await fetch(url, { mode: 'no-cors', cache: 'no-store' });
+            probes.push({ start, ms: Date.now() - start, hidden, ok: true });
+            consecutiveErrors = 0;
+          } catch {
+            probes.push({ start, ms: Date.now() - start, hidden, ok: false });
+            consecutiveErrors++;
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+              netStopped = 'probe URL unreachable — network result is inconclusive';
+              render();
+              return;
+            }
+            // Only place a timer appears in this loop, and only on failure.
+            await new Promise((r) => setTimeout(r, 5000));
+          }
+          render();
+        }
+      }
+
+      function summarise() {
+        const hiddenTicks = ticks.filter((x) => x.hidden).length;
+        const tHidden = gapsWithinRuns(ticks, true);
+        const tVisible = gapsWithinRuns(ticks, false);
+        const pHidden = probes.filter((p) => p.hidden);
+        const pStarts = probes.map((p) => ({ t: p.start, hidden: p.hidden }));
+        return {
+          label: el('label').value || null,
+          ua: navigator.userAgent,
+          ran_for_s: started ? Math.round((Date.now() - started) / 1000) : 0,
+          hidden_time_s: hiddenSeconds(),
+          visibility_changes: vis.length,
+
+          // --- timers (expected gap: 5000ms) ---
+          ticks_visible: ticks.length - hiddenTicks,
+          ticks_hidden: hiddenTicks,
+          tick_gap_visible_avg_ms: avg(tVisible),
+          tick_gap_hidden_avg_ms: avg(tHidden),
+          tick_gap_hidden_max_ms: max(tHidden),
+
+          // --- network (chained, not timer-driven) ---
+          probes_total: probes.length,
+          probes_hidden: pHidden.length,
+          probe_errors: probes.filter((p) => !p.ok).length,
+          probe_hidden_avg_duration_ms: avg(pHidden.map((p) => p.ms)),
+          // Gap between consecutive probe *starts* while hidden. Healthy means
+          // roughly the endpoint's own delay; a frozen page shows a huge gap or
+          // no probes at all.
+          probe_hidden_max_gap_ms: max(gapsWithinRuns(pStarts, true)),
+          probe_note: netStopped
+        };
+      }
+
+      function render() {
+        const s = summarise();
+        el('result').textContent = JSON.stringify(s, null, 2);
+
+        const vt = el('verdictTimers');
+        if (!s.ticks_hidden) {
+          vt.textContent = 'Timers: waiting — minimise the window and leave it a while.';
+          vt.className = 'verdict';
+        } else {
+          // Chromium's intensive throttling clamps hidden timers to ~1/minute,
+          // so the mean is the signal; one slow tick is noise.
+          const bad = s.tick_gap_hidden_avg_ms > TICK_MS * 2;
+          vt.textContent = bad
+            ? `Timers: THROTTLED — hidden ticks averaged ${s.tick_gap_hidden_avg_ms}ms apart (expected ~${TICK_MS}).`
+            : `Timers: healthy — hidden ticks averaged ${s.tick_gap_hidden_avg_ms}ms apart (expected ~${TICK_MS}).`;
+          vt.className = 'verdict ' + (bad ? 'bad' : 'ok');
+        }
+
+        const vn = el('verdictNet');
+        if (netStopped) {
+          vn.textContent = `Network: inconclusive — ${netStopped}`;
+          vn.className = 'verdict warn';
+        } else if (!s.probes_hidden) {
+          vn.textContent = 'Network: waiting for requests to complete while hidden…';
+          vn.className = 'verdict';
+        } else {
+          // The question that decides the feature: do requests still complete
+          // when the window is away, even if timers are clamped?
+          vn.textContent = `Network: alive while hidden — ${s.probes_hidden} requests completed, longest gap ${s.probe_hidden_max_gap_ms}ms.`;
+          vn.className = 'verdict ok';
+        }
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        vis.push({ t: Date.now(), hidden: isHidden() });
+        render();
+      });
+
+      el('url').value = DEFAULT_URL;
+
+      el('start').onclick = () => {
+        if (running) return;
+        running = true;
+        started = Date.now();
+        el('start').disabled = true;
+        el('copy').disabled = false;
+        tick();
+        setInterval(tick, TICK_MS);
+        void probeLoop();
+      };
+
+      el('copy').onclick = async () => {
+        const text = JSON.stringify(summarise(), null, 2);
+        try {
+          await navigator.clipboard.writeText(text);
+          el('copy').textContent = 'Copied';
+          setTimeout(() => (el('copy').textContent = 'Copy result'), 1500);
+        } catch {
+          const r = document.createRange();
+          r.selectNode(el('result'));
+          getSelection().removeAllRanges();
+          getSelection().addRange(r);
+          el('copy').textContent = 'Press Ctrl+C';
+        }
+      };
+    </script>
+  </body>
+</html>

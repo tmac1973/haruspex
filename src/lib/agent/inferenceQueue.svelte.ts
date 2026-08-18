@@ -9,7 +9,7 @@
  * `getRunningCount`) so callers (chat / shell / jobs) are unchanged.
  *
  * Protocol per turn:
- *   1. `inference_acquire(reqId, consumer, parallel, windowLabel)` — resolves
+ *   1. `inference_acquire(reqId, consumer, maxParallel, windowLabel)` — resolves
  *      when admitted, rejects if cancelled/reclaimed.
  *   2. heartbeat `inference_heartbeat(reqId)` on an interval from enqueue
  *      until release, refreshing the lease so a long turn (or a long wait
@@ -29,7 +29,12 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type { BackendOverride } from '$lib/api';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 
-export type InferenceConsumer = 'chat' | 'shell' | { kind: 'job'; jobName: string };
+export type InferenceConsumer =
+	| 'chat'
+	| 'shell'
+	| { kind: 'job'; jobName: string }
+	/** A remote web-chat guest; `client` is their session id. See `remote/`. */
+	| { kind: 'remote'; client: string };
 
 export interface InferenceTicket {
 	/** `<windowLabel>:<n>` — unique across windows. */
@@ -90,16 +95,23 @@ function nextReqId(): string {
  * Which backend a turn targets (override vs Settings) is the descriptor
  * resolver's business; here we only map the resolved backend to a lane:
  * remote/OpenRouter backends get a per-URL lane whose concurrency follows
- * `descriptor.allowParallel` (the Settings "provider supports parallel
+ * `descriptor.allowParallel` plus the slot count the server advertises (the
+ * Settings "provider supports parallel
  * inference" toggle); the local lane always serializes — a single
  * llama-server slot — regardless.
  */
-function laneFor(backend?: BackendOverride): { lane: string; parallel: boolean } {
+function laneFor(backend?: BackendOverride): { lane: string; maxParallel: number | null } {
 	const descriptor = resolveBackendDescriptor(backend);
 	if (descriptor.kind === 'local') {
-		return { lane: 'local', parallel: false };
+		return { lane: 'local', maxParallel: 1 };
 	}
-	return { lane: `remote:${descriptor.baseUrl}`, parallel: descriptor.allowParallel };
+	if (!descriptor.allowParallel) {
+		return { lane: `remote:${descriptor.baseUrl}`, maxParallel: 1 };
+	}
+	// A server that advertises N slots gets N. Unbounded only when the count
+	// is unknown: exceeding a known slot count doesn't buy concurrency, it just
+	// moves the queue inside the server where nothing can report it.
+	return { lane: `remote:${descriptor.baseUrl}`, maxParallel: descriptor.parallelSlots };
 }
 
 // --- cross-window queue snapshot (event-mirrored) -------------------------
@@ -195,7 +207,7 @@ export async function withInferenceSlot<T>(
 
 	ensureSnapshotListener();
 
-	const { lane, parallel } = laneFor(backend);
+	const { lane, maxParallel } = laneFor(backend);
 
 	const reqId = nextReqId();
 	onTicket?.({ id: reqId, consumer, state: 'waiting', enqueuedAt: Date.now() });
@@ -220,7 +232,7 @@ export async function withInferenceSlot<T>(
 			reqId,
 			consumer,
 			lane,
-			parallel,
+			maxParallel,
 			windowLabel: getWindowLabel()
 		});
 		// Abort could have raced in between the grant and here.

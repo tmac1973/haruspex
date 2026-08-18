@@ -252,6 +252,19 @@ export interface AppSettings {
 	 * meets.
 	 */
 	browserPath: string;
+	/**
+	 * Serve a limited chat client to browsers on this machine's network. Off by
+	 * default, and off is the only safe default: enabling it puts a port on the
+	 * LAN and spends this machine's GPU on whoever holds the link. See
+	 * `lib/remote/`.
+	 */
+	remoteAccessEnabled: boolean;
+	remoteAccessPort: number;
+	/**
+	 * The shared secret embedded in the link the host hands out. Minted here
+	 * (Web Crypto) rather than in Rust, so rotating it is a settings write.
+	 */
+	remoteAccessToken: string;
 	contextSize: number;
 	/**
 	 * Allow the local llama-server to run a context larger than fits in VRAM,
@@ -515,6 +528,10 @@ const defaults: AppSettings = {
 	ttsVoice: DEFAULT_TTS_VOICE,
 	searchProvider: 'auto',
 	browserPath: '',
+	remoteAccessEnabled: false,
+	// Unprivileged, memorable, and not something else's default.
+	remoteAccessPort: 8787,
+	remoteAccessToken: '',
 	braveApiKey: '',
 	searxngUrl: DEFAULT_SEARXNG_URL,
 	contextSize: DEFAULT_CONTEXT_SIZE,
