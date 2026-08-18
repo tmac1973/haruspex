@@ -16,6 +16,14 @@
       h2 { font-size: 1rem; margin: 1.4rem 0 0.4rem; }
       button { font: inherit; padding: 0.5rem 1rem; cursor: pointer; }
       input { font: inherit; padding: 0.35rem 0.5rem; }
+      #cmd, #cmd2 {
+        white-space: pre-wrap;
+        word-break: break-all;
+        background: #f4f4f4;
+        padding: 0.6rem;
+        border-radius: 6px;
+        font-size: 0.82rem;
+      }
       #result { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 6px; }
       .verdict { font-weight: 600; padding: 0.4rem 0; }
       .ok { color: #1a7f37; }
@@ -56,19 +64,16 @@
     <p class="note">
       To check whether Chromium's anti-throttling flags cure it — the same flags Tauri can pass to
       WebView2 via <code>additionalBrowserArgs</code> — run this in <strong>PowerShell</strong>
-      from the folder holding this file, then repeat the steps above. It finds Edge itself
-      (<code>msedge.exe</code> is not on <code>PATH</code>) and uses a throwaway profile, which
-      forces a fresh browser process so the flags actually apply even if Edge is already open.
+      from the folder holding this file, then repeat the steps above. One line, because pasted
+      line-continuations break. <code>msedge.exe</code> is not on <code>PATH</code>, hence the full
+      path — and the throwaway profile forces a fresh browser process, without which the flags are
+      silently ignored when Edge is already running.
     </p>
-    <pre id="cmd">$edge = "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-        "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe" |
-        Where-Object { Test-Path $_ } | Select-Object -First 1
-$page = (Resolve-Path .\webview-throttle-test.html).Path
-&amp; $edge --disable-background-timer-throttling `
-      --disable-backgrounding-occluded-windows `
-      --disable-renderer-backgrounding `
-      --no-first-run --no-default-browser-check `
-      --user-data-dir="$env:TEMP\thtest" $page</pre>
+    <pre id="cmd">&amp; "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --no-first-run --no-default-browser-check --user-data-dir="$env:TEMP\thtest" "$PWD\webview-throttle-test.html"</pre>
+    <p class="note">
+      If Edge is not at that path, this finds it — also one line:
+    </p>
+    <pre id="cmd2">&amp; (@("$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe","${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe") | Where-Object {Test-Path $_} | Select-Object -First 1) --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --no-first-run --no-default-browser-check --user-data-dir="$env:TEMP\thtest" "$PWD\webview-throttle-test.html"</pre>
 
     <div class="row">
       <label>Label <input id="label" placeholder="e.g. baseline / with-flags" size="22" /></label>
