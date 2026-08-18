@@ -202,6 +202,17 @@ pub struct Relay {
 
 /// A prompt the frontend should run, handed to the caller so it can emit the
 /// Tauri event outside the lock.
+/// One connected guest, as the host's settings page sees them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfo {
+    pub session_id: String,
+    /// Live SSE connections. Zero means their tab is closed or their phone is
+    /// asleep — not that they have gone for good.
+    pub subscribers: usize,
+    pub busy: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PromptRequest {
@@ -490,6 +501,41 @@ impl Relay {
         orphaned
     }
 
+    /// Throw one guest off, cancelling whatever they had running.
+    ///
+    /// The "my friend is being annoying" affordance, and more useful at this
+    /// scale than any amount of per-request access control. Returns the turn to
+    /// cancel, if there was one. Dropping the session closes its SSE stream;
+    /// the conversation it was writing to is a database row and stays.
+    pub fn disconnect(&self, session_id: &str) -> Option<String> {
+        let mut inner = self.inner.lock().unwrap();
+        let session = inner.sessions.remove(session_id)?;
+        inner.turns.retain(|_, sid| sid != session_id);
+        // Dropping the sender ends every subscriber's stream.
+        drop(session.tx);
+        session
+            .turn
+            .filter(|t| matches!(t.status, TurnStatus::Waiting | TurnStatus::Running))
+            .map(|t| t.id)
+    }
+
+    /// Who is connected, for the host's activity panel.
+    pub fn sessions(&self) -> Vec<SessionInfo> {
+        let inner = self.inner.lock().unwrap();
+        let mut sessions: Vec<SessionInfo> = inner
+            .sessions
+            .iter()
+            .map(|(id, session)| SessionInfo {
+                session_id: id.clone(),
+                subscribers: session.subscribers,
+                busy: session.in_flight(),
+            })
+            .collect();
+        // Stable order, so the panel does not reshuffle itself on every poll.
+        sessions.sort_by(|a, b| a.session_id.cmp(&b.session_id));
+        sessions
+    }
+
     /// Drop everything — used when the server stops, so a restart does not
     /// inherit sessions whose clients are long gone.
     pub fn clear(&self) {
@@ -715,6 +761,60 @@ mod tests {
             relay.subscribe("has space"),
             Err(RelayError::BadSessionId)
         ));
+    }
+
+    #[test]
+    fn disconnecting_a_guest_ends_their_stream_and_their_turn() {
+        let relay = Relay::new();
+        let (mut rx, _) = relay.subscribe("s1").unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
+
+        assert_eq!(relay.disconnect("s1"), Some(req.turn_id.clone()));
+        assert_eq!(relay.session_count(), 0);
+        // The stream ends rather than hanging open on a session nobody owns —
+        // after delivering what was already queued, which is what a subscriber
+        // mid-read would see.
+        while rx.try_recv().is_ok() {}
+        assert!(matches!(
+            rx.try_recv(),
+            Err(broadcast::error::TryRecvError::Closed)
+        ));
+        // And a late delta for the cancelled turn is dropped, not resurrected.
+        assert_eq!(
+            relay.push_text(&req.turn_id, "more"),
+            Err(RelayError::UnknownTurn)
+        );
+    }
+
+    #[test]
+    fn disconnecting_an_idle_guest_cancels_nothing() {
+        let relay = Relay::new();
+        relay.subscribe("s1").unwrap();
+        assert_eq!(relay.disconnect("s1"), None);
+        assert_eq!(relay.disconnect("never-here"), None);
+    }
+
+    #[test]
+    fn connected_guests_are_listed_in_a_stable_order() {
+        let relay = Relay::new();
+        relay.subscribe("zoe").unwrap();
+        relay.subscribe("adam").unwrap();
+        let req = relay.begin_turn("adam", "hi".into(), None).unwrap();
+
+        let sessions = relay.sessions();
+        assert_eq!(
+            sessions
+                .iter()
+                .map(|s| s.session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["adam", "zoe"]
+        );
+        assert!(sessions[0].busy);
+        assert!(!sessions[1].busy);
+        assert_eq!(sessions[0].subscribers, 1);
+
+        relay.finish(&req.turn_id, "done".into()).unwrap();
+        assert!(!relay.sessions()[0].busy);
     }
 
     #[test]

@@ -921,6 +921,74 @@ mod http_tests {
     }
 
     #[tokio::test]
+    async fn rotating_the_token_cuts_off_the_old_link() {
+        // Rotation is the whole of revocation here, so it has to actually
+        // revoke: a link that still works after the host rotated it would make
+        // the button a lie.
+        let relay = Arc::new(Relay::new());
+        let first = start(
+            Arc::new(RecordingSink::default()),
+            relay.clone(),
+            RemoteConfig {
+                port: 0,
+                token: "old-token".into(),
+                bind_all: false,
+            },
+        )
+        .await
+        .unwrap();
+        let old_base = format!("http://127.0.0.1:{}", first.port);
+        assert_eq!(
+            reqwest::get(format!("{old_base}/?t=old-token"))
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+
+        first.stop();
+        for _ in 0..50 {
+            if reqwest::get(format!("{old_base}/api/health"))
+                .await
+                .is_err()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let second = start(
+            Arc::new(RecordingSink::default()),
+            relay,
+            RemoteConfig {
+                port: 0,
+                token: "new-token".into(),
+                bind_all: false,
+            },
+        )
+        .await
+        .unwrap();
+        let base = format!("http://127.0.0.1:{}", second.port);
+
+        let old = reqwest::Client::new()
+            .post(format!("{base}/api/chat?t=old-token"))
+            .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(old.status(), 401, "the old link still worked");
+
+        let new = reqwest::Client::new()
+            .post(format!("{base}/api/chat?t=new-token"))
+            .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(new.status(), 202);
+        second.stop();
+    }
+
+    #[tokio::test]
     async fn a_stopped_server_stops_answering() {
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
         assert!(reqwest::get(format!("{base}/api/health")).await.is_ok());

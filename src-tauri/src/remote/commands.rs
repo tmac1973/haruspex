@@ -13,7 +13,8 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-use super::relay::{PromptRequest, TurnStatus, EVENT_CANCEL, EVENT_PROMPT};
+use super::link::{self, QrMatrix};
+use super::relay::{PromptRequest, SessionInfo, TurnStatus, EVENT_CANCEL, EVENT_PROMPT};
 use super::server::{self, PromptSink, RemoteConfig, RemoteStatus};
 use super::RemoteServer;
 
@@ -71,6 +72,39 @@ pub async fn remote_stop(state: State<'_, RemoteServer>) -> Result<RemoteStatus,
 #[tauri::command]
 pub async fn remote_status(state: State<'_, RemoteServer>) -> Result<RemoteStatus, String> {
     Ok(state.status())
+}
+
+/// The address to hand out, or `None` on a machine with no route to a network.
+/// The settings page says so plainly rather than showing `127.0.0.1`, which
+/// would look like a working link and reach nobody.
+#[tauri::command]
+pub async fn remote_lan_address() -> Result<Option<String>, String> {
+    Ok(link::lan_address().map(|ip| ip.to_string()))
+}
+
+/// The link as a QR code, because the guest is holding a phone and the token is
+/// 32 characters of noise.
+#[tauri::command]
+pub async fn remote_link_qr(text: String) -> Result<QrMatrix, String> {
+    link::qr_matrix(&text)
+}
+
+#[tauri::command]
+pub async fn remote_sessions(state: State<'_, RemoteServer>) -> Result<Vec<SessionInfo>, String> {
+    Ok(state.relay().sessions())
+}
+
+/// Throw one guest off without disturbing anyone else.
+#[tauri::command]
+pub async fn remote_disconnect(
+    app: AppHandle,
+    state: State<'_, RemoteServer>,
+    session_id: String,
+) -> Result<(), String> {
+    if let Some(turn_id) = state.relay().disconnect(&session_id) {
+        WebviewSink(app).cancel(&turn_id);
+    }
+    Ok(())
 }
 
 /// The whole answer so far, not the newest fragment. The relay derives the

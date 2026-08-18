@@ -24,6 +24,7 @@ import {
 } from '$lib/stores/db';
 import { noteExternalConversation } from '$lib/stores/chat.svelte';
 import { conversationIdFor, prepareHistory, titleFor } from './conversation';
+import { noteAnswer, noteFinished, notePrompt } from './activity.svelte';
 
 export interface RemotePromptEvent {
 	sessionId: string;
@@ -101,6 +102,8 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 
 	// An ordinary conversation row, so the host sees the thread in their own
 	// sidebar and can read, rename or delete it like any other.
+	notePrompt(sessionId, event.clientLabel ?? null, message);
+
 	const conversationId = conversationIdFor(sessionId);
 	const title = titleFor(event.clientLabel);
 	await dbCreateConversation(conversationId, title);
@@ -150,11 +153,13 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 					onAssistantDelta: (full) => {
 						lastText = full;
 						pump.push(full);
+						noteAnswer(sessionId, full);
 					}
 				});
 			}
 		);
 		await dbSaveMessage(conversationId, { role: 'assistant', content: result.finalText });
+		noteFinished(sessionId, 'done', result.finalText);
 		await invoke('remote_turn_done', { turnId, text: result.finalText });
 	} catch (error) {
 		if (abort.signal.aborted) {
@@ -165,9 +170,11 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 			if (lastText) {
 				await dbSaveMessage(conversationId, { role: 'assistant', content: lastText });
 			}
+			noteFinished(sessionId, 'done', lastText);
 			await invoke('remote_turn_done', { turnId, text: lastText }).catch(() => {});
 		} else {
 			const messageText = error instanceof Error ? error.message : String(error);
+			noteFinished(sessionId, 'failed', messageText);
 			await invoke('remote_turn_error', { turnId, message: messageText }).catch(() => {});
 		}
 	} finally {

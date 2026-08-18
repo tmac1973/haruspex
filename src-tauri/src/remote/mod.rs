@@ -15,6 +15,7 @@
 
 pub mod auth;
 pub mod commands;
+pub mod link;
 pub mod relay;
 pub mod server;
 

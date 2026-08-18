@@ -72,3 +72,48 @@ amount of per-request access control at this scale.
   works.
 - Watch a remote turn appear in the activity panel while using the local chat
   tab at the same time — the two must not interfere, which is the whole point.
+
+## As built (2026-08-17)
+
+A Remote access section in Settings, under Capabilities, with the switch, the
+port, the link, the QR code, rotation, and a live panel of who is connected.
+
+**The LAN address is found by asking the OS which route it would take.** A
+connected UDP socket picks an interface without sending a packet, and its local
+address is the one a guest can reach. The alternative — walking every interface
+and choosing — gets VPN adapters, Docker bridges and Hyper-V switches wrong in a
+way that is invisible until someone says "it doesn't load". On a machine with no
+route the panel says so plainly rather than showing `127.0.0.1`, which would
+look like a working link and reach nobody.
+
+**The QR code is a matrix, not an image.** `qrcode` (default features off) gives
+the module grid; the frontend turns it into a single SVG `path`. Nothing is
+returned as markup, so nothing has to be trusted as markup, and it is one
+attribute rather than a thousand elements. This is the part that decides whether
+the feature reaches a non-technical friend at all: the token is 32 characters of
+noise and the guest is holding a phone.
+
+**Rotation is revocation, and it is tested as such** — a server restarted with a
+new token answers 401 to the old one and 202 to the new one. There is nothing
+else to revoke at this scale, which is why the button is worth more than any
+amount of per-request access control.
+
+**Per-guest disconnect** drops the session, ends its SSE stream and cancels
+whatever it had running. The conversation stays, because it is a database row.
+
+**The activity panel is not a mirror.** The driver already holds every delta on
+its way to the guest, so it writes them to a small store as well — label, current
+prompt, answer so far, state. Live-mirroring a conversation into the chat tab
+would mean making the singleton-shaped chat store per-conversation, which is a
+rewrite in service of a status panel. Anyone who wants to read a thread opens it
+in the sidebar, where it is a normal conversation.
+
+Connected-guest state is polled every 3s while the section is open, because a
+closed tab is not an event this window hears about.
+
+## Still owed
+
+The three verification items are manual and undone: scanning the QR from a phone
+and chatting, rotating with a phone still connected, and watching a remote turn
+in the panel while using the local chat tab. That last one is the whole point of
+the feature and the only one that cannot be inferred from the tests.
