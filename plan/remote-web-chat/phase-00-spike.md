@@ -73,9 +73,52 @@ local.
 ships, and it means phase 01 is not simultaneously introducing remote turns
 *and* changing how admission counts them.
 
+## Results
+
+### Linux / WebKitGTK 4.1 — passes cleanly (2026-08-17)
+
+The engine Tauri actually uses on Linux, in a GTK window that minimised itself
+after a 45s visible baseline, with every event timestamped by the server rather
+than the page (a frozen page cannot fake its own liveness):
+
+| | |
+|---|---|
+| ticks before minimising | 8, avg gap **5.00s** |
+| ticks after minimising | 135 over ~11 min, avg gap **5.01s**, worst **6.95s** |
+| slow fetches completed | 23, of which **22 after minimising** |
+
+135 ticks is exactly the expected count for the elapsed time, so essentially
+nothing was dropped, and the worst gap of 6.95s is a scheduling hiccup rather
+than throttling — throttling shows up as minute-long gaps, not a 2s one. The
+in-flight fetches, which are the shape a streaming model call has, all
+completed while backgrounded.
+
+**Weak evidence for the platforms that matter, though.** Linux is the least
+aggressive of the three, and the users this feature targets are on Windows and
+macOS. Wayland also made external window control unreliable, hence the
+self-minimising harness; occlusion by another window was not tested separately.
+
+### Windows / WebView2 — still owed
+
+The one to actually worry about: WebView2 is Chromium, and Chromium throttles
+hidden pages hard (timers clamped to roughly once a minute after five minutes
+of being hidden). If that applies to a minimised WebView2 host, remote turns
+stall on the primary target platform.
+
+Worth noting what the Linux run suggests but does not prove: turns are driven
+by streaming fetches, not timers, and network activity is the thing that most
+often keeps a page out of the frozen state. So the likely failure is the
+queue's heartbeat timer rather than the turn itself — which the 5-minute lease
+would then reclaim, degrading to a stalled turn rather than a wedged app.
+
+### macOS / WKWebView — still owed
+
+App Nap is the aggressive one here, and `NSAppSleepDisabled` in `Info.plist`
+is the documented mitigation if it bites.
+
 ## Verification
 
-- A written answer to question 1 for both platforms, in this file, before
-  phase 01 starts.
+- A written answer to question 1 for **Windows and macOS**, added above, before
+  phase 01 starts. Linux is done.
 - For question 2: a test that a lane with capacity 2 admits two and queues the
   third, and that an unknown slot count still behaves as it does today.
