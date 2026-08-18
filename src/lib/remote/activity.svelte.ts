@@ -20,7 +20,13 @@ export interface RemoteActivity {
 	prompt: string;
 	/** The answer as it is being written. */
 	answer: string;
-	state: 'waiting' | 'answering' | 'done' | 'failed';
+	/**
+	 * `waiting` is queued behind another turn; `thinking` has the slot but has
+	 * written nothing yet, which for a reasoning model is most of the wait.
+	 * Collapsing those two was what made the panel say "waiting for a slot"
+	 * until the answer simply appeared.
+	 */
+	state: 'waiting' | 'thinking' | 'answering' | 'done' | 'failed';
 	updatedAt: number;
 }
 
@@ -37,7 +43,9 @@ export function getRemoteActivity(): RemoteActivity[] {
 }
 
 export function getActiveRemoteCount(): number {
-	return activity.filter((a) => a.state === 'waiting' || a.state === 'answering').length;
+	return activity.filter(
+		(a) => a.state === 'waiting' || a.state === 'thinking' || a.state === 'answering'
+	).length;
 }
 
 export function notePrompt(sessionId: string, label: string | null, prompt: string): void {
@@ -54,6 +62,14 @@ export function notePrompt(sessionId: string, label: string | null, prompt: stri
 		...activity,
 		{ sessionId, label, prompt, answer: '', state: 'waiting', updatedAt: Date.now() }
 	];
+}
+
+/** The turn has an inference slot and the model is working on it. */
+export function noteAdmitted(sessionId: string): void {
+	const entry = activity.find((a) => a.sessionId === sessionId);
+	if (!entry || entry.state !== 'waiting') return;
+	entry.state = 'thinking';
+	entry.updatedAt = Date.now();
 }
 
 export function noteAnswer(sessionId: string, answer: string): void {

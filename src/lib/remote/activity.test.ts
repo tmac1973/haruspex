@@ -4,6 +4,7 @@ import {
 	forgetRemoteActivity,
 	getActiveRemoteCount,
 	getRemoteActivity,
+	noteAdmitted,
 	noteAnswer,
 	noteFinished,
 	notePrompt
@@ -32,6 +33,28 @@ describe('what the host can see of their guests', () => {
 		// Still listed — the host can see what was last asked — but no longer
 		// counted as something happening now.
 		expect(getActiveRemoteCount()).toBe(0);
+	});
+
+	it('separates queued from thinking', () => {
+		// Folding these together is what made the panel say "waiting for a
+		// slot" for the whole of a reasoning model's turn, then jump straight
+		// to idle when the answer landed.
+		notePrompt('s1', 'Dave', 'why?');
+		expect(getRemoteActivity()[0].state).toBe('waiting');
+
+		noteAdmitted('s1');
+		expect(getRemoteActivity()[0].state).toBe('thinking');
+		expect(getActiveRemoteCount()).toBe(1);
+
+		noteAnswer('s1', 'because');
+		expect(getRemoteActivity()[0].state).toBe('answering');
+	});
+
+	it('does not resurrect a finished turn when admission arrives late', () => {
+		notePrompt('s1', 'Dave', 'why?');
+		noteFinished('s1', 'done', 'because');
+		noteAdmitted('s1');
+		expect(getRemoteActivity()[0].state).toBe('done');
 	});
 
 	it('keeps guests apart', () => {

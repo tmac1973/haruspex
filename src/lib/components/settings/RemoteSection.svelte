@@ -124,6 +124,27 @@
 		return entry.label || 'Guest';
 	}
 
+	function stateLabel(state: RemoteActivity['state']): string {
+		switch (state) {
+			case 'waiting':
+				return 'waiting for a slot';
+			// A reasoning model spends most of a turn here, which is why it is
+			// not folded into "waiting".
+			case 'thinking':
+				return 'thinking';
+			case 'answering':
+				return 'answering';
+			case 'failed':
+				return 'failed';
+			default:
+				return 'idle';
+		}
+	}
+
+	function isLive(entry: RemoteActivity): boolean {
+		return entry.state === 'thinking' || entry.state === 'answering';
+	}
+
 	onMount(async () => {
 		await refresh();
 		await refreshLink();
@@ -215,15 +236,7 @@
 				<div class="guest">
 					<div class="guest-head">
 						<strong>{guestName(entry)}</strong>
-						<span class="state" class:live={entry.state === 'answering'}>
-							{entry.state === 'waiting'
-								? 'waiting for a slot'
-								: entry.state === 'answering'
-									? 'answering'
-									: entry.state === 'failed'
-										? 'failed'
-										: 'idle'}
-						</span>
+						<span class="state" class:live={isLive(entry)}>{stateLabel(entry.state)}</span>
 						<button class="kick" onclick={() => disconnect(entry.sessionId)}>Disconnect</button>
 					</div>
 					<p class="prompt">{entry.prompt}</p>

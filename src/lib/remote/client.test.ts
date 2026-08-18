@@ -88,6 +88,46 @@ describe('what the page renders', () => {
 		expect(safe).toContain('rel="noopener noreferrer"');
 	});
 
+	it('renders a real answer as prose, not as punctuation', () => {
+		// Taken from an actual answer. Every line here rendered literally
+		// before: the heading as "# Monkeys", the citation as raw brackets, and
+		// the bullets as a paragraph of dashes, because the block parser asked
+		// whether *every* line was a list item.
+		const answer = [
+			'# Monkeys',
+			'',
+			'Roughly 315 species [\\[1\\]](https://example.com/monkey).',
+			'',
+			'## Two major groups',
+			'',
+			'Old World monkeys (Africa & Asia)',
+			'- Examples: baboons, macaques',
+			'- No prehensile tails'
+		].join('\n');
+		const html = renderMarkdown(answer);
+
+		expect(html).toContain('<h1>Monkeys</h1>');
+		expect(html).toContain('<h2>Two major groups</h2>');
+		expect(html).toContain('<p>Old World monkeys (Africa &amp; Asia)</p>');
+		expect(html).toContain('<ul><li>Examples: baboons, macaques</li>');
+		// The citation is a link labelled [1], not four backslashes.
+		expect(html).toContain('>[1]</a>');
+		expect(html).not.toContain('\\');
+		expect(html).not.toContain('# Monkeys');
+	});
+
+	it('renders tables, quotes and rules', () => {
+		const table = renderMarkdown('| a | b |\n| --- | --- |\n| 1 | 2 |');
+		expect(table).toContain('<th>a</th>');
+		expect(table).toContain('<td>2</td>');
+		// A sentence with a pipe in it is not a table.
+		expect(renderMarkdown('use a | b in the shell')).toContain('<p>');
+		expect(renderMarkdown('use a | b in the shell')).not.toContain('<table>');
+
+		expect(renderMarkdown('> quoted')).toContain('<blockquote>quoted</blockquote>');
+		expect(renderMarkdown('---')).toContain('<hr />');
+	});
+
 	it('renders the small subset it promises', () => {
 		expect(renderMarkdown('**bold**')).toContain('<strong>bold</strong>');
 		expect(renderMarkdown('a `snippet` here')).toContain('<code>snippet</code>');
@@ -151,6 +191,38 @@ describe('a turn from the guest side', () => {
 		await client.send('hello');
 		const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 		expect(JSON.parse(init.body as string).clientLabel).toBeNull();
+	});
+
+	it('shows something is happening before any text arrives', async () => {
+		const { client, stream } = start();
+		await client.send('what is a haruspex?');
+		// A placeholder from the moment the question is sent — a reasoning model
+		// can spend a minute before its first word, and silence reads as broken.
+		const bubbles = messages();
+		expect(bubbles).toHaveLength(2);
+		expect(bubbles[1].classList.contains('pending')).toBe(true);
+
+		stream().emit({ type: 'state', turnId: 't1', status: 'running' });
+		// Still one placeholder, not a second one beside it.
+		expect(messages()).toHaveLength(2);
+		expect(status()).toBe('Thinking…');
+
+		stream().emit({ type: 'delta', turnId: 't1', text: 'A reader' });
+		expect(messages()).toHaveLength(2);
+		expect(messages()[1].textContent).toContain('A reader');
+		expect(status()).toBe('Answering…');
+	});
+
+	it('does not leave a placeholder spinning after a failure', async () => {
+		const fetchMock = vi.fn(async () => new Response('too many messages', { status: 429 }));
+		const { client } = start({ fetch: fetchMock });
+		await client.send('again');
+
+		const bubbles = messages();
+		expect(bubbles).toHaveLength(2);
+		expect(bubbles[1].classList.contains('pending')).toBe(false);
+		expect(bubbles[1].classList.contains('failed')).toBe(true);
+		expect(bubbles[1].textContent).toContain('too many messages');
 	});
 
 	it('says it is waiting for the desktop rather than looking hung', () => {

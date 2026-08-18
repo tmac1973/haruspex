@@ -51,14 +51,29 @@ function safeUrl(url) {
 	return /^https?:\/\//i.test(trimmed) ? trimmed : null;
 }
 
+/**
+ * Markdown escapes: models write citations as `[\[1\]](url)`, and a backslash
+ * that survives to the page is a backslash the reader has to mentally delete.
+ * Applied last, so `\*not italic\*` keeps its asterisks rather than becoming
+ * emphasis.
+ *
+ * @param {string} text @returns {string}
+ */
+function unescapeMarkdown(text) {
+	return text.replace(/\\([\\`*_{}[\]()#+\-.!>|~])/g, '$1');
+}
+
 /** @param {string} text @returns {string} */
 function inline(text) {
 	let out = text;
 	out = out.replace(/`([^`\n]+)`/g, (_, code) => `<code>${code}</code>`);
-	out = out.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, href) => {
+	// The label may contain escaped brackets, which is exactly how a model
+	// writes a footnote marker — without allowing for it, every citation in an
+	// answer renders as raw punctuation.
+	out = out.replace(/\[((?:[^\]\\\n]|\\.)*)\]\(([^)\s]+)\)/g, (match, label, href) => {
 		const url = safeUrl(href.replace(/&amp;/g, '&'));
 		return url
-			? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`
+			? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${unescapeMarkdown(label)}</a>`
 			: match;
 	});
 	out = out.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (match, lead, href) => {
@@ -69,15 +84,157 @@ function inline(text) {
 	});
 	out = out.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
 	out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-	return out;
+	return unescapeMarkdown(out);
+}
+
+/** @param {string[]} lines @param {number} start */
+function tableAt(lines, start) {
+	const header = lines[start];
+	const divider = lines[start + 1];
+	if (!header || !divider || !header.includes('|')) return null;
+	// The row of dashes is what distinguishes a table from a sentence with a
+	// pipe in it.
+	if (!/^\s*\|?(\s*:?-{2,}:?\s*\|)+\s*:?-{2,}:?\s*\|?\s*$/.test(divider)) return null;
+
+	/** @param {string} row */
+	const cells = (row) =>
+		row
+			.replace(/^\s*\|/, '')
+			.replace(/\|\s*$/, '')
+			.split('|')
+			.map((cell) => cell.trim());
+
+	const head = cells(header)
+		.map((cell) => `<th>${inline(cell)}</th>`)
+		.join('');
+	let i = start + 2;
+	const body = [];
+	while (i < lines.length && lines[i].includes('|')) {
+		body.push(`<tr>${cells(lines[i]).map((cell) => `<td>${inline(cell)}</td>`).join('')}</tr>`);
+		i++;
+	}
+	return {
+		html: `<table><thead><tr>${head}</tr></thead><tbody>${body.join('')}</tbody></table>`,
+		next: i
+	};
+}
+
+const HEADING = /^(#{1,6})\s+(.*)$/;
+const RULE = /^\s*([-*_])\1{2,}\s*$/;
+const BULLET = /^\s*[-*+]\s+/;
+const NUMBERED = /^\s*\d+[.)]\s+/;
+// `>` has already been escaped by the time blocks are parsed.
+const QUOTE = /^\s*&gt;\s?/;
+
+/**
+ * One block, line by line rather than all-or-nothing.
+ *
+ * The first version asked whether *every* line in a block was a list item,
+ * which is not how anyone writes: "Old World monkeys" followed immediately by
+ * four bullets is one block, and it rendered as a paragraph with the dashes
+ * left in. Runs of like lines are grouped instead, so a lead-in line and its
+ * list come out as a paragraph and a list.
+ *
+ * @param {string} trimmed @param {RegExp} placeholder @returns {string}
+ */
+function renderBlock(trimmed, placeholder) {
+	const lines = trimmed.split('\n');
+	let html = '';
+	let i = 0;
+
+	/** @param {string} line */
+	const isProse = (line) =>
+		!HEADING.test(line) &&
+		!RULE.test(line) &&
+		!BULLET.test(line) &&
+		!NUMBERED.test(line) &&
+		!QUOTE.test(line) &&
+		!placeholder.test(line.trim());
+
+	while (i < lines.length) {
+		const line = lines[i];
+
+		if (placeholder.test(line.trim())) {
+			html += line.trim();
+			i++;
+			continue;
+		}
+
+		const heading = HEADING.exec(line);
+		if (heading) {
+			const level = heading[1].length;
+			html += `<h${level}>${inline(heading[2].trim())}</h${level}>`;
+			i++;
+			continue;
+		}
+
+		if (RULE.test(line)) {
+			html += '<hr />';
+			i++;
+			continue;
+		}
+
+		const table = tableAt(lines, i);
+		if (table) {
+			html += table.html;
+			i = table.next;
+			continue;
+		}
+
+		if (BULLET.test(line)) {
+			const items = [];
+			while (i < lines.length && BULLET.test(lines[i])) {
+				items.push(`<li>${inline(lines[i].replace(BULLET, ''))}</li>`);
+				i++;
+			}
+			html += `<ul>${items.join('')}</ul>`;
+			continue;
+		}
+
+		if (NUMBERED.test(line)) {
+			const items = [];
+			while (i < lines.length && NUMBERED.test(lines[i])) {
+				items.push(`<li>${inline(lines[i].replace(NUMBERED, ''))}</li>`);
+				i++;
+			}
+			html += `<ol>${items.join('')}</ol>`;
+			continue;
+		}
+
+		if (QUOTE.test(line)) {
+			const quoted = [];
+			while (i < lines.length && QUOTE.test(lines[i])) {
+				quoted.push(lines[i].replace(QUOTE, ''));
+				i++;
+			}
+			html += `<blockquote>${inline(quoted.join('\n')).replace(/\n/g, '<br />')}</blockquote>`;
+			continue;
+		}
+
+		const prose = [];
+		while (i < lines.length && isProse(lines[i]) && !tableAt(lines, i)) {
+			prose.push(lines[i]);
+			i++;
+		}
+		if (prose.length) {
+			html += `<p>${inline(prose.join('\n')).replace(/\n/g, '<br />')}</p>`;
+		} else if (i < lines.length && prose.length === 0 && isProse(line)) {
+			// Cannot happen with the guards above, but a loop that might not
+			// advance is not something to leave to reasoning.
+			i++;
+		}
+	}
+	return html;
 }
 
 /**
- * A deliberately small subset: fenced code, inline code, bold, italic, links,
- * lists, paragraphs. Not the app's renderer — no tables, no images, no raw HTML
- * passthrough — because every feature here is also an attack surface.
+ * A deliberately small subset: headings, fenced and inline code, bold, italic,
+ * links, lists, quotes, rules and tables. Not the app's renderer — no images
+ * and no raw HTML passthrough — but wide enough that an ordinary answer arrives
+ * as prose rather than as punctuation.
+ *
+ * @param {unknown} text @returns {string}
  */
-/** @param {unknown} text @returns {string} */
 export function renderMarkdown(text) {
 	// NULs are stripped before anything else so the code-block placeholder
 	// cannot be spoofed by the text being rendered.
@@ -98,19 +255,7 @@ export function renderMarkdown(text) {
 		.split(/\n{2,}/)
 		.map((block) => {
 			const trimmed = block.trim();
-			if (!trimmed) return '';
-			if (placeholder.test(trimmed)) return trimmed;
-
-			const lines = trimmed.split('\n');
-			if (lines.every((line) => /^\s*[-*]\s+/.test(line))) {
-				const items = lines.map((line) => `<li>${inline(line.replace(/^\s*[-*]\s+/, ''))}</li>`);
-				return `<ul>${items.join('')}</ul>`;
-			}
-			if (lines.every((line) => /^\s*\d+[.)]\s+/.test(line))) {
-				const items = lines.map((line) => `<li>${inline(line.replace(/^\s*\d+[.)]\s+/, ''))}</li>`);
-				return `<ol>${items.join('')}</ol>`;
-			}
-			return `<p>${inline(lines.join('\n')).replace(/\n/g, '<br />')}</p>`;
+			return trimmed ? renderBlock(trimmed, placeholder) : '';
 		})
 		.join('');
 
@@ -349,7 +494,14 @@ export function boot(deps = {}) {
 	 */
 	function assistantSlot() {
 		const last = transcript[transcript.length - 1];
-		if (last && last.role === 'assistant' && last.turnId === currentTurn) return last;
+		// A bubble that is still pending is adopted even if it was created
+		// before the server handed back a turn id — otherwise the placeholder
+		// that shows something is happening would be orphaned beside the real
+		// answer.
+		if (last && last.role === 'assistant' && (last.turnId === currentTurn || last.pending)) {
+			last.turnId = currentTurn;
+			return last;
+		}
 		/** @type {Bubble} */
 		const slot = { role: 'assistant', text: '', turnId: currentTurn, pending: true };
 		transcript.push(slot);
@@ -371,7 +523,9 @@ export function boot(deps = {}) {
 				// local model, and a spinner alone would read as a broken page.
 				return 'Waiting for the desktop…';
 			case 'running':
-				return 'Answering…';
+				// It has the slot, but nothing is written yet — a model can
+				// reason for a minute before its first word.
+				return 'Thinking…';
 			case 'failed':
 				return 'Something went wrong';
 			default:
@@ -406,7 +560,13 @@ export function boot(deps = {}) {
 			}
 			case 'state': {
 				currentTurn = event.turnId;
+				// Show the waiting bubble as soon as the turn is accepted. The
+				// first version only created it on the first delta, so a guest
+				// asked a question and watched nothing happen — for as long as
+				// the model spent thinking.
+				assistantSlot().pending = true;
 				setStatus(statusText(event.status));
+				render();
 				break;
 			}
 			case 'delta': {
@@ -469,7 +629,13 @@ export function boot(deps = {}) {
 
 	/** @param {string} text */
 	function fail(text) {
-		transcript.push({ role: 'assistant', text, failed: true });
+		// Reuses the placeholder rather than leaving it blinking beside an
+		// error message.
+		const slot = assistantSlot();
+		slot.text = text;
+		slot.failed = true;
+		slot.pending = false;
+		currentTurn = null;
 		setBusy(false);
 		setStatus(text, true);
 		render();
@@ -479,6 +645,10 @@ export function boot(deps = {}) {
 	/** @param {string} text */
 	async function send(text) {
 		transcript.push({ role: 'user', text });
+		// Optimistic placeholder: the wait for the server to accept the prompt
+		// is short, but it is not nothing, and silence after pressing send is
+		// what makes a page feel broken.
+		transcript.push({ role: 'assistant', text: '', turnId: null, pending: true });
 		saveTranscript();
 		setBusy(true);
 		setStatus('Sending…');

@@ -24,7 +24,7 @@ import {
 } from '$lib/stores/db';
 import { noteExternalConversation } from '$lib/stores/chat.svelte';
 import { conversationIdFor, prepareHistory, titleFor } from './conversation';
-import { noteAnswer, noteFinished, notePrompt } from './activity.svelte';
+import { noteAdmitted, noteAnswer, noteFinished, notePrompt } from './activity.svelte';
 
 export interface RemotePromptEvent {
 	sessionId: string;
@@ -123,7 +123,10 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 				onAdmitted: () => {
 					// Until this fires the client is told it is waiting, which
 					// is what makes contention with the person at the keyboard
-					// legible instead of looking like a hang.
+					// legible instead of looking like a hang. Both sides are
+					// told: the guest through the relay, the host through the
+					// activity panel.
+					noteAdmitted(sessionId);
 					void invoke('remote_turn_running', { turnId }).catch(() => {});
 				}
 			},
