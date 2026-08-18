@@ -180,10 +180,16 @@ describe('the remote turn driver', () => {
 describe('a guest’s conversation', () => {
 	it('is a real conversation row the host can see', async () => {
 		await runRemoteTurn({ ...prompt, clientLabel: 'Dave' });
-		expect(mocks.dbCreateConversation).toHaveBeenCalledWith('remote-guest1', 'Remote — Dave');
+		expect(mocks.dbCreateConversation).toHaveBeenCalledWith(
+			'remote-guest1',
+			'Dave: what is a haruspex?'
+		);
 		// And it shows up in the host's own sidebar rather than only after a
 		// restart.
-		expect(mocks.noteExternalConversation).toHaveBeenCalledWith('remote-guest1', 'Remote — Dave');
+		expect(mocks.noteExternalConversation).toHaveBeenCalledWith(
+			'remote-guest1',
+			'Dave: what is a haruspex?'
+		);
 	});
 
 	it('keeps two guests in two threads', async () => {

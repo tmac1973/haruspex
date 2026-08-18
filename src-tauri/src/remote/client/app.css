@@ -8,6 +8,15 @@
 
 :root {
 	color-scheme: light dark;
+	/*
+	 * The reading column. Everything — bars included — lines up with it, so a
+	 * desktop window gets a wider conversation rather than a phone-shaped one
+	 * stranded in the middle of the screen. Capped rather than fluid because a
+	 * 2500px line of prose is not an improvement.
+	 */
+	--column: 64rem;
+	/* Centres content inside a full-bleed bar without wrapping it in a div. */
+	--gutter: max(1rem, calc((100% - var(--column)) / 2));
 	--bg: #f6f5f4;
 	--surface: #ffffff;
 	--text: #1b1a19;
@@ -61,7 +70,7 @@ body {
 	display: flex;
 	align-items: baseline;
 	gap: 0.75rem;
-	padding: 0.7rem 1rem;
+	padding: 0.7rem var(--gutter);
 	padding-top: calc(0.7rem + env(safe-area-inset-top));
 	border-bottom: 1px solid var(--line);
 	background: var(--surface);
@@ -103,7 +112,7 @@ body {
 	display: flex;
 	flex-direction: column;
 	gap: 0.85rem;
-	max-width: 46rem;
+	max-width: var(--column);
 	width: 100%;
 	margin: 0 auto;
 }
@@ -111,7 +120,7 @@ body {
 .msg {
 	padding: 0.7rem 0.9rem;
 	border-radius: 0.9rem;
-	max-width: 88%;
+	max-width: 92%;
 	overflow-wrap: anywhere;
 }
 
@@ -119,6 +128,8 @@ body {
 	align-self: flex-end;
 	background: var(--user-bg);
 	border-bottom-right-radius: 0.25rem;
+	/* An answer may use the whole column; a question rarely needs to. */
+	max-width: min(88%, 40rem);
 }
 
 .msg.assistant {
@@ -126,6 +137,14 @@ body {
 	background: var(--surface);
 	border: 1px solid var(--line);
 	border-bottom-left-radius: 0.25rem;
+}
+
+/* A wide window is a reading window: a little more room to breathe once there
+   is room to spare. */
+@media (min-width: 60rem) {
+	body {
+		font-size: 17px;
+	}
 }
 
 .msg.failed {
@@ -275,7 +294,7 @@ body {
 
 .notice {
 	margin: 0;
-	padding: 0.55rem 1rem;
+	padding: 0.55rem var(--gutter);
 	font-size: 0.8rem;
 	color: var(--muted);
 	border-top: 1px solid var(--line);
@@ -284,7 +303,7 @@ body {
 }
 
 .greeting {
-	padding: 0.7rem 1rem;
+	padding: 0.7rem var(--gutter);
 	background: var(--surface);
 	border-top: 1px solid var(--line);
 }
@@ -321,7 +340,7 @@ body {
 .composer {
 	display: flex;
 	gap: 0.5rem;
-	padding: 0.7rem 1rem 1rem;
+	padding: 0.7rem var(--gutter) 1rem;
 	background: var(--surface);
 	border-top: 1px solid var(--line);
 	align-items: flex-end;

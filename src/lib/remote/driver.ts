@@ -174,7 +174,9 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 	notePrompt(sessionId, event.clientLabel ?? null, message);
 
 	const conversationId = conversationIdFor(sessionId);
-	const title = titleFor(event.clientLabel);
+	// Named after the first thing asked, like any other conversation — creation
+	// is idempotent, so later turns do not rewrite it.
+	const title = titleFor(event.clientLabel, message);
 	await dbCreateConversation(conversationId, title);
 	noteExternalConversation(conversationId, title);
 

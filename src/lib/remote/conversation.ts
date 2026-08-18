@@ -26,23 +26,37 @@ const PROTECTED_MESSAGES = 8;
 const MAX_LABEL_LENGTH = 40;
 const DEFAULT_LABEL = 'Guest';
 
+/** Matches the local chat's own title length, so the sidebar stays uniform. */
+const MAX_TITLE_LENGTH = 50;
+
 export function conversationIdFor(sessionId: string): string {
 	return `remote-${sessionId}`;
 }
 
 /**
- * Names the thread so its origin is obvious in a sidebar full of the host's own
- * conversations. The label is guest-supplied text: bounded, stripped of control
- * characters, and never trusted to be non-empty.
+ * Names the thread the way the local chat names its own — after the first thing
+ * asked — with the guest's name in front of it.
+ *
+ * Naming every remote thread "Remote — Dave" made the sidebar useless the
+ * moment Dave asked a second question: a column of identical rows, none of them
+ * saying what they were about. The prefix keeps the origin obvious while the
+ * rest does the work a title is for.
+ *
+ * The label is guest-supplied text: bounded, stripped of control characters,
+ * and never trusted to be non-empty.
  */
-export function titleFor(label: string | null | undefined): string {
-	const cleaned = (label ?? '')
-		// eslint-disable-next-line no-control-regex -- stripping them is the point
-		.replace(/[\u0000-\u001f\u007f]/g, ' ')
-		.trim()
-		.slice(0, MAX_LABEL_LENGTH)
-		.trim();
-	return `Remote — ${cleaned || DEFAULT_LABEL}`;
+export function titleFor(label: string | null | undefined, firstMessage = ''): string {
+	const name =
+		(label ?? '')
+			// eslint-disable-next-line no-control-regex -- stripping them is the point
+			.replace(/[\u0000-\u001f\u007f]/g, ' ')
+			.trim()
+			.slice(0, MAX_LABEL_LENGTH)
+			.trim() || DEFAULT_LABEL;
+
+	// Same rule as the local chat's own titles, so the two read alike.
+	const summary = firstMessage.slice(0, MAX_TITLE_LENGTH).replace(/\n/g, ' ').trim();
+	return summary ? `${name}: ${summary}` : `${name}: new chat`;
 }
 
 export interface PreparedHistory {

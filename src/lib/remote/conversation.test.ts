@@ -39,17 +39,25 @@ describe('where a guest’s conversation lives', () => {
 		expect(conversationIdFor('abc123')).not.toBe(conversationIdFor('def456'));
 	});
 
-	it('names it so its origin is obvious in the host’s sidebar', () => {
-		expect(titleFor('Dave')).toBe('Remote — Dave');
-		expect(titleFor('')).toBe('Remote — Guest');
-		expect(titleFor(null)).toBe('Remote — Guest');
+	it('names it after the first thing asked, like any other conversation', () => {
+		// A sidebar of rows all reading "Remote — Dave" says nothing about any
+		// of them.
+		expect(titleFor('Dave', 'what is a haruspex?')).toBe('Dave: what is a haruspex?');
+		expect(titleFor(null, 'what is a haruspex?')).toBe('Guest: what is a haruspex?');
+		expect(titleFor('Dave', '')).toBe('Dave: new chat');
+	});
+
+	it('keeps titles to a sidebar’s width', () => {
+		const long = 'a'.repeat(200);
+		expect(titleFor('Dave', long)).toBe(`Dave: ${'a'.repeat(50)}`);
+		expect(titleFor('Dave', 'line one\nline two')).toBe('Dave: line one line two');
 	});
 
 	it('does not let a guest’s name break the title', () => {
-		expect(titleFor('  Dave  ')).toBe('Remote — Dave');
-		expect(titleFor('Da\nve')).toBe('Remote — Da ve');
-		expect(titleFor('x'.repeat(200))).toBe(`Remote — ${'x'.repeat(40)}`);
-		expect(titleFor('   ')).toBe('Remote — Guest');
+		expect(titleFor('  Dave  ', 'hi')).toBe('Dave: hi');
+		expect(titleFor('Da\nve', 'hi')).toBe('Da ve: hi');
+		expect(titleFor('x'.repeat(200), 'hi')).toBe(`${'x'.repeat(40)}: hi`);
+		expect(titleFor('   ', 'hi')).toBe('Guest: hi');
 	});
 });
 
