@@ -13,11 +13,15 @@
 //!     `"remote:<baseUrl>"` for a remote server). Lanes are independent: a turn
 //!     in one lane never blocks a turn in another, so local chat/shell keep
 //!     running while a job streams against a remote provider.
-//!   - Each lane's capacity is 1 unless the frontend marks it parallel-capable
-//!     (`parallel = true`, from the Settings "provider supports parallel
-//!     inference" toggle), in which case it's unbounded. The flag is re-sent on
-//!     every acquire (last-writer-wins per lane), mirroring the old "re-read
-//!     setting at every acquire" semantics. The local lane is never parallel.
+//!   - Each lane carries a capacity the frontend supplies on every acquire
+//!     (last-writer-wins per lane), mirroring the old "re-read setting at
+//!     every acquire" semantics. 1 serializes — the local llama-server lane is
+//!     always 1. A parallel-capable remote lane uses the slot count the server
+//!     advertises, falling back to unbounded only when that count is unknown
+//!     (OpenRouter, whose concurrency is not ours to model). Unbounded against
+//!     a server with N slots would let request N+1 queue *inside* the server,
+//!     where nothing here can see or report it — losing the "waiting" signal
+//!     exactly when contention starts.
 //!   - Each waiter holds a client-supplied `req_id` (unique per window) so
 //!     it can be cancelled while still queued (abort-before-grant) and
 //!     heartbeated while held.
@@ -109,22 +113,19 @@ struct Inner {
     /// cancel / release. Dropping a sender (without sending) resolves the
     /// waiter's receiver with an error → acquire reports "cancelled".
     senders: HashMap<String, oneshot::Sender<()>>,
-    /// Whether each lane admits concurrent turns. Updated on every acquire
+    /// How many turns each lane admits at once. Updated on every acquire
     /// (last-writer-wins per lane), mirroring the old per-acquire settings
     /// read. A lane absent from the map defaults to serialized (capacity 1).
-    lane_parallel: HashMap<String, bool>,
+    /// `usize::MAX` means "unbounded" — the backend's concurrency is not
+    /// something this app models.
+    lane_capacity: HashMap<String, usize>,
 }
 
 impl Inner {
-    /// Capacity for a single lane: unbounded when that lane was last acquired
-    /// with `parallel = true`, else 1. The frontend never marks the local
-    /// llama-server lane parallel, so it always serializes.
+    /// Capacity for a single lane, as last supplied by the frontend. Defaults
+    /// to 1 so an unknown lane serializes rather than admitting everyone.
     fn capacity(&self, lane: &str) -> usize {
-        if self.lane_parallel.get(lane).copied().unwrap_or(false) {
-            usize::MAX
-        } else {
-            1
-        }
+        self.lane_capacity.get(lane).copied().unwrap_or(1)
     }
 
     /// Count currently-running tickets per lane.
@@ -192,7 +193,7 @@ impl InferenceQueue {
         req_id: String,
         consumer: Value,
         lane: String,
-        parallel: bool,
+        max_parallel: Option<u32>,
         window_label: String,
     ) -> Result<oneshot::Receiver<()>, String> {
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
@@ -200,7 +201,12 @@ impl InferenceQueue {
             return Err("duplicate inference request id".into());
         }
         let now = now_ms();
-        inner.lane_parallel.insert(lane.clone(), parallel);
+        // None means unbounded; a supplied count is floored at 1 so a server
+        // reporting 0 slots cannot deadlock the lane.
+        inner.lane_capacity.insert(
+            lane.clone(),
+            max_parallel.map_or(usize::MAX, |n| (n as usize).max(1)),
+        );
         let (tx, rx) = oneshot::channel();
         inner.senders.insert(req_id.clone(), tx);
         inner.tickets.push(Ticket {
@@ -353,10 +359,10 @@ pub async fn inference_acquire(
     req_id: String,
     consumer: Value,
     lane: String,
-    parallel: bool,
+    max_parallel: Option<u32>,
     window_label: String,
 ) -> Result<TicketDto, String> {
-    let rx = state.enqueue(req_id.clone(), consumer, lane, parallel, window_label)?;
+    let rx = state.enqueue(req_id.clone(), consumer, lane, max_parallel, window_label)?;
     state.emit_snapshot(&app);
 
     match rx.await {
@@ -426,7 +432,7 @@ mod tests {
     /// Enqueue a serialized ticket on the `"local"` lane — the common case in
     /// these tests. Lane-specific behaviour gets its own helpers inline.
     fn enqueue_local(q: &InferenceQueue, id: &str, consumer: Value) -> oneshot::Receiver<()> {
-        q.enqueue(id.into(), consumer, "local".into(), false, "main".into())
+        q.enqueue(id.into(), consumer, "local".into(), Some(1), "main".into())
             .unwrap()
     }
 
@@ -509,7 +515,7 @@ mod tests {
                 "a".into(),
                 json!("shell"),
                 "local".into(),
-                false,
+                Some(1),
                 "win-2".into(),
             )
             .unwrap();
@@ -552,6 +558,56 @@ mod tests {
         assert_eq!(q.snapshot().len(), 1);
     }
 
+    /// A server that advertises N slots must admit exactly N. Unbounded here
+    /// would let the extra request queue *inside* the server, where nothing in
+    /// the app can see it — so the user loses the "waiting" signal at the exact
+    /// moment contention starts.
+    #[test]
+    fn lane_admits_up_to_its_advertised_slots() {
+        let q = InferenceQueue::new();
+        let mut tickets: Vec<_> = ["a", "b", "c"]
+            .iter()
+            .map(|id| {
+                q.enqueue(
+                    (*id).into(),
+                    json!("chat"),
+                    "remote:x".into(),
+                    Some(2),
+                    "main".into(),
+                )
+                .unwrap()
+            })
+            .collect();
+
+        assert!(admitted(&mut tickets[0]));
+        assert!(admitted(&mut tickets[1]));
+        assert!(
+            !admitted(&mut tickets[2]),
+            "third turn must wait on a two-slot server"
+        );
+
+        // Releasing one lets the queued turn through.
+        q.release("a");
+        assert!(admitted(&mut tickets[2]));
+    }
+
+    /// A server reporting zero slots must not deadlock its lane.
+    #[test]
+    fn zero_slots_is_floored_to_one() {
+        let q = InferenceQueue::new();
+        let mut a = q
+            .enqueue(
+                "a".into(),
+                json!("chat"),
+                "remote:x".into(),
+                Some(0),
+                "main".into(),
+            )
+            .unwrap();
+        assert!(admitted(&mut a));
+    }
+
+    /// No advertised count means unbounded, which is right for a hosted API.
     #[test]
     fn parallel_lane_admits_everyone() {
         let q = InferenceQueue::new();
@@ -560,7 +616,7 @@ mod tests {
                 "a".into(),
                 json!("chat"),
                 "remote:x".into(),
-                true,
+                None,
                 "main".into(),
             )
             .unwrap();
@@ -569,7 +625,7 @@ mod tests {
                 "b".into(),
                 json!("chat"),
                 "remote:x".into(),
-                true,
+                None,
                 "main".into(),
             )
             .unwrap();
@@ -588,7 +644,7 @@ mod tests {
                 "dup".into(),
                 json!("chat"),
                 "local".into(),
-                false,
+                Some(1),
                 "main".into()
             )
             .is_err());
@@ -606,7 +662,7 @@ mod tests {
                 "job".into(),
                 json!({"kind":"job","jobName":"Audit"}),
                 "remote:https://api.example.com".into(),
-                false,
+                Some(1),
                 "main".into(),
             )
             .unwrap();
@@ -629,7 +685,7 @@ mod tests {
                 "job".into(),
                 json!("chat"),
                 "remote:y".into(),
-                false,
+                Some(1),
                 "main".into(),
             )
             .unwrap();
@@ -651,7 +707,7 @@ mod tests {
                 "ra".into(),
                 json!("chat"),
                 "remote:z".into(),
-                true,
+                None,
                 "main".into(),
             )
             .unwrap();
@@ -660,7 +716,7 @@ mod tests {
                 "rb".into(),
                 json!("chat"),
                 "remote:z".into(),
-                true,
+                None,
                 "main".into(),
             )
             .unwrap();

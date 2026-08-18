@@ -149,6 +149,13 @@ export interface BackendDescriptor {
 	reasoningEffort: EffortCaps | null;
 	/** Whether the inference queue may admit parallel turns on this backend's lane. */
 	allowParallel: boolean;
+	/**
+	 * How many turns this backend will genuinely run at once, when it says so.
+	 * `null` means unknown — treated as unbounded, which is right for a hosted
+	 * API whose concurrency is not ours to model, and wrong for a self-hosted
+	 * server with a fixed slot count. Only meaningful when `allowParallel`.
+	 */
+	parallelSlots: number | null;
 }
 
 /** What a recognized model identity implies. One entry per model shape. */
@@ -299,7 +306,8 @@ function resolveLocalDescriptor(settings: AppSettings): BackendDescriptor {
 		// about which tuned numbers fit, whereas an effort level is a string the
 		// model's template either accepts or throws on.
 		reasoningEffort: traits?.effort ?? null,
-		allowParallel: false
+		allowParallel: false,
+		parallelSlots: 1
 	};
 }
 
@@ -403,7 +411,10 @@ function resolveRemoteDescriptor(
 		reasoningMode,
 		reasoningSupported,
 		reasoningEffort,
-		allowParallel: inf.allowParallelInference
+		allowParallel: inf.allowParallelInference,
+		// Only a toolchest probe reports a slot count; everything else stays
+		// unknown, which keeps today's unbounded behaviour for hosted APIs.
+		parallelSlots: toolchest ? inf.remoteParallel : null
 	};
 }
 
@@ -481,6 +492,8 @@ function resolveOverrideDescriptor(
 		reasoningMode,
 		reasoningSupported,
 		reasoningEffort,
-		allowParallel: settings.inferenceBackend.allowParallelInference
+		allowParallel: settings.inferenceBackend.allowParallelInference,
+		// A per-job override carries no probe data about slot counts.
+		parallelSlots: null
 	};
 }

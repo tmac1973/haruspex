@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => ({
 	mode: 'local' as 'local' | 'remote',
 	remoteBaseUrl: 'https://api.example.com',
 	allowParallelInference: false,
+	// Only a llama-toolchest probe reports a slot count; the descriptor gates
+	// on the backend kind, so the mock has to carry both.
+	backendKind: null as string | null,
+	remoteParallel: null as number | null,
 	// reqId -> resolver for the pending inference_acquire promise
 	acquire: new Map<string, { resolve: () => void; reject: (e: unknown) => void }>(),
 	eventHandler: undefined as ((e: { payload: unknown }) => void) | undefined
@@ -23,7 +27,9 @@ vi.mock('$lib/stores/settings', () => ({
 		inferenceBackend: {
 			mode: mocks.mode,
 			remoteBaseUrl: mocks.remoteBaseUrl,
-			allowParallelInference: mocks.allowParallelInference
+			allowParallelInference: mocks.allowParallelInference,
+			remoteBackendKind: mocks.backendKind,
+			remoteParallel: mocks.remoteParallel
 		}
 	}),
 	// Read by resolveBackendDescriptor, which laneFor now delegates to.
@@ -103,6 +109,8 @@ beforeEach(() => {
 	mocks.mode = 'local';
 	mocks.remoteBaseUrl = 'https://api.example.com';
 	mocks.allowParallelInference = false;
+	mocks.backendKind = null;
+	mocks.remoteParallel = null;
 	mocks.acquire.clear();
 	mocks.eventHandler = undefined;
 	vi.mocked(invoke).mockClear();
@@ -126,7 +134,7 @@ describe('inferenceQueue client — protocol', () => {
 				reqId: 'main:1',
 				consumer: 'chat',
 				lane: 'local',
-				parallel: false,
+				maxParallel: 1,
 				windowLabel: 'main'
 			})
 		);
@@ -166,14 +174,35 @@ describe('inferenceQueue client — protocol', () => {
 		await Promise.all([a, b]);
 	});
 
-	it('passes parallel=true on the remote lane when remote parallel inference is enabled', async () => {
+	/// A parallel-capable backend that never reported a slot count stays
+	/// unbounded — right for a hosted API, whose concurrency is not ours to
+	/// model.
+	it('leaves the remote lane unbounded when no slot count is known', async () => {
 		mocks.mode = 'remote';
 		mocks.allowParallelInference = true;
 		const p = withInferenceSlot({ consumer: 'chat' }, async () => 'x');
 		await tick();
 		expect(invoke).toHaveBeenCalledWith(
 			'inference_acquire',
-			expect.objectContaining({ lane: 'remote:https://api.example.com', parallel: true })
+			expect.objectContaining({ lane: 'remote:https://api.example.com', maxParallel: null })
+		);
+		admit('main:1');
+		await p;
+	});
+
+	/// A self-hosted server that advertises N slots gets N. Sending unbounded
+	/// would let the extra turn queue inside the server, where the app cannot
+	/// see it — losing the "waiting" signal exactly when contention starts.
+	it('caps the remote lane at the slot count the server advertises', async () => {
+		mocks.mode = 'remote';
+		mocks.allowParallelInference = true;
+		mocks.backendKind = 'llama-toolchest';
+		mocks.remoteParallel = 4;
+		const p = withInferenceSlot({ consumer: 'chat' }, async () => 'x');
+		await tick();
+		expect(invoke).toHaveBeenCalledWith(
+			'inference_acquire',
+			expect.objectContaining({ maxParallel: 4 })
 		);
 		admit('main:1');
 		await p;
@@ -189,7 +218,7 @@ describe('inferenceQueue client — protocol', () => {
 		await tick();
 		expect(invoke).toHaveBeenCalledWith(
 			'inference_acquire',
-			expect.objectContaining({ lane: 'remote:https://job.host', parallel: false })
+			expect.objectContaining({ lane: 'remote:https://job.host', maxParallel: 1 })
 		);
 		admit('main:1');
 		await p;
