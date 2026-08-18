@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Haruspex — background webview test</title>
+    <style>
+      body {
+        font: 15px/1.5 system-ui, sans-serif;
+        max-width: 46rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        color: #111;
+      }
+      h1 { font-size: 1.3rem; }
+      button { font: inherit; padding: 0.5rem 1rem; cursor: pointer; }
+      #result { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 6px; }
+      .verdict { font-weight: 600; padding: 0.5rem 0; }
+      .ok { color: #1a7f37; }
+      .bad { color: #b42318; }
+      ol { padding-left: 1.2rem; }
+      code { background: #f0f0f0; padding: 0 3px; }
+    </style>
+  </head>
+  <body>
+    <h1>Does a backgrounded webview keep running?</h1>
+    <p>
+      Remote web chat assumes Haruspex keeps working while its window is minimised. Windows
+      renders it in WebView2, which is Chromium — the same engine as Edge — and Chromium
+      throttles hidden pages hard. This measures whether it does.
+    </p>
+    <ol>
+      <li>Press <strong>Start</strong>.</li>
+      <li><strong>Minimise this window</strong> (or cover it completely with another).</li>
+      <li>Leave it alone for <strong>at least 15 minutes</strong>. Longer is better — Chromium's
+        harshest throttling only kicks in after 5 minutes hidden.</li>
+      <li>Restore the window and press <strong>Copy result</strong>.</li>
+    </ol>
+
+    <p>
+      <button id="start">Start</button>
+      <button id="copy" disabled>Copy result</button>
+    </p>
+    <div id="verdict" class="verdict"></div>
+    <pre id="result">Not started.</pre>
+
+    <script>
+      // Every measurement uses Date.now(), so a timer that fires late still
+      // reports the real elapsed gap — a throttled page cannot look healthy.
+      const TICK_MS = 5000;
+      const ticks = [];       // {t, hidden}
+      const visChanges = [];  // {t, state}
+      const fetches = [];     // {t, ms, ok}
+      let started = 0;
+      let timer = null;
+      let fetchTimer = null;
+
+      const el = (id) => document.getElementById(id);
+
+      function record() {
+        ticks.push({ t: Date.now(), hidden: document.visibilityState === 'hidden' });
+        render();
+      }
+
+      // A page can have timers throttled while still completing network work,
+      // and the agent loop is driven by streaming responses rather than timers
+      // — so the two are measured separately. Only possible when the page is
+      // served over http(s); from file:// this is skipped and noted.
+      async function probeFetch() {
+        if (location.protocol === 'file:') return;
+        const t0 = Date.now();
+        try {
+          await fetch(location.href, { cache: 'no-store' });
+          fetches.push({ t: t0, ms: Date.now() - t0, ok: true });
+        } catch {
+          fetches.push({ t: t0, ms: Date.now() - t0, ok: false });
+        }
+      }
+
+      function gaps(list) {
+        const out = [];
+        for (let i = 1; i < list.length; i++) out.push(list[i].t - list[i - 1].t);
+        return out;
+      }
+
+      function summarise() {
+        const hiddenTicks = ticks.filter((x) => x.hidden);
+        const shownTicks = ticks.filter((x) => !x.hidden);
+        const hg = gaps(hiddenTicks);
+        const sg = gaps(shownTicks);
+        const avg = (a) => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null);
+        const hiddenMs = visChanges.length
+          ? ticks.length
+            ? hiddenTicks.length * TICK_MS
+            : 0
+          : 0;
+        return {
+          ua: navigator.userAgent,
+          ran_for_s: started ? Math.round((Date.now() - started) / 1000) : 0,
+          visibility_changes: visChanges.length,
+          ticks_visible: shownTicks.length,
+          ticks_hidden: hiddenTicks.length,
+          // The numbers that decide it. Expected gap is 5000ms.
+          gap_visible_avg_ms: avg(sg),
+          gap_hidden_avg_ms: avg(hg),
+          gap_hidden_max_ms: hg.length ? Math.max(...hg) : null,
+          approx_hidden_time_s: Math.round(hiddenMs / 1000),
+          fetch_probes: fetches.length,
+          fetch_failures: fetches.filter((f) => !f.ok).length,
+          fetch_slowest_ms: fetches.length ? Math.max(...fetches.map((f) => f.ms)) : null,
+          fetch_note: location.protocol === 'file:' ? 'skipped (opened from file://)' : 'ran'
+        };
+      }
+
+      function render() {
+        const s = summarise();
+        el('result').textContent = JSON.stringify(s, null, 2);
+        const v = el('verdict');
+        if (!s.ticks_hidden) {
+          v.textContent = 'Waiting — minimise the window and leave it a while.';
+          v.className = 'verdict';
+          return;
+        }
+        // A healthy hidden page keeps ~5s spacing. Chromium's intensive
+        // throttling clamps hidden timers to roughly one per minute, so a mean
+        // far above 5s is the signal, not a single slow tick.
+        const bad = s.gap_hidden_avg_ms > TICK_MS * 2;
+        v.textContent = bad
+          ? `THROTTLED — hidden ticks averaged ${s.gap_hidden_avg_ms}ms apart (expected ~${TICK_MS}).`
+          : `Looks healthy — hidden ticks averaged ${s.gap_hidden_avg_ms}ms apart (expected ~${TICK_MS}).`;
+        v.className = 'verdict ' + (bad ? 'bad' : 'ok');
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        visChanges.push({ t: Date.now(), state: document.visibilityState });
+        render();
+      });
+
+      el('start').onclick = () => {
+        if (timer) return;
+        started = Date.now();
+        el('start').disabled = true;
+        el('copy').disabled = false;
+        record();
+        timer = setInterval(record, TICK_MS);
+        fetchTimer = setInterval(probeFetch, 30000);
+      };
+
+      el('copy').onclick = async () => {
+        const text = JSON.stringify(summarise(), null, 2);
+        try {
+          await navigator.clipboard.writeText(text);
+          el('copy').textContent = 'Copied';
+          setTimeout(() => (el('copy').textContent = 'Copy result'), 1500);
+        } catch {
+          // Clipboard is blocked from file:// in some builds — select instead
+          // so Ctrl+C still works.
+          const r = document.createRange();
+          r.selectNode(el('result'));
+          getSelection().removeAllRanges();
+          getSelection().addRange(r);
+          el('copy').textContent = 'Press Ctrl+C';
+        }
+      };
+    </script>
+  </body>
+</html>
