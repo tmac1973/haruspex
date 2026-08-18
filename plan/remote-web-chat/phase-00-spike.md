@@ -98,18 +98,64 @@ aggressive of the three, and the users this feature targets are on Windows and
 macOS. Wayland also made external window control unreliable, hence the
 self-minimising harness; occlusion by another window was not tested separately.
 
-### Windows / WebView2 — still owed
+### Windows — Edge throttles, Haruspex does not (2026-08-17)
 
-The one to actually worry about: WebView2 is Chromium, and Chromium throttles
-hidden pages hard (timers clamped to roughly once a minute after five minutes
-of being hidden). If that applies to a minimised WebView2 host, remote turns
-stall on the primary target platform.
+Measured twice. The second run overturned the first's conclusion, so both are
+recorded.
 
-Worth noting what the Linux run suggests but does not prove: turns are driven
-by streaming fetches, not timers, and network activity is the thing that most
-often keeps a page out of the frozen state. So the likely failure is the
-queue's heartbeat timer rather than the turn itself — which the 5-minute lease
-would then reclaim, degrading to a stalled turn rather than a wedged app.
+**In a bare Edge window, throttling is real.** Edge 151 is the same Chromium
+engine WebView2 uses. Minimised for ~16 minutes, hidden timers averaged **35.7s
+against an expected 5s**, worst gap **60,013ms** — the exact signature of
+intensive throttling, which clamps hidden-page timers to one a minute after five
+minutes hidden. 27 ticks arrived where ~190 were due. Adding Chromium's three
+anti-throttling flags cured it completely: over 21.5 minutes hidden, **258 of
+258 expected ticks**, gaps of 5000ms average and 5003ms worst, and 245 network
+requests completed while hidden with zero errors.
+
+**Inside Haruspex, it never happens — because the page is never hidden.** The
+same measurement run in a released Windows build (DevTools is compiled in, so
+this needs no toolchain: `Ctrl+Shift+I`, close it before minimising, since an
+open inspector suppresses throttling on its own). Minimised for 15 minutes:
+
+| | |
+|---|---|
+| span | 910s |
+| worst gap between timer samples | **5013ms** against an expected 5000 |
+| samples where `document.hidden` was true | **0**, out of ~182 |
+
+Minimising a Tauri window on Windows does not flip the webview's visibility —
+wry leaves the WebView2 controller visible — so Chromium never classifies the
+page as hidden, and none of its hidden-page throttling applies. The webview
+keeps running at full speed while minimised precisely because the engine does
+not know the window is minimised.
+
+That answers phase 00's blocking question, and answers it better than the flags
+would have: the behaviour the feature depends on is the default.
+
+**The flags are still set, as insurance rather than as the fix.** They cost
+nothing and cover the case where a future wry or WebView2 version starts
+propagating window state to the controller. Note the trap in doing so: wry
+passes `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection` by
+default and setting `additionalBrowserArgs` *replaces* that list rather than
+appending, so those are re-included explicitly. Omitting them would have
+quietly changed SmartScreen behaviour as a side effect of a timer fix.
+
+**Correction.** On the Edge evidence alone this was written up as a shipped bug
+— that the job scheduler's 30s `setInterval` (`scheduler.svelte.ts:29`) was
+being clamped to ~60s, making scheduled jobs on Windows fire late whenever the
+window was not visible. The in-app measurement says otherwise: the timer held
+5000ms throughout. Scheduled jobs are not late on Windows.
+
+**Where this could still bite.** The result covers *minimising*. A window hidden
+programmatically — a tray icon, close-to-tray — goes through a different path
+that likely does set the controller invisible, at which point the page really is
+hidden and the flags stop being inert. Worth re-measuring if such a feature is
+ever added.
+
+### macOS / WKWebView — still owed
+
+No machine available. App Nap is the aggressive one here, and
+`NSAppSleepDisabled` in `Info.plist` is the documented mitigation if it bites.
 
 ### macOS / WKWebView — still owed
 
@@ -118,7 +164,9 @@ is the documented mitigation if it bites.
 
 ## Verification
 
-- A written answer to question 1 for **Windows and macOS**, added above, before
-  phase 01 starts. Linux is done.
+- A written answer to question 1 for **macOS**, added above, before phase 01
+  starts. Linux and Windows are done.
+- A re-measurement on Windows if the app ever gains a hide-to-tray path, which
+  is the one case the in-app run did not cover.
 - For question 2: a test that a lane with capacity 2 admits two and queues the
   third, and that an unknown slot count still behaves as it does today.
