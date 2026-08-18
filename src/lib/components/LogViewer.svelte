@@ -300,7 +300,8 @@
 		return {
 			cache_hits: g.cache_hits ?? 0,
 			total_queries: g.total_queries ?? 0,
-			all_engines_failed: g.all_engines_failed ?? 0
+			all_engines_failed: g.all_engines_failed ?? 0,
+			browser_fallbacks: g.browser_fallbacks ?? 0
 		};
 	}
 
@@ -570,6 +571,11 @@
 							{/if}
 						</div>
 						<div>All-engines failures: <b>{globals.all_engines_failed}</b></div>
+						{#if globals.browser_fallbacks > 0}
+							<!-- Only shown once it has happened: a permanent zero would
+							     be noise for everyone not using browser-assisted search. -->
+							<div>Browser-search fallbacks: <b>{globals.browser_fallbacks}</b></div>
+						{/if}
 					</div>
 				{/snippet}
 

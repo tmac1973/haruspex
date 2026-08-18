@@ -4,8 +4,11 @@
 //! `state` (`ProxyState` caches/rate-limit/rotation), `search` (engine
 //! backends), `extract`/`paywall`/`images` (page content), `bypass`
 //! (user proxy), `stats` (session counters + the `StatSink` persistence
-//! seam). This file holds the Tauri commands and orchestration only.
+//! seam), `browser` (driving an installed Chrome/Chromium for the engines
+//! that now require JS execution). This file holds the Tauri commands and
+//! orchestration only.
 
+mod browser;
 mod bypass;
 mod config;
 mod extract;
@@ -19,6 +22,7 @@ use log::{info, warn};
 use serde::Serialize;
 use std::future::Future;
 use std::time::Instant;
+use tauri::Emitter;
 
 pub(crate) use bypass::apply_proxy;
 pub use config::ProxyConfig;
@@ -63,9 +67,11 @@ where
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn proxy_search(
+    app: tauri::AppHandle,
     state: tauri::State<'_, ProxyState>,
     stats: tauri::State<'_, SearchStats>,
     sink: tauri::State<'_, StatSinkHandle>,
+    session: tauri::State<'_, browser::search::BrowserSessionHandle>,
     query: String,
     provider: Option<String>,
     api_key: Option<String>,
@@ -73,6 +79,8 @@ pub async fn proxy_search(
     recency: Option<String>,
     deep_research: Option<bool>,
     proxy: Option<ProxyConfig>,
+    // Settings override for the browser executable; detection runs when None.
+    browser_path: Option<String>,
 ) -> Result<Vec<SearchResult>, String> {
     let sink: &dyn StatSink = sink.0.as_ref();
     record_global_both(&stats, sink, GlobalCounter::Query);
@@ -125,6 +133,66 @@ pub async fn proxy_search(
             )
             .await?
         }
+        "browser" => {
+            info!(
+                "Browser-assisted search for: {} (recency: {})",
+                query, recency
+            );
+            match browser::search::search_via_browser(
+                &session,
+                &state,
+                &stats,
+                sink,
+                &query,
+                recency,
+                browser_path.as_deref(),
+            )
+            .await
+            {
+                Ok(result) => {
+                    if state.clear_browser_fallback() {
+                        let _ = app.emit("browser-search-fallback-cleared", ());
+                    }
+                    result?
+                }
+                Err(unavailable) => {
+                    // Loud, not silent: a mode that has quietly been using the
+                    // standard rotation for a week must not look healthy. The
+                    // event fires on transition only — a research turn issues
+                    // dozens of searches, and dozens of identical toasts is how
+                    // people learn to ignore them.
+                    warn!(
+                        "browser search unavailable ({}) — falling back to the standard rotation. Searched: {}",
+                        unavailable.reason,
+                        if unavailable.searched.is_empty() {
+                            "(browser already found)".to_string()
+                        } else {
+                            unavailable.searched.join(", ")
+                        }
+                    );
+                    record_global_both(&stats, sink, GlobalCounter::BrowserFallback);
+                    if state.begin_browser_fallback(&unavailable.reason) {
+                        let _ = app.emit(
+                            "browser-search-fallback",
+                            BrowserFallbackState {
+                                reason: unavailable.reason.clone(),
+                                searched: unavailable.searched.clone(),
+                            },
+                        );
+                    }
+                    search_auto(
+                        &state,
+                        &stats,
+                        sink,
+                        &query,
+                        recency,
+                        deep_research,
+                        proxy_ref,
+                    )
+                    .await?
+                }
+            }
+        }
         "auto" => {
             info!(
                 "Auto-searching for: {} (recency: {}, deep_research: {})",
@@ -164,6 +232,30 @@ pub async fn proxy_search(
     Ok(results)
 }
 
+/// The shared browser handle registered as Tauri state. Constructing it does
+/// not launch anything — the browser starts on the first browser-mode search
+/// and quits after an idle period.
+pub fn browser_session() -> BrowserSessionHandle {
+    // Collect profiles a previous run's crash left behind. Nothing else ever
+    // will, and each is hundreds of megabytes.
+    browser::process::sweep_stale_profiles();
+    std::sync::Arc::new(browser::search::BrowserSession::new())
+}
+
+/// Shared browser handle. Re-exported so the app's exit handler can stop the
+/// browser alongside the sidecars without reaching into the module.
+pub type BrowserSessionHandle = browser::search::BrowserSessionHandle;
+
+/// Surfaced when browser-assisted search cannot run and the plain rotation is
+/// standing in for it. Carries where detection looked, because "not found"
+/// alone leaves the user with nothing to act on.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct BrowserFallbackState {
+    pub reason: String,
+    pub searched: Vec<String>,
+}
+
 #[derive(Serialize, ts_rs::TS)]
 #[ts(export)]
 pub struct CombinedSearchStats {
@@ -184,6 +276,30 @@ pub fn get_search_stats(
 #[tauri::command]
 pub fn reset_lifetime_search_stats(sink: tauri::State<'_, StatSinkHandle>) -> Result<(), String> {
     sink.0.reset_lifetime()
+}
+
+/// Look for a Chromium-family browser to drive for browser-assisted search.
+///
+/// Returns the browser on success, or the list of places it looked — a bare
+/// "not found" makes the Settings page useless for diagnosing why, and the
+/// answer is usually "it's installed somewhere unusual", which the list makes
+/// obvious.
+///
+/// Runs the search on a blocking thread: it stats a dozen paths and executes
+/// `--version` on the hits, which is filesystem and process work, not async
+/// work, and doing it on the async runtime would stall other egress.
+#[tauri::command]
+pub async fn detect_browser(
+    override_path: Option<String>,
+) -> Result<browser::DetectedBrowser, browser::detect::BrowserDetectionFailure> {
+    tauri::async_runtime::spawn_blocking(move || browser::detect(override_path.as_deref()))
+        .await
+        .unwrap_or_else(|e| {
+            Err(browser::detect::BrowserDetectionFailure {
+                searched: Vec::new(),
+                override_error: Some(format!("browser detection task failed: {e}")),
+            })
+        })
 }
 
 #[tauri::command]

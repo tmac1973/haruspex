@@ -9,11 +9,58 @@
 		type ProxyMode
 	} from '$lib/stores/settings';
 	import ModeSelector from '$lib/components/ModeSelector.svelte';
+	import { invoke } from '@tauri-apps/api/core';
+	import { onMount } from 'svelte';
+	import { listen } from '@tauri-apps/api/event';
+	import type { DetectedBrowser } from '$lib/ipc/gen/DetectedBrowser';
+	import type { BrowserDetectionFailure } from '$lib/ipc/gen/BrowserDetectionFailure';
+	import type { BrowserFallbackState } from '$lib/ipc/gen/BrowserFallbackState';
 
 	let searchProvider = $state<SearchProvider>(getSettings().searchProvider);
 	let searchRecency = $state(getSettings().searchRecency);
 	let braveApiKey = $state(getSettings().braveApiKey);
 	let searxngUrl = $state(getSettings().searxngUrl);
+
+	let browserPath = $state(getSettings().browserPath);
+	// Detection result for the browser-assisted provider. null = not probed yet.
+	let browser = $state<DetectedBrowser | null>(null);
+	let browserFailure = $state<BrowserDetectionFailure | null>(null);
+	let probing = $state(false);
+	// Set while browser mode is degraded and the plain rotation is standing in.
+	// Rust owns this state; the card mirrors it and clears when Rust says so.
+	let fallback = $state<BrowserFallbackState | null>(null);
+
+	async function probeBrowser() {
+		probing = true;
+		try {
+			browser = await invoke<DetectedBrowser>('detect_browser', {
+				overridePath: browserPath || null
+			});
+			browserFailure = null;
+		} catch (e) {
+			browser = null;
+			browserFailure = e as BrowserDetectionFailure;
+		} finally {
+			probing = false;
+		}
+	}
+
+	onMount(() => {
+		// Probe only when the mode is actually selected: launching --version on
+		// every Settings visit is process churn for a label most users never
+		// read.
+		if (searchProvider === 'browser') void probeBrowser();
+		const unlisten = [
+			listen<BrowserFallbackState>('browser-search-fallback', (e) => (fallback = e.payload)),
+			listen('browser-search-fallback-cleared', () => (fallback = null))
+		];
+		return () => void Promise.all(unlisten).then((fns) => fns.forEach((f) => f()));
+	});
+
+	function saveBrowserPath() {
+		updateSettings({ browserPath });
+		void probeBrowser();
+	}
 
 	let proxyMode = $state<ProxyMode>(getSettings().proxy.mode);
 	let proxyUrl = $state(getSettings().proxy.url);
@@ -22,6 +69,7 @@
 	function setSearchProvider(provider: SearchProvider) {
 		searchProvider = provider;
 		updateSettings({ searchProvider: provider });
+		if (provider === 'browser' && !browser && !browserFailure) void probeBrowser();
 	}
 
 	function saveBraveKey() {
@@ -66,6 +114,7 @@
 			<option value="duckduckgo">DuckDuckGo (no key needed)</option>
 			<option value="brave">Brave Search (API key required)</option>
 			<option value="searxng">SearXNG (self-hosted)</option>
+			<option value="browser">Browser-assisted (requires Chrome or Chromium)</option>
 		</select>
 	</div>
 
@@ -91,6 +140,70 @@
 				placeholder="BSA..."
 			/>
 			<p class="hint">Get a free key at brave.com/search/api (2,000 queries/month)</p>
+		</div>
+	{/if}
+
+	{#if searchProvider === 'browser'}
+		<div class="browser-block">
+			{#if fallback}
+				<!-- Deliberately not dismissible: dismissing would restore exactly
+				     the silence this exists to prevent. It clears when Rust says
+				     browser mode worked again. -->
+				<div class="warn-card">
+					<strong>Browser search is not working.</strong>
+					Searches are using the standard rotation instead.
+					<div class="warn-reason">{fallback.reason}</div>
+					{#if fallback.searched.length}
+						<div class="warn-paths">Looked in: {fallback.searched.join(', ')}</div>
+					{/if}
+				</div>
+			{/if}
+
+			{#if probing}
+				<p class="hint">Looking for a browser…</p>
+			{:else if browser}
+				<p class="hint">
+					Using <strong>{browser.version}</strong> — <code>{browser.path}</code>
+					{#if browser.from_override}(set manually below){/if}
+				</p>
+			{:else if browserFailure}
+				<div class="warn-card">
+					<strong>No Chrome or Chromium found.</strong>
+					{#if browserFailure.override_error}
+						<div class="warn-reason">{browserFailure.override_error}</div>
+					{/if}
+					{#if browserFailure.searched.length}
+						<div class="warn-paths">Looked in: {browserFailure.searched.join(', ')}</div>
+					{/if}
+					<div class="warn-reason">
+						Any Chromium-based browser works — Chrome, Chromium, Brave or Edge. On Windows, Edge is
+						installed by default, so this usually means it lives somewhere unusual; set the path
+						below.
+					</div>
+				</div>
+			{/if}
+
+			<button class="btn btn-small" onclick={probeBrowser} disabled={probing}>
+				{probing ? 'Checking…' : 'Check again'}
+			</button>
+
+			<div class="search-field" style="margin-top: 10px">
+				<label for="browser-path">Browser path (optional):</label>
+				<input
+					id="browser-path"
+					type="text"
+					bind:value={browserPath}
+					onblur={saveBrowserPath}
+					placeholder="Detected automatically — set only if detection misses"
+				/>
+			</div>
+
+			<p class="hint">
+				Every search runs in a real browser, which is what gets past the JavaScript checks some
+				engines now use — it unlocks Startpage, which the standard rotation can't reach. The browser
+				starts when you search and shuts down when idle, and searches take roughly twice as long. If
+				no browser is available, searches fall back to the standard rotation and say so.
+			</p>
 		</div>
 	{/if}
 
@@ -177,6 +290,27 @@
 </section>
 
 <style>
+	.browser-block {
+		margin-top: 10px;
+	}
+
+	.warn-card {
+		border: 1px solid var(--warning, #b4791f);
+		border-radius: 6px;
+		padding: 10px 12px;
+		margin-bottom: 10px;
+		background: var(--bg-secondary);
+		font-size: 0.85rem;
+	}
+
+	.warn-reason,
+	.warn-paths {
+		margin-top: 6px;
+		color: var(--text-secondary);
+		font-size: 0.8rem;
+		word-break: break-word;
+	}
+
 	.hint {
 		margin: 0 0 16px 0;
 	}

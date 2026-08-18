@@ -22,6 +22,16 @@ pub struct ProxyState {
     /// after each successful search so we round-robin through the engines
     /// instead of always starting with the same one.
     auto_rotation_cursor: Mutex<usize>,
+    /// Reason browser-assisted search is currently falling back to the plain
+    /// rotation, or None when it is working. Holds the reason rather than a
+    /// bool so a *changed* reason re-notifies — "Chrome vanished" and "Chrome
+    /// crashed" are different problems.
+    browser_fallback: Mutex<Option<String>>,
+    /// Rotation cursor for browser-assisted search. Separate from the auto
+    /// cursor because the two modes rotate different engine lists, and sharing
+    /// one index would make each mode's starting point depend on how often the
+    /// other ran.
+    browser_rotation_cursor: Mutex<usize>,
 }
 
 impl ProxyState {
@@ -32,6 +42,8 @@ impl ProxyState {
             search_cache: Mutex::new(HashMap::new()),
             fetch_cache: Mutex::new(HashMap::new()),
             auto_rotation_cursor: Mutex::new(0),
+            browser_fallback: Mutex::new(None),
+            browser_rotation_cursor: Mutex::new(0),
         }
     }
 
@@ -67,6 +79,51 @@ impl ProxyState {
         if !wait.is_zero() {
             tokio::time::sleep(wait).await;
         }
+    }
+
+    /// Index browser mode should try first, for a rotation of `len` engines.
+    ///
+    /// Rotating matters more here than it looks. Without it the first engine
+    /// answers every search — and since it is the strongest one, it always
+    /// succeeds, so the other four are never exercised and their stats stay
+    /// empty. That is precisely the state in which "the standard rotation has
+    /// a backup" stops being true without anyone noticing.
+    pub(super) fn browser_rotation_offset(&self, len: usize) -> usize {
+        if len == 0 {
+            return 0;
+        }
+        *self.browser_rotation_cursor.lock().unwrap() % len
+    }
+
+    pub(super) fn advance_browser_rotation_cursor(&self, len: usize) {
+        if len == 0 {
+            return;
+        }
+        let mut cursor = self.browser_rotation_cursor.lock().unwrap();
+        *cursor = (*cursor + 1) % len;
+    }
+
+    /// Note that browser-assisted search could not run. Returns true only on the
+    /// *transition* into the degraded state, or when the reason changes.
+    ///
+    /// The distinction is the whole point: a research turn issues dozens of
+    /// searches, and a notification per search is how people learn to ignore
+    /// notifications. The persistent card carries the ongoing state; the event
+    /// only marks the moment it started.
+    pub(super) fn begin_browser_fallback(&self, reason: &str) -> bool {
+        let mut current = self.browser_fallback.lock().unwrap();
+        if current.as_deref() == Some(reason) {
+            return false;
+        }
+        *current = Some(reason.to_string());
+        true
+    }
+
+    /// Note that browser-assisted search worked. Returns true if it had been
+    /// degraded, so the caller can clear the card. Recovery is deliberately
+    /// quiet — the card simply goes away.
+    pub(super) fn clear_browser_fallback(&self) -> bool {
+        self.browser_fallback.lock().unwrap().take().is_some()
     }
 
     pub(super) fn record_failure(&self, engine: &str) {

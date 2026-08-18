@@ -255,54 +255,71 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
     }))
 }
 
-/// A challenge interstitial is a small page. Real SERPs measured on 2026-08-17:
-/// DuckDuckGo's HTML endpoint is the smallest at ~33 KB (the same for a query
-/// with zero results), Bing ~124 KB, Brave ~317 KB, Yahoo ~430 KB. The
-/// challenge pages that took two engines out: Mojeek 5.5 KB, Startpage 10.3 KB.
-/// 24 KB sits between the two populations with roughly 2x margin either side.
+/// Phrases that only a bot wall says. Matched at any page size, because a
+/// challenge is not always small: Brave's interstitial is ~85 KB, well past
+/// anything an interstitial "ought" to be, and treating size as the only guard
+/// let it read as an empty result set — no cooldown, and a 15s render timeout
+/// burned on every attempt, which is exactly the pathology that let Mojeek
+/// waste 150 first-choice attempts.
+///
+/// Verified 2026-08-17 against live SERPs from Bing (123 KB), DuckDuckGo
+/// (33 KB) and Yahoo (371 KB): none contains any of these.
+const CHALLENGE_PHRASES: &[&str] = &[
+    "verifying you're not a bot",
+    "verifying your request",
+    "javascript is required to complete this challenge",
+    "checking your browser",
+    "unusual traffic",
+    "are you human",
+    "are you a human",
+    "quick check before you continue",
+    "please solve the captcha",
+    "enter the characters you see",
+];
+
+/// Words that appear on bot walls *and* in the markup of healthy pages, so
+/// they only count on a page small enough to be an interstitial.
+///
+/// Measured 2026-08-17: Brave's ordinary SERP contains "captcha" and Bing's
+/// contains "turnstile". Matching these at any size would report a genuine
+/// zero-result query — or a parser broken by a markup change — as a bot wall,
+/// cooling the engine down and hiding the real cause behind a wrong diagnosis.
+const CHALLENGE_WORDS: &[&str] = &[
+    "captcha",
+    "enable javascript",
+    "anubis",
+    "cf-challenge",
+    "turnstile",
+    "datadome",
+];
+
+/// A challenge interstitial is usually a small page. Real SERPs measured on
+/// 2026-08-17: DuckDuckGo's HTML endpoint is the smallest at ~33 KB (the same
+/// for a query with zero results), Bing ~124 KB, Brave ~317 KB, Yahoo ~430 KB.
+/// The small interstitials: Mojeek 5.5 KB, Startpage 10.3 KB. 24 KB sits
+/// between the two populations with roughly 2x margin either side.
 const MAX_CHALLENGE_PAGE_BYTES: usize = 24 * 1024;
 
 /// Does this page look like a bot wall rather than a SERP?
 ///
 /// Generic on purpose. Every engine that has gone dark did so by serving a
-/// challenge with **HTTP 200**, and each one used wording nobody had a needle
-/// for yet — Mojeek's "JavaScript is required to complete this challenge" was
-/// the fourth variant in a row. Matching the *class* of page means the next
-/// engine to fall over is recorded as blocked rather than as an engine that
-/// keeps returning nothing.
+/// challenge with **HTTP 200**, each with wording nobody had a needle for yet.
+/// Matching the *class* of page means the next engine to fall over is recorded
+/// as blocked rather than as an engine that keeps returning nothing.
 ///
-/// The size guard is not belt-and-braces, it is load-bearing. These needles
-/// are single words that appear in the scripts and markup of perfectly healthy
-/// pages: Brave's SERP contains "captcha" and Bing's contains "turnstile", both
-/// measured on a live query. Needles alone would therefore misreport a genuine
-/// zero-result search — or, worse, a parser broken by a markup change — as a
-/// bot wall, cooling the engine down and hiding the real cause behind a wrong
-/// diagnosis. Requiring a small page keeps the match on the population it was
-/// written for.
+/// Two tiers, because one was demonstrably not enough: unambiguous phrases
+/// match at any size, while words that also occur in healthy markup only count
+/// on a page small enough to be an interstitial. Size alone missed Brave's
+/// 85 KB challenge; words alone misread Brave's and Bing's ordinary SERPs.
 ///
-/// Even so this is only consulted when a parse yielded zero results, so a SERP
-/// with results never reaches here whatever its size.
+/// Still only consulted when a parse yielded zero results, so a SERP with
+/// results never reaches here whatever it says.
 pub(super) fn looks_like_bot_challenge(html: &str) -> bool {
-    if html.len() > MAX_CHALLENGE_PAGE_BYTES {
-        return false;
-    }
     let lower = html.to_lowercase();
-    [
-        "captcha",
-        "javascript is required",
-        "enable javascript",
-        "verifying your request",
-        "checking your browser",
-        "unusual traffic",
-        "are you human",
-        "are you a human",
-        "anubis",
-        "cf-challenge",
-        "turnstile",
-        "datadome",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle))
+    if CHALLENGE_PHRASES.iter().any(|p| lower.contains(p)) {
+        return true;
+    }
+    html.len() <= MAX_CHALLENGE_PAGE_BYTES && CHALLENGE_WORDS.iter().any(|w| lower.contains(w))
 }
 
 /// Shared skeleton for the plain-GET HTML scrape engines (Brave HTML, Yahoo).
@@ -562,6 +579,74 @@ pub(super) async fn search_bing(
     .await
 }
 
+// Startpage — Google's index, server-rendered, no key. Removed from the plain
+// rotation in #201 when it began answering with an Anubis proof-of-work
+// interstitial; a headless browser solves that in ~2s, so it lives on in
+// browser-assisted mode only. The parser never broke — only its transport did,
+// and it is restored unchanged: verified on 2026-08-17 that a rendered SERP
+// still yields ten `div.result` with `data-testid="gl-title-link"` anchors.
+//
+// The markup is Emotion CSS-in-JS, so titles and snippets must be read with
+// `text_skipping_style`: Emotion injects `<style>` tags *inside* the result
+// anchors and their CSS would otherwise land in the extracted text.
+
+pub(super) fn parse_startpage_html(html: &str) -> Result<Vec<SearchResult>, String> {
+    let document = Html::parse_document(html);
+    // Each organic result is a div whose class list includes the unhashed
+    // token `result` (alongside an Emotion `css-*` hash we ignore).
+    let result_selector =
+        Selector::parse("div.result").map_err(|_| "Failed to parse startpage result selector")?;
+    // Stable test id on the title anchor; its href is the real destination
+    // (Startpage does not redirect-wrap organic result links).
+    let title_selector = Selector::parse(r#"a[data-testid="gl-title-link"]"#)
+        .map_err(|_| "Failed to parse startpage title selector")?;
+    let desc_selector = Selector::parse("p.description")
+        .map_err(|_| "Failed to parse startpage snippet selector")?;
+
+    Ok(scrape_results(&document, &result_selector, |element| {
+        let title_el = element.select(&title_selector).next();
+        let url = title_el
+            .and_then(|e| e.value().attr("href"))
+            .unwrap_or_default()
+            .to_string();
+        let title = title_el.map(text_skipping_style).unwrap_or_default();
+        let snippet = element
+            .select(&desc_selector)
+            .next()
+            .map(text_skipping_style)
+            .unwrap_or_default();
+
+        (!title.is_empty() && url.starts_with("http")).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
+}
+
+/// Trimmed visible text of an element, ignoring the contents of any nested
+/// `<style>`/`<script>`. Startpage injects Emotion `<style>` tags inside its
+/// result anchors and snippets, whose CSS rules would otherwise pollute the
+/// extracted title/snippet.
+fn text_skipping_style(e: ElementRef) -> String {
+    let mut buf = String::new();
+    for node in e.descendants() {
+        let Some(text) = node.value().as_text() else {
+            continue;
+        };
+        let inside_style = node.ancestors().any(|a| {
+            a.value()
+                .as_element()
+                .map(|el| el.name() == "style" || el.name() == "script")
+                .unwrap_or(false)
+        });
+        if !inside_style {
+            buf.push_str(text);
+        }
+    }
+    buf.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Decode the real destination from a `bing.com/ck/a?...&u=a1<b64url>&ntb=1`
 /// tracking link. The payload is base64url after a two-character `a1` tag, and
 /// Bing omits the padding — which `base64::decode` rejects, hence the explicit
@@ -636,9 +721,14 @@ pub(super) fn parse_yahoo_html(html: &str) -> Result<Vec<SearchResult>, String> 
     // Clean title lives in the nested h3.title (not the breadcrumb div).
     let title_selector =
         Selector::parse("h3.title").map_err(|_| "Failed to parse yahoo title selector")?;
-    // First Yahoo redirect link in the result is the canonical destination.
-    let link_selector = Selector::parse(r#"a[href*="r.search.yahoo.com"]"#)
-        .map_err(|_| "Failed to parse yahoo link selector")?;
+    // Every anchor in the result, because Yahoo serves two shapes and the
+    // title anchor's position differs between them. Over plain HTTP the link
+    // is an `r.search.yahoo.com` redirect carrying the real URL in `RU=`; in a
+    // rendered browser Yahoo's own JS rewrites it to the destination directly.
+    // Keying on the redirect host alone dropped every result in browser mode —
+    // 419 KB of perfectly good SERP parsing to nothing.
+    let link_selector =
+        Selector::parse("a[href]").map_err(|_| "Failed to parse yahoo link selector")?;
     let snippet_selector =
         Selector::parse("div.compText").map_err(|_| "Failed to parse yahoo snippet selector")?;
 
@@ -648,11 +738,20 @@ pub(super) fn parse_yahoo_html(html: &str) -> Result<Vec<SearchResult>, String> 
             .next()
             .map(element_text)
             .unwrap_or_default();
+        // First anchor that yields a real destination: a decodable redirect,
+        // or a direct external link. Yahoo's own hosts are excluded from the
+        // direct branch so a nav or "more results" link can't be mistaken for
+        // the result — at the cost of missing a result that genuinely points
+        // at yahoo.com, which is the cheaper error.
         let url = element
             .select(&link_selector)
-            .next()
-            .and_then(|e| e.value().attr("href"))
-            .and_then(decode_yahoo_redirect)
+            .filter_map(|e| e.value().attr("href"))
+            .find_map(|href| {
+                decode_yahoo_redirect(href).or_else(|| {
+                    (href.starts_with("http") && !href.contains("yahoo.com"))
+                        .then(|| href.to_string())
+                })
+            })
             .unwrap_or_default();
         let snippet = element
             .select(&snippet_selector)
@@ -1051,11 +1150,26 @@ mod tests {
         ));
     }
 
-    /// The needles are single words that live in healthy pages too: measured
-    /// on 2026-08-17, Brave's SERP contains "captcha" and Bing's contains
-    /// "turnstile". Without the size guard, a genuine zero-result query — or a
-    /// parser broken by a markup change — would be reported as a bot wall and
-    /// cool the engine down, hiding the real cause behind a wrong diagnosis.
+    /// Brave's real interstitial is ~85 KB — far past any plausible size
+    /// guard — so an unambiguous phrase has to match regardless of size.
+    /// Missing it meant no cooldown and a 15s render timeout burned on every
+    /// attempt, the same pathology that let Mojeek waste 150 first-choice
+    /// attempts.
+    #[test]
+    fn a_large_challenge_page_is_still_a_challenge() {
+        let brave_sized = format!(
+            "<html><body>Brave Search. Verifying you're not a bot. Quick check before you \
+             continue searching.{}</body></html>",
+            "x".repeat(85_000)
+        );
+        assert!(looks_like_bot_challenge(&brave_sized));
+    }
+
+    /// The words that also live in healthy markup: measured on 2026-08-17,
+    /// Brave's SERP contains "captcha" and Bing's contains "turnstile". Those
+    /// must not convict a full-size page, or a genuine zero-result query — or a
+    /// parser broken by a markup change — reads as a bot wall, cooling the
+    /// engine down and hiding the real cause behind a wrong diagnosis.
     #[test]
     fn a_full_size_serp_is_never_a_challenge_however_it_reads() {
         for needle in ["captcha", "turnstile", "enable javascript"] {
@@ -1117,6 +1231,41 @@ mod tests {
         assert!(results[0].snippet.contains("introduces generics"));
         // The breadcrumb/site-name must not leak into the title.
         assert!(!results[0].title.contains("go.dev"));
+    }
+
+    /// The shape Yahoo serves to a real browser: its own JS rewrites the
+    /// `r.search.yahoo.com` redirects into direct destinations. Keying only on
+    /// the redirect host meant browser mode parsed a full 419 KB SERP into
+    /// zero results and then burned its whole 15s timeout waiting for more.
+    #[test]
+    fn parse_yahoo_reads_the_rendered_shape_with_direct_links() {
+        let html = r##"
+            <li class="first"><div class="dd fst algo algo-sr relsrch Sr">
+              <div class="compTitle">
+                <a class="d-ib" href="https://tokio.rs/tokio/tutorial/async">
+                  <h3 class="title"><span class="d-b">Async in depth | Tokio</span></h3>
+                </a>
+              </div>
+              <div class="compText aAbs"><p>Tokio is an asynchronous runtime.</p></div>
+            </div></li>
+        "##;
+        let results = parse_yahoo_html(html).expect("parse ok");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].url, "https://tokio.rs/tokio/tutorial/async");
+        assert_eq!(results[0].title, "Async in depth | Tokio");
+    }
+
+    /// Yahoo's own navigation must not be mistaken for the result when no
+    /// destination link is present.
+    #[test]
+    fn parse_yahoo_ignores_yahoo_internal_links() {
+        let html = r##"
+            <div class="algo">
+              <a href="https://search.yahoo.com/search?p=more">More results</a>
+              <h3 class="title">A title with no destination</h3>
+            </div>
+        "##;
+        assert!(parse_yahoo_html(html).expect("parse ok").is_empty());
     }
 
     #[test]
