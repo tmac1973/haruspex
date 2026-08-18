@@ -55,10 +55,20 @@
     <h2>Second run: with the fix</h2>
     <p class="note">
       To check whether Chromium's anti-throttling flags cure it — the same flags Tauri can pass to
-      WebView2 via <code>additionalBrowserArgs</code> — close Edge and launch the file like this,
-      then repeat the steps above:
+      WebView2 via <code>additionalBrowserArgs</code> — run this in <strong>PowerShell</strong>
+      from the folder holding this file, then repeat the steps above. It finds Edge itself
+      (<code>msedge.exe</code> is not on <code>PATH</code>) and uses a throwaway profile, which
+      forces a fresh browser process so the flags actually apply even if Edge is already open.
     </p>
-    <pre id="cmd">msedge.exe --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --user-data-dir=%TEMP%\thtest "PATH\TO\webview-throttle-test.html"</pre>
+    <pre id="cmd">$edge = "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+        "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe" |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+$page = (Resolve-Path .\webview-throttle-test.html).Path
+&amp; $edge --disable-background-timer-throttling `
+      --disable-backgrounding-occluded-windows `
+      --disable-renderer-backgrounding `
+      --no-first-run --no-default-browser-check `
+      --user-data-dir="$env:TEMP\thtest" $page</pre>
 
     <div class="row">
       <label>Label <input id="label" placeholder="e.g. baseline / with-flags" size="22" /></label>
