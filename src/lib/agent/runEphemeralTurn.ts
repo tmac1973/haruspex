@@ -18,7 +18,7 @@ import type { BackendOverride, ChatMessage, Usage } from '$lib/api';
 import type { CallStats } from '$lib/agent/loop';
 import type { SamplingParams } from '$lib/stores/settings';
 import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { Artifact, LintIssue } from '$lib/agent/tools';
+import type { Artifact, LintIssue, ToolContext } from '$lib/agent/tools';
 import { runTurnCore } from '$lib/agent/runTurn';
 import { buildSystemPrompt, looksLikeFileOutputRequest } from '$lib/agent/system-prompt';
 import { finalizeStreamText } from '$lib/markdown';
@@ -50,6 +50,12 @@ export interface EphemeralTurnOptions {
 	 * jobs don't hang on a question with no one present.
 	 */
 	interactive?: boolean;
+	/**
+	 * Where `ask_user_question` sends its question when the person who can
+	 * answer it is somewhere else — a remote chat guest. See
+	 * `ToolContext.askUser`.
+	 */
+	askUser?: ToolContext['askUser'];
 	/** Confine writes to this dir (relative to workingDir). See AgentLoopOptions. */
 	writeRoot?: string | null;
 	/**
@@ -155,6 +161,7 @@ export async function runEphemeralTurn(
 			forceFinalTool: options.forceFinalTool,
 			backend: options.backend,
 			interactive: options.interactive,
+			askUser: options.askUser,
 			writeRoot: options.writeRoot,
 			onUsageUpdate: options.onUsageUpdate,
 			onCallStats: options.onCallStats,

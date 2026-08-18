@@ -31,7 +31,13 @@ vi.mock('$lib/stores/chat.svelte', () => ({
 	noteExternalConversation: mocks.noteExternalConversation
 }));
 
-import { runRemoteTurn, cancelRemoteTurn, REMOTE_TOOLS } from '$lib/remote/driver';
+import {
+	runRemoteTurn,
+	cancelRemoteTurn,
+	deliverAnswer,
+	describeToolCall,
+	REMOTE_TOOLS
+} from '$lib/remote/driver';
 import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
 
 const prompt = { sessionId: 'guest1', turnId: 'guest1#0', message: 'what is a haruspex?' };
@@ -74,7 +80,12 @@ describe('the remote turn driver', () => {
 		await runRemoteTurn(prompt);
 		const options = turnOptions();
 		expect(options.toolAllowlist).toBe(REMOTE_TOOLS);
-		expect([...REMOTE_TOOLS]).toEqual(['web_search', 'fetch_url', 'research_url']);
+		expect([...REMOTE_TOOLS]).toEqual([
+			'web_search',
+			'fetch_url',
+			'research_url',
+			'ask_user_question'
+		]);
 		// The three that would make a guest dangerous, stated explicitly so
 		// widening the list is a deliberate act rather than an accident.
 		for (const forbidden of ['fs_write_text', 'run_command', 'fs_read_text']) {
@@ -220,5 +231,117 @@ describe('a guest’s conversation', () => {
 		mocks.runEphemeralTurn.mockRejectedValueOnce(new Error('model is not running'));
 		await runRemoteTurn(prompt);
 		expect(saved('assistant')).toEqual([]);
+	});
+});
+
+describe('showing the guest what the turn is doing', () => {
+	it('describes a tool call in words, not in tool names', () => {
+		expect(describeToolCall({ id: '1', name: 'web_search', arguments: { query: 'monkeys' } })).toBe(
+			'Searching the web for “monkeys”'
+		);
+		expect(
+			describeToolCall({ id: '2', name: 'fetch_url', arguments: { url: 'https://a.example/b' } })
+		).toBe('Reading a.example');
+		expect(
+			describeToolCall({ id: '3', name: 'research_url', arguments: { url: 'not a url' } })
+		).toBe('Researching a page');
+		// Never leaks an internal name to someone who has never heard of a tool.
+		expect(describeToolCall({ id: '4', name: 'something_new', arguments: {} })).toBe('Working');
+	});
+
+	it('reports each call starting and finishing', async () => {
+		const call = { id: 'c1', name: 'web_search', arguments: { query: 'monkeys' } };
+		mocks.runEphemeralTurn.mockImplementationOnce(async (options: EphemeralTurnOptions) => {
+			options.onToolStart?.(call);
+			options.onToolEnd?.(call, 'ten results');
+			return { finalText: 'done', rawText: 'done' };
+		});
+		await runRemoteTurn(prompt);
+
+		expect(calls('remote_turn_step')).toEqual([
+			{ turnId: prompt.turnId, step: { id: 'c1', label: expect.any(String), status: 'running' } },
+			{ turnId: prompt.turnId, step: { id: 'c1', label: expect.any(String), status: 'done' } }
+		]);
+	});
+
+	it('marks a failed call as failed', async () => {
+		const call = { id: 'c1', name: 'fetch_url', arguments: { url: 'https://a.example' } };
+		mocks.runEphemeralTurn.mockImplementationOnce(async (options: EphemeralTurnOptions) => {
+			options.onToolStart?.(call);
+			options.onToolEnd?.(call, 'Error: could not reach the site');
+			return { finalText: 'done', rawText: 'done' };
+		});
+		await runRemoteTurn(prompt);
+		expect(calls('remote_turn_step').at(-1)!.step.status).toBe('failed');
+	});
+});
+
+describe('asking the guest a question', () => {
+	async function askDuringTurn(answer: (questionId: string) => void) {
+		mocks.runEphemeralTurn.mockImplementationOnce(async (options: EphemeralTurnOptions) => {
+			const asked = options.askUser!(
+				{ question: 'Five of what?', options: [{ label: 'Fingers' }] },
+				undefined
+			);
+			// The question is in flight; answer it the way the server would.
+			await vi.waitFor(() => expect(calls('remote_turn_question')).toHaveLength(1));
+			answer(calls('remote_turn_question')[0].question.id);
+			return { finalText: `answered: ${JSON.stringify(await asked)}`, rawText: '' };
+		});
+		await runRemoteTurn(prompt);
+	}
+
+	it('sends the question to the guest and waits for their reply', async () => {
+		await askDuringTurn((questionId) =>
+			deliverAnswer({ turnId: prompt.turnId, questionId, labels: ['Fingers'] })
+		);
+		// It went to the guest — not to a modal on the host's screen, which they
+		// could not see and would not understand.
+		const asked = calls('remote_turn_question')[0].question;
+		expect(asked.question).toBe('Five of what?');
+		expect(asked.options).toEqual([{ label: 'Fingers' }]);
+		expect(calls('remote_turn_done')[0].text).toContain('"labels":["Fingers"]');
+		// And the question is taken down afterwards.
+		expect(calls('remote_turn_question_cleared')).toHaveLength(1);
+	});
+
+	it('accepts an answer that was not one of the options', async () => {
+		await askDuringTurn((questionId) =>
+			deliverAnswer({ turnId: prompt.turnId, questionId, text: 'a high five!' })
+		);
+		expect(calls('remote_turn_done')[0].text).toContain('a high five!');
+	});
+
+	it('ignores an answer to a question nobody is waiting on', () => {
+		// A double tap, or a stale tab.
+		expect(() =>
+			deliverAnswer({ turnId: 't', questionId: 'never-asked', labels: ['x'] })
+		).not.toThrow();
+	});
+
+	it('gives up on an unanswered question rather than holding the slot', async () => {
+		vi.useFakeTimers();
+		try {
+			let resolved: unknown = null;
+			mocks.runEphemeralTurn.mockImplementationOnce(async (options: EphemeralTurnOptions) => {
+				const asked = options.askUser!({ question: 'Five of what?', options: [] }, undefined).then(
+					(answer) => (resolved = answer)
+				);
+				await vi.advanceTimersByTimeAsync(3 * 60_000 + 1000);
+				await asked;
+				return { finalText: 'carried on', rawText: '' };
+			});
+			await runRemoteTurn(prompt);
+
+			// The turn holds an inference slot while parked, so a guest who
+			// wanders off must not reserve the host's GPU indefinitely.
+			expect(resolved).toEqual({
+				kind: 'freeText',
+				text: 'No answer — please continue with your best judgement.'
+			});
+			expect(calls('remote_turn_done')[0].text).toBe('carried on');
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

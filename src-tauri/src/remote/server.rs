@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, watch};
 
 use super::auth;
-use super::relay::{PromptRequest, Relay, RelayError, RemoteEvent};
+use super::relay::{Answer, PromptRequest, Relay, RelayError, RemoteEvent};
 
 /// How often orphaned sessions are swept. Cheap: a map walk over at most
 /// [`super::relay::MAX_SESSIONS`] entries.
@@ -85,6 +85,9 @@ pub trait Host: Send + Sync + 'static {
     /// first use — so a guest tapping Listen on a machine whose owner has not
     /// used speech this session finds nothing listening on the port.
     fn ensure_speech(&self) -> BoxFuture<Result<(), String>>;
+
+    /// Deliver a guest's answer to the turn that is parked on the question.
+    fn answer(&self, turn_id: &str, answer: &Answer);
 }
 
 /// A boxed future, because [`Host`] is a trait object and this crate has no
@@ -150,6 +153,7 @@ pub async fn start(
         .route("/api/health", get(health))
         .route("/api/chat", post(chat))
         .route("/api/cancel", post(cancel))
+        .route("/api/answer", post(answer))
         .route("/api/speak", post(speak))
         .route("/api/stream/{session}", get(stream))
         .with_state(state);
@@ -377,6 +381,39 @@ async fn cancel(
         // Nothing to stop is a success: the client wanted no turn running, and
         // there is no turn running.
         None => StatusCode::NO_CONTENT.into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AnswerRequest {
+    session_id: String,
+    #[serde(flatten)]
+    answer: Answer,
+}
+
+/// The guest's reply to a question the model asked.
+///
+/// The turn is parked on it holding an inference slot, so this is the fastest
+/// path in the file: validate, hand it to the driver, return.
+async fn answer(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Json(body): Json<AnswerRequest>,
+) -> Response {
+    if let Some(response) = unauthorised(&state, &headers, &uri) {
+        return response;
+    }
+    match state.relay.answer(&body.session_id, &body.answer) {
+        Ok(turn_id) => {
+            state.host.answer(&turn_id, &body.answer);
+            StatusCode::ACCEPTED.into_response()
+        }
+        // The question has already been answered or the turn moved on. Not an
+        // error worth alarming a guest about — a double tap looks exactly like
+        // this — but not something to deliver either.
+        Err(_) => StatusCode::NO_CONTENT.into_response(),
     }
 }
 
@@ -646,6 +683,7 @@ mod http_tests {
     struct RecordingSink {
         dispatched: StdMutex<Vec<PromptRequest>>,
         cancelled: StdMutex<Vec<String>>,
+        answered: StdMutex<Vec<(String, Answer)>>,
         fail_dispatch: bool,
         fail_speech: bool,
     }
@@ -661,6 +699,13 @@ mod http_tests {
 
         fn cancel(&self, turn_id: &str) {
             self.cancelled.lock().unwrap().push(turn_id.to_string());
+        }
+
+        fn answer(&self, turn_id: &str, answer: &Answer) {
+            self.answered
+                .lock()
+                .unwrap()
+                .push((turn_id.to_string(), answer.clone()));
         }
 
         fn ensure_speech(&self) -> BoxFuture<Result<(), String>> {
@@ -1021,6 +1066,86 @@ mod http_tests {
             .unwrap();
         assert_eq!(new.status(), 202);
         second.stop();
+    }
+
+    #[tokio::test]
+    async fn an_answer_reaches_the_turn_that_is_waiting_on_it() {
+        use super::super::relay::{Question, QuestionOption};
+
+        let sink = Arc::new(RecordingSink::default());
+        let (base, relay, running) = serve(sink.clone()).await;
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{base}/api/chat?t={TOKEN}"))
+            .json(&serde_json::json!({ "sessionId": "s1", "message": "five up top" }))
+            .send()
+            .await
+            .unwrap();
+        let turn_id = sink.dispatched.lock().unwrap()[0].turn_id.clone();
+        relay
+            .ask(
+                &turn_id,
+                Question {
+                    id: "q1".into(),
+                    question: "Five of what?".into(),
+                    options: vec![QuestionOption {
+                        label: "Fingers".into(),
+                        description: None,
+                        recommended: false,
+                    }],
+                    allow_multiple: false,
+                },
+            )
+            .unwrap();
+
+        let accepted = client
+            .post(format!("{base}/api/answer?t={TOKEN}"))
+            .json(&serde_json::json!({
+                "sessionId": "s1",
+                "questionId": "q1",
+                "labels": ["Fingers"]
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), 202);
+
+        let answered = sink.answered.lock().unwrap().clone();
+        assert_eq!(answered.len(), 1);
+        assert_eq!(answered[0].0, turn_id);
+        assert_eq!(answered[0].1.labels, vec!["Fingers".to_string()]);
+
+        // A second tap lands on a question nobody is waiting for: accepted
+        // quietly, delivered to nobody.
+        let again = client
+            .post(format!("{base}/api/answer?t={TOKEN}"))
+            .json(&serde_json::json!({
+                "sessionId": "s1",
+                "questionId": "q1",
+                "labels": ["Fingers"]
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(again.status(), 204);
+        assert_eq!(sink.answered.lock().unwrap().len(), 1);
+        running.stop();
+    }
+
+    #[tokio::test]
+    async fn an_answer_needs_a_token() {
+        let sink = Arc::new(RecordingSink::default());
+        let (base, _relay, running) = serve(sink.clone()).await;
+        let response = reqwest::Client::new()
+            .post(format!("{base}/api/answer"))
+            .json(&serde_json::json!({ "sessionId": "s1", "questionId": "q1", "labels": [] }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 401);
+        assert!(sink.answered.lock().unwrap().is_empty());
+        running.stop();
     }
 
     #[tokio::test]

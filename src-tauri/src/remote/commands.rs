@@ -17,7 +17,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::tts::TtsEngine;
 
 use super::link::{self, QrMatrix};
-use super::relay::{PromptRequest, SessionInfo, TurnStatus, EVENT_CANCEL, EVENT_PROMPT};
+use super::relay::{
+    Answer, PromptRequest, Question, SessionInfo, Step, TurnStatus, EVENT_CANCEL, EVENT_PROMPT,
+};
 use super::server::{self, BoxFuture, Host, RemoteConfig, RemoteStatus};
 use super::RemoteServer;
 
@@ -48,6 +50,10 @@ impl Host for AppBridge {
         );
     }
 
+    fn answer(&self, turn_id: &str, answer: &Answer) {
+        let _ = self.0.emit(EVENT_ANSWER, AnswerEvent { turn_id, answer });
+    }
+
     fn ensure_speech(&self) -> BoxFuture<Result<(), String>> {
         let app = self.0.clone();
         Box::pin(async move {
@@ -67,6 +73,17 @@ impl Host for AppBridge {
             Err("the speech engine did not become ready".to_string())
         })
     }
+}
+
+/// Emitted to the webview when a guest answers a question the model asked.
+const EVENT_ANSWER: &str = "remote://answer";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AnswerEvent<'a> {
+    turn_id: &'a str,
+    #[serde(flatten)]
+    answer: &'a Answer,
 }
 
 /// 30 seconds at 500ms apart, matching what the app's own TTS startup allows.
@@ -131,6 +148,41 @@ pub async fn remote_disconnect(
     if let Some(turn_id) = state.relay().disconnect(&session_id) {
         AppBridge(app).cancel(&turn_id);
     }
+    Ok(())
+}
+
+/// Report a tool call so the guest can see the turn working rather than
+/// watching a cursor blink.
+#[tauri::command]
+pub async fn remote_turn_step(
+    state: State<'_, RemoteServer>,
+    turn_id: String,
+    step: Step,
+) -> Result<(), String> {
+    let _ = state.relay().push_step(&turn_id, step);
+    Ok(())
+}
+
+/// Park the turn on a question for the guest to answer.
+#[tauri::command]
+pub async fn remote_turn_question(
+    state: State<'_, RemoteServer>,
+    turn_id: String,
+    question: Question,
+) -> Result<(), String> {
+    state
+        .relay()
+        .ask(&turn_id, question)
+        .map_err(|e| e.message().to_string())
+}
+
+/// Take the question down — answered elsewhere, or waited out.
+#[tauri::command]
+pub async fn remote_turn_question_cleared(
+    state: State<'_, RemoteServer>,
+    turn_id: String,
+) -> Result<(), String> {
+    let _ = state.relay().clear_question(&turn_id);
     Ok(())
 }
 

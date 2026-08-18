@@ -323,6 +323,122 @@ describe('a turn from the guest side', () => {
 	});
 });
 
+describe('seeing the turn work', () => {
+	it('shows each tool call as it happens', () => {
+		const { stream } = start();
+		stream().emit({
+			type: 'step',
+			turnId: 't1',
+			step: { id: 's1', label: 'Searching the web for “monkeys”', status: 'running' }
+		});
+		// A search that takes half a minute should look like a search, not
+		// like a stall.
+		const steps = () => Array.from(document.querySelectorAll('.step'));
+		expect(steps()).toHaveLength(1);
+		expect(steps()[0].textContent).toContain('Searching the web');
+		expect(steps()[0].classList.contains('running')).toBe(true);
+
+		// The same id updates in place rather than piling up.
+		stream().emit({
+			type: 'step',
+			turnId: 't1',
+			step: { id: 's1', label: 'Searching the web for “monkeys”', status: 'done' }
+		});
+		expect(steps()).toHaveLength(1);
+		expect(steps()[0].classList.contains('done')).toBe(true);
+
+		stream().emit({
+			type: 'step',
+			turnId: 't1',
+			step: { id: 's2', label: 'Reading example.com', status: 'running' }
+		});
+		expect(steps()).toHaveLength(2);
+	});
+
+	it('renders a search query as text, never as markup', () => {
+		const { stream } = start();
+		stream().emit({
+			type: 'step',
+			turnId: 't1',
+			step: { id: 's1', label: '<img src=x onerror=alert(1)>', status: 'running' }
+		});
+		// The label carries the guest's own words back to them.
+		expect(document.querySelector('.step')!.innerHTML).not.toContain('<img');
+	});
+
+	it('replays steps and a pending question after a reconnect', () => {
+		const { stream } = start();
+		stream().emit({
+			type: 'snapshot',
+			turnId: 't1',
+			text: '',
+			status: 'running',
+			steps: [{ id: 's1', label: 'Reading example.com', status: 'done' }],
+			question: { id: 'q1', question: 'Five of what?', options: [{ label: 'Fingers' }] }
+		});
+		expect(document.querySelectorAll('.step')).toHaveLength(1);
+		expect(document.querySelector('.question-text')!.textContent).toBe('Five of what?');
+	});
+});
+
+describe('answering a question the model asked', () => {
+	function ask() {
+		const started = start();
+		started.stream().emit({
+			type: 'question',
+			turnId: 't1',
+			question: {
+				id: 'q1',
+				question: 'Five of what?',
+				options: [{ label: 'Fingers' }, { label: 'Reasons' }],
+				allowMultiple: false
+			}
+		});
+		return started;
+	}
+
+	it('offers the options and sends the one that is tapped', async () => {
+		const { fetchMock, stream } = ask();
+		const options = Array.from(document.querySelectorAll('.option'));
+		expect(options.map((o) => o.textContent)).toEqual(['Fingers', 'Reasons']);
+
+		(options[0] as HTMLButtonElement).dispatchEvent(new Event('click'));
+		await vi.waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));
+		const [url, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+		expect(url).toContain('/api/answer');
+		expect(JSON.parse(init.body as string)).toMatchObject({
+			questionId: 'q1',
+			labels: ['Fingers']
+		});
+
+		// The form goes away immediately, so a second tap cannot land on a
+		// question nobody is waiting for.
+		expect(document.querySelector('.question')).toBeNull();
+		stream().emit({ type: 'question_cleared', turnId: 't1' });
+		expect(status()).toBe('Thinking…');
+	});
+
+	it('always allows an answer that is not on the list', async () => {
+		const { fetchMock } = ask();
+		const input = document.querySelector('.question-row input') as HTMLInputElement;
+		input.value = 'a high five!';
+		document.querySelector('.question')!.dispatchEvent(new Event('submit', { cancelable: true }));
+
+		await vi.waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));
+		const [, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+		expect(JSON.parse(init.body as string)).toMatchObject({
+			questionId: 'q1',
+			text: 'a high five!'
+		});
+	});
+
+	it('does not send an empty reply', () => {
+		const { fetchMock } = ask();
+		document.querySelector('.question')!.dispatchEvent(new Event('submit', { cancelable: true }));
+		expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/answer'))).toEqual([]);
+	});
+});
+
 describe('starting over', () => {
 	it('clears the conversation and takes a fresh context with it', async () => {
 		const { client, fetchMock } = start();

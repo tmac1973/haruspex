@@ -273,7 +273,9 @@ export function renderMarkdown(text) {
  *   text: string,
  *   turnId?: string | null,
  *   pending?: boolean,
- *   failed?: boolean
+ *   failed?: boolean,
+ *   steps?: {id: string, label: string, status: string}[],
+ *   question?: {id: string, question: string, options: {label: string, description?: string, recommended?: boolean}[], allowMultiple?: boolean} | null
  * }} Bubble
  */
 
@@ -438,7 +440,16 @@ export function boot(deps = {}) {
 				// no reason to become markup.
 				node.textContent = message.text;
 			} else {
-				node.innerHTML = renderMarkdown(message.text);
+				// What the turn is doing, above what it has said — a search that
+				// takes half a minute should look like a search, not like a
+				// stall.
+				if (message.steps?.length) node.append(stepList(message.steps));
+				if (message.text) {
+					const body = doc.createElement('div');
+					body.innerHTML = renderMarkdown(message.text);
+					node.append(body);
+				}
+				if (message.question) node.append(questionForm(message.question));
 				// Only on a finished answer: reading a half-written one aloud
 				// would synthesise a sentence that is about to change.
 				if (!message.pending && !message.failed && message.text) {
@@ -449,6 +460,99 @@ export function boot(deps = {}) {
 		}
 
 		if (stick) ui.messages.scrollTop = ui.messages.scrollHeight;
+	}
+
+	/**
+	 * The tool calls this turn has made, newest last.
+	 *
+	 * @param {{id: string, label: string, status: string}[]} steps
+	 */
+	function stepList(steps) {
+		const list = doc.createElement('ul');
+		list.className = 'steps';
+		for (const step of steps) {
+			const item = doc.createElement('li');
+			item.className = `step ${step.status}`;
+			// textContent, not innerHTML: the label contains a search query,
+			// which is the guest's own words coming back to them.
+			item.textContent = step.label;
+			list.append(item);
+		}
+		return list;
+	}
+
+	/**
+	 * The model has asked something and cannot continue until it hears back.
+	 *
+	 * Free text is always offered alongside the options: the model's guesses
+	 * about what someone might mean are a shortcut, not a list of permitted
+	 * answers.
+	 *
+	 * @param {{id: string, question: string, options: {label: string, description?: string}[], allowMultiple?: boolean}} question
+	 */
+	function questionForm(question) {
+		const form = doc.createElement('form');
+		form.className = 'question';
+
+		const prompt = doc.createElement('p');
+		prompt.className = 'question-text';
+		prompt.textContent = question.question;
+		form.append(prompt);
+
+		for (const option of question.options ?? []) {
+			const button = doc.createElement('button');
+			button.type = 'button';
+			button.className = 'option';
+			button.textContent = option.label;
+			if (option.description) button.title = option.description;
+			button.addEventListener('click', () => {
+				void sendAnswer(question.id, { labels: [option.label] });
+			});
+			form.append(button);
+		}
+
+		const row = doc.createElement('div');
+		row.className = 'question-row';
+		const input = doc.createElement('input');
+		input.type = 'text';
+		input.placeholder = 'Or say something else…';
+		const send = doc.createElement('button');
+		send.type = 'submit';
+		send.textContent = 'Reply';
+		row.append(input, send);
+		form.append(row);
+
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			const text = input.value.trim();
+			if (text) void sendAnswer(question.id, { text });
+		});
+		return form;
+	}
+
+	/**
+	 * @param {string} questionId
+	 * @param {{labels?: string[], text?: string}} answer
+	 */
+	async function sendAnswer(questionId, answer) {
+		const slot = transcript[transcript.length - 1];
+		if (slot && slot.role === 'assistant') {
+			// Take the form away immediately: the turn is moving on, and a
+			// second tap would land on a question nobody is waiting for.
+			slot.question = null;
+			slot.pending = true;
+		}
+		setStatus('Thinking…');
+		render();
+		try {
+			await net(`/api/answer?t=${auth}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ sessionId, questionId, ...answer })
+			});
+		} catch {
+			setStatus('Could not send that answer.', true);
+		}
 	}
 
 	/**
@@ -556,6 +660,11 @@ export function boot(deps = {}) {
 				currentTurn = event.turnId;
 				const slot = assistantSlot();
 				slot.text = event.text ?? '';
+				// Replayed in full, so a phone that reconnects mid-turn sees
+				// what the turn has been doing — including a question it is
+				// still waiting on.
+				slot.steps = event.steps ?? [];
+				slot.question = event.question ?? null;
 				slot.pending = event.status === 'waiting' || event.status === 'running';
 				if (event.status === 'failed' && event.message) {
 					slot.text = event.message;
@@ -576,6 +685,36 @@ export function boot(deps = {}) {
 				// the model spent thinking.
 				assistantSlot().pending = true;
 				setStatus(statusText(event.status));
+				render();
+				break;
+			}
+			case 'step': {
+				currentTurn = event.turnId;
+				const slot = assistantSlot();
+				slot.steps = slot.steps ?? [];
+				const at = slot.steps.findIndex((s) => s.id === event.step.id);
+				if (at >= 0) slot.steps[at] = event.step;
+				else slot.steps.push(event.step);
+				slot.pending = true;
+				render();
+				break;
+			}
+			case 'question': {
+				currentTurn = event.turnId;
+				const slot = assistantSlot();
+				slot.question = event.question;
+				slot.pending = false;
+				setStatus('Waiting for your answer', true);
+				setBusy(false);
+				render();
+				break;
+			}
+			case 'question_cleared': {
+				const slot = assistantSlot();
+				slot.question = null;
+				slot.pending = true;
+				setBusy(true);
+				setStatus('Thinking…');
 				render();
 				break;
 			}

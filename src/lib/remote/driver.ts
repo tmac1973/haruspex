@@ -14,6 +14,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
+import type { ResolvedToolCall } from '$lib/agent/parser';
+import type { ToolContext } from '$lib/agent/tools';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
@@ -38,13 +40,44 @@ export interface RemoteCancelEvent {
 	turnId: string;
 }
 
+export interface RemoteAnswerEvent {
+	turnId: string;
+	questionId: string;
+	labels?: string[];
+	text?: string | null;
+}
+
+/** Questions waiting on a guest, by question id. */
+const pendingQuestions = new Map<string, (event: RemoteAnswerEvent) => void>();
+
+let questionCounter = 0;
+
 /**
  * The entire toolset a guest gets. Reading or writing the host's disk, running
  * commands and driving its shell are all absent — not because the model would
  * misuse them, but because the person typing is not the person who owns the
  * machine, and no phrasing of a prompt should be able to change that.
  */
-export const REMOTE_TOOLS = ['web_search', 'fetch_url', 'research_url'] as const;
+export const REMOTE_TOOLS = [
+	'web_search',
+	'fetch_url',
+	'research_url',
+	// Safe because the question goes to the guest, not to a modal on the host's
+	// screen — see `askGuest`. Without it the model has to guess what an
+	// ambiguous question meant, which is exactly the case a clarifying question
+	// is for.
+	'ask_user_question'
+] as const;
+
+/**
+ * How long a question waits before the turn gives up on it.
+ *
+ * The turn holds an inference slot while parked, so a guest who wanders off
+ * would otherwise keep the host's GPU reserved for an answer that is not
+ * coming. Long enough to read the question and think; short enough that a
+ * forgotten tab is not a lock.
+ */
+const ANSWER_TIMEOUT_MS = 3 * 60_000;
 
 const inFlight = new Map<string, AbortController>();
 
@@ -86,6 +119,41 @@ class TextPump {
 		} finally {
 			this.sending = false;
 		}
+	}
+}
+
+/**
+ * A human-readable label for a tool call.
+ *
+ * Built here rather than in Rust because this is the side that knows what the
+ * arguments mean, and phrased for someone who has never heard of a tool call:
+ * "Searching the web for X", not "web_search({query: X})".
+ */
+export function describeToolCall(call: ResolvedToolCall): string {
+	const args = call.arguments ?? {};
+	const query = typeof args.query === 'string' ? args.query : null;
+	const url = typeof args.url === 'string' ? args.url : null;
+	const host = url ? hostOf(url) : null;
+
+	switch (call.name) {
+		case 'web_search':
+			return query ? `Searching the web for “${query}”` : 'Searching the web';
+		case 'fetch_url':
+			return host ? `Reading ${host}` : 'Reading a page';
+		case 'research_url':
+			return host ? `Researching ${host}` : 'Researching a page';
+		case 'ask_user_question':
+			return 'Asking you a question';
+		default:
+			return 'Working';
+	}
+}
+
+function hostOf(url: string): string | null {
+	try {
+		return new URL(url).host || null;
+	} catch {
+		return null;
 	}
 }
 
@@ -153,6 +221,27 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 					interactive: false,
 					visionSupported: false,
 					signal: abort.signal,
+					// The person who can answer is in another room, so the
+					// question goes down the guest's stream rather than opening
+					// a modal on the host's screen — which they could not see
+					// and would not understand.
+					askUser: askGuest(turnId, abort.signal),
+					onToolStart: (call) => {
+						void invoke('remote_turn_step', {
+							turnId,
+							step: { id: call.id, label: describeToolCall(call), status: 'running' }
+						}).catch(() => {});
+					},
+					onToolEnd: (call, result) => {
+						void invoke('remote_turn_step', {
+							turnId,
+							step: {
+								id: call.id,
+								label: describeToolCall(call),
+								status: isFailure(result) ? 'failed' : 'done'
+							}
+						}).catch(() => {});
+					},
 					onAssistantDelta: (full) => {
 						lastText = full;
 						pump.push(full);
@@ -185,6 +274,65 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 	}
 }
 
+/**
+ * A tool result the guest should see as a failed step rather than a done one.
+ * The tool layer reports errors as text, so this is a sniff, not a contract —
+ * and a wrong guess costs a misleading tick, not a broken turn.
+ */
+function isFailure(result: string): boolean {
+	return /^\s*(error|failed)\b/i.test(result) || result.includes('"error"');
+}
+
+/**
+ * Asks the guest, and waits — or gives up, so a question nobody answers does
+ * not hold an inference slot for the rest of the evening.
+ */
+function askGuest(turnId: string, signal: AbortSignal): ToolContext['askUser'] {
+	return async (request) => {
+		questionCounter += 1;
+		const questionId = `${turnId}:q${questionCounter}`;
+
+		const answered = new Promise<RemoteAnswerEvent | null>((resolve) => {
+			pendingQuestions.set(questionId, resolve);
+
+			const timer = setTimeout(() => {
+				pendingQuestions.delete(questionId);
+				resolve(null);
+			}, ANSWER_TIMEOUT_MS);
+
+			const stop = () => {
+				clearTimeout(timer);
+				pendingQuestions.delete(questionId);
+				resolve(null);
+			};
+			signal.addEventListener('abort', stop, { once: true });
+		});
+
+		await invoke('remote_turn_question', {
+			turnId,
+			question: {
+				id: questionId,
+				question: request.question,
+				options: request.options,
+				allowMultiple: request.allowMultiple === true
+			}
+		});
+
+		const event = await answered;
+		pendingQuestions.delete(questionId);
+		void invoke('remote_turn_question_cleared', { turnId }).catch(() => {});
+
+		if (!event) {
+			// The tool turns this into a result the model can act on, so an
+			// unanswered question becomes "carry on with your best guess"
+			// rather than a dead turn.
+			return { kind: 'freeText', text: 'No answer — please continue with your best judgement.' };
+		}
+		if (event.text) return { kind: 'freeText', text: event.text };
+		return { kind: 'selected', labels: event.labels ?? [] };
+	};
+}
+
 /** Stop a turn the server has asked us to abandon. Exported for tests. */
 export function cancelRemoteTurn(turnId: string): void {
 	inFlight.get(turnId)?.abort();
@@ -205,7 +353,18 @@ export async function startRemoteDriver(): Promise<void> {
 	const stopCancel = await listen<RemoteCancelEvent>('remote://cancel', (event) => {
 		cancelRemoteTurn(event.payload.turnId);
 	});
-	unlisteners.push(stopPrompt, stopCancel);
+	const stopAnswer = await listen<RemoteAnswerEvent>('remote://answer', (event) => {
+		deliverAnswer(event.payload);
+	});
+	unlisteners.push(stopPrompt, stopCancel, stopAnswer);
+}
+
+/** Hand a guest's answer to the turn waiting on it. Exported for tests. */
+export function deliverAnswer(event: RemoteAnswerEvent): void {
+	const resolve = pendingQuestions.get(event.questionId);
+	if (!resolve) return;
+	pendingQuestions.delete(event.questionId);
+	resolve(event);
 }
 
 export function stopRemoteDriver(): void {

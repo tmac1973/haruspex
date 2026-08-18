@@ -35,6 +35,23 @@ export interface ToolExecOutput {
  * Context passed to every tool execute function. Captures per-turn
  * state so individual tools don't need to import global stores.
  */
+/** Mirrors `stores/userQuestion.svelte`, imported as types to keep this module free of it. */
+export interface AskableOption {
+	label: string;
+	description?: string;
+	recommended?: boolean;
+}
+
+export interface UserQuestionRequest {
+	question: string;
+	options: AskableOption[];
+	allowMultiple?: boolean;
+}
+
+export type UserAnswer =
+	| { kind: 'selected'; labels: string[] }
+	| { kind: 'freeText'; text: string };
+
 export interface ToolContext {
 	workingDir: string | null;
 	signal?: AbortSignal;
@@ -67,6 +84,18 @@ export interface ToolContext {
 	 * such tools fail safe instead.
 	 */
 	interactive?: boolean;
+	/**
+	 * Where `ask_user_question` sends its question, when the person who can
+	 * answer is not at this keyboard.
+	 *
+	 * The default path opens a modal in this window, which is right for chat and
+	 * for a foreground job — and wrong for a remote guest, who would have their
+	 * question asked of somebody else, in another room. A caller that owns a
+	 * different route to a human supplies it here. Its presence, not
+	 * `interactive`, is what makes the tool available: everything else about a
+	 * remote turn stays in the "nobody is present" posture.
+	 */
+	askUser?: (request: UserQuestionRequest, signal?: AbortSignal) => Promise<UserAnswer>;
 	/**
 	 * When set, file writes are confined to this directory (a path prefix
 	 * relative to workingDir, e.g. `plan/my-feature/`). fs_write_text rejects any

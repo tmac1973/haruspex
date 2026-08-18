@@ -53,6 +53,10 @@ pub const ORPHAN_GRACE: Duration = Duration::from_secs(90);
 /// forgotten entirely.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
+/// Tool calls remembered per turn. A runaway loop must not grow this without
+/// limit; twenty is more than any real answer shows.
+const MAX_STEPS: usize = 20;
+
 /// Session ids come from the client, so they are echoed into events and used as
 /// map keys. Bound them and keep them boring.
 const MAX_SESSION_ID_LEN: usize = 64;
@@ -74,6 +78,61 @@ pub enum TurnStatus {
     Cancelled,
 }
 
+/// One tool call, as a guest sees it: "Searching the web for …".
+///
+/// A turn that searches three sites takes half a minute with nothing on screen,
+/// and a blinking cursor does not tell anyone that something is happening. This
+/// is the same information the desktop UI shows as search steps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Step {
+    pub id: String,
+    /// Already human-readable — the frontend builds it from the tool call,
+    /// because it is the only side that knows what the arguments mean.
+    pub label: String,
+    pub status: StepStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepStatus {
+    Running,
+    Done,
+    Failed,
+}
+
+/// A question the model has asked, waiting on the guest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Question {
+    pub id: String,
+    pub question: String,
+    pub options: Vec<QuestionOption>,
+    pub allow_multiple: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionOption {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub recommended: bool,
+}
+
+/// What a guest sent back. Free text is always allowed — a list of options is a
+/// shortcut, not a cage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Answer {
+    pub question_id: String,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(
     tag = "type",
@@ -89,6 +148,10 @@ pub enum RemoteEvent {
         text: String,
         status: Option<TurnStatus>,
         message: Option<String>,
+        /// Replayed in full, so a phone that reconnects mid-turn sees what the
+        /// turn has been doing rather than an empty box.
+        steps: Vec<Step>,
+        question: Option<Question>,
     },
     /// Newly generated text, appended to whatever the client already has.
     Delta {
@@ -107,6 +170,20 @@ pub enum RemoteEvent {
     State {
         turn_id: String,
         status: TurnStatus,
+    },
+    /// A tool call started, finished or failed.
+    Step {
+        turn_id: String,
+        step: Step,
+    },
+    /// The model needs the guest to choose before it can continue.
+    Question {
+        turn_id: String,
+        question: Question,
+    },
+    /// The question has been answered (or abandoned) and the turn moves on.
+    QuestionCleared {
+        turn_id: String,
     },
 }
 
@@ -139,6 +216,8 @@ struct Turn {
     text: String,
     status: TurnStatus,
     message: Option<String>,
+    steps: Vec<Step>,
+    question: Option<Question>,
 }
 
 struct Session {
@@ -175,12 +254,16 @@ impl Session {
                 text: t.text.clone(),
                 status: Some(t.status),
                 message: t.message.clone(),
+                steps: t.steps.clone(),
+                question: t.question.clone(),
             },
             None => RemoteEvent::Snapshot {
                 turn_id: None,
                 text: String::new(),
                 status: None,
                 message: None,
+                steps: Vec::new(),
+                question: None,
             },
         }
     }
@@ -328,6 +411,8 @@ impl Relay {
                 text: String::new(),
                 status: TurnStatus::Waiting,
                 message: None,
+                steps: Vec::new(),
+                question: None,
             });
             let _ = session.tx.send(RemoteEvent::State {
                 turn_id: turn_id.clone(),
@@ -385,6 +470,101 @@ impl Relay {
             let _ = session.tx.send(session.snapshot());
         }
         Ok(())
+    }
+
+    /// Record a tool call's progress. A repeated id updates that step rather
+    /// than appending, so "searching" becomes "searched" in place.
+    pub fn push_step(&self, turn_id: &str, step: Step) -> Result<(), RelayError> {
+        let mut inner = self.inner.lock().unwrap();
+        let (tx, turn) = Self::turn_mut(&mut inner, turn_id)?;
+        match turn.steps.iter_mut().find(|s| s.id == step.id) {
+            Some(existing) => *existing = step.clone(),
+            None => {
+                if turn.steps.len() < MAX_STEPS {
+                    turn.steps.push(step.clone());
+                }
+            }
+        }
+        let _ = tx.send(RemoteEvent::Step {
+            turn_id: turn_id.to_string(),
+            step,
+        });
+        Ok(())
+    }
+
+    /// Park the turn on a question for the guest.
+    pub fn ask(&self, turn_id: &str, question: Question) -> Result<(), RelayError> {
+        let mut inner = self.inner.lock().unwrap();
+        let (tx, turn) = Self::turn_mut(&mut inner, turn_id)?;
+        turn.question = Some(question.clone());
+        let _ = tx.send(RemoteEvent::Question {
+            turn_id: turn_id.to_string(),
+            question,
+        });
+        Ok(())
+    }
+
+    /// Accept a guest's answer. Returns the turn it belongs to, so the caller
+    /// can hand it to the driver that is waiting on it.
+    ///
+    /// An answer to a question that is no longer pending — a double tap, a
+    /// stale tab — is rejected rather than delivered, since the turn has
+    /// already moved on and a late answer would be applied to the wrong thing.
+    pub fn answer(&self, session_id: &str, answer: &Answer) -> Result<String, RelayError> {
+        let mut inner = self.inner.lock().unwrap();
+        let session = inner
+            .sessions
+            .get_mut(session_id)
+            .ok_or(RelayError::UnknownTurn)?;
+        let turn = session.turn.as_mut().ok_or(RelayError::UnknownTurn)?;
+        let pending = turn.question.as_ref().ok_or(RelayError::UnknownTurn)?;
+        if pending.id != answer.question_id {
+            return Err(RelayError::UnknownTurn);
+        }
+        turn.question = None;
+        let turn_id = turn.id.clone();
+        let _ = session.tx.send(RemoteEvent::QuestionCleared {
+            turn_id: turn_id.clone(),
+        });
+        Ok(turn_id)
+    }
+
+    /// Drop a pending question without an answer — the turn gave up waiting.
+    pub fn clear_question(&self, turn_id: &str) -> Result<(), RelayError> {
+        let mut inner = self.inner.lock().unwrap();
+        let (tx, turn) = Self::turn_mut(&mut inner, turn_id)?;
+        turn.question = None;
+        let _ = tx.send(RemoteEvent::QuestionCleared {
+            turn_id: turn_id.to_string(),
+        });
+        Ok(())
+    }
+
+    /// The live turn behind an id, or [`RelayError::UnknownTurn`] if it has
+    /// ended. Written once because several callers need exactly this lookup.
+    ///
+    /// The sender is returned separately from the turn rather than the whole
+    /// session: broadcasting while holding a mutable borrow of the turn is the
+    /// natural way to write every caller, and two mutable borrows of one
+    /// session is not a thing.
+    fn turn_mut<'a>(
+        inner: &'a mut Inner,
+        turn_id: &str,
+    ) -> Result<(broadcast::Sender<RemoteEvent>, &'a mut Turn), RelayError> {
+        let session_id = inner
+            .turns
+            .get(turn_id)
+            .cloned()
+            .ok_or(RelayError::UnknownTurn)?;
+        let session = inner
+            .sessions
+            .get_mut(&session_id)
+            .ok_or(RelayError::UnknownTurn)?;
+        let tx = session.tx.clone();
+        match session.turn.as_mut() {
+            Some(turn) if turn.id == turn_id => Ok((tx, turn)),
+            _ => Err(RelayError::UnknownTurn),
+        }
     }
 
     pub fn set_status(&self, turn_id: &str, status: TurnStatus) -> Result<(), RelayError> {
@@ -815,6 +995,149 @@ mod tests {
 
         relay.finish(&req.turn_id, "done".into()).unwrap();
         assert!(!relay.sessions()[0].busy);
+    }
+
+    fn step(id: &str, status: StepStatus) -> Step {
+        Step {
+            id: id.into(),
+            label: format!("doing {id}"),
+            status,
+        }
+    }
+
+    fn question(id: &str) -> Question {
+        Question {
+            id: id.into(),
+            question: "Five of what?".into(),
+            options: vec![QuestionOption {
+                label: "Fingers".into(),
+                description: None,
+                recommended: false,
+            }],
+            allow_multiple: false,
+        }
+    }
+
+    #[test]
+    fn a_step_updates_in_place_rather_than_piling_up() {
+        let relay = Relay::new();
+        let (_rx, _) = relay.subscribe("s1").unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
+
+        relay
+            .push_step(&req.turn_id, step("a", StepStatus::Running))
+            .unwrap();
+        relay
+            .push_step(&req.turn_id, step("a", StepStatus::Done))
+            .unwrap();
+        relay
+            .push_step(&req.turn_id, step("b", StepStatus::Running))
+            .unwrap();
+
+        // A reconnecting client replays the turn's work so far, so "searching"
+        // must have become "searched" rather than appearing twice.
+        relay.unsubscribe("s1");
+        let (_rx2, snapshot) = relay.subscribe("s1").unwrap();
+        match snapshot {
+            RemoteEvent::Snapshot { steps, .. } => {
+                assert_eq!(steps.len(), 2);
+                assert_eq!(steps[0].status, StepStatus::Done);
+                assert_eq!(steps[1].id, "b");
+            }
+            other => panic!("expected a snapshot, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn steps_are_bounded() {
+        let relay = Relay::new();
+        relay.subscribe("s1").unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
+        for i in 0..(MAX_STEPS + 10) {
+            relay
+                .push_step(&req.turn_id, step(&format!("s{i}"), StepStatus::Done))
+                .unwrap();
+        }
+        match relay.snapshot("s1").unwrap() {
+            RemoteEvent::Snapshot { steps, .. } => assert_eq!(steps.len(), MAX_STEPS),
+            other => panic!("expected a snapshot, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_question_waits_in_the_snapshot_until_it_is_answered() {
+        let relay = Relay::new();
+        let (_rx, _) = relay.subscribe("s1").unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
+        relay.ask(&req.turn_id, question("q1")).unwrap();
+
+        // A phone that locked its screen while being asked something comes back
+        // to the question, not to a stalled turn.
+        match relay.snapshot("s1").unwrap() {
+            RemoteEvent::Snapshot {
+                question: Some(q), ..
+            } => assert_eq!(q.id, "q1"),
+            other => panic!("expected a pending question, got {other:?}"),
+        }
+
+        let answered = relay
+            .answer(
+                "s1",
+                &Answer {
+                    question_id: "q1".into(),
+                    labels: vec!["Fingers".into()],
+                    text: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(answered, req.turn_id);
+        match relay.snapshot("s1").unwrap() {
+            RemoteEvent::Snapshot { question, .. } => assert!(question.is_none()),
+            other => panic!("expected a snapshot, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_stale_answer_is_refused_rather_than_delivered() {
+        let relay = Relay::new();
+        relay.subscribe("s1").unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
+        relay.ask(&req.turn_id, question("q1")).unwrap();
+
+        let stale = Answer {
+            question_id: "q-old".into(),
+            labels: vec!["Fingers".into()],
+            text: None,
+        };
+        // A double tap, or a tab left open from a previous question: the turn
+        // has moved on and a late answer would be applied to the wrong thing.
+        assert_eq!(relay.answer("s1", &stale), Err(RelayError::UnknownTurn));
+
+        // And once answered, the same answer does not land twice.
+        let good = Answer {
+            question_id: "q1".into(),
+            labels: vec!["Fingers".into()],
+            text: None,
+        };
+        assert!(relay.answer("s1", &good).is_ok());
+        assert_eq!(relay.answer("s1", &good), Err(RelayError::UnknownTurn));
+    }
+
+    #[test]
+    fn steps_and_questions_for_a_finished_turn_are_dropped() {
+        let relay = Relay::new();
+        relay.subscribe("s1").unwrap();
+        let req = relay.begin_turn("s1", "hi".into(), None).unwrap();
+        relay.finish(&req.turn_id, "done".into()).unwrap();
+
+        assert_eq!(
+            relay.push_step(&req.turn_id, step("late", StepStatus::Done)),
+            Err(RelayError::UnknownTurn)
+        );
+        assert_eq!(
+            relay.ask(&req.turn_id, question("late")),
+            Err(RelayError::UnknownTurn)
+        );
     }
 
     #[test]
