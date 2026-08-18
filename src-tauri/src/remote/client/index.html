@@ -14,6 +14,10 @@
 		<header class="bar">
 			<span class="brand">Haruspex</span>
 			<span id="status" class="status" role="status">Connecting…</span>
+			<!-- A guest who changes the subject four times should not be paying
+			     for the first three. Starts a fresh conversation on the host;
+			     the old one stays in the host's sidebar. -->
+			<button id="new-chat" class="new-chat" type="button">New chat</button>
 		</header>
 
 		<main id="messages" class="messages" aria-live="polite" aria-label="Conversation"></main>

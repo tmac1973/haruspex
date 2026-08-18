@@ -79,6 +79,17 @@ body {
 	color: var(--muted);
 	font-size: 0.85rem;
 	min-height: 1.2em;
+	flex: 1;
+}
+
+.new-chat {
+	min-height: 34px;
+	padding: 0 0.7rem;
+	font-size: 0.82rem;
+	font-weight: 500;
+	background: transparent;
+	color: var(--muted);
+	border: 1px solid var(--line);
 }
 
 .status.error {

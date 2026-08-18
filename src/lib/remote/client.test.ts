@@ -259,6 +259,24 @@ describe('a turn from the guest side', () => {
 		expect(messages()[0].querySelector('.speak')).not.toBeNull();
 	});
 
+	it('lets a guest retry when speech fails, and says why', async () => {
+		const fetchMock = vi.fn(async (url: string) => {
+			if (String(url).includes('/api/speak')) {
+				return new Response("the host's speech engine could not start", { status: 503 });
+			}
+			return new Response(JSON.stringify({ turnId: 't1' }), { status: 202 });
+		});
+		const { stream } = start({ fetch: fetchMock });
+		stream().emit({ type: 'done', turnId: 't1', text: 'an answer' });
+
+		const listen = messages()[0].querySelector('.speak') as HTMLButtonElement;
+		listen.dispatchEvent(new Event('click'));
+		await vi.waitFor(() => expect(status()).toContain('could not start'));
+		// Not left disabled reading "Failed": the host may simply need a moment.
+		expect(listen.disabled).toBe(false);
+		expect(listen.textContent).toBe('Listen');
+	});
+
 	it('resumes a half-written answer after the connection drops', () => {
 		const { stream } = start();
 		stream().emit({ type: 'delta', turnId: 't1', text: 'half an ans' });
@@ -302,6 +320,53 @@ describe('a turn from the guest side', () => {
 	it('survives a frame it cannot parse', () => {
 		const { stream } = start();
 		expect(() => stream().onmessage?.({ data: 'not json' })).not.toThrow();
+	});
+});
+
+describe('starting over', () => {
+	it('clears the conversation and takes a fresh context with it', async () => {
+		const { client, fetchMock } = start();
+		await client.send('about monkeys');
+		const firstSession = JSON.parse(
+			(fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string
+		).sessionId;
+		const firstStream = FakeStream.last!;
+
+		document.getElementById('new-chat')!.dispatchEvent(new Event('click'));
+
+		// The screen is empty and the old stream is closed.
+		expect(messages()).toHaveLength(0);
+		expect(document.querySelector('#messages .empty')).not.toBeNull();
+		expect(firstStream.closed).toBe(true);
+
+		// And the next question goes to a different conversation on the host —
+		// the earlier one stays in their sidebar rather than being deleted.
+		await client.send('about something else');
+		const secondSession = JSON.parse(
+			(fetchMock.mock.calls.at(-1) as [string, RequestInit])[1].body as string
+		).sessionId;
+		expect(secondSession).not.toBe(firstSession);
+		expect(FakeStream.last!.url).toContain(secondSession);
+	});
+
+	it('does not ask the guest their name all over again', () => {
+		start();
+		(document.getElementById('name') as HTMLInputElement).value = 'Dave';
+		document.getElementById('greeting')!.dispatchEvent(new Event('submit', { cancelable: true }));
+
+		document.getElementById('new-chat')!.dispatchEvent(new Event('click'));
+		expect((document.getElementById('greeting') as HTMLFormElement).hidden).toBe(true);
+	});
+
+	it('stops a turn that is still running', async () => {
+		const { client, fetchMock } = start();
+		await client.send('a long question');
+		fetchMock.mockClear();
+
+		document.getElementById('new-chat')!.dispatchEvent(new Event('click'));
+		const cancelled = fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/cancel'));
+		// Otherwise the host keeps working on an answer nobody will read.
+		expect(cancelled).toHaveLength(1);
 	});
 });
 

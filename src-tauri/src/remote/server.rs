@@ -7,7 +7,9 @@
 //! a reason to build a duplex channel.
 
 use std::convert::Infallible;
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -63,23 +65,35 @@ pub struct RemoteStatus {
     pub sessions: usize,
 }
 
-/// Where an accepted prompt goes next.
+/// Everything the HTTP layer needs from the app it is embedded in.
 ///
-/// In the app this is a Tauri event to the webview, which is the only thing
-/// that can actually run a turn. Behind a trait because the HTTP surface is
-/// worth testing end to end — token handling especially — and standing up an
-/// `AppHandle` to do it is not realistic.
-pub trait PromptSink: Send + Sync + 'static {
-    /// Hand a prompt to whoever runs turns. An error means nobody is
-    /// listening, and the caller fails the turn rather than leaving the client
-    /// waiting on an answer that will never come.
+/// Behind a trait because the HTTP surface is worth testing end to end — token
+/// handling especially — and standing up an `AppHandle` to do it is not
+/// realistic.
+pub trait Host: Send + Sync + 'static {
+    /// Hand a prompt to whoever runs turns — in the app, a Tauri event to the
+    /// webview, which is the only thing that can run one. An error means nobody
+    /// is listening, and the caller fails the turn rather than leaving the
+    /// client waiting on an answer that will never come.
     fn dispatch(&self, request: PromptRequest) -> Result<(), String>;
+
     fn cancel(&self, turn_id: &str);
+
+    /// Make sure the speech sidecar is running, starting it if not.
+    ///
+    /// The app starts koko lazily — the host's own Listen button starts it on
+    /// first use — so a guest tapping Listen on a machine whose owner has not
+    /// used speech this session finds nothing listening on the port.
+    fn ensure_speech(&self) -> BoxFuture<Result<(), String>>;
 }
+
+/// A boxed future, because [`Host`] is a trait object and this crate has no
+/// async-trait dependency.
+pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 #[derive(Clone)]
 struct AppState {
-    sink: Arc<dyn PromptSink>,
+    host: Arc<dyn Host>,
     relay: Arc<Relay>,
     token: Arc<String>,
 }
@@ -100,7 +114,7 @@ impl Running {
 /// Bind and serve. Returns once the socket is listening, so a caller that gets
 /// `Ok` can hand out the link immediately.
 pub async fn start(
-    sink: Arc<dyn PromptSink>,
+    host: Arc<dyn Host>,
     relay: Arc<Relay>,
     config: RemoteConfig,
 ) -> Result<Running, String> {
@@ -108,12 +122,12 @@ pub async fn start(
         return Err("refusing to start without an access token".into());
     }
 
-    let host = if config.bind_all {
+    let bind_ip = if config.bind_all {
         IpAddr::V4(Ipv4Addr::UNSPECIFIED)
     } else {
         IpAddr::V4(Ipv4Addr::LOCALHOST)
     };
-    let addr = SocketAddr::new(host, config.port);
+    let addr = SocketAddr::new(bind_ip, config.port);
 
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
         format!("could not listen on {addr}: {e} — another program may already have that port")
@@ -124,7 +138,7 @@ pub async fn start(
         .unwrap_or(config.port);
 
     let state = AppState {
-        sink: sink.clone(),
+        host: host.clone(),
         relay: relay.clone(),
         token: Arc::new(config.token.clone()),
     };
@@ -154,7 +168,7 @@ pub async fn start(
 
     // Orphan sweep: a client that closed its tab mid-answer must not hold an
     // inference slot until the app restarts.
-    let reap_sink = sink.clone();
+    let reap_host = host.clone();
     let reap_relay = relay.clone();
     tokio::spawn(async move {
         loop {
@@ -164,7 +178,7 @@ pub async fn start(
             }
             for turn_id in reap_relay.reap() {
                 log::info!("[remote] abandoning turn {turn_id}: nobody is listening");
-                reap_sink.cancel(&turn_id);
+                reap_host.cancel(&turn_id);
             }
         }
     });
@@ -308,7 +322,7 @@ async fn chat(
             // The frontend is the only thing that can run a turn; if the
             // handoff fails there is nobody to answer, so the turn is failed
             // rather than left waiting forever.
-            if let Err(e) = state.sink.dispatch(request) {
+            if let Err(e) = state.host.dispatch(request) {
                 let _ = state
                     .relay
                     .fail(&turn_id, "the desktop app is not listening".into());
@@ -357,7 +371,7 @@ async fn cancel(
     }
     match state.relay.in_flight_turn(&body.session_id) {
         Some(turn_id) => {
-            state.sink.cancel(&turn_id);
+            state.host.cancel(&turn_id);
             StatusCode::ACCEPTED.into_response()
         }
         // Nothing to stop is a success: the client wanted no turn running, and
@@ -395,6 +409,18 @@ async fn speak(
     // one tap is not.
     let text = crate::text_util::truncate_at_char_boundary(text, MAX_SPEECH_CHARS);
 
+    // Start the sidecar if this is the first speech on this machine since
+    // launch — which it usually is, since the host has their own ears and does
+    // not need their own answers read aloud.
+    if let Err(e) = state.host.ensure_speech().await {
+        log::warn!("[remote] speech could not be started: {e}");
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the host's speech engine could not start",
+        )
+            .into_response();
+    }
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build();
@@ -424,12 +450,9 @@ async fn speak(
             return (StatusCode::BAD_GATEWAY, "speech is not available").into_response();
         }
         Err(e) => {
-            log::info!("[remote] speech unavailable: {e}");
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "the host has not turned on speech",
-            )
-                .into_response();
+            // Started, and still unreachable: not something a guest can act on.
+            log::warn!("[remote] speech unreachable: {e}");
+            return (StatusCode::SERVICE_UNAVAILABLE, "speech is not available").into_response();
         }
     };
     let Ok(audio) = audio else {
@@ -624,9 +647,10 @@ mod http_tests {
         dispatched: StdMutex<Vec<PromptRequest>>,
         cancelled: StdMutex<Vec<String>>,
         fail_dispatch: bool,
+        fail_speech: bool,
     }
 
-    impl PromptSink for RecordingSink {
+    impl Host for RecordingSink {
         fn dispatch(&self, request: PromptRequest) -> Result<(), String> {
             if self.fail_dispatch {
                 return Err("no webview".into());
@@ -637,6 +661,17 @@ mod http_tests {
 
         fn cancel(&self, turn_id: &str) {
             self.cancelled.lock().unwrap().push(turn_id.to_string());
+        }
+
+        fn ensure_speech(&self) -> BoxFuture<Result<(), String>> {
+            let fail = self.fail_speech;
+            Box::pin(async move {
+                if fail {
+                    Err("no speech engine".to_string())
+                } else {
+                    Ok(())
+                }
+            })
         }
     }
 
@@ -986,6 +1021,67 @@ mod http_tests {
             .unwrap();
         assert_eq!(new.status(), 202);
         second.stop();
+    }
+
+    #[tokio::test]
+    async fn speech_starts_the_sidecar_before_giving_up_on_it() {
+        // The app starts koko lazily, so a guest tapping Listen on a machine
+        // whose owner has not used speech this session must trigger the same
+        // startup the host's own button would.
+        let sink = Arc::new(RecordingSink::default());
+        let (base, _relay, running) = serve(sink).await;
+        let response = reqwest::Client::new()
+            .post(format!("{base}/api/speak?t={TOKEN}"))
+            .json(&serde_json::json!({ "text": "hello" }))
+            .send()
+            .await
+            .unwrap();
+        // No sidecar exists in a test, so this still fails — but it fails
+        // having tried, and says so differently from a host with no engine.
+        assert_eq!(response.status(), 503);
+        assert_eq!(response.text().await.unwrap(), "speech is not available");
+        running.stop();
+    }
+
+    #[tokio::test]
+    async fn speech_that_cannot_start_says_so_plainly() {
+        let sink = Arc::new(RecordingSink {
+            fail_speech: true,
+            ..Default::default()
+        });
+        let (base, _relay, running) = serve(sink).await;
+        let response = reqwest::Client::new()
+            .post(format!("{base}/api/speak?t={TOKEN}"))
+            .json(&serde_json::json!({ "text": "hello" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 503);
+        assert!(response.text().await.unwrap().contains("could not start"));
+        running.stop();
+    }
+
+    #[tokio::test]
+    async fn speech_needs_a_token_and_something_to_say() {
+        let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
+        let client = reqwest::Client::new();
+
+        let unauthenticated = client
+            .post(format!("{base}/api/speak"))
+            .json(&serde_json::json!({ "text": "hello" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(unauthenticated.status(), 401);
+
+        let empty = client
+            .post(format!("{base}/api/speak?t={TOKEN}"))
+            .json(&serde_json::json!({ "text": "   " }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(empty.status(), 400);
+        running.stop();
     }
 
     #[tokio::test]

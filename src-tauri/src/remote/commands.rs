@@ -9,13 +9,16 @@
 //! of these block, but the async form removes the question.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::tts::TtsEngine;
 
 use super::link::{self, QrMatrix};
 use super::relay::{PromptRequest, SessionInfo, TurnStatus, EVENT_CANCEL, EVENT_PROMPT};
-use super::server::{self, PromptSink, RemoteConfig, RemoteStatus};
+use super::server::{self, BoxFuture, Host, RemoteConfig, RemoteStatus};
 use super::RemoteServer;
 
 #[derive(Debug, Clone, Serialize)]
@@ -24,11 +27,12 @@ struct CancelEvent {
     turn_id: String,
 }
 
-/// Delivers prompts to the webview, which is the only thing in the process
-/// that can run an agent turn.
-struct WebviewSink(AppHandle);
+/// Connects the HTTP server to the running app: prompts go to the webview,
+/// which is the only thing in the process that can run an agent turn, and
+/// speech goes through the same sidecar the host's own Listen button uses.
+struct AppBridge(AppHandle);
 
-impl PromptSink for WebviewSink {
+impl Host for AppBridge {
     fn dispatch(&self, request: PromptRequest) -> Result<(), String> {
         self.0
             .emit(EVENT_PROMPT, request)
@@ -43,7 +47,30 @@ impl PromptSink for WebviewSink {
             },
         );
     }
+
+    fn ensure_speech(&self) -> BoxFuture<Result<(), String>> {
+        let app = self.0.clone();
+        Box::pin(async move {
+            let engine = app.state::<TtsEngine>();
+            if engine.is_ready().await {
+                return Ok(());
+            }
+            log::info!("[remote] starting the speech engine for a guest");
+            engine.start(&app).await?;
+            // Same wait the local path allows: the sidecar loads a model.
+            for _ in 0..SPEECH_START_ATTEMPTS {
+                if engine.is_ready().await {
+                    return Ok(());
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            Err("the speech engine did not become ready".to_string())
+        })
+    }
 }
+
+/// 30 seconds at 500ms apart, matching what the app's own TTS startup allows.
+const SPEECH_START_ATTEMPTS: usize = 60;
 
 #[tauri::command]
 pub async fn remote_start(
@@ -57,8 +84,8 @@ pub async fn remote_start(
     // Stop first: rebinding the same port while the old listener holds it is
     // the obvious way for a port change to fail on the way back.
     state.shutdown();
-    let sink = Arc::new(WebviewSink(app));
-    let running = server::start(sink, state.relay(), config).await?;
+    let bridge = Arc::new(AppBridge(app));
+    let running = server::start(bridge, state.relay(), config).await?;
     state.install(running);
     Ok(state.status())
 }
@@ -102,7 +129,7 @@ pub async fn remote_disconnect(
     session_id: String,
 ) -> Result<(), String> {
     if let Some(turn_id) = state.relay().disconnect(&session_id) {
-        WebviewSink(app).cancel(&turn_id);
+        AppBridge(app).cancel(&turn_id);
     }
     Ok(())
 }

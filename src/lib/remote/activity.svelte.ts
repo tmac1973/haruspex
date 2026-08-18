@@ -36,6 +36,13 @@ export interface RemoteActivity {
  */
 const MAX_ANSWER_CHARS = 2000;
 
+/**
+ * Guests kept in the panel. Starting a new chat mints a new session id, so a
+ * guest who changes the subject all evening would otherwise leave a card behind
+ * for every topic.
+ */
+const MAX_TRACKED = 10;
+
 let activity = $state<RemoteActivity[]>([]);
 
 export function getRemoteActivity(): RemoteActivity[] {
@@ -58,10 +65,15 @@ export function notePrompt(sessionId: string, label: string | null, prompt: stri
 		existing.updatedAt = Date.now();
 		return;
 	}
-	activity = [
-		...activity,
-		{ sessionId, label, prompt, answer: '', state: 'waiting', updatedAt: Date.now() }
-	];
+	const entry: RemoteActivity = {
+		sessionId,
+		label,
+		prompt,
+		answer: '',
+		state: 'waiting',
+		updatedAt: Date.now()
+	};
+	activity = [...activity, entry].slice(-MAX_TRACKED);
 }
 
 /** The turn has an inference slot and the model is working on it. */

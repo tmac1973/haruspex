@@ -328,6 +328,7 @@ export function boot(deps = {}) {
 	const inputEl = /** @type {HTMLTextAreaElement | null} */ (doc.getElementById('input'));
 	const sendEl = /** @type {HTMLButtonElement | null} */ (doc.getElementById('send'));
 	const stopEl = /** @type {HTMLButtonElement | null} */ (doc.getElementById('stop'));
+	const newChatEl = /** @type {HTMLButtonElement | null} */ (doc.getElementById('new-chat'));
 	const greetingEl = /** @type {HTMLFormElement | null} */ (doc.getElementById('greeting'));
 	const nameEl = /** @type {HTMLInputElement | null} */ (doc.getElementById('name'));
 	const skipEl = /** @type {HTMLButtonElement | null} */ (doc.getElementById('skip'));
@@ -343,7 +344,8 @@ export function boot(deps = {}) {
 		!stopEl ||
 		!greetingEl ||
 		!nameEl ||
-		!skipEl
+		!skipEl ||
+		!newChatEl
 	) {
 		return null;
 	}
@@ -357,7 +359,8 @@ export function boot(deps = {}) {
 		stop: stopEl,
 		greeting: greetingEl,
 		name: nameEl,
-		skip: skipEl
+		skip: skipEl,
+		newChat: newChatEl
 	};
 
 	// The link the host shared carries the token; it is kept in the address bar
@@ -374,7 +377,7 @@ export function boot(deps = {}) {
 	// Not an account: it distinguishes this browser from another one, so two
 	// guests do not land in one conversation and a reload continues rather than
 	// restarts.
-	const sessionId = readStore(store, SESSION_KEY) ?? randomId();
+	let sessionId = readStore(store, SESSION_KEY) ?? randomId();
 	writeStore(store, SESSION_KEY, sessionId);
 
 	/** @type {Bubble[]} */
@@ -470,7 +473,12 @@ export function boot(deps = {}) {
 					body: JSON.stringify({ text })
 				});
 				if (!response.ok) {
-					button.textContent = response.status === 503 ? 'No speech' : 'Failed';
+					// The server's own words: "the host's speech engine could not
+					// start" tells a guest something; "Failed" tells them nothing.
+					const reason = (await response.text().catch(() => '')) || 'Speech is not available';
+					setStatus(reason, true);
+					button.textContent = 'Listen';
+					button.disabled = false;
 					return;
 				}
 				const audio = new Audio(URL.createObjectURL(await response.blob()));
@@ -481,7 +489,9 @@ export function boot(deps = {}) {
 				await audio.play();
 				button.textContent = 'Playing…';
 			} catch {
-				button.textContent = 'Failed';
+				setStatus('Could not reach the computer running Haruspex.', true);
+				button.textContent = 'Listen';
+				button.disabled = false;
 			}
 		});
 		return button;
@@ -677,6 +687,44 @@ export function boot(deps = {}) {
 	function isTouch() {
 		return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 	}
+
+	/**
+	 * Start again with an empty context.
+	 *
+	 * The host's conversation id is derived from the session id, so a new
+	 * session is a new conversation — the earlier one stays in their sidebar
+	 * rather than being deleted. Without this a guest who changes the subject
+	 * four times pays for the first three on every turn, and eventually gets a
+	 * summary of a muddle instead of an answer.
+	 */
+	function newChat() {
+		if (busy) {
+			// Do not leave a turn running against a conversation nobody is
+			// reading any more.
+			void net(`/api/cancel?t=${auth}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ sessionId })
+			}).catch(() => {});
+		}
+		stream?.close();
+		try {
+			store?.removeItem(`${TRANSCRIPT_KEY}:${sessionId}`);
+		} catch {
+			// Storage may be unavailable; a stale key is not worth failing on.
+		}
+
+		sessionId = randomId();
+		writeStore(store, SESSION_KEY, sessionId);
+		transcript = [];
+		currentTurn = null;
+		setBusy(false);
+		render();
+		setStatus('Ready');
+		connect();
+	}
+
+	ui.newChat.addEventListener('click', newChat);
 
 	function askForName() {
 		ui.greeting.hidden = false;
