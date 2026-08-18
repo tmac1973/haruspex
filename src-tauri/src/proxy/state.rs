@@ -27,6 +27,11 @@ pub struct ProxyState {
     /// bool so a *changed* reason re-notifies — "Chrome vanished" and "Chrome
     /// crashed" are different problems.
     browser_fallback: Mutex<Option<String>>,
+    /// Rotation cursor for browser-assisted search. Separate from the auto
+    /// cursor because the two modes rotate different engine lists, and sharing
+    /// one index would make each mode's starting point depend on how often the
+    /// other ran.
+    browser_rotation_cursor: Mutex<usize>,
 }
 
 impl ProxyState {
@@ -38,6 +43,7 @@ impl ProxyState {
             fetch_cache: Mutex::new(HashMap::new()),
             auto_rotation_cursor: Mutex::new(0),
             browser_fallback: Mutex::new(None),
+            browser_rotation_cursor: Mutex::new(0),
         }
     }
 
@@ -73,6 +79,28 @@ impl ProxyState {
         if !wait.is_zero() {
             tokio::time::sleep(wait).await;
         }
+    }
+
+    /// Index browser mode should try first, for a rotation of `len` engines.
+    ///
+    /// Rotating matters more here than it looks. Without it the first engine
+    /// answers every search — and since it is the strongest one, it always
+    /// succeeds, so the other four are never exercised and their stats stay
+    /// empty. That is precisely the state in which "the standard rotation has
+    /// a backup" stops being true without anyone noticing.
+    pub(super) fn browser_rotation_offset(&self, len: usize) -> usize {
+        if len == 0 {
+            return 0;
+        }
+        *self.browser_rotation_cursor.lock().unwrap() % len
+    }
+
+    pub(super) fn advance_browser_rotation_cursor(&self, len: usize) {
+        if len == 0 {
+            return;
+        }
+        let mut cursor = self.browser_rotation_cursor.lock().unwrap();
+        *cursor = (*cursor + 1) % len;
     }
 
     /// Note that browser-assisted search could not run. Returns true only on the

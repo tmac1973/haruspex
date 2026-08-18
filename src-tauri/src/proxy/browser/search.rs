@@ -152,7 +152,9 @@ impl BrowserSession {
             .is_some_and(|w| w.last_used.elapsed() > IDLE_SHUTDOWN)
         {
             info!("browser search: shutting down idle browser");
-            *guard = None;
+            if let Some(mut warm) = guard.take() {
+                warm.process.close().await;
+            }
         }
 
         if guard.is_none() {
@@ -172,7 +174,9 @@ impl BrowserSession {
                 // one: it may have crashed, and a dead port produces the same
                 // error forever otherwise.
                 warn!("browser search: render failed ({e}) — dropping the browser");
-                *guard = None;
+                if let Some(mut warm) = guard.take() {
+                    warm.process.close().await;
+                }
             }
         }
         outcome
@@ -180,7 +184,9 @@ impl BrowserSession {
 
     /// Release the browser (app shutdown, or the user turning the mode off).
     pub(crate) async fn shutdown(&self) {
-        *self.inner.lock().await = None;
+        if let Some(mut warm) = self.inner.lock().await.take() {
+            warm.process.close().await;
+        }
     }
 }
 
@@ -222,7 +228,18 @@ pub(crate) async fn search_via_browser(
     let mut last_error = String::new();
     let mut engine_ran = false;
 
-    for engine in BROWSER_ENGINES {
+    // Start at the rotation cursor and wrap, exactly as `search_auto` does.
+    // Without this the leading engine answers every search, the other four are
+    // never exercised, and their stats stay empty — which is how a hedge stops
+    // working without anyone noticing.
+    let offset = state.browser_rotation_offset(BROWSER_ENGINES.len());
+    let rotated = BROWSER_ENGINES
+        .iter()
+        .cycle()
+        .skip(offset)
+        .take(BROWSER_ENGINES.len());
+
+    for engine in rotated {
         if !state.is_engine_healthy(engine.stats_key, ENGINE_COOLDOWN) {
             continue;
         }
@@ -286,6 +303,9 @@ pub(crate) async fn search_via_browser(
                     engine.stats_key,
                     results.len()
                 );
+                // Advance so the NEXT search starts elsewhere; this is what
+                // makes it a rotation rather than a preference order.
+                state.advance_browser_rotation_cursor(BROWSER_ENGINES.len());
                 return Ok(Ok(results));
             }
             Ok(_) => last_error = format!("{} returned no results", engine.stats_key),
@@ -296,6 +316,9 @@ pub(crate) async fn search_via_browser(
         }
     }
 
+    // Everything failed: still move on, so the next search does not open with
+    // the same engine that just failed.
+    state.advance_browser_rotation_cursor(BROWSER_ENGINES.len());
     Ok(Err(if last_error.is_empty() {
         "All browser search engines are cooling down.".to_string()
     } else {
@@ -368,11 +391,35 @@ mod tests {
         }
     }
 
-    /// Startpage is the engine this mode exists to provide; losing it from the
-    /// table would leave browser mode slower than `auto` for no gain.
+    /// Startpage is the engine this mode exists to provide, so it opens the
+    /// rotation — but only as the first search's starting point, since the
+    /// cursor moves on afterwards.
     #[test]
-    fn startpage_leads_the_rotation() {
+    fn startpage_opens_the_rotation() {
         assert_eq!(BROWSER_ENGINES[0].stats_key, "startpage/browser");
+    }
+
+    /// The rotation must actually visit every engine as a starting point.
+    /// Without this the strongest engine answers every search, the rest are
+    /// never exercised, and the mode's whole reason for existing — a path that
+    /// still works when one engine falls over — quietly stops being tested.
+    #[test]
+    fn rotation_starts_each_engine_in_turn() {
+        let state = ProxyState::new();
+        let len = BROWSER_ENGINES.len();
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..len {
+            let offset = state.browser_rotation_offset(len);
+            seen.insert(BROWSER_ENGINES[offset].stats_key);
+            state.advance_browser_rotation_cursor(len);
+        }
+        assert_eq!(
+            seen.len(),
+            len,
+            "every engine should get a turn at the front; saw {seen:?}"
+        );
+        // A full lap returns to the start.
+        assert_eq!(state.browser_rotation_offset(len), 0);
     }
 
     #[test]
@@ -432,6 +479,25 @@ mod integration {
         assert!(
             results.iter().all(|r| r.url.starts_with("http")),
             "every result should carry a real URL"
+        );
+
+        // Exercise the real teardown rather than Drop's backstop, and prove it
+        // leaves nothing behind — the leak this caught was ten processes and a
+        // profile directory surviving an earlier version of this test.
+        session.shutdown().await;
+        let leftovers: Vec<_> = std::fs::read_dir(std::env::temp_dir())
+            .expect("temp dir readable")
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|n| n.starts_with(super::super::process::PROFILE_PREFIX))
+            })
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "shutdown left {} profile(s) behind",
+            leftovers.len()
         );
     }
 }

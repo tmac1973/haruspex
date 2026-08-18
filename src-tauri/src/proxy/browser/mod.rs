@@ -10,15 +10,8 @@
 //! five DevTools methods needed to open a tab and read its settled DOM. No
 //! search knowledge lives here; `proxy::search` supplies the URLs and parsers.
 
-// The runtime is complete and exercised by the integration tests below, but
-// the search path that calls it lands in the next phase — so the compiler can
-// see no caller yet. The allow comes off when `proxy::search` uses it; it is
-// scoped to these two modules rather than the crate so it cannot hide anything
-// else going unused in the meantime.
-#[allow(dead_code)]
 pub(super) mod cdp;
 pub(super) mod detect;
-#[allow(dead_code)]
 pub(super) mod process;
 pub(super) mod search;
 

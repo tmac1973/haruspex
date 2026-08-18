@@ -236,6 +236,9 @@ pub async fn proxy_search(
 /// not launch anything — the browser starts on the first browser-mode search
 /// and quits after an idle period.
 pub fn browser_session() -> BrowserSessionHandle {
+    // Collect profiles a previous run's crash left behind. Nothing else ever
+    // will, and each is hundreds of megabytes.
+    browser::process::sweep_stale_profiles();
     std::sync::Arc::new(browser::search::BrowserSession::new())
 }
 
