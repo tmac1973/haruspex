@@ -22,6 +22,11 @@ pub struct ProxyState {
     /// after each successful search so we round-robin through the engines
     /// instead of always starting with the same one.
     auto_rotation_cursor: Mutex<usize>,
+    /// Reason browser-assisted search is currently falling back to the plain
+    /// rotation, or None when it is working. Holds the reason rather than a
+    /// bool so a *changed* reason re-notifies — "Chrome vanished" and "Chrome
+    /// crashed" are different problems.
+    browser_fallback: Mutex<Option<String>>,
 }
 
 impl ProxyState {
@@ -32,6 +37,7 @@ impl ProxyState {
             search_cache: Mutex::new(HashMap::new()),
             fetch_cache: Mutex::new(HashMap::new()),
             auto_rotation_cursor: Mutex::new(0),
+            browser_fallback: Mutex::new(None),
         }
     }
 
@@ -67,6 +73,29 @@ impl ProxyState {
         if !wait.is_zero() {
             tokio::time::sleep(wait).await;
         }
+    }
+
+    /// Note that browser-assisted search could not run. Returns true only on the
+    /// *transition* into the degraded state, or when the reason changes.
+    ///
+    /// The distinction is the whole point: a research turn issues dozens of
+    /// searches, and a notification per search is how people learn to ignore
+    /// notifications. The persistent card carries the ongoing state; the event
+    /// only marks the moment it started.
+    pub(super) fn begin_browser_fallback(&self, reason: &str) -> bool {
+        let mut current = self.browser_fallback.lock().unwrap();
+        if current.as_deref() == Some(reason) {
+            return false;
+        }
+        *current = Some(reason.to_string());
+        true
+    }
+
+    /// Note that browser-assisted search worked. Returns true if it had been
+    /// degraded, so the caller can clear the card. Recovery is deliberately
+    /// quiet — the card simply goes away.
+    pub(super) fn clear_browser_fallback(&self) -> bool {
+        self.browser_fallback.lock().unwrap().take().is_some()
     }
 
     pub(super) fn record_failure(&self, engine: &str) {

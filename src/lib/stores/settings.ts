@@ -15,7 +15,7 @@ import type { ShellSelection } from '$lib/ipc/gen/ShellSelection';
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type AccentColor = 'teal' | 'amber' | 'violet' | 'blue';
-export type SearchProvider = 'auto' | 'duckduckgo' | 'brave' | 'searxng';
+export type SearchProvider = 'auto' | 'duckduckgo' | 'brave' | 'searxng' | 'browser';
 
 /**
  * A named API key in the shared key store. Keys are referenced by `id` from
@@ -245,6 +245,13 @@ export interface AppSettings {
 	searchProvider: SearchProvider;
 	braveApiKey: string;
 	searxngUrl: string;
+	/**
+	 * Path to the Chrome/Chromium executable browser-assisted search should
+	 * drive. Empty means "detect one" — this exists for installs in places the
+	 * per-OS candidate list doesn't cover, which every such list eventually
+	 * meets.
+	 */
+	browserPath: string;
 	contextSize: number;
 	/**
 	 * Allow the local llama-server to run a context larger than fits in VRAM,
@@ -507,6 +514,7 @@ const defaults: AppSettings = {
 	uiScale: 1,
 	ttsVoice: DEFAULT_TTS_VOICE,
 	searchProvider: 'auto',
+	browserPath: '',
 	braveApiKey: '',
 	searxngUrl: DEFAULT_SEARXNG_URL,
 	contextSize: DEFAULT_CONTEXT_SIZE,

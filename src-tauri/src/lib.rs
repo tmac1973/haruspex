@@ -90,6 +90,10 @@ pub fn run() {
         .manage(LlamaServer::new())
         .manage(InferenceQueue::new())
         .manage(ProxyState::new())
+        // One browser for the app's life: launched on demand by
+        // browser-assisted search and dropped when idle, so nothing is
+        // running unless that mode is in use.
+        .manage(proxy::browser_session())
         .manage(SearchStats::new())
         .manage(AudioRecorder::new())
         .manage(WhisperServer::new())
@@ -251,11 +255,17 @@ pub fn run() {
                 let whisper = app.state::<WhisperServer>();
                 let tts = app.state::<TtsEngine>();
                 let shell_mgr = app.state::<ShellManager>();
+                // A headless browser left running holds ~1 GB and a debugging
+                // port. Its Drop would handle it, but managed state is not
+                // guaranteed to drop at process exit, so it is stopped here
+                // alongside the sidecars.
+                let browser = app.state::<proxy::BrowserSessionHandle>();
                 shell_mgr.shutdown_all();
                 tauri::async_runtime::block_on(async {
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;
                     let _ = tts.stop().await;
+                    browser.shutdown().await;
                 });
             }
         });

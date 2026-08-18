@@ -51,7 +51,9 @@ registerTool({
 				instanceUrl: settings.searxngUrl || DEFAULT_SEARXNG_URL,
 				recency: settings.searchRecency || null,
 				deepResearch: ctx.deepResearch,
-				proxy: settings.proxy
+				proxy: settings.proxy,
+				// Only meaningful for the 'browser' provider; ignored otherwise.
+				browserPath: settings.browserPath || null
 			});
 			return toolResult(JSON.stringify(results));
 		} catch (e) {

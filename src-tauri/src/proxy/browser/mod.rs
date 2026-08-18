@@ -20,6 +20,7 @@ pub(super) mod cdp;
 pub(super) mod detect;
 #[allow(dead_code)]
 pub(super) mod process;
+pub(super) mod search;
 
 pub(super) use detect::{detect, DetectedBrowser};
 

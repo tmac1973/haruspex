@@ -212,6 +212,10 @@ pub(crate) enum GlobalCounter {
     Query,
     CacheHit,
     AllEnginesFailed,
+    /// Browser-assisted search could not run and fell back to the plain
+    /// rotation. Counted so a mode that has quietly been degraded for a week
+    /// is visible as a number, not only as a banner someone may have missed.
+    BrowserFallback,
 }
 
 impl GlobalCounter {
@@ -220,6 +224,7 @@ impl GlobalCounter {
             GlobalCounter::Query => "total_queries",
             GlobalCounter::CacheHit => "cache_hits",
             GlobalCounter::AllEnginesFailed => "all_engines_failed",
+            GlobalCounter::BrowserFallback => "browser_fallbacks",
         }
     }
 }
@@ -288,6 +293,7 @@ pub(crate) fn record_global_both(stats: &SearchStats, sink: &dyn StatSink, count
         GlobalCounter::Query => stats.record_query(),
         GlobalCounter::CacheHit => stats.record_cache_hit(),
         GlobalCounter::AllEnginesFailed => stats.record_all_engines_failed(),
+        GlobalCounter::BrowserFallback => stats.record_browser_fallback(),
     }
     sink.record_global(counter.db_key());
 }
@@ -311,6 +317,11 @@ pub struct GlobalCounters {
     pub total_queries: u64,
     #[ts(type = "number")]
     pub all_engines_failed: u64,
+    /// Times browser-assisted search fell back to the plain rotation.
+    // `number` like its siblings: without it ts-rs maps u64 to bigint and the
+    // one field reads differently from the rest of the struct.
+    #[ts(type = "number")]
+    pub browser_fallbacks: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
@@ -346,6 +357,11 @@ impl SearchStats {
     pub fn record_all_engines_failed(&self) {
         let mut g = self.globals.lock().unwrap();
         g.all_engines_failed += 1;
+    }
+
+    pub fn record_browser_fallback(&self) {
+        let mut g = self.globals.lock().unwrap();
+        g.browser_fallbacks += 1;
     }
 
     pub fn record_outcome(&self, engine: &str, outcome: &RecordedOutcome) {

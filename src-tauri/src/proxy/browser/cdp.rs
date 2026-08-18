@@ -131,7 +131,7 @@ pub(super) struct RenderOutcome {
 pub(super) async fn render(
     port: u16,
     url: &str,
-    ready: &dyn Fn(&str) -> bool,
+    ready: &(dyn Fn(&str) -> bool + Sync),
     timeout: Duration,
 ) -> Result<RenderOutcome, String> {
     let version: Value = reqwest::get(format!("http://127.0.0.1:{port}/json/version"))
@@ -168,7 +168,7 @@ pub(super) async fn render(
 async fn render_in_target(
     port: u16,
     target_id: &str,
-    ready: &dyn Fn(&str) -> bool,
+    ready: &(dyn Fn(&str) -> bool + Sync),
     timeout: Duration,
 ) -> Result<RenderOutcome, String> {
     let deadline = Instant::now() + timeout;

@@ -22,6 +22,7 @@ use log::{info, warn};
 use serde::Serialize;
 use std::future::Future;
 use std::time::Instant;
+use tauri::Emitter;
 
 pub(crate) use bypass::apply_proxy;
 pub use config::ProxyConfig;
@@ -66,9 +67,11 @@ where
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn proxy_search(
+    app: tauri::AppHandle,
     state: tauri::State<'_, ProxyState>,
     stats: tauri::State<'_, SearchStats>,
     sink: tauri::State<'_, StatSinkHandle>,
+    session: tauri::State<'_, browser::search::BrowserSessionHandle>,
     query: String,
     provider: Option<String>,
     api_key: Option<String>,
@@ -76,6 +79,8 @@ pub async fn proxy_search(
     recency: Option<String>,
     deep_research: Option<bool>,
     proxy: Option<ProxyConfig>,
+    // Settings override for the browser executable; detection runs when None.
+    browser_path: Option<String>,
 ) -> Result<Vec<SearchResult>, String> {
     let sink: &dyn StatSink = sink.0.as_ref();
     record_global_both(&stats, sink, GlobalCounter::Query);
@@ -128,6 +133,66 @@ pub async fn proxy_search(
             )
             .await?
         }
+        "browser" => {
+            info!(
+                "Browser-assisted search for: {} (recency: {})",
+                query, recency
+            );
+            match browser::search::search_via_browser(
+                &session,
+                &state,
+                &stats,
+                sink,
+                &query,
+                recency,
+                browser_path.as_deref(),
+            )
+            .await
+            {
+                Ok(result) => {
+                    if state.clear_browser_fallback() {
+                        let _ = app.emit("browser-search-fallback-cleared", ());
+                    }
+                    result?
+                }
+                Err(unavailable) => {
+                    // Loud, not silent: a mode that has quietly been using the
+                    // standard rotation for a week must not look healthy. The
+                    // event fires on transition only — a research turn issues
+                    // dozens of searches, and dozens of identical toasts is how
+                    // people learn to ignore them.
+                    warn!(
+                        "browser search unavailable ({}) — falling back to the standard rotation. Searched: {}",
+                        unavailable.reason,
+                        if unavailable.searched.is_empty() {
+                            "(browser already found)".to_string()
+                        } else {
+                            unavailable.searched.join(", ")
+                        }
+                    );
+                    record_global_both(&stats, sink, GlobalCounter::BrowserFallback);
+                    if state.begin_browser_fallback(&unavailable.reason) {
+                        let _ = app.emit(
+                            "browser-search-fallback",
+                            BrowserFallbackState {
+                                reason: unavailable.reason.clone(),
+                                searched: unavailable.searched.clone(),
+                            },
+                        );
+                    }
+                    search_auto(
+                        &state,
+                        &stats,
+                        sink,
+                        &query,
+                        recency,
+                        deep_research,
+                        proxy_ref,
+                    )
+                    .await?
+                }
+            }
+        }
         "auto" => {
             info!(
                 "Auto-searching for: {} (recency: {}, deep_research: {})",
@@ -165,6 +230,27 @@ pub async fn proxy_search(
 
     state.cache_search(&cache_key, &results);
     Ok(results)
+}
+
+/// The shared browser handle registered as Tauri state. Constructing it does
+/// not launch anything — the browser starts on the first browser-mode search
+/// and quits after an idle period.
+pub fn browser_session() -> BrowserSessionHandle {
+    std::sync::Arc::new(browser::search::BrowserSession::new())
+}
+
+/// Shared browser handle. Re-exported so the app's exit handler can stop the
+/// browser alongside the sidecars without reaching into the module.
+pub type BrowserSessionHandle = browser::search::BrowserSessionHandle;
+
+/// Surfaced when browser-assisted search cannot run and the plain rotation is
+/// standing in for it. Carries where detection looked, because "not found"
+/// alone leaves the user with nothing to act on.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct BrowserFallbackState {
+    pub reason: String,
+    pub searched: Vec<String>,
 }
 
 #[derive(Serialize, ts_rs::TS)]

@@ -562,6 +562,74 @@ pub(super) async fn search_bing(
     .await
 }
 
+// Startpage — Google's index, server-rendered, no key. Removed from the plain
+// rotation in #201 when it began answering with an Anubis proof-of-work
+// interstitial; a headless browser solves that in ~2s, so it lives on in
+// browser-assisted mode only. The parser never broke — only its transport did,
+// and it is restored unchanged: verified on 2026-08-17 that a rendered SERP
+// still yields ten `div.result` with `data-testid="gl-title-link"` anchors.
+//
+// The markup is Emotion CSS-in-JS, so titles and snippets must be read with
+// `text_skipping_style`: Emotion injects `<style>` tags *inside* the result
+// anchors and their CSS would otherwise land in the extracted text.
+
+pub(super) fn parse_startpage_html(html: &str) -> Result<Vec<SearchResult>, String> {
+    let document = Html::parse_document(html);
+    // Each organic result is a div whose class list includes the unhashed
+    // token `result` (alongside an Emotion `css-*` hash we ignore).
+    let result_selector =
+        Selector::parse("div.result").map_err(|_| "Failed to parse startpage result selector")?;
+    // Stable test id on the title anchor; its href is the real destination
+    // (Startpage does not redirect-wrap organic result links).
+    let title_selector = Selector::parse(r#"a[data-testid="gl-title-link"]"#)
+        .map_err(|_| "Failed to parse startpage title selector")?;
+    let desc_selector = Selector::parse("p.description")
+        .map_err(|_| "Failed to parse startpage snippet selector")?;
+
+    Ok(scrape_results(&document, &result_selector, |element| {
+        let title_el = element.select(&title_selector).next();
+        let url = title_el
+            .and_then(|e| e.value().attr("href"))
+            .unwrap_or_default()
+            .to_string();
+        let title = title_el.map(text_skipping_style).unwrap_or_default();
+        let snippet = element
+            .select(&desc_selector)
+            .next()
+            .map(text_skipping_style)
+            .unwrap_or_default();
+
+        (!title.is_empty() && url.starts_with("http")).then_some(SearchResult {
+            title,
+            url,
+            snippet,
+        })
+    }))
+}
+
+/// Trimmed visible text of an element, ignoring the contents of any nested
+/// `<style>`/`<script>`. Startpage injects Emotion `<style>` tags inside its
+/// result anchors and snippets, whose CSS rules would otherwise pollute the
+/// extracted title/snippet.
+fn text_skipping_style(e: ElementRef) -> String {
+    let mut buf = String::new();
+    for node in e.descendants() {
+        let Some(text) = node.value().as_text() else {
+            continue;
+        };
+        let inside_style = node.ancestors().any(|a| {
+            a.value()
+                .as_element()
+                .map(|el| el.name() == "style" || el.name() == "script")
+                .unwrap_or(false)
+        });
+        if !inside_style {
+            buf.push_str(text);
+        }
+    }
+    buf.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Decode the real destination from a `bing.com/ck/a?...&u=a1<b64url>&ntb=1`
 /// tracking link. The payload is base64url after a two-character `a1` tag, and
 /// Bing omits the padding — which `base64::decode` rejects, hence the explicit
