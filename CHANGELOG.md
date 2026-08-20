@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.59](https://github.com/tmac1973/haruspex/compare/v0.1.58...v0.1.59) (2026-08-20)
+
+
+### Features
+
+* bring Bing back into the search rotation ([#203](https://github.com/tmac1973/haruspex/issues/203)) ([09c213b](https://github.com/tmac1973/haruspex/commit/09c213b676ddb52a10ad88d8e1d87305c2f92a12))
+* browser-assisted search ([#204](https://github.com/tmac1973/haruspex/issues/204)) ([ccc4ab0](https://github.com/tmac1973/haruspex/commit/ccc4ab0891c89b3a2c79cca573c6f55957b50e21))
+* per-phase token accounting and a thinking panel that stays open ([#200](https://github.com/tmac1973/haruspex/issues/200)) ([528e8be](https://github.com/tmac1973/haruspex/commit/528e8be83add6ddda34ca6940e08478e34ce2f88))
+* refresh the local model lineup and add reasoning-effort controls ([#199](https://github.com/tmac1973/haruspex/issues/199)) ([093b91f](https://github.com/tmac1973/haruspex/commit/093b91f1ccab8c131f974e775667e05bb221da54))
+* remote web chat — serve a limited chat client to your network ([#205](https://github.com/tmac1973/haruspex/issues/205)) ([f01a5c6](https://github.com/tmac1973/haruspex/commit/f01a5c6a8c47f39b6b024b2151fe7041509a171d))
+
+
+### Bug Fixes
+
+* drop Startpage and Mojeek from search rotation, detect bot walls generically ([#201](https://github.com/tmac1973/haruspex/issues/201)) ([8e9559a](https://github.com/tmac1973/haruspex/commit/8e9559a1e5c611951e57f166ac6548343c84b737))
+* require a small page before calling something a bot challenge ([#202](https://github.com/tmac1973/haruspex/issues/202)) ([b38c871](https://github.com/tmac1973/haruspex/commit/b38c8710fca805313a187afffdd162426c1a5381))
+
 ## [0.1.58](https://github.com/tmac1973/haruspex/compare/v0.1.57...v0.1.58) (2026-08-16)
 
 
