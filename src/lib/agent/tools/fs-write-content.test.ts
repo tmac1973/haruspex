@@ -188,3 +188,40 @@ describe('fs_write_pptx / fs_write_odp slide validation', () => {
 		});
 	}
 });
+
+/**
+ * `writeRoot` confines a run to one directory. fs_write_text has enforced it
+ * since it existed; fs_edit_text never did — harmless only while no writeRoot
+ * caller could reach that tool. Guided planning now exposes it (as the escape
+ * hatch from the repeat-write guard), so an unguarded edit would have let a
+ * "planning only, never edit code" turn rewrite any file in the project.
+ */
+describe('writeRoot confinement applies to edits, not just writes', () => {
+	const rooted = { ...ctx, writeRoot: 'plan/my-feature/' };
+
+	async function callRooted(tool: string, args: Record<string, unknown>) {
+		const { executeTool } = await import('$lib/agent/tools');
+		return executeTool(tool, args, rooted);
+	}
+
+	it('refuses an edit outside the write root', async () => {
+		const out = await callRooted('fs_edit_text', {
+			path: 'src/main.rs',
+			old_str: 'a',
+			new_str: 'b'
+		});
+		expect(JSON.parse(out.result).error).toMatch(/may only write inside plan\/my-feature\//);
+		expect(mocks.invoke).not.toHaveBeenCalled();
+	});
+
+	it('allows an edit inside the write root', async () => {
+		mocks.invoke.mockResolvedValue({ first_changed_line: 12, used_fuzzy: false });
+		const out = await callRooted('fs_edit_text', {
+			path: 'plan/my-feature/phase-01.md',
+			old_str: 'a',
+			new_str: 'b'
+		});
+		expect(out.result).toContain('Edited plan/my-feature/phase-01.md');
+		expect(mocks.invoke).toHaveBeenCalled();
+	});
+});

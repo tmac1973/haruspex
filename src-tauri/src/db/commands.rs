@@ -220,6 +220,28 @@ pub async fn db_mark_run_started(
 }
 
 #[tauri::command]
+pub async fn db_set_run_environment(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    model_id: Option<String>,
+    model_thinking: Option<bool>,
+    model_effort: Option<String>,
+    context_size: Option<i64>,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| {
+        db.set_run_environment(
+            run_id,
+            model_id.as_deref(),
+            model_thinking,
+            model_effort.as_deref(),
+            context_size,
+        )
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn db_mark_run_finished(
     state: tauri::State<'_, Database>,
     run_id: i64,

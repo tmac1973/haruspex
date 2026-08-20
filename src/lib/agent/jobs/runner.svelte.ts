@@ -21,7 +21,11 @@ import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { runWithAutoApprove } from '$lib/stores/approvalOverride';
 import { getJob, type JobWithSteps, type JobType } from '$lib/stores/jobs.svelte';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
-import type { SamplingParams } from '$lib/stores/settings';
+import {
+	getActiveLocalModelFilename,
+	getSettings,
+	type SamplingParams
+} from '$lib/stores/settings';
 import { parseModelAdvanced } from './modelAdvanced';
 // The registration barrel, deliberately — importing it registers the built-in
 // job types before the first dispatch can happen.
@@ -30,6 +34,7 @@ import { markStepDone, newRunningStep } from '$lib/agent/steps';
 import {
 	createJobRun,
 	markRunFinished,
+	setRunEnvironment,
 	setStepStatsProvider,
 	type JobRunStatus,
 	type StepStats
@@ -95,6 +100,46 @@ function jobTurnPolicy(job: JobWithSteps): {
  */
 function jobDescriptor(job: JobWithSteps) {
 	return resolveBackendDescriptor(jobBackendOverride(job));
+}
+
+/**
+ * What a run executes under, as the stats card reports it.
+ *
+ * Resolved here at run start and persisted with the run, because the job's
+ * settings are editable afterwards: reading them back at display time would
+ * relabel a finished run's token table with a model that never touched it.
+ * The reasoning fields are the job's own choice where it made one, and the
+ * global Settings value where it inherits — i.e. what the turns actually ran
+ * with, not the literal config.
+ */
+export interface RunEnvironment {
+	/** Model name for display. Local runs report the active GGUF's filename. */
+	modelId: string | null;
+	/** Resolved reasoning toggle: the job's override, else the global setting. */
+	modelThinking: boolean | null;
+	/** Resolved reasoning effort, or null when none is selected. */
+	modelEffort: string | null;
+	contextSize: number | null;
+}
+
+function runEnvironment(job: JobWithSteps): RunEnvironment {
+	const descriptor = jobDescriptor(job);
+	const policy = jobTurnPolicy(job);
+	const settings = getSettings();
+	// llama-server serves one model and ignores the name, so the descriptor
+	// reports the 'default' placeholder — the GGUF filename is the only thing
+	// that identifies what actually answered.
+	const local = getActiveLocalModelFilename().replace(/\.gguf$/i, '');
+	const modelId =
+		descriptor.kind === 'local' || descriptor.modelId === 'default'
+			? local || 'local model'
+			: descriptor.modelId;
+	return {
+		modelId,
+		modelThinking: policy.thinkingEnabled ?? settings.thinkingEnabled,
+		modelEffort: policy.reasoningEffort ?? settings.reasoningEffort,
+		contextSize: descriptor.contextSize
+	};
 }
 
 /**
@@ -317,6 +362,8 @@ export interface RunState {
 	 * globally-active model's.
 	 */
 	contextSize: number;
+	/** Model / reasoning settings this run executes under. See RunEnvironment. */
+	environment: RunEnvironment;
 	steps: RunStepState[];
 	currentStepIndex: number;
 	status: RunStatus;
@@ -442,12 +489,17 @@ function startRun(queued: QueuedRun): void {
 	activeAbort = abort;
 
 	const planned = planSteps(job);
+	const environment = runEnvironment(job);
+	// Fire-and-forget: a failed environment write costs the stats card its
+	// model label, which must never be a reason a run does not start.
+	void setRunEnvironment(runId, environment);
 	current = {
 		id: runId,
 		jobId: job.id,
 		jobName: job.name,
 		jobType: job.job_type,
-		contextSize: jobDescriptor(job).contextSize,
+		contextSize: environment.contextSize ?? 0,
+		environment,
 		steps: planned.map((s, i) => ({
 			index: i,
 			promptAuthored: s.authored,

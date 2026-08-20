@@ -439,6 +439,6 @@ export async function saveFullDiagnostics(): Promise<SaveResult> {
 	if (!chosen) return { kind: 'cancelled' };
 
 	const bundle = buildFullBundle(diag);
-	await invoke('save_diagnostics_file', { path: chosen, contents: bundle });
+	await invoke('save_export_file', { path: chosen, contents: bundle });
 	return { kind: 'saved', path: chosen };
 }

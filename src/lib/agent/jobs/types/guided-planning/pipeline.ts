@@ -21,7 +21,10 @@ import {
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
 import { parseGuidedPlanningConfig, type GuidedPlanningConfig } from './config';
-import { VERIFICATION_COMMAND_HEADING } from '../autonomous-coding/planParse';
+import {
+	extractDecisionCommand,
+	VERIFICATION_COMMAND_HEADING
+} from '../autonomous-coding/planParse';
 
 /**
  * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at
@@ -54,13 +57,20 @@ export interface PlanningState {
  * markdown write tool, and the interactive question tool. No code-editing,
  * exec, sandbox, email, or web-write tools — planning writes markdown only.
  */
-const GUIDED_PLANNING_TOOLS = [
+export const GUIDED_PLANNING_TOOLS = [
 	'fs_read_text',
 	'fs_list_dir',
 	'fs_read_pdf',
 	'code_grep',
 	'code_glob',
 	'fs_write_text',
+	// The escape hatch from the repeat-write guard: fs_write_text refuses a
+	// second write to the same path within one turn (it would replace, not
+	// append), and its refusal tells the model to use fs_edit_text. Without
+	// this the advice was unfollowable — a run stalled mid-turn asking the
+	// user to delete a phase file by hand because it had spotted a
+	// contradiction in what it had just written and had no way to fix it.
+	'fs_edit_text',
 	'ask_user_question'
 ];
 
@@ -103,7 +113,7 @@ function guidedPlanOutputDir(job: JobWithSteps, cfg: GuidedPlanningConfig): stri
  * questioning via the question tool, then write overview.md from a fixed
  * template with a Decisions appendix. Planning only.
  */
-function overviewStagePrompt(outDir: string, overviewPath: string): string {
+export function overviewStagePrompt(outDir: string, overviewPath: string): string {
 	return [
 		'You are running an interactive guided-planning session. This is STAGE 1 of',
 		'2: produce a project OVERVIEW. Planning only — never write or edit code.',
@@ -135,6 +145,25 @@ function overviewStagePrompt(outDir: string, overviewPath: string): string {
 		'   browser app a headless DOM smoke check beats a bare syntax parse. It must',
 		'   be READ-ONLY, fast, idempotent, and phase-agnostic (no `git`, no',
 		'   installs, no servers, no inline `-c "…"` program strings).',
+		'   NAME A FILE ONLY IF IT EXISTS ON DISK RIGHT NOW (check first). This',
+		"   plan's file layout is decided in STAGE 2, after this — so any path you",
+		'   invent here is a guess, and the coding run executes the command as',
+		'   written. Use a whole-project form instead: `python3 -m compileall -q .`,',
+		'   `python3 -m pytest -q`, `npm test`, `cargo check`, `go build ./...`. And',
+		'   if the plan will create a test suite, this command must RUN that suite —',
+		'   a syntax check that never executes the tests the plan writes is not',
+		'   verification.',
+		'   It must PASS AT EVERY PHASE BOUNDARY, starting right after the FIRST',
+		'   phase: the coding runner reruns it as each phase completes and treats a',
+		'   non-zero exit as failure. A command that only works once the last phase',
+		'   lands fails every phase before it — `pytest` with no tests yet exits 5,',
+		'   which counts as failure. So if verification is a test suite THIS plan',
+		'   creates, state in the overview that the suite is built in the FIRST',
+		'   phase and extended afterwards.',
+		'   Use only tooling that is already installed, or that the plan installs as',
+		'   part of its own work — and do not contradict the ## Constraints you are',
+		'   writing in this same file. "Standard library only, no third-party',
+		'   dependencies" and a `pytest` command cannot both be true.',
 		`4. Write the overview to \`${overviewPath}\` with fs_write_text, using these`,
 		'   sections exactly: a top "# <Project> — Project Overview" heading, then',
 		'   ## Problem, ## Goals, ## Non-goals, ## Users & primary flow,',
@@ -172,7 +201,7 @@ function overviewRevisePrompt(outDir: string, overviewPath: string): string {
  * per-phase write loop (stage 2b) produces the markdown one file per turn, which
  * is how a small model reliably writes every phase instead of just the first.
  */
-function outlineStagePrompt(outDir: string, overviewPath: string): string {
+export function outlineStagePrompt(outDir: string, overviewPath: string): string {
 	return [
 		'You are running an interactive guided-planning session. This is STAGE 2 of 2,',
 		'part A: produce the OUTLINE of a phased implementation plan from the approved',
@@ -193,6 +222,13 @@ function outlineStagePrompt(outDir: string, overviewPath: string): string {
 		'3. Break the WHOLE project into phases ordered STRICTLY by dependency: every',
 		'   phase may depend ONLY on earlier phases, never a later one. Cover the',
 		'   project end to end — most plans need several phases, not one.',
+		`   If the overview's "## ${VERIFICATION_COMMAND_HEADING}" runs a TEST SUITE that this`,
+		'   plan creates, the phase that CREATES that suite must be phase 01. The',
+		'   coding runner reruns that command as every phase completes, so a suite',
+		'   introduced in a later phase leaves each earlier phase failing',
+		'   verification with nothing to run. Land the first tests alongside the',
+		'   first product code and extend them phase by phase — never a single',
+		'   "write the tests" phase at the end.',
 		'4. Report the outline by calling `submit_plan_outline` exactly once, with',
 		'   every phase (id "01", "02", …; title; depends_on; a 1–3 sentence summary).',
 		'   Do NOT write any phase files — that happens next, one phase at a time.'
@@ -214,12 +250,56 @@ function outlineRevisePrompt(overviewPath: string): string {
 }
 
 /**
+ * What a phase file may and may not contain.
+ *
+ * A plan run once produced a 598-line phase file that was 79% fenced code,
+ * including a section headed "Code contract (single source of truth — copy
+ * verbatim)" holding the complete finished module. That is not a plan: the
+ * coding run's decompose stage reads every plan file, and each phase turn
+ * re-reads them, so embedded implementations are paid for over and over — and
+ * the plan quietly becomes the product, written by the planning model with no
+ * verification behind it.
+ *
+ * The rule has to give back what the code was doing, though: for a small local
+ * model the verbatim source WAS the specification. So the ban on bodies is
+ * paired with an explicit demand for signatures, data structures and decision
+ * rules — precision without implementation.
+ */
+const NO_EMBEDDED_CODE_RULES = [
+	'SPECIFY THE WORK — DO NOT WRITE IT:',
+	'A phase file says WHAT to build and WHY, precisely enough that someone else',
+	'writes the code from it. Be exhaustive about the CONTRACT: exact file and',
+	'module paths, function and type signatures, data structures and their fields,',
+	'constants and their values, invariants, and the decision rules that govern',
+	'behaviour (edge cases, error handling, ordering, what happens on failure).',
+	'Do NOT write the implementation. No function bodies, no complete source file,',
+	'no test suite, and never a "copy this verbatim" / "single source of truth"',
+	'code section. The code is written LATER, by the autonomous coding run, from',
+	'this file. A phase file that already contains the code is a defect: every',
+	'later stage re-reads it, and it puts unverified code into the plan.',
+	'Fenced blocks are for build-gate and verification COMMANDS, directory or file',
+	'layouts, and short literal data or schema snippets — roughly 15 lines each.',
+	'Use a few lines of pseudocode only where a rule genuinely cannot be stated in',
+	'prose. If a block runs long, or would compile as part of the product, cut it',
+	'and state the signatures and rules it implied instead.',
+	'To correct part of a file you already wrote IN THIS TURN, use fs_edit_text.',
+	'Writing the same file twice in one turn is refused — the second write would',
+	'replace the first rather than extend it.',
+	'The commands in ## Build gate and ## Test plan must be REAL commands. No',
+	'inline `-c "…"` or `-e "…"` program strings, no heredocs, no multi-line REPL',
+	'transcripts — those are hand-written validators smuggled into a command, and',
+	'an autonomous run executes them literally. If a check needs a program, it',
+	'belongs in the test suite this plan already has the run build; name the',
+	'command that runs the suite.'
+];
+
+/**
  * Stage 2b (per-phase write) system prompt: write EXACTLY ONE phase file from
  * the approved outline. The runner drives one of these per phase, so the model
  * only ever has to do a single thing — write one file — rather than "write them
  * all", which a small model tends to abandon after the first.
  */
-function phaseWritePrompt(outDir: string, overviewPath: string): string {
+export function phaseWritePrompt(outDir: string, overviewPath: string): string {
 	return [
 		'You are writing ONE file of an approved, dependency-ordered implementation',
 		'plan. Planning only — never write or edit code. Every decision is already',
@@ -241,6 +321,8 @@ function phaseWritePrompt(outDir: string, overviewPath: string): string {
 		'one off installing headless-browser packages and embedding a 50-test harness',
 		'into the shipped product file.',
 		'',
+		...NO_EMBEDDED_CODE_RULES,
+		'',
 		`Write ONLY that one file, inside \`${outDir}\`. Then stop.`
 	].join('\n');
 }
@@ -250,14 +332,14 @@ function phaseWritePrompt(outDir: string, overviewPath: string): string {
  * disk, never the planning conversation), read-only, single job: flag ordering
  * violations and deferred decisions. Signals "PLAN OK" when clean.
  */
-function verifierPrompt(outDir: string, overviewPath: string): string {
+export function verifierPrompt(outDir: string, overviewPath: string): string {
 	return [
 		'You are an INDEPENDENT reviewer of a phased implementation plan. You did not',
-		'write it. Review it with fresh eyes and check ONLY two things.',
+		'write it. Review it with fresh eyes and check ONLY what is listed below.',
 		'',
 		`1. Read the overview at \`${overviewPath}\`, then list \`${outDir}\` and read`,
 		'   every phase-NN-*.md file in it.',
-		'2. Look for exactly three kinds of problem:',
+		'2. Look for exactly five kinds of problem:',
 		'   a. ORDERING — any phase that depends on work introduced in a LATER phase',
 		'      (its "Depends on" names a higher-numbered phase, or its steps need',
 		'      something a later phase creates).',
@@ -266,23 +348,42 @@ function verifierPrompt(outDir: string, overviewPath: string): string {
 		'   c. MALFORMED FILE — a phase file that is empty, truncated, starts partway',
 		'      through the document instead of at its "# Phase NN" heading, or is',
 		'      missing whole sections.',
+		'   d. EMBEDDED IMPLEMENTATION CODE — a phase file that WRITES the code',
+		'      instead of specifying it: function bodies, a complete source file, a',
+		'      test suite, or a block labelled "copy verbatim" / "source of truth".',
+		'      Plans specify signatures, data structures and rules; the code is',
+		'      written later by the coding run. Commands, directory layouts and',
+		'      short literal data or schema snippets are FINE — flag a fenced block',
+		'      only when it runs well past ~15 lines or would compile as part of the',
+		'      product. Name the file and the block, and say what should replace it.',
+		'      Also flag a COMMAND that embeds a program — `python -c "…"`,',
+		'      `node -e "…"`, a heredoc, a pasted REPL transcript. Build gates run',
+		'      real commands; a program inside one is a validator in disguise.',
+		'   e. CONTRADICTORY OR UNREACHABLE STEP — a step that cannot be followed as',
+		'      written: an action placed after a "Return"/"stop" so it can never',
+		'      run, two steps specifying conflicting behaviour for the same case, or',
+		'      a step that references something the same file says does not exist.',
+		'      Example: "Return `GuessResult(...)`" followed by "After this, check',
+		'      whether the game should end in WON" — the check is dead. Quote the',
+		'      step and say what the correct order or resolution is.',
 		'',
 		'IMPORTANT: if a file is MALFORMED, report it under (c) and move straight on',
-		'to the next file. Do NOT try to decide whether it also counts as an ordering',
-		'or deferred-decision problem, and do NOT try to infer what its missing parts',
-		'would have said — a malformed file cannot be checked for (a) or (b) at all,',
-		'and re-reading it will not fix that. One bullet, then move on.',
+		'to the next file. Do NOT try to decide whether it also counts as one of the',
+		'other problems, and do NOT try to infer what its missing parts would have',
+		'said — a malformed file cannot be checked for the others at all, and',
+		're-reading it will not fix that. One bullet, then move on.',
 		'',
 		'You write NOTHING to disk. Then respond:',
 		'- If there are NO problems, your ENTIRE reply must be exactly: PLAN OK',
 		'- Otherwise, reply with a short bulleted list — each bullet naming the phase',
-		'  file and the specific ordering / decision / malformed problem to fix.',
-		'Report only those three kinds of problem — not style or scope opinions.'
+		'  file and the specific ordering / decision / malformed / embedded-code /',
+		'  unreachable-step problem to fix.',
+		'Report only those five kinds of problem — not style or scope opinions.'
 	].join('\n');
 }
 
 /** Revise the phase files per reviewer findings or a user request (checkpoint). */
-function planRevisePrompt(outDir: string): string {
+export function planRevisePrompt(outDir: string): string {
 	return [
 		'You are revising the phased implementation plan. Planning only — never write',
 		'or edit code.',
@@ -295,12 +396,99 @@ function planRevisePrompt(outDir: string): string {
 		'   heading or sections), rewrite that file COMPLETELY from its',
 		'   "# Phase NN — <title>" heading through every section — do not try to',
 		'   patch or continue the fragment that is there.',
+		'   If a fix concerns EMBEDDED CODE, delete the code and put the contract in',
+		'   its place — signatures, data structures, constants, and the decision',
+		'   rules it implied. Do not simply shorten it.',
 		`3. Write the corrected phase files back with fs_write_text, passing`,
 		`   overwrite: true (it refuses to replace an existing file otherwise), only`,
 		`   inside \`${outDir}\`. If a fix changes ordering, renumber the files so NN still`,
 		'   reflects dependency order.',
-		'4. Send a one-line summary of what you changed, then stop.'
+		'4. Send a one-line summary of what you changed, then stop.',
+		'',
+		...NO_EMBEDDED_CODE_RULES
 	].join('\n');
+}
+
+/**
+ * Source/config paths a shell command names, workdir-relative.
+ *
+ * Stage 1 settles the verification command during the overview interview —
+ * BEFORE stage 2 invents the file layout — so any path it names is a guess. A
+ * real run settled on `python3 -m py_compile hangman.py` while every phase
+ * wrote `src/hangman.py`; the command would have failed on the first phase of
+ * the coding run, and preflight would have spent a round re-settling it.
+ *
+ * Absolute paths and anything reaching outside the workdir are dropped: they
+ * are the environment's files (`/usr/share/dict/words`), not the plan's, and
+ * `fs_path_exists` only speaks workdir-relative. Extension-less tokens and
+ * globs are ignored too — `tests/`, `src/*.py` and `npm test` say nothing
+ * about a specific file that has to be there.
+ */
+const SOURCE_PATH_RE =
+	/[A-Za-z0-9_./-]+\.(?:py|pyw|js|mjs|cjs|jsx|ts|tsx|rs|go|rb|java|kt|kts|c|h|cc|cpp|hpp|cs|php|swift|sh|bash|zsh|lua|pl|sql|html|css|toml|cfg|ini|json|ya?ml)\b/g;
+
+export function sourcePathsIn(command: string): string[] {
+	const out: string[] = [];
+	for (const raw of command.match(SOURCE_PATH_RE) ?? []) {
+		if (raw.startsWith('/') || raw.startsWith('~') || raw.includes('..')) continue;
+		const rel = raw.replace(/^\.\//, '');
+		if (rel && !out.includes(rel)) out.push(rel);
+	}
+	return out;
+}
+
+/**
+ * A phase outline's title and summary — the only fields the ordering check
+ * needs. `NormalizedPhase` is structurally assignable to it.
+ */
+export interface OutlinePhaseSummary {
+	nn: string;
+	title: string;
+	summary: string;
+}
+
+/** Commands whose exit code depends on a test suite existing. */
+const TEST_RUNNER_RE =
+	/\b(pytest|unittest|jest|vitest|mocha|jasmine|rspec|phpunit|ctest|go\s+test|cargo\s+test|mvn\s+test|gradle\s+test|dotnet\s+test|(npm|yarn|pnpm)\s+(run\s+)?test)\b/i;
+
+/** A phase whose job is (partly) to create tests. */
+const TEST_PHASE_RE =
+	/\btests?\b|\btesting\b|\bspecs?\b|test suite|test harness|pytest|vitest|jest/i;
+
+/**
+ * Flag a plan whose verification command cannot pass until a late phase lands.
+ *
+ * The coding runner reruns the recorded command as EVERY phase completes and
+ * treats a non-zero exit as failure (`autonomous-coding/pipeline.ts`,
+ * `passed: r.exit_code === 0`). A real plan recorded `python3 -m pytest -q`
+ * and then created `test_hangman.py` in its FINAL phase — so phases 01-03
+ * would each have been verified by a pytest run with no tests to collect,
+ * which exits 5. The plan even said so in prose ("becomes authoritative once
+ * Phase 04 lands the suite"), which the runner cannot read.
+ *
+ * Returns null when no phase mentions tests at all: the command then relies on
+ * a suite that already exists, which is fine and none of this check's business.
+ * The caller additionally skips the check when the working directory already
+ * has a test directory.
+ */
+export function testSuiteOrderingProblem(
+	command: string | null,
+	phases: OutlinePhaseSummary[]
+): string | null {
+	if (!command || phases.length < 2 || !TEST_RUNNER_RE.test(command)) return null;
+	const idx = phases.findIndex((p) => TEST_PHASE_RE.test(`${p.title} ${p.summary}`));
+	if (idx <= 0) return null;
+	const late = phases[idx];
+	const earlier = phases
+		.slice(0, idx)
+		.map((p) => p.nn)
+		.join(', ');
+	return (
+		`phase ${late.nn} ("${late.title}") is where this plan creates its tests, but the ` +
+		`verification command \`${command.trim()}\` runs that suite as EVERY phase completes — ` +
+		`so phase(s) ${earlier} would be verified by a test run with nothing to collect, which ` +
+		`fails`
+	);
 }
 
 const MIN_PHASE_FILE_CHARS = 400;
@@ -503,6 +691,95 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		return phaseFileProblem(relPath, text);
 	};
 
+	/**
+	 * Bounded, NON-FATAL repair of a verification command that names a file the
+	 * plan has not created. Deliberately not an `ensureWritten` gate: the plan
+	 * is otherwise fine, preflight re-settles a failing command anyway, and
+	 * hard-failing a whole planning run over one line would cost far more than
+	 * the round it saves. Two attempts, then proceed and let the user see it at
+	 * the overview checkpoint.
+	 */
+	const MAX_COMMAND_REPAIR_ATTEMPTS = 2;
+
+	const verificationCommandProblem = async (): Promise<string | null> => {
+		if (!job.working_dir) return null;
+		const text = await readWorkdirFile(overviewPath);
+		if (typeof text !== 'string') return null;
+		const command = extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING);
+		if (!command) return null;
+		for (const relPath of sourcePathsIn(command)) {
+			if (await fileExists(relPath)) continue;
+			return (
+				`the "## ${VERIFICATION_COMMAND_HEADING}" section runs \`${command.trim()}\`, which ` +
+				`names \`${relPath}\` — a file that does not exist. The file layout is not ` +
+				`decided until the next stage, so that path is a guess`
+			);
+		}
+		return null;
+	};
+
+	const repairVerificationCommand = async (): Promise<void> => {
+		for (let attempt = 0; attempt < MAX_COMMAND_REPAIR_ATTEMPTS; attempt++) {
+			abortIfCancelled();
+			const problem = await verificationCommandProblem();
+			if (problem === null) return;
+			await turn(
+				OVERVIEW,
+				`The overview needs one fix: ${problem}. Do NOT ask any questions and do NOT ` +
+					`change anything else. Replace ONLY the command in that section with a ` +
+					`whole-project one that names no specific file — for example ` +
+					`\`python3 -m compileall -q .\`, \`python3 -m pytest -q\`, \`npm test\`, or ` +
+					`\`cargo check\` — keeping it read-only, fast and phase-agnostic, and keeping ` +
+					`the section's single fenced code block. Then write the overview back.`,
+				overviewRevisePrompt(outDir, overviewPath),
+				15,
+				{ expectsFileOutput: true }
+			);
+		}
+	};
+
+	/** Conventional test directories: if one already exists, the suite predates the plan. */
+	const EXISTING_TEST_DIRS = ['tests', 'test', 'spec', '__tests__'];
+
+	const hasExistingTests = async (): Promise<boolean> => {
+		for (const dir of EXISTING_TEST_DIRS) {
+			if (await fileExists(dir)) return true;
+		}
+		return false;
+	};
+
+	const outlineOrderingProblem = async (phases: NormalizedPhase[]): Promise<string | null> => {
+		if (!job.working_dir) return null;
+		const text = await readWorkdirFile(overviewPath);
+		if (typeof text !== 'string') return null;
+		const problem = testSuiteOrderingProblem(
+			extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING),
+			phases
+		);
+		// An existing suite makes the command pass from phase 01 regardless of
+		// where this plan adds more tests — flagging that would be a false alarm.
+		if (problem === null || (await hasExistingTests())) return null;
+		return problem;
+	};
+
+	/** Same bounded, non-fatal contract as `repairVerificationCommand`. */
+	const repairOutlineOrdering = async (phases: NormalizedPhase[]): Promise<NormalizedPhase[]> => {
+		let current = phases;
+		for (let attempt = 0; attempt < MAX_COMMAND_REPAIR_ATTEMPTS; attempt++) {
+			abortIfCancelled();
+			const problem = await outlineOrderingProblem(current);
+			if (problem === null) return current;
+			current = await obtainOutline(
+				`The outline needs one fix: ${problem}. Resubmit the COMPLETE phase list with ` +
+					`the first tests created in phase 01, alongside the first product code, and ` +
+					`extended by the phases that follow — not gathered into one testing phase at ` +
+					`the end. Keep strict dependency order and full end-to-end coverage.`,
+				outlineRevisePrompt(overviewPath)
+			);
+		}
+		return current;
+	};
+
 	/** Existence-only gate, for artifacts with no fixed section contract. */
 	const checkFileExists = (relPath: string) => async (): Promise<string | null> =>
 		(await fileExists(relPath)) ? null : `${relPath} is not on disk`;
@@ -685,6 +962,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				`The overview was never written to ${overviewPath} after ${MAX_WRITE_ATTEMPTS} attempts. ` +
 				`The selected model may be too small to follow the write step reliably — try a larger model.`
 		);
+		await repairVerificationCommand();
 		let approved = false;
 		while (!approved) {
 			abortIfCancelled();
@@ -722,9 +1000,11 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// approval checkpoint. The outline is what makes the per-phase write loop
 		// completeness-checkable: the runner knows exactly how many files to demand.
 		startStep(OUTLINE);
-		let outline = await obtainOutline(
-			`The overview at ${overviewPath} is approved. Now design the phased plan OUTLINE.`,
-			outlineStagePrompt(outDir, overviewPath)
+		let outline = await repairOutlineOrdering(
+			await obtainOutline(
+				`The overview at ${overviewPath} is approved. Now design the phased plan OUTLINE.`,
+				outlineStagePrompt(outDir, overviewPath)
+			)
 		);
 		let outlineApproved = false;
 		while (!outlineApproved) {
@@ -793,13 +1073,22 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		}
 		finishStep(PLANNING, `Wrote ${outline.length} phase file(s) to ${outDir}`);
 
-		// Verification — independent fresh-context review, revise until clean (bounded).
+		// Verification — independent fresh-context review, revise until clean
+		// (bounded). The slowest stage of a local run by some margin: a fresh
+		// read of every phase file, plus up to MAX_VERIFY_ROUNDS revise rounds.
+		// The stage still starts and finishes when switched off, so its step
+		// index stays put and the run view shows what was skipped rather than
+		// silently renumbering the stages around it.
 		startStep(VERIFY);
-		for (let round = 0; round < MAX_VERIFY_ROUNDS; round++) {
-			abortIfCancelled();
-			if (await verifyOnce()) break;
+		if (cfg.skip_verification) {
+			finishStep(VERIFY, 'Skipped — verification is off for this job');
+		} else {
+			for (let round = 0; round < MAX_VERIFY_ROUNDS; round++) {
+				abortIfCancelled();
+				if (await verifyOnce()) break;
+			}
+			finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
 		}
-		finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
 
 		// Approval — plan / dependency-map approval checkpoint loop.
 		startStep(APPROVAL);

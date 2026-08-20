@@ -17,6 +17,10 @@ const summary = (id: number, jobId = 1, overrides: Partial<JobRunSummary> = {}):
 	finished_at: 3000 + id,
 	error: null,
 	planning_state: null,
+	model_id: 'Qwen3.6-35B-A3B',
+	model_thinking: true,
+	model_effort: null,
+	context_size: 32768,
 	...overrides
 });
 
@@ -162,6 +166,10 @@ describe('jobRuns store', () => {
 			finished_at: 3,
 			error: null,
 			planning_state: null,
+			model_id: null,
+			model_thinking: null,
+			model_effort: null,
+			context_size: null,
 			steps: [
 				{
 					id: 100,

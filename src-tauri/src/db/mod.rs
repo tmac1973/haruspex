@@ -220,6 +220,12 @@ pub struct JobRunSummary {
     /// Serialized guided_planning resume state (stage, milestone, approved
     /// outline). NULL for non-guided runs.
     pub planning_state: Option<String>,
+    /// The model, reasoning settings and context window this run executed
+    /// under. All NULL for runs that predate the recording.
+    pub model_id: Option<String>,
+    pub model_thinking: Option<bool>,
+    pub model_effort: Option<String>,
+    pub context_size: Option<i64>,
 }
 
 /// Token and timing totals for one finished step, summed across every model
@@ -273,6 +279,10 @@ pub struct JobRunWithSteps {
     pub finished_at: Option<i64>,
     pub error: Option<String>,
     pub planning_state: Option<String>,
+    pub model_id: Option<String>,
+    pub model_thinking: Option<bool>,
+    pub model_effort: Option<String>,
+    pub context_size: Option<i64>,
     pub steps: Vec<JobRunStep>,
 }
 
@@ -507,6 +517,14 @@ impl Database {
             "ALTER TABLE job_run_steps ADD COLUMN model_calls INTEGER",
             "ALTER TABLE job_run_steps ADD COLUMN reasoning_ms INTEGER",
             "ALTER TABLE job_run_steps ADD COLUMN total_ms INTEGER",
+            // What the run actually ran on. Recorded per RUN, not read from
+            // the job at display time: a job's model/reasoning settings can be
+            // edited after a run finishes, and a token table attributed to the
+            // wrong model is worse than one with no attribution at all.
+            "ALTER TABLE job_runs ADD COLUMN model_id TEXT",
+            "ALTER TABLE job_runs ADD COLUMN model_thinking INTEGER",
+            "ALTER TABLE job_runs ADD COLUMN model_effort TEXT",
+            "ALTER TABLE job_runs ADD COLUMN context_size INTEGER",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

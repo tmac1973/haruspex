@@ -70,7 +70,26 @@
 	/>
 </div>
 
+<div class="toggle-row">
+	<label>
+		<input type="checkbox" bind:checked={cfg.skip_verification} />
+		<span class="label">
+			Skip verification
+			<Tooltip
+				label="About skipping verification"
+				text="Verification is an independent fresh-context review of every phase file — dependency ordering, unresolved decisions, embedded code, unreachable steps — with up to three revise rounds. It is usually the longest stage of a run. Skip it when the plan is small or you intend to review it yourself; the approval checkpoint still shows you the files either way."
+			/>
+		</span>
+	</label>
+</div>
+
 <style>
+	.toggle-row label {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
 	.label {
 		display: inline-flex;
 		align-items: center;
