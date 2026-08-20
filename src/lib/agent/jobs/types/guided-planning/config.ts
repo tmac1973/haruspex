@@ -5,6 +5,13 @@ export interface GuidedPlanningConfig {
 	initial_description: string | null;
 	/** Plan output folder relative to working_dir. null = derive plan/<slug>/. */
 	plan_output_dir: string | null;
+	/**
+	 * Skip the independent verification stage. It is a fresh-context read of
+	 * every phase file plus up to three revise rounds, which on a local model
+	 * is the longest stage of the run — worth skipping when the plan is small
+	 * or you intend to read it yourself. Defaults to running it.
+	 */
+	skip_verification: boolean;
 }
 
 export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningConfig {
@@ -25,6 +32,8 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		plan_output_dir:
 			typeof raw.plan_output_dir === 'string' && raw.plan_output_dir.length > 0
 				? raw.plan_output_dir
-				: null
+				: null,
+		// Absent (every job authored before this existed) means verify.
+		skip_verification: raw.skip_verification === true
 	};
 }

@@ -7,6 +7,7 @@ import Editor from './Editor.svelte';
 export interface GuidedPlanningEditorState {
 	initial_description: string;
 	plan_output_dir: string;
+	skip_verification: boolean;
 }
 
 /**
@@ -33,7 +34,7 @@ const GUIDED_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 	{
 		title: 'Verification',
 		description:
-			'An independent reviewer is reading the plan to check dependency ordering and catch any unresolved (“TBD”) decisions.'
+			'An independent reviewer is reading the plan to check dependency ordering, unresolved (“TBD”) decisions, embedded code and unreachable steps. Can be switched off in the job editor.'
 	},
 	{
 		title: 'Approval',
@@ -59,19 +60,25 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 	hasPlannedSteps: false,
 	workingDirPlaceholder: 'Absolute path to the project to plan in',
 	Editor,
-	configDefaults: () => ({ initial_description: '', plan_output_dir: '' }),
+	configDefaults: () => ({
+		initial_description: '',
+		plan_output_dir: '',
+		skip_verification: false
+	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
 		return {
 			initial_description: c.initial_description ?? '',
-			plan_output_dir: c.plan_output_dir ?? ''
+			plan_output_dir: c.plan_output_dir ?? '',
+			skip_verification: c.skip_verification
 		};
 	},
 	configToJson: (config) => {
 		const s = config as unknown as GuidedPlanningEditorState;
 		return JSON.stringify({
 			initial_description: s.initial_description.trim() || undefined,
-			plan_output_dir: s.plan_output_dir.trim() || undefined
+			plan_output_dir: s.plan_output_dir.trim() || undefined,
+			skip_verification: s.skip_verification || undefined
 		});
 	},
 	validate: ({ workingDir, config }) => {
