@@ -3,6 +3,7 @@
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
 	import { formatDuration } from '$lib/utils/format';
 	import { getJobRun, type JobRunStep, type JobRunWithSteps } from '$lib/stores/jobRuns.svelte';
+	import { getJobs } from '$lib/stores/jobs.svelte';
 	import JobRunStats from '$lib/components/jobs/JobRunStats.svelte';
 	import { stepStatsFromWire } from '$lib/agent/jobs/runner.svelte';
 
@@ -22,9 +23,6 @@
 	 * Persisted rows mapped into the shape a live step carries, so the stats
 	 * card is one component rather than two that drift. A run recorded before
 	 * token accounting existed has null throughout and the card says so.
-	 *
-	 * The context window isn't stored per run, so the peak column shows raw
-	 * token counts here rather than a percentage of a window we'd be guessing.
 	 */
 	const statsRows = $derived(
 		(run?.steps ?? []).map((s) => ({
@@ -32,6 +30,25 @@
 			stats: stepStatsFromWire(s.stats)
 		}))
 	);
+
+	/**
+	 * What the run ran under, as recorded at its start. Null for runs from
+	 * before that was captured — the card then shows no environment line
+	 * rather than labelling old numbers with today's job settings.
+	 */
+	const environment = $derived(
+		run && run.model_id !== null
+			? {
+					modelId: run.model_id,
+					modelThinking: run.model_thinking,
+					modelEffort: run.model_effort,
+					contextSize: run.context_size
+				}
+			: null
+	);
+
+	/** The owning job, for export metadata. Already loaded by the Jobs tab. */
+	const job = $derived(run ? (getJobs().find((j) => j.id === run!.job_id) ?? null) : null);
 
 	$effect(() => {
 		const id = runId;
@@ -119,7 +136,18 @@
 			{/each}
 		</div>
 
-		<JobRunStats rows={statsRows} contextSize={null} />
+		<JobRunStats
+			rows={statsRows}
+			contextSize={run.context_size}
+			{environment}
+			meta={{
+				jobName: job?.name ?? null,
+				jobType: job?.job_type ?? null,
+				runId,
+				startedAt: run.started_at,
+				finishedAt: run.finished_at
+			}}
+		/>
 	{/if}
 </div>
 

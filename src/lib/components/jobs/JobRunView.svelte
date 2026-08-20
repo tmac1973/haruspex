@@ -230,7 +230,18 @@
 
 		<!-- Supersedes the old header roll-up: same source, but the whole
 		     accounting rather than one percentage, and it updates live. -->
-		<JobRunStats rows={statsRows} contextSize={run.contextSize} />
+		<JobRunStats
+			rows={statsRows}
+			contextSize={run.contextSize}
+			environment={run.environment}
+			meta={{
+				jobName: run.jobName,
+				jobType: run.jobType,
+				runId: run.id,
+				startedAt: run.startedAt,
+				finishedAt: run.finishedAt
+			}}
+		/>
 	</div>
 {/if}
 
