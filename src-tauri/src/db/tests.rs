@@ -890,6 +890,76 @@ fn run_lifecycle_transitions_persist_correctly() {
     assert_eq!(run.steps[1].output.as_deref(), Some("b-output"));
 }
 
+/// The stats card labels a run's tokens with the model that produced them.
+/// Reading that off the job at display time would be wrong the moment the job
+/// is edited, so it is written to the RUN and must survive a round trip —
+/// through both read paths, since the history list and the detail view use
+/// different queries.
+#[test]
+fn run_environment_round_trips_through_both_read_paths() {
+    let db = test_db();
+    let job_id = job_with_steps(&db, "Planning", &["a"]);
+    let run_id = db
+        .create_job_run(job_id, "manual", &["a".to_string()])
+        .unwrap();
+
+    db.set_run_environment(
+        run_id,
+        Some("Qwen3.6-35B-A3B"),
+        Some(true),
+        Some("high"),
+        Some(32768),
+    )
+    .unwrap();
+
+    let run = db.get_job_run(run_id).unwrap();
+    assert_eq!(run.model_id.as_deref(), Some("Qwen3.6-35B-A3B"));
+    assert_eq!(run.model_thinking, Some(true));
+    assert_eq!(run.model_effort.as_deref(), Some("high"));
+    assert_eq!(run.context_size, Some(32768));
+
+    let listed = db.list_job_runs(job_id).unwrap();
+    assert_eq!(listed[0].model_id.as_deref(), Some("Qwen3.6-35B-A3B"));
+    assert_eq!(listed[0].model_thinking, Some(true));
+    assert_eq!(listed[0].context_size, Some(32768));
+}
+
+/// A run recorded before this existed reads back as NULL, not as a row of
+/// defaults — "not recorded" and "ran on an unnamed model with thinking off"
+/// are different claims, and only one of them is true.
+#[test]
+fn run_environment_is_null_when_never_recorded() {
+    let db = test_db();
+    let job_id = job_with_steps(&db, "Planning", &["a"]);
+    let run_id = db
+        .create_job_run(job_id, "manual", &["a".to_string()])
+        .unwrap();
+
+    let run = db.get_job_run(run_id).unwrap();
+    assert!(run.model_id.is_none());
+    assert!(run.model_thinking.is_none());
+    assert!(run.model_effort.is_none());
+    assert!(run.context_size.is_none());
+}
+
+/// Reasoning off is a recorded fact, not an absence: `Some(false)` must not
+/// collapse into `None` on the way through SQLite.
+#[test]
+fn run_environment_records_thinking_off_distinctly() {
+    let db = test_db();
+    let job_id = job_with_steps(&db, "Planning", &["a"]);
+    let run_id = db
+        .create_job_run(job_id, "manual", &["a".to_string()])
+        .unwrap();
+
+    db.set_run_environment(run_id, Some("gpt-oss-120b"), Some(false), None, Some(8192))
+        .unwrap();
+
+    let run = db.get_job_run(run_id).unwrap();
+    assert_eq!(run.model_thinking, Some(false));
+    assert!(run.model_effort.is_none());
+}
+
 #[test]
 fn failure_path_records_error_on_run_and_step() {
     let db = test_db();

@@ -6,10 +6,11 @@
 //!     koko). The frontend merges this with settings + the debug-log
 //!     ring buffer and either composes a pre-filled GitHub issue URL or
 //!     a full-bundle file for the "Save Full Diagnostics" path.
-//!   - `save_diagnostics_file` — one-shot UTF-8 write to an absolute
+//!   - `save_export_file` — one-shot UTF-8 write to an absolute
 //!     path. Used after the user picks a destination via the save
-//!     dialog. Kept separate from `fs_write_text` because that command
-//!     is workdir-sandboxed; diagnostics export needs to land anywhere.
+//!     dialog — the diagnostics bundle and the job-run stats export.
+//!     Kept separate from `fs_write_text` because that command is
+//!     workdir-sandboxed; a user-chosen destination lands anywhere.
 
 use serde::Serialize;
 
@@ -66,8 +67,8 @@ pub async fn get_diagnostics(
 }
 
 #[tauri::command]
-pub async fn save_diagnostics_file(path: String, contents: String) -> Result<(), String> {
+pub async fn save_export_file(path: String, contents: String) -> Result<(), String> {
     tokio::fs::write(&path, contents)
         .await
-        .map_err(|e| format!("Failed to write diagnostics file: {}", e))
+        .map_err(|e| format!("Failed to write file: {}", e))
 }

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	markRunFinished: vi.fn(),
 	markRunStepStarted: vi.fn(),
 	markRunStepFinished: vi.fn(),
+	setRunEnvironment: vi.fn(),
 	setStepStatsProvider: vi.fn(),
 	askUserQuestion: vi.fn(),
 	invoke: vi.fn()
@@ -37,6 +38,7 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
 	markRunFinished: mocks.markRunFinished,
 	markRunStepStarted: mocks.markRunStepStarted,
 	markRunStepFinished: mocks.markRunStepFinished,
+	setRunEnvironment: mocks.setRunEnvironment,
 	// The runner registers its stats provider at module load; capturing it
 	// here is what lets the persistence test below call it directly.
 	setStepStatsProvider: mocks.setStepStatsProvider
@@ -45,11 +47,17 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
 		contextSize: 8192,
-		inferenceBackend: { mode: 'local' as const }
+		inferenceBackend: { mode: 'local' as const },
+		// What a job inherits when it sets no reasoning policy of its own —
+		// the runner records the RESOLVED values with the run.
+		thinkingEnabled: true,
+		reasoningEffort: 'medium'
 	}),
 	// Read by resolveBackendDescriptor, which the runner now maps job
-	// context-size / vision decisions through.
-	getActiveLocalModelFilename: () => '',
+	// context-size / vision decisions through, and by the run environment —
+	// llama-server ignores the model name, so the GGUF filename is the only
+	// thing that identifies what answered.
+	getActiveLocalModelFilename: () => 'Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf',
 	getApiKeyValue: () => undefined
 }));
 
@@ -207,6 +215,63 @@ describe('jobs runner — guards', () => {
 	// each pipeline — so every job type gets it and none can drift. These pin
 	// that it reaches the turn boundary at all, which is what was missing:
 	// jobs previously had no way to set reasoning other than a global toggle.
+	/**
+	 * The stats card labels a run's tokens with what produced them. Resolved
+	 * and written at run start, because a job's model and reasoning settings
+	 * are editable afterwards — reading them back at display time would
+	 * relabel a finished run with a model that never touched it.
+	 */
+	describe('run environment recording', () => {
+		it('records the resolved model, reasoning and context window', async () => {
+			mocks.getJob.mockResolvedValueOnce(makeJob());
+			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+			const { enqueue } = await freshRunner();
+			await enqueue(1);
+			await tick();
+
+			expect(mocks.setRunEnvironment).toHaveBeenCalledWith(expect.any(Number), {
+				// The GGUF filename, minus the extension — 'default' is all the
+				// descriptor can say for a local backend.
+				modelId: 'Qwen3.6-35B-A3B-UD-Q8_K_XL',
+				// Inherited from Settings: the job set no policy of its own.
+				modelThinking: true,
+				modelEffort: 'medium',
+				contextSize: 8192
+			});
+		});
+
+		it("records the job's own reasoning policy over the global one", async () => {
+			mocks.getJob.mockResolvedValueOnce(
+				makeJob({
+					model_advanced: JSON.stringify({ reasoning: { mode: 'off', effort: 'high' } })
+				})
+			);
+			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+			const { enqueue } = await freshRunner();
+			await enqueue(1);
+			await tick();
+
+			expect(mocks.setRunEnvironment).toHaveBeenCalledWith(
+				expect.any(Number),
+				expect.objectContaining({ modelThinking: false, modelEffort: 'high' })
+			);
+		});
+
+		it('exposes the same environment on the live run for the stats card', async () => {
+			mocks.getJob.mockResolvedValueOnce(makeJob());
+			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await tick();
+
+			expect(getCurrentRun()?.environment.modelId).toBe('Qwen3.6-35B-A3B-UD-Q8_K_XL');
+			expect(getCurrentRun()?.environment.modelThinking).toBe(true);
+		});
+	});
+
 	describe('per-job model policy', () => {
 		it('defaults to inheriting the global reasoning setting', async () => {
 			mocks.getJob.mockResolvedValueOnce(makeJob());

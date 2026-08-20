@@ -35,6 +35,17 @@ export interface JobRunSummary {
 	 * outline). null for non-guided runs. Mirrors job_runs.planning_state.
 	 */
 	planning_state: string | null;
+	/**
+	 * What the run executed under, captured at start. Recorded per run rather
+	 * than read off the job at display time: a job's model or reasoning
+	 * settings can be edited afterwards, and a token table labelled with the
+	 * wrong model is worse than one with no label. All null for runs that
+	 * predate the recording.
+	 */
+	model_id: string | null;
+	model_thinking: boolean | null;
+	model_effort: string | null;
+	context_size: number | null;
 }
 
 /**
@@ -155,6 +166,30 @@ export async function markRunStarted(runId: number, startedAt: number): Promise<
 		cmd: 'db_mark_run_started',
 		args: { runId, startedAt },
 		onError: 'markRunStarted failed',
+		ctx: { runId }
+	});
+}
+
+/** Record the model/reasoning/context a run executes under. Called at start. */
+export async function setRunEnvironment(
+	runId: number,
+	env: {
+		modelId: string | null;
+		modelThinking: boolean | null;
+		modelEffort: string | null;
+		contextSize: number | null;
+	}
+): Promise<void> {
+	await dbMutate({
+		cmd: 'db_set_run_environment',
+		args: {
+			runId,
+			modelId: env.modelId,
+			modelThinking: env.modelThinking,
+			modelEffort: env.modelEffort,
+			contextSize: env.contextSize
+		},
+		onError: 'setRunEnvironment failed',
 		ctx: { runId }
 	});
 }

@@ -47,6 +47,29 @@ impl Database {
         Ok(())
     }
 
+    /// Record what the run executed under: model, resolved reasoning mode and
+    /// effort, and the context window. Written once at run start. Stored on the
+    /// run rather than read back off the job, so editing a job's model later
+    /// cannot retroactively relabel a finished run's token table.
+    pub fn set_run_environment(
+        &self,
+        run_id: i64,
+        model_id: Option<&str>,
+        model_thinking: Option<bool>,
+        model_effort: Option<&str>,
+        context_size: Option<i64>,
+    ) -> Result<(), String> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE job_runs
+             SET model_id = ?1, model_thinking = ?2, model_effort = ?3, context_size = ?4
+             WHERE id = ?5",
+            params![model_id, model_thinking, model_effort, context_size, run_id],
+        )
+        .map_err(|e| format!("Run environment update failed: {}", e))?;
+        Ok(())
+    }
+
     pub fn mark_run_finished(
         &self,
         run_id: i64,
@@ -169,7 +192,7 @@ impl Database {
         let mut stmt = conn
             .prepare(
                 "SELECT id, job_id, status, trigger, queued_at, started_at, finished_at, error,
-                        planning_state
+                        planning_state, model_id, model_thinking, model_effort, context_size
                  FROM job_runs WHERE job_id = ?1
                  ORDER BY queued_at DESC",
             )
@@ -187,6 +210,10 @@ impl Database {
                     finished_at: row.get(6)?,
                     error: row.get(7)?,
                     planning_state: row.get(8)?,
+                    model_id: row.get(9)?,
+                    model_thinking: row.get(10)?,
+                    model_effort: row.get(11)?,
+                    context_size: row.get(12)?,
                 })
             })
             .map_err(|e| format!("Runs query failed: {}", e))?;
@@ -197,10 +224,23 @@ impl Database {
 
     pub fn get_job_run(&self, run_id: i64) -> Result<JobRunWithSteps, String> {
         let conn = self.conn();
-        let (job_id, status, trigger, queued_at, started_at, finished_at, error, planning_state) =
-            conn.query_row(
+        let (
+            job_id,
+            status,
+            trigger,
+            queued_at,
+            started_at,
+            finished_at,
+            error,
+            planning_state,
+            model_id,
+            model_thinking,
+            model_effort,
+            context_size,
+        ) = conn
+            .query_row(
                 "SELECT job_id, status, trigger, queued_at, started_at, finished_at, error,
-                        planning_state
+                        planning_state, model_id, model_thinking, model_effort, context_size
                  FROM job_runs WHERE id = ?1",
                 params![run_id],
                 |row| {
@@ -213,6 +253,10 @@ impl Database {
                         row.get::<_, Option<i64>>(5)?,
                         row.get::<_, Option<String>>(6)?,
                         row.get::<_, Option<String>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
+                        row.get::<_, Option<bool>>(9)?,
+                        row.get::<_, Option<String>>(10)?,
+                        row.get::<_, Option<i64>>(11)?,
                     ))
                 },
             )
@@ -274,6 +318,10 @@ impl Database {
             finished_at,
             error,
             planning_state,
+            model_id,
+            model_thinking,
+            model_effort,
+            context_size,
             steps,
         })
     }
