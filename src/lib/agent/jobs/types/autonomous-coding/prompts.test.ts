@@ -66,10 +66,18 @@ describe('iterationPrompt — no commands settled (bounded self-judgment fallbac
 		expect(prompt).toContain('say so plainly in your note');
 	});
 
-	it('requires cleanup and caps harness growth', () => {
-		expect(prompt).toContain('Leave nothing behind');
+	it('keeps scratch out of the repo and caps harness growth', () => {
+		expect(prompt).toContain('Keep scratch OUT of the repo');
 		expect(prompt).toContain('do not re-prove earlier steps');
 		expect(prompt).toContain('approaching the size of the code it checks');
+	});
+
+	it('does not ask for the cleanup that trips the risk gate', () => {
+		// The old rule ("Leave nothing behind... must be deleted before you
+		// finish") is what sent runs into `rm -f /tmp/...` — a command
+		// classifyShellRisk flags, so the iteration was spent being denied.
+		expect(prompt).not.toContain('must be deleted');
+		expect(prompt).toContain('do NOT delete it');
 	});
 });
 
@@ -102,6 +110,53 @@ describe('iterationPrompt — invariants across branches', () => {
 			}
 		});
 	}
+});
+
+/**
+ * Scratch/shell rules. A guided-planning-adjacent complaint from a real
+ * session: the model wrote a temp file, then ran `rm` on it. In preflight that
+ * raises an approval modal at a user who was promised the interview was the
+ * last interaction; mid-run `ensureCommandApproved` denies it and the turn is
+ * wasted. Both stages therefore carry the same rule — temp is allowed, cleanup
+ * is not.
+ */
+describe('shell safety rules — every stage that can run commands', () => {
+	for (const [label, raw] of [
+		['preflight', preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step')],
+		['iteration (both commands)', iterationPrompt('lint', 'test', 'plan/x/')],
+		['iteration (no commands)', iterationPrompt(null, null, 'plan/x/')],
+		['phase turn', phaseTurnPrompt('npm test', 'plan/x/')]
+	] as const) {
+		const prompt = flat(raw);
+
+		it(`${label}: allows scratch files in the system temp dir`, () => {
+			expect(prompt).toContain('system temp');
+			expect(prompt).toContain('/tmp on Linux/macOS, %TEMP% on Windows');
+		});
+
+		it(`${label}: forbids cleaning them up`, () => {
+			expect(prompt).toContain('LEAVE THEM THERE');
+			expect(prompt).toContain('Do not tidy up');
+		});
+
+		it(`${label}: names the commands that need a human`, () => {
+			expect(prompt).toContain('`rm` with -r or -f');
+			expect(prompt).toContain('`sudo`');
+			expect(prompt).toContain('`curl … | sh`');
+		});
+	}
+
+	it('tells the unattended stages the command is blocked outright', () => {
+		expect(flat(iterationPrompt('lint', 'test', 'plan/x/'))).toContain(
+			'nobody is present to approve one'
+		);
+	});
+
+	it('tells preflight it would interrupt the user instead', () => {
+		const prompt = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step'));
+		expect(prompt).toContain('stops the run on an approval modal');
+		expect(prompt).not.toContain('nobody is present to approve one');
+	});
 });
 
 describe('preflightPrompt — settling the two-command contract', () => {

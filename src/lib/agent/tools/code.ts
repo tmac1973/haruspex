@@ -53,9 +53,10 @@ async function ensureCommandApproved(
 			message: toolError(
 				`Command blocked (${risk.reasons.join('; ')}): risky commands are unavailable ` +
 					`in unattended runs — there is nobody present to approve them. Take a safer ` +
-					`route: prefer the fs_* tools for file work, avoid destructive commands, and ` +
-					`leave temp files alone (never create them where possible; .gitignore covers ` +
-					`regenerable ones). Do not retry this command.`
+					`route: prefer the fs_* tools for file work, and avoid destructive commands. ` +
+					`Scratch files themselves are fine — write them to the system temp directory ` +
+					`(/tmp, %TEMP%) and leave them there rather than cleaning up; the cleanup is ` +
+					`what gets blocked. Do not retry this command.`
 			)
 		};
 	}

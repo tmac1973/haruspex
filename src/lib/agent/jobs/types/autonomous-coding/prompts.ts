@@ -3,6 +3,45 @@
 import { STEP_CHECK_HEADING, VERIFICATION_COMMAND_HEADING } from './planParse';
 
 /**
+ * Shell rules every stage that can call `run_command` carries.
+ *
+ * Two real failure modes, one root cause. `classifyShellRisk` flags `rm -r`/
+ * `rm -f` — so a model that writes a scratch file and then tidies it up hits
+ * the risk gate. In preflight (the one interactive stage) that pops an
+ * approval modal at a user who was told the interview was the last thing
+ * they'd have to answer; in the unattended loop `ensureCommandApproved` denies
+ * it outright and the iteration is spent on a deletion nobody wanted. The
+ * cheapest fix is to stop the model from wanting to clean up: scratch goes to
+ * the OS temp dir and stays there.
+ *
+ * Appended as a labelled block rather than another numbered rule so the
+ * per-stage rule numbering stays stable.
+ */
+function shellSafetyRules(stage: 'preflight' | 'unattended'): string[] {
+	return [
+		'',
+		'SCRATCH FILES AND SHELL SAFETY:',
+		...(stage === 'preflight'
+			? [
+					'A command the app classes as risky stops the run on an approval modal.',
+					'The questions you ask are the last thing this user should have to answer —',
+					'never make them approve a shell command on top of that.'
+				]
+			: [
+					'Commands the app classes as risky are BLOCKED — nobody is present to',
+					'approve one, so the attempt costs you the turn and changes nothing.'
+				]),
+		'Never run: `sudo`; `rm` with -r or -f; `dd`; `mkfs`; `pkill`/`killall`/',
+		'`kill -9`; `curl … | sh`; reboot/shutdown/halt; or a redirect into /etc.',
+		'Scratch files are fine and need no permission: write them to the system temp',
+		'directory (/tmp on Linux/macOS, %TEMP% on Windows), never into the working',
+		'directory — and then LEAVE THEM THERE. Do not tidy up. The OS clears temp on',
+		'its own, and the cleanup command is exactly the one that gets stopped; a',
+		'leftover scratch file costs nothing, deleting it costs an approval or a turn.'
+	];
+}
+
+/**
  * Stage 0 system prompt: the last human checkpoint before a fully unattended
  * run. Hunt every deferred/ambiguous decision in the plan, resolve each with
  * the user via ask_user_question, record the answers, then report readiness
@@ -53,7 +92,8 @@ export function preflightPrompt(
 		`   Write ONLY inside \`${planDir}\` — no code, no other files.`,
 		'5. Call `submit_preflight` exactly once: ready=true when nothing is left',
 		'   ambiguous; ready=false with concrete blockers when the run cannot start',
-		'   (e.g. the plan directory is empty or the plans contradict each other).'
+		'   (e.g. the plan directory is empty or the plans contradict each other).',
+		...shellSafetyRules('preflight')
 	].join('\n');
 }
 
@@ -253,7 +293,8 @@ export function iterationPrompt(
 		'   "failed" with a note starting "depends on blocked <id>".',
 		'7. Finish by calling `submit_iteration_result` exactly once: the item id you',
 		'   were given, "done" or "failed", and a note. A useful failure note names',
-		'   the error, the evidence, and what the next attempt should try instead.'
+		'   the error, the evidence, and what the next attempt should try instead.',
+		...shellSafetyRules('unattended')
 	].join('\n');
 }
 
@@ -299,7 +340,8 @@ export function phaseTurnPrompt(phaseVerifyCommand: string | null, planDir: stri
 		'   recorded command, nothing else.',
 		'7. When the phase is implemented and verification passes — or you are',
 		'   genuinely stuck — call `submit_phase_result` exactly once with a summary',
-		'   and stop.'
+		'   and stop.',
+		...shellSafetyRules('unattended')
 	].join('\n');
 }
 
@@ -350,7 +392,7 @@ function verifyRule(stepCheckCommand: string | null, phaseVerifyCommand: string 
 	return [
 		'3. Verify by your own judgment (run_command): build it, run it, or test it —',
 		'   whatever proves this step actually works. Unverified ≠ done. Bounded by',
-		'   three rules, because verification you throw away is verification the',
+		'   four rules, because verification you throw away is verification the',
 		'   user cannot re-run:',
 		'   a. ONE shared verification file for the whole run. Look for an existing',
 		'      one first (fs_list_dir) and APPEND to it. Never create a per-step',
@@ -362,8 +404,10 @@ function verifyRule(stepCheckCommand: string | null, phaseVerifyCommand: string 
 		'      Execute the code and assert on what it does. If a step genuinely',
 		'      cannot be executed (pure CSS, static markup), say so plainly in your',
 		'      note instead of inventing a check that always passes.',
-		'   c. Leave nothing behind. Any temporary file you create to run a check',
-		'      must be deleted before you finish, unless it IS the shared',
+		'   c. Keep scratch OUT of the repo. Any temporary file you create to run a',
+		'      check belongs in the system temp dir, not the working directory —',
+		'      and stays there afterwards; do NOT delete it (see SCRATCH FILES',
+		'      below). The only check file that belongs in the repo is the shared',
 		'      verification file.',
 		'   d. Keep it CHEAP. This file is re-read, re-edited and re-run on every',
 		'      remaining step, so its cost is multiplied by the steps left. Verify',
