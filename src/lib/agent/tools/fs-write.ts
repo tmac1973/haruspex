@@ -416,6 +416,12 @@ function shellAwareWriteText() {
 
 function shellAwareEditText() {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		// Same confinement fs_write_text gets. Missing here until guided planning
+		// started exposing this tool, which was safe only because no writeRoot
+		// caller could reach it — an edit that escapes the root is exactly as
+		// damaging as a write that does.
+		const rootErr = writeRootError(args.path, ctx);
+		if (rootErr) return toolResult(toolError(rootErr));
 		if (ctx.shellMode && ctx.codeMode) {
 			const path = resolveShellPath(args.path as string, ctx.shellCwd);
 			try {
