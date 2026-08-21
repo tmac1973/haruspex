@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import {
 		pickProbedModel,
@@ -86,7 +87,18 @@
 		typeConfigStash[jobType] = typeConfig;
 		jobType = next;
 		typeConfig = typeConfigStash[next] ?? getJobType(next)!.configDefaults();
+		// An interactive type can't run unattended, so it can't carry a
+		// schedule across a type switch either.
+		if (getJobType(next)?.supportsSchedule === false) schedule = { kind: 'manual' };
 	}
+
+	/**
+	 * Whether this type's runs can fire unattended. Interactive types (guided
+	 * planning, autonomous coding) open with an interview, so a scheduled fire
+	 * would park on a question modal with nobody there — the field is hidden
+	 * rather than disabled, since a schedule is not a thing they can have.
+	 */
+	const schedulable = $derived(typeDef.supportsSchedule !== false);
 	// Where this job's model calls go (any job type): 'settings' follows the
 	// app's active Settings backend; 'remote'/'openrouter' pin the job to a
 	// specific server/model configured below. One selection — mirrors the
@@ -139,6 +151,65 @@
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 
+	/**
+	 * Unsaved-changes tracking.
+	 *
+	 * Everything the form can persist, as one comparable string. Clicking a
+	 * job's run arrow used to enqueue the STORED job while the editor held
+	 * newer values, so a run silently executed the version the user thought
+	 * they had just changed — the parent asks this before running or
+	 * switching away.
+	 *
+	 * Signature-of-the-whole-form rather than per-field flags: a field added
+	 * to the editor later is covered automatically, where a flag would have
+	 * to be remembered.
+	 */
+	function formSignature(): string {
+		return JSON.stringify({
+			name,
+			description,
+			workingDir,
+			schedule,
+			steps: $state.snapshot(steps),
+			jobType,
+			typeConfig: $state.snapshot(typeConfig),
+			modelSource,
+			modelBaseUrl,
+			modelApiKey,
+			modelApiKeyId,
+			modelModelId,
+			modelContextSize,
+			modelVision,
+			advanced: currentModelAdvanced()
+		});
+	}
+
+	/** The form as loaded (or last saved). null until the first load settles. */
+	let baseline = $state<string | null>(null);
+
+	const dirty = $derived(baseline !== null && !loading && formSignature() !== baseline);
+
+	/** Read by the Jobs tab before it runs this job or navigates away. */
+	export function hasUnsavedChanges(): boolean {
+		return dirty;
+	}
+
+	/** Save on the parent's behalf. False when validation rejected the form. */
+	export async function saveNow(): Promise<boolean> {
+		return save();
+	}
+
+	/**
+	 * Snapshot the loaded form as the comparison point. Deferred by a tick so
+	 * a type editor's own mount effects settle first — guided planning
+	 * derives its output folder from the job name on mount, which would
+	 * otherwise register as an edit the user never made.
+	 */
+	async function captureBaseline() {
+		await tick();
+		baseline = formSignature();
+	}
+
 	$effect(() => {
 		loadIntoForm(jobId);
 	});
@@ -167,9 +238,11 @@
 			probeNote = null;
 			orCatalog = null;
 			orError = null;
+			void captureBaseline();
 			return;
 		}
 		loading = true;
+		baseline = null;
 		try {
 			const job = await getJob(id);
 			if (!job) {
@@ -228,6 +301,7 @@
 		} finally {
 			loading = false;
 		}
+		void captureBaseline();
 	}
 
 	async function pickWorkingDir() {
@@ -524,14 +598,15 @@
 			.filter((s) => s.prompt.length > 0);
 	}
 
-	async function save() {
+	/** True when the job (and its steps) reached the DB. */
+	async function save(): Promise<boolean> {
 		const v = validate();
 		if (v) {
 			error = v;
 			// The offending field may be inside a folded section — unfold
 			// everything so the error is visible and fixable.
 			openSections = { basics: true, where: true, model: true, type: true };
-			return;
+			return false;
 		}
 		error = null;
 		saving = true;
@@ -549,9 +624,11 @@
 				// Jobs always run unattended, so tool calls are auto-approved.
 				auto_approve_tools: true,
 				job_type: jobType,
-				schedule_kind: schedule.kind,
-				schedule_config: scheduleToConfigJson(schedule),
-				next_due_at: computeNextDueAt(schedule, null),
+				// Belt and braces: the field is hidden for interactive types, but a
+				// job saved before this gate existed can still be carrying one.
+				schedule_kind: schedulable ? schedule.kind : 'manual',
+				schedule_config: schedulable ? scheduleToConfigJson(schedule) : null,
+				next_due_at: schedulable ? computeNextDueAt(schedule, null) : null,
 				// The type's own knobs, serialized by its definition — Rust
 				// stores this verbatim.
 				type_config: typeDef.configToJson($state.snapshot(typeConfig)),
@@ -586,14 +663,14 @@
 				const created = await createJob(input);
 				if (created === null) {
 					error = 'Failed to create job.';
-					return;
+					return false;
 				}
 				id = created;
 			} else {
 				const ok = await updateJob(jobId, input);
 				if (!ok) {
 					error = 'Failed to save job.';
-					return;
+					return false;
 				}
 				id = jobId;
 			}
@@ -601,9 +678,15 @@
 			const stepsOk = await replaceJobSteps(id, stepsToSave);
 			if (!stepsOk) {
 				error = 'Saved job but failed to save steps.';
-				return;
+				return false;
 			}
+			// Re-baseline before handing control back: `onsaved` may leave this
+			// editor mounted (an existing job keeps its id), and a form that
+			// still compares dirty against the pre-save values would prompt to
+			// save changes that are already on disk.
+			baseline = formSignature();
 			onsaved(id);
+			return true;
 		} finally {
 			saving = false;
 		}
@@ -650,7 +733,12 @@
 
 	const basicsSummary = $derived(`${name.trim() || 'Untitled'} · ${typeDef.label}`);
 	const whereSummary = $derived(
-		`${workingDir.trim() ? (workingDir.trim().split('/').filter(Boolean).pop() ?? workingDir.trim()) : 'No folder'} · ${scheduleSummary(schedule)}`
+		[
+			workingDir.trim()
+				? (workingDir.trim().split('/').filter(Boolean).pop() ?? workingDir.trim())
+				: 'No folder',
+			...(schedulable ? [scheduleSummary(schedule)] : [])
+		].join(' · ')
 	);
 	const modelSummary = $derived(
 		modelSource === 'settings'
@@ -802,9 +890,15 @@
 							</div>
 						</div>
 
-						<div class="field">
-							<JobScheduleField {schedule} onchange={(s) => (schedule = s)} />
-						</div>
+						{#if schedulable}
+							<div class="field">
+								<JobScheduleField {schedule} onchange={(s) => (schedule = s)} />
+							</div>
+						{:else}
+							<p class="hint">
+								{typeDef.label} runs start by interviewing you, so they only run when you start them.
+							</p>
+						{/if}
 					</div>
 				{/if}
 			</section>
@@ -1134,7 +1228,7 @@
 				<button
 					type="button"
 					class="btn btn-primary"
-					onclick={save}
+					onclick={() => void save()}
 					disabled={saving}
 					title="Save the job. Use the Run button in the job list to execute it manually."
 				>
