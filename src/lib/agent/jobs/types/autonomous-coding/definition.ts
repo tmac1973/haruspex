@@ -57,6 +57,9 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		'Takes a folder of plan files, resolves open decisions with you up front, then codes the project unattended — one atomic step at a time, verified and committed, until the plan is done.',
 	// Runs are driven by the plan dir + preflight interview, not authored steps.
 	hasPlannedSteps: false,
+	// The run opens with the preflight interview — a scheduled fire would park
+	// on the first question with nobody there to answer it.
+	supportsSchedule: false,
 	// Full-shell job type: only offered where the shell plumbing works. The
 	// single choke point is shell_platform_supported() — no other platform
 	// checks belong in this module (see the Code-mode × Windows notes).

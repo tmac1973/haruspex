@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getJobs, type JobSummary } from '$lib/stores/jobs.svelte';
-	import { enqueue, getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
+	import { getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
@@ -12,21 +12,31 @@
 
 	interface Props {
 		selectedId: number | 'new' | null;
+		/**
+		 * Selection is unavailable — a run owns the centre pane, so switching
+		 * jobs would highlight a row and show nothing. Rows go inert; the run
+		 * buttons stay live, because queueing behind the active run works and
+		 * shows up in the queue badge.
+		 */
+		locked?: boolean;
 		onselect: (id: number | 'new') => void;
+		/** Asks the tab to run this job — it may prompt about unsaved edits first. */
 		onrun: (jobId: number) => void;
 	}
 
-	const { selectedId, onselect, onrun }: Props = $props();
+	const { selectedId, locked = false, onselect, onrun }: Props = $props();
 
 	const running = $derived(getCurrentRun()?.status === 'running');
 	const queueDepth = $derived(getQueueDepth());
 
-	async function handleRun(e: MouseEvent, jobId: number) {
+	const LOCKED_HINT = 'A run is in progress — it has the pane until it finishes or you cancel it';
+
+	function handleRun(e: MouseEvent, jobId: number) {
 		e.stopPropagation();
-		// Don't block on busy — queue it. The runner now FIFO-queues runs
-		// behind whatever is currently active.
-		const runId = await enqueue(jobId, 'manual');
-		if (runId !== null) onrun(jobId);
+		// Enqueueing is the tab's job: it holds the editor's unsaved-changes
+		// state, and running the stored job while newer values sit unsaved in
+		// the form is the bug this indirection exists to prevent.
+		onrun(jobId);
 	}
 
 	const jobs = $derived(getJobs());
@@ -86,6 +96,8 @@
 			type="button"
 			class="new-btn"
 			class:active={selectedId === 'new'}
+			disabled={locked}
+			title={locked ? LOCKED_HINT : 'Create a new job'}
 			onclick={() => onselect('new')}
 		>
 			+ New
@@ -102,7 +114,12 @@
 				<div
 					class="row"
 					class:selected={selectedId === job.id}
-					use:activatable={() => onselect(job.id)}
+					class:locked
+					role="button"
+					tabindex={locked ? -1 : 0}
+					aria-disabled={locked}
+					title={locked ? LOCKED_HINT : undefined}
+					use:activatable={() => !locked && onselect(job.id)}
 				>
 					<div class="row-main">
 						<span class="name">
@@ -116,6 +133,7 @@
 					<button
 						type="button"
 						class="job-run-btn"
+						data-no-activate
 						title={!isJobTypeAvailable(job.job_type)
 							? 'This job type is not available on this platform'
 							: running
@@ -230,6 +248,15 @@
 
 	.row:hover {
 		background: var(--bg-primary);
+	}
+
+	.row.locked {
+		cursor: default;
+		opacity: 0.55;
+	}
+
+	.row.locked:hover {
+		background: transparent;
 	}
 
 	.row.selected {

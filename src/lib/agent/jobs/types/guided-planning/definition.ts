@@ -58,6 +58,9 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 	// Runs are driven by the initial description + interactive Q&A, not a step
 	// pipeline — a guided job with zero authored steps is the normal case.
 	hasPlannedSteps: false,
+	// The run opens with an interview — a scheduled fire would park on the
+	// first question with nobody there to answer it.
+	supportsSchedule: false,
 	workingDirPlaceholder: 'Absolute path to the project to plan in',
 	Editor,
 	configDefaults: () => ({

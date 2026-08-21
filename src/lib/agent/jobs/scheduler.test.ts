@@ -149,3 +149,42 @@ describe('scheduler tick', () => {
 		}
 	});
 });
+
+/**
+ * Guided planning and autonomous coding open their runs by interviewing the
+ * user. Fired unattended, the run parks on a question modal with nobody there
+ * and holds the runner while everything else queues behind it. The editor
+ * hides the schedule field for those types, so a due job of one can only be
+ * a row saved before that gate existed.
+ */
+describe('scheduler — types that cannot run unattended', () => {
+	for (const jobType of ['guided_planning', 'autonomous_coding'] as const) {
+		it(`never enqueues a due ${jobType} job`, async () => {
+			mocks.listDueJobs.mockResolvedValue([dueJob({ job_type: jobType })]);
+
+			await tick();
+
+			expect(mocks.enqueue).not.toHaveBeenCalled();
+		});
+
+		it(`clears the due time so ${jobType} is not re-examined every tick`, async () => {
+			mocks.listDueJobs.mockResolvedValue([dueJob({ id: 4, job_type: jobType })]);
+
+			await tick();
+
+			expect(mocks.setJobNextDueAt).toHaveBeenCalledWith(4, null);
+		});
+	}
+
+	it('still runs the schedulable types alongside them', async () => {
+		mocks.listDueJobs.mockResolvedValue([
+			dueJob({ id: 1, job_type: 'guided_planning' }),
+			dueJob({ id: 2, job_type: 'research' })
+		]);
+
+		await tick();
+
+		expect(mocks.enqueue).toHaveBeenCalledTimes(1);
+		expect(mocks.enqueue).toHaveBeenCalledWith(2, 'scheduled');
+	});
+});

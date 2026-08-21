@@ -117,6 +117,14 @@ export interface JobTypeDefinition {
 	/** Extra text after the schedule summary in the JobList row (research: step count). */
 	listMeta?: (job: JobSummary) => string;
 	/**
+	 * Whether this type can run on a schedule. False for types whose runs
+	 * interview the user (guided planning, autonomous coding): with nobody
+	 * present the run parks on a question modal and holds the runner while
+	 * everything else queues behind it. False hides the schedule field in the
+	 * editor and makes the scheduler skip the job. Absent = schedulable.
+	 */
+	supportsSchedule?: boolean;
+	/**
 	 * Platform gate. When it resolves false the type is hidden from the
 	 * picker (types/availability caches the answer for sync UI reads) and
 	 * enqueue refuses runs. Absent = available everywhere.

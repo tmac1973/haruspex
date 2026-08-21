@@ -24,6 +24,7 @@ import {
 	type JobSummary
 } from '$lib/stores/jobs.svelte';
 import { enqueue } from '$lib/agent/jobs/runner.svelte';
+import { getJobType } from '$lib/agent/jobs/types';
 import { logDebug } from '$lib/debug-log';
 
 const TICK_MS = 30_000;
@@ -73,6 +74,20 @@ export async function tick(): Promise<void> {
 }
 
 async function processDueJob(job: JobSummary, now: number): Promise<void> {
+	// Interactive types open with an interview. Firing one unattended parks
+	// the run on a question modal with nobody there to answer it, holding the
+	// runner while every other run queues behind it. The editor hides the
+	// schedule field for these types, so this only catches jobs saved before
+	// that gate existed — clear the due time rather than skipping it, or the
+	// job is re-examined on every tick forever.
+	if (getJobType(job.job_type)?.supportsSchedule === false) {
+		logDebug('jobs', 'scheduler: type cannot run unattended, clearing schedule', {
+			jobId: job.id,
+			jobType: job.job_type
+		});
+		await setJobNextDueAt(job.id, null);
+		return;
+	}
 	// Recompute the next due time FIRST, using the previous next_due_at as
 	// the anchor so interval cadence stays steady. Doing this before
 	// enqueue avoids a race where a long-running enqueue might double-fire
