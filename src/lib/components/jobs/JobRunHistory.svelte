@@ -130,6 +130,7 @@
 					<button
 						type="button"
 						class="delete-btn"
+						data-no-activate
 						aria-label="Delete run"
 						title="Delete this run"
 						onclick={(e) => requestDeleteRun(run, e)}
