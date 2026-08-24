@@ -84,3 +84,4 @@ grep = "0.3"
 ignore = "0.4"
 globset = "0.4"
 tauri-plugin-notification = "2.3.3"
+fastembed = { version = "6.0.0", default-features = false, features = ["hf-hub", "hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }

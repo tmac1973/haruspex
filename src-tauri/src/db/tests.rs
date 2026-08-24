@@ -1232,3 +1232,379 @@ fn guided_planning_config_and_run_state_round_trip() {
     db.set_run_status(run_id, "needs_input").unwrap();
     assert_eq!(db.get_job_run(run_id).unwrap().status, "needs_input");
 }
+
+// ---------------------------------------------------------------------------
+// Agentic memory (plan/agentic-memory/phase-01-rust-memory-core.md)
+//
+// Synthetic vectors throughout: these assert the storage, ranking and cursor
+// logic, none of which should depend on a 34 MB ONNX model being present.
+// The embedder has its own tests, and the one that needs real weights is
+// #[ignore]d.
+// ---------------------------------------------------------------------------
+
+const MODEL: &str = "test-model";
+
+/// A unit vector pointing along `axis` — orthogonal to every other axis, so
+/// cosine between two of them is exactly 0 and against itself exactly 1.
+fn axis_vector(axis: usize) -> Vec<f32> {
+    let mut v = vec![0.0; 8];
+    v[axis] = 1.0;
+    v
+}
+
+/// A vector `t` of the way from axis 0 toward axis 1 — for graded similarity.
+fn blend(t: f32) -> Vec<f32> {
+    let mut v = vec![0.0; 8];
+    v[0] = 1.0 - t;
+    v[1] = t;
+    v
+}
+
+#[test]
+fn memory_insert_and_list_round_trips() {
+    let db = test_db();
+    let id = db
+        .insert_memory(
+            "Prefers tabs over spaces",
+            "preference",
+            &axis_vector(0),
+            MODEL,
+            Some("conv-1"),
+            1_000,
+        )
+        .unwrap();
+
+    let rows = db.list_memories(0, 10, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, id);
+    assert_eq!(rows[0].content, "Prefers tabs over spaces");
+    assert_eq!(rows[0].category, "preference");
+    assert_eq!(rows[0].source_conversation_id.as_deref(), Some("conv-1"));
+    // A new memory is as fresh as it will ever be.
+    assert_eq!(rows[0].created_at, rows[0].last_seen_at);
+    assert_eq!(rows[0].use_count, 0);
+    assert_eq!(db.count_memories().unwrap(), 1);
+}
+
+/// The memory must outlive its source conversation — deleting a chat cannot
+/// delete what was learned from it. That is what incognito is for. Hence no
+/// foreign key on source_conversation_id.
+#[test]
+fn deleting_the_source_conversation_keeps_the_memory() {
+    let db = test_db();
+    db.create_conversation("conv-1", "Chat").unwrap();
+    db.insert_memory(
+        "Lives in Toronto",
+        "fact",
+        &axis_vector(0),
+        MODEL,
+        Some("conv-1"),
+        1_000,
+    )
+    .unwrap();
+
+    db.delete_conversation("conv-1").unwrap();
+
+    assert_eq!(db.count_memories().unwrap(), 1);
+    assert_eq!(
+        db.list_memories(0, 10, None).unwrap()[0]
+            .source_conversation_id
+            .as_deref(),
+        Some("conv-1")
+    );
+}
+
+#[test]
+fn search_ranks_by_similarity_and_returns_top_k() {
+    let db = test_db();
+    db.insert_memory("exact", "fact", &blend(0.0), MODEL, None, 1_000)
+        .unwrap();
+    db.insert_memory("close", "fact", &blend(0.25), MODEL, None, 1_000)
+        .unwrap();
+    db.insert_memory("far", "fact", &blend(0.9), MODEL, None, 1_000)
+        .unwrap();
+
+    let hits = db
+        .search_memories(&blend(0.0), MODEL, 2, 0.0, 1_000)
+        .unwrap();
+
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].memory.content, "exact");
+    assert_eq!(hits[1].memory.content, "close");
+    assert!(hits[0].similarity > hits[1].similarity);
+}
+
+#[test]
+fn search_applies_the_minimum_similarity() {
+    let db = test_db();
+    db.insert_memory("same", "fact", &axis_vector(0), MODEL, None, 1_000)
+        .unwrap();
+    db.insert_memory("orthogonal", "fact", &axis_vector(1), MODEL, None, 1_000)
+        .unwrap();
+
+    let hits = db
+        .search_memories(&axis_vector(0), MODEL, 10, 0.5, 1_000)
+        .unwrap();
+
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory.content, "same");
+}
+
+/// Cosine between vectors from two different embedding spaces is a number
+/// with no meaning. Acting on it would be worse than recalling nothing, so
+/// rows from another model are skipped rather than scored.
+#[test]
+fn search_ignores_rows_embedded_by_another_model() {
+    let db = test_db();
+    db.insert_memory("current", "fact", &axis_vector(0), MODEL, None, 1_000)
+        .unwrap();
+    db.insert_memory(
+        "legacy",
+        "fact",
+        &axis_vector(0),
+        "older-model",
+        None,
+        1_000,
+    )
+    .unwrap();
+
+    let hits = db
+        .search_memories(&axis_vector(0), MODEL, 10, 0.0, 1_000)
+        .unwrap();
+
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory.content, "current");
+}
+
+/// Recency breaks ties; it must not bury an old-but-true fact under a recent
+/// irrelevant one. The floor of 0.5 is the exact guarantee: an ancient exact
+/// match still beats anything less than half as similar. It does NOT beat a
+/// fresh 0.83-similar one — that is the deliberate cost of letting recency
+/// mean anything at all, and this test pins the line where it falls.
+#[test]
+fn recency_breaks_ties_without_overturning_relevance() {
+    let db = test_db();
+    let year_ms = 365i64 * 86_400_000;
+    let now = 10 * year_ms;
+
+    db.insert_memory(
+        "old but exact",
+        "fact",
+        &blend(0.0),
+        MODEL,
+        None,
+        now - 5 * year_ms,
+    )
+    .unwrap();
+    // blend(0.75) is ~0.32 similar to blend(0.0) — under the floor, so no
+    // amount of freshness can lift it past a five-year-old exact match.
+    db.insert_memory(
+        "fresh but far weaker",
+        "fact",
+        &blend(0.75),
+        MODEL,
+        None,
+        now,
+    )
+    .unwrap();
+    let hits = db
+        .search_memories(&blend(0.0), MODEL, 10, 0.0, now)
+        .unwrap();
+    assert_eq!(hits[0].memory.content, "old but exact");
+
+    // Same similarity, different age → the fresher one wins.
+    let db2 = test_db();
+    db2.insert_memory("stale", "fact", &blend(0.0), MODEL, None, now - 5 * year_ms)
+        .unwrap();
+    db2.insert_memory("recent", "fact", &blend(0.0), MODEL, None, now)
+        .unwrap();
+    let hits2 = db2
+        .search_memories(&blend(0.0), MODEL, 10, 0.0, now)
+        .unwrap();
+    assert_eq!(hits2[0].memory.content, "recent");
+}
+
+#[test]
+fn search_bumps_usage_on_the_rows_it_returns() {
+    let db = test_db();
+    db.insert_memory("used", "fact", &axis_vector(0), MODEL, None, 1_000)
+        .unwrap();
+    db.insert_memory("unused", "fact", &axis_vector(1), MODEL, None, 1_000)
+        .unwrap();
+
+    db.search_memories(&axis_vector(0), MODEL, 10, 0.5, 5_000)
+        .unwrap();
+
+    let rows = db.list_memories(0, 10, None).unwrap();
+    let used = rows.iter().find(|m| m.content == "used").unwrap();
+    let unused = rows.iter().find(|m| m.content == "unused").unwrap();
+    assert_eq!(used.use_count, 1);
+    assert_eq!(used.last_seen_at, 5_000);
+    assert_eq!(unused.use_count, 0);
+    assert_eq!(unused.last_seen_at, 1_000);
+}
+
+/// Deciding not to store a duplicate is not the memory being used — counting
+/// it would inflate the usage figures the manager UI reports.
+#[test]
+fn find_similar_returns_the_best_match_without_bumping_usage() {
+    let db = test_db();
+    db.insert_memory("near duplicate", "fact", &blend(0.05), MODEL, None, 1_000)
+        .unwrap();
+    db.insert_memory("unrelated", "fact", &axis_vector(4), MODEL, None, 1_000)
+        .unwrap();
+
+    let hit = db
+        .find_similar(&blend(0.0), MODEL, 0.9, 2_000)
+        .unwrap()
+        .expect("a near-duplicate should match");
+    assert_eq!(hit.memory.content, "near duplicate");
+
+    assert!(db
+        .list_memories(0, 10, None)
+        .unwrap()
+        .iter()
+        .all(|m| m.use_count == 0));
+}
+
+#[test]
+fn find_similar_is_none_below_the_threshold() {
+    let db = test_db();
+    db.insert_memory("unrelated", "fact", &axis_vector(4), MODEL, None, 1_000)
+        .unwrap();
+    assert!(db
+        .find_similar(&axis_vector(0), MODEL, 0.9, 2_000)
+        .unwrap()
+        .is_none());
+}
+
+/// Content and embedding are two representations of one fact. A row whose
+/// text says one thing while its vector says another is recalled for the
+/// wrong query and then shown as the wrong answer.
+#[test]
+fn updating_content_replaces_the_vector_too() {
+    let db = test_db();
+    let id = db
+        .insert_memory("old wording", "fact", &axis_vector(0), MODEL, None, 1_000)
+        .unwrap();
+
+    assert!(db
+        .update_memory_content(&id, "new wording", &axis_vector(3), MODEL)
+        .unwrap());
+
+    assert!(db
+        .search_memories(&axis_vector(0), MODEL, 10, 0.5, 2_000)
+        .unwrap()
+        .is_empty());
+    let hits = db
+        .search_memories(&axis_vector(3), MODEL, 10, 0.5, 2_000)
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory.content, "new wording");
+}
+
+#[test]
+fn delete_and_clear_report_what_they_removed() {
+    let db = test_db();
+    let id = db
+        .insert_memory("a", "fact", &axis_vector(0), MODEL, None, 1_000)
+        .unwrap();
+    db.insert_memory("b", "fact", &axis_vector(1), MODEL, None, 1_000)
+        .unwrap();
+
+    assert!(db.delete_memory(&id).unwrap());
+    assert!(
+        !db.delete_memory(&id).unwrap(),
+        "second delete removes nothing"
+    );
+    assert_eq!(db.delete_all_memories().unwrap(), 1);
+    assert_eq!(db.count_memories().unwrap(), 0);
+}
+
+#[test]
+fn list_filters_by_content_substring() {
+    let db = test_db();
+    db.insert_memory(
+        "prefers dark mode",
+        "preference",
+        &axis_vector(0),
+        MODEL,
+        None,
+        1_000,
+    )
+    .unwrap();
+    db.insert_memory(
+        "lives in Toronto",
+        "fact",
+        &axis_vector(1),
+        MODEL,
+        None,
+        1_000,
+    )
+    .unwrap();
+
+    let hits = db.list_memories(0, 10, Some("Toronto")).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].content, "lives in Toronto");
+}
+
+#[test]
+fn memory_cursor_defaults_to_enabled_and_unextracted() {
+    let db = test_db();
+    db.create_conversation("conv-1", "Chat").unwrap();
+
+    let cursor = db.get_memory_cursor("conv-1").unwrap();
+    assert!(cursor.memory_enabled);
+    // -1, because sort_order starts at 0 and 0 would mean "the first message
+    // is already done".
+    assert_eq!(cursor.memory_extracted_to, -1);
+}
+
+/// The extraction scheduler races conversation deletion. "Process this chat
+/// that no longer exists" is the wrong default for a privacy feature.
+#[test]
+fn memory_cursor_of_a_missing_conversation_reads_as_disabled() {
+    let db = test_db();
+    let cursor = db.get_memory_cursor("never-existed").unwrap();
+    assert!(!cursor.memory_enabled);
+    assert_eq!(cursor.memory_extracted_to, -1);
+}
+
+#[test]
+fn memory_enabled_flag_persists_both_ways() {
+    let db = test_db();
+    db.create_conversation("conv-1", "Chat").unwrap();
+
+    db.set_memory_enabled("conv-1", false).unwrap();
+    assert!(!db.get_memory_cursor("conv-1").unwrap().memory_enabled);
+
+    db.set_memory_enabled("conv-1", true).unwrap();
+    assert!(db.get_memory_cursor("conv-1").unwrap().memory_enabled);
+}
+
+/// Two extraction passes can overlap — an idle timer firing as the user
+/// switches away — and the later-finishing one may hold the older cursor.
+/// Taking the max stops a stale writer re-distilling turns already done.
+#[test]
+fn the_watermark_advances_but_never_retreats() {
+    let db = test_db();
+    db.create_conversation("conv-1", "Chat").unwrap();
+
+    db.set_memory_extracted_to("conv-1", 12).unwrap();
+    assert_eq!(
+        db.get_memory_cursor("conv-1").unwrap().memory_extracted_to,
+        12
+    );
+
+    db.set_memory_extracted_to("conv-1", 4).unwrap();
+    assert_eq!(
+        db.get_memory_cursor("conv-1").unwrap().memory_extracted_to,
+        12
+    );
+
+    db.set_memory_extracted_to("conv-1", 30).unwrap();
+    assert_eq!(
+        db.get_memory_cursor("conv-1").unwrap().memory_extracted_to,
+        30
+    );
+}

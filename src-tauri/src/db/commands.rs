@@ -6,7 +6,7 @@ use super::*;
 /// work (worst case: deserializing a conversation's `steps` artifacts)
 /// stalls the webview. `Database` is a cloneable handle over the shared
 /// connection, so each command clones it and does the real work off-thread.
-async fn on_pool<T, F>(db: Database, f: F) -> Result<T, String>
+pub(super) async fn on_pool<T, F>(db: Database, f: F) -> Result<T, String>
 where
     T: Send + 'static,
     F: FnOnce(Database) -> Result<T, String> + Send + 'static,
