@@ -25,14 +25,24 @@ use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 /// search time — a future model swap then degrades to "older memories are
 /// invisible until re-embedded" rather than to garbage cosine scores between
 /// vectors from different embedding spaces.
-pub const EMBEDDING_MODEL_NAME: &str = "bge-small-en-v1.5";
+pub const EMBEDDING_MODEL_NAME: &str = "bge-small-en-v1.5-q";
 
 /// The Hugging Face repo fastembed pulls the ONNX weights from, mirrored here
 /// so `model_present` can answer without initializing anything.
-const MODEL_REPO: &str = "Xenova/bge-small-en-v1.5";
+///
+/// The QUANTIZED build, deliberately. The fp32 variant fastembed calls
+/// `BGESmallENV15` is a 127 MB download; this one is 67 MB for the same 384
+/// dimensions, and the accuracy it gives up is invisible in the job it does
+/// here — ranking a few thousand short facts by relevance. The download is
+/// something the user has to agree to, so halving it is worth more than the
+/// last percent of retrieval quality.
+const MODEL_REPO: &str = "Qdrant/bge-small-en-v1.5-onnx-Q";
 
 /// hf-hub's on-disk name for that repo: `models--<org>--<name>`.
-const MODEL_REPO_DIR: &str = "models--Xenova--bge-small-en-v1.5";
+const MODEL_REPO_DIR: &str = "models--Qdrant--bge-small-en-v1.5-onnx-Q";
+
+/// The weights file inside that repo — what `model_present` looks for.
+const MODEL_FILE: &str = "model_optimized.onnx";
 
 static EMBEDDER: Mutex<Option<TextEmbedding>> = Mutex::new(None);
 
@@ -63,7 +73,7 @@ pub fn model_present(cache_dir: &Path) -> bool {
     find_model_file(&repo, 0)
 }
 
-/// Depth-bounded search for `model.onnx` under an hf-hub repo directory.
+/// Depth-bounded search for the weights file under an hf-hub repo directory.
 ///
 /// Bounded because this runs on a directory the user could have put anything
 /// in; `snapshots/<rev>/onnx/model.onnx` is three levels, so four is plenty
@@ -81,7 +91,7 @@ fn find_model_file(dir: &Path, depth: usize) -> bool {
             if find_model_file(&path, depth + 1) {
                 return true;
             }
-        } else if path.file_name().is_some_and(|n| n == "model.onnx") {
+        } else if path.file_name().is_some_and(|n| n == MODEL_FILE) {
             return true;
         }
     }
@@ -91,7 +101,7 @@ fn find_model_file(dir: &Path, depth: usize) -> bool {
 /// Download the weights if they aren't already cached, and load them.
 ///
 /// The only function here that may touch the network, and it is called from
-/// exactly one place: the explicit consent flow. Blocking and slow (~34 MB)
+/// exactly one place: the explicit consent flow. Blocking and slow (~65 MB)
 /// — `spawn_blocking` only.
 pub fn ensure_model(cache_dir: &Path) -> Result<(), String> {
     let mut guard = lock();
@@ -106,7 +116,7 @@ pub fn ensure_model(cache_dir: &Path) -> Result<(), String> {
 ///
 /// Fails rather than downloading when the weights are absent: the caller is
 /// a background pass or a chat send, neither of which is a moment to start a
-/// 34 MB fetch the user never agreed to.
+/// 65 MB fetch the user never agreed to.
 pub fn embed(cache_dir: &Path, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
     if texts.is_empty() {
         return Ok(Vec::new());
@@ -144,7 +154,7 @@ fn load(cache_dir: &Path, allow_download: bool) -> Result<TextEmbedding, String>
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Could not create the embedding model cache dir: {e}"))?;
     }
-    let options = TextInitOptions::new(EmbeddingModel::BGESmallENV15)
+    let options = TextInitOptions::new(EmbeddingModel::BGESmallENV15Q)
         .with_cache_dir(dir)
         // Progress is reported through the consent flow's own UI, not by
         // scribbling a bar into a terminal nobody is looking at.
@@ -189,8 +199,8 @@ mod tests {
     fn model_present_finds_the_weights_under_an_hf_hub_snapshot() {
         let tmp = std::env::temp_dir().join("haruspex-embed-present");
         let snapshot = tmp.join(MODEL_REPO_DIR).join("snapshots").join("abc123");
-        fs::create_dir_all(snapshot.join("onnx")).unwrap();
-        fs::write(snapshot.join("onnx").join("model.onnx"), b"not really onnx").unwrap();
+        fs::create_dir_all(&snapshot).unwrap();
+        fs::write(snapshot.join(MODEL_FILE), b"not really onnx").unwrap();
         assert!(model_present(&tmp));
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -225,7 +235,7 @@ mod tests {
         assert!(err.contains("not been downloaded"), "got: {err}");
     }
 
-    /// Needs the real ~34 MB model, so it is not part of `cargo test`.
+    /// Needs the real ~65 MB model, so it is not part of `cargo test`.
     /// Run with: `cargo test -- --ignored embeds_paraphrases_closer`
     #[test]
     #[ignore = "requires the downloaded ONNX model"]

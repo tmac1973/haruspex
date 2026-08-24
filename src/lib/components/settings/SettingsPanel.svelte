@@ -3,6 +3,7 @@
 	import GeneralSection from '$lib/components/settings/GeneralSection.svelte';
 	import InferenceSection from '$lib/components/settings/InferenceSection.svelte';
 	import AgentSection from '$lib/components/settings/AgentSection.svelte';
+	import MemorySection from '$lib/components/settings/MemorySection.svelte';
 	import AudioSection from '$lib/components/settings/AudioSection.svelte';
 	import SearchSection from '$lib/components/settings/SearchSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
@@ -19,6 +20,7 @@
 		| 'general'
 		| 'inference'
 		| 'agent'
+		| 'memory'
 		| 'audio'
 		| 'search'
 		| 'integrations'
@@ -60,6 +62,12 @@
 					label: 'Agent',
 					subtitle: 'How the model reasons, remembers, and runs code.',
 					icon: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>'
+				},
+				{
+					id: 'memory',
+					label: 'Memory',
+					subtitle: 'What the assistant remembers between chats.',
+					icon: '<path d="M12 2a5 5 0 0 0-5 5v1a4 4 0 0 0 0 8v1a4 4 0 0 0 8 0"></path><path d="M12 2a5 5 0 0 1 5 5v1a4 4 0 0 1 0 8v1a4 4 0 0 1-8 0"></path><line x1="12" y1="7" x2="12" y2="17"></line>'
 				}
 			]
 		},
@@ -185,6 +193,8 @@
 				<InferenceSection />
 			{:else if activeCategory === 'agent'}
 				<AgentSection />
+			{:else if activeCategory === 'memory'}
+				<MemorySection />
 			{:else if activeCategory === 'audio'}
 				<AudioSection />
 			{:else if activeCategory === 'search'}

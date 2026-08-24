@@ -1237,7 +1237,7 @@ fn guided_planning_config_and_run_state_round_trip() {
 // Agentic memory (plan/agentic-memory/phase-01-rust-memory-core.md)
 //
 // Synthetic vectors throughout: these assert the storage, ranking and cursor
-// logic, none of which should depend on a 34 MB ONNX model being present.
+// logic, none of which should depend on a 65 MB ONNX model being present.
 // The embedder has its own tests, and the one that needs real weights is
 // #[ignore]d.
 // ---------------------------------------------------------------------------

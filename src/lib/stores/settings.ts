@@ -434,6 +434,18 @@ export interface AppSettings {
 	 */
 	shellCodeModeDefault: boolean;
 	/**
+	 * Cross-chat memory: extract stable facts from conversations and recall
+	 * them in later ones. Off by default — it is the only setting that makes
+	 * the app carry what you said into a conversation you have not had yet,
+	 * and enabling it also requires downloading an embedding model. See
+	 * `stores/memory.svelte.ts` and `plan/agentic-memory/`.
+	 *
+	 * True here is necessary but not sufficient: the embedding model must
+	 * also be present. Settings restored onto a fresh machine can carry
+	 * `true` with no model on disk, and nothing may auto-download to fix it.
+	 */
+	memoryEnabled: boolean;
+	/**
 	 * Code tab: when true, `run_command` runs risk-flagged commands without
 	 * prompting. Off by default — the user opts into a "trust the model on
 	 * this machine" posture explicitly.
@@ -567,7 +579,8 @@ const defaults: AppSettings = {
 	codeAutoApprove: false,
 	codeRunCommandTimeoutSecs: 30,
 	codeCommandExec: 'auto',
-	codeMaxIterations: 40
+	codeMaxIterations: 40,
+	memoryEnabled: false
 };
 
 function load(): AppSettings {

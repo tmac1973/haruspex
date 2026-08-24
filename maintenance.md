@@ -692,7 +692,7 @@ tokio-rustls, lettre). The dependency is declared with
 too, since only text embedding is used.
 
 **The model is not the archive.** The ONNX Runtime above is the engine,
-linked at build time. The BGE-small-en-v1.5 *weights* (~34 MB) are
+linked at build time. The BGE-small-en-v1.5 *weights* (~65 MB, the quantized build) are
 downloaded at runtime from Hugging Face into
 `<app_data>/models/embeddings`, and only ever from the explicit consent
 flow — `embedder::embed` fails rather than fetching them. `HF_HOME`

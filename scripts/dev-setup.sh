@@ -132,6 +132,29 @@ if [ "$SKIP_MODELS" = false ]; then
         echo "   Saved to: $TTS_CACHE/"
     fi
     echo
+
+    # Embedding model for cross-chat memory (Settings -> Memory).
+    #
+    # The app downloads this itself on first enable, behind an explicit
+    # consent step — it is never fetched without asking. Pre-seeding it here
+    # only means a dev who turns memory on is not waiting on Hugging Face,
+    # and that the #[ignore]d embedder test has something to run against.
+    # Layout must match hf-hub's, since fastembed reads the cache directly.
+    EMBED_REPO="models--Qdrant--bge-small-en-v1.5-onnx-Q"
+    EMBED_DIR="$MODELS_DIR/embeddings/$EMBED_REPO/snapshots/main"
+    if [ -f "$EMBED_DIR/model_optimized.onnx" ]; then
+        echo ">> Embedding model already exists."
+    else
+        echo ">> Downloading embedding model (bge-small-en-v1.5 quantized, ~65 MB)..."
+        mkdir -p "$EMBED_DIR"
+        BASE="https://huggingface.co/Qdrant/bge-small-en-v1.5-onnx-Q/resolve/main"
+        curl -L --progress-bar "$BASE/model_optimized.onnx" -o "$EMBED_DIR/model_optimized.onnx"
+        for f in tokenizer.json config.json tokenizer_config.json special_tokens_map.json; do
+            curl -L --progress-bar "$BASE/$f" -o "$EMBED_DIR/$f"
+        done
+        echo "   Saved: $EMBED_DIR"
+    fi
+    echo
 fi
 
 echo "========================================"
