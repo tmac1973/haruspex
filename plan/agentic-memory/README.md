@@ -9,7 +9,11 @@ and the Decisions appendix (D1–D5).
 
 ## Build status
 
-Planning only — nothing implemented.
+Phase 01 complete (schema, embedder, queries, IPC — no behaviour change yet).
+Phase 02 next. Amended 2026-08-21 (see D3 and the Non-goals): remote
+web chat landed after this plan was locked, so remote threads are created
+incognito; the recall budget scales with the context window; the Shell tab is
+explicitly out of scope.
 
 ## Phases
 

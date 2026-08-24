@@ -661,6 +661,50 @@ bundled layout, then a dev fallback that points at the source tree.
 
 ---
 
+## 11c. Agentic memory (embeddings)
+
+`src-tauri/src/memory/` owns on-device embeddings; `db/memories.rs` owns
+storage and search; `db/memory_commands.rs` is the IPC surface. Plan:
+`plan/agentic-memory/`.
+
+**The `ort` build-time download.** `fastembed` pulls in `ort` (ONNX
+Runtime). Its `ort-download-binaries-rustls-tls` feature fetches a
+prebuilt static archive (~90 MB) from `ort.pyke.io` into
+`~/.cache/ort.pyke.io/` on first build and links it **statically** — so
+there is no `.so` to bundle and nothing to add to
+`scripts/link-sidecar-libs.sh`. The cost is that a clean build machine
+(CI included) needs network access to that host, alongside crates.io.
+
+**Measured cost: +30.3 MB on the release binary** (52.2 → 82.5 MB,
+2026-08-21, x86_64 Linux). Paid by every user whether or not they enable
+memory, because the runtime is linked in rather than loaded on demand.
+Accepted deliberately: it keeps the build a single artifact, and it is
+small against an install that already carries three sidecars and a
+~5.7 GB model. If it ever needs to come back down, `ort`'s
+`ort-load-dynamic` feature ships `libonnxruntime.so` as a bundled
+resource instead — a pure packaging change that nothing above
+`memory/embedder.rs` can observe.
+
+**TLS features matter.** fastembed's defaults use `native-tls`, which
+would drag OpenSSL into a tree that is rustls end to end (reqwest,
+tokio-rustls, lettre). The dependency is declared with
+`default-features = false` and the rustls variants; `image-models` is off
+too, since only text embedding is used.
+
+**The model is not the archive.** The ONNX Runtime above is the engine,
+linked at build time. The BGE-small-en-v1.5 *weights* (~34 MB) are
+downloaded at runtime from Hugging Face into
+`<app_data>/models/embeddings`, and only ever from the explicit consent
+flow — `embedder::embed` fails rather than fetching them. `HF_HOME`
+overrides that cache dir inside fastembed, so `model_present` honours it
+too or the check and the loader would disagree.
+
+**Everything here is CPU-bound.** Embedding runs inside `spawn_blocking`
+in every command. See §9's arboard note: blocking the main thread freezes
+WebKitGTK.
+
+---
+
 ## 12. Conventions (the rules to internalize)
 
 - **Conventional Commits required** — release-please parses every commit

@@ -55,7 +55,17 @@ that bespoke from mature pieces we already have or can embed.
   (Decision D5). Retrieval relevance is the filter. A `scope` column is easy
   to add later; designing classification rules now is speculative.
 - **Chat only.** Job pipelines (research/audit/coding) neither read nor write
-  memories in v1.
+  memories in v1. Job runs are unattended and driven by precise prompt
+  contracts ("planning only — never write code"); a stale preference injected
+  there carries system-prompt authority with nobody watching.
+- **Not the Shell tab.** It builds its own prompt (`buildShellSystemPrompt`),
+  so it is separate integration work rather than a free ride — and the facts
+  worth remembering there are about the *machine* ("this box is Fedora, uses
+  dnf"), a different kind from chat's personal and preference facts. One
+  shared pool would bleed chat preferences into troubleshooting and back.
+  Revisit only alongside the `scope` column D5 defers.
+- **Not remote chat.** A guest on the network must never receive the owner's
+  memories, nor seed them. See D3.
 - **No FTS5 / hybrid retrieval.** Cosine over a few thousand rows is
   brute-force fine; add lexical fusion only if recall quality demands it.
 - **No third-party memory library or memory sidecar.** See survey above.
@@ -108,9 +118,34 @@ that bespoke from mature pieces we already have or can embed.
   persisted as a column so it survives restart. Rejected: split recall/record
   toggles (more UI for a refinement that can come later); session-only pill
   (privacy footgun after restart).
+  - **Remote chat threads are created incognito** (`memory_enabled = 0` at
+    `dbCreateConversation` in `lib/remote/driver.ts`), and the toggle is not
+    offered for them. Added 2026-08-21: remote web chat (#205) landed after
+    this plan was locked. Guest threads are ordinary `conversations` rows
+    (ids `remote-<sessionId>`) and they appear in the owner's sidebar, so the
+    chat-switch extraction trigger would otherwise distill a *visitor's*
+    statements into the owner's memory — a stranger seeding the assistant's
+    long-term memory by chatting to it. Recall was already safe by
+    construction (the driver never passes the recalled list), so reusing the
+    incognito column closes the recording half with the mechanism that already
+    exists rather than a special case.
 - **D4 — UI: full manager + in-chat visibility.** Settings manager plus a
   per-turn indicator of injected memories with per-memory delete. "Why did it
   say that?" must be answerable.
+- **D6 — ONNX Runtime is linked statically (settled 2026-08-21, Phase 01).**
+  `ort`'s download-binaries feature fetches a ~90 MB static archive at build
+  time and links it in: **+30.3 MB on the release binary** (52.2 → 82.5 MB,
+  measured against a clean tree, not the stale artifact in `target/`). Paid
+  by every user whether or not memory is enabled. Accepted — it keeps the
+  build one artifact with nothing new to bundle or symlink, and it is small
+  beside three sidecars and a ~5.7 GB model. Rejected for now:
+  `ort-load-dynamic` (ships `libonnxruntime.so` as a resource; a pure
+  packaging change, still available later); embeddings via llama-server
+  (see D1 — server config churn, VRAM contention, no endpoint on remote
+  backends). Also note the TLS choice: fastembed's defaults are
+  `native-tls`, which would drag OpenSSL into a tree that is rustls end to
+  end, so the dependency is declared `default-features = false` with the
+  rustls variants and `image-models` off.
 - **D5 — Scope: global only.** Provenance (`source_conversation_id`) is
   stored for the manager UI, but recall does not filter by it.
 

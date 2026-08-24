@@ -17,8 +17,13 @@ per turn so Phase 05 can show exactly what was injected.
     plus a short tail of recent user turns (paraphrase context), truncated.
   - Filters: global + per-chat gates (skip entirely when off — recall must
     add **zero** latency to incognito/disabled chats); `minScore` start
-    0.55; `k` start 6; then a **token budget** (~500 tokens estimated) that
-    trims lowest-score first. Constants co-located with Phase 03's.
+    0.55; `k` start 6; then a **token budget** that trims lowest-score
+    first. The budget SCALES WITH THE CONTEXT WINDOW rather than being a
+    flat constant — `min(500, 2% of descriptor.contextSize)` — because 500
+    tokens is 1.5% of a 32K window but 12% of a 4K one, and the machines
+    most likely to run a small window are the ones least able to spare it.
+    Read the window from `resolveBackendDescriptor()`, never from settings
+    directly. Constants co-located with Phase 03's.
   - Returns `{ id, content, category, score }[]` and stamps the turn (below).
 - **EDIT** `src/lib/agent/system-prompt.ts` — new conditional section in
   `buildSystemPrompt` (accepts the recalled list as a param; this module

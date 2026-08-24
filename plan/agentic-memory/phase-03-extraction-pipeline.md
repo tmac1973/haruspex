@@ -54,6 +54,12 @@ them against the store, and advances the per-conversation watermark. Gated on
 - **EDIT** `src/lib/stores/chat.svelte.ts` — two minimal calls into the
   scheduler (turn finalized; conversation switched). Keep the store's diff
   tiny; logic lives in `agent/memory/`.
+- **EDIT** `src/lib/remote/driver.ts` — create remote threads with
+  `memory_enabled = 0` (see D3). Remote conversations are ordinary
+  `conversations` rows that show up in the owner's sidebar, so opening one to
+  read it and switching away would fire the chat-switch trigger and distill a
+  *guest's* statements into the owner's memory. The flag makes the existing
+  gate do the work; there is no separate remote code path to keep in sync.
 - Tests: extraction pure parts (turn collection/windowing off fixture
   messages, dedupe decision, watermark ordering) with mocked `invoke` +
   mocked `runEphemeralTurn`.
@@ -88,5 +94,8 @@ them against the store, and advances the per-conversation watermark. Gated on
   `last_seen_at` bumps.
 - Incognito precheck: set `memory_enabled = 0` on a conversation via
   devtools → no extraction for it (UI toggle arrives in Phase 05).
+- Remote precheck: a thread created by the remote web chat is born with
+  `memory_enabled = 0`; opening it locally and switching away extracts
+  nothing (test with a mocked driver, asserted on the create call).
 - Global toggle off, or model absent → schedulers no-op (assert via test).
 - `make check` green.
