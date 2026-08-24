@@ -21,6 +21,12 @@ import {
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
 import { noteConversationLeft, noteTurnFinished } from '$lib/agent/memory/scheduler';
+import {
+	MEMORY_RECALL_STEP,
+	recallForTurn,
+	renderMemorySection,
+	type RecalledMemory
+} from '$lib/agent/memory/recall';
 import { getSettings, SETTINGS_KEY } from '$lib/stores/settings';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
@@ -836,10 +842,14 @@ function resetTurnState(conversation: Conversation): AbortSignal {
 function buildApiPrompt(
 	conversation: Conversation,
 	workingDir: string | null,
-	keepRecentTools: boolean
+	keepRecentTools: boolean,
+	memorySection: string
 ): { messages: ChatMessage[]; baseMessageCount: number } {
 	const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
-	let messagesForApi: ChatMessage[] = [buildSystemPrompt(workingDir), ...historyMessages];
+	let messagesForApi: ChatMessage[] = [
+		buildSystemPrompt(workingDir, { memorySection }),
+		...historyMessages
+	];
 
 	// If the user opted in, splice the previous turn's tool_calls + tool
 	// messages back into the prompt so the model can reference its own
@@ -1189,6 +1199,44 @@ export async function sendMessage(content: string, images: string[] = []): Promi
 }
 
 /**
+ * The user's own recent messages, oldest first, excluding the one being sent.
+ *
+ * Recall needs them because a follow-up is often unintelligible alone: "and
+ * what about the other one?" retrieves nothing by itself. Only user turns —
+ * assistant text would pull the query toward whatever the model last chose
+ * to talk about.
+ */
+function priorUserTexts(conversation: Conversation): string[] {
+	const texts = conversation.messages
+		.filter((m) => m.role === 'user')
+		.map((m) => messageText(m.content));
+	// The last one is the message being sent; recall already has it.
+	return texts.slice(0, -1).slice(-2);
+}
+
+/**
+ * Record which memories were injected, as a step on this turn.
+ *
+ * Rides the existing steps machinery so it persists with the message and
+ * needs no new storage — and so "why did it say that?" has an answer sitting
+ * next to the answer itself. Nothing recalled means no step at all, rather
+ * than an empty one.
+ */
+function recordRecallStep(conversation: Conversation, memories: RecalledMemory[]): void {
+	if (memories.length === 0) return;
+	conversation.searchSteps = [
+		...conversation.searchSteps,
+		{
+			id: `memory-recall-${currentTurnId}`,
+			toolName: MEMORY_RECALL_STEP,
+			query: `${memories.length} ${memories.length === 1 ? 'memory' : 'memories'} recalled`,
+			status: 'done' as const,
+			args: { memories }
+		}
+	];
+}
+
+/**
  * Run one agent turn against the conversation's existing history (the user
  * message is already appended). Shared by sendMessage, retryLastTurn and
  * the queued-startup watcher.
@@ -1208,15 +1256,29 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
 
 		const keepRecentTools = getSettings().keepRecentToolResults;
-		const { messages: messagesForApi, baseMessageCount } = buildApiPrompt(
-			conversation,
-			currentWorkingDir,
-			keepRecentTools
-		);
 
 		// Chat always talks to the global Settings backend (no override).
 		const backendDescriptor = resolveBackendDescriptor();
 		const activeCtxSize = backendDescriptor.contextSize;
+
+		// Once per USER turn, not per agent-loop iteration: tool calls reuse
+		// the prompt built here. One embed plus one SQLite scan, both local —
+		// a few milliseconds, and it short-circuits to nothing when memory is
+		// off or this chat is incognito.
+		const recalled = await recallForTurn({
+			conversationId: conversation.id,
+			userMessage: content,
+			priorUserTurns: priorUserTexts(conversation),
+			contextSize: activeCtxSize
+		});
+		recordRecallStep(conversation, recalled);
+
+		const { messages: messagesForApi, baseMessageCount } = buildApiPrompt(
+			conversation,
+			currentWorkingDir,
+			keepRecentTools,
+			renderMemorySection(recalled)
+		);
 		const visionSupported = backendDescriptor.vision;
 
 		isWaitingForSlot = true;
