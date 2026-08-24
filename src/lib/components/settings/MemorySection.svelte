@@ -9,6 +9,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import { getSettings } from '$lib/stores/settings';
+	import { cancelAllExtraction } from '$lib/agent/memory/scheduler';
 	import {
 		disableMemory,
 		downloadModel,
@@ -42,6 +43,10 @@
 				memoryEnabled = ok;
 			} else {
 				await disableMemory();
+				// Belt and braces: the scheduler re-checks before every pass, so a
+				// timer armed while memory was on already no-ops. Dropping the
+				// timers now just stops it holding them for the rest of the session.
+				cancelAllExtraction();
 			}
 		} finally {
 			busy = false;

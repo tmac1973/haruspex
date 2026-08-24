@@ -34,7 +34,13 @@ export type InferenceConsumer =
 	| 'shell'
 	| { kind: 'job'; jobName: string }
 	/** A remote web-chat guest; `client` is their session id. See `remote/`. */
-	| { kind: 'remote'; client: string };
+	| { kind: 'remote'; client: string }
+	/**
+	 * Background memory extraction. Queued like everything else so it can
+	 * never compete with a turn the user is waiting on — it is the one
+	 * consumer nobody asked for, so it always yields.
+	 */
+	| 'memory';
 
 export interface InferenceTicket {
 	/** `<windowLabel>:<n>` — unique across windows. */

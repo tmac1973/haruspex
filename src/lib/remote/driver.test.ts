@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	withInferenceSlot: vi.fn(),
 	resolveBackendDescriptor: vi.fn(),
 	dbCreateConversation: vi.fn(),
+	dbSetConversationMemoryEnabled: vi.fn(),
 	dbLoadMessages: vi.fn(),
 	dbSaveMessage: vi.fn(),
 	dbReplaceMessages: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('$lib/inference/descriptor', () => ({
 }));
 vi.mock('$lib/stores/db', () => ({
 	dbCreateConversation: mocks.dbCreateConversation,
+	dbSetConversationMemoryEnabled: mocks.dbSetConversationMemoryEnabled,
 	dbLoadMessages: mocks.dbLoadMessages,
 	dbSaveMessage: mocks.dbSaveMessage,
 	dbReplaceMessages: mocks.dbReplaceMessages
@@ -349,5 +351,27 @@ describe('asking the guest a question', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+/**
+ * A guest on the network must never seed the owner's long-term memory.
+ * Remote threads are ordinary `conversations` rows that show up in the
+ * owner's sidebar, so opening one and switching away would otherwise fire the
+ * chat-switch extraction trigger over a stranger's words.
+ */
+describe('remote threads are never remembered', () => {
+	it('marks the conversation incognito when a turn runs', async () => {
+		mocks.dbLoadMessages.mockResolvedValue([]);
+		mocks.runEphemeralTurn.mockResolvedValue({ finalText: 'hi', rawText: 'hi' });
+
+		await runRemoteTurn({
+			sessionId: 'sess-1',
+			turnId: 'sess-1#0',
+			message: 'hello',
+			clientLabel: 'Dave'
+		});
+
+		expect(mocks.dbSetConversationMemoryEnabled).toHaveBeenCalledWith('remote-sess-1', false);
 	});
 });

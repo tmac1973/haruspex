@@ -105,6 +105,7 @@
 	function consumerLabel(consumer: InferenceTicket['consumer']): string {
 		if (consumer === 'chat') return 'a chat turn';
 		if (consumer === 'shell') return 'another shell turn';
+		if (consumer === 'memory') return 'a memory extraction pass';
 		return consumer.kind === 'job' ? `job "${consumer.jobName}"` : 'a remote guest';
 	}
 	const lastError = $derived(session.lastError);

@@ -20,6 +20,7 @@ import {
 } from '$lib/agent/system-prompt';
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
+import { noteConversationLeft, noteTurnFinished } from '$lib/agent/memory/scheduler';
 import { getSettings, SETTINGS_KEY } from '$lib/stores/settings';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
@@ -542,6 +543,10 @@ function restoreContextUsageFor(id: string | null): void {
 
 export async function setActiveConversation(id: string): Promise<void> {
 	if (conversations.some((c) => c.id === id)) {
+		// Leaving a conversation is the strongest signal it is finished, and
+		// the trigger that catches someone who closes the app soon after.
+		const leaving = getActiveConversationId();
+		if (leaving && leaving !== id) noteConversationLeft(leaving);
 		setActiveConversationId(id);
 		errorMessage = null;
 		errorTurnId = null;
@@ -1088,6 +1093,9 @@ function finalizeStreamedTurn(
 		}
 	}
 	conversation.sourceUrls = processed.citedUrls;
+	// Arms the idle countdown; extraction itself happens minutes later, in
+	// agent/memory/, and only when memory is on.
+	noteTurnFinished(conversation.id);
 }
 
 /** Resume after a turn-limit / forced stop — the Continue button on the stop

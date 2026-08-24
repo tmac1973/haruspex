@@ -144,6 +144,30 @@ export async function dbCreateConversation(id: string, title: string): Promise<v
 	}
 }
 
+/**
+ * Mark a conversation as never remembered — incognito, persisted.
+ *
+ * Remote web-chat threads are created this way. They are ordinary
+ * `conversations` rows that appear in the owner's sidebar, so without this a
+ * guest's statements would be distilled into the OWNER's memory the moment
+ * the owner opened the thread and switched away. A visitor must not be able
+ * to seed what the assistant believes.
+ */
+export async function dbSetConversationMemoryEnabled(
+	conversationId: string,
+	enabled: boolean
+): Promise<void> {
+	if (!available) return;
+	try {
+		await invoke('conversation_set_memory_enabled', { conversationId, enabled });
+	} catch (e) {
+		logDebug('db', 'dbSetConversationMemoryEnabled failed', {
+			conversationId,
+			error: String(e)
+		});
+	}
+}
+
 export async function dbRenameConversation(id: string, title: string): Promise<void> {
 	if (!available) return;
 	try {
