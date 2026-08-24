@@ -153,6 +153,28 @@ export async function dbCreateConversation(id: string, title: string): Promise<v
  * the owner opened the thread and switched away. A visitor must not be able
  * to seed what the assistant believes.
  */
+/**
+ * Whether this conversation participates in memory. Defaults to true when the
+ * row cannot be read — a conversation that has not loaded yet is an ordinary
+ * one, and the two real gates (the global switch, and the Rust-side cursor
+ * check on every extraction and recall) still hold.
+ */
+export async function dbGetConversationMemoryEnabled(conversationId: string): Promise<boolean> {
+	if (!available) return true;
+	try {
+		const cursor = await invoke<{ memory_enabled: boolean }>('conversation_memory_cursor', {
+			conversationId
+		});
+		return cursor.memory_enabled;
+	} catch (e) {
+		logDebug('db', 'dbGetConversationMemoryEnabled failed', {
+			conversationId,
+			error: String(e)
+		});
+		return true;
+	}
+}
+
 export async function dbSetConversationMemoryEnabled(
 	conversationId: string,
 	enabled: boolean

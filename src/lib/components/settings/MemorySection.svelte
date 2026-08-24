@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 	import { getSettings } from '$lib/stores/settings';
 	import { cancelAllExtraction } from '$lib/agent/memory/scheduler';
+	import MemoryList from './MemoryList.svelte';
 	import {
 		disableMemory,
 		downloadModel,
@@ -93,6 +94,10 @@
 		</p>
 	{/if}
 </section>
+
+{#if status === 'ready' && count > 0}
+	<MemoryList />
+{/if}
 
 {#if status !== 'ready'}
 	<section class="settings-section">

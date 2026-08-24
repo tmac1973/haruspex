@@ -8,4 +8,11 @@
  * it say that?", and showing a number the ranking did not use would be a
  * lie with extra steps.
  */
-export type MemoryHit = { score: number, similarity: number, id: string, content: string, category: string, source_conversation_id: string | null, created_at: number, last_seen_at: number, use_count: number, };
+export type MemoryHit = { score: number, similarity: number, id: string, content: string, category: string, source_conversation_id: string | null, 
+/**
+ * Title of the conversation this was learned from, when that
+ * conversation still exists. None once it has been deleted — the memory
+ * outlives its source by design, so the manager can say "a deleted chat"
+ * rather than pretending the provenance is unknown.
+ */
+source_title: string | null, created_at: number, last_seen_at: number, use_count: number, };

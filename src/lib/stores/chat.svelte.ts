@@ -64,6 +64,8 @@ import {
 	dbLoadMessages,
 	dbLoadMessageSteps,
 	dbReplaceMessages,
+	dbGetConversationMemoryEnabled,
+	dbSetConversationMemoryEnabled,
 	type DbConversationSummary
 } from '$lib/stores/db';
 
@@ -123,6 +125,24 @@ export interface Conversation {
 	 * reference raw research details. In-memory only — not persisted to DB.
 	 */
 	lastTurnTools?: ChatMessage[];
+	/**
+	 * Whether this chat participates in cross-chat memory. False is
+	 * incognito: no recall in, no recording out, from the moment it is
+	 * switched — turns extracted before that stay memories, which is what the
+	 * manager is for.
+	 *
+	 * Undefined until loaded from the DB (the column is the source of truth,
+	 * so it survives restart by construction). The gates treat undefined as
+	 * "not yet known" and re-read; only an explicit false means incognito.
+	 */
+	memoryEnabled?: boolean;
+	/**
+	 * True for a conversation the remote web chat created. Those are never
+	 * remembered and the toggle is not offered — a guest must not be able to
+	 * seed the owner's memory. Set where the sidebar learns about them, not
+	 * by sniffing the id.
+	 */
+	isRemote?: boolean;
 }
 
 export interface MessageStats {
@@ -248,12 +268,50 @@ export async function initChatStore(): Promise<void> {
 
 async function loadConversationMessages(id: string): Promise<void> {
 	const conv = conversations.find((c) => c.id === id);
-	if (!conv || conv.messages.length > 0) return;
+	if (!conv) return;
+	// Read even when the messages are already in memory: the incognito flag
+	// lives in the DB (so it survives restart), and this is where a
+	// conversation opened after startup learns its own state.
+	void refreshMemoryFlag(conv);
+	if (conv.messages.length > 0) return;
 	conv.messages = await dbLoadMessages(id);
 	// Rehydrate per-message artifacts (images / DataFrames / interactive
 	// plots) so inline content survives restart.
 	const steps = await dbLoadMessageSteps(id);
 	conv.messageSteps = steps as typeof conv.messageSteps;
+}
+
+async function refreshMemoryFlag(conv: Conversation): Promise<void> {
+	if (conv.memoryEnabled !== undefined) return;
+	conv.memoryEnabled = await dbGetConversationMemoryEnabled(conv.id);
+}
+
+/**
+ * Flip this chat's incognito state, persisting it.
+ *
+ * From here forward only: turns already extracted stay memories, because
+ * un-remembering them is the manager's job and pretending otherwise would be
+ * a privacy promise this cannot keep.
+ */
+export async function setConversationMemoryEnabled(
+	conversationId: string,
+	enabled: boolean
+): Promise<void> {
+	const conv = conversations.find((c) => c.id === conversationId);
+	if (!conv || conv.isRemote) return;
+	conv.memoryEnabled = enabled;
+	await dbSetConversationMemoryEnabled(conversationId, enabled);
+}
+
+/** Whether the active chat is participating in memory. Unknown reads as on. */
+export function isActiveConversationRemembered(): boolean {
+	const conv = getActiveConversation();
+	return conv ? conv.memoryEnabled !== false : true;
+}
+
+/** Whether the active chat is a remote guest thread (never remembered). */
+export function isActiveConversationRemote(): boolean {
+	return getActiveConversation()?.isRemote === true;
 }
 
 /**
@@ -272,6 +330,10 @@ export function noteExternalConversation(id: string, title: string): void {
 		{
 			id,
 			title,
+			// Guest threads are never remembered, and the owner is not offered
+			// a switch for it — see the remote driver, which sets the column.
+			isRemote: true,
+			memoryEnabled: false,
 			// Left empty: opening it loads the messages from the database, the
 			// same as any conversation restored at startup.
 			messages: [],

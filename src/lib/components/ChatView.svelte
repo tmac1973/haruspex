@@ -30,7 +30,10 @@
 		sendMessage,
 		continueTurn,
 		cancelGeneration,
-		retryLastTurn
+		retryLastTurn,
+		isActiveConversationRemembered,
+		isActiveConversationRemote,
+		setConversationMemoryEnabled
 	} from '$lib/stores/chat.svelte';
 	import { getServerState, startServer, stopServer } from '$lib/stores/server.svelte';
 	import { showToast } from '$lib/stores/toasts.svelte';
@@ -119,6 +122,17 @@
 	}
 
 	const activeConversation = $derived(getActiveConversation());
+	// The control only exists while memory does — no point offering to exclude
+	// a chat from something that is switched off globally.
+	const memoryEnabledGlobally = $derived(getSettings().memoryEnabled);
+	const chatRemembered = $derived(isActiveConversationRemembered());
+	const chatIsRemote = $derived(isActiveConversationRemote());
+
+	async function toggleIncognito() {
+		const id = activeConversation?.id;
+		if (!id) return;
+		await setConversationMemoryEnabled(id, !chatRemembered);
+	}
 	const isGenerating = $derived(getIsGenerating());
 	const isWaitingForSlot = $derived(getIsWaitingForSlot());
 	const isCompacting = $derived(getIsCompacting());
@@ -511,6 +525,30 @@
 			class:drag-over={dragOver}
 			use:imageDropTarget={{ onImages: addImageUrls, onDragChange: (over) => (dragOver = over) }}
 		>
+			{#if memoryEnabledGlobally && !chatRemembered}
+				<!-- Stated in the conversation, not just on the button: a privacy
+				     mode the user cannot see is one they cannot trust. -->
+				<div class="incognito-banner">
+					<svg
+						width="13"
+						height="13"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path
+							d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+						></path>
+						<line x1="1" y1="1" x2="23" y2="23"></line>
+					</svg>
+					{chatIsRemote
+						? 'Remote thread — guest chats are never remembered'
+						: "Incognito — this chat won't be remembered"}
+				</div>
+			{/if}
 			{#if isGenerating || queuedForStartup}
 				<button class="stop-btn" onclick={() => cancelGeneration()}>
 					{queuedForStartup ? 'Cancel queued message' : 'Stop generating'}
@@ -568,6 +606,44 @@
 						{/if}
 					</svg>
 				</button>
+				{#if memoryEnabledGlobally}
+					<button
+						class="research-toggle incognito-toggle"
+						class:active={!chatRemembered}
+						disabled={chatIsRemote}
+						onclick={toggleIncognito}
+						title={chatIsRemote
+							? 'Remote thread — guest chats are never remembered'
+							: chatRemembered
+								? 'This chat can be remembered. Click to go incognito.'
+								: "Incognito — this chat won't be remembered"}
+						aria-pressed={!chatRemembered}
+						aria-label="Incognito"
+					>
+						<svg
+							width="18"
+							height="18"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							{#if chatRemembered}
+								<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+								<circle cx="12" cy="12" r="3"></circle>
+							{:else}
+								<path
+									d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+								></path>
+								<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"
+								></path>
+								<line x1="1" y1="1" x2="23" y2="23"></line>
+							{/if}
+						</svg>
+					</button>
+				{/if}
 				<MicButton
 					onTranscription={async (text) => {
 						await doSend(text);
@@ -976,5 +1052,26 @@
 		background: color-mix(in srgb, var(--accent) 15%, transparent);
 		border-color: var(--accent);
 		color: var(--accent);
+	}
+
+	.incognito-toggle:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	/* A privacy mode you cannot see is a privacy mode you cannot trust, so
+	   incognito says so in the conversation itself, not only on the button. */
+	.incognito-banner {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		margin: 0 auto 8px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--bg-secondary);
+		color: var(--text-secondary);
+		font-size: 0.76rem;
+		width: fit-content;
 	}
 </style>

@@ -298,6 +298,11 @@ pub struct MemoryMeta {
     pub content: String,
     pub category: String,
     pub source_conversation_id: Option<String>,
+    /// Title of the conversation this was learned from, when that
+    /// conversation still exists. None once it has been deleted — the memory
+    /// outlives its source by design, so the manager can say "a deleted chat"
+    /// rather than pretending the provenance is unknown.
+    pub source_title: Option<String>,
     #[ts(type = "number")]
     pub created_at: i64,
     #[ts(type = "number")]

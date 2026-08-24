@@ -703,6 +703,32 @@ too or the check and the loader would disagree.
 in every command. See §9's arboard note: blocking the main thread freezes
 WebKitGTK.
 
+**Where the pieces live.** Rust: `memory/` (embedder + cosine + BLOB
+codec, no `db` imports), `db/memories.rs` (storage and brute-force
+search), `db/memory_commands.rs` (IPC). TypeScript: `agent/memory/` —
+`extraction.ts` (what gets recorded), `scheduler.ts` (when), `recall.ts`
+(what comes back), `extractionPrompt.ts` (the distillation prompt).
+`stores/memory.svelte.ts` owns the global switch and model status.
+
+**Two gates, and both must hold.** `memoryActive()` = the setting AND the
+model on disk. Settings sync onto a fresh machine carries the flag but
+not the weights, so the flag alone is not a capability. Per chat,
+`conversations.memory_enabled` is the incognito column, checked in Rust
+on every extraction and recall — remote web-chat threads are created with
+it off (D3).
+
+**Trust boundary.** Extraction reads `user` and `assistant` turns only.
+A transcript also holds tool results — web pages, files, emails — and a
+page saying "remember X" must never be able to write to the user's
+memory. `collectNewTurns` is the guard; the prompt repeats it.
+
+**Tuning constants, all in one place each.** Dedupe threshold (0.90) and
+the transcript cap live in `extraction.ts`; the recall floor (0.55), k
+(6) and the context-scaled token budget live in `recall.ts`; the recency
+half-life and floor live in `memory/mod.rs`. Changing the *embedding
+model* means changing `EMBEDDING_MODEL_NAME` too — search filters on it,
+so old rows go quiet instead of being compared across embedding spaces.
+
 ---
 
 ## 12. Conventions (the rules to internalize)

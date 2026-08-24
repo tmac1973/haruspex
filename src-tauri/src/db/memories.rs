@@ -15,18 +15,33 @@ use crate::memory::{cosine_similarity, decode_embedding, encode_embedding, recen
 use rusqlite::params;
 
 /// Columns every `MemoryMeta` read needs, in the order `read_meta` expects.
-const META_COLUMNS: &str =
-    "id, content, category, source_conversation_id, created_at, last_seen_at, use_count";
+///
+/// Qualified with `m.` because the manager's list joins `conversations` for
+/// the source title; the search path uses the same list without a join, so
+/// the alias has to be there in both.
+const META_COLUMNS: &str = "m.id, m.content, m.category, m.source_conversation_id, \
+     m.created_at, m.last_seen_at, m.use_count";
 
+/// Reads the seven `META_COLUMNS`, leaving `source_title` empty. Search does
+/// not need provenance and should not pay for a join to get it.
 fn read_meta(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryMeta> {
     Ok(MemoryMeta {
         id: row.get(0)?,
         content: row.get(1)?,
         category: row.get(2)?,
         source_conversation_id: row.get(3)?,
+        source_title: None,
         created_at: row.get(4)?,
         last_seen_at: row.get(5)?,
         use_count: row.get(6)?,
+    })
+}
+
+/// `read_meta` plus the joined conversation title in column 7.
+fn read_meta_with_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryMeta> {
+    Ok(MemoryMeta {
+        source_title: row.get(7)?,
+        ..read_meta(row)?
     })
 }
 
@@ -87,12 +102,17 @@ impl Database {
         let like = filter
             .map(|f| format!("%{}%", f.trim()))
             .filter(|f| f.len() > 2);
+        // LEFT JOIN, not JOIN: a memory whose source conversation was deleted
+        // must still be listed. It outlives its source by design, and a row
+        // vanishing from the manager because the chat was cleared would leave
+        // the user unable to delete something still being recalled.
         let sql = format!(
-            "SELECT {META_COLUMNS} FROM memories
+            "SELECT {META_COLUMNS}, c.title FROM memories m
+             LEFT JOIN conversations c ON c.id = m.source_conversation_id
              {}
-             ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
+             ORDER BY m.created_at DESC LIMIT ?1 OFFSET ?2",
             if like.is_some() {
-                "WHERE content LIKE ?3"
+                "WHERE m.content LIKE ?3"
             } else {
                 ""
             }
@@ -101,8 +121,8 @@ impl Database {
             .prepare(&sql)
             .map_err(|e| format!("Memory list failed: {}", e))?;
         let rows = match &like {
-            Some(f) => stmt.query_map(params![limit, offset, f], read_meta),
-            None => stmt.query_map(params![limit, offset], read_meta),
+            Some(f) => stmt.query_map(params![limit, offset, f], read_meta_with_source),
+            None => stmt.query_map(params![limit, offset], read_meta_with_source),
         }
         .map_err(|e| format!("Memory list failed: {}", e))?;
         rows.collect::<Result<Vec<_>, _>>()
@@ -220,7 +240,7 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT {META_COLUMNS}, embedding FROM memories WHERE embedding_model = ?1"
+                "SELECT {META_COLUMNS}, m.embedding FROM memories m WHERE m.embedding_model = ?1"
             ))
             .map_err(|e| format!("Memory search failed: {}", e))?;
         let rows = stmt

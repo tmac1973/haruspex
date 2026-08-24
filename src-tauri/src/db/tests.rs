@@ -1548,6 +1548,65 @@ fn list_filters_by_content_substring() {
     assert_eq!(hits[0].content, "lives in Toronto");
 }
 
+/// The manager shows where a memory came from. A LEFT JOIN, so a memory
+/// whose source chat was deleted still lists — it outlives its source by
+/// design, and a row vanishing from the manager would leave the user unable
+/// to delete something still being recalled.
+#[test]
+fn list_resolves_the_source_conversation_title() {
+    let db = test_db();
+    db.create_conversation("conv-1", "Editor preferences")
+        .unwrap();
+    db.insert_memory(
+        "Prefers tabs.",
+        "preference",
+        &axis_vector(0),
+        MODEL,
+        Some("conv-1"),
+        1_000,
+    )
+    .unwrap();
+
+    let rows = db.list_memories(0, 10, None).unwrap();
+    assert_eq!(rows[0].source_title.as_deref(), Some("Editor preferences"));
+
+    db.delete_conversation("conv-1").unwrap();
+    let after = db.list_memories(0, 10, None).unwrap();
+    assert_eq!(
+        after.len(),
+        1,
+        "the memory outlives its source conversation"
+    );
+    assert!(after[0].source_title.is_none());
+}
+
+/// Search does not join for provenance — nothing in the recall path needs a
+/// conversation title, and paying for the join per query would be waste.
+#[test]
+fn search_leaves_the_source_title_unresolved() {
+    let db = test_db();
+    db.create_conversation("conv-1", "Editor preferences")
+        .unwrap();
+    db.insert_memory(
+        "Prefers tabs.",
+        "preference",
+        &axis_vector(0),
+        MODEL,
+        Some("conv-1"),
+        1_000,
+    )
+    .unwrap();
+
+    let hits = db
+        .search_memories(&axis_vector(0), MODEL, 5, 0.5, 2_000)
+        .unwrap();
+    assert!(hits[0].memory.source_title.is_none());
+    assert_eq!(
+        hits[0].memory.source_conversation_id.as_deref(),
+        Some("conv-1")
+    );
+}
+
 #[test]
 fn memory_cursor_defaults_to_enabled_and_unextracted() {
     let db = test_db();
