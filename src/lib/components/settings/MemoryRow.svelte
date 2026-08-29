@@ -18,6 +18,16 @@
 
 	const { memory, onsave, ondelete }: Props = $props();
 
+	// "You asked me to remember this" reads very differently from "I decided
+	// this about you" — the second is the one worth scrutinising, so the row
+	// says which it is rather than leaving both looking identical.
+	const originLabel = $derived(memory.origin === 'explicit' ? 'you asked' : 'inferred');
+	const originTitle = $derived(
+		memory.origin === 'explicit'
+			? 'Saved because you asked the assistant to remember it'
+			: 'Distilled automatically from a finished conversation'
+	);
+
 	let editing = $state(false);
 	let draft = $state('');
 	let busy = $state(false);
@@ -73,6 +83,9 @@
 <li class="memory-row">
 	<div class="head">
 		<span class="chip chip-{memory.category}">{memory.category}</span>
+		<!-- Provenance the user actually cares about: did they ask for this, or
+		     did the app infer it? The inferred ones are what want auditing. -->
+		<span class="chip chip-origin" title={originTitle}>{originLabel}</span>
 		<span class="meta">
 			learned {formatDate(memory.created_at)}
 			{#if memory.use_count > 0}
@@ -119,6 +132,12 @@
 		align-items: baseline;
 		gap: 8px;
 		flex-wrap: wrap;
+	}
+
+	.chip-origin {
+		background: transparent;
+		border: 1px solid var(--border);
+		color: var(--text-secondary);
 	}
 
 	.chip {

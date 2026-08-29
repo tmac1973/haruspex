@@ -20,9 +20,9 @@ use rusqlite::params;
 /// the source title; the search path uses the same list without a join, so
 /// the alias has to be there in both.
 const META_COLUMNS: &str = "m.id, m.content, m.category, m.source_conversation_id, \
-     m.created_at, m.last_seen_at, m.use_count";
+     m.created_at, m.last_seen_at, m.use_count, m.origin";
 
-/// Reads the seven `META_COLUMNS`, leaving `source_title` empty. Search does
+/// Reads the eight `META_COLUMNS`, leaving `source_title` empty. Search does
 /// not need provenance and should not pay for a join to get it.
 fn read_meta(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryMeta> {
     Ok(MemoryMeta {
@@ -34,13 +34,14 @@ fn read_meta(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryMeta> {
         created_at: row.get(4)?,
         last_seen_at: row.get(5)?,
         use_count: row.get(6)?,
+        origin: row.get(7)?,
     })
 }
 
-/// `read_meta` plus the joined conversation title in column 7.
+/// `read_meta` plus the joined conversation title in column 8.
 fn read_meta_with_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryMeta> {
     Ok(MemoryMeta {
-        source_title: row.get(7)?,
+        source_title: row.get(8)?,
         ..read_meta(row)?
     })
 }
@@ -51,6 +52,7 @@ impl Database {
     /// `id` is generated here rather than by the caller so the frontend never
     /// has to invent one, and `created_at`/`last_seen_at` start equal — a
     /// brand-new memory is by definition as fresh as it will ever be.
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_memory(
         &self,
         content: &str,
@@ -58,6 +60,7 @@ impl Database {
         embedding: &[f32],
         embedding_model: &str,
         source_conversation_id: Option<&str>,
+        origin: &str,
         now: i64,
     ) -> Result<String, String> {
         let id = format!("mem-{}-{}", now, fastrand_suffix());
@@ -65,8 +68,8 @@ impl Database {
         conn.execute(
             "INSERT INTO memories
                 (id, content, category, embedding, embedding_model,
-                 source_conversation_id, created_at, last_seen_at, use_count)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, 0)",
+                 source_conversation_id, origin, created_at, last_seen_at, use_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, 0)",
             params![
                 id,
                 content,
@@ -74,6 +77,7 @@ impl Database {
                 encode_embedding(embedding),
                 embedding_model,
                 source_conversation_id,
+                origin,
                 now
             ],
         )
@@ -245,7 +249,8 @@ impl Database {
             .map_err(|e| format!("Memory search failed: {}", e))?;
         let rows = stmt
             .query_map(params![embedding_model], |row| {
-                Ok((read_meta(row)?, row.get::<_, Vec<u8>>(7)?))
+                // Index 8: the embedding follows the eight META_COLUMNS.
+                Ok((read_meta(row)?, row.get::<_, Vec<u8>>(8)?))
             })
             .map_err(|e| format!("Memory search failed: {}", e))?;
 

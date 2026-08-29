@@ -309,6 +309,13 @@ pub struct MemoryMeta {
     pub last_seen_at: i64,
     #[ts(type = "number")]
     pub use_count: i64,
+    /// How this memory came to exist: `"extracted"` when the background pass
+    /// distilled it from a finished conversation, `"explicit"` when the user
+    /// asked for it in so many words and the model called `remember_this`.
+    ///
+    /// Shown in the manager because the two deserve different scrutiny: one
+    /// the user said, the other the app inferred.
+    pub origin: String,
 }
 
 /// A search hit: the memory plus why it was returned.
@@ -604,6 +611,11 @@ impl Database {
             // distilled. -1 means nothing yet, and sort_order starts at 0.
             "ALTER TABLE conversations ADD COLUMN memory_enabled INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE conversations ADD COLUMN memory_extracted_to INTEGER NOT NULL DEFAULT -1",
+            // origin: "extracted" (the background pass distilled it) or
+            // "explicit" (the user asked and remember_this wrote it). Default
+            // "extracted" is right for every row written before this column
+            // existed — the tool did not exist then.
+            "ALTER TABLE memories ADD COLUMN origin TEXT NOT NULL DEFAULT 'extracted'",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

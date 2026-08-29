@@ -148,6 +148,7 @@ export interface ToolRegistration {
 		| 'planning'
 		| 'coding'
 		| 'memory'
+		| 'memory-write'
 		| 'interaction';
 	requiresVision?: boolean;
 }

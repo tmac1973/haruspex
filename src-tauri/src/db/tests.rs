@@ -1270,6 +1270,7 @@ fn memory_insert_and_list_round_trips() {
             &axis_vector(0),
             MODEL,
             Some("conv-1"),
+            "extracted",
             1_000,
         )
         .unwrap();
@@ -1299,6 +1300,7 @@ fn deleting_the_source_conversation_keeps_the_memory() {
         &axis_vector(0),
         MODEL,
         Some("conv-1"),
+        "extracted",
         1_000,
     )
     .unwrap();
@@ -1317,11 +1319,27 @@ fn deleting_the_source_conversation_keeps_the_memory() {
 #[test]
 fn search_ranks_by_similarity_and_returns_top_k() {
     let db = test_db();
-    db.insert_memory("exact", "fact", &blend(0.0), MODEL, None, 1_000)
-        .unwrap();
-    db.insert_memory("close", "fact", &blend(0.25), MODEL, None, 1_000)
-        .unwrap();
-    db.insert_memory("far", "fact", &blend(0.9), MODEL, None, 1_000)
+    db.insert_memory(
+        "exact",
+        "fact",
+        &blend(0.0),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
+    db.insert_memory(
+        "close",
+        "fact",
+        &blend(0.25),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
+    db.insert_memory("far", "fact", &blend(0.9), MODEL, None, "extracted", 1_000)
         .unwrap();
 
     let hits = db
@@ -1337,10 +1355,26 @@ fn search_ranks_by_similarity_and_returns_top_k() {
 #[test]
 fn search_applies_the_minimum_similarity() {
     let db = test_db();
-    db.insert_memory("same", "fact", &axis_vector(0), MODEL, None, 1_000)
-        .unwrap();
-    db.insert_memory("orthogonal", "fact", &axis_vector(1), MODEL, None, 1_000)
-        .unwrap();
+    db.insert_memory(
+        "same",
+        "fact",
+        &axis_vector(0),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
+    db.insert_memory(
+        "orthogonal",
+        "fact",
+        &axis_vector(1),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
 
     let hits = db
         .search_memories(&axis_vector(0), MODEL, 10, 0.5, 1_000)
@@ -1356,14 +1390,23 @@ fn search_applies_the_minimum_similarity() {
 #[test]
 fn search_ignores_rows_embedded_by_another_model() {
     let db = test_db();
-    db.insert_memory("current", "fact", &axis_vector(0), MODEL, None, 1_000)
-        .unwrap();
+    db.insert_memory(
+        "current",
+        "fact",
+        &axis_vector(0),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
     db.insert_memory(
         "legacy",
         "fact",
         &axis_vector(0),
         "older-model",
         None,
+        "extracted",
         1_000,
     )
     .unwrap();
@@ -1393,6 +1436,7 @@ fn recency_breaks_ties_without_overturning_relevance() {
         &blend(0.0),
         MODEL,
         None,
+        "extracted",
         now - 5 * year_ms,
     )
     .unwrap();
@@ -1404,6 +1448,7 @@ fn recency_breaks_ties_without_overturning_relevance() {
         &blend(0.75),
         MODEL,
         None,
+        "extracted",
         now,
     )
     .unwrap();
@@ -1414,9 +1459,17 @@ fn recency_breaks_ties_without_overturning_relevance() {
 
     // Same similarity, different age → the fresher one wins.
     let db2 = test_db();
-    db2.insert_memory("stale", "fact", &blend(0.0), MODEL, None, now - 5 * year_ms)
-        .unwrap();
-    db2.insert_memory("recent", "fact", &blend(0.0), MODEL, None, now)
+    db2.insert_memory(
+        "stale",
+        "fact",
+        &blend(0.0),
+        MODEL,
+        None,
+        "extracted",
+        now - 5 * year_ms,
+    )
+    .unwrap();
+    db2.insert_memory("recent", "fact", &blend(0.0), MODEL, None, "extracted", now)
         .unwrap();
     let hits2 = db2
         .search_memories(&blend(0.0), MODEL, 10, 0.0, now)
@@ -1427,10 +1480,26 @@ fn recency_breaks_ties_without_overturning_relevance() {
 #[test]
 fn search_bumps_usage_on_the_rows_it_returns() {
     let db = test_db();
-    db.insert_memory("used", "fact", &axis_vector(0), MODEL, None, 1_000)
-        .unwrap();
-    db.insert_memory("unused", "fact", &axis_vector(1), MODEL, None, 1_000)
-        .unwrap();
+    db.insert_memory(
+        "used",
+        "fact",
+        &axis_vector(0),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
+    db.insert_memory(
+        "unused",
+        "fact",
+        &axis_vector(1),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
 
     db.search_memories(&axis_vector(0), MODEL, 10, 0.5, 5_000)
         .unwrap();
@@ -1449,10 +1518,26 @@ fn search_bumps_usage_on_the_rows_it_returns() {
 #[test]
 fn find_similar_returns_the_best_match_without_bumping_usage() {
     let db = test_db();
-    db.insert_memory("near duplicate", "fact", &blend(0.05), MODEL, None, 1_000)
-        .unwrap();
-    db.insert_memory("unrelated", "fact", &axis_vector(4), MODEL, None, 1_000)
-        .unwrap();
+    db.insert_memory(
+        "near duplicate",
+        "fact",
+        &blend(0.05),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
+    db.insert_memory(
+        "unrelated",
+        "fact",
+        &axis_vector(4),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
 
     let hit = db
         .find_similar(&blend(0.0), MODEL, 0.9, 2_000)
@@ -1470,8 +1555,16 @@ fn find_similar_returns_the_best_match_without_bumping_usage() {
 #[test]
 fn find_similar_is_none_below_the_threshold() {
     let db = test_db();
-    db.insert_memory("unrelated", "fact", &axis_vector(4), MODEL, None, 1_000)
-        .unwrap();
+    db.insert_memory(
+        "unrelated",
+        "fact",
+        &axis_vector(4),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
     assert!(db
         .find_similar(&axis_vector(0), MODEL, 0.9, 2_000)
         .unwrap()
@@ -1485,7 +1578,15 @@ fn find_similar_is_none_below_the_threshold() {
 fn updating_content_replaces_the_vector_too() {
     let db = test_db();
     let id = db
-        .insert_memory("old wording", "fact", &axis_vector(0), MODEL, None, 1_000)
+        .insert_memory(
+            "old wording",
+            "fact",
+            &axis_vector(0),
+            MODEL,
+            None,
+            "extracted",
+            1_000,
+        )
         .unwrap();
 
     assert!(db
@@ -1507,10 +1608,26 @@ fn updating_content_replaces_the_vector_too() {
 fn delete_and_clear_report_what_they_removed() {
     let db = test_db();
     let id = db
-        .insert_memory("a", "fact", &axis_vector(0), MODEL, None, 1_000)
+        .insert_memory(
+            "a",
+            "fact",
+            &axis_vector(0),
+            MODEL,
+            None,
+            "extracted",
+            1_000,
+        )
         .unwrap();
-    db.insert_memory("b", "fact", &axis_vector(1), MODEL, None, 1_000)
-        .unwrap();
+    db.insert_memory(
+        "b",
+        "fact",
+        &axis_vector(1),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
 
     assert!(db.delete_memory(&id).unwrap());
     assert!(
@@ -1530,6 +1647,7 @@ fn list_filters_by_content_substring() {
         &axis_vector(0),
         MODEL,
         None,
+        "extracted",
         1_000,
     )
     .unwrap();
@@ -1539,6 +1657,7 @@ fn list_filters_by_content_substring() {
         &axis_vector(1),
         MODEL,
         None,
+        "extracted",
         1_000,
     )
     .unwrap();
@@ -1563,6 +1682,7 @@ fn list_resolves_the_source_conversation_title() {
         &axis_vector(0),
         MODEL,
         Some("conv-1"),
+        "extracted",
         1_000,
     )
     .unwrap();
@@ -1593,6 +1713,7 @@ fn search_leaves_the_source_title_unresolved() {
         &axis_vector(0),
         MODEL,
         Some("conv-1"),
+        "extracted",
         1_000,
     )
     .unwrap();

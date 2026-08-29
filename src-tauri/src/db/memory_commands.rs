@@ -77,8 +77,16 @@ pub async fn memory_add(
     content: String,
     category: String,
     source_conversation_id: Option<String>,
+    origin: Option<String>,
 ) -> Result<String, String> {
     let db = state.inner().clone();
+    // Anything but the one known alternative records as "extracted": the
+    // background pass is the default writer, and an unrecognised value must not
+    // let a row claim the user asked for it.
+    let origin = match origin.as_deref() {
+        Some("explicit") => "explicit",
+        _ => "extracted",
+    };
     on_pool_with_model(&app, db, move |db, dir| {
         let vector = embed_one(&dir, &content)?;
         db.insert_memory(
@@ -87,6 +95,7 @@ pub async fn memory_add(
             &vector,
             embedder::EMBEDDING_MODEL_NAME,
             source_conversation_id.as_deref(),
+            origin,
             now_ms(),
         )
     })

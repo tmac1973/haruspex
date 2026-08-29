@@ -19,6 +19,7 @@ function memory(over: Partial<MemoryMeta> = {}): MemoryMeta {
 		created_at: Date.UTC(2026, 7, 1),
 		last_seen_at: Date.UTC(2026, 7, 20),
 		use_count: 3,
+		origin: 'extracted',
 		...over
 	};
 }

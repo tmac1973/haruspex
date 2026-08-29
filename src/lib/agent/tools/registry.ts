@@ -3,6 +3,9 @@ import type { ToolRegistration, ToolExecOutput, ToolContext } from './types';
 import { toolResult, toolError } from './types';
 import { coerceArgsToSchema } from './coerce';
 import { hasEnabledEmailAccount, getSettings } from '$lib/stores/settings';
+// The predicate, not the tool module: memoryWrite.ts registers THROUGH this
+// file, so importing it here would be a cycle.
+import { memoryActive } from '$lib/stores/memory.svelte';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -27,6 +30,8 @@ interface ToolFilterOpts {
 	codeMode: boolean;
 	hasEmail: boolean;
 	sandboxEnabled: boolean;
+	/** Memory is on AND its embedding model is present — see memoryActive(). */
+	memoryWritable: boolean;
 }
 
 // Tools exposed to the Shell-tab assistant (non-Code mode). Reads only —
@@ -112,6 +117,10 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 		return false;
 	// code_grep / code_glob are Code-mode fs tools; keep them out of Chat.
 	if (CODE_ONLY_FS.has(name)) return false;
+	// remember_this writes to long-term memory. Offered only when memory is
+	// switched on AND its embedding model is present — memory_add embeds before
+	// inserting, so without the model the call can only fail.
+	if (reg.category === 'memory-write' && !opts.memoryWritable) return false;
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
@@ -157,7 +166,8 @@ export function getToolSchemas(opts: {
 		shellMode: opts.shellMode ?? false,
 		codeMode: opts.codeMode ?? false,
 		hasEmail: hasEnabledEmailAccount(),
-		sandboxEnabled: getSettings().sandboxEnabled
+		sandboxEnabled: getSettings().sandboxEnabled,
+		memoryWritable: memoryActive()
 	};
 	const schemas: ToolDefinition[] = [];
 	for (const reg of tools.values()) {
@@ -190,6 +200,20 @@ export async function executeTool(
 	if (reg.category === 'sandbox' && !getSettings().sandboxEnabled) {
 		return toolResult(
 			toolError('Python sandbox is disabled. Enable it in Settings → Agent to run code.')
+		);
+	}
+
+	// Same hard gate for memory writes, and for the same reason: schema
+	// filtering alone doesn't stop execution, because this function resolves
+	// the name against the FULL registry and a small model can emit a call it
+	// was never offered. Without this, switching memory off in Settings would
+	// fail to prevent writes.
+	if (reg.category === 'memory-write' && !memoryActive()) {
+		return toolResult(
+			toolError(
+				'Long-term memory is off, or its embedding model has not been downloaded. ' +
+					'Nothing was saved. The user can turn it on in Settings → Remember across chats.'
+			)
 		);
 	}
 
