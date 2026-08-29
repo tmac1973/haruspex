@@ -44,6 +44,7 @@
 	import { getDebugLogsForTurn } from '$lib/debug-log';
 	import { createCopyAction } from '$lib/utils/clipboard.svelte';
 	import { imageFileToDataUrl, imageFilesFrom } from '$lib/utils/image';
+	import { openShellFromChat } from '$lib/shell/fromChat';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
@@ -348,6 +349,15 @@
 			restartingOnGpu = false;
 		}
 	}
+
+	// Hand this conversation to a fresh shell tab. The chat answer's ```bash
+	// cards are inert here (their Paste/Run buttons only reach a terminal on
+	// the Shell tab), so "recommends a command" is a dead end without this.
+	function handleOpenInShell() {
+		const conv = activeConversation;
+		if (!conv) return;
+		openShellFromChat({ title: conv.title, messages: conv.messages });
+	}
 </script>
 
 <div class="chat-layout">
@@ -542,6 +552,27 @@
 					rows="1"
 				></textarea>
 				<WorkingDirButton />
+				<button
+					class="open-shell-btn"
+					onclick={handleOpenInShell}
+					disabled={isGenerating || isCompacting || !activeConversation}
+					title="Open a new shell tab carrying this conversation, so the commands in it can actually be run. The shell thread isn't saved to your chat history."
+					aria-label="Open in shell"
+				>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<polyline points="4 17 10 11 4 5"></polyline>
+						<line x1="12" y1="19" x2="20" y2="19"></line>
+					</svg>
+				</button>
 				<button
 					class="research-toggle"
 					class:active={exhaustiveResearch}
@@ -950,6 +981,31 @@
 	.send-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.open-shell-btn {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		border: 1px solid var(--border);
+		background: var(--bg-secondary);
+		color: var(--text-secondary);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: all 0.15s;
+	}
+
+	.open-shell-btn:hover:not(:disabled) {
+		color: var(--text-primary);
+		border-color: var(--text-secondary);
+	}
+
+	.open-shell-btn:disabled {
+		opacity: 0.4;
+		cursor: default;
 	}
 
 	.research-toggle {

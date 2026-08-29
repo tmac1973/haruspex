@@ -384,7 +384,13 @@
 					{#if msg.role === 'assistant' && messageSteps[i]?.length}
 						<SearchStepComponent steps={messageSteps[i]} />
 					{/if}
-					{#if msg.role === 'user'}
+					{#if msg.role === 'system'}
+						<!-- Thread notes, not model output: the "older history trimmed"
+						     marker and the Chat-tab handoff note. They go to the model
+						     as system messages, so they're shown rather than hidden —
+						     but as a note, not as a "Haruspex" answer bubble. -->
+						<div class="thread-note">{messageText(msg.content)}</div>
+					{:else if msg.role === 'user'}
 						{@const split = userMessageView(msg)}
 						{#if messageHistorySent[i]?.length}
 							<!-- Shell-history-file breadcrumbs that went into this turn's
@@ -653,6 +659,16 @@
 		color: var(--text-secondary);
 		font-style: italic;
 		padding: 6px 4px;
+	}
+
+	.thread-note {
+		margin: 8px 0;
+		padding: 6px 10px;
+		border-left: 2px solid var(--border);
+		font-size: 0.76rem;
+		line-height: 1.45;
+		color: var(--text-secondary);
+		font-style: italic;
 	}
 
 	.shell-preamble {

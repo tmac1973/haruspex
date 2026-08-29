@@ -130,6 +130,14 @@ export class ShellSession {
 	 * Null for normally-created sessions.
 	 */
 	readonly attachPtyId: number | null;
+	/**
+	 * Directory this session's PTY starts in, read once when the pane's
+	 * Terminal mounts. Set by the Chat tab's "Open in shell" handoff from the
+	 * conversation's working directory; null means the Rust side's default
+	 * ($HOME), which is what a normally-created shell gets. Not $state — it's
+	 * assigned before the pane mounts and never changes after.
+	 */
+	initialCwd: string | null = null;
 
 	messages = $state<ChatMessage[]>([]);
 	streamingContent = $state('');
@@ -197,6 +205,26 @@ export class ShellSession {
 			// Corrupt stash — start with an empty thread rather than crashing.
 		}
 	}
+
+	/**
+	 * Adopt a thread handed over from the Chat tab ("Open in shell"). The
+	 * caller passes an already-reshaped array (see `shell/chatHandoff.ts`);
+	 * this just installs it and opens the sidebar so the user lands on the
+	 * conversation rather than an empty assistant panel.
+	 *
+	 * The index-keyed sidecars (steps / stats / stops / history-sent) are
+	 * deliberately NOT carried across: they're keyed by position in the chat
+	 * tab's array, which the handoff filter renumbers, and what they render
+	 * (tok/s footers, run_python artifacts) belongs to the other tab's turns.
+	 */
+	adoptChatThread = (messages: ChatMessage[]): void => {
+		this.messages = messages;
+		this.messageSteps = {};
+		this.messageStats = {};
+		this.messageStops = {};
+		this.messageHistorySent = {};
+		this.sidebarOpen = true;
+	};
 
 	get boundSessionId(): number | null {
 		return this.activeSession?.sessionId ?? null;

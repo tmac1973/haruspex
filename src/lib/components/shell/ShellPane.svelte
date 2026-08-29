@@ -312,6 +312,7 @@
 		>
 			<Terminal
 				{attachSessionId}
+				cwd={session.initialCwd}
 				onReady={onTerminalReady}
 				onSelectionChange={(has) => (hasSelection = has)}
 			/>
