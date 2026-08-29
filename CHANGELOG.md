@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.60](https://github.com/tmac1973/haruspex/compare/v0.1.59...v0.1.60) (2026-08-29)
+
+
+### Features
+
+* **memory:** let the user ask the assistant to remember something ([#213](https://github.com/tmac1973/haruspex/issues/213)) ([7936c97](https://github.com/tmac1973/haruspex/commit/7936c9700f4b19b45e82063e6cefb18343b5e286))
+
 ## [0.1.59](https://github.com/tmac1973/haruspex/compare/v0.1.58...v0.1.59) (2026-08-20)
 
 
