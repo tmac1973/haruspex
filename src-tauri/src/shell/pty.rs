@@ -27,6 +27,24 @@ pub fn resolve_shell_with_override(override_path: Option<&str>) -> String {
     platform::default_shell()
 }
 
+/// Start directory for a new PTY, honouring a caller-supplied override.
+///
+/// Used by the Chat tab's "Open in shell" handoff so the shell starts where
+/// the conversation's working directory points, rather than at $HOME — the
+/// commands a chat answer suggests are usually relative to that directory.
+/// An override that isn't an existing directory (deleted since it was set,
+/// or on the other side of a WSL boundary) falls back to `resolve_cwd`, the
+/// same as no override at all: a bad path must not break the Shell tab.
+pub fn resolve_cwd_with_override(requested: Option<&str>) -> String {
+    if let Some(path) = requested {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() && Path::new(trimmed).is_dir() {
+            return trimmed.to_string();
+        }
+    }
+    resolve_cwd()
+}
+
 pub fn resolve_cwd() -> String {
     // Windows: the GUI app process has no useful $HOME (a Git-Bash-inherited
     // one is an MSYS path like /c/Users/tim that isn't a valid Windows path),
@@ -309,5 +327,35 @@ mod tests {
         assert_eq!(shell_name("/usr/bin/bash"), "bash");
         assert_eq!(shell_name("/bin/zsh"), "zsh");
         assert_eq!(shell_name("fish"), "fish");
+    }
+
+    #[test]
+    fn cwd_override_accepts_a_real_directory() {
+        let dir = std::env::temp_dir();
+        let path = dir.to_string_lossy().into_owned();
+        assert_eq!(resolve_cwd_with_override(Some(&path)), path);
+        // Surrounding whitespace shouldn't defeat the directory check.
+        let padded = format!("  {path}  ");
+        assert_eq!(resolve_cwd_with_override(Some(&padded)), path);
+    }
+
+    #[test]
+    fn cwd_override_falls_back_when_unusable() {
+        // None, blank, a path that doesn't exist, and a path that exists but
+        // is a file all fall back to the default rather than failing the spawn.
+        let default = resolve_cwd();
+        assert_eq!(resolve_cwd_with_override(None), default);
+        assert_eq!(resolve_cwd_with_override(Some("   ")), default);
+        assert_eq!(
+            resolve_cwd_with_override(Some("/nonexistent/haruspex/handoff")),
+            default
+        );
+        let file = std::env::temp_dir().join("haruspex-cwd-override-test");
+        std::fs::write(&file, b"x").unwrap();
+        assert_eq!(
+            resolve_cwd_with_override(Some(&file.to_string_lossy())),
+            default
+        );
+        std::fs::remove_file(&file).ok();
     }
 }

@@ -25,11 +25,13 @@ vi.mock('$lib/debug-log', () => ({ logDebug: vi.fn() }));
 import { openShellFromChat } from './fromChat';
 import { getShellSessions, closeShellSession, getActiveShellId } from '$lib/stores/shell.svelte';
 import { getActiveTab, setActiveTab } from '$lib/stores/activeTab.svelte';
+import { setWorkingDirState } from '$lib/stores/session.svelte';
 import type { ChatMessage } from '$lib/api';
 
 beforeEach(() => {
 	for (const s of [...getShellSessions()]) closeShellSession(s.id);
 	setActiveTab('chat');
+	setWorkingDirState(null);
 });
 
 const thread: ChatMessage[] = [
@@ -58,6 +60,22 @@ describe('openShellFromChat', () => {
 		expect(first.id).not.toBe(second.id);
 		expect(getShellSessions()).toHaveLength(2);
 		expect(getActiveShellId()).toBe(second.id);
+	});
+
+	it("starts the shell in the chat's working directory", () => {
+		setWorkingDirState('/home/tim/Projects/haruspex');
+		const session = openShellFromChat({ title: 'x', messages: thread });
+		expect(session.initialCwd).toBe('/home/tim/Projects/haruspex');
+	});
+
+	it('leaves the start directory to the backend default when the chat has none', () => {
+		expect(openShellFromChat({ title: 'x', messages: thread }).initialCwd).toBeNull();
+	});
+
+	it('lets the caller override the working directory', () => {
+		setWorkingDirState('/from/store');
+		const session = openShellFromChat({ title: 'x', messages: thread, workingDir: '/explicit' });
+		expect(session.initialCwd).toBe('/explicit');
 	});
 
 	it('still opens a usable shell for a conversation with nothing to carry', () => {

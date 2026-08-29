@@ -19,6 +19,11 @@
 		// When set, attach to this existing PTY (detach/re-attach) instead of
 		// spawning a new one: fetch its context, replay scrollback, go live.
 		attachSessionId?: number;
+		// Directory to start the PTY in. Set by the Chat tab's "Open in shell"
+		// handoff so the shell opens where the conversation's working directory
+		// points. Omit for $HOME (the Rust side falls back there, and also for
+		// a path that no longer exists).
+		cwd?: string | null;
 	}
 
 	export interface TerminalHandle {
@@ -46,7 +51,7 @@
 		snapshotImage: () => string | null;
 	}
 
-	const { onReady, onSelectionChange, attachSessionId }: Props = $props();
+	const { onReady, onSelectionChange, attachSessionId, cwd = null }: Props = $props();
 
 	let container: HTMLDivElement;
 	let term: Terminal | null = null;
@@ -378,12 +383,16 @@
 		const fit = new FitAddon();
 		// Reuse the existing terminal; xterm holds onto its own resize
 		// addon from createTerminal. We only need a fresh observer.
+		// Restart keeps the original start directory rather than jumping to
+		// $HOME: the user restarts to pick up a different shell binary or a
+		// refreshed integration script, not to move.
 		const spawn = await invoke<ShellSpawnResult>('shell_restart', {
 			sessionId: oldId,
 			cols: term.cols,
 			rows: term.rows,
 			shellOverride,
-			selection
+			selection,
+			cwd
 		});
 		await attachSession(term, fit, spawn.session_id, spawn.context);
 	}
@@ -416,7 +425,8 @@
 				cols: t.cols,
 				rows: t.rows,
 				shellOverride,
-				selection
+				selection,
+				cwd
 			});
 
 			if (cancelled) {

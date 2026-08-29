@@ -130,6 +130,14 @@ export class ShellSession {
 	 * Null for normally-created sessions.
 	 */
 	readonly attachPtyId: number | null;
+	/**
+	 * Directory this session's PTY starts in, read once when the pane's
+	 * Terminal mounts. Set by the Chat tab's "Open in shell" handoff from the
+	 * conversation's working directory; null means the Rust side's default
+	 * ($HOME), which is what a normally-created shell gets. Not $state — it's
+	 * assigned before the pane mounts and never changes after.
+	 */
+	initialCwd: string | null = null;
 
 	messages = $state<ChatMessage[]>([]);
 	streamingContent = $state('');

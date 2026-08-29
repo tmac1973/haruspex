@@ -49,7 +49,8 @@ impl ShellManager {
     /// Allocate an id, resolve the spawn target, start a `Session`, register it,
     /// and return the spawn result. Shared by `shell_spawn` and `shell_restart`
     /// (which only differs by first dropping the old session) so the 9-arg
-    /// `Session::spawn` call lives in one place.
+    /// `Session::spawn` call lives in one place. `cwd_override` is the Chat
+    /// tab's working directory on the "Open in shell" path; None means $HOME.
     fn spawn_session(
         &self,
         app: AppHandle,
@@ -57,10 +58,11 @@ impl ShellManager {
         rows: u16,
         shell_override: Option<String>,
         selection: Option<kind::ShellSelection>,
+        cwd_override: Option<String>,
     ) -> Result<ShellSpawnResult, String> {
         let id = self.alloc_id();
         let (program, base_args, wsl_distro) = resolve_spawn_target(selection, shell_override);
-        let cwd = pty::resolve_cwd();
+        let cwd = pty::resolve_cwd_with_override(cwd_override.as_deref());
         let integration_dir = integration_dir(&app);
         let session = Session::spawn(
             app,
@@ -182,8 +184,9 @@ pub fn shell_spawn(
     rows: u16,
     shell_override: Option<String>,
     selection: Option<kind::ShellSelection>,
+    cwd: Option<String>,
 ) -> Result<ShellSpawnResult, String> {
-    state.spawn_session(app, cols, rows, shell_override, selection)
+    state.spawn_session(app, cols, rows, shell_override, selection, cwd)
 }
 
 #[tauri::command]
@@ -234,6 +237,10 @@ pub fn shell_kill(state: State<'_, ShellManager>, session_id: SessionId) -> Resu
 /// way shell_spawn does. Used by the "Restart shell" UI affordance — also
 /// the recovery path when the integration script gets updated and the user
 /// needs a new bash session to source it.
+// One over clippy's limit, like `Session::spawn` it delegates to: the spawn
+// knobs are a flat set the frontend passes by name, and bundling them into a
+// struct would only move the same fields behind an extra nesting level.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn shell_restart(
     app: AppHandle,
@@ -243,13 +250,14 @@ pub fn shell_restart(
     rows: u16,
     shell_override: Option<String>,
     selection: Option<kind::ShellSelection>,
+    cwd: Option<String>,
 ) -> Result<ShellSpawnResult, String> {
     // Drop the old session (its Drop impl kills the PTY + cleans tempdirs).
     {
         let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
         sessions.remove(&session_id);
     }
-    state.spawn_session(app, cols, rows, shell_override, selection)
+    state.spawn_session(app, cols, rows, shell_override, selection, cwd)
 }
 
 #[derive(Serialize, ts_rs::TS)]
