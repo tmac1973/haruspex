@@ -201,7 +201,9 @@ async function storeCandidates(
 			await invoke('memory_add', {
 				content: candidate.content,
 				category: candidate.category,
-				sourceConversationId: conversationId
+				sourceConversationId: conversationId,
+				// This pass inferred it; remember_this is the other origin.
+				origin: 'extracted'
 			});
 			added++;
 		} catch (e) {

@@ -10,6 +10,7 @@ import './audit';
 import './planning';
 import './coding';
 import './memory';
+import './memoryWrite';
 import './user-question';
 
 // Re-export registry API

@@ -446,6 +446,13 @@ export interface AppSettings {
 	 */
 	memoryEnabled: boolean;
 	/**
+	 * Ask before `remember_this` writes a fact. On by default: a chat turn can
+	 * read a web page or a file, and a tool result is untrusted text — the
+	 * prompt is what stops a "remember X" planted in a document from landing
+	 * silently. Turn it off to save without confirming.
+	 */
+	memoryConfirmWrites: boolean;
+	/**
 	 * Code tab: when true, `run_command` runs risk-flagged commands without
 	 * prompting. Off by default — the user opts into a "trust the model on
 	 * this machine" posture explicitly.
@@ -580,7 +587,8 @@ const defaults: AppSettings = {
 	codeRunCommandTimeoutSecs: 30,
 	codeCommandExec: 'auto',
 	codeMaxIterations: 40,
-	memoryEnabled: false
+	memoryEnabled: false,
+	memoryConfirmWrites: true
 };
 
 function load(): AppSettings {

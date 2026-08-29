@@ -8,8 +8,9 @@
 	 * interruption after they have answered it.
 	 */
 	import { onMount } from 'svelte';
-	import { getSettings } from '$lib/stores/settings';
+	import { getSettings, updateSettings } from '$lib/stores/settings';
 	import { cancelAllExtraction } from '$lib/agent/memory/scheduler';
+	import { resetMemoryApproval } from '$lib/stores/memoryApproval.svelte';
 	import MemoryList from './MemoryList.svelte';
 	import {
 		disableMemory,
@@ -28,6 +29,11 @@
 	const status = $derived(getModelStatus());
 	const error = $derived(getModelError());
 	const count = $derived(getMemoryCount());
+	let confirmWrites = $state(getSettings().memoryConfirmWrites);
+
+	function toggleConfirm() {
+		updateSettings({ memoryConfirmWrites: confirmWrites });
+	}
 
 	onMount(() => {
 		void refreshModelStatus().then(() => refreshMemoryCount());
@@ -48,6 +54,9 @@
 				// timer armed while memory was on already no-ops. Dropping the
 				// timers now just stops it holding them for the rest of the session.
 				cancelAllExtraction();
+				// An earlier "allow for this session" must not survive the user
+				// deciding memory should be off.
+				resetMemoryApproval();
 			}
 		} finally {
 			busy = false;
@@ -85,6 +94,17 @@
 		You can exclude any single chat with its incognito switch, and review, edit or delete everything
 		that has been remembered below.
 	</p>
+
+	{#if status === 'ready' && memoryEnabled}
+		<label class="toggle-row">
+			<input type="checkbox" bind:checked={confirmWrites} onchange={toggleConfirm} />
+			<span>Ask before saving something you asked me to remember</span>
+		</label>
+		<p class="help">
+			The assistant can save a fact on request. Confirming first means a “remember this” planted in
+			a web page or file it reads cannot write to your memory without you seeing it.
+		</p>
+	{/if}
 
 	{#if status === 'ready'}
 		<p class="help status-line">

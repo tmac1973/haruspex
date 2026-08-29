@@ -162,7 +162,10 @@ describe('extractMemories — storing', () => {
 		expect(mocks.invoke).toHaveBeenCalledWith('memory_add', {
 			content: 'Prefers tabs over spaces.',
 			category: 'preference',
-			sourceConversationId: 'conv-1'
+			sourceConversationId: 'conv-1',
+			// This pass inferred it; remember_this is the other origin, and the
+			// manager shows the difference.
+			origin: 'extracted'
 		});
 	});
 

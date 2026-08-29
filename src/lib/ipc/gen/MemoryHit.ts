@@ -15,4 +15,13 @@ export type MemoryHit = { score: number, similarity: number, id: string, content
  * outlives its source by design, so the manager can say "a deleted chat"
  * rather than pretending the provenance is unknown.
  */
-source_title: string | null, created_at: number, last_seen_at: number, use_count: number, };
+source_title: string | null, created_at: number, last_seen_at: number, use_count: number, 
+/**
+ * How this memory came to exist: `"extracted"` when the background pass
+ * distilled it from a finished conversation, `"explicit"` when the user
+ * asked for it in so many words and the model called `remember_this`.
+ *
+ * Shown in the manager because the two deserve different scrutiny: one
+ * the user said, the other the app inferred.
+ */
+origin: string, };
