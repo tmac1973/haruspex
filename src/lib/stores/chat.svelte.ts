@@ -20,6 +20,13 @@ import {
 } from '$lib/agent/system-prompt';
 import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
 import { beginTurn, logDebug } from '$lib/debug-log';
+import { noteConversationLeft, noteTurnFinished } from '$lib/agent/memory/scheduler';
+import {
+	MEMORY_RECALL_STEP,
+	recallForTurn,
+	renderMemorySection,
+	type RecalledMemory
+} from '$lib/agent/memory/recall';
 import { getSettings, SETTINGS_KEY } from '$lib/stores/settings';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
@@ -57,6 +64,8 @@ import {
 	dbLoadMessages,
 	dbLoadMessageSteps,
 	dbReplaceMessages,
+	dbGetConversationMemoryEnabled,
+	dbSetConversationMemoryEnabled,
 	type DbConversationSummary
 } from '$lib/stores/db';
 
@@ -116,6 +125,24 @@ export interface Conversation {
 	 * reference raw research details. In-memory only — not persisted to DB.
 	 */
 	lastTurnTools?: ChatMessage[];
+	/**
+	 * Whether this chat participates in cross-chat memory. False is
+	 * incognito: no recall in, no recording out, from the moment it is
+	 * switched — turns extracted before that stay memories, which is what the
+	 * manager is for.
+	 *
+	 * Undefined until loaded from the DB (the column is the source of truth,
+	 * so it survives restart by construction). The gates treat undefined as
+	 * "not yet known" and re-read; only an explicit false means incognito.
+	 */
+	memoryEnabled?: boolean;
+	/**
+	 * True for a conversation the remote web chat created. Those are never
+	 * remembered and the toggle is not offered — a guest must not be able to
+	 * seed the owner's memory. Set where the sidebar learns about them, not
+	 * by sniffing the id.
+	 */
+	isRemote?: boolean;
 }
 
 export interface MessageStats {
@@ -241,12 +268,50 @@ export async function initChatStore(): Promise<void> {
 
 async function loadConversationMessages(id: string): Promise<void> {
 	const conv = conversations.find((c) => c.id === id);
-	if (!conv || conv.messages.length > 0) return;
+	if (!conv) return;
+	// Read even when the messages are already in memory: the incognito flag
+	// lives in the DB (so it survives restart), and this is where a
+	// conversation opened after startup learns its own state.
+	void refreshMemoryFlag(conv);
+	if (conv.messages.length > 0) return;
 	conv.messages = await dbLoadMessages(id);
 	// Rehydrate per-message artifacts (images / DataFrames / interactive
 	// plots) so inline content survives restart.
 	const steps = await dbLoadMessageSteps(id);
 	conv.messageSteps = steps as typeof conv.messageSteps;
+}
+
+async function refreshMemoryFlag(conv: Conversation): Promise<void> {
+	if (conv.memoryEnabled !== undefined) return;
+	conv.memoryEnabled = await dbGetConversationMemoryEnabled(conv.id);
+}
+
+/**
+ * Flip this chat's incognito state, persisting it.
+ *
+ * From here forward only: turns already extracted stay memories, because
+ * un-remembering them is the manager's job and pretending otherwise would be
+ * a privacy promise this cannot keep.
+ */
+export async function setConversationMemoryEnabled(
+	conversationId: string,
+	enabled: boolean
+): Promise<void> {
+	const conv = conversations.find((c) => c.id === conversationId);
+	if (!conv || conv.isRemote) return;
+	conv.memoryEnabled = enabled;
+	await dbSetConversationMemoryEnabled(conversationId, enabled);
+}
+
+/** Whether the active chat is participating in memory. Unknown reads as on. */
+export function isActiveConversationRemembered(): boolean {
+	const conv = getActiveConversation();
+	return conv ? conv.memoryEnabled !== false : true;
+}
+
+/** Whether the active chat is a remote guest thread (never remembered). */
+export function isActiveConversationRemote(): boolean {
+	return getActiveConversation()?.isRemote === true;
 }
 
 /**
@@ -265,6 +330,10 @@ export function noteExternalConversation(id: string, title: string): void {
 		{
 			id,
 			title,
+			// Guest threads are never remembered, and the owner is not offered
+			// a switch for it — see the remote driver, which sets the column.
+			isRemote: true,
+			memoryEnabled: false,
 			// Left empty: opening it loads the messages from the database, the
 			// same as any conversation restored at startup.
 			messages: [],
@@ -542,6 +611,10 @@ function restoreContextUsageFor(id: string | null): void {
 
 export async function setActiveConversation(id: string): Promise<void> {
 	if (conversations.some((c) => c.id === id)) {
+		// Leaving a conversation is the strongest signal it is finished, and
+		// the trigger that catches someone who closes the app soon after.
+		const leaving = getActiveConversationId();
+		if (leaving && leaving !== id) noteConversationLeft(leaving);
 		setActiveConversationId(id);
 		errorMessage = null;
 		errorTurnId = null;
@@ -831,10 +904,14 @@ function resetTurnState(conversation: Conversation): AbortSignal {
 function buildApiPrompt(
 	conversation: Conversation,
 	workingDir: string | null,
-	keepRecentTools: boolean
+	keepRecentTools: boolean,
+	memorySection: string
 ): { messages: ChatMessage[]; baseMessageCount: number } {
 	const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
-	let messagesForApi: ChatMessage[] = [buildSystemPrompt(workingDir), ...historyMessages];
+	let messagesForApi: ChatMessage[] = [
+		buildSystemPrompt(workingDir, { memorySection }),
+		...historyMessages
+	];
 
 	// If the user opted in, splice the previous turn's tool_calls + tool
 	// messages back into the prompt so the model can reference its own
@@ -1088,6 +1165,9 @@ function finalizeStreamedTurn(
 		}
 	}
 	conversation.sourceUrls = processed.citedUrls;
+	// Arms the idle countdown; extraction itself happens minutes later, in
+	// agent/memory/, and only when memory is on.
+	noteTurnFinished(conversation.id);
 }
 
 /** Resume after a turn-limit / forced stop — the Continue button on the stop
@@ -1181,6 +1261,44 @@ export async function sendMessage(content: string, images: string[] = []): Promi
 }
 
 /**
+ * The user's own recent messages, oldest first, excluding the one being sent.
+ *
+ * Recall needs them because a follow-up is often unintelligible alone: "and
+ * what about the other one?" retrieves nothing by itself. Only user turns —
+ * assistant text would pull the query toward whatever the model last chose
+ * to talk about.
+ */
+function priorUserTexts(conversation: Conversation): string[] {
+	const texts = conversation.messages
+		.filter((m) => m.role === 'user')
+		.map((m) => messageText(m.content));
+	// The last one is the message being sent; recall already has it.
+	return texts.slice(0, -1).slice(-2);
+}
+
+/**
+ * Record which memories were injected, as a step on this turn.
+ *
+ * Rides the existing steps machinery so it persists with the message and
+ * needs no new storage — and so "why did it say that?" has an answer sitting
+ * next to the answer itself. Nothing recalled means no step at all, rather
+ * than an empty one.
+ */
+function recordRecallStep(conversation: Conversation, memories: RecalledMemory[]): void {
+	if (memories.length === 0) return;
+	conversation.searchSteps = [
+		...conversation.searchSteps,
+		{
+			id: `memory-recall-${currentTurnId}`,
+			toolName: MEMORY_RECALL_STEP,
+			query: `${memories.length} ${memories.length === 1 ? 'memory' : 'memories'} recalled`,
+			status: 'done' as const,
+			args: { memories }
+		}
+	];
+}
+
+/**
  * Run one agent turn against the conversation's existing history (the user
  * message is already appended). Shared by sendMessage, retryLastTurn and
  * the queued-startup watcher.
@@ -1200,15 +1318,29 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
 
 		const keepRecentTools = getSettings().keepRecentToolResults;
-		const { messages: messagesForApi, baseMessageCount } = buildApiPrompt(
-			conversation,
-			currentWorkingDir,
-			keepRecentTools
-		);
 
 		// Chat always talks to the global Settings backend (no override).
 		const backendDescriptor = resolveBackendDescriptor();
 		const activeCtxSize = backendDescriptor.contextSize;
+
+		// Once per USER turn, not per agent-loop iteration: tool calls reuse
+		// the prompt built here. One embed plus one SQLite scan, both local —
+		// a few milliseconds, and it short-circuits to nothing when memory is
+		// off or this chat is incognito.
+		const recalled = await recallForTurn({
+			conversationId: conversation.id,
+			userMessage: content,
+			priorUserTurns: priorUserTexts(conversation),
+			contextSize: activeCtxSize
+		});
+		recordRecallStep(conversation, recalled);
+
+		const { messages: messagesForApi, baseMessageCount } = buildApiPrompt(
+			conversation,
+			currentWorkingDir,
+			keepRecentTools,
+			renderMemorySection(recalled)
+		);
 		const visionSupported = backendDescriptor.vision;
 
 		isWaitingForSlot = true;

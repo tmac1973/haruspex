@@ -286,6 +286,57 @@ pub struct JobRunWithSteps {
     pub steps: Vec<JobRunStep>,
 }
 
+/// One remembered fact, as the frontend sees it.
+///
+/// The embedding is deliberately absent: it is several KB of f32 per row that
+/// no caller outside Rust can do anything with, and shipping it over IPC
+/// would make listing the manager UI's rows cost megabytes.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct MemoryMeta {
+    pub id: String,
+    pub content: String,
+    pub category: String,
+    pub source_conversation_id: Option<String>,
+    /// Title of the conversation this was learned from, when that
+    /// conversation still exists. None once it has been deleted — the memory
+    /// outlives its source by design, so the manager can say "a deleted chat"
+    /// rather than pretending the provenance is unknown.
+    pub source_title: Option<String>,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    #[ts(type = "number")]
+    pub last_seen_at: i64,
+    #[ts(type = "number")]
+    pub use_count: i64,
+}
+
+/// A search hit: the memory plus why it was returned.
+///
+/// `score` is the reranked value actually used for ordering (similarity
+/// discounted by age), not raw cosine — Phase 05 shows it to answer "why did
+/// it say that?", and showing a number the ranking did not use would be a
+/// lie with extra steps.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct MemoryHit {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub memory: MemoryMeta,
+    pub score: f32,
+    pub similarity: f32,
+}
+
+/// Per-conversation memory state: the incognito flag and the extraction
+/// watermark, read together because every caller needs both.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct MemoryCursor {
+    pub memory_enabled: bool,
+    #[ts(type = "number")]
+    pub memory_extracted_to: i64,
+}
+
 /// Cloneable handle to the single SQLite connection. Cloning shares the
 /// connection (and its mutex), so the same instance can be managed as
 /// Tauri state *and* registered as the proxy's `StatSink`.
@@ -469,6 +520,21 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_job_run_steps_run
                 ON job_run_steps(run_id, ordering);
 
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'fact',
+                embedding BLOB NOT NULL,
+                embedding_model TEXT NOT NULL,
+                source_conversation_id TEXT,
+                created_at INTEGER NOT NULL,
+                last_seen_at INTEGER NOT NULL,
+                use_count INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_memories_model
+                ON memories(embedding_model);
+
             CREATE TABLE IF NOT EXISTS prompt_catalog (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -525,6 +591,19 @@ impl Database {
             "ALTER TABLE job_runs ADD COLUMN model_thinking INTEGER",
             "ALTER TABLE job_runs ADD COLUMN model_effort TEXT",
             "ALTER TABLE job_runs ADD COLUMN context_size INTEGER",
+            // Agentic memory, per conversation. Both land now so phases 03-05
+            // need no further migration.
+            //
+            // memory_enabled: incognito is per chat and persisted, so it
+            // survives a restart — a session-only toggle is a privacy footgun.
+            // Default 1: an ordinary chat participates once the global switch
+            // is on. Remote web-chat threads are created with 0, because a
+            // guest must not seed the owner's memory (see the plan's D3).
+            //
+            // memory_extracted_to: the max message sort_order already
+            // distilled. -1 means nothing yet, and sort_order starts at 0.
+            "ALTER TABLE conversations ADD COLUMN memory_enabled INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE conversations ADD COLUMN memory_extracted_to INTEGER NOT NULL DEFAULT -1",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();
@@ -601,11 +680,14 @@ fn chrono_now() -> i64 {
 mod commands;
 mod conversations;
 mod jobs;
+mod memories;
+mod memory_commands;
 mod prompts;
 mod runs;
 mod stats;
 
 pub use commands::*;
+pub use memory_commands::*;
 
 #[cfg(test)]
 mod tests;

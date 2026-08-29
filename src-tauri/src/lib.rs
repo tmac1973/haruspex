@@ -12,6 +12,7 @@ mod inference_queue;
 mod integrations;
 mod links;
 mod lint;
+mod memory;
 mod models;
 mod proxy;
 mod remote;
@@ -189,6 +190,21 @@ pub fn run() {
             db::db_delete_prompt,
             db::db_create_job_run,
             db::db_mark_run_started,
+            db::memory_add,
+            db::memory_search,
+            db::memory_find_similar,
+            db::memory_touch,
+            db::memory_list,
+            db::memory_count,
+            db::memory_update,
+            db::memory_delete,
+            db::memory_delete_all,
+            db::memory_model_present,
+            db::memory_download_model,
+            db::memory_unload_model,
+            db::conversation_memory_cursor,
+            db::conversation_set_memory_enabled,
+            db::conversation_set_memory_extracted_to,
             db::db_set_run_environment,
             db::db_mark_run_finished,
             db::db_mark_run_step_started,

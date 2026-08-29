@@ -8,6 +8,8 @@
 	import { isToolErrorResult } from '$lib/agent/tools/_helpers';
 	import { sanitizeHtml } from '$lib/sanitize';
 	import ImageViewerModal from './ImageViewerModal.svelte';
+	import MemoryRecallStep from './MemoryRecallStep.svelte';
+	import { MEMORY_RECALL_STEP } from '$lib/agent/memory/recall';
 
 	hljs.registerLanguage('python', python);
 
@@ -137,181 +139,187 @@
 			</div>
 		{/if}
 		{#each steps as step (step.id)}
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div
-				class="step"
-				class:has-details={!!step.result}
-				class:expanded={detailsExpanded[step.id]}
-				class:errored={stepErrored(step)}
-				data-status={step.status}
-				onclick={() => toggleDetails(step)}
-				title={step.result ? (detailsExpanded[step.id] ? 'Hide log' : 'Show log') : ''}
-			>
-				<span class="step-icon">{stepIcon(step.toolName)}</span>
-				<span class="step-label">
-					{stepLabel(step.toolName, step.query)}
-					{#if step.lintIssues && step.lintIssues.length > 0}
-						<span class="lint-summary">{lintSummary(step)}</span>
-					{/if}
-				</span>
-				<span class="step-chevron">
-					{#if step.result}{detailsExpanded[step.id] ? '▾' : '▸'}{/if}
-				</span>
-				{#if step.status === 'running' && step.installStatus}
-					<span
-						class="install-status"
-						title="Downloading a package — this can take a moment on first use"
-					>
-						{step.installStatus}
+			{#if step.toolName === MEMORY_RECALL_STEP}
+				<!-- Not a tool call: a record of what memory put in the prompt.
+				     Rendered here so it sits with the turn it shaped. -->
+				<MemoryRecallStep {step} />
+			{:else}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="step"
+					class:has-details={!!step.result}
+					class:expanded={detailsExpanded[step.id]}
+					class:errored={stepErrored(step)}
+					data-status={step.status}
+					onclick={() => toggleDetails(step)}
+					title={step.result ? (detailsExpanded[step.id] ? 'Hide log' : 'Show log') : ''}
+				>
+					<span class="step-icon">{stepIcon(step.toolName)}</span>
+					<span class="step-label">
+						{stepLabel(step.toolName, step.query)}
+						{#if step.lintIssues && step.lintIssues.length > 0}
+							<span class="lint-summary">{lintSummary(step)}</span>
+						{/if}
 					</span>
-				{/if}
-				<span class="step-status">
-					{#if step.status === 'running'}
-						<span class="spinner"></span>
-					{:else if stepErrored(step)}
-						<span class="status-err" title="errored">✕</span>
-					{:else}
-						&#10003;
+					<span class="step-chevron">
+						{#if step.result}{detailsExpanded[step.id] ? '▾' : '▸'}{/if}
+					</span>
+					{#if step.status === 'running' && step.installStatus}
+						<span
+							class="install-status"
+							title="Downloading a package — this can take a moment on first use"
+						>
+							{step.installStatus}
+						</span>
 					{/if}
-				</span>
-			</div>
-			{#if step.toolName === 'run_python' && typeof step.args?.code === 'string'}
-				<!--
+					<span class="step-status">
+						{#if step.status === 'running'}
+							<span class="spinner"></span>
+						{:else if stepErrored(step)}
+							<span class="status-err" title="errored">✕</span>
+						{:else}
+							&#10003;
+						{/if}
+					</span>
+				</div>
+				{#if step.toolName === 'run_python' && typeof step.args?.code === 'string'}
+					<!--
 					Collapse the code-controls + code block by default on errored
 					runs so a chain of "tried this, failed; tried that, failed"
 					attempts doesn't visually drown the conversation. The full
 					detail is one click away (toggle the step row). Running and
 					successful steps keep the existing inline layout.
 				-->
-				{#if step.status === 'running' || !stepErrored(step) || detailsExpanded[step.id]}
-					<div class="code-controls">
-						<button
-							class="code-toggle"
-							class:errored={stepErrored(step)}
-							onclick={(e) => toggleCode(step, e)}
-							title={isCodeCollapsed(step) ? 'Show code' : 'Hide code'}
-						>
-							{isCodeCollapsed(step) ? '▸' : '▾'} code
-						</button>
-						<button
-							class="copy-btn"
-							onclick={(e) => copyResult(`${step.id}:code`, step.args!.code as string, e)}
-						>
-							{copyLabel(`${step.id}:code`)}
-						</button>
-						{#if step.status === 'running'}
+					{#if step.status === 'running' || !stepErrored(step) || detailsExpanded[step.id]}
+						<div class="code-controls">
 							<button
-								class="run-control cancel"
-								onclick={cancelStep}
-								title="Terminate the Python worker for this chat"
+								class="code-toggle"
+								class:errored={stepErrored(step)}
+								onclick={(e) => toggleCode(step, e)}
+								title={isCodeCollapsed(step) ? 'Show code' : 'Hide code'}
 							>
-								⏸ Cancel
+								{isCodeCollapsed(step) ? '▸' : '▾'} code
 							</button>
-						{:else if stepErrored(step)}
 							<button
-								class="run-control rerun"
-								onclick={(e) => rerunStep(step, e)}
-								title="Run the same code again in a fresh attempt"
+								class="copy-btn"
+								onclick={(e) => copyResult(`${step.id}:code`, step.args!.code as string, e)}
 							>
-								▶ Run again
+								{copyLabel(`${step.id}:code`)}
 							</button>
-						{/if}
-					</div>
-					{#if !isCodeCollapsed(step)}
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div class="step-code" onclick={(e) => e.stopPropagation()}>
-							<pre><code class="language-python"
-									>{@html highlightPython(step.args.code as string)}</code
-								></pre>
+							{#if step.status === 'running'}
+								<button
+									class="run-control cancel"
+									onclick={cancelStep}
+									title="Terminate the Python worker for this chat"
+								>
+									⏸ Cancel
+								</button>
+							{:else if stepErrored(step)}
+								<button
+									class="run-control rerun"
+									onclick={(e) => rerunStep(step, e)}
+									title="Run the same code again in a fresh attempt"
+								>
+									▶ Run again
+								</button>
+							{/if}
 						</div>
+						{#if !isCodeCollapsed(step)}
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="step-code" onclick={(e) => e.stopPropagation()}>
+								<pre><code class="language-python"
+										>{@html highlightPython(step.args.code as string)}</code
+									></pre>
+							</div>
+						{/if}
 					{/if}
 				{/if}
-			{/if}
-			{#if step.thumbDataUrl}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="step-thumb" onclick={(e) => e.stopPropagation()}>
-					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-					<img
-						src={step.thumbDataUrl}
-						alt={step.query}
-						class="clickable"
-						title="Click to enlarge"
-						onclick={(e) => openViewer(step.thumbDataUrl!, step.query, e)}
-					/>
-				</div>
-			{/if}
-			{#if step.artifacts && step.artifacts.length > 0}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="step-artifacts" onclick={(e) => e.stopPropagation()}>
-					{#each step.artifacts as artifact, i (i)}
-						{#if artifact.kind === 'image'}
-							<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-							<img
-								class="artifact-image clickable"
-								src={artifact.dataUrl}
-								alt={artifact.alt ?? 'plot'}
-								title="Click to enlarge"
-								onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
-							/>
-						{:else if artifactTooLarge(artifact.html)}
-							<!--
+				{#if step.thumbDataUrl}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="step-thumb" onclick={(e) => e.stopPropagation()}>
+						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+						<img
+							src={step.thumbDataUrl}
+							alt={step.query}
+							class="clickable"
+							title="Click to enlarge"
+							onclick={(e) => openViewer(step.thumbDataUrl!, step.query, e)}
+						/>
+					</div>
+				{/if}
+				{#if step.artifacts && step.artifacts.length > 0}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="step-artifacts" onclick={(e) => e.stopPropagation()}>
+						{#each step.artifacts as artifact, i (i)}
+							{#if artifact.kind === 'image'}
+								<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+								<img
+									class="artifact-image clickable"
+									src={artifact.dataUrl}
+									alt={artifact.alt ?? 'plot'}
+									title="Click to enlarge"
+									onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
+								/>
+							{:else if artifactTooLarge(artifact.html)}
+								<!--
 								Refuse to inject an oversized artifact: parsing it in WebKitGTK
 								can blank the entire webview with no recovery. Show a placeholder
 								instead so the chat stays alive.
 							-->
-							<div class="artifact-toolarge">
-								⚠ Plot too large to display ({artifactSizeLabel(artifact.html)}). Ask for a smaller
-								figure (fewer points, or save it to a file instead of rendering inline).
-							</div>
-						{:else if artifact.interactive}
-							<!--
+								<div class="artifact-toolarge">
+									⚠ Plot too large to display ({artifactSizeLabel(artifact.html)}). Ask for a
+									smaller figure (fewer points, or save it to a file instead of rendering inline).
+								</div>
+							{:else if artifact.interactive}
+								<!--
 								Interactive HTML (plotly / bokeh / altair / folium output) renders
 								inside a sandboxed srcdoc iframe so the browser loads it as a fresh
 								document and executes the embedded <script> tags natively. sandbox=
 								"allow-scripts" lets the chart's JS run but no allow-same-origin →
 								the iframe can't reach the parent.
 							-->
-							<iframe
-								class="artifact-iframe"
-								srcdoc={artifact.html}
-								sandbox="allow-scripts"
-								title="interactive plot"
-							></iframe>
-						{:else}
-							<div class="artifact-html">
-								{#if artifact.truncated}
-									<div class="artifact-truncation-note">
-										Showing {artifact.truncated.shown} of {artifact.truncated.total} rows
-									</div>
-								{/if}
-								<!-- NOT trusted: the Python that produced this HTML is model-authored,
+								<iframe
+									class="artifact-iframe"
+									srcdoc={artifact.html}
+									sandbox="allow-scripts"
+									title="interactive plot"
+								></iframe>
+							{:else}
+								<div class="artifact-html">
+									{#if artifact.truncated}
+										<div class="artifact-truncation-note">
+											Showing {artifact.truncated.shown} of {artifact.truncated.total} rows
+										</div>
+									{/if}
+									<!-- NOT trusted: the Python that produced this HTML is model-authored,
 								     and the model's context includes fetched web content. A crafted
 								     _repr_html_ without a <script> tag (e.g. <img onerror>) would
 								     otherwise execute here in the privileged webview — only the
 								     `interactive` branch above is isolated in a sandboxed iframe. -->
-								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-								{@html sanitizeHtml(artifact.html)}
-							</div>
-						{/if}
-					{/each}
-				</div>
-			{/if}
-			{#if detailsExpanded[step.id] && step.result}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="detail-block" onclick={(e) => e.stopPropagation()}>
-					<div class="detail-header">
-						<div class="detail-label">{step.toolName}: {step.query}</div>
-						<button class="copy-btn" onclick={(e) => copyResult(step.id, step.result ?? '', e)}>
-							{copyLabel(step.id)}
-						</button>
+									<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+									{@html sanitizeHtml(artifact.html)}
+								</div>
+							{/if}
+						{/each}
 					</div>
-					<pre>{step.result}</pre>
-				</div>
+				{/if}
+				{#if detailsExpanded[step.id] && step.result}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="detail-block" onclick={(e) => e.stopPropagation()}>
+						<div class="detail-header">
+							<div class="detail-label">{step.toolName}: {step.query}</div>
+							<button class="copy-btn" onclick={(e) => copyResult(step.id, step.result ?? '', e)}>
+								{copyLabel(step.id)}
+							</button>
+						</div>
+						<pre>{step.result}</pre>
+					</div>
+				{/if}
 			{/if}
 		{/each}
 	</div>

@@ -103,7 +103,12 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// submit_verdict), `planning` (submit_plan_outline), `coding`
 	// (submit_preflight, ...) — are only ever exposed via an explicit
 	// toolAllowlist, never the default toolset.
-	if (reg.category === 'audit' || reg.category === 'planning' || reg.category === 'coding')
+	if (
+		reg.category === 'audit' ||
+		reg.category === 'planning' ||
+		reg.category === 'coding' ||
+		reg.category === 'memory'
+	)
 		return false;
 	// code_grep / code_glob are Code-mode fs tools; keep them out of Chat.
 	if (CODE_ONLY_FS.has(name)) return false;

@@ -20,6 +20,7 @@ import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
 	dbCreateConversation,
+	dbSetConversationMemoryEnabled,
 	dbLoadMessages,
 	dbReplaceMessages,
 	dbSaveMessage
@@ -178,6 +179,13 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 	// is idempotent, so later turns do not rewrite it.
 	const title = titleFor(event.clientLabel, message);
 	await dbCreateConversation(conversationId, title);
+	// Guest threads are never remembered. They are ordinary conversation rows
+	// in the owner's sidebar, so the chat-switch extraction trigger would
+	// otherwise distil a visitor's statements into the owner's memory. Set on
+	// every turn rather than only at creation: `db_create_conversation` is
+	// INSERT OR IGNORE (a session id recurs across restarts), so there is no
+	// single moment that reliably means "this row is new".
+	await dbSetConversationMemoryEnabled(conversationId, false);
 	noteExternalConversation(conversationId, title);
 
 	const history = await dbLoadMessages(conversationId);

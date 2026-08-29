@@ -21,21 +21,22 @@ off-switch exists.
   (`absent | downloading | ready | error`), memory count, and
   `enableMemory()` orchestration (consent → download → flip setting).
   Refreshes via the Phase 01 commands.
-- **NEW** commands (Rust, `src-tauri/src/memory/commands.rs`):
-  `memory_model_status()` (file check, instant) and
-  `memory_model_download()` (async command wrapping `ensure_model` in
-  `spawn_blocking`; emits `memory-model-progress` events if fastembed's
-  progress hook allows, otherwise indeterminate). Register + re-run
-  `scripts/export-ipc-types.sh`.
+- ~~**NEW** commands (Rust)~~ — already landed in Phase 01 as
+  `memory_model_present`, `memory_download_model` and `memory_unload_model`
+  (in `db/memory_commands.rs`, not a separate `memory/commands.rs`). The
+  four-state status the store needs is derived in TS rather than modelled in
+  Rust: `downloading` and `error` are facts about this session, not about the
+  disk. fastembed exposes no progress callback — only a stderr bar — so
+  progress is indeterminate, as this phase anticipated.
 - **NEW** `src/lib/components/settings/MemorySection.svelte`:
   - `.settings-section` card "Memory", with `ToggleField` — "Remember
     across chats" + description ("Haruspex extracts stable facts and
     preferences from your conversations and recalls them in future chats.
     Everything stays on this device.").
   - First enable with model absent → confirm step in-card (not a modal):
-    "Requires a one-time download of a small embedding model (~34 MB) from
+    "Requires a one-time download of a small embedding model (~65 MB) from
     Hugging Face." with Download button + progress; toggle only flips once
-    status is `ready`.
+    status is `ready`. (Size corrected from ~34 MB — see D7.)
   - Placeholder count line ("N memories stored") — the full manager list
     replaces/extends this card in Phase 05.
 - **EDIT** `src/lib/components/settings/SettingsPanel.svelte` — new

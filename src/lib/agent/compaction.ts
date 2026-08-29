@@ -45,8 +45,13 @@ export async function compactConversation(
 			messages: [
 				{
 					role: 'system',
+					// Scope note: this summary serves THIS conversation only. Facts
+					// worth carrying into future ones are agentic memory's job
+					// (see agent/memory/), so there is no need to hoard
+					// standing preferences here at the cost of the detail the
+					// current thread still needs.
 					content:
-						'Summarize the following conversation concisely, preserving key facts, decisions, user preferences, and context needed to continue the conversation naturally. Be thorough but brief. Output only the summary, no preamble.'
+						'Summarize the following conversation concisely, preserving key facts, decisions, user preferences, and context needed to continue THIS conversation naturally. Be thorough but brief. Output only the summary, no preamble.'
 				},
 				{
 					role: 'user',

@@ -661,6 +661,76 @@ bundled layout, then a dev fallback that points at the source tree.
 
 ---
 
+## 11c. Agentic memory (embeddings)
+
+`src-tauri/src/memory/` owns on-device embeddings; `db/memories.rs` owns
+storage and search; `db/memory_commands.rs` is the IPC surface. Plan:
+`plan/agentic-memory/`.
+
+**The `ort` build-time download.** `fastembed` pulls in `ort` (ONNX
+Runtime). Its `ort-download-binaries-rustls-tls` feature fetches a
+prebuilt static archive (~90 MB) from `ort.pyke.io` into
+`~/.cache/ort.pyke.io/` on first build and links it **statically** — so
+there is no `.so` to bundle and nothing to add to
+`scripts/link-sidecar-libs.sh`. The cost is that a clean build machine
+(CI included) needs network access to that host, alongside crates.io.
+
+**Measured cost: +30.3 MB on the release binary** (52.2 → 82.5 MB,
+2026-08-21, x86_64 Linux). Paid by every user whether or not they enable
+memory, because the runtime is linked in rather than loaded on demand.
+Accepted deliberately: it keeps the build a single artifact, and it is
+small against an install that already carries three sidecars and a
+~5.7 GB model. If it ever needs to come back down, `ort`'s
+`ort-load-dynamic` feature ships `libonnxruntime.so` as a bundled
+resource instead — a pure packaging change that nothing above
+`memory/embedder.rs` can observe.
+
+**TLS features matter.** fastembed's defaults use `native-tls`, which
+would drag OpenSSL into a tree that is rustls end to end (reqwest,
+tokio-rustls, lettre). The dependency is declared with
+`default-features = false` and the rustls variants; `image-models` is off
+too, since only text embedding is used.
+
+**The model is not the archive.** The ONNX Runtime above is the engine,
+linked at build time. The BGE-small-en-v1.5 *weights* (~65 MB, the quantized build) are
+downloaded at runtime from Hugging Face into
+`<app_data>/models/embeddings`, and only ever from the explicit consent
+flow — `embedder::embed` fails rather than fetching them. `HF_HOME`
+overrides that cache dir inside fastembed, so `model_present` honours it
+too or the check and the loader would disagree.
+
+**Everything here is CPU-bound.** Embedding runs inside `spawn_blocking`
+in every command. See §9's arboard note: blocking the main thread freezes
+WebKitGTK.
+
+**Where the pieces live.** Rust: `memory/` (embedder + cosine + BLOB
+codec, no `db` imports), `db/memories.rs` (storage and brute-force
+search), `db/memory_commands.rs` (IPC). TypeScript: `agent/memory/` —
+`extraction.ts` (what gets recorded), `scheduler.ts` (when), `recall.ts`
+(what comes back), `extractionPrompt.ts` (the distillation prompt).
+`stores/memory.svelte.ts` owns the global switch and model status.
+
+**Two gates, and both must hold.** `memoryActive()` = the setting AND the
+model on disk. Settings sync onto a fresh machine carries the flag but
+not the weights, so the flag alone is not a capability. Per chat,
+`conversations.memory_enabled` is the incognito column, checked in Rust
+on every extraction and recall — remote web-chat threads are created with
+it off (D3).
+
+**Trust boundary.** Extraction reads `user` and `assistant` turns only.
+A transcript also holds tool results — web pages, files, emails — and a
+page saying "remember X" must never be able to write to the user's
+memory. `collectNewTurns` is the guard; the prompt repeats it.
+
+**Tuning constants, all in one place each.** Dedupe threshold (0.90) and
+the transcript cap live in `extraction.ts`; the recall floor (0.55), k
+(6) and the context-scaled token budget live in `recall.ts`; the recency
+half-life and floor live in `memory/mod.rs`. Changing the *embedding
+model* means changing `EMBEDDING_MODEL_NAME` too — search filters on it,
+so old rows go quiet instead of being compared across embedding spaces.
+
+---
+
 ## 12. Conventions (the rules to internalize)
 
 - **Conventional Commits required** — release-please parses every commit

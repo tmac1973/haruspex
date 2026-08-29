@@ -82,10 +82,13 @@ the frontend does not call yet.
 - `embedding_model` column is written on every insert; `search_memories`
   filters `WHERE embedding_model = current` so a future model swap degrades
   to "old memories invisible until re-embedded", never to garbage cosine.
-- `Cargo.toml`: `fastembed` pulls `ort` (ONNX Runtime). Verify Linux build +
-  binary-size impact in this phase; if `ort`'s dynamic-lib download strategy
-  fights the AppImage/deb bundling, pin the static-link feature and note it
-  in `maintenance.md`.
+- `Cargo.toml`: `fastembed` pulls `ort` (ONNX Runtime). **Resolved
+  2026-08-21**: the default download-binaries strategy links ONNX Runtime
+  statically, so nothing has to be bundled or symlinked — at +30.3 MB on the
+  release binary (52.2 → 82.5). Accepted (D6). Declared
+  `default-features = false` with the rustls variants, because fastembed's
+  `native-tls` default would pull OpenSSL into an otherwise rustls-only tree.
+  Documented in `maintenance.md` §11c.
 
 ## Acceptance
 

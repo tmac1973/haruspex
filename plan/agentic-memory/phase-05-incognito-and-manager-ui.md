@@ -67,6 +67,16 @@ which memories it was given.
   constants and where to tune them, the extraction trust boundary
   (user/assistant turns only).
 
+## Remote chat threads
+
+Threads created by the remote web chat are born incognito (D3) and the toggle
+is **not offered** for them: show the pill in a fixed, explained state
+("Remote thread — never remembered") rather than a control the owner can flip.
+Flipping it would let a guest's statements into the owner's memory, which is
+the thing the default exists to prevent. Detect them the way the sidebar
+already marks external conversations, not by sniffing the `remote-` id prefix
+in new code.
+
 ## Acceptance
 
 - Incognito pill: toggle → persists across app restart; extraction and

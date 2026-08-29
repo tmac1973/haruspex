@@ -40,6 +40,9 @@ vi.mock('$lib/stores/chat.svelte', () => ({
 	continueTurn: vi.fn(),
 	cancelGeneration: vi.fn(),
 	retryLastTurn: vi.fn(),
+	isActiveConversationRemembered: vi.fn(() => true),
+	isActiveConversationRemote: vi.fn(() => false),
+	setConversationMemoryEnabled: vi.fn(),
 	// ConversationSidebar
 	clearAllConversations: vi.fn(),
 	deleteConversation: vi.fn(),

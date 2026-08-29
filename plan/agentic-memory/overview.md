@@ -31,7 +31,7 @@ that bespoke from mature pieces we already have or can embed.
 - **In-process embeddings via the `fastembed` crate** (ONNX, pure Rust) —
   no new sidecar, no `--embeddings` flag on llama-server, no contention with
   the single inference slot, identical behaviour for local and remote chat
-  backends. Model (~34 MB) downloaded once with explicit user consent.
+  backends. Model (~65 MB) downloaded once with explicit user consent.
 - **Background extraction on idle + chat-switch** via the existing
   `runEphemeralTurn` + `withInferenceSlot` machinery, using a forced
   structured-output `submit_memories` tool (the audit/planning pattern).
@@ -55,7 +55,17 @@ that bespoke from mature pieces we already have or can embed.
   (Decision D5). Retrieval relevance is the filter. A `scope` column is easy
   to add later; designing classification rules now is speculative.
 - **Chat only.** Job pipelines (research/audit/coding) neither read nor write
-  memories in v1.
+  memories in v1. Job runs are unattended and driven by precise prompt
+  contracts ("planning only — never write code"); a stale preference injected
+  there carries system-prompt authority with nobody watching.
+- **Not the Shell tab.** It builds its own prompt (`buildShellSystemPrompt`),
+  so it is separate integration work rather than a free ride — and the facts
+  worth remembering there are about the *machine* ("this box is Fedora, uses
+  dnf"), a different kind from chat's personal and preference facts. One
+  shared pool would bleed chat preferences into troubleshooting and back.
+  Revisit only alongside the `scope` column D5 defers.
+- **Not remote chat.** A guest on the network must never receive the owner's
+  memories, nor seed them. See D3.
 - **No FTS5 / hybrid retrieval.** Cosine over a few thousand rows is
   brute-force fine; add lexical fusion only if recall quality demands it.
 - **No third-party memory library or memory sidecar.** See survey above.
@@ -94,7 +104,8 @@ that bespoke from mature pieces we already have or can embed.
 ## Decisions (settled 2026-08-12)
 
 - **D1 — Retrieval: fastembed in Rust.** In-process ONNX embeddings
-  (`fastembed` crate, BGE-small-en-v1.5, 384-dim, ~34 MB). Rejected:
+  (`fastembed` crate, BGE-small-en-v1.5, 384-dim, ~65 MB — see D7 on the
+  size and the variant). Rejected:
   llama-server `--embeddings`/router mode (server config churn, slot/VRAM
   contention, remote backends lack the endpoint); FTS5-only (lexical recall
   misses paraphrase).
@@ -108,9 +119,48 @@ that bespoke from mature pieces we already have or can embed.
   persisted as a column so it survives restart. Rejected: split recall/record
   toggles (more UI for a refinement that can come later); session-only pill
   (privacy footgun after restart).
+  - **Remote chat threads are created incognito** (`memory_enabled = 0` at
+    `dbCreateConversation` in `lib/remote/driver.ts`), and the toggle is not
+    offered for them. Added 2026-08-21: remote web chat (#205) landed after
+    this plan was locked. Guest threads are ordinary `conversations` rows
+    (ids `remote-<sessionId>`) and they appear in the owner's sidebar, so the
+    chat-switch extraction trigger would otherwise distill a *visitor's*
+    statements into the owner's memory — a stranger seeding the assistant's
+    long-term memory by chatting to it. Recall was already safe by
+    construction (the driver never passes the recalled list), so reusing the
+    incognito column closes the recording half with the mechanism that already
+    exists rather than a special case.
 - **D4 — UI: full manager + in-chat visibility.** Settings manager plus a
   per-turn indicator of injected memories with per-memory delete. "Why did it
   say that?" must be answerable.
+- **D7 — The QUANTIZED model, and the size was wrong (settled 2026-08-24,
+  Phase 02).** This plan said ~34 MB in four places. Nothing fastembed will
+  actually fetch is that size: `BGESmallENV15` is `Xenova/bge-small-en-v1.5`
+  at **127 MB** (fp32), and `BGESmallENV15Q` is
+  `Qdrant/bge-small-en-v1.5-onnx-Q` at **65 MB** including tokenizer and
+  config. The 34 MB figure appears to have come from a quantized file in the
+  Xenova repo that fastembed does not reference for either variant. Settled
+  on **`BGESmallENV15Q`**: same 384 dimensions, half the download, and the
+  accuracy given up is invisible when the job is ranking a few thousand short
+  facts by relevance. The number matters beyond tidiness — it is quoted in a
+  consent prompt, and being wrong by 4x there is the kind of thing that costs
+  a privacy-focused app its credibility. Rows record
+  `embedding_model = "bge-small-en-v1.5-q"`, so a later switch to the fp32
+  build invalidates cleanly rather than mixing embedding spaces.
+- **D6 — ONNX Runtime is linked statically (settled 2026-08-21, Phase 01).**
+  `ort`'s download-binaries feature fetches a ~90 MB static archive at build
+  time and links it in: **+30.3 MB on the release binary** (52.2 → 82.5 MB,
+  measured against a clean tree, not the stale artifact in `target/`). Paid
+  by every user whether or not memory is enabled. Accepted — it keeps the
+  build one artifact with nothing new to bundle or symlink, and it is small
+  beside three sidecars and a ~5.7 GB model. Rejected for now:
+  `ort-load-dynamic` (ships `libonnxruntime.so` as a resource; a pure
+  packaging change, still available later); embeddings via llama-server
+  (see D1 — server config churn, VRAM contention, no endpoint on remote
+  backends). Also note the TLS choice: fastembed's defaults are
+  `native-tls`, which would drag OpenSSL into a tree that is rustls end to
+  end, so the dependency is declared `default-features = false` with the
+  rustls variants and `image-models` off.
 - **D5 — Scope: global only.** Provenance (`source_conversation_id`) is
   stored for the manager UI, but recall does not filter by it.
 
@@ -131,7 +181,7 @@ that bespoke from mature pieces we already have or can embed.
   swallow-duplicate `ALTER TABLE` loop.
 - fastembed downloads its model from Hugging Face on first init — for a
   privacy-focused app this must be explicit: memory ships **default-off**,
-  and enabling it shows a one-time "download embedding model (~34 MB)"
+  and enabling it shows a one-time "download embedding model (~65 MB)"
   consent step, cached under the app data dir.
 - Conventional Commits (release-please), `make check` green per phase.
 

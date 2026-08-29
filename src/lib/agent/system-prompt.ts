@@ -16,8 +16,24 @@ export function looksLikeFileOutputRequest(content: string): boolean {
 	return FILE_OUTPUT_PATTERNS.test(content);
 }
 
-export function buildSystemPrompt(workingDir: string | null): ChatMessage {
+/**
+ * Recalled memories for this turn, rendered into the prompt by the caller
+ * that has them. A PARAMETER rather than something this module fetches: chat
+ * is the only surface memory applies to, and job runs, remote guests and the
+ * shell assistant all build their prompts through here too. Passing it in
+ * means they cannot receive the user's memories by accident — the plan's
+ * "chat only" scope is enforced by the shape of this signature.
+ */
+export interface SystemPromptOptions {
+	memorySection?: string;
+}
+
+export function buildSystemPrompt(
+	workingDir: string | null,
+	opts: SystemPromptOptions = {}
+): ChatMessage {
 	const today = formatTodayLong();
+	const memorySection = opts.memorySection ?? '';
 
 	const fsSection = workingDir
 		? `
@@ -85,7 +101,7 @@ ${getSettings().customSystemPrompt.trim()}
 `
 		: ''
 }
-${getResponseFormatPrompt()}`
+${getResponseFormatPrompt()}${memorySection}`
 	};
 }
 

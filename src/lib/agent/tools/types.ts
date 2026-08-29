@@ -147,6 +147,7 @@ export interface ToolRegistration {
 		| 'audit'
 		| 'planning'
 		| 'coding'
+		| 'memory'
 		| 'interaction';
 	requiresVision?: boolean;
 }
