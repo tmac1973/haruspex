@@ -289,8 +289,12 @@ describe('command auto-attach de-duplication', () => {
 		completedTotal: number;
 		recentLimits: number[];
 		pending?: string;
+		pendingFroms?: number[];
 	}) {
-		vi.mocked(invoke).mockImplementation((async (cmd: string, args?: { limit: number }) => {
+		vi.mocked(invoke).mockImplementation((async (
+			cmd: string,
+			args?: { limit: number; pendingFrom?: number }
+		) => {
 			switch (cmd) {
 				case 'shell_get_context':
 					return {
@@ -310,16 +314,25 @@ describe('command auto-attach de-duplication', () => {
 						exitCode: 0 as number | null,
 						cwd: '/home/tim',
 						truncated: false,
-						pending: false
+						pending: false,
+						outputStart: 0,
+						outputEnd: 0
 					}));
 					if (state.pending !== undefined) {
+						// Stand in for the Rust watermark slice: offsets are string
+						// indices here, and the backend returns only what has arrived
+						// since `pendingFrom`.
+						const from = args?.pendingFrom ?? 0;
+						state.pendingFroms?.push(from);
 						regions.push({
 							commandLine: 'ssh server',
-							output: state.pending,
+							output: state.pending.slice(from),
 							exitCode: null,
 							cwd: '/home/tim',
 							truncated: false,
-							pending: true
+							pending: true,
+							outputStart: from,
+							outputEnd: state.pending.length
 						});
 					}
 					return regions;
@@ -374,18 +387,86 @@ describe('command auto-attach de-duplication', () => {
 		const s = createShellSession();
 		bindCtx(s, 12);
 
-		// Turn 1 consumes the 2 completed commands (and the pending region).
 		await s.submitChatMessage('connecting...');
-		// Turn 2: nothing newly finished (completedTotal unchanged), but the ssh
-		// session is still in flight → attachCount 0, yet the pending region still
-		// comes back and gets attached.
-		await s.submitChatMessage('why did that fail?');
-		expect(state.recentLimits).toEqual([2, 0]);
+		expect(state.recentLimits).toEqual([2]);
+		const q1 = s.messages[0].content;
+		expect(q1).toContain('Recent shell activity');
+		expect(q1).toContain('ssh server');
+		expect(q1).toContain('Linux remote-host');
+		expect(q1).toContain('still running, no exit code yet');
+	});
+
+	it('sends only remote output that arrived since the last turn', async () => {
+		// An ssh session is ONE command whose output grows for as long as it
+		// runs. Re-sending all of it every turn spent the capture budget on a
+		// transcript already in the chat history — and since the budget trim is
+		// head+tail, the recent work being asked about was what got squeezed.
+		const state = {
+			completedTotal: 2,
+			recentLimits: [] as number[],
+			pendingFroms: [] as number[],
+			pending: 'BusyBox v1.36 (OpenWrt)\n'
+		};
+		installInvoke(state);
+		const s = createShellSession();
+		bindCtx(s, 13);
+
+		await s.submitChatMessage('what box is this?');
+		expect(state.pendingFroms).toEqual([0]);
+		expect(s.messages[0].content).toContain('BusyBox v1.36');
+
+		// The remote emits more while the user reads the answer.
+		const banner = state.pending;
+		state.pending += 'root@OpenWrt:~# dmesg | tail\nusb 1-1: new device\n';
+		await s.submitChatMessage('anything in dmesg?');
+		expect(state.pendingFroms).toEqual([0, banner.length]);
 		const q2 = s.messages[2].content;
-		expect(q2).toContain('Recent shell activity');
-		expect(q2).toContain('ssh server');
-		expect(q2).toContain('Linux remote-host');
-		expect(q2).toContain('still running, no exit code yet');
+		expect(q2).toContain('usb 1-1: new device');
+		// The banner is already in the thread from turn 1 — not re-sent.
+		expect(q2).not.toContain('BusyBox v1.36');
+
+		// Nothing new since: no shell-activity block at all, just the question.
+		await s.submitChatMessage('still nothing?');
+		expect(s.messages[4].content).toBe('still nothing?');
+	});
+
+	it('re-sends the in-flight command in full for an explicit context dump', async () => {
+		// "Submit context" is the user saying "send what is on screen NOW", so it
+		// ignores the watermark the way it already ignores the completed-command one.
+		const state = {
+			completedTotal: 2,
+			recentLimits: [] as number[],
+			pendingFroms: [] as number[],
+			pending: 'BusyBox v1.36 (OpenWrt)\n'
+		};
+		installInvoke(state);
+		const s = createShellSession();
+		bindCtx(s, 14);
+
+		await s.submitChatMessage('what box is this?');
+		await s.submitRecentCommands();
+		expect(state.pendingFroms).toEqual([0, 0]);
+		expect(s.messages[2].content).toContain('BusyBox v1.36');
+	});
+
+	it('resets the in-flight watermark when the thread is cleared', async () => {
+		const state = {
+			completedTotal: 2,
+			recentLimits: [] as number[],
+			pendingFroms: [] as number[],
+			pending: 'BusyBox v1.36 (OpenWrt)\n'
+		};
+		installInvoke(state);
+		const s = createShellSession();
+		bindCtx(s, 15);
+
+		await s.submitChatMessage('what box is this?');
+		// A new thread carries none of the old history, so the in-flight output
+		// has to go out from the start again.
+		s.newChat();
+		await s.submitChatMessage('what box is this?');
+		expect(state.pendingFroms).toEqual([0, 0]);
+		expect(s.messages[0].content).toContain('BusyBox v1.36');
 	});
 });
 

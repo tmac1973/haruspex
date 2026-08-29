@@ -255,11 +255,25 @@ impl Session {
 
     /// Recent completed commands plus the in-flight command (if one is
     /// running) so the auto-attach can include what the user just started.
-    pub fn capture_recent_commands_with_pending(&self, limit: usize) -> Vec<CapturedRegion> {
+    /// `pending_from` watermarks the in-flight command's output — see
+    /// `Integration::pending_command`.
+    pub fn capture_recent_commands_with_pending(
+        &self,
+        limit: usize,
+        pending_from: u64,
+    ) -> Vec<CapturedRegion> {
         self.integration
             .lock()
-            .map(|i| i.capture_recent_commands_with_pending(limit))
+            .map(|i| i.capture_recent_commands_with_pending(limit, pending_from))
             .unwrap_or_default()
+    }
+
+    /// Command line of the in-flight command, or None at the prompt.
+    pub fn pending_command_line(&self) -> Option<String> {
+        self.integration
+            .lock()
+            .ok()
+            .and_then(|i| i.pending_command_line())
     }
 
     pub fn marker_count(&self) -> usize {

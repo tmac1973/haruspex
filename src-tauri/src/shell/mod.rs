@@ -306,12 +306,32 @@ pub fn shell_get_recent_commands(
     state: State<'_, ShellManager>,
     session_id: SessionId,
     limit: usize,
+    pending_from: Option<u64>,
 ) -> Result<Vec<CapturedRegion>, String> {
     state.with_session(session_id, |session| {
         // Include the in-flight command so asking about something still
         // running attaches its output-so-far, not just completed commands.
-        Ok(session.capture_recent_commands_with_pending(limit))
+        // `pending_from` is the caller's watermark into that in-flight
+        // command's output: a long `ssh` session is a single command whose
+        // output grows for as long as it runs, so each turn asks only for
+        // what has arrived since the last one.
+        Ok(session.capture_recent_commands_with_pending(limit, pending_from.unwrap_or(0)))
     })
+}
+
+/// The command line of the session's in-flight command, or None when the
+/// shell is sitting at its own prompt.
+///
+/// The paste path uses this to decide whether bracketed-paste guards are safe:
+/// they're only correct when OUR shell's line editor is the thing reading them.
+/// Deliberately separate from `shell_get_recent_commands`, which would
+/// serialize the in-flight command's entire output just to answer this.
+#[tauri::command]
+pub fn shell_pending_command(
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+) -> Result<Option<String>, String> {
+    state.with_session(session_id, |session| Ok(session.pending_command_line()))
 }
 
 #[tauri::command]

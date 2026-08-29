@@ -62,6 +62,14 @@ pub struct CapturedRegion {
     /// (output end) yet — i.e. the command is still running. `exit_code`
     /// is None and `output` holds whatever has been emitted so far.
     pub pending: bool,
+    /// Absolute stream offset of the first output byte in `output`.
+    /// For a pending region resumed from a watermark this is the watermark,
+    /// not the command's own start.
+    pub output_start: u64,
+    /// Absolute stream offset just past the last output byte in `output`.
+    /// The caller feeds this back as `pending_from` on the next capture to
+    /// receive only what has arrived since — see `pending_command`.
+    pub output_end: u64,
 }
 
 enum ParserState {
@@ -407,6 +415,8 @@ impl Integration {
                     .or_else(|| b.cwd.clone()),
                 truncated,
                 pending: false,
+                output_start: c.seq_end,
+                output_end: d.seq_start,
             });
 
             search_end = b_offset;
@@ -421,20 +431,21 @@ impl Integration {
     /// `pending` region holding the output emitted so far. This lets the
     /// auto-attach include the command the user just kicked off, instead
     /// of waiting for the next prompt to draw (which is what emits `D`).
-    pub fn capture_recent_commands_with_pending(&self, limit: usize) -> Vec<CapturedRegion> {
+    pub fn capture_recent_commands_with_pending(
+        &self,
+        limit: usize,
+        pending_from: u64,
+    ) -> Vec<CapturedRegion> {
         let mut regions = self.capture_recent_commands(limit);
-        if let Some(pending) = self.pending_command() {
+        if let Some(pending) = self.pending_command(pending_from) {
             regions.push(pending);
         }
         regions
     }
 
-    /// The in-flight command, if any: the most recent `C` that has no `D`
-    /// after it (and a `B` before it). Output runs from the `C` to the
-    /// current end of the stream; exit code is unknown. Returns None when
-    /// the shell is sitting idle at a prompt (the trailing marker is a
-    /// `B`, not a `C`).
-    fn pending_command(&self) -> Option<CapturedRegion> {
+    /// The `(B, C)` marker pair of the in-flight command, if one is running.
+    /// Shared by `pending_command` and `pending_command_line`.
+    fn pending_markers(&self) -> Option<(&Marker, &Marker)> {
         let markers: Vec<&Marker> = self.markers.iter().collect();
         let c_offset = markers
             .iter()
@@ -450,9 +461,39 @@ impl Integration {
         let b_offset = markers[..c_offset]
             .iter()
             .rposition(|m| m.kind == MarkerKind::CommandStart)?;
-        let b = markers[b_offset];
+        Some((markers[b_offset], c))
+    }
 
-        let out_bytes = self.slice_output(c.seq_end, self.total_offset);
+    /// Just the command line of the in-flight command — no output slicing.
+    ///
+    /// Used by the paste path to answer "is the user's own shell reading this,
+    /// or is something else?" without serializing the in-flight command's
+    /// output, which for a long `ssh` session is the whole remote session.
+    pub fn pending_command_line(&self) -> Option<String> {
+        let (b, c) = self.pending_markers()?;
+        Some(self.resolve_command_line(b, c).0)
+    }
+
+    /// The in-flight command, if any: the most recent `C` that has no `D`
+    /// after it (and a `B` before it). Output runs from the `C` to the
+    /// current end of the stream; exit code is unknown. Returns None when
+    /// the shell is sitting idle at a prompt (the trailing marker is a
+    /// `B`, not a `C`).
+    fn pending_command(&self, pending_from: u64) -> Option<CapturedRegion> {
+        let (b, c) = self.pending_markers()?;
+
+        // A long-lived foreground command (an `ssh` session, a REPL) is ONE
+        // command whose output grows for as long as it runs. Re-sending all of
+        // it every turn spends the whole capture budget on a transcript the
+        // model already has — and because the budget trim is head+tail, what
+        // gets dropped is the middle, i.e. the recent work being asked about.
+        // `pending_from` is the caller's watermark: resume from there and send
+        // only what has arrived since. Clamped to the command's own start, so
+        // a watermark from a previous command (or a stale one) yields the whole
+        // region rather than an empty slice.
+        let start = pending_from.max(c.seq_end);
+        let end = self.total_offset.max(start);
+        let out_bytes = self.slice_output(start, end);
         let (command_line, cmd_truncated) = self.resolve_command_line(b, c);
         Some(CapturedRegion {
             command_line,
@@ -461,6 +502,8 @@ impl Integration {
             cwd: c.cwd.clone().or_else(|| b.cwd.clone()),
             truncated: cmd_truncated || out_bytes.is_none(),
             pending: true,
+            output_start: start,
+            output_end: end,
         })
     }
 }
@@ -913,7 +956,7 @@ mod tests {
         // completed-only capture sees nothing
         assert!(integ.capture_recent_commands(5).is_empty());
         // with-pending sees the in-flight command
-        let with_pending = integ.capture_recent_commands_with_pending(5);
+        let with_pending = integ.capture_recent_commands_with_pending(5, 0);
         assert_eq!(with_pending.len(), 1);
         let p = &with_pending[0];
         assert_eq!(p.command_line, "sleep 5");
@@ -923,12 +966,68 @@ mod tests {
     }
 
     #[test]
+    fn pending_watermark_returns_only_new_output() {
+        // The ssh case: one long-lived command whose output grows every turn.
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07ssh box\n\x1B]133;C;cl=c3NoIGJveA==\x07");
+        integ.ingest(b"login banner\n");
+
+        let first = integ.capture_recent_commands_with_pending(5, 0);
+        let p1 = first.last().unwrap();
+        assert_eq!(p1.command_line, "ssh box");
+        assert_eq!(p1.output, "login banner\n");
+
+        // More remote output arrives; resuming from the watermark yields only it.
+        integ.ingest(b"remote output\n");
+        let second = integ.capture_recent_commands_with_pending(5, p1.output_end);
+        let p2 = second.last().unwrap();
+        assert_eq!(p2.output, "remote output\n");
+        assert_eq!(p2.output_start, p1.output_end);
+        assert!(p2.output_end > p2.output_start);
+
+        // Nothing new since the last turn: an empty slice, not a re-send.
+        let third = integ.capture_recent_commands_with_pending(5, p2.output_end);
+        assert_eq!(third.last().unwrap().output, "");
+    }
+
+    #[test]
+    fn pending_watermark_from_an_earlier_command_yields_the_whole_region() {
+        // A watermark left over from a previous command must not silently
+        // truncate the new one — it clamps to the new command's own start.
+        let mut integ = Integration::new();
+        run_cycle(&mut integ, "ls", "a b\n", 0);
+        integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07ssh box\n\x1B]133;C;cl=c3NoIGJveA==\x07");
+        integ.ingest(b"banner\n");
+
+        let regions = integ.capture_recent_commands_with_pending(5, 1);
+        let pending = regions.last().unwrap();
+        assert!(pending.pending);
+        assert_eq!(pending.output, "banner\n");
+    }
+
+    #[test]
+    fn pending_command_line_is_available_without_slicing_output() {
+        let mut integ = Integration::new();
+        // At a prompt: nothing in flight, so the paste path keeps its guards.
+        integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07");
+        assert_eq!(integ.pending_command_line(), None);
+
+        // Inside ssh: in flight, so the paste path drops them.
+        integ.ingest(b"ssh box\n\x1B]133;C;cl=c3NoIGJveA==\x07banner\n");
+        assert_eq!(integ.pending_command_line().as_deref(), Some("ssh box"));
+
+        // Back at the prompt after it exits.
+        integ.ingest(b"\x1B]133;D;0\x07");
+        assert_eq!(integ.pending_command_line(), None);
+    }
+
+    #[test]
     fn pending_appended_after_completed_commands() {
         let mut integ = Integration::new();
         run_cycle(&mut integ, "ls", "a b\n", 0);
         // now a running command
         integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07top\n\x1B]133;C\x07loading\n");
-        let regions = integ.capture_recent_commands_with_pending(5);
+        let regions = integ.capture_recent_commands_with_pending(5, 0);
         assert_eq!(regions.len(), 2);
         assert_eq!(regions[0].command_line.trim(), "ls");
         assert!(!regions[0].pending);
@@ -942,7 +1041,7 @@ mod tests {
         let mut integ = Integration::new();
         run_cycle(&mut integ, "ls", "a\n", 0);
         integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07");
-        let regions = integ.capture_recent_commands_with_pending(5);
+        let regions = integ.capture_recent_commands_with_pending(5, 0);
         assert_eq!(regions.len(), 1);
         assert!(!regions[0].pending);
     }

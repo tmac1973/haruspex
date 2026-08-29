@@ -10,7 +10,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import ModalButton from '$lib/components/ModalButton.svelte';
 	import { classifyShellRisk, type RiskMatch } from '$lib/shell/risky-commands';
-	import { stripCommandComments, toBracketedPaste } from '$lib/shell/commandBlock';
+	import { stripCommandComments, toPtyPaste } from '$lib/shell/commandBlock';
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getActiveShellId, type ShellSession } from '$lib/stores/shell.svelte';
 
@@ -212,18 +212,45 @@
 			riskyConfirm = { command: cleaned, reasons: risk.reasons, action: 'paste' };
 			return;
 		}
-		executePaste(cleaned);
+		void executePaste(cleaned);
+	}
+
+	/**
+	 * Whether bracketed-paste guards are safe for this write.
+	 *
+	 * They are exactly when our own shell's line editor is what reads them —
+	 * i.e. when the shell is sitting at its prompt with nothing in flight. A
+	 * command that IS in flight owns the terminal's stdin, and it may be a
+	 * remote shell (`ssh` to a busybox box), a REPL, or anything else that
+	 * doesn't implement bracketed paste and will mangle the command rather
+	 * than strip the guards. Errs toward keeping the guards when the state
+	 * can't be read: the prompt is where nearly every paste happens, and it's
+	 * where they're needed.
+	 */
+	async function bracketedPasteSafe(sessionId: number): Promise<boolean> {
+		try {
+			return (await invoke<string | null>('shell_pending_command', { sessionId })) == null;
+		} catch (e) {
+			console.error('shell_pending_command failed', e);
+			return true;
+		}
 	}
 
 	// No trailing Enter — the paste doesn't auto-execute; the user presses
-	// Enter themselves (the security model). Bracketed paste keeps the shell's
-	// line editor from mangling the text (auto-closed quotes, reprints,
-	// autosuggestions).
-	function executePaste(cleaned: string) {
+	// Enter themselves (the security model).
+	async function executePaste(cleaned: string) {
 		if (!handle) return;
-		invoke('shell_write', { sessionId: handle.sessionId, data: toBracketedPaste(cleaned) })
-			.then(() => handle?.focus())
-			.catch((e) => console.error('shell_write (paste) failed', e));
+		const sessionId = handle.sessionId;
+		const bracketed = await bracketedPasteSafe(sessionId);
+		try {
+			await invoke('shell_write', {
+				sessionId,
+				data: toPtyPaste(cleaned, { bracketed })
+			});
+			handle?.focus();
+		} catch (e) {
+			console.error('shell_write (paste) failed', e);
+		}
 	}
 
 	/**
@@ -255,7 +282,7 @@
 		const pending = riskyConfirm;
 		riskyConfirm = null;
 		if (!pending) return;
-		if (pending.action === 'paste') executePaste(pending.command);
+		if (pending.action === 'paste') void executePaste(pending.command);
 		else void executeRunCommand(pending.command);
 	}
 
@@ -269,11 +296,13 @@
 		// auto-send its output back to the assistant. The user stays in control
 		// of what the model sees and can ask about the result from the composer.
 		try {
-			// Bracketed paste + a trailing Enter: the shell inserts the
+			// Guards (when safe) + a trailing Enter: the shell inserts the
 			// command(s) literally (no quote/highlight mangling) then runs.
+			const sessionId = handle.sessionId;
+			const bracketed = await bracketedPasteSafe(sessionId);
 			await invoke('shell_write', {
-				sessionId: handle.sessionId,
-				data: toBracketedPaste(cleaned, true)
+				sessionId,
+				data: toPtyPaste(cleaned, { execute: true, bracketed })
 			});
 			handle.focus();
 		} catch (e) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stripCommandComments, toBracketedPaste } from './commandBlock';
+import { stripCommandComments, toPtyPaste } from './commandBlock';
 
 describe('stripCommandComments', () => {
 	it('drops comment-only and blank lines, keeping commands', () => {
@@ -38,19 +38,32 @@ describe('stripCommandComments', () => {
 	});
 });
 
-describe('toBracketedPaste', () => {
+describe('toPtyPaste', () => {
 	it('wraps text in bracketed-paste guards without executing by default', () => {
-		expect(toBracketedPaste('ls -la')).toBe('\x1b[200~ls -la\x1b[201~');
+		expect(toPtyPaste('ls -la')).toBe('\x1b[200~ls -la\x1b[201~');
 	});
 
 	it('appends a carriage return after the guards when executing', () => {
-		expect(toBracketedPaste('ls -la', true)).toBe('\x1b[200~ls -la\x1b[201~\r');
+		expect(toPtyPaste('ls -la', { execute: true })).toBe('\x1b[200~ls -la\x1b[201~\r');
 	});
 
 	it('keeps embedded newlines inside the paste (not executed early)', () => {
-		const out = toBracketedPaste('cmd1\ncmd2', true);
+		const out = toPtyPaste('cmd1\ncmd2', { execute: true });
 		expect(out).toBe('\x1b[200~cmd1\ncmd2\x1b[201~\r');
 		// The only carriage return is the final execute keystroke.
 		expect(out.indexOf('\r')).toBe(out.length - 1);
+	});
+
+	// A line editor that doesn't implement bracketed paste (busybox ash over
+	// ssh) parses the guards as an unknown escape sequence and swallows them
+	// along with adjacent input, so the command loses its first characters.
+	it('omits the guards entirely when they are not safe', () => {
+		const out = toPtyPaste("dmesg | grep -iE 'quectel|wwan'", { bracketed: false });
+		expect(out).toBe("dmesg | grep -iE 'quectel|wwan'");
+		expect(out).not.toContain('\x1b');
+	});
+
+	it('still appends the execute keystroke without the guards', () => {
+		expect(toPtyPaste('ls -la', { execute: true, bracketed: false })).toBe('ls -la\r');
 	});
 });
