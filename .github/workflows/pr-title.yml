@@ -1,0 +1,57 @@
+# Require a conventional-commit prefix on every PR title.
+#
+# release-please builds the changelog by parsing conventional prefixes off the
+# SQUASH-MERGE SUBJECT, and GitHub chooses that subject two different ways:
+#
+#   - single-commit PR -> the commit message
+#   - multi-commit PR  -> the PR TITLE
+#
+# So a multi-commit PR with a prose title silently loses its prefix at merge
+# time, and release-please skips the commit entirely. That is invisible until
+# release day: v0.1.60 was prepared listing one of its five user-visible
+# changes, because #208, #209, #210 and #211 were all multi-commit PRs with
+# prose titles.
+#
+# Linting the title catches it at review time, when it is one edit to fix.
+#
+# Single-commit PRs don't strictly need this — their commit message supplies
+# the subject — but the rule is enforced for every PR anyway: "does this need a
+# prefix?" depending on commit count is a rule nobody can apply reliably, and
+# a PR gains commits after review all the time.
+name: PR title
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  conventional:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The types release-please-config.json knows about. Anything else
+          # would parse as no prefix at all and vanish from the changelog.
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            build
+            ci
+            chore
+            style
+            test
+            revert
+          # Scope is optional — plenty of changes span the whole app — but when
+          # given it must be lowercase, matching every existing entry.
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" should start with a lowercase letter, to
+            match the existing changelog entries.
