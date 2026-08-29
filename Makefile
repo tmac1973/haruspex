@@ -101,11 +101,18 @@ ensure-sidecars: ## Rebuild sidecars only when missing or their pinned version c
 dev: ensure-sidecars ensure-pdfium ensure-ruff ensure-pyodide ensure-node-modules ensure-libs-linked ## Run the app in dev mode
 	GDK_BACKEND=x11 npm run tauri dev; stty sane
 
+# The two check-*.mjs guards mirror the frontend CI job. They used to run ONLY
+# in CI, so adding a #[tauri::command] passed every local gate and then failed
+# the frontend job on push (src/lib/ipc/commands.ts is generated from the Rust
+# command set and goes stale). CI keeps a third guard, the chat<->sandbox
+# import-cycle grep, which is inline YAML rather than a script.
 .PHONY: check
-check: ## Run all checks (lint, format, typecheck, test)
+check: ## Run all checks (lint, format, typecheck, drift guards, test)
 	npm run lint
 	npm run format:check
 	npm run check
+	node scripts/check-ipc.mjs
+	node scripts/check-constants.mjs
 	npm run test
 	cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 	cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
