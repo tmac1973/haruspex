@@ -11,7 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { sleep } from '$lib/utils/async';
 import { getSettings } from '$lib/stores/settings';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
-import { toBracketedPaste } from '$lib/shell/commandBlock';
+import { toPtyPaste } from '$lib/shell/commandBlock';
 import { setPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
 import type { ToolContext } from './types';
 
@@ -35,14 +35,13 @@ interface CapturedRegion {
 
 /** The command currently running in the PTY (last marker is a start with no
  *  end), or null if the terminal is idle at a prompt. */
-async function pendingCommand(sessionId: number): Promise<CapturedRegion | null> {
+async function pendingCommand(sessionId: number): Promise<string | null> {
 	try {
-		const regions = await invoke<CapturedRegion[]>('shell_get_recent_commands', {
-			sessionId,
-			limit: 1
-		});
-		const last = regions[regions.length - 1];
-		return last?.pending ? last : null;
+		// The dedicated command returns just the command line. Asking
+		// `shell_get_recent_commands` would serialize the in-flight command's
+		// entire output — for a long-running `ssh` session, the whole remote
+		// transcript — only to read one field off it.
+		return await invoke<string | null>('shell_pending_command', { sessionId });
 	} catch {
 		return null;
 	}
@@ -94,7 +93,7 @@ export async function runInPty(
 		const inflight = await pendingCommand(sessionId);
 		if (inflight) {
 			return (
-				`The terminal is busy running \`${inflight.commandLine || 'a command'}\` (still in progress), ` +
+				`The terminal is busy running \`${inflight || 'a command'}\` (still in progress), ` +
 				'so a new command cannot run here yet. Use shell_read to see its output, shell_input to send ' +
 				'it input (answer a prompt, or drive a REPL/debugger), or shell_interrupt to stop it and free ' +
 				'the terminal. Do not re-run it.'
@@ -103,7 +102,7 @@ export async function runInPty(
 
 		const before = (await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId }))
 			.completed_total;
-		await invoke('shell_write', { sessionId, data: toBracketedPaste(command, true) });
+		await invoke('shell_write', { sessionId, data: toPtyPaste(command, { execute: true }) });
 
 		// Poll for completion — check first, then sleep, so a fast command isn't
 		// held for a full interval after it already finished.
@@ -167,7 +166,7 @@ export async function runInPtyBackground(
 	const inflight = await pendingCommand(sessionId);
 	if (inflight) {
 		return (
-			`The terminal is busy running \`${inflight.commandLine || 'a command'}\`, so a background ` +
+			`The terminal is busy running \`${inflight || 'a command'}\`, so a background ` +
 			'command cannot start here yet. Free the terminal first (shell_interrupt), then retry.'
 		);
 	}

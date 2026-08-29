@@ -54,6 +54,11 @@ interface CapturedRegion {
 	truncated: boolean;
 	// True for an in-flight command (still running, no exit code yet).
 	pending?: boolean;
+	/** Absolute stream offset of the first byte of `output`. */
+	outputStart: number;
+	/** Absolute stream offset just past `output`. Fed back as the next
+	 *  turn's `pendingFrom` watermark. */
+	outputEnd: number;
 }
 
 export interface ShellSubmission {
@@ -184,6 +189,17 @@ export class ShellSession {
 	// under a re-pasted dump of the previous commands, drowning out the actual
 	// conversation. 0 = nothing attached yet this session.
 	private lastAttachedCommandTotal = 0;
+	// Byte watermark into the IN-FLIGHT command's output, the same idea one
+	// level down. A long-lived foreground command — an `ssh` session, a REPL,
+	// `docker exec -it` — is a single command whose output grows for as long as
+	// it runs, so attaching "the pending region" re-sent the entire remote
+	// session every turn. Worse than merely redundant: the per-capture budget
+	// trim is head+tail, so half of it went on re-sending the ssh login banner
+	// while the recent work being asked about got squeezed into the tail. This
+	// records how far into that output we've already sent, so each turn carries
+	// only what has arrived since. 0 = nothing sent yet (also the reset value:
+	// a new command's own start clamps it on the Rust side).
+	private lastPendingOutputEnd = 0;
 
 	constructor(id: string, name: string, attachPtyId: number | null = null) {
 		this.id = id;
@@ -339,6 +355,9 @@ export class ShellSession {
 		this.messageHistorySent = {};
 		this.lastError = null;
 		this.contextNotice = null;
+		// The new thread carries none of the old one's history, so the in-flight
+		// command's output has to be sent from the start again.
+		this.lastPendingOutputEnd = 0;
 		// A fresh chat is a fresh session: re-arm the per-command approval so an
 		// earlier "allow for this session" doesn't carry into the new chat.
 		resetSessionApproval();
@@ -408,14 +427,22 @@ export class ShellSession {
 	private loadRecent = async (
 		sessionId: number,
 		count: number,
-		enabled: boolean
-	): Promise<CapturedRegion[]> =>
-		enabled
-			? invoke<CapturedRegion[]>('shell_get_recent_commands', {
-					sessionId,
-					limit: count
-				})
-			: [];
+		enabled: boolean,
+		options: { resumePending?: boolean } = {}
+	): Promise<CapturedRegion[]> => {
+		if (!enabled) return [];
+		const { resumePending = true } = options;
+		const regions = await invoke<CapturedRegion[]>('shell_get_recent_commands', {
+			sessionId,
+			limit: count,
+			pendingFrom: resumePending ? this.lastPendingOutputEnd : 0
+		});
+		const pending = regions.find((r) => r.pending);
+		if (pending) this.lastPendingOutputEnd = pending.outputEnd;
+		// A pending region with nothing new since the last turn carries no
+		// information — drop it rather than emit an empty "$ ssh box" block.
+		return regions.filter((r) => !r.pending || r.output.trim().length > 0);
+	};
 
 	/**
 	 * Submit a chat message from the sidebar composer. The user's text is
@@ -503,7 +530,12 @@ export class ShellSession {
 		const pre = await this.prepareSubmit();
 		if (!pre) return;
 		const { session, live, limit } = pre;
-		const recent = await this.loadRecent(session.sessionId, limit, limit > 0);
+		// The explicit dump deliberately ignores both dedup watermarks: the user
+		// pressed "submit context" to send what's on screen NOW, including the
+		// in-flight command's output from its start.
+		const recent = await this.loadRecent(session.sessionId, limit, limit > 0, {
+			resumePending: false
+		});
 		if (recent.length === 0) {
 			this.sidebarOpen = true;
 			this.lastError =

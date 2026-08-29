@@ -38,12 +38,33 @@ export function stripCommandComments(text: string): string {
 const BRACKETED_PASTE_START = '\x1b[200~';
 const BRACKETED_PASTE_END = '\x1b[201~';
 
+export interface PtyPasteOptions {
+	/** Append a trailing CR (outside the guards) so the command(s) run. */
+	execute?: boolean;
+	/**
+	 * Wrap in bracketed-paste guards. Default true.
+	 *
+	 * Only pass false when our own shell's line editor is NOT the thing
+	 * reading the bytes — i.e. a command is in flight and owns the terminal's
+	 * stdin. The guards are an ANSI escape sequence: a line editor that
+	 * implements bracketed paste strips them, but one that doesn't (busybox
+	 * ash on an OpenWrt box reached over ssh, say) parses `ESC [ 2 0 0 ~` as an
+	 * unknown escape sequence and swallows it *along with adjacent buffered
+	 * input* — so the command arrives with its first several characters
+	 * missing. Raw text is what a native terminal paste sends anyway, and the
+	 * mangling the guards protect against (fish auto-closing quotes,
+	 * autosuggestions, highlight reprints) is a property of OUR shell, which
+	 * isn't reading in that case.
+	 */
+	bracketed?: boolean;
+}
+
 /**
- * Wrap command text as a bracketed paste for safe PTY injection. When
- * `execute` is true a trailing carriage return is appended (outside the
- * paste guards) so the pasted command(s) run; otherwise the text just
- * lands in the prompt for the user to review and run themselves.
+ * Prepare command text for injection into the PTY. Guards on by default;
+ * see `PtyPasteOptions.bracketed` for when to turn them off.
  */
-export function toBracketedPaste(text: string, execute = false): string {
-	return `${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}${execute ? '\r' : ''}`;
+export function toPtyPaste(text: string, opts: PtyPasteOptions = {}): string {
+	const { execute = false, bracketed = true } = opts;
+	const body = bracketed ? `${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}` : text;
+	return `${body}${execute ? '\r' : ''}`;
 }

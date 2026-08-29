@@ -393,17 +393,9 @@ describe('run_command PTY driving', () => {
 	it('refuses to inject when the terminal is already busy', async () => {
 		mocks.invoke.mockImplementation((cmd: string) => {
 			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
-			if (cmd === 'shell_get_recent_commands')
-				return Promise.resolve([
-					{
-						commandLine: 'go run main.go',
-						output: '',
-						exitCode: null,
-						cwd: '/proj',
-						truncated: false,
-						pending: true
-					}
-				]);
+			// The busy check reads just the command line — asking for the recent
+			// commands would serialize the in-flight command's whole output.
+			if (cmd === 'shell_pending_command') return Promise.resolve('go run main.go');
 			return Promise.resolve();
 		});
 		const { executeTool } = await import('$lib/agent/tools');
