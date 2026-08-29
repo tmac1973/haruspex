@@ -52,6 +52,11 @@ vi.mock('$lib/stores/chat.svelte', () => ({
 	setWorkingDir: vi.fn()
 }));
 
+// The handoff pulls in the shell registry + the activeTab store; here we only
+// care that the button wires to it with the conversation.
+const openShellFromChat = vi.hoisted(() => vi.fn());
+vi.mock('$lib/shell/fromChat', () => ({ openShellFromChat }));
+
 const conversation = {
 	id: 'c1',
 	title: 'Chat',
@@ -104,5 +109,40 @@ describe('ChatView error banner', () => {
 		render(ChatView);
 		expect(screen.getByText('An unexpected error occurred.')).toBeTruthy();
 		expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+	});
+});
+
+describe('ChatView "Open in shell"', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(getActiveConversation).mockReturnValue(conversation);
+		vi.mocked(getConversations).mockReturnValue([conversation] as unknown as ReturnType<
+			typeof getConversations
+		>);
+		vi.mocked(getErrorMessage).mockReturnValue(null);
+		vi.mocked(getIsGenerating).mockReturnValue(false);
+	});
+
+	it('hands the active conversation to a shell session', async () => {
+		render(ChatView);
+		await fireEvent.click(screen.getByRole('button', { name: 'Open in shell' }));
+		expect(openShellFromChat).toHaveBeenCalledWith({
+			title: 'Chat',
+			messages: conversation!.messages
+		});
+	});
+
+	it('is disabled mid-generation, so a streaming answer is not carried half-written', () => {
+		vi.mocked(getIsGenerating).mockReturnValue(true);
+		render(ChatView);
+		const btn = screen.getByRole('button', { name: 'Open in shell' }) as HTMLButtonElement;
+		expect(btn.disabled).toBe(true);
+	});
+
+	it('is disabled with no conversation open', () => {
+		vi.mocked(getActiveConversation).mockReturnValue(undefined);
+		render(ChatView);
+		const btn = screen.getByRole('button', { name: 'Open in shell' }) as HTMLButtonElement;
+		expect(btn.disabled).toBe(true);
 	});
 });
