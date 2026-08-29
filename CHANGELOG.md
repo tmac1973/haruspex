@@ -5,7 +5,15 @@
 
 ### Features
 
+* agentic memory — extract, store and recall facts across chats, fully on-device ([#209](https://github.com/tmac1973/haruspex/issues/209)) ([8fad87f](https://github.com/tmac1973/haruspex/commit/8fad87f5c4a681a19eee54317e3e5f3ea06807fb))
+* jobs tab: unsaved-edit guard, list lock during runs, and schedules only where they work ([#208](https://github.com/tmac1973/haruspex/issues/208)) ([c532fdc](https://github.com/tmac1973/haruspex/commit/c532fdc7cc9ce82c24094a78a75a5731d6dab4e2))
 * **memory:** let the user ask the assistant to remember something ([#213](https://github.com/tmac1973/haruspex/issues/213)) ([7936c97](https://github.com/tmac1973/haruspex/commit/7936c9700f4b19b45e82063e6cefb18343b5e286))
+* open a chat conversation in a new shell tab ([#210](https://github.com/tmac1973/haruspex/issues/210)) ([75d4d2b](https://github.com/tmac1973/haruspex/commit/75d4d2b4dd1b881e233d30ce414929e18be9adb9))
+
+
+### Bug Fixes
+
+* **shell:** make paste and context capture aware of in-flight commands ([#211](https://github.com/tmac1973/haruspex/issues/211)) ([8573952](https://github.com/tmac1973/haruspex/commit/8573952d63df1850eb76f889637696b0ced49c8f))
 
 ## [0.1.59](https://github.com/tmac1973/haruspex/compare/v0.1.58...v0.1.59) (2026-08-20)
 
