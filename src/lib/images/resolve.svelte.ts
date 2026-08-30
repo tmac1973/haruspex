@@ -66,10 +66,26 @@ export async function resolveReplyImages(
 	isStillActive: () => boolean
 ): Promise<void> {
 	const eligible = eligibleImages(steps);
-	if (eligible.size === 0) return;
-
+	const asked = imageUrlsInText([replyText]);
 	const requests = resolvableFromReply(replyText, eligible, MAX_IMAGES_PER_MESSAGE);
-	if (requests.length === 0) return;
+
+	// Logged even when there is nothing to do, and deliberately so. These two
+	// counts are the only way to tell apart the three ways an answer ends up
+	// with no pictures — the model wrote none, the model wrote URLs no tool
+	// produced, or the fetch failed — and all three look identical on screen.
+	logDebug(
+		'images',
+		`reply: ${eligible.size} eligible, ${asked.length} requested, ${requests.length} resolvable`
+	);
+	if (requests.length === 0) {
+		if (asked.length > 0) {
+			// The model invented URLs, or copied ones from page text rather than
+			// from a tool result. Worth naming: it is a prompt problem, not a
+			// transport one.
+			logDebug('images', `reply: none of the requested URLs were eligible: ${asked.join(', ')}`);
+		}
+		return;
+	}
 
 	await runResolve(conversationId, requests, isStillActive, 'reply');
 }

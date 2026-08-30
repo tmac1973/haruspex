@@ -11,8 +11,18 @@ function step(partial: Partial<SearchStep> & { toolName: string }): SearchStep {
 	} as SearchStep;
 }
 
+/**
+ * Mirrors the real tool result: a JSON object followed by the `[Haruspex hint]`
+ * block the tool appends. A whole-string JSON.parse would throw on this.
+ */
 function imageSearchStep(...results: Array<Record<string, unknown>>): SearchStep {
-	return step({ toolName: 'image_search', result: JSON.stringify({ results }) });
+	return step({
+		toolName: 'image_search',
+		result:
+			JSON.stringify({ results }) +
+			'\n\n[Haruspex hint] To show an image, copy one of these lines into the answer you are ' +
+			'about to write:\n![a thing](https://example.test/thumb.jpg)\nUse at most 3.'
+	});
 }
 
 const COMMONS = {
@@ -135,5 +145,42 @@ describe('resolvableFromReply', () => {
 		expect(resolvableFromReply('Just prose, and a [link](https://e.test).', eligible, 3)).toEqual(
 			[]
 		);
+	});
+});
+
+describe('image_search result shape', () => {
+	it('survives the hint text appended after the JSON', () => {
+		// Regression: the tool appends a [Haruspex hint] block, and a
+		// whole-string JSON.parse threw on it — which emptied the eligibility
+		// set, so every image was silently dropped at render with no error
+		// logged anywhere.
+		const eligible = eligibleImages([imageSearchStep(COMMONS)]);
+		expect(eligible.size).toBeGreaterThan(0);
+		expect(eligible.has(COMMONS.url)).toBe(true);
+	});
+
+	it('accepts the thumbnail as well as the full-size URL', () => {
+		// The hint hands the model markdown built from thumb_url, but nothing
+		// stops it copying `url` out of the JSON instead. Registering only one
+		// would silently drop whichever it picked.
+		const withThumb = { ...COMMONS, thumb_url: 'https://upload.wikimedia.org/960px-panda.jpg' };
+		const eligible = eligibleImages([imageSearchStep(withThumb)]);
+		expect(eligible.has(COMMONS.url)).toBe(true);
+		expect(eligible.has('https://upload.wikimedia.org/960px-panda.jpg')).toBe(true);
+		// Both carry the same provenance, so the caption is right either way.
+		expect(eligible.get('https://upload.wikimedia.org/960px-panda.jpg')?.attribution).toBe(
+			'A Photographer'
+		);
+	});
+
+	it('does not duplicate when thumb_url equals url', () => {
+		const same = { ...COMMONS, thumb_url: COMMONS.url };
+		expect(eligibleImages([imageSearchStep(same)]).size).toBe(1);
+	});
+
+	it('still yields nothing for a result that is not JSON at all', () => {
+		expect(
+			eligibleImages([step({ toolName: 'image_search', result: 'total nonsense' })]).size
+		).toBe(0);
 	});
 });

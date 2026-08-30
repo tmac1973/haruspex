@@ -75,37 +75,88 @@ export function eligibleImages(steps: readonly SearchStep[]): Map<string, ImageR
 /**
  * Pull requests out of an `image_search` tool result.
  *
- * The result is the JSON the tool returned. Anything unparseable yields
- * nothing — a malformed result must not widen what may be fetched.
+ * The result is a JSON object followed by the `[Haruspex hint]` block the tool
+ * appends, so the JSON is parsed from the leading object rather than the whole
+ * string. Anything unparseable yields nothing — a malformed result must not
+ * widen what may be fetched.
  */
 function parseImageSearchResults(result: string | undefined): ImageRequest[] {
 	if (!result) return [];
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(result);
-	} catch {
-		return [];
-	}
+	const parsed = parseLeadingJson(result);
 	if (typeof parsed !== 'object' || parsed === null) return [];
 	const results = (parsed as { results?: unknown }).results;
 	if (!Array.isArray(results)) return [];
 
-	return results.map(toRequest).filter((r): r is ImageRequest => r !== null);
+	return results.flatMap(toRequests);
 }
 
-/** One search result → one request, or null if it carries no usable URL. */
-function toRequest(raw: unknown): ImageRequest | null {
-	if (typeof raw !== 'object' || raw === null) return null;
+/**
+ * Parse the JSON object at the start of a string, ignoring anything after it.
+ *
+ * Tool results carry trailing hint text, so a whole-string `JSON.parse` would
+ * throw and silently empty the eligibility set — every image would then be
+ * dropped at render with no error anywhere.
+ */
+function parseLeadingJson(text: string): unknown {
+	const trimmed = text.trimStart();
+	if (!trimmed.startsWith('{')) return null;
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let i = 0; i < trimmed.length; i++) {
+		const ch = trimmed[i];
+		if (escaped) {
+			escaped = false;
+			continue;
+		}
+		if (ch === '\\' && inString) {
+			escaped = true;
+			continue;
+		}
+		if (ch === '"') inString = !inString;
+		if (inString) continue;
+		if (ch === '{') depth++;
+		else if (ch === '}') {
+			depth--;
+			if (depth === 0) {
+				try {
+					return JSON.parse(trimmed.slice(0, i + 1));
+				} catch {
+					return null;
+				}
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * One search result → the requests it makes eligible.
+ *
+ * **Both** `url` and `thumb_url` are registered. The tool's hint hands the
+ * model ready-made markdown built from `thumb_url`, but a model may equally
+ * copy the full-resolution `url` out of the JSON — and a URL that is not in
+ * this set is never fetched, so registering only one of them would silently
+ * drop whichever the model happened to choose.
+ */
+function toRequests(raw: unknown): ImageRequest[] {
+	if (typeof raw !== 'object' || raw === null) return [];
 	const item = raw as Partial<ImageSearchResult>;
-	if (typeof item.url !== 'string' || !item.url) return null;
-	return {
-		url: item.url,
+	if (typeof item.url !== 'string' || !item.url) return [];
+
+	const base = {
 		source: typeof item.source === 'string' && item.source ? item.source : 'unknown',
 		license: item.license || null,
 		license_version: null,
 		attribution: item.attribution || null,
 		description_url: item.description_url || null
 	};
+
+	const out: ImageRequest[] = [{ url: item.url, ...base }];
+	if (typeof item.thumb_url === 'string' && item.thumb_url && item.thumb_url !== item.url) {
+		out.push({ url: item.thumb_url, ...base });
+	}
+	return out;
 }
 
 /**

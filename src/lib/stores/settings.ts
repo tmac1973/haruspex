@@ -1233,9 +1233,12 @@ export function getIncludeImagesPrompt(): string {
 	return `
 
 IMAGES:
-- When the answer is about something visual — a place, an animal, an object, a person, a plant, a building — include 1 to 3 relevant images.
-- Get them with image_search, or use an [Image: <url>] line from a page you fetched. Only use image URLs that appeared in a tool result in this conversation. Never invent an image URL.
-- Embed with markdown: ![short description](URL)
+- Images are an addition to a good answer, never a replacement for one. Follow the SEARCH RULES first: research the question as you normally would, and only then consider a picture. Calling image_search does not count as researching the topic.
+- When the answer is about something visual — a place, an animal, an object, a person, a plant, a building — add 1 to 3 relevant images.
+- You can use an [Image: <url>] line from a page you already fetched, or call image_search once you know what the answer is about.
+- Embed with markdown in the answer itself: ![short description](URL). An image you do not write into your answer is never shown to the user.
+- Use the thumb_url from an image_search result, not the full-size url.
+- Only use image URLs that appeared in a tool result in this conversation. Never invent an image URL.
 - Put each image right after the paragraph it illustrates, not all at the end.
 - Do NOT include images for abstract or technical questions — code, maths, definitions, comparisons of numbers, step-by-step instructions.
 - Never use more than 3 images in one answer. Fewer is better. An image that does not help the reader understand something is just noise.`;

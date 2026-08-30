@@ -12,6 +12,39 @@ import { fetchResult, toolResult } from './types';
 
 const RESEARCH_AGENT_MAX_TOKENS = 3072;
 
+/**
+ * Ready-to-paste markdown appended to an `image_search` result.
+ *
+ * Observed 2026-08-30 on Qwen 3.6 35B: the model searched for images, received
+ * the results, and then wrote a perfectly good answer containing none of them.
+ * This is the same failure the README documents for file writes — after a tool
+ * call, a model strongly prefers ending its turn with prose rather than one
+ * more structured act — and a rule in the system prompt thousands of
+ * characters earlier does not reliably beat it.
+ *
+ * So the instruction goes next to the data, at the point of use, which is the
+ * pattern the loop already uses for run_python and run_command hints. Handing
+ * over finished markdown lines rather than describing the syntax removes the
+ * remaining step where a model can get it wrong.
+ *
+ * `thumb_url` and not `url`: the full-resolution original is pointlessly large
+ * for a chat bubble — a sampled Commons pair on 2026-08-30 was 1 MB against
+ * 170 KB for the 960px thumbnail — and big originals would silently exceed the
+ * cache's 5 MB per-image ceiling.
+ */
+function embedHint(results: ImageSearchResult[]): string {
+	const lines = results
+		.slice(0, 3)
+		.map((r) => `![${r.title.replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, '')}](${r.thumb_url})`)
+		.join('\n');
+	return (
+		`\n\n[Haruspex hint] To show an image, copy one of these lines into the answer you are ` +
+		`about to write, placing it just after the paragraph it illustrates:\n${lines}\n` +
+		`Use at most 3, and only where a picture genuinely helps. An image you do not copy in ` +
+		`is never shown to the user.`
+	);
+}
+
 function paywallErrorMessage(url: string, reason: string): string {
 	return (
 		`Paywalled: ${url} — ${reason}. Do NOT cite any facts from this URL; ` +
@@ -219,11 +252,11 @@ registerTool({
 				return toolResult(
 					JSON.stringify({
 						results: [],
-						note: `No Wikimedia Commons images found for "${query}". Try a broader or different query.`
+						note: `No images found for "${query}". Try a broader or different query.`
 					})
 				);
 			}
-			return toolResult(JSON.stringify({ results }));
+			return toolResult(JSON.stringify({ results }) + embedHint(results));
 		} catch (e) {
 			return toolResult(toolInvokeError('image_search', e));
 		}
