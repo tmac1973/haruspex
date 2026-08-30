@@ -40,6 +40,7 @@ import {
 	type StepStats
 } from '$lib/stores/jobRuns.svelte';
 import { logDebug } from '$lib/debug-log';
+import { setKeepAwake } from './keepAwake';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -400,6 +401,22 @@ export interface PendingQueueEntry {
 let current = $state<RunState | null>(null);
 let pending = $state<QueuedRun[]>([]);
 let activeAbort: AbortController | null = null;
+
+// Hold the machine awake for as long as there is work. The scheduler ticker
+// and every pipeline are JS in the webview, so an OS suspend doesn't just
+// pause inference — it stalls the run loop outright, and since the process
+// survives, the run isn't swept into 'interrupted' either; it sits at
+// 'running' until someone notices. A module-level $effect.root (same pattern
+// as the queued-send watcher in stores/chat.svelte.ts) derives the intent
+// from the state that already exists rather than from calls sprinkled
+// through startRun / finalizeRun / drainNext, so no path can forget one.
+// Batching is a bonus: a finish that immediately drains the next queued run
+// settles as a single no-op instead of a release/acquire round trip.
+$effect.root(() => {
+	$effect(() => {
+		setKeepAwake(current?.status === 'running' || pending.length > 0);
+	});
+});
 
 export function getCurrentRun(): RunState | null {
 	return current;
