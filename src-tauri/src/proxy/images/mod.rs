@@ -295,6 +295,80 @@ fn interleave(lists: Vec<Vec<ImageSearchResult>>, limit: usize) -> Vec<ImageSear
     out
 }
 
+/// Substrings that mark a URL as decoration rather than a subject photograph.
+/// Matched against the lowercased path, so `/assets/site-logo.png` is caught
+/// but a legitimate `/photos/logotype-museum.jpg` article image is not
+/// meaningfully at risk — a false negative here costs one skipped image, a
+/// false positive puts a site's logo in the middle of an answer.
+const DECORATIVE_MARKERS: &[&str] = &[
+    "sprite",
+    "logo",
+    "icon",
+    "favicon",
+    "avatar",
+    "placeholder",
+    "spacer",
+    "banner-ad",
+];
+
+/// The page's own declared hero image, if it has one.
+///
+/// Only the three *declared* sources are consulted, in this order:
+/// `og:image`, `twitter:image`, then `link rel="image_src"`. Body `<img>`
+/// tags are deliberately excluded — [`extract_page_images`] returns those for
+/// the explicit "find images on this page" tool, but a page's first `<img>` is
+/// as likely to be a logo or a nav sprite as a photograph of the subject, and
+/// this result is offered to the model unprompted on every fetch.
+///
+/// Nothing is downloaded here. The URL is only surfaced; it is fetched later,
+/// and only if the model actually cites it.
+pub(crate) fn extract_hero_image(html: &str, base_url: &url::Url) -> Option<String> {
+    let doc = Html::parse_document(html);
+
+    let candidates = [
+        (r#"meta[property="og:image"]"#, "content"),
+        (r#"meta[name="twitter:image"]"#, "content"),
+        (r#"link[rel="image_src"]"#, "href"),
+    ];
+
+    for (selector, attr) in candidates {
+        let Ok(sel) = Selector::parse(selector) else {
+            continue;
+        };
+        for el in doc.select(&sel) {
+            let Some(raw) = el.value().attr(attr) else {
+                continue;
+            };
+            if let Some(url) = usable_hero_url(raw, base_url) {
+                return Some(url);
+            }
+        }
+    }
+    None
+}
+
+/// Resolve a raw hero candidate and reject the ones not worth offering.
+fn usable_hero_url(raw: &str, base_url: &url::Url) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.starts_with("data:") {
+        // A data: URL is already inline; there is nothing for the cache to
+        // fetch and nothing to attribute.
+        return None;
+    }
+
+    let absolute = base_url.join(raw).ok()?;
+    if !matches!(absolute.scheme(), "http" | "https") {
+        return None;
+    }
+
+    let path = absolute.path().to_lowercase();
+    if DECORATIVE_MARKERS.iter().any(|m| path.contains(m)) {
+        return None;
+    }
+
+    Some(absolute.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,5 +512,99 @@ mod tests {
 
         assert!(interleave(vec![vec![], vec![], vec![]], 10).is_empty());
         assert!(interleave(vec![], 10).is_empty());
+    }
+
+    #[test]
+    fn hero_prefers_og_image_then_twitter_then_image_src() {
+        let base = url::Url::parse("https://example.com/article").unwrap();
+
+        let all = r#"<html><head>
+            <meta property="og:image" content="https://cdn.example.com/og.jpg">
+            <meta name="twitter:image" content="https://cdn.example.com/tw.jpg">
+            <link rel="image_src" href="https://cdn.example.com/legacy.jpg">
+        </head></html>"#;
+        assert_eq!(
+            extract_hero_image(all, &base).as_deref(),
+            Some("https://cdn.example.com/og.jpg")
+        );
+
+        let no_og = r#"<html><head>
+            <meta name="twitter:image" content="https://cdn.example.com/tw.jpg">
+            <link rel="image_src" href="https://cdn.example.com/legacy.jpg">
+        </head></html>"#;
+        assert_eq!(
+            extract_hero_image(no_og, &base).as_deref(),
+            Some("https://cdn.example.com/tw.jpg")
+        );
+
+        let legacy_only = r#"<html><head>
+            <link rel="image_src" href="https://cdn.example.com/legacy.jpg">
+        </head></html>"#;
+        assert_eq!(
+            extract_hero_image(legacy_only, &base).as_deref(),
+            Some("https://cdn.example.com/legacy.jpg")
+        );
+    }
+
+    /// Body images are for the explicit fetch_url_images tool. This one is
+    /// offered unprompted, so it must never guess at a random <img>.
+    #[test]
+    fn hero_ignores_body_images_entirely() {
+        let base = url::Url::parse("https://example.com/article").unwrap();
+        let html = r#"<html><body><img src="photo.jpg" alt="a photo"></body></html>"#;
+        assert_eq!(extract_hero_image(html, &base), None);
+    }
+
+    #[test]
+    fn hero_resolves_a_relative_url_against_the_page() {
+        let base = url::Url::parse("https://example.com/news/2026/story").unwrap();
+        let html = r#"<html><head><meta property="og:image" content="../hero.jpg"></head></html>"#;
+        assert_eq!(
+            extract_hero_image(html, &base).as_deref(),
+            Some("https://example.com/news/hero.jpg")
+        );
+    }
+
+    #[test]
+    fn hero_rejects_decoration_and_unusable_schemes() {
+        let base = url::Url::parse("https://example.com/").unwrap();
+        for src in [
+            "https://cdn.example.com/assets/site-logo.png",
+            "https://cdn.example.com/sprite-sheet.png",
+            "https://cdn.example.com/img/favicon.ico",
+            "https://cdn.example.com/users/avatar.jpg",
+            "https://cdn.example.com/placeholder.png",
+            "data:image/png;base64,iVBORw0KGgo=",
+            "javascript:alert(1)",
+            "",
+        ] {
+            let html =
+                format!(r#"<html><head><meta property="og:image" content="{src}"></head></html>"#);
+            assert_eq!(
+                extract_hero_image(&html, &base),
+                None,
+                "should reject {src}"
+            );
+        }
+    }
+
+    /// A junk og:image must not stop a usable twitter:image being found.
+    #[test]
+    fn hero_falls_through_when_the_first_candidate_is_junk() {
+        let base = url::Url::parse("https://example.com/").unwrap();
+        let html = r#"<html><head>
+            <meta property="og:image" content="https://cdn.example.com/logo.png">
+            <meta name="twitter:image" content="https://cdn.example.com/real-photo.jpg">
+        </head></html>"#;
+        assert_eq!(
+            extract_hero_image(html, &base).as_deref(),
+            Some("https://cdn.example.com/real-photo.jpg")
+        );
+    }
+
+    #[test]
+    fn hero_is_absent_when_the_page_declares_none() {
+        let base = url::Url::parse("https://example.com/").unwrap();
+        assert_eq!(extract_hero_image("<html></html>", &base), None);
     }
 }

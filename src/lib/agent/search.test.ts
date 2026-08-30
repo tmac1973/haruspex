@@ -37,7 +37,10 @@ describe('executeTool', () => {
 	});
 
 	it('routes fetch_url to proxy_fetch invoke', async () => {
-		vi.mocked(invoke).mockResolvedValue('page content');
+		// proxy_fetch returns the page text plus the hero image the page
+		// declares about itself; the image is harvested during the parse Rust
+		// was already doing, so a page without one simply reports null.
+		vi.mocked(invoke).mockResolvedValue({ text: 'page content', hero_image: null });
 
 		const { executeTool } = await import('$lib/agent/tools');
 		const output = await executeTool('fetch_url', { url: 'https://example.com' }, defaultCtx);
@@ -47,6 +50,19 @@ describe('executeTool', () => {
 			expect.objectContaining({ url: 'https://example.com', caller: 'fetch_url' })
 		);
 		expect(output.result).toBe('page content');
+		expect(output.heroImage).toBeUndefined();
+	});
+
+	it('carries a fetched page hero image through to the tool output', async () => {
+		vi.mocked(invoke).mockResolvedValue({
+			text: 'page content',
+			hero_image: 'https://cdn.example.com/hero.jpg'
+		});
+
+		const { executeTool } = await import('$lib/agent/tools');
+		const output = await executeTool('fetch_url', { url: 'https://example.com' }, defaultCtx);
+
+		expect(output.heroImage).toBe('https://cdn.example.com/hero.jpg');
 	});
 
 	it('returns error for unknown tool', async () => {

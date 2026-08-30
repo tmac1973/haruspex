@@ -75,7 +75,7 @@ SEARCH RULES:
 - For reviews or "best of" questions, include Reddit alongside review sites.
 
 INLINE CITATIONS:
-- Every fetch_url / research_url result starts with a "[Source: <url>]" header identifying which URL the content came from.
+- Every fetch_url / research_url result starts with a "[Source: <url>]" header identifying which URL the content came from. Some also carry an "[Image: <url>]" line — that is a picture from the page, available if an image would help.
 - Cite facts from the web inline as [source](URL). The anchor text must be the literal word "source". Example: "...the device ships with 16 GB of RAM [source](https://example.com/product-page)."
 - Each [source](URL) must point to the specific page where that claim appeared. Copy the URL from the "[Source: <url>]" header.
 - Never invent a URL. Never cite a URL from an earlier turn.

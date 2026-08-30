@@ -8,7 +8,7 @@ import type { PageImage } from '$lib/ipc/gen/PageImage';
 import type { SearchResult } from '$lib/ipc/gen/SearchResult';
 import { labelArg, proxyFetch, runSubAgent, toolInvokeError, ensureUrlScheme } from './_helpers';
 import { registerTool } from './registry';
-import { toolResult } from './types';
+import { fetchResult, toolResult } from './types';
 
 const RESEARCH_AGENT_MAX_TOKENS = 3072;
 
@@ -83,12 +83,12 @@ registerTool({
 	async execute(args) {
 		const url = args.url as string;
 		try {
-			const content = await proxyFetch(url, 'fetch_url');
-			const paywall = detectPaywall(url, content);
+			const page = await proxyFetch(url, 'fetch_url');
+			const paywall = detectPaywall(url, page.text);
 			if (paywall.paywalled) {
 				return toolResult(paywallErrorMessage(url, paywall.reason || 'page is paywalled'));
 			}
-			return toolResult(content);
+			return fetchResult(page.text, page.hero_image ?? undefined);
 		} catch (e) {
 			return toolResult(`Failed to fetch URL: ${e}`);
 		}
@@ -127,8 +127,11 @@ registerTool({
 		const focus = args.focus as string;
 
 		let pageContent: string;
+		let heroImage: string | undefined;
 		try {
-			pageContent = await proxyFetch(url, 'research_url');
+			const page = await proxyFetch(url, 'research_url');
+			pageContent = page.text;
+			heroImage = page.hero_image ?? undefined;
 		} catch (e) {
 			return toolResult(`Failed to fetch URL: ${e}`);
 		}
@@ -167,7 +170,7 @@ registerTool({
 			if (!findings) {
 				return toolResult(`Sub-agent returned no findings for ${url}.`);
 			}
-			return toolResult(`Source: ${url}\nFocus: ${focus}\n\n${findings}`);
+			return fetchResult(`Source: ${url}\nFocus: ${focus}\n\n${findings}`, heroImage);
 		} catch (e) {
 			if (isAbortError(e)) throw e;
 			return toolResult(toolInvokeError(`research_url sub-agent for ${url}`, e));

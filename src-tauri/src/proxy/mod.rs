@@ -310,7 +310,7 @@ pub async fn proxy_fetch(
     url: String,
     caller: Option<String>,
     proxy: Option<ProxyConfig>,
-) -> Result<String, String> {
+) -> Result<extract::FetchedPage, String> {
     // Tag for the log line so we can distinguish fetch_url calls (raw page
     // text returned to the main agent) from research_url calls (page goes
     // through a sub-agent extractor before its findings reach the main agent).

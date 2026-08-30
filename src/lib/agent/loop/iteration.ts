@@ -1286,7 +1286,11 @@ async function executeToolCalls(
 				blockedWebReads++;
 			} else if (url) {
 				nudges.recordFetchedUrl(url);
-				toolContent = `[Source: ${url}]\n\n${toolContent}`;
+				// The hero image goes on its own line beside the Source header,
+				// and the line is omitted entirely when the page declared none —
+				// an empty field is something a small model will try to fill in.
+				const imageLine = output.heroImage ? `\n[Image: ${output.heroImage}]` : '';
+				toolContent = `[Source: ${url}]${imageLine}\n\n${toolContent}`;
 			}
 		}
 

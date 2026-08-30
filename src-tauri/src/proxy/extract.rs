@@ -8,6 +8,7 @@ use super::config::FETCH_TIMEOUT;
 use super::paywall::{detect_paywall_signal, PAYWALL_SENTINEL};
 use super::ProxyConfig;
 use scraper::{Html, Selector};
+use serde::Serialize;
 use std::net::IpAddr;
 
 const MAX_FETCH_LENGTH: usize = 4000;
@@ -102,10 +103,25 @@ async fn fetch_first_ok(
     Err(refusal.unwrap_or_else(|| "Fetch failed: no candidate URLs".to_string()))
 }
 
+/// A fetched page: its extracted text, plus the hero image the page declares
+/// about itself.
+///
+/// The image is harvested here because the HTML is already in hand — the page
+/// is being parsed for text regardless, so finding its `og:image` costs one
+/// more pass over a document we have already built and no extra request.
+/// Nothing is downloaded; the URL is only carried forward, and is fetched
+/// later only if the model actually cites it.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct FetchedPage {
+    pub text: String,
+    pub hero_image: Option<String>,
+}
+
 pub(super) async fn fetch_and_extract(
     url: &str,
     proxy: Option<&ProxyConfig>,
-) -> Result<String, String> {
+) -> Result<FetchedPage, String> {
     // Validate URL
     validate_url(url)?;
 
@@ -127,6 +143,11 @@ pub(super) async fn fetch_and_extract(
         return Err(format!("Content type not supported: {}", content_type));
     }
 
+    // Captured before the body is consumed: redirects mean the URL we asked
+    // for and the one that answered are not always the same, and a relative
+    // og:image must resolve against the latter.
+    let final_url = response.url().to_string();
+
     let html = response
         .text()
         .await
@@ -138,10 +159,24 @@ pub(super) async fn fetch_and_extract(
     // usefully cite a preview, and the TS layer will reject the URL as a
     // citation source. See the comment on PAYWALL_SENTINEL.
     if let Some(reason) = detect_paywall_signal(&html) {
-        return Ok(format!("{} {}", PAYWALL_SENTINEL, reason));
+        return Ok(FetchedPage {
+            text: format!("{} {}", PAYWALL_SENTINEL, reason),
+            // A paywalled page's hero image is its promotional art, and the
+            // model has no body text to pair it with anyway.
+            hero_image: None,
+        });
     }
 
-    Ok(extract_text(&html))
+    // Resolve against the post-redirect URL so a relative og:image points
+    // where the browser actually landed, not where we started.
+    let hero_image = url::Url::parse(&final_url)
+        .ok()
+        .and_then(|base| super::images::extract_hero_image(&html, &base));
+
+    Ok(FetchedPage {
+        text: extract_text(&html),
+        hero_image,
+    })
 }
 
 pub(crate) fn validate_url(url: &str) -> Result<(), String> {

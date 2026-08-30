@@ -17,7 +17,7 @@ pub struct ProxyState {
     last_search_time: Mutex<HashMap<String, Instant>>,
     engine_failures: Mutex<HashMap<String, Instant>>,
     search_cache: Mutex<HashMap<String, CacheEntry<Vec<SearchResult>>>>,
-    fetch_cache: Mutex<HashMap<String, CacheEntry<String>>>,
+    fetch_cache: Mutex<HashMap<String, CacheEntry<super::extract::FetchedPage>>>,
     /// Index of the next engine to try first in auto-rotation. Incremented
     /// after each successful search so we round-robin through the engines
     /// instead of always starting with the same one.
@@ -161,7 +161,7 @@ impl ProxyState {
         );
     }
 
-    pub(super) fn get_cached_fetch(&self, url: &str) -> Option<String> {
+    pub(super) fn get_cached_fetch(&self, url: &str) -> Option<super::extract::FetchedPage> {
         let cache = self.fetch_cache.lock().unwrap();
         cache.get(url).and_then(|entry| {
             if entry.expires_at > Instant::now() {
@@ -172,12 +172,12 @@ impl ProxyState {
         })
     }
 
-    pub(super) fn cache_fetch(&self, url: &str, content: &str) {
+    pub(super) fn cache_fetch(&self, url: &str, content: &super::extract::FetchedPage) {
         let mut cache = self.fetch_cache.lock().unwrap();
         cache.insert(
             url.to_string(),
             CacheEntry {
-                value: content.to_string(),
+                value: content.clone(),
                 expires_at: Instant::now() + FETCH_CACHE_TTL,
             },
         );
@@ -210,8 +210,16 @@ mod tests {
     #[test]
     fn fetch_cache_stores_and_retrieves() {
         let state = ProxyState::new();
-        state.cache_fetch("https://example.com", "cached content");
-        let cached = state.get_cached_fetch("https://example.com");
+        state.cache_fetch(
+            "https://example.com",
+            &crate::proxy::extract::FetchedPage {
+                text: "cached content".to_string(),
+                hero_image: None,
+            },
+        );
+        let cached = state
+            .get_cached_fetch("https://example.com")
+            .map(|p| p.text);
         assert!(cached.is_some());
         assert_eq!(cached.unwrap(), "cached content");
     }
