@@ -9,7 +9,29 @@ findings, and the Decisions appendix.
 
 ## Build status
 
-Locked 2026-08-30. Not started.
+Locked 2026-08-30. All seven phases implemented 2026-08-30, pending manual
+verification on Linux, Windows and macOS. `make check` passes.
+
+Four things the plan did not anticipate, each recorded in its phase's commit:
+
+- **AVIF is rejected at the header** (phase 01). The `image` crate already in
+  the tree pulls in `ravif`, an _encoder_; decoding needs `avif-native` and
+  libdav1d on all three platforms. Accepting the type would mean downloading up
+  to 5 MB and always failing the decode gate.
+- **The hash goes in the URL path, not the host** (phase 02). A DNS label caps
+  at 63 characters and a sha256 digest is 64, so a hash-as-host URL is
+  malformed before it reaches the handler. Tauri's own `asset://localhost/`
+  uses the same host-plus-path shape.
+- **`$state(new Map())` is not reactive** (phase 05). Svelte 5 does not make a
+  Map's contents reactive, so resolved images would have landed in the map and
+  never reached the screen. It is a `SvelteMap`, matching `stores/toasts`.
+- **`lookup_only` is enforced in Rust** (phase 05), not merely by the frontend
+  declining to ask. A frontend mistake therefore cannot turn a stored message
+  into a network request.
+
+No new dependencies were needed: `sha2`, `futures-util` and `image` were
+already present, and the Rust tests use the `std::env::temp_dir` idiom from
+`code_tools.rs` rather than adding `tempfile`.
 
 ## Phases
 
