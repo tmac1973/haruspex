@@ -79,3 +79,28 @@ describe('renderMarkdown sanitization', () => {
 		expect(out).toContain('language-python');
 	});
 });
+
+describe('image URI scheme allowance', () => {
+	it('lets cached chat images through', () => {
+		const hash = '0123456789abcdef'.repeat(4);
+		const html = sanitizeHtml(`<img src="haruspex-img://localhost/${hash}" alt="x">`);
+		// Without the custom scheme on the allowlist DOMPurify strips the src
+		// and every cached image silently vanishes.
+		expect(html).toContain(`haruspex-img://localhost/${hash}`);
+	});
+
+	it('still allows the Windows form, which is plain http', () => {
+		const html = sanitizeHtml('<img src="http://haruspex-img.localhost/abc" alt="x">');
+		expect(html).toContain('haruspex-img.localhost');
+	});
+
+	it('still strips javascript: URLs', () => {
+		expect(sanitizeHtml('<a href="javascript:alert(1)">x</a>')).not.toContain('javascript:');
+		expect(sanitizeHtml('<img src="javascript:alert(1)">')).not.toContain('javascript:');
+	});
+
+	it('still allows ordinary web and data URLs', () => {
+		expect(sanitizeHtml('<a href="https://example.com">x</a>')).toContain('https://example.com');
+		expect(sanitizeHtml('<img src="data:image/png;base64,iVBORw0KGgo=">')).toContain('data:image');
+	});
+});

@@ -358,23 +358,35 @@ export function stripToolCallArtifacts(text: string): string {
  * stable. Legitimate HTML in the middle of the content is untouched;
  * only a tag at the very end without its closing `>` gets hidden.
  */
-function sanitizeForRender(text: string): string {
+function sanitizeForRender(text: string, resolved?: ResolvedImages): string {
 	let out = stripToolCallArtifacts(text);
 	// Matches `<`, `</`, `<tag`, `</tag`, etc. at the very end of the
 	// string. Requires at least a `<` and no `>` after it. The tag-name
 	// character class excludes space so plain text like `5 < 10` isn't
 	// matched.
 	out = out.replace(/<\/?[a-zA-Z0-9_-]*$/, '');
-	// Drop markdown image refs whose src isn't a real URL — the model
-	// often writes `![plot](sine_wave.png)` after using the Python
-	// sandbox to plot something, expecting the rendered chat to embed
-	// the file. Such relative paths never resolve from the WebView's
-	// origin and produce a broken-image icon. Real http(s)/data sources
-	// (web search results, base64 images) are left alone.
-	out = out.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, _alt, src) => {
+	// Every markdown image ref resolves to exactly one of three outcomes:
+	//
+	//   1. A cached image → a <figure> served from haruspex-img://, with an
+	//      attribution caption built from stored provenance.
+	//   2. A data: URL → left alone. The Python sandbox writes these for
+	//      inline plots and they are already local.
+	//   3. Anything else → dropped entirely.
+	//
+	// Case 3 covers three situations with one behaviour, deliberately: a
+	// relative path the model invented (`![plot](sine_wave.png)`), an image
+	// still being fetched, and an image whose fetch failed or was never
+	// eligible. All render as nothing, so a failure is indistinguishable from
+	// a slow load and neither produces a broken-image icon.
+	//
+	// It also means a bare remote http(s) URL is no longer passed through,
+	// which is what guarantees no image request ever originates in the
+	// webview. The CSP enforces the same thing a second time.
+	out = out.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src) => {
 		const trimmed = String(src).trim();
-		if (/^(https?:|data:)/i.test(trimmed)) return match;
-		return '';
+		if (/^data:/i.test(trimmed)) return match;
+		const figure = resolved?.figureFor(trimmed, String(alt));
+		return figure ?? '';
 	});
 	return out;
 }
@@ -677,8 +689,18 @@ export function finalizeStreamText(
 	return processCitations(stripToolCallArtifacts(stripThinkBlocks(raw)).trim(), fetchedUrls);
 }
 
-export function renderMarkdown(text: string): string {
-	const sanitized = sanitizeForRender(text);
+/**
+ * Turns a resolved image URL into the HTML that displays it. Supplied by the
+ * caller so this module needs no knowledge of the cache, the protocol scheme
+ * or the caption rules, and stays a pure synchronous function — which is what
+ * lets it keep being called from a `$derived` on every streaming chunk.
+ */
+export interface ResolvedImages {
+	figureFor: (url: string, alt: string) => string | null;
+}
+
+export function renderMarkdown(text: string, resolved?: ResolvedImages): string {
+	const sanitized = sanitizeForRender(text, resolved);
 	const withThinking = convertThinkingBlocks(sanitized);
 	const withFixedTables = fixMalformedTables(withThinking);
 	// marked passes raw HTML in the source text through verbatim, and this

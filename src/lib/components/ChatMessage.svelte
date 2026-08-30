@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { renderMarkdown, splitThinkChannels, stripMarkdownForTTS } from '$lib/markdown';
+	import { resolvedImages } from '$lib/images/figure';
 	import ThinkingPanel from '$lib/components/ThinkingPanel.svelte';
 	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
 	import { getSettings } from '$lib/stores/settings';
@@ -54,7 +55,9 @@
 		!isStreaming && channels.answer.trim() === '' && channels.reasoning.trim() !== ''
 	);
 	let answerText = $derived(thinkingOnly ? channels.reasoning : channels.answer);
-	let renderedContent = $derived(answerText ? renderMarkdown(answerText) : '');
+	// `resolvedImages` reads the live SvelteMap on every call, so this
+	// re-derives as each image resolves and they appear one by one.
+	let renderedContent = $derived(answerText ? renderMarkdown(answerText, resolvedImages) : '');
 	let plainText = $derived(
 		answerText ? stripMarkdownForTTS(answerText, getSettings().ttsReadTablesByColumn) : ''
 	);
@@ -234,6 +237,43 @@
 		padding: 0.15em 0.4em;
 		border-radius: 3px;
 		font-size: 0.9em;
+	}
+
+	/* Images the model put in its answer. Served from haruspex-img://, never
+	   fetched by the webview — see images/figure.ts. */
+	.message-content :global(figure.chat-image) {
+		margin: 0.75rem 0;
+	}
+
+	.message-content :global(figure.chat-image img) {
+		display: block;
+		max-width: 100%;
+		/* Height-capped so one tall image cannot push the rest of an answer
+		   off screen; `auto` width keeps the aspect ratio. */
+		max-height: 22rem;
+		width: auto;
+		height: auto;
+		border-radius: 8px;
+		border: 1px solid var(--border);
+	}
+
+	/* Credit line. CC BY and CC BY-SA require this wherever the image is
+	   shown, so it is generated from stored provenance rather than left to
+	   the model. */
+	.message-content :global(figcaption.chat-image-credit) {
+		margin-top: 0.3rem;
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		line-height: 1.3;
+	}
+
+	.message-content :global(figcaption.chat-image-credit a) {
+		color: var(--text-muted);
+		text-decoration: underline;
+	}
+
+	.message-content :global(figcaption.chat-image-credit a:hover) {
+		color: var(--text-secondary);
 	}
 
 	.message-content :global(.thinking-block) {
