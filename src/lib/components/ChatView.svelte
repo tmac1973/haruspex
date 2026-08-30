@@ -416,6 +416,7 @@
 						<ChatMessage
 							message={msg}
 							tokensPerSecond={activeConversation.messageStats?.[i]?.tokensPerSecond}
+							steps={activeConversation.messageSteps[i]}
 						/>
 						{#if activeConversation.messageStops?.[i]}
 							<StopIndicator

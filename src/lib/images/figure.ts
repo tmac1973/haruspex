@@ -9,7 +9,9 @@
 
 import type { ImageRow } from '$lib/ipc/gen/ImageRow';
 import type { ResolvedImages } from '$lib/markdown';
+import type { SearchStep } from '$lib/agent/loop';
 import { captionFor } from './caption';
+import { imageUrlsInText, stripCandidates } from './eligible';
 import { getResolvedImages } from './resolve.svelte';
 import { imageSrc } from './url';
 
@@ -69,3 +71,27 @@ export const resolvedImages: ResolvedImages = {
 		return row ? figureHtml(row, alt) : null;
 	}
 };
+
+/**
+ * The images to show beneath one answer, or an empty list.
+ *
+ * Returns candidates only when the answer embedded no image of its own: an
+ * inline picture placed next to the paragraph it illustrates is the better
+ * outcome and this must not duplicate it. The strip exists purely to catch the
+ * case where the model searched and then forgot to write the markdown.
+ *
+ * Unresolved candidates are omitted rather than held as placeholders, so a
+ * strip whose images all failed to fetch renders as nothing at all — the same
+ * silent behaviour as an unresolved inline image.
+ */
+export function stripFor(text: string, steps: readonly SearchStep[]): ImageRow[] {
+	const map = getResolvedImages();
+
+	// Something already rendered in the prose — leave the answer alone.
+	const embedded = imageUrlsInText([text]).some((url) => map.has(url));
+	if (embedded) return [];
+
+	return stripCandidates(steps)
+		.map((c) => map.get(c.url))
+		.filter((row): row is ImageRow => row !== undefined);
+}

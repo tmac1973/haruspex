@@ -20,7 +20,13 @@ import type { ImageRow } from '$lib/ipc/gen/ImageRow';
 import { getSettings } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
 import { SvelteMap } from 'svelte/reactivity';
-import { eligibleImages, imageUrlsInText, resolvableFromReply } from './eligible';
+import {
+	eligibleImages,
+	imageUrlsInText,
+	rehydrationUrls,
+	resolvableFromReply,
+	stripCandidates
+} from './eligible';
 
 /** Ceiling per message. The prompt asks for 1–3; this makes it true. */
 export const MAX_IMAGES_PER_MESSAGE = 3;
@@ -84,10 +90,33 @@ export async function resolveReplyImages(
 			// transport one.
 			logDebug('images', `reply: none of the requested URLs were eligible: ${asked.join(', ')}`);
 		}
+		// Nothing embedded, but the model may still have searched for pictures.
+		// Running image_search is the intent; forgetting the final markdown is
+		// the failure this covers. See stripCandidates.
+		await resolveStrip(conversationId, steps, isStillActive);
 		return;
 	}
 
 	await runResolve(conversationId, requests, isStillActive, 'reply');
+}
+
+/**
+ * Fetch the images for the fallback strip.
+ *
+ * These URLs come from our own `image_search` results, never from anything the
+ * model wrote, so the eligibility allowlist that guards the inline path has
+ * nothing to check here — there is no attacker-controlled text in this route
+ * at all.
+ */
+async function resolveStrip(
+	conversationId: string,
+	steps: readonly SearchStep[],
+	isStillActive: () => boolean
+): Promise<void> {
+	const candidates = stripCandidates(steps);
+	if (candidates.length === 0) return;
+	logDebug('images', `strip: ${candidates.length} candidates from image_search`);
+	await runResolve(conversationId, candidates, isStillActive, 'strip');
 }
 
 /**
@@ -102,9 +131,13 @@ export async function resolveReplyImages(
 export async function rehydrateImages(
 	conversationId: string,
 	messageTexts: readonly string[],
+	stepsByMessage: readonly (readonly SearchStep[])[],
 	isStillActive: () => boolean
 ): Promise<void> {
-	const urls = imageUrlsInText(messageTexts).filter((url) => !resolved.has(url));
+	// Inline images are addressed by the URLs in the message text; strip images
+	// are not in the text at all, so their URLs come back from the archived
+	// steps. Both are lookups — see below.
+	const urls = rehydrationUrls(messageTexts, stepsByMessage).filter((url) => !resolved.has(url));
 	if (urls.length === 0) return;
 
 	const requests: ImageRequest[] = urls.map((url) => ({

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { renderMarkdown, splitThinkChannels, stripMarkdownForTTS } from '$lib/markdown';
-	import { resolvedImages } from '$lib/images/figure';
+	import { resolvedImages, stripFor } from '$lib/images/figure';
+	import ChatImageStrip from './ChatImageStrip.svelte';
+	import type { SearchStep } from '$lib/agent/loop';
 	import ThinkingPanel from '$lib/components/ThinkingPanel.svelte';
 	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
 	import { getSettings } from '$lib/stores/settings';
@@ -11,9 +13,15 @@
 		message: ChatMessage;
 		isStreaming?: boolean;
 		tokensPerSecond?: number;
+		/**
+		 * This message's archived tool steps. Only needed to decide whether the
+		 * model searched for pictures it then failed to embed — see
+		 * `images/figure`.`stripFor`.
+		 */
+		steps?: SearchStep[];
 	}
 
-	let { message, isStreaming = false, tokensPerSecond }: Props = $props();
+	let { message, isStreaming = false, tokensPerSecond, steps }: Props = $props();
 
 	let tokRateLabel = $derived(
 		typeof tokensPerSecond === 'number' && tokensPerSecond > 0
@@ -58,6 +66,11 @@
 	// `resolvedImages` reads the live SvelteMap on every call, so this
 	// re-derives as each image resolves and they appear one by one.
 	let renderedContent = $derived(answerText ? renderMarkdown(answerText, resolvedImages) : '');
+	// Empty while streaming: the answer is not finished, so "the model embedded
+	// nothing" is not yet a fact about it.
+	let stripImages = $derived(
+		!isStreaming && message.role === 'assistant' ? stripFor(answerText, steps ?? []) : []
+	);
 	let plainText = $derived(
 		answerText ? stripMarkdownForTTS(answerText, getSettings().ttsReadTablesByColumn) : ''
 	);
@@ -90,6 +103,7 @@
 				/>
 			{/if}
 			{@html renderedContent}
+			<ChatImageStrip images={stripImages} />
 			{#if isStreaming}
 				<span class="streaming-caret"></span>
 			{/if}

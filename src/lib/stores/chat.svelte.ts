@@ -630,6 +630,9 @@ export async function setActiveConversation(id: string): Promise<void> {
 			void rehydrateImages(
 				id,
 				conv.messages.map((m) => messageText(m.content)),
+				// Strip images are not referenced anywhere in the message text,
+				// so their URLs have to come back from the archived steps.
+				conv.messages.map((_m, i) => conv.messageSteps[i] ?? []),
 				() => getActiveConversationId() === id
 			);
 		}

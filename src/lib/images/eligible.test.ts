@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { eligibleImages, resolvableFromReply } from './eligible';
+import { eligibleImages, resolvableFromReply, stripCandidates } from './eligible';
 import type { SearchStep } from '$lib/agent/loop';
 
 function step(partial: Partial<SearchStep> & { toolName: string }): SearchStep {
@@ -182,5 +182,78 @@ describe('image_search result shape', () => {
 		expect(
 			eligibleImages([step({ toolName: 'image_search', result: 'total nonsense' })]).size
 		).toBe(0);
+	});
+});
+
+describe('stripCandidates', () => {
+	const withThumb = (url: string, thumb: string) => ({
+		...COMMONS,
+		url,
+		thumb_url: thumb
+	});
+
+	it('prefers the thumbnail over the full-size original', () => {
+		// Right-sized for display and a fraction of the bytes — the sampled
+		// Commons pair was 1 MB against 170 KB.
+		const out = stripCandidates([
+			imageSearchStep(withThumb('https://e.test/big.jpg', 'https://e.test/960px.jpg'))
+		]);
+		expect(out).toHaveLength(1);
+		expect(out[0].url).toBe('https://e.test/960px.jpg');
+	});
+
+	it('takes one image per search, not the whole result set', () => {
+		// "monkeys in the wild" returns three near-identical frames from the
+		// same photographer; showing all three looks broken, not illustrated.
+		const out = stripCandidates([
+			imageSearchStep(
+				withThumb('https://e.test/a.jpg', 'https://e.test/a-thumb.jpg'),
+				withThumb('https://e.test/b.jpg', 'https://e.test/b-thumb.jpg'),
+				withThumb('https://e.test/c.jpg', 'https://e.test/c-thumb.jpg')
+			)
+		]);
+		expect(out).toHaveLength(1);
+		expect(out[0].url).toBe('https://e.test/a-thumb.jpg');
+	});
+
+	it('takes one from each of several searches', () => {
+		const out = stripCandidates([
+			imageSearchStep(withThumb('https://e.test/1.jpg', 'https://e.test/1t.jpg')),
+			imageSearchStep(withThumb('https://e.test/2.jpg', 'https://e.test/2t.jpg'))
+		]);
+		expect(out.map((r) => r.url)).toEqual(['https://e.test/1t.jpg', 'https://e.test/2t.jpg']);
+	});
+
+	it('caps the number shown', () => {
+		const steps = [1, 2, 3, 4, 5].map((n) =>
+			imageSearchStep(withThumb(`https://e.test/${n}.jpg`, `https://e.test/${n}t.jpg`))
+		);
+		expect(stripCandidates(steps)).toHaveLength(3);
+		expect(stripCandidates(steps, 2)).toHaveLength(2);
+	});
+
+	// og:image is harvested from every page a research turn fetches, with the
+	// model never asking for it. Auto-showing those would staple an arbitrary
+	// hero image under every research answer.
+	it('ignores page hero images entirely', () => {
+		const out = stripCandidates([
+			step({ toolName: 'fetch_url', heroImage: 'https://news.example/hero.jpg' }),
+			step({ toolName: 'research_url', heroImage: 'https://news.example/r.jpg' })
+		]);
+		expect(out).toHaveLength(0);
+	});
+
+	it('yields nothing when no image_search ran', () => {
+		expect(stripCandidates([step({ toolName: 'web_search', result: '[]' })])).toHaveLength(0);
+		expect(stripCandidates([])).toHaveLength(0);
+	});
+
+	it('carries provenance so the caption is still correct', () => {
+		const out = stripCandidates([
+			imageSearchStep(withThumb('https://e.test/x.jpg', 'https://e.test/xt.jpg'))
+		]);
+		expect(out[0].attribution).toBe('A Photographer');
+		expect(out[0].license).toBe('CC BY-SA 4.0');
+		expect(out[0].source).toBe('commons');
 	});
 });

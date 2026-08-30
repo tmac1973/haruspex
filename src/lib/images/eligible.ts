@@ -81,13 +81,23 @@ export function eligibleImages(steps: readonly SearchStep[]): Map<string, ImageR
  * widen what may be fetched.
  */
 function parseImageSearchResults(result: string | undefined): ImageRequest[] {
+	return parseImageSearchGroups(result).flat();
+}
+
+/**
+ * The same results, grouped one array per image rather than flattened.
+ *
+ * Each group holds the full-size URL and, where it differs, the thumbnail —
+ * in that order. Callers that need *a* URL for an image (the strip) take the
+ * last entry, which is the thumbnail whenever there is one.
+ */
+function parseImageSearchGroups(result: string | undefined): ImageRequest[][] {
 	if (!result) return [];
 	const parsed = parseLeadingJson(result);
 	if (typeof parsed !== 'object' || parsed === null) return [];
 	const results = (parsed as { results?: unknown }).results;
 	if (!Array.isArray(results)) return [];
-
-	return results.flatMap(toRequests);
+	return results.map(toRequests).filter((g) => g.length > 0);
 }
 
 /**
@@ -204,4 +214,62 @@ export function resolvableFromReply(
 	}
 
 	return out;
+}
+
+/**
+ * The images to show beneath an answer when the model searched for pictures
+ * but embedded none.
+ *
+ * Running `image_search` is itself the statement of intent: the model chose
+ * the query and made the call. It never sees the pictures — only titles and
+ * licences — so a search followed by no embed is far more likely to be the
+ * model forgetting its last step than an editorial judgement about images it
+ * cannot look at.
+ *
+ * Deliberately **`image_search` only**. A `heroImage` is harvested from every
+ * page a research turn fetches, without the model asking for anything, so
+ * showing those automatically would staple an arbitrary hero image under every
+ * research answer.
+ *
+ * One image per search, because a query like "monkeys in the wild" returns
+ * three near-identical frames from the same photographer and showing all of
+ * them looks broken rather than illustrated. `thumb_url` for the same reason
+ * the tool hint offers it: right-sized for display, and a fraction of the
+ * bytes.
+ */
+export function stripCandidates(steps: readonly SearchStep[], max = 3): ImageRequest[] {
+	const out: ImageRequest[] = [];
+	const seen = new Set<string>();
+
+	for (const step of steps) {
+		if (step.toolName !== 'image_search') continue;
+		for (const group of parseImageSearchGroups(step.result)) {
+			// Last entry is the thumbnail when the result carried one.
+			const req = group[group.length - 1];
+			if (seen.has(req.url)) continue;
+			seen.add(req.url);
+			out.push(req);
+			// One per search: the next result of this same query is almost
+			// always a near-duplicate of the one just taken.
+			break;
+		}
+		if (out.length >= max) break;
+	}
+
+	return out.slice(0, max);
+}
+
+/**
+ * Every image URL a stored conversation might display, for rehydration.
+ *
+ * Two routes, and they are addressed differently: inline images are named by
+ * URL in the message text, while strip images appear nowhere in the text and
+ * have to be recovered from the archived tool steps.
+ */
+export function rehydrationUrls(
+	messageTexts: readonly string[],
+	stepsByMessage: readonly (readonly SearchStep[])[]
+): string[] {
+	const stripUrls = stepsByMessage.flatMap((steps) => stripCandidates(steps).map((c) => c.url));
+	return [...new Set([...imageUrlsInText(messageTexts), ...stripUrls])];
 }
