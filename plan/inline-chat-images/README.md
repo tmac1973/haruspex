@@ -9,8 +9,86 @@ findings, and the Decisions appendix.
 
 ## Build status
 
-Locked 2026-08-30. All seven phases implemented 2026-08-30, pending manual
-verification on Linux, Windows and macOS. `make check` passes.
+Locked 2026-08-30. All seven phases implemented 2026-08-30, plus the amendments
+below. `make check` passes. Verified working on Linux against Qwen 3.6 35B;
+**Windows and macOS still need a manual pass**, and the phase 07 success
+criterion (three questions × three runs on the default 9B) has not been run.
+
+## Amended during implementation
+
+Testing against a real model changed two things the plan did not anticipate,
+and both are load-bearing.
+
+**A fallback strip (`ChatImageStrip`).** The plan assumed the model would embed
+the images it found. Across five runs on a 35B it searched and then failed to
+write the markdown three times. Prompt wording was tried twice and a
+`[Haruspex hint]` beside the tool result once; each reduced it, none settled
+it, because the last step of a turn is simply not reliable at temperature 1.
+
+So running `image_search` is now treated as the statement of intent it is —
+the model chose the query and made the call, and it never sees the pictures,
+only their titles. When an answer embeds nothing, the images it searched for
+appear beneath it. Inline placement is still preferred and the strip stands
+down whenever the answer embedded anything, so the good case is untouched.
+
+Chosen over a second model call to pick images, which was the other option
+considered: the failure being fixed is a model forgetting a step, so adding a
+model step to fix it would have reintroduced the same class of bug. The strip
+costs no inference at all. It is also _safer_ than the inline path — the
+eligibility allowlist exists to stop URLs the model wrote, and the strip reads
+only our own tool results, so that surface is absent rather than guarded.
+
+**Two loop nudges.** `image_search` as a turn's only tool call now sends the
+model back to research first, guarded by `looksLikeImageOnlyRequest` so
+"show me a picture of X" is not nudged into researching something nobody asked
+about. Writing image markdown without ever calling `image_search` — the model
+inventing plausible `upload.wikimedia.org/...440px-....jpg` URLs, which the
+allowlist correctly refused — sends it back to find real ones.
+
+Also added: click any chat image to open it full size, which reuses the
+existing `ImageViewerModal`. The plan simply missed it.
+
+## Bugs found in testing
+
+Each is a commit on the branch with the reasoning; recorded here because three
+of them share a shape worth remembering — data crossing a boundary wired to the
+wrong side of it.
+
+1. **Steps read after they were cleared.** `commitMessage` archives
+   `searchSteps` and empties the live array; image resolution runs after the
+   commit by design and read the emptied one, so the allowlist was always empty
+   and the model's own URLs were refused.
+2. **Wikimedia tracking parameters.** The imageinfo API appends
+   `?utm_source=…&utm_campaign=imageinfo`; the model tidied them off when
+   copying the URL, exact-string matching failed, and the inline path silently
+   never rendered. Stripped at the source so one spelling exists everywhere.
+3. **Rehydration hung off the wrong function.** `initChatStore` restores the
+   first conversation by calling `loadConversationMessages` directly, so the
+   conversation you land on after a restart was the only one that never
+   rehydrated.
+4. **Hint text broke the tool-result parse.** The `[Haruspex hint]` block is
+   appended after the JSON, and a whole-string `JSON.parse` threw — emptying
+   the allowlist again.
+5. **Commons returns non-images.** Its `File:` namespace holds PDFs and DjVu
+   and its full-text search matches words _inside_ them, so "baboon Old World
+   monkey portrait" returned three scanned books. Filtered to types the cache
+   can display.
+
+The recurring lesson is that every one of these failed **silently** — an image
+that does not render looks identical whether it was never requested, refused,
+or failed to fetch. Both resolution paths now log their counts unconditionally,
+including the zero case, because silence was indistinguishable from success.
+
+## Known model behaviour, not a bug in this work
+
+The model sometimes answers a general-knowledge question from training data
+with no research at all. Confirmed with **Include images off**, where the
+system prompt is byte-identical to before this feature: 1 run in 3 skipped
+research. The cause is the system prompt's own header, which says to search for
+"products, current events, pricing, or recommendations" while the line below
+says to search "before answering factual questions". Those contradict, and
+"tell me about monkeys" is none of the former. Worth fixing, but it affects
+every chat rather than image ones, so it belongs in its own change.
 
 Four things the plan did not anticipate, each recorded in its phase's commit:
 
