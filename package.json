@@ -2,6 +2,12 @@
 	"name": "haruspex",
 	"private": true,
 	"version": "0.1.61",
+	"license": "GPL-3.0-or-later",
+	"author": "Tim MacDonald <tbaxmacdonald@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/tmac1973/haruspex.git"
+	},
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",

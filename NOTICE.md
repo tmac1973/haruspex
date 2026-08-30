@@ -1,13 +1,14 @@
 # Third-Party Notices
 
 This file lists third-party assets bundled with Haruspex and the licenses they
-are distributed under. The Haruspex source code itself is licensed separately
-(see `LICENSE` / the License section of `README.md`).
+are distributed under. The Haruspex source code itself is licensed separately,
+under the **GNU General Public License v3.0 or later** — see `LICENSE` and the
+License section of `README.md`.
 
 ## Application icon
 
 The Haruspex application icon is derived from a photograph of the
-**Piacenza Bronze Liver** (Italian: *Fegato di Piacenza*) — an Etruscan bronze
+**Piacenza Bronze Liver** (Italian: _Fegato di Piacenza_) — an Etruscan bronze
 artifact used by haruspices as a divination reference, c. 100 BCE.
 
 - **Source image**: <https://commons.wikimedia.org/wiki/File:Piacenza_Bronzeleber.jpg>
