@@ -4,59 +4,100 @@ Click this screenshot to watch the explainer video:
 
 [![Watch the video](https://img.youtube.com/vi/VT-gGdOAonA/maxresdefault.jpg)](https://youtu.be/VT-gGdOAonA)
 
-A cross-platform desktop AI web researcher and agent that runs entirely on your computer. No accounts, no telemetry — your conversations and AI responses stay on your device. Web research sends search queries to the web, and the optional cloud backend (OpenRouter) is off by default and clearly labeled.
+Haruspex is a desktop AI assistant that runs on your own computer. It works on Linux, Windows and macOS. There is no account to create and no telemetry. Your conversations and the model's answers stay on your device.
 
-Haruspex excels at researching information. Ask it a question and it will search the web and compile an answer. Turn on deep research mode for a more thorough job. Enable a working directory and ask it to produce a PDF, spreadsheet, or Word document from its results. It will even write and execute python in the UI in pursuit of your goals.
+It began as a web researcher, and it is still very good at that: ask a question and it searches the web, reads the pages and writes you an answer. But it does more than research now. It can also:
+
+- read and write documents in a folder you choose (PDF, Word, Excel, PowerPoint, OpenDocument, images)
+- write and run Python inside the app
+- help you in a real terminal, and run commands for you if you let it
+- read your email over IMAP
+- run saved jobs on a schedule, unattended
+- turn an idea into a written plan, and then write the code for that plan
+- look at images and scanned documents
+- listen to you speak, and read its answers out loud
+- remember facts from one conversation to the next
+- serve a small chat page to other devices on your home network
+
+Two things can leave your computer, and both are clearly marked in the app:
+
+- **Web searches.** The search words you send go to a search engine. You can route them through a proxy or your own SearXNG instance.
+- **OpenRouter.** This is an optional cloud backend. If you turn it on, your prompts go to OpenRouter's servers instead of staying local. It is off by default.
 
 ## Goals
 
-The primary goals of this project are:
+- **Privacy** — Your conversations and the model run on your machine. Searches do hit the web, but HTTP proxies and SearXNG are supported so you can hide where they come from.
+- **Open Source / Open Weight** — Open weight models mean no monthly bill and no vendor lock-in.
+- **Consumer Hardware** — We target normal consumer graphics cards, from 8 GB cards up to 32 GB cards, and we do our best on cards with less than 8 GB and on integrated graphics too. The app looks at your hardware on first run and picks a model that fits.
 
-- **Privacy** - Conversations and inference stay local. Searches themselves hit the web but web proxies and SearXNG are supported to anonymize your web searches.
-- **Open Source/Open Weight** - Use of open weight local models means no monthly bill.
-- **Minimal Hardware Requirements** - This project targets 8GB of Unified RAM/VRAM for LLM+Context. Currently the model used is Qwen-3.5-9B (though we do offer Qwen-3.5-4B if you are tight on memory). All project features are built with this target (and the inherit limitations of a small model) in mind.
-- **Human Enablement, Not Human Replacement** - There are many projects that are building fully autonomous agents, this isn't one of them. This project aims to use AI to assist humans in learning, creation, and troubleshooting; not replace the human element completely.
+  On 8 GB or less you get Qwen 3.5 9B (or Qwen 3.5 4B if memory is tight). These small models are remarkably capable for their size and they do research very well, which is the main job of the Chat tab. They are simply not good at writing code.
+
+  So the coding features — Code mode in the Shell tab, guided planning, autonomous coding, audit jobs, and the Python sandbox in the Chat tab — will work much better with a bigger model. We recommend **Qwen 3.6 35B-A3B** or **Qwen 3.8 27B**, which need about 24 GB of VRAM. You can also point those features at a bigger model on another machine, or at OpenRouter.
+
+- **Human Enablement, Not Human Replacement** — Many projects are building agents that replace people. This is not one of them. Haruspex is meant to help you learn, create and fix things, with you still in the chair.
 
 ## Features
 
-- **Private by design** — inference runs on your hardware by default; the optional cloud backend (OpenRouter) is off by default and clearly labeled
-- **Web research** — searches the web and reads pages to answer questions about anything, with an optional **deep research mode** for multi-source synthesis
-- **Shell tab** _(Linux, macOS & Windows — PowerShell and WSL2 on Windows)_ — a real interactive terminal with a one-click "Submit to LLM" path: ask the assistant to analyze the last command's output or a selected range. By default the assistant is a **read-only troubleshooting advisor**: it can read config files / logs anywhere on the system and suggest fix commands as click-to-paste cards (with red chips on risky patterns like `sudo`, `rm -rf`, `dd of=`, `curl | sh`, `Remove-Item -Recurse -Force`), but it never runs anything — every command lands at the prompt for you to review and press Enter. Flip on **Code mode** (per session, off by default) to turn it into a coding agent that edits files and **executes commands in your live terminal**; commands the risk classifier flags pause for your approval first, anything it considers safe runs automatically. ⚠️ Read the [AI safety disclaimer](#ai-safety-disclaimer) before enabling Code mode or running anything the model proposes.
-- **Jobs tab** — author, save, and **schedule** reusable prompts that run unattended. Three kinds: a **research** pipeline of sequential steps, an **audit** that samples a prompt many times and source-verifies the findings into a single report, and **guided planning** that turns a rough idea into a phased implementation plan through interactive Q&A. Each job can run against its own remote model. ([details](#jobs))
-- **Local file access (opt-in)** — pick a working directory and the model can read and write text, PDF, docx, xlsx, odt/ods/odp, pptx, and images, sandboxed to that directory ([details](#local-files))
-- **Python sandbox** — the model can write and execute Python in a sandboxed Pyodide environment running in the webview, with on-demand package installs (`install_package`) and HTTP via `pyfetch`; approval-gated with a per-call time limit. **Off by default** — enable it under Settings → Agent → Python Sandbox.
-- **Vision** — analyze images and form PDFs via the model's built-in mmproj projector
-- **Voice input / output** — speak your questions ([whisper.cpp](https://github.com/ggml-org/whisper.cpp)) and hear responses read aloud ([Kokoros](https://github.com/lucasjinreal/Kokoros))
-- **GPU accelerated** — Vulkan (Linux/Windows) and Metal (macOS)
-- **First-run wizard** — detects your hardware and downloads an appropriately sized model
-- **Remote inference (optional)** — connect to your own self-hosted OpenAI-compatible server instead of using the bundled sidecar ([details](#remote-inference-server))
-- **Email integration (optional, read-only)** — connect IMAP accounts (Gmail, Fastmail, iCloud, Yahoo, or custom) so the model can summarize and search recent messages ([details](#email-integration))
-- **Persistent conversations** — SQLite-backed chat history survives restarts
-- **Log viewer** — toolbar modal with copyable per-sidecar logs for easy bug reports
-- **Dark mode** — system-aware with manual override
+### Chat
+
+- **Web research** — Ask a question, and it searches the web, reads the results and answers. Turn on **deep research** for a slower, more thorough answer that uses more sources.
+- **Files (you opt in)** — Pick a working directory and the model can read and write files there, and only there. It handles text, PDF, Word, Excel, PowerPoint, OpenDocument and images. ([details](#local-files))
+- **Python sandbox** — The model can write and run Python inside the app, in a sandboxed Pyodide environment. It can install packages on demand and make HTTP requests. Use it to make charts, do maths, or build documents. It asks before each run, and it is **off by default** (Settings → Agent → Python Sandbox). Works best with a larger model.
+- **Vision** — Show it an image or a scanned PDF and it can describe or read it.
+- **Voice** — Speak your question with push-to-talk, and have answers read aloud.
+- **Memory (off by default)** — When you turn it on, Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". All of it stays on this device — the text never leaves it. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](#memory))
+- **Open in shell** — If an answer ends with "run this command", press the `>_` button to open the whole conversation in a new Shell tab, where the commands become buttons you can run.
+
+### Shell
+
+- **A real terminal** _(Linux, macOS and Windows — PowerShell and WSL2 on Windows)_ with an assistant beside it. Open several shell tabs at once.
+- **Send output to the assistant** — One click sends the last command and its output, or a selection, to the assistant to explain.
+- **Read-only by default** — The assistant can read config files and logs anywhere on your system and suggest fixes, but it never runs anything. Suggested commands appear as cards you click to paste at your prompt. Risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, `Remove-Item -Recurse -Force`) get a red chip.
+- **Code mode (off by default)** — Turn it on per session to let the assistant edit files and **run commands in your live terminal**. Commands it considers risky stop and ask you first; commands it considers safe run on their own. ⚠️ Please read the [AI safety disclaimer](#ai-safety-disclaimer) first. This is a coding feature — expect much better results with a larger model.
+
+### Jobs and schedules
+
+Save a prompt once and run it again later, by hand or on a schedule, without sitting there. There are four kinds of job: **research**, **audit**, **guided planning** and **autonomous coding**. Each job can use its own model, so you can send a heavy job to a big remote model while your local model keeps serving the Chat and Shell tabs. ([details](#jobs))
+
+Audit, guided planning and autonomous coding are coding-focused. They need a larger model to be useful.
+
+### Where the model runs
+
+- **Local (default)** — A bundled `llama-server` runs the model on your GPU. Vulkan on Linux and Windows, Metal on macOS.
+- **Your own server** — Point Haruspex at any OpenAI-compatible server you already run (llama.cpp, LM Studio, Ollama, vLLM and others). ([details](#remote-inference-server))
+- **OpenRouter (cloud, off by default)** — ⚠️ **This one is not local and may not be private.** Your prompts leave your device and go to OpenRouter's servers, under whatever privacy policy OpenRouter and the model provider have. We include it anyway because some people want access to large frontier models — especially for the coding features — and would rather make that trade themselves. Add your API key in Settings → Inference and pick from around 300 models. It stays off until you turn it on, and the app labels it clearly while it is on. Local inference is still the recommended setup.
+
+### Other
+
+- **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](#remote-access))
+- **Email (off by default, read-only)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. It can never send. ([details](#email-integration))
+- **First-run wizard** — Checks your hardware and downloads a model that fits.
+- **Conversations are saved** — Chat history lives in a local SQLite database and survives restarts.
+- **Log viewer** — Copy the logs of each background process from the toolbar, so bug reports are easy.
+- **Dark mode** — Follows your system, or set it yourself.
 
 ## AI safety disclaimer
 
 > [!WARNING]
-> **Haruspex is an AI assistant, and AI models hallucinate. Verify before you act.**
+> **Haruspex is an AI assistant, and AI models hallucinate. Check before you act.**
 >
-> The language model can be confidently wrong. It may invent facts, misread a file or command output, and — especially relevant now that Haruspex has a **Shell tab** — suggest commands that are mistaken, dangerous, or destructive (deleting data, changing system configuration, exposing secrets, etc.). The smaller local models this project targets are more prone to these mistakes than large cloud models.
+> The model can be confidently wrong. It can invent facts, misread a file or some command output, and — this matters most in the **Shell tab** — suggest commands that are wrong, dangerous or destructive (deleting data, changing system settings, exposing secrets). The small local models this project targets make these mistakes more often than large cloud models do.
 >
-> Haruspex is built around **human enablement, not human replacement**. By default the Shell assistant is **read-only** and never runs anything: every suggested command lands at your prompt for you to read and run yourself, with risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, …) flagged. But if you enable the Shell tab's **Code mode**, the agent **executes commands itself in your live terminal** — commands the risk classifier flags pause for your approval, but anything it considers safe runs automatically (and even the approval prompt can be turned off in Settings). Code mode is off by default and opt-in per session; only turn it on for machines and projects you're willing to let the model act on. These flags and prompts are aids, not guarantees. **You are the last line of defense.**
+> Haruspex is built around **human enablement, not human replacement**. By default the Shell assistant is **read-only** and runs nothing: every command it suggests lands at your prompt for you to read and run yourself, with risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, …) flagged. But if you turn on **Code mode**, the assistant **runs commands itself in your live terminal**. Commands it flags as risky stop and ask you first, but anything it considers safe runs on its own — and you can even turn that prompt off in Settings. Code mode is off by default and you turn it on per session. Only turn it on for machines and projects you are willing to let the model touch. These flags and prompts help, but they are not a guarantee. **You are the last line of defence.**
 >
 > Before running anything the model suggests:
 >
-> - Read and understand the command. If you don't, don't run it.
-> - Be especially careful with commands that delete files, modify system settings, pipe downloads into a shell, or touch credentials.
-> - Keep backups of anything you can't afford to lose.
+> - Read the command and understand it. If you do not understand it, do not run it.
+> - Take extra care with commands that delete files, change system settings, pipe a download into a shell, or touch passwords and keys.
+> - Keep backups of anything you cannot afford to lose.
 >
-> Haruspex is provided "as is", without warranty of any kind. You use it — and any commands or output it produces — **at your own risk**. The authors and contributors are not liable for any damage, data loss, or other harm resulting from its use. See the [License](#license) for the full disclaimer.
+> Haruspex is provided "as is", without warranty of any kind. You use it — and any command or output it produces — **at your own risk**. The authors and contributors are not liable for any damage, data loss or other harm that comes from using it. See the [License](#license) for the full disclaimer.
 
 ## Installing
 
 Download the latest release for your platform from the [Releases](https://github.com/tmac1973/haruspex/releases) page.
 
-> **Note on code signing:** Haruspex binaries are **not code-signed on macOS or Windows**. macOS Gatekeeper will refuse to open the app directly, and Windows SmartScreen will warn before running the installer. See the per-platform notes below for how to bypass these warnings.
+> **Note on code signing:** Haruspex binaries are **not code-signed on macOS or Windows**. macOS Gatekeeper will refuse to open the app directly, and Windows SmartScreen will warn you before running the installer. See the notes below for how to get past these warnings.
 
 ### Debian / Ubuntu
 
@@ -82,50 +123,216 @@ chmod +x Haruspex_*.AppImage
 
 ### Windows
 
-Run the `.msi` or `.exe` installer. The MSVC runtime is bundled — no additional dependencies required.
+Run the `.msi` or `.exe` installer. The MSVC runtime is included — nothing else to install.
 
-Because the installer is **not code-signed**, Windows SmartScreen will show a "Windows protected your PC" warning. Click **More info → Run anyway** to proceed.
+Because the installer is **not code-signed**, Windows SmartScreen shows a "Windows protected your PC" warning. Click **More info → Run anyway**.
 
 ### macOS
 
-Open the `.dmg` and drag Haruspex to Applications. Because the app is **not code-signed**, on first launch right-click the app and choose **Open** to bypass Gatekeeper.
+Open the `.dmg` and drag Haruspex to Applications. Because the app is **not code-signed**, right-click it the first time and choose **Open** to get past Gatekeeper.
 
 ## Hardware requirements
 
-**Recommended:** a discrete AMD or NVIDIA GPU with 8 GB+ of VRAM.
+Haruspex runs the model on your GPU. How much VRAM you have decides which model you get and how well the coding features work.
 
-**Minimum:** any system with a Vulkan-capable GPU and 8 GB of system RAM. Haruspex includes a smaller 4B-parameter model for systems with limited VRAM, and the first-run wizard picks an appropriate model automatically.
+| Your GPU          | Model you get                                                | What to expect                                                            |
+| ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Under 8 GB / iGPU | Qwen 3.5 4B                                                  | Chat, research and documents work. Slower. Coding features will struggle. |
+| 8 GB              | Qwen 3.5 9B                                                  | Good research and document work. Coding features will struggle.           |
+| 12 GB             | Qwen 3.5 9B (Q6)                                             | Same abilities, better quality answers.                                   |
+| 16 GB             | Qwen 3.5 9B (Q8)                                             | Best quality from the 9B.                                                 |
+| 24 GB and up      | Qwen 3.6 35B-A3B (fast, recommended) or Qwen 3.8 27B (dense) | Everything, including the coding features.                                |
 
-**Integrated graphics** (Intel HD/UHD/Iris, AMD Vega/Radeon Graphics) will work but inference will be significantly slower. Recent AMD APUs perform better than older Intel iGPUs but still fall well short of a discrete card.
+The first-run wizard picks one of these for you. You can change it later in Settings → Models.
 
-**Apple Silicon** Macs use unified memory and Metal acceleration, so even the base M1 with 8 GB provides a good experience.
+**Integrated graphics** (Intel HD/UHD/Iris, AMD Vega/Radeon Graphics) will work, but much more slowly. Recent AMD APUs do better than older Intel iGPUs, and both are well behind a discrete card.
+
+**Apple Silicon** Macs use unified memory and Metal, so even a base M1 with 8 GB is a good experience.
+
+**If you want the coding features on a small card:** point Haruspex at a bigger model on another machine ([remote inference](#remote-inference-server)), or use [OpenRouter](#where-the-model-runs) and accept that those prompts leave your device.
 
 > [!WARNING]
-> **Haruspex uses your GPU for inference.** While it is running, other GPU-intensive applications like games may experience reduced performance. Close Haruspex before launching games or other GPU-heavy programs.
+> **Haruspex uses your GPU.** While it is running, games and other GPU-heavy programs will be slower. Close Haruspex before you play.
 
 ## Keyboard shortcuts
 
-Press **F1** (or click the **?** in the header) to see this list in the app anytime.
+Press **F1** (or click the **?** in the header) to see this list in the app at any time.
 
-| Shortcut                  | Action                                                             | Where                  |
-| ------------------------- | ------------------------------------------------------------------ | ---------------------- |
-| `F1`                      | Show the keyboard-shortcuts help                                   | Everywhere             |
-| `F2` (hold)               | Push-to-talk voice input — release to send                         | Main window            |
-| `F3`                      | Read the last reply aloud (toggle)                                 | Main window            |
-| `F4`                      | Submit recent shell commands & output to the assistant (no prompt) | Shell tab              |
-| `Ctrl`/`Cmd` + `N`        | New conversation                                                   | Chat tab               |
-| `Enter` / `Shift`+`Enter` | Send message / new line                                            | Chat & Shell composers |
-| `Esc`                     | Stop generating · close dialogs                                    | Everywhere             |
-| `Ctrl`+`Shift`+`A`        | Toggle the assistant sidebar                                       | Shell tab              |
-| `` Ctrl+` ``              | Switch focus: terminal ↔ assistant                                 | Shell tab              |
-| `Ctrl`+`Shift`+`C` / `V`  | Copy selection / paste                                             | Shell tab              |
-| `Ctrl`+`Shift`+`I` (`Cmd`+`Opt`+`I` on macOS) | Open the web inspector (devtools)              | Everywhere             |
+| Shortcut                                      | Action                                                 | Where                  |
+| --------------------------------------------- | ------------------------------------------------------ | ---------------------- |
+| `F1`                                          | Show the keyboard shortcuts                            | Everywhere             |
+| `F2` (hold)                                   | Push-to-talk voice input — release to send             | Main window            |
+| `F3`                                          | Read the last reply aloud (toggle)                     | Main window            |
+| `F4`                                          | Send recent shell commands and output to the assistant | Shell tab              |
+| `Ctrl`/`Cmd` + `N`                            | New conversation                                       | Chat tab               |
+| `Ctrl`/`Cmd` + `+` / `-`                      | Zoom the interface in / out                            | Everywhere             |
+| `Ctrl`/`Cmd` + `0`                            | Reset the zoom                                         | Everywhere             |
+| `Enter` / `Shift`+`Enter`                     | Send message / new line                                | Chat & Shell composers |
+| `Esc`                                         | Stop generating · close dialogs                        | Everywhere             |
+| `Ctrl`+`Shift`+`A`                            | Show or hide the assistant sidebar                     | Shell tab              |
+| `` Ctrl+` ``                                  | Move focus between terminal and assistant              | Shell tab              |
+| `Ctrl`+`Shift`+`C` / `V`                      | Copy selection / paste                                 | Shell tab              |
+| `Ctrl`+`Shift`+`I` (`Cmd`+`Opt`+`I` on macOS) | Open the web inspector (devtools)                      | Everywhere             |
+
+## Jobs
+
+The Jobs tab runs saved prompts without you watching — on a schedule or when you press run. Each run streams live in its own view, stops at the first error, and stays in that job's run history. If you start several, they run one after another.
+
+There are four kinds of job:
+
+- **Research** — A list of steps that run in order. Each step is a fresh conversation that receives the previous step's output, so you can chain "search → summarise → write a report" into one run. Each step can turn on deep research on its own.
+- **Audit** — Runs one prompt many times independently, groups the findings, checks each group against the source, and writes one report sorted into confirmed / refuted / uncertain. Running it many times cancels out the noise a small model produces in any single run. You can set the number of runs, the step budget per run, a read-only tool restriction, your own instructions, and an output file.
+- **Guided planning** — Turns a rough idea into a written project overview and a plan split into phases, in the right dependency order. It asks you one question at a time and reads your codebase as it goes. It writes an `overview.md` and `phase-NN-*.md` files, and stops at checkpoints so you can review or change things. A separate reviewer pass then looks for missing steps and decisions still marked "TBD". It only plans — it never writes code. A long run picks up where it left off if the app restarts.
+- **Autonomous coding** — Takes a folder of plan files (usually from a guided planning job), asks you about every open decision up front, then writes the code unattended: one small step at a time, each one checked and committed, with a deeper check at the end of every phase. Each run gets its own git branch. It finishes by writing a report of what it built, what is blocked and why, and what comes next.
+
+**These job types work much better with a bigger model.** Audit, guided planning and autonomous coding all involve reading and writing code, which is exactly where the 4B and 9B models are weakest. Give the job its own model if your local one is small.
+
+**Scheduling.** Run a job by hand, or on a preset (hourly / daily / weekly) or a fixed interval while the app is open. While a job is running, Haruspex keeps your machine from going to sleep. Autonomous coding cannot be scheduled, because it starts by asking you questions.
+
+**Per-job model.** By default a job uses your global backend (Settings → Inference backend). Any job can instead point at its own OpenAI-compatible server: base URL, optional API key, model ID, context size and whether it can see images. This is useful for sending a heavy audit or planning job to a bigger or faster model. Because that remote model and your local `llama-server` are separate, a job running remotely **does not block the Chat or Shell tabs** from using your local model at the same time.
+
+Audit, guided planning and autonomous coding need a working directory — the model reads your code and writes its files there. Research jobs work with or without one.
+
+## Local files
+
+Click the folder icon in the chat input to choose a working directory. The model can then read and write files, but only inside that directory. With no working directory set, it has no file access at all.
+
+**Read:** text, markdown, CSV, JSON, YAML, TOML (`fs_read_text`); PDFs with layout preserved (`fs_read_pdf`); PDFs as images, for scans (`fs_read_pdf_pages`); Word `.docx` (`fs_read_docx`); Excel `.xlsx` as CSV (`fs_read_xlsx`); images, through the vision model (`fs_read_image`); folder listings (`fs_list_dir`).
+
+**Write:** text (`fs_write_text`); find-and-replace edits (`fs_edit_text`); Word `.docx` and OpenDocument `.odt` (`fs_write_docx` / `fs_write_odt`); Excel `.xlsx` and OpenDocument `.ods` (`fs_write_xlsx` / `fs_write_ods`); PowerPoint `.pptx` and OpenDocument `.odp` (`fs_write_pptx` / `fs_write_odp` — **experimental**); PDFs (`fs_write_pdf`).
+
+**Download:** any HTTP(S) file into the folder (`fs_download_url`), with a 50 MB limit and executables blocked. Freely licensed images from Wikimedia Commons (`image_search` — **experimental**). Images found on a web page (`fetch_url_images` — **experimental**, usually copyrighted).
+
+**Cannot:** delete or move files, run scripts, or touch anything outside the working directory.
+
+**Overwrite protection:** write tools will not quietly replace a file that already exists. If the target is already there, Haruspex stops and asks: Overwrite / Keep both / Cancel. Rework inside the same turn (write → read → correct → write) does not trigger the question.
+
+The working directory belongs to one conversation and is not remembered after you close the app.
+
+## Memory
+
+Memory is **off by default**. Turn it on in Settings → Memory.
+
+When it is on, Haruspex reads your finished conversations in the background, picks out the facts that are likely to matter later — your preferences, corrections you made, ongoing project context — and brings the relevant ones into your next chat. You can also ask directly: "remember that I use fish, not bash."
+
+Everything stays on this device. The text is never sent anywhere, and the embeddings used to find the right memory later are calculated on your machine. Turning memory on downloads a small embedding model once.
+
+You can switch any single conversation to incognito so it is never read, ask to be prompted before anything is saved, and read, edit or delete every stored memory from the settings panel.
+
+## Remote access
+
+Remote access is **off by default**. Turn it on in Settings → Remote access.
+
+It serves a small chat page over your local network. Anyone on your network with the link can chat with your Haruspex, using your computer's GPU. There is nothing to install on their side — a browser is enough, so phones and tablets work. Share the link, or let them scan the QR code.
+
+This is useful when your main machine is doing something else, like running a game, and you want to ask a question from another device.
+
+Things to know before you turn it on:
+
+- Their conversations are saved on your machine and show up in your sidebar.
+- The traffic is not encrypted, so only use this on networks you trust.
+- On Windows, the firewall asks for permission the first time. Say yes, or nobody can connect.
+- You can see who is connected, disconnect anyone, and rotate the link, which cuts off everybody using the old one.
+
+## Remote inference server
+
+Normally Haruspex runs its own `llama-server` with a model it downloaded. If you already run an OpenAI-compatible server, you can point Haruspex at it instead. The local server then never starts, and every chat request goes to your URL. There are two places to set this:
+
+1. **First-run wizard** — choose "Connect to an existing server" instead of "Download a model".
+2. **Settings → Inference backend** — switch between Local and Remote whenever you like. Switching to Remote stops the local server right away, so it stops using VRAM. Switching back starts it again with the model you had.
+
+This is the global backend used by Chat and Shell. Individual [jobs](#jobs) can override it with their own server. If your server handles more than one request at a time (vLLM, `llama-server -np N`, hosted APIs), turn on **Allow parallel inference** so chat and job turns can run together instead of queueing.
+
+**Detection.** Haruspex probes the URL you enter in this order, and the richest backend that answers wins:
+
+| Order | Endpoint                  | Matches                                                                                                    |
+| ----- | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1     | `GET /api/service/status` | [llama-toolchest](https://github.com/tmac1973/llama-toolchest) — rich per-model metadata                   |
+| 2     | `GET /props`              | Stock llama.cpp `llama-server` — exposes `n_ctx` and the loaded model                                      |
+| 3     | `GET /v1/models`          | Generic OpenAI-compatible (LM Studio, Lemonade, Ollama, vLLM, TGI, llamafile, koboldcpp, text-gen-webui …) |
+| 4     | `GET /api/tags`           | Ollama's own endpoint, if its OpenAI-compatible one is switched off                                        |
+
+**What gets filled in.** The model list always. Context size and image support are filled in automatically when the server reports them (llama-toolchest and stock llama-server do; most generic servers do not, so you get editable fields instead).
+
+**Auth.** Every probe and chat request can send an `Authorization: Bearer <key>` header. Leave it blank for servers that do not need one.
+
+### OpenRouter (cloud — not local, and possibly not private)
+
+Besides your own servers, Haruspex supports [OpenRouter](https://openrouter.ai) directly. Add your API key in Settings → Inference and choose from the roughly 300 models it lists, complete with context length, image support, tool support and reasoning settings.
+
+⚠️ **OpenRouter is a cloud service. Your prompts leave your computer** and are handled by OpenRouter and by whichever model provider you picked, under their privacy policies, not ours. This is the one part of Haruspex that is not private by design.
+
+We include it because some people want a frontier model — usually for the coding features, where small local models struggle — and would rather decide that trade-off for themselves. It is off until you turn it on, and the app shows clearly when it is in use. Running locally is still the recommended setup.
+
+## Email integration
+
+Haruspex can connect to your email over IMAP so the model can summarise recent messages, find mail from a certain person, or read one full message when you ask. It is **off by default**, **read-only** and works with several providers.
+
+Every provider needs 2-factor authentication on your account plus an **app password** — a 16-character code the provider creates for Haruspex. It is not your normal login password.
+
+| Provider    | IMAP host                 | Where to get an app password                        |
+| ----------- | ------------------------- | --------------------------------------------------- |
+| Gmail       | `imap.gmail.com:993`      | <https://myaccount.google.com/apppasswords>         |
+| Fastmail    | `imap.fastmail.com:993`   | <https://app.fastmail.com/settings/security/tokens> |
+| iCloud Mail | `imap.mail.me.com:993`    | <https://account.apple.com/account/manage>          |
+| Yahoo Mail  | `imap.mail.yahoo.com:993` | <https://login.yahoo.com/account/security>          |
+| Custom      | you provide it            | whatever your provider says                         |
+
+Microsoft 365 and Outlook.com are **not** supported. Microsoft turned off basic authentication for those accounts, so there is no app-password path. OAuth support is planned later.
+
+**Setup.** `Settings → Integrations → Email`, click "Add email account", pick a provider, enter your address and app password, click "Test connection", then switch the account on.
+
+**Tools.** With at least one account switched on, the model gets three tools:
+
+- `email_list_recent` — a cheap list (subject, sender, date, snippet). Always called first.
+- `email_summarize_message` — summarises one full message in a separate call, the same way web pages are summarised.
+- `email_read_full` — returns one full message as-is, when a summary is not enough.
+
+All three are hidden from the model completely unless an account is switched on. Credentials are stored in the same local settings file as your other secrets (no system keyring). Messages are fetched with `BODY.PEEK[]`, so reading one never marks it as read. There is no sending at all.
+
+## Search providers
+
+| Provider         | Setup                        | Notes                                                                                                                                                                                                        |
+| ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Auto (default)   | None                         | Rotates between Yahoo, Brave, DuckDuckGo and Bing, taking turns, tracking which ones are healthy and failing over                                                                                            |
+| DuckDuckGo       | None                         | One engine only, may get rate limited                                                                                                                                                                        |
+| Brave Search API | API key in Settings          | 2,000 free queries a month, most reliable                                                                                                                                                                    |
+| SearXNG          | Instance URL in Settings     | Unlimited, if you host it yourself                                                                                                                                                                           |
+| Browser-assisted | Chrome or Chromium installed | Drives a hidden browser window, so it can reach engines that block simple requests. Around twice as slow, and it uses about 1.2 GB of RAM while it runs. The browser starts when needed and quits when idle. |
+
+When deep research is on, you are using Auto, and you have no Brave API key, the search proxy switches to **slow mode**: it waits longer between engines so they have time to recover during the same research turn. Setting a Brave API key or a SearXNG instance skips slow mode completely.
+
+## Known issues
+
+### Coding features need a bigger model
+
+Code mode, guided planning, autonomous coding, audit jobs and the Python sandbox all ask the model to read and write code. The 4B and 9B models we recommend for 8 GB cards are good at research and weak at coding, so on those models these features will make mistakes, get stuck, or produce code that does not run.
+
+They are still included because they work well on a 24 GB card with Qwen 3.6 35B-A3B or Qwen 3.8 27B, and because you can point any of them at a bigger model elsewhere. Set your expectations by your hardware.
+
+### Asking for a file often needs a second message
+
+If you ask for something in one message — for example _"Create a PDF report about X"_ — the model will usually do the research and write a good answer in the chat, but **not** actually create the file. Sometimes it even says it created a file that does not exist.
+
+This is how small local models behave: after a long research turn, they prefer to finish by writing prose rather than making one more tool call. Haruspex pushes back on this with direct tool descriptions, reminders during the turn, and a recovery pass when a turn ends without the expected file, but it does not catch every case.
+
+**What to do:** just ask again — _"write that to a PDF"_. The second message almost always works, because the content is already in the conversation.
+
+### Presentations and image search are experimental
+
+The presentation tools (`fs_write_pptx`, `fs_write_odp`) and the image tools (`image_search`, `fetch_url_images`) work, but treat them as experimental:
+
+- Asking for research and a presentation with images in one message is unreliable. Do it in two or three messages: research first, then ask for the presentation.
+- `image_search` uses Wikimedia Commons, which is great for landmarks, animals and general subjects, and has almost nothing for specific consumer products.
+- Slides can have a title, a bullet list (up to two levels) and one image. No tables, charts, speaker notes or custom layouts.
+
+These limits come from the model, and they will improve as local models get better at using tools.
 
 ## Development
 
 ### Build prerequisites
 
-Each block below installs **everything** needed to build Haruspex on that platform — system libraries, the Vulkan shader toolchain, Rust (stable), and Node.js (22+). Copy and run the whole block.
+Each block below installs **everything** you need to build Haruspex on that platform — system libraries, the Vulkan shader tools, Rust (stable) and Node.js (22+). Copy and run the whole block.
 
 #### Debian / Ubuntu
 
@@ -166,16 +373,16 @@ sudo pacman -S --needed base-devel cmake pkg-config \
 
 #### Windows
 
-On a fresh Windows 11 install, run the bundled PowerShell setup script from a regular PowerShell window. It installs Git, Node.js LTS, the Rust MSVC toolchain, VS 2022 Build Tools, CMake, the Vulkan SDK, and the WebView2 runtime via `winget`, skipping anything already present:
+On a fresh Windows 11 install, run the included PowerShell setup script from a normal PowerShell window. It installs Git, Node.js LTS, the Rust MSVC toolchain, VS 2022 Build Tools, CMake, the Vulkan SDK and the WebView2 runtime with `winget`, and skips anything you already have:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\scripts\windows-setup.ps1
 ```
 
-After it finishes, **open a new terminal** so PATH updates take effect. Sidecar builds run from Git Bash via `./scripts/dev-setup.sh`.
+When it finishes, **open a new terminal** so the PATH changes take effect. Sidecar builds run from Git Bash with `./scripts/dev-setup.sh`.
 
-If you'd rather install prerequisites yourself: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload), [CMake](https://cmake.org/download/), [Vulkan SDK](https://vulkan.lunarg.com/), [Git for Windows](https://git-scm.com/download/win).
+If you would rather install the prerequisites yourself: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload), [CMake](https://cmake.org/download/), [Vulkan SDK](https://vulkan.lunarg.com/), [Git for Windows](https://git-scm.com/download/win).
 
 #### macOS
 
@@ -185,7 +392,7 @@ xcode-select --install
 brew install cmake pkg-config opus rust node
 ```
 
-> Prefer to manage Rust yourself? Skip `rust` above and use [rustup](https://rustup.rs/) instead.
+> Prefer to manage Rust yourself? Skip `rust` above and use [rustup](https://rustup.rs/).
 
 ### Dev setup
 
@@ -193,12 +400,12 @@ brew install cmake pkg-config opus rust node
 git clone https://github.com/tmac1973/haruspex.git
 cd haruspex
 
-# Required first run: builds the sidecars and downloads the rest of the
-# resources the app needs — ruff, PDFium, and the Pyodide runtime. `make dev`
-# only checks the sidecars, so it is NOT a substitute for this step.
+# Required on the first run. This builds the sidecars and downloads the other
+# resources the app needs — ruff, PDFium and the Pyodide runtime. `make dev`
+# only checks the sidecars, so it does NOT replace this step.
 ./scripts/dev-setup.sh
 
-# Run the app (on subsequent runs this is all you need)
+# Run the app (after the first time, this is all you need)
 make dev
 ```
 
@@ -206,17 +413,17 @@ make dev
 
 Run `make help` to see all targets:
 
-| Target               | Description                                                              |
-| -------------------- | ------------------------------------------------------------------------ |
-| `make dev`           | Run the app in dev mode (auto-checks sidecars; run `dev-setup.sh` first) |
-| `make check`         | Run all checks (lint, format, typecheck, test)                           |
-| `make fmt`           | Auto-format all code (Prettier + cargo fmt)                              |
-| `make sidecars`      | Build sidecar binaries (llama-server, whisper-server, koko)              |
-| `make app`           | Build the Tauri app packages (requires sidecars)                         |
-| `make release-local` | Build everything: sidecars + app packages                                |
-| `make clean`         | Remove built sidecars, forcing rebuild                                   |
-| `make clean-all`     | Remove sidecars + Rust/frontend build artifacts                          |
-| `make reset-data`    | Remove all app data (models, db) for a fresh start                       |
+| Target               | Description                                                         |
+| -------------------- | ------------------------------------------------------------------- |
+| `make dev`           | Run the app in dev mode (checks sidecars; run `dev-setup.sh` first) |
+| `make check`         | Run all checks (lint, format, typecheck, test)                      |
+| `make fmt`           | Auto-format all code (Prettier + cargo fmt)                         |
+| `make sidecars`      | Build sidecar binaries (llama-server, whisper-server, koko)         |
+| `make app`           | Build the Tauri app packages (needs sidecars)                       |
+| `make release-local` | Build everything: sidecars + app packages                           |
+| `make clean`         | Remove built sidecars, forcing a rebuild                            |
+| `make clean-all`     | Remove sidecars + Rust/frontend build artifacts                     |
+| `make reset-data`    | Remove all app data (models, db) for a fresh start                  |
 
 ### Data directory
 
@@ -226,155 +433,44 @@ Run `make help` to see all targets:
 | macOS    | `~/Library/Application Support/com.haruspex.app/` |
 | Windows  | `%APPDATA%\com.haruspex.app\`                     |
 
-Use `make reset-data` to wipe this directory for a fresh start (Linux/macOS).
-
-## Jobs
-
-The Jobs tab runs reusable prompts unattended — on a schedule or on demand. Each run streams live in a dedicated view, halts on the first error, and stays browsable in per-job run history. Runs queue serially behind the active job.
-
-There are three job types:
-
-- **Research** — an ordered pipeline of single-objective steps. Each step runs as a fresh conversation with the previous step's output prepended, so you can chain "search → summarize → write a report" into one unattended run. A per-step toggle enables deep multi-source research for that step.
-- **Audit** — runs one prompt independently many times (sampling), then deterministically clusters the findings, re-checks each cluster against the source, and writes a single meta-report grouped by verdict (confirmed / refuted / uncertain). Sampling averages out the single-run noise a small model produces. Configurable: number of runs, per-sample turn budget, a read-only tool restriction, custom sample/verification instructions, and an optional output file.
-- **Guided planning** — interactively turns a rough idea into a written project **overview** and a dependency-ordered, **phased implementation plan**, asking one question at a time and grounding itself in your codebase. It writes an `overview.md` and `phase-NN-*.md` files, pausing at checkpoints for you to review or revise before continuing, and an independent verifier pass flags ordering gaps or unresolved decisions. Planning only — it never writes code. Long runs resume from the last milestone if the app restarts.
-
-**Scheduling.** Run a job manually, or on a preset (hourly / daily / weekly) or a fixed interval while the app is open.
-
-**Per-job model.** By default a job uses your global inference backend (Settings → Inference backend). Any job can instead point at its own remote OpenAI-compatible server — base URL, optional API key, model ID, context size, and vision capability — handy for routing a heavy audit or planning job to a larger-context or faster model. Because a remote job and the local `llama-server` are independent providers, a job running against a remote model **doesn't block the Chat or Shell tabs** from using your local model at the same time.
-
-Audit and guided-planning jobs need a working directory (the model reads your code and writes its reports there); research jobs can run with or without one.
-
-## Local files
-
-When you select a working directory from the folder icon in the chat input, Haruspex exposes filesystem tools to the model — scoped strictly to that directory. Without a working directory set, the model has no filesystem access at all.
-
-**Read:** plain text / markdown / CSV / JSON / YAML / TOML (`fs_read_text`), PDFs via PDFium with position-aware layout (`fs_read_pdf`), PDFs as images via PDF.js for scanned docs (`fs_read_pdf_pages`), Word `.docx` (`fs_read_docx`), Excel `.xlsx` as CSV (`fs_read_xlsx`), images via the vision model (`fs_read_image`), directory listings (`fs_list_dir`).
-
-**Write:** plain text (`fs_write_text`), targeted find-and-replace edits (`fs_edit_text`), Word `.docx` and OpenDocument `.odt` (`fs_write_docx` / `fs_write_odt`), Excel `.xlsx` and OpenDocument `.ods` (`fs_write_xlsx` / `fs_write_ods`), PowerPoint `.pptx` and OpenDocument `.odp` (`fs_write_pptx` / `fs_write_odp` — **experimental**), PDFs from markdown-style input (`fs_write_pdf`).
-
-**Download:** any HTTP(S) binary into the sandbox (`fs_download_url`) with SSRF protection, a 50 MB ceiling, and executable formats blocked. Freely-licensed images from Wikimedia Commons (`image_search` — **experimental**). Image URLs discovered on web pages (`fetch_url_images` — **experimental**, typically copyrighted).
-
-**Cannot:** delete or move files, execute scripts, or touch anything outside the working directory.
-
-**Overwrite protection:** write tools refuse to silently clobber existing files. If a write target already exists from a previous turn or user action, Haruspex pauses and prompts you with Overwrite / Keep both / Cancel. In-turn rework (write → read → correct → write) is handled implicitly and does not trigger the prompt.
-
-Working directory selection is per-conversation and is not persisted across app restarts.
-
-## Remote inference server
-
-Haruspex normally manages its own `llama-server` sidecar with a downloaded model. If you already run an OpenAI-compatible inference server, you can point Haruspex at it instead — the local sidecar will not spawn and every chat request routes to your configured URL. This is exposed in two places:
-
-1. **First-run wizard** — pick "Connect to an existing server" instead of "Download a model".
-2. **Settings → Inference backend** — switch between Local and Remote at any time. Toggling to Remote stops the local sidecar immediately (no VRAM consumption); toggling back spawns it again with your previously-selected model.
-
-This is the global backend used by Chat and Shell. Individual [jobs](#jobs) can override it with their own remote server. If your server serves concurrent requests (vLLM, `llama-server -np N`, hosted APIs), enable **Allow parallel inference** here to let chat and job turns against it run at the same time instead of queuing.
-
-**Detection.** Haruspex probes the base URL you enter in this order, and the richest backend that responds wins:
-
-| Order | Endpoint                  | Matches                                                                                                |
-| ----- | ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 1     | `GET /api/service/status` | [llama-toolchest](https://github.com/tmac1973/llama-toolchest) — rich per-model metadata               |
-| 2     | `GET /props`              | Stock llama.cpp `llama-server` — exposes `n_ctx` and loaded-model info                                 |
-| 3     | `GET /v1/models`          | Generic OpenAI-compat (LM Studio, Lemonade, Ollama, vLLM, TGI, llamafile, koboldcpp, text-gen-webui …) |
-| 4     | `GET /api/tags`           | Ollama native fallback when its OpenAI-compat endpoint is disabled                                     |
-
-**What gets populated.** Model list is always pulled. Context size and vision capability are auto-detected when the backend exposes them (llama-toolchest and stock llama-server do; generic OpenAI-compat backends usually don't, so you'll see editable fields).
-
-**Auth.** Every probe and chat request can send an optional `Authorization: Bearer <key>` header. Leave blank for self-hosted servers that don't require auth.
-
-**OpenRouter (cloud).** In addition to self-hosted remote servers, Haruspex has a first-class [OpenRouter](https://openrouter.ai) option in Settings → Inference. Enter your API key and pick from the automatically populated model catalog (~300 models with context length, vision, tool support, and reasoning-effort metadata pulled from OpenRouter's `/v1/models` endpoint). ⚠️ Unlike the local and self-hosted remote modes, **OpenRouter is a cloud backend — your prompts leave your device** and go to OpenRouter's servers. It's opt-in and off by default; the local llama-server sidecar remains the recommended configuration.
-
-## Email integration
-
-Haruspex can optionally connect to your email over IMAP so the model can summarize recent messages, find email from a specific person, or read the full body of a single message on request. The integration is **off by default**, **read-only**, and **multi-provider**.
-
-Every preset requires 2-factor authentication on the provider account plus an **app password** (a 16-character token the provider generates specifically for Haruspex — not your login password).
-
-| Provider    | IMAP host                 | Where to get an app password                        |
-| ----------- | ------------------------- | --------------------------------------------------- |
-| Gmail       | `imap.gmail.com:993`      | <https://myaccount.google.com/apppasswords>         |
-| Fastmail    | `imap.fastmail.com:993`   | <https://app.fastmail.com/settings/security/tokens> |
-| iCloud Mail | `imap.mail.me.com:993`    | <https://account.apple.com/account/manage>          |
-| Yahoo Mail  | `imap.mail.yahoo.com:993` | <https://login.yahoo.com/account/security>          |
-| Custom      | user-provided             | whatever your provider says                         |
-
-Microsoft 365 / Outlook.com is **not** supported — Microsoft disabled basic authentication for those accounts, so there's no app-password path. OAuth support is planned for a later phase.
-
-**Setup.** `Settings → Integrations → Email`, click "Add email account", pick a provider, paste your email + app password, click "Test connection", then flip the account's "Enabled" toggle.
-
-**Tools.** When at least one account is enabled, the model sees three new tools:
-
-- `email_list_recent` — cheap listing (subject + sender + date + snippet). Always the first call.
-- `email_summarize_message` — sub-agent that compresses one full message body through a separate chat completion. Mirrors how `research_url` already compresses web pages.
-- `email_read_full` — escape hatch that returns the full normalized body verbatim.
-
-All three are hidden from the model entirely unless at least one account is enabled. Credentials are stored in the same local settings blob as other secrets (no keyring). `BODY.PEEK[]` is used for every fetch, so reading a message never marks it as seen. There is no sending — this phase is strictly read-only.
+Use `make reset-data` to wipe this directory and start fresh (Linux/macOS).
 
 ## Tech stack
 
-| Component                       | Technology                                                                                                                                                                      |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App framework                   | [Tauri 2.x](https://v2.tauri.app/) (Rust backend, system webview)                                                                                                               |
-| Frontend                        | [SvelteKit 5](https://svelte.dev/) (TypeScript, static SPA, Svelte 5 runes)                                                                                                     |
-| LLM inference                   | [llama.cpp](https://github.com/ggml-org/llama.cpp) sidecar (Vulkan/Metal, multimodal with mmproj)                                                                               |
-| Speech-to-text                  | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) sidecar (Vulkan/Metal)                                                                                                   |
-| Text-to-speech                  | [Kokoros](https://github.com/lucasjinreal/Kokoros) sidecar (CPU)                                                                                                                |
-| Default models                  | [Qwen 3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) and [Qwen 3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) (both vision-language)                          |
-| PDF text extraction             | [PDFium](https://github.com/bblanchon/pdfium-binaries) with custom position-aware layout reconstruction                                                                         |
-| PDF rendering (vision fallback) | [PDF.js](https://mozilla.github.io/pdf.js/) running in the Tauri webview                                                                                                        |
-| PDF creation                    | [printpdf](https://crates.io/crates/printpdf) (pure Rust)                                                                                                                       |
-| docx / xlsx                     | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes |
-| odt / ods / odp / pptx          | Hand-rolled zip+XML following the OASIS OpenDocument and OOXML specs                                                                                                            |
-| Database                        | SQLite (via rusqlite)                                                                                                                                                           |
-| Web search                      | Auto-rotation (Brave HTML / DuckDuckGo / Mojeek), Brave Search API, or SearXNG                                                                                                  |
-
-## Search providers
-
-| Provider         | Setup                    | Notes                                                                                                                           |
-| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| Auto (default)   | None                     | Rotates between Brave HTML scrape, DuckDuckGo, and Mojeek with round-robin scheduling, per-engine health tracking, and failover |
-| DuckDuckGo       | None                     | Single engine, may get rate limited                                                                                             |
-| Brave Search API | API key in Settings      | 2,000 free queries/month, most reliable                                                                                         |
-| SearXNG          | Instance URL in Settings | Unlimited (self-hosted)                                                                                                         |
-
-When deep research mode is on, the Auto provider is selected, and no Brave API key is configured, the search proxy switches to **slow mode** (longer per-engine pacing, shorter cooldowns) so engines can recover within the same research turn. Configuring a Brave API key or a SearXNG instance bypasses slow mode entirely.
+| Component                  | Technology                                                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App framework              | [Tauri 2.x](https://v2.tauri.app/) (Rust backend, system webview)                                                                                                               |
+| Frontend                   | [SvelteKit 5](https://svelte.dev/) (TypeScript, static SPA, Svelte 5 runes)                                                                                                     |
+| LLM inference              | [llama.cpp](https://github.com/ggml-org/llama.cpp) (Vulkan/Metal, with image support via mmproj)                                                                                |
+| Speech-to-text             | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Vulkan/Metal)                                                                                                           |
+| Text-to-speech             | [Kokoros](https://github.com/lucasjinreal/Kokoros) (CPU)                                                                                                                        |
+| Models (small)             | [Qwen 3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) and [Qwen 3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF)                                                 |
+| Models (24 GB and up)      | [Qwen 3.6 35B-A3B](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) and [Qwen 3.8 27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF)                                     |
+| Python sandbox             | [Pyodide](https://pyodide.org/) running in the app's webview                                                                                                                    |
+| PDF text extraction        | [PDFium](https://github.com/bblanchon/pdfium-binaries) with custom layout reconstruction                                                                                        |
+| PDF rendering (for vision) | [PDF.js](https://mozilla.github.io/pdf.js/) running in the Tauri webview                                                                                                        |
+| PDF creation               | [printpdf](https://crates.io/crates/printpdf) (pure Rust)                                                                                                                       |
+| docx / xlsx                | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes |
+| odt / ods / odp / pptx     | Hand-written zip+XML following the OASIS OpenDocument and OOXML specs                                                                                                           |
+| Database                   | SQLite (via rusqlite)                                                                                                                                                           |
+| Web search                 | Rotation of free engines, Brave Search API, SearXNG, or a local Chrome/Chromium                                                                                                 |
 
 ## Building a release
 
-Releases are automated via [release-please](https://github.com/googleapis/release-please):
+Releases are automated with [release-please](https://github.com/googleapis/release-please):
 
-1. Commits on `main` must use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, `feat!:` for breaking, etc).
-2. release-please keeps an open PR titled "chore(main): release X.Y.Z" that bumps versions, updates `CHANGELOG.md`, and accumulates notes from each new commit.
-3. Merge that PR to cut a release. That creates the `vX.Y.Z` tag and a draft GitHub release prefilled with the changelog.
-4. The tag push triggers the `Release` workflow, which builds sidecars + app for all platforms and attaches installers (Linux AppImage/deb/rpm, Windows NSIS/MSI, macOS DMG) to the draft.
-5. Review the draft and click **Publish** when satisfied.
+1. Commits on `main` must use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, `feat!:` for breaking changes).
+2. release-please keeps a pull request open, titled "chore(main): release X.Y.Z", that bumps the versions, updates `CHANGELOG.md` and collects the notes from each new commit.
+3. Merge that PR to cut a release. That creates the `vX.Y.Z` tag and a draft GitHub release with the changelog already filled in.
+4. Pushing the tag runs the `Release` workflow, which builds the sidecars and the app for every platform and attaches the installers (Linux AppImage/deb/rpm, Windows NSIS/MSI, macOS DMG) to the draft.
+5. Review the draft and click **Publish**.
 
 To build locally: `make release-local`.
 
-## Known issues
-
-### File-creation prompts usually need a follow-up
-
-When you ask the model to create a file in a single prompt — e.g. _"Create a PDF report on X"_ — it will typically do the research and write a detailed answer to the chat, but **not** actually call `fs_write_pdf`. Sometimes it will even claim it created the file when it didn't.
-
-This is a model-behavior issue with small local models: after a multi-step research turn, the model strongly prefers ending with a natural-language synthesis instead of a final tool call. Haruspex mitigates this with imperative tool descriptions, per-turn reminders, and a recovery pass that nudges the model when a turn ends without the expected write — but the mitigations aren't complete.
-
-**Workaround:** if the model didn't create the file on the first try, just ask again (_"write that to a PDF"_). The second turn almost always succeeds because the report content is already in the conversation history.
-
-### Presentation creation and image search are experimental
-
-The presentation tools (`fs_write_pptx`, `fs_write_odp`) and image discovery tools (`image_search`, `fetch_url_images`) work end-to-end but are best treated as experimental:
-
-- Single-turn "research + create presentation with images" prompts are unreliable. Split into two or three turns: research first, then ask for the presentation explicitly.
-- `image_search` hits Wikimedia Commons, which has great coverage of landmarks, animals, and generic subjects but very little for specific consumer-tech products.
-- Slides are limited to a title + bullet list (up to 2 levels of nesting) + an optional image. No tables, charts, speaker notes, or custom layouts.
-
-These limitations are model-behavior side and will improve as local models get better at tool use.
-
 ## Credits
 
-The Haruspex application icon is derived from a photograph of the **Piacenza Bronze Liver** by **Lokilech**, sourced from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Piacenza_Bronzeleber.jpg) and used under the [Creative Commons Attribution-ShareAlike 3.0 Unported](https://creativecommons.org/licenses/by-sa/3.0/) license. See [`NOTICE.md`](./NOTICE.md) for details.
+The Haruspex application icon comes from a photograph of the **Piacenza Bronze Liver** by **Lokilech**, from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Piacenza_Bronzeleber.jpg), used under the [Creative Commons Attribution-ShareAlike 3.0 Unported](https://creativecommons.org/licenses/by-sa/3.0/) licence. See [`NOTICE.md`](./NOTICE.md) for details.
 
 ## License
 
-MIT (source code). See [`NOTICE.md`](./NOTICE.md) for the icon's separate CC BY-SA 3.0 license.
+MIT (source code). See [`NOTICE.md`](./NOTICE.md) for the icon's separate CC BY-SA 3.0 licence.
