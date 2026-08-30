@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.61](https://github.com/tmac1973/haruspex/compare/v0.1.60...v0.1.61) (2026-08-30)
+
+
+### Features
+
+* **jobs:** keep the machine awake while a job run is in flight ([#216](https://github.com/tmac1973/haruspex/issues/216)) ([a42bd8a](https://github.com/tmac1973/haruspex/commit/a42bd8aed389298e89c3b4afd3127fc032297438))
+
 ## [0.1.60](https://github.com/tmac1973/haruspex/compare/v0.1.59...v0.1.60) (2026-08-29)
 
 
