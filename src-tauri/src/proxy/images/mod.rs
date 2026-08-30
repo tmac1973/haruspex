@@ -262,15 +262,30 @@ pub async fn proxy_image_search(
     .map(|(name, res)| match res {
         Ok(items) => items,
         Err(e) => {
-            // Debug, not warn: a source being unavailable is routine and the
-            // user cannot act on it.
-            log::debug!("image source {} unavailable: {}", name, e);
+            // Warn, not debug: a source dropping out silently degrades results
+            // to whatever is left, and Commons alone is the weakest of the
+            // three. When someone reports poor images this is the first thing
+            // worth knowing, so it belongs in the Log Viewer by default.
+            log::warn!("image source {} unavailable: {}", name, e);
             Vec::new()
         }
     })
     .collect();
 
-    Ok(interleave(lists, limit))
+    let merged = interleave(lists.clone(), limit);
+    // Per-source counts, because "which source answered" is the question that
+    // matters when results are poor, and the merged list alone cannot answer
+    // it — a source that returned nothing and one that was never reached look
+    // identical downstream.
+    info!(
+        "image_search q={:?} → openverse={} commons={} wikipedia={}, merged={}",
+        query,
+        lists.first().map(Vec::len).unwrap_or(0),
+        lists.get(1).map(Vec::len).unwrap_or(0),
+        lists.get(2).map(Vec::len).unwrap_or(0),
+        merged.len()
+    );
+    Ok(merged)
 }
 
 /// Round-robin the lists together, dropping duplicate URLs, until `limit` is
@@ -606,5 +621,71 @@ mod tests {
     fn hero_is_absent_when_the_page_declares_none() {
         let base = url::Url::parse("https://example.com/").unwrap();
         assert_eq!(extract_hero_image("<html></html>", &base), None);
+    }
+}
+
+/// Live-API checks, `#[ignore]`d like the browser-search integration tests.
+///
+/// The unit tests above parse recorded fixtures, which proves the parsers are
+/// right and says nothing about whether the endpoints still answer the way the
+/// fixtures were captured. Run these when a source stops returning results:
+///
+/// ```text
+/// cargo test --lib proxy::images::integration -- --ignored --nocapture
+/// ```
+#[cfg(test)]
+mod integration {
+    use super::*;
+
+    fn client() -> reqwest::Client {
+        crate::proxy::build_fetch_client(None).unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn openverse_returns_results() {
+        let out = openverse::search(&client(), "spider monkey", 3)
+            .await
+            .unwrap();
+        println!("openverse: {} results", out.len());
+        assert!(!out.is_empty(), "openverse returned nothing");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn commons_returns_results() {
+        let out = commons::search(&client(), "spider monkey", 3)
+            .await
+            .unwrap();
+        println!("commons: {} results", out.len());
+        for r in &out {
+            println!("  {} [{}]", r.title, r.mime);
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn wikipedia_returns_a_lead_image() {
+        let out = wikipedia::search(&client(), "Spider monkey").await.unwrap();
+        println!("wikipedia: {} results", out.len());
+    }
+
+    /// The one that matters: with a small limit, the merged search must not
+    /// collapse to a single source.
+    #[tokio::test]
+    #[ignore]
+    async fn merged_search_draws_from_more_than_commons() {
+        let c1 = client();
+        let (o, c, w) = tokio::join!(
+            openverse::search(&c1, "baboon", 1),
+            commons::search(&c1, "baboon", 1),
+            wikipedia::search(&c1, "Baboon"),
+        );
+        println!("openverse: {:?}", o.as_ref().map(|v| v.len()));
+        println!("commons:   {:?}", c.as_ref().map(|v| v.len()));
+        println!("wikipedia: {:?}", w.as_ref().map(|v| v.len()));
+        if let Err(e) = &o {
+            println!("OPENVERSE ERROR: {e}");
+        }
     }
 }

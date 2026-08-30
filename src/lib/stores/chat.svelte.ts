@@ -1161,6 +1161,11 @@ function finalizeStreamedTurn(
 	const fetched = extractUrlsFromSteps(conversation.searchSteps);
 	const processed = processCitations(stripToolCallArtifacts(streamingContent).trim(), fetched);
 	const finalContent = processed.content;
+	// Snapshot before committing: commitMessage archives these into
+	// messageSteps and then empties the live array, so anything reading
+	// conversation.searchSteps afterwards sees nothing. Image resolution runs
+	// after the commit by design and needs the turn's image_search results.
+	const stepsThisTurn = [...conversation.searchSteps];
 
 	if (finalContent) {
 		logDebug('chat', 'onComplete commit', {
@@ -1195,7 +1200,7 @@ function finalizeStreamedTurn(
 		void resolveReplyImages(
 			conversation.id,
 			finalContent,
-			conversation.searchSteps,
+			stepsThisTurn,
 			() => getActiveConversationId() === conversation.id
 		);
 	}

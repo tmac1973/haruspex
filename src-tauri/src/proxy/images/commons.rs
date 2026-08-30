@@ -11,6 +11,16 @@
 use super::ImageSearchResult;
 use crate::proxy::extract::{strip_html_tags, USER_AGENT};
 
+/// Types the image cache can actually fetch and display, mirroring
+/// `image_cache::fetch::ACCEPTED_MIME`.
+///
+/// Commons' `File:` namespace is not an image library — it holds PDFs, DjVu
+/// scans, video and audio, and its full-text search matches words *inside*
+/// those documents. A search for "baboon Old World monkey portrait" on
+/// 2026-08-30 returned three scanned books and no photograph at all. Offering
+/// those to the model wastes result slots on things that could never render.
+const DISPLAYABLE_MIME: &[&str] = &["image/jpeg", "image/png", "image/webp", "image/gif"];
+
 /// Search Wikimedia Commons for images matching `query`. Two-call flow:
 ///
 ///   1. `list=search&srnamespace=6` → find File:* page titles
@@ -167,6 +177,12 @@ pub(crate) fn parse_commons_imageinfo(
         if url.is_empty() {
             continue;
         }
+        // Drop anything we could not display even if the model picked it:
+        // PDFs, DjVu, video, and SVG (which the fetch path refuses because it
+        // is script-capable markup rather than raster data).
+        if !DISPLAYABLE_MIME.contains(&mime.as_str()) {
+            continue;
+        }
         out.push(ImageSearchResult {
             title: title.clone(),
             url,
@@ -186,6 +202,62 @@ pub(crate) fn parse_commons_imageinfo(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Commons search matches text *inside* documents, so a query about an
+    /// animal readily returns scanned books. Those can never be displayed, so
+    /// they must not occupy a result slot.
+    #[test]
+    fn non_image_files_are_dropped() {
+        let json = serde_json::json!({
+            "query": { "pages": {
+                "1": {
+                    "title": "File:Apes and monkeys; their life and language.pdf",
+                    "imageinfo": [{
+                        "url": "https://upload.wikimedia.org/x.pdf",
+                        "thumburl": "https://upload.wikimedia.org/page1-500px-x.pdf.jpg",
+                        "width": 718, "height": 1116, "mime": "application/pdf",
+                        "descriptionurl": "https://commons.wikimedia.org/wiki/File:x.pdf",
+                        "extmetadata": {}
+                    }]
+                },
+                "2": {
+                    "title": "File:Real baboon.jpg",
+                    "imageinfo": [{
+                        "url": "https://upload.wikimedia.org/baboon.jpg",
+                        "thumburl": "https://upload.wikimedia.org/960px-baboon.jpg",
+                        "width": 4000, "height": 3000, "mime": "image/jpeg",
+                        "descriptionurl": "https://commons.wikimedia.org/wiki/File:baboon.jpg",
+                        "extmetadata": {}
+                    }]
+                }
+            }}
+        });
+        let ordered = vec![
+            "File:Apes and monkeys; their life and language.pdf".to_string(),
+            "File:Real baboon.jpg".to_string(),
+        ];
+        let out = parse_commons_imageinfo(&json, &ordered);
+        assert_eq!(out.len(), 1, "the PDF should have been dropped");
+        assert_eq!(out[0].title, "File:Real baboon.jpg");
+    }
+
+    /// SVG is refused by the fetch path because it is script-capable markup,
+    /// so offering one would produce an image that silently never renders.
+    #[test]
+    fn svg_is_dropped_because_the_fetcher_refuses_it() {
+        let json = serde_json::json!({
+            "query": { "pages": { "1": {
+                "title": "File:Diagram.svg",
+                "imageinfo": [{
+                    "url": "https://upload.wikimedia.org/d.svg",
+                    "width": 100, "height": 100, "mime": "image/svg+xml",
+                    "extmetadata": {}
+                }]
+            }}}
+        });
+        let out = parse_commons_imageinfo(&json, &["File:Diagram.svg".to_string()]);
+        assert!(out.is_empty());
+    }
 
     #[test]
     fn parse_commons_imageinfo_extracts_fields() {
