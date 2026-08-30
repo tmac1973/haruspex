@@ -8,6 +8,7 @@ import {
 	getOpenRouterReasoningParam,
 	setActiveLocalModel,
 	SETTINGS_KEY,
+	getIncludeImagesPrompt,
 	clampResponseTokens,
 	DEFAULT_MAX_RESPONSE_TOKENS,
 	DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
@@ -724,5 +725,31 @@ describe('response token ceilings', () => {
 
 	it('falls back to the base default for a non-numeric entry', () => {
 		expect(clampResponseTokens(Number.NaN)).toBe(DEFAULT_MAX_RESPONSE_TOKENS);
+	});
+});
+
+describe('include images setting', () => {
+	beforeEach(() => {
+		localStorage.clear();
+	});
+
+	it('is off by default', () => {
+		expect(getSettings().includeImages).toBe(false);
+	});
+
+	it('produces no prompt fragment while off', () => {
+		expect(getIncludeImagesPrompt()).toBe('');
+	});
+
+	it('produces the IMAGES block once switched on', () => {
+		updateSettings({ includeImages: true });
+		const prompt = getIncludeImagesPrompt();
+		expect(prompt).toContain('IMAGES:');
+		// Both halves of the instruction matter: a 9B told only "include
+		// relevant images" either ignores it or puts one after every
+		// paragraph, so the categories that do NOT qualify are named too.
+		expect(prompt).toContain('1 to 3');
+		expect(prompt).toContain('Do NOT include images for abstract or technical questions');
+		expect(prompt).toContain('Never invent an image URL');
 	});
 });

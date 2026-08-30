@@ -237,6 +237,14 @@ export type { ProxyConfig };
 
 export interface AppSettings {
 	responseFormat: ResponseFormat;
+	/**
+	 * Ask the model to put relevant pictures in its answers. Off by default.
+	 *
+	 * Purely a prompt nudge: the image tools are in the schema either way, so
+	 * with this off "show me a picture of X" still works and the model may
+	 * still offer one unprompted. All this changes is whether it volunteers.
+	 */
+	includeImages: boolean;
 	theme: ThemeMode;
 	accentColor: AccentColor;
 	/** Browser-style UI zoom factor (1 = 100%). One of UI_SCALE_STEPS. */
@@ -541,6 +549,7 @@ export const DEFAULT_TTS_VOICE = 'af_heart';
 
 const defaults: AppSettings = {
 	responseFormat: 'standard',
+	includeImages: false,
 	theme: 'system',
 	accentColor: 'teal',
 	uiScale: 1,
@@ -1207,6 +1216,29 @@ export function getSamplingParams(
 		};
 	}
 	return base;
+}
+
+/**
+ * The IMAGES block, or an empty string when the setting is off.
+ *
+ * Deliberately concrete on both sides. "Include relevant images where
+ * appropriate" gets a 9B either ignoring the instruction entirely or pasting a
+ * picture after every paragraph; naming the categories that qualify *and* the
+ * ones that do not is what produces consistent behaviour. The three-image
+ * ceiling is stated here and separately enforced in images/eligible, because
+ * the prompt sets intent and only code can guarantee it.
+ */
+export function getIncludeImagesPrompt(): string {
+	if (!settings.includeImages) return '';
+	return `
+
+IMAGES:
+- When the answer is about something visual — a place, an animal, an object, a person, a plant, a building — include 1 to 3 relevant images.
+- Get them with image_search, or use an [Image: <url>] line from a page you fetched. Only use image URLs that appeared in a tool result in this conversation. Never invent an image URL.
+- Embed with markdown: ![short description](URL)
+- Put each image right after the paragraph it illustrates, not all at the end.
+- Do NOT include images for abstract or technical questions — code, maths, definitions, comparisons of numbers, step-by-step instructions.
+- Never use more than 3 images in one answer. Fewer is better. An image that does not help the reader understand something is just noise.`;
 }
 
 export function getResponseFormatPrompt(): string {

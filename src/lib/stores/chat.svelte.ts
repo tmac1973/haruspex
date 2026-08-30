@@ -925,7 +925,12 @@ function buildApiPrompt(
 ): { messages: ChatMessage[]; baseMessageCount: number } {
 	const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
 	let messagesForApi: ChatMessage[] = [
-		buildSystemPrompt(workingDir, { memorySection }),
+		buildSystemPrompt(workingDir, {
+			memorySection,
+			// Chat tab only. Jobs, remote guests and the shell assistant build
+			// their prompts through the same function and must not get this.
+			includeImages: getSettings().includeImages
+		}),
 		...historyMessages
 	];
 
