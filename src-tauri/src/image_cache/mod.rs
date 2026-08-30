@@ -13,13 +13,14 @@
 //!     document-embedding feature needs and cannot reconstruct from a URL.
 //!
 //! Layout: `db/images.rs` owns the SQL, `fetch.rs` the network and its safety
-//! gates, `license.rs` the licence-to-`embeddable` mapping, and this file the
-//! files on disk plus the `image_resolve` command that ties them together.
-//! `protocol.rs` joins them in the next phase to serve the bytes.
+//! gates, `license.rs` the licence-to-`embeddable` mapping, `protocol.rs` the
+//! URI scheme that serves the bytes, and this file the files on disk plus the
+//! `image_resolve` command that ties them together.
 
 pub mod commands;
 pub mod fetch;
 pub mod license;
+pub mod protocol;
 
 use crate::db::{Database, ImageRow};
 use log::{debug, warn};

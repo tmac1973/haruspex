@@ -151,6 +151,49 @@ impl Database {
         Ok(())
     }
 
+    /// Look one image up by its content hash — the protocol handler's path.
+    pub fn image_by_hash(&self, hash: &str) -> Result<Option<ImageRow>, String> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT {IMAGE_COLUMNS} FROM images WHERE hash = ?1"
+            ))
+            .map_err(|e| format!("Failed to prepare image lookup: {}", e))?;
+        let mut rows = stmt
+            .query_map(params![hash], read_image)
+            .map_err(|e| format!("Failed to query image: {}", e))?;
+        match rows.next() {
+            Some(row) => Ok(Some(
+                row.map_err(|e| format!("Failed to read image: {}", e))?,
+            )),
+            None => Ok(None),
+        }
+    }
+
+    /// Mark images as displayed now, so eviction ranks by actual use rather
+    /// than by when the bytes happened to be fetched.
+    pub fn touch_images(&self, hashes: &[String]) -> Result<(), String> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
+        let now = chrono_now();
+        let mut conn = self.conn();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to open touch transaction: {}", e))?;
+        {
+            let mut stmt = tx
+                .prepare("UPDATE images SET last_used_at = ?1 WHERE hash = ?2")
+                .map_err(|e| format!("Failed to prepare touch: {}", e))?;
+            for hash in hashes {
+                stmt.execute(params![now, hash])
+                    .map_err(|e| format!("Failed to touch image: {}", e))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("Failed to commit touch: {}", e))
+    }
+
     /// Total bytes currently held by cached images.
     pub fn images_total_bytes(&self) -> Result<i64, String> {
         let conn = self.conn();

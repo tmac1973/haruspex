@@ -1959,3 +1959,52 @@ fn eviction_ignores_whether_an_image_is_referenced() {
     // image is still evictable, and rehydration will simply not find it.
     assert_eq!(db.images_to_evict(10).unwrap(), vec![hash]);
 }
+
+#[test]
+fn displaying_an_image_moves_it_out_of_the_eviction_line() {
+    let db = test_db();
+    let (stale, viewed) = ("7".repeat(64), "8".repeat(64));
+    db.insert_image(&img(&stale, "https://e.com/stale.jpg", 100))
+        .unwrap();
+    db.insert_image(&img(&viewed, "https://e.com/viewed.jpg", 100))
+        .unwrap();
+    set_used_at(&db, &stale, 1);
+    set_used_at(&db, &viewed, 2);
+
+    // Before any display, the older fetch is first in line.
+    assert_eq!(db.images_to_evict(100).unwrap(), vec![stale.clone()]);
+
+    // Serving the older one over the protocol counts as use, which is the
+    // whole reason touch_images exists: an image fetched long ago but looked
+    // at daily should outlive one fetched recently and never viewed.
+    db.touch_images(std::slice::from_ref(&viewed)).unwrap();
+    db.touch_images(std::slice::from_ref(&stale)).unwrap();
+    set_used_at(&db, &viewed, 10);
+    set_used_at(&db, &stale, 20);
+
+    assert_eq!(db.images_to_evict(100).unwrap(), vec![viewed]);
+}
+
+#[test]
+fn image_lookup_by_hash_matches_lookup_by_url() {
+    let db = test_db();
+    let hash = "9".repeat(64);
+    db.insert_image(&img(&hash, "https://e.com/x.jpg", 10))
+        .unwrap();
+
+    let by_hash = db.image_by_hash(&hash).unwrap().expect("found by hash");
+    let by_url = db
+        .image_by_source_url("https://e.com/x.jpg")
+        .unwrap()
+        .expect("found by url");
+    assert_eq!(by_hash.hash, by_url.hash);
+    assert_eq!(by_hash.mime, by_url.mime);
+
+    assert!(db.image_by_hash(&"0".repeat(64)).unwrap().is_none());
+}
+
+#[test]
+fn touching_nothing_is_not_an_error() {
+    let db = test_db();
+    db.touch_images(&[]).unwrap();
+}

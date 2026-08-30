@@ -63,6 +63,17 @@ pub fn run() {
                 responder.respond(sandbox_fetch::handle_fetch_scheme(request).await);
             });
         })
+        // Serves cached chat images by content hash. Registered as a scheme
+        // rather than handed over IPC as data: URLs so a long conversation's
+        // images stream from disk instead of sitting in webview memory. See
+        // image_cache::protocol for the URL shape and why the hash is in the
+        // path rather than the host.
+        .register_asynchronous_uri_scheme_protocol("haruspex-img", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(image_cache::protocol::handle(&app, request));
+            });
+        })
         .setup(|app| {
             app.manage(ModelManager::new(app.handle()));
             let database = Database::new(app.handle()).expect("Failed to initialize database");
