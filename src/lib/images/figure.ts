@@ -50,9 +50,18 @@ export function figureHtml(row: ImageRow, alt: string): string | null {
 
 	// width/height are set so the browser can reserve the right box before the
 	// bytes arrive, which stops the text below jumping as each image lands.
+	//
+	// `data-action` rather than an inline handler: this HTML goes through
+	// DOMPurify, which strips `onclick`, and the CSP would block it anyway.
+	// markdown-actions.ts routes the click, the same way the code-block
+	// copy/paste/run buttons work.
 	return (
 		`<figure class="chat-image">` +
-		`<img src="${esc(src)}" alt="${esc(alt)}" width="${row.width}" height="${row.height}" loading="lazy">` +
+		`<button type="button" class="chat-image-zoom" data-action="view-image" ` +
+		`title="Click to enlarge" aria-label="Enlarge image">` +
+		`<img src="${esc(src)}" alt="${esc(alt)}" width="${row.width}" height="${row.height}" ` +
+		`loading="lazy">` +
+		`</button>` +
 		captionHtml +
 		`</figure>`
 	);

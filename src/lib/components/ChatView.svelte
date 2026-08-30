@@ -3,6 +3,8 @@
 	import ConversationSidebar from '$lib/components/ConversationSidebar.svelte';
 	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
 	import SearchStepComponent from '$lib/components/SearchStep.svelte';
+	import ImageViewerModal from '$lib/components/ImageViewerModal.svelte';
+	import { VIEW_IMAGE_EVENT } from '$lib/markdown-actions';
 	import SourceChip from '$lib/components/SourceChip.svelte';
 	import MicButton from '$lib/components/MicButton.svelte';
 	import WorkingDirButton from '$lib/components/WorkingDirButton.svelte';
@@ -222,6 +224,24 @@
 	onMount(() => {
 		window.addEventListener('keydown', handleGlobalKeydown);
 		return () => window.removeEventListener('keydown', handleGlobalKeydown);
+	});
+
+	// One viewer for every chat image, inline or strip. Both routes raise the
+	// same event rather than each owning a modal: inline images live in raw
+	// markdown HTML and cannot hold a Svelte handler at all, so a shared
+	// listener is the only thing that can serve both.
+	let viewerSrc = $state<string | null>(null);
+	let viewerAlt = $state('image');
+
+	onMount(() => {
+		const open = (e: Event) => {
+			const detail = (e as CustomEvent<{ src: string; alt: string }>).detail;
+			if (!detail?.src) return;
+			viewerSrc = detail.src;
+			viewerAlt = detail.alt || 'image';
+		};
+		document.addEventListener(VIEW_IMAGE_EVENT, open);
+		return () => document.removeEventListener(VIEW_IMAGE_EVENT, open);
 	});
 
 	// Throttle streaming markdown rendering.
@@ -695,6 +715,8 @@
 		</div>
 	</div>
 </div>
+
+<ImageViewerModal src={viewerSrc} alt={viewerAlt} onClose={() => (viewerSrc = null)} />
 
 <style>
 	.chat-layout {

@@ -16,6 +16,15 @@
 	import type { ImageRow } from '$lib/ipc/gen/ImageRow';
 	import { captionFor } from '$lib/images/caption';
 	import { imageSrc } from '$lib/images/url';
+	import { VIEW_IMAGE_EVENT } from '$lib/markdown-actions';
+
+	/**
+	 * Same event the inline images raise, so one viewer at the chat level
+	 * serves both routes rather than each message owning a modal.
+	 */
+	function enlarge(src: string, alt: string) {
+		document.dispatchEvent(new CustomEvent(VIEW_IMAGE_EVENT, { detail: { src, alt } }));
+	}
 
 	interface Props {
 		images: ImageRow[];
@@ -31,7 +40,15 @@
 			{@const caption = captionFor(row)}
 			{#if src}
 				<figure>
-					<img {src} alt="" width={row.width} height={row.height} loading="lazy" />
+					<button
+						type="button"
+						class="zoom"
+						title="Click to enlarge"
+						aria-label="Enlarge image"
+						onclick={() => enlarge(src, row.attribution ?? 'image')}
+					>
+						<img {src} alt="" width={row.width} height={row.height} loading="lazy" />
+					</button>
 					{#if caption}
 						<figcaption>
 							{caption.text}{#if caption.linkHref}<a
@@ -63,6 +80,17 @@
 		   width when the pane is narrow. */
 		flex: 1 1 200px;
 		max-width: 280px;
+	}
+
+	/* Strips the button chrome so only the image is visible; the cursor and
+	   focus ring are what signal it is interactive. */
+	.zoom {
+		display: block;
+		padding: 0;
+		border: none;
+		background: none;
+		cursor: zoom-in;
+		width: 100%;
 	}
 
 	img {

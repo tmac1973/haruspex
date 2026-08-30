@@ -260,6 +260,7 @@
 	}
 
 	.message-content :global(figure.chat-image img) {
+		cursor: zoom-in;
 		display: block;
 		max-width: 100%;
 		/* Height-capped so one tall image cannot push the rest of an answer
