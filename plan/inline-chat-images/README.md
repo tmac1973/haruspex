@@ -10,9 +10,14 @@ findings, and the Decisions appendix.
 ## Build status
 
 Locked 2026-08-30. All seven phases implemented 2026-08-30, plus the amendments
-below. `make check` passes. Verified working on Linux against Qwen 3.6 35B;
-**Windows and macOS still need a manual pass**, and the phase 07 success
-criterion (three questions × three runs on the default 9B) has not been run.
+below. `make check` passes.
+
+Verified on Linux against both Qwen 3.6 35B and the default Qwen 3.5 9B — the
+9B works well, which was the phase 07 success criterion and the one that
+mattered, since every model-behaviour problem found during implementation was
+worse on smaller models. **Windows and macOS still need a manual pass**; the
+custom URI scheme resolves differently on Windows and no unit test can cover
+that.
 
 ## Amended during implementation
 
