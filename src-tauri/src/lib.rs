@@ -14,6 +14,7 @@ mod links;
 mod lint;
 mod memory;
 mod models;
+mod power;
 mod proxy;
 mod remote;
 mod sandbox_fetch;
@@ -31,6 +32,7 @@ use audio::AudioRecorder;
 use db::Database;
 use inference_queue::InferenceQueue;
 use models::ModelManager;
+use power::PowerInhibitor;
 use proxy::stats::{SearchStats, StatSinkHandle};
 use proxy::ProxyState;
 use remote::RemoteServer;
@@ -104,6 +106,9 @@ pub fn run() {
         .manage(WhisperServer::new())
         .manage(TtsEngine::new())
         .manage(ShellManager::new())
+        // Holds off OS idle-sleep while a job run is in flight. Idle until
+        // the runner asks; see power.rs.
+        .manage(PowerInhibitor::new())
         .invoke_handler(tauri::generate_handler![
             server::start_server,
             server::stop_server,
@@ -282,6 +287,8 @@ pub fn run() {
             shell::shell_list_shells,
             clipboard::clipboard_read_text,
             clipboard::clipboard_read_primary,
+            power::power_inhibit_acquire,
+            power::power_inhibit_release,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -300,6 +307,9 @@ pub fn run() {
                 // after the window is gone is the kind of thing that makes the
                 // next launch fail to bind.
                 app.state::<RemoteServer>().shutdown();
+                // Let the machine sleep again if a run was still holding the
+                // inhibit when the window closed.
+                app.state::<PowerInhibitor>().shutdown();
                 shell_mgr.shutdown_all();
                 tauri::async_runtime::block_on(async {
                     let _ = llama.stop().await;

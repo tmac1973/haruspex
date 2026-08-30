@@ -23,6 +23,7 @@
 	import { reclaimOwnWindowSlots } from '$lib/agent/inferenceQueue.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
 	import { startScheduler } from '$lib/agent/jobs/scheduler.svelte';
+	import { releaseStaleInhibit } from '$lib/agent/jobs/keepAwake';
 	import {
 		enterRemoteMode,
 		initServerStore,
@@ -147,10 +148,15 @@
 		// Sweep any job runs left at 'queued' / 'running' by a previous
 		// session (hard close, crash). Fire-and-forget — the JobsTab loads
 		// run history on demand and will pick up the recovered statuses.
-		// Start the job scheduler ticker after recovery has had a chance
-		// to clean up — we don't want the scheduler enqueuing while the
-		// runner thinks the DB has a stale 'running' row.
-		void recoverOrphanRuns().then(() => startScheduler());
+		// releaseStaleInhibit clears a sleep inhibit stranded by a previous
+		// renderer lifetime, for the same reason as reclaimOwnWindowSlots
+		// above — a webview reload would otherwise hold the machine awake
+		// until the app exits. Both must settle before the scheduler starts:
+		// it fires a tick immediately, and a due job acquiring the inhibit
+		// mid-sweep would have that acquire undone by the late release, just
+		// as it would enqueue while the runner thinks the DB has a stale
+		// 'running' row.
+		void Promise.all([recoverOrphanRuns(), releaseStaleInhibit()]).then(() => startScheduler());
 		// Remote web chat, if Settings has it on. Only the main window does
 		// this: the driver answers a process-wide event, so a second listener
 		// in a detached shell would race it for every guest prompt.
