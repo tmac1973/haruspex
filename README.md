@@ -473,4 +473,14 @@ The Haruspex application icon comes from a photograph of the **Piacenza Bronze L
 
 ## License
 
-MIT (source code). See [`NOTICE.md`](./NOTICE.md) for the icon's separate CC BY-SA 3.0 licence.
+Copyright © 2025–2026 Tim MacDonald.
+
+Haruspex is free software: you can redistribute it and modify it under the terms of the **GNU General Public License version 3**, or (at your option) any later version, as published by the Free Software Foundation. The full text is in [`LICENSE`](./LICENSE).
+
+In plain terms: you can use it, read it, change it and share it. If you share a changed version, that version has to be free software too, under the same licence, with its source available and the original credit kept.
+
+Haruspex is distributed in the hope that it will be useful, but **WITHOUT ANY WARRANTY** — without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See sections 15 and 16 of the GNU General Public License for details.
+
+The application icon is licensed separately under CC BY-SA 3.0. See [`NOTICE.md`](./NOTICE.md).
+
+> Versions up to and including v0.1.61 were released under the MIT licence. That does not change retroactively — the licence applies from this commit onward.
