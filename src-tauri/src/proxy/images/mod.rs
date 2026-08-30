@@ -1,19 +1,26 @@
-//! Image-search backend (Wikimedia Commons) and per-page image
-//! extraction (`extract_page_images`). The Tauri commands
-//! `proxy_image_search` and `proxy_fetch_url_images` live here and are
-//! re-exported from `mod.rs` so the `lib.rs` invoke handler keeps using
-//! `proxy::proxy_image_search` / `proxy::proxy_fetch_url_images`.
+//! Image sourcing: a per-page scraper (`extract_page_images`) and the
+//! multi-source search behind the `image_search` tool.
+//!
+//! [`proxy_image_search`] queries Openverse, Commons and Wikipedia
+//! concurrently and interleaves the results. It is one Tauri command and one
+//! model-facing tool no matter how many sources sit behind it — every tool
+//! added to the schema costs quality on the small models this project targets,
+//! so the source list grows here and never in the tool list.
 
-use super::extract::{strip_html_tags, validate_url, USER_AGENT};
+mod commons;
+mod openverse;
+mod wikipedia;
+
+use super::extract::validate_url;
 use super::ProxyConfig;
 use log::info;
 use scraper::{Html, Selector};
 use serde::Serialize;
 
-/// and height are from the HTML attributes when present — many modern
-/// pages omit them (relying on CSS), so they're optional. `src` is
-/// always absolute (relative URLs are resolved against the page URL
-/// before they leave `fetch_url_images`).
+/// One image found on a page. `width` and `height` come from the HTML
+/// attributes when present — many modern pages omit them, relying on CSS — so
+/// they are optional. `src` is always absolute: relative URLs are resolved
+/// against the page URL before they leave `fetch_url_images`.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[ts(export)]
 pub struct PageImage {
@@ -197,7 +204,10 @@ pub(super) fn extract_page_images(html: &str, base_url: &url::Url) -> Vec<PageIm
 ///   - `mime`: server-declared MIME type
 ///   - `license`: short license name if present (e.g. "CC BY-SA 4.0")
 ///   - `attribution`: author/credit line, plain text
-///   - `description_url`: Commons page URL for the file (attribution link)
+///   - `description_url`: page to link a caption to (attribution link)
+///   - `source`: which backend produced it — `openverse`, `commons` or
+///     `wikipedia`. Carried through so the caption can name it and so the
+///     licence normaliser knows what it is looking at.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[ts(export)]
 pub struct ImageSearchResult {
@@ -210,181 +220,77 @@ pub struct ImageSearchResult {
     pub license: String,
     pub attribution: String,
     pub description_url: String,
+    pub source: String,
 }
 
-/// Search Wikimedia Commons for images matching `query`. Two-call flow:
+/// Search every image source at once and interleave what comes back.
 ///
-///   1. `list=search&srnamespace=6` → find File:* page titles
-///   2. `prop=imageinfo&iiurlwidth=800` → resolve actual upload URLs
-///      and extract license / attribution from extmetadata
+/// One Tauri command and one model-facing tool regardless of how many sources
+/// exist. Round-robin interleaving rather than concatenation matters: the
+/// model usually looks at the first few results, and three Openverse hits
+/// followed by three Commons hits would hide whichever source happened to be
+/// slower to the front of the list.
 ///
-/// Commons is used because all content is openly licensed (public domain
-/// or CC family) — embedding those in a generated PPTX is safe from a
-/// licensing standpoint. Returns up to `max_results.unwrap_or(5)` items,
-/// capped at 20.
+/// A source that errors, times out or rate-limits contributes nothing and is
+/// otherwise ignored. Only when all three come back empty does the caller see
+/// an empty result, which keeps one flaky backend from breaking image search.
 #[tauri::command]
 pub async fn proxy_image_search(
     query: String,
     max_results: Option<usize>,
     proxy: Option<ProxyConfig>,
 ) -> Result<Vec<ImageSearchResult>, String> {
-    use serde_json::Value;
-
     let limit = max_results.unwrap_or(5).clamp(1, 20);
-    info!("image_search (commons) q={:?} limit={}", query, limit);
+    info!("image_search q={:?} limit={}", query, limit);
 
     let client = super::extract::build_fetch_client(proxy.as_ref())?;
 
-    // Step 1: search for file titles in the File: namespace.
-    let search_url = format!(
-        "https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srnamespace=6&srlimit={}&srsearch={}",
-        limit,
-        urlencoding::encode(&query)
+    // Ask each source for the full limit: interleaving then trims, so a source
+    // that returns nothing costs the others no slots.
+    let (openverse_res, commons_res, wikipedia_res) = tokio::join!(
+        openverse::search(&client, &query, limit),
+        commons::search(&client, &query, limit),
+        wikipedia::search(&client, &query),
     );
-    let search_resp: Value = client
-        .get(&search_url)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .map_err(|e| format!("Commons search request failed: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("Commons search JSON parse failed: {}", e))?;
 
-    let titles: Vec<String> = search_resp
-        .get("query")
-        .and_then(|q| q.get("search"))
-        .and_then(|s| s.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|item| item.get("title").and_then(|t| t.as_str()).map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    if titles.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Step 2: resolve URLs + metadata for all matched titles in a single
-    // call. Commons accepts up to 50 pipe-separated titles per request;
-    // we're already capped at 20 above so this is always one round trip.
-    let titles_param = titles.join("|");
-    let info_url = format!(
-        "https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=800&titles={}",
-        urlencoding::encode(&titles_param)
-    );
-    let info_resp: Value = client
-        .get(&info_url)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .map_err(|e| format!("Commons imageinfo request failed: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("Commons imageinfo JSON parse failed: {}", e))?;
-
-    let results = parse_commons_imageinfo(&info_resp, &titles);
-    Ok(results)
-}
-
-/// Pull a string value out of Commons' extmetadata shape, which wraps
-/// every field in `{ "value": "...", "source": "...", ... }`. Handles
-/// both plain-text values and HTML-ish ones (the caller strips tags).
-fn commons_extmetadata_string(extmeta: &serde_json::Value, key: &str) -> String {
-    extmeta
-        .get(key)
-        .and_then(|v| v.get("value"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_default()
-}
-
-/// Parse the JSON response from the imageinfo API call into a list of
-/// `ImageSearchResult`. Extracted as a free function so it can be unit-
-/// tested against hand-rolled JSON fixtures without touching the network.
-/// `ordered_titles` preserves the result order from the search step — the
-/// Commons API returns `pages` as an unordered map keyed by pageid, so we
-/// re-project through the original title order for deterministic output.
-pub(super) fn parse_commons_imageinfo(
-    info_resp: &serde_json::Value,
-    ordered_titles: &[String],
-) -> Vec<ImageSearchResult> {
-    let Some(pages) = info_resp
-        .get("query")
-        .and_then(|q| q.get("pages"))
-        .and_then(|p| p.as_object())
-    else {
-        return Vec::new();
-    };
-
-    // Build a lookup from title → page JSON so we can re-project in the
-    // original search order.
-    let mut by_title: std::collections::HashMap<&str, &serde_json::Value> =
-        std::collections::HashMap::new();
-    for page in pages.values() {
-        if let Some(title) = page.get("title").and_then(|t| t.as_str()) {
-            by_title.insert(title, page);
+    let lists: Vec<Vec<ImageSearchResult>> = [
+        ("openverse", openverse_res),
+        ("commons", commons_res),
+        ("wikipedia", wikipedia_res),
+    ]
+    .into_iter()
+    .map(|(name, res)| match res {
+        Ok(items) => items,
+        Err(e) => {
+            // Debug, not warn: a source being unavailable is routine and the
+            // user cannot act on it.
+            log::debug!("image source {} unavailable: {}", name, e);
+            Vec::new()
         }
-    }
+    })
+    .collect();
 
+    Ok(interleave(lists, limit))
+}
+
+/// Round-robin the lists together, dropping duplicate URLs, until `limit` is
+/// reached or every list is exhausted.
+fn interleave(lists: Vec<Vec<ImageSearchResult>>, limit: usize) -> Vec<ImageSearchResult> {
+    let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for title in ordered_titles {
-        let Some(page) = by_title.get(title.as_str()) else {
-            continue;
-        };
-        let Some(info) = page
-            .get("imageinfo")
-            .and_then(|a| a.as_array())
-            .and_then(|a| a.first())
-        else {
-            continue;
-        };
-        let url = info
-            .get("url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        // Commons returns thumburl when iiurlwidth is specified; fall
-        // back to the original url if it's missing (e.g. image smaller
-        // than the requested thumbnail width).
-        let thumb_url = info
-            .get("thumburl")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .unwrap_or_else(|| url.clone());
-        let width = info.get("width").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let height = info.get("height").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let mime = info
-            .get("mime")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let description_url = info
-            .get("descriptionurl")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+    let longest = lists.iter().map(Vec::len).max().unwrap_or(0);
 
-        let extmeta = info.get("extmetadata").cloned().unwrap_or_default();
-        let license = commons_extmetadata_string(&extmeta, "LicenseShortName");
-        let artist_raw = commons_extmetadata_string(&extmeta, "Artist");
-        let attribution = strip_html_tags(&artist_raw);
-
-        if url.is_empty() {
-            continue;
+    for i in 0..longest {
+        for list in &lists {
+            let Some(item) = list.get(i) else { continue };
+            if !seen.insert(item.url.clone()) {
+                continue;
+            }
+            out.push(item.clone());
+            if out.len() == limit {
+                return out;
+            }
         }
-        out.push(ImageSearchResult {
-            title: title.clone(),
-            url,
-            thumb_url,
-            width,
-            height,
-            mime,
-            license,
-            attribution,
-            description_url,
-        });
     }
     out
 }
@@ -463,72 +369,74 @@ mod tests {
         assert!(!images.iter().any(|i| i.alt == "bad scheme"));
     }
 
-    #[test]
-    fn parse_commons_imageinfo_extracts_fields() {
-        // Minimal response shape mimicking the Commons imageinfo API.
-        // Includes two pages to verify title-order projection — the
-        // Commons `pages` map is unordered, so we rely on the ordered
-        // `titles` slice to define result order.
-        let json = serde_json::json!({
-            "query": {
-                "pages": {
-                    "99": {
-                        "title": "File:Beta.png",
-                        "imageinfo": [{
-                            "url": "https://upload.wikimedia.org/full/beta.png",
-                            "thumburl": "https://upload.wikimedia.org/thumb/beta.png",
-                            "width": 1024,
-                            "height": 768,
-                            "mime": "image/png",
-                            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Beta.png",
-                            "extmetadata": {
-                                "LicenseShortName": { "value": "CC BY-SA 4.0" },
-                                "Artist": { "value": "<a href=\"//foo\">Jane Doe</a>" }
-                            }
-                        }]
-                    },
-                    "42": {
-                        "title": "File:Alpha.jpg",
-                        "imageinfo": [{
-                            "url": "https://upload.wikimedia.org/full/alpha.jpg",
-                            "thumburl": "https://upload.wikimedia.org/thumb/alpha.jpg",
-                            "width": 2000,
-                            "height": 1500,
-                            "mime": "image/jpeg",
-                            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Alpha.jpg",
-                            "extmetadata": {
-                                "LicenseShortName": { "value": "Public domain" },
-                                "Artist": { "value": "John Doe" }
-                            }
-                        }]
-                    }
-                }
-            }
-        });
-        let ordered = vec!["File:Alpha.jpg".to_string(), "File:Beta.png".to_string()];
-        let out = parse_commons_imageinfo(&json, &ordered);
-        // Result order matches the ordered titles slice, not the JSON map order.
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].title, "File:Alpha.jpg");
-        assert_eq!(out[0].url, "https://upload.wikimedia.org/full/alpha.jpg");
-        assert_eq!(out[0].width, 2000);
-        assert_eq!(out[0].license, "Public domain");
-        assert_eq!(out[0].attribution, "John Doe");
-
-        assert_eq!(out[1].title, "File:Beta.png");
-        assert_eq!(out[1].license, "CC BY-SA 4.0");
-        // HTML tags in the Artist field are stripped.
-        assert_eq!(out[1].attribution, "Jane Doe");
+    fn result(url: &str, source: &str) -> ImageSearchResult {
+        ImageSearchResult {
+            title: url.to_string(),
+            url: url.to_string(),
+            thumb_url: url.to_string(),
+            width: 1,
+            height: 1,
+            mime: String::new(),
+            license: String::new(),
+            attribution: String::new(),
+            description_url: String::new(),
+            source: source.to_string(),
+        }
     }
 
     #[test]
-    fn parse_commons_imageinfo_returns_empty_on_malformed() {
-        let empty = serde_json::json!({});
-        assert!(parse_commons_imageinfo(&empty, &["File:X.jpg".to_string()]).is_empty());
+    fn interleave_takes_one_from_each_source_in_turn() {
+        let out = interleave(
+            vec![
+                vec![result("o1", "openverse"), result("o2", "openverse")],
+                vec![result("c1", "commons"), result("c2", "commons")],
+                vec![result("w1", "wikipedia")],
+            ],
+            10,
+        );
+        let urls: Vec<&str> = out.iter().map(|r| r.url.as_str()).collect();
+        assert_eq!(urls, vec!["o1", "c1", "w1", "o2", "c2"]);
+    }
 
-        let no_imageinfo = serde_json::json!({
-            "query": { "pages": { "1": { "title": "File:Y.jpg" } } }
-        });
-        assert!(parse_commons_imageinfo(&no_imageinfo, &["File:Y.jpg".to_string()]).is_empty());
+    #[test]
+    fn interleave_respects_the_limit() {
+        let out = interleave(
+            vec![
+                vec![result("o1", "openverse"), result("o2", "openverse")],
+                vec![result("c1", "commons")],
+            ],
+            2,
+        );
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].url, "o1");
+        assert_eq!(out[1].url, "c1");
+    }
+
+    /// Openverse aggregates Wikimedia, so the same file can legitimately come
+    /// back from two sources. The first one wins.
+    #[test]
+    fn interleave_drops_duplicate_urls() {
+        let out = interleave(
+            vec![
+                vec![result("same", "openverse")],
+                vec![result("same", "commons"), result("other", "commons")],
+            ],
+            10,
+        );
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].source, "openverse");
+        assert_eq!(out[1].url, "other");
+    }
+
+    /// One or two sources failing must not empty the result — that is the
+    /// whole point of querying three.
+    #[test]
+    fn interleave_survives_empty_sources() {
+        let out = interleave(vec![vec![], vec![result("c1", "commons")], vec![]], 10);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].url, "c1");
+
+        assert!(interleave(vec![vec![], vec![], vec![]], 10).is_empty());
+        assert!(interleave(vec![], 10).is_empty());
     }
 }

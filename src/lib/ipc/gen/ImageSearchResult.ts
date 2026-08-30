@@ -10,6 +10,9 @@
  *   - `mime`: server-declared MIME type
  *   - `license`: short license name if present (e.g. "CC BY-SA 4.0")
  *   - `attribution`: author/credit line, plain text
- *   - `description_url`: Commons page URL for the file (attribution link)
+ *   - `description_url`: page to link a caption to (attribution link)
+ *   - `source`: which backend produced it — `openverse`, `commons` or
+ *     `wikipedia`. Carried through so the caption can name it and so the
+ *     licence normaliser knows what it is looking at.
  */
-export type ImageSearchResult = { title: string, url: string, thumb_url: string, width: number, height: number, mime: string, license: string, attribution: string, description_url: string, };
+export type ImageSearchResult = { title: string, url: string, thumb_url: string, width: number, height: number, mime: string, license: string, attribution: string, description_url: string, source: string, };
