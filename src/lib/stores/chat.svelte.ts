@@ -280,6 +280,24 @@ async function loadConversationMessages(id: string): Promise<void> {
 	// plots) so inline content survives restart.
 	const steps = await dbLoadMessageSteps(id);
 	conv.messageSteps = steps as typeof conv.messageSteps;
+
+	// Repopulate chat images from the cache. Lookup only — never a fetch — so
+	// opening an old chat makes no network requests at all; an image the cache
+	// has evicted simply stops rendering.
+	//
+	// This lives here, and not in setActiveConversation, because startup
+	// restores the first conversation by calling this function directly. Doing
+	// it in the caller meant the conversation you land on after a restart —
+	// the only one most people look at — was the single one that never
+	// rehydrated.
+	void rehydrateImages(
+		id,
+		conv.messages.map((m) => messageText(m.content)),
+		// Strip images are referenced nowhere in the message text, so their
+		// URLs have to come back from the archived steps.
+		conv.messages.map((_m, i) => conv.messageSteps[i] ?? []),
+		() => getActiveConversationId() === id
+	);
 }
 
 async function refreshMemoryFlag(conv: Conversation): Promise<void> {
@@ -622,20 +640,6 @@ export async function setActiveConversation(id: string): Promise<void> {
 		lastTurnFailed = false;
 		restoreContextUsageFor(id);
 		await loadConversationMessages(id);
-		// Repopulate images from the cache. Lookup only — never a fetch — so
-		// opening an old chat makes no network requests at all. An image the
-		// cache has evicted simply stops rendering.
-		const conv = conversations.find((c) => c.id === id);
-		if (conv) {
-			void rehydrateImages(
-				id,
-				conv.messages.map((m) => messageText(m.content)),
-				// Strip images are not referenced anywhere in the message text,
-				// so their URLs have to come back from the archived steps.
-				conv.messages.map((_m, i) => conv.messageSteps[i] ?? []),
-				() => getActiveConversationId() === id
-			);
-		}
 		// Fire-and-forget; the replay updates conv.isRestoringSession so
 		// the UI can show a small indicator while it runs.
 		void restoreSandboxSession(id);

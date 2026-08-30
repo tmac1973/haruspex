@@ -138,6 +138,13 @@ export async function rehydrateImages(
 	// are not in the text at all, so their URLs come back from the archived
 	// steps. Both are lookups — see below.
 	const urls = rehydrationUrls(messageTexts, stepsByMessage).filter((url) => !resolved.has(url));
+	// Logged unconditionally, including the zero case. The bug this replaced
+	// was rehydration never running at all on the startup path, and silence is
+	// indistinguishable from "ran and found nothing".
+	logDebug(
+		'images',
+		`rehydrate: ${messageTexts.length} messages, ${urls.length} uncached URLs to look up`
+	);
 	if (urls.length === 0) return;
 
 	const requests: ImageRequest[] = urls.map((url) => ({

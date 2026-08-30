@@ -83,6 +83,14 @@ const sandboxMocks = vi.hoisted(() => ({
 
 vi.mock('$lib/sandbox/sandbox', () => sandboxMocks);
 
+const imageMocks = vi.hoisted(() => ({
+	rehydrateImages: vi.fn().mockResolvedValue(undefined),
+	resolveReplyImages: vi.fn().mockResolvedValue(undefined),
+	sweepImages: vi.fn().mockResolvedValue(undefined)
+}));
+
+vi.mock('$lib/images/resolve.svelte', () => imageMocks);
+
 describe('chat store', () => {
 	beforeEach(() => {
 		vi.resetModules();
@@ -389,5 +397,58 @@ describe('chat store', () => {
 			expect(sandboxMocks.runPython).not.toHaveBeenCalled();
 			expect(getActiveConversation()?.sessionRestoreSkipped).toBe(true);
 		});
+	});
+});
+
+/**
+ * Regression: startup restores the first conversation by calling
+ * `loadConversationMessages` directly rather than going through
+ * `setActiveConversation`, so rehydration hung off the latter never ran for
+ * the conversation you actually land on after a restart — the only one most
+ * people look at. It now hangs off the shared load path.
+ */
+describe('image rehydration on load', () => {
+	beforeEach(() => {
+		vi.resetModules();
+		imageMocks.rehydrateImages.mockClear();
+	});
+
+	it('rehydrates the conversation restored at startup', async () => {
+		const { invoke } = await import('@tauri-apps/api/core');
+		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+			if (cmd === 'db_list_conversations') {
+				return [{ id: 'c1', title: 'Red pandas', created_at: 1, updated_at: 1 }];
+			}
+			if (cmd === 'db_get_conversation') {
+				return {
+					id: 'c1',
+					title: 'Red pandas',
+					created_at: 1,
+					updated_at: 1,
+					messages: [
+						{
+							id: 1,
+							conversation_id: 'c1',
+							role: 'assistant',
+							content: '![panda](https://upload.wikimedia.org/x.jpg)',
+							tool_calls: null,
+							tool_call_id: null,
+							created_at: 1,
+							sort_order: 0,
+							steps: null
+						}
+					]
+				};
+			}
+			return [];
+		});
+
+		const { initChatStore } = await import('$lib/stores/chat.svelte');
+		await initChatStore();
+
+		expect(imageMocks.rehydrateImages).toHaveBeenCalled();
+		const [id, texts] = imageMocks.rehydrateImages.mock.calls[0];
+		expect(id).toBe('c1');
+		expect(texts.join(' ')).toContain('upload.wikimedia.org/x.jpg');
 	});
 });
