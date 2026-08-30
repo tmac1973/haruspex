@@ -29,7 +29,8 @@ export function markStepDone(
 	result: string,
 	thumbDataUrl?: string,
 	artifacts?: Artifact[],
-	lintIssues?: LintIssue[]
+	lintIssues?: LintIssue[],
+	heroImage?: string
 ): SearchStep[] {
 	return steps.map((s) =>
 		s.id === call.id
@@ -40,6 +41,7 @@ export function markStepDone(
 					thumbDataUrl,
 					artifacts,
 					lintIssues,
+					heroImage,
 					installStatus: undefined
 				}
 			: s

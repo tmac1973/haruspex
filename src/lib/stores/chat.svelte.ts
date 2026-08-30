@@ -27,6 +27,7 @@ import {
 	renderMemorySection,
 	type RecalledMemory
 } from '$lib/agent/memory/recall';
+import { rehydrateImages, resolveReplyImages, sweepImages } from '$lib/images/resolve.svelte';
 import { getSettings, SETTINGS_KEY } from '$lib/stores/settings';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
@@ -621,6 +622,17 @@ export async function setActiveConversation(id: string): Promise<void> {
 		lastTurnFailed = false;
 		restoreContextUsageFor(id);
 		await loadConversationMessages(id);
+		// Repopulate images from the cache. Lookup only — never a fetch — so
+		// opening an old chat makes no network requests at all. An image the
+		// cache has evicted simply stops rendering.
+		const conv = conversations.find((c) => c.id === id);
+		if (conv) {
+			void rehydrateImages(
+				id,
+				conv.messages.map((m) => messageText(m.content)),
+				() => getActiveConversationId() === id
+			);
+		}
 		// Fire-and-forget; the replay updates conv.isRestoringSession so
 		// the UI can show a small indicator while it runs.
 		void restoreSandboxSession(id);
@@ -760,6 +772,10 @@ export async function deleteConversation(id: string): Promise<void> {
 	}
 	forgetChatSandboxApproval(id);
 	await dbDeleteConversation(id);
+	// The delete cascades the conversation_images links away but cannot free
+	// the bytes — that is the sweep's job, and running it now rather than at
+	// next launch is what makes "delete the chat, delete its images" immediate.
+	void sweepImages();
 }
 
 export async function renameConversation(id: string, title: string): Promise<void> {
@@ -1107,14 +1123,15 @@ function buildAgentLoopCallbacks(
 				s.id === call.id ? { ...s, installStatus: status } : s
 			);
 		},
-		onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) => {
+		onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues, heroImage) => {
 			conversation.searchSteps = markStepDone(
 				conversation.searchSteps,
 				call,
 				result,
 				thumbDataUrl,
 				artifacts,
-				lintIssues
+				lintIssues,
+				heroImage
 			);
 		},
 		onStreamChunk: (chunk) => {
@@ -1165,6 +1182,18 @@ function finalizeStreamedTurn(
 		}
 	}
 	conversation.sourceUrls = processed.citedUrls;
+	// Fetch any images the reply asked for that this conversation's own tool
+	// results actually produced. Deliberately after commit and not awaited:
+	// the answer is already on screen, and one slow image host must not delay
+	// the turn being marked done. See images/resolve.
+	if (finalContent) {
+		void resolveReplyImages(
+			conversation.id,
+			finalContent,
+			conversation.searchSteps,
+			() => getActiveConversationId() === conversation.id
+		);
+	}
 	// Arms the idle countdown; extraction itself happens minutes later, in
 	// agent/memory/, and only when memory is on.
 	noteTurnFinished(conversation.id);

@@ -30,6 +30,13 @@ const CONCURRENCY: usize = 4;
 /// Returns a row per image that is now cached and displayable, in no
 /// particular order. A URL absent from the result could not be fetched; the
 /// caller treats that as "no image".
+///
+/// `lookup_only` makes this a pure cache read: hits are returned and linked,
+/// misses are dropped, nothing is fetched. Re-opening an old conversation uses
+/// it, because the tool steps that established which URLs were eligible are
+/// long gone by then — a cached row carries that permission forward, a miss
+/// proves nothing. Enforcing it here rather than trusting the caller not to
+/// ask means a frontend mistake cannot turn a stored message into a request.
 #[tauri::command]
 pub async fn image_resolve(
     app: AppHandle,
@@ -37,6 +44,7 @@ pub async fn image_resolve(
     conversation_id: String,
     requests: Vec<ImageRequest>,
     proxy: Option<ProxyConfig>,
+    lookup_only: Option<bool>,
 ) -> Result<Vec<ImageRow>, String> {
     if requests.is_empty() {
         return Ok(Vec::new());
@@ -55,6 +63,11 @@ pub async fn image_resolve(
             }
             None => pending.push(req),
         }
+    }
+
+    if lookup_only.unwrap_or(false) {
+        // Misses stay missing. The image simply does not render.
+        return Ok(resolved);
     }
 
     if !pending.is_empty() {

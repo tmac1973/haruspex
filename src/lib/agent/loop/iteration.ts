@@ -1261,7 +1261,8 @@ async function executeToolCalls(
 			output.result,
 			output.thumbDataUrl,
 			output.artifacts,
-			output.lintIssues
+			output.lintIssues,
+			output.heroImage
 		);
 
 		// Track successful file-write calls so the hallucination check

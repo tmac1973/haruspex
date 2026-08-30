@@ -2008,3 +2008,26 @@ fn touching_nothing_is_not_an_error() {
     let db = test_db();
     db.touch_images(&[]).unwrap();
 }
+
+/// The rehydration contract, at the layer that enforces it: a URL with no
+/// cached row yields nothing. `image_resolve`'s `lookup_only` path returns
+/// exactly what this lookup finds and fetches nothing, so an evicted image
+/// stops rendering rather than becoming a request nobody can vouch for.
+#[test]
+fn a_lookup_miss_yields_nothing_to_rehydrate_from() {
+    let db = test_db();
+    db.create_conversation("c1", "One").unwrap();
+    let hash = "a1".repeat(32);
+    db.insert_image(&img(&hash, "https://e.com/known.jpg", 10))
+        .unwrap();
+    db.link_image("c1", &hash).unwrap();
+
+    assert!(db
+        .image_by_source_url("https://e.com/known.jpg")
+        .unwrap()
+        .is_some());
+    assert!(db
+        .image_by_source_url("https://e.com/evicted.jpg")
+        .unwrap()
+        .is_none());
+}

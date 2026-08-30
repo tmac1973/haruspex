@@ -330,6 +330,8 @@ describe('runAgentLoop: tool-call round trip', () => {
 			'Page text here',
 			undefined,
 			undefined,
+			undefined,
+			// heroImage — this page declared none.
 			undefined
 		);
 
