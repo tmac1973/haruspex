@@ -31,3 +31,33 @@ describe('looksLikeImageOnlyRequest', () => {
 		expect(looksLikeImageOnlyRequest(q)).toBe(false);
 	});
 });
+
+import { wroteRemoteImageMarkdown } from '$lib/agent/loop/iteration';
+
+describe('wroteRemoteImageMarkdown', () => {
+	it('detects an invented remote image link', () => {
+		expect(
+			wroteRemoteImageMarkdown(
+				'![Rhesus macaque](https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/x/440px-y.jpg)'
+			)
+		).toBe(true);
+	});
+
+	// The Python sandbox writes these for inline plots, and models routinely
+	// reference a figure they just saved. Neither claims to have found a
+	// picture on the web, so neither should trigger the nudge.
+	it.each([
+		['data URL from the sandbox', '![plot](data:image/png;base64,iVBORw0KGgo=)'],
+		['relative path after savefig', '![plot](sine_wave.png)'],
+		['absolute local path', '![chart](/home/tim/out.png)'],
+		['no images at all', 'Just prose with a [link](https://example.com).'],
+		['empty', '']
+	])('ignores %s', (_label, content) => {
+		expect(wroteRemoteImageMarkdown(content)).toBe(false);
+	});
+
+	it('handles null and undefined content', () => {
+		expect(wroteRemoteImageMarkdown(null)).toBe(false);
+		expect(wroteRemoteImageMarkdown(undefined)).toBe(false);
+	});
+});

@@ -68,6 +68,7 @@ export class NudgeState {
 	private webSearchUsed = false;
 	private imageSearchUsed = false;
 	private researchNudged = false;
+	private phantomImageNudged = false;
 	/** Distinct URLs fetched via fetch_url / research_url this turn. */
 	private fetchedUrls: Set<string> = new Set();
 	/** Have we already pushed the diversity nudge this turn? */
@@ -134,6 +135,27 @@ export class NudgeState {
 	/** Mark the research nudge as fired. */
 	consumeResearchNudge(): void {
 		this.researchNudged = true;
+	}
+
+	/**
+	 * Should we push the phantom-image nudge?
+	 *
+	 * Fires when the model has written markdown image references without ever
+	 * calling image_search — meaning it invented the URLs. Observed on Qwen 3.6
+	 * 35B, which produced two entirely plausible
+	 * `upload.wikimedia.org/.../440px-Rhesus_Macaque…jpg` links out of nothing.
+	 *
+	 * The eligibility allowlist already refuses to fetch them, so nothing
+	 * unsafe happens; the cost is an answer with two invisible gaps where
+	 * pictures were promised. This sends the model back to find real ones.
+	 */
+	needsPhantomImageNudge(wroteImageMarkdown: boolean): boolean {
+		return wroteImageMarkdown && !this.imageSearchUsed && !this.phantomImageNudged;
+	}
+
+	/** Mark the phantom-image nudge as fired. */
+	consumePhantomImageNudge(): void {
+		this.phantomImageNudged = true;
 	}
 
 	/**

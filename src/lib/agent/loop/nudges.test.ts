@@ -141,3 +141,28 @@ describe('research nudge', () => {
 		expect(n.needsResearchNudge(true, false)).toBe(false);
 	});
 });
+
+describe('phantom image nudge', () => {
+	it('fires when image markdown was written without any image_search', () => {
+		const n = new NudgeState();
+		expect(n.needsPhantomImageNudge(true)).toBe(true);
+	});
+
+	it('does not fire when the model actually searched', () => {
+		const n = new NudgeState();
+		n.markImageSearchUsed();
+		expect(n.needsPhantomImageNudge(true)).toBe(false);
+	});
+
+	it('does not fire when the answer has no image markdown', () => {
+		const n = new NudgeState();
+		expect(n.needsPhantomImageNudge(false)).toBe(false);
+	});
+
+	it('fires at most once per turn', () => {
+		const n = new NudgeState();
+		expect(n.needsPhantomImageNudge(true)).toBe(true);
+		n.consumePhantomImageNudge();
+		expect(n.needsPhantomImageNudge(true)).toBe(false);
+	});
+});

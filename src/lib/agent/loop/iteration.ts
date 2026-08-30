@@ -251,6 +251,30 @@ export function looksLikeImageOnlyRequest(content: string): boolean {
 	return IMAGE_ONLY_PATTERNS.test(content);
 }
 
+/**
+ * Did the model write a remote markdown image reference?
+ *
+ * Only `http(s)` counts. The Python sandbox legitimately produces
+ * `![plot](data:image/png;base64,…)` for inline charts, and models routinely
+ * write `![plot](sine_wave.png)` after saving a figure — neither is a claim to
+ * have found a picture on the web.
+ */
+export function wroteRemoteImageMarkdown(content: string | null | undefined): boolean {
+	return /!\[[^\]]*\]\(\s*https?:/i.test(content ?? '');
+}
+
+function phantomImageNudgePrompt(): string {
+	return (
+		'STOP. Your answer contains image links, but you never called ' +
+		'image_search, so those URLs are ones you made up. They do not exist and ' +
+		'nothing will be displayed. You MUST call image_search now to find real ' +
+		'pictures. Your NEXT output must be a tool_calls block invoking ' +
+		'image_search — do not reply with text. When the results come back, use ' +
+		'a thumb_url exactly as it appears in them, and never write an image URL ' +
+		'from memory.'
+	);
+}
+
 function researchNudgePrompt(): string {
 	return (
 		'STOP. The only tool you have called this turn is image_search, which finds ' +
@@ -1125,6 +1149,16 @@ async function finalizeNoToolCalls(
 	iteration: number
 ): Promise<IterationOutcome> {
 	const { messages, tools, options } = ctx;
+
+	// Phantom-image gate. First, because a turn that invented its image URLs
+	// has produced an answer promising pictures that cannot exist, and the
+	// other gates would let that stand.
+	if (nudges.needsPhantomImageNudge(wroteRemoteImageMarkdown(response.content))) {
+		nudges.consumePhantomImageNudge();
+		logDebug('agent', `iteration ${iteration} branch=phantom-image-nudge`);
+		nudges.armNarrateRecovery();
+		return pushNudge(messages, response, phantomImageNudgePrompt());
+	}
 
 	// Research gate. Checked before the diversity gate because a turn that
 	// only grabbed a picture has not researched at all, which is the more
