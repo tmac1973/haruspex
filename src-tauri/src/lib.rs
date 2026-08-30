@@ -7,6 +7,7 @@ mod env_util;
 mod feedback;
 mod fs_tools;
 mod hardware;
+mod image_cache;
 mod inference;
 mod inference_queue;
 mod integrations;
@@ -81,6 +82,27 @@ pub fn run() {
             // without releasing or heartbeating.
             inference_queue::spawn_lease_sweeper(app.handle().clone());
 
+            // Reclaim cached images no conversation references any more.
+            // Deleting a conversation cascades its `conversation_images` rows
+            // away but cannot free the bytes — the delete path knows nothing
+            // about the cache directory — so the sweep collects them here, on
+            // the next launch. Off the main thread: it touches the filesystem
+            // and must never delay the window appearing.
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let db = handle.state::<Database>();
+                    match image_cache::cache_dir(&handle) {
+                        Ok(dir) => {
+                            if let Err(e) = image_cache::sweep_orphans(&db, &dir) {
+                                log::warn!("image cache sweep failed: {}", e);
+                            }
+                        }
+                        Err(e) => log::warn!("image cache dir unavailable: {}", e),
+                    }
+                });
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -152,6 +174,8 @@ pub fn run() {
             remote::remote_turn_error,
             proxy::images::proxy_image_search,
             proxy::images::proxy_fetch_url_images,
+            image_cache::commands::image_resolve,
+            image_cache::commands::image_sweep,
             inference::probe_inference_server,
             inference_queue::inference_acquire,
             inference_queue::inference_cancel,

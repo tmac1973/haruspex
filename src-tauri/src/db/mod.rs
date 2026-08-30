@@ -551,7 +551,40 @@ impl Database {
             );
 
             CREATE INDEX IF NOT EXISTS idx_prompt_catalog_scope
-                ON prompt_catalog(scope, name);",
+                ON prompt_catalog(scope, name);
+
+            CREATE TABLE IF NOT EXISTS images (
+                hash TEXT PRIMARY KEY,
+                source_url TEXT NOT NULL,
+                source TEXT NOT NULL,
+                mime TEXT NOT NULL,
+                width INTEGER NOT NULL,
+                height INTEGER NOT NULL,
+                bytes INTEGER NOT NULL,
+                license TEXT,
+                attribution TEXT,
+                description_url TEXT,
+                embeddable INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                last_used_at INTEGER NOT NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_images_source_url
+                ON images(source_url);
+
+            CREATE INDEX IF NOT EXISTS idx_images_last_used
+                ON images(last_used_at);
+
+            CREATE TABLE IF NOT EXISTS conversation_images (
+                conversation_id TEXT NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                image_hash TEXT NOT NULL
+                    REFERENCES images(hash) ON DELETE CASCADE,
+                PRIMARY KEY (conversation_id, image_hash)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_conversation_images_hash
+                ON conversation_images(image_hash);",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
@@ -691,6 +724,7 @@ fn chrono_now() -> i64 {
 
 mod commands;
 mod conversations;
+mod images;
 mod jobs;
 mod memories;
 mod memory_commands;
@@ -699,6 +733,7 @@ mod runs;
 mod stats;
 
 pub use commands::*;
+pub use images::ImageRow;
 pub use memory_commands::*;
 
 #[cfg(test)]

@@ -204,7 +204,7 @@ pub(crate) fn validating_redirect_policy() -> reqwest::redirect::Policy {
 /// timeout plus the SSRF-[`validating_redirect_policy`]. Centralized so the
 /// redirect guard — what stops a 30x from bouncing a fetch to an internal
 /// address — can't be omitted by one call site.
-pub(super) fn build_fetch_client(proxy: Option<&ProxyConfig>) -> Result<reqwest::Client, String> {
+pub(crate) fn build_fetch_client(proxy: Option<&ProxyConfig>) -> Result<reqwest::Client, String> {
     apply_proxy(
         reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)

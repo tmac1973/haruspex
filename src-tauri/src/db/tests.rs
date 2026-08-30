@@ -1788,3 +1788,174 @@ fn the_watermark_advances_but_never_retreats() {
         30
     );
 }
+
+// ---------------------------------------------------------------------------
+// Cached images
+// ---------------------------------------------------------------------------
+
+/// A row with plausible values; `hash` and `source_url` are what the tests
+/// actually vary, and `bytes` drives the eviction maths.
+fn img(hash: &str, url: &str, bytes: i64) -> ImageRow {
+    ImageRow {
+        hash: hash.to_string(),
+        source_url: url.to_string(),
+        source: "commons".to_string(),
+        mime: "image/jpeg".to_string(),
+        width: 800,
+        height: 600,
+        bytes,
+        license: Some("cc-by-sa-4.0".to_string()),
+        attribution: Some("A Photographer".to_string()),
+        description_url: Some("https://commons.wikimedia.org/wiki/File:X.jpg".to_string()),
+        embeddable: true,
+        created_at: 0,
+        last_used_at: 0,
+    }
+}
+
+/// Force a known `last_used_at` so eviction order is deterministic rather than
+/// dependent on how fast the test machine inserts rows.
+fn set_used_at(db: &Database, hash: &str, at: i64) {
+    let conn = db.conn.lock().unwrap();
+    conn.execute(
+        "UPDATE images SET last_used_at = ?1 WHERE hash = ?2",
+        params![at, hash],
+    )
+    .unwrap();
+}
+
+#[test]
+fn image_round_trips_by_source_url() {
+    let db = test_db();
+    db.insert_image(&img("a".repeat(64).as_str(), "https://e.com/a.jpg", 100))
+        .unwrap();
+
+    let found = db.image_by_source_url("https://e.com/a.jpg").unwrap();
+    let found = found.expect("inserted image should be found");
+    assert_eq!(found.hash, "a".repeat(64));
+    assert!(found.embeddable);
+    assert_eq!(found.attribution.as_deref(), Some("A Photographer"));
+
+    assert!(db
+        .image_by_source_url("https://e.com/missing.jpg")
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn reinserting_the_same_bytes_keeps_the_first_provenance() {
+    let db = test_db();
+    let hash = "b".repeat(64);
+    db.insert_image(&img(&hash, "https://e.com/first.jpg", 100))
+        .unwrap();
+
+    // Same bytes arriving again from a scrape with no licence must not
+    // downgrade the record we already have.
+    let mut poorer = img(&hash, "https://e.com/second.jpg", 100);
+    poorer.source = "page_og".to_string();
+    poorer.license = Some("unknown".to_string());
+    poorer.attribution = None;
+    poorer.embeddable = false;
+    db.insert_image(&poorer).unwrap();
+
+    let kept = db
+        .image_by_source_url("https://e.com/first.jpg")
+        .unwrap()
+        .expect("first row survives");
+    assert_eq!(kept.license.as_deref(), Some("cc-by-sa-4.0"));
+    assert!(kept.embeddable, "the richer provenance must win");
+}
+
+#[test]
+fn deleting_a_conversation_orphans_only_its_own_images() {
+    let db = test_db();
+    db.create_conversation("c1", "One").unwrap();
+    db.create_conversation("c2", "Two").unwrap();
+
+    let solo = "c".repeat(64);
+    let shared = "d".repeat(64);
+    db.insert_image(&img(&solo, "https://e.com/solo.jpg", 10))
+        .unwrap();
+    db.insert_image(&img(&shared, "https://e.com/shared.jpg", 10))
+        .unwrap();
+
+    db.link_image("c1", &solo).unwrap();
+    db.link_image("c1", &shared).unwrap();
+    db.link_image("c2", &shared).unwrap();
+
+    assert!(db.unreferenced_image_hashes().unwrap().is_empty());
+
+    db.delete_conversation("c1").unwrap();
+
+    // The cascade unlinked c1's rows; only the image nothing else references
+    // is now collectable.
+    let orphans = db.unreferenced_image_hashes().unwrap();
+    assert_eq!(orphans, vec![solo.clone()]);
+
+    db.delete_images(&orphans).unwrap();
+    assert!(db
+        .image_by_source_url("https://e.com/solo.jpg")
+        .unwrap()
+        .is_none());
+    assert!(
+        db.image_by_source_url("https://e.com/shared.jpg")
+            .unwrap()
+            .is_some(),
+        "an image another conversation still uses must survive"
+    );
+}
+
+#[test]
+fn linking_the_same_image_twice_is_a_no_op() {
+    let db = test_db();
+    db.create_conversation("c1", "One").unwrap();
+    let hash = "e".repeat(64);
+    db.insert_image(&img(&hash, "https://e.com/x.jpg", 10))
+        .unwrap();
+
+    db.link_image("c1", &hash).unwrap();
+    db.link_image("c1", &hash).unwrap();
+
+    db.delete_conversation("c1").unwrap();
+    assert_eq!(db.unreferenced_image_hashes().unwrap(), vec![hash]);
+}
+
+#[test]
+fn eviction_takes_least_recently_used_until_under_cap() {
+    let db = test_db();
+    let (old, mid, new) = ("1".repeat(64), "2".repeat(64), "3".repeat(64));
+    db.insert_image(&img(&old, "https://e.com/old.jpg", 100))
+        .unwrap();
+    db.insert_image(&img(&mid, "https://e.com/mid.jpg", 100))
+        .unwrap();
+    db.insert_image(&img(&new, "https://e.com/new.jpg", 100))
+        .unwrap();
+    set_used_at(&db, &old, 1);
+    set_used_at(&db, &mid, 2);
+    set_used_at(&db, &new, 3);
+
+    assert_eq!(db.images_total_bytes().unwrap(), 300);
+
+    // Under the cap: nothing goes.
+    assert!(db.images_to_evict(300).unwrap().is_empty());
+
+    // Needs 100 freed → the oldest alone.
+    assert_eq!(db.images_to_evict(200).unwrap(), vec![old.clone()]);
+
+    // Needs 200 freed → the two oldest, in order.
+    assert_eq!(db.images_to_evict(100).unwrap(), vec![old, mid]);
+}
+
+#[test]
+fn eviction_ignores_whether_an_image_is_referenced() {
+    let db = test_db();
+    db.create_conversation("c1", "One").unwrap();
+    let hash = "f".repeat(64);
+    db.insert_image(&img(&hash, "https://e.com/x.jpg", 100))
+        .unwrap();
+    db.link_image("c1", &hash).unwrap();
+
+    // The cap is a disk limit, not a retention promise: a live conversation's
+    // image is still evictable, and rehydration will simply not find it.
+    assert_eq!(db.images_to_evict(10).unwrap(), vec![hash]);
+}
