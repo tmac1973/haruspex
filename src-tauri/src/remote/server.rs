@@ -99,6 +99,15 @@ struct AppState {
     host: Arc<dyn Host>,
     relay: Arc<Relay>,
     token: Arc<String>,
+    /// Where to reach koko. Always [`TTS_PORT`] in the app; a port with
+    /// nothing behind it in tests.
+    ///
+    /// State rather than a constant read at the call site because the handler
+    /// asserts what happens when speech is *unreachable*, and a hard-coded
+    /// 127.0.0.1:3001 makes that assertion depend on whether the developer
+    /// happens to have Haruspex running — the same reason the test server
+    /// itself binds port 0.
+    tts_port: u16,
 }
 
 pub struct Running {
@@ -120,6 +129,20 @@ pub async fn start(
     host: Arc<dyn Host>,
     relay: Arc<Relay>,
     config: RemoteConfig,
+) -> Result<Running, String> {
+    start_with_tts_port(host, relay, config, TTS_PORT).await
+}
+
+/// [`start`], with the speech sidecar's port injectable.
+///
+/// A private seam rather than a field on [`RemoteConfig`]: that struct is the
+/// user's own configuration and crosses the IPC boundary, so a knob only the
+/// tests turn has no business in it.
+async fn start_with_tts_port(
+    host: Arc<dyn Host>,
+    relay: Arc<Relay>,
+    config: RemoteConfig,
+    tts_port: u16,
 ) -> Result<Running, String> {
     if config.token.trim().is_empty() {
         return Err("refusing to start without an access token".into());
@@ -144,6 +167,7 @@ pub async fn start(
         host: host.clone(),
         relay: relay.clone(),
         token: Arc::new(config.token.clone()),
+        tts_port,
     };
 
     let router = Router::new()
@@ -475,7 +499,10 @@ async fn speak(
     };
 
     let response = client
-        .post(format!("http://127.0.0.1:{TTS_PORT}/v1/audio/speech"))
+        .post(format!(
+            "http://127.0.0.1:{}/v1/audio/speech",
+            state.tts_port
+        ))
         .json(&serde_json::json!({
             "model": "tts-1",
             "input": text,
@@ -729,7 +756,7 @@ mod http_tests {
 
     async fn serve(sink: Arc<RecordingSink>) -> (String, Arc<Relay>, Running) {
         let relay = Arc::new(Relay::new());
-        let running = start(
+        let running = start_with_tts_port(
             sink,
             relay.clone(),
             RemoteConfig {
@@ -739,11 +766,28 @@ mod http_tests {
                 token: TOKEN.into(),
                 bind_all: false,
             },
+            // Same reasoning applied to the speech sidecar: the real koko
+            // listens on 3001, and a developer running the app while running
+            // the tests would otherwise have it answer them.
+            closed_port(),
         )
         .await
         .expect("server should bind");
         let base = format!("http://127.0.0.1:{}", running.port);
         (base, relay, running)
+    }
+
+    /// A port with nothing behind it.
+    ///
+    /// Bind to 0 so the OS names a free port, then drop the listener. Another
+    /// process could in principle claim it in the gap; nothing on the machine
+    /// is trying to, and the alternative — a hard-coded number — is what put a
+    /// live sidecar in the middle of these tests in the first place.
+    fn closed_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind an ephemeral port");
+        let port = listener.local_addr().expect("read the bound port").port();
+        drop(listener);
+        port
     }
 
     #[tokio::test]
@@ -1186,8 +1230,11 @@ mod http_tests {
             .send()
             .await
             .unwrap();
-        // No sidecar exists in a test, so this still fails — but it fails
-        // having tried, and says so differently from a host with no engine.
+        // The test server points at a port with nothing behind it, so this
+        // still fails — but it fails having tried, and says so differently
+        // from a host with no engine. Pointing it there rather than at the
+        // real 3001 is what stops the result depending on whether the
+        // developer happens to have Haruspex running.
         assert_eq!(response.status(), 503);
         assert_eq!(response.text().await.unwrap(), "speech is not available");
         running.stop();
