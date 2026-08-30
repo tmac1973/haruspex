@@ -310,6 +310,41 @@ fn interleave(lists: Vec<Vec<ImageSearchResult>>, limit: usize) -> Vec<ImageSear
     out
 }
 
+/// Strip analytics parameters a source appends to the URLs it hands out.
+///
+/// Wikimedia adds `?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&
+/// utm_content=thumbnail` to every URL the imageinfo API returns. They are the
+/// API's own attribution tracking, not part of the image's identity — the
+/// bytes are identical without them.
+///
+/// They have to go, because a model writing `![alt](URL)` routinely tidies a
+/// URL as it copies, and dropping a query string is the most natural tidy of
+/// all. When it does, the URL in the answer no longer matches the one in the
+/// tool result, the eligibility check refuses it, and the image silently never
+/// appears. Removing them here means the tool result, the model's copy, the
+/// eligibility key and the cached row are all the same string.
+pub(crate) fn strip_tracking_params(raw: &str) -> String {
+    let Ok(mut url) = url::Url::parse(raw) else {
+        return raw.to_string();
+    };
+    let kept: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(k, _)| !k.starts_with("utm_"))
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    if kept.is_empty() {
+        url.set_query(None);
+    } else {
+        let mut qs = url.query_pairs_mut();
+        qs.clear();
+        for (k, v) in &kept {
+            qs.append_pair(k, v);
+        }
+        drop(qs);
+    }
+    url.into()
+}
+
 /// Substrings that mark a URL as decoration rather than a subject photograph.
 /// Matched against the lowercased path, so `/assets/site-logo.png` is caught
 /// but a legitimate `/photos/logotype-museum.jpg` article image is not
@@ -622,17 +657,52 @@ mod tests {
         let base = url::Url::parse("https://example.com/").unwrap();
         assert_eq!(extract_hero_image("<html></html>", &base), None);
     }
-}
 
-/// Live-API checks, `#[ignore]`d like the browser-search integration tests.
-///
-/// The unit tests above parse recorded fixtures, which proves the parsers are
-/// right and says nothing about whether the endpoints still answer the way the
-/// fixtures were captured. Run these when a source stops returning results:
-///
-/// ```text
-/// cargo test --lib proxy::images::integration -- --ignored --nocapture
-/// ```
+    /// The exact shape Wikimedia returned on 2026-08-30, and the reason the
+    /// inline path silently failed: the model wrote the URL without the query
+    /// string, so it no longer matched the tool result it came from.
+    #[test]
+    fn strips_wikimedia_analytics_parameters() {
+        let raw = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Red_Panda.jpg/960px-Red_Panda.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail";
+        assert_eq!(
+            strip_tracking_params(raw),
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Red_Panda.jpg/960px-Red_Panda.jpg"
+        );
+    }
+
+    #[test]
+    fn keeps_query_parameters_that_are_not_tracking() {
+        // Some hosts genuinely need a query string to serve the right bytes,
+        // so only utm_* is removed.
+        let raw = "https://example.com/img?size=large&utm_source=x";
+        assert_eq!(
+            strip_tracking_params(raw),
+            "https://example.com/img?size=large"
+        );
+    }
+
+    #[test]
+    fn leaves_a_clean_url_untouched() {
+        let raw = "https://example.com/a/b.jpg";
+        assert_eq!(strip_tracking_params(raw), raw);
+    }
+
+    #[test]
+    fn passes_through_something_that_is_not_a_url() {
+        assert_eq!(strip_tracking_params("not a url"), "not a url");
+    }
+
+    /// Percent-encoding in the path must survive intact — Commons filenames are
+    /// full of it, and mangling it would break every lookup.
+    #[test]
+    fn preserves_percent_encoding_in_the_path() {
+        let raw = "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Geoffroy%27s_spider_monkey_%28Ateles%29.jpg/960px-x.jpg?utm_source=y";
+        let out = strip_tracking_params(raw);
+        assert!(out.contains("%27"), "apostrophe encoding lost: {out}");
+        assert!(out.contains("%28"), "paren encoding lost: {out}");
+        assert!(!out.contains("utm_"));
+    }
+}
 #[cfg(test)]
 mod integration {
     use super::*;

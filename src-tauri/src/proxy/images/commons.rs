@@ -8,7 +8,7 @@
 //! Commons remains the strongest source for landmarks, nature and historical
 //! subjects, and everything on it is openly licensed.
 
-use super::ImageSearchResult;
+use super::{strip_tracking_params, ImageSearchResult};
 use crate::proxy::extract::{strip_html_tags, USER_AGENT};
 
 /// Types the image cache can actually fetch and display, mirroring
@@ -143,18 +143,21 @@ pub(crate) fn parse_commons_imageinfo(
         else {
             continue;
         };
+        // Cleaned here rather than at the point of use so the tool result, the
+        // model's copy of it, the eligibility key and the cached row are all
+        // the same string. See strip_tracking_params.
         let url = info
             .get("url")
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+            .map(strip_tracking_params)
+            .unwrap_or_default();
         // Commons returns thumburl when iiurlwidth is specified; fall
         // back to the original url if it's missing (e.g. image smaller
         // than the requested thumbnail width).
         let thumb_url = info
             .get("thumburl")
             .and_then(|v| v.as_str())
-            .map(String::from)
+            .map(strip_tracking_params)
             .unwrap_or_else(|| url.clone());
         let width = info.get("width").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let height = info.get("height").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
