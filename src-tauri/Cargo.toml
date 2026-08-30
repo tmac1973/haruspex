@@ -2,9 +2,9 @@
 name = "haruspex"
 version = "0.1.61"
 description = "Private local AI with web research capability"
-authors = ["you"]
-license = "MIT"
-repository = ""
+authors = ["Tim MacDonald <tbaxmacdonald@gmail.com>"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/tmac1973/haruspex"
 edition = "2021"
 rust-version = "1.77.2"
 
