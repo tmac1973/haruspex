@@ -66,6 +66,8 @@ export class NudgeState {
 	private truncationRetries = 0;
 	/** Set to true on the first web_search tool call this turn. */
 	private webSearchUsed = false;
+	private imageSearchUsed = false;
+	private researchNudged = false;
 	/** Distinct URLs fetched via fetch_url / research_url this turn. */
 	private fetchedUrls: Set<string> = new Set();
 	/** Have we already pushed the diversity nudge this turn? */
@@ -94,9 +96,44 @@ export class NudgeState {
 		this.webSearchUsed = true;
 	}
 
+	/** Record that image_search was invoked. */
+	markImageSearchUsed(): void {
+		this.imageSearchUsed = true;
+	}
+
 	/** Record a successful fetch_url / research_url call by URL. */
 	recordFetchedUrl(url: string): void {
 		this.fetchedUrls.add(url);
+	}
+
+	/**
+	 * Should we push the research nudge?
+	 *
+	 * Fires when the turn's *only* tool use was image_search: no web_search,
+	 * no page fetched. Observed repeatedly on Qwen 3.6 35B with "Tell me about
+	 * monkeys?" — the model grabs a picture, treats that as having used its
+	 * tools, and answers the rest from training data with no citations. It is
+	 * intermittent at temperature 1, which is exactly why a prompt rule alone
+	 * does not settle it.
+	 *
+	 * The caller supplies `imageOnlyRequest`, because someone who asked only
+	 * for a picture has already been served and must not be nudged into
+	 * researching something they did not ask about. Fires at most once.
+	 */
+	needsResearchNudge(usedTools: boolean, imageOnlyRequest: boolean): boolean {
+		return (
+			usedTools &&
+			this.imageSearchUsed &&
+			!this.webSearchUsed &&
+			this.fetchedUrls.size === 0 &&
+			!imageOnlyRequest &&
+			!this.researchNudged
+		);
+	}
+
+	/** Mark the research nudge as fired. */
+	consumeResearchNudge(): void {
+		this.researchNudged = true;
 	}
 
 	/**

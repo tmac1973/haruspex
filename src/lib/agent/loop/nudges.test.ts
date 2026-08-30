@@ -98,3 +98,46 @@ describe('NudgeState truncation retry budget', () => {
 		expect(n.truncationRetryCount).toBe(1);
 	});
 });
+
+describe('research nudge', () => {
+	it('fires when the only tool used was image_search', () => {
+		const n = new NudgeState();
+		n.markImageSearchUsed();
+		expect(n.needsResearchNudge(true, false)).toBe(true);
+	});
+
+	it('does not fire once a web_search has happened', () => {
+		const n = new NudgeState();
+		n.markImageSearchUsed();
+		n.markWebSearchUsed();
+		expect(n.needsResearchNudge(true, false)).toBe(false);
+	});
+
+	it('does not fire once a page has been fetched', () => {
+		const n = new NudgeState();
+		n.markImageSearchUsed();
+		n.recordFetchedUrl('https://example.com');
+		expect(n.needsResearchNudge(true, false)).toBe(false);
+	});
+
+	it('does not fire when no image_search happened', () => {
+		const n = new NudgeState();
+		expect(n.needsResearchNudge(true, false)).toBe(false);
+	});
+
+	// Someone who asked only for a picture has been served. Nudging them into
+	// researching a topic they never asked about would be worse than the bug.
+	it('does not fire for a request images alone can satisfy', () => {
+		const n = new NudgeState();
+		n.markImageSearchUsed();
+		expect(n.needsResearchNudge(true, true)).toBe(false);
+	});
+
+	it('fires at most once per turn', () => {
+		const n = new NudgeState();
+		n.markImageSearchUsed();
+		expect(n.needsResearchNudge(true, false)).toBe(true);
+		n.consumeResearchNudge();
+		expect(n.needsResearchNudge(true, false)).toBe(false);
+	});
+});
