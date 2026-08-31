@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { goto } from '$app/navigation';
 	import {
 		startServer,
 		stopServer,
@@ -35,6 +36,7 @@
 	const serverState = $derived(getServerState());
 	let contextSize = $state(getSettings().contextSize);
 	let allowSpill = $state(getSettings().allowSpillToSystemRam);
+	let projectorInRam = $state(getSettings().visionProjectorInSystemRam);
 	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
 
 	// Predictive VRAM cap: detected total VRAM (MB) and the largest context the
@@ -61,7 +63,10 @@
 		try {
 			ctxCeiling = await invoke<number | null>('context_fit_ceiling', {
 				modelId,
-				vramMb: gpuVramMb
+				vramMb: gpuVramMb,
+				// A CPU-resident projector isn't competing for VRAM, so it
+				// doesn't count against the KV budget.
+				mmprojOnCpu: projectorInRam
 			});
 		} catch {
 			ctxCeiling = null;
@@ -99,6 +104,27 @@
 		}
 	});
 
+	async function onToggleProjector(next: boolean) {
+		projectorInRam = next;
+		updateSettings({ visionProjectorInSystemRam: next });
+		// The ceiling moves with the flag — the projector's VRAM either counts
+		// against the KV budget or it doesn't — so re-derive before deciding
+		// whether the current selection still fits.
+		await refreshCtxCeiling();
+		if (!allowSpill && ctxCeiling !== null && contextSize > ctxCeiling) {
+			// Moving the projector back onto the GPU shrank the budget. Snap
+			// down like the spill toggle does; that restarts the server too,
+			// so there's nothing left to do here.
+			showToast(
+				`${formatCtx(contextSize)} no longer fits with the projector in VRAM — using ${formatCtx(ctxCeiling)}.`,
+				{ kind: 'info' }
+			);
+			await setContextSize(ctxCeiling);
+			return;
+		}
+		await restartActiveModel('projector');
+	}
+
 	function onToggleSpill(next: boolean) {
 		allowSpill = next;
 		updateSettings({ allowSpillToSystemRam: next });
@@ -126,6 +152,12 @@
 	);
 	const genericRemoteMode = $derived(remoteMode && !openrouterMode);
 	const pendingRestart = $derived(getPendingRestart());
+
+	function restartReasonLabel(reason: 'model' | 'context' | 'projector'): string {
+		if (reason === 'model') return 'Model change';
+		if (reason === 'projector') return 'Vision projector change';
+		return 'Context size change';
+	}
 
 	/** Server stop/start failure → error toast with a View-logs action.
 	 *  The console.warn stays as the Log Viewer / devtools trail. */
@@ -238,23 +270,27 @@
 		onInferenceConfigChange(next);
 	}
 
-	async function setContextSize(size: number) {
-		if (size === contextSize) return;
-		contextSize = size;
-		updateSettings({ contextSize: size });
-		// A running server only picks up a new context window on restart. Do it
-		// automatically — but defer it if a turn is in flight so we don't abort
-		// the user's response mid-stream (restartServerWhenIdle queues it and
-		// the banner below shows it's waiting). If the server isn't running,
-		// there's nothing to restart; the new size applies on the next start.
+	/** Restart the running server against the active model so a changed
+	 *  server-side flag takes effect. Deferred if a turn is in flight so we
+	 *  don't abort the user's response mid-stream (restartServerWhenIdle
+	 *  queues it and the banner above shows it's waiting). A no-op when the
+	 *  server isn't running — the change applies on the next start. */
+	async function restartActiveModel(reason: 'context' | 'projector') {
 		if (serverState.status !== 'ready' && serverState.status !== 'starting') return;
 		const modelPath = await invoke<string | null>('get_active_model_path', {
 			preferredFilename: getActiveLocalModelFilename() || null
 		});
-		if (modelPath) {
-			setActiveLocalModel(modelPath);
-			await restartServerWhenIdle(modelPath, size, 'context');
-		}
+		if (!modelPath) return;
+		setActiveLocalModel(modelPath);
+		await restartServerWhenIdle(modelPath, contextSize, reason);
+	}
+
+	async function setContextSize(size: number) {
+		if (size === contextSize) return;
+		contextSize = size;
+		updateSettings({ contextSize: size });
+		// A running server only picks up a new context window on restart.
+		await restartActiveModel('context');
 	}
 
 	// Explicit Restart — acts immediately and supersedes any queued restart.
@@ -332,8 +368,8 @@
 		<div class="restart-banner" role="status">
 			<span class="spinner restart-spinner" aria-hidden="true"></span>
 			<span class="restart-text">
-				{pendingRestart.reason === 'model' ? 'Model change' : 'Context size change'} queued — the server
-				will restart automatically once the in-progress response finishes.
+				{restartReasonLabel(pendingRestart.reason)} queued — the server will restart automatically once
+				the in-progress response finishes.
 			</span>
 			<button class="btn btn-small" onclick={cancelPendingRestart}>Cancel</button>
 		</div>
@@ -366,17 +402,32 @@
 				</button>
 			{/each}
 		</div>
-		<label class="spill-toggle">
+		<label class="inference-toggle">
 			<input
 				type="checkbox"
 				checked={allowSpill}
 				onchange={(e) => onToggleSpill(e.currentTarget.checked)}
 			/>
-			<span class="spill-label">
+			<span class="toggle-label">
 				Allow spill to system RAM
-				<span class="spill-sub">
+				<span class="toggle-sub">
 					Lets you pick context sizes larger than your VRAM. The overflow runs from system RAM
 					(slower on every token). Off by default.
+				</span>
+			</span>
+		</label>
+		<label class="inference-toggle">
+			<input
+				type="checkbox"
+				checked={projectorInRam}
+				onchange={(e) => void onToggleProjector(e.currentTarget.checked)}
+			/>
+			<span class="toggle-label">
+				Keep the vision projector in system RAM
+				<span class="toggle-sub">
+					Frees the ~1 GB the image encoder holds in VRAM all session, usually buying a larger
+					context. Only turns that contain an image pay for it, and they get slower. Off by default;
+					restarts the server.
 				</span>
 			</span>
 		</label>
@@ -393,6 +444,13 @@
 			<span>{PORTS.llama}</span>
 		</div>
 		<div class="server-actions">
+			<button
+				class="btn"
+				title="Re-run first-run setup: hardware detection, model choice and the test query. Your existing models and settings are left alone unless you change them there."
+				onclick={() => goto('/setup')}
+			>
+				Run Setup Wizard
+			</button>
 			{#if serverState.status === 'ready' || serverState.status === 'error'}
 				<button class="btn btn-primary" onclick={restartServer}>Restart Server</button>
 			{:else if serverState.status === 'stopped'}
@@ -488,7 +546,7 @@
 		border-color: var(--border);
 	}
 
-	.spill-toggle {
+	.inference-toggle {
 		display: flex;
 		align-items: flex-start;
 		gap: 8px;
@@ -496,17 +554,17 @@
 		cursor: pointer;
 	}
 
-	.spill-toggle input {
+	.inference-toggle input {
 		margin-top: 2px;
 		flex-shrink: 0;
 	}
 
-	.spill-label {
+	.toggle-label {
 		font-size: 0.85rem;
 		color: var(--text-primary);
 	}
 
-	.spill-sub {
+	.toggle-sub {
 		display: block;
 		font-size: 0.7rem;
 		color: var(--text-secondary);

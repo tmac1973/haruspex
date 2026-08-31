@@ -283,6 +283,18 @@ export interface AppSettings {
 	 */
 	allowSpillToSystemRam: boolean;
 	/**
+	 * Load the vision projector (mmproj) onto the CPU rather than the GPU
+	 * (`--no-mmproj-offload`). The projector is 0.9-1.2 GB for the models we
+	 * ship, and it sits in VRAM for the whole session even though it only does
+	 * work on turns that contain an image — so moving it to system RAM hands
+	 * that much back to the KV cache, typically a full rung of context.
+	 *
+	 * The cost lands entirely on image turns, where encoding runs on the CPU
+	 * (seconds rather than well under one). Text-only turns are unaffected.
+	 * Off by default; requires a server restart to take effect.
+	 */
+	visionProjectorInSystemRam: boolean;
+	/**
 	 * Max output tokens for a normal agent turn. Distinct from `contextSize`,
 	 * which bounds the whole window — this bounds only what the model generates
 	 * in one response.
@@ -564,6 +576,7 @@ const defaults: AppSettings = {
 	searxngUrl: DEFAULT_SEARXNG_URL,
 	contextSize: DEFAULT_CONTEXT_SIZE,
 	allowSpillToSystemRam: false,
+	visionProjectorInSystemRam: false,
 	maxResponseTokens: DEFAULT_MAX_RESPONSE_TOKENS,
 	maxResponseTokensFileWrite: DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
 	ttsReadTablesByColumn: true,

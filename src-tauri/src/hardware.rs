@@ -39,11 +39,12 @@ struct GpuInfo {
 /// model sized for 8 GB, which is the bug this table has always had at the
 /// 8 GB and 16 GB boundaries.
 const QUANT_BY_VRAM_MB: &[(u64, &str)] = &[
-    (7168, "Qwen3.5-4B-IQ4_NL"),             // < ~8 GB
-    (11264, "Qwen3.5-9B-IQ4_NL"),            // ~8–12 GB (default tier)
-    (15360, "Qwen3.5-9B-UD-Q6_K_XL"),        // ~12–16 GB
-    (23552, "Qwen3.5-9B-UD-Q8_K_XL"),        // ~16–24 GB
-    (u64::MAX, "Qwen3.6-35B-A3B-UD-IQ4_NL"), // 24 GB+ → sparse MoE (dense 27B is opt-in only)
+    (7168, "Qwen3.5-4B-IQ4_NL"),              // < ~8 GB
+    (11264, "Qwen3.5-9B-IQ4_NL"),             // ~8–12 GB (default tier)
+    (15360, "Qwen3.5-9B-UD-Q6_K_XL"),         // ~12–16 GB
+    (23552, "Qwen3.8-27B-UD-IQ3_XXS"),        // ~16–24 GB (Gemma 4 26B-A4B is opt-in)
+    (31744, "Qwen3.6-35B-A3B-UD-IQ4_NL"),     // ~24–32 GB → sparse MoE (dense 27B is opt-in)
+    (u64::MAX, "Qwen3.6-35B-A3B-UD-Q5_K_XL"), // 32 GB+ → the same MoE at Q5
 ];
 
 /// Pick the value for the first tier whose threshold `vram_mb` falls below.
@@ -94,7 +95,11 @@ pub fn detect_hardware() -> HardwareInfo {
         Some(vram_mb) if !gpu.integrated => {
             // First run has no saved preference, so assume the default (on).
             // Models without an MTP head are unaffected either way.
-            crate::models::recommended_context_for(recommended_quant, vram_mb * 1024 * 1024, true)
+            crate::models::recommended_context_for(
+                recommended_quant,
+                vram_mb * 1024 * 1024,
+                crate::models::FitOptions::with_mtp(true),
+            )
         }
         _ => crate::models::MIN_CONTEXT,
     };
@@ -437,8 +442,9 @@ mod tests {
             "Qwen3.5-4B-IQ4_NL",
             "Qwen3.5-9B-IQ4_NL",
             "Qwen3.5-9B-UD-Q6_K_XL",
-            "Qwen3.5-9B-UD-Q8_K_XL",
+            "Qwen3.8-27B-UD-IQ3_XXS",
             "Qwen3.6-35B-A3B-UD-IQ4_NL",
+            "Qwen3.6-35B-A3B-UD-Q5_K_XL",
         ];
         assert!(
             valid_quants.contains(&info.recommended_quant.as_str()),
@@ -454,13 +460,14 @@ mod tests {
     #[test]
     fn quant_tiers_tolerate_under_nominal_vram_reports() {
         let cases = [
-            (6144, "Qwen3.5-4B-IQ4_NL"),          // 6 GB
-            (8188, "Qwen3.5-9B-IQ4_NL"),          // "8 GB", reported short
-            (10240, "Qwen3.5-9B-IQ4_NL"),         // 10 GB
-            (12038, "Qwen3.5-9B-UD-Q6_K_XL"),     // "12 GB", reported short
-            (16303, "Qwen3.5-9B-UD-Q8_K_XL"),     // "16 GB", reported short
-            (24110, "Qwen3.6-35B-A3B-UD-IQ4_NL"), // "24 GB", reported short
-            (32768, "Qwen3.6-35B-A3B-UD-IQ4_NL"), // 32 GB
+            (6144, "Qwen3.5-4B-IQ4_NL"),           // 6 GB
+            (8188, "Qwen3.5-9B-IQ4_NL"),           // "8 GB", reported short
+            (10240, "Qwen3.5-9B-IQ4_NL"),          // 10 GB
+            (12038, "Qwen3.5-9B-UD-Q6_K_XL"),      // "12 GB", reported short
+            (16303, "Qwen3.8-27B-UD-IQ3_XXS"),     // "16 GB", reported short
+            (24110, "Qwen3.6-35B-A3B-UD-IQ4_NL"),  // "24 GB", reported short
+            (32510, "Qwen3.6-35B-A3B-UD-Q5_K_XL"), // "32 GB", reported short
+            (49152, "Qwen3.6-35B-A3B-UD-Q5_K_XL"), // 48 GB
         ];
         for (vram_mb, expected) in cases {
             assert_eq!(
@@ -480,7 +487,12 @@ mod tests {
     fn quant_tier_ids_resolve_in_registry() {
         for (_, id) in QUANT_BY_VRAM_MB {
             assert!(
-                crate::models::context_ceiling_for(id, 24 * 1024 * 1024 * 1024, true).is_some(),
+                crate::models::context_ceiling_for(
+                    id,
+                    24 * 1024 * 1024 * 1024,
+                    crate::models::FitOptions::with_mtp(true),
+                )
+                .is_some(),
                 "tier table references a model id the registry can't size: {}",
                 id
             );

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { invoke } from '@tauri-apps/api/core';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { goto } from '$app/navigation';
 	import {
@@ -37,6 +39,24 @@
 	const testResponse = $derived(getTestResponse());
 	const testStatusMessage = $derived(getTestStatusMessage());
 	const models = $derived(getModels());
+
+	// Only the recommended lineup. `list_models` returns retired models too
+	// (so Settings can offer to re-download one already on disk), but a fresh
+	// install has none of them and must never be offered one — the retired
+	// list includes an entry whose upstream file is gone.
+	const selectableModels = $derived(models.filter((m) => !m.legacy));
+
+	// The wizard is normally reached because there's no model yet, but it can
+	// also be opened deliberately from Settings. In that case the user has a
+	// working install to go back to, so give them a way out.
+	let canExit = $state(false);
+	onMount(async () => {
+		try {
+			canExit = await invoke<boolean>('has_any_model');
+		} catch {
+			canExit = false;
+		}
+	});
 
 	function estimatedTime(progress: {
 		downloaded: number;
@@ -162,6 +182,9 @@
 					</div>
 				</div>
 			</div>
+			{#if canExit}
+				<button class="exit-setup" onclick={() => goto('/')}>&#8592; Back to Haruspex</button>
+			{/if}
 			<p class="wizard-choice-intro">How do you want to run the model?</p>
 			<div class="wizard-choice">
 				<button class="choice-btn primary" onclick={goToHardware}>
@@ -255,7 +278,7 @@
 						value={selectedModel}
 						onchange={(e) => setSelectedModel((e.target as HTMLSelectElement).value)}
 					>
-						{#each models as model (model.id)}
+						{#each selectableModels as model (model.id)}
 							<option value={model.id}>
 								{model.id === hardware.recommended_quant ? '(recommended) ' : ''}
 								{model.description}
@@ -267,6 +290,9 @@
 				<div class="actions">
 					<button class="primary-btn" onclick={goToDownload}>Download Model</button>
 					<button class="secondary-btn" onclick={handleImport}>Use existing GGUF file</button>
+					{#if canExit}
+						<button class="secondary-btn" onclick={() => goto('/')}>Cancel</button>
+					{/if}
 				</div>
 			{:else}
 				<p class="loading">Detecting hardware...</p>
@@ -389,6 +415,20 @@
 
 	.wizard-step.wide .hint {
 		margin-top: 16px;
+	}
+
+	.exit-setup {
+		align-self: flex-start;
+		background: none;
+		border: none;
+		color: var(--text-secondary);
+		cursor: pointer;
+		font-size: 0.85rem;
+		padding: 4px 0;
+	}
+
+	.exit-setup:hover {
+		color: var(--text-primary);
 	}
 
 	.wizard-choice-intro {

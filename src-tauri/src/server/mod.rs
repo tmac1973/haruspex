@@ -56,10 +56,21 @@ pub struct ServerConfig {
     pub ctx_size: u32,
     pub n_gpu_layers: i32,
     pub flash_attn: bool,
-    /// Drive the model's bundled multi-token-prediction head as a
-    /// self-speculative draft. Only ever true for a model that actually
-    /// carries one — see `models::model_supports_mtp`.
+    /// Drive the model's multi-token-prediction head as a self-speculative
+    /// draft. Only ever true for a model that actually has one, and for a
+    /// sibling drafter only when its file is on disk — see
+    /// `models::mtp_source_for`.
     pub mtp: bool,
+    /// Path to a sibling drafter GGUF, for models whose MTP head ships as a
+    /// separate file rather than inside the weights. `None` for a bundled
+    /// head, which needs no `--model-draft`.
+    pub mtp_draft_path: Option<String>,
+    /// Load the vision projector onto the CPU backend (`--no-mmproj-offload`)
+    /// instead of the GPU. Frees the projector's VRAM (0.9-1.2 GB for the
+    /// models we ship) for the KV cache, at the cost of a slower encode on
+    /// the turns that actually contain an image. Text-only turns never touch
+    /// the projector either way.
+    pub mmproj_on_cpu: bool,
     pub extra_args: Vec<String>,
 }
 
@@ -74,6 +85,8 @@ impl Default for ServerConfig {
             n_gpu_layers: 99,
             flash_attn: true,
             mtp: false,
+            mtp_draft_path: None,
+            mmproj_on_cpu: false,
             extra_args: Vec::new(),
         }
     }
@@ -112,10 +125,16 @@ impl ServerConfig {
         args.push(if self.flash_attn { "on" } else { "off" }.to_string());
 
         if self.mtp {
-            // The head ships inside the weights file, so no draft model is
-            // needed: llama-server builds the MTP draft context against the
-            // target model itself. The type name is `draft-mtp` — a bare
-            // `mtp` is rejected as an unknown speculative type.
+            // A bundled head needs no draft model: llama-server builds the
+            // MTP draft context against the target model itself. A sibling
+            // drafter has to be named explicitly — llama.cpp auto-discovers
+            // it only for `-hf` downloads, not for local `--model` paths.
+            if let Some(draft) = self.mtp_draft_path.as_ref() {
+                args.push("--model-draft".to_string());
+                args.push(draft.clone());
+            }
+            // The type name is `draft-mtp` — a bare `mtp` is rejected as an
+            // unknown speculative type.
             args.push("--spec-type".to_string());
             args.push("draft-mtp".to_string());
         }
@@ -331,6 +350,18 @@ impl LlamaServer {
         Ok(())
     }
 
+    /// `--mmproj <path>`, plus `--no-mmproj-offload` when the user has asked
+    /// to keep the projector in system RAM. Split out from `build_llama_args`
+    /// (which needs an `AppHandle` to locate the projector) so the flag
+    /// itself is unit-testable.
+    fn mmproj_args(path: &Path, on_cpu: bool) -> Vec<String> {
+        let mut args = vec!["--mmproj".to_string(), path.to_string_lossy().to_string()];
+        if on_cpu {
+            args.push("--no-mmproj-offload".to_string());
+        }
+        args
+    }
+
     /// Build the llama-server CLI args for `model_path`: the configured base
     /// args plus `--mmproj` when the model has a multimodal projector. Shared
     /// by the initial spawn and both respawn paths (CPU fallback, auto-restart).
@@ -347,9 +378,13 @@ impl LlamaServer {
         let state = inner.lock().await;
         let mut args = state.config.build_args(model_path);
         if let Some(path) = mmproj_path.as_ref() {
-            args.push("--mmproj".to_string());
-            args.push(path.to_string_lossy().to_string());
-            info!("Vision projector enabled: {}", path.display());
+            let on_cpu = state.config.mmproj_on_cpu;
+            args.extend(Self::mmproj_args(path, on_cpu));
+            info!(
+                "Vision projector enabled ({}): {}",
+                if on_cpu { "system RAM" } else { "VRAM" },
+                path.display()
+            );
         }
         args
     }
@@ -912,16 +947,36 @@ pub async fn start_server(
     // doesn't read settings) means "no objection" — the model's own capability
     // decides, which is the same answer the default preference gives.
     mtp: Option<bool>,
+    // The user's "keep the vision projector in system RAM" preference.
+    // `None` (first-run setup) means the default: projector on the GPU.
+    mmproj_on_cpu: Option<bool>,
 ) -> Result<(), String> {
     let filename = Path::new(&model_path)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
+    // A sibling drafter is only usable once it's actually on disk; without
+    // the file, `--spec-type draft-mtp` would fail the start and burn a
+    // fallback retry, so treat a missing drafter as "no MTP" up front.
+    let draft_path = {
+        use tauri::Manager;
+        app.try_state::<crate::models::ModelManager>()
+            .and_then(|mgr| mgr.find_mtp_draft_for_model(Path::new(&model_path)))
+            .map(|p| p.to_string_lossy().to_string())
+    };
+    let mtp_usable = match crate::models::mtp_source_for(&filename) {
+        crate::models::MtpSource::None => false,
+        crate::models::MtpSource::Bundled => true,
+        crate::models::MtpSource::Sibling { .. } => draft_path.is_some(),
+    };
+    // Both have to agree: the user hasn't turned it off AND this GGUF
+    // actually has a head to draft from.
+    let mtp_on = mtp.unwrap_or(true) && mtp_usable;
     let config = ServerConfig {
         ctx_size,
-        // Both have to agree: the user hasn't turned it off AND this GGUF
-        // actually carries a head to draft from.
-        mtp: mtp.unwrap_or(true) && crate::models::model_supports_mtp(&filename),
+        mtp: mtp_on,
+        mtp_draft_path: if mtp_on { draft_path } else { None },
+        mmproj_on_cpu: mmproj_on_cpu.unwrap_or(false),
         extra_args: extra_args.unwrap_or_default(),
         ..Default::default()
     };
@@ -1160,6 +1215,82 @@ mod tests {
         .build_args("/path/to/model.gguf");
         let last = args.iter().rposition(|a| a == "--spec-type").unwrap();
         assert_eq!(args[last + 1], "none");
+    }
+
+    /// A sibling drafter has to be named explicitly: llama.cpp auto-discovers
+    /// the MTP file only for `-hf` downloads, never for the local `--model`
+    /// paths we pass, so `--spec-type draft-mtp` alone would fail the start.
+    #[test]
+    fn sibling_drafter_is_passed_as_model_draft() {
+        let cfg = ServerConfig {
+            mtp: true,
+            mtp_draft_path: Some("/models/mtp-draft.gguf".to_string()),
+            ..Default::default()
+        };
+        let args = cfg.build_args("/models/target.gguf");
+        let draft = args
+            .iter()
+            .position(|a| a == "--model-draft")
+            .expect("--model-draft present for a sibling drafter");
+        assert_eq!(args[draft + 1], "/models/mtp-draft.gguf");
+        assert!(args.iter().any(|a| a == "draft-mtp"));
+    }
+
+    /// A bundled head drafts against the target model itself — passing a
+    /// draft path there would point llama-server at a file that isn't one.
+    #[test]
+    fn bundled_head_needs_no_model_draft() {
+        let cfg = ServerConfig {
+            mtp: true,
+            ..Default::default()
+        };
+        let args = cfg.build_args("/models/target.gguf");
+        assert!(!args.iter().any(|a| a == "--model-draft"));
+        assert!(args.iter().any(|a| a == "draft-mtp"));
+    }
+
+    /// The MTP fallback clears `mtp`; the draft path must go quiet with it
+    /// rather than being left on the command line for the retry.
+    #[test]
+    fn clearing_mtp_drops_the_draft_path_too() {
+        let cfg = ServerConfig {
+            mtp: false,
+            mtp_draft_path: Some("/models/mtp-draft.gguf".to_string()),
+            ..Default::default()
+        };
+        let args = cfg.build_args("/models/target.gguf");
+        assert!(!args.iter().any(|a| a == "--model-draft"));
+        assert!(!args.iter().any(|a| a == "--spec-type"));
+    }
+
+    #[test]
+    fn mmproj_args_place_the_projector() {
+        let path = Path::new("/models/mmproj-F16.gguf");
+
+        let vram = LlamaServer::mmproj_args(path, false);
+        assert_eq!(vram, vec!["--mmproj", "/models/mmproj-F16.gguf"]);
+
+        // On CPU the path is unchanged — only the placement flag is added, so
+        // llama-server still loads the same projector, just onto the CPU
+        // backend. Dropping --mmproj here would silently disable vision.
+        let ram = LlamaServer::mmproj_args(path, true);
+        assert_eq!(
+            ram,
+            vec!["--mmproj", "/models/mmproj-F16.gguf", "--no-mmproj-offload"]
+        );
+    }
+
+    /// The flag rides with `--mmproj`, not in the base args, so a text-only
+    /// model never gets a projector flag it has no projector for.
+    #[test]
+    fn base_args_carry_no_projector_flags() {
+        let cfg = ServerConfig {
+            mmproj_on_cpu: true,
+            ..Default::default()
+        };
+        let args = cfg.build_args("/models/text-only.gguf");
+        assert!(!args.iter().any(|a| a == "--no-mmproj-offload"));
+        assert!(!args.iter().any(|a| a == "--mmproj"));
     }
 
     #[test]

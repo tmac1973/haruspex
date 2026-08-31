@@ -173,7 +173,10 @@ export async function startServer(
 			ctxSize: ctxSize ?? DEFAULT_CONTEXT_SIZE,
 			extraArgs: extraArgs || null,
 			// The preference only; Rust ANDs it with the model's own capability.
-			mtp: getSettings().mtpEnabled
+			mtp: getSettings().mtpEnabled,
+			// Only reaches llama-server for models that actually have a
+			// projector — Rust attaches it alongside `--mmproj`.
+			mmprojOnCpu: getSettings().visionProjectorInSystemRam
 		});
 	} catch (e) {
 		serverState.status = 'error';
@@ -207,7 +210,7 @@ export interface PendingRestart {
 	modelPath: string;
 	ctxSize: number;
 	/** What the user changed — drives the banner copy. */
-	reason: 'model' | 'context';
+	reason: 'model' | 'context' | 'projector';
 }
 
 let pendingRestart = $state<PendingRestart | null>(null);
@@ -230,7 +233,7 @@ export function cancelPendingRestart(): void {
 export async function restartServerWhenIdle(
 	modelPath: string,
 	ctxSize: number,
-	reason: 'model' | 'context'
+	reason: 'model' | 'context' | 'projector'
 ): Promise<boolean> {
 	if (getRunningCount() > 0) {
 		pendingRestart = { modelPath, ctxSize, reason };
