@@ -173,6 +173,12 @@ const QWEN_38_27B_MMPROJ_SIZE: u64 = 927_607_488;
 const QWEN_38_27B_MMPROJ_SHA256: &str =
     "cbb841a9ee0636b2ec172f5bb8df2ea8dfeb01e90fe7c6126581d662a0b4e43e";
 
+const GEMMA4_26B_A4B_MMPROJ_URL: &str =
+    "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-F16.gguf";
+const GEMMA4_26B_A4B_MMPROJ_SIZE: u64 = 1_193_058_784;
+const GEMMA4_26B_A4B_MMPROJ_SHA256: &str =
+    "418a6d8723067cd712235facbbc5cba6c8fbbd413fc1292d2aace5a027d5a42f";
+
 /// sha256 for the mmproj at `url`. Keyed by URL rather than stored per
 /// registry entry because several models share one projector file.
 fn mmproj_sha256_for_url(url: &str) -> Option<&'static str> {
@@ -182,6 +188,7 @@ fn mmproj_sha256_for_url(url: &str) -> Option<&'static str> {
         QWEN_35B_A3B_MMPROJ_URL => Some(QWEN_35B_A3B_MMPROJ_SHA256),
         QWEN_27B_MMPROJ_URL => Some(QWEN_27B_MMPROJ_SHA256),
         QWEN_38_27B_MMPROJ_URL => Some(QWEN_38_27B_MMPROJ_SHA256),
+        GEMMA4_26B_A4B_MMPROJ_URL => Some(GEMMA4_26B_A4B_MMPROJ_SHA256),
         _ => None,
     }
 }
@@ -206,6 +213,10 @@ fn qwen_38_27b_mmproj_filename() -> String {
     "Qwen3.8-27B-mmproj-F16.gguf".to_string()
 }
 
+fn gemma4_26b_a4b_mmproj_filename() -> String {
+    "Gemma4-26B-A4B-mmproj-F16.gguf".to_string()
+}
+
 // Per-token KV-cache growth (bytes, q8_0) by model shape. Full derivation in
 // the note above `CONTEXT_LADDER`; every registry entry declares one of these.
 /// 4B and 9B: 8 full-attention layers × 4 KV heads.
@@ -214,13 +225,24 @@ const KV_PER_TOKEN_SMALL: u64 = 17_408;
 const KV_PER_TOKEN_DENSE_27B: u64 = 34_816;
 /// 35B-A3B sparse MoE: 10 full-attention layers × 2 KV heads.
 const KV_PER_TOKEN_35B_A3B: u64 = 10_880;
+/// Gemma 4 26B-A4B: 30 layers, of which only 5 are full attention (the other
+/// 25 are sliding-window 1024). Those 5 use 2 KV heads at head_dim 512:
+/// 5 × 2 × 2 × 512 = 10240 elements × 34/32 = 10880 — the same figure as the
+/// 35B-A3B above, reached a different way, so it gets its own constant.
+///
+/// NOT counted here: the sliding-window layers hold a fixed ~111 MB pool
+/// (25 × 2 × 8 × 256 × 1.0625 × 1024 window) that doesn't grow with context.
+/// It's absorbed by COMPUTE_OVERHEAD_BYTES rather than modelled per-token,
+/// which would over-charge long contexts by an order of magnitude.
+const KV_PER_TOKEN_GEMMA4_A4B: u64 = 10_880;
 /// Architecture unknown — a model the user imported themselves. Makes
 /// `context_ceiling_for` report "can't predict" so the Settings cap fails open.
 const KV_PER_TOKEN_UNKNOWN: u64 = 0;
 
 /// The current recommended lineup — one model per VRAM tier, all Unsloth
-/// dynamic quants. The two 24 GB picks offer a choice of sparse (MoE, the
-/// recommended default) vs dense.
+/// dynamic quants. The 16 GB and 24 GB tiers each offer two: the first entry
+/// is the tier's default (what `hardware::QUANT_BY_VRAM_MB` recommends) and
+/// the second is an opt-in alternative with a different trade.
 fn model_registry() -> Vec<ModelInfo> {
     vec![
         // < 8 GB VRAM — lightweight 4B for integrated graphics / low VRAM
@@ -277,22 +299,47 @@ fn model_registry() -> Vec<ModelInfo> {
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
-        // 16 GB VRAM — high-quality 9B
+        // 16 GB VRAM — the dense 27B at a low quant. Three times the
+        // parameters of the 9B it replaces, and it leaves ~4.8 GB free on a
+        // 16 GB card, which matters when that card is also driving the
+        // desktop. Its MTP head is bundled, so speculation works here.
         ModelInfo {
-            id: "Qwen3.5-9B-UD-Q8_K_XL".to_string(),
-            filename: "Qwen3.5-9B-UD-Q8_K_XL.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q8_K_XL.gguf"
+            id: "Qwen3.8-27B-UD-IQ3_XXS".to_string(),
+            filename: "Qwen3.8-27B-UD-IQ3_XXS.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ3_XXS.gguf"
                 .to_string(),
-            sha256: "2c4e08e0e72c68d8c1835a26f5be4075894df9ea5be9cc20a246517afd6a0cb6".to_string(),
-            size_bytes: 12_974_040_288,
-            description: "Qwen 3.5 9B Q8 — highest-quality 9B, for 16 GB VRAM (~13 GB)".to_string(),
+            sha256: "c0b7c3038681ed2e3040456c1dd45f9858b6c2290bed172c70388a94874f3eee".to_string(),
+            size_bytes: 10_934_860_704,
+            description: "Qwen 3.8 27B — dense, recommended for 16 GB VRAM (~11 GB)".to_string(),
             downloaded: false,
             legacy: false,
-            mmproj_filename: Some(qwen_9b_mmproj_filename()),
-            mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
-            mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            mmproj_filename: Some(qwen_38_27b_mmproj_filename()),
+            mmproj_url: Some(QWEN_38_27B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_38_27B_MMPROJ_SIZE),
+            mtp: MtpSource::Bundled,
+            kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
+        },
+        // 16 GB VRAM — sparse alternative. Only 4B active, so it decodes far
+        // faster than the dense 27B, and its cheap KV reaches a much larger
+        // context — but it holds ~2.7 GB more, leaving less room for the
+        // desktop. Its MTP head ships as a separate drafter that does NOT fit
+        // alongside the weights at this tier, hence `None` rather than
+        // `Sibling`: enabling it would back the context down to the floor.
+        ModelInfo {
+            id: "gemma-4-26B-A4B-it-UD-IQ4_XS".to_string(),
+            filename: "gemma-4-26B-A4B-it-UD-IQ4_XS.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-IQ4_XS.gguf"
+                .to_string(),
+            sha256: "babd1e389d386352f71600765d37390f7dc993fbfad6725caccf996ffe34aecf".to_string(),
+            size_bytes: 13_597_177_568,
+            description: "Gemma 4 26B-A4B — fast sparse MoE for 16 GB VRAM (~14 GB)".to_string(),
+            downloaded: false,
+            legacy: false,
+            mmproj_filename: Some(gemma4_26b_a4b_mmproj_filename()),
+            mmproj_url: Some(GEMMA4_26B_A4B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(GEMMA4_26B_A4B_MMPROJ_SIZE),
             mtp: MtpSource::None,
-            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            kv_bytes_per_token: KV_PER_TOKEN_GEMMA4_A4B,
         },
         // 24 GB VRAM — sparse MoE, the recommended large model
         ModelInfo {
@@ -312,15 +359,18 @@ fn model_registry() -> Vec<ModelInfo> {
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_35B_A3B,
         },
-        // 24 GB VRAM — dense alternative for those who want it
+        // 24 GB VRAM — dense alternative for those who want it. Was
+        // `Qwen3.8-27B-IQ4_NL` until Unsloth dropped that quant from the
+        // repo, at which point the download started 404ing; UD-IQ4_XS is the
+        // nearest surviving file and carries the same bundled MTP head.
         ModelInfo {
-            id: "Qwen3.8-27B-IQ4_NL".to_string(),
-            filename: "Qwen3.8-27B-IQ4_NL.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-IQ4_NL.gguf"
+            id: "Qwen3.8-27B-UD-IQ4_XS".to_string(),
+            filename: "Qwen3.8-27B-UD-IQ4_XS.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ4_XS.gguf"
                 .to_string(),
-            sha256: "466c6714b0eca21c032690c801391a3c1e8f464ef01bbf420b70840027590c38".to_string(),
-            size_bytes: 16_337_628_128,
-            description: "Qwen 3.8 27B — dense model for 24 GB VRAM, advanced (~16 GB)".to_string(),
+            sha256: "40fac4050e940397dbf13087afd50f4734a11805bf9d65ef8ddd7483470e6199".to_string(),
+            size_bytes: 14_252_845_984,
+            description: "Qwen 3.8 27B — dense model for 24 GB VRAM, advanced (~14 GB)".to_string(),
             downloaded: false,
             legacy: false,
             mmproj_filename: Some(qwen_38_27b_mmproj_filename()),
@@ -336,6 +386,10 @@ fn model_registry() -> Vec<ModelInfo> {
 /// so users who downloaded one before upgrading keep it working, can switch
 /// back to it, and — if they delete it — can still re-download it. New
 /// installs never download these; they only surface when already on disk.
+///
+/// One exception to the "valid URL" rule is called out inline below: the
+/// Qwen 3.8 27B IQ4_NL entry's upstream file no longer exists, so it is kept
+/// only to keep an already-downloaded copy usable.
 fn legacy_registry() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
@@ -436,6 +490,46 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+        },
+        // Superseded at the 16 GB tier by the dense Qwen 3.8 27B, which
+        // fits three times the parameters in less VRAM. Kept so an existing
+        // download stays usable and switchable.
+        ModelInfo {
+            id: "Qwen3.5-9B-UD-Q8_K_XL".to_string(),
+            filename: "Qwen3.5-9B-UD-Q8_K_XL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q8_K_XL.gguf"
+                .to_string(),
+            sha256: "2c4e08e0e72c68d8c1835a26f5be4075894df9ea5be9cc20a246517afd6a0cb6".to_string(),
+            size_bytes: 12_974_040_288,
+            description: "Qwen 3.5 9B Q8 — legacy (~13 GB)".to_string(),
+            downloaded: false,
+            legacy: true,
+            mmproj_filename: Some(qwen_9b_mmproj_filename()),
+            mmproj_url: Some(QWEN_9B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
+            mtp: MtpSource::None,
+            kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+        },
+        // DEAD URL — Unsloth removed this quant from the repo, so the
+        // download 404s. Unlike every other legacy entry it cannot be
+        // re-downloaded; it stays listed purely so a user who got it while
+        // it existed (it shipped in the lineup from #199) keeps a working,
+        // switchable model. Superseded by `Qwen3.8-27B-UD-IQ4_XS`.
+        ModelInfo {
+            id: "Qwen3.8-27B-IQ4_NL".to_string(),
+            filename: "Qwen3.8-27B-IQ4_NL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-IQ4_NL.gguf"
+                .to_string(),
+            sha256: "466c6714b0eca21c032690c801391a3c1e8f464ef01bbf420b70840027590c38".to_string(),
+            size_bytes: 16_337_628_128,
+            description: "Qwen 3.8 27B IQ4_NL — legacy (~16 GB)".to_string(),
+            downloaded: false,
+            legacy: true,
+            mmproj_filename: Some(qwen_38_27b_mmproj_filename()),
+            mmproj_url: Some(QWEN_38_27B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_38_27B_MMPROJ_SIZE),
+            mtp: MtpSource::Bundled,
+            kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
         },
         // Superseded by Qwen 3.8 27B, which is the same architecture at a
         // near-identical footprint. Kept so a 16 GB download isn't lost.
@@ -1375,18 +1469,126 @@ mod tests {
         assert_eq!(download_speed_bps(900, 400, 0.5), 1000);
     }
 
+    /// No tier default may land on the context floor. A model whose weights
+    /// crowd out the KV cache still "fits" as far as the picker is concerned,
+    /// it just silently runs at 8k — which is the failure mode that makes a
+    /// bigger model at a lower quant a bad trade.
+    #[test]
+    fn every_tier_default_clears_the_context_floor() {
+        // (VRAM the tier targets, its default model) — cards report a little
+        // under nominal, so use the same short values as the tier table.
+        let tiers = [
+            (8188u64, "Qwen3.5-9B-IQ4_NL"),
+            (12038, "Qwen3.5-9B-UD-Q6_K_XL"),
+            (16303, "Qwen3.8-27B-UD-IQ3_XXS"),
+            (24110, "Qwen3.6-35B-A3B-UD-IQ4_NL"),
+        ];
+        for (vram_mb, id) in tiers {
+            let ctx = recommended_context_for(
+                id,
+                vram_mb * 1024 * 1024,
+                FitOptions::with_mtp(true), // the shipped default
+            );
+            assert!(
+                ctx >= 32768,
+                "{id} at {vram_mb} MB recommends only {ctx} — too tight for the tier"
+            );
+        }
+
+        // The 16 GB opt-in alternatives have to clear it too, or picking one
+        // quietly halves the window.
+        for id in ["gemma-4-26B-A4B-it-UD-IQ4_XS", "Qwen3.8-27B-UD-IQ4_XS"] {
+            let vram_mb: u64 = if id.starts_with("gemma") {
+                16303
+            } else {
+                24110
+            };
+            let ctx =
+                recommended_context_for(id, vram_mb * 1024 * 1024, FitOptions::with_mtp(true));
+            assert!(ctx >= 32768, "{id} at {vram_mb} MB recommends only {ctx}");
+        }
+    }
+
+    /// Every lineup URL still resolves upstream, at exactly the byte count
+    /// the registry declares. Network-dependent, so `#[ignore]`d — run with
+    /// `cargo test -- --ignored registry_urls`.
+    ///
+    /// This is the check that would have caught Unsloth dropping the
+    /// `Qwen3.8-27B-IQ4_NL` quant from its repo: the dense 24 GB pick 404'd
+    /// for months and `model_registry_urls_are_valid` never noticed, because
+    /// it only asserts the URL starts with huggingface.co.
+    #[tokio::test]
+    #[ignore]
+    async fn registry_urls_resolve_at_the_declared_size() {
+        // Knowingly dead: kept only so an existing download stays usable.
+        const DEAD: &[&str] = &["Qwen3.8-27B-IQ4_NL"];
+
+        let client = reqwest::Client::new();
+        let mut checked = std::collections::HashSet::new();
+        let mut failures = Vec::new();
+
+        for model in full_registry() {
+            if DEAD.contains(&model.id.as_str()) {
+                continue;
+            }
+            let mut targets = vec![(model.url.clone(), model.size_bytes)];
+            if let (Some(url), Some(size)) = (model.mmproj_url, model.mmproj_size_bytes) {
+                targets.push((url, size));
+            }
+            for (url, expected) in targets {
+                if !checked.insert(url.clone()) {
+                    continue; // several models share one projector
+                }
+                let resp = match client.head(&url).send().await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        failures.push(format!("{}: request failed: {e}", url));
+                        continue;
+                    }
+                };
+                if !resp.status().is_success() {
+                    failures.push(format!("{}: HTTP {}", url, resp.status()));
+                    continue;
+                }
+                // `content_length()` is None for a HEAD response, so read the
+                // header. HF also exposes `x-linked-size` for LFS objects.
+                let header = |name: &str| {
+                    resp.headers()
+                        .get(name)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse::<u64>().ok())
+                };
+                let actual = header("x-linked-size")
+                    .or_else(|| header("content-length"))
+                    .unwrap_or(0);
+                if actual != expected {
+                    failures.push(format!("{}: declared {expected}, upstream {actual}", url));
+                }
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "registry drift:\n  {}",
+            failures.join("\n  ")
+        );
+    }
+
     #[test]
     fn model_registry_has_expected_entries() {
         let models = model_registry();
-        assert_eq!(models.len(), 6);
+        assert_eq!(models.len(), 7);
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert!(ids.contains(&"Qwen3.5-4B-IQ4_NL"));
         assert!(ids.contains(&"Qwen3.5-9B-IQ4_NL"));
         assert!(ids.contains(&"Qwen3.5-9B-UD-Q6_K_XL"));
-        assert!(ids.contains(&"Qwen3.5-9B-UD-Q8_K_XL"));
+        // 16 GB: dense default plus the sparse opt-in.
+        assert!(ids.contains(&"Qwen3.8-27B-UD-IQ3_XXS"));
+        assert!(ids.contains(&"gemma-4-26B-A4B-it-UD-IQ4_XS"));
+        // 24 GB: sparse default plus the dense opt-in.
         assert!(ids.contains(&"Qwen3.6-35B-A3B-UD-IQ4_NL"));
-        assert!(ids.contains(&"Qwen3.8-27B-IQ4_NL"));
+        assert!(ids.contains(&"Qwen3.8-27B-UD-IQ4_XS"));
 
         // None of the current lineup is flagged legacy.
         assert!(models.iter().all(|m| !m.legacy));
@@ -1423,24 +1625,35 @@ mod tests {
         }
     }
 
-    /// Only the 3.8 27B ships an MTP head. Verified by reading the GGUF
-    /// metadata of every lineup file: the 9B quants, the 3.6 27B and the
-    /// 35B-A3B carry no `nextn` tensors, even though two of their HF configs
-    /// declare `mtp_num_hidden_layers: 1`. A blanket `--spec-type draft-mtp`
-    /// would fail the server's start on all of them.
+    /// Only the dense Qwen 3.8 27B quants ship an MTP head. Verified by
+    /// reading the GGUF metadata of every lineup file for `blk.N.nextn.*`
+    /// tensors: the 9B quants, the 3.6 27B, the 35B-A3B and Gemma 4 26B-A4B
+    /// carry none, even though several of their HF configs declare
+    /// `mtp_num_hidden_layers` / `nextn_predict_layers`. A blanket
+    /// `--spec-type draft-mtp` would fail the server's start on all of them.
+    ///
+    /// Gemma 4 26B-A4B does publish a drafter, but as a *separate* file that
+    /// doesn't fit alongside the weights at the 16 GB tier — see its registry
+    /// entry.
     #[test]
     fn only_the_dense_38_declares_an_mtp_head() {
+        const BUNDLED: &[&str] = &[
+            "Qwen3.8-27B-UD-IQ3_XXS",
+            "Qwen3.8-27B-UD-IQ4_XS",
+            "Qwen3.8-27B-IQ4_NL", // legacy, but the head is still in the file
+        ];
         for model in full_registry() {
-            let expected = if model.id == "Qwen3.8-27B-IQ4_NL" {
+            let expected = if BUNDLED.contains(&model.id.as_str()) {
                 MtpSource::Bundled
             } else {
                 MtpSource::None
             };
             assert_eq!(model.mtp, expected, "unexpected mtp source on {}", model.id);
         }
-        assert!(mtp_source_for("Qwen3.8-27B-IQ4_NL.gguf").is_supported());
+        assert!(mtp_source_for("Qwen3.8-27B-UD-IQ3_XXS.gguf").is_supported());
         assert!(!mtp_source_for("Qwen3.6-27B-IQ4_NL.gguf").is_supported());
         assert!(!mtp_source_for("Qwen3.5-9B-IQ4_NL.gguf").is_supported());
+        assert!(!mtp_source_for("gemma-4-26B-A4B-it-UD-IQ4_XS.gguf").is_supported());
         // A GGUF the user dropped in themselves: we know nothing about it.
         assert!(!mtp_source_for("Some-Imported-Model.gguf").is_supported());
     }
