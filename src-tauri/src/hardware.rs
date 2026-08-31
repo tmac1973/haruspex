@@ -94,7 +94,11 @@ pub fn detect_hardware() -> HardwareInfo {
         Some(vram_mb) if !gpu.integrated => {
             // First run has no saved preference, so assume the default (on).
             // Models without an MTP head are unaffected either way.
-            crate::models::recommended_context_for(recommended_quant, vram_mb * 1024 * 1024, true)
+            crate::models::recommended_context_for(
+                recommended_quant,
+                vram_mb * 1024 * 1024,
+                crate::models::FitOptions::with_mtp(true),
+            )
         }
         _ => crate::models::MIN_CONTEXT,
     };
@@ -480,7 +484,12 @@ mod tests {
     fn quant_tier_ids_resolve_in_registry() {
         for (_, id) in QUANT_BY_VRAM_MB {
             assert!(
-                crate::models::context_ceiling_for(id, 24 * 1024 * 1024 * 1024, true).is_some(),
+                crate::models::context_ceiling_for(
+                    id,
+                    24 * 1024 * 1024 * 1024,
+                    crate::models::FitOptions::with_mtp(true),
+                )
+                .is_some(),
                 "tier table references a model id the registry can't size: {}",
                 id
             );
