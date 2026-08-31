@@ -4,7 +4,7 @@ Click this screenshot to watch the explainer video:
 
 [![Watch the video](https://img.youtube.com/vi/VT-gGdOAonA/maxresdefault.jpg)](https://youtu.be/VT-gGdOAonA)
 
-Haruspex is a desktop AI researcher and coding tool that runs entirely local by default. It works on Linux, Windows and macOS. There is no account to create and no telemetry. Your conversations and the model's answers stay on your device. You do not need a separate inference server (ollama, LMStudio, Lemonade, vLLM, etc...) as Haruspex will default to automatically downloading an appropriate model for your system and will run it locally using it's own managed llama.cpp. You can turn this off and use a remote model if you choose though.
+Haruspex is a desktop AI researcher and coding tool that runs entirely local by default. It works on Linux, Windows and macOS. There is no account to create and no telemetry. Your conversations and the model's answers stay on your device. You do not need a separate inference server (ollama, LMStudio, Lemonade, vLLM, etc...) as Haruspex will default to automatically downloading an appropriate model for your system and will run it locally. If you prefer to manage your own llms you can turn this off and use a remote model instead.
 
 ## Goals
 
@@ -12,11 +12,11 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 - **Open Source / Open Weight** — Open weight models mean no monthly bill and no vendor lock-in.
 - **Consumer Hardware** — We target normal consumer graphics, from integrated graphics up to 32 GB discrete GPUs. The app looks at your hardware on first run and suggests a model that fits.
 
-  On 8 GB or less you get Qwen 3.5 9B (or Qwen 3.5 4B if memory is tight). These small models are remarkably capable for their size and they do research very well, though they don't write code very well.
+  On 8 GB or less you get Qwen 3.5 9B (or Qwen 3.5 4B if memory is tight). These small models are remarkably capable for their size and they do research well, though they aren't great at coding tasks.
 
-  The coding features — Code mode in the Shell tab, guided planning, autonomous coding, audit jobs, and the Python sandbox in the Chat tab — will work much better with a bigger model. We recommend **Qwen 3.6 35B-A3B** or **Qwen 3.8 27B**, which need about 24 GB of VRAM. You can also point those features at a bigger model on another machine, or at OpenRouter (though you lose the privacy of running locally).
+  The coding features — Code mode in the Shell tab, guided planning, autonomous coding, audit jobs, and the Python sandbox in the Chat tab — will work much better with a bigger model. We recommend **Qwen 3.6 35B-A3B** or **Qwen 3.8 27B**, which need at least 16 GB of VRAM but better quantizations are available for those with  24 and 32 GB of VRAM. You can also point those features at a bigger model on another machine, or at OpenRouter (though you lose the privacy of running locally).
 
-- **Human Enablement, Not Human Replacement** — Many projects are building agents that replace people. This is not one of them. Haruspex is meant to help you learn, create and fix things, with you still in the chair.
+- **Human Enablement, Not Human Replacement** — Many projects are building fully autonomous agents that replace people. This is not one of them. Haruspex is meant to help you learn, create, and fix things, with you still in the chair.
 
 ## Features
 
