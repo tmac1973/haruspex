@@ -379,6 +379,48 @@ fn model_registry() -> Vec<ModelInfo> {
             mtp: MtpSource::Bundled,
             kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
         },
+        // 32 GB VRAM — the same sparse MoE the 24 GB tier defaults to, but at
+        // Q5 instead of IQ4. A 32 GB card was previously handed the 24 GB pick
+        // and left ~11 GB idle; spending it on quant fidelity of the larger
+        // model beats re-quantising the smaller dense one.
+        ModelInfo {
+            id: "Qwen3.6-35B-A3B-UD-Q5_K_XL".to_string(),
+            filename: "Qwen3.6-35B-A3B-UD-Q5_K_XL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q5_K_XL.gguf"
+                .to_string(),
+            sha256: "25233af7642e3a91bd52cc4aeefdbd4a117479088e06cf1aea5b6bedb443c506".to_string(),
+            size_bytes: 26_592_508_896,
+            description: "Qwen 3.6 35B-A3B Q5 — sparse MoE, recommended for 32 GB VRAM (~27 GB)"
+                .to_string(),
+            downloaded: false,
+            legacy: false,
+            mmproj_filename: Some(qwen_35b_a3b_mmproj_filename()),
+            mmproj_url: Some(QWEN_35B_A3B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_35B_A3B_MMPROJ_SIZE),
+            mtp: MtpSource::None,
+            kv_bytes_per_token: KV_PER_TOKEN_35B_A3B,
+        },
+        // 32 GB VRAM — dense alternative. Q4_K_XL needs this tier to breathe:
+        // on a 24 GB card it reaches the same 128k rung as UD-IQ4_XS with only
+        // ~80 MB to spare, which the backoff ladder eats on the first machine
+        // whose compute buffers run over the flat estimate.
+        ModelInfo {
+            id: "Qwen3.8-27B-UD-Q4_K_XL".to_string(),
+            filename: "Qwen3.8-27B-UD-Q4_K_XL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-Q4_K_XL.gguf"
+                .to_string(),
+            sha256: "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e".to_string(),
+            size_bytes: 17_559_178_144,
+            description: "Qwen 3.8 27B Q4 — dense model for 32 GB VRAM, advanced (~18 GB)"
+                .to_string(),
+            downloaded: false,
+            legacy: false,
+            mmproj_filename: Some(qwen_38_27b_mmproj_filename()),
+            mmproj_url: Some(QWEN_38_27B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(QWEN_38_27B_MMPROJ_SIZE),
+            mtp: MtpSource::Bundled,
+            kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
+        },
     ]
 }
 
@@ -1482,6 +1524,7 @@ mod tests {
             (12038, "Qwen3.5-9B-UD-Q6_K_XL"),
             (16303, "Qwen3.8-27B-UD-IQ3_XXS"),
             (24110, "Qwen3.6-35B-A3B-UD-IQ4_NL"),
+            (32510, "Qwen3.6-35B-A3B-UD-Q5_K_XL"),
         ];
         for (vram_mb, id) in tiers {
             let ctx = recommended_context_for(
@@ -1495,14 +1538,15 @@ mod tests {
             );
         }
 
-        // The 16 GB opt-in alternatives have to clear it too, or picking one
-        // quietly halves the window.
-        for id in ["gemma-4-26B-A4B-it-UD-IQ4_XS", "Qwen3.8-27B-UD-IQ4_XS"] {
-            let vram_mb: u64 = if id.starts_with("gemma") {
-                16303
-            } else {
-                24110
-            };
+        // The opt-in alternatives have to clear it too, or picking one
+        // quietly halves the window. Each is paired with the tier it belongs
+        // to, since that's the only VRAM it's offered at.
+        let alternatives = [
+            ("gemma-4-26B-A4B-it-UD-IQ4_XS", 16303u64),
+            ("Qwen3.8-27B-UD-IQ4_XS", 24110),
+            ("Qwen3.8-27B-UD-Q4_K_XL", 32510),
+        ];
+        for (id, vram_mb) in alternatives {
             let ctx =
                 recommended_context_for(id, vram_mb * 1024 * 1024, FitOptions::with_mtp(true));
             assert!(ctx >= 32768, "{id} at {vram_mb} MB recommends only {ctx}");
@@ -1577,7 +1621,7 @@ mod tests {
     #[test]
     fn model_registry_has_expected_entries() {
         let models = model_registry();
-        assert_eq!(models.len(), 7);
+        assert_eq!(models.len(), 9);
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert!(ids.contains(&"Qwen3.5-4B-IQ4_NL"));
@@ -1589,6 +1633,9 @@ mod tests {
         // 24 GB: sparse default plus the dense opt-in.
         assert!(ids.contains(&"Qwen3.6-35B-A3B-UD-IQ4_NL"));
         assert!(ids.contains(&"Qwen3.8-27B-UD-IQ4_XS"));
+        // 32 GB: same again, one quant up each.
+        assert!(ids.contains(&"Qwen3.6-35B-A3B-UD-Q5_K_XL"));
+        assert!(ids.contains(&"Qwen3.8-27B-UD-Q4_K_XL"));
 
         // None of the current lineup is flagged legacy.
         assert!(models.iter().all(|m| !m.legacy));
@@ -1640,6 +1687,7 @@ mod tests {
         const BUNDLED: &[&str] = &[
             "Qwen3.8-27B-UD-IQ3_XXS",
             "Qwen3.8-27B-UD-IQ4_XS",
+            "Qwen3.8-27B-UD-Q4_K_XL",
             "Qwen3.8-27B-IQ4_NL", // legacy, but the head is still in the file
         ];
         for model in full_registry() {

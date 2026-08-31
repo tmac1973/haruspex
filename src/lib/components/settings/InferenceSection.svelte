@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { goto } from '$app/navigation';
 	import {
 		startServer,
 		stopServer,
@@ -443,6 +444,13 @@
 			<span>{PORTS.llama}</span>
 		</div>
 		<div class="server-actions">
+			<button
+				class="btn"
+				title="Re-run first-run setup: hardware detection, model choice and the test query. Your existing models and settings are left alone unless you change them there."
+				onclick={() => goto('/setup')}
+			>
+				Run Setup Wizard
+			</button>
 			{#if serverState.status === 'ready' || serverState.status === 'error'}
 				<button class="btn btn-primary" onclick={restartServer}>Restart Server</button>
 			{:else if serverState.status === 'stopped'}
