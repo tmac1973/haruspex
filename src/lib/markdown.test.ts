@@ -280,10 +280,15 @@ describe('renderMarkdown image stripping', () => {
 		expect(html).not.toContain('<img');
 	});
 
-	it('keeps image refs with http(s) URLs', () => {
+	// Behaviour change: http(s) refs used to be passed straight through to an
+	// <img src>, which made the webview fetch the host directly and bypass the
+	// user's proxy. Now a remote URL renders only if it has been fetched into
+	// the cache and is handed back through the resolved-images map; a bare one
+	// renders nothing. See renderMarkdown image handling below.
+	it('drops a bare http(s) image ref with no resolved cache entry', () => {
 		const html = renderMarkdown('![logo](https://example.com/logo.png)');
-		expect(html).toContain('<img');
-		expect(html).toContain('https://example.com/logo.png');
+		expect(html).not.toContain('<img');
+		expect(html).not.toContain('https://example.com/logo.png');
 	});
 
 	it('keeps image refs with data URIs', () => {
@@ -628,5 +633,55 @@ describe('extractThinkBlocks', () => {
 		expect(extractThinkBlocks('<think>a</think>ans')).toBe('a');
 		expect(extractThinkBlocks('ans <think>b')).toBe('b');
 		expect(extractThinkBlocks('no reasoning')).toBe('');
+	});
+});
+
+describe('renderMarkdown image handling', () => {
+	const CACHED = 'https://upload.wikimedia.org/panda.jpg';
+	const resolved = {
+		figureFor: (url: string, alt: string) =>
+			url === CACHED
+				? `<figure class="chat-image"><img src="haruspex-img://localhost/abc" alt="${alt}"></figure>`
+				: null
+	};
+
+	it('replaces a resolved image with its cached figure', () => {
+		const html = renderMarkdown(`Look:\n\n![a panda](${CACHED})`, resolved);
+		expect(html).toContain('figure');
+		expect(html).toContain('haruspex-img://localhost/abc');
+		expect(html).toContain('a panda');
+	});
+
+	// The guarantee the whole design exists for: a remote URL must never reach
+	// an <img src>, or the webview would contact the host directly and bypass
+	// the user's proxy. The CSP enforces this a second time.
+	it('renders nothing for a remote URL that is not resolved', () => {
+		const html = renderMarkdown('![x](https://attacker.example/beacon.png)', resolved);
+		expect(html).not.toContain('attacker.example');
+		expect(html).not.toContain('<img');
+	});
+
+	it('renders nothing when no resolved map is supplied at all', () => {
+		const html = renderMarkdown(`![a panda](${CACHED})`);
+		expect(html).not.toContain('<img');
+		expect(html).not.toContain('upload.wikimedia.org');
+	});
+
+	it('leaves surrounding prose untouched when an image is dropped', () => {
+		const html = renderMarkdown('Before.\n\n![x](https://nope.example/a.png)\n\nAfter.', resolved);
+		expect(html).toContain('Before.');
+		expect(html).toContain('After.');
+		expect(html).not.toContain('nope.example');
+	});
+
+	// Python-sandbox plots arrive as data: URLs and are already local.
+	it('still passes data: URLs through', () => {
+		const html = renderMarkdown('![plot](data:image/png;base64,iVBORw0KGgo=)', resolved);
+		expect(html).toContain('data:image/png;base64');
+	});
+
+	it('still drops a relative path the model invented', () => {
+		const html = renderMarkdown('![plot](sine_wave.png)', resolved);
+		expect(html).not.toContain('sine_wave.png');
 	});
 });

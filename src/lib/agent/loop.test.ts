@@ -330,6 +330,8 @@ describe('runAgentLoop: tool-call round trip', () => {
 			'Page text here',
 			undefined,
 			undefined,
+			undefined,
+			// heroImage — this page declared none.
 			undefined
 		);
 
@@ -358,6 +360,48 @@ describe('runAgentLoop: tool-call round trip', () => {
 		});
 
 		expect(streamedText(cb)).toBe('Final answer.');
+		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+	});
+
+	it('adds an [Image: url] line when the fetched page declared a hero image', async () => {
+		nonStreamQueue.push(
+			toolCallResponse([
+				{ id: 'call_img', name: 'fetch_url', args: '{"url":"https://example.com"}' }
+			]),
+			textResponse('Final answer.')
+		);
+		toolsMock.executeTool.mockResolvedValue({
+			result: 'Page text here',
+			heroImage: 'https://cdn.example.com/hero.jpg'
+		});
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		const toolMsg = nonStreamSnapshots[1].find((m) => m.role === 'tool');
+		expect(toolMsg?.content).toBe(
+			'[Source: https://example.com]\n[Image: https://cdn.example.com/hero.jpg]\n\nPage text here'
+		);
+		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+	});
+
+	it('omits the [Image:] line entirely when the page declared none', async () => {
+		nonStreamQueue.push(
+			toolCallResponse([
+				{ id: 'call_noimg', name: 'fetch_url', args: '{"url":"https://example.com"}' }
+			]),
+			textResponse('Final answer.')
+		);
+		// An empty field is something a small model will try to fill in, so
+		// the line must be absent rather than present-and-blank.
+		toolsMock.executeTool.mockResolvedValue({ result: 'Page text here' });
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		const toolMsg = nonStreamSnapshots[1].find((m) => m.role === 'tool');
+		expect(toolMsg?.content).toBe('[Source: https://example.com]\n\nPage text here');
+		expect(toolMsg?.content).not.toContain('[Image:');
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 	});
 

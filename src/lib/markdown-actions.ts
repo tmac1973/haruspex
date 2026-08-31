@@ -11,8 +11,27 @@
 const codeFor = (btn: HTMLElement): string =>
 	btn.closest('.code-block')?.querySelector('code')?.textContent ?? '';
 
+/** Event the chat view listens for to open the full-size image viewer. */
+export const VIEW_IMAGE_EVENT = 'hsp-view-image';
+
 export function handleMarkdownAction(event: MouseEvent): void {
 	const target = event.target as HTMLElement | null;
+
+	// Matched before the generic button lookup because it needs the <img>
+	// inside the wrapper rather than the button itself. The image is wrapped
+	// in a real <button> so it is keyboard-reachable and announced, rather
+	// than being a bare <img> with a click handler.
+	const zoom = target?.closest<HTMLElement>('[data-action="view-image"]');
+	if (zoom) {
+		const img = zoom.querySelector('img');
+		if (img) {
+			document.dispatchEvent(
+				new CustomEvent(VIEW_IMAGE_EVENT, { detail: { src: img.src, alt: img.alt } })
+			);
+		}
+		return;
+	}
+
 	const btn = target?.closest<HTMLElement>('button[data-action]');
 	if (!btn) return;
 	switch (btn.dataset.action) {

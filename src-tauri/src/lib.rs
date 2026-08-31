@@ -7,6 +7,7 @@ mod env_util;
 mod feedback;
 mod fs_tools;
 mod hardware;
+mod image_cache;
 mod inference;
 mod inference_queue;
 mod integrations;
@@ -62,6 +63,17 @@ pub fn run() {
                 responder.respond(sandbox_fetch::handle_fetch_scheme(request).await);
             });
         })
+        // Serves cached chat images by content hash. Registered as a scheme
+        // rather than handed over IPC as data: URLs so a long conversation's
+        // images stream from disk instead of sitting in webview memory. See
+        // image_cache::protocol for the URL shape and why the hash is in the
+        // path rather than the host.
+        .register_asynchronous_uri_scheme_protocol("haruspex-img", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(image_cache::protocol::handle(&app, request));
+            });
+        })
         .setup(|app| {
             app.manage(ModelManager::new(app.handle()));
             let database = Database::new(app.handle()).expect("Failed to initialize database");
@@ -80,6 +92,27 @@ pub fn run() {
             // Backstop reclaim of inference slots whose holder window hung
             // without releasing or heartbeating.
             inference_queue::spawn_lease_sweeper(app.handle().clone());
+
+            // Reclaim cached images no conversation references any more.
+            // Deleting a conversation cascades its `conversation_images` rows
+            // away but cannot free the bytes — the delete path knows nothing
+            // about the cache directory — so the sweep collects them here, on
+            // the next launch. Off the main thread: it touches the filesystem
+            // and must never delay the window appearing.
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let db = handle.state::<Database>();
+                    match image_cache::cache_dir(&handle) {
+                        Ok(dir) => {
+                            if let Err(e) = image_cache::sweep_orphans(&db, &dir) {
+                                log::warn!("image cache sweep failed: {}", e);
+                            }
+                        }
+                        Err(e) => log::warn!("image cache dir unavailable: {}", e),
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -152,6 +185,8 @@ pub fn run() {
             remote::remote_turn_error,
             proxy::images::proxy_image_search,
             proxy::images::proxy_fetch_url_images,
+            image_cache::commands::image_resolve,
+            image_cache::commands::image_sweep,
             inference::probe_inference_server,
             inference_queue::inference_acquire,
             inference_queue::inference_cancel,

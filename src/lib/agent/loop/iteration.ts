@@ -239,6 +239,55 @@ function assistantTouchesPython(toolCalls: NonNullable<ChatMessage['tool_calls']
 }
 
 /** The "open 2-3 distinct sources" nudge pushed when a turn researched too narrowly. */
+/**
+ * Recognises a request that images alone can satisfy, so the research nudge
+ * does not fire on someone who only wanted a picture. Same shape as
+ * `looksLikeReviewQuery` / `looksLikeFileOutputRequest` in system-prompt.ts.
+ */
+const IMAGE_ONLY_PATTERNS =
+	/\b(show|find|get|give|send)\s+(me\s+)?(a\s+|some\s+|the\s+)?(pic(ture)?s?|photos?|images?|shots?)\b|\bwhat\s+do(es)?\s+.*look\s+like\b|\bpic(ture)?s?\s+of\b|\bimages?\s+of\b/i;
+
+export function looksLikeImageOnlyRequest(content: string): boolean {
+	return IMAGE_ONLY_PATTERNS.test(content);
+}
+
+/**
+ * Did the model write a remote markdown image reference?
+ *
+ * Only `http(s)` counts. The Python sandbox legitimately produces
+ * `![plot](data:image/png;base64,…)` for inline charts, and models routinely
+ * write `![plot](sine_wave.png)` after saving a figure — neither is a claim to
+ * have found a picture on the web.
+ */
+export function wroteRemoteImageMarkdown(content: string | null | undefined): boolean {
+	return /!\[[^\]]*\]\(\s*https?:/i.test(content ?? '');
+}
+
+function phantomImageNudgePrompt(): string {
+	return (
+		'STOP. Your answer contains image links, but you never called ' +
+		'image_search, so those URLs are ones you made up. They do not exist and ' +
+		'nothing will be displayed. You MUST call image_search now to find real ' +
+		'pictures. Your NEXT output must be a tool_calls block invoking ' +
+		'image_search — do not reply with text. When the results come back, use ' +
+		'a thumb_url exactly as it appears in them, and never write an image URL ' +
+		'from memory.'
+	);
+}
+
+function researchNudgePrompt(): string {
+	return (
+		'STOP. The only tool you have called this turn is image_search, which finds ' +
+		'pictures and tells you nothing about the subject. You have not researched ' +
+		'the question at all, so anything you write now comes from memory and cannot ' +
+		'be cited. You MUST now call web_search for the topic, then fetch_url or ' +
+		'research_url on 2-3 of the results. Do NOT reply with text describing what ' +
+		'you plan to search for — your NEXT output must be a tool_calls block. Once ' +
+		'the pages come back, write the answer with [source](URL) citations, and keep ' +
+		'the image you already found.'
+	);
+}
+
 function diversityNudgePrompt(fetchedCount: number): string {
 	return (
 		`STOP. You have opened ${fetchedCount === 0 ? 'no pages' : 'only one page'} ` +
@@ -1101,6 +1150,29 @@ async function finalizeNoToolCalls(
 ): Promise<IterationOutcome> {
 	const { messages, tools, options } = ctx;
 
+	// Phantom-image gate. First, because a turn that invented its image URLs
+	// has produced an answer promising pictures that cannot exist, and the
+	// other gates would let that stand.
+	if (nudges.needsPhantomImageNudge(wroteRemoteImageMarkdown(response.content))) {
+		nudges.consumePhantomImageNudge();
+		logDebug('agent', `iteration ${iteration} branch=phantom-image-nudge`);
+		nudges.armNarrateRecovery();
+		return pushNudge(messages, response, phantomImageNudgePrompt());
+	}
+
+	// Research gate. Checked before the diversity gate because a turn that
+	// only grabbed a picture has not researched at all, which is the more
+	// basic failure of the two.
+	const lastUserText = messageText(
+		[...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+	);
+	if (nudges.needsResearchNudge(state.usedTools, looksLikeImageOnlyRequest(lastUserText))) {
+		nudges.consumeResearchNudge();
+		logDebug('agent', `iteration ${iteration} branch=research-nudge`);
+		nudges.armNarrateRecovery();
+		return pushNudge(messages, response, researchNudgePrompt());
+	}
+
 	// Diversity gate.
 	if (nudges.needsDiversityNudge(state.usedTools)) {
 		const fetchedCount = nudges.consumeDiversityNudge();
@@ -1261,7 +1333,8 @@ async function executeToolCalls(
 			output.result,
 			output.thumbDataUrl,
 			output.artifacts,
-			output.lintIssues
+			output.lintIssues,
+			output.heroImage
 		);
 
 		// Track successful file-write calls so the hallucination check
@@ -1272,6 +1345,9 @@ async function executeToolCalls(
 
 		// Prepend a "[Source: <url>]" header to successful page fetches.
 		let toolContent = output.result;
+		if (call.name === 'image_search') {
+			nudges.markImageSearchUsed();
+		}
 		if (call.name === 'web_search') {
 			nudges.markWebSearchUsed();
 			// A search that errored out (rate-limited engines, bot gate) left the
@@ -1286,7 +1362,11 @@ async function executeToolCalls(
 				blockedWebReads++;
 			} else if (url) {
 				nudges.recordFetchedUrl(url);
-				toolContent = `[Source: ${url}]\n\n${toolContent}`;
+				// The hero image goes on its own line beside the Source header,
+				// and the line is omitted entirely when the page declared none —
+				// an empty field is something a small model will try to fill in.
+				const imageLine = output.heroImage ? `\n[Image: ${output.heroImage}]` : '';
+				toolContent = `[Source: ${url}]${imageLine}\n\n${toolContent}`;
 			}
 		}
 

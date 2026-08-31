@@ -28,7 +28,9 @@ pub(crate) use bypass::apply_proxy;
 pub use config::ProxyConfig;
 use config::RATE_LIMIT_INTERVAL;
 use extract::fetch_and_extract;
-pub(crate) use extract::{validate_url, validating_redirect_policy, USER_AGENT};
+pub(crate) use extract::{
+    build_fetch_client, validate_url, validating_redirect_policy, USER_AGENT,
+};
 use search::{search_auto, search_brave, search_duckduckgo, search_searxng};
 pub use state::ProxyState;
 use stats::{
@@ -308,7 +310,7 @@ pub async fn proxy_fetch(
     url: String,
     caller: Option<String>,
     proxy: Option<ProxyConfig>,
-) -> Result<String, String> {
+) -> Result<extract::FetchedPage, String> {
     // Tag for the log line so we can distinguish fetch_url calls (raw page
     // text returned to the main agent) from research_url calls (page goes
     // through a sub-agent extractor before its findings reach the main agent).

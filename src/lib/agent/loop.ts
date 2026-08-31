@@ -121,6 +121,15 @@ export interface SearchStep {
 	 * dropped when the step transitions to 'done'.
 	 */
 	installStatus?: string;
+	/**
+	 * The hero image a fetched page declared about itself. Set only by
+	 * `fetch_url` / `research_url`.
+	 *
+	 * Recorded on the step rather than only shown to the model because the
+	 * step list is what the image resolver reads to decide which URLs a
+	 * conversation is allowed to fetch. See `images/eligible`.
+	 */
+	heroImage?: string;
 }
 
 export interface AgentLoopOptions {
@@ -148,7 +157,8 @@ export interface AgentLoopOptions {
 		result: string,
 		thumbDataUrl?: string,
 		artifacts?: Artifact[],
-		lintIssues?: LintIssue[]
+		lintIssues?: LintIssue[],
+		heroImage?: string
 	) => void;
 	onStreamChunk: (chunk: StreamChunk) => void;
 	/** Called once the turn settles. `meta.stopReason` distinguishes a natural

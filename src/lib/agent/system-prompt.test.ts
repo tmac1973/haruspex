@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({ customSystemPrompt: '', sandboxEnabled: false }),
 	getResponseFormatPrompt: () => '',
+	getIncludeImagesPrompt: () => '\n\nIMAGES:\n- When the answer is about something visual',
 	hasEnabledEmailAccount: () => false
 }));
 
@@ -76,5 +77,49 @@ describe('buildSystemPrompt — search rules', () => {
 		expect(p).toContain('Use fetch_url on 2-4 of the most relevant results');
 		expect(p).toContain('Only cite sources you actually fetched');
 		expect(p).toContain('include Reddit alongside review sites');
+	});
+});
+
+/**
+ * Images are a PARAMETER for the same reason memories are. The IMAGES block
+ * must reach the Chat tab and nothing else — a job run, a remote guest and the
+ * shell assistant all build their prompts through this function.
+ */
+describe('buildSystemPrompt — images section', () => {
+	it('omits the block when the caller does not ask for it', () => {
+		const prompt = buildSystemPrompt(null).content as string;
+		expect(prompt).not.toContain('IMAGES:');
+	});
+
+	it('omits it when the caller explicitly opts out', () => {
+		const prompt = buildSystemPrompt(null, { includeImages: false }).content as string;
+		expect(prompt).not.toContain('IMAGES:');
+	});
+
+	it('adds it when the caller opts in', () => {
+		const prompt = buildSystemPrompt(null, { includeImages: true }).content as string;
+		expect(prompt).toContain('IMAGES:');
+	});
+
+	/**
+	 * The regression that matters most to users who never turn this on: with
+	 * the setting off, the prompt must be byte-identical to what it was before
+	 * the feature existed.
+	 */
+	it('leaves the prompt byte-identical when images are off', () => {
+		const off = buildSystemPrompt(null, { includeImages: false }).content as string;
+		const unset = buildSystemPrompt(null).content as string;
+		expect(off).toBe(unset);
+	});
+
+	it('composes with memory without either clobbering the other', () => {
+		const prompt = buildSystemPrompt(null, {
+			includeImages: true,
+			memorySection: '\n\nMEMORY — things you learned:\n- Prefers tabs.'
+		}).content as string;
+		expect(prompt).toContain('IMAGES:');
+		expect(prompt).toContain('- Prefers tabs.');
+		// Memory stays last so it remains the freshest context.
+		expect(prompt.trimEnd().endsWith('- Prefers tabs.')).toBe(true);
 	});
 });

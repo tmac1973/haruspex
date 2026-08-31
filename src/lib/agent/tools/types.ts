@@ -29,6 +29,16 @@ export interface ToolExecOutput {
 	 * instead of the full traceback-style result string.
 	 */
 	lintIssues?: LintIssue[];
+	/**
+	 * The hero image the fetched page declares about itself (`og:image` and
+	 * friends). Set by `fetch_url` / `research_url` only.
+	 *
+	 * Surfaced to the model as an `[Image: <url>]` line beside the existing
+	 * `[Source: <url>]` header, and recorded as eligible so the image may
+	 * later be fetched if — and only if — the model cites it. Nothing is
+	 * downloaded to produce this.
+	 */
+	heroImage?: string;
 }
 
 /**
@@ -156,6 +166,11 @@ export interface ToolRegistration {
 /** Wrap a plain-string result into a ToolExecOutput. */
 export function toolResult(s: string, thumbDataUrl?: string): ToolExecOutput {
 	return { result: s, thumbDataUrl };
+}
+
+/** A page-fetch result that also carries the page's declared hero image. */
+export function fetchResult(s: string, heroImage?: string): ToolExecOutput {
+	return { result: s, heroImage };
 }
 
 /** Format a tool error as the JSON string the model expects. */

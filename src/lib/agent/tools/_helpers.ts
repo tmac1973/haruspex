@@ -9,6 +9,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { chatCompletion, type ChatMessage } from '$lib/api';
 import { getChatTemplateKwargs, getSamplingParams, getSettings } from '$lib/stores/settings';
+import type { FetchedPage } from '$lib/ipc/gen/FetchedPage';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import { errMessage } from '$lib/utils/error';
 import { stripThinkBlocks } from '$lib/markdown';
@@ -148,9 +149,14 @@ export function ensureUrlScheme(url: string): string {
  * Invoke the Rust-side `proxy_fetch` command with the standard payload
  * (url + caller + current proxy settings). Caller identifies the
  * originating tool for the proxy state's per-call accounting.
+ *
+ * Returns the page text plus the hero image the page declares about itself
+ * (`og:image` and friends), harvested during the parse Rust was doing anyway.
+ * Nothing is downloaded for the image here — the URL is only carried forward,
+ * and is fetched only if the model goes on to cite it.
  */
-export async function proxyFetch(url: string, caller: string): Promise<string> {
-	return invoke<string>('proxy_fetch', {
+export async function proxyFetch(url: string, caller: string): Promise<FetchedPage> {
+	return invoke<FetchedPage>('proxy_fetch', {
 		url: ensureUrlScheme(url),
 		caller,
 		proxy: getSettings().proxy

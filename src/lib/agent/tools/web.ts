@@ -8,9 +8,42 @@ import type { PageImage } from '$lib/ipc/gen/PageImage';
 import type { SearchResult } from '$lib/ipc/gen/SearchResult';
 import { labelArg, proxyFetch, runSubAgent, toolInvokeError, ensureUrlScheme } from './_helpers';
 import { registerTool } from './registry';
-import { toolResult } from './types';
+import { fetchResult, toolResult } from './types';
 
 const RESEARCH_AGENT_MAX_TOKENS = 3072;
+
+/**
+ * Ready-to-paste markdown appended to an `image_search` result.
+ *
+ * Observed 2026-08-30 on Qwen 3.6 35B: the model searched for images, received
+ * the results, and then wrote a perfectly good answer containing none of them.
+ * This is the same failure the README documents for file writes — after a tool
+ * call, a model strongly prefers ending its turn with prose rather than one
+ * more structured act — and a rule in the system prompt thousands of
+ * characters earlier does not reliably beat it.
+ *
+ * So the instruction goes next to the data, at the point of use, which is the
+ * pattern the loop already uses for run_python and run_command hints. Handing
+ * over finished markdown lines rather than describing the syntax removes the
+ * remaining step where a model can get it wrong.
+ *
+ * `thumb_url` and not `url`: the full-resolution original is pointlessly large
+ * for a chat bubble — a sampled Commons pair on 2026-08-30 was 1 MB against
+ * 170 KB for the 960px thumbnail — and big originals would silently exceed the
+ * cache's 5 MB per-image ceiling.
+ */
+function embedHint(results: ImageSearchResult[]): string {
+	const lines = results
+		.slice(0, 3)
+		.map((r) => `![${r.title.replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, '')}](${r.thumb_url})`)
+		.join('\n');
+	return (
+		`\n\n[Haruspex hint] To show an image, copy one of these lines into the answer you are ` +
+		`about to write, placing it just after the paragraph it illustrates:\n${lines}\n` +
+		`Use at most 3, and only where a picture genuinely helps. An image you do not copy in ` +
+		`is never shown to the user.`
+	);
+}
 
 function paywallErrorMessage(url: string, reason: string): string {
 	return (
@@ -83,12 +116,12 @@ registerTool({
 	async execute(args) {
 		const url = args.url as string;
 		try {
-			const content = await proxyFetch(url, 'fetch_url');
-			const paywall = detectPaywall(url, content);
+			const page = await proxyFetch(url, 'fetch_url');
+			const paywall = detectPaywall(url, page.text);
 			if (paywall.paywalled) {
 				return toolResult(paywallErrorMessage(url, paywall.reason || 'page is paywalled'));
 			}
-			return toolResult(content);
+			return fetchResult(page.text, page.hero_image ?? undefined);
 		} catch (e) {
 			return toolResult(`Failed to fetch URL: ${e}`);
 		}
@@ -127,8 +160,11 @@ registerTool({
 		const focus = args.focus as string;
 
 		let pageContent: string;
+		let heroImage: string | undefined;
 		try {
-			pageContent = await proxyFetch(url, 'research_url');
+			const page = await proxyFetch(url, 'research_url');
+			pageContent = page.text;
+			heroImage = page.hero_image ?? undefined;
 		} catch (e) {
 			return toolResult(`Failed to fetch URL: ${e}`);
 		}
@@ -167,7 +203,7 @@ registerTool({
 			if (!findings) {
 				return toolResult(`Sub-agent returned no findings for ${url}.`);
 			}
-			return toolResult(`Source: ${url}\nFocus: ${focus}\n\n${findings}`);
+			return fetchResult(`Source: ${url}\nFocus: ${focus}\n\n${findings}`, heroImage);
 		} catch (e) {
 			if (isAbortError(e)) throw e;
 			return toolResult(toolInvokeError(`research_url sub-agent for ${url}`, e));
@@ -182,7 +218,7 @@ registerTool({
 		function: {
 			name: 'image_search',
 			description:
-				'Search Wikimedia Commons for freely-licensed images. Returns image metadata including url, thumbnail, dimensions, and license. All results are openly licensed — safe to embed in documents or presentations.',
+				'Find a picture of something. Searches Openverse, Wikimedia Commons and Wikipedia together and returns freely-licensed images with their url, dimensions, license and credit. Use it when a picture would help the reader — a place, an animal, an object, a person, a plant, a building — either because the user asked for one or because the answer is about something visual.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -216,11 +252,11 @@ registerTool({
 				return toolResult(
 					JSON.stringify({
 						results: [],
-						note: `No Wikimedia Commons images found for "${query}". Try a broader or different query.`
+						note: `No images found for "${query}". Try a broader or different query.`
 					})
 				);
 			}
-			return toolResult(JSON.stringify({ results }));
+			return toolResult(JSON.stringify({ results }) + embedHint(results));
 		} catch (e) {
 			return toolResult(toolInvokeError('image_search', e));
 		}

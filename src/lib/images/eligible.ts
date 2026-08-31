@@ -1,0 +1,275 @@
+/**
+ * Which image URLs a conversation is allowed to fetch.
+ *
+ * This is the prompt-injection defence, and it is the reason the whole image
+ * pipeline is safe to point at model output. A page the model reads can say
+ * anything, including `![](https://attacker.example/beacon.png)`, and the model
+ * may echo it into its reply. Rendering that would fire a request carrying the
+ * user's IP to an address the attacker chose — a tracking pixel with extra
+ * steps.
+ *
+ * So a URL is fetchable only if this conversation's own tool results produced
+ * it. Two sources, and nothing else may be added:
+ *
+ *   - every result of an `image_search` call, with its full provenance;
+ *   - the `heroImage` of a `fetch_url` / `research_url` step, tagged `page_og`
+ *     and carrying no licence.
+ *
+ * A URL the model wrote that is not in the set is never fetched. That also
+ * disposes of hallucinated image URLs, which a 9B produces readily — they
+ * simply never resolve, and the renderer shows nothing.
+ */
+
+import type { SearchStep } from '$lib/agent/loop';
+import type { ImageRequest } from '$lib/ipc/gen/ImageRequest';
+import type { ImageSearchResult } from '$lib/ipc/gen/ImageSearchResult';
+
+/**
+ * Markdown image refs. Global, as `matchAll` requires — it iterates over a
+ * clone, so `lastIndex` is not shared between the two functions below.
+ */
+const IMAGE_REF_RE = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+
+/**
+ * Build the fetchable set for a conversation from its tool steps.
+ *
+ * Derived rather than accumulated: the steps are already the record of what
+ * the turn did, so there is no second piece of state to keep in sync, and a
+ * step list restored from the database yields the same answer it did live.
+ */
+export function eligibleImages(steps: readonly SearchStep[]): Map<string, ImageRequest> {
+	const out = new Map<string, ImageRequest>();
+
+	for (const step of steps) {
+		if (step.toolName === 'image_search') {
+			for (const req of parseImageSearchResults(step.result)) {
+				// First writer wins: a URL returned by two sources keeps the
+				// provenance of whichever reported it first, matching how the
+				// cache resolves the same collision.
+				if (!out.has(req.url)) out.set(req.url, req);
+			}
+			continue;
+		}
+
+		if (step.toolName === 'fetch_url' || step.toolName === 'research_url') {
+			const hero = step.heroImage;
+			if (!hero) continue;
+			if (!out.has(hero)) {
+				out.set(hero, {
+					url: hero,
+					// Forces licence `unknown` and `embeddable: false` in Rust,
+					// whatever the page claimed about itself.
+					source: 'page_og',
+					license: null,
+					license_version: null,
+					attribution: null,
+					description_url: null
+				});
+			}
+		}
+	}
+
+	return out;
+}
+
+/**
+ * Pull requests out of an `image_search` tool result.
+ *
+ * The result is a JSON object followed by the `[Haruspex hint]` block the tool
+ * appends, so the JSON is parsed from the leading object rather than the whole
+ * string. Anything unparseable yields nothing — a malformed result must not
+ * widen what may be fetched.
+ */
+function parseImageSearchResults(result: string | undefined): ImageRequest[] {
+	return parseImageSearchGroups(result).flat();
+}
+
+/**
+ * The same results, grouped one array per image rather than flattened.
+ *
+ * Each group holds the full-size URL and, where it differs, the thumbnail —
+ * in that order. Callers that need *a* URL for an image (the strip) take the
+ * last entry, which is the thumbnail whenever there is one.
+ */
+function parseImageSearchGroups(result: string | undefined): ImageRequest[][] {
+	if (!result) return [];
+	const parsed = parseLeadingJson(result);
+	if (typeof parsed !== 'object' || parsed === null) return [];
+	const results = (parsed as { results?: unknown }).results;
+	if (!Array.isArray(results)) return [];
+	return results.map(toRequests).filter((g) => g.length > 0);
+}
+
+/**
+ * Parse the JSON object at the start of a string, ignoring anything after it.
+ *
+ * Tool results carry trailing hint text, so a whole-string `JSON.parse` would
+ * throw and silently empty the eligibility set — every image would then be
+ * dropped at render with no error anywhere.
+ */
+function parseLeadingJson(text: string): unknown {
+	const trimmed = text.trimStart();
+	if (!trimmed.startsWith('{')) return null;
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let i = 0; i < trimmed.length; i++) {
+		const ch = trimmed[i];
+		if (escaped) {
+			escaped = false;
+			continue;
+		}
+		if (ch === '\\' && inString) {
+			escaped = true;
+			continue;
+		}
+		if (ch === '"') inString = !inString;
+		if (inString) continue;
+		if (ch === '{') depth++;
+		else if (ch === '}') {
+			depth--;
+			if (depth === 0) {
+				try {
+					return JSON.parse(trimmed.slice(0, i + 1));
+				} catch {
+					return null;
+				}
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * One search result → the requests it makes eligible.
+ *
+ * **Both** `url` and `thumb_url` are registered. The tool's hint hands the
+ * model ready-made markdown built from `thumb_url`, but a model may equally
+ * copy the full-resolution `url` out of the JSON — and a URL that is not in
+ * this set is never fetched, so registering only one of them would silently
+ * drop whichever the model happened to choose.
+ */
+function toRequests(raw: unknown): ImageRequest[] {
+	if (typeof raw !== 'object' || raw === null) return [];
+	const item = raw as Partial<ImageSearchResult>;
+	if (typeof item.url !== 'string' || !item.url) return [];
+
+	const base = {
+		source: typeof item.source === 'string' && item.source ? item.source : 'unknown',
+		license: item.license || null,
+		license_version: null,
+		attribution: item.attribution || null,
+		description_url: item.description_url || null
+	};
+
+	const out: ImageRequest[] = [{ url: item.url, ...base }];
+	if (typeof item.thumb_url === 'string' && item.thumb_url && item.thumb_url !== item.url) {
+		out.push({ url: item.thumb_url, ...base });
+	}
+	return out;
+}
+
+/**
+ * Every distinct http(s) markdown image URL in some text, in document order.
+ *
+ * Used by rehydration, which has no eligibility set to intersect against and
+ * instead asks the cache which of these it already holds.
+ */
+export function imageUrlsInText(texts: readonly string[]): string[] {
+	const seen = new Set<string>();
+	for (const text of texts) {
+		for (const match of text.matchAll(IMAGE_REF_RE)) {
+			const url = match[1]?.trim();
+			if (url && /^https?:/i.test(url)) seen.add(url);
+		}
+	}
+	return [...seen];
+}
+
+/**
+ * The image URLs a reply asks for that this conversation is actually allowed
+ * to fetch, capped and in document order.
+ *
+ * The cap is enforced here rather than trusted to the prompt. The prompt asks
+ * for one to three images; a small model will sometimes ask for eight, and
+ * this is what makes the ceiling real.
+ */
+export function resolvableFromReply(
+	text: string,
+	eligible: ReadonlyMap<string, ImageRequest>,
+	max: number
+): ImageRequest[] {
+	const out: ImageRequest[] = [];
+	const taken = new Set<string>();
+
+	for (const match of text.matchAll(IMAGE_REF_RE)) {
+		const url = match[1]?.trim();
+		if (!url || taken.has(url)) continue;
+		const req = eligible.get(url);
+		// The injection guard, in one line: not in the set, not fetched.
+		if (!req) continue;
+		taken.add(url);
+		out.push(req);
+		if (out.length >= max) break;
+	}
+
+	return out;
+}
+
+/**
+ * The images to show beneath an answer when the model searched for pictures
+ * but embedded none.
+ *
+ * Running `image_search` is itself the statement of intent: the model chose
+ * the query and made the call. It never sees the pictures — only titles and
+ * licences — so a search followed by no embed is far more likely to be the
+ * model forgetting its last step than an editorial judgement about images it
+ * cannot look at.
+ *
+ * Deliberately **`image_search` only**. A `heroImage` is harvested from every
+ * page a research turn fetches, without the model asking for anything, so
+ * showing those automatically would staple an arbitrary hero image under every
+ * research answer.
+ *
+ * One image per search, because a query like "monkeys in the wild" returns
+ * three near-identical frames from the same photographer and showing all of
+ * them looks broken rather than illustrated. `thumb_url` for the same reason
+ * the tool hint offers it: right-sized for display, and a fraction of the
+ * bytes.
+ */
+export function stripCandidates(steps: readonly SearchStep[], max = 3): ImageRequest[] {
+	const out: ImageRequest[] = [];
+	const seen = new Set<string>();
+
+	for (const step of steps) {
+		if (step.toolName !== 'image_search') continue;
+		for (const group of parseImageSearchGroups(step.result)) {
+			// Last entry is the thumbnail when the result carried one.
+			const req = group[group.length - 1];
+			if (seen.has(req.url)) continue;
+			seen.add(req.url);
+			out.push(req);
+			// One per search: the next result of this same query is almost
+			// always a near-duplicate of the one just taken.
+			break;
+		}
+		if (out.length >= max) break;
+	}
+
+	return out.slice(0, max);
+}
+
+/**
+ * Every image URL a stored conversation might display, for rehydration.
+ *
+ * Two routes, and they are addressed differently: inline images are named by
+ * URL in the message text, while strip images appear nowhere in the text and
+ * have to be recovered from the archived tool steps.
+ */
+export function rehydrationUrls(
+	messageTexts: readonly string[],
+	stepsByMessage: readonly (readonly SearchStep[])[]
+): string[] {
+	const stripUrls = stepsByMessage.flatMap((steps) => stripCandidates(steps).map((c) => c.url));
+	return [...new Set([...imageUrlsInText(messageTexts), ...stripUrls])];
+}

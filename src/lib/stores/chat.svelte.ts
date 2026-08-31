@@ -27,6 +27,7 @@ import {
 	renderMemorySection,
 	type RecalledMemory
 } from '$lib/agent/memory/recall';
+import { rehydrateImages, resolveReplyImages, sweepImages } from '$lib/images/resolve.svelte';
 import { getSettings, SETTINGS_KEY } from '$lib/stores/settings';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
@@ -279,6 +280,24 @@ async function loadConversationMessages(id: string): Promise<void> {
 	// plots) so inline content survives restart.
 	const steps = await dbLoadMessageSteps(id);
 	conv.messageSteps = steps as typeof conv.messageSteps;
+
+	// Repopulate chat images from the cache. Lookup only — never a fetch — so
+	// opening an old chat makes no network requests at all; an image the cache
+	// has evicted simply stops rendering.
+	//
+	// This lives here, and not in setActiveConversation, because startup
+	// restores the first conversation by calling this function directly. Doing
+	// it in the caller meant the conversation you land on after a restart —
+	// the only one most people look at — was the single one that never
+	// rehydrated.
+	void rehydrateImages(
+		id,
+		conv.messages.map((m) => messageText(m.content)),
+		// Strip images are referenced nowhere in the message text, so their
+		// URLs have to come back from the archived steps.
+		conv.messages.map((_m, i) => conv.messageSteps[i] ?? []),
+		() => getActiveConversationId() === id
+	);
 }
 
 async function refreshMemoryFlag(conv: Conversation): Promise<void> {
@@ -760,6 +779,10 @@ export async function deleteConversation(id: string): Promise<void> {
 	}
 	forgetChatSandboxApproval(id);
 	await dbDeleteConversation(id);
+	// The delete cascades the conversation_images links away but cannot free
+	// the bytes — that is the sweep's job, and running it now rather than at
+	// next launch is what makes "delete the chat, delete its images" immediate.
+	void sweepImages();
 }
 
 export async function renameConversation(id: string, title: string): Promise<void> {
@@ -909,7 +932,12 @@ function buildApiPrompt(
 ): { messages: ChatMessage[]; baseMessageCount: number } {
 	const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
 	let messagesForApi: ChatMessage[] = [
-		buildSystemPrompt(workingDir, { memorySection }),
+		buildSystemPrompt(workingDir, {
+			memorySection,
+			// Chat tab only. Jobs, remote guests and the shell assistant build
+			// their prompts through the same function and must not get this.
+			includeImages: getSettings().includeImages
+		}),
 		...historyMessages
 	];
 
@@ -1107,14 +1135,15 @@ function buildAgentLoopCallbacks(
 				s.id === call.id ? { ...s, installStatus: status } : s
 			);
 		},
-		onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) => {
+		onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues, heroImage) => {
 			conversation.searchSteps = markStepDone(
 				conversation.searchSteps,
 				call,
 				result,
 				thumbDataUrl,
 				artifacts,
-				lintIssues
+				lintIssues,
+				heroImage
 			);
 		},
 		onStreamChunk: (chunk) => {
@@ -1139,6 +1168,11 @@ function finalizeStreamedTurn(
 	const fetched = extractUrlsFromSteps(conversation.searchSteps);
 	const processed = processCitations(stripToolCallArtifacts(streamingContent).trim(), fetched);
 	const finalContent = processed.content;
+	// Snapshot before committing: commitMessage archives these into
+	// messageSteps and then empties the live array, so anything reading
+	// conversation.searchSteps afterwards sees nothing. Image resolution runs
+	// after the commit by design and needs the turn's image_search results.
+	const stepsThisTurn = [...conversation.searchSteps];
 
 	if (finalContent) {
 		logDebug('chat', 'onComplete commit', {
@@ -1165,6 +1199,18 @@ function finalizeStreamedTurn(
 		}
 	}
 	conversation.sourceUrls = processed.citedUrls;
+	// Fetch any images the reply asked for that this conversation's own tool
+	// results actually produced. Deliberately after commit and not awaited:
+	// the answer is already on screen, and one slow image host must not delay
+	// the turn being marked done. See images/resolve.
+	if (finalContent) {
+		void resolveReplyImages(
+			conversation.id,
+			finalContent,
+			stepsThisTurn,
+			() => getActiveConversationId() === conversation.id
+		);
+	}
 	// Arms the idle countdown; extraction itself happens minutes later, in
 	// agent/memory/, and only when memory is on.
 	noteTurnFinished(conversation.id);

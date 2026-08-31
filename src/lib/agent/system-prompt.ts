@@ -1,5 +1,10 @@
 import { type ChatMessage, messageText } from '$lib/api';
-import { getResponseFormatPrompt, getSettings, hasEnabledEmailAccount } from '$lib/stores/settings';
+import {
+	getIncludeImagesPrompt,
+	getResponseFormatPrompt,
+	getSettings,
+	hasEnabledEmailAccount
+} from '$lib/stores/settings';
 import { formatTodayLong } from '$lib/utils/format';
 
 const REVIEW_PATTERNS =
@@ -26,6 +31,15 @@ export function looksLikeFileOutputRequest(content: string): boolean {
  */
 export interface SystemPromptOptions {
 	memorySection?: string;
+	/**
+	 * Whether to add the IMAGES block. A PARAMETER for the same reason
+	 * `memorySection` is one: chat is the only surface images apply to, and
+	 * job runs, remote guests and the shell assistant all build their prompts
+	 * through here too. Passing it in means they cannot get it by accident —
+	 * the "local Chat tab only" scope is enforced by the shape of this
+	 * signature rather than by a check someone has to remember.
+	 */
+	includeImages?: boolean;
 }
 
 export function buildSystemPrompt(
@@ -34,6 +48,7 @@ export function buildSystemPrompt(
 ): ChatMessage {
 	const today = formatTodayLong();
 	const memorySection = opts.memorySection ?? '';
+	const imagesSection = opts.includeImages ? getIncludeImagesPrompt() : '';
 
 	const fsSection = workingDir
 		? `
@@ -75,7 +90,7 @@ SEARCH RULES:
 - For reviews or "best of" questions, include Reddit alongside review sites.
 
 INLINE CITATIONS:
-- Every fetch_url / research_url result starts with a "[Source: <url>]" header identifying which URL the content came from.
+- Every fetch_url / research_url result starts with a "[Source: <url>]" header identifying which URL the content came from. Some also carry an "[Image: <url>]" line — that is a picture from the page, available if an image would help.
 - Cite facts from the web inline as [source](URL). The anchor text must be the literal word "source". Example: "...the device ships with 16 GB of RAM [source](https://example.com/product-page)."
 - Each [source](URL) must point to the specific page where that claim appeared. Copy the URL from the "[Source: <url>]" header.
 - Never invent a URL. Never cite a URL from an earlier turn.
@@ -103,7 +118,7 @@ ${getSettings().customSystemPrompt.trim()}
 `
 		: ''
 }
-${getResponseFormatPrompt()}${memorySection}`
+${getResponseFormatPrompt()}${imagesSection}${memorySection}`
 	};
 }
 

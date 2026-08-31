@@ -43,6 +43,7 @@ Two things can leave your computer, and both are clearly marked in the app:
 - **Web research** — Ask a question, and it searches the web, reads the results and answers. Turn on **deep research** for a slower, more thorough answer that uses more sources.
 - **Files (you opt in)** — Pick a working directory and the model can read and write files there, and only there. It handles text, PDF, Word, Excel, PowerPoint, OpenDocument and images. ([details](#local-files))
 - **Python sandbox** — The model can write and run Python inside the app, in a sandboxed Pyodide environment. It can install packages on demand and make HTTP requests. Use it to make charts, do maths, or build documents. It asks before each run, and it is **off by default** (Settings → Agent → Python Sandbox). Works best with a larger model.
+- **Pictures in answers (off by default)** — Turn on **Include images** in Settings → General and answers about visual things — a place, an animal, an object, a person — come with one to three relevant pictures. They come from Openverse, Wikimedia Commons and Wikipedia, and each one shows who made it and under what licence. Haruspex downloads them itself, so the site never sees your computer, and it keeps them on this device. Small models often look for a picture and then forget to put it in the answer, so when that happens the pictures it found appear under the answer instead of beside the paragraph — you still get them.
 - **Vision** — Show it an image or a scanned PDF and it can describe or read it.
 - **Voice** — Speak your question with push-to-talk, and have answers read aloud.
 - **Memory (off by default)** — When you turn it on, Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". All of it stays on this device — the text never leaves it. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](#memory))
@@ -309,6 +310,16 @@ When deep research is on, you are using Auto, and you have no Brave API key, the
 Code mode, guided planning, autonomous coding, audit jobs and the Python sandbox all ask the model to read and write code. The 4B and 9B models we recommend for 8 GB cards are good at research and weak at coding, so on those models these features will make mistakes, get stuck, or produce code that does not run.
 
 They are still included because they work well on a 24 GB card with Qwen 3.6 35B-A3B or Qwen 3.8 27B, and because you can point any of them at a bigger model elsewhere. Set your expectations by your hardware.
+
+### Image coverage is thin for new and specific things
+
+The image sources are strong on places, animals, plants, landmarks, historical
+figures and general subjects, and weak on very recent products and events. If
+no good picture exists, the answer simply arrives without one.
+
+On the 9B the model also sometimes picks a loosely related image, or puts one
+in an answer that did not need it. Turning **Include images** off in Settings →
+General stops it volunteering; asking for a picture directly still works.
 
 ### Asking for a file often needs a second message
 
