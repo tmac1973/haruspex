@@ -4,35 +4,17 @@ Click this screenshot to watch the explainer video:
 
 [![Watch the video](https://img.youtube.com/vi/VT-gGdOAonA/maxresdefault.jpg)](https://youtu.be/VT-gGdOAonA)
 
-Haruspex is a desktop AI assistant that runs on your own computer. It works on Linux, Windows and macOS. There is no account to create and no telemetry. Your conversations and the model's answers stay on your device.
-
-It began as a web researcher, and it is still very good at that: ask a question and it searches the web, reads the pages and writes you an answer. But it does more than research now. It can also:
-
-- read and write documents in a folder you choose (PDF, Word, Excel, PowerPoint, OpenDocument, images)
-- write and run Python inside the app
-- help you in a real terminal, and run commands for you if you let it
-- read your email over IMAP
-- run saved jobs on a schedule, unattended
-- turn an idea into a written plan, and then write the code for that plan
-- look at images and scanned documents
-- listen to you speak, and read its answers out loud
-- remember facts from one conversation to the next
-- serve a small chat page to other devices on your home network
-
-Two things can leave your computer, and both are clearly marked in the app:
-
-- **Web searches.** The search words you send go to a search engine. You can route them through a proxy or your own SearXNG instance.
-- **OpenRouter.** This is an optional cloud backend. If you turn it on, your prompts go to OpenRouter's servers instead of staying local. It is off by default.
+Haruspex is a desktop AI researcher and coding tool that runs entirely local by default. It works on Linux, Windows and macOS. There is no account to create and no telemetry. Your conversations and the model's answers stay on your device. You do not need a separate inference server (ollama, LMStudio, Lemonade, vLLM, etc...) as Haruspex will default to automatically downloading an appropriate model for your system and will run it locally using it's own managed llama.cpp. You can turn this off and use a remote model if you choose though.
 
 ## Goals
 
 - **Privacy** — Your conversations and the model run on your machine. Searches do hit the web, but HTTP proxies and SearXNG are supported so you can hide where they come from.
 - **Open Source / Open Weight** — Open weight models mean no monthly bill and no vendor lock-in.
-- **Consumer Hardware** — We target normal consumer graphics cards, from 8 GB cards up to 32 GB cards, and we do our best on cards with less than 8 GB and on integrated graphics too. The app looks at your hardware on first run and picks a model that fits.
+- **Consumer Hardware** — We target normal consumer graphics, from integrated graphics up to 32 GB discrete GPUs. The app looks at your hardware on first run and suggests a model that fits.
 
-  On 8 GB or less you get Qwen 3.5 9B (or Qwen 3.5 4B if memory is tight). These small models are remarkably capable for their size and they do research very well, which is the main job of the Chat tab. They are simply not good at writing code.
+  On 8 GB or less you get Qwen 3.5 9B (or Qwen 3.5 4B if memory is tight). These small models are remarkably capable for their size and they do research very well, though they don't write code very well.
 
-  So the coding features — Code mode in the Shell tab, guided planning, autonomous coding, audit jobs, and the Python sandbox in the Chat tab — will work much better with a bigger model. We recommend **Qwen 3.6 35B-A3B** or **Qwen 3.8 27B**, which need about 24 GB of VRAM. You can also point those features at a bigger model on another machine, or at OpenRouter.
+  The coding features — Code mode in the Shell tab, guided planning, autonomous coding, audit jobs, and the Python sandbox in the Chat tab — will work much better with a bigger model. We recommend **Qwen 3.6 35B-A3B** or **Qwen 3.8 27B**, which need about 24 GB of VRAM. You can also point those features at a bigger model on another machine, or at OpenRouter (though you lose the privacy of running locally).
 
 - **Human Enablement, Not Human Replacement** — Many projects are building agents that replace people. This is not one of them. Haruspex is meant to help you learn, create and fix things, with you still in the chair.
 
@@ -41,13 +23,16 @@ Two things can leave your computer, and both are clearly marked in the app:
 ### Chat
 
 - **Web research** — Ask a question, and it searches the web, reads the results and answers. Turn on **deep research** for a slower, more thorough answer that uses more sources.
-- **Files (you opt in)** — Pick a working directory and the model can read and write files there, and only there. It handles text, PDF, Word, Excel, PowerPoint, OpenDocument and images. ([details](#local-files))
+- **Files (you opt in)** — Pick a working directory in the chat tab and the model can read and write files there, and only there. It handles text, PDF, Word, Excel, PowerPoint, OpenDocument and images. Great for creating reports from your research. ([details](#local-files))
 - **Python sandbox** — The model can write and run Python inside the app, in a sandboxed Pyodide environment. It can install packages on demand and make HTTP requests. Use it to make charts, do maths, or build documents. It asks before each run, and it is **off by default** (Settings → Agent → Python Sandbox). Works best with a larger model.
 - **Pictures in answers (off by default)** — Turn on **Include images** in Settings → General and answers about visual things — a place, an animal, an object, a person — come with one to three relevant pictures. They come from Openverse, Wikimedia Commons and Wikipedia, and each one shows who made it and under what licence. Haruspex downloads them itself, so the site never sees your computer, and it keeps them on this device. Small models often look for a picture and then forget to put it in the answer, so when that happens the pictures it found appear under the answer instead of beside the paragraph — you still get them.
 - **Vision** — Show it an image or a scanned PDF and it can describe or read it.
 - **Voice** — Speak your question with push-to-talk, and have answers read aloud.
 - **Memory (off by default)** — When you turn it on, Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". All of it stays on this device — the text never leaves it. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](#memory))
 - **Open in shell** — If an answer ends with "run this command", press the `>_` button to open the whole conversation in a new Shell tab, where the commands become buttons you can run.
+- **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](#remote-access))
+- **Email (off by default, read-only)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. It can never send. ([details](#email-integration))
+- **Conversations are saved** — Chat history lives in a local SQLite database and survives restarts.
 
 ### Shell
 
@@ -66,14 +51,11 @@ Audit, guided planning and autonomous coding are coding-focused. They need a lar
 
 - **Local (default)** — A bundled `llama-server` runs the model on your GPU. Vulkan on Linux and Windows, Metal on macOS.
 - **Your own server** — Point Haruspex at any OpenAI-compatible server you already run (llama.cpp, LM Studio, Ollama, vLLM and others). ([details](#remote-inference-server))
-- **OpenRouter (cloud, off by default)** — ⚠️ **This one is not local and may not be private.** Your prompts leave your device and go to OpenRouter's servers, under whatever privacy policy OpenRouter and the model provider have. We include it anyway because some people want access to large frontier models — especially for the coding features — and would rather make that trade themselves. Add your API key in Settings → Inference and pick from around 300 models. It stays off until you turn it on, and the app labels it clearly while it is on. Local inference is still the recommended setup.
+- **OpenRouter (cloud, off by default)** — ⚠️ **This one is not local and may not be private.** Your prompts leave your device and go to OpenRouter's servers, under whatever privacy policy OpenRouter and the model provider have. We include it anyway because some people want access to large frontier models — especially for the coding features —. Add your API key in Settings → Inference and pick from around 300 models. It stays off until you turn it on, and the app labels it clearly while it is on. Local inference is still the recommended setup for privacy.
 
 ### Other
 
-- **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](#remote-access))
-- **Email (off by default, read-only)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. It can never send. ([details](#email-integration))
 - **First-run wizard** — Checks your hardware and downloads a model that fits.
-- **Conversations are saved** — Chat history lives in a local SQLite database and survives restarts.
 - **Log viewer** — Copy the logs of each background process from the toolbar, so bug reports are easy.
 - **Dark mode** — Follows your system, or set it yourself.
 
@@ -148,12 +130,12 @@ The first-run wizard picks one of these for you. You can change it later in Sett
 
 **Integrated graphics** (Intel HD/UHD/Iris, AMD Vega/Radeon Graphics) will work, but much more slowly. Recent AMD APUs do better than older Intel iGPUs, and both are well behind a discrete card.
 
-**Apple Silicon** Macs use unified memory and Metal, so even a base M1 with 8 GB is a good experience.
+**Apple Silicon** Macs use unified memory and Metal, so even a base M1 with 8 GB should work, though more recent "Pro" Apple CPUs will be much faster.
 
-**If you want the coding features on a small card:** point Haruspex at a bigger model on another machine ([remote inference](#remote-inference-server)), or use [OpenRouter](#where-the-model-runs) and accept that those prompts leave your device.
+**If you want the coding features but have a less capable local GPU:** point Haruspex at a bigger model on another machine ([remote inference](#remote-inference-server)), or use [OpenRouter](#where-the-model-runs) and accept that those prompts leave your device.
 
 > [!WARNING]
-> **Haruspex uses your GPU.** While it is running, games and other GPU-heavy programs will be slower. Close Haruspex before you play.
+> **Haruspex uses your GPU.** While it is running, games and other GPU-heavy programs will be impacted, especially if you don't have enough VRAM to hold both the llm and your other programs resources. Close Haruspex before you play.
 
 ## Keyboard shortcuts
 
@@ -182,11 +164,11 @@ The Jobs tab runs saved prompts without you watching — on a schedule or when y
 There are four kinds of job:
 
 - **Research** — A list of steps that run in order. Each step is a fresh conversation that receives the previous step's output, so you can chain "search → summarise → write a report" into one run. Each step can turn on deep research on its own.
-- **Audit** — Runs one prompt many times independently, groups the findings, checks each group against the source, and writes one report sorted into confirmed / refuted / uncertain. Running it many times cancels out the noise a small model produces in any single run. You can set the number of runs, the step budget per run, a read-only tool restriction, your own instructions, and an output file.
+- **Audit** — Used to audit code bases. Runs one prompt many times independently, groups the findings, checks each group against the source, and writes one report sorted into confirmed / refuted / uncertain. Running it many times cancels out the noise a small model produces in any single run. You can set the number of runs, the step budget per run, a read-only tool restriction, your own instructions, and an output file.
 - **Guided planning** — Turns a rough idea into a written project overview and a plan split into phases, in the right dependency order. It asks you one question at a time and reads your codebase as it goes. It writes an `overview.md` and `phase-NN-*.md` files, and stops at checkpoints so you can review or change things. A separate reviewer pass then looks for missing steps and decisions still marked "TBD". It only plans — it never writes code. A long run picks up where it left off if the app restarts.
 - **Autonomous coding** — Takes a folder of plan files (usually from a guided planning job), asks you about every open decision up front, then writes the code unattended: one small step at a time, each one checked and committed, with a deeper check at the end of every phase. Each run gets its own git branch. It finishes by writing a report of what it built, what is blocked and why, and what comes next.
 
-**These job types work much better with a bigger model.** Audit, guided planning and autonomous coding all involve reading and writing code, which is exactly where the 4B and 9B models are weakest. Give the job its own model if your local one is small.
+**These job types work much better with a bigger model.** Audit, guided planning and autonomous coding all involve reading and writing code, which is where the 4B and 9B models are weakest. You can still use these jobs with a small model but don't expect great results.
 
 **Scheduling.** Run a job by hand, or on a preset (hourly / daily / weekly) or a fixed interval while the app is open. While a job is running, Haruspex keeps your machine from going to sleep. Autonomous coding cannot be scheduled, because it starts by asking you questions.
 
@@ -232,7 +214,7 @@ Things to know before you turn it on:
 
 - Their conversations are saved on your machine and show up in your sidebar.
 - The traffic is not encrypted, so only use this on networks you trust.
-- On Windows, the firewall asks for permission the first time. Say yes, or nobody can connect.
+- On Windows, the firewall asks for permission the first time. Say yes, or nobody can connect. On Linux and Mac depending on your system settings you may need to manually open up the specified port in the system firewall.
 - You can see who is connected, disconnect anyone, and rotate the link, which cuts off everybody using the old one.
 
 ## Remote inference server
@@ -263,7 +245,7 @@ Besides your own servers, Haruspex supports [OpenRouter](https://openrouter.ai) 
 
 ⚠️ **OpenRouter is a cloud service. Your prompts leave your computer** and are handled by OpenRouter and by whichever model provider you picked, under their privacy policies, not ours. This is the one part of Haruspex that is not private by design.
 
-We include it because some people want a frontier model — usually for the coding features, where small local models struggle — and would rather decide that trade-off for themselves. It is off until you turn it on, and the app shows clearly when it is in use. Running locally is still the recommended setup.
+We include it because some people want a frontier model — usually for the coding features, where small local models struggle — and would rather decide that trade-off for themselves. It is off until you turn it on, and the app shows clearly when it is in use. Running locally is still the recommended setup if you value privacy.
 
 ## Email integration
 
@@ -321,11 +303,11 @@ On the 9B the model also sometimes picks a loosely related image, or puts one
 in an answer that did not need it. Turning **Include images** off in Settings →
 General stops it volunteering; asking for a picture directly still works.
 
-### Asking for a file often needs a second message
+### Smaller models need multiple prompts in series to do complex tasks
 
-If you ask for something in one message — for example _"Create a PDF report about X"_ — the model will usually do the research and write a good answer in the chat, but **not** actually create the file. Sometimes it even says it created a file that does not exist.
+If you ask Qwen 3.5 9b to do 2 things in one message — for example _"Research X and Create a PDF report about it"_ — the model will usually do the research and write a good answer in the chat, but **not** actually create the file. Sometimes it even says it created a file that does not exist.
 
-This is how small local models behave: after a long research turn, they prefer to finish by writing prose rather than making one more tool call. Haruspex pushes back on this with direct tool descriptions, reminders during the turn, and a recovery pass when a turn ends without the expected file, but it does not catch every case.
+This is how small local models behave: after a long research turn, they prefer to finish by writing prose rather than making one more tool call. Haruspex pushes back on this with direct tool descriptions, reminders during the turn, and a recovery pass when a turn ends without the expected file, but it does not catch every case. Larger models typically do not suffer from this issue.
 
 **What to do:** just ask again — _"write that to a PDF"_. The second message almost always works, because the content is already in the conversation.
 
