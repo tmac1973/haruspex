@@ -32,12 +32,10 @@ pub enum MtpSource {
     /// to be downloaded alongside the weights and passed via `--model-draft`,
     /// and its weights are VRAM *on top of* `size_bytes`.
     ///
-    /// No lineup model uses this yet — it exists so that adding one is a
-    /// registry edit rather than a code change, and so `fixed_vram_bytes`
-    /// stops under-counting the moment one appears. The download, path
-    /// resolution, and `--model-draft` wiring are all live; only the data is
-    /// missing. Tests construct it.
-    #[allow(dead_code)]
+    /// Gemma 4 12B is the one lineup model that uses this. The drafter is
+    /// fetched with the weights, but a model downloaded before it was wired
+    /// up won't have the file — `find_mtp_draft_for_model` then returns
+    /// `None` and the server starts without the flag rather than failing.
     Sibling {
         filename: String,
         url: String,
@@ -179,6 +177,18 @@ const GEMMA4_12B_MMPROJ_SIZE: u64 = 175_115_840;
 const GEMMA4_12B_MMPROJ_SHA256: &str =
     "91f086971e56d7a7d8d39e271873fccdb49541bd259d6e02c401a4f1cb7a219e";
 
+// The Gemma 4 12B MTP drafter, the one sibling head in the lineup. Unsloth
+// publishes three precisions under `MTP/`; Q8_0 is both the smallest and the
+// one mirrored at the repo root for `-hf` auto-discovery, which we can't use
+// (we pass local `--model` paths), so the explicit `MTP/` path is what gets
+// downloaded. A drafter is quality-tolerant — a bad draft token is rejected
+// and costs throughput, not correctness — so on a tier this VRAM-tight the
+// 465 MB Q8_0 is the right trade over the 862 MB F16/BF16.
+const GEMMA4_12B_MTP_URL: &str = "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/main/MTP/mtp-gemma-4-12b-it-Q8_0.gguf";
+const GEMMA4_12B_MTP_SIZE: u64 = 465_109_248;
+const GEMMA4_12B_MTP_SHA256: &str =
+    "145db9094bc0f85f1701e255a2ed216dcc9800fc8bc8631ad00905b456bd451b";
+
 /// sha256 for the mmproj at `url`. Keyed by URL rather than stored per
 /// registry entry because several models share one projector file.
 fn mmproj_sha256_for_url(url: &str) -> Option<&'static str> {
@@ -215,6 +225,14 @@ fn qwen_38_27b_mmproj_filename() -> String {
 
 fn gemma4_12b_mmproj_filename() -> String {
     "Gemma4-12B-mmproj-F16.gguf".to_string()
+}
+
+/// Local name for the drafter. Normalised the same way as the projectors
+/// above: the models dir is flat, and the upstream `MTP/` prefix is lost on
+/// download, so the file is stored under a name that says which model it
+/// belongs to.
+fn gemma4_12b_mtp_filename() -> String {
+    "Gemma4-12B-MTP-Q8_0.gguf".to_string()
 }
 
 // Per-token KV-cache growth (bytes, q8_0) by model shape. Full derivation in
@@ -320,10 +338,17 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_url: Some(GEMMA4_12B_MMPROJ_URL.to_string()),
             mmproj_size_bytes: Some(GEMMA4_12B_MMPROJ_SIZE),
             // Verified per file: the main GGUF carries no `blk.N.nextn.*`
-            // tensors. Unsloth ships a 465 MB drafter separately, which
-            // `MtpSource::Sibling` exists for and which would fit inside this
-            // tier's headroom — not wired up until it's been measured.
-            mtp: MtpSource::None,
+            // tensors, so the head comes from Unsloth's separate drafter —
+            // the lineup's only sibling. Costs `MTP_OVERHEAD_BYTES` for the
+            // draft context plus its own 465 MB of weights when the user has
+            // MTP on, which this tier absorbs: 262144 either way, with the
+            // ~2.2 GB spare above dropping to ~1.2 GB.
+            mtp: MtpSource::Sibling {
+                filename: gemma4_12b_mtp_filename(),
+                url: GEMMA4_12B_MTP_URL.to_string(),
+                size_bytes: GEMMA4_12B_MTP_SIZE,
+                sha256: GEMMA4_12B_MTP_SHA256.to_string(),
+            },
             kv_bytes_per_token: KV_PER_TOKEN_GEMMA4_12B,
         },
         // 24 GB VRAM — sparse MoE, the recommended large model
@@ -599,6 +624,15 @@ pub fn mtp_source_for(filename: &str) -> MtpSource {
         .unwrap_or(MtpSource::None)
 }
 
+/// Whether `filename` is a sibling MTP drafter belonging to some registry
+/// entry. Matched against the registry rather than by a substring on the
+/// name, so a user's own model that happens to contain "mtp" isn't hidden.
+fn is_sibling_drafter(filename: &str) -> bool {
+    full_registry()
+        .iter()
+        .any(|m| matches!(&m.mtp, MtpSource::Sibling { filename: f, .. } if f == filename))
+}
+
 // --- Context-size recommendation ----------------------------------------
 //
 // Qwen 3.5 / 3.6 are *hybrid* attention models: per their config.json only
@@ -838,10 +872,14 @@ impl ModelManager {
         if let Ok(entries) = std::fs::read_dir(&self.models_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                // Skip partial downloads and mmproj files (they are not standalone models)
+                // Skip partial downloads, mmproj files, and MTP drafters —
+                // none are standalone models. `read_dir` order is arbitrary,
+                // so without the drafter check this could hand back a 465 MB
+                // draft head as "the model" and start the server on it.
                 if name.ends_with(".gguf")
                     && !name.ends_with(".partial")
                     && !name.contains("mmproj")
+                    && !is_sibling_drafter(&name)
                 {
                     return Some(entry.path());
                 }
@@ -1563,6 +1601,14 @@ mod tests {
             if let (Some(url), Some(size)) = (model.mmproj_url, model.mmproj_size_bytes) {
                 targets.push((url, size));
             }
+            // A drafter that 404s or changed size fails the download the same
+            // way the weights would, so it needs the same guard.
+            if let MtpSource::Sibling {
+                url, size_bytes, ..
+            } = &model.mtp
+            {
+                targets.push((url.clone(), *size_bytes));
+            }
             for (url, expected) in targets {
                 if !checked.insert(url.clone()) {
                     continue; // several models share one projector
@@ -1654,37 +1700,82 @@ mod tests {
         }
     }
 
-    /// Only the dense Qwen 3.8 27B quants ship an MTP head. Verified by
-    /// reading the GGUF metadata of every lineup file for `blk.N.nextn.*`
-    /// tensors: the 9B quants, the 3.6 27B, the 35B-A3B and Gemma 4 26B-A4B
-    /// carry none, even though several of their HF configs declare
-    /// `mtp_num_hidden_layers` / `nextn_predict_layers`. A blanket
-    /// `--spec-type draft-mtp` would fail the server's start on all of them.
+    /// Where each lineup model's MTP head comes from. Verified by reading the
+    /// GGUF metadata of every lineup file for `blk.N.nextn.*` tensors: only
+    /// the dense Qwen 3.8 27B quants carry one inline. The 9B quants, the 3.6
+    /// 27B and the 35B-A3B carry none even though several of their HF configs
+    /// declare `mtp_num_hidden_layers` / `nextn_predict_layers`, so a blanket
+    /// `--spec-type draft-mtp` would fail the server's start on them.
     ///
-    /// Gemma 4 26B-A4B does publish a drafter, but as a *separate* file that
-    /// doesn't fit alongside the weights at the 16 GB tier — see its registry
-    /// entry.
+    /// Gemma 4 12B carries none inline either, but Unsloth publishes a
+    /// drafter as a separate file that fits inside the 16 GB tier's headroom
+    /// — the lineup's one `Sibling`.
     #[test]
-    fn only_the_dense_38_declares_an_mtp_head() {
+    fn mtp_head_source_is_declared_per_file() {
         const BUNDLED: &[&str] = &[
             "Qwen3.8-27B-UD-IQ4_XS",
             "Qwen3.8-27B-UD-Q4_K_XL",
             "Qwen3.8-27B-IQ4_NL", // legacy, but the head is still in the file
         ];
+        const SIBLING: &[&str] = &["gemma-4-12b-it-UD-Q6_K_XL"];
         for model in full_registry() {
-            let expected = if BUNDLED.contains(&model.id.as_str()) {
-                MtpSource::Bundled
+            let id = model.id.as_str();
+            if BUNDLED.contains(&id) {
+                assert_eq!(model.mtp, MtpSource::Bundled, "{id} should be bundled");
+            } else if SIBLING.contains(&id) {
+                assert!(
+                    matches!(model.mtp, MtpSource::Sibling { .. }),
+                    "{id} should carry a sibling drafter"
+                );
             } else {
-                MtpSource::None
-            };
-            assert_eq!(model.mtp, expected, "unexpected mtp source on {}", model.id);
+                assert_eq!(model.mtp, MtpSource::None, "unexpected mtp source on {id}");
+            }
         }
         assert!(mtp_source_for("Qwen3.8-27B-UD-IQ4_XS.gguf").is_supported());
+        assert!(mtp_source_for("gemma-4-12b-it-UD-Q6_K_XL.gguf").is_supported());
         assert!(!mtp_source_for("Qwen3.6-27B-IQ4_NL.gguf").is_supported());
         assert!(!mtp_source_for("Qwen3.5-9B-IQ4_NL.gguf").is_supported());
-        assert!(!mtp_source_for("gemma-4-12b-it-UD-Q6_K_XL.gguf").is_supported());
         // A GGUF the user dropped in themselves: we know nothing about it.
         assert!(!mtp_source_for("Some-Imported-Model.gguf").is_supported());
+    }
+
+    /// The drafter is a whole extra file in the 16 GB tier's headroom, so the
+    /// thing to guard is that turning MTP on doesn't quietly cost a rung of
+    /// context — the trade that made this tier pick a 12B in the first place.
+    #[test]
+    fn the_gemma_drafter_fits_without_costing_context() {
+        let id = "gemma-4-12b-it-UD-Q6_K_XL";
+        let vram = 16303 * 1024 * 1024u64; // a "16 GB" card, reported short
+        let on = context_ceiling_for(id, vram, FitOptions::with_mtp(true)).unwrap();
+        let off = context_ceiling_for(id, vram, FitOptions::default()).unwrap();
+        assert_eq!(off, 262144, "the 12B should reach the top of the ladder");
+        assert_eq!(on, off, "the drafter must not cost a rung of context");
+
+        // And it is genuinely being charged for — an equality that held
+        // because the weights were never counted would be worthless.
+        let MtpSource::Sibling { size_bytes, .. } =
+            mtp_source_for("gemma-4-12b-it-UD-Q6_K_XL.gguf")
+        else {
+            panic!("the 12B should carry a sibling drafter");
+        };
+        assert_eq!(size_bytes, GEMMA4_12B_MTP_SIZE);
+        let registry = full_registry();
+        let model = registry.iter().find(|m| m.id == id).unwrap();
+        assert_eq!(
+            fixed_vram_bytes(model, FitOptions::with_mtp(true))
+                - fixed_vram_bytes(model, FitOptions::default()),
+            MTP_OVERHEAD_BYTES + GEMMA4_12B_MTP_SIZE
+        );
+    }
+
+    /// A drafter sitting in the models dir is not a model. `read_dir` order is
+    /// arbitrary, so first-run autodetect could otherwise start the server on
+    /// a 465 MB draft head.
+    #[test]
+    fn drafter_files_are_not_mistaken_for_models() {
+        assert!(is_sibling_drafter(&gemma4_12b_mtp_filename()));
+        assert!(!is_sibling_drafter("gemma-4-12b-it-UD-Q6_K_XL.gguf"));
+        assert!(!is_sibling_drafter("My-Own-mtp-Finetune.gguf"));
     }
 
     /// llama-server reserves a second context for the MTP draft before fitting

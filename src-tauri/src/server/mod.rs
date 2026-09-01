@@ -132,6 +132,20 @@ impl ServerConfig {
             if let Some(draft) = self.mtp_draft_path.as_ref() {
                 args.push("--model-draft".to_string());
                 args.push(draft.clone());
+                // `--spec-draft-ngl` defaults to `auto`, which decides how
+                // much of the drafter to keep in VRAM *after* the target and
+                // its KV cache have claimed theirs. Pin it to `all`: a
+                // partially offloaded drafter still produces tokens, so the
+                // host round-trips are invisible and just read as "MTP bought
+                // nothing".
+                args.push("--spec-draft-ngl".to_string());
+                args.push("all".to_string());
+                // 4 is what Unsloth's drafter card recommends; llama.cpp
+                // defaults to 3. Scoped to the sibling path because that's
+                // where the recommendation comes from — the bundled-head 27B
+                // has no measurement behind changing it.
+                args.push("--spec-draft-n-max".to_string());
+                args.push("4".to_string());
             }
             // The type name is `draft-mtp` — a bare `mtp` is rejected as an
             // unknown speculative type.
@@ -967,7 +981,20 @@ pub async fn start_server(
     let mtp_usable = match crate::models::mtp_source_for(&filename) {
         crate::models::MtpSource::None => false,
         crate::models::MtpSource::Bundled => true,
-        crate::models::MtpSource::Sibling { .. } => draft_path.is_some(),
+        crate::models::MtpSource::Sibling {
+            filename: draft, ..
+        } => {
+            if draft_path.is_none() {
+                // Happens to anyone who downloaded the weights before the
+                // drafter was wired into the registry. Silence here reads as
+                // "MTP made no difference", so say it out loud in the logs.
+                warn!(
+                    "MTP drafter {draft} is not in the models dir — starting without \
+                     speculative decoding. Re-run the download for {filename} to fetch it."
+                );
+            }
+            draft_path.is_some()
+        }
     };
     // Both have to agree: the user hasn't turned it off AND this GGUF
     // actually has a head to draft from.
@@ -1234,6 +1261,19 @@ mod tests {
             .expect("--model-draft present for a sibling drafter");
         assert_eq!(args[draft + 1], "/models/mtp-draft.gguf");
         assert!(args.iter().any(|a| a == "draft-mtp"));
+
+        // The drafter's weights belong on the GPU, and at the depth its
+        // publisher recommends rather than llama.cpp's default of 3.
+        let ngl = args
+            .iter()
+            .position(|a| a == "--spec-draft-ngl")
+            .expect("--spec-draft-ngl pinned for a sibling drafter");
+        assert_eq!(args[ngl + 1], "all");
+        let nmax = args
+            .iter()
+            .position(|a| a == "--spec-draft-n-max")
+            .expect("--spec-draft-n-max set for a sibling drafter");
+        assert_eq!(args[nmax + 1], "4");
     }
 
     /// A bundled head drafts against the target model itself — passing a
@@ -1247,6 +1287,11 @@ mod tests {
         let args = cfg.build_args("/models/target.gguf");
         assert!(!args.iter().any(|a| a == "--model-draft"));
         assert!(args.iter().any(|a| a == "draft-mtp"));
+        // The draft-tuning flags ride with the sibling drafter, not with MTP
+        // in general: there is no separate drafter here to offload, and no
+        // measurement behind moving this model off llama.cpp's defaults.
+        assert!(!args.iter().any(|a| a == "--spec-draft-ngl"));
+        assert!(!args.iter().any(|a| a == "--spec-draft-n-max"));
     }
 
     /// The MTP fallback clears `mtp`; the draft path must go quiet with it
