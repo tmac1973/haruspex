@@ -344,6 +344,7 @@
 				cwd={session.initialCwd}
 				onReady={onTerminalReady}
 				onSelectionChange={(has) => (hasSelection = has)}
+				isInputBlocked={() => session.terminalInputBlocked}
 			/>
 		</div>
 	</div>

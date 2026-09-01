@@ -24,6 +24,12 @@
 		// points. Omit for $HOME (the Rust side falls back there, and also for
 		// a path that no longer exists).
 		cwd?: string | null;
+		/**
+		 * Swallow user keystrokes while true. A function, not a value, so the
+		 * long-lived `onData` handler reads the live state each keypress rather
+		 * than a value captured when it was wired.
+		 */
+		isInputBlocked?: () => boolean;
 	}
 
 	export interface TerminalHandle {
@@ -51,7 +57,13 @@
 		snapshotImage: () => string | null;
 	}
 
-	const { onReady, onSelectionChange, attachSessionId, cwd = null }: Props = $props();
+	const {
+		onReady,
+		onSelectionChange,
+		attachSessionId,
+		cwd = null,
+		isInputBlocked
+	}: Props = $props();
 
 	let container: HTMLDivElement;
 	let term: Terminal | null = null;
@@ -316,13 +328,19 @@
 		// resizes flow to the new PTY.
 		onDataDisposable = t.onData((data) => {
 			if (sessionId == null) return;
-			// NOTE: we deliberately do NOT block input while the agent is driving
-			// the PTY. The agent's command is the foreground process, so the user's
-			// keystrokes reach *its* stdin — which is exactly what's needed to
-			// answer an interactive prompt (a sudo password, a [y/N], git creds).
-			// They can't start a competing shell command (the shell isn't reading
-			// input while a command runs), and output capture is marker-based, so
-			// it isn't corrupted. The "agent running" badge signals the takeover.
+			// Input is blocked ONLY while a Code-mode turn is between commands —
+			// see `terminalInputBlocked`. There the shell sits at a prompt, so a
+			// stray `cd` retargets the agent's next command and a half-typed line
+			// concatenates onto it (pty-exec pastes `<command>\n`).
+			//
+			// While the agent's command is actually RUNNING we still let input
+			// through, deliberately: that command is the foreground process, so
+			// the user's keystrokes reach *its* stdin — the only way to answer a
+			// sudo password, a [y/N] or git creds. They can't start a competing
+			// shell command (the shell isn't reading input while a command runs),
+			// and output capture is marker-based, so it isn't corrupted. The
+			// "agent running" badge signals that takeover.
+			if (isInputBlocked?.()) return;
 			invoke('shell_write', { sessionId, data }).catch((e) =>
 				console.error('shell_write failed', e)
 			);
@@ -456,7 +474,13 @@
 </script>
 
 <div class="terminal-host" bind:this={container}>
-	{#if isPtyBusy(sessionId)}
+	{#if isInputBlocked?.()}
+		<!-- Silently dropping keystrokes reads as a frozen app, which is worse
+		     than the conflict being prevented. Say what is happening. -->
+		<div class="agent-running-badge paused" title="The coding agent is working in this shell">
+			⌨ input paused — agent is working
+		</div>
+	{:else if isPtyBusy(sessionId)}
 		<div class="agent-running-badge" title={ptyBusyCommand(sessionId) ?? ''}>
 			⏳ agent running: <span class="cmd">{ptyBusyCommand(sessionId)}</span>
 		</div>
@@ -471,6 +495,12 @@
 		   in both app themes. */
 		background: #0c0b0a;
 		padding: 4px 0 0 4px;
+	}
+
+	.agent-running-badge.paused {
+		background: var(--accent-soft);
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 
 	.agent-running-badge {

@@ -251,3 +251,39 @@ export async function dbReplaceMessages(
 		logDebug('db', 'dbReplaceMessages failed', { conversationId, error: String(e) });
 	}
 }
+
+// --- Code-mode shell threads ---------------------------------------------
+// Keyed by working directory rather than by shell id; see
+// `shell/codeSession.ts` for the payload shape and the rationale.
+//
+// All three swallow their errors like the rest of this module: persistence is
+// a convenience layered over an in-memory session, and a failed write must
+// never take down the turn that triggered it.
+
+export async function dbSaveShellSession(cwd: string, thread: string): Promise<void> {
+	if (!available) return;
+	try {
+		await invoke('db_save_shell_session', { cwd, thread });
+	} catch (e) {
+		logDebug('db', 'dbSaveShellSession failed', { cwd, error: String(e) });
+	}
+}
+
+export async function dbLoadShellSession(cwd: string): Promise<string | null> {
+	if (!available) return null;
+	try {
+		return await invoke<string | null>('db_load_shell_session', { cwd });
+	} catch (e) {
+		logDebug('db', 'dbLoadShellSession failed', { cwd, error: String(e) });
+		return null;
+	}
+}
+
+export async function dbDeleteShellSession(cwd: string): Promise<void> {
+	if (!available) return;
+	try {
+		await invoke('db_delete_shell_session', { cwd });
+	} catch (e) {
+		logDebug('db', 'dbDeleteShellSession failed', { cwd, error: String(e) });
+	}
+}

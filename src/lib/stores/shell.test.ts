@@ -11,7 +11,10 @@ const runShellTurn = vi.hoisted(() => vi.fn());
 vi.mock('$lib/shell/runShellTurn', () => ({ runShellTurn }));
 
 vi.mock('$lib/shell/system-prompt', () => ({
-	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' })
+	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' }),
+	// Code mode picks this builder instead; needed by the persistence tests,
+	// which all run with codeMode on.
+	buildShellCodeSystemPrompt: () => ({ role: 'system', content: 'code-sys' })
 }));
 
 vi.mock('$lib/stores/settings', () => ({
@@ -27,6 +30,13 @@ vi.mock('$lib/stores/settings', () => ({
 	getActiveLocalModelFilename: () => '',
 	getApiKeyValue: () => undefined
 }));
+
+const dbMock = vi.hoisted(() => ({
+	dbSaveShellSession: vi.fn(async () => {}),
+	dbLoadShellSession: vi.fn<(cwd: string) => Promise<string | null>>(async () => null),
+	dbDeleteShellSession: vi.fn(async () => {})
+}));
+vi.mock('$lib/stores/db', () => dbMock);
 
 vi.mock('$lib/agent/tools', () => ({ getDisplayLabel: () => 'tool' }));
 vi.mock('$lib/agent/context-budget', () => ({ describeContextManaged: () => 'managed' }));
@@ -50,6 +60,7 @@ import {
 	isSessionApproved,
 	resetSessionApproval
 } from '$lib/stores/codeCommandApproval.svelte';
+import { setPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
 
 beforeEach(() => {
 	// Drain the module-level registry between tests.
@@ -512,5 +523,274 @@ describe('detach / re-attach', () => {
 		const second = reattachShellSession(99);
 		expect(second).toBeNull();
 		expect(getShellSessions().filter((s) => s.attachPtyId === 99)).toHaveLength(1);
+	});
+});
+
+/**
+ * Code-mode threads persist so a coding session survives a crash or power
+ * loss. The shell tab is otherwise session-scoped on purpose, so the guards
+ * on WHEN a restore is allowed are the part worth pinning down.
+ */
+/**
+ * Typing into the shell mid-turn can corrupt the agent's next command, but the
+ * block has to be narrow: while the agent's command is actually running, the
+ * user's keystrokes are the only way to answer a sudo/[y/N]/credential prompt.
+ */
+describe('terminal input blocking', () => {
+	function codeSession() {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		s.bindSession({ sessionId: 42 } as never);
+		return s;
+	}
+
+	afterEach(() => setPtyBusy(42, null));
+
+	it('blocks while a code-mode turn is between commands', () => {
+		const s = codeSession();
+		s.isSubmitting = true;
+		expect(s.terminalInputBlocked).toBe(true);
+	});
+
+	it('allows input while the agent command is running, so prompts can be answered', () => {
+		const s = codeSession();
+		s.isSubmitting = true;
+		setPtyBusy(42, 'sudo apt install foo');
+		expect(s.terminalInputBlocked).toBe(false);
+	});
+
+	it('never blocks outside code mode', () => {
+		const s = codeSession();
+		s.codeMode = false;
+		s.isSubmitting = true;
+		expect(s.terminalInputBlocked).toBe(false);
+	});
+
+	it('never blocks when no turn is in flight', () => {
+		const s = codeSession();
+		expect(s.terminalInputBlocked).toBe(false);
+	});
+
+	it('releases as soon as the turn ends', () => {
+		const s = codeSession();
+		s.isSubmitting = true;
+		expect(s.terminalInputBlocked).toBe(true);
+		s.isSubmitting = false;
+		expect(s.terminalInputBlocked).toBe(false);
+	});
+});
+
+describe('code-mode session persistence', () => {
+	const encoded = JSON.stringify({
+		version: 1,
+		savedAt: 1,
+		messages: [
+			{ role: 'user', content: 'earlier question' },
+			{ role: 'assistant', content: 'earlier answer' }
+		],
+		messageSteps: {},
+		messageStats: {},
+		messageStops: {},
+		messageHistorySent: {}
+	});
+
+	beforeEach(() => {
+		dbMock.dbLoadShellSession.mockReset().mockResolvedValue(encoded);
+		dbMock.dbSaveShellSession.mockReset();
+		dbMock.dbDeleteShellSession.mockReset();
+	});
+
+	it('restores a stored thread into an empty code-mode session', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		await s.restoreCodeThread('/home/tim/projects/haruspex');
+		expect(s.messages).toHaveLength(2);
+		expect(s.restoredNotice).toEqual({ turns: 1, cwd: '/home/tim/projects/haruspex' });
+		// The user should land on the conversation, not an empty panel.
+		expect(s.sidebarOpen).toBe(true);
+	});
+
+	it('never restores over a thread the user is already in', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		s.messages = [{ role: 'user', content: 'live question' }];
+		await s.restoreCodeThread('/work');
+		expect(s.messages).toEqual([{ role: 'user', content: 'live question' }]);
+		expect(s.restoredNotice).toBeNull();
+	});
+
+	it('does not restore outside code mode', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = false;
+		await s.restoreCodeThread('/work');
+		expect(dbMock.dbLoadShellSession).not.toHaveBeenCalled();
+		expect(s.messages).toHaveLength(0);
+	});
+
+	it('does not restore without a known cwd', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		await s.restoreCodeThread(null);
+		expect(dbMock.dbLoadShellSession).not.toHaveBeenCalled();
+	});
+
+	it('"Start fresh" forgets the stored thread; newChat keeps it', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		await s.restoreCodeThread('/work');
+
+		s.newChat();
+		expect(s.messages).toHaveLength(0);
+		expect(s.restoredNotice).toBeNull();
+		// newChat clears the live thread only — the stored one stays restorable.
+		expect(dbMock.dbDeleteShellSession).not.toHaveBeenCalled();
+
+		await s.restoreCodeThread('/work');
+		s.startFreshCodeThread();
+		expect(s.messages).toHaveLength(0);
+		expect(dbMock.dbDeleteShellSession).toHaveBeenCalledWith('/work');
+	});
+
+	it('keeps the thread when the notice is dismissed', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		await s.restoreCodeThread('/work');
+		s.dismissRestoredNotice();
+		expect(s.restoredNotice).toBeNull();
+		expect(s.messages).toHaveLength(2);
+	});
+
+	/**
+	 * The bug this pins: a new PTY opens in $HOME, but threads are saved under
+	 * whatever project directory the user cd'd into. Checking only at
+	 * terminal-bind always asked about $HOME, so nothing ever came back.
+	 */
+	/**
+	 * Bind a terminal that has no context yet — the realistic mount state, and
+	 * deterministic here: `bindSession` kicks off its own status refresh, so
+	 * letting it see a cwd would race the awaited poll the test drives.
+	 */
+	async function bindWithoutContext(s: ShellSession) {
+		vi.mocked(invoke).mockRejectedValue(new Error('no pty yet'));
+		s.bindSession({ sessionId: 1 } as never);
+		await s.refreshIntegrationStatus();
+	}
+
+	/** Point the live shell at `cwd` for the next `refreshIntegrationStatus`. */
+	function atCwd(cwd: string) {
+		vi.mocked(invoke).mockResolvedValue({
+			current_cwd: cwd,
+			marker_count: 0,
+			completed_commands: 0,
+			completed_total: 0
+		} as never);
+	}
+
+	/** Only `savedIn` has a stored thread — every other directory is empty. */
+	function savedOnlyIn(savedIn: string) {
+		dbMock.dbLoadShellSession.mockImplementation(async (cwd: string) =>
+			cwd === savedIn ? encoded : null
+		);
+	}
+
+	/**
+	 * The bug this pins: a new PTY opens in $HOME, but threads are saved under
+	 * whatever project directory the user cd'd into. Checking only at
+	 * terminal-bind always asked about $HOME, so nothing ever came back.
+	 */
+	it('restores when the shell reaches the saved directory, not just at startup', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		savedOnlyIn('/home/tim/test');
+
+		await bindWithoutContext(s);
+
+		// Shell comes up in $HOME — nothing saved there.
+		atCwd('/home/tim');
+		await s.refreshIntegrationStatus();
+		expect(s.messages).toHaveLength(0);
+		expect(s.restoredNotice).toBeNull();
+
+		// User cds into the project the thread belongs to. The poll dispatches
+		// the restore without awaiting it — a status tick must not block on a
+		// database read — so settle rather than assuming it lands synchronously.
+		atCwd('/home/tim/test');
+		await s.refreshIntegrationStatus();
+		await vi.waitFor(() => expect(s.messages).toHaveLength(2));
+		expect(s.restoredNotice?.cwd).toBe('/home/tim/test');
+	});
+
+	it('checks each directory once, not on every poll tick', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		savedOnlyIn('/elsewhere');
+		await bindWithoutContext(s);
+		atCwd('/somewhere');
+		for (let i = 0; i < 5; i++) await s.refreshIntegrationStatus();
+		expect(dbMock.dbLoadShellSession).toHaveBeenCalledTimes(1);
+		expect(dbMock.dbLoadShellSession).toHaveBeenCalledWith('/somewhere');
+	});
+
+	it('does not resurrect a thread the user just cleared', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		savedOnlyIn('/work');
+		await bindWithoutContext(s);
+		atCwd('/work');
+		await s.refreshIntegrationStatus();
+		await vi.waitFor(() => expect(s.messages).toHaveLength(2));
+
+		// newChat leaves the row on disk on purpose; the poll must not undo it.
+		s.newChat();
+		await s.refreshIntegrationStatus();
+		await s.refreshIntegrationStatus();
+		expect(s.messages).toHaveLength(0);
+	});
+
+	it('retires the notice once a message is sent, so Start fresh cannot eat new work', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		savedOnlyIn('/work');
+		await bindWithoutContext(s);
+		atCwd('/work');
+		await s.refreshIntegrationStatus();
+		await vi.waitFor(() => expect(s.restoredNotice).not.toBeNull());
+
+		await s.submitShell({
+			body: 'next question',
+			currentCwd: '/work',
+			recentHistory: [],
+			capturedRegions: []
+		} as never);
+
+		expect(s.restoredNotice).toBeNull();
+		// The restored context is still there — only the banner went away.
+		expect(s.messages.length).toBeGreaterThan(2);
+	});
+
+	it('refuses Start fresh mid-turn rather than half-applying it', async () => {
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		savedOnlyIn('/work');
+		await bindWithoutContext(s);
+		atCwd('/work');
+		await s.refreshIntegrationStatus();
+		await vi.waitFor(() => expect(s.messages).toHaveLength(2));
+
+		s.isSubmitting = true;
+		s.startFreshCodeThread();
+		// newChat refuses mid-turn, so deleting the row here would strand the
+		// thread on screen with nothing backing it.
+		expect(dbMock.dbDeleteShellSession).not.toHaveBeenCalled();
+		expect(s.messages).toHaveLength(2);
+	});
+
+	it('ignores a stored thread it cannot decode', async () => {
+		dbMock.dbLoadShellSession.mockResolvedValue('{corrupt');
+		const s = new ShellSession('shell-1', 'Shell 1');
+		s.codeMode = true;
+		await s.restoreCodeThread('/work');
+		expect(s.messages).toHaveLength(0);
+		expect(s.restoredNotice).toBeNull();
 	});
 });

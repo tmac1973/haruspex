@@ -363,3 +363,34 @@ pub async fn db_list_due_jobs(
     let db = state.inner().clone();
     on_pool(db, move |db| db.list_due_jobs(now_ms)).await
 }
+
+// --- Code-mode shell session persistence ---------------------------------
+// Keyed by cwd; see db/shell_sessions.rs for the rationale.
+
+#[tauri::command]
+pub async fn db_save_shell_session(
+    state: tauri::State<'_, Database>,
+    cwd: String,
+    thread: String,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.save_shell_code_session(&cwd, &thread)).await
+}
+
+#[tauri::command]
+pub async fn db_load_shell_session(
+    state: tauri::State<'_, Database>,
+    cwd: String,
+) -> Result<Option<String>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.load_shell_code_session(&cwd)).await
+}
+
+#[tauri::command]
+pub async fn db_delete_shell_session(
+    state: tauri::State<'_, Database>,
+    cwd: String,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.delete_shell_code_session(&cwd)).await
+}
