@@ -41,7 +41,7 @@ import {
 	type SamplingParams
 } from '$lib/stores/settings';
 import { resolveBackendDescriptor, type BackendDescriptor } from '$lib/inference/descriptor';
-import { splitThinkChannels, stripToolCallArtifacts } from '$lib/markdown';
+import { splitThinkChannels, stripThinkBlocks, stripToolCallArtifacts } from '$lib/markdown';
 import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
 import { isAbortError } from '$lib/utils/error';
 import { logDebug } from '$lib/debug-log';
@@ -56,7 +56,6 @@ const IN_LOOP_TRIM_THRESHOLD = 0.7;
 // read. The operative values come from Settings → Agent → Response Length,
 // resolved per turn by `resolveMaxResponseTokens` below.
 const AGENT_LOOP_MAX_TOKENS = 8192;
-const FINAL_SYNTHESIS_MAX_TOKENS = 8192;
 
 /**
  * Outcome of one iteration body. The driver in `runAgentLoop` reads
@@ -400,6 +399,35 @@ function hasNonThinkingContent(content: string | null | undefined): boolean {
 }
 
 /**
+ * The "ran out of tokens" error, naming the limit that was actually hit.
+ *
+ * This message used to tell the user to raise the context size. That is the
+ * wrong dial and sends people on a long detour: the ceiling here is the
+ * per-response output cap, which is independent of context. The report that
+ * prompted this had a 256K context with 20K of it in use — the answer was
+ * truncated at an 8192-token output cap the message never mentioned.
+ */
+function outOfTokensMessage(ctx: LoopContext, postTools: boolean): string {
+	const settingLabel = ctx.expectsFileOutput
+		? 'Max response tokens (file writes)'
+		: 'Max response tokens';
+	const approxKb = Math.round((ctx.maxResponseTokens * TOKEN_BYTES_RATIO) / 1024);
+	return (
+		`The model ran out of room before finishing its answer. It hit the ` +
+		`${ctx.maxResponseTokens}-token response limit — roughly ${approxKb} KB of ` +
+		`output, less whatever the model spent reasoning. This is a separate ` +
+		`setting from the context size, which is not what ran out here. Raise ` +
+		`Settings → Agent → Response Length → ${settingLabel}, ask for a smaller ` +
+		`piece of work, or lower the reasoning effort so more of the budget goes ` +
+		`to the answer.` +
+		(postTools
+			? ` If the turn gathered a lot of material, a narrower question or ` +
+				`disabling deep research will also leave more room.`
+			: '')
+	);
+}
+
+/**
  * Race a promise against an AbortSignal. If the signal fires before the
  * promise settles, rejects with AbortError. The original promise keeps
  * running and its resolution is discarded — most tools dispatch to
@@ -645,6 +673,13 @@ async function forceFinalToolCall(
  * total tokens for the call-stats / error-on-length post-processing.
  * Shared by both post-tools and no-tools final-synthesis branches and
  * by the max-iterations handler.
+ *
+ * Uses `ctx.maxResponseTokens` — the SAME ceiling as the tool-check call.
+ * This call produces the answer the user actually reads, so a second hardcoded
+ * literal here silently overrode every value that resolves into the context:
+ * Settings → Agent → Response Length, the larger file-write ceiling, and the
+ * budget shell code mode pins for itself. A one-shot "write me a whole file"
+ * prompt was capped at 8192 no matter what any of them said.
  */
 async function streamFinalSynthesis(
 	ctx: LoopContext,
@@ -652,7 +687,7 @@ async function streamFinalSynthesis(
 	sampling: ReturnType<typeof getSamplingParams>,
 	templateKwargs: ReturnType<typeof getChatTemplateKwargs>
 ): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
-	applyContextGuard(ctx, FINAL_SYNTHESIS_MAX_TOKENS, tools);
+	applyContextGuard(ctx, ctx.maxResponseTokens, tools);
 	const sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 	const reasoning =
 		getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled, ctx.reasoningEffort) ??
@@ -663,7 +698,7 @@ async function streamFinalSynthesis(
 			tools,
 			backend: ctx.backend ?? undefined,
 			...sampling,
-			max_tokens: FINAL_SYNTHESIS_MAX_TOKENS,
+			max_tokens: ctx.maxResponseTokens,
 			chat_template_kwargs: templateKwargs,
 			reasoning
 		},
@@ -843,7 +878,7 @@ export async function runIteration(
 	// to defer to the next. `??` preserves the original sequential-if order.
 	if (toolCalls.length === 0) {
 		const recovered =
-			tryContinueOnLength(ctx, state, response, iteration) ??
+			tryContinueOnLength(ctx, state, nudges, response, iteration) ??
 			tryMalformedToolCall(ctx, state, response, iteration) ??
 			tryDegradedOutput(state, response, iteration) ??
 			tryNarrateRecovery(ctx, nudges, response, iteration) ??
@@ -905,38 +940,95 @@ export async function runIteration(
  * user `nudge`, returning the `'continue'` outcome. Shared by the no-tool-call
  * recovery guards so they push the assistant/user pair the same way. Pass
  * `stripArtifacts` for the malformed-tool-call case (strips stray `<tool_call>`
- * fragments from the echoed content).
+ * fragments from the echoed content), and `stripThinking` when the echo exists
+ * to be re-read by the model rather than shown to the user.
  */
 function pushNudge(
 	messages: ChatMessage[],
 	response: ChatCompletionResponse,
 	nudge: string,
-	stripArtifacts = false
+	stripArtifacts = false,
+	stripThinking = false
 ): IterationOutcome {
-	const content = stripArtifacts
-		? stripToolCallArtifacts(response.content ?? '')
-		: (response.content ?? '');
+	let content = response.content ?? '';
+	if (stripArtifacts) content = stripToolCallArtifacts(content);
+	// `stripThinking` is for echoes that will be re-sent to the model. Reasoning
+	// travels to the chat template in its own field, so leaving `<think>` tags in
+	// the content would render a second, nested block inside the template's own.
+	if (stripThinking) content = stripThinkBlocks(content).trimStart();
 	messages.push({ role: 'assistant', content });
 	messages.push({ role: 'user', content: nudge });
 	return 'continue';
 }
 
 /**
- * Max-tokens truncation after tools: the model was cut off mid-response,
- * so continue the loop to let it finish generating. Precondition: caller
- * has already established `toolCalls.length === 0`.
+ * Max-tokens truncation: the model was cut off mid-response, so continue the
+ * loop to let it finish instead of throwing the work away. Precondition:
+ * caller has already established `toolCalls.length === 0`.
+ *
+ * This used to require `state.usedTools`, which made it unreachable on the
+ * first iteration — the case it is most needed for. A heavy reasoner asked for
+ * a large one-shot answer overruns the ceiling *before* it ever calls a tool;
+ * every other guard then declined it too, and the turn fell through to final
+ * synthesis with `ctx.messages` unmutated. The model re-derived the whole
+ * answer from an identical prompt (confirmed in a llama.cpp trace: same
+ * prompt length, `sim_best = 1.000`), having burned 16K tokens and four
+ * minutes on reasoning nobody kept.
+ *
+ * Two shapes, because they need opposite handling:
+ *
+ *  - **Cut off mid-answer** — there is real content past the reasoning. Echo
+ *    it back and say "Continue.", the original behaviour. `<think>` blocks are
+ *    stripped from the echo: the model's reasoning reaches the template through
+ *    `reasoning_content`, not through content, so re-sending it as literal tags
+ *    would nest a second `<think>` inside the one the template already emits.
+ *
+ *  - **Cut off still reasoning** — no answer content exists, so there is
+ *    nothing coherent to continue from. Echoing a half-finished thought is
+ *    worse than useless; ask for the answer directly instead. Bounded, since
+ *    a model that overruns on the retry too must reach the error path rather
+ *    than eat the iteration budget in silence.
  */
 function tryContinueOnLength(
 	ctx: LoopContext,
 	state: LoopState,
+	nudges: NudgeState,
 	response: ChatCompletionResponse,
 	iteration: number
 ): IterationOutcome | null {
-	if (state.usedTools && response.finish_reason === 'length') {
-		logDebug('agent', `iteration ${iteration} branch=continue-on-length nudge`);
-		return pushNudge(ctx.messages, response, 'Continue.');
+	if (response.finish_reason !== 'length') return null;
+
+	// Cut off with an answer already in flight: resume it.
+	if (state.usedTools || hasNonThinkingContent(response.content)) {
+		logDebug('agent', `iteration ${iteration} branch=continue-on-length nudge`, {
+			usedTools: state.usedTools
+		});
+		return pushNudge(ctx.messages, response, 'Continue.', false, true);
 	}
-	return null;
+
+	// Cut off while still reasoning, with no answer to resume.
+	if (!nudges.needsLengthContinueRetry()) {
+		logDebug('agent', `iteration ${iteration} branch=continue-on-length exhausted`, {
+			retries: nudges.lengthContinueRetryCount
+		});
+		return null;
+	}
+	nudges.consumeLengthContinueRetry();
+	logDebug('agent', `iteration ${iteration} branch=reasoning-overrun nudge`, {
+		retry: nudges.lengthContinueRetryCount
+	});
+	// No assistant echo: the response was entirely reasoning, and the stripped
+	// content would be an empty message.
+	ctx.messages.push({
+		role: 'user',
+		content:
+			`Your previous response was cut off at the ${ctx.maxResponseTokens}-token ` +
+			`limit while you were still thinking, so none of it reached me. Answer now: ` +
+			`keep your reasoning short and spend the response on the answer itself. If ` +
+			`the full answer will not fit in one response, say so first and give me the ` +
+			`most important part.`
+	});
+	return 'continue';
 }
 
 /**
@@ -1236,16 +1328,7 @@ async function finalizeNoToolCalls(
 	});
 	options.onComplete();
 	if (lastFinish === 'length') {
-		options.onError(
-			new ApiError(
-				postTools
-					? 'The model ran out of tokens before finishing its answer. ' +
-							'Try a less context-heavy question, disable deep research, ' +
-							'or increase the context size in Settings.'
-					: 'The model ran out of tokens before finishing its answer. ' +
-							'Try a shorter question or increase the context size in Settings.'
-			)
-		);
+		options.onError(new ApiError(outOfTokensMessage(ctx, postTools)));
 	}
 	return 'complete';
 }
@@ -1451,11 +1534,13 @@ export async function runMaxIterationsFinalSynthesis(
 	});
 	ctx.options.onComplete({ stopReason });
 	if (lastFinish === 'length') {
+		// Same `length` finish reason as the normal path, so the same limit is at
+		// fault — the iteration cap is why the turn ended here, not why the answer
+		// was cut off. Don't point at the context size for an output-cap failure.
 		ctx.options.onError(
 			new ApiError(
-				'Reached the iteration limit and the final answer was truncated before completing. ' +
-					'The research turn used too many fetched pages to fit in the context window. ' +
-					'Try a more focused question, disable deep research, or increase the context size in Settings.'
+				'Reached the iteration limit, and the final answer was then cut off too. ' +
+					outOfTokensMessage(ctx, true)
 			)
 		);
 	}

@@ -38,6 +38,15 @@ export const MAX_FILE_WRITE_RETRIES = 2;
  * instead of burning every iteration re-emitting the same oversized call.
  */
 export const MAX_TRUNCATION_RETRIES = 2;
+/**
+ * Retries allowed when the model hits the token ceiling *before* it has called
+ * any tool. Distinct from MAX_TRUNCATION_RETRIES, which covers a refused tool
+ * call: this one covers a plain response — usually an answer cut off mid-write,
+ * or reasoning that never reached an answer at all. Bounded because the recovery
+ * re-runs the same iteration, and a model that overruns every time would
+ * otherwise burn the whole iteration budget before the user sees anything.
+ */
+export const MAX_LENGTH_CONTINUE_RETRIES = 2;
 export const RUN_PYTHON_FAILURE_NUDGE_THRESHOLD = 3;
 /** Consecutive identical run_command calls before we hint, then hard-stop. */
 export const RUN_COMMAND_REPEAT_NUDGE_THRESHOLD = 2;
@@ -64,6 +73,8 @@ export class NudgeState {
 	private fileWriteRetries = 0;
 	/** Bounded retry counter for refused (truncated) tool calls. */
 	private truncationRetries = 0;
+	/** Bounded retry counter for pre-tool max_tokens truncation. */
+	private lengthContinueRetries = 0;
 	/** Set to true on the first web_search tool call this turn. */
 	private webSearchUsed = false;
 	private imageSearchUsed = false;
@@ -190,6 +201,25 @@ export class NudgeState {
 	/** Read back the truncation retry counter for log lines. */
 	get truncationRetryCount(): number {
 		return this.truncationRetries;
+	}
+
+	/**
+	 * Can we ask a pre-tool response that hit the token ceiling to carry on?
+	 * Once this is exhausted the caller falls through to final synthesis, which
+	 * reports the ceiling as an actionable error.
+	 */
+	needsLengthContinueRetry(): boolean {
+		return this.lengthContinueRetries < MAX_LENGTH_CONTINUE_RETRIES;
+	}
+
+	/** Increment the pre-tool truncation counter; call when emitting the nudge. */
+	consumeLengthContinueRetry(): void {
+		this.lengthContinueRetries++;
+	}
+
+	/** Read back the pre-tool truncation retry counter for log lines. */
+	get lengthContinueRetryCount(): number {
+		return this.lengthContinueRetries;
 	}
 
 	/**
