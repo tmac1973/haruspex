@@ -94,6 +94,12 @@ impl Default for ServerConfig {
 
 impl ServerConfig {
     pub fn build_args(&self, model_path: &str) -> Vec<String> {
+        self.build_args_for(model_path, cfg!(target_os = "windows"))
+    }
+
+    /// `build_args` with the host platform injected, so both branches of the
+    /// Windows checkpoint workaround are reachable from tests on any host.
+    fn build_args_for(&self, model_path: &str, is_windows: bool) -> Vec<String> {
         let mut args = vec![
             "--model".to_string(),
             model_path.to_string(),
@@ -123,6 +129,23 @@ impl ServerConfig {
 
         args.push("--flash-attn".to_string());
         args.push(if self.flash_attn { "on" } else { "off" }.to_string());
+
+        if is_windows {
+            // Workaround for llama.cpp#27560: on Windows + Vulkan, llama-server
+            // takes an access violation (0xC0000005) on the FIRST
+            // /v1/chat/completions request whenever context checkpoints are
+            // enabled. Qwen3.8-27B is the reported repro and is one of the
+            // models we ship, so this would land as "the app crashes the moment
+            // you send a message". Upstream is still open as of llama.cpp
+            // v0.3.0; `--ctx-checkpoints 0` is the maintainers' workaround.
+            //
+            // The cost is recomputing prefix state that a checkpoint would have
+            // restored — slower reprocessing after a cache miss, no behaviour
+            // change. Linux and macOS keep checkpoints on. Revisit when #27560
+            // closes: https://github.com/ggml-org/llama.cpp/issues/27560
+            args.push("--ctx-checkpoints".to_string());
+            args.push("0".to_string());
+        }
 
         if self.mtp {
             // A bundled head needs no draft model: llama-server builds the
@@ -1336,6 +1359,44 @@ mod tests {
         let args = cfg.build_args("/models/text-only.gguf");
         assert!(!args.iter().any(|a| a == "--no-mmproj-offload"));
         assert!(!args.iter().any(|a| a == "--mmproj"));
+    }
+
+    /// llama.cpp#27560: Windows + Vulkan + Qwen3.8-27B takes an access
+    /// violation on the first chat request unless checkpoints are off. Both
+    /// branches are asserted from the host-independent seam so this keeps
+    /// working on Linux CI, where the Windows job is opt-in.
+    #[test]
+    fn build_args_disables_ctx_checkpoints_on_windows() {
+        let cfg = ServerConfig::default();
+        let args = cfg.build_args_for("/models/qwen.gguf", true);
+        let idx = args
+            .iter()
+            .position(|a| a == "--ctx-checkpoints")
+            .expect("windows build must disable context checkpoints");
+        assert_eq!(args[idx + 1], "0");
+    }
+
+    #[test]
+    fn build_args_keeps_ctx_checkpoints_off_windows() {
+        let cfg = ServerConfig::default();
+        let args = cfg.build_args_for("/models/qwen.gguf", false);
+        assert!(!args.iter().any(|a| a == "--ctx-checkpoints"));
+    }
+
+    /// The workaround must stay overridable: extra_args is appended last so a
+    /// power user can re-enable checkpoints, and llama.cpp takes the last value.
+    #[test]
+    fn build_args_extra_args_override_ctx_checkpoints() {
+        let cfg = ServerConfig {
+            extra_args: vec!["--ctx-checkpoints".to_string(), "8".to_string()],
+            ..Default::default()
+        };
+        let args = cfg.build_args_for("/models/qwen.gguf", true);
+        let last = args
+            .iter()
+            .rposition(|a| a == "--ctx-checkpoints")
+            .expect("flag present");
+        assert_eq!(args[last + 1], "8");
     }
 
     #[test]
