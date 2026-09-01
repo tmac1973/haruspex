@@ -378,8 +378,14 @@ export interface AppSettings {
 	 * separate axis from on/off (Qwen 3.8: `low` / `medium` / `xhigh`).
 	 *
 	 * `null` means "let the model decide" — no effort is sent and the
-	 * template's own default applies. That is the default deliberately: an
-	 * upgrade must not silently change the behavior of every existing job.
+	 * template's own default applies. That used to be the shipped default, on
+	 * the reasoning that an upgrade shouldn't change every job's behavior. It
+	 * backfired: Qwen 3.8's own default is `xhigh`, so the models we recommend
+	 * from 16 GB up were thinking at maximum effort out of the box and
+	 * spending the context window on it before a coding turn could finish. We
+	 * now ship `medium` and migrate installs that never chose a level (see
+	 * `reasoningEffortDefaulted`); `null` remains selectable as "Model
+	 * default" and is honoured once chosen.
 	 *
 	 * The value is validated against the active model's advertised levels at
 	 * request time (`resolveEffort`), so a level left over from a different
@@ -387,6 +393,15 @@ export interface AppSettings {
 	 * wrong value is a 500, not a fallback.
 	 */
 	reasoningEffort: string | null;
+	/**
+	 * True once the `medium` effort default has been applied to this install.
+	 * Lets the migration tell "never chose a level" (adopt the new default)
+	 * apart from "deliberately chose Model default" (leave `null` alone) —
+	 * `??` cannot, since both read as `null`.
+	 *
+	 * Remove a release after the migration ships.
+	 */
+	reasoningEffortDefaulted: boolean;
 	/**
 	 * Extra instructions appended to the built-in system prompt. Empty
 	 * string means "no addition". Free-form text edited in Settings; we
@@ -592,7 +607,11 @@ const defaults: AppSettings = {
 	sandboxTimeoutSeconds: 60,
 	thinkingEnabled: true,
 	mtpEnabled: true,
-	reasoningEffort: null,
+	// Not `null` ("model default"): Qwen 3.8 defaults itself to `xhigh`, which
+	// burns the context window on thinking. Unknown levels are dropped at
+	// request time, so this is inert on models with no effort axis.
+	reasoningEffort: 'medium',
+	reasoningEffortDefaulted: true,
 	customSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
 	apiKeys: [],
@@ -672,12 +691,23 @@ function load(): AppSettings {
 			// config. One selector now covers every backend that publishes
 			// levels, so adopt the old value rather than silently resetting an
 			// OpenRouter user to their model's default.
-			const reasoningEffort: string | null =
+			//
+			// A stored `null` is ambiguous — it means both "never touched" and
+			// "chose Model default" — so `reasoningEffortDefaulted` marks which
+			// installs have already seen the `medium` default. Installs that
+			// predate the flag and hold no level adopt it once; a level the
+			// user actually picked (including `null` after this migration) is
+			// left alone.
+			const storedEffort: string | null =
 				parsed.reasoningEffort ?? mergedInference.openrouterReasoningEffort ?? null;
+			const alreadyDefaulted = parsed.reasoningEffortDefaulted === true;
+			const reasoningEffort =
+				alreadyDefaulted || storedEffort !== null ? storedEffort : defaults.reasoningEffort;
 			return {
 				...defaults,
 				...parsed,
 				reasoningEffort,
+				reasoningEffortDefaulted: true,
 				inferenceBackend: mergedInference,
 				apiKeys,
 				integrations: mergedIntegrations,
