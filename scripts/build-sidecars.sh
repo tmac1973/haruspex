@@ -339,6 +339,17 @@ else
     # load it against llama's core → CPU-only. whisper-server links libggml.so.0
     # and runs against llama's authoritative copy, so we never bundle whisper's.
     mkdir -p "$BINARIES_DIR/libs"
+
+    # Drop previously-bundled whisper-owned libs first, exactly as the llama
+    # block does for its own families. The copy loop below skips any name that
+    # already exists (to avoid clobbering llama's authoritative set), and the
+    # soname loop only fills in a soname that is MISSING. Together those two
+    # guards mean a version bump would otherwise leave libwhisper.so.1 pointing
+    # at the previous build forever: the new libwhisper.so.1.9.2 lands beside
+    # it, but libwhisper.so.1 — the name whisper-server actually links — stays
+    # on 1.8.4. Observed on the v1.8.4 -> v1.9.2 bump.
+    rm -f "$BINARIES_DIR"/libs/libwhisper*.so*
+
     find -L . \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \) -type f | while read lib; do
         libname=$(basename "$lib")
         case "$libname" in

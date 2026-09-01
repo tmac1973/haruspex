@@ -182,6 +182,8 @@ let nonStreamSnapshots: ChatMessage[][];
 let streamQueue: StreamChunk[][];
 let streamSnapshots: ChatMessage[][];
 let streamTools: Array<ToolDefinition[] | undefined>;
+let streamMaxTokens: Array<number | undefined>;
+let nonStreamMaxTokens: Array<number | undefined>;
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -190,21 +192,27 @@ beforeEach(() => {
 	streamQueue = [];
 	streamSnapshots = [];
 	streamTools = [];
+	streamMaxTokens = [];
+	nonStreamMaxTokens = [];
 
 	toolsMock.getToolSchemas.mockReturnValue(TOOL_SCHEMAS);
 	toolsMock.executeTool.mockResolvedValue({ result: 'ok' });
 
-	api.chatCompletion.mockImplementation(async (opts: { messages: ChatMessage[] }) => {
-		nonStreamSnapshots.push(structuredClone(opts.messages));
-		const next = nonStreamQueue.shift();
-		if (!next) throw new Error('test: nonStreamQueue exhausted');
-		return next;
-	});
+	api.chatCompletion.mockImplementation(
+		async (opts: { messages: ChatMessage[]; max_tokens?: number }) => {
+			nonStreamSnapshots.push(structuredClone(opts.messages));
+			nonStreamMaxTokens.push(opts.max_tokens);
+			const next = nonStreamQueue.shift();
+			if (!next) throw new Error('test: nonStreamQueue exhausted');
+			return next;
+		}
+	);
 
 	api.chatCompletionStream.mockImplementation(
-		(opts: { messages: ChatMessage[]; tools?: ToolDefinition[] }) => {
+		(opts: { messages: ChatMessage[]; tools?: ToolDefinition[]; max_tokens?: number }) => {
 			streamSnapshots.push(structuredClone(opts.messages));
 			streamTools.push(opts.tools);
+			streamMaxTokens.push(opts.max_tokens);
 			const chunks = streamQueue.shift() ?? [];
 			return (async function* () {
 				for (const c of chunks) yield c;
@@ -293,11 +301,115 @@ describe('runAgentLoop: plain answer paths', () => {
 		expect(cb.onError).toHaveBeenCalledTimes(1);
 		const err = cb.onError.mock.calls[0][0] as Error;
 		expect(err.name).toBe('ApiError');
-		expect(err.message).toContain('ran out of tokens');
+		// Must name the limit that actually ran out (the per-response output cap)
+		// and point at the setting that changes it. The old copy told the user to
+		// raise the context size, which is a different dial and does nothing here.
+		expect(err.message).toContain('ran out of room');
+		expect(err.message).toContain('response limit');
+		expect(err.message).toContain('Response Length');
+		expect(err.message).not.toMatch(/increase the context size/);
 		// onComplete fires before the in-band error.
 		expect(cb.onComplete.mock.invocationCallOrder[0]).toBeLessThan(
 			cb.onError.mock.invocationCallOrder[0]
 		);
+	});
+});
+
+/**
+ * Regressions from a real report: Qwen 3.8 27B, 256K context, shell code mode,
+ * asked for a whole HTML game in one shot. It produced nothing usable after
+ * 6.5 minutes. The llama.cpp trace showed two calls that generated exactly
+ * 16384 and exactly 8192 tokens — both caps, not stopping points — from
+ * *identical* prompts (`sim_best = 1.000`). The first call's 16K of reasoning
+ * was discarded rather than continued, and the visible answer was capped at a
+ * hardcoded 8192 that no setting could raise.
+ */
+describe('runAgentLoop: response-token ceiling', () => {
+	it('streams the final answer at the turn ceiling, not a hardcoded literal', async () => {
+		// The bug: final synthesis used its own FINAL_SYNTHESIS_MAX_TOKENS = 8192,
+		// so shell code mode's pinned budget (and the Response Length setting, and
+		// the file-write ceiling) applied only to the tool-check call and never to
+		// the answer the user actually reads.
+		nonStreamQueue.push(textResponse(null, 'stop'));
+		streamQueue.push([contentChunk('answer', 'stop')]);
+		const { options } = makeOptions({ maxResponseTokens: 40000 });
+
+		await runAgentLoop(options);
+
+		expect(nonStreamMaxTokens[0]).toBe(40000);
+		expect(streamMaxTokens[0]).toBe(40000);
+	});
+
+	it('falls back to the default ceiling on both calls when none is given', async () => {
+		nonStreamQueue.push(textResponse(null, 'stop'));
+		streamQueue.push([contentChunk('answer', 'stop')]);
+		const { options } = makeOptions();
+
+		await runAgentLoop(options);
+
+		expect(streamMaxTokens[0]).toBe(nonStreamMaxTokens[0]);
+		expect(streamMaxTokens[0]).toBe(8192);
+	});
+});
+
+describe('runAgentLoop: truncation before any tool call', () => {
+	it('asks for the answer instead of re-sending an identical prompt', async () => {
+		// The reported failure: cut off mid-reasoning on iteration 1, having
+		// called no tool. `tryContinueOnLength` was gated on `usedTools`, so
+		// nothing recovered it and nothing was appended to `messages` — the next
+		// call re-derived everything from the same prompt.
+		nonStreamQueue.push(textResponse('<think>long deliberation</think>', 'length'));
+		nonStreamQueue.push(textResponse('the finished answer', 'stop'));
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
+		// The prompt must have MOVED ON. Identical snapshots are the exact
+		// signature of the wasted call in the report.
+		expect(nonStreamSnapshots[1]).not.toEqual(nonStreamSnapshots[0]);
+		expect(nonStreamSnapshots[1].length).toBeGreaterThan(nonStreamSnapshots[0].length);
+		const nudge = flattenText(nonStreamSnapshots[1]).at(-1) ?? '';
+		expect(nudge).toContain('cut off');
+		expect(nudge).toContain('still thinking');
+		// Reasoning-only: there is no partial answer worth echoing back.
+		expect(nonStreamSnapshots[1].some((m) => m.role === 'assistant')).toBe(false);
+		expect(streamedText(cb)).toBe('the finished answer');
+		expect(cb.onError).not.toHaveBeenCalled();
+	});
+
+	it('resumes a partial answer with Continue., stripping the think block', async () => {
+		nonStreamQueue.push(textResponse('<think>plan</think>\n\n<html>partial', 'length'));
+		nonStreamQueue.push(textResponse('</html>', 'stop'));
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		const echoed = nonStreamSnapshots[1].find((m) => m.role === 'assistant');
+		expect(echoed).toBeDefined();
+		// Reasoning reaches the chat template through its own field; re-sending
+		// literal tags here would nest a second block inside the template's own.
+		expect(echoed?.content).toBe('<html>partial');
+		expect(flattenText(nonStreamSnapshots[1]).at(-1)).toBe('Continue.');
+		expect(cb.onError).not.toHaveBeenCalled();
+	});
+
+	it('gives up after the retry bound instead of eating the iteration budget', async () => {
+		// A model that overruns every time must reach the actionable error, not
+		// spin silently to maxIterations.
+		for (let i = 0; i < 6; i++) {
+			nonStreamQueue.push(textResponse('<think>still going</think>', 'length'));
+		}
+		streamQueue.push([contentChunk('partial', 'length')]);
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		// 1 initial + MAX_LENGTH_CONTINUE_RETRIES (2) retries, then final synthesis.
+		expect(api.chatCompletion).toHaveBeenCalledTimes(3);
+		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
+		const err = cb.onError.mock.calls[0][0] as Error;
+		expect(err.message).toContain('response limit');
 	});
 });
 

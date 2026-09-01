@@ -149,23 +149,37 @@ export interface Conversation {
 export interface MessageStats {
 	tokensPerSecond: number;
 	completionTokens: number;
+	/** Duration of the FINAL model call — the one tok/s is measured over. */
 	durationMs: number;
+	/**
+	 * Wall-clock time for the whole turn: from the user pressing send to the
+	 * answer being committed. Deliberately not `durationMs`, which covers only
+	 * the last model call — a turn that ran tools, or that burned a call on
+	 * reasoning before answering, spends most of its time outside that call,
+	 * and reporting the call as "elapsed" would understate it badly.
+	 */
+	elapsedMs?: number;
 }
 
 /**
- * Turn one LLM call's timing into the per-message tok/s stats shown in the
- * thread footer. Shared by the chat store and the shell session so both tabs
- * compute the rate identically. Returns null when the call lacks usable
- * timing (no completion tokens or zero duration).
+ * Turn one LLM call's timing into the per-message stats shown in the thread
+ * footer. Shared by the chat store and the shell session so both tabs compute
+ * the rate identically. Returns null when the call lacks usable timing (no
+ * completion tokens or zero duration).
+ *
+ * `elapsedMs` is the caller's whole-turn wall clock, passed separately because
+ * only the caller knows when the turn began.
  */
 export function computeMessageStats(
-	s: { durationMs: number; completionTokens: number } | null
+	s: { durationMs: number; completionTokens: number } | null,
+	elapsedMs?: number
 ): MessageStats | null {
 	if (!s || s.completionTokens <= 0 || s.durationMs <= 0) return null;
 	return {
 		tokensPerSecond: s.completionTokens / (s.durationMs / 1000),
 		completionTokens: s.completionTokens,
-		durationMs: s.durationMs
+		durationMs: s.durationMs,
+		...(typeof elapsedMs === 'number' && elapsedMs > 0 ? { elapsedMs } : {})
 	};
 }
 
@@ -844,10 +858,12 @@ function extractUrlsFromSteps(steps: SearchStep[]): string[] {
  */
 interface TurnStats {
 	lastCallStats: { durationMs: number; completionTokens: number } | null;
+	/** `Date.now()` when the turn started, for the footer's elapsed figure. */
+	startedAt: number;
 }
 
 function computeStats(stats: TurnStats): MessageStats | null {
-	return computeMessageStats(stats.lastCallStats);
+	return computeMessageStats(stats.lastCallStats, Date.now() - stats.startedAt);
 }
 
 /**
@@ -1356,7 +1372,7 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 	// Latch the most recent one — it corresponds to the model call whose
 	// output is being committed. Earlier tool-decision calls get
 	// overwritten by the final synthesis call, which is what we want.
-	const turnStats: TurnStats = { lastCallStats: null };
+	const turnStats: TurnStats = { lastCallStats: null, startedAt: Date.now() };
 
 	try {
 		const currentWorkingDir = getWorkingDir();

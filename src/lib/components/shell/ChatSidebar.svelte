@@ -110,6 +110,7 @@
 	}
 	const lastError = $derived(session.lastError);
 	const contextNotice = $derived(session.contextNotice);
+	const restoredNotice = $derived(session.restoredNotice);
 	const searchSteps = $derived(session.searchSteps);
 	const messageSteps = $derived(session.messageSteps);
 	const messageStats = $derived(session.messageStats);
@@ -142,11 +143,17 @@
 				? 'OSC 133 hook is loaded but no commands have completed in this session yet. Run something in the terminal — the auto-attach uses completed B→C→D cycles, not just the prompt redraws.'
 				: `${completedCommands} completed command${completedCommands === 1 ? '' : 's'} available — the auto-attach will include up to ${completedCommands < 10 ? completedCommands : 10} of them in your next message (configurable in Settings → Shell).`
 	);
-	// Refresh the status while the sidebar is open so the badge tracks
-	// captures as the user runs commands. 2 s is enough to feel live
-	// without thrashing the Tauri IPC.
+	// Refresh the status so the badge tracks captures as the user runs
+	// commands. 2 s is enough to feel live without thrashing the Tauri IPC.
+	//
+	// Runs even while the sidebar is COLLAPSED. This component stays mounted
+	// either way (only its <aside> is gated on `open`), and the same poll is
+	// what notices the shell entering a directory with a saved Code-mode
+	// thread. Skipping it while collapsed meant cd-ing into a project did
+	// nothing until the user happened to expand the sidebar, which then opened
+	// empty and only filled in seconds later — the restore is supposed to be
+	// what opens the sidebar, so it has to be able to run before that.
 	$effect(() => {
-		if (!open) return;
 		const id = setInterval(() => void session.refreshIntegrationStatus(), 2000);
 		return () => clearInterval(id);
 	});
@@ -369,6 +376,27 @@
 				<button onclick={session.toggleSidebar} title="Collapse">›</button>
 			</div>
 		</header>
+		{#if restoredNotice}
+			<!-- OUTSIDE .thread on purpose. The thread pins itself to the bottom
+			     whenever messages.length changes, and a restore takes that 0 -> N,
+			     so anything at the top of the scroll area is immediately scrolled
+			     out of sight. This notice is about the session, not a turn, so it
+			     belongs in the panel chrome where it stays visible. -->
+			<div class="restored-notice">
+				<span class="restored-badge">Restored</span>
+				<span class="restored-text">
+					{restoredNotice.turns}
+					{restoredNotice.turns === 1 ? 'turn' : 'turns'} from your last coding session in
+					<code>{restoredNotice.cwd}</code>
+				</span>
+				<span class="restored-actions">
+					<button type="button" onclick={() => session.dismissRestoredNotice()}>Keep</button>
+					<button type="button" class="danger" onclick={() => session.startFreshCodeThread()}>
+						Start fresh
+					</button>
+				</span>
+			</div>
+		{/if}
 		<div class="thread" bind:this={threadEl}>
 			{#if messages.length === 0 && !streamingMessage}
 				<div class="placeholder">
@@ -424,7 +452,11 @@
 							<ChatMessage message={msg} />
 						{/if}
 					{:else}
-						<ChatMessage message={msg} tokensPerSecond={messageStats[i]?.tokensPerSecond} />
+						<ChatMessage
+							message={msg}
+							tokensPerSecond={messageStats[i]?.tokensPerSecond}
+							elapsedMs={messageStats[i]?.elapsedMs}
+						/>
 						{#if messageStops[i]}
 							<StopIndicator
 								reason={messageStops[i]}
@@ -660,6 +692,84 @@
 		color: var(--text-secondary);
 		font-style: italic;
 		padding: 6px 4px;
+	}
+
+	.restored-notice {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		/* Panel chrome, not a thread item: sits between the header and the
+		   scroll area, and must not shrink away under a long thread. */
+		flex: 0 0 auto;
+		padding: 8px 10px;
+		border-bottom: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		/* Accent-tinted rather than the plain panel background: this is the one
+		   moment the user has to notice something happened to their thread, and
+		   in --text-secondary grey on --bg-secondary it read as boilerplate. */
+		background: var(--accent-soft);
+		font-size: 0.78rem;
+		color: var(--text-primary);
+	}
+
+	/* Filled, so --accent-contrast per the accent rule for filled controls. */
+	.restored-badge {
+		flex-shrink: 0;
+		background: var(--accent);
+		color: var(--accent-contrast);
+		border-radius: 3px;
+		padding: 1px 6px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
+	}
+
+	.restored-text {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
+	.restored-notice code {
+		font-size: 0.74rem;
+		color: var(--accent);
+		word-break: break-all;
+	}
+
+	.restored-actions {
+		display: flex;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
+	.restored-actions button {
+		background: none;
+		border: 1px solid var(--accent);
+		border-radius: 4px;
+		color: var(--accent);
+		cursor: pointer;
+		font-size: 0.74rem;
+		font-weight: 500;
+		padding: 2px 8px;
+		white-space: nowrap;
+	}
+
+	.restored-actions button:hover {
+		background: var(--accent);
+		color: var(--accent-contrast);
+	}
+
+	/* Discards the thread, so it doesn't borrow the accent's "do this" pull. */
+	.restored-actions button.danger {
+		border-color: var(--border);
+		color: var(--text-secondary);
+	}
+
+	.restored-actions button.danger:hover {
+		background: var(--error-bg);
+		border-color: var(--error-text);
+		color: var(--error-text);
 	}
 
 	.thread-note {

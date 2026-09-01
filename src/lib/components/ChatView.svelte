@@ -436,6 +436,7 @@
 						<ChatMessage
 							message={msg}
 							tokensPerSecond={activeConversation.messageStats?.[i]?.tokensPerSecond}
+							elapsedMs={activeConversation.messageStats?.[i]?.elapsedMs}
 							steps={activeConversation.messageSteps[i]}
 						/>
 						{#if activeConversation.messageStops?.[i]}

@@ -430,6 +430,15 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_messages_conversation
                 ON messages(conversation_id, sort_order);
 
+            -- Code-mode shell threads, keyed by working directory so a
+            -- coding session survives a crash or power loss. See
+            -- db/shell_sessions.rs for why cwd and not the shell's id.
+            CREATE TABLE IF NOT EXISTS shell_code_sessions (
+                cwd TEXT PRIMARY KEY,
+                thread TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS search_stats_engines (
                 engine TEXT PRIMARY KEY,
                 attempts INTEGER NOT NULL DEFAULT 0,
@@ -730,6 +739,7 @@ mod memories;
 mod memory_commands;
 mod prompts;
 mod runs;
+mod shell_sessions;
 mod stats;
 
 pub use commands::*;

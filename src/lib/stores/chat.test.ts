@@ -452,3 +452,29 @@ describe('image rehydration on load', () => {
 		expect(texts.join(' ')).toContain('upload.wikimedia.org/x.jpg');
 	});
 });
+
+describe('computeMessageStats', () => {
+	it('measures the rate over the final call but reports the whole turn as elapsed', async () => {
+		const { computeMessageStats } = await import('$lib/stores/chat.svelte');
+		// A code-mode turn: 4s of final generation inside a 90s turn that also
+		// ran tools. Reporting the call as "elapsed" would understate it 20x.
+		const stats = computeMessageStats({ durationMs: 4000, completionTokens: 200 }, 90_000);
+		expect(stats?.tokensPerSecond).toBe(50);
+		expect(stats?.durationMs).toBe(4000);
+		expect(stats?.elapsedMs).toBe(90_000);
+	});
+
+	it('omits elapsedMs when the caller has no turn clock', async () => {
+		const { computeMessageStats } = await import('$lib/stores/chat.svelte');
+		const stats = computeMessageStats({ durationMs: 2000, completionTokens: 100 });
+		expect(stats?.tokensPerSecond).toBe(50);
+		expect(stats && 'elapsedMs' in stats).toBe(false);
+	});
+
+	it('still returns null when the call has no usable timing', async () => {
+		const { computeMessageStats } = await import('$lib/stores/chat.svelte');
+		expect(computeMessageStats(null, 5000)).toBeNull();
+		expect(computeMessageStats({ durationMs: 0, completionTokens: 10 }, 5000)).toBeNull();
+		expect(computeMessageStats({ durationMs: 100, completionTokens: 0 }, 5000)).toBeNull();
+	});
+});

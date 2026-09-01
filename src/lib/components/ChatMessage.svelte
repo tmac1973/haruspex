@@ -7,12 +7,19 @@
 	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
 	import { getSettings } from '$lib/stores/settings';
 	import { createCopyAction } from '$lib/utils/clipboard.svelte';
+	import { formatDuration } from '$lib/utils/format';
 	import { messageText, type ChatMessage, type MessageContentPart } from '$lib/api';
 
 	interface Props {
 		message: ChatMessage;
 		isStreaming?: boolean;
 		tokensPerSecond?: number;
+		/**
+		 * Whole-turn wall clock, shown just before the rate. Not the same span
+		 * the rate is measured over: `tokensPerSecond` covers the final model
+		 * call, this covers everything the turn did — tool calls included.
+		 */
+		elapsedMs?: number;
 		/**
 		 * This message's archived tool steps. Only needed to decide whether the
 		 * model searched for pictures it then failed to embed — see
@@ -21,7 +28,11 @@
 		steps?: SearchStep[];
 	}
 
-	let { message, isStreaming = false, tokensPerSecond, steps }: Props = $props();
+	let { message, isStreaming = false, tokensPerSecond, elapsedMs, steps }: Props = $props();
+
+	let elapsedLabel = $derived(
+		typeof elapsedMs === 'number' && elapsedMs > 0 ? formatDuration(elapsedMs) : ''
+	);
 
 	let tokRateLabel = $derived(
 		typeof tokensPerSecond === 'number' && tokensPerSecond > 0
@@ -111,6 +122,11 @@
 	</div>
 	{#if message.role === 'assistant' && message.content && !isStreaming}
 		<div class="message-footer">
+			{#if elapsedLabel}
+				<span class="elapsed" title="Total time for this turn, including any tools it ran"
+					>{elapsedLabel}</span
+				>
+			{/if}
 			{#if tokRateLabel}
 				<span class="tok-rate" title="Generation speed for this response">{tokRateLabel}</span>
 			{/if}
@@ -337,7 +353,8 @@
 		background: var(--bg-secondary);
 	}
 
-	.tok-rate {
+	.tok-rate,
+	.elapsed {
 		font-size: 0.75rem;
 		color: var(--text-secondary);
 		font-variant-numeric: tabular-nums;
