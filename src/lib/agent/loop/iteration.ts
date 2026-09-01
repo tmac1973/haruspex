@@ -143,12 +143,30 @@ export interface LoopContext {
  * An explicit per-call value always wins: shell code mode pins its own.
  */
 function resolveMaxResponseTokens(options: AgentLoopOptions, expectsFileOutput: boolean): number {
-	if (options.maxResponseTokens != null) return options.maxResponseTokens;
 	const settings = getSettings();
-	const fromSettings = expectsFileOutput
-		? settings.maxResponseTokensFileWrite
-		: settings.maxResponseTokens;
-	return fromSettings ?? AGENT_LOOP_MAX_TOKENS;
+	const requested =
+		options.maxResponseTokens ??
+		(expectsFileOutput ? settings.maxResponseTokensFileWrite : settings.maxResponseTokens) ??
+		AGENT_LOOP_MAX_TOKENS;
+	return clampToContext(requested, options.contextSize ?? 0);
+}
+
+/**
+ * Ceilings are also RESERVATIONS: `applyContextGuard` hands the value to
+ * `fitMessagesToBudget`, which computes the prompt budget as
+ * `contextSize - reserveOutput`. So a ceiling at or above the context window
+ * leaves no room for the prompt and collapses the budget to 1 token, trimming
+ * the conversation to nothing on every turn.
+ *
+ * That is reachable today without any of this: the 8K "Low VRAM" context tier
+ * against the default 8192 ceiling is exactly `8192 - 8192`. Capping output at
+ * half the window keeps a usable prompt budget at every tier, and only binds
+ * on the small ones — a 256K context clamps to 128K, far above any ceiling the
+ * settings allow.
+ */
+function clampToContext(requested: number, contextSize: number): number {
+	if (contextSize <= 0) return requested;
+	return Math.min(requested, Math.floor(contextSize / 2));
 }
 
 /**

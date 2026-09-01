@@ -908,7 +908,19 @@ export class ShellSession {
 				maxIterations: this.codeMode ? getSettings().codeMaxIterations : undefined,
 				codeAutoApprove: getSettings().codeAutoApprove,
 				thinkingEnabled: this.thinkingEnabled,
-				maxResponseTokens: this.codeMode && this.thinkingEnabled ? 16384 : undefined,
+				// Code mode is the "write me a whole file" path, so it gets the
+				// file-write ceiling from Settings → Agent → Response Length rather
+				// than a hardcoded literal. The old 16384 could not be raised by any
+				// setting, and was additionally gated on thinking being ON — so the
+				// one case that most needs room, a heavy reasoner writing a whole
+				// file, was capped below what the user had configured.
+				//
+				// Passed explicitly instead of via `expectsFileOutput` because that
+				// flag also arms the file-write nudge, and `fileWritten` is only set
+				// by fs_write_* tools. Code mode legitimately writes files with a
+				// shell heredoc, which would leave the nudge nagging about a file
+				// that is already on disk.
+				maxResponseTokens: this.codeMode ? getSettings().maxResponseTokensFileWrite : undefined,
 				signal: this.abortController.signal,
 				onTicket: (t) => (this.ticket = t),
 				onAdmitted: () => (this.ticket = null),

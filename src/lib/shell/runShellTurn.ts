@@ -98,6 +98,12 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			codeAutoApprove: options.codeAutoApprove ?? false,
 			thinkingEnabled: options.thinkingEnabled,
 			maxResponseTokens: options.maxResponseTokens,
+			// Deliberately false even in Code mode. This flag arms the file-write
+			// hallucination nudge, which clears only when an fs_write_* tool
+			// reports success — but Code mode often writes files through a shell
+			// heredoc, so arming it here would nag about files already written.
+			// The larger response ceiling Code mode needs is passed directly as
+			// `maxResponseTokens` instead.
 			expectsFileOutput: false,
 			visionSupported: options.visionSupported ?? true,
 			signal: options.signal,
