@@ -173,11 +173,11 @@ const QWEN_38_27B_MMPROJ_SIZE: u64 = 927_607_488;
 const QWEN_38_27B_MMPROJ_SHA256: &str =
     "cbb841a9ee0636b2ec172f5bb8df2ea8dfeb01e90fe7c6126581d662a0b4e43e";
 
-const GEMMA4_26B_A4B_MMPROJ_URL: &str =
-    "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-F16.gguf";
-const GEMMA4_26B_A4B_MMPROJ_SIZE: u64 = 1_193_058_784;
-const GEMMA4_26B_A4B_MMPROJ_SHA256: &str =
-    "418a6d8723067cd712235facbbc5cba6c8fbbd413fc1292d2aace5a027d5a42f";
+const GEMMA4_12B_MMPROJ_URL: &str =
+    "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/main/mmproj-F16.gguf";
+const GEMMA4_12B_MMPROJ_SIZE: u64 = 175_115_840;
+const GEMMA4_12B_MMPROJ_SHA256: &str =
+    "91f086971e56d7a7d8d39e271873fccdb49541bd259d6e02c401a4f1cb7a219e";
 
 /// sha256 for the mmproj at `url`. Keyed by URL rather than stored per
 /// registry entry because several models share one projector file.
@@ -188,7 +188,7 @@ fn mmproj_sha256_for_url(url: &str) -> Option<&'static str> {
         QWEN_35B_A3B_MMPROJ_URL => Some(QWEN_35B_A3B_MMPROJ_SHA256),
         QWEN_27B_MMPROJ_URL => Some(QWEN_27B_MMPROJ_SHA256),
         QWEN_38_27B_MMPROJ_URL => Some(QWEN_38_27B_MMPROJ_SHA256),
-        GEMMA4_26B_A4B_MMPROJ_URL => Some(GEMMA4_26B_A4B_MMPROJ_SHA256),
+        GEMMA4_12B_MMPROJ_URL => Some(GEMMA4_12B_MMPROJ_SHA256),
         _ => None,
     }
 }
@@ -213,8 +213,8 @@ fn qwen_38_27b_mmproj_filename() -> String {
     "Qwen3.8-27B-mmproj-F16.gguf".to_string()
 }
 
-fn gemma4_26b_a4b_mmproj_filename() -> String {
-    "Gemma4-26B-A4B-mmproj-F16.gguf".to_string()
+fn gemma4_12b_mmproj_filename() -> String {
+    "Gemma4-12B-mmproj-F16.gguf".to_string()
 }
 
 // Per-token KV-cache growth (bytes, q8_0) by model shape. Full derivation in
@@ -225,16 +225,16 @@ const KV_PER_TOKEN_SMALL: u64 = 17_408;
 const KV_PER_TOKEN_DENSE_27B: u64 = 34_816;
 /// 35B-A3B sparse MoE: 10 full-attention layers × 2 KV heads.
 const KV_PER_TOKEN_35B_A3B: u64 = 10_880;
-/// Gemma 4 26B-A4B: 30 layers, of which only 5 are full attention (the other
-/// 25 are sliding-window 1024). Those 5 use 2 KV heads at head_dim 512:
-/// 5 × 2 × 2 × 512 = 10240 elements × 34/32 = 10880 — the same figure as the
-/// 35B-A3B above, reached a different way, so it gets its own constant.
+/// Gemma 4 12B: 48 layers, of which only 8 are full attention (the other 40
+/// are sliding-window 1024). Those 8 use a single KV head at head_dim 512:
+/// 8 × 2 × 1 × 512 = 8192 elements × 34/32 = 8704 — half the 9B's per-token
+/// cost, which is why this tier reaches the top of the context ladder.
 ///
-/// NOT counted here: the sliding-window layers hold a fixed ~111 MB pool
-/// (25 × 2 × 8 × 256 × 1.0625 × 1024 window) that doesn't grow with context.
+/// NOT counted here: the sliding-window layers hold a fixed ~178 MB pool
+/// (40 × 2 × 8 × 256 × 1.0625 × 1024 window) that doesn't grow with context.
 /// It's absorbed by COMPUTE_OVERHEAD_BYTES rather than modelled per-token,
 /// which would over-charge long contexts by an order of magnitude.
-const KV_PER_TOKEN_GEMMA4_A4B: u64 = 10_880;
+const KV_PER_TOKEN_GEMMA4_12B: u64 = 8_704;
 /// Architecture unknown — a model the user imported themselves. Makes
 /// `context_ceiling_for` report "can't predict" so the Settings cap fails open.
 const KV_PER_TOKEN_UNKNOWN: u64 = 0;
@@ -299,47 +299,32 @@ fn model_registry() -> Vec<ModelInfo> {
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
         },
-        // 16 GB VRAM — the dense 27B at a low quant. Three times the
-        // parameters of the 9B it replaces, and it leaves ~4.8 GB free on a
-        // 16 GB card, which matters when that card is also driving the
-        // desktop. Its MTP head is bundled, so speculation works here.
+        // 16 GB VRAM — Gemma 4 12B at Q6. Replaced a dense 27B at IQ3_XXS and
+        // a 26B-A4B MoE, both of which spent the tier's whole VRAM budget on
+        // parameters and left the context window starved: the 27B's KV costs
+        // 34,816 bytes/token, so it topped out at 64k even with the projector
+        // moved to system RAM. The 12B is a quarter of that per token and its
+        // projector is 175 MB rather than 1.19 GB, so this reaches the top of
+        // the context ladder with ~2.2 GB still free for the desktop.
         ModelInfo {
-            id: "Qwen3.8-27B-UD-IQ3_XXS".to_string(),
-            filename: "Qwen3.8-27B-UD-IQ3_XXS.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ3_XXS.gguf"
+            id: "gemma-4-12b-it-UD-Q6_K_XL".to_string(),
+            filename: "gemma-4-12b-it-UD-Q6_K_XL.gguf".to_string(),
+            url: "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/main/gemma-4-12b-it-UD-Q6_K_XL.gguf"
                 .to_string(),
-            sha256: "c0b7c3038681ed2e3040456c1dd45f9858b6c2290bed172c70388a94874f3eee".to_string(),
-            size_bytes: 10_934_860_704,
-            description: "Qwen 3.8 27B — dense, recommended for 16 GB VRAM (~11 GB)".to_string(),
+            sha256: "70d04059c74be85c5e709921f05acac412b8b8f24f3ee7dd07e91ddc5f4d4de8".to_string(),
+            size_bytes: 10_685_012_800,
+            description: "Gemma 4 12B Q6 — recommended for 16 GB VRAM (~11 GB)".to_string(),
             downloaded: false,
             legacy: false,
-            mmproj_filename: Some(qwen_38_27b_mmproj_filename()),
-            mmproj_url: Some(QWEN_38_27B_MMPROJ_URL.to_string()),
-            mmproj_size_bytes: Some(QWEN_38_27B_MMPROJ_SIZE),
-            mtp: MtpSource::Bundled,
-            kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
-        },
-        // 16 GB VRAM — sparse alternative. Only 4B active, so it decodes far
-        // faster than the dense 27B, and its cheap KV reaches a much larger
-        // context — but it holds ~2.7 GB more, leaving less room for the
-        // desktop. Its MTP head ships as a separate drafter that does NOT fit
-        // alongside the weights at this tier, hence `None` rather than
-        // `Sibling`: enabling it would back the context down to the floor.
-        ModelInfo {
-            id: "gemma-4-26B-A4B-it-UD-IQ4_XS".to_string(),
-            filename: "gemma-4-26B-A4B-it-UD-IQ4_XS.gguf".to_string(),
-            url: "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-IQ4_XS.gguf"
-                .to_string(),
-            sha256: "babd1e389d386352f71600765d37390f7dc993fbfad6725caccf996ffe34aecf".to_string(),
-            size_bytes: 13_597_177_568,
-            description: "Gemma 4 26B-A4B — fast sparse MoE for 16 GB VRAM (~14 GB)".to_string(),
-            downloaded: false,
-            legacy: false,
-            mmproj_filename: Some(gemma4_26b_a4b_mmproj_filename()),
-            mmproj_url: Some(GEMMA4_26B_A4B_MMPROJ_URL.to_string()),
-            mmproj_size_bytes: Some(GEMMA4_26B_A4B_MMPROJ_SIZE),
+            mmproj_filename: Some(gemma4_12b_mmproj_filename()),
+            mmproj_url: Some(GEMMA4_12B_MMPROJ_URL.to_string()),
+            mmproj_size_bytes: Some(GEMMA4_12B_MMPROJ_SIZE),
+            // Verified per file: the main GGUF carries no `blk.N.nextn.*`
+            // tensors. Unsloth ships a 465 MB drafter separately, which
+            // `MtpSource::Sibling` exists for and which would fit inside this
+            // tier's headroom — not wired up until it's been measured.
             mtp: MtpSource::None,
-            kv_bytes_per_token: KV_PER_TOKEN_GEMMA4_A4B,
+            kv_bytes_per_token: KV_PER_TOKEN_GEMMA4_12B,
         },
         // 24 GB VRAM — sparse MoE, the recommended large model
         ModelInfo {
@@ -1522,7 +1507,7 @@ mod tests {
         let tiers = [
             (8188u64, "Qwen3.5-9B-IQ4_NL"),
             (12038, "Qwen3.5-9B-UD-Q6_K_XL"),
-            (16303, "Qwen3.8-27B-UD-IQ3_XXS"),
+            (16303, "gemma-4-12b-it-UD-Q6_K_XL"),
             (24110, "Qwen3.6-35B-A3B-UD-IQ4_NL"),
             (32510, "Qwen3.6-35B-A3B-UD-Q5_K_XL"),
         ];
@@ -1542,8 +1527,7 @@ mod tests {
         // quietly halves the window. Each is paired with the tier it belongs
         // to, since that's the only VRAM it's offered at.
         let alternatives = [
-            ("gemma-4-26B-A4B-it-UD-IQ4_XS", 16303u64),
-            ("Qwen3.8-27B-UD-IQ4_XS", 24110),
+            ("Qwen3.8-27B-UD-IQ4_XS", 24110u64),
             ("Qwen3.8-27B-UD-Q4_K_XL", 32510),
         ];
         for (id, vram_mb) in alternatives {
@@ -1621,15 +1605,13 @@ mod tests {
     #[test]
     fn model_registry_has_expected_entries() {
         let models = model_registry();
-        assert_eq!(models.len(), 9);
+        assert_eq!(models.len(), 8);
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert!(ids.contains(&"Qwen3.5-4B-IQ4_NL"));
         assert!(ids.contains(&"Qwen3.5-9B-IQ4_NL"));
         assert!(ids.contains(&"Qwen3.5-9B-UD-Q6_K_XL"));
-        // 16 GB: dense default plus the sparse opt-in.
-        assert!(ids.contains(&"Qwen3.8-27B-UD-IQ3_XXS"));
-        assert!(ids.contains(&"gemma-4-26B-A4B-it-UD-IQ4_XS"));
+        assert!(ids.contains(&"gemma-4-12b-it-UD-Q6_K_XL"));
         // 24 GB: sparse default plus the dense opt-in.
         assert!(ids.contains(&"Qwen3.6-35B-A3B-UD-IQ4_NL"));
         assert!(ids.contains(&"Qwen3.8-27B-UD-IQ4_XS"));
@@ -1685,7 +1667,6 @@ mod tests {
     #[test]
     fn only_the_dense_38_declares_an_mtp_head() {
         const BUNDLED: &[&str] = &[
-            "Qwen3.8-27B-UD-IQ3_XXS",
             "Qwen3.8-27B-UD-IQ4_XS",
             "Qwen3.8-27B-UD-Q4_K_XL",
             "Qwen3.8-27B-IQ4_NL", // legacy, but the head is still in the file
@@ -1698,10 +1679,10 @@ mod tests {
             };
             assert_eq!(model.mtp, expected, "unexpected mtp source on {}", model.id);
         }
-        assert!(mtp_source_for("Qwen3.8-27B-UD-IQ3_XXS.gguf").is_supported());
+        assert!(mtp_source_for("Qwen3.8-27B-UD-IQ4_XS.gguf").is_supported());
         assert!(!mtp_source_for("Qwen3.6-27B-IQ4_NL.gguf").is_supported());
         assert!(!mtp_source_for("Qwen3.5-9B-IQ4_NL.gguf").is_supported());
-        assert!(!mtp_source_for("gemma-4-26B-A4B-it-UD-IQ4_XS.gguf").is_supported());
+        assert!(!mtp_source_for("gemma-4-12b-it-UD-Q6_K_XL.gguf").is_supported());
         // A GGUF the user dropped in themselves: we know nothing about it.
         assert!(!mtp_source_for("Some-Imported-Model.gguf").is_supported());
     }

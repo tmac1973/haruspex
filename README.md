@@ -123,15 +123,17 @@ Haruspex runs the model on your GPU. How much VRAM you have decides which model 
 | Under 8 GB / iGPU | Qwen 3.5 4B                                                            | Chat, research and documents work. Slower. Coding features will struggle. |
 | 8 GB              | Qwen 3.5 9B                                                            | Good research and document work. Coding features will struggle.           |
 | 12 GB             | Qwen 3.5 9B (Q6)                                                       | Same abilities, better quality answers.                                   |
-| 16 GB             | Qwen 3.8 27B _or_ Gemma 4 26B-A4B                                      | Three times the parameters of the 9B. Coding features become usable.      |
+| 16 GB             | Gemma 4 12B (Q6)                                                       | Coding features become usable, with room for very long conversations.     |
 | 24 GB             | Qwen 3.6 35B-A3B _or_ Qwen 3.8 27B                                     | Everything, including the coding features.                                |
 | 32 GB and up      | The same two models, at higher-quality quants                          | The best local quality Haruspex offers.                                   |
 
 The first-run wizard picks one of these for you. You can change it later in Settings → Models, and you can re-run the wizard from Settings → Inference.
 
-**From 16 GB up, each tier offers two models.** The default is the one that leaves the most room free on a card that is probably also driving your desktop. The alternative spends some of that headroom on something else: at 16 GB, Gemma 4 26B-A4B only activates 4B parameters per token, so it answers noticeably faster and holds a much longer conversation, but it needs about 3 GB more than the Qwen. Both are listed in Settings → Models with their sizes.
+**From 24 GB up, each tier offers two models.** The default is the sparse mixture-of-experts model, which activates only a fraction of its parameters per token and so answers faster; the alternative is a dense model of similar size, which some people prefer. Both are listed in Settings → Models with their sizes.
 
-**Short on VRAM?** Settings → Inference has an option to keep the vision projector in system RAM. The projector is about 1 GB and only does work on messages that actually contain an image, so moving it out of VRAM usually buys a longer context — often twice as much. Messages with images take a few seconds longer to process; nothing else changes.
+**Why a 12B at 16 GB and not something bigger?** A bigger model has to fit its weights *and* the conversation in the same VRAM, and the conversation is not free. Gemma 4 12B keeps only 8 of its 48 attention layers at full range, so its share of the memory grows about four times more slowly per word than a 27B's — which is what lets this tier hold a very long conversation instead of spending everything on parameters and running out of room mid-task.
+
+**Short on VRAM?** Settings → Inference has an option to keep the vision projector in system RAM. The projector only does work on messages that actually contain an image, so moving it out of VRAM buys a longer conversation — up to twice as much on the 8 GB tier, where it is the largest. Messages with images take a few seconds longer to process; nothing else changes.
 
 **Integrated graphics** (Intel HD/UHD/Iris, AMD Vega/Radeon Graphics) will work, but much more slowly. Recent AMD APUs do better than older Intel iGPUs, and both are well behind a discrete card.
 
@@ -296,7 +298,7 @@ When deep research is on, you are using Auto, and you have no Brave API key, the
 
 Code mode, guided planning, autonomous coding, audit jobs and the Python sandbox all ask the model to read and write code. The 4B and 9B models we recommend below 16 GB are good at research and weak at coding, so on those models these features will make mistakes, get stuck, or produce code that does not run.
 
-They are still included because they work from 16 GB up, where the lineup moves to Qwen 3.8 27B, Gemma 4 26B-A4B and Qwen 3.6 35B-A3B, and because you can point any of them at a bigger model elsewhere. Set your expectations by your hardware.
+They are still included because they work from 16 GB up, where the lineup moves to Gemma 4 12B and then to Qwen 3.6 35B-A3B and Qwen 3.8 27B, and because you can point any of them at a bigger model elsewhere. Set your expectations by your hardware.
 
 ### Image coverage is thin for new and specific things
 
@@ -443,7 +445,7 @@ Use `make reset-data` to wipe this directory and start fresh (Linux/macOS).
 | Speech-to-text             | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Vulkan/Metal)                                                                                                           |
 | Text-to-speech             | [Kokoros](https://github.com/lucasjinreal/Kokoros) (CPU)                                                                                                                        |
 | Models (small)             | [Qwen 3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) and [Qwen 3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF)                                                 |
-| Models (16 GB and up)      | [Qwen 3.8 27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF), [Qwen 3.6 35B-A3B](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) and [Gemma 4 26B-A4B](https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF) |
+| Models (16 GB and up)      | [Gemma 4 12B](https://huggingface.co/unsloth/gemma-4-12b-it-GGUF), [Qwen 3.6 35B-A3B](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) and [Qwen 3.8 27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF) |
 | Python sandbox             | [Pyodide](https://pyodide.org/) running in the app's webview                                                                                                                    |
 | PDF text extraction        | [PDFium](https://github.com/bblanchon/pdfium-binaries) with custom layout reconstruction                                                                                        |
 | PDF rendering (for vision) | [PDF.js](https://mozilla.github.io/pdf.js/) running in the Tauri webview                                                                                                        |

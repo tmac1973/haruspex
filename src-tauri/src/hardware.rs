@@ -42,7 +42,7 @@ const QUANT_BY_VRAM_MB: &[(u64, &str)] = &[
     (7168, "Qwen3.5-4B-IQ4_NL"),              // < ~8 GB
     (11264, "Qwen3.5-9B-IQ4_NL"),             // ~8–12 GB (default tier)
     (15360, "Qwen3.5-9B-UD-Q6_K_XL"),         // ~12–16 GB
-    (23552, "Qwen3.8-27B-UD-IQ3_XXS"),        // ~16–24 GB (Gemma 4 26B-A4B is opt-in)
+    (23552, "gemma-4-12b-it-UD-Q6_K_XL"),     // ~16–24 GB
     (31744, "Qwen3.6-35B-A3B-UD-IQ4_NL"),     // ~24–32 GB → sparse MoE (dense 27B is opt-in)
     (u64::MAX, "Qwen3.6-35B-A3B-UD-Q5_K_XL"), // 32 GB+ → the same MoE at Q5
 ];
@@ -442,7 +442,7 @@ mod tests {
             "Qwen3.5-4B-IQ4_NL",
             "Qwen3.5-9B-IQ4_NL",
             "Qwen3.5-9B-UD-Q6_K_XL",
-            "Qwen3.8-27B-UD-IQ3_XXS",
+            "gemma-4-12b-it-UD-Q6_K_XL",
             "Qwen3.6-35B-A3B-UD-IQ4_NL",
             "Qwen3.6-35B-A3B-UD-Q5_K_XL",
         ];
@@ -464,7 +464,7 @@ mod tests {
             (8188, "Qwen3.5-9B-IQ4_NL"),           // "8 GB", reported short
             (10240, "Qwen3.5-9B-IQ4_NL"),          // 10 GB
             (12038, "Qwen3.5-9B-UD-Q6_K_XL"),      // "12 GB", reported short
-            (16303, "Qwen3.8-27B-UD-IQ3_XXS"),     // "16 GB", reported short
+            (16303, "gemma-4-12b-it-UD-Q6_K_XL"),  // "16 GB", reported short
             (24110, "Qwen3.6-35B-A3B-UD-IQ4_NL"),  // "24 GB", reported short
             (32510, "Qwen3.6-35B-A3B-UD-Q5_K_XL"), // "32 GB", reported short
             (49152, "Qwen3.6-35B-A3B-UD-Q5_K_XL"), // 48 GB
