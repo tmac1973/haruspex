@@ -69,6 +69,17 @@
 	// Settings renders as an in-page overlay rather than a route navigation, so
 	// the Shell tab's PTY (and scrollback) survives opening/closing settings.
 	let showSettings = $state(false);
+
+	// Settings is an overlay rendered *above* `children()` in <main>, not a
+	// route. So navigating away from inside it — Inference → Run Setup Wizard
+	// calls `goto('/setup')` — swaps the page underneath while the overlay
+	// stays put, and the click looks like it did nothing. Close it whenever we
+	// land on the wizard.
+	$effect(() => {
+		if (page.url.pathname.startsWith('/setup')) {
+			showSettings = false;
+		}
+	});
 	let showStartupNotice = $state(false);
 	let version = $state('');
 	let update = $state<UpdateInfo | null>(null);
