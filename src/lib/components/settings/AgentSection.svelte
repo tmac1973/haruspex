@@ -141,7 +141,9 @@
 		</select>
 		<p class="hint">
 			How hard the model thinks before answering. A lower level tells it up front to keep the chain
-			of thought short, so it still reaches a conclusion — nothing is cut off part-way.
+			of thought short, so it still reaches a conclusion — nothing is cut off part-way. Thinking is
+			spent from the same context window as the work, so on a card where the window is tight a high
+			level can run a long coding turn out of room before it finishes.
 			{#if !thinkingEnabled}
 				Only applies while reasoning mode is on.
 			{:else if !effortCaps}

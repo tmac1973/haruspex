@@ -609,6 +609,68 @@ describe('OpenRouter backend', () => {
 	});
 });
 
+describe('load-time reasoning-effort default', () => {
+	// Same fresh-module idiom as the suite below: load() only runs at module
+	// init, so each case primes localStorage and re-imports.
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) {
+			localStorage.removeItem(SETTINGS_KEY);
+		} else {
+			localStorage.setItem(SETTINGS_KEY, priorRaw);
+		}
+		vi.resetModules();
+	});
+
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		const fresh = await import('$lib/stores/settings');
+		return fresh.getSettings();
+	}
+
+	it('ships medium, so Qwen 3.8 does not think at its own xhigh default', async () => {
+		localStorage.removeItem(SETTINGS_KEY);
+		vi.resetModules();
+		const fresh = await import('$lib/stores/settings');
+		expect(fresh.getSettings().reasoningEffort).toBe('medium');
+	});
+
+	it('adopts medium for an install that predates the flag and chose nothing', async () => {
+		const s = await loadWith({ reasoningEffort: null });
+		expect(s.reasoningEffort).toBe('medium');
+	});
+
+	it('leaves a level the user actually picked alone', async () => {
+		const s = await loadWith({ reasoningEffort: 'xhigh' });
+		expect(s.reasoningEffort).toBe('xhigh');
+	});
+
+	it('honours Model default once the migration has run', async () => {
+		// The ambiguity this flag exists to resolve: the same stored `null` as
+		// the second case, but chosen deliberately after the default shipped.
+		const s = await loadWith({ reasoningEffort: null, reasoningEffortDefaulted: true });
+		expect(s.reasoningEffort).toBeNull();
+	});
+
+	it('still migrates the legacy OpenRouter-only level forward', async () => {
+		const s = await loadWith({
+			inferenceBackend: { openrouterReasoningEffort: 'high' }
+		});
+		expect(s.reasoningEffort).toBe('high');
+	});
+
+	it('marks the install so the migration cannot run twice', async () => {
+		const s = await loadWith({ reasoningEffort: null });
+		expect(s.reasoningEffortDefaulted).toBe(true);
+	});
+});
+
 describe('load-time remoteServerUrls seeding', () => {
 	// The store is a module singleton, so exercising load() requires a
 	// fresh module instance: prime localStorage, reset the registry, and
