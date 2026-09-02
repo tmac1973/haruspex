@@ -94,6 +94,65 @@
 	// window — the detached shell window renders markdown too.
 	onMount(() => installMarkdownActions());
 
+	/**
+	 * Intercept clicks on external links and open them in the system browser
+	 * rather than letting the webview navigate to them (which would replace the
+	 * Haruspex UI). Routed through our own `open_url` command rather than
+	 * tauri-plugin-shell so the spawn happens in Rust where we can strip
+	 * AppImage-bundled paths out of LD_LIBRARY_PATH for the child — without
+	 * that, AppImage builds inherited the bundled lib path into the spawned
+	 * browser and links did nothing.
+	 */
+	function openExternalLinks(e: MouseEvent): void {
+		const anchor = (e.target as HTMLElement).closest('a');
+		if (!anchor) return;
+		const href = anchor.getAttribute('href');
+		if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+			e.preventDefault();
+			invoke('open_url', { url: href }).catch((err) => {
+				console.error('open_url failed:', href, err);
+				showToast("Couldn't open link in your browser", { kind: 'error' });
+			});
+		}
+	}
+
+	/**
+	 * Suppress the webview's right-click context menu on links. WebKitGTK's
+	 * default "Open Link" item navigates the current frame, which replaces the
+	 * Haruspex UI with the linked page. Killing the menu on anchors removes the
+	 * footgun; non-link right-clicks still get the default menu.
+	 */
+	function suppressLinkContextMenu(e: MouseEvent): void {
+		const anchor = (e.target as HTMLElement).closest('a');
+		if (anchor) e.preventDefault();
+	}
+
+	/**
+	 * Both link handlers, in their OWN synchronous onMount.
+	 *
+	 * They used to live in the async bootstrap onMount below, which was wrong
+	 * twice over. Svelte only honours a teardown returned SYNCHRONOUSLY, so an
+	 * async callback cannot clean up after itself at all — the listeners were
+	 * never removed, and every remount (Vite HMR during development) stacked
+	 * another copy. With N copies attached, one click on a reference link
+	 * fired `open_url` N times and opened N identical browser tabs.
+	 *
+	 * Installing them here also reaches every window. The bootstrap onMount
+	 * early-returns for detached shell windows, so those never got the
+	 * interceptor: a link click there navigated the webview and replaced the
+	 * shell UI with the page. Detached windows render markdown (and so links)
+	 * exactly like the main one, which is why `installMarkdownActions` above is
+	 * already installed unconditionally.
+	 */
+	onMount(() => {
+		document.addEventListener('click', openExternalLinks);
+		document.addEventListener('contextmenu', suppressLinkContextMenu);
+		return () => {
+			document.removeEventListener('click', openExternalLinks);
+			document.removeEventListener('contextmenu', suppressLinkContextMenu);
+		};
+	});
+
 	// Effective theme for the header sun/moon toggle. The settings store
 	// isn't reactive, but applyTheme() is the only writer of `data-theme`,
 	// so observing that attribute + the OS preference covers every way the
@@ -185,35 +244,6 @@
 				update = info;
 			});
 		}
-
-		// Intercept clicks on external links and open in the system browser
-		// rather than letting the webview navigate to them (which would replace
-		// the Haruspex UI). Routed through our own `open_url` command rather
-		// than tauri-plugin-shell so the spawn happens in Rust where we can
-		// strip AppImage-bundled paths out of LD_LIBRARY_PATH for the child
-		// — without that, AppImage builds inherited the bundled lib path
-		// into the spawned browser and links did nothing.
-		document.addEventListener('click', (e) => {
-			const anchor = (e.target as HTMLElement).closest('a');
-			if (!anchor) return;
-			const href = anchor.getAttribute('href');
-			if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-				e.preventDefault();
-				invoke('open_url', { url: href }).catch((err) => {
-					console.error('open_url failed:', href, err);
-					showToast("Couldn't open link in your browser", { kind: 'error' });
-				});
-			}
-		});
-
-		// Suppress the webview's right-click context menu on links. WebKitGTK's
-		// default "Open Link" item navigates the current frame, which replaces
-		// the Haruspex UI with the linked page. Killing the menu on anchors
-		// removes the footgun; non-link right-clicks still get the default menu.
-		document.addEventListener('contextmenu', (e) => {
-			const anchor = (e.target as HTMLElement).closest('a');
-			if (anchor) e.preventDefault();
-		});
 
 		// First-run detection + initial backend setup. Three paths:
 		//   1. Remote-inference mode active → skip the local sidecar
