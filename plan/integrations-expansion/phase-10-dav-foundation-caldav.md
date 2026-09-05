@@ -1,12 +1,12 @@
-# Phase 11 — DAV foundation + CalDAV read
+# Phase 10 — DAV foundation + CalDAV read
 
-**Depends on:** nothing (track C) · **Enables:** Phase 12.
+**Depends on:** nothing (track B) · **Enables:** Phase 11.
 
 ## Goal
 
 Complete the local-first PIM story that IMAP started: let the agent answer
 questions about the user's calendar. Build the shared DAV client here, so
-CardDAV in Phase 12 is mostly parsing.
+CardDAV in Phase 11 is mostly parsing.
 
 Read-only, exactly as email shipped read-only first and gained sending later.
 
@@ -21,7 +21,7 @@ Read-only, exactly as email shipped read-only first and gained sending later.
 - **NEW** `src-tauri/src/integrations/dav/commands.rs`
 - **EDIT** `src-tauri/Cargo.toml` — `quick-xml` (DAV is XML; the existing
   `scraper` is an HTML parser and is the wrong tool), plus an iCalendar/vCard
-  parser chosen to cover **both** formats so Phase 12 reuses it.
+  parser chosen to cover **both** formats so Phase 11 reuses it.
 - **EDIT** `src-tauri/src/integrations/mod.rs` — `pub mod dav;`.
 - **NEW** `src/lib/agent/tools/calendar.ts` + test.
 - **EDIT** `src/lib/agent/tools/types.ts` — `'calendar'` category.
@@ -48,7 +48,7 @@ available through Integrations → MCP" is not.
 
 Given an email-like address or a bare server URL:
 
-1. DNS SRV `_caldavs._tcp` (and `_carddavs._tcp` in Phase 12), then
+1. DNS SRV `_caldavs._tcp` (and `_carddavs._tcp` in Phase 11), then
 2. `/.well-known/caldav`, following redirects, then
 3. `current-user-principal` via PROPFIND, then
 4. `calendar-home-set`, then

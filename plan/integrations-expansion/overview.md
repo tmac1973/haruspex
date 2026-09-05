@@ -16,23 +16,31 @@ The gap is twofold:
 1. **No general integration mechanism.** There is no MCP client, so the entire
    third-party ecosystem is unreachable. `src-tauri/src/integrations/mod.rs`
    has said "eventually a general MCP client for the long tail" since Phase 10.
-2. **Missing capabilities that only a desktop app can have.** Clipboard, active
-   window and screen capture are the things a browser-based assistant
-   structurally cannot do, and Haruspex does not expose any of them to the
-   agent. A local-first PIM story stops at email, with no calendar or contacts.
+2. **Missing capabilities that only a desktop app can have.** Screen capture is
+   the thing a browser-based assistant structurally cannot do, and Haruspex does
+   not expose it to the agent. A local-first PIM story stops at email, with no
+   calendar or contacts.
 
 ## Goals
 
 - A **three-tier integration strategy**, implemented:
-  - **Tier 1, hand-built** — desktop context (clipboard, active window,
-    screenshots) and CalDAV/CardDAV, chosen because they need OS-level access or
-    are used every session.
+  - **Tier 1, hand-built** — screen capture and CalDAV/CardDAV, chosen because
+    they need OS-level access or are used every session.
   - **Tier 2, curated MCP catalog** — vetted server configs with tested default
-    tool filters and guided setup, shipped with the app.
+    tool filters and guided setup, shipped with the app. Includes
+    **companion-app** entries: servers that drive a third-party desktop
+    application Haruspex neither bundles nor installs.
   - **Tier 3, arbitrary user-defined MCP servers** — the long tail.
 - An MCP client that **speaks both protocol eras** (2026-07-28 stateless and the
-  2025-11-25-and-earlier handshake), because most servers in the wild are still
-  on the older revision.
+  2025-11-25-and-earlier `initialize` handshake). Not for the features — a
+  modern-only client against a legacy server simply *fails*, per the spec's own
+  compatibility matrix, so the era we skip is a slice of the ecosystem we cannot
+  talk to at all. As of September 2026 the stateless revision is five weeks old
+  and the feature-lifecycle policy guarantees legacy at least a twelve-month
+  deprecation window, with the v1 SDK lines alive alongside v2; the long tail
+  Tier 3 exists to serve will be handshake-era for a while yet. Revisit once the
+  curated catalog is majority-modern — dual-era is scoped (see Phase 03) so that
+  dropping legacy is a deletion, not an untangling.
 - **Zero-install for the user.** Adding an integration must be completable
   entirely inside the app's UI by someone who has never opened a terminal.
 - **Per-server and per-tool enable/disable from day one**, plus a tool budget
@@ -52,8 +60,18 @@ The gap is twofold:
 - **MCP resources and prompts.** Tools only in v1.
 - **CalDAV/CardDAV writes.** Read-only first, mirroring how email shipped
   (10.1 read-only, 10.2 sending).
-- **Background polling of anything.** No capability here ever samples the
-  clipboard, the focused window, or the screen on a timer.
+- **Background polling of anything.** No capability here ever samples the screen
+  on a timer.
+- **Clipboard and active-window tools, and a global hotkey.** Cut 2026-09-05.
+  A `read_clipboard` / `active_window` pair plus a system-wide shortcut that
+  prefills a new chat is a lot of per-platform native work — X11 atoms, Win32,
+  AppKit, an honest Wayland "unavailable", plus shortcut registration and
+  focus-stealing behaviour on three platforms — for something the user already
+  does by pasting into the composer. The hotkey in particular is the hardest
+  thing here to get right cross-platform and the easiest to live without. Screen
+  capture survives the same cut because the agent deciding to *look*,
+  mid-conversation, is a capability dragging a file into the composer does not
+  provide.
 
 ## Users & primary flows
 
@@ -72,13 +90,17 @@ software.
 a command and arguments directly. Same lifecycle, same tool controls, no catalog
 entry.
 
-**Flow C — desktop context.** The user hits a global hotkey; Haruspex opens with
-the clipboard (and, where the platform can report it, the active window) already
-in the composer. Or, mid-conversation, the model calls `read_clipboard` /
-`active_window` / `capture_screen` because the user referred to something on
-screen.
+**Flow C — screen capture.** Mid-conversation, the user refers to something on
+screen and the model calls `capture_screen`; on Wayland the portal's own picker
+is what makes the capture user-initiated. The user can also attach a capture from
+the composer directly.
 
-**Flow D — calendar and contacts.** The user adds a CalDAV/CardDAV account with a
+**Flow D — a companion application.** The user installs the Blender entry from
+the catalog, runs its addon install, and enables the addon in Blender. From then
+on the app knows whether Blender is actually reachable and says so in Settings,
+rather than looking healthy and failing at chat time.
+
+**Flow E — calendar and contacts.** The user adds a CalDAV/CardDAV account with a
 URL and an app password; discovery finds the collections; the agent can then
 answer questions about their schedule and their contacts alongside their email.
 
@@ -88,9 +110,9 @@ answer questions about their schedule and their contacts alongside their email.
   needs. The user must never be told to install Node, Python, or Docker.
 - **Local-first and offline-capable.** After install, starting a server must not
   require the network. The catalog ships in the bundle, not from a hosted endpoint.
-- **User-initiated capture only.** Clipboard, window and screen reads happen on
-  an explicit tool call or an explicit keypress, never on a timer — and this must
-  be obvious from reading the source.
+- **User-initiated capture only.** Screen reads happen on an explicit tool call
+  or an explicit composer action, never on a timer — and this must be obvious
+  from reading the source.
 - **Third-party code runs here.** MCP servers are arbitrary programs with
   arbitrary side effects. Non-read-only tools are gated behind an approval
   prompt, and a tool with no annotation is treated as unsafe.
@@ -112,8 +134,9 @@ answer questions about their schedule and their contacts alongside their email.
   leaves no orphaned child processes.
 - A server exposing 30+ tools produces a visible budget warning on the 9B tier,
   and the user can disable individual tools to clear it.
-- `read_clipboard` and `active_window` work on X11, Windows and macOS, and report
-  a clear, honest "unavailable" under Wayland rather than failing obscurely.
+- With Blender closed, its server's Settings row says *running, but Blender is not
+  connected* with the steps to fix it — and flips on its own once the user starts
+  the addon, without restarting anything.
 - Screen capture works under the Wayland portal, X11, macOS and Windows, and the
   model demonstrably reads the resulting image.
 - A real Nextcloud or Fastmail account can be added and queried for events and
@@ -127,10 +150,11 @@ Every decision below is resolved. Nothing is deferred to implementation.
 
 | Decision | Resolution |
 |---|---|
-| Capabilities in scope | Desktop context (clipboard + active window), MCP client infrastructure, screenshots, CalDAV/CardDAV |
+| Capabilities in scope | MCP client infrastructure (including companion-app servers), screen capture, CalDAV/CardDAV |
 | Local semantic search | **Out of scope.** Separate plan folder later |
+| Clipboard / active window / global hotkey | **Cut 2026-09-05.** Heavy per-platform native work for something pasting already covers; the hotkey is the hardest part to get right on three platforms. See Non-goals |
 | Plan layout | One folder, dependency-ordered phases (this folder) |
-| Ordering | Desktop context as warm-up, then MCP front-loaded, then screenshots and DAV as independent tracks |
+| Ordering | MCP front-loaded and internally sequential; screen capture and DAV as independent tracks alongside it |
 | Platforms | Linux, macOS and Windows implemented up front |
 
 ### MCP
@@ -138,7 +162,7 @@ Every decision below is resolved. Nothing is deferred to implementation.
 | Decision | Resolution |
 |---|---|
 | Client implementation | **rmcp 3.x**, the official Rust SDK |
-| Protocol eras | Both. 2026-07-28 stateless *and* the 2025-11-25-and-earlier `initialize` handshake |
+| Protocol eras | Both, but *scoped*: connect / `tools/list` / `tools/call` on either era; the interactive path (MRTR) is modern-only |
 | Runtimes | **Bundled**: Node + npm and `uv`. `uv` manages its own CPython, so no Python bundle |
 | Third acquisition kind | **Release binary**, per-platform, checksum-verified — required by GitHub's official server, which is a Go binary, not an npm package |
 | Docker | Never bundled; not a supported acquisition kind |
@@ -148,30 +172,40 @@ Every decision below is resolved. Nothing is deferred to implementation.
 | Approval gate | **Annotation-driven.** `readOnlyHint` runs freely; anything else prompts once per tool with "always allow". **Missing annotation = treated as non-read-only** |
 | Tool budget | Per-tool enable/disable from day one, plus a **warning** above a model-scaled cap. Warn, never auto-narrow |
 | Catalog location | **Bundled JSON in the repo**, shipped with the app |
-| Catalog v1 entries | **GitHub** (release binary, PAT) and **Google Drive/Workspace** (npm, OAuth-heavy) |
+| Catalog v1 entries | **GitHub** (release binary, PAT), **Google Drive/Workspace** (npm, OAuth-heavy), **Blender** (pypi, companion app) and **Godot** (pypi, companion app). Between them they exercise all three acquisition kinds and every setup step kind |
 | Catalog format | Includes a **guided-setup concept**: ordered steps with instruction text and links, secret and file inputs, and a post-install auth command whose output the app surfaces |
 | Transports | **stdio first**; streamable HTTP is a later phase within this plan |
 | Server-initiated requests | Multi Round-Trip Requests (`resultType: "input_required"` → retry with `inputResponses`) mapped onto the **existing** HITL primitive in `src/lib/stores/userQuestion.svelte.ts` |
 | Secrets storage | The settings blob, same trust level as the existing Brave / inference / IMAP credentials. Documented explicitly, not silently |
 
-### Desktop context
+### Companion-app servers
 
 | Decision | Resolution |
 |---|---|
-| Surfaces | Both **agent tools** (`read_clipboard`, `active_window`) and a **global hotkey** that captures context into a new chat |
-| Clipboard implementation | Reuse the existing `src-tauri/src/clipboard.rs` (arboard, off the main thread). No new native code |
-| Active window | **Best-effort per platform with an honest "unavailable"**: X11 `_NET_ACTIVE_WINDOW`, Windows `GetForegroundWindow`, macOS `NSWorkspace` app name (title only with an Accessibility grant), Wayland unavailable |
-| Why Wayland is unavailable | `ext-foreign-toplevel-list-v1` is compositor-dependent and does not cleanly report focus; GNOME needs a shell extension, KDE needs KWin scripting. Not a generic capability |
-| Polling | **Never.** User-initiated reads only |
+| The class | Servers bridging a third-party desktop app the user installs themselves — the app must be present, carry an enabled addon, and be **running** |
+| v1 entries | **Blender** (`blender-mcp`, MIT, community) and **Godot** (`godot-editor-mcp`, community) |
+| The problem being solved | The MCP process is genuinely healthy — it negotiates and lists tools — while every call fails. Without modelling this, Settings shows green and the model reports it cannot reach Blender |
+| Declaration | A `companion` block in the catalog entry: app name, minimum version, download link, a probe, and a hint string shown to the user |
+| Probe kinds | **`tcp`** (Blender's addon listens on 9876) and **`tool`** (Godot's addon dials *out* to the server, so a port check would always succeed; call a tool and classify `BRIDGE_DISCONNECTED`) |
+| Probe safety | A `tool` probe may name only a tool carrying `readOnlyHint`, validated at parse time. The app calls probes on its own initiative, so a probe must never reach a tool the approval gate would prompt for |
+| Status shape | A **field beside** `SidecarStatus`, not a fifth variant — the process state is genuinely fine. Displayed as one combined line |
+| Probe cadence | On start, on demand, after a failed tool call, and on a slow poll **only while the settings panel is open** |
+| Blender telemetry | `DISABLE_TELEMETRY=true` in the entry, asserted by a test against the spawned environment. A catalog entry that phones home contradicts the product |
+| Blender code execution | `execute_blender_code` is out of `defaultTools`, carries no `readOnlyHint` so the gate prompts, and is never probe-eligible |
+| Godot addon scope | Per **project**, not per machine — installed from the Asset Library into each project. The setup steps and the hint both say so |
+| Vetting community entries | Pinned version, recorded license and maintainer shown in the catalog browser **before install**, source reviewed at the pinned version, `defaultTools` actually exercised |
 
-### Screenshots
+### Screen capture
 
 | Decision | Resolution |
 |---|---|
+| Surfaces | An **agent tool** (`capture_screen`) plus a composer attach control. No global hotkey |
 | Capture scope | Whole screen or a user-chosen window |
 | Linux | **Portal-first** — `xdg-desktop-portal` Screenshot on Wayland; its system picker *is* the user-initiated guarantee. Direct X11 path otherwise |
 | macOS / Windows | ScreenCaptureKit with the Screen Recording grant; native capture on Windows |
 | Vision | Confirmed available — every model in `src-tauri/src/models.rs` carries an `mmproj_url`. **No OCR fallback needed** |
+| Consent | One Settings toggle, default off, gated twice (schema filter **and** `executeTool`) |
+| Polling | **Never.** User-initiated reads only |
 
 ### CalDAV / CardDAV
 

@@ -1,6 +1,6 @@
-# Phase 08 — MCP settings UI
+# Phase 06 — MCP settings UI
 
-**Depends on:** Phases 06, 07 · **Enables:** Phase 09.
+**Depends on:** Phases 04, 05 · **Enables:** Phases 07, 08.
 
 ## Goal
 
@@ -29,8 +29,11 @@ Follow `EmailSection.svelte` for structure and the established visual language:
 ### Server list
 
 Each configured server shows its name, status (reusing the four-state vocabulary
-from Phase 04), the negotiated protocol era and version, tool count, and controls
+from Phase 02), the negotiated protocol era and version, tool count, and controls
 to start, stop, view logs, configure, or remove.
+
+Leave room in the row for a second status line: Phase 07 adds companion-app
+state ("running, but Blender is not connected") beneath the process status.
 
 A server in `Error` shows its reason and the tail of its log ring inline. A
 non-technical user's whole diagnostic surface is this panel, so it must say what
@@ -42,7 +45,7 @@ Lists the bundled catalog with name, description, what the server can do, and wh
 setup it will require *before* the user commits — a Google-Cloud-project step
 disclosed after installation is a bad experience.
 
-"Add" runs the install with the `DownloadProgress` events from Phase 06, then
+"Add" runs the install with the `DownloadProgress` events from Phase 04, then
 hands off to the setup wizard.
 
 ### Setup wizard
@@ -57,7 +60,7 @@ long enough that they will.
 ### Tool list
 
 Per-tool toggles with each tool's description and its annotation badges
-(read-only / destructive). The budget warning from Phase 07 sits above the list
+(read-only / destructive). The budget warning from Phase 05 sits above the list
 and names the model it is judged against. "Reset to defaults" restores the
 catalog entry's tested `defaultTools`.
 
@@ -70,7 +73,7 @@ server is not more trusted than a curated one.
 
 ### Runtime health
 
-If Phase 03's `runtimes_available()` reports a missing runtime, say so at the top
+If Phase 01's `runtimes_available()` reports a missing runtime, say so at the top
 of the section and disable the affected acquisition kinds, rather than letting an
 install fail deep in a spawn.
 

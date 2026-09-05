@@ -1,6 +1,6 @@
-# Phase 04 — MCP process lifecycle: spawn, crash, hang, zombie reaping
+# Phase 02 — MCP process lifecycle: spawn, crash, hang, zombie reaping
 
-**Depends on:** Phase 03 · **Enables:** Phase 05.
+**Depends on:** Phase 01 · **Enables:** Phase 03.
 
 ## Goal
 
@@ -12,7 +12,7 @@ the app and holds resources until reboot.
 
 This phase introduces the `rmcp` dependency, because its stdio transport
 (`TokioChildProcess`) spawns the child itself — the supervisor is built around
-that type rather than around a hand-rolled spawn. Protocol work stays in Phase 05.
+that type rather than around a hand-rolled spawn. Protocol work stays in Phase 03.
 
 ## Files touched
 
@@ -38,11 +38,11 @@ llama-server, whisper-server and koko. Reuse it rather than reinventing:
 - `SidecarStatus` (`Stopped | Starting | Ready | Error`) — the same four states
   describe an MCP server. Use the existing enum, or mirror it exactly.
 - `new_log_buffer()` / `push_log()` / `strip_ansi()` — the 1000-entry ANSI-stripped
-  ring buffer, so Phase 08 can show a server's stderr when it fails.
+  ring buffer, so Phase 06 can show a server's stderr when it fails.
 - `spawn_log_reader` — the pattern for draining a child's output without blocking.
 
 Do **not** reuse the port/health-poll helpers: stdio servers have no port and no
-`/health`. Readiness is a successful protocol response, which Phase 05 supplies;
+`/health`. Readiness is a successful protocol response, which Phase 03 supplies;
 until then, readiness is "the process is alive and its pipes are open".
 
 ### The supervisor
@@ -87,9 +87,9 @@ that strictly worse. Note it in the module docs.
 ### Testing without a real server
 
 Ship a tiny stdio echo fixture (a few lines of Node, run through the bundled
-runtime from Phase 03). It can be made to exit immediately, hang forever, or
+runtime from Phase 01). It can be made to exit immediately, hang forever, or
 answer normally — which is exactly the matrix the supervisor must handle. This is
-what lets lifecycle be proven before Phase 05 exists.
+what lets lifecycle be proven before Phase 03 exists.
 
 ## Build gate
 
@@ -123,4 +123,4 @@ node scripts/check-ipc.mjs --write && git diff --exit-code src/lib/ipc/commands.
 
 ## Rollback
 
-Revert. Nothing spawns servers until a server is configured, which Phase 06 adds.
+Revert. Nothing spawns servers until a server is configured, which Phase 04 adds.

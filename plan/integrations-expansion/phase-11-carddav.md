@@ -1,11 +1,11 @@
-# Phase 12 — CardDAV read
+# Phase 11 — CardDAV read
 
-**Depends on:** Phase 11 · **Enables:** nothing (leaf).
+**Depends on:** Phase 10 · **Enables:** nothing (leaf).
 
 ## Goal
 
 Contacts alongside calendar and email, completing the PIM story. Small phase by
-design: the DAV client, discovery, auth and account model all come from Phase 11.
+design: the DAV client, discovery, auth and account model all come from Phase 10.
 
 ## Files touched
 
@@ -48,13 +48,13 @@ contact list is exactly the kind of data with one weird entry in it.
 - `contacts_search(query)` — over name, email, phone, organization.
 - `contacts_get(identifier)` — full detail for one contact.
 
-Same account resolution and fan-out as Phase 11.
+Same account resolution and fan-out as Phase 10.
 
 ### Why this is worth its own phase
 
 It shares everything structural with CalDAV but nothing in its parsing, and vCard
 version drift is the kind of detail that quietly produces wrong answers. Keeping
-it separate keeps Phase 11 reviewable and lets CalDAV ship on its own.
+it separate keeps Phase 10 reviewable and lets CalDAV ship on its own.
 
 ## Build gate
 
