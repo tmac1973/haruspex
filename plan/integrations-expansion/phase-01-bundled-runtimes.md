@@ -1,13 +1,13 @@
-# Phase 03 — Bundle the runtimes: node + npm + uv
+# Phase 01 — Bundle the runtimes: node + npm + uv
 
-**Depends on:** nothing · **Enables:** Phases 04, 06 (nothing can install or launch an MCP server without these).
+**Depends on:** nothing · **Enables:** Phases 02, 04 (nothing can install or launch an MCP server without these).
 
 ## Goal
 
 Ship Node + npm and `uv` inside the app so a non-technical user never installs
 anything to use an MCP server. This is long-lead work — per-platform binaries,
-bundle configuration and CI — and is independent of every other phase, so it can
-start immediately and in parallel with track A.
+bundle configuration and CI — and gates everything else in track A, so it starts
+first. It can also run in parallel with the independent track B phases.
 
 `uv` provisions its own CPython on demand, so Python is **not** bundled
 separately.
@@ -78,7 +78,7 @@ runtime gets an explicit environment — do not inherit an ambient `NODE_PATH`,
 "works on my machine" bug reaches a non-technical user's install.
 
 A `runtimes_available()` health check returns which runtimes resolved, so
-Phase 08's UI can explain a broken install instead of failing at spawn time.
+Phase 06's UI can explain a broken install instead of failing at spawn time.
 
 ### Bundle size
 
@@ -116,5 +116,5 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
 ## Rollback
 
-Revert. Nothing consumes `runtimes.rs` until Phase 04, so a revert is inert
+Revert. Nothing consumes `runtimes.rs` until Phase 02, so a revert is inert
 beyond bundle size.

@@ -1,6 +1,6 @@
-# Phase 07 — Dynamic tool registration, tool budget, approval gate
+# Phase 05 — Dynamic tool registration, tool budget, approval gate
 
-**Depends on:** Phases 05, 06 · **Enables:** Phase 08.
+**Depends on:** Phases 03, 04 · **Enables:** Phase 06.
 
 ## Goal
 
@@ -40,7 +40,7 @@ export function unregisterMcpServer(serverId: string): void;
 ```
 
 Called when a server reaches ready and when it stops or is disabled. All of them
-share one executor that dispatches to the Phase 05 `tools/call` command.
+share one executor that dispatches to the Phase 03 `tools/call` command.
 
 **Naming.** `mcp__<serverId>__<toolName>`. Two servers exposing `search` must not
 collide, and the prefix makes it obvious in the UI and in logs where a tool came
@@ -48,7 +48,7 @@ from. Keep the server's original name in the descriptor for display.
 
 ### Gating, twice
 
-Per-tool enablement is persisted on the server config (Phase 06). A disabled tool
+Per-tool enablement is persisted on the server config (Phase 04). A disabled tool
 is filtered out of `getToolSchemas` **and** hard-gated in `executeTool`.
 
 The second check is the one that actually protects the user. `executeTool`

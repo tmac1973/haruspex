@@ -1,6 +1,6 @@
-# Phase 09 — Streamable HTTP transport
+# Phase 08 — Streamable HTTP transport
 
-**Depends on:** Phases 05, 08 · **Enables:** hosted/remote MCP servers.
+**Depends on:** Phases 03, 06 · **Enables:** hosted/remote MCP servers.
 
 ## Goal
 
@@ -32,12 +32,12 @@ that MCP quietly ignores it.
 
 The stateless revision carries the negotiated version in the
 `MCP-Protocol-Version` header as well as `_meta`; handshake-era remote servers
-still expect `Mcp-Session-Id`. The dual-era logic from Phase 05 already decides
+still expect `Mcp-Session-Id`. The dual-era logic from Phase 03 already decides
 which, so this phase supplies headers, not policy.
 
 ### Lifecycle differences
 
-There is no child process, so most of Phase 04 does not apply — but the status
+There is no child process, so most of Phase 02 does not apply — but the status
 vocabulary does. Reachability replaces liveness: connection failures, TLS
 failures and HTTP errors all map onto `Error` with a readable reason. Retries are
 bounded and never automatic in a loop.

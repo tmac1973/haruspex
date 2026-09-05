@@ -1,6 +1,6 @@
-# Phase 06 — Curated catalog, install manager, settings shape
+# Phase 04 — Curated catalog, install manager, settings shape
 
-**Depends on:** Phases 03, 05 · **Enables:** Phases 07, 08.
+**Depends on:** Phases 01, 03 · **Enables:** Phases 05, 06, 07.
 
 ## Goal
 
@@ -77,6 +77,10 @@ entry therefore declares ordered steps, each one of:
 Steps are data, not code: adding a server to the catalog must never require a
 code change. Validate the shape at parse time and fail loudly on an unknown step
 kind rather than silently skipping it.
+
+The entry shape is additive by design. Phase 07 extends it with a `companion`
+block and an `optional` flag on steps, for servers that drive a third-party
+application; an entry without either must keep parsing unchanged.
 
 ### Install manager
 

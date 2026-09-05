@@ -1,6 +1,9 @@
-# Phase 10 — Screen capture
+# Phase 09 — Screen capture
 
-**Depends on:** nothing (track C) · **Enables:** nothing (leaf). Shares the Phase 01 settings section if that has landed; otherwise creates it.
+**Depends on:** nothing (track B) · **Enables:** nothing (leaf).
+
+This phase is self-contained: it creates the `desktop/` module, the Settings
+section and the `desktop` tool category that no other phase provides.
 
 ## Goal
 
@@ -13,15 +16,26 @@ needed.**
 
 ## Files touched
 
+- **NEW** `src-tauri/src/desktop/mod.rs` — module docs (including the
+  never-polled guarantee) and the capture command.
 - **NEW** `src-tauri/src/desktop/screenshot.rs` — per-platform capture.
-- **EDIT** `src-tauri/src/desktop/mod.rs` — the capture command.
-- **EDIT** `src-tauri/Cargo.toml` — `ashpd` (Linux portal), plus the existing
-  per-platform blocks from Phase 01.
+- **EDIT** `src-tauri/src/lib.rs` — `mod desktop;` and register the command in
+  `generate_handler![...]`.
+- **EDIT** `src-tauri/Cargo.toml` — `ashpd` (Linux portal), plus per-platform
+  blocks (`windows` for Win32, `objc2`/ScreenCaptureKit for macOS) under
+  `[target.'cfg(...)'.dependencies]` so no platform pays for another's deps.
 - **NEW** `src/lib/agent/tools/screen.ts` — the `capture_screen` tool.
+- **NEW** `src/lib/agent/tools/screen.test.ts`.
+- **EDIT** `src/lib/agent/tools/index.ts` — side-effect import.
+- **EDIT** `src/lib/agent/tools/types.ts` — add `'desktop'` to the `category` union.
+- **EDIT** `src/lib/agent/tools/registry.ts` — `screenCapture` on `ToolFilterOpts`,
+  the chat/code-mode filter arms, and the hard gate in `executeTool`.
+- **EDIT** `src/lib/stores/settings.ts` — `screenCaptureEnabled` (default `false`).
+- **NEW** `src/lib/components/settings/DesktopSection.svelte` — modelled on
+  `EmailSection.svelte`; one toggle.
+- **EDIT** `src/lib/components/settings/SettingsPanel.svelte` — mount it.
 - **EDIT** `src/lib/components/ChatView.svelte` / `ChatImageStrip.svelte` — a
   composer attach control.
-- **EDIT** `src/lib/components/settings/DesktopSection.svelte` — a separate
-  screen-capture toggle.
 
 ## Implementation
 
@@ -60,9 +74,16 @@ no "capture until", no background variant.
 
 ### Consent
 
-Screen capture gets its **own** toggle, separate from clipboard and active window.
-They are different orders of intrusion and should not share a switch. Default off.
-Never polled, and — as with Phase 01 — obviously so from reading the source.
+One Settings toggle, default **off**. Gating is enforced **twice**: the category
+is dropped from `getToolSchemas` when the toggle is off, *and* `executeTool`
+hard-gates before dispatch. The second check is not redundant — `executeTool`
+resolves names against the **full** registry, so a small model emitting a call it
+was never offered would otherwise execute it. The existing sandbox and
+memory-write gates document exactly this.
+
+Never polled. Say it in the module docs, say it in the tool description, and
+prove it with a test asserting no timer or interval exists in the desktop module.
+The constraint is that user-initiation is *obvious* from reading the source.
 
 ## Build gate
 
@@ -78,6 +99,7 @@ node scripts/check-ipc.mjs --write && git diff --exit-code src/lib/ipc/commands.
 - **Unit (TS)** — the tool is hidden when vision is unsupported; hidden when the
   toggle is off; refused by `executeTool` when off.
 - **Unit (Rust)** — downscale maths; the missing-permission result shape.
+- **Unit** — no timer or interval anywhere in the desktop module.
 - **Manual, per platform:**
   - Wayland: portal picker appears, capture succeeds, model describes the image.
   - X11: capture without a portal present.

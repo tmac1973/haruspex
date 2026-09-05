@@ -1,4 +1,4 @@
-# Phase 13 — Integration hardening + cross-platform verification
+# Phase 12 — Integration hardening + cross-platform verification
 
 **Depends on:** all previous phases · **Enables:** shipping.
 
@@ -19,7 +19,8 @@ behaviour when handed a large toolset.
 - **EDIT** `maintenance.md` — MCP runtime and orphan-process notes for future work.
 - **EDIT** `README.md` — the integrations the app now has.
 - **EDIT** `CLAUDE.md` — bundled runtimes in the sidecar table; the new
-  `integrations/` and `desktop/` modules.
+  `integrations/` and `desktop/` modules; the companion-app ports (Blender 9876,
+  Godot's 9080 bridge) alongside the existing sidecar port list.
 - Bug fixes across the phases as the matrix finds them.
 
 ## The matrix
@@ -31,12 +32,10 @@ Windows:
 
 | Capability | Linux/X11 | Linux/Wayland | macOS | Windows |
 |---|---|---|---|---|
-| `read_clipboard` | ✓ | ✓ | ✓ | ✓ |
-| `active_window` | ✓ | honest *unavailable* | app name; title with grant | ✓ |
-| Global hotkey | ✓ | ✓ (raise may be refused) | ✓ | ✓ |
 | `capture_screen` | ✓ | portal picker | grant flow, then ✓ | ✓ |
 | Bundled node/npm/uv | ✓ | ✓ | ✓ signed | ✓ |
 | MCP stdio server | ✓ | ✓ | ✓ | ✓ |
+| Companion probe (Blender, Godot) | ✓ | ✓ | ✓ | ✓ |
 
 macOS and Windows are verified on Tim's own machines. A row that cannot be
 verified is recorded as unverified in `verification.md` rather than assumed.
@@ -73,6 +72,11 @@ attributed to us:
   the coercion layer has never seen.
 - A server whose tools carry **no annotations** — confirm every one prompts.
 - A server that renames its tools between listings.
+- A companion app that dies mid-conversation: the next tool call fails with a
+  specific message and the Settings row updates, rather than the model guessing.
+- A `tool`-kind probe whose target tool has been disabled by the user, or has
+  vanished from the server's list — the probe degrades to *unknown*, not to a
+  crash or a silent *connected*.
 - A tool result large enough to exceed the context budget — confirm
   `fitMessagesToBudget` truncates rather than the request 400ing.
 
@@ -92,9 +96,14 @@ Run as the non-technical user this was designed for, from a fresh profile:
 1. Install GitHub from the catalog, paste a token, ask a question about a repo.
 2. Complete Google Drive/Workspace setup start to finish — Cloud project, OAuth
    client, credentials file, browser auth — without a terminal.
-3. Hotkey-capture a snippet from another app and ask about it.
-4. Screenshot a window and ask what it says.
-5. Add a Nextcloud account and ask what's on the calendar this week.
+3. Install Blender from the catalog with Blender closed, run the addon install,
+   start the addon, and ask the model to describe the scene — checking that the
+   Settings row told the truth at each stage.
+4. Enable the Godot entry in a project without the addon, confirm the hint names
+   the per-project install, then enable it and confirm reconnection needs no
+   restart.
+5. Screenshot a window and ask what it says.
+6. Add a Nextcloud account and ask what's on the calendar this week.
 
 ## Build gate
 
