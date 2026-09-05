@@ -9,8 +9,12 @@
 //!
 //! - `email` — multi-provider IMAP email access (read-only in Phase 10.1).
 //!   See the phase 10 planning doc in `plan/phase-10-email-integration.md`.
+//! - `mcp` — the general MCP client for the long tail of third-party
+//!   services. Built in phases; see `plan/integrations-expansion/`. Process
+//!   lifecycle landed first, before any protocol work.
 //!
-//! Future integrations that will live here: Google Calendar / Drive /
-//! Docs, and eventually a general MCP client for the long tail.
+//! Calendar and contacts arrive as CalDAV/CardDAV rather than as hand-built
+//! per-vendor modules; anything Google-shaped ships as a curated MCP config.
 
 pub mod email;
+pub mod mcp;

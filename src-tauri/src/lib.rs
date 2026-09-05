@@ -33,6 +33,7 @@ mod whisper;
 use audio::AudioRecorder;
 use db::Database;
 use inference_queue::InferenceQueue;
+use integrations::mcp::McpSupervisor;
 use models::ModelManager;
 use power::PowerInhibitor;
 use proxy::stats::{SearchStats, StatSinkHandle};
@@ -90,6 +91,12 @@ pub fn run() {
                 fs_tools::init_pdfium(&resource_dir);
             }
 
+            // Reap MCP servers left running by a previous launch that never
+            // got to clean up (SIGKILL, a crash, a hard power-off). Must run
+            // before anything spawns, so a fresh pid is never mistaken for a
+            // stale one. See integrations::mcp::orphans.
+            integrations::mcp::orphans::sweep(app.handle());
+
             // Backstop reclaim of inference slots whose holder window hung
             // without releasing or heartbeating.
             inference_queue::spawn_lease_sweeper(app.handle().clone());
@@ -124,9 +131,19 @@ pub fn run() {
             if let WindowEvent::Destroyed = event {
                 let queue = window.state::<InferenceQueue>();
                 queue.on_window_destroyed(window.app_handle(), window.label());
+                // Closing the window is one quit path; RunEvent::Exit below is
+                // the other, and neither covers the rest on its own. stop is
+                // idempotent, so running both is harmless. Spawned rather than
+                // blocked on: this handler runs on the event loop, and a stop
+                // can take seconds against a server that ignores its stdin.
+                let app = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    app.state::<McpSupervisor>().stop_all(&app).await;
+                });
             }
         })
         .manage(LlamaServer::new())
+        .manage(McpSupervisor::new())
         .manage(InferenceQueue::new())
         .manage(ProxyState::new())
         // Remote web chat's server: off until Settings turns it on.
@@ -328,6 +345,11 @@ pub fn run() {
             clipboard::clipboard_read_primary,
             power::power_inhibit_acquire,
             power::power_inhibit_release,
+            integrations::mcp::process::mcp_start_server,
+            integrations::mcp::process::mcp_stop_server,
+            integrations::mcp::process::mcp_server_status,
+            integrations::mcp::process::mcp_server_logs,
+            integrations::mcp::process::mcp_clear_server_logs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -350,7 +372,12 @@ pub fn run() {
                 // inhibit when the window closed.
                 app.state::<PowerInhibitor>().shutdown();
                 shell_mgr.shutdown_all();
+                // MCP children are the ones most likely to outlive us: there
+                // can be several, and they are third-party programs that need
+                // not honour a closed stdin.
+                let mcp = app.state::<McpSupervisor>();
                 tauri::async_runtime::block_on(async {
+                    mcp.stop_all(app).await;
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;
                     let _ = tts.stop().await;

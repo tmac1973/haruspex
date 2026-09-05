@@ -6,7 +6,7 @@ authors = ["Tim MacDonald <tbaxmacdonald@gmail.com>"]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/tmac1973/haruspex"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.88"
 
 [lib]
 name = "app_lib"
@@ -90,3 +90,4 @@ tauri-plugin-notification = "2.3.3"
 # thiserror plus the one platform backend. See src/power.rs.
 keepawake = { version = "0.6.1", default-features = false }
 fastembed = { version = "6.0.0", default-features = false, features = ["hf-hub", "hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
+rmcp = { version = "3.2.0", features = ["client", "transport-child-process"] }
