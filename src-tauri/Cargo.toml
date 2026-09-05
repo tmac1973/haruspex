@@ -1,6 +1,6 @@
 [package]
 name = "haruspex"
-version = "0.1.61"
+version = "0.2.0"
 description = "Private local AI with web research capability"
 authors = ["Tim MacDonald <tbaxmacdonald@gmail.com>"]
 license = "GPL-3.0-or-later"

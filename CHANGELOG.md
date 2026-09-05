@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.2.0](https://github.com/tmac1973/haruspex/compare/v0.1.61...v0.2.0) (2026-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* relicense from MIT to GPL-3.0-or-later ([#220](https://github.com/tmac1973/haruspex/issues/220))
+
+### Features
+
+* **inference:** 16 GB tier refresh, projector in system RAM, VRAM accounting fixes ([#224](https://github.com/tmac1973/haruspex/issues/224)) ([288019d](https://github.com/tmac1973/haruspex/commit/288019d67d6dcbe5f41b2d6e2ca5dec3ecc7dbe5))
+* inline images in chat answers ([#221](https://github.com/tmac1973/haruspex/issues/221)) ([87b43f1](https://github.com/tmac1973/haruspex/commit/87b43f1a5b09d9af168dde535a489e304d1bfc1c))
+* **models:** drive Gemma 4 12B's MTP head from Unsloth's sibling drafter ([#231](https://github.com/tmac1973/haruspex/issues/231)) ([94e8249](https://github.com/tmac1973/haruspex/commit/94e824969d5c3812c24d5461543b29cc1c03fdcb))
+* **models:** put Gemma 4 12B on the 16 GB tier ([#230](https://github.com/tmac1973/haruspex/issues/230)) ([530aab5](https://github.com/tmac1973/haruspex/commit/530aab5f99a04cf8029832d383d879df3c5156ac))
+* **shell:** persist code-mode sessions across restarts ([#232](https://github.com/tmac1973/haruspex/issues/232)) ([698f6ee](https://github.com/tmac1973/haruspex/commit/698f6eebfa0069ae53aca77933c168f2f53d032a))
+
+
+### Bug Fixes
+
+* **agent:** give one answer to "when should I search?", not two ([#223](https://github.com/tmac1973/haruspex/issues/223)) ([4667f4a](https://github.com/tmac1973/haruspex/commit/4667f4ab3fbff7f44b7606dc20f3a09a8cf622f1))
+* **agent:** honour the configured response ceiling without starving the prompt ([#233](https://github.com/tmac1973/haruspex/issues/233)) ([82278dd](https://github.com/tmac1973/haruspex/commit/82278dd2906f6749e8f23cbca45bd3580cf42ebd))
+* **inference:** ship medium reasoning effort instead of the model's own ([#229](https://github.com/tmac1973/haruspex/issues/229)) ([605441a](https://github.com/tmac1973/haruspex/commit/605441a115149fabfec32d1cddddf9ca7f634a40))
+* **remote:** stop the speech test depending on whether the app is running ([#222](https://github.com/tmac1973/haruspex/issues/222)) ([856efe5](https://github.com/tmac1973/haruspex/commit/856efe5e78b826bad7758be92effa20b0182de25))
+* **settings:** close the settings overlay when opening the setup wizard ([#227](https://github.com/tmac1973/haruspex/issues/227)) ([363bab4](https://github.com/tmac1973/haruspex/commit/363bab4a2e3d25c5d92024b93d0ce2ea2dc1472f))
+* **ui:** open a clicked link once instead of once per remount ([#234](https://github.com/tmac1973/haruspex/issues/234)) ([618529f](https://github.com/tmac1973/haruspex/commit/618529f3ac36ef71e8e9b28bf92e1826ab4f4c46))
+
+
+### Documentation
+
+* bring the hardware table in line with the current model lineup ([#228](https://github.com/tmac1973/haruspex/issues/228)) ([10ab7d6](https://github.com/tmac1973/haruspex/commit/10ab7d699b87fcaf9ba358038e5d1eca89c4b261))
+* **plan:** integrations-expansion plan, and archive the completed plans ([#235](https://github.com/tmac1973/haruspex/issues/235)) ([186a8a8](https://github.com/tmac1973/haruspex/commit/186a8a8a9d7c112cfc166a3c9d6c30e3f3d23073))
+* **plan:** revise the integrations-expansion plan ([#236](https://github.com/tmac1973/haruspex/issues/236)) ([25549ef](https://github.com/tmac1973/haruspex/commit/25549ef76776c41a414c46b9323fce36e0938362))
+* refresh the README for everything added since 0.1.55 ([#218](https://github.com/tmac1973/haruspex/issues/218)) ([428a339](https://github.com/tmac1973/haruspex/commit/428a3391ef537a24b3f391bafa050fd4b246d690))
+* rewrite the intro and tighten wording throughout the README ([#225](https://github.com/tmac1973/haruspex/issues/225)) ([47d6eb4](https://github.com/tmac1973/haruspex/commit/47d6eb49adf2c700989b79cd2e704f99b15feef7))
+
+
+### Miscellaneous Chores
+
+* relicense from MIT to GPL-3.0-or-later ([#220](https://github.com/tmac1973/haruspex/issues/220)) ([2907d37](https://github.com/tmac1973/haruspex/commit/2907d37a9b58941609f8b7fb5fe11e635efbc061))
+
 ## [0.1.61](https://github.com/tmac1973/haruspex/compare/v0.1.60...v0.1.61) (2026-08-30)
 
 
