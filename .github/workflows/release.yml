@@ -253,6 +253,17 @@ jobs:
           chmod +x "$DEST"
           rm -rf "$TMP"
 
+      # Node/npm and uv are what install and launch MCP servers, so a release
+      # without them ships an app whose integration catalog cannot install
+      # anything. Unlike the ruff step above, these call the same scripts dev
+      # setup uses rather than re-implementing them, so the pinned versions and
+      # the Node checksum check cannot drift between dev and release.
+      - name: Download MCP runtimes (node, npm, uv)
+        shell: bash
+        run: |
+          ./scripts/fetch-node.sh --target ${{ matrix.target }}
+          ./scripts/fetch-uv.sh --target ${{ matrix.target }}
+
       # Vendor the Pyodide runtime + wheels into static/pyodide/ (gitignored,
       # so absent on a fresh checkout). vite build copies static/ verbatim,
       # so without this the shipped app has no local Pyodide assets and the

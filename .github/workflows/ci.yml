@@ -74,11 +74,13 @@ jobs:
         run: |
           TARGET=$(rustc --print host-tuple)
           mkdir -p src-tauri/binaries
-          for name in llama-server whisper-server koko ruff; do
+          for name in llama-server whisper-server koko ruff node uv; do
             echo '#!/bin/sh' > "src-tauri/binaries/${name}-${TARGET}"
             chmod +x "src-tauri/binaries/${name}-${TARGET}"
           done
           # Create dirs with placeholders for resources globs
+          mkdir -p src-tauri/binaries/node-modules
+          touch src-tauri/binaries/node-modules/.placeholder
           mkdir -p src-tauri/binaries/libs
           touch src-tauri/binaries/libs/.placeholder
           mkdir -p src-tauri/binaries/espeak-ng-data/lang/placeholder
@@ -159,11 +161,13 @@ jobs:
         run: |
           $target = (rustc --print host-tuple)
           New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
-          foreach ($name in 'llama-server', 'whisper-server', 'koko', 'ruff') {
+          foreach ($name in 'llama-server', 'whisper-server', 'koko', 'ruff', 'node', 'uv') {
             # externalBin resolves to `<name>-<triple>.exe` on Windows.
             Set-Content -Path "src-tauri/binaries/$name-$target.exe" -Value '@echo off'
           }
           # Placeholder dirs/files for the resources globs in tauri.conf.json.
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries/node-modules | Out-Null
+          Set-Content -Path src-tauri/binaries/node-modules/.placeholder -Value ''
           New-Item -ItemType Directory -Force -Path src-tauri/binaries/libs | Out-Null
           New-Item -ItemType Directory -Force -Path src-tauri/binaries/espeak-ng-data/lang/placeholder | Out-Null
           Set-Content -Path src-tauri/binaries/libs/.placeholder -Value ''

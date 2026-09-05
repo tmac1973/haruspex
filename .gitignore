@@ -23,6 +23,9 @@ src-tauri/binaries/llama-server-*
 src-tauri/binaries/whisper-server-*
 src-tauri/binaries/koko-*
 src-tauri/binaries/ruff-*
+src-tauri/binaries/node-*
+src-tauri/binaries/uv-*
+src-tauri/binaries/node-modules/
 src-tauri/binaries/*.so*
 src-tauri/binaries/libs/
 src-tauri/binaries/espeak-ng-data/
