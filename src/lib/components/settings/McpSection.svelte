@@ -19,8 +19,20 @@
 	import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
 	import McpServerRow from './McpServerRow.svelte';
 	import McpCatalogBrowser from './McpCatalogBrowser.svelte';
+	import { probeCompanion } from '$lib/stores/mcpServers.svelte';
 
 	const INSTALL_PROGRESS_EVENT = 'mcp-install-progress';
+
+	/**
+	 * How often to re-check companion applications while this panel is open.
+	 *
+	 * The realistic flow is: the user reads "Blender is not connected", alt-tabs
+	 * to Blender, starts the add-on, and comes back. Without a poll they would
+	 * be looking at a stale warning and have to find the "Check again" button to
+	 * learn it is fixed. Slow, and only while the panel is visible — a loopback
+	 * connect is cheap but not free, and nothing off-screen needs it.
+	 */
+	const COMPANION_POLL_MS = 5000;
 
 	let servers = $state<McpServerConfig[]>(structuredClone(getSettings().integrations.mcp.servers));
 	let catalog = $state<CatalogEntry[]>([]);
@@ -33,6 +45,7 @@
 	let customProgram = $state('');
 	let customArgs = $state('');
 	let unlisten: UnlistenFn | null = null;
+	let companionPoll: ReturnType<typeof setInterval> | null = null;
 
 	const installedEntryIds = $derived(
 		servers.flatMap((s) => (s.source.kind === 'catalog' ? [s.source.entryId] : []))
@@ -143,9 +156,17 @@
 		unlisten = await listen<DownloadProgress>(INSTALL_PROGRESS_EVENT, (e) => {
 			progress = e.payload;
 		});
+		companionPoll = setInterval(() => {
+			for (const server of servers) {
+				if (server.source.kind === 'catalog') void probeCompanion(server);
+			}
+		}, COMPANION_POLL_MS);
 	});
 
-	onDestroy(() => unlisten?.());
+	onDestroy(() => {
+		unlisten?.();
+		if (companionPoll !== null) clearInterval(companionPoll);
+	});
 </script>
 
 <section class="settings-section">

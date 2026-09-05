@@ -9,7 +9,8 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use tauri::State;
 
-use super::catalog::{self, CatalogEntry};
+use super::catalog::{self, CatalogEntry, CompanionProbe};
+use super::companion::{self, CompanionStatus};
 use super::install::{self, McpInstaller};
 use super::process::{McpSupervisor, SpawnConfig};
 use super::server_config::McpServerConfig;
@@ -222,4 +223,81 @@ pub async fn mcp_run_setup_command(
     } else {
         Err(text)
     }
+}
+
+/// Probe a server's companion application and record the answer.
+///
+/// Called on start, from the row's "Check again" control, on a slow poll while
+/// the settings panel is open, and after a failed tool call — a failed call is
+/// the strongest signal the companion dropped, and re-probing there turns the
+/// model's error into a specific one.
+///
+/// A server with no companion answers `Unknown`, which the UI reads as "nothing
+/// to say" rather than as a problem.
+#[tauri::command]
+pub async fn mcp_probe_companion(
+    supervisor: State<'_, McpSupervisor>,
+    id: String,
+    entry_id: Option<String>,
+) -> Result<CompanionStatus, String> {
+    let Some(entry_id) = entry_id else {
+        return Ok(CompanionStatus::Unknown);
+    };
+    let catalog = catalog::load()?;
+    let Some(companion) = catalog.entry(&entry_id).and_then(|e| e.companion.clone()) else {
+        return Ok(CompanionStatus::Unknown);
+    };
+
+    let status = match &companion.probe {
+        CompanionProbe::Tcp { host, port } => {
+            if companion::probe_tcp(host, *port).await {
+                CompanionStatus::Connected
+            } else {
+                CompanionStatus::Disconnected {
+                    hint: companion.hint.clone(),
+                }
+            }
+        }
+        CompanionProbe::Tool {
+            tool,
+            disconnected_error,
+        } => {
+            // The safety rule, enforced against what this server actually
+            // published rather than against the catalog's word for it: a probe
+            // runs unprompted, so it must never reach a tool the approval gate
+            // would have asked about.
+            let tools = supervisor.list_tools(&id).await?;
+            let annotations: Vec<(String, Option<bool>)> = tools
+                .iter()
+                .map(|t| {
+                    (
+                        t.name.clone(),
+                        t.annotations.as_ref().and_then(|a| a.read_only_hint),
+                    )
+                })
+                .collect();
+            let entry = catalog
+                .entry(&entry_id)
+                .ok_or_else(|| format!("no catalog entry named '{entry_id}'"))?;
+            catalog::validate_probe_tool(entry, &annotations)?;
+
+            let called = supervisor
+                .call_tool(&id, tool, None, None, None)
+                .await
+                .map(|_| ());
+            companion::classify_tool_probe(called, disconnected_error, &companion.hint)
+        }
+    };
+
+    supervisor.set_companion(&id, status.clone()).await;
+    Ok(status)
+}
+
+/// The last recorded companion state, without probing again.
+#[tauri::command]
+pub async fn mcp_companion_status(
+    supervisor: State<'_, McpSupervisor>,
+    id: String,
+) -> Result<CompanionStatus, String> {
+    Ok(supervisor.companion(&id).await)
 }

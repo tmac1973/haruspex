@@ -10,8 +10,10 @@
 	import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
 	import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
 	import {
+		companionWarning,
 		mcpServerLogs,
 		mcpState,
+		probeCompanion,
 		removeMcpServer,
 		startMcpServer,
 		statusLabel
@@ -36,9 +38,20 @@
 	const runtime = $derived(mcpState(config.id));
 	const running = $derived(runtime.status.type === 'Ready');
 	const failed = $derived(runtime.status.type === 'Error');
-	// Phase 07 adds a second status line here for companion-app state
-	// ("running, but Blender is not connected").
 	const detail = $derived(statusLabel(runtime));
+	// The second status line. A process that is fine while the application it
+	// bridges to is absent is exactly the case a single green dot gets wrong.
+	const companionHint = $derived(companionWarning(runtime));
+	let reprobing = $state(false);
+
+	async function recheckCompanion(): Promise<void> {
+		reprobing = true;
+		try {
+			await probeCompanion(config);
+		} finally {
+			reprobing = false;
+		}
+	}
 
 	async function toggleLogs(): Promise<void> {
 		showLogs = !showLogs;
@@ -73,6 +86,17 @@
 			<span class="tool-count">{runtime.tools.length} tools</span>
 		{/if}
 	</div>
+
+	{#if companionHint}
+		<p class="companion">
+			<span class="companion-state">{entry?.companion?.app ?? 'The application'} not connected</span
+			>
+			{companionHint}
+			<button type="button" class="link-button" disabled={reprobing} onclick={recheckCompanion}>
+				{reprobing ? 'Checking…' : 'Check again'}
+			</button>
+		</p>
+	{/if}
 
 	{#if !config.setupComplete}
 		<p class="needs-setup">
@@ -159,8 +183,17 @@
 		color: var(--danger, #ef4444);
 	}
 	.needs-setup,
+	.companion,
 	.error {
 		font-size: 0.9em;
+	}
+	.companion {
+		border-left: 3px solid var(--warning, #d97706);
+		padding-left: 0.75rem;
+	}
+	.companion-state {
+		font-weight: 600;
+		display: block;
 	}
 	.error {
 		color: var(--danger, #ef4444);

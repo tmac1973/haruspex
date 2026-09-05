@@ -49,6 +49,21 @@ import {
  */
 export const MAX_MRTR_ROUNDS = 10;
 
+/**
+ * Called when a tool call fails, with the server it failed on.
+ *
+ * A failed call is the strongest available signal that a companion application
+ * has dropped, so the server store re-probes here and turns the model's next
+ * error into a specific one. A hook rather than a direct import because the
+ * store imports this module, and the dependency must not run both ways.
+ */
+type ToolFailureHook = (serverId: string) => void;
+let onToolFailure: ToolFailureHook | null = null;
+
+export function setToolFailureHook(hook: ToolFailureHook | null): void {
+	onToolFailure = hook;
+}
+
 /** Registered MCP tool names, per server, so unregistering is exact. */
 const registered = new Map<string, Set<string>>();
 
@@ -166,6 +181,7 @@ async function executeMcpTool(
 				requestState
 			});
 		} catch (e) {
+			onToolFailure?.(serverId);
 			return toolResult(toolError(`${descriptor.name} failed: ${String(e)}`));
 		}
 

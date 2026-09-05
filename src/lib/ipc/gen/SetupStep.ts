@@ -7,9 +7,15 @@
  * Cloud project (instruction), an OAuth client (instruction), a downloaded
  * credentials file (file), and a browser auth run (command).
  */
-export type SetupStep = { "kind": "instruction", title: string, text: string, link: string | null, } | { "kind": "secret", key: string, label: string, help: string | null, } | { "kind": "file", label: string, 
+export type SetupStep = { "kind": "instruction", title: string, text: string, link: string | null, } | { "kind": "secret", key: string, label: string, help: string | null, 
+/**
+ * An optional step may be skipped, and its absence must not stop the
+ * server starting. Blender's asset-service keys are the case: useful
+ * to have, useless to require.
+ */
+optional: boolean, } | { "kind": "file", label: string, 
 /**
  * Destination name inside the server directory, e.g.
  * `gcp-oauth.keys.json`.
  */
-filename: string, help: string | null, } | { "kind": "command", label: string, args: Array<string>, help: string | null, };
+filename: string, help: string | null, optional: boolean, } | { "kind": "command", label: string, args: Array<string>, help: string | null, optional: boolean, };

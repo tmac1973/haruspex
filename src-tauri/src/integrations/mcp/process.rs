@@ -43,6 +43,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
 
 use super::client::McpSession;
+use super::companion::CompanionStatus;
 use super::orphans::{self, RunningServer};
 use super::types::{McpCallOutcome, McpConnectionInfo, McpToolDescriptor};
 use crate::sidecar_utils::{new_log_buffer, push_log, LogBuffer, SidecarStatus};
@@ -117,6 +118,10 @@ struct ServerHandle {
     session: Option<Arc<McpSession>>,
     /// What negotiation settled on. `None` until it succeeds.
     connection: Option<McpConnectionInfo>,
+    /// Whether the third-party application this server bridges to is
+    /// reachable. Beside the process status rather than inside it: the process
+    /// is genuinely fine when this is `Disconnected`. See `companion.rs`.
+    companion: CompanionStatus,
     consecutive_timeouts: u32,
 }
 
@@ -146,6 +151,23 @@ impl McpSupervisor {
     /// The negotiated era and version for a connected server, for the UI.
     pub async fn connection(&self, id: &str) -> Option<McpConnectionInfo> {
         self.servers.lock().await.get(id)?.connection.clone()
+    }
+
+    /// The last known companion state. `Unknown` for a server with no companion
+    /// at all, which the UI reads as "nothing to say".
+    pub async fn companion(&self, id: &str) -> CompanionStatus {
+        self.servers
+            .lock()
+            .await
+            .get(id)
+            .map(|h| h.companion.clone())
+            .unwrap_or(CompanionStatus::Unknown)
+    }
+
+    pub async fn set_companion(&self, id: &str, status: CompanionStatus) {
+        if let Some(handle) = self.servers.lock().await.get_mut(id) {
+            handle.companion = status;
+        }
     }
 
     /// The tools a connected server publishes.
@@ -266,6 +288,7 @@ impl McpSupervisor {
                 pid,
                 session: None,
                 connection: None,
+                companion: CompanionStatus::Unknown,
                 consecutive_timeouts: 0,
             },
         );
@@ -330,6 +353,7 @@ impl McpSupervisor {
         handle.consecutive_timeouts = 0;
 
         handle.connection = None;
+        handle.companion = CompanionStatus::Unknown;
         if let Some(session) = handle.session.take() {
             match Arc::into_inner(session) {
                 Some(session) => {
@@ -997,6 +1021,7 @@ mod tests {
                 pid: None,
                 session: None,
                 connection: None,
+                companion: CompanionStatus::Unknown,
                 consecutive_timeouts: 0,
             },
         );
@@ -1020,6 +1045,7 @@ mod tests {
                 pid: None,
                 session: None,
                 connection: None,
+                companion: CompanionStatus::Unknown,
                 consecutive_timeouts: 0,
             },
         );

@@ -73,7 +73,20 @@
 				{#if installed}<span class="tag">added</span>{/if}
 			</div>
 			<p class="description">{entry.description}</p>
+			{#if entry.companion}
+				<p class="companion-requirement">
+					Needs {entry.companion.app}{#if entry.companion.minVersion}
+						{entry.companion.minVersion} or newer{/if} installed and running on this computer. Haruspex
+					does not install it.
+				</p>
+			{/if}
 			{#if setup}<p class="setup-cost">{setup}</p>{/if}
+			{#if entry.provenance && !entry.provenance.firstParty}
+				<p class="provenance">
+					Community project by {entry.provenance.maintainer} ({entry.provenance.license}). Its tools
+					run with the same approval prompts as any other server.
+				</p>
+			{/if}
 			{#if blocked}
 				<p class="blocked">{blocked}</p>
 			{/if}
@@ -127,8 +140,17 @@
 		margin: 0.2rem 0;
 		font-size: 0.9em;
 	}
-	.setup-cost {
+	.setup-cost,
+	.provenance {
 		color: var(--text-secondary, #a8a29e);
+	}
+	.provenance,
+	.companion-requirement {
+		margin: 0.2rem 0;
+		font-size: 0.85em;
+	}
+	.companion-requirement {
+		color: var(--warning, #d97706);
 	}
 	.blocked {
 		font-size: 0.9em;

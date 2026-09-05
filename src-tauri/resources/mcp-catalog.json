@@ -26,7 +26,9 @@
         }
       },
       "command": {
-        "args": ["stdio"],
+        "args": [
+          "stdio"
+        ],
         "env": {
           "GITHUB_PERSONAL_ACCESS_TOKEN": "$secret.token"
         }
@@ -54,7 +56,12 @@
           "label": "Personal access token",
           "help": "Starts with github_pat_ or ghp_. Stored with your other Haruspex settings."
         }
-      ]
+      ],
+      "provenance": {
+        "maintainer": "github/github-mcp-server",
+        "license": "MIT",
+        "firstParty": true
+      }
     },
     {
       "id": "google-workspace",
@@ -74,7 +81,11 @@
           "GDRIVE_CREDS_DIR": "$serverDir"
         }
       },
-      "defaultTools": ["gdrive_search", "gdrive_read_file", "gsheets_read"],
+      "defaultTools": [
+        "gdrive_search",
+        "gdrive_read_file",
+        "gsheets_read"
+      ],
       "setup": [
         {
           "kind": "instruction",
@@ -117,6 +128,148 @@
           "label": "Sign in to Google",
           "args": [],
           "help": "Opens your browser once so you can grant access. Sign in with an account that belongs to the Cloud project's organisation."
+        }
+      ],
+      "provenance": {
+        "maintainer": "isaacphi/mcp-gdrive",
+        "license": "MIT",
+        "firstParty": false
+      }
+    },
+    {
+      "id": "blender",
+      "name": "Blender",
+      "description": "Inspect and edit the scene in a running copy of Blender.",
+      "homepage": "https://github.com/ahujasid/blender-mcp",
+      "provenance": {
+        "maintainer": "ahujasid/blender-mcp",
+        "license": "MIT",
+        "firstParty": false
+      },
+      "acquisition": {
+        "kind": "pypi",
+        "package": "blender-mcp",
+        "version": "1.9.1",
+        "entrypoint": "blender-mcp"
+      },
+      "command": {
+        "args": [],
+        "env": {
+          "DISABLE_TELEMETRY": "true",
+          "BLENDER_MCP_SAFE_MODE": "1",
+          "BLENDERMCP_SKETCHFAB_API_KEY": "$secret.sketchfab",
+          "BLENDERMCP_POLYPIZZA_API_KEY": "$secret.polypizza"
+        }
+      },
+      "companion": {
+        "app": "Blender",
+        "minVersion": "3.0",
+        "download": "https://www.blender.org/download/",
+        "probe": {
+          "kind": "tcp",
+          "host": "127.0.0.1",
+          "port": 9876
+        },
+        "hint": "In Blender, press N in the 3D viewport, open the MCP tab, and click Start MCP Server."
+      },
+      "defaultTools": [
+        "get_scene_info",
+        "get_object_info",
+        "get_viewport_screenshot"
+      ],
+      "setup": [
+        {
+          "kind": "instruction",
+          "title": "Install Blender 3.0 or newer",
+          "text": "Haruspex talks to a copy of Blender running on this machine; it does not install or bundle one. If you already have Blender, skip this step.",
+          "link": "https://www.blender.org/download/"
+        },
+        {
+          "kind": "command",
+          "label": "Install the Blender add-on",
+          "args": [
+            "install-addon"
+          ],
+          "help": "Copies the add-on into Blender's add-ons folder. Blender should be closed while this runs."
+        },
+        {
+          "kind": "instruction",
+          "title": "Turn the add-on on",
+          "text": "Open Blender, then Edit → Preferences → Add-ons and enable 'Interface: MCP for Blender'. Back in the 3D viewport, press N, open the MCP tab, and click Start MCP Server. Haruspex can only see Blender while that server is running.",
+          "link": null
+        },
+        {
+          "kind": "secret",
+          "key": "sketchfab",
+          "label": "Sketchfab API key (optional)",
+          "help": "Only needed if you want the assistant to download models from Sketchfab. Leave blank otherwise.",
+          "optional": true
+        },
+        {
+          "kind": "secret",
+          "key": "polypizza",
+          "label": "Poly Pizza API key (optional)",
+          "help": "Only needed for Poly Pizza's low-poly asset library. Leave blank otherwise.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "godot",
+      "name": "Godot",
+      "description": "Build and inspect scenes in a running Godot editor.",
+      "homepage": "https://github.com/hybridindie/godot-mcp",
+      "provenance": {
+        "maintainer": "hybridindie/godot-mcp",
+        "license": "MIT",
+        "firstParty": false
+      },
+      "acquisition": {
+        "kind": "pypi",
+        "package": "godot-editor-mcp",
+        "version": "2026.9.2",
+        "entrypoint": "godot-editor-mcp"
+      },
+      "command": {
+        "args": [],
+        "env": {
+          "GODOT_MCP_TRANSPORT": "stdio"
+        }
+      },
+      "companion": {
+        "app": "Godot",
+        "minVersion": "4.4",
+        "download": "https://godotengine.org/download/",
+        "probe": {
+          "kind": "tool",
+          "tool": "get_editor_state",
+          "disconnectedError": "BRIDGE_DISCONNECTED"
+        },
+        "hint": "Open the Godot project you want to work on, and make sure the Godot MCP plugin is enabled for it under Project → Project Settings → Plugins. The plugin is per project, so a different project needs it enabled too."
+      },
+      "defaultTools": [
+        "get_editor_state",
+        "get_scene_tree",
+        "get_node_properties"
+      ],
+      "setup": [
+        {
+          "kind": "instruction",
+          "title": "Install Godot 4.4 or newer",
+          "text": "Haruspex talks to a Godot editor running on this machine; it does not install or bundle one.",
+          "link": "https://godotengine.org/download/"
+        },
+        {
+          "kind": "instruction",
+          "title": "Add the plugin to your project",
+          "text": "In Godot, open the project you want to work on, then Editor → Asset Library and search for 'Godot MCP'. Install it into the project. This is per project, not per machine — another project needs it added too.",
+          "link": null
+        },
+        {
+          "kind": "instruction",
+          "title": "Enable it",
+          "text": "Project → Project Settings → Plugins, and switch 'Godot MCP' on. It connects to Haruspex by itself; the order you start things in does not matter.",
+          "link": null
         }
       ]
     }

@@ -10,7 +10,8 @@ import {
 	registeredMcpToolNames,
 	MAX_MRTR_ROUNDS,
 	elicitationMessage,
-	formatContent
+	formatContent,
+	setToolFailureHook
 } from './mcp';
 import { getToolSchemas, executeTool } from './registry';
 import {
@@ -469,6 +470,35 @@ describe('result formatting', () => {
 });
 
 describe('failure handling', () => {
+	it('tells the server store a call failed, so a companion can be re-probed', async () => {
+		// A failed call is the strongest available signal that a companion
+		// application has dropped, and re-probing there is what turns "it
+		// failed" into "Blender is not running".
+		const seen: string[] = [];
+		setToolFailureHook((id) => seen.push(id));
+		registerMcpTools(SERVER, 'One', [tool('search')], ['search']);
+		invoke.mockRejectedValue('boom');
+		await executeTool('mcp__srv-1__search', {}, ctx());
+		expect(seen).toEqual([SERVER]);
+		setToolFailureHook(null);
+	});
+
+	it('does not fire the hook on a call that merely returns an error result', async () => {
+		// The server answered. Nothing about the companion is in question.
+		const seen: string[] = [];
+		setToolFailureHook((id) => seen.push(id));
+		registerMcpTools(SERVER, 'One', [tool('search')], ['search']);
+		invoke.mockResolvedValue({
+			type: 'complete',
+			content: [{ type: 'text', text: 'not found' }],
+			structuredContent: null,
+			isError: true
+		});
+		await executeTool('mcp__srv-1__search', {}, ctx());
+		expect(seen).toEqual([]);
+		setToolFailureHook(null);
+	});
+
 	it('turns a transport failure into a tool error, not an exception', async () => {
 		registerMcpTools(SERVER, 'One', [tool('search')], ['search']);
 		invoke.mockRejectedValue('server is not connected');

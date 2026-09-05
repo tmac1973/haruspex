@@ -366,6 +366,8 @@ pub fn run() {
             integrations::mcp::commands::mcp_uninstall_server,
             integrations::mcp::commands::mcp_server_dir,
             integrations::mcp::commands::mcp_spawn_config,
+            integrations::mcp::commands::mcp_probe_companion,
+            integrations::mcp::commands::mcp_companion_status,
             integrations::mcp::commands::mcp_place_setup_file,
             integrations::mcp::commands::mcp_run_setup_command,
             runtimes::mcp_runtimes_available,

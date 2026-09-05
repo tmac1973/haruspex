@@ -4,12 +4,15 @@ import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
 import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
 import { IPC } from '$lib/ipc/commands';
 import {
+	companionWarning,
 	mcpState,
+	probeCompanion,
 	removeMcpServer,
 	startEnabledMcpServers,
 	startMcpServer,
 	statusLabel,
-	stopMcpServer
+	stopMcpServer,
+	type McpRuntimeState
 } from './mcpServers.svelte';
 import { registeredMcpToolNames } from '$lib/agent/tools/mcp';
 import { isAlwaysAllowed, rememberAlwaysAllow } from './mcpApproval.svelte';
@@ -42,6 +45,8 @@ function entry(over: Partial<CatalogEntry> = {}): CatalogEntry {
 		command: { args: [], env: {} },
 		defaultTools: ['search'],
 		setup: [],
+		companion: null,
+		provenance: null,
 		...over
 	};
 }
@@ -202,45 +207,97 @@ describe('starting everything on launch', () => {
 });
 
 describe('status labels', () => {
+	const runtime = (over: Partial<McpRuntimeState>): McpRuntimeState => ({
+		status: { type: 'Stopped' },
+		connection: null,
+		tools: [],
+		companion: { kind: 'unknown' },
+		error: null,
+		busy: false,
+		...over
+	});
+
 	it('reads plainly in every state', () => {
+		expect(statusLabel(runtime({ status: { type: 'Stopped' } }))).toBe('Stopped');
+		expect(statusLabel(runtime({ status: { type: 'Starting' }, busy: true }))).toBe('Starting…');
 		expect(
-			statusLabel({
-				status: { type: 'Stopped' },
-				connection: null,
-				tools: [],
-				error: null,
-				busy: false
-			})
-		).toBe('Stopped');
-		expect(
-			statusLabel({
-				status: { type: 'Starting' },
-				connection: null,
-				tools: [],
-				error: null,
-				busy: true
-			})
-		).toBe('Starting…');
-		expect(
-			statusLabel({
-				status: { type: 'Error', message: 'boom' },
-				connection: null,
-				tools: [],
-				error: 'boom',
-				busy: false
-			})
+			statusLabel(runtime({ status: { type: 'Error', message: 'boom' }, error: 'boom' }))
 		).toBe('Failed');
 	});
 
 	it('omits the version when a server is running but did not report one', () => {
+		expect(statusLabel(runtime({ status: { type: 'Ready' } }))).toBe('Running');
+	});
+});
+
+describe('companion applications', () => {
+	const runtime = (over: Partial<McpRuntimeState>): McpRuntimeState => ({
+		status: { type: 'Ready' },
+		connection: null,
+		tools: [],
+		companion: { kind: 'unknown' },
+		error: null,
+		busy: false,
+		...over
+	});
+
+	it('says nothing for a server with no companion at all', () => {
+		// `unknown` is not a problem to report — most servers have no companion.
+		expect(companionWarning(runtime({}))).toBeNull();
+	});
+
+	it('says nothing while the companion is attached', () => {
+		expect(companionWarning(runtime({ companion: { kind: 'connected' } }))).toBeNull();
+	});
+
+	it("shows the catalog entry's own hint when it is not", () => {
+		// Carried through rather than composed here: a third companion entry
+		// must be a JSON change, not a code change.
+		const warning = companionWarning(
+			runtime({ companion: { kind: 'disconnected', hint: 'Press N, then Start MCP Server.' } })
+		);
+		expect(warning).toBe('Press N, then Start MCP Server.');
+	});
+
+	it('says nothing about a companion when the server is not running', () => {
+		// "Blender is not connected" under a stopped server is noise: of course
+		// it is not, nothing is asking it.
 		expect(
-			statusLabel({
-				status: { type: 'Ready' },
-				connection: null,
-				tools: [],
-				error: null,
-				busy: false
-			})
-		).toBe('Running');
+			companionWarning(
+				runtime({
+					status: { type: 'Stopped' },
+					companion: { kind: 'disconnected', hint: 'Open Blender.' }
+				})
+			)
+		).toBeNull();
+	});
+
+	it('probes a catalog server and records the answer', async () => {
+		invoke.mockResolvedValue({ kind: 'disconnected', hint: 'Open Blender.' });
+		const status = await probeCompanion(config({ id: 'blender-1' }));
+		expect(status).toEqual({ kind: 'disconnected', hint: 'Open Blender.' });
+		expect(mcpState('blender-1').companion).toEqual({
+			kind: 'disconnected',
+			hint: 'Open Blender.'
+		});
+	});
+
+	it('treats a probe that could not run as unknown, not as missing', async () => {
+		// A failed probe is not evidence the application is absent, and telling
+		// the user to go and start something that is already running is worse
+		// than saying nothing.
+		invoke.mockRejectedValue('server is not connected');
+		expect(await probeCompanion(config({ id: 'blender-2' }))).toEqual({ kind: 'unknown' });
+	});
+
+	it('passes no entry id for a custom server, which cannot have a companion', async () => {
+		invoke.mockResolvedValue({ kind: 'unknown' });
+		await probeCompanion(
+			config({ id: 'custom-1', source: { kind: 'custom', program: '/x/srv', args: [] } })
+		);
+		expect(invoke).toHaveBeenCalledWith(IPC.mcp_probe_companion, {
+			id: 'custom-1',
+			entryId: null
+		});
 	});
 });

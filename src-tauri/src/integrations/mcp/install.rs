@@ -427,7 +427,7 @@ pub fn catalog_spawn_config(
     };
     args.extend(entry.command.args.iter().cloned());
 
-    let mut env = resolve_env(&entry.command.env, secrets)?;
+    let mut env = resolve_env(entry, secrets)?;
     substitute_server_dir(&mut env, &dir);
 
     Ok(SpawnConfig {

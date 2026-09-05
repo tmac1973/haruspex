@@ -20,14 +20,27 @@ const instruction: SetupStep = {
 	text: 'Go and do it.',
 	link: 'https://example.test'
 };
-const secret: SetupStep = { kind: 'secret', key: 'token', label: 'Token', help: null };
+const secret: SetupStep = {
+	kind: 'secret',
+	key: 'token',
+	label: 'Token',
+	help: null,
+	optional: false
+};
 const file: SetupStep = {
 	kind: 'file',
 	label: 'Keys file',
 	filename: 'gcp-oauth.keys.json',
-	help: null
+	help: null,
+	optional: false
 };
-const command: SetupStep = { kind: 'command', label: 'Sign in', args: [], help: null };
+const command: SetupStep = {
+	kind: 'command',
+	label: 'Sign in',
+	args: [],
+	help: null,
+	optional: false
+};
 
 function state(over: Partial<SetupState> = {}): SetupState {
 	return { secrets: {}, filesPlaced: [], commandsRun: [], ...over };
