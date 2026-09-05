@@ -90,6 +90,6 @@ tauri-plugin-notification = "2.3.3"
 # thiserror plus the one platform backend. See src/power.rs.
 keepawake = { version = "0.6.1", default-features = false }
 fastembed = { version = "6.0.0", default-features = false, features = ["hf-hub", "hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
-rmcp = { version = "3.2.0", features = ["client", "transport-child-process"] }
+rmcp = { version = "3.2.0", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 tar = "0.4.46"
 flate2 = "1.1.10"

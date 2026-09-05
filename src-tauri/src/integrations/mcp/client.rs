@@ -158,6 +158,28 @@ impl McpSession {
     /// to rmcp, which is why the supervisor hands ownership over rather than
     /// keeping a copy.
     pub async fn connect(transport: TokioChildProcess) -> Result<Self, String> {
+        Self::negotiate(transport).await
+    }
+
+    /// Negotiate with a server reached over HTTP.
+    ///
+    /// Identical from here up: the transport is the only difference, and the
+    /// dual-era logic, discovery and tool calls are all unchanged. A remote
+    /// legacy server gets the `initialize` handshake and its `Mcp-Session-Id`;
+    /// a modern one gets per-request `_meta` and the `MCP-Protocol-Version`
+    /// header. rmcp sends whichever the negotiation settled on.
+    pub async fn connect_http(
+        config: &super::http::HttpConfig,
+        proxy: Option<&crate::proxy::ProxyConfig>,
+    ) -> Result<Self, String> {
+        Self::negotiate(super::http::transport(config, proxy)?).await
+    }
+
+    async fn negotiate<T, E, A>(transport: T) -> Result<Self, String>
+    where
+        T: rmcp::transport::IntoTransport<RoleClient, E, A>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
         let service = HaruspexClient
             .serve_with_lifecycle(
                 transport,

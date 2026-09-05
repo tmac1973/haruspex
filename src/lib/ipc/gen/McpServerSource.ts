@@ -3,4 +3,4 @@
 /**
  * How a configured server came to exist.
  */
-export type McpServerSource = { "kind": "catalog", entryId: string, } | { "kind": "custom", program: string, args: Array<string>, };
+export type McpServerSource = { "kind": "catalog", entryId: string, } | { "kind": "custom", program: string, args: Array<string>, } | { "kind": "remote", url: string, };

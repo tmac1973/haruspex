@@ -211,6 +211,81 @@ impl McpSupervisor {
             .await
     }
 
+    /// Connect to a server reached over HTTP rather than spawned.
+    ///
+    /// Everything after negotiation is identical, so this shares the handle
+    /// shape, the status vocabulary and the session. What differs is what
+    /// "running" means: there is no child, no pid and no stderr, so
+    /// reachability replaces liveness and the log ring stays empty. A
+    /// connection, TLS or HTTP failure all land in `Error` with the reason,
+    /// and nothing retries in a loop.
+    pub async fn connect_remote(
+        &self,
+        id: &str,
+        config: &super::http::HttpConfig,
+        proxy: Option<&crate::proxy::ProxyConfig>,
+    ) -> Result<(), String> {
+        {
+            let servers = self.servers.lock().await;
+            if let Some(existing) = servers.get(id) {
+                let status = existing.status.lock().await;
+                if !matches!(*status, SidecarStatus::Stopped | SidecarStatus::Error(_)) {
+                    return Err(format!("server {id} is already connected"));
+                }
+            }
+        }
+
+        let status = Arc::new(Mutex::new(SidecarStatus::Starting));
+        let log = new_log_buffer();
+        self.servers.lock().await.insert(
+            id.to_string(),
+            ServerHandle {
+                status: status.clone(),
+                log,
+                pid: None,
+                session: None,
+                connection: None,
+                companion: CompanionStatus::Unknown,
+                consecutive_timeouts: 0,
+            },
+        );
+
+        match tokio::time::timeout(
+            timing::NEGOTIATION_DEADLINE,
+            McpSession::connect_http(config, proxy),
+        )
+        .await
+        {
+            Ok(Ok(session)) => {
+                let connection = session.info().clone();
+                info!(
+                    "mcp: remote server {id} ready ({:?} {})",
+                    connection.era, connection.protocol_version
+                );
+                if let Some(handle) = self.servers.lock().await.get_mut(id) {
+                    handle.session = Some(Arc::new(session));
+                    handle.connection = Some(connection);
+                }
+                *status.lock().await = SidecarStatus::Ready;
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                *status.lock().await = SidecarStatus::Error(e.clone());
+                warn!("mcp: remote server {id} failed to connect: {e}");
+                Err(e)
+            }
+            Err(_) => {
+                let reason = format!(
+                    "{} did not answer within {}s",
+                    config.url,
+                    timing::NEGOTIATION_DEADLINE.as_secs()
+                );
+                *status.lock().await = SidecarStatus::Error(reason.clone());
+                Err(reason)
+            }
+        }
+    }
+
     /// [`Self::start`] with an explicit negotiation deadline. Private because
     /// the deadline is a property of the product, not of the caller; the tests
     /// shorten it so the "never answers" case does not cost 20 seconds.

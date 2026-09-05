@@ -375,6 +375,12 @@ fn catalog_command_args(config: &McpServerConfig) -> Vec<String> {
 
 fn build_spawn_config(app: &AppHandle, config: &McpServerConfig) -> Result<SpawnConfig, String> {
     match &config.source {
+        // A remote server is not spawned at all. Reaching here means a caller
+        // branched wrong, and saying so beats fabricating a command.
+        McpServerSource::Remote { .. } => Err(format!(
+            "{} is a remote server; there is nothing to launch on this machine",
+            config.label
+        )),
         McpServerSource::Custom { program, args } => Ok(SpawnConfig {
             id: config.id.clone(),
             program: PathBuf::from(program),

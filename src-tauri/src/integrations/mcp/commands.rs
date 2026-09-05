@@ -11,10 +11,12 @@ use tauri::State;
 
 use super::catalog::{self, CatalogEntry, CompanionProbe};
 use super::companion::{self, CompanionStatus};
+use super::http;
 use super::install::{self, McpInstaller};
 use super::process::{McpSupervisor, SpawnConfig};
 use super::server_config::McpServerConfig;
 use super::types::{McpCallOutcome, McpConnectionInfo, McpToolDescriptor};
+use crate::proxy::ProxyConfig;
 use crate::sidecar_utils::SidecarStatus;
 use tauri::AppHandle;
 
@@ -300,4 +302,28 @@ pub async fn mcp_companion_status(
     id: String,
 ) -> Result<CompanionStatus, String> {
     Ok(supervisor.companion(&id).await)
+}
+
+/// Connect to a server reached over the network.
+///
+/// Separate from `mcp_start_server` rather than folded into it: a remote server
+/// has no spawn configuration at all — no program, no arguments, no environment
+/// — and threading an empty one through the stdio path would mean every caller
+/// carrying a shape that means nothing for half its cases.
+#[tauri::command]
+pub async fn mcp_connect_remote_server(
+    supervisor: State<'_, McpSupervisor>,
+    config: McpServerConfig,
+    proxy: Option<ProxyConfig>,
+) -> Result<(), String> {
+    if !config.is_startable() {
+        return Err(format!("{} is turned off", config.label));
+    }
+    let url = config
+        .remote_url()
+        .ok_or_else(|| format!("{} is not a remote server", config.label))?;
+    let http = http::HttpConfig::bearer(url, config.remote_token());
+    supervisor
+        .connect_remote(&config.id, &http, proxy.as_ref())
+        .await
 }

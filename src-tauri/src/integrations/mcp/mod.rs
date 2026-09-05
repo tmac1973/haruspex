@@ -7,8 +7,8 @@
 //!   that outlive the app. Neither knows what an MCP message is, which is what
 //!   let lifecycle be built and tested before there was a protocol to speak.
 //! - [`client`] owns everything that is MCP: dual-era negotiation, discovery,
-//!   tool calls. [`types`] is the narrow projection of rmcp's model the
-//!   frontend consumes.
+//!   tool calls, over either transport. [`http`] is the remote one; [`types`] is
+//!   the narrow projection of rmcp's model the frontend consumes.
 //! - [`catalog`] is the bundled list of vetted servers, [`install`] puts one on
 //!   the machine, and [`server_config`] is what the user's settings remember
 //!   about it afterwards.
@@ -21,6 +21,7 @@ pub mod catalog;
 pub mod client;
 pub mod commands;
 pub mod companion;
+pub mod http;
 pub mod install;
 pub mod orphans;
 pub mod process;

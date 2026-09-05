@@ -79,6 +79,9 @@
 			<span class="label">{config.label}</span>
 		</label>
 		<span class="status" class:running class:failed>{detail}</span>
+		{#if config.source.kind === 'remote'}
+			<span class="remote" title={config.source.url}>remote</span>
+		{/if}
 		{#if runtime.connection}
 			<span class="era">{runtime.connection.era === 'modern' ? 'stateless' : 'handshake'}</span>
 		{/if}
@@ -172,9 +175,15 @@
 	}
 	.status,
 	.era,
+	.remote,
 	.tool-count {
 		font-size: 0.85em;
 		color: var(--text-secondary, #a8a29e);
+	}
+	.remote {
+		border: 1px solid var(--border-subtle, #292524);
+		border-radius: 3px;
+		padding: 0 0.35rem;
 	}
 	.status.running {
 		color: var(--accent, #14b8a6);

@@ -23,6 +23,7 @@ import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
 import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
 import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '$lib/agent/tools/mcp';
 import { forgetServerApprovals } from './mcpApproval.svelte';
+import { getSettings } from './settings';
 
 /** Everything the UI knows about one server right now. */
 export interface McpRuntimeState {
@@ -84,8 +85,20 @@ export async function startMcpServer(
 	configs[config.id] = config;
 	patch(config.id, { busy: true, error: null, status: { type: 'Starting' } });
 	try {
-		const spawn = await invoke<SpawnConfig>(IPC.mcp_spawn_config, { config });
-		await invoke(IPC.mcp_start_server, { config: spawn });
+		if (config.source.kind === 'remote') {
+			// A remote server has no spawn configuration at all — no program, no
+			// arguments, no environment — so it takes its own path rather than
+			// threading an empty one through the stdio machinery. The proxy goes
+			// with it: a user who configured one must not find that MCP quietly
+			// connects direct.
+			await invoke(IPC.mcp_connect_remote_server, {
+				config,
+				proxy: getSettings().proxy
+			});
+		} else {
+			const spawn = await invoke<SpawnConfig>(IPC.mcp_spawn_config, { config });
+			await invoke(IPC.mcp_start_server, { config: spawn });
+		}
 
 		const [connection, tools] = await Promise.all([
 			invoke<McpConnectionInfo | null>(IPC.mcp_connection_info, { id: config.id }),

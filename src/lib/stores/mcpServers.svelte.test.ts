@@ -181,6 +181,51 @@ describe('removing a server', () => {
 	});
 });
 
+describe('remote servers', () => {
+	const remote = (over: Partial<McpServerConfig> = {}): McpServerConfig =>
+		config({
+			id: 'remote-1',
+			label: 'mcp.example.test',
+			source: { kind: 'remote', url: 'https://mcp.example.test/mcp' },
+			...over
+		});
+
+	it('takes the remote path rather than asking for a spawn config', async () => {
+		// A remote server has no program, arguments or environment. Threading an
+		// empty spawn config through the stdio path would mean every caller
+		// carrying a shape that means nothing for half its cases.
+		invoke.mockImplementation((cmd: string) => {
+			if (cmd === IPC.mcp_list_tools) return Promise.resolve([]);
+			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
+			return Promise.resolve(null);
+		});
+		await startMcpServer(remote(), null);
+
+		const called = invoke.mock.calls.map((c) => c[0]);
+		expect(called).toContain(IPC.mcp_connect_remote_server);
+		expect(called).not.toContain(IPC.mcp_spawn_config);
+		expect(called).not.toContain(IPC.mcp_start_server);
+		expect(mcpState('remote-1').status.type).toBe('Ready');
+		await stopMcpServer('remote-1');
+	});
+
+	it('sends the configured proxy with the connection', async () => {
+		// A user who configured a proxy — often the whole reason they did —
+		// must not find that MCP quietly connects direct.
+		invoke.mockResolvedValue(null);
+		await startMcpServer(remote({ id: 'remote-2' }), null);
+		const call = invoke.mock.calls.find((c) => c[0] === IPC.mcp_connect_remote_server);
+		expect(call?.[1]).toHaveProperty('proxy');
+		await stopMcpServer('remote-2');
+	});
+
+	it('lands in error with the reason when the host is unreachable', async () => {
+		invoke.mockRejectedValue('mcp.example.test did not answer within 20s');
+		await startMcpServer(remote({ id: 'remote-3' }), null);
+		expect(mcpState('remote-3').error).toContain('did not answer');
+	});
+});
+
 describe('starting everything on launch', () => {
 	it('carries on past a failure so one broken server does not hide the rest', async () => {
 		const first = config({ id: 'a', label: 'A' });

@@ -44,6 +44,9 @@
 	let showCustom = $state(false);
 	let customProgram = $state('');
 	let customArgs = $state('');
+	let showRemote = $state(false);
+	let remoteUrl = $state('');
+	let remoteToken = $state('');
 	let unlisten: UnlistenFn | null = null;
 	let companionPoll: ReturnType<typeof setInterval> | null = null;
 
@@ -135,6 +138,37 @@
 		showCustom = false;
 	}
 
+	function addRemote(): void {
+		const url = remoteUrl.trim();
+		if (!url) return;
+		let label = url;
+		try {
+			label = new URL(url).host;
+		} catch {
+			// An unparseable URL is rejected by the backend with a message about
+			// what was typed; falling back to the raw string keeps the row
+			// identifiable until then.
+		}
+		persist([
+			...servers,
+			{
+				id: newId(),
+				label,
+				enabled: true,
+				source: { kind: 'remote', url },
+				// The pasted credential is a secret like any other, under the key
+				// the backend reads.
+				secrets: remoteToken.trim() ? { remoteToken: remoteToken.trim() } : {},
+				toolEnabled: {},
+				// Nothing to install and no setup steps, so it is ready at once.
+				setupComplete: true
+			}
+		]);
+		remoteUrl = '';
+		remoteToken = '';
+		showRemote = false;
+	}
+
 	function entryFor(config: McpServerConfig): CatalogEntry | null {
 		if (config.source.kind !== 'catalog') return null;
 		const entryId = config.source.entryId;
@@ -203,6 +237,9 @@
 		<button type="button" class="advanced" onclick={() => (showCustom = !showCustom)}>
 			{showCustom ? 'Close' : 'Add a custom server (advanced)'}
 		</button>
+		<button type="button" class="advanced" onclick={() => (showRemote = !showRemote)}>
+			{showRemote ? 'Close' : 'Add a remote server (advanced)'}
+		</button>
 	</div>
 
 	{#if showCatalog}
@@ -215,6 +252,30 @@
 			oninstall={install}
 			oncancel={cancelInstall}
 		/>
+	{/if}
+
+	{#if showRemote}
+		<div class="custom-form">
+			<p class="warning">
+				A remote server runs on someone else's computer and sees whatever the assistant sends it —
+				including the parts of your conversation that end up in a tool call. Only add one you trust
+				with that. Its tools get the same approval prompts as any other server; being remote does
+				not make a tool safer.
+			</p>
+			<label>
+				Server URL
+				<input bind:value={remoteUrl} placeholder="https://mcp.example.com/mcp" />
+			</label>
+			<label>
+				Token or API key (optional)
+				<input type="password" bind:value={remoteToken} placeholder="Leave blank if none" />
+			</label>
+			<p class="section-help">
+				Servers that require signing in through a browser are not supported yet. Requests follow
+				whatever proxy you have configured under Search.
+			</p>
+			<button type="button" disabled={!remoteUrl.trim()} onclick={addRemote}>Add</button>
+		</div>
 	{/if}
 
 	{#if showCustom}

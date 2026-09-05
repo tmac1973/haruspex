@@ -38,7 +38,20 @@ pub enum McpServerSource {
         #[serde(default)]
         args: Vec<String>,
     },
+    /// A server reached over the network rather than spawned. Nothing is
+    /// installed, so there is no server directory and no runtime involved; the
+    /// credential, when there is one, lives in `secrets` under
+    /// [`REMOTE_TOKEN_KEY`] like every other MCP secret.
+    #[serde(rename_all = "camelCase")]
+    Remote { url: String },
 }
+
+/// Where a remote server's bearer token lives in `secrets`.
+///
+/// A named constant rather than a literal in three places: the settings UI
+/// writes it, the spawn path reads it, and a typo between them would produce a
+/// server that authenticates as nobody with no error to explain it.
+pub const REMOTE_TOKEN_KEY: &str = "remoteToken";
 
 /// A server the user has added.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -80,11 +93,24 @@ pub struct McpServerConfig {
 
 impl McpServerConfig {
     /// Whether this server should be started: enabled, and finished being set
-    /// up. Custom servers have no setup steps, so they are complete by
-    /// construction — but the flag is still what decides, so the two paths
-    /// share one rule.
+    /// up. Custom and remote servers have no setup steps, so they are complete
+    /// by construction — but the flag is still what decides, so every path
+    /// shares one rule.
     pub fn is_startable(&self) -> bool {
         self.enabled && self.setup_complete
+    }
+
+    /// The URL for a remote server, if this is one.
+    pub fn remote_url(&self) -> Option<&str> {
+        match &self.source {
+            McpServerSource::Remote { url } => Some(url),
+            _ => None,
+        }
+    }
+
+    /// The pasted credential for a remote server.
+    pub fn remote_token(&self) -> Option<&str> {
+        self.secrets.get(REMOTE_TOKEN_KEY).map(String::as_str)
     }
 }
 
@@ -139,6 +165,26 @@ mod tests {
             !parsed.setup_complete,
             "an unknown setup state must read as incomplete, not as ready to run"
         );
+    }
+
+    #[test]
+    fn a_remote_server_carries_its_url_and_token() {
+        let remote = McpServerConfig {
+            source: McpServerSource::Remote {
+                url: "https://mcp.example.test/mcp".into(),
+            },
+            secrets: BTreeMap::from([(REMOTE_TOKEN_KEY.to_string(), "abc".to_string())]),
+            ..catalog_server()
+        };
+        assert_eq!(remote.remote_url(), Some("https://mcp.example.test/mcp"));
+        assert_eq!(remote.remote_token(), Some("abc"));
+    }
+
+    #[test]
+    fn a_local_server_has_no_remote_url() {
+        // The caller branches on this, so a stdio server answering with a URL
+        // would send it down the HTTP path with nothing to connect to.
+        assert_eq!(catalog_server().remote_url(), None);
     }
 
     #[test]

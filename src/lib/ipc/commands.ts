@@ -122,6 +122,7 @@ export const IPC = {
 	mcp_catalog: 'mcp_catalog',
 	mcp_clear_server_logs: 'mcp_clear_server_logs',
 	mcp_companion_status: 'mcp_companion_status',
+	mcp_connect_remote_server: 'mcp_connect_remote_server',
 	mcp_connection_info: 'mcp_connection_info',
 	mcp_install_server: 'mcp_install_server',
 	mcp_list_tools: 'mcp_list_tools',
