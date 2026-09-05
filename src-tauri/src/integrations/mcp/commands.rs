@@ -9,9 +9,13 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use tauri::State;
 
+use super::catalog::{self, CatalogEntry};
+use super::install::{self, McpInstaller};
 use super::process::{McpSupervisor, SpawnConfig};
+use super::server_config::McpServerConfig;
 use super::types::{McpCallOutcome, McpConnectionInfo, McpToolDescriptor};
 use crate::sidecar_utils::SidecarStatus;
+use tauri::AppHandle;
 
 /// Spawn a server and negotiate with it. Resolves once it is `Ready` or has
 /// failed; a slow legacy handshake can take a few seconds.
@@ -93,4 +97,67 @@ pub async fn mcp_clear_server_logs(
 ) -> Result<(), String> {
     supervisor.clear_logs(&id).await;
     Ok(())
+}
+
+/// The bundled catalog, for the browser in Settings.
+///
+/// Parsed on every call rather than cached: it is a small compiled-in string,
+/// and a cache would be one more thing to invalidate for no measurable gain.
+#[tauri::command]
+pub async fn mcp_catalog() -> Result<Vec<CatalogEntry>, String> {
+    Ok(catalog::load()?.entries)
+}
+
+/// Install a catalog entry for a configured server, streaming progress on
+/// `mcp-install-progress`.
+#[tauri::command]
+pub async fn mcp_install_server(
+    app: AppHandle,
+    installer: State<'_, McpInstaller>,
+    entry_id: String,
+    server_id: String,
+) -> Result<(), String> {
+    let catalog = catalog::load()?;
+    let entry = catalog
+        .entry(&entry_id)
+        .ok_or_else(|| format!("no catalog entry named '{entry_id}'"))?;
+    installer.install(&app, entry, &server_id).await?;
+    Ok(())
+}
+
+/// Stop an install in flight. The staging directory goes with it, so a retry
+/// starts clean.
+#[tauri::command]
+pub async fn mcp_cancel_install(installer: State<'_, McpInstaller>) -> Result<(), String> {
+    installer.cancel().await;
+    Ok(())
+}
+
+/// Remove a server's directory. Idempotent: the caller drops the settings entry
+/// separately, and either order has to work.
+#[tauri::command]
+pub async fn mcp_uninstall_server(app: AppHandle, server_id: String) -> Result<(), String> {
+    install::uninstall(&app, &server_id).await
+}
+
+/// Where a server's files live, for the file step of guided setup and for a
+/// "show me the folder" affordance.
+#[tauri::command]
+pub async fn mcp_server_dir(app: AppHandle, server_id: String) -> Result<String, String> {
+    Ok(install::server_dir(&app, &server_id)?
+        .to_string_lossy()
+        .to_string())
+}
+
+/// Build the spawn configuration for a configured server, catalog or custom.
+///
+/// Exposed rather than folded into `mcp_start_server` so the settings UI can
+/// show exactly what will be run, and so a missing secret or an unfinished
+/// setup surfaces as a setup problem before anything is spawned.
+#[tauri::command]
+pub async fn mcp_spawn_config(
+    app: AppHandle,
+    config: McpServerConfig,
+) -> Result<SpawnConfig, String> {
+    install::spawn_config_for(&app, &config)
 }

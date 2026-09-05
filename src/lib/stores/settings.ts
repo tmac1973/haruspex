@@ -7,6 +7,7 @@ import type { OpenRouterModel, OpenRouterKeyStatus } from '$lib/openrouter';
 import type { BackendDescriptor, EffortCaps } from '$lib/inference/descriptor';
 
 import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
+import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
 import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
 import type { TlsMode } from '$lib/ipc/gen/TlsMode';
@@ -214,8 +215,13 @@ export interface EmailIntegrationConfig {
 	accounts: EmailAccount[];
 }
 
+export interface McpIntegrationConfig {
+	servers: McpServerConfig[];
+}
+
 export interface IntegrationsConfig {
 	email: EmailIntegrationConfig;
+	mcp: McpIntegrationConfig;
 }
 
 /**
@@ -540,7 +546,8 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 };
 
 const defaultIntegrations: IntegrationsConfig = {
-	email: { accounts: [] }
+	email: { accounts: [] },
+	mcp: { servers: [] }
 };
 
 const defaultProxy: ProxyConfig = {
@@ -681,6 +688,9 @@ function load(): AppSettings {
 			const mergedIntegrations: IntegrationsConfig = {
 				email: {
 					accounts: parsedIntegrations.email?.accounts ?? []
+				},
+				mcp: {
+					servers: parsedIntegrations.mcp?.servers ?? []
 				}
 			};
 			const mergedProxy: ProxyConfig = {
@@ -761,6 +771,38 @@ export function setEmailAccounts(accounts: EmailAccount[]): void {
  */
 export function hasEnabledEmailAccount(): boolean {
 	return settings.integrations.email.accounts.some((a) => a.enabled);
+}
+
+/**
+ * Replace the full list of MCP servers. Mirrors `setEmailAccounts`: the
+ * Settings UI edits a working copy and calls this once on save.
+ */
+export function setMcpServers(servers: McpServerConfig[]): void {
+	settings = {
+		...settings,
+		integrations: {
+			...settings.integrations,
+			mcp: { servers }
+		}
+	};
+	save(settings);
+}
+
+/**
+ * Whether any MCP server should be running. Stricter than the email
+ * equivalent: a server whose guided setup was abandoned halfway is enabled
+ * but not startable, and starting it would fail at spawn on a credential the
+ * user was never asked for.
+ */
+export function hasEnabledMcpServer(): boolean {
+	return settings.integrations.mcp.servers.some((s) => s.enabled && s.setupComplete);
+}
+
+/**
+ * The servers that should actually be started, in settings order.
+ */
+export function startableMcpServers(): McpServerConfig[] {
+	return settings.integrations.mcp.servers.filter((s) => s.enabled && s.setupComplete);
 }
 
 /**

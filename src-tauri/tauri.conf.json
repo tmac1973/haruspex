@@ -49,6 +49,7 @@
       "binaries/espeak-ng-data/lang/*",
       "binaries/espeak-ng-data/lang/*/*",
       "resources/shell-integration/*",
+      "resources/mcp-catalog.json",
       "binaries/node-modules/"
     ],
     "icon": [

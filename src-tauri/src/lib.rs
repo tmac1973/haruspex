@@ -33,7 +33,7 @@ mod whisper;
 use audio::AudioRecorder;
 use db::Database;
 use inference_queue::InferenceQueue;
-use integrations::mcp::McpSupervisor;
+use integrations::mcp::{McpInstaller, McpSupervisor};
 use models::ModelManager;
 use power::PowerInhibitor;
 use proxy::stats::{SearchStats, StatSinkHandle};
@@ -150,6 +150,7 @@ pub fn run() {
             }
         })
         .manage(LlamaServer::new())
+        .manage(McpInstaller::new())
         .manage(InferenceQueue::new())
         .manage(ProxyState::new())
         // Remote web chat's server: off until Settings turns it on.
@@ -359,6 +360,12 @@ pub fn run() {
             integrations::mcp::commands::mcp_call_tool,
             integrations::mcp::commands::mcp_server_logs,
             integrations::mcp::commands::mcp_clear_server_logs,
+            integrations::mcp::commands::mcp_catalog,
+            integrations::mcp::commands::mcp_install_server,
+            integrations::mcp::commands::mcp_cancel_install,
+            integrations::mcp::commands::mcp_uninstall_server,
+            integrations::mcp::commands::mcp_server_dir,
+            integrations::mcp::commands::mcp_spawn_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

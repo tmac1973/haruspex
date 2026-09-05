@@ -1,0 +1,124 @@
+{
+  "entries": [
+    {
+      "id": "github",
+      "name": "GitHub",
+      "description": "Search and read your repositories, issues and pull requests.",
+      "homepage": "https://github.com/github/github-mcp-server",
+      "acquisition": {
+        "kind": "binary",
+        "repo": "github/github-mcp-server",
+        "version": "v1.12.0",
+        "executable": "github-mcp-server",
+        "assets": {
+          "x86_64-unknown-linux-gnu": "github-mcp-server_Linux_x86_64.tar.gz",
+          "aarch64-unknown-linux-gnu": "github-mcp-server_Linux_arm64.tar.gz",
+          "x86_64-apple-darwin": "github-mcp-server_Darwin_x86_64.tar.gz",
+          "aarch64-apple-darwin": "github-mcp-server_Darwin_arm64.tar.gz",
+          "x86_64-pc-windows-msvc": "github-mcp-server_Windows_x86_64.zip"
+        },
+        "sha256": {
+          "x86_64-unknown-linux-gnu": "f34de295acd8f1012c7f2c0e3b909d87361d0993b9489b57ee92ac72b85d7cca",
+          "aarch64-unknown-linux-gnu": "51f2411e93d981eb7038ca23229aa960006209ce82a4dd80a92d7875a7931a5c",
+          "x86_64-apple-darwin": "bd386e398f37011db94f186a7b30ddf1be943fa2d414824d749455e2c83feb42",
+          "aarch64-apple-darwin": "e559f9da66cd639d14f72ca5402d2ad8e258849d30458bbbf3347d5408b02676",
+          "x86_64-pc-windows-msvc": "bc8782deda12dc1f36a182d0205bb4f11b05aee0eec7e2c8c109bb8f622fb4b4"
+        }
+      },
+      "command": {
+        "args": ["stdio"],
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "$secret.token"
+        }
+      },
+      "defaultTools": [
+        "search_repositories",
+        "search_code",
+        "search_issues",
+        "get_file_contents",
+        "list_issues",
+        "get_issue",
+        "list_pull_requests",
+        "get_pull_request"
+      ],
+      "setup": [
+        {
+          "kind": "instruction",
+          "title": "Create a personal access token",
+          "text": "Open GitHub's token settings and create a fine-grained personal access token. Give it read access to the repositories you want Haruspex to see — it does not need write access for the tools enabled by default.",
+          "link": "https://github.com/settings/personal-access-tokens/new"
+        },
+        {
+          "kind": "secret",
+          "key": "token",
+          "label": "Personal access token",
+          "help": "Starts with github_pat_ or ghp_. Stored with your other Haruspex settings."
+        }
+      ]
+    },
+    {
+      "id": "google-workspace",
+      "name": "Google Drive & Sheets",
+      "description": "Search and read your Google Drive files, and read or update Google Sheets.",
+      "homepage": "https://github.com/isaacphi/mcp-gdrive",
+      "acquisition": {
+        "kind": "npm",
+        "package": "@isaacphi/mcp-gdrive",
+        "version": "0.2.0",
+        "bin": "@isaacphi/mcp-gdrive/dist/index.js"
+      },
+      "command": {
+        "env": {
+          "CLIENT_ID": "$secret.clientId",
+          "CLIENT_SECRET": "$secret.clientSecret",
+          "GDRIVE_CREDS_DIR": "$serverDir"
+        }
+      },
+      "defaultTools": ["gdrive_search", "gdrive_read_file", "gsheets_read"],
+      "setup": [
+        {
+          "kind": "instruction",
+          "title": "Create a Google Cloud project",
+          "text": "Open the Google Cloud console and create a new project (or pick an existing one). This is free, and it is what lets your own account authorise Haruspex.",
+          "link": "https://console.cloud.google.com/projectcreate"
+        },
+        {
+          "kind": "instruction",
+          "title": "Enable the Drive and Sheets APIs",
+          "text": "In the same project, enable the Google Drive API and the Google Sheets API. Without these the sign-in will succeed and every request will fail.",
+          "link": "https://console.cloud.google.com/apis/library"
+        },
+        {
+          "kind": "instruction",
+          "title": "Create an OAuth client",
+          "text": "Under APIs & Services → Credentials, create an OAuth client ID with application type 'Desktop app'. Configure the consent screen first if you are asked to. Then download the client's JSON file — you will need it in the next step.",
+          "link": "https://console.cloud.google.com/apis/credentials"
+        },
+        {
+          "kind": "file",
+          "label": "OAuth client JSON file",
+          "filename": "gcp-oauth.keys.json",
+          "help": "The file you just downloaded. Haruspex copies it into this server's own folder and renames it; the original is left where it is."
+        },
+        {
+          "kind": "secret",
+          "key": "clientId",
+          "label": "OAuth client ID",
+          "help": "Shown on the credentials page, and also inside the JSON file you just chose."
+        },
+        {
+          "kind": "secret",
+          "key": "clientSecret",
+          "label": "OAuth client secret",
+          "help": "Shown next to the client ID."
+        },
+        {
+          "kind": "command",
+          "label": "Sign in to Google",
+          "args": [],
+          "help": "Opens your browser once so you can grant access. Sign in with an account that belongs to the Cloud project's organisation."
+        }
+      ]
+    }
+  ]
+}

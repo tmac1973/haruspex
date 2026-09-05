@@ -14,8 +14,12 @@ import {
 	DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
 	MIN_MAX_RESPONSE_TOKENS,
 	MAX_MAX_RESPONSE_TOKENS,
+	setMcpServers,
+	hasEnabledMcpServer,
+	startableMcpServers,
 	type SamplingOptions
 } from '$lib/stores/settings';
+import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 
 // The sampling/template/reasoning readers now take a resolved backend
@@ -813,5 +817,65 @@ describe('include images setting', () => {
 		expect(prompt).toContain('1 to 3');
 		expect(prompt).toContain('Do NOT include images for abstract or technical questions');
 		expect(prompt).toContain('Never invent an image URL');
+	});
+});
+
+describe('MCP servers', () => {
+	const server = (over: Partial<McpServerConfig> = {}): McpServerConfig => ({
+		id: 'srv-1',
+		label: 'GitHub',
+		enabled: true,
+		source: { kind: 'catalog', entryId: 'github' },
+		secrets: {},
+		toolEnabled: {},
+		setupComplete: true,
+		...over
+	});
+
+	beforeEach(() => {
+		setMcpServers([]);
+	});
+
+	it('starts with no servers', () => {
+		expect(getSettings().integrations.mcp.servers).toEqual([]);
+		expect(hasEnabledMcpServer()).toBe(false);
+	});
+
+	it('round-trips a server through the store', () => {
+		const one = server({ secrets: { token: 'ghp_x' } });
+		setMcpServers([one]);
+		expect(getSettings().integrations.mcp.servers).toEqual([one]);
+		expect(hasEnabledMcpServer()).toBe(true);
+	});
+
+	it('does not treat a server whose setup was abandoned as active', () => {
+		// This is the difference from the email predicate. A server can be
+		// enabled and still missing the credential its guided setup collects,
+		// in which case starting it fails at spawn on something the user was
+		// never asked for.
+		setMcpServers([server({ setupComplete: false })]);
+		expect(hasEnabledMcpServer()).toBe(false);
+		expect(startableMcpServers()).toEqual([]);
+	});
+
+	it('does not treat a disabled server as active', () => {
+		setMcpServers([server({ enabled: false })]);
+		expect(hasEnabledMcpServer()).toBe(false);
+	});
+
+	it('reports only the startable servers, in settings order', () => {
+		setMcpServers([
+			server({ id: 'a', enabled: false }),
+			server({ id: 'b' }),
+			server({ id: 'c', setupComplete: false }),
+			server({ id: 'd' })
+		]);
+		expect(startableMcpServers().map((s) => s.id)).toEqual(['b', 'd']);
+	});
+
+	it('leaves the other integrations alone when servers change', () => {
+		const before = getSettings().integrations.email;
+		setMcpServers([server()]);
+		expect(getSettings().integrations.email).toEqual(before);
 	});
 });
