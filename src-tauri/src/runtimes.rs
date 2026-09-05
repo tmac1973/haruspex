@@ -25,11 +25,6 @@
 //! someone else's install. For the same reason every spawned runtime gets a
 //! scrubbed environment rather than inheriting the user's shell.
 
-// Nothing consumes this module until Phase 02 spawns its first MCP server; the
-// runtimes are bundled first because they are long-lead work (per-platform
-// binaries, bundle config, CI). Drop this attribute in that phase.
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use tokio::process::Command;
@@ -40,10 +35,14 @@ use tokio::process::Command;
 /// than on ours, so they are stripped from every spawn.
 const SCRUBBED_ENV_PREFIXES: [&str; 3] = ["NODE_", "NPM_CONFIG_", "UV_"];
 
-/// Which bundled runtimes actually resolved. Phase 06's settings UI uses this
-/// to explain a broken install up front rather than letting the failure surface
-/// as a spawn error in the middle of a conversation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Which bundled runtimes actually resolved.
+///
+/// The settings UI shows this so a broken install is explained up front, with
+/// the acquisition kinds it breaks disabled — rather than letting the failure
+/// surface as a spawn error in the middle of a conversation.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeAvailability {
     pub node: bool,
     pub npm: bool,
@@ -53,11 +52,14 @@ pub struct RuntimeAvailability {
 impl RuntimeAvailability {
     /// True when everything needed to install and launch an MCP server is
     /// present. npm without node is useless, so this is not just a count.
+    #[cfg(test)]
     pub fn is_complete(&self) -> bool {
         self.node && self.npm && self.uv
     }
 
-    /// The runtimes that are missing, for a message the user can act on.
+    /// The runtimes that are missing, for a message the user can act on. The
+    /// frontend composes the message; this is the fact it needs.
+    #[cfg(test)]
     pub fn missing(&self) -> Vec<&'static str> {
         let mut out = Vec::new();
         if !self.node {
@@ -227,7 +229,12 @@ pub fn uv_command() -> Result<Command, String> {
 }
 
 /// Which runtimes resolved on this install.
-pub fn runtimes_available(app: &AppHandle) -> RuntimeAvailability {
+#[tauri::command]
+pub async fn mcp_runtimes_available(app: AppHandle) -> Result<RuntimeAvailability, String> {
+    Ok(runtimes_available(&app))
+}
+
+fn runtimes_available(app: &AppHandle) -> RuntimeAvailability {
     RuntimeAvailability {
         node: node_path().is_ok(),
         npm: npm_cli_path(app).is_ok(),

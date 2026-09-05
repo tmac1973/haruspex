@@ -271,6 +271,43 @@ fn staging_dir(final_dir: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// Copy a file the user picked into a server's directory, under the name the
+/// catalog entry asked for.
+///
+/// Copied rather than referenced: the original is somewhere in the user's
+/// Downloads folder and will be tidied away eventually, and a credentials file
+/// that vanishes three weeks later produces a failure nobody connects to the
+/// cleanup. The server directory is the one place whose lifetime we control.
+pub async fn place_setup_file(
+    app: &AppHandle,
+    server_id: &str,
+    source: &Path,
+    filename: &str,
+) -> Result<(), String> {
+    // The name comes from the catalog, but a badly edited catalog must not be
+    // able to write outside the server's own directory.
+    if !is_plain_filename(filename) {
+        return Err(format!("'{filename}' is not a plain file name"));
+    }
+    let dir = server_dir(app, server_id)?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    tokio::fs::copy(source, dir.join(filename))
+        .await
+        .map_err(|e| format!("could not copy {}: {e}", source.display()))?;
+    Ok(())
+}
+
+/// One path component, no separators, no `..`, no root.
+fn is_plain_filename(name: &str) -> bool {
+    if name.is_empty() || name == "." || name == ".." {
+        return false;
+    }
+    let path = Path::new(name);
+    path.components().count() == 1 && path.file_name().is_some_and(|f| f == name)
+}
+
 /// Remove a server's directory. Missing is success — uninstall is idempotent,
 /// and a settings entry outliving its directory is exactly the state this is
 /// called to clean up.
@@ -299,6 +336,44 @@ pub fn spawn_config_for(app: &AppHandle, config: &McpServerConfig) -> Result<Spa
             format!("{} is turned off", config.label)
         });
     }
+    build_spawn_config(app, config)
+}
+
+/// The same resolution, with the entry's own arguments replaced and the
+/// startable check skipped.
+///
+/// Guided setup runs the installed program *before* setup is complete — that is
+/// what a `command` step is — so the check that protects a normal start would
+/// make the step that satisfies it impossible. And the entry's `command.args`
+/// are for running the *server*; a setup step supplies its own, where an empty
+/// list is meaningful (Google's auth step runs the program bare, which is what
+/// triggers the browser flow).
+pub fn setup_command_config(
+    app: &AppHandle,
+    config: &McpServerConfig,
+    args: Vec<String>,
+) -> Result<SpawnConfig, String> {
+    let mut spawn = build_spawn_config(app, config)?;
+    let entry_args = catalog_command_args(config);
+    spawn
+        .args
+        .truncate(spawn.args.len().saturating_sub(entry_args.len()));
+    spawn.args.extend(args);
+    Ok(spawn)
+}
+
+/// The trailing arguments `build_spawn_config` appended from the catalog entry.
+fn catalog_command_args(config: &McpServerConfig) -> Vec<String> {
+    let McpServerSource::Catalog { entry_id } = &config.source else {
+        return Vec::new();
+    };
+    super::catalog::load()
+        .ok()
+        .and_then(|c| c.entry(entry_id).map(|e| e.command.args.clone()))
+        .unwrap_or_default()
+}
+
+fn build_spawn_config(app: &AppHandle, config: &McpServerConfig) -> Result<SpawnConfig, String> {
     match &config.source {
         McpServerSource::Custom { program, args } => Ok(SpawnConfig {
             id: config.id.clone(),

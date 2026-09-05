@@ -161,3 +161,65 @@ pub async fn mcp_spawn_config(
 ) -> Result<SpawnConfig, String> {
     install::spawn_config_for(&app, &config)
 }
+
+/// Copy a file the user picked in the setup wizard into the server's directory.
+#[tauri::command]
+pub async fn mcp_place_setup_file(
+    app: AppHandle,
+    server_id: String,
+    source_path: String,
+    filename: String,
+) -> Result<(), String> {
+    install::place_setup_file(
+        &app,
+        &server_id,
+        std::path::Path::new(&source_path),
+        &filename,
+    )
+    .await
+}
+
+/// Run a guided-setup `command` step and return everything it printed.
+///
+/// Runs to completion rather than streaming: these are one-shot auth flows that
+/// hand off to a browser and then finish, and the output only matters
+/// afterwards — when it says whether the sign-in worked. Both streams come
+/// back, because the useful line is as often on stderr as on stdout and the
+/// user should not have to know which.
+#[tauri::command]
+pub async fn mcp_run_setup_command(
+    app: AppHandle,
+    config: McpServerConfig,
+    args: Vec<String>,
+) -> Result<String, String> {
+    let spawn = install::setup_command_config(&app, &config, args)?;
+    let mut cmd = tokio::process::Command::new(&spawn.program);
+    cmd.args(&spawn.args);
+    cmd.env_clear();
+    for (key, value) in &spawn.env {
+        cmd.env(key, value);
+    }
+    if let Some(cwd) = &spawn.cwd {
+        cmd.current_dir(cwd);
+    }
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("could not run {}: {e}", spawn.program.display()))?;
+
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.trim().is_empty() {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(&stderr);
+    }
+    if output.status.success() {
+        Ok(text)
+    } else if text.trim().is_empty() {
+        Err(format!("the command exited with {}", output.status))
+    } else {
+        Err(text)
+    }
+}

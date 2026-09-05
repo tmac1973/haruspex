@@ -7,6 +7,7 @@
 	import AudioSection from '$lib/components/settings/AudioSection.svelte';
 	import SearchSection from '$lib/components/settings/SearchSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
+	import McpSection from '$lib/components/settings/McpSection.svelte';
 	import ShellSection from '$lib/components/settings/ShellSection.svelte';
 	import RemoteSection from '$lib/components/settings/RemoteSection.svelte';
 	import FeedbackSection from '$lib/components/settings/FeedbackSection.svelte';
@@ -201,6 +202,7 @@
 				<SearchSection />
 			{:else if activeCategory === 'integrations'}
 				<EmailSection />
+				<McpSection />
 			{:else if activeCategory === 'shell'}
 				<ShellSection />
 			{:else if activeCategory === 'remote'}
