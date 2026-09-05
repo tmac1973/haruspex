@@ -3,6 +3,9 @@ import type { ToolRegistration, ToolExecOutput, ToolContext } from './types';
 import { toolResult, toolError } from './types';
 import { coerceArgsToSchema } from './coerce';
 import { hasEnabledEmailAccount, getSettings } from '$lib/stores/settings';
+// The predicate, not the tool module — mcp.ts registers THROUGH this file, so
+// importing it here would be a cycle. Same reason as memoryActive() below.
+import { isMcpToolEnabled } from './mcp-names';
 // The predicate, not the tool module: memoryWrite.ts registers THROUGH this
 // file, so importing it here would be a cycle.
 import { memoryActive } from '$lib/stores/memory.svelte';
@@ -11,6 +14,15 @@ const tools = new Map<string, ToolRegistration>();
 
 export function registerTool(reg: ToolRegistration): void {
 	tools.set(reg.schema.function.name, reg);
+}
+
+/**
+ * Remove a tool. Only MCP tools are ever withdrawn — built-ins register once at
+ * module load and stay — but the registry does not need to know that, so this
+ * is the general operation rather than an MCP-shaped one.
+ */
+export function unregisterTool(name: string): void {
+	tools.delete(name);
 }
 
 /**
@@ -124,6 +136,10 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
+	// MCP tools are per-tool switchable, so the category alone is not the
+	// answer; see isMcpToolEnabled for how an explicit choice beats the
+	// catalog default.
+	if (reg.category === 'mcp' && !isMcpToolEnabled(name)) return false;
 	if (opts.deepResearch && name === 'fetch_url') return false;
 	if (!opts.visionSupported && reg.requiresVision) return false;
 	return true;
@@ -214,6 +230,16 @@ export async function executeTool(
 				'Long-term memory is off, or its embedding model has not been downloaded. ' +
 					'Nothing was saved. The user can turn it on in Settings → Remember across chats.'
 			)
+		);
+	}
+
+	// Same hard gate again, for MCP. Identical reasoning to the two above, and
+	// it matters more here: an MCP tool can reach a third-party service and
+	// change something there, so a tool the user switched off must not run
+	// because a small model guessed its name from the ones it *was* offered.
+	if (reg.category === 'mcp' && !isMcpToolEnabled(name)) {
+		return toolResult(
+			toolError(`${name} is switched off. The user can enable it in Settings → Integrations.`)
 		);
 	}
 

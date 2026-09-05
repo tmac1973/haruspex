@@ -159,7 +159,8 @@ export interface ToolRegistration {
 		| 'coding'
 		| 'memory'
 		| 'memory-write'
-		| 'interaction';
+		| 'interaction'
+		| 'mcp';
 	requiresVision?: boolean;
 }
 

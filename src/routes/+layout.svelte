@@ -5,6 +5,7 @@
 	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
 	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
 	import CommandApprovalModal from '$lib/components/CommandApprovalModal.svelte';
+	import McpApprovalModal from '$lib/components/McpApprovalModal.svelte';
 	import MemoryApprovalModal from '$lib/components/MemoryApprovalModal.svelte';
 	import UserQuestionModal from '$lib/components/UserQuestionModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
@@ -595,6 +596,7 @@
 	<FileConflictModal />
 	<SandboxApprovalModal />
 	<CommandApprovalModal />
+	<McpApprovalModal />
 	<MemoryApprovalModal />
 	<UserQuestionModal />
 {/if}
