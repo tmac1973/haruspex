@@ -96,6 +96,13 @@ pub fn run() {
             // before anything spawns, so a fresh pid is never mistaken for a
             // stale one. See integrations::mcp::orphans.
             integrations::mcp::orphans::sweep(app.handle());
+            // The supervisor holds the orphan-registry path rather than an
+            // AppHandle, which is what lets it be driven in tests; resolving it
+            // needs the handle, so it is managed here rather than in the
+            // builder chain.
+            app.manage(McpSupervisor::new(
+                integrations::mcp::orphans::registry_path(app.handle()).ok(),
+            ));
 
             // Backstop reclaim of inference slots whose holder window hung
             // without releasing or heartbeating.
@@ -138,12 +145,11 @@ pub fn run() {
                 // can take seconds against a server that ignores its stdin.
                 let app = window.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    app.state::<McpSupervisor>().stop_all(&app).await;
+                    app.state::<McpSupervisor>().stop_all().await;
                 });
             }
         })
         .manage(LlamaServer::new())
-        .manage(McpSupervisor::new())
         .manage(InferenceQueue::new())
         .manage(ProxyState::new())
         // Remote web chat's server: off until Settings turns it on.
@@ -345,11 +351,14 @@ pub fn run() {
             clipboard::clipboard_read_primary,
             power::power_inhibit_acquire,
             power::power_inhibit_release,
-            integrations::mcp::process::mcp_start_server,
-            integrations::mcp::process::mcp_stop_server,
-            integrations::mcp::process::mcp_server_status,
-            integrations::mcp::process::mcp_server_logs,
-            integrations::mcp::process::mcp_clear_server_logs,
+            integrations::mcp::commands::mcp_start_server,
+            integrations::mcp::commands::mcp_stop_server,
+            integrations::mcp::commands::mcp_server_status,
+            integrations::mcp::commands::mcp_connection_info,
+            integrations::mcp::commands::mcp_list_tools,
+            integrations::mcp::commands::mcp_call_tool,
+            integrations::mcp::commands::mcp_server_logs,
+            integrations::mcp::commands::mcp_clear_server_logs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -377,7 +386,7 @@ pub fn run() {
                 // not honour a closed stdin.
                 let mcp = app.state::<McpSupervisor>();
                 tauri::async_runtime::block_on(async {
-                    mcp.stop_all(app).await;
+                    mcp.stop_all().await;
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;
                     let _ = tts.stop().await;

@@ -71,28 +71,31 @@ pub fn save(path: &std::path::Path, entries: &[RunningServer]) -> Result<(), Str
 
 /// Record a spawn. Replaces any existing entry for the same server id — a
 /// restart reuses the id and the old pid is no longer ours to kill.
-pub fn register(app: &AppHandle, entry: RunningServer) {
-    let Ok(path) = registry_path(app) else {
+///
+/// A `None` path means there is nowhere to record to (no app data directory);
+/// that degrades reaping, so it must never fail a spawn.
+pub fn register(path: Option<&std::path::Path>, entry: RunningServer) {
+    let Some(path) = path else {
         return;
     };
-    let mut entries = load(&path);
+    let mut entries = load(path);
     entries.retain(|e| e.id != entry.id);
     entries.push(entry);
-    if let Err(e) = save(&path, &entries) {
+    if let Err(e) = save(path, &entries) {
         warn!("mcp: could not record running server: {e}");
     }
 }
 
 /// Drop a server from the registry once we have stopped it ourselves.
-pub fn deregister(app: &AppHandle, id: &str) {
-    let Ok(path) = registry_path(app) else {
+pub fn deregister(path: Option<&std::path::Path>, id: &str) {
+    let Some(path) = path else {
         return;
     };
-    let mut entries = load(&path);
+    let mut entries = load(path);
     let before = entries.len();
     entries.retain(|e| e.id != id);
     if entries.len() != before {
-        if let Err(e) = save(&path, &entries) {
+        if let Err(e) = save(path, &entries) {
             warn!("mcp: could not update running server registry: {e}");
         }
     }

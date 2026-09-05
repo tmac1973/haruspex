@@ -17,13 +17,16 @@
 //!   The tradeoff is that we log the child's own last words rather than a
 //!   numeric exit status, and the log tail is what the UI shows anyway.
 //!
-//! **Readiness is provisional.** Phase 03 replaces it with the first successful
-//! protocol response. Until then a server is Ready once it has survived
-//! [`timing::STARTUP_SETTLE`] without exiting — enough to separate "started"
-//! from "died on launch", which is the distinction that matters to a user
-//! staring at a status dot. It cannot see a server that starts and then hangs;
-//! that is a protocol-level fact, and [`McpSupervisor::record_timeout`] is the
-//! hook Phase 03 drives for it.
+//! **Ready means the protocol answered.** Not "the process is alive" — a server
+//! that launches and then never speaks is exactly the failure a status dot must
+//! not call healthy. `start` spawns the child and then negotiates; only a
+//! completed negotiation reaches `Ready`, and the handle records which protocol
+//! era and version it settled on. A server that never answers is killed at
+//! [`timing::NEGOTIATION_DEADLINE`].
+//!
+//! Hangs *after* negotiation are a different failure, and per-request:
+//! [`McpSupervisor::record_timeout`] fails one request but breaks the server
+//! after three in a row.
 //!
 //! **Nothing auto-restarts.** A server that crashes on startup would spin
 //! forever, burning CPU and filling the log ring. Restart is a user action.
@@ -36,20 +39,27 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::AppHandle;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
 
+use super::client::McpSession;
 use super::orphans::{self, RunningServer};
+use super::types::{McpCallOutcome, McpConnectionInfo, McpToolDescriptor};
 use crate::sidecar_utils::{new_log_buffer, push_log, LogBuffer, SidecarStatus};
+use std::path::Path;
 
 pub mod timing {
     use std::time::Duration;
 
-    /// How long a freshly spawned server must stay alive before it counts as
-    /// Ready. A server that is going to die on launch dies well inside this;
-    /// anything longer just makes a healthy start feel slow.
-    pub const STARTUP_SETTLE: Duration = Duration::from_millis(250);
+    /// How long a freshly spawned server has to complete MCP negotiation
+    /// before it is killed and reported broken.
+    ///
+    /// Generous, because it covers rmcp's own 10s `server/discover` probe
+    /// timeout plus the legacy `initialize` handshake that follows it — a
+    /// silent legacy server spends the full probe timeout before the fallback
+    /// even starts. Shorter than this and a legitimately slow legacy server
+    /// would look dead.
+    pub const NEGOTIATION_DEADLINE: Duration = Duration::from_secs(20);
 
     /// Upper bound on the whole stop sequence. Deliberately longer than the
     /// 3s rmcp spends waiting inside `graceful_shutdown` before it kills, so
@@ -100,29 +110,93 @@ struct ServerHandle {
     status: Arc<Mutex<SidecarStatus>>,
     log: LogBuffer,
     pid: Option<u32>,
-    /// The transport, and with it ownership of the child. Phase 03 moves this
-    /// into an rmcp service; until then the supervisor holds it so `stop` can
-    /// shut it down gracefully.
-    process: Option<TokioChildProcess>,
+    /// The negotiated MCP session, which owns the transport and with it the
+    /// child. `Arc` so a tool call can be driven without holding the map's
+    /// lock across the await — one slow tool must not freeze every other
+    /// server's status query.
+    session: Option<Arc<McpSession>>,
+    /// What negotiation settled on. `None` until it succeeds.
+    connection: Option<McpConnectionInfo>,
     consecutive_timeouts: u32,
 }
 
 /// Tauri-managed state: every MCP server this app has spawned.
+///
+/// Holds the orphan-registry path rather than an `AppHandle`, so the whole
+/// supervisor can be driven in tests against a temp directory. Resolving that
+/// path is the only thing it ever needed the handle for.
 #[derive(Default)]
 pub struct McpSupervisor {
     servers: Mutex<HashMap<String, ServerHandle>>,
+    registry_path: Option<PathBuf>,
 }
 
 impl McpSupervisor {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(registry_path: Option<PathBuf>) -> Self {
+        Self {
+            servers: Mutex::new(HashMap::new()),
+            registry_path,
+        }
+    }
+
+    fn registry(&self) -> Option<&Path> {
+        self.registry_path.as_deref()
+    }
+
+    /// The negotiated era and version for a connected server, for the UI.
+    pub async fn connection(&self, id: &str) -> Option<McpConnectionInfo> {
+        self.servers.lock().await.get(id)?.connection.clone()
+    }
+
+    /// The tools a connected server publishes.
+    pub async fn list_tools(&self, id: &str) -> Result<Vec<McpToolDescriptor>, String> {
+        self.session(id).await?.list_tools().await
+    }
+
+    /// One `tools/call` round trip. See `client.rs` on why a round trip rather
+    /// than a completed call.
+    pub async fn call_tool(
+        &self,
+        id: &str,
+        name: &str,
+        arguments: Option<serde_json::Map<String, serde_json::Value>>,
+        input_responses: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+        request_state: Option<String>,
+    ) -> Result<McpCallOutcome, String> {
+        self.session(id)
+            .await?
+            .call_tool(name, arguments, input_responses, request_state)
+            .await
+    }
+
+    /// Clone the session handle out from under the lock, so a slow call cannot
+    /// freeze status queries for every other server.
+    async fn session(&self, id: &str) -> Result<Arc<McpSession>, String> {
+        self.servers
+            .lock()
+            .await
+            .get(id)
+            .and_then(|handle| handle.session.clone())
+            .ok_or_else(|| format!("server {id} is not connected"))
     }
 
     /// Spawn a server and wait out the settle window.
     ///
     /// Errors if the id is already running: restarting is [`Self::stop`] then
     /// `start`, so that the caller — and the user — decides.
-    pub async fn start(&self, app: &AppHandle, config: SpawnConfig) -> Result<(), String> {
+    pub async fn start(&self, config: SpawnConfig) -> Result<(), String> {
+        self.start_within(config, timing::NEGOTIATION_DEADLINE)
+            .await
+    }
+
+    /// [`Self::start`] with an explicit negotiation deadline. Private because
+    /// the deadline is a property of the product, not of the caller; the tests
+    /// shorten it so the "never answers" case does not cost 20 seconds.
+    async fn start_within(
+        &self,
+        config: SpawnConfig,
+        negotiation_deadline: std::time::Duration,
+    ) -> Result<(), String> {
         {
             let servers = self.servers.lock().await;
             if let Some(existing) = servers.get(&config.id) {
@@ -160,7 +234,7 @@ impl McpSupervisor {
         let pid = process.id();
         if let Some(pid) = pid {
             orphans::register(
-                app,
+                self.registry(),
                 RunningServer {
                     id: config.id.clone(),
                     pid,
@@ -190,28 +264,61 @@ impl McpSupervisor {
                 status: status.clone(),
                 log: log.clone(),
                 pid,
-                process: Some(process),
+                session: None,
+                connection: None,
                 consecutive_timeouts: 0,
             },
         );
 
-        match settle(&status, &exited, &log).await {
-            SidecarStatus::Ready => {
-                info!("mcp: server {id} started (pid {pid:?})");
+        // Negotiation takes ownership of the transport, so a failure past this
+        // point cannot hand the child back — dropping the transport kills it,
+        // which is what we want for a server that will not speak.
+        let negotiated =
+            match tokio::time::timeout(negotiation_deadline, McpSession::connect(process)).await {
+                Ok(Ok(session)) => Ok(session),
+                Ok(Err(_)) if exited.load(Ordering::SeqCst) => {
+                    // The child died rather than disagreeing with us; its own
+                    // last words are the more useful diagnostic.
+                    Err(format!("server exited on startup{}", log_tail(&log).await))
+                }
+                Ok(Err(e)) => Err(format!("{e}{}", log_tail(&log).await)),
+                Err(_) => Err(format!(
+                    "server did not answer MCP within {}s{}",
+                    negotiation_deadline.as_secs(),
+                    log_tail(&log).await
+                )),
+            };
+
+        match negotiated {
+            Ok(session) => {
+                let connection = session.info().clone();
+                info!(
+                    "mcp: server {id} ready (pid {pid:?}, {:?} {})",
+                    connection.era, connection.protocol_version
+                );
+                if let Some(handle) = self.servers.lock().await.get_mut(&id) {
+                    handle.session = Some(Arc::new(session));
+                    handle.connection = Some(connection);
+                }
+                let mut current = status.lock().await;
+                if matches!(*current, SidecarStatus::Starting) {
+                    *current = SidecarStatus::Ready;
+                }
                 Ok(())
             }
-            SidecarStatus::Error(reason) => {
-                orphans::deregister(app, &id);
+            Err(reason) => {
+                *status.lock().await = SidecarStatus::Error(reason.clone());
+                orphans::deregister(self.registry(), &id);
+                warn!("mcp: server {id} failed to start: {reason}");
                 Err(reason)
             }
-            other => Err(format!("server {id} did not start: {other:?}")),
         }
     }
 
     /// Stop a server: graceful first, killed if it will not go.
     ///
     /// Idempotent — stopping something already stopped is not an error.
-    pub async fn stop(&self, app: &AppHandle, id: &str) -> Result<(), String> {
+    pub async fn stop(&self, id: &str) -> Result<(), String> {
         let mut servers = self.servers.lock().await;
         let Some(handle) = servers.get_mut(id) else {
             return Ok(());
@@ -222,29 +329,43 @@ impl McpSupervisor {
         *handle.status.lock().await = SidecarStatus::Stopped;
         handle.consecutive_timeouts = 0;
 
-        if let Some(mut process) = handle.process.take() {
-            match tokio::time::timeout(timing::STOP_GRACE, process.graceful_shutdown()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => warn!("mcp: {id} did not shut down cleanly: {e}"),
-                Err(_) => warn!("mcp: {id} ignored the stop deadline; killing it"),
+        handle.connection = None;
+        if let Some(session) = handle.session.take() {
+            match Arc::into_inner(session) {
+                Some(session) => {
+                    if tokio::time::timeout(timing::STOP_GRACE, session.shutdown())
+                        .await
+                        .is_err()
+                    {
+                        warn!("mcp: {id} ignored the stop deadline; killing it");
+                    }
+                }
+                // A tool call is still in flight and holds the other reference.
+                // Dropping ours is enough: when the call finishes, the last
+                // reference goes and rmcp's ChildWithCleanup kills the child.
+                None => warn!("mcp: {id} stopped with a call in flight; it will be killed"),
             }
-            // Dropping the transport kills the child if it is somehow still
-            // alive; rmcp's ChildWithCleanup does that in its Drop.
-            drop(process);
         }
         handle.pid = None;
-        orphans::deregister(app, id);
+        orphans::deregister(self.registry(), id);
         info!("mcp: server {id} stopped");
         Ok(())
     }
 
     /// Stop every server. Used on app exit, from both the window-destroyed and
     /// run-exit paths — neither covers every quit on its own.
-    pub async fn stop_all(&self, app: &AppHandle) {
+    pub async fn stop_all(&self) {
         let ids: Vec<String> = self.servers.lock().await.keys().cloned().collect();
         for id in ids {
-            let _ = self.stop(app, &id).await;
+            let _ = self.stop(&id).await;
         }
+    }
+
+    /// The child's pid. Only the tests need it — the UI shows status and logs,
+    /// not process identity.
+    #[cfg(test)]
+    pub async fn pid_for(&self, id: &str) -> Option<u32> {
+        self.servers.lock().await.get(id)?.pid
     }
 
     pub async fn status(&self, id: &str) -> SidecarStatus {
@@ -347,31 +468,6 @@ fn spawn_stderr_reader(
     });
 }
 
-/// Wait out the settle window and decide what the server's status is.
-///
-/// This is the whole of Phase 02's readiness rule, in one place so the tests
-/// exercise the real decision rather than a paraphrase of it. Phase 03 replaces
-/// the sleep with the first successful protocol response.
-async fn settle(
-    status: &Arc<Mutex<SidecarStatus>>,
-    exited: &Arc<AtomicBool>,
-    log: &LogBuffer,
-) -> SidecarStatus {
-    tokio::time::sleep(timing::STARTUP_SETTLE).await;
-    let mut current = status.lock().await;
-    if exited.load(Ordering::SeqCst) {
-        // The stderr reader may have set its own Error already; its reason is
-        // the more specific one, so only fill in when it has not.
-        if matches!(*current, SidecarStatus::Starting) {
-            *current =
-                SidecarStatus::Error(format!("server exited on startup{}", log_tail(log).await));
-        }
-    } else if matches!(*current, SidecarStatus::Starting) {
-        *current = SidecarStatus::Ready;
-    }
-    current.clone()
-}
-
 /// The last few log lines, formatted for appending to an error message.
 async fn log_tail(log: &LogBuffer) -> String {
     let buf = log.lock().await;
@@ -389,86 +485,61 @@ async fn log_tail(log: &LogBuffer) -> String {
     }
 }
 
-#[tauri::command]
-pub async fn mcp_start_server(
-    app: AppHandle,
-    supervisor: tauri::State<'_, McpSupervisor>,
-    config: SpawnConfig,
-) -> Result<(), String> {
-    supervisor.start(&app, config).await
-}
-
-#[tauri::command]
-pub async fn mcp_stop_server(
-    app: AppHandle,
-    supervisor: tauri::State<'_, McpSupervisor>,
-    id: String,
-) -> Result<(), String> {
-    supervisor.stop(&app, &id).await
-}
-
-#[tauri::command]
-pub async fn mcp_server_status(
-    supervisor: tauri::State<'_, McpSupervisor>,
-    id: String,
-) -> Result<SidecarStatus, String> {
-    Ok(supervisor.status(&id).await)
-}
-
-#[tauri::command]
-pub async fn mcp_server_logs(
-    supervisor: tauri::State<'_, McpSupervisor>,
-    id: String,
-) -> Result<Vec<String>, String> {
-    Ok(supervisor.logs(&id).await)
-}
-
-#[tauri::command]
-pub async fn mcp_clear_server_logs(
-    supervisor: tauri::State<'_, McpSupervisor>,
-    id: String,
-) -> Result<(), String> {
-    supervisor.clear_logs(&id).await;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::integrations::mcp::types::McpProtocolEra;
     use std::time::Duration;
 
-    /// The fixture stands in for an MCP server: it speaks no protocol, but it
-    /// can start, crash, hang and echo, which is the matrix the supervisor has
-    /// to survive. Run through the bundled Node from Phase 01.
-    fn fixture_config(id: &str, mode: &str) -> Option<SpawnConfig> {
+    /// Locate a fixture script, or `None` when the bundled Node is a CI
+    /// placeholder rather than a real interpreter. Skipping beats a failure
+    /// that says nothing about our code.
+    fn fixture_config(id: &str, script: &str, mode: &str) -> Option<SpawnConfig> {
         let node = crate::runtimes::node_path().ok()?;
-        // CI stubs the sidecars with `#!/bin/sh` placeholders rather than
-        // fetching real ones, so confirm this is actually Node before relying
-        // on it. Skipping beats a failure that says nothing about our code.
-        let version = std::process::Command::new(&node).arg("--version").output();
-        let usable = version.is_ok_and(|out| {
-            out.status.success() && String::from_utf8_lossy(&out.stdout).starts_with('v')
-        });
+        let usable = std::process::Command::new(&node)
+            .arg("--version")
+            .output()
+            .is_ok_and(|out| {
+                out.status.success() && String::from_utf8_lossy(&out.stdout).starts_with('v')
+            });
         if !usable {
             eprintln!("skipping: no usable bundled node (run ./scripts/fetch-node.sh)");
             return None;
         }
-        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("fixtures")
-            .join("mcp-echo-server.js");
-        assert!(script.is_file(), "fixture missing at {}", script.display());
+            .join(script);
+        assert!(path.is_file(), "fixture missing at {}", path.display());
         Some(SpawnConfig {
             id: id.to_string(),
             program: node,
-            args: vec![script.to_string_lossy().to_string(), mode.to_string()],
+            args: vec![path.to_string_lossy().to_string(), mode.to_string()],
             env: Vec::new(),
             cwd: None,
         })
     }
 
-    /// Spawn the fixture the way `start` does, without needing an `AppHandle`.
-    /// The orphan registry is exercised separately in `orphans.rs`.
+    /// The protocol-speaking fixture, one mode per branch of the connection
+    /// sequence.
+    fn era_config(id: &str, mode: &str) -> Option<SpawnConfig> {
+        fixture_config(id, "mcp-era-server.js", mode)
+    }
+
+    /// The protocol-*less* fixture from Phase 02: useful precisely because it
+    /// never answers MCP.
+    fn echo_config(id: &str, mode: &str) -> Option<SpawnConfig> {
+        fixture_config(id, "mcp-echo-server.js", mode)
+    }
+
+    fn supervisor() -> McpSupervisor {
+        // No registry path: orphan recording is exercised in orphans.rs, and a
+        // test writing to the real app data dir would be a surprise.
+        McpSupervisor::new(None)
+    }
+
+    /// Spawn a fixture the way `start` does, for the tests that exercise the
+    /// stderr reader on its own.
     fn spawn_fixture(
         config: &SpawnConfig,
     ) -> (TokioChildProcess, Option<tokio::process::ChildStderr>) {
@@ -481,114 +552,361 @@ mod tests {
             .expect("fixture should spawn")
     }
 
-    async fn run_fixture(mode: &str) -> Option<(SidecarStatus, Vec<String>)> {
-        let config = fixture_config("test", mode)?;
+    // ---- negotiation -----------------------------------------------------
+
+    #[tokio::test]
+    async fn a_modern_server_negotiates_the_stateless_revision() {
+        let Some(config) = era_config("modern", "modern") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.expect("modern server should start");
+        assert_eq!(sup.status("modern").await, SidecarStatus::Ready);
+
+        let info = sup.connection("modern").await.expect("connected");
+        assert_eq!(info.era, McpProtocolEra::Modern);
+        assert_eq!(info.protocol_version, "2026-07-28");
+        assert_eq!(info.server_name.as_deref(), Some("fixture-modern"));
+        sup.stop("modern").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_handshake_server_falls_back_and_still_lists_tools() {
+        let Some(config) = era_config("legacy", "legacy") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.expect("legacy server should start");
+
+        let info = sup.connection("legacy").await.expect("connected");
+        assert_eq!(info.era, McpProtocolEra::Legacy);
+        assert_eq!(info.protocol_version, "2025-11-25");
+
+        let tools = sup.list_tools("legacy").await.expect("tools/list");
+        assert_eq!(tools.len(), 2, "the fallback must not cost us discovery");
+        sup.stop("legacy").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_fallback_is_not_keyed_to_one_error_code() {
+        // The spec is explicit: legacy servers answer an unknown
+        // pre-`initialize` method with implementation-defined errors, or with
+        // nothing at all. Keying the fallback to -32601 would strand the rest.
+        for mode in ["legacy", "legacy-32602"] {
+            let Some(config) = era_config(mode, mode) else {
+                return;
+            };
+            let sup = supervisor();
+            sup.start(config)
+                .await
+                .unwrap_or_else(|e| panic!("{mode} should have fallen back: {e}"));
+            assert_eq!(
+                sup.connection(mode).await.expect("connected").era,
+                McpProtocolEra::Legacy,
+                "{mode} should have been classified as legacy"
+            );
+            sup.stop(mode).await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn a_version_mismatch_retries_once_and_stays_modern() {
+        // A recognised modern error identifies a *modern* server. Retry at a
+        // version it named; do not fall back to `initialize`.
+        let Some(config) = era_config("mismatch", "version-mismatch") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.expect("the retry should succeed");
+        let info = sup.connection("mismatch").await.expect("connected");
+        assert_eq!(
+            info.era,
+            McpProtocolEra::Modern,
+            "a version disagreement is not a reason to drop to the handshake"
+        );
+        sup.stop("mismatch").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_version_dead_end_fails_rather_than_falling_back() {
+        let Some(config) = era_config("deadend", "version-dead-end") else {
+            return;
+        };
+        let sup = supervisor();
+        let err = sup
+            .start(config)
+            .await
+            .expect_err("no mutually supported version exists");
+        assert!(
+            matches!(sup.status("deadend").await, SidecarStatus::Error(_)),
+            "a dead end must not leave the server looking healthy"
+        );
+        assert!(!err.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_server_that_never_speaks_mcp_is_killed_at_the_deadline() {
+        // The echo fixture answers no protocol at all. rmcp's probe times out,
+        // the legacy fallback gets no answer either, and negotiation fails —
+        // which is the whole point of Ready meaning "the protocol answered".
+        let Some(config) = echo_config("mute", "hang") else {
+            return;
+        };
+        let sup = supervisor();
+        // Shortened: the real deadline has to outlast rmcp's own 10s probe
+        // timeout plus a legacy handshake, and waiting that out here would
+        // dominate the suite.
+        let err = sup
+            .start_within(config, Duration::from_secs(2))
+            .await
+            .expect_err("nothing answered");
+        assert!(
+            matches!(sup.status("mute").await, SidecarStatus::Error(_)),
+            "got {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_server_that_exits_on_startup_reports_its_own_last_words() {
+        let Some(config) = echo_config("dead", "exit-immediately") else {
+            return;
+        };
+        let sup = supervisor();
+        let err = sup.start(config).await.expect_err("it exited");
+        assert!(
+            err.contains("exiting immediately"),
+            "the server's stderr is the useful diagnostic here, got {err:?}"
+        );
+    }
+
+    // ---- discovery -------------------------------------------------------
+
+    #[tokio::test]
+    async fn annotations_survive_discovery_including_their_absence() {
+        let Some(config) = era_config("tools", "modern") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.unwrap();
+        let tools = sup.list_tools("tools").await.unwrap();
+
+        let annotated = tools.iter().find(|t| t.name == "read_thing").unwrap();
+        let a = annotated.annotations.as_ref().expect("server sent some");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(
+            a.destructive_hint, None,
+            "an unsent hint must not become false on the way through"
+        );
+
+        let bare = tools
+            .iter()
+            .find(|t| t.name == "unannotated_thing")
+            .unwrap();
+        assert!(
+            bare.annotations.is_none(),
+            "no annotations is a different statement from empty annotations"
+        );
+        assert!(
+            bare.input_schema.get("type").is_some(),
+            "the schema must reach the model as the server published it"
+        );
+        sup.stop("tools").await.unwrap();
+    }
+
+    // ---- calling ---------------------------------------------------------
+
+    #[tokio::test]
+    async fn a_tool_call_completes() {
+        let Some(config) = era_config("call", "modern") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.unwrap();
+        let outcome = sup
+            .call_tool("call", "read_thing", None, None, None)
+            .await
+            .unwrap();
+        let McpCallOutcome::Complete { content, .. } = outcome else {
+            panic!("expected a completed call, got {outcome:?}");
+        };
+        assert!(content.to_string().contains("called read_thing"));
+        sup.stop("call").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_mrtr_question_is_returned_rather_than_answered_here() {
+        // The MRTR loop belongs above this layer, where the existing
+        // ask-the-user machinery already is. This layer's job is to hand the
+        // question up without losing anything, and to accept the answer back.
+        let Some(config) = era_config("mrtr", "mrtr") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.unwrap();
+
+        let first = sup
+            .call_tool("mrtr", "read_thing", None, None, None)
+            .await
+            .unwrap();
+        let McpCallOutcome::InputRequired {
+            requests,
+            request_state,
+        } = first
+        else {
+            panic!("expected a question, got {first:?}");
+        };
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].key, "q1");
+        assert_eq!(requests[0].method.as_deref(), Some("elicitation/create"));
+        assert_eq!(
+            request_state.as_deref(),
+            Some("opaque-state-1"),
+            "the opaque state must come back untouched"
+        );
+
+        let answers = std::collections::BTreeMap::from([(
+            "q1".to_string(),
+            serde_json::json!({ "action": "accept", "content": { "project": "haruspex" } }),
+        )]);
+        let second = sup
+            .call_tool("mrtr", "read_thing", None, Some(answers), request_state)
+            .await
+            .unwrap();
+        let McpCallOutcome::Complete { content, .. } = second else {
+            panic!("the retry should complete, got {second:?}");
+        };
+        assert!(content.to_string().contains("haruspex"));
+        sup.stop("mrtr").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_legacy_server_asking_a_question_fails_the_call_and_survives() {
+        // Legacy servers ask by sending their own request. There is no legacy
+        // question path by design, so the call must fail with a reason the
+        // model can relay — not hang, and not take the server down.
+        let Some(config) = era_config("elicit", "legacy-elicit") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config)
+            .await
+            .expect("it is a working legacy server");
+        assert_eq!(
+            sup.connection("elicit").await.unwrap().era,
+            McpProtocolEra::Legacy
+        );
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            sup.call_tool("elicit", "read_thing", None, None, None),
+        )
+        .await
+        .expect("the call must fail rather than hang");
+        assert!(result.is_err(), "expected a failed call, got {result:?}");
+
+        assert_eq!(
+            sup.status("elicit").await,
+            SidecarStatus::Ready,
+            "one refused question is not a reason to tear the server down"
+        );
+        sup.stop("elicit").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn calling_a_server_that_is_not_connected_says_so() {
+        let sup = supervisor();
+        let err = sup
+            .call_tool("ghost", "read_thing", None, None, None)
+            .await
+            .expect_err("nothing is connected");
+        assert!(err.contains("not connected"), "got {err}");
+        assert!(sup.list_tools("ghost").await.is_err());
+        assert!(sup.connection("ghost").await.is_none());
+    }
+
+    // ---- lifecycle -------------------------------------------------------
+
+    #[tokio::test]
+    async fn stopping_disconnects_and_leaves_no_child_behind() {
+        let Some(config) = era_config("bye", "modern") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.unwrap();
+        let pid = sup.pid_for("bye").await.expect("a spawned child has a pid");
+
+        sup.stop("bye").await.unwrap();
+        assert_eq!(sup.status("bye").await, SidecarStatus::Stopped);
+        assert!(sup.connection("bye").await.is_none());
+
+        #[cfg(unix)]
+        {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert!(!pid_is_alive(pid), "pid {pid} survived the stop");
+        }
+        let _ = pid;
+    }
+
+    #[tokio::test]
+    async fn starting_a_running_server_twice_is_refused() {
+        let Some(config) = era_config("dup", "modern") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config.clone()).await.unwrap();
+        let err = sup.start(config).await.expect_err("already running");
+        assert!(err.contains("already running"), "got {err}");
+        sup.stop("dup").await.unwrap();
+    }
+
+    /// Is this pid a live process? `kill -0` succeeds for a zombie too, so the
+    /// check goes through `ps`, which reports state. Unix only; the Windows
+    /// equivalent is a manual step in the phase's test plan.
+    #[cfg(unix)]
+    fn pid_is_alive(pid: u32) -> bool {
+        let Ok(out) = std::process::Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "state="])
+            .output()
+        else {
+            return false;
+        };
+        let state = String::from_utf8_lossy(&out.stdout);
+        let state = state.trim();
+        // Z is a reaped-but-not-collected corpse, not a running server.
+        !state.is_empty() && !state.starts_with('Z')
+    }
+
+    // ---- stderr, logs and crash detection --------------------------------
+
+    #[tokio::test]
+    async fn a_servers_stderr_reaches_its_log_ring_and_is_bounded() {
+        let Some(config) = echo_config("noisy", "noisy") else {
+            return;
+        };
         let (process, stderr) = spawn_fixture(&config);
-        let status = Arc::new(Mutex::new(SidecarStatus::Starting));
-        let log = new_log_buffer();
-        let exited = Arc::new(AtomicBool::new(false));
-        spawn_stderr_reader(
-            "test".into(),
-            stderr.expect("stderr is piped"),
-            status.clone(),
-            log.clone(),
-            exited.clone(),
-        );
-        let settled = settle(&status, &exited, &log).await;
-        let lines = log.lock().await.iter().cloned().collect();
-        drop(process);
-        Some((settled, lines))
-    }
-
-    #[tokio::test]
-    async fn a_normal_server_settles_into_ready_and_captures_its_stderr() {
-        let Some((status, logs)) = run_fixture("normal").await else {
-            return;
-        };
-        assert_eq!(status, SidecarStatus::Ready);
-        assert!(
-            logs.iter().any(|l| l.contains("fixture: ready")),
-            "the server's own diagnostics must reach the log ring, got {logs:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_server_that_exits_immediately_lands_in_error_with_its_last_words() {
-        let Some((status, logs)) = run_fixture("exit-immediately").await else {
-            return;
-        };
-        let SidecarStatus::Error(reason) = status else {
-            panic!("expected Error, got {status:?}");
-        };
-        assert!(
-            reason.contains("exit"),
-            "the reason should say it exited, got {reason:?}"
-        );
-        assert!(
-            reason.contains("exiting immediately"),
-            "the log tail should be quoted into the reason, got {reason:?}"
-        );
-        assert!(!logs.is_empty());
-    }
-
-    #[tokio::test]
-    async fn a_hung_server_is_ready_because_process_liveness_cannot_see_a_hang() {
-        // Documents the limit deliberately: a server that starts and then
-        // never answers is indistinguishable from a healthy idle one at the
-        // process level. Detecting it is a protocol fact — see
-        // `record_timeout`, which Phase 03 drives.
-        let Some((status, _)) = run_fixture("hang").await else {
-            return;
-        };
-        assert_eq!(status, SidecarStatus::Ready);
-    }
-
-    #[tokio::test]
-    async fn a_noisy_server_does_not_grow_its_log_ring_without_bound() {
-        let Some((status, logs)) = run_fixture("noisy").await else {
-            return;
-        };
-        assert_eq!(status, SidecarStatus::Ready);
-        assert!(
-            logs.len() >= 50,
-            "expected the noisy output, got {}",
-            logs.len()
-        );
-        assert!(
-            logs.len() <= crate::sidecar_utils::LOG_RING_BUFFER_SIZE,
-            "the ring buffer must bound the log"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_deliberate_stop_is_not_reported_as_a_crash() {
-        let Some(config) = fixture_config("test", "normal") else {
-            return;
-        };
-        let (mut process, stderr) = spawn_fixture(&config);
         let status = Arc::new(Mutex::new(SidecarStatus::Ready));
         let log = new_log_buffer();
         let exited = Arc::new(AtomicBool::new(false));
         spawn_stderr_reader(
-            "test".into(),
+            "noisy".into(),
             stderr.expect("stderr is piped"),
-            status.clone(),
-            log,
+            status,
+            log.clone(),
             exited,
         );
-
-        // What `stop` does: mark Stopped before shutting anything down, so the
-        // stderr EOF that follows is understood as deliberate.
-        *status.lock().await = SidecarStatus::Stopped;
-        let _ = tokio::time::timeout(timing::STOP_GRACE, process.graceful_shutdown()).await;
-        drop(process);
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        assert_eq!(
-            *status.lock().await,
-            SidecarStatus::Stopped,
-            "a user-initiated stop must not surface as an error"
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let lines: Vec<String> = log.lock().await.iter().cloned().collect();
+        assert!(
+            lines.len() >= 50,
+            "expected the noisy output, got {}",
+            lines.len()
         );
+        assert!(
+            lines.len() <= crate::sidecar_utils::LOG_RING_BUFFER_SIZE,
+            "the ring buffer must bound the log"
+        );
+        drop(process);
     }
 
     #[cfg(unix)]
@@ -598,19 +916,18 @@ mod tests {
         // manager, and Settings keeps showing a green dot while every tool call
         // fails. SIGKILL gives the child no chance to say anything, so the only
         // signal is its stderr pipe closing.
-        let Some(config) = fixture_config("test", "normal") else {
+        let Some(config) = echo_config("killed", "normal") else {
             return;
         };
         let (process, stderr) = spawn_fixture(&config);
         let pid = process.id().expect("a spawned child has a pid");
         let status = Arc::new(Mutex::new(SidecarStatus::Ready));
-        let log = new_log_buffer();
         let exited = Arc::new(AtomicBool::new(false));
         spawn_stderr_reader(
-            "test".into(),
+            "killed".into(),
             stderr.expect("stderr is piped"),
             status.clone(),
-            log,
+            new_log_buffer(),
             exited,
         );
 
@@ -637,98 +954,91 @@ mod tests {
         drop(process);
     }
 
-    #[cfg(unix)]
     #[tokio::test]
-    async fn stopping_during_startup_leaves_no_child_behind() {
-        let Some(config) = fixture_config("test", "hang") else {
+    async fn a_deliberate_stop_is_not_reported_as_a_crash() {
+        let Some(config) = echo_config("stopped", "normal") else {
             return;
         };
-        let (mut process, _stderr) = spawn_fixture(&config);
-        let pid = process.id().expect("a spawned child has a pid");
+        let (mut process, stderr) = spawn_fixture(&config);
+        let status = Arc::new(Mutex::new(SidecarStatus::Ready));
+        spawn_stderr_reader(
+            "stopped".into(),
+            stderr.expect("stderr is piped"),
+            status.clone(),
+            new_log_buffer(),
+            Arc::new(AtomicBool::new(false)),
+        );
+
+        // What `stop` does: mark Stopped before shutting anything down, so the
+        // stderr EOF that follows is understood as deliberate.
+        *status.lock().await = SidecarStatus::Stopped;
         let _ = tokio::time::timeout(timing::STOP_GRACE, process.graceful_shutdown()).await;
         drop(process);
-        // rmcp's ChildWithCleanup kills from a spawned task on drop, so give
-        // the runtime a moment before checking.
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        assert!(
-            !pid_is_alive(pid),
-            "pid {pid} survived a stop issued during startup"
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(
+            *status.lock().await,
+            SidecarStatus::Stopped,
+            "a user-initiated stop must not surface as an error"
         );
     }
 
-    /// Is this pid a live process? `kill -0` succeeds for a zombie too, so
-    /// the check goes through `ps`, which reports state and omits nothing we
-    /// care about. Unix only; the Windows equivalent is a manual step in the
-    /// phase's test plan.
-    #[cfg(unix)]
-    fn pid_is_alive(pid: u32) -> bool {
-        let Ok(out) = std::process::Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "state="])
-            .output()
-        else {
-            return false;
-        };
-        let state = String::from_utf8_lossy(&out.stdout);
-        let state = state.trim();
-        // Z is a reaped-but-not-collected corpse, not a running server.
-        !state.is_empty() && !state.starts_with('Z')
-    }
+    // ---- hang handling ---------------------------------------------------
 
     #[tokio::test]
     async fn timeouts_only_break_a_server_once_they_repeat() {
-        let supervisor = McpSupervisor::new();
+        let sup = supervisor();
         let status = Arc::new(Mutex::new(SidecarStatus::Ready));
-        supervisor.servers.lock().await.insert(
+        sup.servers.lock().await.insert(
             "s".into(),
             ServerHandle {
                 status: status.clone(),
                 log: new_log_buffer(),
                 pid: None,
-                process: None,
+                session: None,
+                connection: None,
                 consecutive_timeouts: 0,
             },
         );
 
         for _ in 1..MAX_CONSECUTIVE_TIMEOUTS {
-            assert!(!supervisor.record_timeout("s").await);
-            assert_eq!(supervisor.status("s").await, SidecarStatus::Ready);
+            assert!(!sup.record_timeout("s").await);
+            assert_eq!(sup.status("s").await, SidecarStatus::Ready);
         }
-        assert!(supervisor.record_timeout("s").await);
-        assert!(matches!(
-            supervisor.status("s").await,
-            SidecarStatus::Error(_)
-        ));
+        assert!(sup.record_timeout("s").await);
+        assert!(matches!(sup.status("s").await, SidecarStatus::Error(_)));
     }
 
     #[tokio::test]
     async fn a_successful_request_clears_the_timeout_streak() {
-        let supervisor = McpSupervisor::new();
-        supervisor.servers.lock().await.insert(
+        let sup = supervisor();
+        sup.servers.lock().await.insert(
             "s".into(),
             ServerHandle {
                 status: Arc::new(Mutex::new(SidecarStatus::Ready)),
                 log: new_log_buffer(),
                 pid: None,
-                process: None,
+                session: None,
+                connection: None,
                 consecutive_timeouts: 0,
             },
         );
 
         for _ in 1..MAX_CONSECUTIVE_TIMEOUTS {
-            supervisor.record_timeout("s").await;
+            sup.record_timeout("s").await;
         }
-        supervisor.record_success("s").await;
+        sup.record_success("s").await;
         // The streak restarted, so the next timeout must not be the fatal one.
-        assert!(!supervisor.record_timeout("s").await);
-        assert_eq!(supervisor.status("s").await, SidecarStatus::Ready);
+        assert!(!sup.record_timeout("s").await);
+        assert_eq!(sup.status("s").await, SidecarStatus::Ready);
     }
 
     #[tokio::test]
     async fn an_unknown_server_reads_as_stopped_rather_than_failing() {
-        let supervisor = McpSupervisor::new();
-        assert_eq!(supervisor.status("nope").await, SidecarStatus::Stopped);
-        assert!(supervisor.logs("nope").await.is_empty());
-        assert!(!supervisor.record_timeout("nope").await);
+        let sup = supervisor();
+        assert_eq!(sup.status("nope").await, SidecarStatus::Stopped);
+        assert!(sup.logs("nope").await.is_empty());
+        assert!(!sup.record_timeout("nope").await);
     }
 
     #[tokio::test]
