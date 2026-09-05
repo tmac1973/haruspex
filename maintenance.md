@@ -665,7 +665,7 @@ bundled layout, then a dev fallback that points at the source tree.
 
 `src-tauri/src/memory/` owns on-device embeddings; `db/memories.rs` owns
 storage and search; `db/memory_commands.rs` is the IPC surface. Plan:
-`plan/agentic-memory/`.
+`plan/archive/agentic-memory/`.
 
 **The `ort` build-time download.** `fastembed` pulls in `ort` (ONNX
 Runtime). Its `ort-download-binaries-rustls-tls` feature fetches a

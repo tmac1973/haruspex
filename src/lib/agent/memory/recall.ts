@@ -11,7 +11,7 @@
  * a similarity floor, a small k, and a token budget that scales with the
  * context window.
  *
- * See `plan/agentic-memory/phase-04-recall-and-injection.md`.
+ * See `plan/archive/agentic-memory/phase-04-recall-and-injection.md`.
  */
 
 import { invoke } from '@tauri-apps/api/core';

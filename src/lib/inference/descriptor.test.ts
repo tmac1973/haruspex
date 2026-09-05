@@ -480,7 +480,7 @@ describe('resolveBackendDescriptor — per-job override', () => {
 });
 
 /**
- * The bug behind `plan/job-observability/`: an overnight coding job ran
+ * The bug behind `plan/archive/job-observability/`: an overnight coding job ran
  * against a model whose id matched none of the built-in Qwen substrings, so
  * the descriptor reported `reasoningMode: none` and the request carried no
  * `enable_thinking` kwarg at all. The server's default (reasoning on) applied

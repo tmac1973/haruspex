@@ -5,7 +5,7 @@ Running list of things to address. Status annotations added 2026-07-19.
 ## Open
 
 - When in jobs with a different model than the system settings the model and context size indicator in the top right corner show the model/context usage for the system settings, not the model used for the job. Ideally the indicator would change when viewing a running job to indicate the model/context for that running job, but change back to the system model/context when viewing the chat/shell tabs. Alternatively we could put that info in the job step card instead and just not show the model/context indicator in the upper right when on the jobs tab. This might be the more flexible option
-  - **Planned — `plan/job-observability/`, phase 02.** Doing both, not either:
+  - **Planned — `plan/archive/job-observability/`, phase 02.** Doing both, not either:
     per-step usage in the step cards (the durable per-step record, and the only
     place that shows a per-phase context growing) plus retargeting the top-right
     indicator while a live run is in view. Root cause of the missing numbers is
@@ -24,6 +24,18 @@ Running list of things to address. Status annotations added 2026-07-19.
     larger sample too: `/home/tim/Projects/hangman2/plan/test-plan/` (158 KB vs 89 KB,
     and the run that produced it caught a real bug in its own phase 03 during
     verification).
+
+- **Owed: manual verification of agentic memory on a real profile.** All five phases
+  shipped 2026-08-24, but the plan was archived with its verification pass still
+  outstanding — nothing has exercised extraction, recall and incognito against a
+  profile with real history rather than test fixtures. Plan:
+  `plan/archive/agentic-memory/`.
+
+- **Owed: Windows and macOS pass for inline chat images.** All seven phases shipped
+  2026-08-30 and were verified on Linux against both Qwen 3.6 35B and the default
+  9B, but never off Linux. The specific risk is the custom URI scheme, which
+  resolves differently on Windows and which no unit test covers. Plan:
+  `plan/archive/inline-chat-images/`.
 
 ## Partially done
 
@@ -53,7 +65,7 @@ Running list of things to address. Status annotations added 2026-07-19.
        still reported success, so a chunked write kept only the last chunk.
     3. Writes were a bare `fs::write` (truncate-then-write), so a failed write
        destroyed the previously-good file.
-  - Plan and full rationale: `plan/write-path-integrity/`.
+  - Plan and full rationale: `plan/archive/write-path-integrity/`.
 
 ## Notes
 

@@ -43,7 +43,7 @@ The gap is twofold:
 
 - **Local semantic search over user files.** The flagship retrieval feature, and
   a project in its own right; it gets its own plan folder, as
-  `plan/agentic-memory/` did. Nothing here may foreclose it.
+  `plan/archive/agentic-memory/` did. Nothing here may foreclose it.
 - **OAuth as shared infrastructure.** There is no OAuth anywhere in the tree
   today and none is added. CalDAV/CardDAV use basic/app-password auth; anything
   Google-shaped ships as a curated MCP config instead of a hand-built integration.

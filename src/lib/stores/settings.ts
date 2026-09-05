@@ -473,7 +473,7 @@ export interface AppSettings {
 	 * them in later ones. Off by default — it is the only setting that makes
 	 * the app carry what you said into a conversation you have not had yet,
 	 * and enabling it also requires downloading an embedding model. See
-	 * `stores/memory.svelte.ts` and `plan/agentic-memory/`.
+	 * `stores/memory.svelte.ts` and `plan/archive/agentic-memory/`.
 	 *
 	 * True here is necessary but not sufficient: the embedding model must
 	 * also be present. Settings restored onto a fresh machine can carry

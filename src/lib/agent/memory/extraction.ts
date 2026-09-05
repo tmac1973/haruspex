@@ -11,7 +11,7 @@
  * advanced only after the facts are stored, which makes a killed app re-extract
  * rather than lose — dedupe makes that retry harmless.
  *
- * See `plan/agentic-memory/phase-03-extraction-pipeline.md`.
+ * See `plan/archive/agentic-memory/phase-03-extraction-pipeline.md`.
  */
 
 import { invoke } from '@tauri-apps/api/core';
