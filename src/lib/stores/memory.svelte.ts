@@ -11,7 +11,7 @@
  * privacy-focused app does not fetch from Hugging Face on the user's behalf
  * because a restored config file said it could.
  *
- * See `plan/agentic-memory/phase-02-settings-and-model-consent.md`.
+ * See `plan/archive/agentic-memory/phase-02-settings-and-model-consent.md`.
  */
 
 import { invoke } from '@tauri-apps/api/core';

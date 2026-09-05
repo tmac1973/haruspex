@@ -5,7 +5,7 @@
 //! established, so the embedder stays testable without a database and the
 //! schema stays ignorant of ONNX.
 //!
-//! See `plan/agentic-memory/phase-01-rust-memory-core.md`.
+//! See `plan/archive/agentic-memory/phase-01-rust-memory-core.md`.
 
 pub mod embedder;
 
