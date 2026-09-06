@@ -140,6 +140,71 @@ describe('starting a server', () => {
 	});
 });
 
+describe('a backend that outlived the frontend', () => {
+	it('adopts a running server instead of failing to start it again', async () => {
+		// `make dev` reloads the frontend and leaves the Rust supervisor running.
+		// Without this the card read "Failed: already running" next to a server
+		// that was working, and — worse — no tools were registered at all.
+		invoke.mockImplementation((cmd: string) => {
+			switch (cmd) {
+				case IPC.mcp_server_status:
+					return Promise.resolve({ type: 'Ready' });
+				case IPC.mcp_connection_info:
+					return Promise.resolve({
+						era: 'modern',
+						protocolVersion: '2026-07-28',
+						serverName: 'github',
+						serverVersion: '1.0.0',
+						instructions: null
+					});
+				case IPC.mcp_list_tools:
+					return Promise.resolve(TOOLS);
+				default:
+					return Promise.resolve(null);
+			}
+		});
+
+		await startMcpServer(config(), entry());
+
+		const called = invoke.mock.calls.map((c) => c[0]);
+		expect(called).not.toContain(IPC.mcp_start_server);
+		expect(called).not.toContain(IPC.mcp_spawn_config);
+		expect(mcpState(ID).status.type).toBe('Ready');
+		expect(mcpState(ID).connection?.protocolVersion).toBe('2026-07-28');
+		expect(registeredMcpToolNames()).toContain('mcp__srv-1__search');
+		await stopMcpServer(ID);
+	});
+
+	it('starts normally when the backend has nothing running', async () => {
+		invoke.mockImplementation((cmd: string) => {
+			if (cmd === IPC.mcp_server_status) return Promise.resolve({ type: 'Stopped' });
+			if (cmd === IPC.mcp_spawn_config)
+				return Promise.resolve({ id: ID, program: '/x/node', args: [], env: [], cwd: null });
+			if (cmd === IPC.mcp_list_tools) return Promise.resolve(TOOLS);
+			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
+			return Promise.resolve(null);
+		});
+
+		await startMcpServer(config(), entry());
+		expect(invoke.mock.calls.map((c) => c[0])).toContain(IPC.mcp_start_server);
+		await stopMcpServer(ID);
+	});
+
+	it('does not adopt a server the backend reports as failed', async () => {
+		// Ready is the only state worth taking over. Adopting an Error would
+		// hide the failure behind a card that claims to be running.
+		invoke.mockImplementation((cmd: string) => {
+			if (cmd === IPC.mcp_server_status)
+				return Promise.resolve({ type: 'Error', message: 'it died' });
+			if (cmd === IPC.mcp_spawn_config) return Promise.reject('still broken');
+			return Promise.resolve(null);
+		});
+
+		await startMcpServer(config(), entry());
+		expect(mcpState(ID).status.type).toBe('Error');
+	});
+});
+
 describe('stopping a server', () => {
 	it('withdraws its tools and clears the connection', async () => {
 		mockHappyStart();

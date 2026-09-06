@@ -85,6 +85,15 @@ export async function startMcpServer(
 	configs[config.id] = config;
 	patch(config.id, { busy: true, error: null, status: { type: 'Starting' } });
 	try {
+		// The backend outlives this module. A frontend reload — `make dev` after
+		// a change, or any webview reload — resets the tool registry and this
+		// store while the supervisor keeps every server running, so starting one
+		// again is refused and the card reads Failed next to a server that is
+		// working. Ask what is already up and adopt it instead.
+		if (await isAlreadyRunning(config.id)) {
+			await adopt(config, catalogEntry);
+			return;
+		}
 		if (config.source.kind === 'remote') {
 			// A remote server has no spawn configuration at all — no program, no
 			// arguments, no environment — so it takes its own path rather than
@@ -137,6 +146,45 @@ export async function startMcpServer(
 			busy: false
 		});
 	}
+}
+
+/**
+ * Whether the backend already has this server up.
+ *
+ * A probe rather than an inference from an error message: "already running" is
+ * prose, and matching on it would break the first time someone reworded it.
+ */
+async function isAlreadyRunning(serverId: string): Promise<boolean> {
+	try {
+		const status = await invoke<SidecarStatus>(IPC.mcp_server_status, { id: serverId });
+		return status.type === 'Ready';
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Take over a server the backend is already running: read back what it
+ * negotiated, re-list its tools, and put them into the registry.
+ *
+ * Everything after the spawn is the same work `startMcpServer` does, which is
+ * the point — a reload should leave the app in the state it would have been in
+ * had it started the server itself.
+ */
+async function adopt(config: McpServerConfig, catalogEntry: CatalogEntry | null): Promise<void> {
+	const [connection, tools] = await Promise.all([
+		invoke<McpConnectionInfo | null>(IPC.mcp_connection_info, { id: config.id }),
+		invoke<McpToolDescriptor[]>(IPC.mcp_list_tools, { id: config.id })
+	]);
+	registerMcpTools(config.id, config.label, tools, catalogEntry?.defaultTools ?? []);
+	patch(config.id, {
+		status: { type: 'Ready' },
+		connection,
+		tools,
+		error: null,
+		busy: false
+	});
+	await probeCompanion(config);
 }
 
 /**
