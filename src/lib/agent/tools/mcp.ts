@@ -101,7 +101,11 @@ export function registerMcpTools(
 				type: 'function',
 				function: {
 					name,
-					description: descriptor.description ?? `${descriptor.name} (via ${serverLabel})`,
+					// The server label is appended to every description, not just a
+					// missing one: the registered name carries a server *id*, so
+					// without this the model has no way to tell which of its tools
+					// belong to "GitHub".
+					description: `${descriptor.description ?? descriptor.name} (via ${serverLabel})`,
 					// The server's own schema, passed through untouched. Rewriting
 					// it here would mean the model is told something different from
 					// what the server will actually validate.
@@ -137,6 +141,18 @@ export function mcpToolEntry(name: string): McpToolEntry | null {
 /** Every registered MCP tool name, for the budget and for tests. */
 export function registeredMcpToolNames(): string[] {
 	return [...entries.keys()].sort();
+}
+
+/**
+ * The servers whose tools the model can currently see, by label.
+ *
+ * Read from the registry rather than from settings, because that is exactly
+ * the set the prompt should describe: a configured server that failed to start
+ * has no tools, and telling the model to prefer it would send it looking for
+ * something that is not there.
+ */
+export function registeredMcpServerLabels(): string[] {
+	return [...new Set([...entries.values()].map((e) => e.serverLabel))].sort();
 }
 
 /**

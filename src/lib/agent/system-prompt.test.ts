@@ -1,13 +1,30 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({ customSystemPrompt: '', sandboxEnabled: false }),
 	getResponseFormatPrompt: () => '',
 	getIncludeImagesPrompt: () => '\n\nIMAGES:\n- When the answer is about something visual',
-	hasEnabledEmailAccount: () => false
+	hasEnabledEmailAccount: () => false,
+	// registry.ts reads this through the mcp-names predicate when filtering
+	// schemas; the tool-description assertion below goes through getToolSchemas.
+	startableMcpServers: () => [
+		{
+			id: 'sp-srv-1',
+			label: 'GitHub',
+			enabled: true,
+			source: { kind: 'catalog', entryId: 'github' },
+			secrets: {},
+			toolEnabled: {},
+			proxyUse: 'auto',
+			setupComplete: true
+		}
+	]
 }));
 
 import { buildSystemPrompt } from './system-prompt';
+import { registerMcpTools, unregisterMcpServer } from '$lib/agent/tools/mcp';
+import { getToolSchemas } from '$lib/agent/tools/registry';
+import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
 
 /**
  * Memory is a PARAMETER, not something this module fetches. Job runs, remote
@@ -121,5 +138,68 @@ describe('buildSystemPrompt — images section', () => {
 		expect(prompt).toContain('- Prefers tabs.');
 		// Memory stays last so it remains the freshest context.
 		expect(prompt.trimEnd().endsWith('- Prefers tabs.')).toBe(true);
+	});
+});
+
+describe('buildSystemPrompt — connected integrations', () => {
+	const SERVER = 'sp-srv-1';
+
+	function tool(name: string): McpToolDescriptor {
+		return {
+			name,
+			title: null,
+			description: `does ${name}`,
+			inputSchema: { type: 'object' },
+			annotations: null
+		};
+	}
+
+	afterEach(() => unregisterMcpServer(SERVER));
+
+	it('says nothing when nothing is connected', () => {
+		const prompt = buildSystemPrompt(null).content as string;
+		expect(prompt).not.toContain('CONNECTED INTEGRATIONS');
+	});
+
+	it('names the connected services rather than gesturing at integrations', () => {
+		// A general "prefer integrations" loses to a concrete run_python the
+		// model already knows how to write. Naming GitHub gives it something to
+		// reach for.
+		registerMcpTools(SERVER, 'GitHub', [tool('list_pull_requests')], ['list_pull_requests']);
+		const prompt = buildSystemPrompt(null).content as string;
+		expect(prompt).toContain('CONNECTED INTEGRATIONS: GitHub');
+	});
+
+	it('tells the model not to reach for Python or the raw API instead', () => {
+		// The observed failure: asked about recent PRs, the model tried the
+		// Python sandbox, then the GitHub API by hand, then scraped the web page
+		// — and only used the MCP server when told to.
+		registerMcpTools(SERVER, 'GitHub', [tool('list_pull_requests')], ['list_pull_requests']);
+		const prompt = buildSystemPrompt(null).content as string;
+		expect(prompt).toMatch(/Do NOT write Python/i);
+		expect(prompt).toMatch(/fetch its web pages/i);
+	});
+
+	it('lists only servers whose tools the model can actually see', () => {
+		// A configured server that failed to start has no tools; naming it would
+		// send the model looking for something that is not there.
+		const prompt = buildSystemPrompt(null).content as string;
+		expect(prompt).not.toContain('GitHub');
+	});
+
+	it('names each server once however many tools it has', () => {
+		registerMcpTools(SERVER, 'GitHub', [tool('a'), tool('b'), tool('c')], ['a', 'b', 'c']);
+		const prompt = buildSystemPrompt(null).content as string;
+		expect(prompt.match(/GitHub/g)?.length).toBe(1);
+	});
+
+	it('carries the server label into every tool description', () => {
+		// The registered name carries a server *id*, so without this the model
+		// has no way to tell which of its tools belong to GitHub.
+		registerMcpTools(SERVER, 'GitHub', [tool('list_pull_requests')], ['list_pull_requests']);
+		const schema = getToolSchemas({ hasWorkingDir: false }).find((s) =>
+			s.function.name.endsWith('__list_pull_requests')
+		);
+		expect(schema?.function.description).toContain('(via GitHub)');
 	});
 });

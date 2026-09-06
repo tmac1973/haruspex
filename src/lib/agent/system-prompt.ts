@@ -6,6 +6,7 @@ import {
 	hasEnabledEmailAccount
 } from '$lib/stores/settings';
 import { formatTodayLong } from '$lib/utils/format';
+import { registeredMcpServerLabels } from './tools/mcp';
 
 const REVIEW_PATTERNS =
 	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
@@ -69,6 +70,24 @@ EMAIL INTEGRATION:
 - Use email_read_full only when the user needs verbatim text.`
 		: '';
 
+	// Named services beat a general instruction. "Prefer integrations" loses to
+	// a concrete run_python the model already knows how to write; "GitHub is
+	// connected" gives it something to reach for.
+	// Email has its own section above with usage rules of its own, so it is
+	// named here only to put it in the same "prefer these" list.
+	const connected = [
+		...(hasEnabledEmailAccount() ? ['Email'] : []),
+		...registeredMcpServerLabels()
+	];
+	const integrationsSection =
+		connected.length > 0
+			? `
+
+CONNECTED INTEGRATIONS: ${connected.join(', ')}
+- When a request is about one of these services, use its tools. They are already authenticated and return structured data.
+- Do NOT write Python, call the service's API by hand, or fetch its web pages to get something one of these tools returns. That is slower, unauthenticated, and frequently wrong.`
+			: '';
+
 	const sandboxFsSection =
 		workingDir && getSettings().sandboxEnabled
 			? `
@@ -95,7 +114,7 @@ INLINE CITATIONS:
 - Each [source](URL) must point to the specific page where that claim appeared. Copy the URL from the "[Source: <url>]" header.
 - Never invent a URL. Never cite a URL from an earlier turn.
 - The UI converts your [source](URL) links into numbered references [1], [2], [3] automatically — do NOT append a Sources or References section at the end.
-- Citations are mandatory for factual claims sourced from the web.${fsSection}${emailSection}${
+- Citations are mandatory for factual claims sourced from the web.${fsSection}${emailSection}${integrationsSection}${
 			getSettings().sandboxEnabled
 				? `
 
@@ -104,6 +123,7 @@ PYTHON SANDBOX:
 - Variables, imports, and installed packages persist across run_python calls within this chat. Build on prior state instead of reimporting every call.
 - Pyodide ships only the standard library by default. Use install_package('numpy') (or pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4) before importing those — installs are cached for the chat.
 - Do NOT use run_python to create PDFs, Word docs, PowerPoint decks, or spreadsheets. The dedicated fs_write_pdf / fs_write_pptx / fs_write_docx / fs_write_xlsx / fs_write_odt / fs_write_ods / fs_write_odp tools produce much better output than fpdf2 / python-pptx scripts. Use Python for the analysis or chart generation, save any plots as PNG files in the working directory with matplotlib's savefig, and then call the appropriate fs_write_* tool with the text/structured content (referencing the saved chart paths where the format supports embedded images).
+- Do NOT use run_python to reach a service listed under CONNECTED INTEGRATIONS. Use that service's own tools.
 - If the sandbox state gets stuck (a hung import, a poisoned variable, an unrecoverable exception), call reset_python and start over. Don't reach for it casually — resets wipe everything in the session.
 - Tool results include stdout, stderr, the value of the final expression, and any artifacts (plots, tables) the UI rendered for the user. You see the text; the user also sees the rich artifacts.${sandboxFsSection}`
 				: ''
