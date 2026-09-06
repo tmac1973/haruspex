@@ -171,8 +171,9 @@ impl McpSession {
     pub async fn connect_http(
         config: &super::http::HttpConfig,
         proxy: Option<&crate::proxy::ProxyConfig>,
+        proxy_use: crate::proxy::ProxyUse,
     ) -> Result<Self, String> {
-        Self::negotiate(super::http::transport(config, proxy)?).await
+        Self::negotiate(super::http::transport(config, proxy, proxy_use)?).await
     }
 
     async fn negotiate<T, E, A>(transport: T) -> Result<Self, String>

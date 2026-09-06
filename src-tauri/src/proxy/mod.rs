@@ -24,7 +24,8 @@ use std::future::Future;
 use std::time::Instant;
 use tauri::Emitter;
 
-pub(crate) use bypass::apply_proxy;
+pub use bypass::ProxyUse;
+pub(crate) use bypass::{apply_proxy, apply_proxy_with};
 pub use config::ProxyConfig;
 use config::RATE_LIMIT_INTERVAL;
 use extract::fetch_and_extract;

@@ -37,6 +37,7 @@ use super::catalog::{resolve_env, Acquisition, CatalogEntry};
 use super::process::SpawnConfig;
 use super::server_config::{McpServerConfig, McpServerSource};
 use crate::models::DownloadProgress;
+use crate::proxy::{apply_proxy, ProxyConfig};
 use crate::runtimes;
 
 /// Progress events land here rather than on `download-progress`, so a model
@@ -85,6 +86,7 @@ impl McpInstaller {
         app: &AppHandle,
         entry: &CatalogEntry,
         server_id: &str,
+        proxy: Option<&ProxyConfig>,
     ) -> Result<PathBuf, String> {
         self.reset_cancel().await;
         let final_dir = server_dir(app, server_id)?;
@@ -95,7 +97,7 @@ impl McpInstaller {
             .await
             .map_err(|e| format!("could not create {}: {e}", staging.display()))?;
 
-        let result = self.install_into(app, entry, &staging).await;
+        let result = self.install_into(app, entry, &staging, proxy).await;
 
         match result {
             Ok(()) => {
@@ -119,6 +121,7 @@ impl McpInstaller {
         app: &AppHandle,
         entry: &CatalogEntry,
         dir: &Path,
+        proxy: Option<&ProxyConfig>,
     ) -> Result<(), String> {
         match &entry.acquisition {
             Acquisition::Npm {
@@ -174,8 +177,14 @@ impl McpInstaller {
 
                 let url = format!("https://github.com/{repo}/releases/download/{version}/{asset}");
                 let archive = dir.join(asset);
-                self.download(app, &url, &archive, &format!("Downloading {}", entry.name))
-                    .await?;
+                self.download(
+                    app,
+                    &url,
+                    &archive,
+                    &format!("Downloading {}", entry.name),
+                    proxy,
+                )
+                .await?;
 
                 emit(app, "Verifying download", 0, 0);
                 let actual = sha256_of(&archive).await?;
@@ -209,8 +218,16 @@ impl McpInstaller {
         url: &str,
         dest: &Path,
         stage: &str,
+        proxy: Option<&ProxyConfig>,
     ) -> Result<(), String> {
-        let response = reqwest::Client::new()
+        // Through the app's proxy, like every other outbound client. This is
+        // our own egress, not a server's, so there is no per-server override to
+        // consult — a user who routes their traffic through a proxy did not
+        // mean "except when Haruspex fetches things for itself".
+        let client = apply_proxy(reqwest::Client::builder(), proxy)?
+            .build()
+            .map_err(|e| format!("could not create an HTTP client: {e}"))?;
+        let response = client
             .get(url)
             .send()
             .await

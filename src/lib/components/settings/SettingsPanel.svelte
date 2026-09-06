@@ -6,6 +6,7 @@
 	import MemorySection from '$lib/components/settings/MemorySection.svelte';
 	import AudioSection from '$lib/components/settings/AudioSection.svelte';
 	import SearchSection from '$lib/components/settings/SearchSection.svelte';
+	import NetworkSection from '$lib/components/settings/NetworkSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
 	import McpSection from '$lib/components/settings/McpSection.svelte';
 	import ShellSection from '$lib/components/settings/ShellSection.svelte';
@@ -24,6 +25,7 @@
 		| 'memory'
 		| 'audio'
 		| 'search'
+		| 'network'
 		| 'integrations'
 		| 'shell'
 		| 'remote'
@@ -88,9 +90,15 @@
 					icon: '<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>'
 				},
 				{
+					id: 'network',
+					label: 'Network',
+					subtitle: 'Proxy settings for everything Haruspex sends out.',
+					icon: '<circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>'
+				},
+				{
 					id: 'integrations',
 					label: 'Integrations',
-					subtitle: 'Read-only email over IMAP.',
+					subtitle: 'Email, and MCP servers for everything else.',
 					icon: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline>'
 				},
 				{
@@ -200,6 +208,8 @@
 				<AudioSection />
 			{:else if activeCategory === 'search'}
 				<SearchSection />
+			{:else if activeCategory === 'network'}
+				<NetworkSection />
 			{:else if activeCategory === 'integrations'}
 				<EmailSection />
 				<McpSection />

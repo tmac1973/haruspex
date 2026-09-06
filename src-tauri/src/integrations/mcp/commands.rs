@@ -119,12 +119,15 @@ pub async fn mcp_install_server(
     installer: State<'_, McpInstaller>,
     entry_id: String,
     server_id: String,
+    proxy: Option<ProxyConfig>,
 ) -> Result<(), String> {
     let catalog = catalog::load()?;
     let entry = catalog
         .entry(&entry_id)
         .ok_or_else(|| format!("no catalog entry named '{entry_id}'"))?;
-    installer.install(&app, entry, &server_id).await?;
+    installer
+        .install(&app, entry, &server_id, proxy.as_ref())
+        .await?;
     Ok(())
 }
 
@@ -324,6 +327,6 @@ pub async fn mcp_connect_remote_server(
         .ok_or_else(|| format!("{} is not a remote server", config.label))?;
     let http = http::HttpConfig::bearer(url, config.remote_token());
     supervisor
-        .connect_remote(&config.id, &http, proxy.as_ref())
+        .connect_remote(&config.id, &http, proxy.as_ref(), config.proxy_use)
         .await
 }

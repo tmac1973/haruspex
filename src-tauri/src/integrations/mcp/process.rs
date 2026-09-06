@@ -224,6 +224,7 @@ impl McpSupervisor {
         id: &str,
         config: &super::http::HttpConfig,
         proxy: Option<&crate::proxy::ProxyConfig>,
+        proxy_use: crate::proxy::ProxyUse,
     ) -> Result<(), String> {
         {
             let servers = self.servers.lock().await;
@@ -252,7 +253,7 @@ impl McpSupervisor {
 
         match tokio::time::timeout(
             timing::NEGOTIATION_DEADLINE,
-            McpSession::connect_http(config, proxy),
+            McpSession::connect_http(config, proxy, proxy_use),
         )
         .await
         {

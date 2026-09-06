@@ -85,7 +85,13 @@
 		installingId = entry.id;
 		progress = null;
 		try {
-			await invoke(IPC.mcp_install_server, { entryId: entry.id, serverId: id });
+			// Downloads are our own egress, so they follow the app proxy with no
+			// per-server override to consult.
+			await invoke(IPC.mcp_install_server, {
+				entryId: entry.id,
+				serverId: id,
+				proxy: getSettings().proxy
+			});
 			persist([
 				...servers,
 				{
@@ -95,6 +101,7 @@
 					source: { kind: 'catalog', entryId: entry.id },
 					secrets: {},
 					toolEnabled: {},
+					proxyUse: 'auto',
 					// An entry with no setup steps is ready immediately; one with
 					// steps is not startable until the wizard says so.
 					setupComplete: entry.setup.length === 0
@@ -129,6 +136,7 @@
 				},
 				secrets: {},
 				toolEnabled: {},
+				proxyUse: 'auto',
 				// No catalog entry means no setup steps to complete.
 				setupComplete: true
 			}
@@ -160,6 +168,7 @@
 				// the backend reads.
 				secrets: remoteToken.trim() ? { remoteToken: remoteToken.trim() } : {},
 				toolEnabled: {},
+				proxyUse: 'auto',
 				// Nothing to install and no setup steps, so it is ready at once.
 				setupComplete: true
 			}

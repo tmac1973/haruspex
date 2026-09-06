@@ -15,10 +15,14 @@
 //!
 //! # Egress goes where the user said it should
 //!
-//! The client is built through [`apply_proxy`], the same helper `web_search` and
-//! `fetch_url` use. A user who has configured a proxy — often the entire reason
-//! they configured one — must not find that MCP quietly ignores it and connects
+//! The client is built through the same helper `web_search` and `fetch_url`
+//! use. A user who has configured a proxy — often the entire reason they
+//! configured one — must not find that MCP quietly ignores it and connects
 //! direct.
+//!
+//! Loopback is never proxied, so a server the user runs on their own machine
+//! over HTTP works without them having to know that. A per-server
+//! [`ProxyUse`] override covers the cases the address cannot decide.
 //!
 //! # Auth
 //!
@@ -31,7 +35,7 @@ use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig
 use rmcp::transport::StreamableHttpClientTransport;
 use std::time::Duration;
 
-use crate::proxy::{apply_proxy, ProxyConfig};
+use crate::proxy::{apply_proxy_with, ProxyConfig, ProxyUse};
 
 /// Overall timeout for a single HTTP exchange with a remote server.
 ///
@@ -102,11 +106,16 @@ pub fn validate_url(url: &str) -> Result<(), String> {
 pub fn transport(
     config: &HttpConfig,
     proxy: Option<&ProxyConfig>,
+    proxy_use: ProxyUse,
 ) -> Result<StreamableHttpClientTransport<reqwest::Client>, String> {
     validate_url(&config.url)?;
-    let client = apply_proxy(reqwest::Client::builder().timeout(HTTP_TIMEOUT), proxy)?
-        .build()
-        .map_err(|e| format!("could not create an HTTP client: {e}"))?;
+    let client = apply_proxy_with(
+        reqwest::Client::builder().timeout(HTTP_TIMEOUT),
+        proxy,
+        proxy_use,
+    )?
+    .build()
+    .map_err(|e| format!("could not create an HTTP client: {e}"))?;
 
     let mut transport_config = StreamableHttpClientTransportConfig::with_uri(config.url.trim());
     transport_config.auth_header = config.auth_header.clone();
@@ -193,7 +202,7 @@ mod tests {
     async fn the_transport_is_built_stateless_because_a_modern_server_mints_no_session() {
         let config = HttpConfig::bearer("https://x.test/mcp", Some("t"));
         assert!(
-            transport(&config, None).is_ok(),
+            transport(&config, None, ProxyUse::Auto).is_ok(),
             "a valid URL should produce a transport"
         );
     }
@@ -201,7 +210,7 @@ mod tests {
     #[test]
     fn a_bad_url_fails_before_any_request_is_made() {
         let config = HttpConfig::bearer("nonsense", None);
-        assert!(transport(&config, None).is_err());
+        assert!(transport(&config, None, ProxyUse::Auto).is_err());
     }
 
     #[test]
@@ -214,7 +223,7 @@ mod tests {
             url: "not a url".into(),
             bypass: String::new(),
         };
-        let err = match transport(&config, Some(&proxy)) {
+        let err = match transport(&config, Some(&proxy), ProxyUse::Auto) {
             Err(e) => e,
             // The transport type is not Debug, so this cannot be expect_err.
             Ok(_) => panic!("an unparseable proxy URL must not produce a transport"),

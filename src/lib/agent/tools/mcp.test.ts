@@ -56,6 +56,7 @@ function server(id: string, over: Partial<McpServerConfig> = {}): McpServerConfi
 		source: { kind: 'catalog', entryId: 'x' },
 		secrets: {},
 		toolEnabled: {},
+		proxyUse: 'auto',
 		setupComplete: true,
 		...over
 	};

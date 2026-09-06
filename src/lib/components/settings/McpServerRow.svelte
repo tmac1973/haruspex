@@ -149,6 +149,25 @@
 		/>
 	{/if}
 
+	{#if config.source.kind === 'remote'}
+		<label class="proxy-choice">
+			Proxy
+			<select
+				value={config.proxyUse}
+				onchange={(e) =>
+					onchange({ ...config, proxyUse: e.currentTarget.value as McpServerConfig['proxyUse'] })}
+			>
+				<option value="auto">Use the app setting</option>
+				<option value="always">Always</option>
+				<option value="never">Never</option>
+			</select>
+			<span class="hint">
+				The app setting already reaches <code>localhost</code> directly. Override this only for a host
+				it decides wrongly about.
+			</span>
+		</label>
+	{/if}
+
 	{#if showTools}
 		<McpToolList
 			tools={runtime.tools}
@@ -217,6 +236,18 @@
 		display: flex;
 		gap: 0.5rem;
 		margin-top: 0.5rem;
+	}
+	.proxy-choice {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		margin-top: 0.5rem;
+		font-size: 0.9em;
+	}
+	.proxy-choice .hint {
+		color: var(--text-secondary, #a8a29e);
+		font-size: 0.85em;
 	}
 	.link-button {
 		background: none;

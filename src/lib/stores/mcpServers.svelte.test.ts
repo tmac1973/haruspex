@@ -30,6 +30,7 @@ function config(over: Partial<McpServerConfig> = {}): McpServerConfig {
 		source: { kind: 'catalog', entryId: 'github' },
 		secrets: {},
 		toolEnabled: {},
+		proxyUse: 'auto',
 		setupComplete: true,
 		...over
 	};
@@ -207,6 +208,17 @@ describe('remote servers', () => {
 		expect(called).not.toContain(IPC.mcp_start_server);
 		expect(mcpState('remote-1').status.type).toBe('Ready');
 		await stopMcpServer('remote-1');
+	});
+
+	it('carries the per-server proxy override to the backend', async () => {
+		// The escape hatch for the cases an address cannot decide: a public host
+		// the user wants reached direct, or an internal one that does need the
+		// proxy despite the bypass rules.
+		invoke.mockResolvedValue(null);
+		await startMcpServer(remote({ id: 'remote-4', proxyUse: 'never' }), null);
+		const call = invoke.mock.calls.find((c) => c[0] === IPC.mcp_connect_remote_server);
+		expect((call?.[1] as { config: McpServerConfig }).config.proxyUse).toBe('never');
+		await stopMcpServer('remote-4');
 	});
 
 	it('sends the configured proxy with the connection', async () => {

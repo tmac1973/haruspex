@@ -84,6 +84,19 @@ pub struct McpServerConfig {
     #[serde(default)]
     pub tool_enabled: BTreeMap<String, bool>,
 
+    /// Whether this server's traffic goes through the app's proxy.
+    ///
+    /// Defaults to following the app setting, which already never proxies
+    /// loopback. The override is an escape hatch for the cases an address
+    /// cannot decide: a public host the user wants reached direct, or an
+    /// internal one that does need the proxy despite the bypass rules.
+    ///
+    /// Only meaningful for a remote server. A stdio server communicates over a
+    /// pipe — there is no connection to proxy — so this is ignored for one, and
+    /// the UI does not offer it.
+    #[serde(default)]
+    pub proxy_use: crate::proxy::ProxyUse,
+
     /// Whether the guided setup ran to completion. A server whose setup was
     /// abandoned halfway is configured but not startable, and the UI has to be
     /// able to say which.
@@ -128,6 +141,7 @@ mod tests {
             },
             secrets: BTreeMap::from([("token".into(), "ghp_x".into())]),
             tool_enabled: BTreeMap::new(),
+            proxy_use: crate::proxy::ProxyUse::Auto,
             setup_complete: true,
         }
     }
@@ -165,6 +179,26 @@ mod tests {
             !parsed.setup_complete,
             "an unknown setup state must read as incomplete, not as ready to run"
         );
+    }
+
+    #[test]
+    fn a_server_follows_the_app_proxy_setting_by_default() {
+        // The default has to be the one that needs no thought: the app setting
+        // already declines to proxy loopback, so most servers never need the
+        // override at all.
+        assert_eq!(catalog_server().proxy_use, crate::proxy::ProxyUse::Auto);
+    }
+
+    #[test]
+    fn an_older_settings_blob_predating_the_override_reads_as_auto() {
+        let stored = serde_json::json!({
+            "id": "abc",
+            "label": "GitHub",
+            "enabled": true,
+            "source": { "kind": "catalog", "entryId": "github" }
+        });
+        let parsed: McpServerConfig = serde_json::from_value(stored).unwrap();
+        assert_eq!(parsed.proxy_use, crate::proxy::ProxyUse::Auto);
     }
 
     #[test]

@@ -2,13 +2,10 @@
 	import {
 		getSettings,
 		updateSettings,
-		updateProxy,
 		DEFAULT_SEARXNG_URL,
 		type AppSettings,
-		type SearchProvider,
-		type ProxyMode
+		type SearchProvider
 	} from '$lib/stores/settings';
-	import ModeSelector from '$lib/components/ModeSelector.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
 	import { listen } from '@tauri-apps/api/event';
@@ -62,10 +59,6 @@
 		void probeBrowser();
 	}
 
-	let proxyMode = $state<ProxyMode>(getSettings().proxy.mode);
-	let proxyUrl = $state(getSettings().proxy.url);
-	let proxyBypass = $state(getSettings().proxy.bypass);
-
 	function setSearchProvider(provider: SearchProvider) {
 		searchProvider = provider;
 		updateSettings({ searchProvider: provider });
@@ -84,21 +77,6 @@
 		searchRecency = value as AppSettings['searchRecency'];
 		updateSettings({ searchRecency });
 	}
-
-	function setProxyMode(mode: ProxyMode) {
-		proxyMode = mode;
-		updateProxy({ mode });
-	}
-
-	function saveProxyUrl() {
-		updateProxy({ url: proxyUrl.trim() });
-	}
-
-	function saveProxyBypass() {
-		updateProxy({ bypass: proxyBypass });
-	}
-
-	const proxyBypassPlaceholder = 'example.com\n192.168.1.5\n10.0.0.0/8';
 </script>
 
 <section class="settings-section">
@@ -236,59 +214,6 @@
 	</div>
 </section>
 
-<section class="settings-section">
-	<h2>Network Proxy</h2>
-	<p class="hint">
-		Route outbound web traffic (search, URL fetch, image search) through an HTTP/HTTPS proxy. Leave
-		set to <strong>None</strong> to connect directly.
-	</p>
-	<div class="proxy-modes">
-		<ModeSelector
-			name="proxy-mode"
-			direction="row"
-			value={proxyMode}
-			onchange={setProxyMode}
-			options={[
-				{ value: 'none', title: 'None', description: 'Direct connection' },
-				{ value: 'manual', title: 'Manual', description: 'Route all traffic through a proxy URL' }
-			]}
-		/>
-	</div>
-
-	{#if proxyMode === 'manual'}
-		<div class="search-field">
-			<label for="proxy-url">Proxy URL:</label>
-			<input
-				id="proxy-url"
-				type="text"
-				bind:value={proxyUrl}
-				onblur={saveProxyUrl}
-				placeholder="http://host:port or http://user:pass@host:port"
-			/>
-			<p class="hint">
-				Used for both HTTP and HTTPS destinations. Include <code>user:pass@</code> in the URL for proxies
-				that require authentication.
-			</p>
-		</div>
-
-		<div class="search-field">
-			<label for="proxy-bypass">No proxy for:</label>
-			<textarea
-				id="proxy-bypass"
-				rows="4"
-				bind:value={proxyBypass}
-				onblur={saveProxyBypass}
-				placeholder={proxyBypassPlaceholder}
-			></textarea>
-			<p class="hint">
-				One entry per line (or comma-separated). Each entry can be a hostname (matches the host and
-				any subdomain), an individual IP address, or a CIDR subnet (e.g.
-				<code>10.0.0.0/8</code>, <code>2001:db8::/32</code>).
-			</p>
-		</div>
-	{/if}
-</section>
-
 <style>
 	.browser-block {
 		margin-top: 10px;
@@ -345,23 +270,6 @@
 
 	.search-provider select,
 	.search-field input,
-	.search-field textarea {
-		width: 100%;
-		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		font-size: 0.9rem;
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
-		color-scheme: light dark;
-	}
-
-	.search-field textarea {
-		font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-		resize: vertical;
-		min-height: 80px;
-	}
-
 	.search-provider select option {
 		background-color: var(--bg-primary);
 		color: var(--text-primary);
@@ -373,7 +281,4 @@
 
 	/* Not a flex wrapper: that would shrink-wrap the segmented control to
 	   its content width instead of letting it fill the pane. */
-	.proxy-modes {
-		margin-bottom: 12px;
-	}
 </style>

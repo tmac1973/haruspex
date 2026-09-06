@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
+import { getSettings } from '$lib/stores/settings';
 
 /**
  * Download `modelId`, forwarding each `download-progress` event to `onProgress`
@@ -18,7 +19,12 @@ export async function downloadModelWithProgress(
 		onProgress(e.payload)
 	);
 	try {
-		return await invoke<string>('download_model', { modelId });
+		// Model weights are our own egress: they follow the app proxy like every
+		// other outbound request.
+		return await invoke<string>('download_model', {
+			modelId,
+			proxy: getSettings().proxy
+		});
 	} finally {
 		unlisten();
 	}

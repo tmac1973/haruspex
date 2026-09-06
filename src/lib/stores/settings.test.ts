@@ -828,6 +828,7 @@ describe('MCP servers', () => {
 		source: { kind: 'catalog', entryId: 'github' },
 		secrets: {},
 		toolEnabled: {},
+		proxyUse: 'auto',
 		setupComplete: true,
 		...over
 	});
