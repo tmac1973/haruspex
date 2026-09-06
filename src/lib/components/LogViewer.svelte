@@ -6,13 +6,14 @@
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
 	import { createCopyAction } from '$lib/utils/clipboard.svelte';
+	import { getSettings } from '$lib/stores/settings';
 	import type { CombinedSearchStats } from '$lib/ipc/gen/CombinedSearchStats';
 	import type { EngineLifetimeStats } from '$lib/ipc/gen/EngineLifetimeStats';
 	import type { EngineSessionStats } from '$lib/ipc/gen/EngineSessionStats';
 	import type { GlobalCounters } from '$lib/ipc/gen/GlobalCounters';
 	import type { SearchFailureKind } from '$lib/ipc/gen/SearchFailureKind';
 
-	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'crashes' | 'debug' | 'tools' | 'stats';
+	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats';
 
 	interface Props {
 		open: boolean;
@@ -169,14 +170,28 @@
 		return iso.slice(t + 1, z > t ? z : undefined);
 	}
 
-	const tabCommands: Record<Exclude<LogTab, 'crashes' | 'debug' | 'tools' | 'stats'>, string> = {
+	// MCP servers are many rather than one, so their logs are fetched per
+	// selected server rather than from a fixed command like the sidecars.
+	const mcpServers = $derived(getSettings().integrations.mcp.servers);
+	let mcpServerId = $state<string | null>(null);
+	const selectedMcpServer = $derived(
+		mcpServers.find((s) => s.id === mcpServerId) ?? mcpServers[0] ?? null
+	);
+
+	const tabCommands: Record<
+		Exclude<LogTab, 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats'>,
+		string
+	> = {
 		app: IPC.get_app_logs,
 		llm: IPC.get_server_logs,
 		tts: IPC.get_tts_logs,
 		whisper: IPC.get_whisper_logs
 	};
 
-	const clearCommands: Record<Exclude<LogTab, 'crashes' | 'debug' | 'tools' | 'stats'>, string> = {
+	const clearCommands: Record<
+		Exclude<LogTab, 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats'>,
+		string
+	> = {
 		app: IPC.clear_app_logs,
 		llm: IPC.clear_server_logs,
 		tts: IPC.clear_tts_logs,
@@ -188,6 +203,7 @@
 		llm: 'LLM',
 		tts: 'TTS',
 		whisper: 'Whisper',
+		mcp: 'MCP',
 		crashes: 'Crashes',
 		debug: 'Debug',
 		tools: 'Tools',
@@ -208,6 +224,13 @@
 			} else if (activeTab === 'debug') {
 				// Frontend-side ring buffer; no Tauri round-trip needed.
 				logLines = getDebugLogs();
+			} else if (activeTab === 'mcp') {
+				// A server that is stopped, or that never printed anything, is a
+				// normal state rather than a failure — say so instead of showing
+				// an empty pane.
+				logLines = selectedMcpServer
+					? await invoke<string[]>(IPC.mcp_server_logs, { id: selectedMcpServer.id })
+					: [];
 			} else if (activeTab === 'tools') {
 				// Same buffer, narrowed to tool start/end lines so you can
 				// see exactly what arguments the model passed to each tool
@@ -373,6 +396,11 @@
 				// empties them both.
 				clearDebugLogs();
 				logLines = [];
+			} else if (activeTab === 'mcp') {
+				if (selectedMcpServer) {
+					await invoke(IPC.mcp_clear_server_logs, { id: selectedMcpServer.id });
+				}
+				logLines = [];
 			} else {
 				await invoke(clearCommands[activeTab]);
 				logLines = [];
@@ -408,7 +436,7 @@
 		<div class="modal" role="dialog" tabindex="-1" onkeydown={handleKeydown}>
 			<div class="modal-header">
 				<div class="tabs">
-					{#each ['app', 'llm', 'tts', 'whisper', 'crashes', 'debug', 'tools', 'stats'] as const as tab (tab)}
+					{#each ['app', 'llm', 'tts', 'whisper', 'mcp', 'crashes', 'debug', 'tools', 'stats'] as const as tab (tab)}
 						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
 							{tabLabels[tab]}
 						</button>
@@ -438,6 +466,22 @@
 							{clearState === 'cleared' ? 'Cleared' : 'Clear'}
 						{/if}
 					</button>
+					{#if activeTab === 'mcp' && mcpServers.length > 1}
+						<div class="mcp-picker">
+							<select
+								value={selectedMcpServer?.id ?? ''}
+								onchange={(e) => {
+									mcpServerId = e.currentTarget.value;
+									logLines = [];
+									void fetchLogs();
+								}}
+							>
+								{#each mcpServers as server (server.id)}
+									<option value={server.id}>{server.label}</option>
+								{/each}
+							</select>
+						</div>
+					{/if}
 					{#if activeTab !== 'stats'}
 						<button
 							class="copy-btn"
@@ -681,6 +725,12 @@
 		flex-shrink: 0;
 	}
 
+	.mcp-picker {
+		padding: 6px 12px 0;
+	}
+	.mcp-picker select {
+		width: 100%;
+	}
 	.tabs {
 		display: flex;
 		gap: 4px;

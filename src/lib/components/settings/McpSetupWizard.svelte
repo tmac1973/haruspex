@@ -29,7 +29,9 @@
 		config: McpServerConfig;
 		steps: SetupStep[];
 		onchange: (next: McpServerConfig) => void;
-		ondone: () => void;
+		/** Receives the finished config, so the caller need not wait for the
+		 * prop to come back round before acting on it. */
+		ondone: (finished: McpServerConfig) => void;
 		oncancel: () => void;
 	}
 
@@ -71,9 +73,10 @@
 		// from the same check the wizard shows — not from "the user reached the
 		// last screen", which they can do with a step left unsatisfied behind
 		// them if settings changed underneath.
-		onchange({ ...config, setupComplete: isSetupComplete(steps, setupState) });
+		const finished = { ...config, setupComplete: isSetupComplete(steps, setupState) };
+		onchange(finished);
 		clearSetupProgress(config.id);
-		ondone();
+		ondone(finished);
 	}
 
 	async function pickFile(filename: string): Promise<void> {

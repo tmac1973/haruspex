@@ -5,6 +5,7 @@ import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
 import { IPC } from '$lib/ipc/commands';
 import {
 	companionWarning,
+	startConfiguredMcpServers,
 	mcpState,
 	probeCompanion,
 	removeMcpServer,
@@ -15,6 +16,7 @@ import {
 	type McpRuntimeState
 } from './mcpServers.svelte';
 import { registeredMcpToolNames } from '$lib/agent/tools/mcp';
+import { setMcpServers } from './settings';
 import { isAlwaysAllowed, rememberAlwaysAllow } from './mcpApproval.svelte';
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -273,6 +275,59 @@ describe('starting everything on launch', () => {
 		expect(mcpState('b').status.type).toBe('Ready');
 		await stopMcpServer('a');
 		await stopMcpServer('b');
+	});
+});
+
+describe('starting at app launch', () => {
+	it('starts the servers settings says should be running', async () => {
+		// The gap this closes: a tool only exists in the registry while its
+		// server runs, and nothing was starting them, so the model never saw a
+		// single MCP tool however carefully the user had set one up.
+		setMcpServers([config({ id: 'boot-1' })]);
+		invoke.mockImplementation((cmd: string) => {
+			if (cmd === IPC.mcp_catalog) return Promise.resolve([entry()]);
+			if (cmd === IPC.mcp_spawn_config)
+				return Promise.resolve({ id: 'boot-1', program: '/x/node', args: [], env: [], cwd: null });
+			if (cmd === IPC.mcp_list_tools) return Promise.resolve([]);
+			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
+			return Promise.resolve(null);
+		});
+
+		await startConfiguredMcpServers();
+		expect(mcpState('boot-1').status.type).toBe('Ready');
+		await stopMcpServer('boot-1');
+		setMcpServers([]);
+	});
+
+	it('skips a server whose setup never finished', async () => {
+		setMcpServers([config({ id: 'boot-2', setupComplete: false })]);
+		invoke.mockResolvedValue([]);
+		await startConfiguredMcpServers();
+		expect(mcpState('boot-2').status.type).toBe('Stopped');
+		setMcpServers([]);
+	});
+
+	it('starts nothing when the catalog cannot be read', async () => {
+		// Without it a catalog server has no defaultTools, so every one of its
+		// tools would resolve as disabled — a server running with an invisible
+		// toolset is worse than one that did not start.
+		setMcpServers([config({ id: 'boot-3' })]);
+		invoke.mockImplementation((cmd: string) =>
+			cmd === IPC.mcp_catalog ? Promise.reject('no catalog') : Promise.resolve(null)
+		);
+		await startConfiguredMcpServers();
+		expect(mcpState('boot-3').status.type).toBe('Stopped');
+		setMcpServers([]);
+	});
+
+	it('does not even read the catalog when no server is configured', async () => {
+		// The common case on a fresh install: launch must not pay for a feature
+		// nobody has set up.
+		setMcpServers([]);
+		invoke.mockClear();
+		invoke.mockResolvedValue(null);
+		await startConfiguredMcpServers();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 });
 

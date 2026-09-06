@@ -23,7 +23,7 @@ import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
 import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
 import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '$lib/agent/tools/mcp';
 import { forgetServerApprovals } from './mcpApproval.svelte';
-import { getSettings } from './settings';
+import { getSettings, startableMcpServers } from './settings';
 
 /** Everything the UI knows about one server right now. */
 export interface McpRuntimeState {
@@ -262,6 +262,32 @@ setToolFailureHook((serverId) => {
 	const config = configs[serverId];
 	if (config) void probeCompanion(config);
 });
+
+/**
+ * Start every configured server that should be running, in the background.
+ *
+ * Called once at app launch. Eager rather than lazy because a tool the model
+ * cannot see is a tool it will not use: the schemas have to be in the registry
+ * before the first message, not after something has already asked for them.
+ *
+ * Nothing is awaited by the caller — servers come up over the first few seconds
+ * and their tools appear as they do, rather than holding the window closed
+ * while four child processes negotiate.
+ */
+export async function startConfiguredMcpServers(): Promise<void> {
+	const configs = startableMcpServers();
+	if (configs.length === 0) return;
+	let catalog: CatalogEntry[] = [];
+	try {
+		catalog = await invoke<CatalogEntry[]>(IPC.mcp_catalog);
+	} catch {
+		// Without the catalog a catalog server has no defaultTools, so every one
+		// of its tools would resolve as disabled. Better to start nothing than
+		// to start servers whose tools are all invisible.
+		return;
+	}
+	await startEnabledMcpServers(configs, catalog);
+}
 
 /** Human-readable one-liner for a status, for the row and for tests. */
 export function statusLabel(state: McpRuntimeState): string {

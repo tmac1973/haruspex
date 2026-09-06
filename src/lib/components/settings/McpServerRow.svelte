@@ -91,8 +91,20 @@
 		if (showLogs) logs = await mcpServerLogs(config.id);
 	}
 
-	async function start(): Promise<void> {
-		await startMcpServer(config, entry);
+	async function start(next: McpServerConfig = config): Promise<void> {
+		await startMcpServer(next, entry);
+	}
+
+	/**
+	 * Finishing setup starts the server.
+	 *
+	 * Otherwise the wizard ends on a card that says nothing is running and a
+	 * Start button the user has to notice — which is not what someone who just
+	 * completed a five-step Google sign-in is expecting.
+	 */
+	function onSetupDone(finished: McpServerConfig): void {
+		showSetup = false;
+		if (finished.setupComplete && !running) void start(finished);
 	}
 
 	async function remove(): Promise<void> {
@@ -144,19 +156,23 @@
 
 	{#if runtime.error}
 		<p class="error">{runtime.error}</p>
-		<button type="button" class="link-button" onclick={toggleLogs}>
-			{showLogs ? 'Hide output' : 'Show output'}
-		</button>
-		{#if showLogs}
-			<pre class="logs">{logs.join('\n') || 'No output.'}</pre>
-		{/if}
+	{/if}
+
+	<!-- Available whether or not the server failed: a running server's own
+	     output is where you look when it is answering but doing the wrong
+	     thing. The Log Viewer's MCP tab shows the same buffer. -->
+	<button type="button" class="link-button" onclick={toggleLogs}>
+		{showLogs ? 'Hide output' : 'Show output'}
+	</button>
+	{#if showLogs}
+		<pre class="logs">{logs.join('\n') || 'No output.'}</pre>
 	{/if}
 
 	<div class="actions">
 		<button
 			type="button"
 			disabled={runtime.busy || running || !config.setupComplete}
-			onclick={start}
+			onclick={() => start()}
 		>
 			Start
 		</button>
@@ -176,7 +192,7 @@
 			{config}
 			steps={entry.setup}
 			{onchange}
-			ondone={() => (showSetup = false)}
+			ondone={onSetupDone}
 			oncancel={() => (showSetup = false)}
 		/>
 	{/if}
