@@ -45,7 +45,7 @@ use tokio::sync::Mutex;
 use super::client::McpSession;
 use super::companion::CompanionStatus;
 use super::orphans::{self, RunningServer};
-use super::types::{McpCallOutcome, McpConnectionInfo, McpToolDescriptor};
+use super::types::{McpCallOutcome, McpConnectionInfo, McpProtocolEra, McpToolDescriptor};
 use crate::sidecar_utils::{new_log_buffer, push_log, LogBuffer, SidecarStatus};
 use std::path::Path;
 
@@ -77,6 +77,14 @@ pub const MAX_CONSECUTIVE_TIMEOUTS: u32 = 3;
 /// Log lines quoted into an `Error` status. Enough to show the cause, short
 /// enough to sit in a settings row.
 const ERROR_TAIL_LINES: usize = 5;
+
+/// Marks a line Haruspex wrote, as opposed to one the server printed.
+///
+/// A server's own output answers "what is this program saying"; it cannot
+/// answer "what did we ask it to do", which is the question someone opens the
+/// log for. Both go in one buffer so the two interleave in time order, and the
+/// prefix is what lets the viewer show ours alone.
+pub const APP_LOG_PREFIX: &str = "[haruspex]";
 
 /// Everything needed to spawn — and later respawn — one server.
 ///
@@ -172,7 +180,17 @@ impl McpSupervisor {
 
     /// The tools a connected server publishes.
     pub async fn list_tools(&self, id: &str) -> Result<Vec<McpToolDescriptor>, String> {
-        self.session(id).await?.list_tools().await
+        let result = self.session(id).await?.list_tools().await;
+        // The count is what answers "can the model see anything at all", which
+        // is the first question when a server is up and nothing works.
+        match &result {
+            Ok(tools) => {
+                self.note(id, &format!("tools/list -> {} tools", tools.len()))
+                    .await
+            }
+            Err(e) => self.note(id, &format!("tools/list failed: {e}")).await,
+        }
+        result
     }
 
     /// One `tools/call` round trip. See `client.rs` on why a round trip rather
@@ -185,10 +203,44 @@ impl McpSupervisor {
         input_responses: Option<std::collections::BTreeMap<String, serde_json::Value>>,
         request_state: Option<String>,
     ) -> Result<McpCallOutcome, String> {
-        self.session(id)
+        let started = std::time::Instant::now();
+        let result = self
+            .session(id)
             .await?
             .call_tool(name, arguments, input_responses, request_state)
-            .await
+            .await;
+        // Argument values are deliberately not logged: they carry whatever the
+        // model put in them, which for these servers routinely includes
+        // private content.
+        let elapsed = started.elapsed().as_millis();
+        self.note(
+            id,
+            &match &result {
+                Ok(McpCallOutcome::Complete { is_error, .. }) => format!(
+                    "{name} -> {} in {elapsed}ms",
+                    if *is_error { "tool error" } else { "ok" }
+                ),
+                Ok(McpCallOutcome::InputRequired { .. }) => {
+                    format!("{name} -> asked a question in {elapsed}ms")
+                }
+                Err(e) => format!("{name} -> failed in {elapsed}ms: {e}"),
+            },
+        )
+        .await;
+        result
+    }
+
+    /// Write one of our own lines into a server's log ring.
+    ///
+    /// Silently does nothing for a server we do not know, which is the right
+    /// behaviour for a diagnostic: losing a log line must never be able to fail
+    /// the operation it was describing.
+    pub async fn note(&self, id: &str, message: &str) {
+        let log = self.servers.lock().await.get(id).map(|h| h.log.clone());
+        if let Some(log) = log {
+            let mut buf = log.lock().await;
+            push_log(&mut buf, &format!("{APP_LOG_PREFIX} {message}"));
+        }
     }
 
     /// Clone the session handle out from under the lock, so a slow call cannot
@@ -395,6 +447,23 @@ impl McpSupervisor {
                     "mcp: server {id} ready (pid {pid:?}, {:?} {})",
                     connection.era, connection.protocol_version
                 );
+                self.note(
+                    &id,
+                    &format!(
+                        "connected · {} · MCP {}{}",
+                        match connection.era {
+                            McpProtocolEra::Modern => "stateless",
+                            McpProtocolEra::Legacy => "handshake",
+                        },
+                        connection.protocol_version,
+                        connection
+                            .server_name
+                            .as_deref()
+                            .map(|n| format!(" · {n}"))
+                            .unwrap_or_default()
+                    ),
+                )
+                .await;
                 if let Some(handle) = self.servers.lock().await.get_mut(&id) {
                     handle.session = Some(Arc::new(session));
                     handle.connection = Some(connection);
@@ -449,6 +518,8 @@ impl McpSupervisor {
         handle.pid = None;
         orphans::deregister(self.registry(), id);
         info!("mcp: server {id} stopped");
+        drop(servers);
+        self.note(id, "stopped").await;
         Ok(())
     }
 
@@ -911,6 +982,68 @@ mod tests {
             "one refused question is not a reason to tear the server down"
         );
         sup.stop("elicit").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn our_own_side_of_the_conversation_reaches_the_log() {
+        // A server's stderr says what that program is saying; it cannot say
+        // what we asked it to do, which is the question the log gets opened
+        // for. Both live in one buffer so they interleave in time order.
+        let Some(config) = era_config("noted", "modern") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.unwrap();
+        sup.list_tools("noted").await.unwrap();
+        sup.call_tool("noted", "read_thing", None, None, None)
+            .await
+            .unwrap();
+
+        let ours: Vec<String> = sup
+            .logs("noted")
+            .await
+            .into_iter()
+            .filter(|l| l.starts_with(APP_LOG_PREFIX))
+            .collect();
+        let joined = ours.join("\n");
+        assert!(joined.contains("connected"), "got {joined}");
+        assert!(
+            joined.contains("MCP 2026-07-28"),
+            "the era is worth recording"
+        );
+        assert!(joined.contains("2 tools"), "got {joined}");
+        assert!(joined.contains("read_thing -> ok in"), "got {joined}");
+
+        sup.stop("noted").await.unwrap();
+        let after = sup.logs("noted").await.join("\n");
+        assert!(after.contains("stopped"));
+    }
+
+    #[tokio::test]
+    async fn a_failed_call_records_why_without_recording_the_arguments() {
+        // Arguments carry whatever the model put in them, which for these
+        // servers routinely includes private content.
+        let Some(config) = era_config("failing", "legacy-elicit") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.unwrap();
+        let _ = sup
+            .call_tool("failing", "read_thing", None, None, None)
+            .await;
+
+        let joined = sup.logs("failing").await.join("\n");
+        assert!(joined.contains("read_thing -> failed in"), "got {joined}");
+        sup.stop("failing").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_note_for_an_unknown_server_is_dropped_rather_than_failing() {
+        // Losing a log line must never be able to fail the operation it was
+        // describing.
+        let sup = supervisor();
+        sup.note("ghost", "something happened").await;
+        assert!(sup.logs("ghost").await.is_empty());
     }
 
     #[tokio::test]

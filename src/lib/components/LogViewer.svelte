@@ -101,9 +101,13 @@
 	const availableCategories = $derived(distinctPrefixField(3).sort());
 
 	const filteredLines = $derived.by(() => {
-		if (!filtersActive) return logLines;
+		const base =
+			activeTab === 'mcp' && mcpAppOnly
+				? logLines.filter((l) => l.startsWith(MCP_APP_PREFIX))
+				: logLines;
+		if (!filtersActive) return base;
 		const needle = filterText.trim().toLowerCase();
-		return logLines.filter((l) => {
+		return base.filter((l) => {
 			if (turnFilter || categoryFilter) {
 				const m = l.match(PREFIX_RE);
 				if (turnFilter && m?.[2] !== turnFilter) return false;
@@ -174,6 +178,15 @@
 	// selected server rather than from a fixed command like the sidecars.
 	const mcpServers = $derived(getSettings().integrations.mcp.servers);
 	let mcpServerId = $state<string | null>(null);
+	/**
+	 * Hide the server's own output and show only what Haruspex did.
+	 *
+	 * Some servers print a line per request whatever you ask of them — GitHub's
+	 * logs "client log level set" on every call — which buries the handful of
+	 * lines that answer why something went wrong.
+	 */
+	let mcpAppOnly = $state(false);
+	const MCP_APP_PREFIX = '[haruspex]';
 	const selectedMcpServer = $derived(
 		mcpServers.find((s) => s.id === mcpServerId) ?? mcpServers[0] ?? null
 	);
@@ -466,20 +479,26 @@
 							{clearState === 'cleared' ? 'Cleared' : 'Clear'}
 						{/if}
 					</button>
-					{#if activeTab === 'mcp' && mcpServers.length > 1}
+					{#if activeTab === 'mcp'}
 						<div class="mcp-picker">
-							<select
-								value={selectedMcpServer?.id ?? ''}
-								onchange={(e) => {
-									mcpServerId = e.currentTarget.value;
-									logLines = [];
-									void fetchLogs();
-								}}
-							>
-								{#each mcpServers as server (server.id)}
-									<option value={server.id}>{server.label}</option>
-								{/each}
-							</select>
+							<label class="app-only">
+								<input type="checkbox" bind:checked={mcpAppOnly} />
+								Haruspex only
+							</label>
+							{#if mcpServers.length > 1}
+								<select
+									value={selectedMcpServer?.id ?? ''}
+									onchange={(e) => {
+										mcpServerId = e.currentTarget.value;
+										logLines = [];
+										void fetchLogs();
+									}}
+								>
+									{#each mcpServers as server (server.id)}
+										<option value={server.id}>{server.label}</option>
+									{/each}
+								</select>
+							{/if}
 						</div>
 					{/if}
 					{#if activeTab !== 'stats'}
@@ -726,10 +745,19 @@
 	}
 
 	.mcp-picker {
+		display: flex;
+		align-items: center;
+		gap: 10px;
 		padding: 6px 12px 0;
 	}
 	.mcp-picker select {
-		width: 100%;
+		flex: 1;
+	}
+	.app-only {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		white-space: nowrap;
 	}
 	.tabs {
 		display: flex;
