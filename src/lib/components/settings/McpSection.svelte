@@ -225,15 +225,6 @@
 
 	{#if servers.length === 0}
 		<p class="section-help">No servers yet.</p>
-	{:else}
-		{#each servers as config (config.id)}
-			<McpServerRow
-				{config}
-				entry={entryFor(config)}
-				onchange={(next) => persist(servers.map((s) => (s.id === next.id ? next : s)))}
-				onremove={() => persist(servers.filter((s) => s.id !== config.id))}
-			/>
-		{/each}
 	{/if}
 
 	<div class="actions">
@@ -307,6 +298,18 @@
 		</div>
 	{/if}
 </section>
+
+<!-- One card per server, siblings of the card above rather than rows inside it:
+	 a configured server has its own status, tools, setup and proxy choice, which
+	 is more than a row can carry legibly. -->
+{#each servers as config (config.id)}
+	<McpServerRow
+		{config}
+		entry={entryFor(config)}
+		onchange={(next) => persist(servers.map((s) => (s.id === next.id ? next : s)))}
+		onremove={() => persist(servers.filter((s) => s.id !== config.id))}
+	/>
+{/each}
 
 <style>
 	.warning {

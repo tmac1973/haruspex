@@ -60,13 +60,17 @@ pub fn proxy_env(proxy: Option<&ProxyConfig>, mode: ProxyUse) -> Vec<(String, St
         env.push((name.to_lowercase(), url.to_string()));
     }
 
-    // "Always" means ignore the bypass rules, so it names no exceptions —
-    // not even loopback, since that is the case someone would pick it for.
-    if mode != ProxyUse::Always {
-        let no_proxy = no_proxy_list(&cfg.bypass);
-        env.push(("NO_PROXY".to_string(), no_proxy.clone()));
-        env.push(("no_proxy".to_string(), no_proxy));
-    }
+    // "Always" means ignore the *user's bypass list* — not loopback. Nobody
+    // picks it in order to proxy 127.0.0.1, and a companion-app server told to
+    // do so would try to reach Blender or Godot through the proxy and fail at
+    // the one connection it exists to make.
+    let no_proxy = if mode == ProxyUse::Always {
+        ALWAYS_DIRECT.to_string()
+    } else {
+        no_proxy_list(&cfg.bypass)
+    };
+    env.push(("NO_PROXY".to_string(), no_proxy.clone()));
+    env.push(("no_proxy".to_string(), no_proxy));
     env
 }
 
@@ -171,13 +175,15 @@ mod tests {
     }
 
     #[test]
-    fn always_names_no_exceptions_at_all() {
-        // "Always" is picked precisely to override the bypass rules, so keeping
-        // even the loopback carve-out would defeat the one thing it is for.
+    fn always_drops_the_users_bypass_list_but_keeps_loopback() {
+        // The whole point of "always" is to override the bypass list. Dropping
+        // loopback with it would tell a companion-app server to reach Blender
+        // through the proxy — failing at the one connection it exists to make.
         let cfg = manual("http://proxy:8080", "example.com");
         let env = proxy_env(Some(&cfg), ProxyUse::Always);
         assert_eq!(value(&env, "HTTPS_PROXY"), Some("http://proxy:8080"));
-        assert!(value(&env, "NO_PROXY").is_none());
-        assert!(value(&env, "no_proxy").is_none());
+        let no_proxy = value(&env, "NO_PROXY").expect("loopback still needs naming");
+        assert!(no_proxy.contains("127.0.0.1"));
+        assert!(!no_proxy.contains("example.com"));
     }
 }

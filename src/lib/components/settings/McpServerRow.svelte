@@ -68,7 +68,8 @@
 	}
 </script>
 
-<div class="server-row" class:failed>
+<section class="settings-section" class:failed>
+	<h2>{config.label}</h2>
 	<div class="header">
 		<label class="toggle-row">
 			<input
@@ -76,7 +77,7 @@
 				checked={config.enabled}
 				onchange={() => onchange({ ...config, enabled: !config.enabled })}
 			/>
-			<span class="label">{config.label}</span>
+			<span>Enabled</span>
 		</label>
 		<span class="status" class:running class:failed>{detail}</span>
 		{#if config.source.kind === 'remote'}
@@ -176,21 +177,17 @@
 			onchange={(toolEnabled) => onchange({ ...config, toolEnabled })}
 		/>
 	{/if}
-</div>
+</section>
 
 <style>
-	.server-row {
-		padding: 0.75rem 0;
-		border-bottom: 1px solid var(--border-subtle, #292524);
+	.failed {
+		border-color: var(--danger, #ef4444);
 	}
 	.header {
 		display: flex;
 		align-items: center;
 		gap: 0.6rem;
 		flex-wrap: wrap;
-	}
-	.label {
-		font-weight: 600;
 	}
 	.status,
 	.era,

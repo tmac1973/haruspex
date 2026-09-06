@@ -94,7 +94,8 @@ pub enum ProxyUse {
     Auto,
     /// Never use the proxy for this client.
     Never,
-    /// Always use it, ignoring both the loopback carve-out and the bypass list.
+    /// Always use it, ignoring the user's bypass list. Loopback is still
+    /// reached directly — that carve-out is not what the override is for.
     Always,
 }
 
@@ -125,9 +126,14 @@ pub(crate) fn apply_proxy_with(
     let proxy_url = reqwest::Url::parse(trimmed)
         .map_err(|e| format!("Invalid proxy URL '{}': {}", trimmed, e))?;
     let bypass = parse_bypass_list(&cfg.bypass);
-    let force = mode == ProxyUse::Always;
+    // "Always" overrides the user's bypass list, but never the loopback
+    // carve-out: routing 127.0.0.1 through a proxy is not what anyone picks it
+    // for, and it is how a local server stops working.
+    let ignore_list = mode == ProxyUse::Always;
     let rp = reqwest::Proxy::custom(move |target| {
-        if !force && should_bypass(target, &bypass) {
+        let bypassed = target.host_str().is_some_and(is_loopback)
+            || (!ignore_list && should_bypass(target, &bypass));
+        if bypassed {
             None
         } else {
             Some(proxy_url.clone())
@@ -247,6 +253,12 @@ mod tests {
             apply_proxy_with(reqwest::Client::builder(), Some(&broken), ProxyUse::Never).is_ok()
         );
         assert!(apply_proxy_with(reqwest::Client::builder(), Some(&cfg), ProxyUse::Never).is_ok());
+    }
+
+    #[test]
+    fn always_does_not_reach_past_the_loopback_carve_out() {
+        // A local server proxied is a local server broken.
+        assert!(should_bypass(&url("http://127.0.0.1:9876/"), &bypass("")));
     }
 
     #[test]
