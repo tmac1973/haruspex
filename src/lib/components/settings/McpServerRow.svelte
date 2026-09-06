@@ -46,22 +46,30 @@
 
 	/**
 	 * What each proxy choice does, named against the settings the user can go
-	 * and look at. `title` on an <option> is not shown by every browser, so the
-	 * same text also sits on the summary beside the control.
+	 * and look at.
+	 *
+	 * A remote server's connection is ours to make, so the wording is about what
+	 * Haruspex does. A stdio server's connections are its own; all we do is set
+	 * environment variables and hope it reads them, so the wording names the
+	 * variables and says "should" rather than "will".
+	 *
+	 * `title` on an <option> is not shown by every browser, so the same text
+	 * also sits on the summary beside the control.
 	 */
 	const proxyHelp = $derived(
 		config.source.kind === 'remote'
 			? {
-					auto: 'Follows Settings → Network, including the Proxy Bypass List.',
+					auto: 'Haruspex connects through the proxy in Settings → Network, except for hosts on the Proxy Bypass List and localhost.',
 					always:
-						'Ignores the Proxy Bypass List in Settings → Network. localhost is still reached directly.',
-					never: 'Connects directly, even when a proxy is set in Settings → Network.'
+						'Haruspex connects through the proxy in Settings → Network even for hosts on the Proxy Bypass List. localhost is still reached directly.',
+					never: 'Haruspex connects directly, even when a proxy is set in Settings → Network.'
 				}
 			: {
-					auto: 'Tells this server about the proxy in Settings → Network, including the Proxy Bypass List. Whether it honours that is up to the server.',
+					auto: 'Sets HTTP_PROXY, HTTPS_PROXY, ALL_PROXY and NO_PROXY (upper and lower case) from Settings → Network; NO_PROXY holds the Proxy Bypass List plus localhost. Connections this server makes should go through the proxy, if it reads these variables.',
 					always:
-						'Tells this server to ignore the Proxy Bypass List in Settings → Network. localhost is still reached directly.',
-					never: 'Tells this server nothing about the proxy in Settings → Network.'
+						'Sets the same variables, but NO_PROXY holds only localhost — the Proxy Bypass List is ignored. Connections this server makes should go through the proxy even for hosts on that list.',
+					never:
+						'Sets no proxy environment variables for this server. Connections this server makes should be direct.'
 				}
 	);
 
