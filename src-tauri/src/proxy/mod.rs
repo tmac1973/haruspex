@@ -10,6 +10,7 @@
 
 mod browser;
 mod bypass;
+mod child_env;
 mod config;
 mod extract;
 pub mod images;
@@ -26,6 +27,7 @@ use tauri::Emitter;
 
 pub use bypass::ProxyUse;
 pub(crate) use bypass::{apply_proxy, apply_proxy_with};
+pub(crate) use child_env::proxy_env;
 pub use config::ProxyConfig;
 use config::RATE_LIMIT_INTERVAL;
 use extract::fetch_and_extract;

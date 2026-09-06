@@ -12,6 +12,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 	import { IPC } from '$lib/ipc/commands';
+	import { getSettings } from '$lib/stores/settings';
 	import type { SetupStep } from '$lib/ipc/gen/SetupStep';
 	import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
 	import {
@@ -98,7 +99,9 @@
 		try {
 			commandOutput = await invoke<string>(IPC.mcp_run_setup_command, {
 				config,
-				args
+				args,
+				// A setup command is usually a sign-in that talks to the service.
+				proxy: getSettings().proxy
 			});
 			commandsRun = [...commandsRun, index];
 		} catch (e) {

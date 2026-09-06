@@ -96,7 +96,13 @@ export async function startMcpServer(
 				proxy: getSettings().proxy
 			});
 		} else {
-			const spawn = await invoke<SpawnConfig>(IPC.mcp_spawn_config, { config });
+			// The proxy goes with a stdio server too: it is composed into the
+			// child's environment so the server can honour it for the calls it
+			// makes on its own account. Best effort — see child_env.rs.
+			const spawn = await invoke<SpawnConfig>(IPC.mcp_spawn_config, {
+				config,
+				proxy: getSettings().proxy
+			});
 			await invoke(IPC.mcp_start_server, { config: spawn });
 		}
 

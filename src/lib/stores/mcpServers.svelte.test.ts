@@ -182,6 +182,19 @@ describe('removing a server', () => {
 	});
 });
 
+describe('proxy handling', () => {
+	it('sends the proxy with a stdio spawn, so the child can be told about it', async () => {
+		// A stdio server makes its own outbound calls; the proxy is composed
+		// into its environment rather than inherited. Best effort — whether the
+		// server honours it is up to its author.
+		mockHappyStart();
+		await startMcpServer(config(), entry());
+		const call = invoke.mock.calls.find((c) => c[0] === IPC.mcp_spawn_config);
+		expect(call?.[1]).toHaveProperty('proxy');
+		await stopMcpServer(ID);
+	});
+});
+
 describe('remote servers', () => {
 	const remote = (over: Partial<McpServerConfig> = {}): McpServerConfig =>
 		config({

@@ -164,8 +164,9 @@ pub async fn mcp_server_dir(app: AppHandle, server_id: String) -> Result<String,
 pub async fn mcp_spawn_config(
     app: AppHandle,
     config: McpServerConfig,
+    proxy: Option<ProxyConfig>,
 ) -> Result<SpawnConfig, String> {
-    install::spawn_config_for(&app, &config)
+    install::spawn_config_for(&app, &config, proxy.as_ref())
 }
 
 /// Copy a file the user picked in the setup wizard into the server's directory.
@@ -197,8 +198,11 @@ pub async fn mcp_run_setup_command(
     app: AppHandle,
     config: McpServerConfig,
     args: Vec<String>,
+    proxy: Option<ProxyConfig>,
 ) -> Result<String, String> {
-    let spawn = install::setup_command_config(&app, &config, args)?;
+    // A setup command is usually a sign-in that talks to the service, so it
+    // needs the proxy as much as the server does.
+    let spawn = install::setup_command_config(&app, &config, args, proxy.as_ref())?;
     let mut cmd = tokio::process::Command::new(&spawn.program);
     cmd.args(&spawn.args);
     cmd.env_clear();

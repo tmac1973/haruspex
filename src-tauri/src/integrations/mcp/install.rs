@@ -37,7 +37,7 @@ use super::catalog::{resolve_env, Acquisition, CatalogEntry};
 use super::process::SpawnConfig;
 use super::server_config::{McpServerConfig, McpServerSource};
 use crate::models::DownloadProgress;
-use crate::proxy::{apply_proxy, ProxyConfig};
+use crate::proxy::{apply_proxy, proxy_env, ProxyConfig, ProxyUse};
 use crate::runtimes;
 
 /// Progress events land here rather than on `download-progress`, so a model
@@ -129,6 +129,12 @@ impl McpInstaller {
             } => {
                 emit(app, &format!("Installing {package}"), 0, 0);
                 let mut cmd = runtimes::npm_command(app)?;
+                // npm reaches the registry itself, so it needs telling where
+                // the proxy is; runtimes::npm_command scrubbed the ambient
+                // environment, so this is set rather than inherited.
+                for (key, value) in proxy_env(proxy, ProxyUse::Auto) {
+                    cmd.env(key, value);
+                }
                 cmd.args([
                     "install",
                     "--prefix",
@@ -145,10 +151,18 @@ impl McpInstaller {
                 emit(app, &format!("Installing {package}"), 0, 0);
                 let venv = dir.join("venv");
                 let mut create = runtimes::uv_command()?;
+                // uv downloads a CPython build for the venv, so even this step
+                // is network work that has to follow the proxy.
+                for (key, value) in proxy_env(proxy, ProxyUse::Auto) {
+                    create.env(key, value);
+                }
                 create.args(["venv", &venv.to_string_lossy()]);
                 run_to_completion(create, "uv venv").await?;
 
                 let mut install = runtimes::uv_command()?;
+                for (key, value) in proxy_env(proxy, ProxyUse::Auto) {
+                    install.env(key, value);
+                }
                 install.args([
                     "pip",
                     "install",
@@ -345,7 +359,11 @@ pub async fn uninstall(app: &AppHandle, server_id: &str) -> Result<(), String> {
 /// typed; a catalog server goes through [`catalog_spawn_config`]. Refusing a
 /// server that is not startable here rather than at spawn time is what turns
 /// "it did nothing" into "finish the setup first".
-pub fn spawn_config_for(app: &AppHandle, config: &McpServerConfig) -> Result<SpawnConfig, String> {
+pub fn spawn_config_for(
+    app: &AppHandle,
+    config: &McpServerConfig,
+    proxy: Option<&ProxyConfig>,
+) -> Result<SpawnConfig, String> {
     if !config.is_startable() {
         return Err(if config.enabled {
             format!("{} has not finished its setup", config.label)
@@ -353,7 +371,7 @@ pub fn spawn_config_for(app: &AppHandle, config: &McpServerConfig) -> Result<Spa
             format!("{} is turned off", config.label)
         });
     }
-    build_spawn_config(app, config)
+    build_spawn_config(&server_dir(app, &config.id)?, config, proxy)
 }
 
 /// The same resolution, with the entry's own arguments replaced and the
@@ -369,8 +387,9 @@ pub fn setup_command_config(
     app: &AppHandle,
     config: &McpServerConfig,
     args: Vec<String>,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<SpawnConfig, String> {
-    let mut spawn = build_spawn_config(app, config)?;
+    let mut spawn = build_spawn_config(&server_dir(app, &config.id)?, config, proxy)?;
     let entry_args = catalog_command_args(config);
     spawn
         .args
@@ -390,7 +409,20 @@ fn catalog_command_args(config: &McpServerConfig) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn build_spawn_config(app: &AppHandle, config: &McpServerConfig) -> Result<SpawnConfig, String> {
+/// Compose a spawn configuration.
+///
+/// Takes the resolved server directory rather than an `AppHandle`, which is the
+/// only thing it needed one for — so the whole of this, proxy variables
+/// included, is testable without a running Tauri app.
+fn build_spawn_config(
+    dir: &Path,
+    config: &McpServerConfig,
+    proxy: Option<&ProxyConfig>,
+) -> Result<SpawnConfig, String> {
+    // What the server is told about the proxy, for the calls it makes on its
+    // own account. Best effort by construction: whether it honours these is up
+    // to whoever wrote it, so nothing downstream may treat it as a guarantee.
+    let proxy_vars = proxy_env(proxy, config.proxy_use);
     match &config.source {
         // A remote server is not spawned at all. Reaching here means a caller
         // branched wrong, and saying so beats fabricating a command.
@@ -404,16 +436,25 @@ fn build_spawn_config(app: &AppHandle, config: &McpServerConfig) -> Result<Spawn
             args: args.clone(),
             // A custom server has no catalog entry to declare an environment,
             // and inheriting ours would undo the guarantee in process.rs that a
-            // server behaves the same everywhere.
-            env: Vec::new(),
-            cwd: server_dir(app, &config.id).ok(),
+            // server behaves the same everywhere. The proxy variables are
+            // composed rather than inherited, so they do not breach that.
+            env: proxy_vars,
+            cwd: Some(dir.to_path_buf()),
         }),
         McpServerSource::Catalog { entry_id } => {
             let catalog = super::catalog::load()?;
             let entry = catalog
                 .entry(entry_id)
                 .ok_or_else(|| format!("no catalog entry named '{entry_id}'"))?;
-            catalog_spawn_config(app, entry, &config.id, &config.secrets)
+            let mut spawn = catalog_spawn_config(dir, entry, &config.id, &config.secrets)?;
+            // Appended after the entry's own environment so a catalog entry
+            // that deliberately sets one of these keeps its value.
+            for (key, value) in proxy_vars {
+                if !spawn.env.iter().any(|(k, _)| *k == key) {
+                    spawn.env.push((key, value));
+                }
+            }
+            Ok(spawn)
         }
     }
 }
@@ -424,12 +465,11 @@ fn build_spawn_config(app: &AppHandle, config: &McpServerConfig) -> Result<Spawn
 /// absolute program path and an argument list, and nothing downstream needs to
 /// know which one it came from.
 pub fn catalog_spawn_config(
-    app: &AppHandle,
+    dir: &Path,
     entry: &CatalogEntry,
     server_id: &str,
     secrets: &BTreeMap<String, String>,
 ) -> Result<SpawnConfig, String> {
-    let dir = server_dir(app, server_id)?;
     let (program, mut args) = match &entry.acquisition {
         // `node <entry point>`, never npm's `.bin` shim: the shim resolves its
         // own interpreter off `PATH`, and a `PATH` we do not control is how a
@@ -451,14 +491,14 @@ pub fn catalog_spawn_config(
     args.extend(entry.command.args.iter().cloned());
 
     let mut env = resolve_env(entry, secrets)?;
-    substitute_server_dir(&mut env, &dir);
+    substitute_server_dir(&mut env, dir);
 
     Ok(SpawnConfig {
         id: server_id.to_string(),
         program,
         args,
         env,
-        cwd: Some(dir),
+        cwd: Some(dir.to_path_buf()),
     })
 }
 
@@ -654,6 +694,99 @@ mod tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn custom_server(proxy_use: ProxyUse) -> McpServerConfig {
+        McpServerConfig {
+            id: "c1".into(),
+            label: "Mine".into(),
+            enabled: true,
+            source: McpServerSource::Custom {
+                program: "/usr/local/bin/srv".into(),
+                args: vec!["--stdio".into()],
+            },
+            secrets: BTreeMap::new(),
+            tool_enabled: BTreeMap::new(),
+            proxy_use,
+            setup_complete: true,
+        }
+    }
+
+    fn manual_proxy() -> ProxyConfig {
+        ProxyConfig {
+            mode: "manual".into(),
+            url: "http://proxy:8080".into(),
+            bypass: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_custom_server_is_told_about_the_proxy_and_nothing_else() {
+        // Phase 02's env_clear rule stands: a custom server has no catalog
+        // entry to declare an environment, so the proxy variables are the
+        // *only* thing it gets — and they are composed from our settings
+        // rather than inherited from whatever shell launched the app.
+        let spawn = build_spawn_config(
+            Path::new("/data/mcp/servers/c1"),
+            &custom_server(ProxyUse::Auto),
+            Some(&manual_proxy()),
+        )
+        .unwrap();
+        assert!(spawn
+            .env
+            .iter()
+            .any(|(k, v)| k == "HTTPS_PROXY" && v == "http://proxy:8080"));
+        assert!(spawn.env.iter().any(|(k, _)| k == "NO_PROXY"));
+        assert!(
+            spawn
+                .env
+                .iter()
+                .all(|(k, _)| k.to_uppercase().contains("PROXY")),
+            "nothing but proxy variables should reach a custom server: {:?}",
+            spawn.env
+        );
+    }
+
+    #[test]
+    fn a_server_set_to_never_is_told_nothing_about_the_proxy() {
+        let spawn = build_spawn_config(
+            Path::new("/data/mcp/servers/c1"),
+            &custom_server(ProxyUse::Never),
+            Some(&manual_proxy()),
+        )
+        .unwrap();
+        assert!(spawn.env.is_empty());
+    }
+
+    #[test]
+    fn a_catalog_entrys_own_environment_wins_over_the_proxy_variables() {
+        // An entry that deliberately sets one of these names knows something we
+        // do not; appending must not overwrite it.
+        let catalog = super::super::catalog::load().unwrap();
+        let blender = catalog.entry("blender").unwrap();
+        let mut spawn = catalog_spawn_config(
+            Path::new("/data/mcp/servers/b1"),
+            blender,
+            "b1",
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        spawn
+            .env
+            .push(("HTTPS_PROXY".into(), "http://declared".into()));
+
+        let before = spawn.env.len();
+        for (key, value) in proxy_env(Some(&manual_proxy()), ProxyUse::Auto) {
+            if !spawn.env.iter().any(|(k, _)| *k == key) {
+                spawn.env.push((key, value));
+            }
+        }
+        assert_eq!(
+            spawn.env.iter().filter(|(k, _)| k == "HTTPS_PROXY").count(),
+            1,
+            "the declared value must not be duplicated or replaced"
+        );
+        assert!(spawn.env.len() > before, "the rest should still be added");
     }
 
     #[test]
