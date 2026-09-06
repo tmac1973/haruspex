@@ -35,11 +35,8 @@
 
 <section class="settings-section">
 	<h2>Network Proxy</h2>
-	<p class="hint">
-		Route everything Haruspex sends out — web search, page fetches, model and integration downloads,
-		and MCP servers reached over the network — through an HTTP/HTTPS proxy. Leave set to <strong
-			>None</strong
-		> to connect directly.
+	<p class="hint" title="Covers web search, page fetches, downloads, and MCP servers.">
+		Route everything Haruspex sends out through an HTTP/HTTPS proxy.
 	</p>
 	<div class="proxy-modes">
 		<ModeSelector
@@ -65,8 +62,7 @@
 				placeholder="http://host:port or http://user:pass@host:port"
 			/>
 			<p class="hint">
-				Used for both HTTP and HTTPS destinations. Include <code>user:pass@</code> in the URL for proxies
-				that require authentication.
+				Used for HTTP and HTTPS. Include <code>user:pass@</code> if the proxy needs credentials.
 			</p>
 		</div>
 
@@ -79,14 +75,8 @@
 				onblur={saveProxyBypass}
 				placeholder={proxyBypassPlaceholder}
 			></textarea>
-			<p class="hint">
-				One entry per line (or comma-separated). Each entry can be a hostname (matches the host and
-				any subdomain), an individual IP address, or a CIDR subnet (e.g.
-				<code>10.0.0.0/8</code>, <code>2001:db8::/32</code>).
-			</p>
-			<p class="hint">
-				<code>localhost</code> and <code>127.0.0.1</code> are always reached directly and do not need
-				listing. Private ranges are not assumed — add them here if your network does not proxy them.
+			<p class="hint" title="Hostnames match the host and any subdomain.">
+				One per line: hostname, IP, or CIDR subnet. <code>localhost</code> is always direct.
 			</p>
 		</div>
 	{/if}

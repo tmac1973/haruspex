@@ -107,10 +107,11 @@ export function evaluateToolBudget(args: {
 		maxTools,
 		modelLabel,
 		overBudget,
+		// One sentence: the count, the cost, and the number to get under. What to
+		// do about it is the list of toggles directly beneath it.
 		warning: overBudget
-			? `${toolCount} tools are enabled (about ${estimatedTokens.toLocaleString()} tokens ` +
-				`in every request). ${modelLabel} picks tools reliably up to about ${maxTools}. ` +
-				`Turn off the ones you do not need below — nothing is disabled automatically.`
+			? `${toolCount} tools enabled (~${estimatedTokens.toLocaleString()} tokens per request). ` +
+				`${modelLabel} selects reliably up to about ${maxTools}.`
 			: null
 	};
 }

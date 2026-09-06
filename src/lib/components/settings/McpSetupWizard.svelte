@@ -179,7 +179,7 @@
 		{/if}
 	</div>
 	{#if !canAdvance && step}
-		<p class="help">Fill this in to continue. Your progress is saved if you close the app.</p>
+		<p class="help" title="Progress is saved if you close the app.">Fill this in to continue.</p>
 	{/if}
 </div>
 

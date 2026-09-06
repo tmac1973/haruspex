@@ -86,8 +86,10 @@ describe('the budget verdict', () => {
 		expect(evaluateToolBudget({ schemas: many, modelId: large }).overBudget).toBe(false);
 	});
 
-	it('names the count, the cost and the model, and points at the toggles', () => {
+	it('names the count, the cost and the number to get under', () => {
 		// "Too many tools" on its own gives the user nothing to decide with.
+		// What to *do* about it is the list of toggles beneath the warning, so
+		// the sentence does not repeat it.
 		const budget = evaluateToolBudget({
 			schemas: schemas(20),
 			modelId: small,
@@ -96,14 +98,13 @@ describe('the budget verdict', () => {
 		expect(budget.warning).toContain('20 tools');
 		expect(budget.warning).toContain('Qwen 9B');
 		expect(budget.warning).toContain(String(budget.maxTools));
-		expect(budget.warning).toContain('Turn off');
 	});
 
-	it('promises nothing is disabled automatically', () => {
-		// A tool the user deliberately enabled silently vanishing is worse than
-		// one that is merely inadvisable, so the message has to say so.
+	it('stays one sentence pair rather than a paragraph', () => {
+		// The warning sits above a list the user is about to act on; anything
+		// longer is clutter they scroll past.
 		const budget = evaluateToolBudget({ schemas: schemas(20), modelId: small });
-		expect(budget.warning).toContain('nothing is disabled automatically');
+		expect(budget.warning!.length).toBeLessThan(160);
 	});
 
 	it('estimates a real cost that rises with the toolset', () => {

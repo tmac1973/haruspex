@@ -58,25 +58,23 @@
 		{#if hints.length}
 			<p class="hints">This tool {hints.join('; ')}.</p>
 		{:else if unannotated}
-			<p class="hints">
-				This server does not say whether the tool changes anything, so Haruspex asks.
-			</p>
+			<p class="hints">This server does not say whether the tool changes anything.</p>
 		{/if}
 		{#if argsPreview}
 			<pre class="code-preview"><code>{argsPreview}</code></pre>
 		{/if}
 		<div class="button-row">
 			<ModalButton onclick={() => resolveMcpApproval('allow_always')}>
-				{#snippet title()}Always allow this tool{/snippet}
-				{#snippet subtitle()}Don't ask again for {pending.toolName} on {pending.serverLabel}{/snippet}
+				{#snippet title()}Always allow{/snippet}
+				{#snippet subtitle()}For {pending.toolName} on {pending.serverLabel}{/snippet}
 			</ModalButton>
 			<ModalButton onclick={() => resolveMcpApproval('allow_once')}>
 				{#snippet title()}Allow once{/snippet}
-				{#snippet subtitle()}Run it now, ask again next time{/snippet}
+				{#snippet subtitle()}Ask again next time{/snippet}
 			</ModalButton>
 			<ModalButton variant="danger" onclick={() => resolveMcpApproval('deny')}>
 				{#snippet title()}Deny{/snippet}
-				{#snippet subtitle()}Don't run; the model will see a denial{/snippet}
+				{#snippet subtitle()}The model sees a denial{/snippet}
 			</ModalButton>
 		</div>
 	{/if}

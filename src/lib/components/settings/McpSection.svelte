@@ -213,11 +213,8 @@
 </script>
 
 <section class="settings-section">
-	<h2>Integrations</h2>
-	<p class="section-help">
-		Connect Haruspex to other services through MCP servers. Everything is installed into the app —
-		you never need a terminal — and each server's tools stay off until you turn them on.
-	</p>
+	<h2>MCP integrations</h2>
+	<p class="section-help">Connect Haruspex to other services through MCP servers.</p>
 
 	{#if runtimeWarning}
 		<p class="warning">{runtimeWarning}</p>
@@ -240,14 +237,28 @@
 	{/if}
 
 	<div class="actions">
-		<button type="button" onclick={() => (showCatalog = !showCatalog)}>
-			{showCatalog ? 'Close' : 'Add an integration'}
+		<button
+			type="button"
+			title="Servers Haruspex installs and sets up for you."
+			onclick={() => (showCatalog = !showCatalog)}
+		>
+			{showCatalog ? 'Close' : 'Add from the catalog'}
 		</button>
-		<button type="button" class="advanced" onclick={() => (showCustom = !showCustom)}>
-			{showCustom ? 'Close' : 'Add a custom server (advanced)'}
+		<button
+			type="button"
+			class="advanced"
+			title="An MCP server you already have on this machine. Nothing is installed."
+			onclick={() => (showCustom = !showCustom)}
+		>
+			{showCustom ? 'Close' : 'Add a server on this computer'}
 		</button>
-		<button type="button" class="advanced" onclick={() => (showRemote = !showRemote)}>
-			{showRemote ? 'Close' : 'Add a remote server (advanced)'}
+		<button
+			type="button"
+			class="advanced"
+			title="Connect to an MCP server running elsewhere. Nothing is installed."
+			onclick={() => (showRemote = !showRemote)}
+		>
+			{showRemote ? 'Close' : 'Add a server on your network'}
 		</button>
 	</div>
 
@@ -266,10 +277,7 @@
 	{#if showRemote}
 		<div class="custom-form">
 			<p class="warning">
-				A remote server runs on someone else's computer and sees whatever the assistant sends it —
-				including the parts of your conversation that end up in a tool call. Only add one you trust
-				with that. Its tools get the same approval prompts as any other server; being remote does
-				not make a tool safer.
+				This server sees whatever the assistant sends it, including parts of your conversation.
 			</p>
 			<label>
 				Server URL
@@ -279,21 +287,14 @@
 				Token or API key (optional)
 				<input type="password" bind:value={remoteToken} placeholder="Leave blank if none" />
 			</label>
-			<p class="section-help">
-				Servers that require signing in through a browser are not supported yet. Requests follow
-				whatever proxy you have configured under Search.
-			</p>
+			<p class="section-help">Servers that sign in through a browser are not supported yet.</p>
 			<button type="button" disabled={!remoteUrl.trim()} onclick={addRemote}>Add</button>
 		</div>
 	{/if}
 
 	{#if showCustom}
 		<div class="custom-form">
-			<p class="section-help">
-				Run any MCP server you already have. It gets the same tool controls and the same approval
-				prompts as a catalog server — a server you configured yourself is not treated as more
-				trustworthy.
-			</p>
+			<p class="section-help">Run an MCP server you already have on this machine.</p>
 			<label>
 				Program
 				<input bind:value={customProgram} placeholder="/usr/local/bin/my-mcp-server" />

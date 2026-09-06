@@ -103,20 +103,18 @@
 
 	{#if !config.setupComplete}
 		<p class="needs-setup">
-			Setup is not finished, so this server will not start.
-			<button type="button" class="link-button" onclick={() => (showSetup = true)}>
-				Continue setup
-			</button>
+			Setup unfinished.
+			<button type="button" class="link-button" onclick={() => (showSetup = true)}>Continue</button>
 		</p>
 	{/if}
 
 	{#if runtime.error}
 		<p class="error">{runtime.error}</p>
 		<button type="button" class="link-button" onclick={toggleLogs}>
-			{showLogs ? 'Hide' : 'Show'} the server's own output
+			{showLogs ? 'Hide output' : 'Show output'}
 		</button>
 		{#if showLogs}
-			<pre class="logs">{logs.join('\n') || 'The server printed nothing.'}</pre>
+			<pre class="logs">{logs.join('\n') || 'No output.'}</pre>
 		{/if}
 	{/if}
 
@@ -160,14 +158,13 @@
 			<option value="always">Always</option>
 			<option value="never">Never</option>
 		</select>
-		<span class="hint">
-			{#if config.source.kind === 'remote'}
-				How Haruspex reaches this server. The app setting already contacts <code>localhost</code>
-				directly, so override it only for a host it decides wrongly about.
-			{:else}
-				What this server is told about your proxy, for the connections it makes itself. Whether it
-				honours that is up to the server — Haruspex cannot make it.
-			{/if}
+		<span
+			class="hint"
+			title={config.source.kind === 'remote'
+				? 'How Haruspex reaches this server. localhost is always contacted directly.'
+				: 'What this server is told about your proxy. Whether it honours that is up to the server.'}
+		>
+			{config.source.kind === 'remote' ? 'For this connection' : 'Best effort'}
 		</span>
 	</label>
 

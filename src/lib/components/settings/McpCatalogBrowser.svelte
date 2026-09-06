@@ -74,17 +74,15 @@
 			</div>
 			<p class="description">{entry.description}</p>
 			{#if entry.companion}
-				<p class="companion-requirement">
+				<p class="companion-requirement" title="Haruspex does not install it.">
 					Needs {entry.companion.app}{#if entry.companion.minVersion}
-						{entry.companion.minVersion} or newer{/if} installed and running on this computer. Haruspex
-					does not install it.
+						{entry.companion.minVersion}+{/if} installed and running.
 				</p>
 			{/if}
 			{#if setup}<p class="setup-cost">{setup}</p>{/if}
 			{#if entry.provenance && !entry.provenance.firstParty}
 				<p class="provenance">
-					Community project by {entry.provenance.maintainer} ({entry.provenance.license}). Its tools
-					run with the same approval prompts as any other server.
+					Community · {entry.provenance.maintainer} · {entry.provenance.license}
 				</p>
 			{/if}
 			{#if blocked}
