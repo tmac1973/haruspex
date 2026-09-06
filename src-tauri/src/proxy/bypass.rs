@@ -1,6 +1,6 @@
-//! Proxy bypass-list parsing and apply_proxy() — both consumed by
-//! every outbound HTTP client in this module so they live together
-//! at the leaf.
+//! Proxy Bypass List parsing (Settings -> Network) and apply_proxy() — both
+//! consumed by every outbound HTTP client in this module, so they live
+//! together at the leaf.
 
 use super::ProxyConfig;
 use std::net::IpAddr;
@@ -29,7 +29,7 @@ pub(super) fn parse_bypass_list(raw: &str) -> Vec<BypassEntry> {
         .collect()
 }
 
-/// Loopback is never proxied, whatever the user's bypass list says.
+/// Loopback is never proxied, whatever the Proxy Bypass List says.
 ///
 /// Nobody routes `127.0.0.1` through a corporate proxy, and doing it produces a
 /// connection failure that reads as "the local server is broken" rather than as
@@ -38,7 +38,7 @@ pub(super) fn parse_bypass_list(raw: &str) -> Vec<BypassEntry> {
 ///
 /// Deliberately loopback only. Private ranges like `10.0.0.0/8` are a judgement
 /// call — some networks genuinely do proxy internal traffic — so those stay in
-/// the user's own bypass list rather than being assumed here.
+/// the user's own Proxy Bypass List rather than being assumed here.
 fn is_loopback(host: &str) -> bool {
     if host.eq_ignore_ascii_case("localhost") || host.to_lowercase().ends_with(".localhost") {
         return true;
@@ -88,14 +88,15 @@ pub(super) fn should_bypass(target: &reqwest::Url, entries: &[BypassEntry]) -> b
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub enum ProxyUse {
-    /// Follow the app's proxy setting, including the loopback carve-out and the
-    /// user's bypass list.
+    /// Follow the app's proxy setting, including the loopback carve-out and
+    /// the Proxy Bypass List (Settings -> Network).
     #[default]
     Auto,
     /// Never use the proxy for this client.
     Never,
-    /// Always use it, ignoring the user's bypass list. Loopback is still
-    /// reached directly — that carve-out is not what the override is for.
+    /// Always use it, ignoring the Proxy Bypass List (Settings -> Network).
+    /// Loopback is still reached directly — that carve-out is not what the
+    /// override is for.
     Always,
 }
 
@@ -126,7 +127,7 @@ pub(crate) fn apply_proxy_with(
     let proxy_url = reqwest::Url::parse(trimmed)
         .map_err(|e| format!("Invalid proxy URL '{}': {}", trimmed, e))?;
     let bypass = parse_bypass_list(&cfg.bypass);
-    // "Always" overrides the user's bypass list, but never the loopback
+    // "Always" overrides the Proxy Bypass List, but never the loopback
     // carve-out: routing 127.0.0.1 through a proxy is not what anyone picks it
     // for, and it is how a local server stops working.
     let ignore_list = mode == ProxyUse::Always;

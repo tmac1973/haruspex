@@ -44,6 +44,31 @@
 	const companionHint = $derived(companionWarning(runtime));
 	let reprobing = $state(false);
 
+	/**
+	 * What each proxy choice does, named against the settings the user can go
+	 * and look at. `title` on an <option> is not shown by every browser, so the
+	 * same text also sits on the summary beside the control.
+	 */
+	const proxyHelp = $derived(
+		config.source.kind === 'remote'
+			? {
+					auto: 'Follows Settings → Network, including the Proxy Bypass List.',
+					always:
+						'Ignores the Proxy Bypass List in Settings → Network. localhost is still reached directly.',
+					never: 'Connects directly, even when a proxy is set in Settings → Network.'
+				}
+			: {
+					auto: 'Tells this server about the proxy in Settings → Network, including the Proxy Bypass List. Whether it honours that is up to the server.',
+					always:
+						'Tells this server to ignore the Proxy Bypass List in Settings → Network. localhost is still reached directly.',
+					never: 'Tells this server nothing about the proxy in Settings → Network.'
+				}
+	);
+
+	const proxySummary = $derived(
+		config.source.kind === 'remote' ? 'For this connection' : 'Passed to the server; best effort'
+	);
+
 	async function recheckCompanion(): Promise<void> {
 		reprobing = true;
 		try {
@@ -155,18 +180,11 @@
 			onchange={(e) =>
 				onchange({ ...config, proxyUse: e.currentTarget.value as McpServerConfig['proxyUse'] })}
 		>
-			<option value="auto">Use the app setting</option>
-			<option value="always">Always</option>
-			<option value="never">Never</option>
+			<option value="auto" title={proxyHelp.auto}>Use the app setting</option>
+			<option value="always" title={proxyHelp.always}>Always</option>
+			<option value="never" title={proxyHelp.never}>Never</option>
 		</select>
-		<span
-			class="hint"
-			title={config.source.kind === 'remote'
-				? 'How Haruspex reaches this server. localhost is always contacted directly.'
-				: 'What this server is told about your proxy. Whether it honours that is up to the server.'}
-		>
-			{config.source.kind === 'remote' ? 'For this connection' : 'Best effort'}
-		</span>
+		<span class="hint" title={proxyHelp[config.proxyUse]}>{proxySummary}</span>
 	</label>
 
 	{#if showTools}

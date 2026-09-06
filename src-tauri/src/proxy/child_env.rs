@@ -60,7 +60,7 @@ pub fn proxy_env(proxy: Option<&ProxyConfig>, mode: ProxyUse) -> Vec<(String, St
         env.push((name.to_lowercase(), url.to_string()));
     }
 
-    // "Always" means ignore the *user's bypass list* — not loopback. Nobody
+    // "Always" means ignore the *Proxy Bypass List* — not loopback. Nobody
     // picks it in order to proxy 127.0.0.1, and a companion-app server told to
     // do so would try to reach Blender or Godot through the proxy and fail at
     // the one connection it exists to make.
@@ -74,7 +74,8 @@ pub fn proxy_env(proxy: Option<&ProxyConfig>, mode: ProxyUse) -> Vec<(String, St
     env
 }
 
-/// The `NO_PROXY` value: the loopback carve-out plus whatever the user listed.
+/// The `NO_PROXY` value: the loopback carve-out plus the Proxy Bypass List
+/// (Settings -> Network).
 ///
 /// The user's entries are passed through as written rather than normalised.
 /// `NO_PROXY` is a loose convention with no single grammar — Go accepts CIDR,
@@ -176,7 +177,7 @@ mod tests {
 
     #[test]
     fn always_drops_the_users_bypass_list_but_keeps_loopback() {
-        // The whole point of "always" is to override the bypass list. Dropping
+        // The whole point of "always" is to override the Proxy Bypass List. Dropping
         // loopback with it would tell a companion-app server to reach Blender
         // through the proxy — failing at the one connection it exists to make.
         let cfg = manual("http://proxy:8080", "example.com");

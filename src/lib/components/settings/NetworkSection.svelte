@@ -67,7 +67,7 @@
 		</div>
 
 		<div class="field">
-			<label for="proxy-bypass">No proxy for:</label>
+			<label for="proxy-bypass">Proxy Bypass List:</label>
 			<textarea
 				id="proxy-bypass"
 				rows="4"
@@ -76,7 +76,8 @@
 				placeholder={proxyBypassPlaceholder}
 			></textarea>
 			<p class="hint" title="Hostnames match the host and any subdomain.">
-				One per line: hostname, IP, or CIDR subnet. <code>localhost</code> is always direct.
+				Reached directly, never through the proxy. One per line: hostname, IP, or CIDR subnet.
+				<code>localhost</code> is always on this list.
 			</p>
 		</div>
 	{/if}
