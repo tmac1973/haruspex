@@ -50,9 +50,11 @@ them, since the phases that used to do that are cut.
 Deviations are recorded here rather than quietly absorbed, because each was a
 judgement call someone may want to revisit.
 
-- **One protocol era, not both** (phase 3). Scoped to 2026-07-28 after the
-  question was asked directly: the servers worth connecting to have moved, and
-  carrying the handshake era doubles the surface that can be wrong.
+- **Both protocol eras kept** (phase 3), after the decision was reopened on
+  2026-09-05 — see the dated rationale in `overview.md`. The cost turned out to
+  be near zero: rmcp 3.2's `ClientLifecycleMode::Auto` drives the probe and the
+  fallback itself, so supporting the handshake era added a config value rather
+  than a second code path.
 - **No DNS SRV lookup in DAV discovery** (phase 10). RFC 6764 puts it first;
   every server this targets answers `.well-known`, and the manual URL override
   is a shorter path for the one case SRV uniquely covers than a resolver is.
@@ -70,8 +72,7 @@ judgement call someone may want to revisit.
 
 ## Locked decisions (full list in `overview.md`)
 
-**MCP:** rmcp 3.x · one protocol era (2026-07-28), scoped to connect/list/call
-· bundled
+**MCP:** rmcp 3.x · both protocol eras, scoped to connect/list/call · bundled
 node/npm/uv · release-binary acquisition as a third kind · explicit install with
 progress, never `npx -y` · dynamic registration into the existing registry under
 an `mcp` category · annotation-driven approval with

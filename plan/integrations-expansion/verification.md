@@ -152,6 +152,7 @@ survives and a retry works.
 
 | Check | State |
 |---|---|
+| Both protocol eras reachable | unverified (legacy era) |
 | Malformed JSON, enormous results, unseen schemas | **automated** |
 | A server whose tools carry no annotations — every one prompts | **automated** |
 | A server that renames its tools between listings | **automated** |
@@ -168,6 +169,11 @@ survives and a retry works.
   message" and "always satisfies the budget post-condition, even pathologically".
 - Transport failure mid-call is "turns a transport failure into a tool error,
   not an exception" and "says a tool is gone when its server stopped mid-turn".
+- The **legacy** protocol era is exercised only against the local fixture server
+  (`tests/`), not against a real handshake-era server. rmcp's
+  `ClientLifecycleMode::Auto` chooses the era, so the untested part is its
+  probe against a real one, not our handling of the result. The GitHub server
+  observed in journey 1 is a modern-era server.
 
 A genuinely adversarial server — one deliberately returning malformed frames —
 has not been written. The coercion layer (`coerce.test.ts`) and the parser are
