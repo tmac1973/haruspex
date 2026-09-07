@@ -6,6 +6,7 @@
 
 export const IPC = {
 	cancel_download: 'cancel_download',
+	capture_screen: 'capture_screen',
 	clear_app_logs: 'clear_app_logs',
 	clear_llama_crash_log: 'clear_llama_crash_log',
 	clear_server_logs: 'clear_server_logs',

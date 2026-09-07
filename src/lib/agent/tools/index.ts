@@ -14,6 +14,7 @@ import './memoryWrite';
 import './user-question';
 import './mcp';
 import './calendar';
+import './screen';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel } from './registry';

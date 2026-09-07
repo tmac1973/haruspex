@@ -339,7 +339,7 @@ Each block below installs **everything** you need to build Haruspex on that plat
 ```bash
 # System libraries + Vulkan shader toolchain
 sudo apt update && sudo apt install -y build-essential cmake pkg-config curl \
-  libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev \
+  libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev libxcb1-dev \
   libvulkan-dev glslc spirv-headers libsonic-dev libpcaudio-dev libssl-dev libfuse2
 
 # Node.js 22 (distro packages are usually too old)
@@ -354,7 +354,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ```bash
 # System libraries + Vulkan shader toolchain + Node.js
 sudo dnf install -y @development-tools cmake pkg-config \
-  webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel alsa-lib-devel \
+  webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel alsa-lib-devel libxcb-devel \
   vulkan-headers spirv-headers glslc sonic-devel pcaudiolib-devel openssl-devel nodejs npm
 
 # Rust (stable, via rustup)
@@ -367,7 +367,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 # Everything in one command. spirv-headers is required by llama.cpp's Vulkan
 # backend and is NOT pulled in by shaderc, so it must be listed explicitly.
 sudo pacman -S --needed base-devel cmake pkg-config \
-  webkit2gtk-4.1 libappindicator-gtk3 librsvg alsa-lib \
+  webkit2gtk-4.1 libappindicator-gtk3 librsvg alsa-lib libxcb \
   vulkan-headers shaderc spirv-headers fuse2 libsonic pcaudiolib rust nodejs npm
 ```
 

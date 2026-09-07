@@ -5,8 +5,10 @@ import { toolError, toolResult } from './types';
 
 // Max images per turn. Each ~1024px image is ~500-800 image tokens for
 // Qwen3.5-9B vision; batching more than this at once risks blowing out
-// the KV cache and crashing llama-server.
-const MAX_PENDING_IMAGES = 6;
+// the KV cache and crashing llama-server. Exported so screen capture counts
+// against the same budget — a screenshot costs the model exactly what an
+// image read off disk does.
+export const MAX_PENDING_IMAGES = 6;
 
 // Regex for file extensions we can preview as a thumbnail inline. This is
 // deliberately BROADER than the document-embed allow-list in Rust

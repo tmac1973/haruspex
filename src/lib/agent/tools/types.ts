@@ -161,7 +161,8 @@ export interface ToolRegistration {
 		| 'memory-write'
 		| 'interaction'
 		| 'mcp'
-		| 'calendar';
+		| 'calendar'
+		| 'desktop';
 	requiresVision?: boolean;
 }
 

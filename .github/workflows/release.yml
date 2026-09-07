@@ -172,6 +172,7 @@ jobs:
           apt-get install -y \
             build-essential pkg-config cmake clang libclang-dev \
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev \
+            libxcb1-dev \
             libvulkan-dev glslc libsonic-dev libpcaudio-dev libssl-dev \
             libfuse2t64 \
             python3 \

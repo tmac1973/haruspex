@@ -68,7 +68,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            libasound2-dev
+            libasound2-dev \
+            libxcb1-dev
 
       - name: Create placeholder sidecar binaries and libs
         run: |

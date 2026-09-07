@@ -50,6 +50,8 @@ interface ToolFilterOpts {
 	memoryWritable: boolean;
 	/** At least one CalDAV account is enabled and has credentials. */
 	hasCalendar: boolean;
+	/** The user has switched screen capture on in Settings → Screen. */
+	screenCapture: boolean;
 }
 
 // Tools exposed to the Shell-tab assistant (non-Code mode). Reads only —
@@ -114,6 +116,10 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// Interactive terminal control only when Code mode drives a live shell
 	// session (shellMode), where there's a real PTY to send input/signals to.
 	if (SHELL_INTERACTIVE_TOOLS.has(name)) return opts.shellMode;
+	// Looking at the screen is as useful in Code mode as in Chat — "why does
+	// this dialog look wrong" is a question about pixels — and it carries the
+	// same toggle either way.
+	if (reg.category === 'desktop') return opts.screenCapture;
 	return false;
 }
 
@@ -142,6 +148,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
 	if (reg.category === 'calendar' && !opts.hasCalendar) return false;
+	if (reg.category === 'desktop' && !opts.screenCapture) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
 	// MCP tools are per-tool switchable, so the category alone is not the
 	// answer; see isMcpToolEnabled for how an explicit choice beats the
@@ -190,6 +197,7 @@ export function getToolSchemas(opts: {
 		codeMode: opts.codeMode ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		hasCalendar: hasEnabledCalendarAccount(),
+		screenCapture: getSettings().screenCaptureEnabled,
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
 	};
@@ -248,6 +256,16 @@ export async function executeTool(
 	if (reg.category === 'calendar' && !hasEnabledCalendarAccount()) {
 		return toolResult(
 			toolError('No calendar account is set up. The user can add one in Settings → Integrations.')
+		);
+	}
+
+	// The same hard gate for screen capture, and here it is the one that
+	// matters most: the toggle is the user's statement about whether this
+	// assistant may look at their screen at all, and schema filtering alone
+	// would leave it enforced only by the model's good behaviour.
+	if (reg.category === 'desktop' && !getSettings().screenCaptureEnabled) {
+		return toolResult(
+			toolError('Screen capture is off. The user can turn it on in Settings → Screen.')
 		);
 	}
 

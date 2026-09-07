@@ -3,6 +3,7 @@ mod audio;
 mod clipboard;
 mod code_tools;
 mod db;
+mod desktop;
 mod env_util;
 mod feedback;
 mod fs_tools;
@@ -304,6 +305,7 @@ pub fn run() {
             fs_tools::xlsx::fs_read_xlsx,
             fs_tools::images::fs_read_image,
             fs_tools::images::read_dropped_image,
+            desktop::screenshot::capture_screen,
             fs_tools::pdf_read::fs_read_pdf_bytes,
             fs_tools::docx::fs_write_docx,
             fs_tools::xlsx::fs_write_xlsx,

@@ -347,6 +347,12 @@ export interface AppSettings {
 	 * tool list entirely, the same way fs tools are when no working
 	 * directory is set.
 	 */
+	/**
+	 * Master switch for screen capture. Off by default: an assistant that can
+	 * see the screen is a different thing from one that cannot, and that has
+	 * to be a decision the user made rather than one they inherited.
+	 */
+	screenCaptureEnabled: boolean;
 	sandboxEnabled: boolean;
 	/**
 	 * Controls when the user is prompted before the Python sandbox runs
@@ -616,6 +622,7 @@ const defaults: AppSettings = {
 	keepRecentToolResults: true,
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
+	screenCaptureEnabled: false,
 	sandboxEnabled: false,
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 60,
