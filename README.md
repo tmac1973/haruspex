@@ -32,6 +32,9 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 - **Open in shell** — If an answer ends with "run this command", press the `>_` button to open the whole conversation in a new Shell tab, where the commands become buttons you can run.
 - **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](#remote-access))
 - **Email (off by default, read-only)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. It can never send. ([details](#email-integration))
+- **Calendar and contacts (off by default, read-only)** — Connect a CalDAV/CardDAV account (Nextcloud, Fastmail, iCloud, Radicale, Baikal, Synology) and ask what is on this week or how to reach someone. ([details](#calendar-and-contacts))
+- **MCP integrations (off by default)** — Connect other services through MCP servers. Haruspex installs and runs them itself, so you never need a terminal. ([details](#mcp-integrations))
+- **Screen capture (off by default)** — Ask about what is on your screen. There is also a camera button in the chat box for attaching a screenshot yourself. ([details](#screen-capture))
 - **Conversations are saved** — Chat history lives in a local SQLite database and survives restarts.
 
 ### Shell
@@ -280,6 +283,44 @@ Microsoft 365 and Outlook.com are **not** supported. Microsoft turned off basic 
 
 All three are hidden from the model completely unless an account is switched on. Credentials are stored in the same local settings file as your other secrets (no system keyring). Messages are fetched with `BODY.PEEK[]`, so reading one never marks it as read. There is no sending at all.
 
+## Calendar and contacts
+
+Haruspex can read your calendar and address book from a CalDAV/CardDAV server. It is **off by default** and **read-only** — it never creates, moves or deletes anything.
+
+Tested against Nextcloud, Fastmail, iCloud, Radicale, Baikal and Synology. Like email, it wants an **app password** rather than your login password.
+
+**Google Calendar and Google Contacts are not supported here.** Their endpoints require OAuth. Add them under MCP integrations instead.
+
+**Setup.** `Settings → Integrations → Calendar & Contacts`, click "Add an account", enter your address (`me@fastmail.com`) or your server URL, your username and app password, then click "Check". Check finds your calendars and address books and lists them. If your server does not answer discovery, you can enter the collection URL by hand.
+
+One account covers both. If your server offers only one of them, only that one's tools appear.
+
+**Tools.** `calendar_list_events`, `calendar_search`, `contacts_search`, `contacts_get`. The calendar tools default their date range, so you can just ask what is coming up. Contact photos are never downloaded.
+
+## MCP integrations
+
+[MCP](https://modelcontextprotocol.io) is a standard for connecting an assistant to other software. Haruspex can install and run MCP servers itself — it bundles the runtimes they need, so there is no terminal step.
+
+`Settings → Integrations → MCP` has three buttons:
+
+- **Add an integration** — pick from a built-in catalogue with guided setup (GitHub, Google Drive, Blender, Godot).
+- **Add a custom server** — a command on your machine that Haruspex starts and stops.
+- **Add a remote server** — an MCP server reachable over HTTP.
+
+Each server's tools stay off until you turn them on, and a tool that is not declared read-only asks before it runs. Servers speak the 2026-07-28 protocol. Blender and Godot bridge to the running application through its own addon; the Settings row tells you whether the app is actually attached.
+
+Traffic can go through your proxy per server (`Settings → Network` holds the proxy itself). Connections to your own machine never use it.
+
+`Settings → Logs → MCP` shows both sides of the conversation with each server.
+
+## Screen capture
+
+Ask about what is on your screen and Haruspex takes one screenshot, at that moment, and shows it to you as well as to the model. **It never watches your screen** — there is no timer, no interval and no background capture.
+
+The camera button in the chat box always works. `Settings → Screen` decides whether the *assistant* may take one when you ask it to; it is off by default.
+
+On Linux the screenshot goes through your desktop's own portal, so your desktop draws the confirmation and picks the screen. On macOS you need to grant Screen Recording in System Settings — without it macOS hands back a desktop with no windows in it, and Haruspex says so rather than describing an empty screen.
+
 ## Search providers
 
 | Provider         | Setup                        | Notes                                                                                                                                                                                                        |
@@ -452,6 +493,9 @@ Use `make reset-data` to wipe this directory and start fresh (Linux/macOS).
 | PDF creation               | [printpdf](https://crates.io/crates/printpdf) (pure Rust)                                                                                                                       |
 | docx / xlsx                | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes |
 | odt / ods / odp / pptx     | Hand-written zip+XML following the OASIS OpenDocument and OOXML specs                                                                                                           |
+| MCP client                 | [rmcp](https://crates.io/crates/rmcp) (stdio and streamable HTTP), with [node](https://nodejs.org/) and [uv](https://github.com/astral-sh/uv) bundled to run servers |
+| Calendar / contacts        | CalDAV and CardDAV over [quick-xml](https://crates.io/crates/quick-xml), with [rrule](https://crates.io/crates/rrule) for recurrence |
+| Screen capture             | XDG desktop portal on Linux ([ashpd](https://crates.io/crates/ashpd)), [xcap](https://crates.io/crates/xcap) on macOS and Windows |
 | Database                   | SQLite (via rusqlite)                                                                                                                                                           |
 | Web search                 | Rotation of free engines, Brave Search API, SearXNG, or a local Chrome/Chromium                                                                                                 |
 

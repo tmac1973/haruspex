@@ -649,6 +649,47 @@ mod tests {
         assert!(parse_multistatus("<html><body>hello</body></html>").is_empty());
     }
 
+    /// An unreachable server answers, rather than hanging the tool call that
+    /// is waiting on it.
+    ///
+    /// Port 1 on loopback: nothing listens there, the connection is refused
+    /// immediately, and no packet leaves the machine.
+    #[tokio::test]
+    async fn an_unreachable_server_fails_readably_instead_of_hanging() {
+        let account = DavAccount {
+            id: "x".into(),
+            label: "Unreachable".into(),
+            enabled: true,
+            address: "http://127.0.0.1:1".into(),
+            username: "u".into(),
+            password: "p".into(),
+            calendar_url: None,
+            contacts_url: None,
+            has_calendars: None,
+            has_contacts: None,
+        };
+        let client = DavClient::new(&account, None).expect("a client");
+
+        let error = tokio::time::timeout(
+            Duration::from_secs(10),
+            client.propfind("http://127.0.0.1:1/", "0", PRINCIPAL_BODY),
+        )
+        .await
+        .expect("the request returns rather than hanging")
+        .expect_err("nothing is listening");
+
+        // Worded for someone who has just typed an address into a settings
+        // form, not for someone reading a stack trace.
+        assert!(
+            error.contains("127.0.0.1:1"),
+            "names what it tried: {error}"
+        );
+        assert!(
+            error.contains("could not connect") || error.contains("did not respond"),
+            "got {error}"
+        );
+    }
+
     #[test]
     fn an_auth_failure_names_the_app_password_because_that_is_usually_it() {
         let message = describe_status("https://dav.example.com/", 401, "");

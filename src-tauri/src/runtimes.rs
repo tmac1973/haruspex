@@ -97,6 +97,12 @@ fn binary_in(dir: &Path, stem: &str) -> Option<PathBuf> {
 ///
 /// `node-modules` lives in the same directory and shares the `node-` prefix, so
 /// directories are skipped rather than matched.
+///
+/// Gated to match its only callers. A release build stages every sidecar beside
+/// the executable, so reaching back into the source tree there would mean
+/// reading a developer's checkout on a user's machine — and without the gate it
+/// is dead code that warns on every release build.
+#[cfg(any(debug_assertions, test))]
 fn binary_in_source_tree(binaries_dir: &Path, stem: &str) -> Option<PathBuf> {
     let prefix = format!("{stem}-");
     let mut matches: Vec<PathBuf> = std::fs::read_dir(binaries_dir)
