@@ -35,6 +35,17 @@ export default defineConfig({
 			ignored: ['**/src-tauri/**']
 		}
 	},
+	// Pyodide is only imported by python.worker.ts, which Vite reaches through
+	// `new Worker(new URL(...))` — a reference its dependency scanner does not
+	// follow. So pyodide is missing from the startup pre-bundle, and the first
+	// time a model runs Python, Vite discovers it, optimizes it and issues a
+	// full-page reload that throws away whatever the user was looking at.
+	// Naming it here gets it pre-bundled up front instead. Safe to pre-bundle
+	// because the worker passes an explicit `indexURL`, so pyodide's runtime
+	// assets resolve against the origin rather than the module's own location.
+	optimizeDeps: {
+		include: ['pyodide']
+	},
 	// The Python sandbox worker (python.worker.ts) loads pyodide, which Rollup
 	// splits into multiple chunks. Vite's default worker format is `iife`,
 	// which can't represent a multi-chunk bundle and fails the build with
