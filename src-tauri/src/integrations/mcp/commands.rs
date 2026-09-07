@@ -18,7 +18,30 @@ use super::server_config::McpServerConfig;
 use super::types::{McpCallOutcome, McpConnectionInfo, McpToolDescriptor};
 use crate::proxy::ProxyConfig;
 use crate::sidecar_utils::SidecarStatus;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
+
+/// Carries the id of a server whose toolset changed under it.
+pub const TOOLS_CHANGED_EVENT: &str = "mcp-tools-changed";
+
+/// Bridge the supervisor's tool-change notifications to the frontend.
+///
+/// Returns the sender to hand to [`McpSupervisor::on_tools_changed`]. The
+/// draining task lives as long as the app; it ends when the supervisor and
+/// every session holding a clone of the sender are dropped.
+///
+/// Only the id crosses. Re-listing on this side would race the frontend's own
+/// registry — which is the thing that actually decides what the model sees —
+/// so the frontend asks for the new list when it is ready to install it.
+pub fn spawn_tools_changed_bridge(app: AppHandle) -> tokio::sync::mpsc::UnboundedSender<String> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    tauri::async_runtime::spawn(async move {
+        while let Some(id) = rx.recv().await {
+            log::info!("mcp: server {id} says its tool list changed");
+            let _ = app.emit(TOOLS_CHANGED_EVENT, id);
+        }
+    });
+    tx
+}
 
 /// Spawn a server and negotiate with it. Resolves once it is `Ready` or has
 /// failed; a slow legacy handshake can take a few seconds.

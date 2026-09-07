@@ -8,6 +8,7 @@ import {
 	startConfiguredMcpServers,
 	mcpState,
 	probeCompanion,
+	refreshMcpTools,
 	removeMcpServer,
 	startEnabledMcpServers,
 	startMcpServer,
@@ -16,6 +17,7 @@ import {
 	type McpRuntimeState
 } from './mcpServers.svelte';
 import { registeredMcpToolNames } from '$lib/agent/tools/mcp';
+import { mcpDefaultTools } from '$lib/agent/tools/mcp-names';
 import { setMcpServers } from './settings';
 import { isAlwaysAllowed, rememberAlwaysAllow } from './mcpApproval.svelte';
 
@@ -203,6 +205,89 @@ describe('a backend that outlived the frontend', () => {
 
 		await startMcpServer(config(), entry());
 		expect(mcpState(ID).status.type).toBe('Error');
+	});
+});
+
+describe('a server that changes its toolset while running', () => {
+	// Godot gates 27 of its 29 toolsets off and reveals one when the model
+	// calls godot_enable_toolset. Without this the newly exposed tools stay
+	// invisible until the server is restarted.
+	const MORE: McpToolDescriptor[] = [
+		...TOOLS,
+		{
+			name: 'create_node',
+			title: null,
+			description: 'makes a node',
+			inputSchema: { type: 'object', properties: {} },
+			annotations: null
+		}
+	];
+
+	it('picks up tools that appeared after it started', async () => {
+		mockHappyStart();
+		await startMcpServer(config(), entry());
+		expect(registeredMcpToolNames()).not.toContain('mcp__srv-1__create_node');
+
+		invoke.mockImplementation((cmd: string) =>
+			cmd === IPC.mcp_list_tools ? Promise.resolve(MORE) : Promise.resolve(null)
+		);
+		await refreshMcpTools(ID);
+
+		expect(mcpState(ID).tools).toHaveLength(2);
+		expect(registeredMcpToolNames()).toContain('mcp__srv-1__create_node');
+	});
+
+	it('keeps the catalog defaults, so a new tool is not silently enabled', async () => {
+		// The defaults were recorded when the server first registered; the
+		// notification carries nothing but an id. Re-registering with an empty
+		// default list would leave every newly revealed tool resolving as
+		// disabled — or, worse, change what the user had chosen.
+		mockHappyStart();
+		await startMcpServer(config(), entry());
+		expect(mcpDefaultTools(ID)).toEqual(['search']);
+
+		invoke.mockImplementation((cmd: string) =>
+			cmd === IPC.mcp_list_tools ? Promise.resolve(MORE) : Promise.resolve(null)
+		);
+		await refreshMcpTools(ID);
+
+		expect(mcpDefaultTools(ID)).toEqual(['search']);
+	});
+
+	it('withdraws tools that went away', async () => {
+		// godot_disable_toolset shrinks the surface. A refresh that only ever
+		// added would leave the model holding schemas it can no longer call.
+		mockHappyStart();
+		await startMcpServer(config(), entry());
+		expect(registeredMcpToolNames()).toContain('mcp__srv-1__search');
+
+		invoke.mockImplementation((cmd: string) =>
+			cmd === IPC.mcp_list_tools ? Promise.resolve([]) : Promise.resolve(null)
+		);
+		await refreshMcpTools(ID);
+
+		expect(registeredMcpToolNames()).not.toContain('mcp__srv-1__search');
+	});
+
+	it('does nothing for a server it has never started', async () => {
+		// The notification can outlive the server: re-registering here would
+		// resurrect tools for something that is gone.
+		invoke.mockClear();
+		await refreshMcpTools('never-started');
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it('leaves the row alone when the refresh fails', async () => {
+		// The server went away mid-refresh. Its own stop path withdraws the
+		// tools; an error here would mark a healthy row broken.
+		mockHappyStart();
+		await startMcpServer(config(), entry());
+
+		invoke.mockRejectedValue('server is not connected');
+		await refreshMcpTools(ID);
+
+		expect(mcpState(ID).status.type).toBe('Ready');
+		expect(mcpState(ID).error).toBeNull();
 	});
 });
 

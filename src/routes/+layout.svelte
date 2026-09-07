@@ -61,7 +61,10 @@
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getActiveConversation, sendMessage } from '$lib/stores/chat.svelte';
 	import { getActiveShellSession } from '$lib/stores/shell.svelte';
-	import { startConfiguredMcpServers } from '$lib/stores/mcpServers.svelte';
+	import {
+		listenForMcpToolChanges,
+		startConfiguredMcpServers
+	} from '$lib/stores/mcpServers.svelte';
 
 	let { children } = $props();
 	// Log Viewer visibility lives in the logViewer store (not local state)
@@ -102,6 +105,13 @@
 	// while several child processes negotiate.
 	onMount(() => {
 		void startConfiguredMcpServers();
+		// A running server can change what it publishes — Godot reveals a whole
+		// toolset when the model enables one — and the registry has to hear
+		// about it or the new tools stay invisible until a restart.
+		const mcpToolsChanged = listenForMcpToolChanges();
+		// The root layout lives as long as the app, but a dev-server reload
+		// remounts it, and a listener per reload means one refresh per reload.
+		return () => void mcpToolsChanged.then((unlisten) => unlisten());
 	});
 
 	/**
