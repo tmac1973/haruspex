@@ -159,7 +159,11 @@ export interface ToolRegistration {
 		| 'coding'
 		| 'memory'
 		| 'memory-write'
-		| 'interaction';
+		| 'interaction'
+		| 'mcp'
+		| 'calendar'
+		| 'contacts'
+		| 'desktop';
 	requiresVision?: boolean;
 }
 

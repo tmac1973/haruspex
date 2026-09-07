@@ -6,13 +6,14 @@
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
 	import { createCopyAction } from '$lib/utils/clipboard.svelte';
+	import { getSettings } from '$lib/stores/settings';
 	import type { CombinedSearchStats } from '$lib/ipc/gen/CombinedSearchStats';
 	import type { EngineLifetimeStats } from '$lib/ipc/gen/EngineLifetimeStats';
 	import type { EngineSessionStats } from '$lib/ipc/gen/EngineSessionStats';
 	import type { GlobalCounters } from '$lib/ipc/gen/GlobalCounters';
 	import type { SearchFailureKind } from '$lib/ipc/gen/SearchFailureKind';
 
-	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'crashes' | 'debug' | 'tools' | 'stats';
+	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats';
 
 	interface Props {
 		open: boolean;
@@ -100,9 +101,13 @@
 	const availableCategories = $derived(distinctPrefixField(3).sort());
 
 	const filteredLines = $derived.by(() => {
-		if (!filtersActive) return logLines;
+		const base =
+			activeTab === 'mcp' && mcpAppOnly
+				? logLines.filter((l) => l.startsWith(MCP_APP_PREFIX))
+				: logLines;
+		if (!filtersActive) return base;
 		const needle = filterText.trim().toLowerCase();
-		return logLines.filter((l) => {
+		return base.filter((l) => {
 			if (turnFilter || categoryFilter) {
 				const m = l.match(PREFIX_RE);
 				if (turnFilter && m?.[2] !== turnFilter) return false;
@@ -169,14 +174,37 @@
 		return iso.slice(t + 1, z > t ? z : undefined);
 	}
 
-	const tabCommands: Record<Exclude<LogTab, 'crashes' | 'debug' | 'tools' | 'stats'>, string> = {
+	// MCP servers are many rather than one, so their logs are fetched per
+	// selected server rather than from a fixed command like the sidecars.
+	const mcpServers = $derived(getSettings().integrations.mcp.servers);
+	let mcpServerId = $state<string | null>(null);
+	/**
+	 * Hide the server's own output and show only what Haruspex did.
+	 *
+	 * Some servers print a line per request whatever you ask of them — GitHub's
+	 * logs "client log level set" on every call — which buries the handful of
+	 * lines that answer why something went wrong.
+	 */
+	let mcpAppOnly = $state(false);
+	const MCP_APP_PREFIX = '[haruspex]';
+	const selectedMcpServer = $derived(
+		mcpServers.find((s) => s.id === mcpServerId) ?? mcpServers[0] ?? null
+	);
+
+	const tabCommands: Record<
+		Exclude<LogTab, 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats'>,
+		string
+	> = {
 		app: IPC.get_app_logs,
 		llm: IPC.get_server_logs,
 		tts: IPC.get_tts_logs,
 		whisper: IPC.get_whisper_logs
 	};
 
-	const clearCommands: Record<Exclude<LogTab, 'crashes' | 'debug' | 'tools' | 'stats'>, string> = {
+	const clearCommands: Record<
+		Exclude<LogTab, 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats'>,
+		string
+	> = {
 		app: IPC.clear_app_logs,
 		llm: IPC.clear_server_logs,
 		tts: IPC.clear_tts_logs,
@@ -188,6 +216,7 @@
 		llm: 'LLM',
 		tts: 'TTS',
 		whisper: 'Whisper',
+		mcp: 'MCP',
 		crashes: 'Crashes',
 		debug: 'Debug',
 		tools: 'Tools',
@@ -208,6 +237,13 @@
 			} else if (activeTab === 'debug') {
 				// Frontend-side ring buffer; no Tauri round-trip needed.
 				logLines = getDebugLogs();
+			} else if (activeTab === 'mcp') {
+				// A server that is stopped, or that never printed anything, is a
+				// normal state rather than a failure — say so instead of showing
+				// an empty pane.
+				logLines = selectedMcpServer
+					? await invoke<string[]>(IPC.mcp_server_logs, { id: selectedMcpServer.id })
+					: [];
 			} else if (activeTab === 'tools') {
 				// Same buffer, narrowed to tool start/end lines so you can
 				// see exactly what arguments the model passed to each tool
@@ -373,6 +409,11 @@
 				// empties them both.
 				clearDebugLogs();
 				logLines = [];
+			} else if (activeTab === 'mcp') {
+				if (selectedMcpServer) {
+					await invoke(IPC.mcp_clear_server_logs, { id: selectedMcpServer.id });
+				}
+				logLines = [];
 			} else {
 				await invoke(clearCommands[activeTab]);
 				logLines = [];
@@ -408,7 +449,7 @@
 		<div class="modal" role="dialog" tabindex="-1" onkeydown={handleKeydown}>
 			<div class="modal-header">
 				<div class="tabs">
-					{#each ['app', 'llm', 'tts', 'whisper', 'crashes', 'debug', 'tools', 'stats'] as const as tab (tab)}
+					{#each ['app', 'llm', 'tts', 'whisper', 'mcp', 'crashes', 'debug', 'tools', 'stats'] as const as tab (tab)}
 						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
 							{tabLabels[tab]}
 						</button>
@@ -425,6 +466,16 @@
 							{humanReadable ? 'Pretty' : 'Raw'}
 						</button>
 					{/if}
+					{#if activeTab === 'mcp'}
+						<button
+							class="toggle-btn"
+							class:active={mcpAppOnly}
+							onclick={() => (mcpAppOnly = !mcpAppOnly)}
+							title="Show only the lines Haruspex wrote, hiding the server's own output"
+						>
+							Haruspex only
+						</button>
+					{/if}
 					<button
 						class="copy-btn"
 						onclick={clearCurrentLog}
@@ -438,6 +489,21 @@
 							{clearState === 'cleared' ? 'Cleared' : 'Clear'}
 						{/if}
 					</button>
+					{#if activeTab === 'mcp' && mcpServers.length > 1}
+						<select
+							class="mcp-picker"
+							value={selectedMcpServer?.id ?? ''}
+							onchange={(e) => {
+								mcpServerId = e.currentTarget.value;
+								logLines = [];
+								void fetchLogs();
+							}}
+						>
+							{#each mcpServers as server (server.id)}
+								<option value={server.id}>{server.label}</option>
+							{/each}
+						</select>
+					{/if}
 					{#if activeTab !== 'stats'}
 						<button
 							class="copy-btn"
@@ -681,6 +747,14 @@
 		flex-shrink: 0;
 	}
 
+	.mcp-picker {
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 5px 8px;
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+	}
 	.tabs {
 		display: flex;
 		gap: 4px;

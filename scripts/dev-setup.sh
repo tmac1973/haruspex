@@ -3,6 +3,7 @@
 # Downloads and builds all sidecar binaries and models needed for dev.
 #
 # Usage: ./scripts/dev-setup.sh [--skip-models] [--skip-build] [--skip-pyodide]
+#                               [--skip-runtimes]
 
 set -e
 
@@ -17,12 +18,14 @@ TTS_CACHE="$HOME/.cache/k"
 SKIP_MODELS=false
 SKIP_BUILD=false
 SKIP_PYODIDE=false
+SKIP_RUNTIMES=false
 
 for arg in "$@"; do
     case $arg in
         --skip-models) SKIP_MODELS=true ;;
         --skip-build) SKIP_BUILD=true ;;
         --skip-pyodide) SKIP_PYODIDE=true ;;
+        --skip-runtimes) SKIP_RUNTIMES=true ;;
     esac
 done
 
@@ -77,6 +80,17 @@ echo
 # and pyflakes errors back to the model in the same tool result.
 "$SCRIPT_DIR/fetch-ruff.sh" --target "$TARGET_TRIPLE"
 echo
+
+# ---- Download Node/npm and uv (MCP server runtimes) ----
+# Installing and launching npm- and PyPI-published MCP servers without asking
+# the user to install anything. Roughly 190 MB per platform, so it gets a skip
+# flag like Pyodide does; skipping it only disables MCP servers.
+if [ "$SKIP_RUNTIMES" = false ]; then
+    "$SCRIPT_DIR/fetch-node.sh" --target "$TARGET_TRIPLE"
+    echo
+    "$SCRIPT_DIR/fetch-uv.sh" --target "$TARGET_TRIPLE"
+    echo
+fi
 
 # ---- Download Pyodide runtime (Python sandbox) ----
 # Phase 11 — needed by the in-browser Python code-execution tool.

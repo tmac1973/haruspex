@@ -6,8 +6,14 @@ screen capture and CalDAV/CardDAV. See [`overview.md`](./overview.md) for the
 project definition and the full Decisions appendix.
 
 **Status:** Locked 2026-09-03 · revised 2026-09-05 (clipboard, active-window and
-global-hotkey phases cut; companion-app catalog entries added). Not yet
-implemented.
+global-hotkey phases cut; companion-app catalog entries added) · **all twelve
+phases implemented 2026-09-05 → 2026-09-07**, each on its own stacked branch.
+
+What was actually verified, and on what machine, is in
+[`verification.md`](./verification.md). Read it before trusting a row in the
+phase map: the code is written and the gate is green everywhere, but macOS and
+Windows have never compiled the screen-capture path, and the whole DAV stack has
+only ever spoken to fixtures.
 
 ## Phase map (strictly dependency-ordered)
 
@@ -38,6 +44,31 @@ everything in track A, so it starts first. Phases 7 and 8 are both leaves off th
 settings UI and are independent of each other. Phase 9 is self-contained — it
 creates the `desktop/` module and its Settings section rather than inheriting
 them, since the phases that used to do that are cut.
+
+## What shipped differently from the plan
+
+Deviations are recorded here rather than quietly absorbed, because each was a
+judgement call someone may want to revisit.
+
+- **Both protocol eras kept** (phase 3), after the decision was reopened on
+  2026-09-05 — see the dated rationale in `overview.md`. The cost turned out to
+  be near zero: rmcp 3.2's `ClientLifecycleMode::Auto` drives the probe and the
+  fallback itself, so supporting the handshake era added a config value rather
+  than a second code path.
+- **No DNS SRV lookup in DAV discovery** (phase 10). RFC 6764 puts it first;
+  every server this targets answers `.well-known`, and the manual URL override
+  is a shorter path for the one case SRV uniquely covers than a resolver is.
+- **macOS and Windows capture goes through `xcap`** (phase 9), not hand-written
+  ScreenCaptureKit and Win32. Its backends are those same APIs. Deliberately not
+  used on Linux, where it drags in pipewire and libwayshot for no gain over the
+  portal.
+- **Screen captures ride the existing image-attachment path**, not
+  `image_cache` (phase 9) — so the model and the user see the same image.
+- **vCard is parsed directly**, not through the `ical` crate already in the tree
+  (phase 11). That crate rejects vCard 2.1's bare type parameters and raises the
+  error for the whole card, so the contact vanishes.
+- **Downscaling holds a pixel budget**, not a long-edge cap (phase 9). Found by
+  the one live multi-monitor capture — see `verification.md`.
 
 ## Locked decisions (full list in `overview.md`)
 

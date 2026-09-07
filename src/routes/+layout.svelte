@@ -5,6 +5,7 @@
 	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
 	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
 	import CommandApprovalModal from '$lib/components/CommandApprovalModal.svelte';
+	import McpApprovalModal from '$lib/components/McpApprovalModal.svelte';
 	import MemoryApprovalModal from '$lib/components/MemoryApprovalModal.svelte';
 	import UserQuestionModal from '$lib/components/UserQuestionModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
@@ -60,6 +61,7 @@
 	import { getActiveTab } from '$lib/stores/activeTab.svelte';
 	import { getActiveConversation, sendMessage } from '$lib/stores/chat.svelte';
 	import { getActiveShellSession } from '$lib/stores/shell.svelte';
+	import { startConfiguredMcpServers } from '$lib/stores/mcpServers.svelte';
 
 	let { children } = $props();
 	// Log Viewer visibility lives in the logViewer store (not local state)
@@ -93,6 +95,14 @@
 	// markdown (sanitization strips inline onclick). Installed in every
 	// window — the detached shell window renders markdown too.
 	onMount(() => installMarkdownActions());
+
+	// Bring up the user's MCP servers in the background. Their tools only exist
+	// in the registry while a server is running, so nothing starting them meant
+	// the model never saw them; not awaited, so the window is not held closed
+	// while several child processes negotiate.
+	onMount(() => {
+		void startConfiguredMcpServers();
+	});
 
 	/**
 	 * Intercept clicks on external links and open them in the system browser
@@ -595,6 +605,7 @@
 	<FileConflictModal />
 	<SandboxApprovalModal />
 	<CommandApprovalModal />
+	<McpApprovalModal />
 	<MemoryApprovalModal />
 	<UserQuestionModal />
 {/if}

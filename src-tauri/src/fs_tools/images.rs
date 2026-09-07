@@ -346,14 +346,30 @@ pub(super) fn load_markdown_images(
 /// path) and `read_dropped_image` (absolute path from a native file drop).
 fn encode_resized_jpeg_data_url(path: &Path) -> Result<String, String> {
     let img = image::open(path).map_err(|e| format!("Failed to decode image: {}", e))?;
+    encode_jpeg_data_url(img, MAX_IMAGE_DIMENSION)
+}
 
-    // Resize if larger than MAX_IMAGE_DIMENSION on the longest side
+/// Downscale an already-decoded image to `max_dimension` on its longest side
+/// and encode it as a JPEG `data:` URL.
+///
+/// Split out from [`encode_resized_jpeg_data_url`] so screen capture, which
+/// produces its pixels in memory rather than on disk, uses one downscale and
+/// encode policy rather than a second opinion about it. The cap is a parameter
+/// because a screenshot and a photograph do not want the same one — see
+/// `desktop::MAX_SCREENSHOT_DIMENSION`.
+pub(crate) fn encode_jpeg_data_url(
+    img: image::DynamicImage,
+    max_dimension: u32,
+) -> Result<String, String> {
     let (w, h) = (img.width(), img.height());
     let max_side = w.max(h);
-    let resized = if max_side > MAX_IMAGE_DIMENSION {
-        let scale = MAX_IMAGE_DIMENSION as f32 / max_side as f32;
-        let new_w = (w as f32 * scale) as u32;
-        let new_h = (h as f32 * scale) as u32;
+    let resized = if max_side > max_dimension {
+        let scale = max_dimension as f32 / max_side as f32;
+        // `.max(1)` because a very long, very thin image (a 4000x1 strip of a
+        // progress bar) would otherwise scale its short side to zero, and
+        // `resize` panics on a zero dimension.
+        let new_w = ((w as f32 * scale) as u32).max(1);
+        let new_h = ((h as f32 * scale) as u32).max(1);
         img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3)
     } else {
         img

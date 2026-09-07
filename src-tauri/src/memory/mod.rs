@@ -36,13 +36,15 @@ pub fn encode_embedding(v: &[f32]) -> Vec<u8> {
 /// blob would otherwise decode to a shorter vector and silently score against
 /// everything as if it were a different fact.
 pub fn decode_embedding(bytes: &[u8]) -> Option<Vec<f32>> {
-    if bytes.is_empty() || bytes.len() % 4 != 0 {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return None;
     }
     Some(
         bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| f32::from_le_bytes(*c))
             .collect(),
     )
 }

@@ -11,15 +11,14 @@
 	import {
 		getSettings,
 		setEmailAccounts,
+		snapshot,
 		type EmailAccount,
 		type EmailProviderId
 	} from '$lib/stores/settings';
 	import type { EmailProviderPreset } from '$lib/ipc/gen/EmailProviderPreset';
 	import EmailAccountForm from '$lib/components/EmailAccountForm.svelte';
 
-	let emailAccounts = $state<EmailAccount[]>(
-		structuredClone(getSettings().integrations.email.accounts)
-	);
+	let emailAccounts = $state<EmailAccount[]>(snapshot(getSettings().integrations.email.accounts));
 	let emailPresets = $state<EmailProviderPreset[]>([]);
 
 	async function loadEmailPresets() {

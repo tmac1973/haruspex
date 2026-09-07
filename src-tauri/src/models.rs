@@ -788,6 +788,8 @@ pub fn recommended_context_for(model_id: &str, vram_bytes: u64, opts: FitOptions
 pub struct ModelManager {
     models_dir: PathBuf,
     cancel_flag: Arc<Mutex<bool>>,
+    /// The app's proxy config, set by the download command. See `set_proxy`.
+    proxy: Arc<Mutex<Option<crate::proxy::ProxyConfig>>>,
 }
 
 /// Total expected size for a (possibly resumed) download. When resuming, the
@@ -823,6 +825,7 @@ impl ModelManager {
         Self {
             models_dir,
             cancel_flag: Arc::new(Mutex::new(false)),
+            proxy: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -951,7 +954,15 @@ impl ModelManager {
 
         info!("{}: resume from {} bytes", stage_label, existing_size);
 
-        let client = reqwest::Client::new();
+        // Built through the app's proxy config like every other outbound
+        // client. A user who routes their traffic through a proxy did not mean
+        // "except for the multi-gigabyte downloads".
+        let client = crate::proxy::apply_proxy(
+            reqwest::Client::builder(),
+            self.proxy.lock().await.as_ref(),
+        )?
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
         let mut request = client.get(url);
         if existing_size > 0 {
             request = request.header("Range", format!("bytes={}-", existing_size));
@@ -1099,6 +1110,15 @@ impl ModelManager {
 
         info!("{} download complete: {}", stage_label, filename);
         Ok(final_path)
+    }
+
+    /// Record the proxy config to use for the next download.
+    ///
+    /// Held on the manager rather than threaded through four call layers: the
+    /// download helpers are already six parameters deep, and the proxy is a
+    /// property of the app rather than of any one file being fetched.
+    pub async fn set_proxy(&self, proxy: Option<crate::proxy::ProxyConfig>) {
+        *self.proxy.lock().await = proxy;
     }
 
     pub async fn download_model(&self, app: &AppHandle, model_id: &str) -> Result<PathBuf, String> {
@@ -1391,7 +1411,9 @@ pub async fn download_model(
     app: AppHandle,
     state: tauri::State<'_, ModelManager>,
     model_id: String,
+    proxy: Option<crate::proxy::ProxyConfig>,
 ) -> Result<String, String> {
+    state.set_proxy(proxy).await;
     let path = state.download_model(&app, &model_id).await?;
     Ok(path.to_string_lossy().to_string())
 }

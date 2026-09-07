@@ -1,6 +1,6 @@
-//! Proxy bypass-list parsing and apply_proxy() — both consumed by
-//! every outbound HTTP client in this module so they live together
-//! at the leaf.
+//! Proxy Bypass List parsing (Settings -> Network) and apply_proxy() — both
+//! consumed by every outbound HTTP client in this module, so they live
+//! together at the leaf.
 
 use super::ProxyConfig;
 use std::net::IpAddr;
@@ -29,10 +29,33 @@ pub(super) fn parse_bypass_list(raw: &str) -> Vec<BypassEntry> {
         .collect()
 }
 
+/// Loopback is never proxied, whatever the Proxy Bypass List says.
+///
+/// Nobody routes `127.0.0.1` through a corporate proxy, and doing it produces a
+/// connection failure that reads as "the local server is broken" rather than as
+/// "the proxy rejected it". Standard `no_proxy` conventions have carved out
+/// loopback for decades; this makes the app match them.
+///
+/// Deliberately loopback only. Private ranges like `10.0.0.0/8` are a judgement
+/// call — some networks genuinely do proxy internal traffic — so those stay in
+/// the user's own Proxy Bypass List rather than being assumed here.
+fn is_loopback(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") || host.to_lowercase().ends_with(".localhost") {
+        return true;
+    }
+    host.trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback())
+}
+
 pub(super) fn should_bypass(target: &reqwest::Url, entries: &[BypassEntry]) -> bool {
     let Some(host) = target.host_str() else {
         return false;
     };
+    if is_loopback(host) {
+        return true;
+    }
     // url::Url returns IPv6 hosts wrapped in brackets (`[::1]`); strip
     // them before parsing so literal IPv6 destinations match.
     let host_bare = host.trim_start_matches('[').trim_end_matches(']');
@@ -53,10 +76,46 @@ pub(super) fn should_bypass(target: &reqwest::Url, entries: &[BypassEntry]) -> b
 /// Apply the user's proxy config to a reqwest ClientBuilder. Returns the
 /// builder unchanged when the proxy is disabled or the URL is blank; bails
 /// with an error if the URL is set but unparseable.
+/// Whether a particular client should use the app's proxy.
+///
+/// Most callers want [`ProxyUse::Auto`]. The other two exist for MCP servers,
+/// where the address alone cannot always decide: a public host the user wants
+/// reached direct, or an internal host that does need the proxy even though the
+/// bypass rules would skip it.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS,
+)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum ProxyUse {
+    /// Follow the app's proxy setting, including the loopback carve-out and
+    /// the Proxy Bypass List (Settings -> Network).
+    #[default]
+    Auto,
+    /// Never use the proxy for this client.
+    Never,
+    /// Always use it, ignoring the Proxy Bypass List (Settings -> Network).
+    /// Loopback is still reached directly — that carve-out is not what the
+    /// override is for.
+    Always,
+}
+
 pub(crate) fn apply_proxy(
     builder: reqwest::ClientBuilder,
     proxy: Option<&ProxyConfig>,
 ) -> Result<reqwest::ClientBuilder, String> {
+    apply_proxy_with(builder, proxy, ProxyUse::Auto)
+}
+
+/// [`apply_proxy`], with an explicit override.
+pub(crate) fn apply_proxy_with(
+    builder: reqwest::ClientBuilder,
+    proxy: Option<&ProxyConfig>,
+    mode: ProxyUse,
+) -> Result<reqwest::ClientBuilder, String> {
+    if mode == ProxyUse::Never {
+        return Ok(builder);
+    }
     let Some(cfg) = proxy else { return Ok(builder) };
     if cfg.mode != "manual" {
         return Ok(builder);
@@ -68,8 +127,14 @@ pub(crate) fn apply_proxy(
     let proxy_url = reqwest::Url::parse(trimmed)
         .map_err(|e| format!("Invalid proxy URL '{}': {}", trimmed, e))?;
     let bypass = parse_bypass_list(&cfg.bypass);
+    // "Always" overrides the Proxy Bypass List, but never the loopback
+    // carve-out: routing 127.0.0.1 through a proxy is not what anyone picks it
+    // for, and it is how a local server stops working.
+    let ignore_list = mode == ProxyUse::Always;
     let rp = reqwest::Proxy::custom(move |target| {
-        if should_bypass(target, &bypass) {
+        let bypassed = target.host_str().is_some_and(is_loopback)
+            || (!ignore_list && should_bypass(target, &bypass));
+        if bypassed {
             None
         } else {
             Some(proxy_url.clone())
@@ -134,6 +199,91 @@ mod tests {
     fn bypass_empty_list_never_matches() {
         let entries = bypass("");
         assert!(!should_bypass(&url("https://example.com/"), &entries));
+    }
+
+    #[test]
+    fn loopback_is_bypassed_without_being_asked_for() {
+        // A local MCP server on 127.0.0.1 routed through a corporate proxy
+        // fails, and reads as "the local server is broken" rather than as
+        // "the proxy rejected it".
+        let none = bypass("");
+        assert!(should_bypass(&url("http://127.0.0.1:9090/mcp"), &none));
+        assert!(should_bypass(&url("http://127.5.5.5/"), &none));
+        assert!(should_bypass(&url("http://[::1]:8000/"), &none));
+        assert!(should_bypass(&url("http://localhost:3000/"), &none));
+        assert!(should_bypass(&url("http://LocalHost/"), &none));
+        assert!(should_bypass(&url("http://api.localhost/"), &none));
+    }
+
+    #[test]
+    fn a_host_that_merely_resembles_localhost_is_not_loopback() {
+        let none = bypass("");
+        assert!(!should_bypass(
+            &url("https://localhost.example.com/"),
+            &none
+        ));
+        assert!(!should_bypass(&url("https://notlocalhost/"), &none));
+    }
+
+    #[test]
+    fn private_ranges_are_not_assumed_to_bypass() {
+        // Some networks genuinely proxy internal traffic, so 10/8 and friends
+        // stay a decision for the user's own bypass list.
+        let none = bypass("");
+        assert!(!should_bypass(&url("http://10.1.2.3/"), &none));
+        assert!(!should_bypass(&url("http://192.168.1.5/"), &none));
+        // ...and still work when the user does list them.
+        let listed = bypass("10.0.0.0/8");
+        assert!(should_bypass(&url("http://10.1.2.3/"), &listed));
+    }
+
+    #[test]
+    fn never_skips_the_proxy_even_when_one_is_configured() {
+        let cfg = ProxyConfig {
+            mode: "manual".to_string(),
+            url: "http://proxy.example:8080".to_string(),
+            bypass: String::new(),
+        };
+        // An unparseable URL would error under Auto; Never returns before the
+        // config is read at all, which is what proves it short-circuits.
+        let broken = ProxyConfig {
+            url: "not a url".to_string(),
+            ..cfg.clone()
+        };
+        assert!(
+            apply_proxy_with(reqwest::Client::builder(), Some(&broken), ProxyUse::Never).is_ok()
+        );
+        assert!(apply_proxy_with(reqwest::Client::builder(), Some(&cfg), ProxyUse::Never).is_ok());
+    }
+
+    #[test]
+    fn always_does_not_reach_past_the_loopback_carve_out() {
+        // A local server proxied is a local server broken.
+        assert!(should_bypass(&url("http://127.0.0.1:9876/"), &bypass("")));
+    }
+
+    #[test]
+    fn always_still_needs_a_usable_proxy_url() {
+        // "Always" overrides the bypass rules, not the absence of a proxy.
+        let cfg = ProxyConfig {
+            mode: "manual".to_string(),
+            url: "not a url".to_string(),
+            bypass: String::new(),
+        };
+        assert!(
+            apply_proxy_with(reqwest::Client::builder(), Some(&cfg), ProxyUse::Always).is_err()
+        );
+    }
+
+    #[test]
+    fn auto_is_what_the_plain_helper_does() {
+        let cfg = ProxyConfig {
+            mode: "manual".to_string(),
+            url: "http://proxy.example:8080".to_string(),
+            bypass: String::new(),
+        };
+        assert!(apply_proxy(reqwest::Client::builder(), Some(&cfg)).is_ok());
+        assert!(apply_proxy_with(reqwest::Client::builder(), Some(&cfg), ProxyUse::Auto).is_ok());
     }
 
     #[test]

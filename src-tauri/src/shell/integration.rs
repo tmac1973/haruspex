@@ -848,7 +848,7 @@ mod tests {
         let mut integ = Integration::new();
         let mut payload = b"\x1B]133;A".to_vec();
         // Way past MAX_OSC_PAYLOAD with no terminator.
-        payload.extend(std::iter::repeat(b'X').take(MAX_OSC_PAYLOAD + 100));
+        payload.extend(std::iter::repeat_n(b'X', MAX_OSC_PAYLOAD + 100));
         integ.ingest(&payload);
         // Now send a real marker.
         integ.ingest(b"\x1B]133;B\x07");

@@ -6,7 +6,7 @@ authors = ["Tim MacDonald <tbaxmacdonald@gmail.com>"]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/tmac1973/haruspex"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.88"
 
 [lib]
 name = "app_lib"
@@ -90,3 +90,36 @@ tauri-plugin-notification = "2.3.3"
 # thiserror plus the one platform backend. See src/power.rs.
 keepawake = { version = "0.6.1", default-features = false }
 fastembed = { version = "6.0.0", default-features = false, features = ["hf-hub", "hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
+rmcp = { version = "3.2.0", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+tar = "0.4.46"
+flate2 = "1.1.10"
+quick-xml = "0.42.0"
+ical = "0.11.0"
+rrule = "0.14.0"
+chrono = "0.4.45"
+chrono-tz = "0.10.4"
+
+# Screen capture (Phase 09), split by platform so no platform pays for
+# another's dependencies.
+#
+# Linux goes through the XDG desktop portal. ashpd is pure zbus, so it adds no
+# system library to the build, and the portal's own picker is not an obstacle
+# to work around: it IS the user-initiated guarantee, enforced by the compositor
+# rather than promised by us. xcb covers a bare X11 session with no portal
+# running — libxcb is already in the build environment for GTK/WebKit.
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "screenshot"] }
+xcb = "1.7"
+
+# macOS (CoreGraphics/objc2) and Windows (Win32 GDI) capture goes through xcap
+# rather than hand-written unsafe blocks for each. Deliberately not used on
+# Linux: there it pulls in pipewire and libwayshot, system dependencies the
+# portal path does not need and CI would have to install.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+xcap = "0.9"
+
+# macOS only: CGPreflightScreenCaptureAccess. Without the Screen Recording
+# grant macOS does not fail a capture, it returns the desktop picture with
+# every window missing — see desktop::external.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGWindow"] }

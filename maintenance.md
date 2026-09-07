@@ -26,7 +26,8 @@ haruspex/
 │       ├── fs_tools/        # File read/write tools (13 modules)
 │       ├── proxy/           # Web fetch/search backends (6 modules)
 │       ├── server/          # llama-server sidecar lifecycle
-│       ├── integrations/    # External services (currently: email/SMTP)
+│       ├── integrations/    # External services: email (IMAP), mcp/, dav/
+│       ├── desktop/         # Screen capture (portal on Linux, xcap elsewhere)
 │       ├── sidecar_utils.rs # Shared sidecar primitives
 │       ├── whisper.rs       # whisper-server sidecar
 │       ├── tts.rs           # koko sidecar
@@ -731,6 +732,73 @@ so old rows go quiet instead of being compared across embedding spaces.
 
 ---
 
+## 11d. Integrations: MCP, DAV, screen capture
+
+Plan: `plan/integrations-expansion/`, with the record of what was actually
+verified in `verification.md`.
+
+### Bundled runtimes
+
+`node` and `uv` ship as `externalBin` sidecars so a user never needs a terminal
+to install an MCP server. `runtimes.rs` resolves them; npm lives beside node in
+`src-tauri/binaries/node-modules/`.
+
+**The CI trap.** `tauri-build` validates every `externalBin` and every
+`bundle.resources` path *at compile time*, so a CI job that does not create stub
+files for them fails the whole Rust build with a message that does not obviously
+point at the missing file. Both `ci.yml` jobs create stubs for `node`, `uv` and
+`node-modules/`. Adding another bundled runtime means adding it there too.
+
+`libxcb1-dev` is a build dependency on Linux, for the X11 screen-capture
+fallback. It is in both workflows and in the README's per-distro lists.
+
+### MCP process lifecycle (`integrations/mcp/`)
+
+- `process.rs` owns spawn/stop and the registry of running servers.
+  **Nothing auto-restarts** — a server that crashes at startup would otherwise
+  spin, and the restart path is `stop` then `start`.
+- `orphans.rs` is the reason a crashed app does not leave children behind. Every
+  spawn is recorded to a small registry file with its pid *and its program*, and
+  the next launch sweeps it. The program check is load-bearing: pids are
+  recycled, and killing a recycled pid means killing something that is not ours.
+  `command_matches` is what makes that safe, and it is tested with a recycled-pid
+  case — do not "simplify" it to a bare pid check.
+- Backend outlives frontend during `make dev`, so a reload finds servers already
+  running. `start` adopts a server that is already `Ready` rather than erroring;
+  the adopt path probes status rather than matching on an error string.
+
+### DAV (`integrations/dav/`)
+
+`client.rs` is shared by CalDAV and CardDAV — the verbs and the multistatus
+shape are identical, and `discovery.rs` is written once and parameterised by
+`Protocol`. Two things worth knowing before editing:
+
+- **Match on the XML local name, never the prefix.** Servers bind `DAV:` to
+  `d:`, `D:` or a default namespace, and Nextcloud, Fastmail and iCloud all
+  choose differently.
+- **Text is accumulated across entity references, not taken from the first
+  event.** quick-xml reports `&amp;` as its own event, splitting character data
+  around it. Keeping only the first piece silently truncated every calendar at
+  its first "Bob & Alice sync". The reader therefore does **not** trim text;
+  values are trimmed once, whole, when the response closes.
+
+vCard is parsed in `vcard.rs` rather than through the `ical` crate, deliberately:
+that crate rejects vCard 2.1's bare type parameters (`TEL;CELL;VOICE:`) and
+raises the error for the whole card, so the contact vanishes.
+
+### Screen capture (`desktop/`)
+
+Never polled, and a test reads the module's own source — every platform file,
+including the ones the current build does not compile — and fails if a timer,
+interval or `spawn(` appears. If you need concurrency here, that test is the
+conversation to have first.
+
+Linux goes through the XDG portal on Wayland and X11 alike; the portal's picker
+is the user-initiated guarantee. macOS and Windows go through `xcap`, which is
+**not** used on Linux because there it pulls in pipewire and libwayshot.
+
+---
+
 ## 12. Conventions (the rules to internalize)
 
 - **Conventional Commits required** — release-please parses every commit
@@ -748,6 +816,15 @@ so old rows go quiet instead of being compared across embedding spaces.
   add `+server.ts` or `+page.server.ts`.
 - **No comments unless the WHY is non-obvious.** Identifier names already
   explain the WHAT.
+- **UI copy: one short sentence per section.** No exposition, no sales
+  language. Extra detail goes in a `title` tooltip. Name the settings path
+  ("Settings → Network"), and make sure the name matches what the UI actually
+  calls it.
+- **Never hand a `$state` proxy to a settings setter.** `structuredClone`
+  throws `DataCloneError` on a proxy, and a throw inside a Svelte template
+  aborts the render — the symptom is a settings panel that silently stops
+  navigating. `stores/settings.ts` snapshots on every write; use its exported
+  `snapshot()` in place of `structuredClone`.
 
 ---
 

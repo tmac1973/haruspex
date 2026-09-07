@@ -3,6 +3,7 @@ mod audio;
 mod clipboard;
 mod code_tools;
 mod db;
+mod desktop;
 mod env_util;
 mod feedback;
 mod fs_tools;
@@ -18,6 +19,7 @@ mod models;
 mod power;
 mod proxy;
 mod remote;
+mod runtimes;
 mod sandbox_fetch;
 mod sandbox_save;
 mod sandbox_sync;
@@ -32,6 +34,7 @@ mod whisper;
 use audio::AudioRecorder;
 use db::Database;
 use inference_queue::InferenceQueue;
+use integrations::mcp::{McpInstaller, McpSupervisor};
 use models::ModelManager;
 use power::PowerInhibitor;
 use proxy::stats::{SearchStats, StatSinkHandle};
@@ -89,6 +92,19 @@ pub fn run() {
                 fs_tools::init_pdfium(&resource_dir);
             }
 
+            // Reap MCP servers left running by a previous launch that never
+            // got to clean up (SIGKILL, a crash, a hard power-off). Must run
+            // before anything spawns, so a fresh pid is never mistaken for a
+            // stale one. See integrations::mcp::orphans.
+            integrations::mcp::orphans::sweep(app.handle());
+            // The supervisor holds the orphan-registry path rather than an
+            // AppHandle, which is what lets it be driven in tests; resolving it
+            // needs the handle, so it is managed here rather than in the
+            // builder chain.
+            app.manage(McpSupervisor::new(
+                integrations::mcp::orphans::registry_path(app.handle()).ok(),
+            ));
+
             // Backstop reclaim of inference slots whose holder window hung
             // without releasing or heartbeating.
             inference_queue::spawn_lease_sweeper(app.handle().clone());
@@ -123,9 +139,19 @@ pub fn run() {
             if let WindowEvent::Destroyed = event {
                 let queue = window.state::<InferenceQueue>();
                 queue.on_window_destroyed(window.app_handle(), window.label());
+                // Closing the window is one quit path; RunEvent::Exit below is
+                // the other, and neither covers the rest on its own. stop is
+                // idempotent, so running both is harmless. Spawned rather than
+                // blocked on: this handler runs on the event loop, and a stop
+                // can take seconds against a server that ignores its stdin.
+                let app = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    app.state::<McpSupervisor>().stop_all().await;
+                });
             }
         })
         .manage(LlamaServer::new())
+        .manage(McpInstaller::new())
         .manage(InferenceQueue::new())
         .manage(ProxyState::new())
         // Remote web chat's server: off until Settings turns it on.
@@ -279,6 +305,7 @@ pub fn run() {
             fs_tools::xlsx::fs_read_xlsx,
             fs_tools::images::fs_read_image,
             fs_tools::images::read_dropped_image,
+            desktop::screenshot::capture_screen,
             fs_tools::pdf_read::fs_read_pdf_bytes,
             fs_tools::docx::fs_write_docx,
             fs_tools::xlsx::fs_write_xlsx,
@@ -327,6 +354,31 @@ pub fn run() {
             clipboard::clipboard_read_primary,
             power::power_inhibit_acquire,
             power::power_inhibit_release,
+            integrations::mcp::commands::mcp_start_server,
+            integrations::mcp::commands::mcp_stop_server,
+            integrations::mcp::commands::mcp_server_status,
+            integrations::mcp::commands::mcp_connection_info,
+            integrations::mcp::commands::mcp_list_tools,
+            integrations::mcp::commands::mcp_call_tool,
+            integrations::mcp::commands::mcp_server_logs,
+            integrations::mcp::commands::mcp_clear_server_logs,
+            integrations::mcp::commands::mcp_catalog,
+            integrations::mcp::commands::mcp_install_server,
+            integrations::mcp::commands::mcp_cancel_install,
+            integrations::mcp::commands::mcp_uninstall_server,
+            integrations::mcp::commands::mcp_server_dir,
+            integrations::mcp::commands::mcp_spawn_config,
+            integrations::mcp::commands::mcp_connect_remote_server,
+            integrations::mcp::commands::mcp_probe_companion,
+            integrations::mcp::commands::mcp_companion_status,
+            integrations::mcp::commands::mcp_place_setup_file,
+            integrations::mcp::commands::mcp_run_setup_command,
+            runtimes::mcp_runtimes_available,
+            integrations::dav::commands::dav_discover_collections,
+            integrations::dav::commands::dav_search_contacts,
+            integrations::dav::commands::dav_get_contact,
+            integrations::dav::commands::dav_list_events,
+            integrations::dav::commands::dav_search_events,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -349,7 +401,12 @@ pub fn run() {
                 // inhibit when the window closed.
                 app.state::<PowerInhibitor>().shutdown();
                 shell_mgr.shutdown_all();
+                // MCP children are the ones most likely to outlive us: there
+                // can be several, and they are third-party programs that need
+                // not honour a closed stdin.
+                let mcp = app.state::<McpSupervisor>();
                 tauri::async_runtime::block_on(async {
+                    mcp.stop_all().await;
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;
                     let _ = tts.stop().await;

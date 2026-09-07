@@ -12,9 +12,14 @@ import './coding';
 import './memory';
 import './memoryWrite';
 import './user-question';
+import './mcp';
+import './calendar';
+import './contacts';
+import './screen';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel } from './registry';
+export { registerMcpTools, unregisterMcpServer } from './mcp';
 
 // Re-export types used by consumers
 export type { ToolExecOutput, PendingImage, ToolContext, Artifact, LintIssue } from './types';

@@ -2,7 +2,15 @@ import type { ToolDefinition } from '$lib/api';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from './types';
 import { toolResult, toolError } from './types';
 import { coerceArgsToSchema } from './coerce';
-import { hasEnabledEmailAccount, getSettings } from '$lib/stores/settings';
+import {
+	hasEnabledEmailAccount,
+	hasEnabledCalendarAccount,
+	hasEnabledContactsAccount,
+	getSettings
+} from '$lib/stores/settings';
+// The predicate, not the tool module — mcp.ts registers THROUGH this file, so
+// importing it here would be a cycle. Same reason as memoryActive() below.
+import { isMcpToolEnabled } from './mcp-names';
 // The predicate, not the tool module: memoryWrite.ts registers THROUGH this
 // file, so importing it here would be a cycle.
 import { memoryActive } from '$lib/stores/memory.svelte';
@@ -11,6 +19,15 @@ const tools = new Map<string, ToolRegistration>();
 
 export function registerTool(reg: ToolRegistration): void {
 	tools.set(reg.schema.function.name, reg);
+}
+
+/**
+ * Remove a tool. Only MCP tools are ever withdrawn — built-ins register once at
+ * module load and stay — but the registry does not need to know that, so this
+ * is the general operation rather than an MCP-shaped one.
+ */
+export function unregisterTool(name: string): void {
+	tools.delete(name);
 }
 
 /**
@@ -32,6 +49,12 @@ interface ToolFilterOpts {
 	sandboxEnabled: boolean;
 	/** Memory is on AND its embedding model is present — see memoryActive(). */
 	memoryWritable: boolean;
+	/** At least one CalDAV account is enabled and has credentials. */
+	hasCalendar: boolean;
+	/** The same, for an account whose server actually serves address books. */
+	hasContacts: boolean;
+	/** The user has switched screen capture on in Settings → Screen. */
+	screenCapture: boolean;
 }
 
 // Tools exposed to the Shell-tab assistant (non-Code mode). Reads only —
@@ -96,6 +119,10 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// Interactive terminal control only when Code mode drives a live shell
 	// session (shellMode), where there's a real PTY to send input/signals to.
 	if (SHELL_INTERACTIVE_TOOLS.has(name)) return opts.shellMode;
+	// Looking at the screen is as useful in Code mode as in Chat — "why does
+	// this dialog look wrong" is a question about pixels — and it carries the
+	// same toggle either way.
+	if (reg.category === 'desktop') return opts.screenCapture;
 	return false;
 }
 
@@ -123,7 +150,14 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'memory-write' && !opts.memoryWritable) return false;
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
+	if (reg.category === 'calendar' && !opts.hasCalendar) return false;
+	if (reg.category === 'contacts' && !opts.hasContacts) return false;
+	if (reg.category === 'desktop' && !opts.screenCapture) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
+	// MCP tools are per-tool switchable, so the category alone is not the
+	// answer; see isMcpToolEnabled for how an explicit choice beats the
+	// catalog default.
+	if (reg.category === 'mcp' && !isMcpToolEnabled(name)) return false;
 	if (opts.deepResearch && name === 'fetch_url') return false;
 	if (!opts.visionSupported && reg.requiresVision) return false;
 	return true;
@@ -166,6 +200,9 @@ export function getToolSchemas(opts: {
 		shellMode: opts.shellMode ?? false,
 		codeMode: opts.codeMode ?? false,
 		hasEmail: hasEnabledEmailAccount(),
+		hasCalendar: hasEnabledCalendarAccount(),
+		hasContacts: hasEnabledContactsAccount(),
+		screenCapture: getSettings().screenCaptureEnabled,
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
 	};
@@ -214,6 +251,44 @@ export async function executeTool(
 				'Long-term memory is off, or its embedding model has not been downloaded. ' +
 					'Nothing was saved. The user can turn it on in Settings → Remember across chats.'
 			)
+		);
+	}
+
+	// The same hard gate for calendars. Schema filtering does not stop
+	// execution — executeTool resolves against the FULL registry — and a
+	// calendar call with no account reaches a CalDAV request that can only
+	// fail, which is a slower and less useful answer than saying so here.
+	if (reg.category === 'calendar' && !hasEnabledCalendarAccount()) {
+		return toolResult(
+			toolError('No calendar account is set up. The user can add one in Settings → Integrations.')
+		);
+	}
+
+	// The same hard gate for screen capture, and here it is the one that
+	// matters most: the toggle is the user's statement about whether this
+	// assistant may look at their screen at all, and schema filtering alone
+	// would leave it enforced only by the model's good behaviour.
+	if (reg.category === 'desktop' && !getSettings().screenCaptureEnabled) {
+		return toolResult(
+			toolError('Screen capture is off. The user can turn it on in Settings → Screen.')
+		);
+	}
+
+	// And for contacts, which is a separate account capability: a server can
+	// serve calendars and not address books.
+	if (reg.category === 'contacts' && !hasEnabledContactsAccount()) {
+		return toolResult(
+			toolError('No contacts account is set up. The user can add one in Settings → Integrations.')
+		);
+	}
+
+	// Same hard gate again, for MCP. Identical reasoning to the two above, and
+	// it matters more here: an MCP tool can reach a third-party service and
+	// change something there, so a tool the user switched off must not run
+	// because a small model guessed its name from the ones it *was* offered.
+	if (reg.category === 'mcp' && !isMcpToolEnabled(name)) {
+		return toolResult(
+			toolError(`${name} is switched off. The user can enable it in Settings → Integrations.`)
 		);
 	}
 

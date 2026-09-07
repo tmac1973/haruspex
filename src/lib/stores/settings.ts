@@ -7,6 +7,8 @@ import type { OpenRouterModel, OpenRouterKeyStatus } from '$lib/openrouter';
 import type { BackendDescriptor, EffortCaps } from '$lib/inference/descriptor';
 
 import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
+import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
+import type { DavAccount } from '$lib/ipc/gen/DavAccount';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
 import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
 import type { TlsMode } from '$lib/ipc/gen/TlsMode';
@@ -214,8 +216,18 @@ export interface EmailIntegrationConfig {
 	accounts: EmailAccount[];
 }
 
+export interface McpIntegrationConfig {
+	servers: McpServerConfig[];
+}
+
+export interface DavIntegrationConfig {
+	accounts: DavAccount[];
+}
+
 export interface IntegrationsConfig {
 	email: EmailIntegrationConfig;
+	mcp: McpIntegrationConfig;
+	dav: DavIntegrationConfig;
 }
 
 /**
@@ -335,6 +347,12 @@ export interface AppSettings {
 	 * tool list entirely, the same way fs tools are when no working
 	 * directory is set.
 	 */
+	/**
+	 * Master switch for screen capture. Off by default: an assistant that can
+	 * see the screen is a different thing from one that cannot, and that has
+	 * to be a decision the user made rather than one they inherited.
+	 */
+	screenCaptureEnabled: boolean;
 	sandboxEnabled: boolean;
 	/**
 	 * Controls when the user is prompted before the Python sandbox runs
@@ -540,7 +558,9 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 };
 
 const defaultIntegrations: IntegrationsConfig = {
-	email: { accounts: [] }
+	email: { accounts: [] },
+	mcp: { servers: [] },
+	dav: { accounts: [] }
 };
 
 const defaultProxy: ProxyConfig = {
@@ -602,6 +622,7 @@ const defaults: AppSettings = {
 	keepRecentToolResults: true,
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
+	screenCaptureEnabled: false,
 	sandboxEnabled: false,
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 60,
@@ -681,6 +702,12 @@ function load(): AppSettings {
 			const mergedIntegrations: IntegrationsConfig = {
 				email: {
 					accounts: parsedIntegrations.email?.accounts ?? []
+				},
+				mcp: {
+					servers: parsedIntegrations.mcp?.servers ?? []
+				},
+				dav: {
+					accounts: parsedIntegrations.dav?.accounts ?? []
 				}
 			};
 			const mergedProxy: ProxyConfig = {
@@ -734,9 +761,33 @@ export function getSettings(): AppSettings {
 	return settings;
 }
 
-export function updateSettings(partial: Partial<AppSettings>): void {
-	settings = { ...settings, ...partial };
+/**
+ * A plain deep copy, safe to take of a Svelte 5 `$state` proxy.
+ *
+ * `structuredClone` throws `DataCloneError` on a proxy, and the settings
+ * sections all edit a working copy held in `$state` before handing it back
+ * here — so without this, storing one poisons the settings object: every
+ * later `structuredClone` of it throws, which in a Svelte template aborts
+ * the render and leaves the panel stuck on whatever it was showing.
+ *
+ * Everything stored in settings is JSON — strings, numbers, booleans, null —
+ * so a JSON round-trip is both a complete copy and a proxy stripper.
+ */
+export function snapshot<T>(value: T): T {
+	return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
+ * The single write path. Every mutation goes through here so the stored
+ * object is always plain data, whatever the caller passed in.
+ */
+function commit(next: AppSettings): void {
+	settings = snapshot(next);
 	save(settings);
+}
+
+export function updateSettings(partial: Partial<AppSettings>): void {
+	commit({ ...settings, ...partial });
 }
 
 /**
@@ -744,14 +795,13 @@ export function updateSettings(partial: Partial<AppSettings>): void {
  * working copy and calls this once on save.
  */
 export function setEmailAccounts(accounts: EmailAccount[]): void {
-	settings = {
+	commit({
 		...settings,
 		integrations: {
 			...settings.integrations,
 			email: { accounts }
 		}
-	};
-	save(settings);
+	});
 }
 
 /**
@@ -764,16 +814,90 @@ export function hasEnabledEmailAccount(): boolean {
 }
 
 /**
+ * Replace the full list of MCP servers. Mirrors `setEmailAccounts`: the
+ * Settings UI edits a working copy and calls this once on save.
+ */
+export function setMcpServers(servers: McpServerConfig[]): void {
+	commit({
+		...settings,
+		integrations: {
+			...settings.integrations,
+			mcp: { servers }
+		}
+	});
+}
+
+/**
+ * Whether any MCP server should be running. Stricter than the email
+ * equivalent: a server whose guided setup was abandoned halfway is enabled
+ * but not startable, and starting it would fail at spawn on a credential the
+ * user was never asked for.
+ */
+export function hasEnabledMcpServer(): boolean {
+	return settings.integrations.mcp.servers.some((s) => s.enabled && s.setupComplete);
+}
+
+/**
+ * The servers that should actually be started, in settings order.
+ */
+export function startableMcpServers(): McpServerConfig[] {
+	return settings.integrations.mcp.servers.filter((s) => s.enabled && s.setupComplete);
+}
+
+/**
+ * Replace the full list of calendar/contacts accounts. Mirrors
+ * `setEmailAccounts`.
+ */
+export function setDavAccounts(accounts: DavAccount[]): void {
+	commit({
+		...settings,
+		integrations: {
+			...settings.integrations,
+			dav: { accounts }
+		}
+	});
+}
+
+/**
+ * Whether calendar tools should be visible. True iff an account is enabled and
+ * has enough to authenticate — an account missing its password would fail at
+ * the first request, and offering a tool that cannot work is worse than not
+ * offering it.
+ */
+export function hasEnabledCalendarAccount(): boolean {
+	// `null` means the account has never been checked, and counts as yes: a
+	// user who never pressed Check must still get their calendar.
+	return enabledDavAccounts().some((a) => a.hasCalendars !== false);
+}
+
+/**
+ * Whether contact tools should be visible.
+ *
+ * Separate from the calendar check because an account can serve one protocol
+ * and not the other — a calendar-only server must not offer contact tools that
+ * can only fail.
+ */
+export function hasEnabledContactsAccount(): boolean {
+	return enabledDavAccounts().some((a) => a.hasContacts !== false);
+}
+
+/** The accounts a calendar query should fan out over. */
+export function enabledDavAccounts(): DavAccount[] {
+	return settings.integrations.dav.accounts.filter(
+		(a) => a.enabled && a.address.trim() && a.username.trim() && a.password
+	);
+}
+
+/**
  * Merge a partial update into the inferenceBackend sub-object. Callers
  * shouldn't have to rebuild the full config just to flip one field.
  */
 export function updateInferenceBackend(partial: Partial<InferenceBackendConfig>): void {
 	const current = settings.inferenceBackend;
-	settings = {
+	commit({
 		...settings,
 		inferenceBackend: { ...current, ...partial }
-	};
-	save(settings);
+	});
 }
 
 // --- API key store -------------------------------------------------------
@@ -800,11 +924,10 @@ export function getApiKeyValue(id: string | null | undefined): string | undefine
 /** Add a new key and return its id. */
 export function addApiKey(name: string, value: string): string {
 	const id = newKeyId();
-	settings = {
+	commit({
 		...settings,
 		apiKeys: [...settings.apiKeys, { id, name: name.trim() || 'Untitled', value }]
-	};
-	save(settings);
+	});
 	return id;
 }
 
@@ -813,20 +936,18 @@ export function updateApiKey(
 	id: string,
 	patch: Partial<Pick<StoredApiKey, 'name' | 'value'>>
 ): void {
-	settings = {
+	commit({
 		...settings,
 		apiKeys: settings.apiKeys.map((k) => (k.id === id ? { ...k, ...patch } : k))
-	};
-	save(settings);
+	});
 }
 
 /** Delete a key. Callers should clear any references to it first. */
 export function deleteApiKey(id: string): void {
-	settings = {
+	commit({
 		...settings,
 		apiKeys: settings.apiKeys.filter((k) => k.id !== id)
-	};
-	save(settings);
+	});
 }
 
 /**
@@ -834,11 +955,10 @@ export function deleteApiKey(id: string): void {
  */
 export function updateProxy(partial: Partial<ProxyConfig>): void {
 	const current = settings.proxy;
-	settings = {
+	commit({
 		...settings,
 		proxy: { ...current, ...partial }
-	};
-	save(settings);
+	});
 }
 
 export function applyTheme(theme?: ThemeMode): void {
@@ -1106,8 +1226,7 @@ const SAMPLING_PROFILES: Record<QwenSamplingFamily, ModelSamplingProfiles> = {
 export function setActiveLocalModel(filenameOrPath: string | null): void {
 	if (!filenameOrPath) {
 		if (settings.activeLocalModelFilename !== '') {
-			settings = { ...settings, activeLocalModelFilename: '' };
-			save(settings);
+			commit({ ...settings, activeLocalModelFilename: '' });
 		}
 		return;
 	}
@@ -1115,8 +1234,7 @@ export function setActiveLocalModel(filenameOrPath: string | null): void {
 	const slash = Math.max(filenameOrPath.lastIndexOf('/'), filenameOrPath.lastIndexOf('\\'));
 	const basename = slash >= 0 ? filenameOrPath.slice(slash + 1) : filenameOrPath;
 	if (settings.activeLocalModelFilename !== basename) {
-		settings = { ...settings, activeLocalModelFilename: basename };
-		save(settings);
+		commit({ ...settings, activeLocalModelFilename: basename });
 	}
 }
 
@@ -1140,8 +1258,7 @@ export function getLegacyModelNoticeDismissed(): boolean {
 
 export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
 	if (settings.legacyModelNoticeDismissed !== dismissed) {
-		settings = { ...settings, legacyModelNoticeDismissed: dismissed };
-		save(settings);
+		commit({ ...settings, legacyModelNoticeDismissed: dismissed });
 	}
 }
 

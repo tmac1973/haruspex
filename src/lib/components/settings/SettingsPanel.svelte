@@ -6,7 +6,11 @@
 	import MemorySection from '$lib/components/settings/MemorySection.svelte';
 	import AudioSection from '$lib/components/settings/AudioSection.svelte';
 	import SearchSection from '$lib/components/settings/SearchSection.svelte';
+	import NetworkSection from '$lib/components/settings/NetworkSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
+	import McpSection from '$lib/components/settings/McpSection.svelte';
+	import CalendarSection from '$lib/components/settings/CalendarSection.svelte';
+	import DesktopSection from '$lib/components/settings/DesktopSection.svelte';
 	import ShellSection from '$lib/components/settings/ShellSection.svelte';
 	import RemoteSection from '$lib/components/settings/RemoteSection.svelte';
 	import FeedbackSection from '$lib/components/settings/FeedbackSection.svelte';
@@ -23,7 +27,9 @@
 		| 'memory'
 		| 'audio'
 		| 'search'
+		| 'network'
 		| 'integrations'
+		| 'screen'
 		| 'shell'
 		| 'remote'
 		| 'feedback';
@@ -87,10 +93,22 @@
 					icon: '<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>'
 				},
 				{
+					id: 'network',
+					label: 'Network',
+					subtitle: 'Proxy settings for all network connections.',
+					icon: '<circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>'
+				},
+				{
 					id: 'integrations',
 					label: 'Integrations',
-					subtitle: 'Read-only email over IMAP.',
+					subtitle: 'Email, calendar, and MCP servers for everything else.',
 					icon: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline>'
+				},
+				{
+					id: 'screen',
+					label: 'Screen',
+					subtitle: 'Whether the assistant can see your screen.',
+					icon: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line>'
 				},
 				{
 					id: 'shell',
@@ -199,8 +217,14 @@
 				<AudioSection />
 			{:else if activeCategory === 'search'}
 				<SearchSection />
+			{:else if activeCategory === 'network'}
+				<NetworkSection />
 			{:else if activeCategory === 'integrations'}
 				<EmailSection />
+				<CalendarSection />
+				<McpSection />
+			{:else if activeCategory === 'screen'}
+				<DesktopSection />
 			{:else if activeCategory === 'shell'}
 				<ShellSection />
 			{:else if activeCategory === 'remote'}
