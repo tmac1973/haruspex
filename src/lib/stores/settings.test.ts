@@ -830,6 +830,7 @@ describe('MCP servers', () => {
 		toolEnabled: {},
 		proxyUse: 'auto',
 		setupComplete: true,
+		addonProjects: [],
 		...over
 	});
 

@@ -98,6 +98,7 @@
 					id,
 					label: entry.name,
 					enabled: true,
+					addonProjects: [],
 					source: { kind: 'catalog', entryId: entry.id },
 					secrets: {},
 					toolEnabled: {},
@@ -127,6 +128,7 @@
 			...servers,
 			{
 				id: newId(),
+				addonProjects: [],
 				label: program.split(/[\\/]/).pop() || 'Custom server',
 				enabled: true,
 				source: {
@@ -163,6 +165,7 @@
 				id: newId(),
 				label,
 				enabled: true,
+				addonProjects: [],
 				source: { kind: 'remote', url },
 				// The pasted credential is a secret like any other, under the key
 				// the backend reads.

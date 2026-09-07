@@ -18,4 +18,26 @@ optional: boolean, } | { "kind": "file", label: string,
  * Destination name inside the server directory, e.g.
  * `gcp-oauth.keys.json`.
  */
-filename: string, help: string | null, optional: boolean, } | { "kind": "command", label: string, args: Array<string>, help: string | null, optional: boolean, };
+filename: string, help: string | null, optional: boolean, } | { "kind": "command", label: string, args: Array<string>, help: string | null, optional: boolean, } | { "kind": "addon", label: string, 
+/**
+ * Pinned release archive. Version-locked to the server it pairs with:
+ * the two speak a private protocol over the bridge, so a mismatched
+ * pair is a broken pair with no useful error.
+ */
+url: string, 
+/**
+ * Expected sha256, required for the same reason `Acquisition::Binary`
+ * requires one — this writes into the user's own project directory.
+ */
+sha256: string, help: string | null, 
+/**
+ * A file that must exist in the chosen directory for it to be a
+ * plausible target, e.g. `project.godot`. Cheap protection against
+ * unpacking an addon into someone's home folder.
+ */
+marker: string, 
+/**
+ * Path inside the archive, written to the same relative path under
+ * the chosen directory, e.g. `addons/godot_mcp`.
+ */
+installPath: string, optional: boolean, };

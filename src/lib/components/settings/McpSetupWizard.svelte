@@ -24,6 +24,7 @@
 		setupStateOf,
 		stepLabel
 	} from '$lib/stores/mcpSetup';
+	import { pickAndInstallAddon } from '$lib/stores/mcpAddon';
 
 	interface Props {
 		config: McpServerConfig;
@@ -48,6 +49,7 @@
 	let error = $state<string | null>(null);
 
 	const setupState = $derived(setupStateOf(config, filesPlaced, commandsRun));
+	const addonProjects = $derived(config.addonProjects ?? []);
 	const step = $derived(steps[index] ?? null);
 	const canAdvance = $derived(step !== null && isStepSatisfied(step, setupState, index));
 	const complete = $derived(isSetupComplete(steps, setupState));
@@ -92,6 +94,22 @@
 			filesPlaced = [...filesPlaced, filename];
 		} catch (e) {
 			error = String(e);
+		}
+	}
+
+	async function installAddon(): Promise<void> {
+		error = null;
+		running = true;
+		commandOutput = '';
+		try {
+			const done = await pickAndInstallAddon(config, index);
+			if (!done) return;
+			onchange(done.next);
+			commandOutput = `Added to ${done.installedAt}`;
+		} catch (e) {
+			error = String(e);
+		} finally {
+			running = false;
 		}
 	}
 
@@ -155,6 +173,26 @@
 				{#if filesPlaced.includes(step.filename)}
 					<p class="help">Copied in as {step.filename}.</p>
 				{/if}
+			{:else if step.kind === 'addon'}
+				<h4>{step.label}</h4>
+				{#if step.help}<p class="help">{step.help}</p>{/if}
+				<button type="button" disabled={running} onclick={installAddon}>
+					{running
+						? 'Installing…'
+						: addonProjects.length > 0
+							? 'Add to another project…'
+							: 'Choose project folder…'}
+				</button>
+				{#if addonProjects.length > 0}
+					<ul class="projects">
+						{#each addonProjects as dir (dir)}
+							<li>{dir}</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if commandOutput}
+					<pre class="output">{commandOutput}</pre>
+				{/if}
 			{:else if step.kind === 'command'}
 				<h4>{step.label}</h4>
 				{#if step.help}<p class="help">{step.help}</p>{/if}
@@ -187,6 +225,14 @@
 </div>
 
 <style>
+	.projects {
+		list-style: none;
+		padding: 0;
+		margin: 0.5rem 0 0;
+		font-size: 0.85em;
+		color: var(--text-secondary, #a8a29e);
+		word-break: break-all;
+	}
 	.steps {
 		display: flex;
 		flex-wrap: wrap;

@@ -242,15 +242,15 @@
         "download": "https://godotengine.org/download/",
         "probe": {
           "kind": "tool",
-          "tool": "get_editor_state",
+          "tool": "godot_inspection_get_active_scene",
           "disconnectedError": "BRIDGE_DISCONNECTED"
         },
         "hint": "Open the Godot project you want to work on, and make sure the Godot MCP plugin is enabled for it under Project → Project Settings → Plugins. The plugin is per project, so a different project needs it enabled too."
       },
       "defaultTools": [
-        "get_editor_state",
-        "get_scene_tree",
-        "get_node_properties"
+        "godot_inspection_get_active_scene",
+        "godot_inspection_get_scene_tree",
+        "godot_inspection_get_node_properties"
       ],
       "setup": [
         {
@@ -260,10 +260,13 @@
           "link": "https://godotengine.org/download/"
         },
         {
-          "kind": "instruction",
-          "title": "Add the plugin to your project",
-          "text": "In Godot, open the project you want to work on, then Editor → Asset Library and search for 'Godot MCP'. Install it into the project. This is per project, not per machine — another project needs it added too.",
-          "link": null
+          "kind": "addon",
+          "label": "Install the Godot plugin",
+          "url": "https://github.com/hybridindie/godot-mcp/releases/download/2026.09.02/godot_mcp_addon.zip",
+          "sha256": "36433ec6fe492e70823d57973f699b36efae2cdc6fd1e393bc6678a76bf8ebf9",
+          "marker": "project.godot",
+          "installPath": "addons/godot_mcp",
+          "help": "Choose the Godot project to add it to. The plugin is per project — add it to another one from Settings → MCP at any time."
         },
         {
           "kind": "instruction",

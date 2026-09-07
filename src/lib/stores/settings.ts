@@ -704,7 +704,14 @@ function load(): AppSettings {
 					accounts: parsedIntegrations.email?.accounts ?? []
 				},
 				mcp: {
-					servers: parsedIntegrations.mcp?.servers ?? []
+					// `addonProjects` arrived after servers were already stored,
+					// and settings are parsed here rather than through Rust's
+					// serde defaults — so it is filled in once, here, instead of
+					// every reader having to remember it might be absent.
+					servers: (parsedIntegrations.mcp?.servers ?? []).map((server) => ({
+						...server,
+						addonProjects: server.addonProjects ?? []
+					}))
 				},
 				dav: {
 					accounts: parsedIntegrations.dav?.accounts ?? []
