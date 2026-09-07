@@ -162,6 +162,7 @@ export interface ToolRegistration {
 		| 'interaction'
 		| 'mcp'
 		| 'calendar'
+		| 'contacts'
 		| 'desktop';
 	requiresVision?: boolean;
 }

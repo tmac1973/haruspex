@@ -844,7 +844,20 @@ export function setDavAccounts(accounts: DavAccount[]): void {
  * offering it.
  */
 export function hasEnabledCalendarAccount(): boolean {
-	return enabledDavAccounts().length > 0;
+	// `null` means the account has never been checked, and counts as yes: a
+	// user who never pressed Check must still get their calendar.
+	return enabledDavAccounts().some((a) => a.hasCalendars !== false);
+}
+
+/**
+ * Whether contact tools should be visible.
+ *
+ * Separate from the calendar check because an account can serve one protocol
+ * and not the other — a calendar-only server must not offer contact tools that
+ * can only fail.
+ */
+export function hasEnabledContactsAccount(): boolean {
+	return enabledDavAccounts().some((a) => a.hasContacts !== false);
 }
 
 /** The accounts a calendar query should fan out over. */

@@ -37,6 +37,8 @@ function account(overrides: Partial<DavAccount> = {}): DavAccount {
 		password: 'secret',
 		calendarUrl: null,
 		contactsUrl: null,
+		hasCalendars: null,
+		hasContacts: null,
 		...overrides
 	};
 }

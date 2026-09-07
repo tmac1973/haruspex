@@ -63,10 +63,22 @@ pub struct DavAccount {
     #[serde(default)]
     pub calendar_url: Option<String>,
 
-    /// The same override for contacts. Phase 11 reads it; stored now so that
-    /// phase needs no settings migration.
+    /// The same override for contacts.
     #[serde(default)]
     pub contacts_url: Option<String>,
+
+    /// What the server was last seen to offer, recorded by the settings
+    /// "Check" button.
+    ///
+    /// `None` means nobody has looked yet, and is treated as "assume both" —
+    /// a user who never pressed Check must still get their tools, and the
+    /// query itself reports honestly when a collection is not there. Recording
+    /// it at all is what keeps an account that serves calendars but not
+    /// contacts from offering a broken half.
+    #[serde(default)]
+    pub has_calendars: Option<bool>,
+    #[serde(default)]
+    pub has_contacts: Option<bool>,
 }
 
 impl DavAccount {
@@ -89,6 +101,19 @@ impl DavAccount {
             && !self.address.trim().is_empty()
             && !self.username.trim().is_empty()
             && !self.password.is_empty()
+    }
+
+    /// Whether calendar tools should reach this account.
+    ///
+    /// Unknown counts as yes: gating on an absent check would hide a working
+    /// calendar from a user who simply never pressed the button.
+    pub fn serves_calendars(&self) -> bool {
+        self.is_usable() && self.has_calendars.unwrap_or(true)
+    }
+
+    /// The same for contacts.
+    pub fn serves_contacts(&self) -> bool {
+        self.is_usable() && self.has_contacts.unwrap_or(true)
     }
 
     /// Whether this address is one whose CalDAV needs OAuth, which this
@@ -132,6 +157,8 @@ mod tests {
             password: "app-password".into(),
             calendar_url: None,
             contacts_url: None,
+            has_calendars: None,
+            has_contacts: None,
         }
     }
 
@@ -205,6 +232,38 @@ mod tests {
     }
 
     #[test]
+    fn an_unchecked_account_offers_both_rather_than_neither() {
+        // Gating on an absent check would hide a working calendar from a user
+        // who simply never pressed the button.
+        let unchecked = account();
+        assert!(unchecked.serves_calendars());
+        assert!(unchecked.serves_contacts());
+    }
+
+    #[test]
+    fn a_server_that_offers_one_protocol_does_not_present_the_other() {
+        let calendars_only = DavAccount {
+            has_calendars: Some(true),
+            has_contacts: Some(false),
+            ..account()
+        };
+        assert!(calendars_only.serves_calendars());
+        assert!(!calendars_only.serves_contacts());
+    }
+
+    #[test]
+    fn an_unusable_account_serves_nothing_whatever_it_was_seen_to_offer() {
+        let disabled = DavAccount {
+            enabled: false,
+            has_calendars: Some(true),
+            has_contacts: Some(true),
+            ..account()
+        };
+        assert!(!disabled.serves_calendars());
+        assert!(!disabled.serves_contacts());
+    }
+
+    #[test]
     fn an_older_settings_blob_without_the_url_overrides_still_loads() {
         let stored = serde_json::json!({
             "id": "abc",
@@ -217,5 +276,8 @@ mod tests {
         let parsed: DavAccount = serde_json::from_value(stored).unwrap();
         assert!(parsed.calendar_url.is_none());
         assert!(parsed.contacts_url.is_none());
+        // An account stored before capabilities existed keeps working.
+        assert!(parsed.has_calendars.is_none());
+        assert!(parsed.serves_contacts());
     }
 }

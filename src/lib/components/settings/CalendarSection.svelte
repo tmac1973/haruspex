@@ -1,21 +1,26 @@
 <script lang="ts">
 	/**
-	 * CalDAV accounts. One card per account, like the MCP servers.
+	 * CalDAV and CardDAV accounts. One card per account, like the MCP servers.
 	 *
 	 * "Check" runs discovery from the form, so a wrong password is caught while
 	 * the user is still looking at the field holding it — rather than the first
 	 * time the model is asked about their week and answers that they have
 	 * nothing on.
+	 *
+	 * One account, both collection types: a Nextcloud or Fastmail login reaches
+	 * calendars and contacts alike. Check records which the server actually
+	 * offered, so a calendar-only account stops presenting contact tools that
+	 * could only fail.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { IPC } from '$lib/ipc/commands';
 	import { getSettings, setDavAccounts } from '$lib/stores/settings';
 	import type { DavAccount } from '$lib/ipc/gen/DavAccount';
-	import type { DiscoveredCalendar } from '$lib/ipc/gen/DiscoveredCalendar';
+	import type { DavCollections } from '$lib/ipc/gen/DavCollections';
 
 	let accounts = $state<DavAccount[]>(structuredClone(getSettings().integrations.dav.accounts));
 	let checking = $state<string | null>(null);
-	let found = $state<Record<string, DiscoveredCalendar[]>>({});
+	let found = $state<Record<string, DavCollections>>({});
 	let errors = $state<Record<string, string>>({});
 
 	function persist(next: DavAccount[]): void {
@@ -42,7 +47,9 @@
 				username: '',
 				password: '',
 				calendarUrl: null,
-				contactsUrl: null
+				contactsUrl: null,
+				hasCalendars: null,
+				hasContacts: null
 			}
 		]);
 	}
@@ -51,31 +58,44 @@
 		checking = account.id;
 		errors = { ...errors, [account.id]: '' };
 		try {
-			const calendars = await invoke<DiscoveredCalendar[]>(IPC.dav_discover_calendars, {
+			const collections = await invoke<DavCollections>(IPC.dav_discover_collections, {
 				account,
 				proxy: getSettings().proxy
 			});
-			found = { ...found, [account.id]: calendars };
-			// A check that worked is the signal the account is ready; turning it
-			// on by hand afterwards is a step with no decision in it.
-			if (!account.enabled) update(account.id, { enabled: true });
+			found = { ...found, [account.id]: collections };
+			update(account.id, {
+				// What the server was seen to serve. Recorded so a calendar-only
+				// account stops offering contact tools, and vice versa.
+				hasCalendars: collections.calendars.length > 0,
+				hasContacts: collections.addressBooks.length > 0,
+				// A check that worked is the signal the account is ready; turning
+				// it on by hand afterwards is a step with no decision in it.
+				enabled: true
+			});
 		} catch (e) {
 			errors = { ...errors, [account.id]: String(e) };
-			found = { ...found, [account.id]: [] };
+			found = { ...found, [account.id]: undefined as unknown as DavCollections };
 		} finally {
 			checking = null;
 		}
 	}
+
+	function names(items: { name: string }[]): string {
+		return items.map((i) => i.name).join(', ');
+	}
 </script>
 
 <section class="settings-section">
-	<h2>Calendar</h2>
+	<h2>Calendar &amp; Contacts</h2>
 	<p class="section-help">
-		Read your calendar from a CalDAV server. Works with Nextcloud, Fastmail, iCloud, Radicale,
-		Baikal and Synology.
+		Read your calendar and address book from a CalDAV/CardDAV server. Works with Nextcloud,
+		Fastmail, iCloud, Radicale, Baikal and Synology.
 	</p>
-	<p class="section-help" title="Its CalDAV endpoint requires OAuth, which this does not do.">
-		For Google Calendar, add it under MCP integrations instead.
+	<p
+		class="section-help"
+		title="Their CalDAV and CardDAV endpoints require OAuth, which this does not do."
+	>
+		For Google Calendar and Google Contacts, add them under MCP integrations instead.
 	</p>
 	{#if accounts.length === 0}
 		<p class="section-help">No accounts yet.</p>
@@ -140,15 +160,33 @@
 				placeholder="Only if your server is not found automatically"
 			/>
 		</div>
+		<div class="field">
+			<label for="dav-contacts-url-{account.id}">Contacts URL (optional)</label>
+			<input
+				id="dav-contacts-url-{account.id}"
+				value={account.contactsUrl ?? ''}
+				oninput={(e) => update(account.id, { contactsUrl: e.currentTarget.value || null })}
+				placeholder="Only if your server is not found automatically"
+			/>
+		</div>
 
 		{#if errors[account.id]}
 			<p class="error">{errors[account.id]}</p>
 		{/if}
-		{#if found[account.id]?.length}
-			<p class="found">
-				Found {found[account.id].length} calendar{found[account.id].length === 1 ? '' : 's'}:
-				{found[account.id].map((c) => c.name).join(', ')}
-			</p>
+		{#if found[account.id]}
+			{@const collections = found[account.id]}
+			{#if collections.calendars.length}
+				<p class="found">Calendars: {names(collections.calendars)}</p>
+			{/if}
+			{#if collections.addressBooks.length}
+				<p class="found">Address books: {names(collections.addressBooks)}</p>
+			{/if}
+			<!-- Only ever the half that was missing. A server with calendars and
+			     no contacts is an ordinary account, not a broken one, so this
+			     says what is unavailable rather than reporting a failure. -->
+			{#each collections.problems as problem (problem)}
+				<p class="section-help">{problem}</p>
+			{/each}
 		{/if}
 
 		<div class="actions">

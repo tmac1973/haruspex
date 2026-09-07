@@ -4,7 +4,8 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue('') }
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({ proxy: { mode: 'none', url: '', bypass: '' } }),
 	hasEnabledEmailAccount: () => false,
-	hasEnabledCalendarAccount: () => false
+	hasEnabledCalendarAccount: () => false,
+	hasEnabledContactsAccount: () => false
 }));
 
 import { ensureUrlScheme, isToolErrorResult } from './_helpers';

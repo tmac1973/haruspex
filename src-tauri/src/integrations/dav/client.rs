@@ -228,7 +228,13 @@ pub const PRINCIPAL_BODY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 /// calendar that cannot be listed.
 pub fn parse_multistatus(xml: &str) -> Vec<DavResponse> {
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
+    // Text is NOT trimmed by the reader. `calendar-data` and `address-data`
+    // carry a whole iCalendar or vCard document as character data, and an
+    // escaped `&` in it — "Bob & Alice sync", "Smith & Jones" — splits that
+    // document into several text events with an entity between them. Trimming
+    // each piece would eat the spaces around the ampersand; values are trimmed
+    // once, whole, when the response closes.
+    reader.config_mut().trim_text(false);
 
     let mut responses: Vec<DavResponse> = Vec::new();
     let mut current: Option<DavResponse> = None;
@@ -237,13 +243,19 @@ pub fn parse_multistatus(xml: &str) -> Vec<DavResponse> {
     let mut stack: Vec<String> = Vec::new();
     let mut in_resource_type = false;
     let mut in_href_prop: Option<String> = None;
+    // Whether the response's own href has been read. A response has exactly
+    // one, and properties further down contain hrefs of their own.
+    let mut href_done = false;
 
     loop {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
                 let name = local_name(e.name().into_inner());
                 match name.as_str() {
-                    "response" => current = Some(DavResponse::default()),
+                    "response" => {
+                        current = Some(DavResponse::default());
+                        href_done = false;
+                    }
                     "resourcetype" => in_resource_type = true,
                     // These properties carry their value as a nested <href>
                     // rather than as text.
@@ -263,30 +275,24 @@ pub fn parse_multistatus(xml: &str) -> Vec<DavResponse> {
                 }
             }
             Ok(Event::Text(e)) => {
-                let text = e.xml10_content().trim().to_string();
-                if text.is_empty() {
-                    continue;
-                }
-                let Some(name) = stack.last().cloned() else {
-                    continue;
-                };
-                let Some(r) = current.as_mut() else { continue };
-                match name.as_str() {
-                    // An <href> means different things depending on where it
-                    // sits: the response's own path, or the value of a property
-                    // like calendar-home-set.
-                    "href" => match &in_href_prop {
-                        Some(prop) => {
-                            r.props.insert(prop.clone(), text);
-                        }
-                        None if r.href.is_empty() => r.href = text,
-                        None => {}
+                let text = e.xml10_content().into_owned();
+                append_text(&mut current, &stack, &in_href_prop, href_done, &text);
+            }
+            // `&amp;` and friends arrive as their own event, splitting the text
+            // around them. Without this arm the value stops at the first
+            // ampersand — which, for a calendar or an address book, means
+            // losing everything after the first entry with an "&" in it.
+            Ok(Event::GeneralRef(e)) => {
+                let resolved = match e.resolve_char_ref() {
+                    Ok(Some(c)) => c.to_string(),
+                    // A named entity: the five XML predefined ones are all that
+                    // may legally appear without a DTD.
+                    _ => match quick_xml::escape::resolve_predefined_entity(&e.into_inner()) {
+                        Some(text) => text.to_string(),
+                        None => continue,
                     },
-                    "comp" => {}
-                    _ => {
-                        r.props.entry(name).or_insert(text);
-                    }
-                }
+                };
+                append_text(&mut current, &stack, &in_href_prop, href_done, &resolved);
             }
             Ok(Event::End(e)) => {
                 let name = local_name(e.name().into_inner());
@@ -296,8 +302,19 @@ pub fn parse_multistatus(xml: &str) -> Vec<DavResponse> {
                 if in_href_prop.as_deref() == Some(name.as_str()) {
                     in_href_prop = None;
                 }
+                if name == "href" && in_href_prop.is_none() && !href_done {
+                    href_done = true;
+                }
                 if name == "response" {
-                    if let Some(r) = current.take() {
+                    if let Some(mut r) = current.take() {
+                        // Trimmed once, whole, now that no more of it can
+                        // arrive. Empty properties — a 404 propstat's — are
+                        // dropped so they do not shadow a real value.
+                        r.href = r.href.trim().to_string();
+                        r.props.retain(|_, v| {
+                            *v = v.trim().to_string();
+                            !v.is_empty()
+                        });
                         responses.push(r);
                     }
                 }
@@ -312,6 +329,33 @@ pub fn parse_multistatus(xml: &str) -> Vec<DavResponse> {
         }
     }
     responses
+}
+
+/// Add a run of character data to whatever element is currently open.
+///
+/// Called for both text and resolved entity references, so a value split by an
+/// `&amp;` is reassembled rather than truncated.
+fn append_text(
+    current: &mut Option<DavResponse>,
+    stack: &[String],
+    in_href_prop: &Option<String>,
+    href_done: bool,
+    text: &str,
+) {
+    let Some(name) = stack.last() else { return };
+    let Some(r) = current.as_mut() else { return };
+    match name.as_str() {
+        // An <href> means different things depending on where it sits: the
+        // response's own path, or the value of a property like
+        // calendar-home-set.
+        "href" => match in_href_prop {
+            Some(prop) => r.props.entry(prop.clone()).or_default().push_str(text),
+            None if !href_done => r.href.push_str(text),
+            None => {}
+        },
+        "comp" => {}
+        _ => r.props.entry(name.clone()).or_default().push_str(text),
+    }
 }
 
 /// Component names from `supported-calendar-component-set`, which carries them
@@ -363,6 +407,89 @@ fn local_name(raw: impl AsRef<[u8]>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_escaped_ampersand_does_not_truncate_the_data_it_sits_in() {
+        // The bug this guards: quick-xml reports `&amp;` as its own event,
+        // splitting the character data around it. Keeping only the first piece
+        // silently loses every contact after the first "Smith & Jones" — and
+        // every event after the first "Bob & Alice sync".
+        let xml = concat!(
+            r#"<multistatus xmlns="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">"#,
+            "<response><href>/a.vcf</href><propstat><prop><c:address-data>",
+            "BEGIN:VCARD\nFN:Smith &amp; Jones\nORG:A &amp; B Ltd\nEND:VCARD\n",
+            "</c:address-data></prop></propstat></response></multistatus>"
+        );
+        let responses = parse_multistatus(xml);
+        let data = responses[0]
+            .props
+            .get("address-data")
+            .expect("address-data");
+        assert!(data.contains("FN:Smith & Jones"), "got {data:?}");
+        assert!(data.contains("ORG:A & B Ltd"), "got {data:?}");
+        assert!(data.ends_with("END:VCARD"), "got {data:?}");
+    }
+
+    #[test]
+    fn the_spaces_around_an_entity_survive() {
+        // The reason the reader no longer trims each text event: trimming the
+        // pieces either side of the entity would join them as "Smith&Jones".
+        let xml = concat!(
+            r#"<multistatus xmlns="DAV:"><response><href>/c/</href>"#,
+            "<propstat><prop><displayname>Smith &amp; Jones</displayname>",
+            "</prop></propstat></response></multistatus>"
+        );
+        assert_eq!(
+            parse_multistatus(xml)[0].props.get("displayname").unwrap(),
+            "Smith & Jones"
+        );
+    }
+
+    #[test]
+    fn a_numeric_character_reference_is_resolved_too() {
+        // Servers escape newlines inside calendar data as &#13;.
+        let xml = concat!(
+            r#"<multistatus xmlns="DAV:"><response><href>/c/</href>"#,
+            "<propstat><prop><displayname>a&#38;b</displayname>",
+            "</prop></propstat></response></multistatus>"
+        );
+        assert_eq!(
+            parse_multistatus(xml)[0].props.get("displayname").unwrap(),
+            "a&b"
+        );
+    }
+
+    #[test]
+    fn an_empty_property_does_not_shadow_the_real_one() {
+        // Servers answer a multiget with a 200 propstat and a 404 propstat, and
+        // the empty element in the second must not blank the first.
+        let xml = concat!(
+            r#"<multistatus xmlns="DAV:"><response><href>/c/</href>"#,
+            "<propstat><prop><displayname>Home</displayname></prop>",
+            "<status>HTTP/1.1 200 OK</status></propstat>",
+            "<propstat><prop><getctag/></prop>",
+            "<status>HTTP/1.1 404 Not Found</status></propstat>",
+            "</response></multistatus>"
+        );
+        let response = &parse_multistatus(xml)[0];
+        assert_eq!(response.props.get("displayname").unwrap(), "Home");
+        assert!(!response.props.contains_key("getctag"));
+    }
+
+    #[test]
+    fn the_responses_own_href_is_not_overwritten_by_one_inside_a_property() {
+        let xml = concat!(
+            r#"<multistatus xmlns="DAV:"><response><href>/principals/tim/</href>"#,
+            "<propstat><prop><current-user-principal><href>/principals/other/</href>",
+            "</current-user-principal></prop></propstat></response></multistatus>"
+        );
+        let response = &parse_multistatus(xml)[0];
+        assert_eq!(response.href, "/principals/tim/");
+        assert_eq!(
+            response.props.get("current-user-principal").unwrap(),
+            "/principals/other/"
+        );
+    }
 
     /// A Nextcloud-shaped principal response: lowercase `d:` prefix.
     const NEXTCLOUD_PRINCIPAL: &str = r#"<?xml version="1.0"?>

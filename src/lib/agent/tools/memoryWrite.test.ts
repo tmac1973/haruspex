@@ -18,7 +18,8 @@ vi.mock('$lib/stores/session.svelte', () => ({ getActiveConversationId: () => 'c
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => mocks.settings,
 	hasEnabledEmailAccount: () => false,
-	hasEnabledCalendarAccount: () => false
+	hasEnabledCalendarAccount: () => false,
+	hasEnabledContactsAccount: () => false
 }));
 vi.mock('$lib/debug-log', () => ({ logDebug: vi.fn() }));
 

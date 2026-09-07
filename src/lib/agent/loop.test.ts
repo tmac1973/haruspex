@@ -70,7 +70,8 @@ vi.mock('$lib/stores/settings', () => ({
 	getActiveLocalModelFilename: vi.fn(() => ''),
 	getApiKeyValue: vi.fn(() => undefined),
 	hasEnabledEmailAccount: vi.fn(() => false),
-	hasEnabledCalendarAccount: vi.fn(() => false)
+	hasEnabledCalendarAccount: vi.fn(() => false),
+	hasEnabledContactsAccount: vi.fn(() => false)
 }));
 
 vi.mock('$lib/markdown', async (importOriginal) => ({

@@ -1,13 +1,26 @@
-//! Finding a user's calendars from what they typed.
+//! Finding a user's calendars and address books from what they typed.
 //!
 //! The user types `me@fastmail.com` or `https://cloud.example.com`. Getting
-//! from that to a list of calendar URLs is four steps, and every server does
+//! from that to a list of collection URLs is four steps, and every server does
 //! them slightly differently:
 //!
-//! 1. `/.well-known/caldav` on the host, following redirects (RFC 6764).
+//! 1. `/.well-known/caldav` (or `carddav`) on the host, following redirects
+//!    (RFC 6764).
 //! 2. PROPFIND for `current-user-principal` — who am I.
-//! 3. PROPFIND that principal for `calendar-home-set` — where are my calendars.
-//! 4. PROPFIND the home set, depth 1 — what calendars are there.
+//! 3. PROPFIND that principal for `calendar-home-set` (or
+//!    `addressbook-home-set`) — where are my collections.
+//! 4. PROPFIND the home set, depth 1 — what is in it.
+//!
+//! The ladder is identical for both protocols; only the well-known path, the
+//! home-set property and the resource type differ, which is why it is written
+//! once and parameterised by [`Protocol`].
+//!
+//! # One account, both protocols, either missing
+//!
+//! Nextcloud and Fastmail serve calendars and contacts from a single login,
+//! and a calendar-only server is common too. Both are discovered from one set
+//! of credentials, and each is allowed to fail on its own: an account that
+//! serves calendars and not contacts must show its calendars, not an error.
 //!
 //! # No DNS SRV lookup, deliberately
 //!
@@ -30,10 +43,75 @@ use super::account::DavAccount;
 use super::client::{DavClient, DavResponse, PRINCIPAL_BODY};
 
 /// PROPFIND body asking a principal where its calendars live.
-const HOME_SET_BODY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+const CALENDAR_HOME_SET_BODY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 <d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:prop><c:calendar-home-set/></d:prop>
 </d:propfind>"#;
+
+/// The same, for address books.
+const CONTACTS_HOME_SET_BODY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><c:addressbook-home-set/></d:prop>
+</d:propfind>"#;
+
+/// PROPFIND body listing the address books in a home set.
+const ADDRESS_BOOKS_BODY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+  <d:prop>
+    <d:displayname/>
+    <d:resourcetype/>
+    <cs:getctag/>
+  </d:prop>
+</d:propfind>"#;
+
+/// Which of the two protocols a discovery run is asking about.
+///
+/// Everything structural is shared; these three values are the whole of the
+/// difference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Protocol {
+    CalDav,
+    CardDav,
+}
+
+impl Protocol {
+    fn well_known(self) -> &'static str {
+        match self {
+            Protocol::CalDav => "caldav",
+            Protocol::CardDav => "carddav",
+        }
+    }
+
+    fn home_set_body(self) -> &'static str {
+        match self {
+            Protocol::CalDav => CALENDAR_HOME_SET_BODY,
+            Protocol::CardDav => CONTACTS_HOME_SET_BODY,
+        }
+    }
+
+    fn home_set_prop(self) -> &'static str {
+        match self {
+            Protocol::CalDav => "calendar-home-set",
+            Protocol::CardDav => "addressbook-home-set",
+        }
+    }
+
+    /// What the settings form calls the manual override, quoted back to the
+    /// user in the error that suggests they use it.
+    fn override_field(self) -> &'static str {
+        match self {
+            Protocol::CalDav => "Calendar URL",
+            Protocol::CardDav => "Contacts URL",
+        }
+    }
+
+    fn noun(self) -> &'static str {
+        match self {
+            Protocol::CalDav => "calendars",
+            Protocol::CardDav => "address books",
+        }
+    }
+}
 
 /// PROPFIND body listing the collections in a home set, with the properties
 /// worth showing the user.
@@ -47,6 +125,16 @@ const COLLECTIONS_BODY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
     <c:supported-calendar-component-set/>
   </d:prop>
 </d:propfind>"#;
+
+/// One address book found on the server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AddressBook {
+    /// Absolute URL, resolved against the server the href came from.
+    pub url: String,
+    pub name: String,
+    /// The server's change tag, same meaning as a calendar's.
+    pub ctag: Option<String>,
+}
 
 /// One calendar found on the server.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -143,12 +231,38 @@ pub fn calendars_from(
         .collect()
 }
 
+/// Pick the address books out of a home-set listing.
+///
+/// Same shape as `calendars_from`, and the same reason for the resource-type
+/// filter: a CardDAV home set contains itself, and listing the container gives
+/// the user an empty address book they cannot explain.
+pub fn address_books_from(base: &str, responses: &[DavResponse]) -> Vec<AddressBook> {
+    responses
+        .iter()
+        .filter(|r| r.resource_types.iter().any(|t| t == "addressbook"))
+        .map(|r| AddressBook {
+            url: absolutize(base, &r.href),
+            name: r
+                .props
+                .get("displayname")
+                .filter(|n| !n.trim().is_empty())
+                .cloned()
+                .unwrap_or_else(|| last_segment_or(&r.href, "Contacts")),
+            ctag: r.props.get("getctag").cloned(),
+        })
+        .collect()
+}
+
 fn last_segment(href: &str) -> String {
+    last_segment_or(href, "Calendar")
+}
+
+fn last_segment_or(href: &str, fallback: &str) -> String {
     href.trim_end_matches('/')
         .rsplit('/')
         .next()
         .filter(|s| !s.is_empty())
-        .unwrap_or("Calendar")
+        .unwrap_or(fallback)
         .to_string()
 }
 
@@ -168,7 +282,7 @@ pub async fn discover_calendars(
         .filter(|u| !u.is_empty())
     {
         Some(url) => absolutize(&base, url),
-        None => discover_home_set(client, &base).await?,
+        None => discover_home_set(client, &base, Protocol::CalDav).await?,
     };
 
     // One request, parsed twice. `supported-calendar-component-set` carries
@@ -189,9 +303,42 @@ pub async fn discover_calendars(
     Ok(calendars)
 }
 
+/// Find every address book this account can see.
+pub async fn discover_address_books(
+    client: &DavClient,
+    account: &DavAccount,
+) -> Result<Vec<AddressBook>, String> {
+    let base = base_url(&account.address)?;
+
+    let home = match account
+        .contacts_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+    {
+        Some(url) => absolutize(&base, url),
+        None => discover_home_set(client, &base, Protocol::CardDav).await?,
+    };
+
+    let responses = client.propfind(&home, "1", ADDRESS_BOOKS_BODY).await?;
+    let books = address_books_from(&base, &responses);
+
+    if books.is_empty() {
+        return Err(format!(
+            "{home} answered, but no address books were found there. \
+             If you know your contacts URL, enter it under 'Contacts URL'."
+        ));
+    }
+    Ok(books)
+}
+
 /// Steps 1–3: well-known, principal, home set.
-async fn discover_home_set(client: &DavClient, base: &str) -> Result<String, String> {
-    let well_known = format!("{base}/.well-known/caldav");
+async fn discover_home_set(
+    client: &DavClient,
+    base: &str,
+    protocol: Protocol,
+) -> Result<String, String> {
+    let well_known = format!("{base}/.well-known/{}", protocol.well_known());
     // A server that does not implement .well-known is common enough that its
     // absence is not an error; the root often answers the same PROPFIND.
     let entry = client
@@ -206,20 +353,25 @@ async fn discover_home_set(client: &DavClient, base: &str) -> Result<String, Str
     .ok_or_else(|| {
         format!(
             "{entry} did not say which account these credentials belong to. \
-             If you know your calendar URL, enter it under 'Calendar URL'."
+             If you know your URL, enter it under '{}'.",
+            protocol.override_field()
         )
     })?;
 
     let principal_url = absolutize(base, &principal);
     first_prop(
-        &client.propfind(&principal_url, "0", HOME_SET_BODY).await?,
-        "calendar-home-set",
+        &client
+            .propfind(&principal_url, "0", protocol.home_set_body())
+            .await?,
+        protocol.home_set_prop(),
     )
     .map(|home| absolutize(base, &home))
     .ok_or_else(|| {
         format!(
-            "{principal_url} did not say where its calendars are. \
-             If you know your calendar URL, enter it under 'Calendar URL'."
+            "{principal_url} did not say where its {} are. \
+             If you know your URL, enter it under '{}'.",
+            protocol.noun(),
+            protocol.override_field()
         )
     })
 }
@@ -387,6 +539,77 @@ mod tests {
         let found = calendars_from("https://x.test", &responses, &[]);
         assert_eq!(found[0].ctag.as_deref(), Some("abc123"));
         assert_eq!(found[0].color.as_deref(), Some("#FF2968"));
+    }
+
+    #[test]
+    fn the_container_is_not_listed_as_an_address_book() {
+        // Same trap as the calendar home set: it is itself a collection.
+        let responses = vec![
+            response(
+                "/dav/card/",
+                &["collection"],
+                &[("displayname", "Contacts")],
+            ),
+            response(
+                "/dav/card/default/",
+                &["collection", "addressbook"],
+                &[("displayname", "Personal"), ("getctag", "xyz")],
+            ),
+        ];
+        let found = address_books_from("https://x.test", &responses);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "Personal");
+        assert_eq!(found[0].url, "https://x.test/dav/card/default/");
+        assert_eq!(found[0].ctag.as_deref(), Some("xyz"));
+    }
+
+    #[test]
+    fn a_calendar_is_not_mistaken_for_an_address_book_or_the_reverse() {
+        // An account serving both returns both from the same home set on some
+        // servers, and each listing must take only its own.
+        let responses = vec![
+            response("/dav/cal/home/", &["calendar"], &[("displayname", "Home")]),
+            response(
+                "/dav/card/default/",
+                &["addressbook"],
+                &[("displayname", "Personal")],
+            ),
+        ];
+        let books = address_books_from("https://x.test", &responses);
+        let calendars = calendars_from("https://x.test", &responses, &[]);
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].name, "Personal");
+        assert_eq!(calendars.len(), 1);
+        assert_eq!(calendars[0].name, "Home");
+    }
+
+    #[test]
+    fn a_nameless_address_book_falls_back_to_its_path() {
+        let responses = vec![response("/dav/card/default/", &["addressbook"], &[])];
+        assert_eq!(
+            address_books_from("https://x.test", &responses)[0].name,
+            "default"
+        );
+    }
+
+    #[test]
+    fn each_protocol_asks_for_its_own_property() {
+        // Getting these crossed produces an empty home set and a confusing
+        // "no calendars found" against a server that has plenty.
+        assert_eq!(Protocol::CalDav.well_known(), "caldav");
+        assert_eq!(Protocol::CardDav.well_known(), "carddav");
+        assert_eq!(Protocol::CalDav.home_set_prop(), "calendar-home-set");
+        assert_eq!(Protocol::CardDav.home_set_prop(), "addressbook-home-set");
+        assert!(Protocol::CardDav.home_set_body().contains("carddav"));
+        assert!(Protocol::CalDav.home_set_body().contains("caldav"));
+    }
+
+    #[test]
+    fn a_failure_names_the_settings_field_that_would_fix_it() {
+        // "Enter it under 'Calendar URL'" against a contacts failure sends
+        // the user to the wrong box.
+        assert_eq!(Protocol::CalDav.override_field(), "Calendar URL");
+        assert_eq!(Protocol::CardDav.override_field(), "Contacts URL");
     }
 
     #[test]

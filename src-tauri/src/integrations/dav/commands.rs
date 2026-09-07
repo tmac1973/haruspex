@@ -10,11 +10,20 @@ use chrono::{DateTime, Duration, Utc};
 use chrono_tz::Tz;
 
 use super::account::DavAccount;
-use super::caldav;
 use super::client::DavClient;
 use super::discovery::{self, CalendarCollection};
 use super::ical::{CalendarEvent, EventSource};
+use super::vcard::{Contact, ContactSource};
+use super::{caldav, carddav, vcard};
 use crate::proxy::ProxyConfig;
+
+/// The most contacts a search hands back.
+///
+/// A search that matches half an address book has not answered the question,
+/// and pouring three hundred cards into the context window makes the model
+/// worse at the next one. The cap is stated in the result so the model can say
+/// the list was cut rather than imply it was complete.
+const MAX_CONTACT_RESULTS: usize = 25;
 
 /// How far either side of now `calendar_list_events` looks when the caller
 /// gives no window.
@@ -25,6 +34,32 @@ use crate::proxy::ProxyConfig;
 /// history makes "when did I last meet Sarah" answerable too.
 const DEFAULT_PAST: i64 = 7;
 const DEFAULT_FUTURE: i64 = 28;
+
+/// An address book as the settings UI shows it after discovery.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredAddressBook {
+    pub url: String,
+    pub name: String,
+}
+
+/// Everything one account turned out to serve.
+///
+/// Both lists and the failures together, rather than one or the other: an
+/// account that serves calendars but not contacts is an ordinary, working
+/// account, and failing the whole check because half of it is absent would
+/// tell the user their server is broken when it is not.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct DavCollections {
+    pub calendars: Vec<DiscoveredCalendar>,
+    pub address_books: Vec<DiscoveredAddressBook>,
+    /// What did not answer, named. Shown only when the matching list is empty
+    /// — a server with calendars and no contacts is not an error to report.
+    pub problems: Vec<String>,
+}
 
 /// A calendar as the settings UI shows it after discovery.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, ts_rs::TS)]
@@ -51,11 +86,15 @@ impl From<CalendarCollection> for DiscoveredCalendar {
 /// Run from the settings form, so a wrong password is caught while the user is
 /// still looking at the field that holds it rather than the first time the
 /// model asks about their week.
+///
+/// Both protocols from one login, because that is how Nextcloud and Fastmail
+/// actually work — and each is allowed to fail alone, because a calendar-only
+/// server is just as ordinary.
 #[tauri::command]
-pub async fn dav_discover_calendars(
+pub async fn dav_discover_collections(
     account: DavAccount,
     proxy: Option<ProxyConfig>,
-) -> Result<Vec<DiscoveredCalendar>, String> {
+) -> Result<DavCollections, String> {
     if account.needs_oauth() {
         return Err(
             "Google Calendar needs OAuth, which this integration does not do. \
@@ -67,11 +106,41 @@ pub async fn dav_discover_calendars(
         return Err("This account still needs an address, username and password.".into());
     }
     let client = DavClient::new(&account, proxy.as_ref())?;
-    Ok(discovery::discover_calendars(&client, &account)
-        .await?
-        .into_iter()
-        .map(DiscoveredCalendar::from)
-        .collect())
+
+    let mut problems = Vec::new();
+    let calendars = match discovery::discover_calendars(&client, &account).await {
+        Ok(found) => found.into_iter().map(DiscoveredCalendar::from).collect(),
+        Err(e) => {
+            problems.push(format!("Calendars: {e}"));
+            Vec::new()
+        }
+    };
+    let address_books = match discovery::discover_address_books(&client, &account).await {
+        Ok(found) => found
+            .into_iter()
+            .map(|b| DiscoveredAddressBook {
+                url: b.url,
+                name: b.name,
+            })
+            .collect(),
+        Err(e) => {
+            problems.push(format!("Contacts: {e}"));
+            Vec::new()
+        }
+    };
+
+    // Nothing at all is a failed check, and the reasons are what the user
+    // needs: a wrong password fails both, and reporting it as "no collections
+    // found" would send them looking at the wrong thing.
+    if calendars.is_empty() && address_books.is_empty() {
+        return Err(problems.join("\n"));
+    }
+
+    Ok(DavCollections {
+        calendars,
+        address_books,
+        problems,
+    })
 }
 
 /// Events across every enabled account, in a window.
@@ -95,7 +164,7 @@ pub async fn dav_list_events(
     let mut events = Vec::new();
     let mut problems = Vec::new();
 
-    for account in accounts.iter().filter(|a| a.is_usable()) {
+    for account in accounts.iter().filter(|a| a.serves_calendars()) {
         match fetch_account(
             account,
             &from,
@@ -144,6 +213,96 @@ pub struct CalendarQueryResult {
     /// Accounts that failed, named. The model relays these rather than
     /// reporting an empty calendar as though it were an empty week.
     pub problems: Vec<String>,
+}
+
+/// Contacts matching a free-text query, across every enabled account.
+///
+/// Filtered here rather than by the server; `carddav.rs` explains why.
+#[tauri::command]
+pub async fn dav_search_contacts(
+    accounts: Vec<DavAccount>,
+    query: String,
+    proxy: Option<ProxyConfig>,
+) -> Result<ContactQueryResult, String> {
+    let mut result = collect_contacts(&accounts, proxy.as_ref()).await;
+    result.contacts.retain(|c| vcard::matches(c, &query));
+    result.total_matched = result.contacts.len();
+    result.contacts.truncate(MAX_CONTACT_RESULTS);
+    Ok(result)
+}
+
+/// One contact in full, by whatever the caller had to identify them with.
+#[tauri::command]
+pub async fn dav_get_contact(
+    accounts: Vec<DavAccount>,
+    identifier: String,
+    proxy: Option<ProxyConfig>,
+) -> Result<ContactQueryResult, String> {
+    let mut result = collect_contacts(&accounts, proxy.as_ref()).await;
+    result.contacts = carddav::find(&result.contacts, &identifier)
+        .into_iter()
+        .collect();
+    result.total_matched = result.contacts.len();
+    Ok(result)
+}
+
+/// Contacts plus whatever went wrong, rather than one or the other.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactQueryResult {
+    pub contacts: Vec<Contact>,
+    /// How many matched before the list was cut to a readable length, so the
+    /// model can say "and 40 others" rather than imply it saw everyone.
+    pub total_matched: usize,
+    /// Accounts that failed, named. Relayed rather than swallowed: an empty
+    /// address book and an unreachable one are different answers.
+    pub problems: Vec<String>,
+}
+
+/// Every contact every usable account can see.
+async fn collect_contacts(
+    accounts: &[DavAccount],
+    proxy: Option<&ProxyConfig>,
+) -> ContactQueryResult {
+    let mut contacts = Vec::new();
+    let mut problems = Vec::new();
+
+    for account in accounts.iter().filter(|a| a.serves_contacts()) {
+        match fetch_account_contacts(account, proxy).await {
+            Ok(mut found) => contacts.append(&mut found),
+            Err(e) => problems.push(format!("{}: {e}", account.label)),
+        }
+    }
+    ContactQueryResult {
+        total_matched: contacts.len(),
+        contacts,
+        problems,
+    }
+}
+
+async fn fetch_account_contacts(
+    account: &DavAccount,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<Contact>, String> {
+    let client = DavClient::new(account, proxy)?;
+    let books = discovery::discover_address_books(&client, account).await?;
+
+    let mut contacts = Vec::new();
+    for book in &books {
+        let source = ContactSource {
+            account_id: account.id.clone(),
+            account_label: account.label.clone(),
+            address_book: book.name.clone(),
+        };
+        // One unreadable address book does not fail the others, for the same
+        // reason one unreadable calendar does not: a shared collection whose
+        // permissions changed should cost that collection, not the answer.
+        if let Ok(mut found) = carddav::fetch_contacts(&client, book, &source).await {
+            contacts.append(&mut found);
+        }
+    }
+    Ok(contacts)
 }
 
 async fn fetch_account(

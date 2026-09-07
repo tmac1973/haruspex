@@ -374,7 +374,9 @@ pub fn run() {
             integrations::mcp::commands::mcp_place_setup_file,
             integrations::mcp::commands::mcp_run_setup_command,
             runtimes::mcp_runtimes_available,
-            integrations::dav::commands::dav_discover_calendars,
+            integrations::dav::commands::dav_discover_collections,
+            integrations::dav::commands::dav_search_contacts,
+            integrations::dav::commands::dav_get_contact,
             integrations::dav::commands::dav_list_events,
             integrations::dav::commands::dav_search_events,
         ])

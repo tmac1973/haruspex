@@ -6,6 +6,7 @@ vi.mock('$lib/stores/settings', () => ({
 	getIncludeImagesPrompt: () => '\n\nIMAGES:\n- When the answer is about something visual',
 	hasEnabledEmailAccount: () => false,
 	hasEnabledCalendarAccount: () => false,
+	hasEnabledContactsAccount: () => false,
 	// registry.ts reads this through the mcp-names predicate when filtering
 	// schemas; the tool-description assertion below goes through getToolSchemas.
 	startableMcpServers: () => [

@@ -11,7 +11,9 @@
 
 pub mod account;
 pub mod caldav;
+pub mod carddav;
 pub mod client;
 pub mod commands;
 pub mod discovery;
 pub mod ical;
+pub mod vcard;

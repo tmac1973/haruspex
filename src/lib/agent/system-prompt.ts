@@ -4,7 +4,8 @@ import {
 	getResponseFormatPrompt,
 	getSettings,
 	hasEnabledEmailAccount,
-	hasEnabledCalendarAccount
+	hasEnabledCalendarAccount,
+	hasEnabledContactsAccount
 } from '$lib/stores/settings';
 import { formatTodayLong } from '$lib/utils/format';
 import { registeredMcpServerLabels } from './tools/mcp';
@@ -79,6 +80,7 @@ EMAIL INTEGRATION:
 	const connected = [
 		...(hasEnabledEmailAccount() ? ['Email'] : []),
 		...(hasEnabledCalendarAccount() ? ['Calendar'] : []),
+		...(hasEnabledContactsAccount() ? ['Contacts'] : []),
 		...registeredMcpServerLabels()
 	];
 	const integrationsSection =

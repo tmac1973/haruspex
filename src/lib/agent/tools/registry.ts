@@ -5,6 +5,7 @@ import { coerceArgsToSchema } from './coerce';
 import {
 	hasEnabledEmailAccount,
 	hasEnabledCalendarAccount,
+	hasEnabledContactsAccount,
 	getSettings
 } from '$lib/stores/settings';
 // The predicate, not the tool module — mcp.ts registers THROUGH this file, so
@@ -50,6 +51,8 @@ interface ToolFilterOpts {
 	memoryWritable: boolean;
 	/** At least one CalDAV account is enabled and has credentials. */
 	hasCalendar: boolean;
+	/** The same, for an account whose server actually serves address books. */
+	hasContacts: boolean;
 	/** The user has switched screen capture on in Settings → Screen. */
 	screenCapture: boolean;
 }
@@ -148,6 +151,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
 	if (reg.category === 'calendar' && !opts.hasCalendar) return false;
+	if (reg.category === 'contacts' && !opts.hasContacts) return false;
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
 	// MCP tools are per-tool switchable, so the category alone is not the
@@ -197,6 +201,7 @@ export function getToolSchemas(opts: {
 		codeMode: opts.codeMode ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		hasCalendar: hasEnabledCalendarAccount(),
+		hasContacts: hasEnabledContactsAccount(),
 		screenCapture: getSettings().screenCaptureEnabled,
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
@@ -266,6 +271,14 @@ export async function executeTool(
 	if (reg.category === 'desktop' && !getSettings().screenCaptureEnabled) {
 		return toolResult(
 			toolError('Screen capture is off. The user can turn it on in Settings → Screen.')
+		);
+	}
+
+	// And for contacts, which is a separate account capability: a server can
+	// serve calendars and not address books.
+	if (reg.category === 'contacts' && !hasEnabledContactsAccount()) {
+		return toolResult(
+			toolError('No contacts account is set up. The user can add one in Settings → Integrations.')
 		);
 	}
 

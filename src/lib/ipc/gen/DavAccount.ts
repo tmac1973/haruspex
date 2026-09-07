@@ -47,7 +47,17 @@ password: string,
  */
 calendarUrl: string | null, 
 /**
- * The same override for contacts. Phase 11 reads it; stored now so that
- * phase needs no settings migration.
+ * The same override for contacts.
  */
-contactsUrl: string | null, };
+contactsUrl: string | null, 
+/**
+ * What the server was last seen to offer, recorded by the settings
+ * "Check" button.
+ *
+ * `None` means nobody has looked yet, and is treated as "assume both" —
+ * a user who never pressed Check must still get their tools, and the
+ * query itself reports honestly when a collection is not there. Recording
+ * it at all is what keeps an account that serves calendars but not
+ * contacts from offering a broken half.
+ */
+hasCalendars: boolean | null, hasContacts: boolean | null, };
