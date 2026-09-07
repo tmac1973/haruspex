@@ -149,6 +149,13 @@ function onCallTool(id, params) {
 		}
 		return reply(id, textResult(`answered with ${JSON.stringify(params.inputResponses)}`));
 	}
+	if (mode === 'list-changed') {
+		// A toolset was enabled, so the tool list is now different. Godot's
+		// server does exactly this from godot_enable_toolset: the call
+		// succeeds and the surface changes underneath the client.
+		reply(id, textResult(`called ${params.name}`));
+		return send({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
+	}
 	return reply(id, textResult(`called ${params.name}`));
 }
 

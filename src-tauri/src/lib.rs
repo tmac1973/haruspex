@@ -101,9 +101,16 @@ pub fn run() {
             // AppHandle, which is what lets it be driven in tests; resolving it
             // needs the handle, so it is managed here rather than in the
             // builder chain.
-            app.manage(McpSupervisor::new(
-                integrations::mcp::orphans::registry_path(app.handle()).ok(),
-            ));
+            app.manage(
+                McpSupervisor::new(integrations::mcp::orphans::registry_path(app.handle()).ok())
+                    // A server may add or remove tools while it is running — Godot
+                    // reveals a whole toolset when the model enables one — and the
+                    // frontend registry has to hear about it or the new tools stay
+                    // invisible until a restart.
+                    .on_tools_changed(integrations::mcp::commands::spawn_tools_changed_bridge(
+                        app.handle().clone(),
+                    )),
+            );
 
             // Backstop reclaim of inference slots whose holder window hung
             // without releasing or heartbeating.

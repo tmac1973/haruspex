@@ -142,6 +142,12 @@ struct ServerHandle {
 pub struct McpSupervisor {
     servers: Mutex<HashMap<String, ServerHandle>>,
     registry_path: Option<PathBuf>,
+    /// Server ids whose toolset changed under them, for whoever is listening.
+    ///
+    /// A channel rather than an `AppHandle` for the same reason the registry
+    /// path is a path: it keeps the supervisor drivable in tests, where the
+    /// receiver end is just read directly.
+    tools_changed: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 }
 
 impl McpSupervisor {
@@ -149,7 +155,23 @@ impl McpSupervisor {
         Self {
             servers: Mutex::new(HashMap::new()),
             registry_path,
+            tools_changed: None,
         }
+    }
+
+    /// Route `notifications/tools/list_changed` to this channel.
+    ///
+    /// Separate from `new` so the existing callers — and every test — keep
+    /// working without one.
+    pub fn on_tools_changed(mut self, tx: tokio::sync::mpsc::UnboundedSender<String>) -> Self {
+        self.tools_changed = Some(tx);
+        self
+    }
+
+    /// The client handler for one server, carrying its id so a notification
+    /// arriving later can be attributed to it.
+    fn client_for(&self, id: &str) -> super::client::HaruspexClient {
+        super::client::HaruspexClient::new(id.to_string(), self.tools_changed.clone())
     }
 
     fn registry(&self) -> Option<&Path> {
@@ -305,7 +327,7 @@ impl McpSupervisor {
 
         match tokio::time::timeout(
             timing::NEGOTIATION_DEADLINE,
-            McpSession::connect_http(config, proxy, proxy_use),
+            McpSession::connect_http(config, proxy, proxy_use, self.client_for(id)),
         )
         .await
         {
@@ -421,11 +443,17 @@ impl McpSupervisor {
             },
         );
 
+        // Built before negotiation because the handler is what receives the
+        // server's notifications, and a server may fire one the moment it is
+        // initialised.
+        let client = self.client_for(&config.id);
         // Negotiation takes ownership of the transport, so a failure past this
         // point cannot hand the child back — dropping the transport kills it,
         // which is what we want for a server that will not speak.
         let negotiated =
-            match tokio::time::timeout(negotiation_deadline, McpSession::connect(process)).await {
+            match tokio::time::timeout(negotiation_deadline, McpSession::connect(process, client))
+                .await
+            {
                 Ok(Ok(session)) => Ok(session),
                 Ok(Err(_)) if exited.load(Ordering::SeqCst) => {
                     // The child died rather than disagreeing with us; its own
@@ -883,6 +911,46 @@ mod tests {
             "the schema must reach the model as the server published it"
         );
         sup.stop("tools").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_server_that_changes_its_toolset_says_which_one_did() {
+        // Godot gates 27 of its 29 toolsets off and reveals one when the model
+        // calls godot_enable_toolset, firing this notification. Without it the
+        // newly enabled tools stay invisible until the server is restarted.
+        let Some(config) = era_config("changed", "list-changed") else {
+            return;
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sup = McpSupervisor::new(None).on_tools_changed(tx);
+        sup.start(config).await.unwrap();
+        sup.call_tool("changed", "read_thing", None, None, None)
+            .await
+            .unwrap();
+
+        let id = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("the notification should arrive promptly")
+            .expect("the channel should still be open");
+        // The id is the whole payload: one handler belongs to one session, and
+        // without it the frontend cannot tell which registry to refresh.
+        assert_eq!(id, "changed");
+        sup.stop("changed").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_supervisor_with_nobody_listening_still_works() {
+        // The channel is optional, and a server firing the notification into
+        // nothing must not fail the call that triggered it.
+        let Some(config) = era_config("quiet", "list-changed") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.unwrap();
+        sup.call_tool("quiet", "read_thing", None, None, None)
+            .await
+            .expect("the call succeeds whether or not anyone wants the notification");
+        sup.stop("quiet").await.unwrap();
     }
 
     // ---- calling ---------------------------------------------------------

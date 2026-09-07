@@ -54,13 +54,14 @@ use rmcp::model::{
     CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientInfo, Implementation,
     InputRequest, ProtocolVersion,
 };
-use rmcp::service::RunningService;
+use rmcp::service::{NotificationContext, RunningService};
 use rmcp::transport::TokioChildProcess;
 use rmcp::{
     ClientHandler, ClientLifecycleMode, ClientServiceExt, ErrorData as McpError, RoleClient,
 };
 use serde_json::Value;
 use std::borrow::Cow;
+use tokio::sync::mpsc;
 
 use super::types::{
     McpCallOutcome, McpConnectionInfo, McpInputRequest, McpProtocolEra, McpToolAnnotations,
@@ -91,10 +92,28 @@ const LEGACY_INTERACTION_REFUSAL: &str =
 ///
 /// Carries client identity and capabilities, and refuses every server-initiated
 /// request — see the module docs on why the interactive path is modern-only.
+///
+/// It also carries the server's id and a channel, because a notification
+/// arrives with no indication of who sent it: rmcp hands the handler the
+/// notification, and one handler belongs to one session, so the id has to be
+/// baked in here to be recoverable at all.
 #[derive(Clone, Debug)]
-pub struct HaruspexClient;
+pub struct HaruspexClient {
+    server_id: String,
+    /// Where `notifications/tools/list_changed` goes. `None` in tests and for
+    /// any caller that does not care, which keeps the session usable without a
+    /// running Tauri app.
+    tools_changed: Option<mpsc::UnboundedSender<String>>,
+}
 
 impl HaruspexClient {
+    pub fn new(server_id: String, tools_changed: Option<mpsc::UnboundedSender<String>>) -> Self {
+        Self {
+            server_id,
+            tools_changed,
+        }
+    }
+
     fn refuse(what: &str) -> McpError {
         McpError::invalid_request(
             Cow::Owned(format!("{LEGACY_INTERACTION_REFUSAL} (requested: {what})")),
@@ -143,6 +162,25 @@ impl ClientHandler for HaruspexClient {
     ) -> Result<rmcp::model::ListRootsResult, McpError> {
         Err(Self::refuse("roots/list"))
     }
+
+    /// The server's toolset changed; whoever is listening should re-list.
+    ///
+    /// Only the id is sent. Re-listing here would mean a `tools/list` from
+    /// inside a notification handler while the caller holds no lock and wants
+    /// no result, and the answer still has to reach the frontend registry to
+    /// mean anything — so the work belongs to whoever owns that registry.
+    ///
+    /// Godot's server is the forcing case: it gates 27 of its 29 toolsets off
+    /// and reveals them when the model calls `godot_enable_toolset`, firing
+    /// exactly this notification. Ignoring it leaves the newly enabled tools
+    /// invisible until the server is restarted.
+    async fn on_tool_list_changed(&self, _context: NotificationContext<RoleClient>) {
+        if let Some(tx) = &self.tools_changed {
+            // A closed receiver means the app is shutting down. Nothing to do
+            // and nothing worth logging.
+            let _ = tx.send(self.server_id.clone());
+        }
+    }
 }
 
 /// A live MCP session over one supervised child process.
@@ -157,8 +195,11 @@ impl McpSession {
     /// The transport is consumed: from here on the child's stdin/stdout belong
     /// to rmcp, which is why the supervisor hands ownership over rather than
     /// keeping a copy.
-    pub async fn connect(transport: TokioChildProcess) -> Result<Self, String> {
-        Self::negotiate(transport).await
+    pub async fn connect(
+        transport: TokioChildProcess,
+        client: HaruspexClient,
+    ) -> Result<Self, String> {
+        Self::negotiate(transport, client).await
     }
 
     /// Negotiate with a server reached over HTTP.
@@ -172,16 +213,17 @@ impl McpSession {
         config: &super::http::HttpConfig,
         proxy: Option<&crate::proxy::ProxyConfig>,
         proxy_use: crate::proxy::ProxyUse,
+        client: HaruspexClient,
     ) -> Result<Self, String> {
-        Self::negotiate(super::http::transport(config, proxy, proxy_use)?).await
+        Self::negotiate(super::http::transport(config, proxy, proxy_use)?, client).await
     }
 
-    async fn negotiate<T, E, A>(transport: T) -> Result<Self, String>
+    async fn negotiate<T, E, A>(transport: T, client: HaruspexClient) -> Result<Self, String>
     where
         T: rmcp::transport::IntoTransport<RoleClient, E, A>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let service = HaruspexClient
+        let service = client
             .serve_with_lifecycle(
                 transport,
                 ClientLifecycleMode::Auto {
@@ -384,7 +426,7 @@ mod tests {
         // Declaring sampling or roots and then erroring on every call would be
         // a lie told at negotiation time. A server that reads our capabilities
         // should not ask in the first place.
-        let info = HaruspexClient.get_info();
+        let info = HaruspexClient::new("s1".into(), None).get_info();
         assert!(info.capabilities.sampling.is_none());
         assert!(info.capabilities.roots.is_none());
         assert_eq!(info.client_info.name, "haruspex");

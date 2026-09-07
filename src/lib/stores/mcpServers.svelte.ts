@@ -13,6 +13,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { IPC } from '$lib/ipc/commands';
 import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
 import type { SpawnConfig } from '$lib/ipc/gen/SpawnConfig';
@@ -22,6 +23,7 @@ import type { CompanionStatus } from '$lib/ipc/gen/CompanionStatus';
 import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
 import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
 import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '$lib/agent/tools/mcp';
+import { mcpDefaultTools } from '$lib/agent/tools/mcp-names';
 import { forgetServerApprovals } from './mcpApproval.svelte';
 import { getSettings, startableMcpServers } from './settings';
 
@@ -310,6 +312,50 @@ setToolFailureHook((serverId) => {
 	const config = configs[serverId];
 	if (config) void probeCompanion(config);
 });
+
+/** Backend event carrying the id of a server whose toolset changed. */
+const TOOLS_CHANGED_EVENT = 'mcp-tools-changed';
+
+/**
+ * Re-read one server's tools and re-register them.
+ *
+ * A running server can change what it publishes. Godot's gates 27 of its 29
+ * toolsets off and reveals one when the model calls `godot_enable_toolset`,
+ * which is useless if the tools it just exposed stay invisible until a
+ * restart.
+ *
+ * The catalog defaults are re-read from `mcp-names` rather than passed in: the
+ * notification arrives with nothing but an id, and the defaults were already
+ * recorded when the server first registered.
+ */
+export async function refreshMcpTools(serverId: string): Promise<void> {
+	const config = configs[serverId];
+	// A server that stopped, or was removed, between the notification being
+	// sent and this running. Nothing to refresh, and re-registering would
+	// resurrect tools for a server that is gone.
+	if (!config) return;
+	try {
+		const tools = await invoke<McpToolDescriptor[]>(IPC.mcp_list_tools, { id: serverId });
+		registerMcpTools(serverId, config.label, tools, mcpDefaultTools(serverId));
+		patch(serverId, { tools });
+	} catch {
+		// The server went away mid-refresh. Its own stop path withdraws the
+		// tools; failing loudly here would put an error on a row whose server
+		// is fine or already known to be gone.
+	}
+}
+
+/**
+ * Listen for servers changing their toolset while running.
+ *
+ * Returns the unlisten handle. Called once at launch beside
+ * `startConfiguredMcpServers`, from the root layout, so it covers every tab.
+ */
+export function listenForMcpToolChanges(): Promise<UnlistenFn> {
+	return listen<string>(TOOLS_CHANGED_EVENT, (event) => {
+		void refreshMcpTools(event.payload);
+	});
+}
 
 /**
  * Start every configured server that should be running, in the background.
