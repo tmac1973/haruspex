@@ -187,6 +187,40 @@ describe('per-tool enablement', () => {
 		expect(names).toContain('mcp__srv-1__b');
 	});
 
+	it('offers the same tools in Code mode as in Chat', () => {
+		// A configured MCP server is a capability, not a Chat feature: driving
+		// Blender or Godot is at least as useful with a repo open. Code mode
+		// previously had no MCP branch at all, so every server silently
+		// vanished in the Shell tab.
+		registerMcpTools(SERVER, 'One', [tool('a'), tool('b')], ['a']);
+		const code = getToolSchemas({ hasWorkingDir: true, codeMode: true }).map(
+			(s) => s.function.name
+		);
+		expect(code).toContain('mcp__srv-1__a');
+		// And the per-tool switches still decide, exactly as in Chat.
+		expect(code).not.toContain('mcp__srv-1__b');
+	});
+
+	it('honours an explicit per-tool choice in Code mode too', () => {
+		registerMcpTools(SERVER, 'One', [tool('a'), tool('b')], ['a']);
+		setMcpServers([server(SERVER, { toolEnabled: { a: false, b: true } }), server(OTHER)]);
+		const code = getToolSchemas({ hasWorkingDir: true, codeMode: true }).map(
+			(s) => s.function.name
+		);
+		expect(code).not.toContain('mcp__srv-1__a');
+		expect(code).toContain('mcp__srv-1__b');
+	});
+
+	it('stays out of plain Shell mode, which is read-only by design', () => {
+		// Code mode off in the Shell tab is a deliberately narrow assistant;
+		// this is the one surface MCP should not appear on.
+		registerMcpTools(SERVER, 'One', [tool('a')], ['a']);
+		const shell = getToolSchemas({ hasWorkingDir: true, shellMode: true }).map(
+			(s) => s.function.name
+		);
+		expect(shell).not.toContain('mcp__srv-1__a');
+	});
+
 	it('refuses a disabled tool at execution, not just in the schema', async () => {
 		// The gate that actually protects the user: executeTool resolves names
 		// against the FULL registry, so a small model can emit a call it was

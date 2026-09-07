@@ -123,6 +123,13 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// this dialog look wrong" is a question about pixels — and it carries the
 	// same toggle either way.
 	if (reg.category === 'desktop') return opts.screenCapture;
+	// An MCP server is a capability the user configured, not a Chat feature.
+	// Blender and Godot are the obvious cases — driving an editor is *more*
+	// useful with a repo open than it is in Chat — and the per-tool switches in
+	// Settings → MCP already decide which tools the model sees. Same rule as
+	// Chat, deliberately: a server enabled in one place should not silently
+	// vanish in the other.
+	if (reg.category === 'mcp') return isMcpToolEnabled(name);
 	return false;
 }
 
