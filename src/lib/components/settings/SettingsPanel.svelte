@@ -9,6 +9,7 @@
 	import NetworkSection from '$lib/components/settings/NetworkSection.svelte';
 	import EmailSection from '$lib/components/settings/EmailSection.svelte';
 	import McpSection from '$lib/components/settings/McpSection.svelte';
+	import CalendarSection from '$lib/components/settings/CalendarSection.svelte';
 	import ShellSection from '$lib/components/settings/ShellSection.svelte';
 	import RemoteSection from '$lib/components/settings/RemoteSection.svelte';
 	import FeedbackSection from '$lib/components/settings/FeedbackSection.svelte';
@@ -98,7 +99,7 @@
 				{
 					id: 'integrations',
 					label: 'Integrations',
-					subtitle: 'Email, and MCP servers for everything else.',
+					subtitle: 'Email, calendar, and MCP servers for everything else.',
 					icon: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline>'
 				},
 				{
@@ -212,6 +213,7 @@
 				<NetworkSection />
 			{:else if activeCategory === 'integrations'}
 				<EmailSection />
+				<CalendarSection />
 				<McpSection />
 			{:else if activeCategory === 'shell'}
 				<ShellSection />

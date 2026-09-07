@@ -372,6 +372,9 @@ pub fn run() {
             integrations::mcp::commands::mcp_place_setup_file,
             integrations::mcp::commands::mcp_run_setup_command,
             runtimes::mcp_runtimes_available,
+            integrations::dav::commands::dav_discover_calendars,
+            integrations::dav::commands::dav_list_events,
+            integrations::dav::commands::dav_search_events,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

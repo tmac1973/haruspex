@@ -93,3 +93,8 @@ fastembed = { version = "6.0.0", default-features = false, features = ["hf-hub",
 rmcp = { version = "3.2.0", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 tar = "0.4.46"
 flate2 = "1.1.10"
+quick-xml = "0.42.0"
+ical = "0.11.0"
+rrule = "0.14.0"
+chrono = "0.4.45"
+chrono-tz = "0.10.4"

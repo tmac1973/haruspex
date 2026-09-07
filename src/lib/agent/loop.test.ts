@@ -69,7 +69,8 @@ vi.mock('$lib/stores/settings', () => ({
 	// the per-turn descriptor.
 	getActiveLocalModelFilename: vi.fn(() => ''),
 	getApiKeyValue: vi.fn(() => undefined),
-	hasEnabledEmailAccount: vi.fn(() => false)
+	hasEnabledEmailAccount: vi.fn(() => false),
+	hasEnabledCalendarAccount: vi.fn(() => false)
 }));
 
 vi.mock('$lib/markdown', async (importOriginal) => ({

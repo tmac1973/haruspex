@@ -160,7 +160,8 @@ export interface ToolRegistration {
 		| 'memory'
 		| 'memory-write'
 		| 'interaction'
-		| 'mcp';
+		| 'mcp'
+		| 'calendar';
 	requiresVision?: boolean;
 }
 

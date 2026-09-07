@@ -12,9 +12,12 @@
 //! - `mcp` — the general MCP client for the long tail of third-party
 //!   services. Built in phases; see `plan/integrations-expansion/`. Process
 //!   lifecycle landed first, before any protocol work.
+//! - `dav` — CalDAV calendars and (from Phase 11) CardDAV contacts, over
+//!   basic auth against the user's own server.
 //!
 //! Calendar and contacts arrive as CalDAV/CardDAV rather than as hand-built
 //! per-vendor modules; anything Google-shaped ships as a curated MCP config.
 
+pub mod dav;
 pub mod email;
 pub mod mcp;

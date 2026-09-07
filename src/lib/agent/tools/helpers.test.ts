@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue('') }));
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({ proxy: { mode: 'none', url: '', bypass: '' } }),
-	hasEnabledEmailAccount: () => false
+	hasEnabledEmailAccount: () => false,
+	hasEnabledCalendarAccount: () => false
 }));
 
 import { ensureUrlScheme, isToolErrorResult } from './_helpers';

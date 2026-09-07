@@ -8,6 +8,7 @@ import type { BackendDescriptor, EffortCaps } from '$lib/inference/descriptor';
 
 import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
 import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
+import type { DavAccount } from '$lib/ipc/gen/DavAccount';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
 import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
 import type { TlsMode } from '$lib/ipc/gen/TlsMode';
@@ -219,9 +220,14 @@ export interface McpIntegrationConfig {
 	servers: McpServerConfig[];
 }
 
+export interface DavIntegrationConfig {
+	accounts: DavAccount[];
+}
+
 export interface IntegrationsConfig {
 	email: EmailIntegrationConfig;
 	mcp: McpIntegrationConfig;
+	dav: DavIntegrationConfig;
 }
 
 /**
@@ -547,7 +553,8 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 
 const defaultIntegrations: IntegrationsConfig = {
 	email: { accounts: [] },
-	mcp: { servers: [] }
+	mcp: { servers: [] },
+	dav: { accounts: [] }
 };
 
 const defaultProxy: ProxyConfig = {
@@ -691,6 +698,9 @@ function load(): AppSettings {
 				},
 				mcp: {
 					servers: parsedIntegrations.mcp?.servers ?? []
+				},
+				dav: {
+					accounts: parsedIntegrations.dav?.accounts ?? []
 				}
 			};
 			const mergedProxy: ProxyConfig = {
@@ -803,6 +813,38 @@ export function hasEnabledMcpServer(): boolean {
  */
 export function startableMcpServers(): McpServerConfig[] {
 	return settings.integrations.mcp.servers.filter((s) => s.enabled && s.setupComplete);
+}
+
+/**
+ * Replace the full list of calendar/contacts accounts. Mirrors
+ * `setEmailAccounts`.
+ */
+export function setDavAccounts(accounts: DavAccount[]): void {
+	settings = {
+		...settings,
+		integrations: {
+			...settings.integrations,
+			dav: { accounts }
+		}
+	};
+	save(settings);
+}
+
+/**
+ * Whether calendar tools should be visible. True iff an account is enabled and
+ * has enough to authenticate — an account missing its password would fail at
+ * the first request, and offering a tool that cannot work is worse than not
+ * offering it.
+ */
+export function hasEnabledCalendarAccount(): boolean {
+	return enabledDavAccounts().length > 0;
+}
+
+/** The accounts a calendar query should fan out over. */
+export function enabledDavAccounts(): DavAccount[] {
+	return settings.integrations.dav.accounts.filter(
+		(a) => a.enabled && a.address.trim() && a.username.trim() && a.password
+	);
 }
 
 /**

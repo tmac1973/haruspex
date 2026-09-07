@@ -3,7 +3,8 @@ import {
 	getIncludeImagesPrompt,
 	getResponseFormatPrompt,
 	getSettings,
-	hasEnabledEmailAccount
+	hasEnabledEmailAccount,
+	hasEnabledCalendarAccount
 } from '$lib/stores/settings';
 import { formatTodayLong } from '$lib/utils/format';
 import { registeredMcpServerLabels } from './tools/mcp';
@@ -77,6 +78,7 @@ EMAIL INTEGRATION:
 	// named here only to put it in the same "prefer these" list.
 	const connected = [
 		...(hasEnabledEmailAccount() ? ['Email'] : []),
+		...(hasEnabledCalendarAccount() ? ['Calendar'] : []),
 		...registeredMcpServerLabels()
 	];
 	const integrationsSection =

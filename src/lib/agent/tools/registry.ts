@@ -2,7 +2,11 @@ import type { ToolDefinition } from '$lib/api';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from './types';
 import { toolResult, toolError } from './types';
 import { coerceArgsToSchema } from './coerce';
-import { hasEnabledEmailAccount, getSettings } from '$lib/stores/settings';
+import {
+	hasEnabledEmailAccount,
+	hasEnabledCalendarAccount,
+	getSettings
+} from '$lib/stores/settings';
 // The predicate, not the tool module — mcp.ts registers THROUGH this file, so
 // importing it here would be a cycle. Same reason as memoryActive() below.
 import { isMcpToolEnabled } from './mcp-names';
@@ -44,6 +48,8 @@ interface ToolFilterOpts {
 	sandboxEnabled: boolean;
 	/** Memory is on AND its embedding model is present — see memoryActive(). */
 	memoryWritable: boolean;
+	/** At least one CalDAV account is enabled and has credentials. */
+	hasCalendar: boolean;
 }
 
 // Tools exposed to the Shell-tab assistant (non-Code mode). Reads only —
@@ -135,6 +141,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'memory-write' && !opts.memoryWritable) return false;
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
+	if (reg.category === 'calendar' && !opts.hasCalendar) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
 	// MCP tools are per-tool switchable, so the category alone is not the
 	// answer; see isMcpToolEnabled for how an explicit choice beats the
@@ -182,6 +189,7 @@ export function getToolSchemas(opts: {
 		shellMode: opts.shellMode ?? false,
 		codeMode: opts.codeMode ?? false,
 		hasEmail: hasEnabledEmailAccount(),
+		hasCalendar: hasEnabledCalendarAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
 	};
@@ -230,6 +238,16 @@ export async function executeTool(
 				'Long-term memory is off, or its embedding model has not been downloaded. ' +
 					'Nothing was saved. The user can turn it on in Settings → Remember across chats.'
 			)
+		);
+	}
+
+	// The same hard gate for calendars. Schema filtering does not stop
+	// execution — executeTool resolves against the FULL registry — and a
+	// calendar call with no account reaches a CalDAV request that can only
+	// fail, which is a slower and less useful answer than saying so here.
+	if (reg.category === 'calendar' && !hasEnabledCalendarAccount()) {
+		return toolResult(
+			toolError('No calendar account is set up. The user can add one in Settings → Integrations.')
 		);
 	}
 

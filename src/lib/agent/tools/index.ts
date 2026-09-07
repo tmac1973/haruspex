@@ -13,6 +13,7 @@ import './memory';
 import './memoryWrite';
 import './user-question';
 import './mcp';
+import './calendar';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel } from './registry';
