@@ -167,6 +167,13 @@
 {/each}
 
 <style>
+	.section-help {
+		color: var(--text-secondary);
+		font-size: 0.85rem;
+		margin: 0 0 12px 0;
+		line-height: 1.5;
+	}
+
 	.field {
 		margin-top: 10px;
 	}
