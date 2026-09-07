@@ -761,9 +761,33 @@ export function getSettings(): AppSettings {
 	return settings;
 }
 
-export function updateSettings(partial: Partial<AppSettings>): void {
-	settings = { ...settings, ...partial };
+/**
+ * A plain deep copy, safe to take of a Svelte 5 `$state` proxy.
+ *
+ * `structuredClone` throws `DataCloneError` on a proxy, and the settings
+ * sections all edit a working copy held in `$state` before handing it back
+ * here — so without this, storing one poisons the settings object: every
+ * later `structuredClone` of it throws, which in a Svelte template aborts
+ * the render and leaves the panel stuck on whatever it was showing.
+ *
+ * Everything stored in settings is JSON — strings, numbers, booleans, null —
+ * so a JSON round-trip is both a complete copy and a proxy stripper.
+ */
+export function snapshot<T>(value: T): T {
+	return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
+ * The single write path. Every mutation goes through here so the stored
+ * object is always plain data, whatever the caller passed in.
+ */
+function commit(next: AppSettings): void {
+	settings = snapshot(next);
 	save(settings);
+}
+
+export function updateSettings(partial: Partial<AppSettings>): void {
+	commit({ ...settings, ...partial });
 }
 
 /**
@@ -771,14 +795,13 @@ export function updateSettings(partial: Partial<AppSettings>): void {
  * working copy and calls this once on save.
  */
 export function setEmailAccounts(accounts: EmailAccount[]): void {
-	settings = {
+	commit({
 		...settings,
 		integrations: {
 			...settings.integrations,
 			email: { accounts }
 		}
-	};
-	save(settings);
+	});
 }
 
 /**
@@ -795,14 +818,13 @@ export function hasEnabledEmailAccount(): boolean {
  * Settings UI edits a working copy and calls this once on save.
  */
 export function setMcpServers(servers: McpServerConfig[]): void {
-	settings = {
+	commit({
 		...settings,
 		integrations: {
 			...settings.integrations,
 			mcp: { servers }
 		}
-	};
-	save(settings);
+	});
 }
 
 /**
@@ -827,14 +849,13 @@ export function startableMcpServers(): McpServerConfig[] {
  * `setEmailAccounts`.
  */
 export function setDavAccounts(accounts: DavAccount[]): void {
-	settings = {
+	commit({
 		...settings,
 		integrations: {
 			...settings.integrations,
 			dav: { accounts }
 		}
-	};
-	save(settings);
+	});
 }
 
 /**
@@ -873,11 +894,10 @@ export function enabledDavAccounts(): DavAccount[] {
  */
 export function updateInferenceBackend(partial: Partial<InferenceBackendConfig>): void {
 	const current = settings.inferenceBackend;
-	settings = {
+	commit({
 		...settings,
 		inferenceBackend: { ...current, ...partial }
-	};
-	save(settings);
+	});
 }
 
 // --- API key store -------------------------------------------------------
@@ -904,11 +924,10 @@ export function getApiKeyValue(id: string | null | undefined): string | undefine
 /** Add a new key and return its id. */
 export function addApiKey(name: string, value: string): string {
 	const id = newKeyId();
-	settings = {
+	commit({
 		...settings,
 		apiKeys: [...settings.apiKeys, { id, name: name.trim() || 'Untitled', value }]
-	};
-	save(settings);
+	});
 	return id;
 }
 
@@ -917,20 +936,18 @@ export function updateApiKey(
 	id: string,
 	patch: Partial<Pick<StoredApiKey, 'name' | 'value'>>
 ): void {
-	settings = {
+	commit({
 		...settings,
 		apiKeys: settings.apiKeys.map((k) => (k.id === id ? { ...k, ...patch } : k))
-	};
-	save(settings);
+	});
 }
 
 /** Delete a key. Callers should clear any references to it first. */
 export function deleteApiKey(id: string): void {
-	settings = {
+	commit({
 		...settings,
 		apiKeys: settings.apiKeys.filter((k) => k.id !== id)
-	};
-	save(settings);
+	});
 }
 
 /**
@@ -938,11 +955,10 @@ export function deleteApiKey(id: string): void {
  */
 export function updateProxy(partial: Partial<ProxyConfig>): void {
 	const current = settings.proxy;
-	settings = {
+	commit({
 		...settings,
 		proxy: { ...current, ...partial }
-	};
-	save(settings);
+	});
 }
 
 export function applyTheme(theme?: ThemeMode): void {
@@ -1210,8 +1226,7 @@ const SAMPLING_PROFILES: Record<QwenSamplingFamily, ModelSamplingProfiles> = {
 export function setActiveLocalModel(filenameOrPath: string | null): void {
 	if (!filenameOrPath) {
 		if (settings.activeLocalModelFilename !== '') {
-			settings = { ...settings, activeLocalModelFilename: '' };
-			save(settings);
+			commit({ ...settings, activeLocalModelFilename: '' });
 		}
 		return;
 	}
@@ -1219,8 +1234,7 @@ export function setActiveLocalModel(filenameOrPath: string | null): void {
 	const slash = Math.max(filenameOrPath.lastIndexOf('/'), filenameOrPath.lastIndexOf('\\'));
 	const basename = slash >= 0 ? filenameOrPath.slice(slash + 1) : filenameOrPath;
 	if (settings.activeLocalModelFilename !== basename) {
-		settings = { ...settings, activeLocalModelFilename: basename };
-		save(settings);
+		commit({ ...settings, activeLocalModelFilename: basename });
 	}
 }
 
@@ -1244,8 +1258,7 @@ export function getLegacyModelNoticeDismissed(): boolean {
 
 export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
 	if (settings.legacyModelNoticeDismissed !== dismissed) {
-		settings = { ...settings, legacyModelNoticeDismissed: dismissed };
-		save(settings);
+		commit({ ...settings, legacyModelNoticeDismissed: dismissed });
 	}
 }
 

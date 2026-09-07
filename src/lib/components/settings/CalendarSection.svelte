@@ -14,11 +14,11 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { IPC } from '$lib/ipc/commands';
-	import { getSettings, setDavAccounts } from '$lib/stores/settings';
+	import { getSettings, setDavAccounts, snapshot } from '$lib/stores/settings';
 	import type { DavAccount } from '$lib/ipc/gen/DavAccount';
 	import type { DavCollections } from '$lib/ipc/gen/DavCollections';
 
-	let accounts = $state<DavAccount[]>(structuredClone(getSettings().integrations.dav.accounts));
+	let accounts = $state<DavAccount[]>(snapshot(getSettings().integrations.dav.accounts));
 	let checking = $state<string | null>(null);
 	let found = $state<Record<string, DavCollections>>({});
 	let errors = $state<Record<string, string>>({});
