@@ -466,6 +466,16 @@
 							{humanReadable ? 'Pretty' : 'Raw'}
 						</button>
 					{/if}
+					{#if activeTab === 'mcp'}
+						<button
+							class="toggle-btn"
+							class:active={mcpAppOnly}
+							onclick={() => (mcpAppOnly = !mcpAppOnly)}
+							title="Show only the lines Haruspex wrote, hiding the server's own output"
+						>
+							Haruspex only
+						</button>
+					{/if}
 					<button
 						class="copy-btn"
 						onclick={clearCurrentLog}
@@ -479,27 +489,20 @@
 							{clearState === 'cleared' ? 'Cleared' : 'Clear'}
 						{/if}
 					</button>
-					{#if activeTab === 'mcp'}
-						<div class="mcp-picker">
-							<label class="app-only">
-								<input type="checkbox" bind:checked={mcpAppOnly} />
-								Haruspex only
-							</label>
-							{#if mcpServers.length > 1}
-								<select
-									value={selectedMcpServer?.id ?? ''}
-									onchange={(e) => {
-										mcpServerId = e.currentTarget.value;
-										logLines = [];
-										void fetchLogs();
-									}}
-								>
-									{#each mcpServers as server (server.id)}
-										<option value={server.id}>{server.label}</option>
-									{/each}
-								</select>
-							{/if}
-						</div>
+					{#if activeTab === 'mcp' && mcpServers.length > 1}
+						<select
+							class="mcp-picker"
+							value={selectedMcpServer?.id ?? ''}
+							onchange={(e) => {
+								mcpServerId = e.currentTarget.value;
+								logLines = [];
+								void fetchLogs();
+							}}
+						>
+							{#each mcpServers as server (server.id)}
+								<option value={server.id}>{server.label}</option>
+							{/each}
+						</select>
 					{/if}
 					{#if activeTab !== 'stats'}
 						<button
@@ -745,19 +748,12 @@
 	}
 
 	.mcp-picker {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 6px 12px 0;
-	}
-	.mcp-picker select {
-		flex: 1;
-	}
-	.app-only {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		white-space: nowrap;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 5px 8px;
+		color: var(--text-secondary);
+		font-size: 0.75rem;
 	}
 	.tabs {
 		display: flex;
