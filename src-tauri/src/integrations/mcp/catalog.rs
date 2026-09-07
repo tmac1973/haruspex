@@ -25,6 +25,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use super::install::{is_contained_relative, is_plain_filename};
+
 /// The whole bundled file.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Catalog {
@@ -200,6 +202,40 @@ pub enum SetupStep {
         #[serde(default)]
         optional: bool,
     },
+    /// A pinned archive unpacked into a directory the user picks.
+    ///
+    /// The case is a companion application whose plugin lives inside the
+    /// user's own project rather than in a shared location: Godot's addon goes
+    /// in `<project>/addons/`, so it is per project and only the user can say
+    /// which one. Blender's equivalent is a `command` step because its package
+    /// ships a CLI that knows where Blender keeps addons; `godot-editor-mcp`
+    /// ships no CLI and does not bundle the addon in its wheel, so the app
+    /// fetches the release archive itself.
+    ///
+    /// Unlike every other step kind this one is **repeatable**: a second Godot
+    /// project needs the addon too, which is why the installed directories are
+    /// recorded on the server config rather than in wizard-local state.
+    #[serde(rename_all = "camelCase")]
+    Addon {
+        label: String,
+        /// Pinned release archive. Version-locked to the server it pairs with:
+        /// the two speak a private protocol over the bridge, so a mismatched
+        /// pair is a broken pair with no useful error.
+        url: String,
+        /// Expected sha256, required for the same reason `Acquisition::Binary`
+        /// requires one — this writes into the user's own project directory.
+        sha256: String,
+        help: Option<String>,
+        /// A file that must exist in the chosen directory for it to be a
+        /// plausible target, e.g. `project.godot`. Cheap protection against
+        /// unpacking an addon into someone's home folder.
+        marker: String,
+        /// Path inside the archive, written to the same relative path under
+        /// the chosen directory, e.g. `addons/godot_mcp`.
+        install_path: String,
+        #[serde(default)]
+        optional: bool,
+    },
 }
 
 impl SetupStep {
@@ -211,7 +247,8 @@ impl SetupStep {
             SetupStep::Instruction { .. } => false,
             SetupStep::Secret { optional, .. }
             | SetupStep::File { optional, .. }
-            | SetupStep::Command { optional, .. } => *optional,
+            | SetupStep::Command { optional, .. }
+            | SetupStep::Addon { optional, .. } => *optional,
         }
     }
 }
@@ -294,6 +331,44 @@ fn validate(catalog: &Catalog) -> Result<(), String> {
                 if !collected.contains(key) {
                     return Err(format!(
                         "entry {}: {var} refers to $secret.{key}, but no setup step collects it",
+                        entry.id
+                    ));
+                }
+            }
+        }
+        // An addon step writes into a directory the user picks, so the things
+        // that keep it inside the lines are checked here rather than trusted.
+        for step in &entry.setup {
+            if let SetupStep::Addon {
+                url,
+                sha256,
+                marker,
+                install_path,
+                ..
+            } = step
+            {
+                if !url.starts_with("https://") {
+                    return Err(format!(
+                        "entry {}: addon url must be https, got '{url}'",
+                        entry.id
+                    ));
+                }
+                if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Err(format!(
+                        "entry {}: addon sha256 must be 64 hex characters",
+                        entry.id
+                    ));
+                }
+                if !is_plain_filename(marker) {
+                    return Err(format!(
+                        "entry {}: addon marker '{marker}' must be a plain file name",
+                        entry.id
+                    ));
+                }
+                if !is_contained_relative(install_path) {
+                    return Err(format!(
+                        "entry {}: addon installPath '{install_path}' must be a relative path \
+                         inside the project",
                         entry.id
                     ));
                 }
@@ -434,19 +509,20 @@ mod tests {
         // The v1 entries were chosen to force the whole format. If this stops
         // being true, the format is being carried by tests alone.
         let catalog = load().unwrap();
-        let mut has = (false, false, false, false);
+        let mut has = (false, false, false, false, false);
         for step in catalog.entries.iter().flat_map(|e| &e.setup) {
             match step {
                 SetupStep::Instruction { .. } => has.0 = true,
                 SetupStep::Secret { .. } => has.1 = true,
                 SetupStep::File { .. } => has.2 = true,
                 SetupStep::Command { .. } => has.3 = true,
+                SetupStep::Addon { .. } => has.4 = true,
             }
         }
         assert_eq!(
             has,
-            (true, true, true, true),
-            "instruction/secret/file/command must all be represented"
+            (true, true, true, true, true),
+            "instruction/secret/file/command/addon must all be represented"
         );
     }
 
@@ -539,7 +615,7 @@ mod tests {
         else {
             panic!("a port check on Godot would report connected with no editor");
         };
-        assert_eq!(tool, "get_editor_state");
+        assert_eq!(tool, "godot_inspection_get_active_scene");
         assert_eq!(disconnected_error, "BRIDGE_DISCONNECTED");
     }
 
@@ -636,21 +712,117 @@ mod tests {
         assert!(err.contains("provenance"), "got {err}");
     }
 
+    /// A catalog whose godot entry has its addon step replaced by `step`.
+    fn addon_catalog(step: &str) -> Result<Catalog, String> {
+        let text = format!(
+            r#"{{"entries":[{{
+                "id":"g","name":"G","description":"d","homepage":"h",
+                "acquisition":{{"kind":"pypi","package":"p","version":"1.0.0","entrypoint":"p"}},
+                "setup":[{step}]
+            }}]}}"#
+        );
+        parse(&text)
+    }
+
+    const GOOD_SHA: &str = "36433ec6fe492e70823d57973f699b36efae2cdc6fd1e393bc6678a76bf8ebf9";
+
+    #[test]
+    fn an_addon_step_may_not_escape_the_project_directory() {
+        // installPath is joined to a directory the *user* picked, so this is
+        // the difference between writing into their project and writing
+        // wherever the catalog fancies.
+        let err = addon_catalog(&format!(
+            r#"{{"kind":"addon","label":"L","url":"https://e.test/a.zip",
+                 "sha256":"{GOOD_SHA}","marker":"project.godot",
+                 "installPath":"../../../etc"}}"#
+        ))
+        .expect_err("a climbing installPath is not installable");
+        assert!(err.contains("installPath"), "got {err}");
+    }
+
+    #[test]
+    fn an_addon_step_must_be_pinned_by_checksum_over_https() {
+        let plain = addon_catalog(&format!(
+            r#"{{"kind":"addon","label":"L","url":"http://e.test/a.zip",
+                 "sha256":"{GOOD_SHA}","marker":"project.godot",
+                 "installPath":"addons/x"}}"#
+        ))
+        .expect_err("an addon is fetched over the network and unpacked into a project");
+        assert!(plain.contains("https"), "got {plain}");
+
+        let unpinned = addon_catalog(
+            r#"{"kind":"addon","label":"L","url":"https://e.test/a.zip",
+                "sha256":"deadbeef","marker":"project.godot",
+                "installPath":"addons/x"}"#,
+        )
+        .expect_err("a short digest is not a checksum");
+        assert!(unpinned.contains("sha256"), "got {unpinned}");
+    }
+
+    #[test]
+    fn an_addon_marker_is_a_plain_file_name() {
+        let err = addon_catalog(&format!(
+            r#"{{"kind":"addon","label":"L","url":"https://e.test/a.zip",
+                 "sha256":"{GOOD_SHA}","marker":"../project.godot",
+                 "installPath":"addons/x"}}"#
+        ))
+        .expect_err("the marker is looked for inside the chosen directory");
+        assert!(err.contains("marker"), "got {err}");
+    }
+
+    #[test]
+    fn the_godot_addon_is_pinned_to_the_same_release_as_its_server() {
+        // The addon and the server speak a private protocol across the bridge.
+        // A version skew between them is a connected editor that fails on
+        // every call, which is a much worse symptom than not connecting.
+        let entry = load().unwrap().entry("godot").unwrap().clone();
+        let Acquisition::Pypi { version, .. } = &entry.acquisition else {
+            panic!("godot installs from pypi");
+        };
+        let addon = entry
+            .setup
+            .iter()
+            .find_map(|s| match s {
+                SetupStep::Addon { url, .. } => Some(url.clone()),
+                _ => None,
+            })
+            .expect("godot installs its addon for the user");
+        // PyPI normalises the 2026.09.02 release tag to 2026.9.2, so the two
+        // are compared with the zero padding put back.
+        let tag = version
+            .split('.')
+            .map(|p| format!("{:02}", p.parse::<u32>().expect("a numeric version part")))
+            .collect::<Vec<_>>()
+            .join(".");
+        assert_eq!(tag, "2026.09.02", "the pinned server version moved");
+        assert!(
+            addon.contains(&format!("/download/{tag}/")),
+            "addon url {addon} is not pinned to release {tag}"
+        );
+    }
+
     #[test]
     fn a_probe_tool_must_declare_itself_read_only() {
         // The rule that keeps the probe safe: the app calls it unprompted, so
         // it must never be able to reach a tool the approval gate would ask
         // about. Blender's execute_blender_code is why this is written down.
         let entry = companion_entry("godot");
-        assert!(validate_probe_tool(entry, &[("get_editor_state".into(), Some(true))]).is_ok());
+        // The name comes from the entry rather than being written out again.
+        // Hard-coding it here is what once let the catalog name a tool the
+        // server does not have while this test went on passing.
+        let probe = match &entry.companion.as_ref().unwrap().probe {
+            CompanionProbe::Tool { tool, .. } => tool.clone(),
+            CompanionProbe::Tcp { .. } => panic!("godot probes by tool"),
+        };
+        assert!(validate_probe_tool(entry, &[(probe.clone(), Some(true))]).is_ok());
 
-        let not_declared = validate_probe_tool(entry, &[("get_editor_state".into(), None)]);
+        let not_declared = validate_probe_tool(entry, &[(probe.clone(), None)]);
         assert!(
             not_declared.unwrap_err().contains("readOnlyHint"),
             "an unannotated tool is not a safe probe"
         );
 
-        let writes = validate_probe_tool(entry, &[("get_editor_state".into(), Some(false))]);
+        let writes = validate_probe_tool(entry, &[(probe, Some(false))]);
         assert!(writes.is_err());
 
         let missing = validate_probe_tool(entry, &[("something_else".into(), Some(true))]);

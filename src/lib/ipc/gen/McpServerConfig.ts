@@ -51,4 +51,13 @@ proxyUse: ProxyUse,
  * abandoned halfway is configured but not startable, and the UI has to be
  * able to say which.
  */
-setupComplete: boolean, };
+setupComplete: boolean, 
+/**
+ * Directories an `addon` setup step has been installed into.
+ *
+ * Lives here rather than in the wizard's own progress because a companion
+ * addon is per project: a user who adds a second Godot project needs the
+ * addon there too, long after setup finished. The settings row reads this
+ * to show where it went and to offer another project.
+ */
+addonProjects: Array<string>, };

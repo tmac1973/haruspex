@@ -156,7 +156,7 @@ impl McpInstaller {
                 for (key, value) in proxy_env(proxy, ProxyUse::Auto) {
                     create.env(key, value);
                 }
-                create.args(["venv", &venv.to_string_lossy()]);
+                create.args(venv_args(&venv));
                 run_to_completion(create, "uv venv").await?;
 
                 let mut install = runtimes::uv_command()?;
@@ -223,6 +223,121 @@ impl McpInstaller {
                 Ok(())
             }
         }
+    }
+
+    /// Unpack a companion application's addon into a directory the user picked.
+    ///
+    /// Separate from `install()` because it is a different shape of operation:
+    /// the destination is outside the app's own data directory, it targets a
+    /// project rather than a server, and it is repeatable — a user with three
+    /// Godot projects runs it three times. It reuses the same download,
+    /// checksum and progress machinery, so a slow fetch shows the same bar and
+    /// Cancel works the same way.
+    ///
+    /// The archive is unpacked into a staging directory we own and only
+    /// `install_path` is copied across. A malicious archive therefore reaches
+    /// no further than a temporary directory, whatever paths it claims to
+    /// contain.
+    pub async fn install_addon(
+        &self,
+        app: &AppHandle,
+        step: &AddonSpec<'_>,
+        target: &Path,
+        proxy: Option<&ProxyConfig>,
+    ) -> Result<PathBuf, String> {
+        self.reset_cancel().await;
+
+        // The marker is what distinguishes "my Godot project" from a home
+        // directory or a Downloads folder. Getting this wrong scatters an
+        // addons/ tree somewhere the user will never find it.
+        if !target.join(step.marker).is_file() {
+            return Err(format!(
+                "{} does not look like the right folder — it has no {}",
+                target.display(),
+                step.marker
+            ));
+        }
+
+        let staging = target.join(format!(".haruspex-addon{STAGING_SUFFIX}"));
+        let result = self.fetch_addon_into(app, step, &staging, proxy).await;
+        let unpacked = match result {
+            Ok(path) => path,
+            Err(e) => {
+                let _ = tokio::fs::remove_dir_all(&staging).await;
+                return Err(e);
+            }
+        };
+
+        let dest = target.join(step.install_path);
+        let outcome = async {
+            if let Some(parent) = dest.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+            }
+            // Replaced wholesale rather than merged: a previous version's files
+            // that this one dropped would otherwise stay behind and be loaded
+            // by the editor alongside the new ones.
+            let _ = tokio::fs::remove_dir_all(&dest).await;
+            copy_dir(&unpacked, &dest)
+        }
+        .await;
+
+        let _ = tokio::fs::remove_dir_all(&staging).await;
+        outcome?;
+
+        info!("mcp: installed addon into {}", dest.display());
+        emit(app, "Installed", 1, 1);
+        Ok(dest)
+    }
+
+    /// Download, verify and unpack, returning the path to `install_path`
+    /// inside the staging directory.
+    async fn fetch_addon_into(
+        &self,
+        app: &AppHandle,
+        step: &AddonSpec<'_>,
+        staging: &Path,
+        proxy: Option<&ProxyConfig>,
+    ) -> Result<PathBuf, String> {
+        let _ = tokio::fs::remove_dir_all(staging).await;
+        tokio::fs::create_dir_all(staging)
+            .await
+            .map_err(|e| format!("could not create {}: {e}", staging.display()))?;
+
+        let archive = staging.join("addon.zip");
+        self.download(
+            app,
+            step.url,
+            &archive,
+            &format!("Downloading {}", step.label),
+            proxy,
+        )
+        .await?;
+
+        emit(app, "Verifying download", 0, 0);
+        let actual = sha256_of(&archive).await?;
+        if !actual.eq_ignore_ascii_case(step.sha256) {
+            return Err(format!(
+                "checksum mismatch for the {} addon: expected {}, got {actual}",
+                step.label, step.sha256
+            ));
+        }
+
+        emit(app, "Extracting", 0, 0);
+        let unpacked = staging.join("unpacked");
+        std::fs::create_dir_all(&unpacked)
+            .map_err(|e| format!("could not create {}: {e}", unpacked.display()))?;
+        extract(&archive, &unpacked)?;
+
+        let source = unpacked.join(step.install_path);
+        if !source.is_dir() {
+            return Err(format!(
+                "the downloaded archive does not contain {}",
+                step.install_path
+            ));
+        }
+        Ok(source)
     }
 
     /// Stream a URL to a file, emitting progress and honouring cancellation.
@@ -331,12 +446,70 @@ pub async fn place_setup_file(
 }
 
 /// One path component, no separators, no `..`, no root.
-fn is_plain_filename(name: &str) -> bool {
+pub(super) fn is_plain_filename(name: &str) -> bool {
     if name.is_empty() || name == "." || name == ".." {
         return false;
     }
     let path = Path::new(name);
     path.components().count() == 1 && path.file_name().is_some_and(|f| f == name)
+}
+
+/// The fields of a `SetupStep::Addon`, borrowed for the install call.
+///
+/// A struct rather than five positional `&str` parameters: that is exactly the
+/// signature where a caller transposes `marker` and `install_path`, and the
+/// mistake shows up as files in the wrong place on someone else's disk.
+pub struct AddonSpec<'a> {
+    pub label: &'a str,
+    pub url: &'a str,
+    pub sha256: &'a str,
+    pub marker: &'a str,
+    pub install_path: &'a str,
+}
+
+/// Recursively copy a directory tree.
+///
+/// Symlinks are refused rather than skipped or followed. An addon is plain
+/// files; a link in one either escapes the destination when followed or leaves
+/// a dangling entry when not, and both are worse than saying so.
+fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(to).map_err(|e| format!("could not create {}: {e}", to.display()))?;
+    let entries =
+        std::fs::read_dir(from).map_err(|e| format!("could not read {}: {e}", from.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("could not read {}: {e}", from.display()))?;
+        let kind = entry
+            .file_type()
+            .map_err(|e| format!("could not stat {}: {e}", entry.path().display()))?;
+        let dest = to.join(entry.file_name());
+        if kind.is_symlink() {
+            return Err(format!(
+                "the archive contains a symbolic link ({}), which an addon should not",
+                entry.file_name().to_string_lossy()
+            ));
+        } else if kind.is_dir() {
+            copy_dir(&entry.path(), &dest)?;
+        } else {
+            std::fs::copy(entry.path(), &dest)
+                .map_err(|e| format!("could not write {}: {e}", dest.display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// A relative path that cannot climb out of the directory it is joined to.
+///
+/// Every component must be a plain name: no root, no prefix, no `..`, and no
+/// `.`. An addon's `installPath` is joined to a directory the *user* picked, so
+/// a catalog that said `../../..` would be writing wherever it liked on their
+/// machine.
+pub(super) fn is_contained_relative(path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    Path::new(path)
+        .components()
+        .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
 /// Remove a server's directory. Missing is success — uninstall is idempotent,
@@ -546,6 +719,24 @@ fn venv_python(venv: &Path) -> PathBuf {
     venv_bin(venv).join(exe_name("python"))
 }
 
+/// Arguments for creating a server's virtualenv.
+///
+/// `--relocatable` is load-bearing, not a tidiness flag. The venv is built in
+/// the staging directory and renamed into place, and by default uv bakes the
+/// path it was created at into every console script's shebang. The rename then
+/// leaves an entry point whose interpreter does not exist — and that entry
+/// point is precisely what `catalog_spawn_config` launches for a `pypi` server,
+/// so every one of them fails to start with a bare "No such file or directory"
+/// naming a file that is plainly there. Relocatable makes uv emit a shebang
+/// that resolves `python` relative to the script instead.
+fn venv_args(venv: &Path) -> Vec<String> {
+    vec![
+        "venv".to_string(),
+        "--relocatable".to_string(),
+        venv.to_string_lossy().to_string(),
+    ]
+}
+
 fn emit(app: &AppHandle, stage: &str, downloaded: u64, total: u64) {
     let _ = app.emit(
         INSTALL_PROGRESS_EVENT,
@@ -669,6 +860,61 @@ mod tests {
     }
 
     #[test]
+    fn the_virtualenv_is_created_relocatable_because_it_gets_renamed() {
+        let args = venv_args(Path::new("/data/mcp/servers/blender.installing/venv"));
+        assert!(
+            args.iter().any(|a| a == "--relocatable"),
+            "without this the rename into place breaks every console script's \
+             shebang, and the console script is what we launch; got {args:?}"
+        );
+    }
+
+    #[test]
+    fn a_contained_relative_path_cannot_climb_out() {
+        assert!(is_contained_relative("addons/godot_mcp"));
+        assert!(is_contained_relative("addons"));
+        // Each of these, joined to the directory the user picked, lands
+        // somewhere they did not choose.
+        assert!(!is_contained_relative("../addons"));
+        assert!(!is_contained_relative("addons/../../etc"));
+        assert!(!is_contained_relative("/etc/addons"));
+        assert!(!is_contained_relative("./addons"));
+        assert!(!is_contained_relative(""));
+    }
+
+    #[test]
+    fn copying_an_addon_tree_keeps_its_shape() {
+        let root = std::env::temp_dir().join("haruspex_addon_copy_test");
+        let _ = std::fs::remove_dir_all(&root);
+        let from = root.join("from");
+        std::fs::create_dir_all(from.join("handlers")).unwrap();
+        std::fs::write(from.join("plugin.cfg"), b"[plugin]").unwrap();
+        std::fs::write(from.join("handlers").join("editor.gd"), b"extends Node").unwrap();
+
+        let to = root.join("to");
+        copy_dir(&from, &to).unwrap();
+        assert_eq!(std::fs::read(to.join("plugin.cfg")).unwrap(), b"[plugin]");
+        assert!(to.join("handlers").join("editor.gd").is_file());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_in_an_archive_is_refused_rather_than_followed() {
+        // Following one writes outside the destination; skipping it leaves a
+        // silently incomplete addon. Neither is something to do quietly.
+        let root = std::env::temp_dir().join("haruspex_addon_symlink_test");
+        let _ = std::fs::remove_dir_all(&root);
+        let from = root.join("from");
+        std::fs::create_dir_all(&from).unwrap();
+        std::os::unix::fs::symlink("/etc/passwd", from.join("sneaky.gd")).unwrap();
+
+        let err = copy_dir(&from, &root.join("to")).expect_err("a link is not addon content");
+        assert!(err.contains("symbolic link"), "got {err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn an_unknown_archive_format_is_refused_rather_than_guessed_at() {
         let dir = std::env::temp_dir().join("haruspex_mcp_extract_test");
         std::fs::create_dir_all(&dir).unwrap();
@@ -708,6 +954,7 @@ mod tests {
             secrets: BTreeMap::new(),
             tool_enabled: BTreeMap::new(),
             proxy_use,
+            addon_projects: Vec::new(),
             setup_complete: true,
         }
     }
@@ -832,5 +1079,67 @@ mod tests {
             assert!(bin.ends_with("bin"));
             assert!(venv_python(venv).ends_with("python"));
         }
+    }
+}
+
+#[cfg(test)]
+mod addon_tests {
+    use super::*;
+
+    /// The real archive, unpacked the way `install_addon` unpacks it.
+    ///
+    /// Ignored by default because it needs the network; run it when the pinned
+    /// release changes. It is the only check that the catalog's checksum and
+    /// `installPath` actually describe what GitHub serves — every other test
+    /// here would pass just as happily against a made-up archive.
+    #[test]
+    #[ignore = "needs the network"]
+    fn the_pinned_godot_addon_matches_the_catalog() {
+        let catalog = super::super::catalog::load().unwrap();
+        let entry = catalog.entry("godot").unwrap();
+        let (url, sha256, install_path) = entry
+            .setup
+            .iter()
+            .find_map(|s| match s {
+                super::super::catalog::SetupStep::Addon {
+                    url,
+                    sha256,
+                    install_path,
+                    ..
+                } => Some((url.clone(), sha256.clone(), install_path.clone())),
+                _ => None,
+            })
+            .expect("godot installs an addon");
+
+        let dir = std::env::temp_dir().join("haruspex_addon_live_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let archive = dir.join("addon.zip");
+
+        let status = std::process::Command::new("curl")
+            .args(["-sL", "--fail", "-o"])
+            .arg(&archive)
+            .arg(&url)
+            .status()
+            .expect("curl");
+        assert!(status.success(), "could not fetch {url}");
+
+        let actual = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(sha256_of(&archive))
+            .unwrap();
+        assert_eq!(
+            actual, sha256,
+            "the pinned release no longer hashes to this"
+        );
+
+        let unpacked = dir.join("unpacked");
+        std::fs::create_dir_all(&unpacked).unwrap();
+        extract(&archive, &unpacked).unwrap();
+        assert!(
+            unpacked.join(&install_path).join("plugin.cfg").is_file(),
+            "{install_path}/plugin.cfg is what Godot loads"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

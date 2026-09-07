@@ -18,6 +18,7 @@
 		startMcpServer,
 		statusLabel
 	} from '$lib/stores/mcpServers.svelte';
+	import { addonStepIndex, pickAndInstallAddon } from '$lib/stores/mcpAddon';
 	import McpToolList from './McpToolList.svelte';
 	import McpSetupWizard from './McpSetupWizard.svelte';
 
@@ -43,6 +44,37 @@
 	// bridges to is absent is exactly the case a single green dot gets wrong.
 	const companionHint = $derived(companionWarning(runtime));
 	let reprobing = $state(false);
+
+	// A companion addon is per project, so this stays available after setup is
+	// finished: the user who starts a second Godot project needs it there too,
+	// and should not have to walk back through a wizard to say so.
+	const addonStep = $derived(entry ? addonStepIndex(entry.setup) : null);
+	const addonProjects = $derived(config.addonProjects ?? []);
+	const addonLabel = $derived(
+		entry?.companion?.app
+			? `Add the plugin to a ${entry.companion.app} project…`
+			: 'Add the plugin to a project…'
+	);
+	let addingAddon = $state(false);
+	let addonError = $state<string | null>(null);
+	let addonAdded = $state<string | null>(null);
+
+	async function addAddonProject(): Promise<void> {
+		if (addonStep === null) return;
+		addonError = null;
+		addonAdded = null;
+		addingAddon = true;
+		try {
+			const done = await pickAndInstallAddon(config, addonStep);
+			if (!done) return;
+			onchange(done.next);
+			addonAdded = done.installedAt;
+		} catch (e) {
+			addonError = String(e);
+		} finally {
+			addingAddon = false;
+		}
+	}
 
 	/**
 	 * What each proxy choice does, named against the settings the user can go
@@ -187,6 +219,22 @@
 		<button type="button" class="danger" onclick={remove}>Remove</button>
 	</div>
 
+	{#if addonStep !== null && entry}
+		<div class="addon">
+			<button type="button" disabled={addingAddon} onclick={addAddonProject}>
+				{addingAddon ? 'Installing…' : addonLabel}
+			</button>
+			{#if addonProjects.length > 0}
+				<p class="hint" title={addonProjects.join('\n')}>
+					Added to {addonProjects.length}
+					{addonProjects.length === 1 ? 'project' : 'projects'}.
+				</p>
+			{/if}
+			{#if addonAdded}<p class="hint">Added to {addonAdded}</p>{/if}
+			{#if addonError}<p class="error">{addonError}</p>{/if}
+		</div>
+	{/if}
+
 	{#if showSetup && entry}
 		<McpSetupWizard
 			{config}
@@ -222,6 +270,16 @@
 </section>
 
 <style>
+	.addon {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+	.addon .hint {
+		margin: 0;
+	}
 	.failed {
 		border-color: var(--danger, #ef4444);
 	}

@@ -102,6 +102,15 @@ pub struct McpServerConfig {
     /// able to say which.
     #[serde(default)]
     pub setup_complete: bool,
+
+    /// Directories an `addon` setup step has been installed into.
+    ///
+    /// Lives here rather than in the wizard's own progress because a companion
+    /// addon is per project: a user who adds a second Godot project needs the
+    /// addon there too, long after setup finished. The settings row reads this
+    /// to show where it went and to offer another project.
+    #[serde(default)]
+    pub addon_projects: Vec<String>,
 }
 
 impl McpServerConfig {
@@ -143,6 +152,7 @@ mod tests {
             tool_enabled: BTreeMap::new(),
             proxy_use: crate::proxy::ProxyUse::Auto,
             setup_complete: true,
+            addon_projects: Vec::new(),
         }
     }
 

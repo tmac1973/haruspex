@@ -186,6 +186,56 @@ pub async fn mcp_place_setup_file(
     .await
 }
 
+/// Install a companion application's addon into a project directory the user
+/// picked, for a guided-setup `addon` step.
+///
+/// Takes the step's position rather than its contents: the archive URL and its
+/// checksum then come from the bundled catalog on this side of the IPC
+/// boundary, so the frontend cannot be talked into fetching something else.
+#[tauri::command]
+pub async fn mcp_install_addon(
+    app: AppHandle,
+    installer: State<'_, McpInstaller>,
+    entry_id: String,
+    step_index: usize,
+    target_dir: String,
+    proxy: Option<ProxyConfig>,
+) -> Result<String, String> {
+    let catalog = catalog::load()?;
+    let entry = catalog
+        .entry(&entry_id)
+        .ok_or_else(|| format!("no catalog entry named '{entry_id}'"))?;
+    let Some(catalog::SetupStep::Addon {
+        label,
+        url,
+        sha256,
+        marker,
+        install_path,
+        ..
+    }) = entry.setup.get(step_index)
+    else {
+        return Err(format!(
+            "step {step_index} of {entry_id} is not an addon step"
+        ));
+    };
+
+    let installed = installer
+        .install_addon(
+            &app,
+            &install::AddonSpec {
+                label,
+                url,
+                sha256,
+                marker,
+                install_path,
+            },
+            std::path::Path::new(&target_dir),
+            proxy.as_ref(),
+        )
+        .await?;
+    Ok(installed.to_string_lossy().to_string())
+}
+
 /// Run a guided-setup `command` step and return everything it printed.
 ///
 /// Runs to completion rather than streaming: these are one-shot auth flows that

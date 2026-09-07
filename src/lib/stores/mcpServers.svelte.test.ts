@@ -34,6 +34,7 @@ function config(over: Partial<McpServerConfig> = {}): McpServerConfig {
 		toolEnabled: {},
 		proxyUse: 'auto',
 		setupComplete: true,
+		addonProjects: [],
 		...over
 	};
 }

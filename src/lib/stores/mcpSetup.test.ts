@@ -41,9 +41,19 @@ const command: SetupStep = {
 	help: null,
 	optional: false
 };
+const addon: SetupStep = {
+	kind: 'addon',
+	label: 'Install the Godot plugin',
+	url: 'https://example.test/addon.zip',
+	sha256: 'a'.repeat(64),
+	marker: 'project.godot',
+	installPath: 'addons/godot_mcp',
+	help: null,
+	optional: false
+};
 
 function state(over: Partial<SetupState> = {}): SetupState {
-	return { secrets: {}, filesPlaced: [], commandsRun: [], ...over };
+	return { secrets: {}, filesPlaced: [], commandsRun: [], addonProjects: [], ...over };
 }
 
 beforeEach(() => {
@@ -77,6 +87,23 @@ describe('step satisfaction', () => {
 		// nothing stops a catalog from labelling both "Sign in".
 		expect(isStepSatisfied(command, state({ commandsRun: [0] }), 1)).toBe(false);
 		expect(isStepSatisfied(command, state({ commandsRun: [1] }), 1)).toBe(true);
+	});
+
+	it('needs the addon in at least one project', () => {
+		// The step is repeatable — a user with three Godot projects installs it
+		// three times — but one is enough to have finished setting up.
+		expect(isStepSatisfied(addon, state(), 0)).toBe(false);
+		expect(isStepSatisfied(addon, state({ addonProjects: ['/home/me/game'] }), 0)).toBe(true);
+	});
+
+	it('counts an undone optional step as satisfied, whatever its kind', () => {
+		// Blender's Sketchfab key is the case: the help text says to leave it
+		// blank, so a blank one must not disable Next. The same reasoning
+		// applies to an optional file or command — nothing was done, and
+		// nothing needed to be.
+		expect(isStepSatisfied({ ...secret, optional: true }, state(), 0)).toBe(true);
+		expect(isStepSatisfied({ ...file, optional: true }, state(), 0)).toBe(true);
+		expect(isStepSatisfied({ ...command, optional: true }, state(), 0)).toBe(true);
 	});
 });
 
@@ -128,6 +155,13 @@ describe('completion', () => {
 		expect(isSetupComplete([instruction, secret], state())).toBe(false);
 	});
 
+	it('is true with only optional steps left, as Blender’s entry ends', () => {
+		// Blender finishes with two optional asset-service keys. Requiring
+		// them would make its wizard impossible to finish as written.
+		const blenderish = [instruction, { ...secret, optional: true }];
+		expect(isSetupComplete(blenderish, state())).toBe(true);
+	});
+
 	it('is true once every step is satisfied', () => {
 		expect(isSetupComplete([instruction, secret], state({ secrets: { token: 'x' } }))).toBe(true);
 	});
@@ -155,6 +189,12 @@ describe('disclosing the cost before installing', () => {
 		expect(described).toContain('a one-time sign-in');
 	});
 
+	it('says a folder will be asked for when an addon is installed', () => {
+		// Being told up front beats a directory picker appearing unannounced
+		// halfway through setup.
+		expect(describeSetup([instruction, addon])).toContain('a folder to add a plugin to');
+	});
+
 	it('still says something for an instructions-only entry', () => {
 		expect(describeSetup([instruction, instruction])).toContain('2 setup steps');
 	});
@@ -166,5 +206,6 @@ describe('step labels', () => {
 		expect(stepLabel(secret)).toBe('Token');
 		expect(stepLabel(file)).toBe('Keys file');
 		expect(stepLabel(command)).toBe('Sign in');
+		expect(stepLabel(addon)).toBe('Install the Godot plugin');
 	});
 });

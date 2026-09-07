@@ -32,6 +32,13 @@ export interface SetupState {
 	filesPlaced: string[];
 	/** Indices of `command` steps that have been run. */
 	commandsRun: number[];
+	/**
+	 * Project directories an `addon` step has been installed into. Read from
+	 * the stored config rather than tracked in the wizard: unlike every other
+	 * step this one is repeatable, and the settings row offers it again long
+	 * after setup finished.
+	 */
+	addonProjects: string[];
 }
 
 const PROGRESS_KEY = 'haruspex.mcp.setupProgress';
@@ -89,8 +96,15 @@ export function clearSetupProgress(serverId: string): void {
  * Whitespace-only counts as empty for a secret: a token that is a single space
  * would install cleanly and then fail authentication with a message the user
  * cannot connect to what they typed.
+ *
+ * An optional step is satisfied by definition, whether or not it was done —
+ * that is the whole meaning of the flag, and `resolve_env` on the Rust side
+ * already drops an optional secret's variable rather than passing an empty one.
+ * Without this the wizard tells the user to leave Blender's Sketchfab key blank
+ * and then disables Next until they type something.
  */
 export function isStepSatisfied(step: SetupStep, state: SetupState, index: number): boolean {
+	if (step.kind !== 'instruction' && step.optional) return true;
 	switch (step.kind) {
 		case 'instruction':
 			return true;
@@ -100,6 +114,10 @@ export function isStepSatisfied(step: SetupStep, state: SetupState, index: numbe
 			return state.filesPlaced.includes(step.filename);
 		case 'command':
 			return state.commandsRun.includes(index);
+		case 'addon':
+			// One project is enough to finish setup. A user with several adds
+			// the rest from Settings → MCP when they get to them.
+			return state.addonProjects.length > 0;
 	}
 }
 
@@ -130,6 +148,7 @@ export function stepLabel(step: SetupStep): string {
 		case 'secret':
 		case 'file':
 		case 'command':
+		case 'addon':
 			return step.label;
 	}
 }
@@ -148,10 +167,12 @@ export function describeSetup(steps: SetupStep[]): string | null {
 	const secrets = steps.filter((s) => s.kind === 'secret').length;
 	const files = steps.filter((s) => s.kind === 'file').length;
 	const commands = steps.filter((s) => s.kind === 'command').length;
+	const addons = steps.filter((s) => s.kind === 'addon').length;
 	const parts: string[] = [];
 	if (secrets) parts.push(secrets === 1 ? 'a credential' : `${secrets} credentials`);
 	if (files) parts.push(files === 1 ? 'a file from your computer' : `${files} files`);
 	if (commands) parts.push('a one-time sign-in');
+	if (addons) parts.push('a folder to add a plugin to');
 	if (parts.length === 0) return `${steps.length} setup steps to read through.`;
 	const list =
 		parts.length === 1
@@ -166,5 +187,10 @@ export function setupStateOf(
 	filesPlaced: string[],
 	commandsRun: number[]
 ): SetupState {
-	return { secrets: config.secrets, filesPlaced, commandsRun };
+	return {
+		secrets: config.secrets,
+		filesPlaced,
+		commandsRun,
+		addonProjects: config.addonProjects ?? []
+	};
 }
