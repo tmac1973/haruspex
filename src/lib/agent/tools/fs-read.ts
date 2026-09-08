@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { labelArg, resolveShellPath, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
+import { withLocalScopeNote } from './nested-session';
 import { toolError, toolResult } from './types';
 
 // Max images per turn. Each ~1024px image is ~500-800 image tokens for
@@ -123,7 +124,9 @@ registerTool({
 						workdir: ctx.workingDir,
 						relPath: path
 					});
-			return toolResult(formatDirListing(listing));
+			// In Shell mode this listing is of the LOCAL filesystem even when the
+			// terminal has moved onto another host — say so when that's the case.
+			return toolResult(await withLocalScopeNote(formatDirListing(listing), ctx));
 		} catch (e) {
 			return toolResult(toolInvokeError('fs_list_dir', e));
 		}
@@ -178,7 +181,7 @@ registerTool({
 		const text = ctx.shellMode
 			? await fsReadAbsolute('fs_read_text_absolute', resolveShellPath(path, ctx.shellCwd), window)
 			: await fsRead('fs_read_text', ctx.workingDir!, path, window);
-		return toolResult(text);
+		return toolResult(await withLocalScopeNote(text, ctx));
 	}
 });
 

@@ -14,6 +14,7 @@ import {
 } from '$lib/stores/codeCommandApproval.svelte';
 import { runInPty, runInPtyBackground, shouldUsePty, spillIfLarge } from './pty-exec';
 import { registerWatch } from '$lib/shell/backgroundWatch';
+import { withLocalScopeNote } from './nested-session';
 import type { RunCommandResult } from '$lib/ipc/gen/RunCommandResult';
 import type { GrepResult } from '$lib/ipc/gen/GrepResult';
 import type { GlobResult } from '$lib/ipc/gen/GlobResult';
@@ -310,12 +311,13 @@ registerTool({
 				filesOnly: (args.files_only as boolean) ?? null,
 				context: (args.context as number) ?? null
 			});
-			return toolResult(
-				formatGrep(res, {
-					count: (args.count as boolean) ?? false,
-					filesOnly: (args.files_only as boolean) ?? false
-				})
-			);
+			// Searched the LOCAL tree rooted at the tracked shell cwd — which is
+			// the wrong tree once the terminal has ssh'd elsewhere.
+			const out = formatGrep(res, {
+				count: (args.count as boolean) ?? false,
+				filesOnly: (args.files_only as boolean) ?? false
+			});
+			return toolResult(await withLocalScopeNote(out, ctx));
 		} catch (e) {
 			return toolResult(toolInvokeError('code_grep', e));
 		}
@@ -361,7 +363,7 @@ registerTool({
 				pattern: args.pattern as string,
 				maxResults: null
 			});
-			return toolResult(formatGlob(res));
+			return toolResult(await withLocalScopeNote(formatGlob(res), ctx));
 		} catch (e) {
 			return toolResult(toolInvokeError('code_glob', e));
 		}

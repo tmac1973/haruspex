@@ -36,6 +36,7 @@ import {
 	buildShellCodeSystemPrompt,
 	type ShellSessionContext
 } from '$lib/shell/system-prompt';
+import { classifyNestedSession, type NestedSession } from '$lib/shell/nestedSession';
 import { resetSessionApproval } from '$lib/stores/codeCommandApproval.svelte';
 import { runShellTurn } from '$lib/shell/runShellTurn';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
@@ -75,6 +76,8 @@ export interface ShellSubmission {
 	sessionContext: ShellSessionContext;
 	currentCwd: string | null;
 	recentHistory: string[];
+	/** The ssh / container session the terminal is sitting in, if any. */
+	nestedSession?: NestedSession | null;
 	/** Optional user-attached image data URLs (drag-drop / paste). */
 	images?: string[];
 }
@@ -561,6 +564,7 @@ export class ShellSession {
 		currentCwd: string | null;
 		recentHistory: string[];
 		completedTotal: number;
+		nestedSession: NestedSession | null;
 	} | null> => {
 		if (!this.activeSession) return null;
 		const ctxRes = await invoke<ShellContextResponse>('shell_get_context', {
@@ -575,10 +579,18 @@ export class ShellSession {
 					limit: 10
 				})
 			: [];
+		// If the user has stepped onto another host (or into a container), the
+		// cwd above froze at whatever the local shell last reported and the file
+		// tools no longer describe what the terminal shows. The prompt has to say
+		// so, so classify the in-flight command every turn.
+		const pending = await invoke<string | null>('shell_pending_command', {
+			sessionId: this.activeSession.sessionId
+		}).catch(() => null);
 		return {
 			currentCwd: ctxRes.current_cwd,
 			recentHistory: history,
-			completedTotal: ctxRes.completed_total
+			completedTotal: ctxRes.completed_total,
+			nestedSession: classifyNestedSession(pending)
 		};
 	};
 
@@ -667,6 +679,7 @@ export class ShellSession {
 			sessionContext: session.context,
 			currentCwd: live.currentCwd,
 			recentHistory: live.recentHistory,
+			nestedSession: live.nestedSession,
 			images
 		});
 	};
@@ -701,7 +714,8 @@ export class ShellSession {
 			body,
 			sessionContext: sess.context,
 			currentCwd: live?.currentCwd ?? null,
-			recentHistory: live?.recentHistory ?? []
+			recentHistory: live?.recentHistory ?? [],
+			nestedSession: live?.nestedSession ?? null
 		});
 	};
 
@@ -743,7 +757,8 @@ export class ShellSession {
 			body,
 			sessionContext: session.context,
 			currentCwd: live.currentCwd,
-			recentHistory: live.recentHistory
+			recentHistory: live.recentHistory,
+			nestedSession: live.nestedSession
 		});
 	};
 
@@ -874,7 +889,8 @@ export class ShellSession {
 		const promptOpts = {
 			sessionContext: payload.sessionContext,
 			currentCwd: payload.currentCwd,
-			recentHistory: payload.recentHistory
+			recentHistory: payload.recentHistory,
+			nestedSession: payload.nestedSession ?? null
 		};
 		const systemPrompt = this.codeMode
 			? buildShellCodeSystemPrompt(promptOpts)

@@ -7,6 +7,7 @@ import type { ToolContext, ToolExecOutput } from './types';
 import { IMAGE_EXT_RE } from './fs-read';
 import { lintPythonIfApplicable } from './python-lint';
 import { isAutoApproveActive } from '$lib/stores/approvalOverride';
+import { localWriteBlocked } from './nested-session';
 import type { EditResult } from '$lib/ipc/gen/EditResult';
 
 /**
@@ -396,6 +397,11 @@ function shellAwareWriteText() {
 		if (!(ctx.shellMode && ctx.codeMode)) return chat(args, ctx);
 		const err = validateTextContent(args, 'fs_write_text');
 		if (err) return toolResult(toolError(err));
+		// The terminal may have walked off this machine (ssh, container). The
+		// write would land locally while the model believes it edited the file
+		// it is looking at, so refuse and point at the shell instead.
+		const elsewhere = await localWriteBlocked('fs_write_text', ctx);
+		if (elsewhere) return toolResult(toolError(elsewhere));
 		// Resolve a bare/relative name against the shell's cwd so the model's
 		// natural `snake_game.py` lands instead of erroring on the absolute
 		// requirement.
@@ -423,6 +429,8 @@ function shellAwareEditText() {
 		const rootErr = writeRootError(args.path, ctx);
 		if (rootErr) return toolResult(toolError(rootErr));
 		if (ctx.shellMode && ctx.codeMode) {
+			const elsewhere = await localWriteBlocked('fs_edit_text', ctx);
+			if (elsewhere) return toolResult(toolError(elsewhere));
 			const path = resolveShellPath(args.path as string, ctx.shellCwd);
 			try {
 				const r = await invoke<EditResult>('fs_edit_text_absolute', {
