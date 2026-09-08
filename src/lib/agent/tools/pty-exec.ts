@@ -12,6 +12,7 @@ import { sleep } from '$lib/utils/async';
 import { getSettings } from '$lib/stores/settings';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
 import { toPtyPaste } from '$lib/shell/commandBlock';
+import { classifyNestedSession, describeNestedSession } from '$lib/shell/nestedSession';
 import { setPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
 import type { ToolContext } from './types';
 
@@ -62,6 +63,32 @@ export async function shouldUsePty(ctx: ToolContext): Promise<boolean> {
 }
 
 /**
+ * What to tell the model when the terminal already has a foreground program.
+ * A nested session (ssh, a container) needs different advice from a stuck
+ * build: the terminal isn't merely busy, it is somewhere else, and the way to
+ * run something there is shell_input rather than waiting for it to finish.
+ */
+function busyMessage(inflight: string): string {
+	const nested = classifyNestedSession(inflight);
+	if (nested) {
+		const there = nested.kind === 'remote' ? 'that host' : 'that container';
+		return (
+			`The terminal is inside ${describeNestedSession(nested)}, so run_command cannot start a ` +
+			`command here — that session owns the terminal. To run something ON ${there}, type it with ` +
+			`shell_input and read the result with shell_read. Note that ${there} is NOT this machine: ` +
+			'the file tools (fs_read_text, fs_write_text, fs_edit_text, code_grep) stay local, so use the ' +
+			`session for any file work on ${there}. To get back to this machine, shell_input \`exit\`.`
+		);
+	}
+	return (
+		`The terminal is busy running \`${inflight || 'a command'}\` (still in progress), ` +
+		'so a new command cannot run here yet. Use shell_read to see its output, shell_input to send ' +
+		'it input (answer a prompt, or drive a REPL/debugger), or shell_interrupt to stop it and free ' +
+		'the terminal. Do not re-run it.'
+	);
+}
+
+/**
  * Run a command in the live interactive PTY: inject it (bracketed paste +
  * Enter), lock the terminal, poll the shell-integration completion counter
  * until it ticks or the timeout fires, then return the captured region. On
@@ -91,14 +118,7 @@ export async function runInPty(
 		// it owns the terminal's stdin. Injecting now would send our keystrokes
 		// to *that* program, not the shell. Refuse with a clear message instead.
 		const inflight = await pendingCommand(sessionId);
-		if (inflight) {
-			return (
-				`The terminal is busy running \`${inflight || 'a command'}\` (still in progress), ` +
-				'so a new command cannot run here yet. Use shell_read to see its output, shell_input to send ' +
-				'it input (answer a prompt, or drive a REPL/debugger), or shell_interrupt to stop it and free ' +
-				'the terminal. Do not re-run it.'
-			);
-		}
+		if (inflight) return busyMessage(inflight);
 
 		const before = (await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId }))
 			.completed_total;
@@ -165,6 +185,15 @@ export async function runInPtyBackground(
 ): Promise<BackgroundHandle | string> {
 	const inflight = await pendingCommand(sessionId);
 	if (inflight) {
+		const nested = classifyNestedSession(inflight);
+		if (nested) {
+			return (
+				`The terminal is inside ${describeNestedSession(nested)}, so nothing can be backgrounded ` +
+				'here — a background command would have to be started inside that session with shell_input ' +
+				`(\`cmd > log 2>&1 &\`). Leave the session first (shell_input \`exit\`) if you meant to run it on ` +
+				'this machine.'
+			);
+		}
 		return (
 			`The terminal is busy running \`${inflight || 'a command'}\`, so a background ` +
 			'command cannot start here yet. Free the terminal first (shell_interrupt), then retry.'

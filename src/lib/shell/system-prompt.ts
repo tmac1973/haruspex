@@ -17,6 +17,7 @@
 import type { ChatMessage } from '$lib/api';
 import type { SessionContext } from '$lib/ipc/gen/SessionContext';
 import { getSettings } from '$lib/stores/settings';
+import { nestedSessionPromptBlock, type NestedSession } from './nestedSession';
 import { formatTodayLong } from '$lib/utils/format';
 
 /** Re-export of the ts-rs-generated Rust `SessionContext` under the
@@ -27,6 +28,10 @@ export interface BuildShellPromptOpts {
 	sessionContext: ShellSessionContext;
 	currentCwd: string | null;
 	recentHistory: string[];
+	/** Set when the terminal is sitting inside `ssh` / a container at the
+	 *  moment of the turn — the environment the PTY tools act on is then not
+	 *  the one the file tools act on, and the agent has to be told. */
+	nestedSession?: NestedSession | null;
 }
 
 /**
@@ -43,19 +48,31 @@ export interface BuildShellPromptOpts {
 function buildSessionBlock(
 	opts: BuildShellPromptOpts,
 	cwdLabel: string,
-	historyLabel: string
+	historyLabel: string,
+	mode: 'code' | 'chat'
 ): string {
 	const env = describeEnvironment(opts.sessionContext);
 	const cwd = opts.currentCwd ? `${cwdLabel}: ${opts.currentCwd}` : '';
 	const history = opts.recentHistory.length
 		? `${historyLabel} (most recent last):\n${opts.recentHistory.map((c) => `  ${c}`).join('\n')}`
 		: '';
-	return [env, cwd, history].filter(Boolean).join('\n');
+	// Everything above describes the LOCAL machine, captured when the PTY
+	// spawned. If the terminal has since walked onto another host, that has to
+	// land right next to it or the model reads the stale cwd as current.
+	const nested = opts.nestedSession
+		? `\n${nestedSessionPromptBlock(opts.nestedSession, mode)}`
+		: '';
+	return [env, cwd, history].filter(Boolean).join('\n') + nested;
 }
 
 export function buildShellCodeSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
 	const today = formatTodayLong();
-	const sessionBlock = buildSessionBlock(opts, 'Current directory', 'Recent shell activity');
+	const sessionBlock = buildSessionBlock(
+		opts,
+		'Current directory',
+		'Recent shell activity',
+		'code'
+	);
 
 	const custom = getSettings().customSystemPrompt?.trim();
 	const customBlock = custom ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}` : '';
@@ -98,6 +115,12 @@ RUNNING PROCESSES (the terminal runs ONE foreground program at a time):
 - Interactive programs (gdb/lldb, python/node REPLs, ssh, anything that prompts): launch with run_command — it will report "still running" once the program is waiting — then drive it with shell_input and observe with shell_read, and shell_interrupt or send the program's own quit command (\`quit\`, \`exit\`, Ctrl-D) when finished. Do NOT run an interactive program and expect run_command to return its full session.
 - Never abandon a process you started holding the terminal — interrupt it or background it so later commands can run.
 
+TWO ENVIRONMENTS (this is easy to get wrong):
+- run_command, shell_input and shell_read act on whatever the TERMINAL is currently in. The file tools (fs_read_text, fs_list_dir, fs_write_text, fs_edit_text, code_grep, code_glob) always act on THIS machine.
+- They are the same place only while the terminal sits at a local prompt. The moment it enters another environment — \`ssh\`, \`docker exec -it\`, \`distrobox enter\`, a chroot — they diverge: the file tools cannot see or change anything over there, and the current directory shown above stops tracking the shell.
+- When that happens, do all file work through the session: \`cat\`/\`ls\` to read, a \`cat > path <<'EOF' … EOF\` heredoc or \`sed -i\` to write, sent with shell_input. Writes with fs_write_text/fs_edit_text are refused while the terminal is elsewhere, and a file tool's output is labelled when it came from the local machine — believe the label.
+- Never tell the user you changed a file on the remote host when the change went through a file tool.
+
 HOW TO WORK:
 - Explore before editing: grep/glob to locate code, read the relevant slices, then change it.
 - Verify your work: after editing, run the project's own build / test / lint via run_command and fix what breaks before reporting done.
@@ -109,7 +132,12 @@ HOW TO WORK:
 
 export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
 	const today = formatTodayLong();
-	const sessionBlock = buildSessionBlock(opts, 'Current working directory', 'Recent shell history');
+	const sessionBlock = buildSessionBlock(
+		opts,
+		'Current working directory',
+		'Recent shell history',
+		'chat'
+	);
 
 	// PowerShell sessions need PowerShell-flavored suggestions in a fenced
 	// `powershell` block (so the UI renders a Run/Paste card) and Windows
