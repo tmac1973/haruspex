@@ -13,6 +13,11 @@ import { getSettings } from '$lib/stores/settings';
 import { truncateCapturedOutput } from '$lib/shell/truncate';
 import { toPtyPaste } from '$lib/shell/commandBlock';
 import { classifyNestedSession, describeNestedSession } from '$lib/shell/nestedSession';
+import {
+	classifyNestedShell,
+	unhookableShellMessage,
+	type NestedShell
+} from '$lib/shell/nestedShell';
 import { setPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
 import type { ToolContext } from './types';
 
@@ -21,8 +26,16 @@ export const RUN_OUTPUT_MAX_BYTES = 16 * 1024;
 
 const PTY_POLL_MS = 100;
 
+/**
+ * How long to wait for a nested shell to prove it picked up the hook we
+ * sourced into it. It only has to draw one prompt, which is immediate; the
+ * budget is for a shell busy running a slow `~/.bashrc`.
+ */
+const HOOK_WAIT_MS = 3000;
+
 interface ShellCtxSnapshot {
 	completed_total: number;
+	marker_total: number;
 	current_cwd: string | null;
 }
 interface CapturedRegion {
@@ -63,6 +76,79 @@ export async function shouldUsePty(ctx: ToolContext): Promise<boolean> {
 }
 
 /**
+ * Nested shells we tried and failed to hook, per session, keyed by the command
+ * line that opened them. A hook that didn't take won't take on a retry either,
+ * and each attempt costs the user a line of noise in their terminal.
+ *
+ * Only failures are recorded. A hook that worked needs no memo: the first
+ * command run through it completes the outer shell's marker pair, so the
+ * terminal reads as idle from then on and this path isn't reached again — and
+ * if the user leaves that shell and opens another, that one does need its own
+ * attempt.
+ */
+const failedHooks = new Map<number, Set<string>>();
+
+/** Test seam: forget every recorded failure. */
+export function resetNestedShellHooks(): void {
+	failedHooks.clear();
+}
+
+function recordHookFailure(sessionId: number, command: string): void {
+	const failed = failedHooks.get(sessionId);
+	if (failed) failed.add(command);
+	else failedHooks.set(sessionId, new Set([command]));
+}
+
+/** Single-quote for a POSIX shell: wrap, and close/escape/reopen any quote. */
+function shellQuote(path: string): string {
+	return `'${path.replace(/'/g, `'\\''`)}'`;
+}
+
+async function markerTotal(sessionId: number): Promise<number> {
+	const ctx = await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId });
+	return ctx.marker_total;
+}
+
+/**
+ * Turn command capture back on inside a shell the user started by hand, by
+ * sourcing the same OSC 133 hook the spawn path would have installed.
+ *
+ * Verified rather than assumed: the hook announces itself by drawing the next
+ * prompt through it, which emits markers. If the count doesn't move — no hook
+ * shipped for this shell, an unreadable path, a shell that isn't what its name
+ * says — we report failure and the caller falls back to a message, rather than
+ * injecting a command nothing will ever mark complete.
+ */
+async function hookNestedShell(sessionId: number, shell: NestedShell): Promise<boolean> {
+	if (failedHooks.get(sessionId)?.has(shell.command)) return false;
+	if (await sourceHook(sessionId, shell)) return true;
+	recordHookFailure(sessionId, shell.command);
+	return false;
+}
+
+async function sourceHook(sessionId: number, shell: NestedShell): Promise<boolean> {
+	let hook: string | null = null;
+	try {
+		hook = await invoke<string | null>('shell_integration_hook', { shell: shell.program });
+	} catch {
+		return false;
+	}
+	if (!hook) return false;
+
+	const before = await markerTotal(sessionId);
+	await invoke('shell_write', {
+		sessionId,
+		data: toPtyPaste(`. ${shellQuote(hook)}`, { execute: true })
+	});
+	const deadline = Date.now() + HOOK_WAIT_MS;
+	while (Date.now() < deadline) {
+		await sleep(PTY_POLL_MS);
+		if ((await markerTotal(sessionId)) > before) return true;
+	}
+	return false;
+}
+
+/**
  * What to tell the model when the terminal already has a foreground program.
  * A nested session (ssh, a container) needs different advice from a stuck
  * build: the terminal isn't merely busy, it is somewhere else, and the way to
@@ -80,6 +166,8 @@ function busyMessage(inflight: string): string {
 			`session for any file work on ${there}. To get back to this machine, shell_input \`exit\`.`
 		);
 	}
+	const shell = classifyNestedShell(inflight);
+	if (shell) return unhookableShellMessage(shell);
 	return (
 		`The terminal is busy running \`${inflight || 'a command'}\` (still in progress), ` +
 		'so a new command cannot run here yet. Use shell_read to see its output, shell_input to send ' +
@@ -117,7 +205,16 @@ export async function runInPty(
 		// user launched, or a prior command that timed out and was left running —
 		// it owns the terminal's stdin. Injecting now would send our keystrokes
 		// to *that* program, not the shell. Refuse with a clear message instead.
-		const inflight = await pendingCommand(sessionId);
+		let inflight = await pendingCommand(sessionId);
+		if (inflight) {
+			// A shell the user opened by hand (`bash` at a fish prompt) reads as
+			// a command that never ends, because the outer shell's "finished"
+			// marker only fires when it exits. It is really sitting at a prompt
+			// ready for input — so install the hook it's missing and carry on,
+			// rather than refusing for as long as the user stays in it.
+			const shell = classifyNestedShell(inflight);
+			if (shell?.hookable && (await hookNestedShell(sessionId, shell))) inflight = null;
+		}
 		if (inflight) return busyMessage(inflight);
 
 		const before = (await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId }))
@@ -183,7 +280,11 @@ export async function runInPtyBackground(
 	command: string,
 	signal: AbortSignal | undefined
 ): Promise<BackgroundHandle | string> {
-	const inflight = await pendingCommand(sessionId);
+	let inflight = await pendingCommand(sessionId);
+	if (inflight) {
+		const shell = classifyNestedShell(inflight);
+		if (shell?.hookable && (await hookNestedShell(sessionId, shell))) inflight = null;
+	}
 	if (inflight) {
 		const nested = classifyNestedSession(inflight);
 		if (nested) {
@@ -192,6 +293,14 @@ export async function runInPtyBackground(
 				'here — a background command would have to be started inside that session with shell_input ' +
 				`(\`cmd > log 2>&1 &\`). Leave the session first (shell_input \`exit\`) if you meant to run it on ` +
 				'this machine.'
+			);
+		}
+		const shell = classifyNestedShell(inflight);
+		if (shell) {
+			return (
+				`The terminal has \`${shell.command}\` open inside it — a second shell with none of the ` +
+				'command-capture hooks, so nothing can be backgrounded through it. Send `exit` with ' +
+				'shell_input to return to the outer shell, then retry.'
 			);
 		}
 		return (

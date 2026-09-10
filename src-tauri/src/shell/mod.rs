@@ -283,6 +283,11 @@ pub struct ShellContextResponse {
     /// command it launched finishing (marker_count can't, once saturated).
     #[ts(type = "number")]
     pub completed_total: u64,
+    /// Monotonic lifetime count of ALL markers, for the same reason. A prompt
+    /// redraw emits A+B and no D, so `completed_total` can't see it; the
+    /// nested-shell hook check in run_command watches this instead.
+    #[ts(type = "number")]
+    pub marker_total: u64,
 }
 
 #[tauri::command]
@@ -297,6 +302,7 @@ pub fn shell_get_context(
             marker_count: session.marker_count(),
             completed_commands: session.completed_command_count(),
             completed_total: session.completed_command_total(),
+            marker_total: session.marker_total(),
         })
     })
 }
@@ -332,6 +338,25 @@ pub fn shell_pending_command(
     session_id: SessionId,
 ) -> Result<Option<String>, String> {
     state.with_session(session_id, |session| Ok(session.pending_command_line()))
+}
+
+/// Absolute path of the OSC 133 hook script for `shell`, or None when we don't
+/// ship one for it.
+///
+/// Sessions get their hook at spawn time (`pty::plan_integration`), but the
+/// terminal can step into a shell that never went through it — `bash` typed at
+/// a fish prompt. That inner shell emits no markers, so command capture stops
+/// working and the terminal looks permanently busy running `bash`. run_command
+/// sources this file into it to turn the markers back on.
+#[tauri::command]
+pub fn shell_integration_hook(app: AppHandle, shell: String) -> Option<String> {
+    let file = match shell.as_str() {
+        "bash" => "haruspex.bash",
+        "zsh" => "haruspex.zsh",
+        _ => return None,
+    };
+    let path = integration_dir(&app)?.join(file);
+    path.is_file().then(|| path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

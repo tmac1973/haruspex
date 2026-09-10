@@ -96,6 +96,12 @@ pub struct Integration {
     /// caps when the ring saturates, so callers can detect "a new command
     /// finished" by waiting for it to increase (used by the Run auto-submit).
     output_end_total: u64,
+    /// Monotonic count of ALL markers seen over the session's whole lifetime.
+    /// `markers.len()` caps at `marker_capacity`, so it stops moving in a long
+    /// session; this doesn't. Callers waiting for "did the shell emit anything
+    /// at all" — the nested-shell hook check in run_command — need a signal
+    /// that still ticks once the ring is saturated.
+    marker_total: u64,
     /// Most recent cwd announced via OSC 7.
     current_cwd: Option<String>,
     state: ParserState,
@@ -115,6 +121,7 @@ impl Integration {
             markers: VecDeque::with_capacity(marker_capacity),
             marker_capacity,
             output_end_total: 0,
+            marker_total: 0,
             current_cwd: None,
             state: ParserState::Normal,
         }
@@ -253,6 +260,7 @@ impl Integration {
     }
 
     fn push_marker(&mut self, marker: Marker) {
+        self.marker_total = self.marker_total.saturating_add(1);
         if marker.kind == MarkerKind::OutputEnd {
             self.output_end_total = self.output_end_total.saturating_add(1);
         }
@@ -266,6 +274,12 @@ impl Integration {
     /// lifetime. Never resets or caps — see the field comment.
     pub fn output_end_total(&self) -> u64 {
         self.output_end_total
+    }
+
+    /// Monotonic count of every marker seen over the session's lifetime.
+    /// Never resets or caps — see the field comment.
+    pub fn marker_total(&self) -> u64 {
+        self.marker_total
     }
 
     #[allow(dead_code)] // Used by tests + future debug overlay
@@ -753,6 +767,20 @@ mod tests {
         }
         assert_eq!(integ.output_end_total(), 50);
         // The marker ring itself is capped...
+        assert!(integ.markers().count() <= 8);
+    }
+
+    #[test]
+    fn marker_total_counts_prompt_redraws_that_never_complete() {
+        // A shell drawing prompts without running anything emits A+B and no D.
+        // output_end_total can't see that; marker_total must — it's how
+        // run_command tells whether a hook it sourced into a nested shell took.
+        let mut integ = Integration::with_capacity(DEFAULT_OUTPUT_CAPACITY, 8);
+        for _ in 0..50 {
+            integ.ingest(b"\x1B]133;A\x07$ \x1B]133;B\x07");
+        }
+        assert_eq!(integ.output_end_total(), 0);
+        assert_eq!(integ.marker_total(), 100);
         assert!(integ.markers().count() <= 8);
     }
 

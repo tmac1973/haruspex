@@ -300,6 +300,16 @@ impl Session {
             .unwrap_or(0)
     }
 
+    /// Monotonic count of every OSC 133 marker over the session's lifetime
+    /// (never caps when the ring saturates). run_command polls this to tell
+    /// whether a hook it sourced into a nested shell actually took.
+    pub fn marker_total(&self) -> u64 {
+        self.integration
+            .lock()
+            .map(|i| i.marker_total())
+            .unwrap_or(0)
+    }
+
     pub fn current_cwd(&self) -> Option<String> {
         self.integration
             .lock()
