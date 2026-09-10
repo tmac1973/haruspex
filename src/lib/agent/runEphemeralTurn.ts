@@ -14,6 +14,7 @@
  *     wants a live preview (the runner does, the UI reflects it).
  */
 
+import { mergeLeadingSystemMessages } from '$lib/api';
 import type { BackendOverride, ChatMessage, Usage } from '$lib/api';
 import type { CallStats } from '$lib/agent/loop';
 import type { SamplingParams } from '$lib/stores/settings';
@@ -131,13 +132,17 @@ export interface EphemeralTurnResult {
 export async function runEphemeralTurn(
 	options: EphemeralTurnOptions
 ): Promise<EphemeralTurnResult> {
-	const messages: ChatMessage[] = [
+	// Merged, not just concatenated: a remote guest's history can open with a
+	// compaction summary of its own, and two system messages in a row are
+	// rejected by strict chat templates (vLLM: "System message must be at the
+	// beginning.").
+	const messages: ChatMessage[] = mergeLeadingSystemMessages([
 		options.systemPrompt != null
 			? { role: 'system', content: options.systemPrompt }
 			: buildSystemPrompt(options.workingDir),
 		...(options.history ?? []),
 		{ role: 'user', content: options.userMessage }
-	];
+	]);
 
 	// An explicit caller assertion wins; otherwise fall back to sniffing the user
 	// message for binary-document keywords (the chat default).

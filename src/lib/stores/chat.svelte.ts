@@ -1,4 +1,10 @@
-import { type ChatMessage, type Usage, ApiError, messageText } from '$lib/api';
+import {
+	type ChatMessage,
+	type Usage,
+	ApiError,
+	messageText,
+	mergeLeadingSystemMessages
+} from '$lib/api';
 import {
 	runAgentLoop,
 	type SearchStep,
@@ -989,28 +995,6 @@ function buildApiPrompt(
 		exhaustiveResearch
 	});
 	return { messages: messagesForApi, baseMessageCount: messagesForApi.length };
-}
-
-/**
- * Collapse consecutive leading system messages into one. The compaction
- * summary is stored as a system message at the front of history; once the
- * fresh system prompt is prepended, that becomes two adjacent system
- * messages, which strict chat templates reject.
- */
-function mergeLeadingSystemMessages(messages: ChatMessage[]): ChatMessage[] {
-	const merged: ChatMessage[] = [];
-	for (const m of messages) {
-		const prev = merged[merged.length - 1];
-		if (m.role === 'system' && prev && prev.role === 'system') {
-			merged[merged.length - 1] = {
-				...prev,
-				content: `${messageText(prev.content)}\n\n${messageText(m.content)}`
-			};
-		} else {
-			merged.push(m);
-		}
-	}
-	return merged;
 }
 
 /**

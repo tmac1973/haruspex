@@ -94,6 +94,36 @@ export function messageText(content: MessageContent): string {
 		.join('\n');
 }
 
+/**
+ * Collapse adjacent `system` messages into one.
+ *
+ * Every prompt builder here prepends a freshly-built system prompt to a
+ * stored thread, and a thread can already open with a system message of its
+ * own: a compaction summary on the Chat tab, the "moved here from Chat" note
+ * or a history-trim note on a Shell tab. That makes two system messages in a
+ * row, which strict chat templates reject outright — vLLM answers `400
+ * System message must be at the beginning.` — so fold the later ones into
+ * the first instead of shipping them separately.
+ *
+ * Call this on the outgoing copy of a thread, never on stored state: the
+ * sidebar renders those notes as their own entries.
+ */
+export function mergeLeadingSystemMessages(messages: ChatMessage[]): ChatMessage[] {
+	const merged: ChatMessage[] = [];
+	for (const m of messages) {
+		const prev = merged[merged.length - 1];
+		if (m.role === 'system' && prev && prev.role === 'system') {
+			merged[merged.length - 1] = {
+				...prev,
+				content: `${messageText(prev.content)}\n\n${messageText(m.content)}`
+			};
+		} else {
+			merged.push(m);
+		}
+	}
+	return merged;
+}
+
 export interface ToolCall {
 	id: string;
 	type: 'function';
