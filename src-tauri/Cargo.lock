@@ -3025,7 +3025,7 @@ dependencies = [
 
 [[package]]
 name = "haruspex"
-version = "0.1.61"
+version = "0.2.0"
 dependencies = [
  "arboard",
  "ashpd",
