@@ -120,12 +120,12 @@ const CONTAINER_VALUE_FLAGS = new Set([
 ]);
 
 /** Split on whitespace; good enough for a command line we only pattern-match. */
-function tokenize(commandLine: string): string[] {
+export function tokenize(commandLine: string): string[] {
 	return commandLine.trim().split(/\s+/).filter(Boolean);
 }
 
 /** Strip `FOO=bar` assignments and wrapper programs off the front. */
-function unwrap(tokens: string[]): string[] {
+export function unwrap(tokens: string[]): string[] {
 	let i = 0;
 	while (i < tokens.length) {
 		const t = tokens[i];
@@ -147,7 +147,7 @@ function unwrap(tokens: string[]): string[] {
 	return tokens.slice(i);
 }
 
-function basename(path: string): string {
+export function basename(path: string): string {
 	const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
 	return cut >= 0 ? path.slice(cut + 1) : path;
 }

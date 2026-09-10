@@ -22,4 +22,10 @@ completed_commands: number,
  * marker ring saturates. The Run auto-submit polls this to detect the
  * command it launched finishing (marker_count can't, once saturated).
  */
-completed_total: number, };
+completed_total: number, 
+/**
+ * Monotonic lifetime count of ALL markers, for the same reason. A prompt
+ * redraw emits A+B and no D, so `completed_total` can't see it; the
+ * nested-shell hook check in run_command watches this instead.
+ */
+marker_total: number, };
