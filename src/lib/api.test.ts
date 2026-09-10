@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseSSE, chatCompletion, chatCompletionStream, ApiError } from '$lib/api';
+import {
+	parseSSE,
+	chatCompletion,
+	chatCompletionStream,
+	ApiError,
+	mergeLeadingSystemMessages
+} from '$lib/api';
+import type { ChatMessage } from '$lib/api';
 
 // Mock the settings module so resolveChatEndpoint (via resolveBackendDescriptor)
 // sees the backend we want. vi.hoisted ensures the mock fns are available when
@@ -472,5 +479,57 @@ describe('chatCompletion — OpenRouter', () => {
 		expect(body.reasoning).toEqual({ effort: 'high' });
 
 		vi.unstubAllGlobals();
+	});
+});
+
+describe('mergeLeadingSystemMessages', () => {
+	it('folds a thread-leading system note into the system prompt', () => {
+		const merged = mergeLeadingSystemMessages([
+			{ role: 'system', content: 'prompt' },
+			{ role: 'system', content: '[moved here from Chat]' },
+			{ role: 'user', content: 'hi' }
+		]);
+		expect(merged).toEqual([
+			{ role: 'system', content: 'prompt\n\n[moved here from Chat]' },
+			{ role: 'user', content: 'hi' }
+		]);
+	});
+
+	it('collapses a run of three into one', () => {
+		const merged = mergeLeadingSystemMessages([
+			{ role: 'system', content: 'a' },
+			{ role: 'system', content: 'b' },
+			{ role: 'system', content: 'c' },
+			{ role: 'user', content: 'hi' }
+		]);
+		expect(merged).toHaveLength(2);
+		expect(merged[0].content).toBe('a\n\nb\n\nc');
+	});
+
+	it('leaves a thread with one system message untouched', () => {
+		const messages: ChatMessage[] = [
+			{ role: 'system', content: 'prompt' },
+			{ role: 'user', content: 'hi' },
+			{ role: 'assistant', content: 'there' }
+		];
+		expect(mergeLeadingSystemMessages(messages)).toEqual(messages);
+	});
+
+	it('does not mutate the input', () => {
+		const messages: ChatMessage[] = [
+			{ role: 'system', content: 'a' },
+			{ role: 'system', content: 'b' }
+		];
+		mergeLeadingSystemMessages(messages);
+		expect(messages).toHaveLength(2);
+		expect(messages[0].content).toBe('a');
+	});
+
+	it('flattens multimodal content when folding', () => {
+		const merged = mergeLeadingSystemMessages([
+			{ role: 'system', content: [{ type: 'text', text: 'prompt' }] },
+			{ role: 'system', content: 'note' }
+		]);
+		expect(merged[0].content).toBe('prompt\n\nnote');
 	});
 });

@@ -61,6 +61,7 @@ import {
 	resetSessionApproval
 } from '$lib/stores/codeCommandApproval.svelte';
 import { setPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
+import type { ChatMessage } from '$lib/api';
 
 beforeEach(() => {
 	// Drain the module-level registry between tests.
@@ -792,5 +793,32 @@ describe('code-mode session persistence', () => {
 		await s.restoreCodeThread('/work');
 		expect(s.messages).toHaveLength(0);
 		expect(s.restoredNotice).toBeNull();
+	});
+});
+
+describe('outgoing prompt shape', () => {
+	it("folds an adopted chat thread's handoff note into the system prompt", async () => {
+		const s = createShellSession();
+		s.adoptChatThread([
+			{ role: 'system', content: '[moved here from the Chat tab]' },
+			{ role: 'user', content: 'how do I free disk space?' },
+			{ role: 'assistant', content: 'run du' }
+		]);
+
+		await s.submitShell({
+			body: 'do it',
+			sessionContext: {} as never,
+			currentCwd: '/home',
+			recentHistory: []
+		});
+
+		const sent = runShellTurn.mock.calls[0][0].messages as ChatMessage[];
+		// Exactly one system message, and it still carries the note: vLLM 400s
+		// with "System message must be at the beginning." on two in a row.
+		expect(sent.filter((m) => m.role === 'system')).toHaveLength(1);
+		expect(sent[0].role).toBe('system');
+		expect(sent[0].content).toBe('sys\n\n[moved here from the Chat tab]');
+		// The sidebar still renders the note as its own entry.
+		expect(s.messages[0].role).toBe('system');
 	});
 });

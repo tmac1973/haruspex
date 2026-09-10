@@ -20,6 +20,18 @@ vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
 }));
 
 vi.mock('$lib/api', () => ({
+	mergeLeadingSystemMessages: (messages: { role: string; content: unknown }[]) => {
+		const merged: { role: string; content: unknown }[] = [];
+		for (const m of messages) {
+			const prev = merged[merged.length - 1];
+			if (m.role === 'system' && prev && prev.role === 'system') {
+				merged[merged.length - 1] = { ...prev, content: `${prev.content}\n\n${m.content}` };
+			} else {
+				merged.push(m);
+			}
+		}
+		return merged;
+	},
 	ApiError: class ApiError extends Error {
 		statusCode?: number;
 		constructor(message: string, statusCode?: number) {

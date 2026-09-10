@@ -19,7 +19,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { SvelteSet } from 'svelte/reactivity';
 import { isPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
 
-import type { ChatMessage } from '$lib/api';
+import { mergeLeadingSystemMessages, type ChatMessage } from '$lib/api';
 import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
 import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 import type { SearchStep, AgentStopReason } from '$lib/agent/loop';
@@ -853,6 +853,30 @@ export class ShellSession {
 	}
 
 	/**
+	 * The outgoing prompt for one turn: a freshly-built system prompt in front
+	 * of the thread as it stands.
+	 *
+	 * Merged rather than concatenated, because the thread can open with a
+	 * system message of its own — the "moved here from the Chat tab" note, or
+	 * a history-trim note — and two system messages in a row are rejected by
+	 * strict chat templates (vLLM answers `400 System message must be at the
+	 * beginning.`). Folding happens here, on the outgoing copy only, so the
+	 * sidebar still renders those notes as their own entries.
+	 */
+	private buildTurnMessages(payload: ShellSubmission): ChatMessage[] {
+		const promptOpts = {
+			sessionContext: payload.sessionContext,
+			currentCwd: payload.currentCwd,
+			recentHistory: payload.recentHistory,
+			nestedSession: payload.nestedSession ?? null
+		};
+		const systemPrompt = this.codeMode
+			? buildShellCodeSystemPrompt(promptOpts)
+			: buildShellSystemPrompt(promptOpts);
+		return mergeLeadingSystemMessages([systemPrompt, ...this.messages]);
+	}
+
+	/**
 	 * Lower-level entry: append a user turn with the given body and run one
 	 * agent iteration. The system prompt is rebuilt every call so the freshest
 	 * session context lands in it.
@@ -886,17 +910,7 @@ export class ShellSession {
 			};
 		}
 
-		const promptOpts = {
-			sessionContext: payload.sessionContext,
-			currentCwd: payload.currentCwd,
-			recentHistory: payload.recentHistory,
-			nestedSession: payload.nestedSession ?? null
-		};
-		const systemPrompt = this.codeMode
-			? buildShellCodeSystemPrompt(promptOpts)
-			: buildShellSystemPrompt(promptOpts);
-
-		const turnMessages: ChatMessage[] = [systemPrompt, ...this.messages];
+		const turnMessages = this.buildTurnMessages(payload);
 		// The agent loop mutates `turnMessages` in place, appending this turn's
 		// assistant tool_calls + tool results after the user message. Remember the
 		// pre-loop length so we can recover those appended pairs afterwards.
