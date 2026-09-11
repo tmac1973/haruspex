@@ -360,6 +360,17 @@
 	<span class="hint inline">(recommended)</span>
 </div>
 
+<div class="field web-research">
+	<label class="check">
+		<input type="checkbox" bind:checked={cfg.web_research} />
+		<span>Web research during preflight</span>
+	</label>
+	<Tooltip
+		label="About web research"
+		text="Lets the preflight interview search the web to check versions and APIs newer than the model's training, and to compare options when the plan or your answers ask for research. The coding loop can always search. Searches go to the provider in Settings → Search."
+	/>
+</div>
+
 <p class="unattended-note">
 	Runs are <strong>fully unattended</strong> after the preflight interview: the run starts by asking you
 	about anything the plan leaves open, then codes without interruption — one atomic step at a time, verified
@@ -397,7 +408,8 @@
 		gap: 2px;
 	}
 
-	.branch {
+	.branch,
+	.web-research {
 		flex-direction: row;
 		align-items: center;
 		gap: 4px;

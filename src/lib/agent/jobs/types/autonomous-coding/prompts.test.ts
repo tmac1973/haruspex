@@ -122,7 +122,7 @@ describe('iterationPrompt — invariants across branches', () => {
  */
 describe('shell safety rules — every stage that can run commands', () => {
 	for (const [label, raw] of [
-		['preflight', preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step')],
+		['preflight', preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step', false)],
 		['iteration (both commands)', iterationPrompt('lint', 'test', 'plan/x/')],
 		['iteration (no commands)', iterationPrompt(null, null, 'plan/x/')],
 		['phase turn', phaseTurnPrompt('npm test', 'plan/x/')]
@@ -153,15 +153,22 @@ describe('shell safety rules — every stage that can run commands', () => {
 	});
 
 	it('tells preflight it would interrupt the user instead', () => {
-		const prompt = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step'));
+		const prompt = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step', false));
 		expect(prompt).toContain('stops the run on an approval modal');
 		expect(prompt).not.toContain('nobody is present to approve one');
 	});
 });
 
 describe('preflightPrompt — settling the two-command contract', () => {
-	const bothBlankRaw = preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step');
-	const bothSetRaw = preflightPrompt('plan/x', 'plan/x/D.md', 'npm test', 'npm run lint', 'step');
+	const bothBlankRaw = preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step', false);
+	const bothSetRaw = preflightPrompt(
+		'plan/x',
+		'plan/x/D.md',
+		'npm test',
+		'npm run lint',
+		'step',
+		false
+	);
 	const bothBlank = flat(bothBlankRaw);
 	const bothSet = flat(bothSetRaw);
 
@@ -312,7 +319,7 @@ describe('phaseTurnPrompt — build whole phase, runner verifies and commits', (
 });
 
 describe('preflightPrompt — per-phase context mode', () => {
-	const phase = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'phase'));
+	const phase = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'phase', false));
 
 	it('settles only the verification command — no step check exists to ask about', () => {
 		// A real preflight asked the user "what should the step check be?" in a
@@ -338,7 +345,29 @@ describe('preflightPrompt — per-phase context mode', () => {
 		// The mode parameter is required on purpose: a defaulted param once let
 		// the preflight RETRY turn silently receive the step contract while the
 		// main turn ran the phase contract.
-		const step = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step'));
+		const step = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step', false));
 		expect(step).toContain('Settle the TWO commands');
+	});
+});
+
+describe('preflightPrompt — web research', () => {
+	const onRaw = preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'phase', true);
+	const on = flat(onRaw);
+
+	it('adds the research rules when the job allows it', () => {
+		expect(on).toContain('WEB RESEARCH');
+		expect(on).toContain('if the plan or any answer the user gives asks you to research');
+	});
+
+	it('says nothing about the web when off', () => {
+		expect(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'phase', false)).not.toContain(
+			'WEB RESEARCH'
+		);
+	});
+
+	it('keeps the process numbered 1-5 with the block added', () => {
+		for (const n of [1, 2, 3, 4, 5]) {
+			expect(onRaw).toMatch(new RegExp(`^${n}\\. `, 'm'));
+		}
 	});
 });

@@ -109,6 +109,13 @@ describe('registration barrel', () => {
 			'Approval'
 		]);
 		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
+
+		// Web research defaults on and is stored only when switched off.
+		expect(guided.configFromJob(null).web_research).toBe(true);
+		const defaults = { ...guided.configDefaults(), initial_description: 'x' };
+		expect(JSON.parse(guided.configToJson(defaults)!)).not.toHaveProperty('web_research');
+		const off = guided.configToJson({ ...defaults, web_research: false });
+		expect(JSON.parse(off!).web_research).toBe(false);
 	});
 
 	it('autonomous coding: platform-gated, staged, config round-trips', async () => {
@@ -135,7 +142,8 @@ describe('registration barrel', () => {
 			max_attempts: 5,
 			context_mode: 'phase',
 			signing_fallback: 'unsigned',
-			create_branch: true
+			create_branch: true,
+			web_research: true
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
@@ -144,7 +152,8 @@ describe('registration barrel', () => {
 			max_attempts: 3,
 			context_mode: 'phase',
 			signing_fallback: 'unsigned',
-			create_branch: true
+			create_branch: true,
+			web_research: true
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
@@ -153,14 +162,16 @@ describe('registration barrel', () => {
 			max_attempts: 3,
 			context_mode: 'phase',
 			signing_fallback: 'skip',
-			create_branch: false
+			create_branch: false,
+			web_research: false
 		});
 		expect(JSON.parse(json!)).toEqual({
 			plan_dir: 'plan/x/',
 			max_attempts: 3,
 			context_mode: 'phase',
 			signing_fallback: 'skip',
-			create_branch: false
+			create_branch: false,
+			web_research: false
 		});
 
 		// Validation: working dir and plan dir are required; attempts bounded.

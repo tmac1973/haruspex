@@ -21,6 +21,7 @@ import {
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
 import { parseGuidedPlanningConfig, type GuidedPlanningConfig } from './config';
+import { interviewResearchRules, withWebResearch, writeResearchRules } from '../webResearch';
 import {
 	extractDecisionCommand,
 	VERIFICATION_COMMAND_HEADING
@@ -56,6 +57,7 @@ export interface PlanningState {
  * Tools a guided_planning run may use: read-only codebase grounding, the single
  * markdown write tool, and the interactive question tool. No code-editing,
  * exec, sandbox, email, or web-write tools — planning writes markdown only.
+ * Read-only web research is added per job — see guidedPlanningToolsets.
  */
 export const GUIDED_PLANNING_TOOLS = [
 	'fs_read_text',
@@ -92,6 +94,23 @@ const OUTLINE_TOOLS = [
 /** Read-only toolset for the independent verifier (no write, no questions). */
 const VERIFIER_TOOLS = ['fs_read_text', 'fs_list_dir', 'fs_read_pdf', 'code_grep', 'code_glob'];
 
+/**
+ * The toolsets a run uses, with web research folded in where the job allows
+ * it. Never for the verifier: it checks the plan's structure, runs fresh up
+ * to MAX_VERIFY_ROUNDS times, and has no use for a search result.
+ */
+export function guidedPlanningToolsets(webResearch: boolean): {
+	planning: string[];
+	outline: string[];
+	verifier: string[];
+} {
+	return {
+		planning: withWebResearch(GUIDED_PLANNING_TOOLS, webResearch),
+		outline: withWebResearch(OUTLINE_TOOLS, webResearch),
+		verifier: [...VERIFIER_TOOLS]
+	};
+}
+
 /** Max verifier→revise rounds before proceeding to approval regardless. */
 const MAX_VERIFY_ROUNDS = 3;
 
@@ -113,7 +132,11 @@ function guidedPlanOutputDir(job: JobWithSteps, cfg: GuidedPlanningConfig): stri
  * questioning via the question tool, then write overview.md from a fixed
  * template with a Decisions appendix. Planning only.
  */
-export function overviewStagePrompt(outDir: string, overviewPath: string): string {
+export function overviewStagePrompt(
+	outDir: string,
+	overviewPath: string,
+	webResearch: boolean
+): string {
 	return [
 		'You are running an interactive guided-planning session. This is STAGE 1 of',
 		'2: produce a project OVERVIEW. Planning only — never write or edit code.',
@@ -173,12 +196,15 @@ export function overviewStagePrompt(outDir: string, overviewPath: string): strin
 		'   ## Decisions — a list of each question you asked and the answer the user',
 		`   chose. Write ONLY inside \`${outDir}\` — never elsewhere, never code.`,
 		'5. Send a one-line summary naming the file you wrote, then stop. Do NOT start',
-		'   the implementation plan — that is stage 2, after the user reviews this.'
+		'   the implementation plan — that is stage 2, after the user reviews this.',
+		...(webResearch
+			? interviewResearchRules('the project description or any answer the user gives')
+			: [])
 	].join('\n');
 }
 
 /** Revise the already-written overview per the user's request (checkpoint loop). */
-function overviewRevisePrompt(outDir: string, overviewPath: string): string {
+function overviewRevisePrompt(outDir: string, overviewPath: string, webResearch: boolean): string {
 	return [
 		'You are revising the project overview you already wrote. Planning only —',
 		'never write or edit code.',
@@ -190,7 +216,8 @@ function overviewRevisePrompt(outDir: string, overviewPath: string): string {
 		`   Write ONLY inside \`${outDir}\`.`,
 		'4. Send a one-line summary of what you changed, then stop.',
 		'If you must clarify the request, ask ONE question with the `ask_user_question`',
-		'tool — never as plain text.'
+		'tool — never as plain text.',
+		...(webResearch ? interviewResearchRules('the change the user asked for') : [])
 	].join('\n');
 }
 
@@ -201,7 +228,11 @@ function overviewRevisePrompt(outDir: string, overviewPath: string): string {
  * per-phase write loop (stage 2b) produces the markdown one file per turn, which
  * is how a small model reliably writes every phase instead of just the first.
  */
-export function outlineStagePrompt(outDir: string, overviewPath: string): string {
+export function outlineStagePrompt(
+	outDir: string,
+	overviewPath: string,
+	webResearch: boolean
+): string {
 	return [
 		'You are running an interactive guided-planning session. This is STAGE 2 of 2,',
 		'part A: produce the OUTLINE of a phased implementation plan from the approved',
@@ -231,12 +262,13 @@ export function outlineStagePrompt(outDir: string, overviewPath: string): string
 		'   "write the tests" phase at the end.',
 		'4. Report the outline by calling `submit_plan_outline` exactly once, with',
 		'   every phase (id "01", "02", …; title; depends_on; a 1–3 sentence summary).',
-		'   Do NOT write any phase files — that happens next, one phase at a time.'
+		'   Do NOT write any phase files — that happens next, one phase at a time.',
+		...(webResearch ? interviewResearchRules('the overview or any answer the user gives') : [])
 	].join('\n');
 }
 
 /** Re-run the outline turn after the user asks for a change at the checkpoint. */
-function outlineRevisePrompt(overviewPath: string): string {
+function outlineRevisePrompt(overviewPath: string, webResearch: boolean): string {
 	return [
 		'You are revising the implementation-plan OUTLINE. Planning only — write no',
 		'files, edit no code.',
@@ -245,7 +277,8 @@ function outlineRevisePrompt(overviewPath: string): string {
 		'2. Apply the change the user asked for, keeping STRICT dependency order and',
 		'   full end-to-end project coverage.',
 		'3. Call `submit_plan_outline` exactly once with the COMPLETE revised phase',
-		'   list — every phase, not just the ones that changed.'
+		'   list — every phase, not just the ones that changed.',
+		...(webResearch ? interviewResearchRules('the change the user asked for') : [])
 	].join('\n');
 }
 
@@ -299,7 +332,11 @@ const NO_EMBEDDED_CODE_RULES = [
  * only ever has to do a single thing — write one file — rather than "write them
  * all", which a small model tends to abandon after the first.
  */
-export function phaseWritePrompt(outDir: string, overviewPath: string): string {
+export function phaseWritePrompt(
+	outDir: string,
+	overviewPath: string,
+	webResearch: boolean
+): string {
 	return [
 		'You are writing ONE file of an approved, dependency-ordered implementation',
 		'plan. Planning only — never write or edit code. Every decision is already',
@@ -323,7 +360,8 @@ export function phaseWritePrompt(outDir: string, overviewPath: string): string {
 		'',
 		...NO_EMBEDDED_CODE_RULES,
 		'',
-		`Write ONLY that one file, inside \`${outDir}\`. Then stop.`
+		`Write ONLY that one file, inside \`${outDir}\`. Then stop.`,
+		...(webResearch ? writeResearchRules() : [])
 	].join('\n');
 }
 
@@ -383,7 +421,7 @@ export function verifierPrompt(outDir: string, overviewPath: string): string {
 }
 
 /** Revise the phase files per reviewer findings or a user request (checkpoint). */
-export function planRevisePrompt(outDir: string): string {
+export function planRevisePrompt(outDir: string, webResearch: boolean): string {
 	return [
 		'You are revising the phased implementation plan. Planning only — never write',
 		'or edit code.',
@@ -405,7 +443,8 @@ export function planRevisePrompt(outDir: string): string {
 		'   reflects dependency order.',
 		'4. Send a one-line summary of what you changed, then stop.',
 		'',
-		...NO_EMBEDDED_CODE_RULES
+		...NO_EMBEDDED_CODE_RULES,
+		...(webResearch ? writeResearchRules() : [])
 	].join('\n');
 }
 
@@ -574,6 +613,13 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	void markRunStarted(runId, Date.now());
 	const outDir = guidedPlanOutputDir(job, cfg);
 	const overviewPath = `${outDir}overview.md`;
+	// Derived once so a turn's tools and its prompt's research rules can't
+	// disagree: every prompt below takes the same flag its toolset was built from.
+	const webResearch = cfg.web_research;
+	const toolsets = guidedPlanningToolsets(webResearch);
+	// A survey the user asked for ("research the PDF libraries and give me a
+	// choice") is a dozen search and read calls on top of the interview itself.
+	const interviewIterations = webResearch ? 60 : 40;
 
 	// Step indices — must match the GUIDED_STAGES order in ./definition.ts
 	// (which planSteps turns into the run's display steps).
@@ -628,7 +674,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			interactive: true,
 			writeRoot: outDir,
 			systemPrompt,
-			toolAllowlist: opts.tools ?? GUIDED_PLANNING_TOOLS,
+			toolAllowlist: opts.tools ?? toolsets.planning,
 			expectsFileOutput: opts.expectsFileOutput,
 			...deps.buildStreamCallbacks(stepIdx)
 		});
@@ -731,7 +777,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`\`python3 -m compileall -q .\`, \`python3 -m pytest -q\`, \`npm test\`, or ` +
 					`\`cargo check\` — keeping it read-only, fast and phase-agnostic, and keeping ` +
 					`the section's single fenced code block. Then write the overview back.`,
-				overviewRevisePrompt(outDir, overviewPath),
+				overviewRevisePrompt(outDir, overviewPath, webResearch),
 				15,
 				{ expectsFileOutput: true }
 			);
@@ -774,7 +820,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`the first tests created in phase 01, alongside the first product code, and ` +
 					`extended by the phases that follow — not gathered into one testing phase at ` +
 					`the end. Keep strict dependency order and full end-to-end coverage.`,
-				outlineRevisePrompt(overviewPath)
+				outlineRevisePrompt(overviewPath, webResearch)
 			);
 		}
 		return current;
@@ -815,14 +861,14 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			`Review the phase files in ${outDir} against ${overviewPath}.`,
 			verifierPrompt(outDir, overviewPath),
 			25,
-			{ tools: VERIFIER_TOOLS }
+			{ tools: toolsets.verifier }
 		);
 		if (isPlanClean(verdict.finalText)) return true;
 		await turn(
 			VERIFY,
 			`A reviewer found problems with the phase files. Fix every one, keeping ` +
 				`strict dependency order:\n\n${verdict.finalText}`,
-			planRevisePrompt(outDir),
+			planRevisePrompt(outDir, webResearch),
 			35,
 			{ expectsFileOutput: true }
 		);
@@ -897,11 +943,11 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			userMessage,
 			contextSize: deps.contextSize(),
 			visionSupported: deps.visionSupported(),
-			maxIterations: 40,
+			maxIterations: interviewIterations,
 			interactive: true,
 			writeRoot: outDir,
 			systemPrompt,
-			toolAllowlist: OUTLINE_TOOLS,
+			toolAllowlist: toolsets.outline,
 			forceFinalTool: SUBMIT_PLAN_OUTLINE_TOOL,
 			...base,
 			onToolStart: (call: ResolvedToolCall) => {
@@ -931,7 +977,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			msg =
 				`You did not call submit_plan_outline, so no phases were recorded. Call it ` +
 				`now with the COMPLETE dependency-ordered phase list for the whole project.`;
-			prompt = outlineRevisePrompt(overviewPath);
+			prompt = outlineRevisePrompt(overviewPath, webResearch);
 		}
 		throw new Error(
 			`The model never produced a plan outline (no submit_plan_outline call) after ` +
@@ -946,8 +992,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		await turn(
 			OVERVIEW,
 			cfg.initial_description?.trim() || 'Plan this project.',
-			overviewStagePrompt(outDir, overviewPath),
-			40,
+			overviewStagePrompt(outDir, overviewPath, webResearch),
+			interviewIterations,
 			{ expectsFileOutput: true }
 		);
 		await ensureWritten(
@@ -957,7 +1003,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				`I don't see ${overviewPath} on disk yet — you may have described writing the ` +
 				`overview without actually calling the fs_write_text tool. Do NOT ask any more ` +
 				`questions; call fs_write_text now to write the overview to ${overviewPath}, then stop.`,
-			overviewStagePrompt(outDir, overviewPath),
+			overviewStagePrompt(outDir, overviewPath, webResearch),
 			() =>
 				`The overview was never written to ${overviewPath} after ${MAX_WRITE_ATTEMPTS} attempts. ` +
 				`The selected model may be too small to follow the write step reliably — try a larger model.`
@@ -988,7 +1034,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				await turn(
 					OVERVIEW,
 					`Please revise the overview. The user asked for: ${answer.text}`,
-					overviewRevisePrompt(outDir, overviewPath),
+					overviewRevisePrompt(outDir, overviewPath, webResearch),
 					20,
 					{ expectsFileOutput: true }
 				);
@@ -1003,7 +1049,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		let outline = await repairOutlineOrdering(
 			await obtainOutline(
 				`The overview at ${overviewPath} is approved. Now design the phased plan OUTLINE.`,
-				outlineStagePrompt(outDir, overviewPath)
+				outlineStagePrompt(outDir, overviewPath, webResearch)
 			)
 		);
 		let outlineApproved = false;
@@ -1031,7 +1077,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			} else if (answer.kind === 'freeText') {
 				outline = await obtainOutline(
 					`Please revise the outline. The user asked for: ${answer.text}`,
-					outlineRevisePrompt(overviewPath)
+					outlineRevisePrompt(overviewPath, webResearch)
 				);
 			}
 		}
@@ -1052,7 +1098,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				`Now write ONLY Phase ${phase.nn} — ${phase.title} to \`${phase.relPath}\`. ` +
 				(phase.dependsOn.length ? `It depends on phase ${phase.dependsOn.join(', ')}. ` : '') +
 				(phase.summary ? `Scope: ${phase.summary}` : '');
-			await turn(PLANNING, writeMsg, phaseWritePrompt(outDir, overviewPath), 30, {
+			await turn(PLANNING, writeMsg, phaseWritePrompt(outDir, overviewPath, webResearch), 30, {
 				expectsFileOutput: true
 			});
 			await ensureWritten(
@@ -1064,7 +1110,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`overwrite: true to replace what's there) — the whole document from its ` +
 					`"# Phase ${phase.nn} — <title>" heading through every required section, not ` +
 					`a fragment or a continuation. Then stop.`,
-				phaseWritePrompt(outDir, overviewPath),
+				phaseWritePrompt(outDir, overviewPath, webResearch),
 				(problem) =>
 					`Phase ${phase.nn} (${phase.relPath}) was still not written correctly after ` +
 					`${MAX_WRITE_ATTEMPTS} attempts — ${problem}. The selected model may be too small ` +
@@ -1118,7 +1164,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				await turn(
 					APPROVAL,
 					`Please revise the phased plan. The user asked for: ${answer.text}`,
-					planRevisePrompt(outDir),
+					planRevisePrompt(outDir, webResearch),
 					30,
 					{ expectsFileOutput: true }
 				);

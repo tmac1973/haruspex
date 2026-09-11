@@ -40,6 +40,12 @@ export interface AutonomousCodingConfig {
 	 * null = default (true).
 	 */
 	create_branch: boolean | null;
+	/**
+	 * Offer web_search and research_url to the preflight interview, so it can
+	 * check versions and APIs past the model's training cutoff. The coding loop
+	 * has them regardless. null = default (true).
+	 */
+	web_research: boolean | null;
 }
 
 export function parseAutonomousCodingConfig(json: string | null): AutonomousCodingConfig {
@@ -71,7 +77,8 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 			raw.signing_fallback === 'skip' || raw.signing_fallback === 'unsigned'
 				? raw.signing_fallback
 				: null,
-		create_branch: parseCreateBranch(raw.create_branch)
+		create_branch: parseOptionalBool(raw.create_branch),
+		web_research: parseOptionalBool(raw.web_research)
 	};
 }
 
@@ -79,7 +86,7 @@ function parseContextMode(v: unknown): 'step' | 'phase' | null {
 	return v === 'phase' || v === 'step' ? v : null;
 }
 
-function parseCreateBranch(v: unknown): boolean | null {
+function parseOptionalBool(v: unknown): boolean | null {
 	return typeof v === 'boolean' ? v : null;
 }
 

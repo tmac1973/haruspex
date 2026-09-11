@@ -1,6 +1,7 @@
 /** Autonomous-coding prompts: preflight, decompose, the loop, finalize. */
 
 import { STEP_CHECK_HEADING, VERIFICATION_COMMAND_HEADING } from './planParse';
+import { interviewResearchRules } from '../webResearch';
 
 /**
  * Shell rules every stage that can call `run_command` carries.
@@ -46,13 +47,17 @@ function shellSafetyRules(stage: 'preflight' | 'unattended'): string[] {
  * run. Hunt every deferred/ambiguous decision in the plan, resolve each with
  * the user via ask_user_question, record the answers, then report readiness
  * via submit_preflight.
+ *
+ * `webResearch` is required, like `contextMode`, so the retry turn in
+ * ensureFileWritten can't silently get a prompt that disagrees with its tools.
  */
 export function preflightPrompt(
 	planDir: string,
 	decisionsPath: string,
 	verifyCommand: string | null,
 	stepCheckCommand: string | null,
-	contextMode: 'step' | 'phase'
+	contextMode: 'step' | 'phase',
+	webResearch: boolean
 ): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
@@ -93,6 +98,7 @@ export function preflightPrompt(
 		'5. Call `submit_preflight` exactly once: ready=true when nothing is left',
 		'   ambiguous; ready=false with concrete blockers when the run cannot start',
 		'   (e.g. the plan directory is empty or the plans contradict each other).',
+		...(webResearch ? interviewResearchRules('the plan or any answer the user gives') : []),
 		...shellSafetyRules('preflight')
 	].join('\n');
 }
