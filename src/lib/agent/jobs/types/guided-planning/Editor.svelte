@@ -72,6 +72,19 @@
 
 <div class="toggle-row">
 	<label>
+		<input type="checkbox" bind:checked={cfg.web_research} />
+		<span class="label">
+			Web research
+			<Tooltip
+				label="About web research"
+				text="Lets the planner search the web to check versions and APIs newer than its training, and to compare options when you ask it to research something. Searches go to the provider in Settings → Search. The verifier never searches."
+			/>
+		</span>
+	</label>
+</div>
+
+<div class="toggle-row">
+	<label>
 		<input type="checkbox" bind:checked={cfg.skip_verification} />
 		<span class="label">
 			Skip verification

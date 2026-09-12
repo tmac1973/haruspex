@@ -12,6 +12,12 @@ export interface GuidedPlanningConfig {
 	 * or you intend to read it yourself. Defaults to running it.
 	 */
 	skip_verification: boolean;
+	/**
+	 * Offer web_search and research_url to the interview and write turns (never
+	 * the verifier), so the plan is not bounded by the model's training cutoff.
+	 * Defaults to on.
+	 */
+	web_research: boolean;
 }
 
 export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningConfig {
@@ -34,6 +40,8 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 				? raw.plan_output_dir
 				: null,
 		// Absent (every job authored before this existed) means verify.
-		skip_verification: raw.skip_verification === true
+		skip_verification: raw.skip_verification === true,
+		// Absent means on, for older jobs too; only an explicit false opts out.
+		web_research: raw.web_research !== false
 	};
 }

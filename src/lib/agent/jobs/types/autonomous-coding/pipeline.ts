@@ -29,6 +29,7 @@ import {
 	type IterationResultArg,
 	type PreflightResultArg
 } from '$lib/agent/tools/coding';
+import { withWebResearch } from '../webResearch';
 import { getSettings } from '$lib/stores/settings';
 import { normalizeAbort } from '$lib/utils/error';
 import {
@@ -100,6 +101,9 @@ export const FINALIZE = 3;
  * This is not a new capability class for the job — the loop already runs shell
  * commands unattended and auto-approved. It is the same capability, moved to
  * the one stage where the user is still present to see it.
+ *
+ * web_search / research_url are added when the job's web_research toggle is on
+ * (the default) — see withWebResearch.
  */
 const PREFLIGHT_TOOLS = [
 	'fs_read_text',
@@ -297,6 +301,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		const todoPath = `${planDir}TODO-coding.md`;
 		const progressPath = `${planDir}PROGRESS-coding.md`;
 		const reportPath = `${planDir}REPORT-coding.md`;
+		const webResearch = cfg.web_research ?? true;
 
 		// Stage 0 — Preflight: the last human checkpoint. Resolve every open
 		// decision via the question modal, record them, and get a structured
@@ -308,7 +313,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			decisionsPath,
 			cfg.verify_command,
 			cfg.step_check_command,
-			contextMode
+			contextMode,
+			webResearch
 		);
 		abortIfCancelled();
 		if (!outcome.ready) {
@@ -325,9 +331,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				decisionsPath,
 				cfg.verify_command,
 				cfg.step_check_command,
-				contextMode
+				contextMode,
+				webResearch
 			),
-			toolAllowlist: PREFLIGHT_TOOLS,
+			toolAllowlist: withWebResearch(PREFLIGHT_TOOLS, webResearch),
 			what: 'decisions file',
 			abortIfCancelled,
 			mayAskUser: true
@@ -649,7 +656,8 @@ async function runPreflightTurn(
 	decisionsPath: string,
 	verifyCommand: string | null,
 	stepCheckCommand: string | null,
-	contextMode: 'step' | 'phase'
+	contextMode: 'step' | 'phase',
+	webResearch: boolean
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
@@ -667,9 +675,10 @@ async function runPreflightTurn(
 			decisionsPath,
 			verifyCommand,
 			stepCheckCommand,
-			contextMode
+			contextMode,
+			webResearch
 		),
-		toolAllowlist: PREFLIGHT_TOOLS,
+		toolAllowlist: withWebResearch(PREFLIGHT_TOOLS, webResearch),
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,
 		...base,
 		onToolStart: (call: ResolvedToolCall) => {

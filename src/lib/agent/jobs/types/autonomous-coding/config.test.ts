@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePlanDir, planDirFromPicked } from './config';
+import { normalizePlanDir, parseAutonomousCodingConfig, planDirFromPicked } from './config';
 
 describe('normalizePlanDir', () => {
 	it('guarantees a trailing slash', () => {
@@ -52,5 +52,18 @@ describe('planDirFromPicked', () => {
 			ok: true,
 			relative: 'plan/x/'
 		});
+	});
+});
+
+describe('parseAutonomousCodingConfig — web_research', () => {
+	it('is unset when absent or not a boolean, so the default (on) applies', () => {
+		expect(parseAutonomousCodingConfig(null).web_research).toBeNull();
+		expect(parseAutonomousCodingConfig('{"plan_dir":"plan/x/"}').web_research).toBeNull();
+		expect(parseAutonomousCodingConfig('{"web_research":"no"}').web_research).toBeNull();
+	});
+
+	it('reads an explicit choice', () => {
+		expect(parseAutonomousCodingConfig('{"web_research":false}').web_research).toBe(false);
+		expect(parseAutonomousCodingConfig('{"web_research":true}').web_research).toBe(true);
 	});
 });

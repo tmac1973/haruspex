@@ -8,6 +8,7 @@ export interface GuidedPlanningEditorState {
 	initial_description: string;
 	plan_output_dir: string;
 	skip_verification: boolean;
+	web_research: boolean;
 }
 
 /**
@@ -66,14 +67,16 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 	configDefaults: () => ({
 		initial_description: '',
 		plan_output_dir: '',
-		skip_verification: false
+		skip_verification: false,
+		web_research: true
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
 		return {
 			initial_description: c.initial_description ?? '',
 			plan_output_dir: c.plan_output_dir ?? '',
-			skip_verification: c.skip_verification
+			skip_verification: c.skip_verification,
+			web_research: c.web_research
 		};
 	},
 	configToJson: (config) => {
@@ -81,7 +84,9 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		return JSON.stringify({
 			initial_description: s.initial_description.trim() || undefined,
 			plan_output_dir: s.plan_output_dir.trim() || undefined,
-			skip_verification: s.skip_verification || undefined
+			skip_verification: s.skip_verification || undefined,
+			// Sparse like skip_verification: only the non-default value is stored.
+			web_research: s.web_research ? undefined : false
 		});
 	},
 	validate: ({ workingDir, config }) => {

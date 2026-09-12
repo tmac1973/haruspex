@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { finalizeStreamText } from '$lib/markdown';
 import {
 	GUIDED_PLANNING_TOOLS,
+	guidedPlanningToolsets,
 	isPlanClean,
 	phaseFileProblem,
 	phaseWritePrompt,
@@ -226,7 +227,7 @@ describe('phaseFileProblem — tail truncation', () => {
  * them was never verified by anything.
  */
 describe('phaseWritePrompt — specification, not implementation', () => {
-	const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md'));
+	const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false));
 
 	it('bans the artifacts that showed up in the real plan', () => {
 		expect(prompt).toContain('Do NOT write the implementation');
@@ -253,7 +254,7 @@ describe('phaseWritePrompt — specification, not implementation', () => {
 });
 
 describe('planRevisePrompt — carries the same rule into revisions', () => {
-	const prompt = flat(planRevisePrompt('plan/x/'));
+	const prompt = flat(planRevisePrompt('plan/x/', false));
 
 	it('repeats the no-implementation contract', () => {
 		expect(prompt).toContain('Do NOT write the implementation');
@@ -334,7 +335,7 @@ describe('sourcePathsIn', () => {
 });
 
 describe('phaseWritePrompt — build gates are commands, not programs', () => {
-	const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md'));
+	const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false));
 
 	it('bans inline program strings and heredocs', () => {
 		expect(prompt).toContain('must be REAL commands');
@@ -440,19 +441,19 @@ describe('testSuiteOrderingProblem', () => {
 
 describe('overview + outline prompts — verification must pass from phase 01', () => {
 	it('tells the outline stage to put the suite in phase 01', () => {
-		const prompt = flat(outlineStagePrompt('plan/x/', 'plan/x/overview.md'));
+		const prompt = flat(outlineStagePrompt('plan/x/', 'plan/x/overview.md', false));
 		expect(prompt).toContain('must be phase 01');
 		expect(prompt).toContain('never a single "write the tests" phase at the end');
 	});
 
 	it('tells the overview stage the command must pass at every phase boundary', () => {
-		const prompt = flat(overviewStagePrompt('plan/x/', 'plan/x/overview.md'));
+		const prompt = flat(overviewStagePrompt('plan/x/', 'plan/x/overview.md', false));
 		expect(prompt).toContain('PASS AT EVERY PHASE BOUNDARY');
 		expect(prompt).toContain('`pytest` with no tests yet exits 5');
 	});
 
 	it('tells the overview stage not to contradict its own Constraints', () => {
-		const prompt = flat(overviewStagePrompt('plan/x/', 'plan/x/overview.md'));
+		const prompt = flat(overviewStagePrompt('plan/x/', 'plan/x/overview.md', false));
 		// The run that prompted this wrote "zero third-party dependencies" in
 		// Constraints and `python3 -m pytest -q` three sections later.
 		expect(prompt).toContain('Use only tooling that is already installed');
@@ -478,8 +479,72 @@ describe('guided planning can repair a file it already wrote this turn', () => {
 	});
 
 	it('tells the phase writer when to reach for it', () => {
-		const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md'));
+		const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false));
 		expect(prompt).toContain('use fs_edit_text');
 		expect(prompt).toContain('Writing the same file twice in one turn is refused');
+	});
+});
+
+/**
+ * Web research is a per-job toggle, on by default. The tools and the rules
+ * that keep them from turning into browsing travel together, and the
+ * verifier — a structural check run up to three times — never gets either.
+ */
+describe('web research', () => {
+	const WEB = ['web_search', 'research_url'];
+
+	it('adds the web tools to the interview and write turns when on', () => {
+		const t = guidedPlanningToolsets(true);
+		for (const tool of WEB) {
+			expect(t.planning).toContain(tool);
+			expect(t.outline).toContain(tool);
+		}
+	});
+
+	it('offers none when off, and the base toolset has none', () => {
+		const t = guidedPlanningToolsets(false);
+		for (const tool of WEB) {
+			expect(t.planning).not.toContain(tool);
+			expect(t.outline).not.toContain(tool);
+			expect(GUIDED_PLANNING_TOOLS).not.toContain(tool);
+		}
+	});
+
+	it('never gives the verifier web access', () => {
+		for (const on of [true, false]) {
+			for (const tool of WEB) expect(guidedPlanningToolsets(on).verifier).not.toContain(tool);
+		}
+	});
+
+	it('lets the interview stages survey when the user asks', () => {
+		const overview = flat(overviewStagePrompt('plan/x/', 'plan/x/overview.md', true));
+		const outline = flat(outlineStagePrompt('plan/x/', 'plan/x/overview.md', true));
+		// Only stage 1 ever sees the seed description, so it names it.
+		expect(overview).toContain(
+			'if the project description or any answer the user gives asks you to research'
+		);
+		expect(outline).toContain('SURVEY, only when asked');
+	});
+
+	it('keeps the write stages to fact-checking', () => {
+		for (const prompt of [
+			flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', true)),
+			flat(planRevisePrompt('plan/x/', true))
+		]) {
+			expect(prompt).toContain('do not research alternatives');
+			expect(prompt).not.toContain('SURVEY');
+		}
+	});
+
+	it('says nothing about the web when off', () => {
+		for (const prompt of [
+			overviewStagePrompt('plan/x/', 'plan/x/overview.md', false),
+			outlineStagePrompt('plan/x/', 'plan/x/overview.md', false),
+			phaseWritePrompt('plan/x/', 'plan/x/overview.md', false),
+			planRevisePrompt('plan/x/', false),
+			verifierPrompt('plan/x/', 'plan/x/overview.md')
+		]) {
+			expect(prompt).not.toContain('WEB RESEARCH');
+		}
 	});
 });

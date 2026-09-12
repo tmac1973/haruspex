@@ -28,6 +28,18 @@ describe('parseGuidedPlanningConfig', () => {
 		expect(parseGuidedPlanningConfig('{"skip_verification":"yes"}').skip_verification).toBe(false);
 	});
 
+	/**
+	 * Web research is on unless the user switched it off, so jobs authored
+	 * before the toggle existed stop being bounded by the training cutoff too.
+	 */
+	it('researches by default; only an explicit false turns it off', () => {
+		expect(parseGuidedPlanningConfig(null).web_research).toBe(true);
+		expect(parseGuidedPlanningConfig('{').web_research).toBe(true);
+		expect(parseGuidedPlanningConfig('{"initial_description":"x"}').web_research).toBe(true);
+		expect(parseGuidedPlanningConfig('{"web_research":"no"}').web_research).toBe(true);
+		expect(parseGuidedPlanningConfig('{"web_research":false}').web_research).toBe(false);
+	});
+
 	it('treats blank strings as unset', () => {
 		const cfg = parseGuidedPlanningConfig('{"initial_description":"","plan_output_dir":""}');
 		expect(cfg.initial_description).toBeNull();

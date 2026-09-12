@@ -49,6 +49,12 @@ describe('autonomous-coding Editor', () => {
 		expect(screen.getByLabelText('Max attempts per step')).toBeTruthy();
 	});
 
+	it('offers web research in preflight, on by default', () => {
+		mount();
+		const box = screen.getByLabelText('Web research during preflight') as HTMLInputElement;
+		expect(box.checked).toBe(true);
+	});
+
 	it('renders the shared command snippet for both fields', () => {
 		// The step-check field only exists in per-step mode, and both fields
 		// come from one `{@render}` snippet — a snippet resolution problem
