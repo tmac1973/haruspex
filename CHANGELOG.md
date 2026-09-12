@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.1](https://github.com/tmac1973/haruspex/compare/v0.2.0...v0.2.1) (2026-09-12)
+
+
+### Features
+
+* **jobs:** let guided planning and coding preflight research the web ([#246](https://github.com/tmac1973/haruspex/issues/246)) ([187e18f](https://github.com/tmac1973/haruspex/commit/187e18f919f46f59869745c58ad5acfef419bacb))
+
+
+### Bug Fixes
+
+* **api:** fold a thread's leading system note into the system prompt ([#244](https://github.com/tmac1973/haruspex/issues/244)) ([29ef9e6](https://github.com/tmac1973/haruspex/commit/29ef9e6c0e390c4a5213bdbf05d186a3d5c79e8c))
+* **shell:** restore command capture when the user opens a shell by hand ([#245](https://github.com/tmac1973/haruspex/issues/245)) ([3c1e1b0](https://github.com/tmac1973/haruspex/commit/3c1e1b03264cfc9ecd2b1c78cb37bc4804890e1e))
+
 ## [0.2.0](https://github.com/tmac1973/haruspex/compare/v0.1.61...v0.2.0) (2026-09-08)
 
 
