@@ -9,6 +9,7 @@ use super::config::{
     RATE_LIMIT_INTERVAL_SLOW,
 };
 use super::extract::{diagnostic_snippet, USER_AGENT};
+use super::relevance;
 use super::stats::{
     record_engine_result, record_global_both, AutoPosition, GlobalCounter, SearchFailure,
     SearchFailureKind, SearchStats, StatSink,
@@ -127,6 +128,37 @@ fn collect_json_results(items: &[serde_json::Value], snippet_field: &str) -> Vec
     results
 }
 
+/// Reject a result set that parsed cleanly but answers a different question.
+///
+/// Shared by both rotations, because the failure it catches is a property of
+/// the engine's response rather than of the transport that fetched it — Bing
+/// served the same decoys to plain HTTP and through a proxy. Empty sets pass
+/// straight through: `Empty` already classifies those, and says more.
+///
+/// A rejection is a real failure, not an empty result, and deliberately so. An
+/// engine serving decoys has to earn a cooldown, or it keeps winning the
+/// rotation ahead of engines that would have answered.
+pub(super) fn reject_if_irrelevant(
+    engine: &str,
+    query: &str,
+    results: Vec<SearchResult>,
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    if relevance::answers_query(query, &results) {
+        return Ok(results);
+    }
+    warn!(
+        "{} answered '{}' with {} results about something else (first: {:?}) — discarding",
+        engine,
+        query,
+        results.len(),
+        results.first().map(|r| r.title.as_str()).unwrap_or("")
+    );
+    Err(SearchFailure::new(
+        SearchFailureKind::Irrelevant,
+        format!("{} returned results unrelated to the query", engine),
+    ))
+}
+
 /// Log an anchored diagnostic snippet when a scrape parser finds nothing —
 /// this is what makes the empty-result log line actionable when an engine
 /// restructures its markup.
@@ -136,6 +168,24 @@ fn warn_empty_scrape(label: &str, html: &str, needles: &[&str]) {
         "{} parser found 0 results — anchored snippet of response: {}",
         label, snippet
     );
+}
+
+/// Form body for DDG's HTML endpoint.
+///
+/// Split out to be testable: this was `format!("q={}&b={}", query, df)` with
+/// `df` already carrying its own `&df=`, so every search posted a stray empty
+/// `b=` and the date filter arrived only by accident of that leading `&`. A
+/// recency-less search posted `q=...&b=`.
+fn ddg_form_body(query: &str, recency: &str) -> String {
+    // DDG date filter: df=d (day), df=w (week), df=m (month), df=y (year)
+    let df = match recency {
+        "day" => "&df=d",
+        "week" => "&df=w",
+        "month" => "&df=m",
+        "year" => "&df=y",
+        _ => "",
+    };
+    format!("q={}{}", urlencoding::encode(query), df)
 }
 
 pub(super) async fn search_duckduckgo(
@@ -148,21 +198,12 @@ pub(super) async fn search_duckduckgo(
             .cookie_store(true)
     })?;
 
-    // DDG date filter: df=d (day), df=w (week), df=m (month), df=y (year)
-    let df = match recency {
-        "day" => "&df=d",
-        "week" => "&df=w",
-        "month" => "&df=m",
-        "year" => "&df=y",
-        _ => "",
-    };
-
     let response = client
         .post("https://html.duckduckgo.com/html/")
         .header("User-Agent", USER_AGENT)
         .header("Referer", "https://html.duckduckgo.com/")
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(format!("q={}&b={}", urlencoding::encode(query), df))
+        .body(ddg_form_body(query, recency))
         .send()
         .await
         .map_err(|e| classify_reqwest_err(e, "Search request failed"))?;
@@ -364,13 +405,29 @@ async fn scrape_engine(
         .await
         .map_err(|e| classify_reqwest_err(e, &format!("Failed to read {} response", label)))?;
 
-    let results = parse(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
+    finish_scrape(&html, label, parse, on_empty, empty_needles)
+}
+
+/// Parse a fetched SERP, and decide what an empty parse means.
+///
+/// Split out of `scrape_engine` so an engine that needs a transport of its own
+/// — Yahoo's cookie handshake — still shares the challenge classification and
+/// the anchored diagnostic snippet, which are the parts worth keeping
+/// identical across engines.
+fn finish_scrape(
+    html: &str,
+    label: &str,
+    parse: impl Fn(&str) -> Result<Vec<SearchResult>, String>,
+    on_empty: impl Fn(&str) -> Option<SearchFailure>,
+    empty_needles: &[&str],
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    let results = parse(html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
 
     if results.is_empty() {
-        if let Some(failure) = on_empty(&html) {
+        if let Some(failure) = on_empty(html) {
             return Err(failure);
         }
-        warn_empty_scrape(label, &html, empty_needles);
+        warn_empty_scrape(label, html, empty_needles);
     }
 
     Ok(results)
@@ -492,6 +549,25 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
 // we ignore); result links are wrapped in `r.search.yahoo.com` redirects that
 // carry the real destination in the `RU=` path segment.
 
+/// One GET to Yahoo with the standard scrape headers. Separate so the
+/// verification handshake below can issue the identical request twice.
+async fn yahoo_get(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<reqwest::Response, SearchFailure> {
+    client
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Yahoo search failed"))
+}
+
 pub(super) async fn search_yahoo(
     query: &str,
     _recency: &str,
@@ -504,11 +580,45 @@ pub(super) async fn search_yahoo(
         urlencoding::encode(query)
     );
 
-    scrape_engine(
-        &url,
+    // Yahoo answers a cold client with 307 -> /_bv/v.gif ("bot verification"),
+    // and that is what took the engine out on 2026-09-10: the redirect target
+    // answers 500, so following the bounce — which is all the old
+    // `scrape_engine` call could do — turned every search into a Network
+    // failure and a 90s cooldown.
+    //
+    // The bounce is not a wall, it is a cookie drop. The 307 itself carries
+    // Set-Cookie for YBV, A1, A3 and A1S, and re-requesting the *original* URL
+    // with those in hand returns the real SERP (verified 2026-09-19: 267 KB,
+    // seven results, parsed by the unchanged `parse_yahoo_html`). So: keep a
+    // cookie jar, don't follow the redirect, and ask exactly once more.
+    let client = build_search_client(proxy, |b| {
+        b.redirect(reqwest::redirect::Policy::none())
+            .cookie_store(true)
+    })?;
+
+    let mut resp = yahoo_get(&client, &url).await?;
+    if resp.status().is_redirection() {
+        // The cookies from that response are in the jar now.
+        resp = yahoo_get(&client, &url).await?;
+    }
+    if resp.status().is_redirection() {
+        // Two bounces means the handshake is not the obstacle; treat it as a
+        // wall so the engine cools down instead of retrying forever.
+        return Err(SearchFailure::new(
+            SearchFailureKind::RateLimited,
+            "Yahoo kept bouncing to its bot-verification gate.".to_string(),
+        ));
+    }
+
+    let resp = ensure_search_success(resp, "Yahoo")?;
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Failed to read Yahoo response"))?;
+
+    finish_scrape(
+        &html,
         "Yahoo",
-        proxy,
-        true,
         parse_yahoo_html,
         // No results + a consent/captcha fingerprint means Yahoo bounced us to
         // its gate rather than a SERP — cool the engine down rather than report
@@ -523,7 +633,6 @@ pub(super) async fn search_yahoo(
         },
         &["class=\"algo", "compTitle", "h3 class=\"title", "compText"],
     )
-    .await
 }
 
 fn is_yahoo_challenge(html: &str) -> bool {
@@ -841,6 +950,13 @@ pub(super) async fn search_auto(
     for (idx, engine) in engines.iter().enumerate() {
         // Brave's free HTML endpoint 429s far more eagerly than the others, so
         // give it extra breathing room between requests.
+        //
+        // Not to be confused with the *unconditional* 429 it served until
+        // 2026-09-19: that one was ours, an HTTP/1.1 client talking to an
+        // endpoint that only answers HTTP/2 (see the reqwest features in
+        // Cargo.toml). With that fixed Brave answers — but it still counts
+        // requests, and a burst of eight at 3s intervals earns a penalty that
+        // outlasts 15s spacing, so this pacing stays.
         let interval = if *engine == "brave_html" {
             rate_interval.max(std::time::Duration::from_secs(5))
         } else {
@@ -867,6 +983,8 @@ pub(super) async fn search_auto(
             _ => unreachable!(),
         };
         let elapsed = start.elapsed().as_millis() as u64;
+        // Before anything counts this as a win: is it an answer to the query?
+        let result = result.and_then(|r| reject_if_irrelevant(engine, query, r));
 
         record_engine_result(stats, sink, engine, &result, elapsed, Some(position));
 
@@ -1063,6 +1181,57 @@ mod tests {
             .filter(|engine| state.is_engine_healthy(engine, Duration::from_secs(60)))
             .collect();
         assert!(pickable.is_empty());
+    }
+
+    #[test]
+    fn ddg_form_body_carries_the_query_and_one_clean_filter() {
+        // The bug this replaced posted `q=...&b=` — a stray empty parameter,
+        // with the date filter riding in on the `&` baked into its match arm.
+        assert_eq!(ddg_form_body("rust async", "any"), "q=rust%20async");
+        assert_eq!(ddg_form_body("rust", "week"), "q=rust&df=w");
+        assert_eq!(ddg_form_body("rust", "day"), "q=rust&df=d");
+        assert_eq!(ddg_form_body("rust", "month"), "q=rust&df=m");
+        assert_eq!(ddg_form_body("rust", "year"), "q=rust&df=y");
+        // No empty parameters, whatever the recency.
+        for recency in ["any", "day", "week", "month", "year", ""] {
+            let body = ddg_form_body("a b", recency);
+            assert!(!body.contains("b="), "stray parameter in {body}");
+            assert!(!body.ends_with('='), "empty trailing value in {body}");
+        }
+        // Reserved characters must not escape into the body as separators.
+        assert_eq!(
+            ddg_form_body("\"quoted\" a&b=c", "any"),
+            "q=%22quoted%22%20a%26b%3Dc"
+        );
+    }
+
+    /// Yahoo answers a cold client with a 307 to `/_bv/v.gif` whose target
+    /// 500s; the cookies it sets on that redirect are what unlock the SERP.
+    /// Following the bounce (what the shared `scrape_engine` did) is what took
+    /// the engine out on 2026-09-10, so this asserts the handshake, not just
+    /// that some HTML came back.
+    ///
+    /// Ignored: needs the network. Run with
+    /// `cargo test --manifest-path src-tauri/Cargo.toml yahoo_clears -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn yahoo_clears_its_verification_bounce() {
+        let results = search_yahoo("Dave Smith comedian", "any", None)
+            .await
+            .expect("Yahoo should answer once the verification cookies are carried");
+        println!("yahoo returned {} results", results.len());
+        for r in results.iter().take(3) {
+            println!("  {} | {}", r.title, r.url);
+        }
+        assert!(
+            results.len() >= 5,
+            "expected a full page, got {}",
+            results.len()
+        );
+        assert!(
+            results.iter().all(|r| r.url.starts_with("http")),
+            "every result should carry a real URL"
+        );
     }
 
     #[test]

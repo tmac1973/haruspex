@@ -26,7 +26,13 @@ tauri-plugin-shell = "2.3.5"
 # exposes the X11/Wayland PRIMARY selection for middle-click paste. Text only
 # (drop the default image-data feature and its heavy `image` dependency).
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
-reqwest = { version = "0.13.2", default-features = false, features = ["cookies", "json", "multipart", "query", "rustls", "stream"] }
+# `http2` is in reqwest's own default feature set and was lost to
+# `default-features = false`, leaving every request HTTP/1.1. That is not a
+# performance footnote: search.brave.com answers HTTP/1.1 with 429 and HTTP/2
+# with a SERP (measured 2026-09-19 — `curl --http1.1` 429, `curl --http2` 200,
+# same URL, same headers, seconds apart), which is why Brave read as
+# permanently rate-limited while a browser reached it fine.
+reqwest = { version = "0.13.2", default-features = false, features = ["cookies", "http2", "json", "multipart", "query", "rustls", "stream"] }
 tokio = { version = "1.50.0", features = ["time", "rt", "fs", "sync", "macros", "process", "io-util", "net"] }
 # Remote web chat serves a small HTTP API + SSE to LAN browsers. Nothing in
 # the tree served HTTP before this (reqwest is a client; the sidecars run

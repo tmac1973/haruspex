@@ -49,7 +49,27 @@ pub(super) const ENGINE_COOLDOWN_SLOW: Duration = Duration::from_secs(45);
 // results (its markers appear only inside scripts), so it stays out.
 // See git history for the previous search_qwant / search_startpage /
 // search_mojeek implementations.
-pub(super) const AUTO_ENGINES: &[&str] = &["yahoo", "brave_html", "duckduckgo", "bing"];
+// Bing was pulled again on 2026-09-19, and for a new reason: it no longer
+// blocks, it lies. It answers a scrape with HTTP 200 and a full, well-formed
+// SERP whose results are for a different query — the submitted query survives
+// verbatim in the page's own search box, but the organic results are for its
+// first term alone (`Dave Smith comedian libertarian podcast` -> ten results
+// about the Dave banking app, four runs of four), or, through an HTTP proxy,
+// for nothing at all (a different unrelated SERP per request). No header,
+// cookie warm-up or UA made any difference.
+//
+// That is invisible to every check upstream of `relevance`: the page is
+// 120-180 KB, the parser finds eight results, and the rotation takes the first
+// engine that returns any. Bing reached 590 attempts and 590 successes with
+// `last_failure_at` still NULL — the only engine that had never failed, for
+// the only reason that matters, which is that it could not. Whichever search
+// it won came back as confident nonsense.
+//
+// `relevance::answers_query` now catches this class for every engine, so Bing
+// could come back the moment it serves real results again. It stays out until
+// then because a decoy costs a whole search: it wins the rotation before a
+// working engine is ever asked.
+pub(super) const AUTO_ENGINES: &[&str] = &["yahoo", "brave_html", "duckduckgo"];
 
 /// User-configured HTTP proxy. Mirrors the `ProxyConfig` TS type and is
 /// passed in as an optional argument on every egress command. `mode` is

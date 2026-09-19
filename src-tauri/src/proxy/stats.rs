@@ -29,6 +29,10 @@ pub enum SearchFailureKind {
     Parse,
     /// Engine returned 200, parsed cleanly, but produced zero results.
     Empty,
+    /// Engine returned 200 and parsed into well-formed results that are
+    /// about something other than the query — a decoy SERP. See
+    /// `proxy::relevance`.
+    Irrelevant,
     /// reqwest connect/send error (DNS, TLS handshake, broken pipe, ...).
     Network,
     /// FETCH_TIMEOUT exceeded.
@@ -38,6 +42,22 @@ pub enum SearchFailureKind {
 }
 
 impl SearchFailureKind {
+    /// Every variant, so tests can sweep the whole enum rather than a
+    /// hand-copied subset that silently goes stale. `all_variants_are_listed`
+    /// is what keeps it honest. Test-only: nothing in the running app needs
+    /// to enumerate the kinds.
+    #[cfg(test)]
+    pub(crate) const ALL: &'static [SearchFailureKind] = &[
+        SearchFailureKind::Http,
+        SearchFailureKind::RateLimited,
+        SearchFailureKind::Parse,
+        SearchFailureKind::Empty,
+        SearchFailureKind::Irrelevant,
+        SearchFailureKind::Network,
+        SearchFailureKind::Timeout,
+        SearchFailureKind::Other,
+    ];
+
     /// Column name in the `search_stats_engines` table. Kept here so the
     /// proxy layer doesn't need to know about the db schema.
     pub fn db_column(self) -> &'static str {
@@ -46,6 +66,7 @@ impl SearchFailureKind {
             SearchFailureKind::RateLimited => "fail_rate_limited",
             SearchFailureKind::Parse => "fail_parse",
             SearchFailureKind::Empty => "fail_empty",
+            SearchFailureKind::Irrelevant => "fail_irrelevant",
             SearchFailureKind::Network => "fail_network",
             SearchFailureKind::Timeout => "fail_timeout",
             SearchFailureKind::Other => "fail_other",
@@ -110,7 +131,7 @@ pub struct RecordedOutcome {
 ///
 /// Caller is expected to set `attempt = true` for every recorded outcome and
 /// exactly one of: `success = true` OR `failure_column = Some(...)`. The
-/// `failure_column` must be one of the seven `fail_*` column names defined
+/// `failure_column` must be one of the eight `fail_*` column names defined
 /// in `search_stats_engines`; passing anything else returns an error rather
 /// than silently corrupting the SQL.
 #[derive(Clone, Debug, Default)]
@@ -168,6 +189,8 @@ pub struct EngineLifetimeStats {
     pub fail_parse: u64,
     #[ts(type = "number")]
     pub fail_empty: u64,
+    #[ts(type = "number")]
+    pub fail_irrelevant: u64,
     #[ts(type = "number")]
     pub fail_network: u64,
     #[ts(type = "number")]
@@ -538,17 +561,32 @@ mod tests {
     fn failure_kind_db_columns_are_distinct() {
         // Guards against typos that would collapse two kinds onto the
         // same SQL column.
-        let all = [
-            SearchFailureKind::Http,
-            SearchFailureKind::RateLimited,
-            SearchFailureKind::Parse,
-            SearchFailureKind::Empty,
-            SearchFailureKind::Network,
-            SearchFailureKind::Timeout,
-            SearchFailureKind::Other,
-        ];
-        let cols: Vec<&'static str> = all.iter().map(|k| k.db_column()).collect();
+        let cols: Vec<&'static str> = SearchFailureKind::ALL
+            .iter()
+            .map(|k| k.db_column())
+            .collect();
         let unique: std::collections::HashSet<&'static str> = cols.iter().copied().collect();
         assert_eq!(cols.len(), unique.len());
+    }
+
+    /// `ALL` is hand-maintained, and everything that sweeps the enum trusts
+    /// it. The match is exhaustive, so adding a variant without listing it
+    /// here stops compiling rather than quietly shrinking every sweep.
+    #[test]
+    fn all_variants_are_listed() {
+        let mut seen = std::collections::HashSet::new();
+        for kind in SearchFailureKind::ALL {
+            seen.insert(match kind {
+                SearchFailureKind::Http => "http",
+                SearchFailureKind::RateLimited => "rate_limited",
+                SearchFailureKind::Parse => "parse",
+                SearchFailureKind::Empty => "empty",
+                SearchFailureKind::Irrelevant => "irrelevant",
+                SearchFailureKind::Network => "network",
+                SearchFailureKind::Timeout => "timeout",
+                SearchFailureKind::Other => "other",
+            });
+        }
+        assert_eq!(seen.len(), SearchFailureKind::ALL.len(), "duplicate in ALL");
     }
 }
