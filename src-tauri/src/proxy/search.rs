@@ -373,13 +373,29 @@ async fn scrape_engine(
         .await
         .map_err(|e| classify_reqwest_err(e, &format!("Failed to read {} response", label)))?;
 
-    let results = parse(&html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
+    finish_scrape(&html, label, parse, on_empty, empty_needles)
+}
+
+/// Parse a fetched SERP, and decide what an empty parse means.
+///
+/// Split out of `scrape_engine` so an engine that needs a transport of its own
+/// — Yahoo's cookie handshake — still shares the challenge classification and
+/// the anchored diagnostic snippet, which are the parts worth keeping
+/// identical across engines.
+fn finish_scrape(
+    html: &str,
+    label: &str,
+    parse: impl Fn(&str) -> Result<Vec<SearchResult>, String>,
+    on_empty: impl Fn(&str) -> Option<SearchFailure>,
+    empty_needles: &[&str],
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    let results = parse(html).map_err(|e| SearchFailure::new(SearchFailureKind::Parse, e))?;
 
     if results.is_empty() {
-        if let Some(failure) = on_empty(&html) {
+        if let Some(failure) = on_empty(html) {
             return Err(failure);
         }
-        warn_empty_scrape(label, &html, empty_needles);
+        warn_empty_scrape(label, html, empty_needles);
     }
 
     Ok(results)
@@ -501,6 +517,25 @@ pub(super) fn parse_brave_html(html: &str) -> Result<Vec<SearchResult>, String> 
 // we ignore); result links are wrapped in `r.search.yahoo.com` redirects that
 // carry the real destination in the `RU=` path segment.
 
+/// One GET to Yahoo with the standard scrape headers. Separate so the
+/// verification handshake below can issue the identical request twice.
+async fn yahoo_get(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<reqwest::Response, SearchFailure> {
+    client
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Yahoo search failed"))
+}
+
 pub(super) async fn search_yahoo(
     query: &str,
     _recency: &str,
@@ -513,11 +548,45 @@ pub(super) async fn search_yahoo(
         urlencoding::encode(query)
     );
 
-    scrape_engine(
-        &url,
+    // Yahoo answers a cold client with 307 -> /_bv/v.gif ("bot verification"),
+    // and that is what took the engine out on 2026-09-10: the redirect target
+    // answers 500, so following the bounce — which is all the old
+    // `scrape_engine` call could do — turned every search into a Network
+    // failure and a 90s cooldown.
+    //
+    // The bounce is not a wall, it is a cookie drop. The 307 itself carries
+    // Set-Cookie for YBV, A1, A3 and A1S, and re-requesting the *original* URL
+    // with those in hand returns the real SERP (verified 2026-09-19: 267 KB,
+    // seven results, parsed by the unchanged `parse_yahoo_html`). So: keep a
+    // cookie jar, don't follow the redirect, and ask exactly once more.
+    let client = build_search_client(proxy, |b| {
+        b.redirect(reqwest::redirect::Policy::none())
+            .cookie_store(true)
+    })?;
+
+    let mut resp = yahoo_get(&client, &url).await?;
+    if resp.status().is_redirection() {
+        // The cookies from that response are in the jar now.
+        resp = yahoo_get(&client, &url).await?;
+    }
+    if resp.status().is_redirection() {
+        // Two bounces means the handshake is not the obstacle; treat it as a
+        // wall so the engine cools down instead of retrying forever.
+        return Err(SearchFailure::new(
+            SearchFailureKind::RateLimited,
+            "Yahoo kept bouncing to its bot-verification gate.".to_string(),
+        ));
+    }
+
+    let resp = ensure_search_success(resp, "Yahoo")?;
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| classify_reqwest_err(e, "Failed to read Yahoo response"))?;
+
+    finish_scrape(
+        &html,
         "Yahoo",
-        proxy,
-        true,
         parse_yahoo_html,
         // No results + a consent/captcha fingerprint means Yahoo bounced us to
         // its gate rather than a SERP — cool the engine down rather than report
@@ -532,7 +601,6 @@ pub(super) async fn search_yahoo(
         },
         &["class=\"algo", "compTitle", "h3 class=\"title", "compText"],
     )
-    .await
 }
 
 fn is_yahoo_challenge(html: &str) -> bool {
@@ -1100,6 +1168,35 @@ mod tests {
         assert_eq!(
             ddg_form_body("\"quoted\" a&b=c", "any"),
             "q=%22quoted%22%20a%26b%3Dc"
+        );
+    }
+
+    /// Yahoo answers a cold client with a 307 to `/_bv/v.gif` whose target
+    /// 500s; the cookies it sets on that redirect are what unlock the SERP.
+    /// Following the bounce (what the shared `scrape_engine` did) is what took
+    /// the engine out on 2026-09-10, so this asserts the handshake, not just
+    /// that some HTML came back.
+    ///
+    /// Ignored: needs the network. Run with
+    /// `cargo test --manifest-path src-tauri/Cargo.toml yahoo_clears -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn yahoo_clears_its_verification_bounce() {
+        let results = search_yahoo("Dave Smith comedian", "any", None)
+            .await
+            .expect("Yahoo should answer once the verification cookies are carried");
+        println!("yahoo returned {} results", results.len());
+        for r in results.iter().take(3) {
+            println!("  {} | {}", r.title, r.url);
+        }
+        assert!(
+            results.len() >= 5,
+            "expected a full page, got {}",
+            results.len()
+        );
+        assert!(
+            results.iter().all(|r| r.url.starts_with("http")),
+            "every result should carry a real URL"
         );
     }
 
