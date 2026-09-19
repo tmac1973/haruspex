@@ -138,6 +138,24 @@ fn warn_empty_scrape(label: &str, html: &str, needles: &[&str]) {
     );
 }
 
+/// Form body for DDG's HTML endpoint.
+///
+/// Split out to be testable: this was `format!("q={}&b={}", query, df)` with
+/// `df` already carrying its own `&df=`, so every search posted a stray empty
+/// `b=` and the date filter arrived only by accident of that leading `&`. A
+/// recency-less search posted `q=...&b=`.
+fn ddg_form_body(query: &str, recency: &str) -> String {
+    // DDG date filter: df=d (day), df=w (week), df=m (month), df=y (year)
+    let df = match recency {
+        "day" => "&df=d",
+        "week" => "&df=w",
+        "month" => "&df=m",
+        "year" => "&df=y",
+        _ => "",
+    };
+    format!("q={}{}", urlencoding::encode(query), df)
+}
+
 pub(super) async fn search_duckduckgo(
     query: &str,
     recency: &str,
@@ -148,21 +166,12 @@ pub(super) async fn search_duckduckgo(
             .cookie_store(true)
     })?;
 
-    // DDG date filter: df=d (day), df=w (week), df=m (month), df=y (year)
-    let df = match recency {
-        "day" => "&df=d",
-        "week" => "&df=w",
-        "month" => "&df=m",
-        "year" => "&df=y",
-        _ => "",
-    };
-
     let response = client
         .post("https://html.duckduckgo.com/html/")
         .header("User-Agent", USER_AGENT)
         .header("Referer", "https://html.duckduckgo.com/")
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(format!("q={}&b={}", urlencoding::encode(query), df))
+        .body(ddg_form_body(query, recency))
         .send()
         .await
         .map_err(|e| classify_reqwest_err(e, "Search request failed"))?;
@@ -1070,6 +1079,28 @@ mod tests {
             .filter(|engine| state.is_engine_healthy(engine, Duration::from_secs(60)))
             .collect();
         assert!(pickable.is_empty());
+    }
+
+    #[test]
+    fn ddg_form_body_carries_the_query_and_one_clean_filter() {
+        // The bug this replaced posted `q=...&b=` — a stray empty parameter,
+        // with the date filter riding in on the `&` baked into its match arm.
+        assert_eq!(ddg_form_body("rust async", "any"), "q=rust%20async");
+        assert_eq!(ddg_form_body("rust", "week"), "q=rust&df=w");
+        assert_eq!(ddg_form_body("rust", "day"), "q=rust&df=d");
+        assert_eq!(ddg_form_body("rust", "month"), "q=rust&df=m");
+        assert_eq!(ddg_form_body("rust", "year"), "q=rust&df=y");
+        // No empty parameters, whatever the recency.
+        for recency in ["any", "day", "week", "month", "year", ""] {
+            let body = ddg_form_body("a b", recency);
+            assert!(!body.contains("b="), "stray parameter in {body}");
+            assert!(!body.ends_with('='), "empty trailing value in {body}");
+        }
+        // Reserved characters must not escape into the body as separators.
+        assert_eq!(
+            ddg_form_body("\"quoted\" a&b=c", "any"),
+            "q=%22quoted%22%20a%26b%3Dc"
+        );
     }
 
     #[test]
