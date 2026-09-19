@@ -319,6 +319,32 @@ describe('Shell + Code combined mode', () => {
 		);
 	});
 
+	it('code_grep / code_glob pass the WSL distro only for a shell-cwd root', async () => {
+		const { updateSettings } = await import('$lib/stores/settings');
+		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
+		try {
+			const { executeTool } = await import('$lib/agent/tools');
+			mocks.invoke.mockResolvedValue({ matches: [], truncated: false });
+			await executeTool('code_grep', { pattern: 'x' }, shellCodeCtx);
+			expect(mocks.invoke).toHaveBeenCalledWith(
+				'code_grep',
+				expect.objectContaining({ root: '/proj', wslDistro: 'Ubuntu-24.04' })
+			);
+			mocks.invoke.mockResolvedValue({ paths: [], truncated: false });
+			await executeTool('code_glob', { pattern: '**/*.rs' }, shellCodeCtx);
+			expect(mocks.invoke).toHaveBeenCalledWith(
+				'code_glob',
+				expect.objectContaining({ root: '/proj', wslDistro: 'Ubuntu-24.04' })
+			);
+			// The Code tab's working directory is a host path — no distro.
+			mocks.invoke.mockClear();
+			await executeTool('code_glob', { pattern: '**/*.rs' }, codeCtx);
+			expect(mocks.invoke.mock.calls[0][1]).not.toHaveProperty('wslDistro');
+		} finally {
+			updateSettings({ shellSelection: null });
+		}
+	});
+
 	it('fs_edit_text dispatches absolute (shell CWD) in Code mode', async () => {
 		mocks.invoke.mockResolvedValueOnce({
 			first_changed_line: 1,

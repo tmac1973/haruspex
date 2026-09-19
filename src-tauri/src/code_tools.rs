@@ -333,6 +333,18 @@ impl grep::searcher::Sink for ContextSink<'_> {
     }
 }
 
+/// A WSL Shell session's root is the shell's Linux cwd; map it onto the
+/// Windows path the tools can walk (see `require_absolute`). Other roots — the
+/// Code tab's working directory, a PowerShell or Linux/macOS shell cwd — are
+/// already host paths and pass through untouched.
+fn resolve_code_root(root: String, wsl_distro: Option<&str>) -> Result<String, String> {
+    match wsl_distro {
+        Some(_) => crate::fs_tools::absolute::require_absolute(&root, wsl_distro)
+            .map(|p| p.to_string_lossy().into_owned()),
+        None => Ok(root),
+    }
+}
+
 /// Walk `walk_root` honoring .gitignore even outside a git checkout (like
 /// `rg --no-require-git`), yielding each regular file as `(relative_path,
 /// absolute_path)`. The relative path is derived against `strip_root` (which
@@ -384,6 +396,7 @@ pub async fn code_grep(
     count: Option<bool>,
     files_only: Option<bool>,
     context: Option<u32>,
+    wsl_distro: Option<String>,
 ) -> Result<GrepResult, String> {
     use globset::Glob;
     use grep::regex::RegexMatcherBuilder;
@@ -391,7 +404,13 @@ pub async fn code_grep(
     use grep::searcher::SearcherBuilder;
 
     let cap = max_matches.unwrap_or(GREP_DEFAULT_MAX).max(1);
+    let root = resolve_code_root(root, wsl_distro.as_deref())?;
     let search_root = match &path {
+        // An absolute Linux path in a WSL session names an in-distro directory,
+        // not one under the (already translated) root.
+        Some(p) if wsl_distro.is_some() && p.starts_with('/') => {
+            crate::fs_tools::absolute::require_absolute(p, wsl_distro.as_deref())?
+        }
         Some(p) => Path::new(&root).join(p),
         None => PathBuf::from(&root),
     };
@@ -581,10 +600,12 @@ pub async fn code_glob(
     root: String,
     pattern: String,
     max_results: Option<usize>,
+    wsl_distro: Option<String>,
 ) -> Result<GlobResult, String> {
     use globset::Glob;
 
     let cap = max_results.unwrap_or(GLOB_DEFAULT_MAX).max(1);
+    let root = resolve_code_root(root, wsl_distro.as_deref())?;
 
     tokio::task::spawn_blocking(move || -> Result<GlobResult, String> {
         let matcher = Glob::new(&pattern)
@@ -623,6 +644,20 @@ mod tests {
         fs::write(dir.join(".gitignore"), "ignored.rs\n").unwrap();
         fs::write(dir.join("ignored.rs"), "fn needle() {}\n").unwrap();
         dir
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wsl_code_root_maps_onto_the_distro_share() {
+        assert_eq!(
+            resolve_code_root("/home/tim/proj".to_string(), Some("Ubuntu")).unwrap(),
+            r"\\wsl.localhost\Ubuntu\home\tim\proj"
+        );
+        // Not a WSL session: the root is already a host path.
+        assert_eq!(
+            resolve_code_root(r"C:\proj".to_string(), None).unwrap(),
+            r"C:\proj"
+        );
     }
 
     #[tokio::test]
@@ -702,6 +737,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -726,6 +762,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -743,6 +780,7 @@ mod tests {
             "needle".to_string(),
             None,
             Some("src/**/*.rs".to_string()),
+            None,
             None,
             None,
             None,
@@ -775,6 +813,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -791,6 +830,7 @@ mod tests {
             None,
             None,
             Some(1),
+            None,
             None,
             None,
             None,
@@ -813,6 +853,7 @@ mod tests {
             None,
             None,
             Some("main.rs".to_string()),
+            None,
             None,
             None,
             None,
@@ -844,6 +885,7 @@ mod tests {
             Some(true),
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -867,6 +909,7 @@ mod tests {
             None,
             None,
             Some(true),
+            None,
             None,
         )
         .await
@@ -895,6 +938,7 @@ mod tests {
             None,
             None,
             Some(1),
+            None,
         )
         .await
         .unwrap();
@@ -914,6 +958,7 @@ mod tests {
         let res = code_glob(
             dir.to_string_lossy().into_owned(),
             "**/*.rs".to_string(),
+            None,
             None,
         )
         .await
@@ -935,6 +980,7 @@ mod tests {
             dir.to_string_lossy().into_owned(),
             "**/*".to_string(),
             Some(1),
+            None,
         )
         .await
         .unwrap();

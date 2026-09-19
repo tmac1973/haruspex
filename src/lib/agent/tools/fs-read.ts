@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { labelArg, resolveShellPath, toolInvokeError } from './_helpers';
+import { labelArg, resolveShellPath, toolInvokeError, wslDistroArg } from './_helpers';
 import { registerTool } from './registry';
 import { withLocalScopeNote } from './nested-session';
 import { toolError, toolResult } from './types';
@@ -66,7 +66,7 @@ async function fsReadAbsolute(
 	extra?: Record<string, unknown>
 ): Promise<string> {
 	try {
-		return await invoke<string>(command, { path, ...extra });
+		return await invoke<string>(command, { path, ...extra, ...wslDistroArg() });
 	} catch (e) {
 		return toolInvokeError(command, e);
 	}
@@ -118,7 +118,8 @@ registerTool({
 		try {
 			const listing = ctx.shellMode
 				? await invoke<DirListing>('fs_list_dir_absolute', {
-						path: resolveShellPath(path, ctx.shellCwd)
+						path: resolveShellPath(path, ctx.shellCwd),
+						...wslDistroArg()
 					})
 				: await invoke<DirListing>('fs_list_dir', {
 						workdir: ctx.workingDir,

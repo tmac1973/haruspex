@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isAbortError } from '$lib/utils/error';
-import { labelArg, toolInvokeError } from './_helpers';
+import { labelArg, toolInvokeError, wslDistroArg } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
@@ -25,6 +25,11 @@ import type { GlobResult } from '$lib/ipc/gen/GlobResult';
  */
 function codeRoot(ctx: ToolContext): string | null {
 	return ctx.shellMode ? (ctx.shellCwd ?? null) : ctx.workingDir;
+}
+
+/** The WSL distro arg, only when the root is a shell cwd (the Code tab's is a host path). */
+function shellWslDistro(ctx: ToolContext): { wslDistro?: string } {
+	return ctx.shellMode ? wslDistroArg() : {};
 }
 
 /**
@@ -219,6 +224,7 @@ async function startBackground(command: string, ctx: ToolContext, watch: boolean
 			command,
 			logPath: handle.logPath,
 			donePath: handle.donePath,
+			...wslDistroArg(),
 			startedAtMs: Date.now()
 		});
 		return (
@@ -309,7 +315,8 @@ registerTool({
 				maxMatches: null,
 				count: (args.count as boolean) ?? null,
 				filesOnly: (args.files_only as boolean) ?? null,
-				context: (args.context as number) ?? null
+				context: (args.context as number) ?? null,
+				...shellWslDistro(ctx)
 			});
 			// Searched the LOCAL tree rooted at the tracked shell cwd — which is
 			// the wrong tree once the terminal has ssh'd elsewhere.
@@ -361,7 +368,8 @@ registerTool({
 			const res = await invoke<GlobResult>('code_glob', {
 				root,
 				pattern: args.pattern as string,
-				maxResults: null
+				maxResults: null,
+				...shellWslDistro(ctx)
 			});
 			return toolResult(await withLocalScopeNote(formatGlob(res), ctx));
 		} catch (e) {

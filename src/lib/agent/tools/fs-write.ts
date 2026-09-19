@@ -1,6 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { IPC } from '$lib/ipc/commands';
-import { labelArg, resolveShellPath, toolInvokeError, ensureUrlScheme } from './_helpers';
+import {
+	labelArg,
+	resolveShellPath,
+	toolInvokeError,
+	ensureUrlScheme,
+	wslDistroArg
+} from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
@@ -411,7 +417,8 @@ function shellAwareWriteText() {
 			await invoke('fs_write_text_absolute', {
 				path,
 				content: args.content as string,
-				overwrite
+				overwrite,
+				...wslDistroArg()
 			});
 			return toolResult(`Wrote ${path}`);
 		} catch (e) {
@@ -436,7 +443,8 @@ function shellAwareEditText() {
 				const r = await invoke<EditResult>('fs_edit_text_absolute', {
 					path,
 					oldStr: args.old_str as string,
-					newStr: args.new_str as string
+					newStr: args.new_str as string,
+					...wslDistroArg()
 				});
 				return toolResult(formatEditResult(path, r));
 			} catch (e) {

@@ -80,6 +80,16 @@ export function resolveShellPath(path: string, shellCwd: string | null | undefin
 }
 
 /**
+ * Invoke args naming the WSL distro the Shell tab runs, so the `fs_*_absolute`
+ * commands can reach an in-distro path (/home/…) through the distro's
+ * `\\wsl.localhost\<distro>` share. Empty for PowerShell and on Linux/macOS.
+ */
+export function wslDistroArg(): { wslDistro?: string } {
+	const sel = getSettings().shellSelection;
+	return sel?.kind === 'wsl' ? { wslDistro: sel.distro } : {};
+}
+
+/**
  * Format a tool error as `<command> failed: <reason>`. Pulls `e.message`
  * when available so DOMException / Error instances surface a clean
  * string instead of `[object Object]`. The result is the JSON-encoded
