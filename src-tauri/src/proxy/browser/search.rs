@@ -13,7 +13,7 @@ use super::{cdp, detect};
 use crate::proxy::config::{ENGINE_COOLDOWN, RATE_LIMIT_INTERVAL};
 use crate::proxy::search::{
     looks_like_bot_challenge, parse_bing_html, parse_brave_html, parse_ddg_html,
-    parse_startpage_html, parse_yahoo_html,
+    parse_startpage_html, parse_yahoo_html, reject_if_irrelevant,
 };
 use crate::proxy::stats::{
     record_engine_result, SearchFailure, SearchFailureKind, SearchStats, StatSink,
@@ -294,6 +294,10 @@ pub(crate) async fn search_via_browser(
         };
 
         engine_ran = true;
+        // Rendering in a real browser is a better disguise, not a guarantee of
+        // honesty: the readiness probe stops as soon as the parser finds
+        // results, so a decoy SERP renders "ready" like any other.
+        let result = result.and_then(|r| reject_if_irrelevant(engine.stats_key, query, r));
         record_engine_result(stats, sink, engine.stats_key, &result, elapsed, None);
 
         match result {

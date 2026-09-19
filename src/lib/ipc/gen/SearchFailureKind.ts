@@ -4,4 +4,4 @@
  * Why a search engine attempt didn't return usable results. Each kind
  * maps 1:1 to a `fail_*` column in `search_stats_engines`.
  */
-export type SearchFailureKind = "http" | "rate_limited" | "parse" | "empty" | "network" | "timeout" | "other";
+export type SearchFailureKind = "http" | "rate_limited" | "parse" | "empty" | "irrelevant" | "network" | "timeout" | "other";

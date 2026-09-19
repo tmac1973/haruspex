@@ -1,5 +1,5 @@
 use super::*;
-use crate::proxy::stats::EngineStatDelta;
+use crate::proxy::stats::{EngineStatDelta, SearchFailureKind};
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
 
@@ -163,6 +163,68 @@ fn stats_upsert_creates_row_then_accumulates() {
     assert_eq!(e.core.first_choice_attempts, 2);
     assert_eq!(e.core.fallback_attempts, 1);
     assert_eq!(e.core.fallback_successes, 1);
+}
+
+/// Every failure kind must survive the whole round trip: `db_column()` ->
+/// the whitelist -> the UPDATE's column list -> the snapshot SELECT.
+///
+/// Those four places are independent hand-written lists, and a kind missing
+/// from any of them is invisible — the write is rejected or silently lands on
+/// no column, and the engine that earned the failure reads back as flawless.
+/// That is the same shape as the bug this kind was added for, so it gets a
+/// test that sweeps the enum instead of naming one kind.
+#[test]
+fn every_failure_kind_round_trips_to_its_own_column() {
+    let db = test_db();
+    for kind in SearchFailureKind::ALL {
+        let engine = format!("engine-{}", kind.db_column());
+        db.update_engine_stat(
+            &engine,
+            &EngineStatDelta {
+                attempt: true,
+                failure_column: Some(kind.db_column()),
+                now_ms: 1_700_000_000_000,
+                ..Default::default()
+            },
+        )
+        .unwrap_or_else(|e| panic!("{} rejected: {e}", kind.db_column()));
+    }
+
+    let snap = db.lifetime_stats_snapshot().unwrap();
+    assert_eq!(snap.engines.len(), SearchFailureKind::ALL.len());
+
+    for kind in SearchFailureKind::ALL {
+        let col = kind.db_column();
+        let e = snap
+            .engines
+            .iter()
+            .find(|e| e.core.engine == format!("engine-{col}"))
+            .unwrap_or_else(|| panic!("{col} wrote no row"));
+        // Exactly one column moved, and it was this one.
+        let counts = [
+            ("fail_http", e.fail_http),
+            ("fail_rate_limited", e.fail_rate_limited),
+            ("fail_parse", e.fail_parse),
+            ("fail_empty", e.fail_empty),
+            ("fail_irrelevant", e.fail_irrelevant),
+            ("fail_network", e.fail_network),
+            ("fail_timeout", e.fail_timeout),
+            ("fail_other", e.fail_other),
+        ];
+        for (name, count) in counts {
+            let expected = u64::from(name == col);
+            assert_eq!(
+                count, expected,
+                "recording {col} left {name} at {count}, expected {expected}"
+            );
+        }
+        assert_eq!(e.core.attempts, 1);
+        assert_eq!(e.core.successes, 0);
+        assert!(
+            e.core.last_failure_at.is_some(),
+            "{col} recorded no timestamp"
+        );
+    }
 }
 
 #[test]

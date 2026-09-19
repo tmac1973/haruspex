@@ -9,6 +9,7 @@ use super::config::{
     RATE_LIMIT_INTERVAL_SLOW,
 };
 use super::extract::{diagnostic_snippet, USER_AGENT};
+use super::relevance;
 use super::stats::{
     record_engine_result, record_global_both, AutoPosition, GlobalCounter, SearchFailure,
     SearchFailureKind, SearchStats, StatSink,
@@ -125,6 +126,37 @@ fn collect_json_results(items: &[serde_json::Value], snippet_field: &str) -> Vec
         }
     }
     results
+}
+
+/// Reject a result set that parsed cleanly but answers a different question.
+///
+/// Shared by both rotations, because the failure it catches is a property of
+/// the engine's response rather than of the transport that fetched it — Bing
+/// served the same decoys to plain HTTP and through a proxy. Empty sets pass
+/// straight through: `Empty` already classifies those, and says more.
+///
+/// A rejection is a real failure, not an empty result, and deliberately so. An
+/// engine serving decoys has to earn a cooldown, or it keeps winning the
+/// rotation ahead of engines that would have answered.
+pub(super) fn reject_if_irrelevant(
+    engine: &str,
+    query: &str,
+    results: Vec<SearchResult>,
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    if relevance::answers_query(query, &results) {
+        return Ok(results);
+    }
+    warn!(
+        "{} answered '{}' with {} results about something else (first: {:?}) — discarding",
+        engine,
+        query,
+        results.len(),
+        results.first().map(|r| r.title.as_str()).unwrap_or("")
+    );
+    Err(SearchFailure::new(
+        SearchFailureKind::Irrelevant,
+        format!("{} returned results unrelated to the query", engine),
+    ))
 }
 
 /// Log an anchored diagnostic snippet when a scrape parser finds nothing —
@@ -951,6 +983,8 @@ pub(super) async fn search_auto(
             _ => unreachable!(),
         };
         let elapsed = start.elapsed().as_millis() as u64;
+        // Before anything counts this as a win: is it an answer to the query?
+        let result = result.and_then(|r| reject_if_irrelevant(engine, query, r));
 
         record_engine_result(stats, sink, engine, &result, elapsed, Some(position));
 

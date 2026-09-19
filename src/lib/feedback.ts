@@ -27,12 +27,21 @@ const REPO = 'tmac1973/haruspex';
 const ISSUE_URL_BASE = `https://github.com/${REPO}/issues/new`;
 const TEMPLATE = 'feedback.yml';
 
-type FailureKey = 'http' | 'rate_limited' | 'parse' | 'empty' | 'network' | 'timeout' | 'other';
+type FailureKey =
+	| 'http'
+	| 'rate_limited'
+	| 'parse'
+	| 'empty'
+	| 'irrelevant'
+	| 'network'
+	| 'timeout'
+	| 'other';
 const FAILURE_KEYS: FailureKey[] = [
 	'http',
 	'rate_limited',
 	'parse',
 	'empty',
+	'irrelevant',
 	'network',
 	'timeout',
 	'other'
@@ -60,6 +69,7 @@ interface LifetimeEngineStats {
 	fail_rate_limited: number;
 	fail_parse: number;
 	fail_empty: number;
+	fail_irrelevant: number;
 	fail_network: number;
 	fail_timeout: number;
 	fail_other: number;
@@ -209,6 +219,7 @@ function fromSession(e: SessionEngineStats): UnifiedStatsRow {
 		rate_limited: e.failures_by_kind.rate_limited ?? 0,
 		parse: e.failures_by_kind.parse ?? 0,
 		empty: e.failures_by_kind.empty ?? 0,
+		irrelevant: e.failures_by_kind.irrelevant ?? 0,
 		network: e.failures_by_kind.network ?? 0,
 		timeout: e.failures_by_kind.timeout ?? 0,
 		other: e.failures_by_kind.other ?? 0
@@ -221,6 +232,7 @@ function fromLifetime(e: LifetimeEngineStats): UnifiedStatsRow {
 		rate_limited: e.fail_rate_limited,
 		parse: e.fail_parse,
 		empty: e.fail_empty,
+		irrelevant: e.fail_irrelevant,
 		network: e.fail_network,
 		timeout: e.fail_timeout,
 		other: e.fail_other

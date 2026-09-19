@@ -447,6 +447,7 @@ impl Database {
                 fail_rate_limited INTEGER NOT NULL DEFAULT 0,
                 fail_parse INTEGER NOT NULL DEFAULT 0,
                 fail_empty INTEGER NOT NULL DEFAULT 0,
+                fail_irrelevant INTEGER NOT NULL DEFAULT 0,
                 fail_network INTEGER NOT NULL DEFAULT 0,
                 fail_timeout INTEGER NOT NULL DEFAULT 0,
                 fail_other INTEGER NOT NULL DEFAULT 0,
@@ -658,6 +659,11 @@ impl Database {
             // "extracted" is right for every row written before this column
             // existed — the tool did not exist then.
             "ALTER TABLE memories ADD COLUMN origin TEXT NOT NULL DEFAULT 'extracted'",
+            // Result sets that parsed cleanly but answered a different
+            // question. Backfills to 0, which reads correctly: before this
+            // column existed a decoy SERP was counted as a success, so no
+            // historical row has one to report.
+            "ALTER TABLE search_stats_engines ADD COLUMN fail_irrelevant INTEGER NOT NULL DEFAULT 0",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

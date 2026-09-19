@@ -15,6 +15,7 @@ mod config;
 mod extract;
 pub mod images;
 mod paywall;
+mod relevance;
 mod search;
 mod state;
 pub mod stats;

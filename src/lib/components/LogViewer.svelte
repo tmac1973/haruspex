@@ -28,6 +28,7 @@
 		'rate_limited',
 		'parse',
 		'empty',
+		'irrelevant',
 		'network',
 		'timeout',
 		'other'
@@ -37,6 +38,7 @@
 		rate_limited: 'RateLim',
 		parse: 'Parse',
 		empty: 'Empty',
+		irrelevant: 'Decoy',
 		network: 'Net',
 		timeout: 'Timeout',
 		other: 'Other'
@@ -270,6 +272,7 @@
 			rate_limited: e.failures_by_kind.rate_limited ?? 0,
 			parse: e.failures_by_kind.parse ?? 0,
 			empty: e.failures_by_kind.empty ?? 0,
+			irrelevant: e.failures_by_kind.irrelevant ?? 0,
 			network: e.failures_by_kind.network ?? 0,
 			timeout: e.failures_by_kind.timeout ?? 0,
 			other: e.failures_by_kind.other ?? 0
@@ -299,6 +302,7 @@
 				rate_limited: e.fail_rate_limited,
 				parse: e.fail_parse,
 				empty: e.fail_empty,
+				irrelevant: e.fail_irrelevant,
 				network: e.fail_network,
 				timeout: e.fail_timeout,
 				other: e.fail_other
