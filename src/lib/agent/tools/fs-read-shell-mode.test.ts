@@ -254,3 +254,39 @@ describe('fs_read tools in Shell mode', () => {
 		});
 	});
 });
+
+describe('fs tools in a WSL Shell session', () => {
+	it('pass the distro so in-distro paths resolve through the WSL share', async () => {
+		const { updateSettings } = await import('$lib/stores/settings');
+		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
+		try {
+			const { executeTool } = await import('$lib/agent/tools');
+			mocks.invoke.mockResolvedValue({ path: '/home/tim', entries: [], truncated: false });
+			await executeTool('fs_list_dir', { path: '/home/tim' }, shellCtx);
+			expect(mocks.invoke).toHaveBeenCalledWith('fs_list_dir_absolute', {
+				path: '/home/tim',
+				wslDistro: 'Ubuntu-24.04'
+			});
+			mocks.invoke.mockResolvedValue('');
+			await executeTool('fs_read_text', { path: '/home/tim/.bashrc' }, shellCtx);
+			expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', {
+				path: '/home/tim/.bashrc',
+				wslDistro: 'Ubuntu-24.04'
+			});
+			mocks.invoke.mockResolvedValue(null);
+			await executeTool(
+				'fs_write_text',
+				{ path: '/home/tim/a.txt', content: 'x' },
+				shellCtxWritable
+			);
+			expect(mocks.invoke).toHaveBeenCalledWith('fs_write_text_absolute', {
+				path: '/home/tim/a.txt',
+				content: 'x',
+				overwrite: true,
+				wslDistro: 'Ubuntu-24.04'
+			});
+		} finally {
+			updateSettings({ shellSelection: null });
+		}
+	});
+});

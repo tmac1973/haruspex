@@ -18,27 +18,62 @@ use super::path::{
 };
 use std::path::PathBuf;
 
-fn require_absolute(path: &str) -> Result<PathBuf, String> {
+/// `wsl_distro` is the WSL distro the Shell-tab session runs in (Windows only;
+/// None for PowerShell and on Linux/macOS). Also used by `code_grep` /
+/// `code_glob` to resolve a WSL session's Linux working directory.
+pub(crate) fn require_absolute(path: &str, wsl_distro: Option<&str>) -> Result<PathBuf, String> {
     // WSL sessions hand us Linux paths. One under the Windows automount
     // (/mnt/<drive>/…) is just the Windows filesystem mounted in the distro, so
     // translate it to the real Windows path — the file tools run on the Windows
-    // host. A native-distro path (/home/…) has no Windows equivalent.
+    // host. A native-distro path (/home/…) is reached through the distro's
+    // `\\wsl.localhost\<distro>\…` share.
     let translated = normalize_wsl_mount(path);
     let p = PathBuf::from(&translated);
     if !p.is_absolute() {
         #[cfg(windows)]
         if translated.starts_with('/') {
+            if let Some(unc) = wsl_distro.and_then(|d| wsl_distro_unc(&translated, d)) {
+                return Ok(PathBuf::from(unc));
+            }
             return Err(format!(
-                "Path is inside the WSL distro, which the file tools can't reach: {path}. They \
-                 operate on the Windows filesystem — use a path under /mnt/<drive>/… (e.g. \
-                 /mnt/c/Users/…), or have the user work on in-distro files directly."
+                "Path is inside a WSL distro, but this session isn't a WSL shell: {path}. The \
+                 file tools operate on the Windows filesystem — use a Windows path or one under \
+                 /mnt/<drive>/… (e.g. /mnt/c/Users/…)."
             ));
         }
         return Err(format!(
             "Path must be absolute when called from the Shell agent: {translated}"
         ));
     }
+    #[cfg(not(windows))]
+    let _ = wsl_distro;
     Ok(p)
+}
+
+/// Map a native-distro Linux path ("/home/tim") to the Windows share that
+/// exposes the distro's filesystem ("\\\\wsl.localhost\\Ubuntu\\home\\tim").
+/// None for a distro name that could escape the share root.
+#[cfg(windows)]
+fn wsl_distro_unc(path: &str, distro: &str) -> Option<String> {
+    if distro.is_empty() || distro.contains(['\\', '/']) || distro.starts_with('.') {
+        return None;
+    }
+    Some(format!(
+        "\\\\wsl.localhost\\{distro}{}",
+        path.replace('/', "\\")
+    ))
+}
+
+/// The path to report back to the model: the Linux path it asked for when the
+/// tool reached into a WSL distro, so it keeps using the paths the shell shows
+/// rather than switching to the UNC form; the resolved path otherwise.
+fn display_path(requested: &str, resolved: &std::path::Path) -> String {
+    let resolved = resolved.to_string_lossy();
+    if resolved.starts_with("\\\\wsl.localhost\\") && requested.starts_with('/') {
+        requested.to_string()
+    } else {
+        resolved.into_owned()
+    }
 }
 
 /// Translate a WSL Windows-automount path ("/mnt/c/Users/tim") to the real
@@ -75,8 +110,9 @@ pub async fn fs_read_text_absolute(
     path: String,
     offset: Option<u32>,
     limit: Option<u32>,
+    wsl_distro: Option<String>,
 ) -> Result<String, String> {
-    let resolved = require_absolute(&path)?;
+    let resolved = require_absolute(&path, wsl_distro.as_deref())?;
 
     if !resolved.exists() {
         let parent = resolved
@@ -108,8 +144,11 @@ pub async fn fs_read_text_absolute(
 }
 
 #[tauri::command]
-pub async fn fs_list_dir_absolute(path: String) -> Result<DirListing, String> {
-    let resolved = require_absolute(&path)?;
+pub async fn fs_list_dir_absolute(
+    path: String,
+    wsl_distro: Option<String>,
+) -> Result<DirListing, String> {
+    let resolved = require_absolute(&path, wsl_distro.as_deref())?;
 
     if !resolved.exists() {
         return Err(format!(
@@ -130,15 +169,18 @@ pub async fn fs_list_dir_absolute(path: String) -> Result<DirListing, String> {
     let (entries, truncated) = super::path::collect_dir_entries(&resolved, true).await?;
 
     Ok(DirListing {
-        path: resolved.to_string_lossy().to_string(),
+        path: display_path(&path, &resolved),
         entries,
         truncated,
     })
 }
 
 #[tauri::command]
-pub async fn fs_read_pdf_absolute(path: String) -> Result<String, String> {
-    let resolved = require_absolute(&path)?;
+pub async fn fs_read_pdf_absolute(
+    path: String,
+    wsl_distro: Option<String>,
+) -> Result<String, String> {
+    let resolved = require_absolute(&path, wsl_distro.as_deref())?;
     if !resolved.is_file() {
         return Err(format!("Not a file: {}", path));
     }
@@ -150,8 +192,9 @@ pub async fn fs_write_text_absolute(
     path: String,
     content: String,
     overwrite: Option<bool>,
+    wsl_distro: Option<String>,
 ) -> Result<(), String> {
-    let resolved = require_absolute(&path)?;
+    let resolved = require_absolute(&path, wsl_distro.as_deref())?;
 
     if content.len() > MAX_WRITE_BYTES {
         return Err(format!(
@@ -186,8 +229,9 @@ pub async fn fs_edit_text_absolute(
     path: String,
     old_str: String,
     new_str: String,
+    wsl_distro: Option<String>,
 ) -> Result<EditResult, String> {
-    let resolved = require_absolute(&path)?;
+    let resolved = require_absolute(&path, wsl_distro.as_deref())?;
 
     if !resolved.exists() {
         return Err(format!(
@@ -217,9 +261,38 @@ mod tests {
         assert_eq!(normalize_wsl_mount("C:\\already\\win"), "C:\\already\\win");
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn maps_native_distro_paths_to_the_wsl_share() {
+        assert_eq!(
+            require_absolute("/home/tim/test", Some("Ubuntu-24.04")).unwrap(),
+            PathBuf::from("\\\\wsl.localhost\\Ubuntu-24.04\\home\\tim\\test")
+        );
+        // The Windows automount still resolves to the drive, not the share.
+        assert_eq!(
+            require_absolute("/mnt/c/Users", Some("Ubuntu-24.04")).unwrap(),
+            PathBuf::from("C:\\Users")
+        );
+        // Without a distro (a PowerShell session) there is nowhere to send it.
+        let err = require_absolute("/home/tim", None).unwrap_err();
+        assert!(err.contains("isn't a WSL shell"), "got: {err}");
+        // A distro name must not climb out of the share root.
+        assert!(require_absolute("/etc", Some("..\\x")).is_err());
+        assert!(require_absolute("/etc", Some("")).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn reports_the_linux_path_for_distro_listings() {
+        let resolved = require_absolute("/home/tim", Some("Ubuntu")).unwrap();
+        assert_eq!(display_path("/home/tim", &resolved), "/home/tim");
+        let resolved = require_absolute("/mnt/c/Users", Some("Ubuntu")).unwrap();
+        assert_eq!(display_path("/mnt/c/Users", &resolved), "C:\\Users");
+    }
+
     #[tokio::test]
     async fn rejects_relative_path() {
-        let err = fs_read_text_absolute("etc/passwd".to_string(), None, None)
+        let err = fs_read_text_absolute("etc/passwd".to_string(), None, None, None)
             .await
             .unwrap_err();
         assert!(err.contains("must be absolute"), "got: {err}");
@@ -231,7 +304,7 @@ mod tests {
         // path like "/this/..." isn't absolute on Windows (no drive prefix),
         // so root it under the platform temp dir to reach the not-found branch.
         let missing = std::env::temp_dir().join("haruspex-nope/does/not/exist/at/all");
-        let err = fs_read_text_absolute(missing.to_string_lossy().into_owned(), None, None)
+        let err = fs_read_text_absolute(missing.to_string_lossy().into_owned(), None, None, None)
             .await
             .unwrap_err();
         assert!(err.contains("does not exist"), "got: {err}");
@@ -250,7 +323,7 @@ mod tests {
         // An absolute path that exists and is a directory on every platform
         // (Windows /tmp isn't absolute, so use the real temp dir).
         let dir = std::env::temp_dir();
-        let err = fs_read_text_absolute(dir.to_string_lossy().into_owned(), None, None)
+        let err = fs_read_text_absolute(dir.to_string_lossy().into_owned(), None, None, None)
             .await
             .unwrap_err();
         assert!(
@@ -271,7 +344,7 @@ mod tests {
         if !std::path::Path::new("/etc/os-release").exists() {
             return;
         }
-        let body = fs_read_text_absolute("/etc/os-release".to_string(), None, None)
+        let body = fs_read_text_absolute("/etc/os-release".to_string(), None, None, None)
             .await
             .expect("read /etc/os-release");
         assert!(body.contains("NAME="), "expected NAME= in /etc/os-release");
@@ -282,7 +355,7 @@ mod tests {
         if !std::path::Path::new("/etc").is_dir() {
             return;
         }
-        let listing = fs_list_dir_absolute("/etc".to_string())
+        let listing = fs_list_dir_absolute("/etc".to_string(), None)
             .await
             .expect("list /etc");
         assert_eq!(listing.path, "/etc");

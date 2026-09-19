@@ -23,6 +23,8 @@ export interface BackgroundWatch {
 	command: string;
 	logPath: string;
 	donePath: string;
+	/** The WSL distro the paths live in, for a WSL session (Windows). */
+	wslDistro?: string;
 	startedAtMs: number;
 	/** Set once the .done sentinel is observed. */
 	exitCode?: number;
@@ -47,6 +49,7 @@ export function registerWatch(info: {
 	command: string;
 	logPath: string;
 	donePath: string;
+	wslDistro?: string;
 	startedAtMs: number;
 }): string {
 	counter += 1;
@@ -75,9 +78,9 @@ export function clearWatchesForSession(ptySessionId: number): void {
 }
 
 /** Read a watched command's captured output (its temp log). Empty on failure. */
-export async function readWatchLog(logPath: string): Promise<string> {
+export async function readWatchLog(logPath: string, wslDistro?: string): Promise<string> {
 	try {
-		return await invoke<string>('fs_read_text_absolute', { path: logPath });
+		return await invoke<string>('fs_read_text_absolute', { path: logPath, wslDistro });
 	} catch {
 		return '';
 	}
@@ -105,7 +108,10 @@ async function tick(): Promise<void> {
 		for (const w of running) {
 			let content: string;
 			try {
-				content = await invoke<string>('fs_read_text_absolute', { path: w.donePath });
+				content = await invoke<string>('fs_read_text_absolute', {
+					path: w.donePath,
+					wslDistro: w.wslDistro
+				});
 			} catch {
 				continue; // sentinel not written yet — still running
 			}

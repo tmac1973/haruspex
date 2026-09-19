@@ -1002,7 +1002,7 @@ async function buildWatchNotification(completed: BackgroundWatch[]): Promise<str
 			: `${completed.length} background commands you started with watch have finished.`
 	];
 	for (const w of completed) {
-		const tail = truncateCapturedOutput(await readWatchLog(w.logPath), 4096);
+		const tail = truncateCapturedOutput(await readWatchLog(w.logPath, w.wslDistro), 4096);
 		const finishedMs = w.completedAtMs ?? Date.now();
 		lines.push(
 			`\n$ ${w.command}\n` +
