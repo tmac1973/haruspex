@@ -841,6 +841,13 @@ pub(super) async fn search_auto(
     for (idx, engine) in engines.iter().enumerate() {
         // Brave's free HTML endpoint 429s far more eagerly than the others, so
         // give it extra breathing room between requests.
+        //
+        // Not to be confused with the *unconditional* 429 it served until
+        // 2026-09-19: that one was ours, an HTTP/1.1 client talking to an
+        // endpoint that only answers HTTP/2 (see the reqwest features in
+        // Cargo.toml). With that fixed Brave answers — but it still counts
+        // requests, and a burst of eight at 3s intervals earns a penalty that
+        // outlasts 15s spacing, so this pacing stays.
         let interval = if *engine == "brave_html" {
             rate_interval.max(std::time::Duration::from_secs(5))
         } else {
