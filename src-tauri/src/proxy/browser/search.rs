@@ -12,8 +12,8 @@ use super::process::BrowserProcess;
 use super::{cdp, detect};
 use crate::proxy::config::{ENGINE_COOLDOWN, RATE_LIMIT_INTERVAL};
 use crate::proxy::search::{
-    looks_like_bot_challenge, parse_bing_html, parse_brave_html, parse_ddg_html,
-    parse_startpage_html, parse_yahoo_html, reject_if_irrelevant,
+    looks_like_bot_challenge, parse_brave_html, parse_ddg_html, parse_startpage_html,
+    parse_yahoo_html, reject_if_irrelevant,
 };
 use crate::proxy::stats::{
     record_engine_result, SearchFailure, SearchFailureKind, SearchStats, StatSink,
@@ -67,24 +67,20 @@ fn encode(query: &str) -> String {
 /// so nothing client-side reaches it. Qwant is absent because its rendered DOM
 /// contains nothing the existing selectors match; it would need a parser of
 /// its own.
+///
+/// Bing was removed on 2026-09-19 for the decoy SERPs documented on
+/// `AUTO_ENGINES`, having first been checked here rather than assumed: rendered
+/// under Chromium 152 it served the *same* first-term decoy as plain HTTP
+/// (`Dave Smith comedian far right alt right controversy` -> eight results
+/// about the Dave banking app), twice out of two, while every other engine in
+/// this table returned real results for the same query on the same runs. A
+/// real browser is no cure, so this is not one of the removals browser mode
+/// exists to overrule.
 pub(crate) const BROWSER_ENGINES: &[BrowserEngine] = &[
     BrowserEngine {
         stats_key: "startpage/browser",
         url: |q, _| format!("https://www.startpage.com/sp/search?query={}", encode(q)),
         parse: parse_startpage_html,
-    },
-    BrowserEngine {
-        stats_key: "bing/browser",
-        url: |q, recency| {
-            let filters = match recency {
-                "day" => "&filters=ex1%3a%22ez1%22",
-                "week" => "&filters=ex1%3a%22ez2%22",
-                "month" => "&filters=ex1%3a%22ez3%22",
-                _ => "",
-            };
-            format!("https://www.bing.com/search?q={}{}", encode(q), filters)
-        },
-        parse: parse_bing_html,
     },
     BrowserEngine {
         stats_key: "brave_html/browser",
@@ -348,10 +344,6 @@ mod tests {
                 r##"<html><body><div class="result"><a class="result-title" href="https://example.com" data-testid="gl-title-link">A title</a><p class="description">A snippet.</p></div></body></html>"##,
             ),
             (
-                "bing/browser",
-                r##"<html><body><ol id="b_results"><li class="b_algo"><h2><a href="https://www.bing.com/ck/a?!&p=x&u=a1aHR0cHM6Ly9leGFtcGxlLmNvbQ&ntb=1">A title</a></h2><div class="b_caption"><p>A snippet.</p></div></li></ol></body></html>"##,
-            ),
-            (
                 "brave_html/browser",
                 r##"<html><body><div data-type="web"><a href="https://example.com"><div class="search-snippet-title">A title</div></a><div class="generic-snippet">A snippet.</div></div></body></html>"##,
             ),
@@ -426,17 +418,26 @@ mod tests {
         assert_eq!(state.browser_rotation_offset(len), 0);
     }
 
+    /// Looked up by key, not by index: the positional form silently started
+    /// testing a different engine's filters when Bing left the rotation.
+    fn engine(key: &str) -> &'static BrowserEngine {
+        BROWSER_ENGINES
+            .iter()
+            .find(|e| e.stats_key == key)
+            .unwrap_or_else(|| panic!("no engine {key}"))
+    }
+
     #[test]
     fn urls_carry_the_query_and_recency_filters() {
-        let startpage = (BROWSER_ENGINES[0].url)("rust async", "week");
+        let startpage = (engine("startpage/browser").url)("rust async", "week");
         assert!(startpage.contains("rust%20async") || startpage.contains("rust+async"));
 
-        let bing = (BROWSER_ENGINES[1].url)("rust", "week");
-        assert!(bing.contains("ez2"), "week filter missing: {bing}");
-        let bing_any = (BROWSER_ENGINES[1].url)("rust", "any");
+        let brave = (engine("brave_html/browser").url)("rust", "week");
+        assert!(brave.contains("tf=pw"), "week filter missing: {brave}");
+        let brave_any = (engine("brave_html/browser").url)("rust", "any");
         assert!(
-            !bing_any.contains("filters="),
-            "unexpected filter: {bing_any}"
+            !brave_any.contains("&tf="),
+            "unexpected filter: {brave_any}"
         );
     }
 }
