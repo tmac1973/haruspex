@@ -44,7 +44,15 @@ export interface JobRunContext {
 	trigger: RunTrigger;
 	/** One ephemeral agent turn under the job harness (slot, auto-approve, backend). */
 	runJobTurn: (
-		opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'>
+		opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'> & {
+			/**
+			 * What kind of turn this is, for the per-kind token split on the
+			 * step's stats. Free-form and pipeline-owned — "planning.write",
+			 * "verify.review". Omit and the turn's calls are counted in the
+			 * step total but attributed to no kind.
+			 */
+			turnKind?: string;
+		}
 	) => Promise<EphemeralTurnResult>;
 	patchStep: (stepIndex: number, patch: Partial<RunStepState>) => void;
 	buildStreamCallbacks: (

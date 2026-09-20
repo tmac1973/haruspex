@@ -249,6 +249,11 @@ pub struct StepStats {
     pub model_calls: i64,
     pub reasoning_ms: i64,
     pub total_ms: i64,
+    /// Per-turn-kind breakdown of the same totals, as JSON, or None for a step
+    /// recorded before the breakdown existed. Opaque here on purpose: the
+    /// shape is the client's (`TurnKindStats`), and a column per kind would
+    /// need a migration every time a pipeline names a new one.
+    pub turn_stats: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -664,6 +669,10 @@ impl Database {
             // column existed a decoy SERP was counted as a success, so no
             // historical row has one to report.
             "ALTER TABLE search_stats_engines ADD COLUMN fail_irrelevant INTEGER NOT NULL DEFAULT 0",
+            // Per-turn-kind token/time split within a step, as JSON. Nullable:
+            // steps recorded before it read back as "not measured", which is
+            // different from a step whose turns were all one kind.
+            "ALTER TABLE job_run_steps ADD COLUMN turn_stats TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

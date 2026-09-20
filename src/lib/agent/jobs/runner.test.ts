@@ -1732,7 +1732,10 @@ describe('jobs runner — run observability', () => {
 			peak_prompt_tokens: 4000,
 			model_calls: 1,
 			reasoning_ms: 600,
-			total_ms: 1000
+			total_ms: 1000,
+			// This job type declares no turn kinds, so there is no split to
+			// record — distinct from a step whose turns were all one kind.
+			turn_stats: null
 		});
 		// A step that made no model calls records nothing rather than zeros —
 		// otherwise a checkpoint stage waiting on the user reads as free work.
@@ -2236,5 +2239,124 @@ describe('guided_planning — chained coding run settings', () => {
 		// hand-created job.
 		expect('max_attempts' in cfg).toBe(false);
 		expect('context_mode' in cfg).toBe(false);
+	});
+});
+
+/**
+ * Reasoning was 88% of everything run 47 generated. Deciding where to turn it
+ * down needs to know which KIND of turn spent it — a step total cannot say
+ * whether Planning's reasoning went on writing phase files or repairing them.
+ */
+describe('jobs runner — per-turn-kind stats', () => {
+	const call = (over: Partial<Record<string, number>> = {}) => ({
+		durationMs: 1000,
+		completionTokens: 100,
+		promptTokens: 500,
+		reasoningChars: 60,
+		answerChars: 40,
+		reasoningTokens: 60,
+		reasoningExact: true,
+		reasoningMs: 600,
+		...over
+	});
+
+	function provider() {
+		return mocks.setStepStatsProvider.mock.calls.at(-1)?.[0] as (
+			runId: number,
+			ordering: number
+		) => { turn_stats: string | null } | null;
+	}
+
+	it('splits a step by the kinds its turns declared', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				type_config: JSON.stringify({
+					initial_description: 'Build X',
+					plan_output_dir: 'plan/x/',
+					skip_verification: true
+				})
+			})
+		);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		mocks.runEphemeralTurn.mockImplementation(async (opts: any) => {
+			opts.onCallStats?.(call());
+			if (opts.forceFinalTool === 'submit_plan_outline') {
+				opts.onToolStart?.({
+					id: 'o',
+					name: 'submit_plan_outline',
+					arguments: { phases: [{ id: '01', title: 'One', summary: 'first' }] }
+				});
+				return { finalText: 'outline submitted' };
+			}
+			return { finalText: 'PLAN OK' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		const runId = getCurrentRun()!.id;
+
+		// Planning (step 2) is where the phase files get written.
+		const planning = provider()(runId, 2);
+		expect(planning).not.toBeNull();
+		const byKind = JSON.parse(planning!.turn_stats!);
+		expect(byKind['planning.write']).toBeTruthy();
+		expect(byKind['planning.write'].calls).toBe(1);
+		expect(byKind['planning.write'].tokens_reasoning).toBe(60);
+	});
+
+	it('attributes the overview and outline interviews separately', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				type_config: JSON.stringify({
+					initial_description: 'Build X',
+					plan_output_dir: 'plan/x/',
+					skip_verification: true
+				})
+			})
+		);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		mocks.runEphemeralTurn.mockImplementation(async (opts: any) => {
+			opts.onCallStats?.(call());
+			if (opts.forceFinalTool === 'submit_plan_outline') {
+				opts.onToolStart?.({
+					id: 'o',
+					name: 'submit_plan_outline',
+					arguments: { phases: [{ id: '01', title: 'One', summary: 'first' }] }
+				});
+				return { finalText: 'outline submitted' };
+			}
+			return { finalText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		const runId = getCurrentRun()!.id;
+
+		expect(JSON.parse(provider()(runId, 0)!.turn_stats!)).toHaveProperty('overview.interview');
+		expect(JSON.parse(provider()(runId, 1)!.turn_stats!)).toHaveProperty('outline.interview');
+	});
+
+	it('does not leak a kind onto a turn that declared none', async () => {
+		// The cursor is module state cleared in a finally; a leak would
+		// mis-attribute the next turn's calls, which is worse than no label.
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockImplementationOnce(async (opts: EphemeralTurnOptions) => {
+			opts.onCallStats?.(call());
+			return { finalText: 'ok', rawText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(provider()(getCurrentRun()!.id, 0)!.turn_stats).toBeNull();
 	});
 });

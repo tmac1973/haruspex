@@ -37,7 +37,8 @@ import {
 	setRunEnvironment,
 	setStepStatsProvider,
 	type JobRunStatus,
-	type StepStats
+	type StepStats,
+	type TurnKindStats
 } from '$lib/stores/jobRuns.svelte';
 import { logDebug } from '$lib/debug-log';
 import { setKeepAwake } from './keepAwake';
@@ -158,7 +159,7 @@ function runJobTurn(
 	job: JobWithSteps,
 	runId: number,
 	abort: AbortController,
-	opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'>
+	opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'> & { turnKind?: string }
 ): Promise<EphemeralTurnResult> {
 	if (current && current.id === runId) {
 		current = { ...current, waitingForSlot: true };
@@ -173,20 +174,29 @@ function runJobTurn(
 				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
 			}
 		},
-		() =>
-			runWithAutoApprove(() =>
-				runEphemeralTurn({
-					// Ordering is the contract: observability is a default a
-					// pipeline may replace, the job's policy outranks the
-					// pipeline, and the runner owns the last three outright.
-					...observabilityCallbacks(runId),
-					...opts,
-					...jobTurnPolicy(job),
-					workingDir: job.working_dir ? job.working_dir : null,
-					backend,
-					signal: abort.signal
-				})
-			)
+		async () => {
+			// Set for the duration of the turn so onCallStats can attribute each
+			// call, and always cleared — a leaked kind would mis-label the next
+			// turn's calls, which is worse than not labelling them at all.
+			currentTurnKind = opts.turnKind ?? null;
+			try {
+				return await runWithAutoApprove(() =>
+					runEphemeralTurn({
+						// Ordering is the contract: observability is a default a
+						// pipeline may replace, the job's policy outranks the
+						// pipeline, and the runner owns the last three outright.
+						...observabilityCallbacks(runId),
+						...opts,
+						...jobTurnPolicy(job),
+						workingDir: job.working_dir ? job.working_dir : null,
+						backend,
+						signal: abort.signal
+					})
+				);
+			} finally {
+				currentTurnKind = null;
+			}
+		}
 	);
 }
 
@@ -244,11 +254,56 @@ export interface StepThinkingStats {
 	reasoningExact: boolean;
 	/** Number of model calls folded in — the sample size behind the estimate. */
 	calls: number;
+	/**
+	 * The same figures split by the kind of turn that produced them, keyed by
+	 * the label a pipeline passed as `turnKind`. Absent for a step whose turns
+	 * declared none.
+	 *
+	 * Exists to answer a question the step totals cannot: within Planning,
+	 * how much of the reasoning went on writing phase files versus repairing
+	 * them? Reasoning was 88% of everything run 47 generated, and deciding
+	 * where to turn it down needs the split, not the total.
+	 */
+	byKind?: Record<string, KindThinkingStats>;
+}
+
+/** One turn kind's share of a step. */
+export interface KindThinkingStats {
+	calls: number;
+	totalTokens: number;
+	reasoningTokens: number;
+	reasoningMs: number;
+	totalMs: number;
+}
+
+/** Fold one call's stats into the tally for the turn kind that produced it. */
+function addKindStats(
+	prev: Record<string, KindThinkingStats> | undefined,
+	kind: string | null,
+	call: CallStats
+): Record<string, KindThinkingStats> | undefined {
+	if (!kind) return prev;
+	const at = prev?.[kind];
+	return {
+		...prev,
+		[kind]: {
+			calls: (at?.calls ?? 0) + 1,
+			totalTokens: (at?.totalTokens ?? 0) + call.completionTokens,
+			reasoningTokens: (at?.reasoningTokens ?? 0) + call.reasoningTokens,
+			reasoningMs: (at?.reasoningMs ?? 0) + call.reasoningMs,
+			totalMs: (at?.totalMs ?? 0) + call.durationMs
+		}
+	};
 }
 
 /** Fold one call's stats into a step's running totals. */
-export function addCallStats(prev: StepThinkingStats | null, call: CallStats): StepThinkingStats {
+export function addCallStats(
+	prev: StepThinkingStats | null,
+	call: CallStats,
+	kind: string | null = null
+): StepThinkingStats {
 	return {
+		byKind: addKindStats(prev?.byKind, kind, call),
 		reasoningMs: (prev?.reasoningMs ?? 0) + call.reasoningMs,
 		totalMs: (prev?.totalMs ?? 0) + call.durationMs,
 		reasoningTokens: (prev?.reasoningTokens ?? 0) + call.reasoningTokens,
@@ -275,8 +330,25 @@ export function stepStatsWire(stats: StepThinkingStats | null): StepStats | null
 		peak_prompt_tokens: stats.peakPromptTokens,
 		model_calls: stats.calls,
 		reasoning_ms: stats.reasoningMs,
-		total_ms: stats.totalMs
+		total_ms: stats.totalMs,
+		turn_stats: stats.byKind ? JSON.stringify(wireKinds(stats.byKind)) : null
 	};
+}
+
+/** `byKind` in the persisted shape — snake_case, matching StepStats. */
+function wireKinds(byKind: Record<string, KindThinkingStats>): Record<string, TurnKindStats> {
+	return Object.fromEntries(
+		Object.entries(byKind).map(([kind, k]) => [
+			kind,
+			{
+				calls: k.calls,
+				tokens_completion: k.totalTokens,
+				tokens_reasoning: k.reasoningTokens,
+				reasoning_ms: k.reasoningMs,
+				total_ms: k.totalMs
+			}
+		])
+	);
 }
 
 // The store closes steps for every job type; the totals live here. Registering
@@ -580,6 +652,16 @@ function patchStep(runId: number, stepIndex: number, patch: Partial<RunStepState
  * `setCurrentStepIndex` folds everything into step 0, exactly as its errors
  * already would.
  */
+/**
+ * The kind of turn currently in flight, or null when the pipeline did not say.
+ *
+ * A module cursor rather than a parameter: `onCallStats` fires from inside the
+ * agent loop, several frames below the call that knows what kind of turn this
+ * is. Runs are serialized through the inference slot, so there is exactly one
+ * turn in flight at a time and no interleaving to confuse it.
+ */
+let currentTurnKind: string | null = null;
+
 function observabilityCallbacks(runId: number) {
 	const liveStep = () => (current && current.id === runId ? current.currentStepIndex : 0);
 	return {
@@ -591,7 +673,7 @@ function observabilityCallbacks(runId: number) {
 			if (!current || current.id !== runId) return;
 			const idx = liveStep();
 			patchStep(runId, idx, {
-				thinking: addCallStats(current.steps[idx]?.thinking ?? null, stats)
+				thinking: addCallStats(current.steps[idx]?.thinking ?? null, stats, currentTurnKind)
 			});
 		},
 		onReasoning: (reasoning: string) => {

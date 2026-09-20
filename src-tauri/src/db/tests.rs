@@ -874,6 +874,7 @@ fn step_stats_round_trip_and_absence_is_not_zero() {
         model_calls: 31,
         reasoning_ms: 1_683_000,
         total_ms: 2_712_000,
+        turn_stats: Some(r#"{"planning.write":{"calls":5,"tokens_reasoning":9000}}"#.to_string()),
     };
     db.mark_run_step_finished(run_id, 0, "succeeded", Some("out"), None, 200, Some(&stats))
         .unwrap();
@@ -888,6 +889,11 @@ fn step_stats_round_trip_and_absence_is_not_zero() {
     assert_eq!(recorded.tokens_reasoning, 14_100);
     assert!(recorded.tokens_reasoning_exact);
     assert_eq!(recorded.peak_prompt_tokens, 31_700);
+    // Opaque to the db layer, so it must survive the round trip byte for byte.
+    assert_eq!(
+        recorded.turn_stats.as_deref(),
+        Some(r#"{"planning.write":{"calls":5,"tokens_reasoning":9000}}"#)
+    );
     assert_eq!(recorded.model_calls, 31);
     assert_eq!(recorded.reasoning_ms, 1_683_000);
     assert_eq!(recorded.total_ms, 2_712_000);

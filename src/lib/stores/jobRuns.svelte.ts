@@ -66,6 +66,21 @@ export interface StepStats {
 	model_calls: number;
 	reasoning_ms: number;
 	total_ms: number;
+	/**
+	 * The same totals split by turn kind, as JSON, or null for a step recorded
+	 * before the split existed — which is different from a step whose turns
+	 * were all one kind. See `TurnKindStats`.
+	 */
+	turn_stats: string | null;
+}
+
+/** One turn kind's share of a step. Parsed out of `StepStats.turn_stats`. */
+export interface TurnKindStats {
+	calls: number;
+	tokens_completion: number;
+	tokens_reasoning: number;
+	reasoning_ms: number;
+	total_ms: number;
 }
 
 export interface JobRunStep {

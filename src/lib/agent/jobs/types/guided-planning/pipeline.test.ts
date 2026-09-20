@@ -732,3 +732,46 @@ describe('verifierPrompt — findings are tagged', () => {
 		expect(prompt).toContain('your ENTIRE reply must be exactly: PLAN OK');
 	});
 });
+
+/**
+ * A real run produced phase files of ~31,000 characters each. That cost three
+ * ways: the write turn truncated against its output budget, the verifier had
+ * to read every one of them, and the coding run reads them again. A phase file
+ * is a specification, not a transcript.
+ */
+describe('phaseWritePrompt — length', () => {
+	const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false));
+
+	it('gives a concrete target rather than "be concise"', () => {
+		expect(prompt).toContain('150-250 lines');
+	});
+
+	it('says what a phase file is for, so the target is followable', () => {
+		expect(prompt).toContain('SPECIFICATION');
+		expect(prompt).toContain('not a transcript');
+	});
+
+	it('treats overflow as an outline problem, not a licence to sprawl', () => {
+		// Otherwise "aim for 250" reads as "250 is the floor for a big phase".
+		expect(prompt).toContain('should have been two phases');
+	});
+
+	it('names the three things that pad a plan file', () => {
+		expect(prompt).toContain('restating what an earlier phase already settled');
+		expect(prompt).toContain('the overview holds the');
+		expect(prompt).toContain('prose around a list');
+	});
+
+	it('keeps the no-embedded-code rule, which is a different constraint', () => {
+		// Short and code-free are independent: a 150-line file can still be a
+		// source dump, and a 400-line one can be pure specification.
+		expect(prompt).toContain('SPECIFY THE WORK — DO NOT WRITE IT');
+		expect(prompt).toContain('Do NOT write the implementation');
+	});
+
+	it('does not contradict being exhaustive about the contract', () => {
+		// The length target trims narration, not specification — the file still
+		// has to carry signatures, data shapes and decision rules.
+		expect(prompt).toContain('Be exhaustive about the CONTRACT');
+	});
+});

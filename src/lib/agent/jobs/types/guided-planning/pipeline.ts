@@ -377,6 +377,18 @@ export function phaseWritePrompt(
 		'one off installing headless-browser packages and embedding a 50-test harness',
 		'into the shipped product file.',
 		'',
+		'LENGTH: aim for 150-250 lines. A phase file is a SPECIFICATION a competent',
+		'engineer implements, not a transcript of the implementation. Name the',
+		'signatures, data shapes, rules and edge cases; do not narrate how to type',
+		'them in. If a phase genuinely needs more than ~250 lines to specify, that',
+		'is the outline telling you it should have been two phases — say so in',
+		'## Goal and specify the part that belongs here.',
+		'',
+		'Three things make these files long without making them clearer, so do not',
+		'do them: restating what an earlier phase already settled (reference it by',
+		'number instead), explaining WHY a decision was made (the overview holds the',
+		'rationale), and writing prose around a list that says the same thing.',
+		'',
 		...NO_EMBEDDED_CODE_RULES,
 		'',
 		`Write ONLY that one file, inside \`${outDir}\`. Then stop.`,
@@ -747,10 +759,11 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// model self-corrects WITHIN the turn (cheaper than the post-turn
 		// `ensureWritten` retry). Set it on the turns whose job is to produce a file;
 		// leave it off for the read-only verifier turn.
-		opts: { tools?: string[]; expectsFileOutput?: boolean } = {}
+		opts: { tools?: string[]; expectsFileOutput?: boolean; kind?: string } = {}
 	) => {
 		const result = await deps.runJobTurn({
 			userMessage,
+			turnKind: opts.kind,
 			contextSize: deps.contextSize(),
 			visionSupported: deps.visionSupported(),
 			maxIterations,
@@ -862,7 +875,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`the section's single fenced code block. Then write the overview back.`,
 				overviewRevisePrompt(outDir, overviewPath, webResearch),
 				15,
-				{ expectsFileOutput: true }
+				// The runner diagnosed this mechanically and handed over an exact
+				// instruction — the clearest candidate for cheaper reasoning.
+				{ expectsFileOutput: true, kind: 'repair.command' }
 			);
 		}
 	};
@@ -923,13 +938,17 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		stepIdx: number,
 		retryMessage: (problem: string) => string,
 		retryPrompt: string,
-		failureError: (problem: string) => string
+		failureError: (problem: string) => string,
+		kind = 'retry'
 	): Promise<void> => {
 		abortIfCancelled();
 		let problem = await check();
 		for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS && problem !== null; attempt++) {
 			abortIfCancelled();
-			await turn(stepIdx, retryMessage(problem), retryPrompt, 15, { expectsFileOutput: true });
+			await turn(stepIdx, retryMessage(problem), retryPrompt, 15, {
+				expectsFileOutput: true,
+				kind
+			});
 			abortIfCancelled();
 			problem = await check();
 		}
@@ -961,11 +980,13 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		stepIdx: number,
 		userMessage: string,
 		systemPrompt: string,
-		maxIterations: number
+		maxIterations: number,
+		kind: string
 	): Promise<string[]> => {
 		const written = new Set<string>();
 		const base = deps.buildStreamCallbacks(stepIdx);
 		const result = await deps.runJobTurn({
+			turnKind: kind,
 			userMessage,
 			contextSize: deps.contextSize(),
 			visionSupported: deps.visionSupported(),
@@ -1003,7 +1024,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			`Review the phase files in ${outDir} against ${overviewPath}.`,
 			verifierPrompt(outDir, overviewPath, overviewText),
 			25,
-			{ tools: toolsets.verifier }
+			{ tools: toolsets.verifier, kind: 'verify.review' }
 		);
 		return verdict.finalText;
 	};
@@ -1023,7 +1044,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			`A reviewer found problems with the phase files. Fix every one, keeping ` +
 				`strict dependency order:\n\n${verdict}`,
 			planRevisePrompt(outDir, webResearch),
-			35
+			35,
+			'verify.revise'
 		);
 		if (revised.length === 0) return revised;
 		const overviewText = await readWorkdirFile(overviewPath);
@@ -1039,7 +1061,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				phaseWritePrompt(outDir, overviewPath, webResearch, overviewText, useGit),
 				(problem) =>
 					`${relPath} was left malformed by a verification revision and could not be ` +
-					`repaired after ${MAX_WRITE_ATTEMPTS} attempts — ${problem}.`
+					`repaired after ${MAX_WRITE_ATTEMPTS} attempts — ${problem}.`,
+				'verify.retry'
 			);
 		}
 		return revised;
@@ -1126,6 +1149,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			interactive: true,
 			writeRoot: outDir,
 			systemPrompt,
+			turnKind: 'outline.interview',
 			toolAllowlist: toolsets.outline,
 			forceFinalTool: SUBMIT_PLAN_OUTLINE_TOOL,
 			...base,
@@ -1242,7 +1266,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			cfg.initial_description?.trim() || 'Plan this project.',
 			overviewStagePrompt(outDir, overviewPath, webResearch),
 			interviewIterations,
-			{ expectsFileOutput: true }
+			{ expectsFileOutput: true, kind: 'overview.interview' }
 		);
 		await ensureWritten(
 			checkFileExists(overviewPath),
@@ -1254,7 +1278,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			overviewStagePrompt(outDir, overviewPath, webResearch),
 			() =>
 				`The overview was never written to ${overviewPath} after ${MAX_WRITE_ATTEMPTS} attempts. ` +
-				`The selected model may be too small to follow the write step reliably — try a larger model.`
+				`The selected model may be too small to follow the write step reliably — try a larger model.`,
+			'overview.retry'
 		);
 		await repairVerificationCommand();
 		let approved = false;
@@ -1284,7 +1309,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`Please revise the overview. The user asked for: ${answer.text}`,
 					overviewRevisePrompt(outDir, overviewPath, webResearch),
 					20,
-					{ expectsFileOutput: true }
+					{ expectsFileOutput: true, kind: 'overview.revise' }
 				);
 			}
 		}
@@ -1357,7 +1382,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				writeMsg,
 				phaseWritePrompt(outDir, overviewPath, webResearch, planningOverview, useGit),
 				30,
-				{ expectsFileOutput: true }
+				{ expectsFileOutput: true, kind: 'planning.write' }
 			);
 			await ensureWritten(
 				checkPhaseFile(phase.relPath),
@@ -1372,7 +1397,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				(problem) =>
 					`Phase ${phase.nn} (${phase.relPath}) was still not written correctly after ` +
 					`${MAX_WRITE_ATTEMPTS} attempts — ${problem}. The selected model may be too small ` +
-					`to follow the write step reliably — try a larger model.`
+					`to follow the write step reliably — try a larger model.`,
+				'planning.retry'
 			);
 		}
 		finishStep(PLANNING, `Wrote ${outline.length} phase file(s) to ${outDir}`);
@@ -1470,7 +1496,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 						`Please revise the phased plan. The user asked for: ${answer.text}`,
 						planRevisePrompt(outDir, webResearch),
 						30,
-						{ expectsFileOutput: true }
+						{ expectsFileOutput: true, kind: 'approval.revise' }
 					);
 					await verifyOnce(); // re-check after a user-driven revision
 				}
