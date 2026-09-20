@@ -115,6 +115,22 @@ export function guidedPlanningToolsets(webResearch: boolean): {
 /** Max verifier→revise rounds before proceeding to approval regardless. */
 const MAX_VERIFY_ROUNDS = 3;
 
+/**
+ * Output ceiling for the verifier turn.
+ *
+ * It is the one heavy turn that writes no file, so it inherits the ordinary
+ * `maxResponseTokens` — 8192 by default, which is not close to enough.
+ * Measured on run 51: 33 verifier calls generated 138,055 tokens, of which
+ * 135,540 were reasoning. It thinks at 98% to produce a couple of thousand
+ * tokens of findings, and a single call exceeding 8192 ended the run.
+ *
+ * Read-only turns cannot use the file-write ceiling (that setting means what
+ * it says), so this is pinned here. `resolveMaxResponseTokens` honours an
+ * explicit per-call value over both settings, and `clampToContext` still caps
+ * it at half the window on a smaller model.
+ */
+const VERIFIER_MAX_RESPONSE_TOKENS = 32768;
+
 /** A job's plan output folder, relative to working_dir (default plan/<slug>/). */
 function guidedPlanOutputDir(job: JobWithSteps, cfg: GuidedPlanningConfig): string {
 	const dir = cfg.plan_output_dir?.trim();
@@ -759,11 +775,17 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// model self-corrects WITHIN the turn (cheaper than the post-turn
 		// `ensureWritten` retry). Set it on the turns whose job is to produce a file;
 		// leave it off for the read-only verifier turn.
-		opts: { tools?: string[]; expectsFileOutput?: boolean; kind?: string } = {}
+		opts: {
+			tools?: string[];
+			expectsFileOutput?: boolean;
+			kind?: string;
+			maxResponseTokens?: number;
+		} = {}
 	) => {
 		const result = await deps.runJobTurn({
 			userMessage,
 			turnKind: opts.kind,
+			maxResponseTokens: opts.maxResponseTokens,
 			contextSize: deps.contextSize(),
 			visionSupported: deps.visionSupported(),
 			maxIterations,
@@ -1024,7 +1046,11 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			`Review the phase files in ${outDir} against ${overviewPath}.`,
 			verifierPrompt(outDir, overviewPath, overviewText),
 			25,
-			{ tools: toolsets.verifier, kind: 'verify.review' }
+			{
+				tools: toolsets.verifier,
+				kind: 'verify.review',
+				maxResponseTokens: VERIFIER_MAX_RESPONSE_TOKENS
+			}
 		);
 		return verdict.finalText;
 	};
@@ -1415,44 +1441,61 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		} else {
 			let clean = false;
 			let openProblems = '';
-			for (let round = 0; round < MAX_VERIFY_ROUNDS; round++) {
-				abortIfCancelled();
-				const verdict = await verifyTurn();
-				if (isPlanClean(verdict)) {
-					clean = true;
-					break;
+			try {
+				for (let round = 0; round < MAX_VERIFY_ROUNDS; round++) {
+					abortIfCancelled();
+					const verdict = await verifyTurn();
+					if (isPlanClean(verdict)) {
+						clean = true;
+						break;
+					}
+					openProblems = verdict;
+					// The last round is verify-only. A revision on the final round is
+					// never re-read, so it costs a full rewrite of several phase files
+					// to reach an unknown state — where stopping here reaches a
+					// REPORTED one, which is what the approval checkpoint needs.
+					if (round === MAX_VERIFY_ROUNDS - 1) break;
+					abortIfCancelled();
+					const revised = await reviseTurn(verdict);
+					// Nothing written means the files are byte-identical, so the next
+					// review reads the same plan and reaches the same verdict. Stop
+					// rather than spend another full read of every phase file proving
+					// it — this is the case that otherwise burns every round.
+					if (revised.length === 0) break;
 				}
-				openProblems = verdict;
-				// The last round is verify-only. A revision on the final round is
-				// never re-read, so it costs a full rewrite of several phase files
-				// to reach an unknown state — where stopping here reaches a
-				// REPORTED one, which is what the approval checkpoint needs.
-				if (round === MAX_VERIFY_ROUNDS - 1) break;
-				abortIfCancelled();
-				const revised = await reviseTurn(verdict);
-				// Nothing written means the files are byte-identical, so the next
-				// review reads the same plan and reaches the same verdict. Stop
-				// rather than spend another full read of every phase file proving
-				// it — this is the case that otherwise burns every round.
-				if (revised.length === 0) break;
-			}
-			// Said plainly either way. This previously reported "Plan verified" on
-			// every run, including one that spent all its rounds and never got a
-			// clean verdict — so the one stage whose whole job is to tell you
-			// whether the plan is sound could not say no.
-			verified = true;
-			if (clean) {
-				finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
-			} else {
-				// Lead with the counts: the first question on reading this is how
-				// much of it has to be dealt with before the plan is usable.
-				const { blocking, advisory } = classifyFindings(openProblems);
-				blockingFindings = blocking;
-				finishStep(
-					VERIFY,
-					`Verification finished with problems still open — ${blocking.length} blocking, ` +
-						`${advisory.length} advisory. Review before approving:\n\n${openProblems}`
-				);
+				// Said plainly either way. This previously reported "Plan verified" on
+				// every run, including one that spent all its rounds and never got a
+				// clean verdict — so the one stage whose whole job is to tell you
+				// whether the plan is sound could not say no.
+				verified = true;
+				if (clean) {
+					finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
+				} else {
+					// Lead with the counts: the first question on reading this is how
+					// much of it has to be dealt with before the plan is usable.
+					const { blocking, advisory } = classifyFindings(openProblems);
+					blockingFindings = blocking;
+					finishStep(
+						VERIFY,
+						`Verification finished with problems still open — ${blocking.length} blocking, ` +
+							`${advisory.length} advisory. Review before approving:\n\n${openProblems}`
+					);
+				}
+			} catch (e) {
+				// A crashed verifier must not discard a finished plan. The phase
+				// files are written and the run has often spent an hour getting
+				// here; failing the whole run throws that away and, unattended,
+				// wastes the night. Report the stage as failed, leave `verified`
+				// false, and carry on — the handoff gate refuses to start a
+				// coding run on a plan nothing checked, which is the outcome
+				// this situation actually calls for.
+				//
+				// An abort is not a crash: a cancelled run must still cancel.
+				const { aborted, msg } = normalizeAbort(e);
+				if (aborted) throw e;
+				const finishedAt = Date.now();
+				deps.patchStep(VERIFY, { status: 'failed', error: msg, finishedAt });
+				void markRunStepFinished(runId, VERIFY, 'failed', null, msg, finishedAt);
 			}
 		}
 

@@ -2360,3 +2360,81 @@ describe('jobs runner — per-turn-kind stats', () => {
 		expect(provider()(getCurrentRun()!.id, 0)!.turn_stats).toBeNull();
 	});
 });
+
+/**
+ * Run 51 got through a 50-minute Planning stage, wrote thirteen phase files,
+ * then died in verification when a single verifier call hit the 8192-token
+ * response ceiling — and the whole run was marked failed. The plan was
+ * finished and on disk; unattended, that crash costs the night.
+ */
+describe('guided_planning — a crashed verifier does not discard the plan', () => {
+	function planningJob(runMode = 'attended') {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/',
+				run_mode: runMode
+			})
+		});
+	}
+
+	/** Guided turns where the verifier throws the out-of-tokens error. */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const verifierThrows = async (opts: any) => {
+		if (opts.forceFinalTool === 'submit_plan_outline') {
+			opts.onToolStart?.({
+				id: 'o',
+				name: 'submit_plan_outline',
+				arguments: { phases: [{ id: '01', title: 'One', summary: 'first' }] }
+			});
+			return { finalText: 'outline submitted' };
+		}
+		if (typeof opts.userMessage === 'string' && opts.userMessage.startsWith('Review the phase')) {
+			throw new Error('The model ran out of room before finishing its answer.');
+		}
+		return { finalText: 'ok' };
+	};
+
+	it('finishes the run instead of failing it', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(verifierThrows);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(getCurrentRun()!.status).toBe('succeeded');
+	});
+
+	it('marks the verification stage failed, with the reason', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(verifierThrows);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const verify = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 3);
+		expect(verify.length).toBeGreaterThan(0);
+		const last = verify[verify.length - 1];
+		expect(last[2]).toBe('failed');
+		expect(String(last[4])).toContain('ran out of room');
+	});
+
+	it('refuses to chain a coding run on a plan nothing checked', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob('unattended_chain'));
+		mocks.runEphemeralTurn.mockImplementation(verifierThrows);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// The gate that was written as defensive is now the one that matters.
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
+		expect(String(handoff[handoff.length - 1][3])).toContain('not verified');
+	});
+});
