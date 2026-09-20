@@ -673,7 +673,8 @@ function buildRunContext(
 		onSettled: () => {
 			if (activeAbort === abort) activeAbort = null;
 			if (pending.length > 0) queueMicrotask(drainNext);
-		}
+		},
+		startChainedRun: (jobId) => enqueue(jobId, 'chained')
 	};
 }
 

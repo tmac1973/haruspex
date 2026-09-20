@@ -9,7 +9,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { createJob } from '$lib/stores/jobs.svelte';
-import { enqueue } from '$lib/agent/jobs/runner.svelte';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '$lib/agent/tools/planning';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
@@ -937,6 +936,16 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		if (problem !== null) throw new Error(failureError(problem));
 	};
 
+	/**
+	 * Drop null entries, so an unset override is ABSENT from the created job's
+	 * config rather than present as null. Both read as "use the default" to the
+	 * coding parser, but the job editor shows what is actually stored, and a wall
+	 * of nulls reads as decisions somebody made.
+	 */
+	function definedOnly<T extends object>(o: T): Partial<T> {
+		return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null)) as Partial<T>;
+	}
+
 	/** A phase file, as the write tools name one. */
 	const isPhaseFile = (relPath: string): boolean =>
 		/(^|\/)phase-\d+[^/]*\.md$/.test(relPath.trim());
@@ -1203,15 +1212,19 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			model_remote_context_size: job.model_remote_context_size,
 			model_remote_vision_supported: job.model_remote_vision_supported,
 			model_advanced: job.model_advanced,
+			// Null overrides are left OUT rather than written as null, so the
+			// coding job's own parser applies its defaults and its preflight
+			// settles what nobody pinned — exactly as for a hand-created job.
 			type_config: JSON.stringify({
 				plan_dir: outDir,
 				use_git: useGit,
-				web_research: webResearch
+				web_research: webResearch,
+				...definedOnly(cfg.coding_run)
 			})
 		});
 		if (codingJobId === null) return 'Could not create the coding job — nothing was started';
 
-		const codingRunId = await enqueue(codingJobId, 'chained');
+		const codingRunId = await deps.startChainedRun(codingJobId);
 		if (codingRunId === null) {
 			return (
 				`Created coding job ${codingJobId}, but it could not be started — ` +

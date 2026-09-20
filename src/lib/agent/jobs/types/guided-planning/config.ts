@@ -11,6 +11,14 @@
  *
  * Phase 05 widens this with `unattended_chain`.
  */
+/** Overrides applied to the coding job a chained run creates. */
+export interface GuidedPlanningCodingRun {
+	max_attempts: number | null;
+	context_mode: 'step' | 'phase' | null;
+	verify_command: string | null;
+	step_check_command: string | null;
+}
+
 export type GuidedPlanningRunMode = 'attended' | 'unattended_plan' | 'unattended_chain';
 
 const RUN_MODES: readonly GuidedPlanningRunMode[] = [
@@ -59,6 +67,16 @@ export interface GuidedPlanningConfig {
 	 * silently make a run unattended.
 	 */
 	run_mode: GuidedPlanningRunMode;
+	/**
+	 * Settings for the coding run `unattended_chain` starts. Every field is
+	 * nullable and null means "unset", so the coding job's own defaults and its
+	 * preflight apply exactly as they would for a hand-created job.
+	 *
+	 * This exists because the handoff creates the job and starts it in the same
+	 * breath: there is no window between the two in which to edit it, so
+	 * whatever it is born with is what runs all night.
+	 */
+	coding_run: GuidedPlanningCodingRun;
 }
 
 export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningConfig {
@@ -75,6 +93,28 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		? (raw.run_mode as GuidedPlanningRunMode)
 		: 'attended';
 	const skipVerification = raw.skip_verification === true;
+	// A malformed nested object behaves like no nested object, the same way a
+	// malformed config behaves like no config above.
+	const cr =
+		raw.coding_run && typeof raw.coding_run === 'object' && !Array.isArray(raw.coding_run)
+			? (raw.coding_run as Record<string, unknown>)
+			: {};
+	const codingRun: GuidedPlanningCodingRun = {
+		max_attempts:
+			typeof cr.max_attempts === 'number' && Number.isFinite(cr.max_attempts)
+				? cr.max_attempts
+				: null,
+		context_mode:
+			cr.context_mode === 'step' || cr.context_mode === 'phase' ? cr.context_mode : null,
+		verify_command:
+			typeof cr.verify_command === 'string' && cr.verify_command.length > 0
+				? cr.verify_command
+				: null,
+		step_check_command:
+			typeof cr.step_check_command === 'string' && cr.step_check_command.length > 0
+				? cr.step_check_command
+				: null
+	};
 	return {
 		initial_description:
 			typeof raw.initial_description === 'string' && raw.initial_description.length > 0
@@ -92,6 +132,7 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		// off for unattended_chain HERE, not only in the Editor: the severity
 		// gate is the one thing standing between a bad plan and hours of
 		// unwatched code, and a hand-edited type_config must not remove it.
-		skip_verification: mode === 'unattended_chain' ? false : skipVerification
+		skip_verification: mode === 'unattended_chain' ? false : skipVerification,
+		coding_run: codingRun
 	};
 }

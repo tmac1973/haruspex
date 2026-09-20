@@ -131,6 +131,56 @@
 	{/if}
 </div>
 
+{#if cfg.run_mode === 'unattended_chain'}
+	<details class="coding-run">
+		<summary>Coding run settings</summary>
+		<p class="hint">
+			The coding job is created and started without stopping, so this is the only chance to set it.
+			Leave anything blank to let the coding run's own preflight settle it.
+		</p>
+
+		<label class="sub">
+			Max attempts per step
+			<input
+				type="number"
+				min="0"
+				max="10"
+				bind:value={cfg.coding_max_attempts}
+				aria-label="Max attempts per step"
+			/>
+		</label>
+
+		<label class="sub">
+			Context mode
+			<select bind:value={cfg.coding_context_mode} aria-label="Context mode">
+				<option value="">Let the coding job decide</option>
+				<option value="phase">One continuous context per phase</option>
+				<option value="step">A fresh context per checklist item</option>
+			</select>
+		</label>
+
+		<label class="sub">
+			Phase verification command
+			<input
+				type="text"
+				bind:value={cfg.coding_verify_command}
+				placeholder="e.g. npm test"
+				aria-label="Phase verification command"
+			/>
+		</label>
+
+		<label class="sub">
+			Step check command
+			<input
+				type="text"
+				bind:value={cfg.coding_step_check_command}
+				placeholder="e.g. npm run lint"
+				aria-label="Step check command"
+			/>
+		</label>
+	</details>
+{/if}
+
 <style>
 	.field.run-mode {
 		display: flex;
@@ -140,6 +190,23 @@
 
 	.field.run-mode select {
 		width: 100%;
+	}
+
+	.coding-run {
+		margin-top: 0.25rem;
+	}
+
+	.coding-run summary {
+		cursor: pointer;
+		font-weight: 500;
+	}
+
+	.coding-run .sub {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		margin-top: 0.5rem;
+		font-size: 0.9em;
 	}
 
 	.hint {

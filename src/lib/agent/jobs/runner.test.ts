@@ -2196,3 +2196,46 @@ describe('guided_planning — handoff', () => {
 		expect(mocks.askUserQuestion.mock.calls.length).toBe(2);
 	});
 });
+
+describe('guided_planning — chained coding run settings', () => {
+	function planningJob(coding?: Record<string, unknown>) {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/',
+				run_mode: 'unattended_chain',
+				...(coding ? { coding_run: coding } : {})
+			})
+		});
+	}
+
+	async function runIt(job: JobWithSteps) {
+		mocks.getJob.mockResolvedValueOnce(job);
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		return JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+	}
+
+	it('passes the pinned overrides to the created job', async () => {
+		const cfg = await runIt(planningJob({ max_attempts: 5, verify_command: 'npm test' }));
+		expect(cfg.max_attempts).toBe(5);
+		expect(cfg.verify_command).toBe('npm test');
+	});
+
+	it('omits what was never pinned, so the coding defaults apply', async () => {
+		const cfg = await runIt(planningJob());
+		// Absent, not null: the coding parser reads a missing key as "use the
+		// default", and its preflight settles the commands as it would for any
+		// hand-created job.
+		expect('max_attempts' in cfg).toBe(false);
+		expect('verify_command' in cfg).toBe(false);
+		expect('context_mode' in cfg).toBe(false);
+	});
+});
