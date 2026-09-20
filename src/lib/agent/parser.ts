@@ -1,4 +1,4 @@
-import type { ChatCompletionResponse } from '$lib/api';
+import type { ChatCompletionResponse, ToolDefinition } from '$lib/api';
 
 export interface ParsedToolCall {
 	name: string;
@@ -241,7 +241,37 @@ function wasTruncated(response: ChatCompletionResponse): boolean {
  * A remote/quantized model can still emit truncated or invalid `arguments`, so
  * each entry is parsed defensively rather than throwing out of the function.
  */
-function resolveStructuredCalls(response: ChatCompletionResponse): ToolCallResolution | null {
+/**
+ * The first schema-required argument a call is missing, or null.
+ *
+ * Only consulted under a `length` finish. A server that parses tool calls out
+ * of a generation will often REPAIR a call cut off mid-argument into
+ * syntactically valid JSON by dropping the unfinished field — so the args
+ * parse cleanly and the call looks complete. `fs_write_text` arriving with a
+ * `path` and no `content` is that: not a model that forgot the content, but
+ * one that was still writing it when the budget ran out.
+ */
+function missingRequiredArg(
+	call: ResolvedToolCall,
+	tools: ToolDefinition[] | undefined
+): string | null {
+	const params = tools?.find((t) => t.function?.name === call.name)?.function?.parameters as
+		| { required?: unknown }
+		| undefined;
+	const required = params?.required;
+	if (!Array.isArray(required)) return null;
+	for (const key of required) {
+		if (typeof key !== 'string') continue;
+		const v = call.arguments[key];
+		if (v === undefined || v === null || (typeof v === 'string' && v.length === 0)) return key;
+	}
+	return null;
+}
+
+function resolveStructuredCalls(
+	response: ChatCompletionResponse,
+	tools?: ToolDefinition[]
+): ToolCallResolution | null {
 	if (!response.tool_calls || response.tool_calls.length === 0) return null;
 
 	const parsed: ResolvedToolCall[] = [];
@@ -267,6 +297,26 @@ function resolveStructuredCalls(response: ChatCompletionResponse): ToolCallResol
 	if (anyUnparseable && wasTruncated(response)) {
 		return { kind: 'rejected', reason: 'truncated tool call arguments' };
 	}
+	// Parsed, but under a `length` finish "parsed" is not the same as
+	// "complete": see missingRequiredArg. Refusing here routes into the same
+	// retry nudge as a mangled call, which already explains that the content
+	// was too long and points at fs_edit_text — where executing the call
+	// instead produces a tool error blaming the model for forgetting an
+	// argument it was in the middle of writing.
+	if (wasTruncated(response)) {
+		for (const call of parsed) {
+			const missing = missingRequiredArg(call, tools);
+			if (missing) {
+				return {
+					kind: 'rejected',
+					reason:
+						`the response hit its output limit while writing the "${missing}" argument ` +
+						`to ${call.name}, so the call arrived without it`
+				};
+			}
+		}
+	}
+
 	// Every entry parsed: the calls are structurally complete even if the
 	// generation was cut afterwards.
 	if (parsed.length > 0) return { kind: 'calls', calls: parsed };
@@ -274,8 +324,11 @@ function resolveStructuredCalls(response: ChatCompletionResponse): ToolCallResol
 	return null;
 }
 
-export function resolveToolCalls(response: ChatCompletionResponse): ToolCallResolution {
-	const structured = resolveStructuredCalls(response);
+export function resolveToolCalls(
+	response: ChatCompletionResponse,
+	tools?: ToolDefinition[]
+): ToolCallResolution {
+	const structured = resolveStructuredCalls(response, tools);
 	if (structured) return structured;
 
 	if (response.content) {

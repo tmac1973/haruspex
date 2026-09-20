@@ -675,6 +675,49 @@ describe('load-time reasoning-effort default', () => {
 	});
 });
 
+/**
+ * A real project's files did not fit in the old 32768 ceiling: a planning run
+ * burned three attempts and ~13 minutes on a 31,000-character phase file, and
+ * surfaced it as "requires non-empty content" — which a user has no way to
+ * connect to a number in Settings → Agent. Raising the default only helps if
+ * existing installs move too.
+ */
+describe('load-time file-write ceiling migration', () => {
+	// The store is a module singleton, so exercising load() needs a fresh
+	// instance: prime localStorage, then re-import.
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		const fresh = await import('$lib/stores/settings');
+		return fresh.getSettings();
+	}
+
+	it('raises an install still sitting on the old default', async () => {
+		const s = await loadWith({ maxResponseTokensFileWrite: 32768 });
+		expect(s.maxResponseTokensFileWrite).toBe(65536);
+	});
+
+	it('leaves a ceiling the user actually chose alone', async () => {
+		const s = await loadWith({ maxResponseTokensFileWrite: 16384 });
+		expect(s.maxResponseTokensFileWrite).toBe(16384);
+	});
+
+	it('honours 32768 once the migration has run', async () => {
+		// The ambiguity the flag exists to resolve: the same stored number as
+		// the first case, but chosen deliberately after the raise shipped.
+		const s = await loadWith({
+			maxResponseTokensFileWrite: 32768,
+			maxResponseTokensFileWriteDefaulted: true
+		});
+		expect(s.maxResponseTokensFileWrite).toBe(32768);
+	});
+
+	it('marks the install so the migration cannot run twice', async () => {
+		const s = await loadWith({ maxResponseTokensFileWrite: 32768 });
+		expect(s.maxResponseTokensFileWriteDefaulted).toBe(true);
+	});
+});
+
 describe('load-time remoteServerUrls seeding', () => {
 	// The store is a module singleton, so exercising load() requires a
 	// fresh module instance: prime localStorage, reset the registry, and
@@ -756,12 +799,14 @@ describe('response token ceilings', () => {
 		vi.resetModules();
 	});
 
-	it('defaults to 8192 for normal turns and 32768 for file writes', () => {
+	it('defaults to 8192 for normal turns and 65536 for file writes', () => {
 		const s = getSettings();
 		expect(s.maxResponseTokens).toBe(DEFAULT_MAX_RESPONSE_TOKENS);
 		expect(s.maxResponseTokensFileWrite).toBe(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE);
 		expect(DEFAULT_MAX_RESPONSE_TOKENS).toBe(8192);
-		expect(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE).toBe(32768);
+		// Raised from 32768: a real project's plan or source file did not fit,
+		// and the failure surfaced as "requires non-empty content".
+		expect(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE).toBe(65536);
 	});
 
 	// The migration-safety check. An existing install's persisted blob predates

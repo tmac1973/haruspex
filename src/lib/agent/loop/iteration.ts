@@ -674,7 +674,7 @@ async function forceFinalToolCall(
 
 	// A rejected resolution has no usable call either — this path has no retry
 	// budget, so it ends the turn the same way an empty result does.
-	const resolution = resolveToolCalls(response);
+	const resolution = resolveToolCalls(response, ctx.tools);
 	const calls = resolution.kind === 'calls' ? resolution.calls.filter((c) => c.name === name) : [];
 	if (calls.length === 0) {
 		logDebug('agent', 'forced final tool call returned no usable call', { tool: name });
@@ -818,7 +818,7 @@ async function runModelCall(
 	let rejection: string | null = null;
 	let parseError: unknown = null;
 	try {
-		const resolution = resolveToolCalls(response);
+		const resolution = resolveToolCalls(response, ctx.tools);
 		if (resolution.kind === 'calls') toolCalls = resolution.calls;
 		else if (resolution.kind === 'rejected') rejection = resolution.reason;
 	} catch (e) {
