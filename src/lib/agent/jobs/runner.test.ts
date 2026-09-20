@@ -1867,3 +1867,88 @@ describe('guided_planning — verification rounds', () => {
 		expect(output).not.toContain('Plan verified');
 	});
 });
+
+/**
+ * Run mode. Only the FINAL approval is conditional — the overview and outline
+ * checkpoints land inside the window where the user is still answering
+ * interview questions, and skipping them would buy nothing.
+ */
+describe('guided_planning — run mode', () => {
+	function planningJob(runMode?: string) {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/',
+				...(runMode ? { run_mode: runMode } : {})
+			})
+		});
+	}
+
+	const approvalOutput = () => {
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		return String(calls[calls.length - 1]?.[3] ?? '');
+	};
+
+	it('stops at all three checkpoints when attended', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// overview, outline, final approval
+		expect(mocks.askUserQuestion.mock.calls.length).toBe(3);
+		expect(approvalOutput()).toContain('Plan approved');
+	});
+
+	it('skips only the final approval when unattended', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob('unattended_plan'));
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// overview and outline only — the interview checkpoints stay.
+		expect(mocks.askUserQuestion.mock.calls.length).toBe(2);
+	});
+
+	it('says the plan was approved automatically, and by which mode', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob('unattended_plan'));
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// The run view must never imply a human approved a plan nobody read.
+		expect(approvalOutput()).toContain('Approved automatically');
+		expect(approvalOutput()).toContain('Unattended plan');
+		expect(approvalOutput()).not.toContain('Plan approved →');
+	});
+
+	it('still reaches the Approval stage, so step indices do not shift', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob('unattended_plan'));
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// Same precedent as a skipped verification: the stage runs and reports,
+		// rather than renumbering the stages around it.
+		expect(mocks.markRunStepStarted.mock.calls.some((c: unknown[]) => c[1] === 4)).toBe(true);
+	});
+});

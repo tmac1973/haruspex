@@ -61,3 +61,24 @@ describe('use_git', () => {
 		expect(parseGuidedPlanningConfig('{"use_git":"no"}').use_git).toBe(true);
 	});
 });
+
+describe('run_mode', () => {
+	it('defaults to attended for every job authored before it existed', () => {
+		expect(parseGuidedPlanningConfig(null).run_mode).toBe('attended');
+		expect(parseGuidedPlanningConfig('{"initial_description":"x"}').run_mode).toBe('attended');
+	});
+
+	it('reads a known mode', () => {
+		expect(parseGuidedPlanningConfig('{"run_mode":"unattended_plan"}').run_mode).toBe(
+			'unattended_plan'
+		);
+	});
+
+	it('falls back to attended for anything unrecognised', () => {
+		// A malformed config must never silently make a run unattended: failing
+		// closed here costs a prompt, failing open costs an unsupervised run.
+		for (const raw of ['{"run_mode":"nonsense"}', '{"run_mode":42}', '{"run_mode":null}']) {
+			expect(parseGuidedPlanningConfig(raw).run_mode).toBe('attended');
+		}
+	});
+});

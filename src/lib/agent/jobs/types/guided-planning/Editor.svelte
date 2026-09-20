@@ -83,6 +83,20 @@
 	</label>
 </div>
 
+<div class="field run-mode">
+	<span class="label">
+		Run mode
+		<Tooltip
+			label="About run mode"
+			text="Attended stops at three checkpoints: the overview, the phase outline, and the finished plan. Unattended plan skips only the last one — the first two land while you are still answering interview questions, and are the cheapest place to catch a bad overview before it becomes an hour of planning. Nothing skips the interview itself."
+		/>
+	</span>
+	<select bind:value={cfg.run_mode} aria-label="Run mode">
+		<option value="attended">Attended — stop at every checkpoint</option>
+		<option value="unattended_plan">Unattended plan — skip the final approval</option>
+	</select>
+</div>
+
 <div class="toggle-row">
 	<label>
 		<input type="checkbox" bind:checked={cfg.use_git} />
@@ -110,6 +124,16 @@
 </div>
 
 <style>
+	.field.run-mode {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.field.run-mode select {
+		width: 100%;
+	}
+
 	.toggle-row label {
 		display: flex;
 		align-items: center;

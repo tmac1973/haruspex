@@ -1,6 +1,6 @@
 import type { JobTypeDefinition, PlannedStep } from '../types';
 import { runGuidedPlanningPipeline } from './pipeline';
-import { parseGuidedPlanningConfig } from './config';
+import { type GuidedPlanningRunMode, parseGuidedPlanningConfig } from './config';
 import Editor from './Editor.svelte';
 
 /** The guided-planning editor's working state (concrete strings, '' = unset). */
@@ -10,6 +10,7 @@ export interface GuidedPlanningEditorState {
 	skip_verification: boolean;
 	web_research: boolean;
 	use_git: boolean;
+	run_mode: GuidedPlanningRunMode;
 }
 
 /**
@@ -70,7 +71,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		plan_output_dir: '',
 		skip_verification: false,
 		web_research: true,
-		use_git: true
+		use_git: true,
+		run_mode: 'attended'
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
@@ -79,7 +81,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			plan_output_dir: c.plan_output_dir ?? '',
 			skip_verification: c.skip_verification,
 			web_research: c.web_research,
-			use_git: c.use_git
+			use_git: c.use_git,
+			run_mode: c.run_mode
 		};
 	},
 	configToJson: (config) => {
@@ -90,7 +93,9 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			skip_verification: s.skip_verification || undefined,
 			// Sparse like skip_verification: only the non-default value is stored.
 			web_research: s.web_research ? undefined : false,
-			use_git: s.use_git ? undefined : false
+			use_git: s.use_git ? undefined : false,
+			// Sparse: only a non-default mode is stored.
+			run_mode: s.run_mode === 'attended' ? undefined : s.run_mode
 		});
 	},
 	validate: ({ workingDir, config }) => {

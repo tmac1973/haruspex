@@ -1,5 +1,26 @@
 /** Guided-planning `type_config` JSON shape. */
 
+/**
+ * How much of a run the user intends to sit through.
+ *
+ * `attended` is every run authored before this existed and stays the default.
+ * `unattended_plan` skips the FINAL approval checkpoint only — the overview and
+ * outline checkpoints land inside the window where the user is already
+ * answering interview questions, and are the cheapest place to catch a bad
+ * overview before it becomes an hour of planning.
+ *
+ * Phase 05 widens this with `unattended_chain`.
+ */
+export type GuidedPlanningRunMode = 'attended' | 'unattended_plan';
+
+const RUN_MODES: readonly GuidedPlanningRunMode[] = ['attended', 'unattended_plan'];
+
+/** What the run view and the Editor call each mode. */
+export const RUN_MODE_LABELS: Record<GuidedPlanningRunMode, string> = {
+	attended: 'Attended',
+	unattended_plan: 'Unattended plan'
+};
+
 export interface GuidedPlanningConfig {
 	/** The seed idea the interview starts from. */
 	initial_description: string | null;
@@ -27,6 +48,12 @@ export interface GuidedPlanningConfig {
 	 * tail-truncation detector in REQUIRED_PHASE_SECTIONS. Defaults to on.
 	 */
 	use_git: boolean;
+	/**
+	 * Which checkpoints the run stops at. See `GuidedPlanningRunMode`.
+	 * Anything unrecognised reads as `attended`: a malformed config must not
+	 * silently make a run unattended.
+	 */
+	run_mode: GuidedPlanningRunMode;
 }
 
 export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningConfig {
@@ -52,6 +79,9 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		skip_verification: raw.skip_verification === true,
 		// Absent means on, for older jobs too; only an explicit false opts out.
 		web_research: raw.web_research !== false,
-		use_git: raw.use_git !== false
+		use_git: raw.use_git !== false,
+		run_mode: RUN_MODES.includes(raw.run_mode as GuidedPlanningRunMode)
+			? (raw.run_mode as GuidedPlanningRunMode)
+			: 'attended'
 	};
 }

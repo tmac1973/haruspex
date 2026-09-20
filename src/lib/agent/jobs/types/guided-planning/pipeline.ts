@@ -20,7 +20,7 @@ import {
 	type JobRunStepStatus
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
-import { parseGuidedPlanningConfig, type GuidedPlanningConfig } from './config';
+import { parseGuidedPlanningConfig, RUN_MODE_LABELS, type GuidedPlanningConfig } from './config';
 import { interviewResearchRules, withWebResearch, writeResearchRules } from '../webResearch';
 import {
 	extractDecisionCommand,
@@ -659,6 +659,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	// Whether the plan may assume git. Drops "## Commit" from every phase file
 	// when off; "## Rollback" stays (see phaseWritePrompt).
 	const useGit = cfg.use_git;
+	// Which checkpoints this run stops at. Only the FINAL approval is
+	// conditional — the overview and outline checkpoints run in every mode.
+	const runMode = cfg.run_mode;
 	const toolsets = guidedPlanningToolsets(webResearch);
 	// A survey the user asked for ("research the PDF libraries and give me a
 	// choice") is a dozen search and read calls on top of the interview itself.
@@ -1305,41 +1308,52 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		}
 
 		// Approval — plan / dependency-map approval checkpoint loop.
+		//
+		// The stage starts and finishes in EVERY mode, and only its question loop
+		// is conditional. Same precedent as a skipped verification: the step index
+		// stays put and the run view shows what was skipped, rather than silently
+		// renumbering the stages around it.
 		startStep(APPROVAL);
-		let planApproved = false;
-		while (!planApproved) {
-			abortIfCancelled();
-			const answer = await askUserQuestion(
-				{
-					question:
-						`I wrote the phased implementation plan to ${outDir} (phase-NN-*.md), ` +
-						`ordered by dependency and checked for unresolved decisions. Review it, ` +
-						`then approve — or type what you'd like changed.`,
-					options: [
-						{ label: 'Approve', description: 'The plan looks good — finish.', recommended: true },
-						{
-							label: 'I edited it myself — re-check',
-							description: 'I changed files on disk; re-read them before asking again.'
-						}
-					]
-				},
-				abort.signal
-			);
-			abortIfCancelled();
-			if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
-				planApproved = true;
-			} else if (answer.kind === 'freeText') {
-				await turn(
-					APPROVAL,
-					`Please revise the phased plan. The user asked for: ${answer.text}`,
-					planRevisePrompt(outDir, webResearch),
-					30,
-					{ expectsFileOutput: true }
+		if (runMode !== 'attended') {
+			// Named, never implied: the run view must not suggest a human approved
+			// a plan nobody looked at.
+			finishStep(APPROVAL, `Approved automatically — run mode is "${RUN_MODE_LABELS[runMode]}"`);
+		} else {
+			let planApproved = false;
+			while (!planApproved) {
+				abortIfCancelled();
+				const answer = await askUserQuestion(
+					{
+						question:
+							`I wrote the phased implementation plan to ${outDir} (phase-NN-*.md), ` +
+							`ordered by dependency and checked for unresolved decisions. Review it, ` +
+							`then approve — or type what you'd like changed.`,
+						options: [
+							{ label: 'Approve', description: 'The plan looks good — finish.', recommended: true },
+							{
+								label: 'I edited it myself — re-check',
+								description: 'I changed files on disk; re-read them before asking again.'
+							}
+						]
+					},
+					abort.signal
 				);
-				await verifyOnce(); // re-check after a user-driven revision
+				abortIfCancelled();
+				if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
+					planApproved = true;
+				} else if (answer.kind === 'freeText') {
+					await turn(
+						APPROVAL,
+						`Please revise the phased plan. The user asked for: ${answer.text}`,
+						planRevisePrompt(outDir, webResearch),
+						30,
+						{ expectsFileOutput: true }
+					);
+					await verifyOnce(); // re-check after a user-driven revision
+				}
 			}
+			finishStep(APPROVAL, `Plan approved → ${outDir}`);
 		}
-		finishStep(APPROVAL, `Plan approved → ${outDir}`);
 
 		deps.finalizeRun('succeeded', null);
 	} catch (e) {
