@@ -23,7 +23,7 @@ vi.mock('$lib/markdown', () => ({
 	finalizeStreamText: (raw: string) => ({ content: raw.trim(), citedUrls: [] })
 }));
 
-import { runEphemeralTurn, workingDirNote } from '$lib/agent/runEphemeralTurn';
+import { runEphemeralTurn, ambientContextNote } from '$lib/agent/runEphemeralTurn';
 
 beforeEach(() => {
 	mocks.runAgentLoop.mockReset();
@@ -162,28 +162,52 @@ describe('runEphemeralTurn', () => {
  * model knowing where it was. A real planning run tried `fs_list_dir /` and
  * got "path escapes working directory" back.
  */
-describe('workingDirNote', () => {
+describe('ambientContextNote', () => {
 	it('states the directory and how paths resolve', () => {
-		const note = workingDirNote('/home/tim/Projects/game');
+		const note = ambientContextNote({ workingDir: '/home/tim/Projects/game' });
 		expect(note).toContain('/home/tim/Projects/game');
 		expect(note).toContain('resolves against it');
 		expect(note).toContain('`.` is this directory');
 	});
 
 	it('says what is refused, which is the mistake it exists to prevent', () => {
-		const note = workingDirNote('/repo');
+		const note = ambientContextNote({ workingDir: '/repo' });
 		// Matches resolve_in_workdir: absolute is allowed only inside, `..` never.
 		expect(note).toContain('only if it points INSIDE');
 		expect(note).toContain('`..`');
 		expect(note).toContain('refused');
 	});
 
-	it('is empty with no working directory, so a dirless turn gains nothing', () => {
-		expect(workingDirNote(null)).toBe('');
+	it('always carries the date, with the cutoff caveat', () => {
+		// A planning run reasoned about "the current stable release" of a crate
+		// with no idea what today is.
+		for (const wd of ['/repo', null]) {
+			const note = ambientContextNote({ workingDir: wd });
+			expect(note).toContain("Today's date is");
+			expect(note).toContain('out of date');
+		}
+	});
+
+	it('omits the filesystem block with no working directory', () => {
+		const note = ambientContextNote({ workingDir: null });
+		expect(note).not.toContain('WORKING DIRECTORY');
+	});
+
+	it('states a write root when the turn is confined to one', () => {
+		const note = ambientContextNote({ workingDir: '/repo', writeRoot: 'plan/x/' });
+		expect(note).toContain('only WRITE inside');
+		expect(note).toContain('plan/x/');
+		// Stricter than reads: isUnderWriteRoot rejects any absolute path.
+		expect(note).toContain('an absolute one is refused even if it points inside');
+	});
+
+	it('omits the write-root line when the turn has none', () => {
+		const note = ambientContextNote({ workingDir: '/repo', writeRoot: null });
+		expect(note).not.toContain('only WRITE inside');
 	});
 
 	it('starts with a blank line so it cannot run into the prompt above it', () => {
-		expect(workingDirNote('/repo').startsWith('\n\n')).toBe(true);
+		expect(ambientContextNote({ workingDir: '/repo' }).startsWith('\n\n')).toBe(true);
 	});
 });
 
@@ -208,7 +232,7 @@ describe('runEphemeralTurn — a custom prompt still learns where it is', () => 
 		expect(sys.content).toContain('WORKING DIRECTORY');
 	});
 
-	it('leaves a custom prompt alone when there is no working directory', async () => {
+	it('still dates a custom prompt with no working directory', async () => {
 		mocks.runAgentLoop.mockImplementationOnce(async (opts: AgentLoopOptions) => {
 			opts.onComplete();
 		});
@@ -220,6 +244,26 @@ describe('runEphemeralTurn — a custom prompt still learns where it is', () => 
 			contextSize: 8192
 		});
 
-		expect(captureOptions().messages[0].content).toBe('Just this.');
+		const sys = String(captureOptions().messages[0].content);
+		// The date is not a filesystem fact, so it is not gated on a workdir.
+		expect(sys).toContain('Just this.');
+		expect(sys).toContain("Today's date is");
+		expect(sys).not.toContain('WORKING DIRECTORY');
+	});
+
+	it('tells a write-confined turn where it may write', async () => {
+		mocks.runAgentLoop.mockImplementationOnce(async (opts: AgentLoopOptions) => {
+			opts.onComplete();
+		});
+
+		await runEphemeralTurn({
+			userMessage: 'write phase 01',
+			systemPrompt: 'You are writing ONE file of an approved plan.',
+			workingDir: '/repo',
+			writeRoot: 'plan/x/',
+			contextSize: 8192
+		});
+
+		expect(String(captureOptions().messages[0].content)).toContain('only WRITE inside `plan/x/`');
 	});
 });
