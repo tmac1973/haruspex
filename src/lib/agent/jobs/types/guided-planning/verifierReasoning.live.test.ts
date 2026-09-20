@@ -42,8 +42,13 @@ const join = (dir: string, file: string) => `${dir.replace(/\/+$/, '')}/${file}`
  *   HARUSPEX_AB_MODEL=<id, or omit to take the first the server lists> \
  *   HARUSPEX_AB_RUNS=3 \
  *   npx vitest run verifierReasoning
+ *
+ * That runs the stability probe. Add HARUSPEX_AB_THINKING=1 to also run the
+ * thinking-on/off comparison, which costs a second pass per run.
  */
 const PLAN_DIR = process.env.HARUSPEX_AB_PLAN;
+/** The thinking-on/off comparison is expensive; opt into it explicitly. */
+const RUN_AB = process.env.HARUSPEX_AB_THINKING === '1';
 // Required rather than defaulted: which backend is free varies, and a default
 // that silently points at the wrong host wastes a run before it fails.
 const BASE_URL = process.env.HARUSPEX_AB_URL ?? '';
@@ -151,7 +156,65 @@ function report(label: string, attempts: Attempt[]) {
 	}
 }
 
-describe.skipIf(!PLAN_DIR || !BASE_URL)('verifier reasoning A/B (live)', () => {
+/**
+ * How much of a review's output is the plan, and how much is the sampling?
+ *
+ * Run 52's three review rounds found 14, 16 and 7 problems, and round 3's
+ * seven appeared in neither of the first two — while five of its seven files
+ * had already been flagged for different reasons. Revisions were fixing what
+ * was reported; each fresh pass simply reported something else.
+ *
+ * That has two possible causes and they call for opposite fixes. If repeated
+ * reviews of an UNCHANGED plan agree, findings are stable, the plan really
+ * does have a long tail of defects, and more rounds grind through it. If they
+ * disagree, a single pass recalls a different subset each time, the count
+ * never reaches zero however many rounds are spent, and a gate demanding zero
+ * can never open.
+ *
+ * So: same plan, same settings, N times, nothing edited in between.
+ */
+describe.skipIf(!PLAN_DIR || !BASE_URL)('verifier finding stability (live)', () => {
+	it(
+		'reviews an unchanged plan repeatedly and reports how much they agree',
+		async () => {
+			const model = await resolveModel();
+			console.log(`\nplan:  ${PLAN_DIR}\nmodel: ${model}\npasses: ${RUNS}\n`);
+
+			const passes: Attempt[] = [];
+			for (let i = 0; i < RUNS; i++) passes.push(await askVerifier(model, true));
+			report('independent reviews of the SAME plan', passes);
+
+			// Match on (category, file, opening words): the same defect reworded
+			// between passes should still count as the same defect.
+			const key = (f: string) => {
+				const m = /^\(([a-z])\)\s*(\S+?\.md)?\s*:?\s*(.*)$/.exec(f);
+				return m
+					? `${m[1]}|${m[2] ?? ''}|${m[3].toLowerCase().split(/\s+/).slice(0, 8).join(' ')}`
+					: f.slice(0, 80);
+			};
+			const sets = passes.map((a) => new Set([...a.blocking, ...a.advisory].map(key)));
+			const union = new Set(sets.flatMap((s) => [...s]));
+			const inAll = [...union].filter((k) => sets.every((s) => s.has(k)));
+
+			console.log(
+				`\ndistinct findings across ${passes.length} passes: ${union.size}` +
+					`\nfound by EVERY pass: ${inAll.length}` +
+					`\nfound by exactly one: ${[...union].filter((k) => sets.filter((s) => s.has(k)).length === 1).length}`
+			);
+			console.log(
+				'\nIf "found by every pass" is close to the per-pass count, findings are ' +
+					'stable and more rounds will grind the tail down. If most are found by ' +
+					'exactly one pass, the gate cannot converge and the plan needs a ' +
+					'different contract with the coding run.'
+			);
+
+			expect(passes.every((a) => a.verdict.trim().length > 0)).toBe(true);
+		},
+		30 * 60 * 1000
+	);
+});
+
+describe.skipIf(!PLAN_DIR || !BASE_URL || !RUN_AB)('verifier reasoning A/B (live)', () => {
 	it(
 		'compares findings and cost with thinking on vs off',
 		async () => {
