@@ -15,8 +15,6 @@ export interface GuidedPlanningEditorState {
 	// to nulls by configToJson.
 	coding_max_attempts: number;
 	coding_context_mode: '' | 'step' | 'phase';
-	coding_verify_command: string;
-	coding_step_check_command: string;
 }
 
 /**
@@ -65,11 +63,10 @@ const GUIDED_STAGES: ReadonlyArray<{ title: string; description: string }> = [
  */
 function codingRunJson(s: GuidedPlanningEditorState): Record<string, unknown> | undefined {
 	const out: Record<string, unknown> = {};
-	if (s.coding_max_attempts > 0) out.max_attempts = s.coding_max_attempts;
+	// Stored only when it differs from what the coding job would pick anyway.
+	if (s.coding_max_attempts > 0 && s.coding_max_attempts !== 3)
+		out.max_attempts = s.coding_max_attempts;
 	if (s.coding_context_mode) out.context_mode = s.coding_context_mode;
-	if (s.coding_verify_command.trim()) out.verify_command = s.coding_verify_command.trim();
-	if (s.coding_step_check_command.trim())
-		out.step_check_command = s.coding_step_check_command.trim();
 	return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -101,10 +98,10 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		web_research: true,
 		use_git: true,
 		run_mode: 'attended',
-		coding_max_attempts: 0,
-		coding_context_mode: '',
-		coding_verify_command: '',
-		coding_step_check_command: ''
+		// The coding job's own default, shown as itself. A 0 here meant "unset"
+		// and read on screen as "zero attempts", which is not a thing.
+		coding_max_attempts: 3,
+		coding_context_mode: ''
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
@@ -115,10 +112,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			web_research: c.web_research,
 			use_git: c.use_git,
 			run_mode: c.run_mode,
-			coding_max_attempts: c.coding_run.max_attempts ?? 0,
-			coding_context_mode: c.coding_run.context_mode ?? '',
-			coding_verify_command: c.coding_run.verify_command ?? '',
-			coding_step_check_command: c.coding_run.step_check_command ?? ''
+			coding_max_attempts: c.coding_run.max_attempts ?? 3,
+			coding_context_mode: c.coding_run.context_mode ?? ''
 		};
 	},
 	configToJson: (config) => {

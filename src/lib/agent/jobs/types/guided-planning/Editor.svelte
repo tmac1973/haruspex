@@ -143,7 +143,7 @@
 			Max attempts per step
 			<input
 				type="number"
-				min="0"
+				min="1"
 				max="10"
 				bind:value={cfg.coding_max_attempts}
 				aria-label="Max attempts per step"
@@ -157,26 +157,6 @@
 				<option value="phase">One continuous context per phase</option>
 				<option value="step">A fresh context per checklist item</option>
 			</select>
-		</label>
-
-		<label class="sub">
-			Phase verification command
-			<input
-				type="text"
-				bind:value={cfg.coding_verify_command}
-				placeholder="e.g. npm test"
-				aria-label="Phase verification command"
-			/>
-		</label>
-
-		<label class="sub">
-			Step check command
-			<input
-				type="text"
-				bind:value={cfg.coding_step_check_command}
-				placeholder="e.g. npm run lint"
-				aria-label="Step check command"
-			/>
 		</label>
 	</details>
 {/if}

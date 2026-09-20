@@ -138,8 +138,6 @@ describe('registration barrel', () => {
 		// Editor state round-trip: sparse JSON in, concrete defaults out, and back.
 		expect(coding.configFromJob(JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 5 }))).toEqual({
 			plan_dir: 'plan/x/',
-			verify_command: '',
-			step_check_command: '',
 			max_attempts: 5,
 			context_mode: 'phase',
 			signing_fallback: 'unsigned',
@@ -149,8 +147,6 @@ describe('registration barrel', () => {
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
-			verify_command: '',
-			step_check_command: '',
 			max_attempts: 3,
 			context_mode: 'phase',
 			signing_fallback: 'unsigned',
@@ -160,8 +156,6 @@ describe('registration barrel', () => {
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
-			verify_command: '',
-			step_check_command: '',
 			max_attempts: 3,
 			context_mode: 'phase',
 			signing_fallback: 'skip',

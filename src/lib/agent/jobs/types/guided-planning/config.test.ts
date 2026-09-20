@@ -107,29 +107,17 @@ describe('coding_run overrides', () => {
 	it('is all-null when unset', () => {
 		expect(parseGuidedPlanningConfig(null).coding_run).toEqual({
 			max_attempts: null,
-			context_mode: null,
-			verify_command: null,
-			step_check_command: null
+			context_mode: null
 		});
 	});
 
 	it('round-trips a populated object', () => {
 		const cfg = parseGuidedPlanningConfig(
 			JSON.stringify({
-				coding_run: {
-					max_attempts: 5,
-					context_mode: 'step',
-					verify_command: 'npm test',
-					step_check_command: 'npm run lint'
-				}
+				coding_run: { max_attempts: 5, context_mode: 'step' }
 			})
 		);
-		expect(cfg.coding_run).toEqual({
-			max_attempts: 5,
-			context_mode: 'step',
-			verify_command: 'npm test',
-			step_check_command: 'npm run lint'
-		});
+		expect(cfg.coding_run).toEqual({ max_attempts: 5, context_mode: 'step' });
 	});
 
 	it('degrades a malformed object to all-null rather than throwing', () => {
@@ -139,13 +127,11 @@ describe('coding_run overrides', () => {
 			'{"coding_run":"nonsense"}',
 			'{"coding_run":[]}',
 			'{"coding_run":null}',
-			'{"coding_run":{"max_attempts":"five","context_mode":"sideways","verify_command":7}}'
+			'{"coding_run":{"max_attempts":"five","context_mode":"sideways"}}'
 		]) {
 			expect(parseGuidedPlanningConfig(raw).coding_run).toEqual({
 				max_attempts: null,
-				context_mode: null,
-				verify_command: null,
-				step_check_command: null
+				context_mode: null
 			});
 		}
 	});

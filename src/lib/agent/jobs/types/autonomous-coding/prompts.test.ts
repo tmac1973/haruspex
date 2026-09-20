@@ -122,7 +122,7 @@ describe('iterationPrompt — invariants across branches', () => {
  */
 describe('shell safety rules — every stage that can run commands', () => {
 	for (const [label, raw] of [
-		['preflight', preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step', false)],
+		['preflight', preflightPrompt('plan/x', 'plan/x/D.md', 'step', false)],
 		['iteration (both commands)', iterationPrompt('lint', 'test', 'plan/x/')],
 		['iteration (no commands)', iterationPrompt(null, null, 'plan/x/')],
 		['phase turn', phaseTurnPrompt('npm test', 'plan/x/')]
@@ -153,24 +153,19 @@ describe('shell safety rules — every stage that can run commands', () => {
 	});
 
 	it('tells preflight it would interrupt the user instead', () => {
-		const prompt = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step', false));
+		const prompt = flat(preflightPrompt('plan/x', 'plan/x/D.md', 'step', false));
 		expect(prompt).toContain('stops the run on an approval modal');
 		expect(prompt).not.toContain('nobody is present to approve one');
 	});
 });
 
 describe('preflightPrompt — settling the two-command contract', () => {
-	const bothBlankRaw = preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step', false);
-	const bothSetRaw = preflightPrompt(
-		'plan/x',
-		'plan/x/D.md',
-		'npm test',
-		'npm run lint',
-		'step',
-		false
-	);
+	// There is no configured command to echo any more: preflight settles both,
+	// every time. A user with a preference states it in the plan or the build
+	// prompt, where it is context the model reasons about rather than a field
+	// it obeys.
+	const bothBlankRaw = preflightPrompt('plan/x', 'plan/x/D.md', 'step', false);
 	const bothBlank = flat(bothBlankRaw);
-	const bothSet = flat(bothSetRaw);
 
 	it('defines both tiers and their cadence', () => {
 		expect(bothBlank).toContain('STEP CHECK: runs before EVERY commit');
@@ -178,20 +173,22 @@ describe('preflightPrompt — settling the two-command contract', () => {
 		expect(bothBlank).toContain('NOT per step');
 	});
 
-	it('tells preflight to settle blanks itself', () => {
-		expect(bothBlank).toContain('settle it yourself');
+	it('tells preflight both commands are its to settle', () => {
+		expect(bothBlank).toContain('Both are yours to settle');
 	});
 
-	it('echoes user-supplied commands and requires trying them', () => {
-		expect(bothSet).toContain('`npm test`');
-		expect(bothSet).toContain('`npm run lint`');
-		expect(bothSet).toContain('RUN each candidate once with run_command');
-		expect(bothSet).toContain('never executed is a guess');
+	it('requires running every candidate before adopting it', () => {
+		expect(bothBlank).toContain('RUN each candidate once with run_command');
+		expect(bothBlank).toContain('never executed is a guess');
 	});
 
-	it('does not let a failing user command be silently swapped out', () => {
-		expect(bothSet).toContain('do NOT silently substitute');
-		expect(bothSet).toContain('ask ONE `ask_user_question`');
+	it('does not let a failing candidate be silently swapped out', () => {
+		expect(bothBlank).toContain('do NOT silently substitute');
+		expect(bothBlank).toContain('ask ONE `ask_user_question`');
+	});
+
+	it("says both commands are preflight's to settle", () => {
+		expect(bothBlank).toContain('Both are yours to settle');
 	});
 
 	it('composes multi-stack repos into one && command', () => {
@@ -212,10 +209,7 @@ describe('preflightPrompt — settling the two-command contract', () => {
 		expect(bothBlank).toContain('Preflight writes no code');
 	});
 
-	for (const [label, prompt, raw] of [
-		['blank', bothBlank, bothBlankRaw],
-		['set', bothSet, bothSetRaw]
-	] as const) {
+	for (const [label, prompt, raw] of [['blank', bothBlank, bothBlankRaw]] as const) {
 		it(`${label}: requires side-effect-free, fast, idempotent commands`, () => {
 			// Preflight once recorded `git init && node --check ...`, so every
 			// step of the run re-ran git init.
@@ -319,7 +313,7 @@ describe('phaseTurnPrompt — build whole phase, runner verifies and commits', (
 });
 
 describe('preflightPrompt — per-phase context mode', () => {
-	const phase = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'phase', false));
+	const phase = flat(preflightPrompt('plan/x', 'plan/x/D.md', 'phase', false));
 
 	it('settles only the verification command — no step check exists to ask about', () => {
 		// A real preflight asked the user "what should the step check be?" in a
@@ -345,13 +339,13 @@ describe('preflightPrompt — per-phase context mode', () => {
 		// The mode parameter is required on purpose: a defaulted param once let
 		// the preflight RETRY turn silently receive the step contract while the
 		// main turn ran the phase contract.
-		const step = flat(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'step', false));
+		const step = flat(preflightPrompt('plan/x', 'plan/x/D.md', 'step', false));
 		expect(step).toContain('Settle the TWO commands');
 	});
 });
 
 describe('preflightPrompt — web research', () => {
-	const onRaw = preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'phase', true);
+	const onRaw = preflightPrompt('plan/x', 'plan/x/D.md', 'phase', true);
 	const on = flat(onRaw);
 
 	it('adds the research rules when the job allows it', () => {
@@ -360,9 +354,7 @@ describe('preflightPrompt — web research', () => {
 	});
 
 	it('says nothing about the web when off', () => {
-		expect(preflightPrompt('plan/x', 'plan/x/D.md', null, null, 'phase', false)).not.toContain(
-			'WEB RESEARCH'
-		);
+		expect(preflightPrompt('plan/x', 'plan/x/D.md', 'phase', false)).not.toContain('WEB RESEARCH');
 	});
 
 	it('keeps the process numbered 1-5 with the block added', () => {
@@ -380,7 +372,7 @@ describe('preflightPrompt — web research', () => {
  * not interactivity.
  */
 describe('preflightPrompt — non-interactive variant', () => {
-	const args = ['plan/x/', 'plan/x/DECISIONS-coding.md', null, null, 'phase', false] as const;
+	const args = ['plan/x/', 'plan/x/DECISIONS-coding.md', 'phase', false] as const;
 	const asking = preflightPrompt(...args, true);
 	const mute = preflightPrompt(...args, false);
 
@@ -416,10 +408,12 @@ describe('preflightPrompt — non-interactive variant', () => {
 		// Phase mode settles ONE command; step mode settles two. Both must keep
 		// the contract — muting the interview must not mute the job.
 		for (const p of [asking, mute]) {
-			expect(p).toContain('Settle the ONE command');
-			expect(p).toContain('A command you never executed is a guess');
+			// Flattened: the prompt is hard-wrapped, so this phrase spans a line.
+			expect(flat(p)).toContain('Settle the ONE command');
+			expect(flat(p)).toContain('A command you never executed is a guess');
 		}
-		const stepMute = preflightPrompt('plan/x/', 'd.md', null, null, 'step', false, false);
+		const stepMute = preflightPrompt('plan/x/', 'd.md', 'step', false, false);
+		expect(stepMute).toContain('Both are yours to settle');
 		expect(stepMute).toContain('Settle the TWO commands');
 		expect(stepMute).not.toContain('ask_user_question');
 	});

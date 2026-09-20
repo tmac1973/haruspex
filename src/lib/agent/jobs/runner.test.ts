@@ -2224,9 +2224,9 @@ describe('guided_planning — chained coding run settings', () => {
 	}
 
 	it('passes the pinned overrides to the created job', async () => {
-		const cfg = await runIt(planningJob({ max_attempts: 5, verify_command: 'npm test' }));
+		const cfg = await runIt(planningJob({ max_attempts: 5, context_mode: 'step' }));
 		expect(cfg.max_attempts).toBe(5);
-		expect(cfg.verify_command).toBe('npm test');
+		expect(cfg.context_mode).toBe('step');
 	});
 
 	it('omits what was never pinned, so the coding defaults apply', async () => {
@@ -2235,7 +2235,6 @@ describe('guided_planning — chained coding run settings', () => {
 		// default", and its preflight settles the commands as it would for any
 		// hand-created job.
 		expect('max_attempts' in cfg).toBe(false);
-		expect('verify_command' in cfg).toBe(false);
 		expect('context_mode' in cfg).toBe(false);
 	});
 });

@@ -230,16 +230,20 @@ function toChecklist(
 }
 
 /**
- * Resolve both verification commands. Precedence per command: explicit job
- * config > the preflight's DECISIONS file > (phase only) the guided-planning
- * overview, where planning settled the command with the user present — the
- * runner reading it directly means the contract survives a preflight that
- * fumbles the transcription. Files are read fresh at every call (a repair item
- * may fix a broken command there), but only when something still needs them —
- * explicit job config makes the reads dead weight. In phase mode the step
- * check is null by design (the Editor hides the field and the preflight
- * contract forbids recording one) — resolved here so the runner agrees with
- * both.
+ * Resolve both verification commands. Precedence per command: the preflight's
+ * DECISIONS file > (phase only) the guided-planning overview, where planning
+ * settled the command — the runner reading it directly means the contract
+ * survives a preflight that fumbles the transcription. Files are read fresh at
+ * every call, since a repair item may fix a broken command there.
+ *
+ * There is deliberately no job-config layer. Asking a user to type a test
+ * command up front is asking them to guess before anything exists; preflight
+ * can see the repo, run a candidate to check it works, and record what it
+ * chose. A user with a preference states it in the plan or the build prompt,
+ * where it is context the model reasons about rather than a field it obeys.
+ *
+ * In phase mode the step check is null by design (the preflight contract
+ * forbids recording one) — resolved here so the runner agrees.
  */
 async function resolveCommands(
 	ctx: JobRunContext,
@@ -248,25 +252,13 @@ async function resolveCommands(
 	planDir: string,
 	decisionsPath: string
 ): Promise<{ step: string | null; phase: string | null }> {
-	const wantStep = contextMode !== 'phase' && cfg.step_check_command == null;
-	const wantPhase = cfg.verify_command == null;
-	const text = wantStep || wantPhase ? ((await readPlanFile(ctx, decisionsPath)) ?? '') : '';
-	const phaseFromDecisions = wantPhase
-		? extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING)
-		: null;
+	const text = (await readPlanFile(ctx, decisionsPath)) ?? '';
+	const phaseFromDecisions = extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING);
 	const overviewText =
-		wantPhase && phaseFromDecisions === null
-			? ((await readPlanFile(ctx, `${planDir}overview.md`)) ?? '')
-			: '';
+		phaseFromDecisions === null ? ((await readPlanFile(ctx, `${planDir}overview.md`)) ?? '') : '';
 	return {
-		step:
-			contextMode === 'phase'
-				? null
-				: (cfg.step_check_command ?? extractDecisionCommand(text, STEP_CHECK_HEADING)),
-		phase:
-			cfg.verify_command ??
-			phaseFromDecisions ??
-			extractDecisionCommand(overviewText, VERIFICATION_COMMAND_HEADING)
+		step: contextMode === 'phase' ? null : extractDecisionCommand(text, STEP_CHECK_HEADING),
+		phase: phaseFromDecisions ?? extractDecisionCommand(overviewText, VERIFICATION_COMMAND_HEADING)
 	};
 }
 
@@ -328,8 +320,6 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			ctx,
 			planDir,
 			decisionsPath,
-			cfg.verify_command,
-			cfg.step_check_command,
 			contextMode,
 			webResearch,
 			interactive
@@ -344,15 +334,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		await ensureFileWritten(ctx, PREFLIGHT, {
 			relPath: decisionsPath,
 			writeRoot: planDir,
-			systemPrompt: preflightPrompt(
-				planDir,
-				decisionsPath,
-				cfg.verify_command,
-				cfg.step_check_command,
-				contextMode,
-				webResearch,
-				interactive
-			),
+			systemPrompt: preflightPrompt(planDir, decisionsPath, contextMode, webResearch, interactive),
 			toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 			what: 'decisions file',
 			abortIfCancelled,
@@ -675,8 +657,6 @@ async function runPreflightTurn(
 	ctx: JobRunContext,
 	planDir: string,
 	decisionsPath: string,
-	verifyCommand: string | null,
-	stepCheckCommand: string | null,
 	contextMode: 'step' | 'phase',
 	webResearch: boolean,
 	interactive: boolean
@@ -695,15 +675,7 @@ async function runPreflightTurn(
 		maxIterations: PREFLIGHT_MAX_ITERATIONS,
 		interactive,
 		writeRoot: planDir,
-		systemPrompt: preflightPrompt(
-			planDir,
-			decisionsPath,
-			verifyCommand,
-			stepCheckCommand,
-			contextMode,
-			webResearch,
-			interactive
-		),
+		systemPrompt: preflightPrompt(planDir, decisionsPath, contextMode, webResearch, interactive),
 		toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,
 		...base,

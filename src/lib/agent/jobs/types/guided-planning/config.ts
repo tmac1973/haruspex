@@ -15,8 +15,6 @@
 export interface GuidedPlanningCodingRun {
 	max_attempts: number | null;
 	context_mode: 'step' | 'phase' | null;
-	verify_command: string | null;
-	step_check_command: string | null;
 }
 
 export type GuidedPlanningRunMode = 'attended' | 'unattended_plan' | 'unattended_chain';
@@ -104,16 +102,7 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 			typeof cr.max_attempts === 'number' && Number.isFinite(cr.max_attempts)
 				? cr.max_attempts
 				: null,
-		context_mode:
-			cr.context_mode === 'step' || cr.context_mode === 'phase' ? cr.context_mode : null,
-		verify_command:
-			typeof cr.verify_command === 'string' && cr.verify_command.length > 0
-				? cr.verify_command
-				: null,
-		step_check_command:
-			typeof cr.step_check_command === 'string' && cr.step_check_command.length > 0
-				? cr.step_check_command
-				: null
+		context_mode: cr.context_mode === 'step' || cr.context_mode === 'phase' ? cr.context_mode : null
 	};
 	return {
 		initial_description:

@@ -7,8 +7,6 @@ import Editor from './Editor.svelte';
 /** The editor's working state (concrete values; '' = unset). */
 export interface AutonomousCodingEditorState {
 	plan_dir: string;
-	verify_command: string;
-	step_check_command: string;
 	max_attempts: number;
 	context_mode: 'step' | 'phase';
 	signing_fallback: 'unsigned' | 'skip';
@@ -76,8 +74,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 	Editor,
 	configDefaults: (): AutonomousCodingEditorState & Record<string, unknown> => ({
 		plan_dir: '',
-		verify_command: '',
-		step_check_command: '',
 		max_attempts: 3,
 		context_mode: 'phase',
 		signing_fallback: 'unsigned',
@@ -89,8 +85,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		const c = parseAutonomousCodingConfig(typeConfig);
 		return {
 			plan_dir: c.plan_dir ?? '',
-			verify_command: c.verify_command ?? '',
-			step_check_command: c.step_check_command ?? '',
 			max_attempts: c.max_attempts ?? 3,
 			context_mode: c.context_mode ?? 'phase',
 			signing_fallback: c.signing_fallback ?? 'unsigned',
@@ -103,8 +97,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		const s = config as unknown as AutonomousCodingEditorState;
 		return JSON.stringify({
 			plan_dir: s.plan_dir.trim() || undefined,
-			verify_command: s.verify_command.trim() || undefined,
-			step_check_command: s.step_check_command.trim() || undefined,
 			max_attempts: s.max_attempts,
 			context_mode: s.context_mode,
 			signing_fallback: s.signing_fallback,

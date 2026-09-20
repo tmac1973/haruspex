@@ -54,8 +54,6 @@ function shellSafetyRules(stage: 'preflight' | 'unattended'): string[] {
 export function preflightPrompt(
 	planDir: string,
 	decisionsPath: string,
-	verifyCommand: string | null,
-	stepCheckCommand: string | null,
 	contextMode: 'step' | 'phase',
 	webResearch: boolean,
 	interactive: boolean = true
@@ -112,7 +110,7 @@ export function preflightPrompt(
 					'   stall on anything: an unsettled decision becomes a guess made later,',
 					'   in a worse position, by a run that cannot ask either.'
 				]),
-		...verificationContractStep(verifyCommand, stepCheckCommand, contextMode, interactive),
+		...verificationContractStep(contextMode, interactive),
 		`4. Write \`${decisionsPath}\` with fs_write_text: a "# Coding decisions"`,
 		'   heading, then one "## <question>" section per decision with the chosen',
 		'   answer (including defaults you settled). If there were genuinely no open',
@@ -162,14 +160,9 @@ function settleOrAsk(interactive: boolean, ask: string, settle: string): string 
 	return interactive ? ask : settle;
 }
 
-function verificationContractStep(
-	verifyCommand: string | null,
-	stepCheckCommand: string | null,
-	contextMode: 'step' | 'phase',
-	interactive: boolean = true
-): string[] {
+function verificationContractStep(contextMode: 'step' | 'phase', interactive: boolean): string[] {
 	if (contextMode === 'phase') {
-		return phaseContextContract(verifyCommand, interactive);
+		return phaseContextContract(interactive);
 	}
 	return [
 		'3. Settle the TWO commands the runner executes mechanically all night:',
@@ -180,12 +173,7 @@ function verificationContractStep(
 		'     `python -m py_compile`). Near-zero cost, nothing written or maintained.',
 		'   - PHASE VERIFICATION: runs when each phase of the plan completes — NOT',
 		'     per step. The real proof: the test suite if one exists.',
-		stepCheckCommand
-			? `   The user supplied a step check: \`${stepCheckCommand}\`.`
-			: '   The user left the step check blank — settle it yourself.',
-		verifyCommand
-			? `   The user supplied a phase verification command: \`${verifyCommand}\`.`
-			: '   The user left phase verification blank — settle it yourself.',
+		'   Both are yours to settle — there is no configured value to honour.',
 		"   For the phase verification, FIRST check the plan's overview.md for a",
 		`   "## ${VERIFICATION_COMMAND_HEADING}" section — guided planning settles it during`,
 		'   the planning interview. If present, RUN it and adopt it unless it fails.',
@@ -194,9 +182,9 @@ function verificationContractStep(
 		'      requirements.txt, go.mod, Makefile, and any existing test directory.',
 		'      A repo can have SEVERAL; cover every stack found, joining with `&&`',
 		'      so any failure fails the check. One command, one exit code.',
-		'   b. RUN each candidate once with run_command — including any the user',
-		'      supplied. A command you never executed is a guess. If a user-supplied',
-		'      command fails, do NOT silently substitute your own: show what',
+		'   b. RUN each candidate once with run_command. A command you never',
+		'      executed is a guess. If a candidate the plan named fails, do NOT',
+		'      silently substitute your own: show what',
 		settleOrAsk(
 			interactive,
 			'      happened and ask ONE `ask_user_question` offering a corrected\n' +
@@ -242,25 +230,23 @@ function verificationContractStep(
 }
 
 /** The single-command contract for continuous per-phase context runs. */
-function phaseContextContract(verifyCommand: string | null, interactive: boolean): string[] {
+function phaseContextContract(interactive: boolean): string[] {
 	return [
 		'3. Settle the ONE command the runner executes mechanically all night.',
 		'   This run uses continuous per-phase context: the model builds a whole',
 		'   phase, then the runner runs PHASE VERIFICATION — the real proof, the',
 		'   test suite if one exists. There is NO per-step check in this mode; do',
 		'   not ask the user about one and do not record one.',
-		verifyCommand
-			? `   The user supplied a verification command: \`${verifyCommand}\`.`
-			: '   The user left the verification command blank — settle it yourself.',
+		'   It is yours to settle — there is no configured value to honour.',
 		'   FIRST check the plan\'s overview.md for a "## Verification command"',
 		'   section: guided planning settles this during the planning interview,',
 		'   and its choice was confirmed by the user. If present, RUN it; adopt it',
 		'   unless it fails. Only interview the user when the plan has none.',
 		'   a. Detect the stack(s) from what is actually in the working directory,',
 		'      cover every stack found joining with `&&`. One command, one exit code.',
-		'   b. RUN the candidate once with run_command — including one the user',
-		'      supplied. A command you never executed is a guess. If a user-supplied',
-		'      command fails, do NOT silently substitute your own: show what',
+		'   b. RUN the candidate once with run_command. A command you never',
+		'      executed is a guess. If a candidate the plan named fails, do NOT',
+		'      silently substitute your own: show what',
 		settleOrAsk(
 			interactive,
 			'      happened and ask ONE `ask_user_question`.',
