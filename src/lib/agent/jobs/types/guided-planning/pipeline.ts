@@ -112,8 +112,22 @@ export function guidedPlanningToolsets(webResearch: boolean): {
 	};
 }
 
-/** Max verifier→revise rounds before proceeding to approval regardless. */
-const MAX_VERIFY_ROUNDS = 3;
+/**
+ * How many review/revise rounds verification spends before proceeding to
+ * approval regardless.
+ *
+ * Raised from 3 once it was measured what a round actually buys. Three
+ * independent reviews of one untouched plan reported 4, 13 and 9 problems —
+ * the same plan, sampled differently each time — with a small core found by
+ * every pass and a long tail found by one. Each round does remove what it
+ * finds (run 52's rounds 1 and 2 left nothing behind for round 3), so more
+ * rounds mean fewer defects.
+ *
+ * They do NOT mean a clean plan, and nothing downstream may assume otherwise:
+ * a pass reporting zero is a sample that happened to catch nothing, not proof
+ * there is nothing to catch. This is tail-grinding, bounded by patience.
+ */
+const MAX_VERIFY_ROUNDS = 5;
 
 /**
  * Output ceiling for the verifier turn.
@@ -1223,7 +1237,12 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	// it found. `verified` stays false when the stage is skipped, which is a
 	// different thing from a review that came back clean.
 	let verified = false;
-	let blockingFindings: string[] = [];
+	/**
+	 * Everything the last review reported and the run did not fix, blocking and
+	 * advisory alike. Handed to the coding run rather than used to refuse it —
+	 * see `handoff`.
+	 */
+	let openFindings: string[] = [];
 
 	/**
 	 * Create and start the coding run, or explain why not. Returns the sentence
@@ -1238,14 +1257,10 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		if (runMode !== 'unattended_chain') {
 			return `Skipped — run mode is "${RUN_MODE_LABELS[runMode]}"`;
 		}
-		// Defensive: the Editor and the config parser both force verification on
-		// in this mode, so reaching here means something bypassed both.
-		if (!verified) return 'Skipped — the plan was not verified, so nothing gated the handoff';
-		if (blockingFindings.length > 0) {
-			return (
-				`Not started — ${blockingFindings.length} blocking finding(s) an unattended ` +
-				`coding run could not resolve:\n\n${blockingFindings.map((f) => `- ${f}`).join('\n')}`
-			);
+		// The only hard refusal left. "Reviewed and imperfect" and "nothing has
+		// looked at this" are different states, and only the second is unsafe.
+		if (!verified) {
+			return 'Not started — verification did not run, so nothing has checked this plan';
 		}
 
 		const codingJobId = await createJob({
@@ -1273,19 +1288,34 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				plan_dir: outDir,
 				use_git: useGit,
 				web_research: webResearch,
-				...definedOnly(cfg.coding_run)
+				...definedOnly(cfg.coding_run),
+				// Handed over rather than gated on. Verification cannot certify a
+				// plan clean — three reviews of one untouched plan reported 4, 13
+				// and 9 problems — so refusing on a non-empty list would refuse
+				// forever, and refusing on an empty one would trust a sample. The
+				// coding run is told what the reviewer found and settles each
+				// before it writes code, which is strictly more than it knew when
+				// the gate was letting clean-looking plans through.
+				open_findings: openFindings
 			})
 		});
 		if (codingJobId === null) return 'Could not create the coding job — nothing was started';
 
+		// Said on both paths: it describes the job that now exists, which is
+		// true whether or not it also started.
+		const carried = openFindings.length
+			? ` Carried ${openFindings.length} unresolved finding(s) over for its preflight to settle.`
+			: ' The last review found nothing outstanding.';
 		const codingRunId = await deps.startChainedRun(codingJobId);
 		if (codingRunId === null) {
 			return (
 				`Created coding job ${codingJobId}, but it could not be started — ` +
-				`autonomous coding may be unavailable on this platform`
+				`autonomous coding may be unavailable on this platform.${carried}`
 			);
 		}
-		return `Started coding job ${codingJobId} (run ${codingRunId}) on the plan in ${outDir}`;
+		return (
+			`Started coding job ${codingJobId} (run ${codingRunId}) on the plan in ${outDir}.` + carried
+		);
 	};
 
 	try {
@@ -1478,7 +1508,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					// Lead with the counts: the first question on reading this is how
 					// much of it has to be dealt with before the plan is usable.
 					const { blocking, advisory } = classifyFindings(openProblems);
-					blockingFindings = blocking;
+					openFindings = [...blocking, ...advisory];
 					finishStep(
 						VERIFY,
 						`Verification finished with problems still open — ${blocking.length} blocking, ` +

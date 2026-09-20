@@ -39,7 +39,7 @@ export interface GuidedPlanningConfig {
 	plan_output_dir: string | null;
 	/**
 	 * Skip the independent verification stage. It is a fresh-context read of
-	 * every phase file plus up to three revise rounds, which on a local model
+	 * every phase file plus several revise rounds, which on a local model
 	 * is the longest stage of the run — worth skipping when the plan is small
 	 * or you intend to read it yourself. Defaults to running it.
 	 */

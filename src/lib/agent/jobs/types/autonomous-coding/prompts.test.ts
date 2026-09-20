@@ -418,3 +418,58 @@ describe('preflightPrompt — non-interactive variant', () => {
 		expect(stepMute).not.toContain('ask_user_question');
 	});
 });
+
+/**
+ * The chain no longer refuses a plan with open findings, because verification
+ * cannot certify one clean: three independent reviews of a single untouched
+ * plan reported 4, 13 and 9 problems. So the findings come here instead, and
+ * preflight settles them before any code is written.
+ */
+describe('preflightPrompt — findings carried from planning', () => {
+	const args = ['plan/x/', 'plan/x/DECISIONS-coding.md', 'phase', false, false] as const;
+	const FINDINGS = [
+		'(a) phase-11.md: uses SPRITE_FALLBACK, which phase 12 creates. Either move the assertion into phase 12 or list 12 as a dependency.',
+		'(d) phase-15.md: the bot uses `Action::Use`, which does not exist — the model defines `UseConsumable`.'
+	];
+	const withFindings = flat(preflightPrompt(...args, FINDINGS));
+	const without = flat(preflightPrompt(...args, []));
+
+	it('says nothing at all when there are none', () => {
+		expect(without).not.toContain('KNOWN PROBLEMS');
+	});
+
+	it('lists them, numbered, with the count', () => {
+		expect(withFindings).toContain('KNOWN PROBLEMS IN THIS PLAN (2)');
+		expect(withFindings).toContain('1. (a) phase-11.md');
+		expect(withFindings).toContain('2. (d) phase-15.md');
+	});
+
+	it('says to settle them before writing code, not while', () => {
+		expect(withFindings).toContain('Settle every one BEFORE writing code');
+		expect(withFindings).toContain('plan work, not code');
+	});
+
+	it('prefers the reviewer’s resolution, because it saw the whole plan', () => {
+		expect(withFindings).toContain('Where the reviewer names a resolution, take it');
+		expect(withFindings).toContain('It saw the whole plan at once; you will not');
+	});
+
+	it('still tells it to check each one first', () => {
+		// The reviewer reads sixteen files in one pass and can misread one; a
+		// fix for a problem that is not there costs more than the problem.
+		expect(withFindings).toContain('Check each against the plan first');
+		expect(withFindings).toContain('can misread one');
+	});
+
+	it('requires each resolution recorded where the user will find it', () => {
+		expect(withFindings).toContain('plan/x/DECISIONS-coding.md');
+		expect(withFindings).toContain('the only record the user will have');
+	});
+
+	it('collapses a multi-line finding onto one line', () => {
+		// They arrive as bullets wrapped by the verifier; raw newlines would
+		// break the numbered list apart.
+		const wrapped = flat(preflightPrompt(...args, ['(a) phase-01.md: one\n   two\n   three']));
+		expect(wrapped).toContain('1. (a) phase-01.md: one two three');
+	});
+});

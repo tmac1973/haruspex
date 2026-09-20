@@ -36,6 +36,15 @@ export interface AutonomousCodingConfig {
 	 */
 	use_git: boolean | null;
 	/**
+	 * Problems a guided-planning verifier reported and the planning run did not
+	 * fix, carried over so preflight settles them before any code is written.
+	 *
+	 * Empty for a hand-created job, and for a chained one whose last review
+	 * came back clean. Not a gate: a review cannot certify a plan clean, so
+	 * these are the defects that happened to be caught, not all of them.
+	 */
+	open_findings: string[];
+	/**
 	 * Offer web_search and research_url to the preflight interview, so it can
 	 * check versions and APIs past the model's training cutoff. The coding loop
 	 * has them regardless. null = default (true).
@@ -66,7 +75,10 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 				: null,
 		create_branch: parseOptionalBool(raw.create_branch),
 		web_research: parseOptionalBool(raw.web_research),
-		use_git: parseOptionalBool(raw.use_git)
+		use_git: parseOptionalBool(raw.use_git),
+		open_findings: Array.isArray(raw.open_findings)
+			? raw.open_findings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+			: []
 	};
 }
 

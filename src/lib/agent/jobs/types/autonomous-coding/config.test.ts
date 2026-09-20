@@ -84,3 +84,32 @@ describe('use_git', () => {
 		expect(parseAutonomousCodingConfig('{"use_git":true}').use_git).toBe(true);
 	});
 });
+
+describe('open_findings', () => {
+	it('is empty for a hand-created job', () => {
+		expect(parseAutonomousCodingConfig(null).open_findings).toEqual([]);
+		expect(parseAutonomousCodingConfig('{"plan_dir":"plan/x/"}').open_findings).toEqual([]);
+	});
+
+	it('carries what the handoff wrote', () => {
+		const cfg = parseAutonomousCodingConfig(
+			JSON.stringify({
+				open_findings: ['(a) phase-01.md: ordering', '(d) phase-02.md: contradiction']
+			})
+		);
+		expect(cfg.open_findings).toHaveLength(2);
+	});
+
+	it('drops anything that is not a usable string', () => {
+		// A blank entry would become an empty numbered bullet in the preflight
+		// prompt — a problem the model is told to settle, with no problem in it.
+		const cfg = parseAutonomousCodingConfig(
+			JSON.stringify({ open_findings: ['real', '', '   ', 42, null, { a: 1 }] })
+		);
+		expect(cfg.open_findings).toEqual(['real']);
+	});
+
+	it('degrades a non-array to empty rather than throwing', () => {
+		expect(parseAutonomousCodingConfig('{"open_findings":"oops"}').open_findings).toEqual([]);
+	});
+});

@@ -56,7 +56,8 @@ export function preflightPrompt(
 	decisionsPath: string,
 	contextMode: 'step' | 'phase',
 	webResearch: boolean,
-	interactive: boolean = true
+	interactive: boolean = true,
+	openFindings: string[] = []
 ): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
@@ -126,6 +127,7 @@ export function preflightPrompt(
 		// A mute preflight researches to CHECK facts, not to gather options it
 		// would then have to present — interviewResearchRules ends in an
 		// ask_user_question it has no tool for.
+		...openFindingsStep(openFindings, decisionsPath),
 		...(webResearch
 			? interactive
 				? interviewResearchRules('the plan or any answer the user gives')
@@ -133,6 +135,46 @@ export function preflightPrompt(
 			: []),
 		...shellSafetyRules('preflight')
 	].join('\n');
+}
+
+/**
+ * Problems a plan reviewer found and nobody fixed, handed to preflight to
+ * settle before any code is written.
+ *
+ * The reviewer saw all of the plan at once, which preflight does not, so its
+ * diagnosis is worth taking seriously — and it usually names the resolution,
+ * because it was written to. But it read sixteen documents in one pass and can
+ * misread one, so the instruction is to check each against the plan rather
+ * than apply it verbatim.
+ *
+ * This is the whole reason the chained run starts at all. Verification cannot
+ * certify a plan clean — repeated reviews of one untouched plan report
+ * different problems each time — so the choice was never "chain a clean plan
+ * or refuse", it was "hand over what was found, or discover it at 4am".
+ */
+function openFindingsStep(findings: string[], decisionsPath: string): string[] {
+	if (findings.length === 0) return [];
+	return [
+		'',
+		`KNOWN PROBLEMS IN THIS PLAN (${findings.length}):`,
+		'An independent reviewer read the whole plan and reported these. They were',
+		'NOT fixed before this run started. Settle every one BEFORE writing code:',
+		'- Where the reviewer names a resolution, take it unless the plan clearly',
+		'  contradicts it. It saw the whole plan at once; you will not.',
+		'- Where it offers a choice, pick the option that changes the least and',
+		'  matches what the rest of the plan already does.',
+		'- Check each against the plan first. A reviewer reading sixteen files in',
+		'  one pass can misread one, and a "fix" for a problem that is not there',
+		'  costs more than the problem would have.',
+		`- Record each one in \`${decisionsPath}\` under its own "## " heading: what`,
+		'  the problem was, what you chose, and why. This is the only record the',
+		'  user will have of a decision they were not awake for.',
+		'- Fixing these is plan work, not code. Do not start implementing to make',
+		'  one go away.',
+		'',
+		...findings.map((f, i) => `  ${i + 1}. ${f.replace(/\s+/g, ' ').trim()}`),
+		''
+	];
 }
 
 /**

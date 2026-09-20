@@ -1905,10 +1905,11 @@ describe('guided_planning — verification rounds', () => {
 		await tick();
 
 		const calls = mocks.runEphemeralTurn.mock.calls;
-		// Three reviews, but only two revisions: the third review ends the stage
-		// with a reported verdict instead of an unverified rewrite.
-		expect(countStartingWith(calls, 'Review the phase')).toBe(3);
-		expect(countStartingWith(calls, 'A reviewer found problems')).toBe(2);
+		// Five reviews, four revisions: the last review ends the stage with a
+		// reported verdict instead of an unverified rewrite.
+		const reviews = countStartingWith(calls, 'Review the phase');
+		expect(reviews).toBe(5);
+		expect(countStartingWith(calls, 'A reviewer found problems')).toBe(reviews - 1);
 	});
 
 	it('stops once a revision changes nothing, instead of re-reading the same plan', async () => {
@@ -2150,23 +2151,86 @@ describe('guided_planning — handoff', () => {
 		expect(mocks.createJob).toHaveBeenCalledTimes(1);
 	});
 
-	it('refuses on a blocking finding, and names it', async () => {
+	/**
+	 * Findings are carried, not gated on. Three independent reviews of one
+	 * untouched plan reported 4, 13 and 9 problems, so refusing on a non-empty
+	 * list refuses forever and trusting an empty one trusts a sample. The
+	 * coding run is told what was found and settles it in preflight.
+	 */
+	it('chains despite a blocking finding, carrying it to the coding run', async () => {
 		await run(
 			planningJob({ run_mode: 'unattended_chain' }),
 			turnsWithVerdict('- (a) phase-01-one.md: depends on phase 02, written later')
 		);
-		expect(mocks.createJob).not.toHaveBeenCalled();
-		expect(handoffOutput()).toContain('blocking');
-		expect(handoffOutput()).toContain('depends on phase 02');
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.open_findings).toHaveLength(1);
+		expect(cfg.open_findings[0]).toContain('depends on phase 02');
+		expect(handoffOutput()).toContain('1 unresolved finding');
 	});
 
-	it('refuses on an untagged finding — the fail-safe holds end to end', async () => {
+	it('carries an untagged finding too, rather than discarding it', async () => {
+		// It counts as blocking for triage, but blocking no longer means refuse.
 		await run(
 			planningJob({ run_mode: 'unattended_chain' }),
 			turnsWithVerdict('- phase-01-one.md: something is wrong but I did not label it')
 		);
-		expect(mocks.createJob).not.toHaveBeenCalled();
-		expect(handoffOutput()).toContain('blocking');
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.open_findings[0]).toContain('something is wrong');
+	});
+
+	it('carries advisory findings as well as blocking ones', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			turnsWithVerdict(
+				['- (a) phase-01-one.md: ordering problem', '- (c) phase-02-two.md: a big code block'].join(
+					'\n'
+				)
+			)
+		);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.open_findings).toHaveLength(2);
+	});
+
+	/**
+	 * Five, not three. Each round does remove what it finds, and the tail it is
+	 * grinding through is long — so the cap is a patience budget, and a run that
+	 * never comes back clean must spend all of it rather than stopping early.
+	 */
+	it('spends every review round on a plan that never comes back clean', async () => {
+		// The revise turn has to actually rewrite a file: a round that changes
+		// nothing stops the loop on purpose, since the next review would read
+		// the same bytes and reach the same verdict.
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			async (opts: any) => {
+				if (String(opts.userMessage ?? '').startsWith('A reviewer found problems')) {
+					opts.onToolStart?.({
+						id: 'w',
+						name: 'fs_write_text',
+						arguments: { path: `${PLAN_DIR}phase-01-one.md` }
+					});
+					return { finalText: 'revised' };
+				}
+				return turnsWithVerdict('- (a) phase-01-one.md: still depends on phase 02')(opts);
+			}
+		);
+		const reviews = mocks.runEphemeralTurn.mock.calls.filter((c: unknown[]) =>
+			String((c[0] as { userMessage?: string }).userMessage ?? '').startsWith('Review the phase')
+		);
+		expect(reviews).toHaveLength(5);
+	});
+
+	it('says so when the last review found nothing outstanding', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.open_findings).toEqual([]);
+		expect(handoffOutput()).toContain('nothing outstanding');
 	});
 
 	it('reports rather than fails when the coding job cannot be created', async () => {
@@ -2434,7 +2498,8 @@ describe('guided_planning — a crashed verifier does not discard the plan', () 
 
 		// The gate that was written as defensive is now the one that matters.
 		expect(mocks.createJob).not.toHaveBeenCalled();
+		// The one hard refusal left: nothing checked this plan at all.
 		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
-		expect(String(handoff[handoff.length - 1][3])).toContain('not verified');
+		expect(String(handoff[handoff.length - 1][3])).toContain('verification did not run');
 	});
 });
