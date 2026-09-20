@@ -81,3 +81,44 @@ describe('coerceArgsToSchema', () => {
 		expect(coerceArgsToSchema(undefined, args)).toEqual(args);
 	});
 });
+
+/**
+ * Observed in a real guided-planning run: the model emitted `options` as a
+ * JSON string whose array was valid but had a stray fragment of the enclosing
+ * object after it. JSON.parse rejected the whole thing, the string reached the
+ * executor, Array.isArray said no, and the user got a question with nothing to
+ * pick — for an entire interview.
+ */
+describe('coerceArgsToSchema — a valid value with trailing junk', () => {
+	const schema = {
+		properties: {
+			options: { type: 'array' },
+			question: { type: 'string' }
+		}
+	};
+
+	const REAL = String.raw`[{"label": "Strict alternating", "description": "Simplest."}, {"label": "Energy queue", "description": "DCSS style."}], "recommended": true}]`;
+
+	it('recovers the array from the exact payload that broke a run', () => {
+		const out = coerceArgsToSchema(schema, { options: REAL, question: 'How?' });
+		expect(Array.isArray(out.options)).toBe(true);
+		expect((out.options as unknown[]).length).toBe(2);
+		expect((out.options as { label: string }[])[0].label).toBe('Strict alternating');
+	});
+
+	it('is not fooled by a bracket inside a label or description', () => {
+		const withBrackets = String.raw`[{"label": "Array [0] indexing", "description": "a } and a ]"}] trailing`;
+		const out = coerceArgsToSchema(schema, { options: withBrackets });
+		expect((out.options as { label: string }[])[0].label).toBe('Array [0] indexing');
+	});
+
+	it('still parses a well-formed array unchanged', () => {
+		const out = coerceArgsToSchema(schema, { options: '[{"label":"A"},{"label":"B"}]' });
+		expect((out.options as unknown[]).length).toBe(2);
+	});
+
+	it('leaves genuine nonsense alone for the tool to report', () => {
+		const out = coerceArgsToSchema(schema, { options: '[not json at all' });
+		expect(typeof out.options).toBe('string');
+	});
+});

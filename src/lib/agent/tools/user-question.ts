@@ -84,6 +84,29 @@ registerTool({
 			}))
 			.filter((o) => o.label.length > 0);
 
+		// Say so, rather than showing a question with nothing to pick.
+		//
+		// This used to fall through to a free-text-only modal, which looks like
+		// a deliberate open question and is indistinguishable from one. A real
+		// run spent an entire interview that way, because the model emitted
+		// `options` as a malformed JSON string and every call silently lost it.
+		// Erroring costs one round trip and tells the model exactly what to fix.
+		if (options.length === 0) {
+			const got =
+				args.options === undefined
+					? 'nothing'
+					: `a ${Array.isArray(args.options) ? 'list with no usable labels' : typeof args.options}`;
+			return toolResult(
+				toolError(
+					`ask_user_question got ${got} for "options". Pass a real JSON array of ` +
+						`objects, each with a non-empty "label" and optionally a "description" ` +
+						`and "recommended" — not a string containing JSON, and not an empty ` +
+						`list. The user can always type their own answer instead of picking, ` +
+						`so offer the likely choices rather than trying to be exhaustive.`
+				)
+			);
+		}
+
 		// A caller with its own route to a human (a remote chat guest) supplies
 		// one; otherwise the modal in this window is the only route, and without
 		// somebody in front of it the tool fails safe rather than hanging.
