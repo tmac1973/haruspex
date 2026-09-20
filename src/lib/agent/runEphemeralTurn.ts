@@ -129,6 +129,33 @@ export interface EphemeralTurnResult {
 	rawText: string;
 }
 
+/**
+ * Where the turn is, stated for a caller that brought its own system prompt.
+ *
+ * `buildSystemPrompt` says this, but a custom `systemPrompt` REPLACES it
+ * rather than adding to it — so every job pipeline (which all pass their own)
+ * ran without the model ever being told its working directory. It knew the
+ * relative paths its prompt happened to mention and nothing else, which is how
+ * a planning run came to try `fs_list_dir /` and get "path escapes working
+ * directory" back.
+ *
+ * Deliberately just the facts of `resolve_in_workdir`, so a pipeline's own
+ * rules (a narrower write root, "write only inside plan/x/") stay authoritative
+ * and this cannot contradict them.
+ */
+export function workingDirNote(workingDir: string | null): string {
+	if (!workingDir) return '';
+	return [
+		'',
+		'',
+		'WORKING DIRECTORY:',
+		`- You are in \`${workingDir}\`. Every path you give a tool resolves against it.`,
+		'- Use relative paths: `.` is this directory, `src/main.rs` is a file in it.',
+		'- An absolute path works only if it points INSIDE this directory; anything',
+		'  outside it, and any path containing `..`, is refused.'
+	].join('\n');
+}
+
 export async function runEphemeralTurn(
 	options: EphemeralTurnOptions
 ): Promise<EphemeralTurnResult> {
@@ -138,7 +165,10 @@ export async function runEphemeralTurn(
 	// beginning.").
 	const messages: ChatMessage[] = mergeLeadingSystemMessages([
 		options.systemPrompt != null
-			? { role: 'system', content: options.systemPrompt }
+			? {
+					role: 'system',
+					content: options.systemPrompt + workingDirNote(options.workingDir)
+				}
 			: buildSystemPrompt(options.workingDir),
 		...(options.history ?? []),
 		{ role: 'user', content: options.userMessage }

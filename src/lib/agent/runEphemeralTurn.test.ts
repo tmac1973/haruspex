@@ -23,7 +23,7 @@ vi.mock('$lib/markdown', () => ({
 	finalizeStreamText: (raw: string) => ({ content: raw.trim(), citedUrls: [] })
 }));
 
-import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
+import { runEphemeralTurn, workingDirNote } from '$lib/agent/runEphemeralTurn';
 
 beforeEach(() => {
 	mocks.runAgentLoop.mockReset();
@@ -153,5 +153,73 @@ describe('runEphemeralTurn', () => {
 		expect(opts.deepResearch).toBe(true);
 		expect(opts.signal).toBe(ctrl.signal);
 		expect(opts.maxIterations).toBe(25);
+	});
+});
+
+/**
+ * A custom systemPrompt REPLACES buildSystemPrompt, which is the only place
+ * the working directory is stated — so every job pipeline ran without the
+ * model knowing where it was. A real planning run tried `fs_list_dir /` and
+ * got "path escapes working directory" back.
+ */
+describe('workingDirNote', () => {
+	it('states the directory and how paths resolve', () => {
+		const note = workingDirNote('/home/tim/Projects/game');
+		expect(note).toContain('/home/tim/Projects/game');
+		expect(note).toContain('resolves against it');
+		expect(note).toContain('`.` is this directory');
+	});
+
+	it('says what is refused, which is the mistake it exists to prevent', () => {
+		const note = workingDirNote('/repo');
+		// Matches resolve_in_workdir: absolute is allowed only inside, `..` never.
+		expect(note).toContain('only if it points INSIDE');
+		expect(note).toContain('`..`');
+		expect(note).toContain('refused');
+	});
+
+	it('is empty with no working directory, so a dirless turn gains nothing', () => {
+		expect(workingDirNote(null)).toBe('');
+	});
+
+	it('starts with a blank line so it cannot run into the prompt above it', () => {
+		expect(workingDirNote('/repo').startsWith('\n\n')).toBe(true);
+	});
+});
+
+describe('runEphemeralTurn — a custom prompt still learns where it is', () => {
+	it('appends the working directory to a caller-supplied system prompt', async () => {
+		mocks.runAgentLoop.mockImplementationOnce(async (opts: AgentLoopOptions) => {
+			opts.onComplete();
+		});
+
+		await runEphemeralTurn({
+			userMessage: 'write the plan',
+			systemPrompt: 'You are writing ONE file of an approved plan.',
+			workingDir: '/home/tim/Projects/game',
+			contextSize: 8192
+		});
+
+		const sys = captureOptions().messages[0];
+		// The pipeline's own contract is still first and intact...
+		expect(sys.content).toContain('You are writing ONE file of an approved plan.');
+		// ...and the model now knows where it is.
+		expect(sys.content).toContain('/home/tim/Projects/game');
+		expect(sys.content).toContain('WORKING DIRECTORY');
+	});
+
+	it('leaves a custom prompt alone when there is no working directory', async () => {
+		mocks.runAgentLoop.mockImplementationOnce(async (opts: AgentLoopOptions) => {
+			opts.onComplete();
+		});
+
+		await runEphemeralTurn({
+			userMessage: 'x',
+			systemPrompt: 'Just this.',
+			workingDir: null,
+			contextSize: 8192
+		});
+
+		expect(captureOptions().messages[0].content).toBe('Just this.');
 	});
 });
