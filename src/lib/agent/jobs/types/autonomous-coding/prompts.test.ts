@@ -371,3 +371,56 @@ describe('preflightPrompt — web research', () => {
 		}
 	});
 });
+
+/**
+ * A chained run reaches preflight with nobody to interview. The prompt, the
+ * toolset and the turn's `interactive` flag must all say so: pipeline.ts
+ * records a real run that died on "No interactive user is available" because a
+ * retry turn inherited a prompt that said "ask" and a tool to ask with, but
+ * not interactivity.
+ */
+describe('preflightPrompt — non-interactive variant', () => {
+	const args = ['plan/x/', 'plan/x/DECISIONS-coding.md', null, null, 'phase', false] as const;
+	const asking = preflightPrompt(...args, true);
+	const mute = preflightPrompt(...args, false);
+
+	it('defaults to interactive, so existing callers are unchanged', () => {
+		expect(preflightPrompt(...args)).toBe(asking);
+	});
+
+	it('tells an interactive preflight how to ask', () => {
+		expect(asking).toContain('HOW TO ASK THE USER ANYTHING');
+		expect(asking).toContain('ask_user_question');
+	});
+
+	it('never instructs a mute preflight to ask', () => {
+		expect(mute).not.toContain('HOW TO ASK THE USER ANYTHING');
+		expect(mute).not.toContain('ask_user_question');
+		expect(mute).not.toContain('Ask the user');
+	});
+
+	it('tells a mute preflight what to do instead of asking', () => {
+		expect(mute).toContain('NOBODY IS AVAILABLE NOW EITHER');
+		expect(mute).toContain('settle');
+		expect(mute).toContain('record');
+	});
+
+	it('forbids a mute preflight from scaffolding a test framework', () => {
+		// Interactive preflight may propose it and ask; nobody can approve adding
+		// dependencies to a project that may not want them.
+		expect(mute).toContain('not an option');
+		expect(asking).toContain('requires asking the user first');
+	});
+
+	it('still settles the verification command in both variants', () => {
+		// Phase mode settles ONE command; step mode settles two. Both must keep
+		// the contract — muting the interview must not mute the job.
+		for (const p of [asking, mute]) {
+			expect(p).toContain('Settle the ONE command');
+			expect(p).toContain('A command you never executed is a guess');
+		}
+		const stepMute = preflightPrompt('plan/x/', 'd.md', null, null, 'step', false, false);
+		expect(stepMute).toContain('Settle the TWO commands');
+		expect(stepMute).not.toContain('ask_user_question');
+	});
+});

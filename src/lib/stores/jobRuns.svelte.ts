@@ -25,7 +25,7 @@ export interface JobRunSummary {
 	id: number;
 	job_id: number;
 	status: JobRunStatus;
-	trigger: 'manual' | 'scheduled';
+	trigger: 'manual' | 'scheduled' | 'chained';
 	queued_at: number;
 	started_at: number | null;
 	finished_at: number | null;
@@ -121,7 +121,7 @@ export function getJobRun(runId: number): Promise<JobRunWithSteps | null> {
 
 export function createJobRun(
 	jobId: number,
-	trigger: 'manual' | 'scheduled',
+	trigger: 'manual' | 'scheduled' | 'chained',
 	stepPrompts: string[]
 ): Promise<number | null> {
 	return dbQuery<number | null>({

@@ -440,7 +440,15 @@ export function clearCurrentRun(): void {
 	current = null;
 }
 
-export type RunTrigger = 'manual' | 'scheduled';
+/**
+ * How a run was started.
+ *
+ * `chained` is a run another run started — today, a coding run that a
+ * guided-planning run handed off to. It is unattended like `scheduled`, but it
+ * is allowed to start, because the pipeline it reaches has been made
+ * non-interactive for exactly this case.
+ */
+export type RunTrigger = 'manual' | 'scheduled' | 'chained';
 
 export async function enqueue(
 	jobId: number,

@@ -1533,6 +1533,77 @@ describe('jobs runner — autonomous coding', () => {
 		expect(commands.filter((c) => c.trimStart().startsWith('git'))).toEqual([]);
 	});
 
+	/**
+	 * A chained run has nobody to interview. Muteness is enforced by TOOLSET,
+	 * not prompt — the same way every stage after preflight is mute.
+	 */
+	it('offers no question tool to a chained preflight', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		const allowlists = mocks.runEphemeralTurn.mock.calls.map(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => [...(o.toolAllowlist ?? [])]
+		);
+		expect(allowlists.length).toBeGreaterThan(0);
+		for (const tools of allowlists) expect(tools).not.toContain('ask_user_question');
+	});
+
+	it('still offers it to a manual preflight', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'manual');
+		await settle(getCurrentRun);
+
+		// The control: chained must differ from manual, not from nothing.
+		const preflight = mocks.runEphemeralTurn.mock.calls.find(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => o.forceFinalTool === 'submit_preflight'
+		);
+		expect([...(preflight![0].toolAllowlist ?? [])]).toContain('ask_user_question');
+	});
+
+	it('marks a chained preflight turn non-interactive', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		const preflight = mocks.runEphemeralTurn.mock.calls.find(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => o.forceFinalTool === 'submit_preflight'
+		);
+		// Prompt, toolset and flag move together — a tool without interactivity
+		// is what killed a real run.
+		expect(preflight![0].interactive).toBe(false);
+		expect(preflight![0].systemPrompt).not.toContain('ask_user_question');
+	});
+
+	it('still refuses a scheduled run', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'scheduled');
+		await settle(getCurrentRun);
+
+		// A hand-created job fired on a schedule still reaches an interactive
+		// preflight with nobody present. Only `chained` is made safe.
+		expect(getCurrentRun()!.error).toContain('interactive preflight');
+	});
+
 	it('still commits when use_git is left unset', async () => {
 		mocks.getJob.mockResolvedValueOnce(codingJob());
 		const commands = wireGit();

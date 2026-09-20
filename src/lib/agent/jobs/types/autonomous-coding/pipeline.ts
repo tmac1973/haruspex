@@ -105,6 +105,15 @@ export const FINALIZE = 3;
  * web_search / research_url are added when the job's web_research toggle is on
  * (the default) — see withWebResearch.
  */
+/**
+ * Preflight's toolset, minus the question tool when nobody is there to answer.
+ * Muteness is enforced by TOOLSET, not by prompt — the same way every stage
+ * after preflight is mute.
+ */
+function preflightTools(interactive: boolean): string[] {
+	return interactive ? PREFLIGHT_TOOLS : PREFLIGHT_TOOLS.filter((t) => t !== 'ask_user_question');
+}
+
 const PREFLIGHT_TOOLS = [
 	'fs_read_text',
 	'fs_list_dir',
@@ -267,6 +276,12 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 	// Resolved once — the single source of the mode default. Every consumer
 	// (preflight contract, loop branch, command resolution) reads this.
 	const contextMode: 'step' | 'phase' = cfg.context_mode ?? 'phase';
+	// A chained run was started by a guided-planning run that has already
+	// finished — there is nobody to interview. Resolved once here so the
+	// preflight's prompt, its toolset and its turn cannot disagree: a prompt
+	// that says "ask" with no tool, or a tool with no interactivity, is the
+	// failure recorded at ensureFileWritten's `mayAskUser` below.
+	const interactive = ctx.trigger !== 'chained';
 	void markRunStarted(runId, Date.now());
 
 	const startStep = (idx: number) => {
@@ -286,8 +301,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 
 	try {
 		if (ctx.trigger === 'scheduled') {
-			// The preflight is interactive by design — a run with nobody present
-			// would park at the question modal indefinitely.
+			// Still rejected. A hand-created job fired on a schedule reaches an
+			// interactive preflight with nobody present and parks at the question
+			// modal indefinitely. A `chained` run is different in the one way that
+			// matters: its preflight has been made mute, by toolset.
 			throw new Error(
 				'Autonomous coding runs start with an interactive preflight interview — ' +
 					'run this job manually, not on a schedule.'
@@ -314,7 +331,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			cfg.verify_command,
 			cfg.step_check_command,
 			contextMode,
-			webResearch
+			webResearch,
+			interactive
 		);
 		abortIfCancelled();
 		if (!outcome.ready) {
@@ -332,12 +350,13 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				cfg.verify_command,
 				cfg.step_check_command,
 				contextMode,
-				webResearch
+				webResearch,
+				interactive
 			),
-			toolAllowlist: withWebResearch(PREFLIGHT_TOOLS, webResearch),
+			toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 			what: 'decisions file',
 			abortIfCancelled,
-			mayAskUser: true
+			mayAskUser: interactive
 		});
 		finishStep(
 			PREFLIGHT,
@@ -659,18 +678,22 @@ async function runPreflightTurn(
 	verifyCommand: string | null,
 	stepCheckCommand: string | null,
 	contextMode: 'step' | 'phase',
-	webResearch: boolean
+	webResearch: boolean,
+	interactive: boolean
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
 	const turnResult = await ctx.runJobTurn({
-		userMessage:
-			`Run the preflight for the plan in ${planDir}. Interview me about anything ` +
-			`unresolved — after this I will not be available.`,
+		userMessage: interactive
+			? `Run the preflight for the plan in ${planDir}. Interview me about anything ` +
+				`unresolved — after this I will not be available.`
+			: `Run the preflight for the plan in ${planDir}. Nobody is available to ` +
+				`answer questions: settle every open decision yourself from the plan and ` +
+				`the working directory, and record what you chose.`,
 		contextSize: ctx.contextSize(),
 		visionSupported: ctx.visionSupported(),
 		maxIterations: PREFLIGHT_MAX_ITERATIONS,
-		interactive: true,
+		interactive,
 		writeRoot: planDir,
 		systemPrompt: preflightPrompt(
 			planDir,
@@ -678,9 +701,10 @@ async function runPreflightTurn(
 			verifyCommand,
 			stepCheckCommand,
 			contextMode,
-			webResearch
+			webResearch,
+			interactive
 		),
-		toolAllowlist: withWebResearch(PREFLIGHT_TOOLS, webResearch),
+		toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,
 		...base,
 		onToolStart: (call: ResolvedToolCall) => {
