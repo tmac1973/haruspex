@@ -9,9 +9,10 @@ import { classifyFindings, isPlanClean, verifierPrompt } from './pipeline';
  * than reports as missing, and the shape is declared here instead.
  */
 const nodeFs = 'node:fs';
-const { readFileSync, readdirSync } = (await import(nodeFs)) as {
+const { readFileSync, readdirSync, writeFileSync } = (await import(nodeFs)) as {
 	readFileSync: (path: string, encoding: string) => string;
 	readdirSync: (path: string) => string[];
+	writeFileSync: (path: string, data: string) => void;
 };
 declare const process: { env: Record<string, string | undefined> };
 
@@ -59,6 +60,8 @@ interface Attempt {
 	ms: number;
 	completionTokens: number;
 	reasoningTokens: number;
+	/** Why generation stopped. `length` means the answer never arrived. */
+	finishReason: string;
 	verdict: string;
 	blocking: string[];
 	advisory: string[];
@@ -95,6 +98,10 @@ async function askVerifier(model: string, thinking: boolean): Promise<Attempt> {
 	].join('\n');
 
 	const started = Date.now();
+	// Streamed, and not for the progress: a non-streaming request sends no
+	// response headers until generation finishes, and Node's fetch abandons the
+	// connection after 300s of waiting for them. A review of a 69k-token plan
+	// with thinking on takes longer than that.
 	const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -104,7 +111,12 @@ async function askVerifier(model: string, thinking: boolean): Promise<Attempt> {
 				{ role: 'system', content: system },
 				{ role: 'user', content: userMessage }
 			],
-			max_tokens: 32768,
+			// Generous: a review of a 69k-token plan with thinking on spends most
+			// of its budget before the findings start, and an answer that never
+			// arrives is indistinguishable from a plan with no problems.
+			max_tokens: 65536,
+			stream: true,
+			stream_options: { include_usage: true },
 			chat_template_kwargs: { enable_thinking: thinking }
 		})
 	});
@@ -121,19 +133,57 @@ async function askVerifier(model: string, thinking: boolean): Promise<Attempt> {
 		}
 		throw new Error(`${res.status} ${text}`);
 	}
-	const body = (await res.json()) as {
-		choices?: { message?: { content?: string; reasoning_content?: string } }[];
-		usage?: { completion_tokens?: number; reasoning_tokens?: number };
-	};
-	const verdict = body.choices?.[0]?.message?.content ?? '';
+	const stream = res.body;
+	if (!stream) throw new Error('no response body');
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	let buffered = '';
+	let verdict = '';
+	let reasoningChars = 0;
+	let finishReason = '?';
+	let completionTokens = 0;
+	let reasoningTokens = 0;
+
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		buffered += decoder.decode(value, { stream: true });
+		const lines = buffered.split('\n');
+		// Keep the last fragment: an SSE event can be split across chunks.
+		buffered = lines.pop() ?? '';
+		for (const line of lines) {
+			const trimmed = line.trim();
+			if (!trimmed.startsWith('data:')) continue;
+			const payload = trimmed.slice(5).trim();
+			if (payload === '[DONE]') continue;
+			let chunk: {
+				choices?: {
+					delta?: { content?: string; reasoning_content?: string };
+					finish_reason?: string;
+				}[];
+				usage?: { completion_tokens?: number; reasoning_tokens?: number };
+			};
+			try {
+				chunk = JSON.parse(payload);
+			} catch {
+				continue;
+			}
+			const choice = chunk.choices?.[0];
+			verdict += choice?.delta?.content ?? '';
+			reasoningChars += (choice?.delta?.reasoning_content ?? '').length;
+			if (choice?.finish_reason) finishReason = choice.finish_reason;
+			if (chunk.usage?.completion_tokens) completionTokens = chunk.usage.completion_tokens;
+			if (chunk.usage?.reasoning_tokens) reasoningTokens = chunk.usage.reasoning_tokens;
+		}
+	}
+
 	const { blocking, advisory } = classifyFindings(verdict);
 	return {
 		thinking,
+		finishReason,
 		ms: Date.now() - started,
-		completionTokens: body.usage?.completion_tokens ?? 0,
-		reasoningTokens:
-			body.usage?.reasoning_tokens ??
-			Math.round((body.choices?.[0]?.message?.reasoning_content?.length ?? 0) / 4),
+		completionTokens,
+		reasoningTokens: reasoningTokens || Math.round(reasoningChars / 4),
 		verdict,
 		blocking,
 		advisory
@@ -143,10 +193,14 @@ async function askVerifier(model: string, thinking: boolean): Promise<Attempt> {
 function report(label: string, attempts: Attempt[]) {
 	console.log(`\n=== ${label} ===`);
 	for (const [i, a] of attempts.entries()) {
+		const outcome = !a.verdict.trim()
+			? `NO ANSWER (finish_reason=${a.finishReason})`
+			: isPlanClean(a.verdict)
+				? 'PLAN OK'
+				: `${a.blocking.length} blocking, ${a.advisory.length} advisory`;
 		console.log(
 			`  run ${i + 1}: ${(a.ms / 1000).toFixed(1)}s  ${a.completionTokens} tok ` +
-				`(${a.reasoningTokens} reasoning)  ` +
-				`${isPlanClean(a.verdict) ? 'PLAN OK' : `${a.blocking.length} blocking, ${a.advisory.length} advisory`}`
+				`(${a.reasoningTokens} reasoning, finish=${a.finishReason})  ${outcome}`
 		);
 	}
 	const findings = new Set(attempts.flatMap((a) => [...a.blocking, ...a.advisory]));
@@ -192,12 +246,40 @@ describe.skipIf(!PLAN_DIR || !BASE_URL)('verifier finding stability (live)', () 
 					? `${m[1]}|${m[2] ?? ''}|${m[3].toLowerCase().split(/\s+/).slice(0, 8).join(' ')}`
 					: f.slice(0, 80);
 			};
-			const sets = passes.map((a) => new Set([...a.blocking, ...a.advisory].map(key)));
+			// Dump every verdict before any matching happens. Deciding whether two
+			// differently-worded findings are the same defect is a judgement, and
+			// one worth revisiting without paying five minutes a pass to re-run.
+			const out = process.env.HARUSPEX_AB_OUT;
+			if (out) {
+				writeFileSync(
+					out,
+					JSON.stringify(
+						passes.map((a) => ({
+							finishReason: a.finishReason,
+							ms: a.ms,
+							completionTokens: a.completionTokens,
+							blocking: a.blocking,
+							advisory: a.advisory,
+							verdict: a.verdict
+						})),
+						null,
+						2
+					)
+				);
+				console.log(`\nverdicts written to ${out}`);
+			}
+
+			// An empty verdict is not "no problems found" — it is no answer, and
+			// including one would force the overlap to zero by itself.
+			const answered = passes.filter((a) => a.verdict.trim().length > 0);
+			const silent = passes.length - answered.length;
+			if (silent > 0) console.log(`\n${silent} of ${passes.length} passes returned no answer.`);
+			const sets = answered.map((a) => new Set([...a.blocking, ...a.advisory].map(key)));
 			const union = new Set(sets.flatMap((s) => [...s]));
-			const inAll = [...union].filter((k) => sets.every((s) => s.has(k)));
+			const inAll = sets.length > 0 ? [...union].filter((k) => sets.every((s) => s.has(k))) : [];
 
 			console.log(
-				`\ndistinct findings across ${passes.length} passes: ${union.size}` +
+				`\ndistinct findings across ${sets.length} answering passes: ${union.size}` +
 					`\nfound by EVERY pass: ${inAll.length}` +
 					`\nfound by exactly one: ${[...union].filter((k) => sets.filter((s) => s.has(k)).length === 1).length}`
 			);
@@ -208,9 +290,12 @@ describe.skipIf(!PLAN_DIR || !BASE_URL)('verifier finding stability (live)', () 
 					'different contract with the coding run.'
 			);
 
-			expect(passes.every((a) => a.verdict.trim().length > 0)).toBe(true);
+			// Two answering passes is the minimum that can show agreement at all.
+			// Fewer means the run measured nothing, which is worth failing over —
+			// but a pass that answered nothing is reported, not hidden.
+			expect(sets.length).toBeGreaterThanOrEqual(2);
 		},
-		30 * 60 * 1000
+		60 * 60 * 1000
 	);
 });
 
