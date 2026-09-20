@@ -743,7 +743,19 @@ describe('phaseWritePrompt — length', () => {
 	const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false));
 
 	it('gives a concrete target rather than "be concise"', () => {
-		expect(prompt).toContain('150-250 lines');
+		expect(prompt).toContain('12,000 characters');
+	});
+
+	it('budgets characters, not lines', () => {
+		// A line target was tried first and met exactly — every file in a real
+		// run landed in 150-245 lines — while still running to 38 KB, because
+		// the model kept the line count and lengthened the lines.
+		expect(prompt).toContain('not a line count');
+		expect(prompt).toContain('fewer, longer lines does not make it shorter');
+	});
+
+	it('says who pays for the extra characters', () => {
+		expect(prompt).toContain('the verifier and the coding run both read again');
 	});
 
 	it('says what a phase file is for, so the target is followable', () => {

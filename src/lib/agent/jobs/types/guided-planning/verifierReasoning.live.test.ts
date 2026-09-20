@@ -38,13 +38,15 @@ const join = (dir: string, file: string) => `${dir.replace(/\/+$/, '')}/${file}`
  * Skipped unless pointed at a plan and a backend:
  *
  *   HARUSPEX_AB_PLAN=/path/to/plan/<feature>/ \
- *   HARUSPEX_AB_URL=http://compute2:3000 \
+ *   HARUSPEX_AB_URL=http://compute:3000 \
  *   HARUSPEX_AB_MODEL=<id, or omit to take the first the server lists> \
  *   HARUSPEX_AB_RUNS=3 \
  *   npx vitest run verifierReasoning
  */
 const PLAN_DIR = process.env.HARUSPEX_AB_PLAN;
-const BASE_URL = process.env.HARUSPEX_AB_URL ?? 'http://compute2:3000';
+// Required rather than defaulted: which backend is free varies, and a default
+// that silently points at the wrong host wastes a run before it fails.
+const BASE_URL = process.env.HARUSPEX_AB_URL ?? '';
 const RUNS = Number(process.env.HARUSPEX_AB_RUNS ?? '1');
 
 interface Attempt {
@@ -149,7 +151,7 @@ function report(label: string, attempts: Attempt[]) {
 	}
 }
 
-describe.skipIf(!PLAN_DIR)('verifier reasoning A/B (live)', () => {
+describe.skipIf(!PLAN_DIR || !BASE_URL)('verifier reasoning A/B (live)', () => {
 	it(
 		'compares findings and cost with thinking on vs off',
 		async () => {
