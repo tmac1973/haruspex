@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { finalizeStreamText } from '$lib/markdown';
 import {
+	classifyFindings,
 	GUIDED_PLANNING_TOOLS,
 	guidedPlanningToolsets,
 	isPlanClean,
@@ -654,5 +655,80 @@ describe('phaseFileProblem — a git-off phase file is still gated', () => {
 		const problem = phaseFileProblem('plan/x/phase-01-thing.md', body('## Test plan\nRun it.\n'));
 		expect(problem).toContain('Rollback');
 		expect(problem).toContain('truncated');
+	});
+});
+
+/**
+ * Severity exists to answer one question: could an unattended coding run
+ * survive this plan? It cannot resolve a "TBD" — ask_user_question is not in
+ * its toolset — so a deferred decision blocks, while over-specified code in a
+ * plan file is a quality problem the run can work through.
+ */
+describe('classifyFindings', () => {
+	it('sorts the four categories by what an unattended run can survive', () => {
+		const verdict = [
+			'Here are the problems I found:',
+			'- (a) phase-02-api.md: depends on phase 03',
+			'- (b) phase-03-ui.md: step 4 says "decide later"',
+			'- (c) phase-04-engine.md: the update loop block is a full implementation',
+			'- (d) phase-05-io.md: the check after the return can never run',
+			'That is everything.'
+		].join('\n');
+		const { blocking, advisory } = classifyFindings(verdict);
+		expect(blocking).toHaveLength(3);
+		expect(advisory).toHaveLength(1);
+		expect(advisory[0]).toContain('phase-04-engine.md');
+		expect(blocking.join(' ')).toContain('phase-02-api.md');
+		expect(blocking.join(' ')).toContain('phase-03-ui.md');
+		expect(blocking.join(' ')).toContain('phase-05-io.md');
+	});
+
+	it('treats an untagged or unknown-tagged bullet as blocking', () => {
+		// A verdict the runner cannot read must never read as permission to
+		// proceed — the whole gate rests on this.
+		const { blocking, advisory } = classifyFindings(
+			['- phase-01-x.md: something is wrong', '- (z) phase-02-y.md: something else'].join('\n')
+		);
+		expect(blocking).toHaveLength(2);
+		expect(advisory).toHaveLength(0);
+	});
+
+	it('ignores prose, so a model preamble cannot invent findings', () => {
+		const { blocking, advisory } = classifyFindings(
+			[
+				'I reviewed all five phase files against the overview.',
+				'- (c) phase-01-x.md: a long fenced block',
+				'Let me know if you want me to re-check.'
+			].join('\n')
+		);
+		expect(blocking).toHaveLength(0);
+		expect(advisory).toHaveLength(1);
+	});
+
+	it('returns nothing for a clean verdict', () => {
+		expect(classifyFindings('PLAN OK')).toEqual({ blocking: [], advisory: [] });
+	});
+
+	it('accepts asterisk bullets as well as dashes', () => {
+		const { blocking } = classifyFindings('* (a) phase-02-api.md: depends on phase 03');
+		expect(blocking).toHaveLength(1);
+	});
+
+	it('is the case Phase 05 relies on: advisory-only means nothing blocks', () => {
+		const { blocking } = classifyFindings('- (c) phase-01-x.md: a long fenced block');
+		expect(blocking).toHaveLength(0);
+	});
+});
+
+describe('verifierPrompt — findings are tagged', () => {
+	const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md'));
+
+	it('asks for the category letter on every bullet, with an example', () => {
+		expect(prompt).toContain('START EACH BULLET with the letter');
+		expect(prompt).toContain('- (a) phase-02-api.md');
+	});
+
+	it('keeps the PLAN OK contract isPlanClean depends on', () => {
+		expect(prompt).toContain('your ENTIRE reply must be exactly: PLAN OK');
 	});
 });

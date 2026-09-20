@@ -450,9 +450,12 @@ export function verifierPrompt(
 		'',
 		'You write NOTHING to disk. Then respond:',
 		'- If there are NO problems, your ENTIRE reply must be exactly: PLAN OK',
-		'- Otherwise, reply with a short bulleted list — each bullet naming the phase',
-		'  file and the specific ordering / decision / embedded-code /',
-		'  unreachable-step problem to fix.',
+		'- Otherwise, reply with a short bulleted list. START EACH BULLET with the',
+		'  letter of the category it matched, in parentheses, then name the phase',
+		'  file and the specific problem. For example:',
+		'    - (a) phase-02-api.md: depends on phase 03, which is written later',
+		'    - (c) phase-04-engine.md: the "update loop" block is a full',
+		'      implementation — specify the signature and the rules instead',
 		'Report only those four kinds of problem — not style or scope opinions.',
 		...(overviewText
 			? ['', `--- OVERVIEW (${overviewPath}) ---`, overviewText, '--- END OVERVIEW ---']
@@ -617,6 +620,38 @@ export function phaseFileProblem(relPath: string, text: string): string | null {
 	const missing = REQUIRED_PHASE_SECTIONS.filter((s) => !s.re.test(text)).map((s) => s.label);
 	if (missing.length > 0) return `${relPath} is missing ${missing.join(', ')}`;
 	return null;
+}
+
+/**
+ * Split a verifier verdict into findings that must block an unattended run and
+ * findings that merely want attention.
+ *
+ * Severity rides on the four categories the verifier already reports rather
+ * than a taxonomy of its own. (a) ordering, (b) deferred decisions and (d)
+ * contradictory or unreachable steps block; (c) embedded implementation code
+ * is advisory. The deciding question is what an UNATTENDED coding run could
+ * survive: it cannot resolve a "TBD", because `ask_user_question` is not in
+ * its toolset, so it would silently invent the decision. Over-specified code
+ * in a plan file is a quality problem, not a stop.
+ *
+ * Fails safe in two directions. Only lines that are bullets are considered, so
+ * a model's preamble cannot invent findings; and a bullet with no tag, or a
+ * letter outside a-d, counts as BLOCKING — a verdict the runner cannot read
+ * must never read as permission to proceed.
+ */
+export function classifyFindings(verdict: string): { blocking: string[]; advisory: string[] } {
+	if (isPlanClean(verdict)) return { blocking: [], advisory: [] };
+	const blocking: string[] = [];
+	const advisory: string[] = [];
+	for (const raw of verdict.split('\n')) {
+		const line = raw.trim();
+		if (!/^[-*]\s/.test(line)) continue;
+		const text = line.replace(/^[-*]\s+/, '');
+		const tag = /^\(([a-z])\)/i.exec(text)?.[1]?.toLowerCase();
+		if (tag === 'c') advisory.push(text);
+		else blocking.push(text);
+	}
+	return { blocking, advisory };
 }
 
 /**
@@ -1298,13 +1333,18 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			// every run, including one that spent all its rounds and never got a
 			// clean verdict — so the one stage whose whole job is to tell you
 			// whether the plan is sound could not say no.
-			finishStep(
-				VERIFY,
-				clean
-					? 'Plan verified — dependency-ordered, no deferred decisions'
-					: `Verification finished with problems still open — review before ` +
-							`approving:\n\n${openProblems}`
-			);
+			if (clean) {
+				finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
+			} else {
+				// Lead with the counts: the first question on reading this is how
+				// much of it has to be dealt with before the plan is usable.
+				const { blocking, advisory } = classifyFindings(openProblems);
+				finishStep(
+					VERIFY,
+					`Verification finished with problems still open — ${blocking.length} blocking, ` +
+						`${advisory.length} advisory. Review before approving:\n\n${openProblems}`
+				);
+			}
 		}
 
 		// Approval — plan / dependency-map approval checkpoint loop.
