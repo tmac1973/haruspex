@@ -354,7 +354,12 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		// turn burns minutes of inference.
 		abortIfCancelled();
 		const signingFallback = cfg.signing_fallback ?? 'unsigned';
-		await ensureGitBaseline(ctx, signingFallback, cfg.create_branch ?? true);
+		const git: GitPolicy = { enabled: cfg.use_git !== false, fallback: signingFallback };
+		// Skipped wholesale when git is off: ensureGitBaseline would otherwise
+		// `git init` a directory the user never asked to version.
+		if (git.enabled) {
+			await ensureGitBaseline(ctx, signingFallback, cfg.create_branch ?? true);
+		}
 
 		// Stage 1 — Decompose, or resume: a parseable TODO-coding.md on disk IS
 		// the loop state (attempt counts, phases, repair cycles and all), so a
@@ -472,7 +477,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				abortIfCancelled();
 				if (v.passed) {
 					plan = setPhaseVerify(plan, phase.id, 'passed');
-					const c = await commitPhaseOutcome(ctx, phase, true, signingFallback);
+					const c = await commitPhaseOutcome(ctx, phase, true, git);
 					await record(
 						`## Phase ${phase.id} — ${phase.title}: verification PASSED` +
 							`${c.committed ? ' — phase committed' : ''}\n`
@@ -481,7 +486,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 					plan = setPhaseVerify(plan, phase.id, 'blocked');
 					// Commit the unverified work anyway, loudly marked: losing it
 					// would be worse, and the history stays honest.
-					const c = await commitPhaseOutcome(ctx, phase, false, signingFallback);
+					const c = await commitPhaseOutcome(ctx, phase, false, git);
 					await record(
 						`## Phase ${phase.id} — ${phase.title}: verification still failing after ` +
 							`${MAX_PHASE_REPAIR_CYCLES} repair cycle(s) — phase BLOCKED` +
@@ -528,7 +533,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				checklist: toChecklist(plan.items, target.id, maxAttempts)
 			});
 
-			const headBefore = await gitHead(ctx);
+			// Only meaningful to commitStepWork, which ignores it when git is off —
+			// and `git rev-parse HEAD` in a directory that is not a repo is a git
+			// call this run promised not to make.
+			const headBefore = git.enabled ? await gitHead(ctx) : null;
 			const result = await runIterationTurn(
 				ctx,
 				planDir,
@@ -564,13 +572,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				}
 			}
 			if (status === 'done') {
-				const commit = await commitStepWork(
-					ctx,
-					target,
-					plan.items.length,
-					headBefore,
-					signingFallback
-				);
+				const commit = await commitStepWork(ctx, target, plan.items.length, headBefore, git);
 				if (!commit.changed) {
 					// The minimal guard against checking items off on faith.
 					status = 'failed';
@@ -618,7 +620,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			what: 'report',
 			abortIfCancelled
 		});
-		await commitBestEffort(ctx, 'docs: autonomous coding run report', signingFallback);
+		await commitBestEffort(ctx, 'docs: autonomous coding run report', git);
 		finishStep(
 			FINALIZE,
 			(sum.blocked > 0 ? `Done with blockers (${sum.blocked})` : 'Done') + ` — ${reportPath}`
@@ -792,8 +794,11 @@ async function commitPhaseOutcome(
 	ctx: JobRunContext,
 	phase: { id: string; title: string },
 	verified: boolean,
-	fallback: SigningFallback
+	git: GitPolicy
 ): Promise<{ committed: boolean }> {
+	// Before stagePending: that runs `git add -A`, which has nothing to add to
+	// in a directory that is not a repo.
+	if (!git.enabled) return { committed: false };
 	if (!(await stagePending(ctx))) return { committed: false };
 	const marker = verified ? '' : ' [UNVERIFIED — phase verification failed]';
 	// commitTitle: phase.title is model-authored — sanitize before it is
@@ -801,7 +806,7 @@ async function commitPhaseOutcome(
 	const c = await gitCommit(
 		ctx,
 		`feat: ${commitTitle(`Phase ${phase.id} — ${phase.title}`)}${marker}`,
-		fallback
+		git
 	);
 	return { committed: c.committed };
 }
@@ -1252,7 +1257,14 @@ export async function ensureGitBaseline(
 	const unborn = (await gitHead(ctx)) === null;
 	if (dirty || unborn) {
 		await execInWorkdir(ctx, 'git add -A');
-		const c = await gitCommit(ctx, 'chore: pre-ralph baseline', fallback, { allowEmpty: true });
+		const c = await gitCommit(
+			ctx,
+			'chore: pre-ralph baseline',
+			{ enabled: true, fallback },
+			{
+				allowEmpty: true
+			}
+		);
 		if (c.skipped) {
 			// Skip mode + signing already broken at kickoff, while the user is
 			// still present: fail NOW with the fix, not at 3am with no commits.
@@ -1280,6 +1292,17 @@ export async function ensureGitBaseline(
 
 export type SigningFallback = 'unsigned' | 'skip';
 
+/**
+ * Whether this run uses git, and how it handles a signing failure when it does.
+ *
+ * One object rather than a loose boolean threaded beside `fallback`, because
+ * the two always travel together: every function that commits needs both, and
+ * a run with `enabled: false` has no use for a fallback at all. `gitCommit` is
+ * the single choke point every commit path funnels through, so the guard there
+ * covers the step, phase, baseline and report commits alike.
+ */
+export type GitPolicy = { enabled: boolean; fallback: SigningFallback };
+
 /** Heuristic: did a commit fail because the signer refused/expired? */
 function looksLikeSigningFailure(r: ExecResult): boolean {
 	return /gpg|sign|ssh-keygen|agent/i.test(`${r.stderr} ${r.stdout}`);
@@ -1297,9 +1320,11 @@ function looksLikeSigningFailure(r: ExecResult): boolean {
 async function gitCommit(
 	ctx: JobRunContext,
 	message: string,
-	fallback: SigningFallback,
+	git: GitPolicy,
 	opts: { allowEmpty?: boolean } = {}
 ): Promise<{ committed: boolean; unsigned: boolean; skipped: boolean; error?: string }> {
+	if (!git.enabled) return { committed: false, unsigned: false, skipped: false };
+	const { fallback } = git;
 	const flags = opts.allowEmpty ? ' --allow-empty' : '';
 	const first = await execInWorkdir(ctx, `git commit${flags} -m "${message}"`);
 	if (first.exit_code === 0) return { committed: true, unsigned: false, skipped: false };
@@ -1340,8 +1365,13 @@ async function commitStepWork(
 	target: TaskItem,
 	totalItems: number,
 	headBefore: string | null,
-	fallback: SigningFallback
+	git: GitPolicy
 ): Promise<{ changed: boolean; unsigned: boolean; commitSkipped: boolean }> {
+	// Without git there is no diff and no HEAD to compare, so the no-op
+	// detection this function exists for is unavailable. Report `changed: true`
+	// — the caller downgrades a "done" to a failed attempt on `changed: false`,
+	// and inventing that verdict from no evidence would fail real work.
+	if (!git.enabled) return { changed: true, unsigned: false, commitSkipped: false };
 	// stagePending re-checks .gitignore every step, not just at baseline: a run
 	// can INTRODUCE a stack mid-flight (observed: `npm install` at step 12 in a
 	// directory that had no package.json at baseline).
@@ -1355,7 +1385,7 @@ async function commitStepWork(
 		const c = await gitCommit(
 			ctx,
 			`feat: ${commitTitle(target.title)} [ralph ${target.id}/${total}]`,
-			fallback
+			git
 		);
 		if (c.error) {
 			throw new Error(`Step commit failed — is git user.name/user.email configured? ${c.error}`);
@@ -1369,12 +1399,13 @@ async function commitStepWork(
 async function commitBestEffort(
 	ctx: JobRunContext,
 	message: string,
-	fallback: SigningFallback
+	git: GitPolicy
 ): Promise<void> {
+	if (!git.enabled) return;
 	try {
 		await execInWorkdir(ctx, 'git add -A');
 		const staged = (await execInWorkdir(ctx, 'git diff --cached --quiet')).exit_code !== 0;
-		if (staged) await gitCommit(ctx, commitTitle(message), fallback);
+		if (staged) await gitCommit(ctx, commitTitle(message), git);
 	} catch {
 		// The report exists on disk either way; a missing commit is cosmetic.
 	}

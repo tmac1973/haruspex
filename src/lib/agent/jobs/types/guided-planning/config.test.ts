@@ -46,3 +46,18 @@ describe('parseGuidedPlanningConfig', () => {
 		expect(cfg.plan_output_dir).toBeNull();
 	});
 });
+
+describe('use_git', () => {
+	// A plain boolean here, unlike autonomous coding's tri-state: the planning
+	// pipeline has no "unset" behaviour to distinguish — it either writes the
+	// "## Commit" section or it does not.
+	it('defaults to on for every job authored before it existed', () => {
+		expect(parseGuidedPlanningConfig(null).use_git).toBe(true);
+		expect(parseGuidedPlanningConfig('{"initial_description":"x"}').use_git).toBe(true);
+	});
+
+	it('only an explicit false opts out', () => {
+		expect(parseGuidedPlanningConfig('{"use_git":false}').use_git).toBe(false);
+		expect(parseGuidedPlanningConfig('{"use_git":"no"}').use_git).toBe(true);
+	});
+});

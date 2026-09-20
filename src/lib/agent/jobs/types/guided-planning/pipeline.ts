@@ -336,7 +336,8 @@ export function phaseWritePrompt(
 	outDir: string,
 	overviewPath: string,
 	webResearch: boolean,
-	overviewText?: string | null
+	overviewText?: string | null,
+	useGit: boolean = true
 ): string {
 	return [
 		'You are writing ONE file of an approved, dependency-ordered implementation',
@@ -356,7 +357,15 @@ export function phaseWritePrompt(
 		'single phase file named in the instruction, with fs_write_text, using these',
 		'sections: a "# Phase NN — <title>" heading, a "Depends on:" / "Enables:" line,',
 		'then ## Goal, ## Files touched, ## Steps, ## Build gate, ## Test plan,',
-		'## Commit, ## Rollback. Resolve every decision in the text — never "TBD" or',
+		// "## Commit" only when the project uses git — a plan for an unversioned
+		// project must not instruct a coding run to do something it will not do.
+		// "## Rollback" stays either way: it is the last section of the template
+		// and therefore the tail-truncation detector in REQUIRED_PHASE_SECTIONS,
+		// and rollback without git is still real ("delete the files this phase
+		// created").
+		useGit
+			? '## Commit, ## Rollback. Resolve every decision in the text — never "TBD" or'
+			: '## Rollback. Resolve every decision in the text — never "TBD" or',
 		'"decide later".',
 		'',
 		'Steps are IMPLEMENTATION actions only — things that create or change the',
@@ -647,6 +656,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	// Derived once so a turn's tools and its prompt's research rules can't
 	// disagree: every prompt below takes the same flag its toolset was built from.
 	const webResearch = cfg.web_research;
+	// Whether the plan may assume git. Drops "## Commit" from every phase file
+	// when off; "## Rollback" stays (see phaseWritePrompt).
+	const useGit = cfg.use_git;
 	const toolsets = guidedPlanningToolsets(webResearch);
 	// A survey the user asked for ("research the PDF libraries and give me a
 	// choice") is a dozen search and read calls on top of the interview itself.
@@ -974,7 +986,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`ask questions. Write the COMPLETE file to ${relPath} now with fs_write_text ` +
 					`(pass overwrite: true) — the whole document from its "# Phase NN — <title>" ` +
 					`heading through every required section, not a fragment. Then stop.`,
-				phaseWritePrompt(outDir, overviewPath, webResearch, overviewText),
+				phaseWritePrompt(outDir, overviewPath, webResearch, overviewText, useGit),
 				(problem) =>
 					`${relPath} was left malformed by a verification revision and could not be ` +
 					`repaired after ${MAX_WRITE_ATTEMPTS} attempts — ${problem}.`
@@ -1224,7 +1236,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			await turn(
 				PLANNING,
 				writeMsg,
-				phaseWritePrompt(outDir, overviewPath, webResearch, planningOverview),
+				phaseWritePrompt(outDir, overviewPath, webResearch, planningOverview, useGit),
 				30,
 				{ expectsFileOutput: true }
 			);
@@ -1237,7 +1249,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`overwrite: true to replace what's there) — the whole document from its ` +
 					`"# Phase ${phase.nn} — <title>" heading through every required section, not ` +
 					`a fragment or a continuation. Then stop.`,
-				phaseWritePrompt(outDir, overviewPath, webResearch, planningOverview),
+				phaseWritePrompt(outDir, overviewPath, webResearch, planningOverview, useGit),
 				(problem) =>
 					`Phase ${phase.nn} (${phase.relPath}) was still not written correctly after ` +
 					`${MAX_WRITE_ATTEMPTS} attempts — ${problem}. The selected model may be too small ` +

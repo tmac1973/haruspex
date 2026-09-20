@@ -18,6 +18,15 @@ export interface GuidedPlanningConfig {
 	 * Defaults to on.
 	 */
 	web_research: boolean;
+	/**
+	 * Whether the plan may assume git. Off drops the "## Commit" section from
+	 * every phase file, so a plan for an unversioned project never instructs a
+	 * coding run to do something it will not do. "## Rollback" stays in both
+	 * modes: rollback without git is still real ("delete the files this phase
+	 * created"), and it is the last section of the template and therefore the
+	 * tail-truncation detector in REQUIRED_PHASE_SECTIONS. Defaults to on.
+	 */
+	use_git: boolean;
 }
 
 export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningConfig {
@@ -42,6 +51,7 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		// Absent (every job authored before this existed) means verify.
 		skip_verification: raw.skip_verification === true,
 		// Absent means on, for older jobs too; only an explicit false opts out.
-		web_research: raw.web_research !== false
+		web_research: raw.web_research !== false,
+		use_git: raw.use_git !== false
 	};
 }

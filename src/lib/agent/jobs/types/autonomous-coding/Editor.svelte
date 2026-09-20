@@ -317,19 +317,32 @@
 	</select>
 </div>
 
-<div class="field signing">
-	<span class="label">
-		If commit signing becomes unavailable mid-run
-		<Tooltip
-			label="About the signing fallback"
-			text="Commit signing agents (e.g. 1Password) need authorization. The run primes it with the baseline commit right after your preflight interview, but that authorization can expire overnight. Choose “Don't commit” for repos that reject unsigned commits — the loop keeps working and the report notes what went uncommitted."
-		/>
-	</span>
-	<select bind:value={cfg.signing_fallback} aria-label="Signing fallback">
-		<option value="unsigned">Commit unsigned — re-sign before pushing</option>
-		<option value="skip">Don't commit — leave work uncommitted</option>
-	</select>
+<div class="field use-git">
+	<label class="check">
+		<input type="checkbox" bind:checked={cfg.use_git} />
+		<span>Use git</span>
+	</label>
+	<Tooltip
+		label="About using git"
+		text="Off means the run creates no branch, makes no commits and never touches git — for a machine without git installed, or a project you do not want versioned. The work still lands in the working directory and the report is still written; you simply have no per-phase history to roll back to."
+	/>
 </div>
+
+{#if cfg.use_git}
+	<div class="field signing">
+		<span class="label">
+			If commit signing becomes unavailable mid-run
+			<Tooltip
+				label="About the signing fallback"
+				text="Commit signing agents (e.g. 1Password) need authorization. The run primes it with the baseline commit right after your preflight interview, but that authorization can expire overnight. Choose “Don't commit” for repos that reject unsigned commits — the loop keeps working and the report notes what went uncommitted."
+			/>
+		</span>
+		<select bind:value={cfg.signing_fallback} aria-label="Signing fallback">
+			<option value="unsigned">Commit unsigned — re-sign before pushing</option>
+			<option value="skip">Don't commit — leave work uncommitted</option>
+		</select>
+	</div>
+{/if}
 
 <div class="field attempts">
 	<span class="label">
@@ -348,17 +361,19 @@
 	/>
 </div>
 
-<div class="field branch">
-	<label class="check">
-		<input type="checkbox" bind:checked={cfg.create_branch} />
-		<span>Create a working branch for this run</span>
-	</label>
-	<Tooltip
-		label="About the working branch"
-		text="Creates haruspex/autonomous-coding/<timestamp> before any work starts, so the baseline, every step commit and the report land on their own branch instead of your current one. A brand-new repo with no commits stays on its default branch, and a resumed run stays on the branch it already made."
-	/>
-	<span class="hint inline">(recommended)</span>
-</div>
+{#if cfg.use_git}
+	<div class="field branch">
+		<label class="check">
+			<input type="checkbox" bind:checked={cfg.create_branch} />
+			<span>Create a working branch for this run</span>
+		</label>
+		<Tooltip
+			label="About the working branch"
+			text="Creates haruspex/autonomous-coding/<timestamp> before any work starts, so the baseline, every step commit and the report land on their own branch instead of your current one. A brand-new repo with no commits stays on its default branch, and a resumed run stays on the branch it already made."
+		/>
+		<span class="hint inline">(recommended)</span>
+	</div>
+{/if}
 
 <div class="field web-research">
 	<label class="check">

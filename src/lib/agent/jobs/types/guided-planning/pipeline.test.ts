@@ -610,3 +610,49 @@ describe('inlined overview', () => {
 		}
 	});
 });
+
+/**
+ * A plan for a project the user is not versioning must not tell a coding run to
+ * commit. "## Rollback" stays in both modes: it is the last section of the
+ * template and therefore the tail-truncation detector inside
+ * REQUIRED_PHASE_SECTIONS, which `phaseFileProblem` gates every phase write
+ * and every verification revision against — and rollback without git is still
+ * real ("delete the files this phase created").
+ */
+describe('phaseWritePrompt — git-optional sections', () => {
+	const withGit = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false, null, true));
+	const noGit = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false, null, false));
+
+	it('asks for ## Commit only when the project uses git', () => {
+		expect(withGit).toContain('## Commit');
+		expect(noGit).not.toContain('## Commit');
+	});
+
+	it('asks for ## Rollback either way', () => {
+		expect(withGit).toContain('## Rollback');
+		expect(noGit).toContain('## Rollback');
+	});
+
+	it('defaults to git when the flag is omitted, so existing callers are unchanged', () => {
+		expect(flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false))).toContain('## Commit');
+	});
+});
+
+describe('phaseFileProblem — a git-off phase file is still gated', () => {
+	const body = (extra: string) =>
+		`# Phase 01 — Thing\n\n**Depends on:** nothing\n\n## Goal\n${'Detail. '.repeat(60)}\n${extra}`;
+
+	it('accepts a file with no ## Commit section', () => {
+		expect(
+			phaseFileProblem('plan/x/phase-01-thing.md', body('## Rollback\nDelete the files.\n'))
+		).toBeNull();
+	});
+
+	it('still rejects one whose tail is missing', () => {
+		// The whole reason ## Rollback survives git-off: without it this file —
+		// truncated mid-document — would read as acceptable.
+		const problem = phaseFileProblem('plan/x/phase-01-thing.md', body('## Test plan\nRun it.\n'));
+		expect(problem).toContain('Rollback');
+		expect(problem).toContain('truncated');
+	});
+});

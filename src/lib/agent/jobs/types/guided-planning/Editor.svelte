@@ -85,6 +85,19 @@
 
 <div class="toggle-row">
 	<label>
+		<input type="checkbox" bind:checked={cfg.use_git} />
+		<span class="label">
+			Use git
+			<Tooltip
+				label="About using git"
+				text="Off drops the Commit section from every phase file, so a plan for a project you are not versioning never tells a coding run to commit. The Rollback section stays either way — rolling back without git means deleting the files a phase created. Turn this off for a project with no git repository, or one you do not want versioned."
+			/>
+		</span>
+	</label>
+</div>
+
+<div class="toggle-row">
+	<label>
 		<input type="checkbox" bind:checked={cfg.skip_verification} />
 		<span class="label">
 			Skip verification

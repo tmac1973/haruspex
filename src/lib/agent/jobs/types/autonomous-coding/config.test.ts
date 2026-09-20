@@ -67,3 +67,20 @@ describe('parseAutonomousCodingConfig — web_research', () => {
 		expect(parseAutonomousCodingConfig('{"web_research":true}').web_research).toBe(true);
 	});
 });
+
+describe('use_git', () => {
+	// Tri-state like create_branch and web_research in this file: null means
+	// "unset", and the pipeline resolves it with `cfg.use_git !== false`. A
+	// plain boolean here would make "absent" indistinguishable from "off".
+	it('is null when unset, so absent reads as the default rather than as off', () => {
+		expect(parseAutonomousCodingConfig(null).use_git).toBeNull();
+		expect(parseAutonomousCodingConfig('{"plan_dir":"plan/x/"}').use_git).toBeNull();
+		// What the pipeline actually asks of an unset value.
+		expect(parseAutonomousCodingConfig(null).use_git !== false).toBe(true);
+	});
+
+	it('reads an explicit opt-out, and an explicit opt-in', () => {
+		expect(parseAutonomousCodingConfig('{"use_git":false}').use_git).toBe(false);
+		expect(parseAutonomousCodingConfig('{"use_git":true}').use_git).toBe(true);
+	});
+});

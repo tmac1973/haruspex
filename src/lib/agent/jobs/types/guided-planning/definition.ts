@@ -9,6 +9,7 @@ export interface GuidedPlanningEditorState {
 	plan_output_dir: string;
 	skip_verification: boolean;
 	web_research: boolean;
+	use_git: boolean;
 }
 
 /**
@@ -68,7 +69,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		initial_description: '',
 		plan_output_dir: '',
 		skip_verification: false,
-		web_research: true
+		web_research: true,
+		use_git: true
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
@@ -76,7 +78,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			initial_description: c.initial_description ?? '',
 			plan_output_dir: c.plan_output_dir ?? '',
 			skip_verification: c.skip_verification,
-			web_research: c.web_research
+			web_research: c.web_research,
+			use_git: c.use_git
 		};
 	},
 	configToJson: (config) => {
@@ -86,7 +89,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			plan_output_dir: s.plan_output_dir.trim() || undefined,
 			skip_verification: s.skip_verification || undefined,
 			// Sparse like skip_verification: only the non-default value is stored.
-			web_research: s.web_research ? undefined : false
+			web_research: s.web_research ? undefined : false,
+			use_git: s.use_git ? undefined : false
 		});
 	},
 	validate: ({ workingDir, config }) => {

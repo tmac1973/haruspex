@@ -41,6 +41,13 @@ export interface AutonomousCodingConfig {
 	 */
 	create_branch: boolean | null;
 	/**
+	 * Use git at all. Off means no branch, no commits and no signing fallback —
+	 * for a machine without git installed, or a project the user does not want
+	 * versioned. null = default (true), so every job authored before this
+	 * existed keeps committing.
+	 */
+	use_git: boolean | null;
+	/**
 	 * Offer web_search and research_url to the preflight interview, so it can
 	 * check versions and APIs past the model's training cutoff. The coding loop
 	 * has them regardless. null = default (true).
@@ -78,7 +85,8 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 				? raw.signing_fallback
 				: null,
 		create_branch: parseOptionalBool(raw.create_branch),
-		web_research: parseOptionalBool(raw.web_research)
+		web_research: parseOptionalBool(raw.web_research),
+		use_git: parseOptionalBool(raw.use_git)
 	};
 }
 

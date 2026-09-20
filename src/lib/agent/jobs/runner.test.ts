@@ -1507,6 +1507,44 @@ describe('jobs runner — autonomous coding', () => {
 		expect(byTool.filter((t: string) => t === 'submit_iteration_result')).toHaveLength(1);
 		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
 	});
+
+	/**
+	 * The point of the toggle: a machine with no git installed, or a project the
+	 * user does not want versioned. `wireGit` records every run_command_capture,
+	 * so this asserts on what the run actually executed, not on a flag.
+	 */
+	it('issues no git command at all when use_git is off', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			codingJob({
+				type_config: JSON.stringify({
+					plan_dir: 'plan/x/',
+					context_mode: 'step',
+					use_git: false
+				})
+			})
+		);
+		const commands = wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(commands.filter((c) => c.trimStart().startsWith('git'))).toEqual([]);
+	});
+
+	it('still commits when use_git is left unset', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		const commands = wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// The control for the test above: absent must not behave like off.
+		expect(commands.some((c) => c.includes('git commit'))).toBe(true);
+	});
 });
 
 /**
