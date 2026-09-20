@@ -1719,3 +1719,113 @@ describe('jobs runner — run observability', () => {
 		expect(step.thinking).toBeNull();
 	});
 });
+
+/**
+ * The verification stage is the longest part of a guided-planning run — 20 of
+ * run 39's 36 minutes — so what it declines to do matters as much as what it
+ * does. These pin the two places it used to spend a full round for nothing.
+ */
+describe('guided_planning — verification rounds', () => {
+	const DIRTY = '- plan/x/phase-01-schema.md: phase 01 depends on phase 02';
+
+	/**
+	 * Drives a run whose verifier never signs off. `reviseWrites` decides
+	 * whether the revise turn actually rewrites a phase file, which is the
+	 * signal the loop uses to tell "fixed something" from "did nothing".
+	 */
+	function neverCleanTurns(reviseWrites: boolean) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		return async (opts: any) => {
+			if (opts.forceFinalTool === 'submit_plan_outline') {
+				opts.onToolStart?.({
+					id: 'outline',
+					name: 'submit_plan_outline',
+					arguments: { phases: [{ id: '01', title: 'Schema', summary: 'db' }] }
+				});
+				return { finalText: 'outline submitted' };
+			}
+			if (typeof opts.userMessage === 'string' && opts.userMessage.startsWith('Review the phase')) {
+				return { finalText: DIRTY };
+			}
+			if (
+				typeof opts.userMessage === 'string' &&
+				opts.userMessage.startsWith('A reviewer found problems')
+			) {
+				if (reviseWrites) {
+					opts.onToolStart?.({
+						id: 'w',
+						name: 'fs_write_text',
+						arguments: { path: 'plan/x/phase-01-schema.md', content: '# Phase 01' }
+					});
+				}
+				return { finalText: 'revised' };
+			}
+			return { finalText: 'ok' };
+		};
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const countStartingWith = (calls: any[], prefix: string) =>
+		calls.filter(([o]) => typeof o.userMessage === 'string' && o.userMessage.startsWith(prefix))
+			.length;
+
+	function planningJob() {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/'
+			})
+		});
+	}
+
+	it('does not revise on the final round, because nothing would re-read it', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(neverCleanTurns(true));
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const calls = mocks.runEphemeralTurn.mock.calls;
+		// Three reviews, but only two revisions: the third review ends the stage
+		// with a reported verdict instead of an unverified rewrite.
+		expect(countStartingWith(calls, 'Review the phase')).toBe(3);
+		expect(countStartingWith(calls, 'A reviewer found problems')).toBe(2);
+	});
+
+	it('stops once a revision changes nothing, instead of re-reading the same plan', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(neverCleanTurns(false));
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const calls = mocks.runEphemeralTurn.mock.calls;
+		// A revision that wrote no file leaves the plan byte-identical, so the
+		// next review would reach the same verdict from the same bytes.
+		expect(countStartingWith(calls, 'Review the phase')).toBe(1);
+		expect(countStartingWith(calls, 'A reviewer found problems')).toBe(1);
+	});
+
+	it('says the plan is unverified rather than claiming it passed', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(neverCleanTurns(true));
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// Step 3 is Verification. It used to report "Plan verified" even after
+		// spending every round without ever getting a clean verdict.
+		const verify = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 3);
+		expect(verify.length).toBeGreaterThan(0);
+		const output = String(verify[verify.length - 1][3]);
+		expect(output).toContain('problems still open');
+		expect(output).toContain('phase 01 depends on phase 02');
+		expect(output).not.toContain('Plan verified');
+	});
+});

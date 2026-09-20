@@ -269,14 +269,8 @@ describe('planRevisePrompt — carries the same rule into revisions', () => {
 describe('verifierPrompt — embedded code is a reportable problem', () => {
 	const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md'));
 
-	it('adds embedded implementation code as category (d)', () => {
-		expect(prompt).toContain('d. EMBEDDED IMPLEMENTATION CODE');
-	});
-
-	it('keeps the malformed-file short-circuit category-count-agnostic', () => {
-		// It used to enumerate the other categories by letter, which went stale
-		// the moment a fifth was added.
-		expect(prompt).toContain('cannot be checked for the others');
+	it('adds embedded implementation code as category (c)', () => {
+		expect(prompt).toContain('c. EMBEDDED IMPLEMENTATION CODE');
 	});
 
 	it('does not let it fire on commands, layouts, or small data blocks', () => {
@@ -351,9 +345,9 @@ describe('phaseWritePrompt — build gates are commands, not programs', () => {
 describe('verifierPrompt — commands and unreachable steps', () => {
 	const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md'));
 
-	it('counts five categories consistently', () => {
-		expect(prompt).toContain('five kinds of problem');
-		expect(prompt).toContain('Report only those five kinds of problem');
+	it('counts four categories consistently', () => {
+		expect(prompt).toContain('four kinds of problem');
+		expect(prompt).toContain('Report only those four kinds of problem');
 	});
 
 	it('flags a program smuggled into a build-gate command', () => {
@@ -362,7 +356,7 @@ describe('verifierPrompt — commands and unreachable steps', () => {
 	});
 
 	it('adds the unreachable-step category with a worked example', () => {
-		expect(prompt).toContain('e. CONTRADICTORY OR UNREACHABLE STEP');
+		expect(prompt).toContain('d. CONTRADICTORY OR UNREACHABLE STEP');
 		expect(prompt).toContain('an action placed after a "Return"/"stop"');
 		expect(prompt).toContain('the check is dead');
 	});
@@ -545,6 +539,74 @@ describe('web research', () => {
 			verifierPrompt('plan/x/', 'plan/x/overview.md')
 		]) {
 			expect(prompt).not.toContain('WEB RESEARCH');
+		}
+	});
+});
+
+/**
+ * Truncation, a missing "# Phase NN" heading and missing sections are decided
+ * by `phaseFileProblem`, which gates every phase write and every verification
+ * revision. The verifier used to be asked for them too — a reasoning model
+ * re-deriving a guarantee the runner already enforces, plus a paragraph of
+ * prompt telling it how to recover from finding one.
+ */
+describe('verifierPrompt — malformed files are the runner’s job, not the model’s', () => {
+	const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md'));
+
+	it('does not ask for malformed files', () => {
+		expect(prompt).not.toContain('MALFORMED');
+		expect(prompt).not.toContain('starts partway');
+	});
+
+	it('drops the recovery paragraph that only a malformed finding needed', () => {
+		expect(prompt).not.toContain('cannot be checked for the others');
+	});
+
+	it('keeps the four categories it is still the only judge of', () => {
+		expect(prompt).toContain('a. ORDERING');
+		expect(prompt).toContain('b. DEFERRED DECISIONS');
+		expect(prompt).toContain('c. EMBEDDED IMPLEMENTATION CODE');
+		expect(prompt).toContain('d. CONTRADICTORY OR UNREACHABLE STEP');
+	});
+});
+
+/**
+ * The runner has already read the overview for its own gates, so making the
+ * model fetch it spends a tool round trip to put the same bytes into the same
+ * context. Inlining costs the same prompt tokens and saves the round trip.
+ */
+describe('inlined overview', () => {
+	const OVERVIEW = '# Overview\n\nBuild a thing.';
+
+	it('gives the verifier the text and tells it not to read from disk', () => {
+		const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md', OVERVIEW));
+		expect(prompt).toContain('do NOT read it from disk');
+		expect(prompt).toContain('--- OVERVIEW (plan/x/overview.md) ---');
+		expect(prompt).toContain('Build a thing.');
+		// It must still fetch the phase files — those are the artifacts under review.
+		expect(prompt).toContain('read every phase-NN-*.md file in it');
+	});
+
+	it('gives the phase writer the text and tells it not to read from disk', () => {
+		const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false, OVERVIEW));
+		expect(prompt).toContain('do NOT read it from disk');
+		expect(prompt).toContain('--- OVERVIEW (plan/x/overview.md) ---');
+		expect(prompt).toContain('Build a thing.');
+		// Earlier phase files are still fetched — only the overview is inlined.
+		expect(prompt).toContain('Read any earlier phase files');
+	});
+
+	it('falls back to reading from disk when the text is unavailable', () => {
+		// No sandbox root means the runner cannot read it either, so the model
+		// must be told to — the alternative is a prompt that references an
+		// overview it was never given.
+		for (const prompt of [
+			flat(verifierPrompt('plan/x/', 'plan/x/overview.md', null)),
+			flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false, null))
+		]) {
+			expect(prompt).toContain('Read the overview at `plan/x/overview.md`');
+			expect(prompt).not.toContain('--- OVERVIEW');
+			expect(prompt).not.toContain('do NOT read it from disk');
 		}
 	});
 });
