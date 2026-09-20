@@ -94,6 +94,7 @@
 	<select bind:value={cfg.run_mode} aria-label="Run mode">
 		<option value="attended">Attended — stop at every checkpoint</option>
 		<option value="unattended_plan">Unattended plan — skip the final approval</option>
+		<option value="unattended_chain">Unattended plan + code — start a coding run too</option>
 	</select>
 </div>
 
@@ -112,7 +113,11 @@
 
 <div class="toggle-row">
 	<label>
-		<input type="checkbox" bind:checked={cfg.skip_verification} />
+		<input
+			type="checkbox"
+			bind:checked={cfg.skip_verification}
+			disabled={cfg.run_mode === 'unattended_chain'}
+		/>
 		<span class="label">
 			Skip verification
 			<Tooltip
@@ -121,6 +126,9 @@
 			/>
 		</span>
 	</label>
+	{#if cfg.run_mode === 'unattended_chain'}
+		<p class="hint">Required in this mode — it decides whether the coding run may start.</p>
+	{/if}
 </div>
 
 <style>
@@ -132,6 +140,12 @@
 
 	.field.run-mode select {
 		width: 100%;
+	}
+
+	.hint {
+		margin: 0.15rem 0 0 1.6rem;
+		font-size: 0.85em;
+		opacity: 0.7;
 	}
 
 	.toggle-row label {

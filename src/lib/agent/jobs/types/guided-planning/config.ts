@@ -11,14 +11,19 @@
  *
  * Phase 05 widens this with `unattended_chain`.
  */
-export type GuidedPlanningRunMode = 'attended' | 'unattended_plan';
+export type GuidedPlanningRunMode = 'attended' | 'unattended_plan' | 'unattended_chain';
 
-const RUN_MODES: readonly GuidedPlanningRunMode[] = ['attended', 'unattended_plan'];
+const RUN_MODES: readonly GuidedPlanningRunMode[] = [
+	'attended',
+	'unattended_plan',
+	'unattended_chain'
+];
 
 /** What the run view and the Editor call each mode. */
 export const RUN_MODE_LABELS: Record<GuidedPlanningRunMode, string> = {
 	attended: 'Attended',
-	unattended_plan: 'Unattended plan'
+	unattended_plan: 'Unattended plan',
+	unattended_chain: 'Unattended plan + code'
 };
 
 export interface GuidedPlanningConfig {
@@ -66,6 +71,10 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 			// Malformed config behaves like no config.
 		}
 	}
+	const mode: GuidedPlanningRunMode = RUN_MODES.includes(raw.run_mode as GuidedPlanningRunMode)
+		? (raw.run_mode as GuidedPlanningRunMode)
+		: 'attended';
+	const skipVerification = raw.skip_verification === true;
 	return {
 		initial_description:
 			typeof raw.initial_description === 'string' && raw.initial_description.length > 0
@@ -75,13 +84,14 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 			typeof raw.plan_output_dir === 'string' && raw.plan_output_dir.length > 0
 				? raw.plan_output_dir
 				: null,
-		// Absent (every job authored before this existed) means verify.
-		skip_verification: raw.skip_verification === true,
 		// Absent means on, for older jobs too; only an explicit false opts out.
 		web_research: raw.web_research !== false,
 		use_git: raw.use_git !== false,
-		run_mode: RUN_MODES.includes(raw.run_mode as GuidedPlanningRunMode)
-			? (raw.run_mode as GuidedPlanningRunMode)
-			: 'attended'
+		run_mode: mode,
+		// Absent (every job authored before this existed) means verify. Forced
+		// off for unattended_chain HERE, not only in the Editor: the severity
+		// gate is the one thing standing between a bad plan and hours of
+		// unwatched code, and a hand-edited type_config must not remove it.
+		skip_verification: mode === 'unattended_chain' ? false : skipVerification
 	};
 }

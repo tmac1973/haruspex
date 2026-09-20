@@ -106,7 +106,8 @@ describe('registration barrel', () => {
 			'Outline',
 			'Planning',
 			'Verification',
-			'Approval'
+			'Approval',
+			'Handoff'
 		]);
 		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
 

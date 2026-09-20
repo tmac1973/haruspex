@@ -8,6 +8,8 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { createJob } from '$lib/stores/jobs.svelte';
+import { enqueue } from '$lib/agent/jobs/runner.svelte';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '$lib/agent/tools/planning';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
@@ -709,6 +711,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	const PLANNING = 2;
 	const VERIFY = 3;
 	const APPROVAL = 4;
+	const HANDOFF = 5;
 
 	const startStep = (idx: number) => {
 		const startedAt = Date.now();
@@ -1153,6 +1156,71 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		);
 	};
 
+	// What the handoff needs to know: whether a review happened at all, and what
+	// it found. `verified` stays false when the stage is skipped, which is a
+	// different thing from a review that came back clean.
+	let verified = false;
+	let blockingFindings: string[] = [];
+
+	/**
+	 * Create and start the coding run, or explain why not. Returns the sentence
+	 * the Handoff stage finishes with.
+	 *
+	 * Never throws: a run that has already produced a good plan must not be
+	 * recorded as failed over a handoff it could not complete. Both `createJob`
+	 * and `enqueue` report failure by returning null rather than throwing, so
+	 * each is reported rather than propagated.
+	 */
+	const handoff = async (): Promise<string> => {
+		if (runMode !== 'unattended_chain') {
+			return `Skipped — run mode is "${RUN_MODE_LABELS[runMode]}"`;
+		}
+		// Defensive: the Editor and the config parser both force verification on
+		// in this mode, so reaching here means something bypassed both.
+		if (!verified) return 'Skipped — the plan was not verified, so nothing gated the handoff';
+		if (blockingFindings.length > 0) {
+			return (
+				`Not started — ${blockingFindings.length} blocking finding(s) an unattended ` +
+				`coding run could not resolve:\n\n${blockingFindings.map((f) => `- ${f}`).join('\n')}`
+			);
+		}
+
+		const codingJobId = await createJob({
+			name: `${job.name} — coding`,
+			description: `Started automatically by guided-planning run ${runId} from the plan in ${outDir}.`,
+			working_dir: job.working_dir,
+			auto_approve_tools: true,
+			schedule_kind: 'manual',
+			schedule_config: null,
+			next_due_at: null,
+			job_type: 'autonomous_coding',
+			// Inherited so the code is built on what the plan was built on — a
+			// chained run has no chance to be corrected before it executes.
+			model_remote_base_url: job.model_remote_base_url,
+			model_remote_api_key: job.model_remote_api_key,
+			model_remote_api_key_id: job.model_remote_api_key_id,
+			model_remote_model_id: job.model_remote_model_id,
+			model_remote_context_size: job.model_remote_context_size,
+			model_remote_vision_supported: job.model_remote_vision_supported,
+			model_advanced: job.model_advanced,
+			type_config: JSON.stringify({
+				plan_dir: outDir,
+				use_git: useGit,
+				web_research: webResearch
+			})
+		});
+		if (codingJobId === null) return 'Could not create the coding job — nothing was started';
+
+		const codingRunId = await enqueue(codingJobId, 'chained');
+		if (codingRunId === null) {
+			return (
+				`Created coding job ${codingJobId}, but it could not be started — ` +
+				`autonomous coding may be unavailable on this platform`
+			);
+		}
+		return `Started coding job ${codingJobId} (run ${codingRunId}) on the plan in ${outDir}`;
+	};
+
 	try {
 		// Stage 1 — Overview: interview + write, then the review checkpoint loop.
 		startStep(OVERVIEW);
@@ -1333,12 +1401,14 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			// every run, including one that spent all its rounds and never got a
 			// clean verdict — so the one stage whose whole job is to tell you
 			// whether the plan is sound could not say no.
+			verified = true;
 			if (clean) {
 				finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
 			} else {
 				// Lead with the counts: the first question on reading this is how
 				// much of it has to be dealt with before the plan is usable.
 				const { blocking, advisory } = classifyFindings(openProblems);
+				blockingFindings = blocking;
 				finishStep(
 					VERIFY,
 					`Verification finished with problems still open — ${blocking.length} blocking, ` +
@@ -1394,6 +1464,14 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			}
 			finishStep(APPROVAL, `Plan approved → ${outDir}`);
 		}
+
+		// Handoff — start the coding run, or say why not.
+		//
+		// Runs in every mode and never prompts. The morning's first question is
+		// "did it chain, and if not why not", and the run timeline should answer
+		// it without anyone opening a log.
+		startStep(HANDOFF);
+		finishStep(HANDOFF, await handoff());
 
 		deps.finalizeRun('succeeded', null);
 	} catch (e) {

@@ -82,3 +82,23 @@ describe('run_mode', () => {
 		}
 	});
 });
+
+describe('unattended_chain requires verification', () => {
+	it('forces skip_verification off, whatever the config says', () => {
+		// Enforced in the parser, not only the Editor: the severity gate is the
+		// one thing between a bad plan and hours of unwatched code, and a
+		// hand-edited type_config must not be able to remove it.
+		const cfg = parseGuidedPlanningConfig(
+			'{"run_mode":"unattended_chain","skip_verification":true}'
+		);
+		expect(cfg.run_mode).toBe('unattended_chain');
+		expect(cfg.skip_verification).toBe(false);
+	});
+
+	it('leaves the toggle alone in the other modes', () => {
+		for (const mode of ['attended', 'unattended_plan']) {
+			const cfg = parseGuidedPlanningConfig(`{"run_mode":"${mode}","skip_verification":true}`);
+			expect(cfg.skip_verification).toBe(true);
+		}
+	});
+});

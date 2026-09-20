@@ -5,6 +5,7 @@ import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
 const mocks = vi.hoisted(() => ({
 	runEphemeralTurn: vi.fn(),
 	getJob: vi.fn(),
+	createJob: vi.fn(),
 	createJobRun: vi.fn(),
 	markRunStarted: vi.fn(),
 	markRunFinished: vi.fn(),
@@ -29,7 +30,8 @@ vi.mock('$lib/stores/userQuestion.svelte', () => ({
 }));
 
 vi.mock('$lib/stores/jobs.svelte', () => ({
-	getJob: mocks.getJob
+	getJob: mocks.getJob,
+	createJob: mocks.createJob
 }));
 
 vi.mock('$lib/stores/jobRuns.svelte', () => ({
@@ -148,6 +150,7 @@ function phaseWriteMessages(calls: any[]): string[] {
 beforeEach(() => {
 	mocks.runEphemeralTurn.mockReset();
 	mocks.getJob.mockReset();
+	mocks.createJob.mockReset().mockResolvedValue(900);
 	mocks.createJobRun.mockReset();
 	mocks.markRunStarted.mockReset().mockResolvedValue(undefined);
 	mocks.markRunFinished.mockReset().mockResolvedValue(undefined);
@@ -2021,5 +2024,175 @@ describe('guided_planning — run mode', () => {
 		// Same precedent as a skipped verification: the stage runs and reports,
 		// rather than renumbering the stages around it.
 		expect(mocks.markRunStepStarted.mock.calls.some((c: unknown[]) => c[1] === 4)).toBe(true);
+	});
+});
+
+/**
+ * The handoff. Runs in every mode, never prompts, and either starts the coding
+ * run or records why it did not — the morning's first question answered by the
+ * run timeline rather than a log.
+ */
+describe('guided_planning — handoff', () => {
+	const PLAN_DIR = 'plan/x/';
+
+	function planningJob(cfg: Record<string, unknown> = {}) {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: PLAN_DIR,
+				...cfg
+			})
+		});
+	}
+
+	/** Guided turns whose verifier returns `verdict` instead of PLAN OK. */
+	function turnsWithVerdict(verdict: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		return async (opts: any) => {
+			if (opts.forceFinalTool === 'submit_plan_outline') {
+				opts.onToolStart?.({
+					id: 'o',
+					name: 'submit_plan_outline',
+					arguments: { phases: [{ id: '01', title: 'One', summary: 'first' }] }
+				});
+				return { finalText: 'outline submitted' };
+			}
+			if (typeof opts.userMessage === 'string' && opts.userMessage.startsWith('Review the phase')) {
+				return { finalText: verdict };
+			}
+			return { finalText: 'ok' };
+		};
+	}
+
+	const handoffOutput = () => {
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
+		return String(calls[calls.length - 1]?.[3] ?? '');
+	};
+
+	async function run(job: JobWithSteps, turns: unknown) {
+		mocks.getJob.mockResolvedValueOnce(job);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		mocks.runEphemeralTurn.mockImplementation(turns as any);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+	}
+
+	it('does nothing but report in attended mode', async () => {
+		await run(planningJob(), guidedTurns([{ id: '01', title: 'One', summary: 'first' }]));
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(handoffOutput()).toContain('Attended');
+	});
+
+	it('does nothing but report in unattended plan mode', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_plan' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(handoffOutput()).toContain('Unattended plan');
+	});
+
+	it('creates a coding job on a clean verdict, pointed at the plan', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.job_type).toBe('autonomous_coding');
+		expect(JSON.parse(input.type_config).plan_dir).toBe(PLAN_DIR);
+		// The link reads in both directions: the coding job names where it came
+		// from, and the handoff output names what it started.
+		expect(input.description).toContain('guided-planning run');
+		expect(handoffOutput()).toContain('900');
+	});
+
+	it('starts that job with the chained trigger', async () => {
+		// getJob has to answer for the created job too, or enqueue stops at
+		// "job not found" and the trigger never reaches createJobRun.
+		const planning = planningJob({ run_mode: 'unattended_chain' });
+		const coding = makeJob({
+			id: 900,
+			job_type: 'autonomous_coding',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({ plan_dir: PLAN_DIR })
+		});
+		mocks.getJob.mockImplementation(async (id: number) => (id === 900 ? coding : planning));
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// `chained` is what makes the coding preflight mute; a manual or
+		// scheduled trigger here would either interview nobody or be refused.
+		const chained = mocks.createJobRun.mock.calls.filter((c: unknown[]) => c[1] === 'chained');
+		expect(chained).toHaveLength(1);
+		expect(chained[0][0]).toBe(900);
+	});
+
+	it('starts one when the only findings are advisory', async () => {
+		// (c) embedded code is a quality problem an unattended run works through.
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			turnsWithVerdict('- (c) phase-01-one.md: the update loop block is a full implementation')
+		);
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+	});
+
+	it('refuses on a blocking finding, and names it', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			turnsWithVerdict('- (a) phase-01-one.md: depends on phase 02, written later')
+		);
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(handoffOutput()).toContain('blocking');
+		expect(handoffOutput()).toContain('depends on phase 02');
+	});
+
+	it('refuses on an untagged finding — the fail-safe holds end to end', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			turnsWithVerdict('- phase-01-one.md: something is wrong but I did not label it')
+		);
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(handoffOutput()).toContain('blocking');
+	});
+
+	it('reports rather than fails when the coding job cannot be created', async () => {
+		mocks.createJob.mockResolvedValue(null);
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		// A run that produced a good plan must not be recorded as failed over a
+		// handoff it could not complete.
+		expect(handoffOutput()).toContain('Could not create the coding job');
+	});
+
+	it('inherits the git and web-research settings', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain', use_git: false, web_research: false }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.use_git).toBe(false);
+		expect(cfg.web_research).toBe(false);
+	});
+
+	it('asks the user nothing after the outline is approved', async () => {
+		// The headline promise of the whole feature, as one assertion.
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		expect(mocks.askUserQuestion.mock.calls.length).toBe(2);
 	});
 });

@@ -42,6 +42,11 @@ const GUIDED_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 	{
 		title: 'Approval',
 		description: 'Waiting for you to review the phase files and approve — or request changes.'
+	},
+	{
+		title: 'Handoff',
+		description:
+			'Starting an autonomous coding run on the finished plan, or recording why it did not — the run mode, or verification findings an unattended run could not survive.'
 	}
 ];
 
