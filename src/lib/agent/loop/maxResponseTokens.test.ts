@@ -44,7 +44,7 @@ describe('response token ceiling resolution', () => {
 	});
 
 	it('uses the larger file-write ceiling when the turn must produce a file', () => {
-		expect(ctxFor({ expectsFileOutput: true }).maxResponseTokens).toBe(32768);
+		expect(ctxFor({ expectsFileOutput: true }).maxResponseTokens).toBe(65536);
 	});
 
 	it('lets an explicit per-call value win over both settings', () => {

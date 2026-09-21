@@ -67,3 +67,49 @@ describe('parseAutonomousCodingConfig — web_research', () => {
 		expect(parseAutonomousCodingConfig('{"web_research":true}').web_research).toBe(true);
 	});
 });
+
+describe('use_git', () => {
+	// Tri-state like create_branch and web_research in this file: null means
+	// "unset", and the pipeline resolves it with `cfg.use_git !== false`. A
+	// plain boolean here would make "absent" indistinguishable from "off".
+	it('is null when unset, so absent reads as the default rather than as off', () => {
+		expect(parseAutonomousCodingConfig(null).use_git).toBeNull();
+		expect(parseAutonomousCodingConfig('{"plan_dir":"plan/x/"}').use_git).toBeNull();
+		// What the pipeline actually asks of an unset value.
+		expect(parseAutonomousCodingConfig(null).use_git !== false).toBe(true);
+	});
+
+	it('reads an explicit opt-out, and an explicit opt-in', () => {
+		expect(parseAutonomousCodingConfig('{"use_git":false}').use_git).toBe(false);
+		expect(parseAutonomousCodingConfig('{"use_git":true}').use_git).toBe(true);
+	});
+});
+
+describe('open_findings', () => {
+	it('is empty for a hand-created job', () => {
+		expect(parseAutonomousCodingConfig(null).open_findings).toEqual([]);
+		expect(parseAutonomousCodingConfig('{"plan_dir":"plan/x/"}').open_findings).toEqual([]);
+	});
+
+	it('carries what the handoff wrote', () => {
+		const cfg = parseAutonomousCodingConfig(
+			JSON.stringify({
+				open_findings: ['(a) phase-01.md: ordering', '(d) phase-02.md: contradiction']
+			})
+		);
+		expect(cfg.open_findings).toHaveLength(2);
+	});
+
+	it('drops anything that is not a usable string', () => {
+		// A blank entry would become an empty numbered bullet in the preflight
+		// prompt — a problem the model is told to settle, with no problem in it.
+		const cfg = parseAutonomousCodingConfig(
+			JSON.stringify({ open_findings: ['real', '', '   ', 42, null, { a: 1 }] })
+		);
+		expect(cfg.open_findings).toEqual(['real']);
+	});
+
+	it('degrades a non-array to empty rather than throwing', () => {
+		expect(parseAutonomousCodingConfig('{"open_findings":"oops"}').open_findings).toEqual([]);
+	});
+});

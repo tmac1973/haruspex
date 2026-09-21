@@ -5,6 +5,7 @@ import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
 const mocks = vi.hoisted(() => ({
 	runEphemeralTurn: vi.fn(),
 	getJob: vi.fn(),
+	createJob: vi.fn(),
 	createJobRun: vi.fn(),
 	markRunStarted: vi.fn(),
 	markRunFinished: vi.fn(),
@@ -29,7 +30,8 @@ vi.mock('$lib/stores/userQuestion.svelte', () => ({
 }));
 
 vi.mock('$lib/stores/jobs.svelte', () => ({
-	getJob: mocks.getJob
+	getJob: mocks.getJob,
+	createJob: mocks.createJob
 }));
 
 vi.mock('$lib/stores/jobRuns.svelte', () => ({
@@ -148,6 +150,7 @@ function phaseWriteMessages(calls: any[]): string[] {
 beforeEach(() => {
 	mocks.runEphemeralTurn.mockReset();
 	mocks.getJob.mockReset();
+	mocks.createJob.mockReset().mockResolvedValue(900);
 	mocks.createJobRun.mockReset();
 	mocks.markRunStarted.mockReset().mockResolvedValue(undefined);
 	mocks.markRunFinished.mockReset().mockResolvedValue(undefined);
@@ -1507,6 +1510,115 @@ describe('jobs runner — autonomous coding', () => {
 		expect(byTool.filter((t: string) => t === 'submit_iteration_result')).toHaveLength(1);
 		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
 	});
+
+	/**
+	 * The point of the toggle: a machine with no git installed, or a project the
+	 * user does not want versioned. `wireGit` records every run_command_capture,
+	 * so this asserts on what the run actually executed, not on a flag.
+	 */
+	it('issues no git command at all when use_git is off', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			codingJob({
+				type_config: JSON.stringify({
+					plan_dir: 'plan/x/',
+					context_mode: 'step',
+					use_git: false
+				})
+			})
+		);
+		const commands = wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(commands.filter((c) => c.trimStart().startsWith('git'))).toEqual([]);
+	});
+
+	/**
+	 * A chained run has nobody to interview. Muteness is enforced by TOOLSET,
+	 * not prompt — the same way every stage after preflight is mute.
+	 */
+	it('offers no question tool to a chained preflight', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		const allowlists = mocks.runEphemeralTurn.mock.calls.map(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => [...(o.toolAllowlist ?? [])]
+		);
+		expect(allowlists.length).toBeGreaterThan(0);
+		for (const tools of allowlists) expect(tools).not.toContain('ask_user_question');
+	});
+
+	it('still offers it to a manual preflight', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'manual');
+		await settle(getCurrentRun);
+
+		// The control: chained must differ from manual, not from nothing.
+		const preflight = mocks.runEphemeralTurn.mock.calls.find(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => o.forceFinalTool === 'submit_preflight'
+		);
+		expect([...(preflight![0].toolAllowlist ?? [])]).toContain('ask_user_question');
+	});
+
+	it('marks a chained preflight turn non-interactive', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		const preflight = mocks.runEphemeralTurn.mock.calls.find(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => o.forceFinalTool === 'submit_preflight'
+		);
+		// Prompt, toolset and flag move together — a tool without interactivity
+		// is what killed a real run.
+		expect(preflight![0].interactive).toBe(false);
+		expect(preflight![0].systemPrompt).not.toContain('ask_user_question');
+	});
+
+	it('still refuses a scheduled run', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'scheduled');
+		await settle(getCurrentRun);
+
+		// A hand-created job fired on a schedule still reaches an interactive
+		// preflight with nobody present. Only `chained` is made safe.
+		expect(getCurrentRun()!.error).toContain('interactive preflight');
+	});
+
+	it('still commits when use_git is left unset', async () => {
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		const commands = wireGit();
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// The control for the test above: absent must not behave like off.
+		expect(commands.some((c) => c.includes('git commit'))).toBe(true);
+	});
 });
 
 /**
@@ -1620,7 +1732,10 @@ describe('jobs runner — run observability', () => {
 			peak_prompt_tokens: 4000,
 			model_calls: 1,
 			reasoning_ms: 600,
-			total_ms: 1000
+			total_ms: 1000,
+			// This job type declares no turn kinds, so there is no split to
+			// record — distinct from a step whose turns were all one kind.
+			turn_stats: null
 		});
 		// A step that made no model calls records nothing rather than zeros —
 		// otherwise a checkpoint stage waiting on the user reads as free work.
@@ -1717,5 +1832,674 @@ describe('jobs runner — run observability', () => {
 		// Null rather than a zeroed object, so the UI can tell "no data" from
 		// "measured zero thinking" and omit the rollup entirely.
 		expect(step.thinking).toBeNull();
+	});
+});
+
+/**
+ * The verification stage is the longest part of a guided-planning run — 20 of
+ * run 39's 36 minutes — so what it declines to do matters as much as what it
+ * does. These pin the two places it used to spend a full round for nothing.
+ */
+describe('guided_planning — verification rounds', () => {
+	const DIRTY = '- plan/x/phase-01-schema.md: phase 01 depends on phase 02';
+
+	/**
+	 * Drives a run whose verifier never signs off. `reviseWrites` decides
+	 * whether the revise turn actually rewrites a phase file, which is the
+	 * signal the loop uses to tell "fixed something" from "did nothing".
+	 */
+	function neverCleanTurns(reviseWrites: boolean) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		return async (opts: any) => {
+			if (opts.forceFinalTool === 'submit_plan_outline') {
+				opts.onToolStart?.({
+					id: 'outline',
+					name: 'submit_plan_outline',
+					arguments: { phases: [{ id: '01', title: 'Schema', summary: 'db' }] }
+				});
+				return { finalText: 'outline submitted' };
+			}
+			if (typeof opts.userMessage === 'string' && opts.userMessage.startsWith('Review the phase')) {
+				return { finalText: DIRTY };
+			}
+			if (
+				typeof opts.userMessage === 'string' &&
+				opts.userMessage.startsWith('A reviewer found problems')
+			) {
+				if (reviseWrites) {
+					opts.onToolStart?.({
+						id: 'w',
+						name: 'fs_write_text',
+						arguments: { path: 'plan/x/phase-01-schema.md', content: '# Phase 01' }
+					});
+				}
+				return { finalText: 'revised' };
+			}
+			return { finalText: 'ok' };
+		};
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const countStartingWith = (calls: any[], prefix: string) =>
+		calls.filter(([o]) => typeof o.userMessage === 'string' && o.userMessage.startsWith(prefix))
+			.length;
+
+	function planningJob() {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/'
+			})
+		});
+	}
+
+	it('does not revise on the final round, because nothing would re-read it', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(neverCleanTurns(true));
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const calls = mocks.runEphemeralTurn.mock.calls;
+		// Five reviews, four revisions: the last review ends the stage with a
+		// reported verdict instead of an unverified rewrite.
+		const reviews = countStartingWith(calls, 'Review the phase');
+		expect(reviews).toBe(5);
+		expect(countStartingWith(calls, 'A reviewer found problems')).toBe(reviews - 1);
+	});
+
+	it('stops once a revision changes nothing, instead of re-reading the same plan', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(neverCleanTurns(false));
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const calls = mocks.runEphemeralTurn.mock.calls;
+		// A revision that wrote no file leaves the plan byte-identical, so the
+		// next review would reach the same verdict from the same bytes.
+		expect(countStartingWith(calls, 'Review the phase')).toBe(1);
+		expect(countStartingWith(calls, 'A reviewer found problems')).toBe(1);
+	});
+
+	it('says the plan is unverified rather than claiming it passed', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(neverCleanTurns(true));
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// Step 3 is Verification. It used to report "Plan verified" even after
+		// spending every round without ever getting a clean verdict.
+		const verify = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 3);
+		expect(verify.length).toBeGreaterThan(0);
+		const output = String(verify[verify.length - 1][3]);
+		expect(output).toContain('problems still open');
+		expect(output).toContain('phase 01 depends on phase 02');
+		expect(output).not.toContain('Plan verified');
+	});
+});
+
+/**
+ * Run mode. Only the FINAL approval is conditional — the overview and outline
+ * checkpoints land inside the window where the user is still answering
+ * interview questions, and skipping them would buy nothing.
+ */
+describe('guided_planning — run mode', () => {
+	function planningJob(runMode?: string) {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/',
+				...(runMode ? { run_mode: runMode } : {})
+			})
+		});
+	}
+
+	const approvalOutput = () => {
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		return String(calls[calls.length - 1]?.[3] ?? '');
+	};
+
+	it('stops at all three checkpoints when attended', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// overview, outline, final approval
+		expect(mocks.askUserQuestion.mock.calls.length).toBe(3);
+		expect(approvalOutput()).toContain('Plan approved');
+	});
+
+	it('skips only the final approval when unattended', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob('unattended_plan'));
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// overview and outline only — the interview checkpoints stay.
+		expect(mocks.askUserQuestion.mock.calls.length).toBe(2);
+	});
+
+	it('says the plan was approved automatically, and by which mode', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob('unattended_plan'));
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// The run view must never imply a human approved a plan nobody read.
+		expect(approvalOutput()).toContain('Approved automatically');
+		expect(approvalOutput()).toContain('Unattended plan');
+		expect(approvalOutput()).not.toContain('Plan approved →');
+	});
+
+	it('still reaches the Approval stage, so step indices do not shift', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob('unattended_plan'));
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// Same precedent as a skipped verification: the stage runs and reports,
+		// rather than renumbering the stages around it.
+		expect(mocks.markRunStepStarted.mock.calls.some((c: unknown[]) => c[1] === 4)).toBe(true);
+	});
+});
+
+/**
+ * The handoff. Runs in every mode, never prompts, and either starts the coding
+ * run or records why it did not — the morning's first question answered by the
+ * run timeline rather than a log.
+ */
+describe('guided_planning — handoff', () => {
+	const PLAN_DIR = 'plan/x/';
+
+	function planningJob(cfg: Record<string, unknown> = {}) {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: PLAN_DIR,
+				...cfg
+			})
+		});
+	}
+
+	/** Guided turns whose verifier returns `verdict` instead of PLAN OK. */
+	function turnsWithVerdict(verdict: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		return async (opts: any) => {
+			if (opts.forceFinalTool === 'submit_plan_outline') {
+				opts.onToolStart?.({
+					id: 'o',
+					name: 'submit_plan_outline',
+					arguments: { phases: [{ id: '01', title: 'One', summary: 'first' }] }
+				});
+				return { finalText: 'outline submitted' };
+			}
+			if (typeof opts.userMessage === 'string' && opts.userMessage.startsWith('Review the phase')) {
+				return { finalText: verdict };
+			}
+			return { finalText: 'ok' };
+		};
+	}
+
+	const handoffOutput = () => {
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
+		return String(calls[calls.length - 1]?.[3] ?? '');
+	};
+
+	async function run(job: JobWithSteps, turns: unknown) {
+		mocks.getJob.mockResolvedValueOnce(job);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		mocks.runEphemeralTurn.mockImplementation(turns as any);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+	}
+
+	it('does nothing but report in attended mode', async () => {
+		await run(planningJob(), guidedTurns([{ id: '01', title: 'One', summary: 'first' }]));
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(handoffOutput()).toContain('Attended');
+	});
+
+	it('does nothing but report in unattended plan mode', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_plan' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(handoffOutput()).toContain('Unattended plan');
+	});
+
+	it('creates a coding job on a clean verdict, pointed at the plan', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.job_type).toBe('autonomous_coding');
+		expect(JSON.parse(input.type_config).plan_dir).toBe(PLAN_DIR);
+		// The link reads in both directions: the coding job names where it came
+		// from, and the handoff output names what it started.
+		expect(input.description).toContain('guided-planning run');
+		expect(handoffOutput()).toContain('900');
+	});
+
+	it('starts that job with the chained trigger', async () => {
+		// getJob has to answer for the created job too, or enqueue stops at
+		// "job not found" and the trigger never reaches createJobRun.
+		const planning = planningJob({ run_mode: 'unattended_chain' });
+		const coding = makeJob({
+			id: 900,
+			job_type: 'autonomous_coding',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({ plan_dir: PLAN_DIR })
+		});
+		mocks.getJob.mockImplementation(async (id: number) => (id === 900 ? coding : planning));
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// `chained` is what makes the coding preflight mute; a manual or
+		// scheduled trigger here would either interview nobody or be refused.
+		const chained = mocks.createJobRun.mock.calls.filter((c: unknown[]) => c[1] === 'chained');
+		expect(chained).toHaveLength(1);
+		expect(chained[0][0]).toBe(900);
+	});
+
+	it('starts one when the only findings are advisory', async () => {
+		// (c) embedded code is a quality problem an unattended run works through.
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			turnsWithVerdict('- (c) phase-01-one.md: the update loop block is a full implementation')
+		);
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+	});
+
+	/**
+	 * Findings are carried, not gated on. Three independent reviews of one
+	 * untouched plan reported 4, 13 and 9 problems, so refusing on a non-empty
+	 * list refuses forever and trusting an empty one trusts a sample. The
+	 * coding run is told what was found and settles it in preflight.
+	 */
+	it('chains despite a blocking finding, carrying it to the coding run', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			turnsWithVerdict('- (a) phase-01-one.md: depends on phase 02, written later')
+		);
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.open_findings).toHaveLength(1);
+		expect(cfg.open_findings[0]).toContain('depends on phase 02');
+		expect(handoffOutput()).toContain('1 unresolved finding');
+	});
+
+	it('carries an untagged finding too, rather than discarding it', async () => {
+		// It counts as blocking for triage, but blocking no longer means refuse.
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			turnsWithVerdict('- phase-01-one.md: something is wrong but I did not label it')
+		);
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.open_findings[0]).toContain('something is wrong');
+	});
+
+	it('carries advisory findings as well as blocking ones', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			turnsWithVerdict(
+				['- (a) phase-01-one.md: ordering problem', '- (c) phase-02-two.md: a big code block'].join(
+					'\n'
+				)
+			)
+		);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.open_findings).toHaveLength(2);
+	});
+
+	/**
+	 * Five, not three. Each round does remove what it finds, and the tail it is
+	 * grinding through is long — so the cap is a patience budget, and a run that
+	 * never comes back clean must spend all of it rather than stopping early.
+	 */
+	it('spends every review round on a plan that never comes back clean', async () => {
+		// The revise turn has to actually rewrite a file: a round that changes
+		// nothing stops the loop on purpose, since the next review would read
+		// the same bytes and reach the same verdict.
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			async (opts: any) => {
+				if (String(opts.userMessage ?? '').startsWith('A reviewer found problems')) {
+					opts.onToolStart?.({
+						id: 'w',
+						name: 'fs_write_text',
+						arguments: { path: `${PLAN_DIR}phase-01-one.md` }
+					});
+					return { finalText: 'revised' };
+				}
+				return turnsWithVerdict('- (a) phase-01-one.md: still depends on phase 02')(opts);
+			}
+		);
+		const reviews = mocks.runEphemeralTurn.mock.calls.filter((c: unknown[]) =>
+			String((c[0] as { userMessage?: string }).userMessage ?? '').startsWith('Review the phase')
+		);
+		expect(reviews).toHaveLength(5);
+	});
+
+	it('says so when the last review found nothing outstanding', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.open_findings).toEqual([]);
+		expect(handoffOutput()).toContain('nothing outstanding');
+	});
+
+	it('reports rather than fails when the coding job cannot be created', async () => {
+		mocks.createJob.mockResolvedValue(null);
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		// A run that produced a good plan must not be recorded as failed over a
+		// handoff it could not complete.
+		expect(handoffOutput()).toContain('Could not create the coding job');
+	});
+
+	it('inherits the git and web-research settings', async () => {
+		await run(
+			planningJob({ run_mode: 'unattended_chain', use_git: false, web_research: false }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.use_git).toBe(false);
+		expect(cfg.web_research).toBe(false);
+	});
+
+	it('asks the user nothing after the outline is approved', async () => {
+		// The headline promise of the whole feature, as one assertion.
+		await run(
+			planningJob({ run_mode: 'unattended_chain' }),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		expect(mocks.askUserQuestion.mock.calls.length).toBe(2);
+	});
+});
+
+describe('guided_planning — chained coding run settings', () => {
+	function planningJob(coding?: Record<string, unknown>) {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/',
+				run_mode: 'unattended_chain',
+				...(coding ? { coding_run: coding } : {})
+			})
+		});
+	}
+
+	async function runIt(job: JobWithSteps) {
+		mocks.getJob.mockResolvedValueOnce(job);
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		return JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+	}
+
+	it('passes the pinned overrides to the created job', async () => {
+		const cfg = await runIt(planningJob({ max_attempts: 5, context_mode: 'step' }));
+		expect(cfg.max_attempts).toBe(5);
+		expect(cfg.context_mode).toBe('step');
+	});
+
+	it('omits what was never pinned, so the coding defaults apply', async () => {
+		const cfg = await runIt(planningJob());
+		// Absent, not null: the coding parser reads a missing key as "use the
+		// default", and its preflight settles the commands as it would for any
+		// hand-created job.
+		expect('max_attempts' in cfg).toBe(false);
+		expect('context_mode' in cfg).toBe(false);
+	});
+});
+
+/**
+ * Reasoning was 88% of everything run 47 generated. Deciding where to turn it
+ * down needs to know which KIND of turn spent it — a step total cannot say
+ * whether Planning's reasoning went on writing phase files or repairing them.
+ */
+describe('jobs runner — per-turn-kind stats', () => {
+	const call = (over: Partial<Record<string, number>> = {}) => ({
+		durationMs: 1000,
+		completionTokens: 100,
+		promptTokens: 500,
+		reasoningChars: 60,
+		answerChars: 40,
+		reasoningTokens: 60,
+		reasoningExact: true,
+		reasoningMs: 600,
+		...over
+	});
+
+	function provider() {
+		return mocks.setStepStatsProvider.mock.calls.at(-1)?.[0] as (
+			runId: number,
+			ordering: number
+		) => { turn_stats: string | null } | null;
+	}
+
+	it('splits a step by the kinds its turns declared', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				type_config: JSON.stringify({
+					initial_description: 'Build X',
+					plan_output_dir: 'plan/x/',
+					skip_verification: true
+				})
+			})
+		);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		mocks.runEphemeralTurn.mockImplementation(async (opts: any) => {
+			opts.onCallStats?.(call());
+			if (opts.forceFinalTool === 'submit_plan_outline') {
+				opts.onToolStart?.({
+					id: 'o',
+					name: 'submit_plan_outline',
+					arguments: { phases: [{ id: '01', title: 'One', summary: 'first' }] }
+				});
+				return { finalText: 'outline submitted' };
+			}
+			return { finalText: 'PLAN OK' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		const runId = getCurrentRun()!.id;
+
+		// Planning (step 2) is where the phase files get written.
+		const planning = provider()(runId, 2);
+		expect(planning).not.toBeNull();
+		const byKind = JSON.parse(planning!.turn_stats!);
+		expect(byKind['planning.write']).toBeTruthy();
+		expect(byKind['planning.write'].calls).toBe(1);
+		expect(byKind['planning.write'].tokens_reasoning).toBe(60);
+	});
+
+	it('attributes the overview and outline interviews separately', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				type_config: JSON.stringify({
+					initial_description: 'Build X',
+					plan_output_dir: 'plan/x/',
+					skip_verification: true
+				})
+			})
+		);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		mocks.runEphemeralTurn.mockImplementation(async (opts: any) => {
+			opts.onCallStats?.(call());
+			if (opts.forceFinalTool === 'submit_plan_outline') {
+				opts.onToolStart?.({
+					id: 'o',
+					name: 'submit_plan_outline',
+					arguments: { phases: [{ id: '01', title: 'One', summary: 'first' }] }
+				});
+				return { finalText: 'outline submitted' };
+			}
+			return { finalText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		const runId = getCurrentRun()!.id;
+
+		expect(JSON.parse(provider()(runId, 0)!.turn_stats!)).toHaveProperty('overview.interview');
+		expect(JSON.parse(provider()(runId, 1)!.turn_stats!)).toHaveProperty('outline.interview');
+	});
+
+	it('does not leak a kind onto a turn that declared none', async () => {
+		// The cursor is module state cleared in a finally; a leak would
+		// mis-attribute the next turn's calls, which is worse than no label.
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockImplementationOnce(async (opts: EphemeralTurnOptions) => {
+			opts.onCallStats?.(call());
+			return { finalText: 'ok', rawText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(provider()(getCurrentRun()!.id, 0)!.turn_stats).toBeNull();
+	});
+});
+
+/**
+ * Run 51 got through a 50-minute Planning stage, wrote thirteen phase files,
+ * then died in verification when a single verifier call hit the 8192-token
+ * response ceiling — and the whole run was marked failed. The plan was
+ * finished and on disk; unattended, that crash costs the night.
+ */
+describe('guided_planning — a crashed verifier does not discard the plan', () => {
+	function planningJob(runMode = 'attended') {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/',
+				run_mode: runMode
+			})
+		});
+	}
+
+	/** Guided turns where the verifier throws the out-of-tokens error. */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const verifierThrows = async (opts: any) => {
+		if (opts.forceFinalTool === 'submit_plan_outline') {
+			opts.onToolStart?.({
+				id: 'o',
+				name: 'submit_plan_outline',
+				arguments: { phases: [{ id: '01', title: 'One', summary: 'first' }] }
+			});
+			return { finalText: 'outline submitted' };
+		}
+		if (typeof opts.userMessage === 'string' && opts.userMessage.startsWith('Review the phase')) {
+			throw new Error('The model ran out of room before finishing its answer.');
+		}
+		return { finalText: 'ok' };
+	};
+
+	it('finishes the run instead of failing it', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(verifierThrows);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(getCurrentRun()!.status).toBe('succeeded');
+	});
+
+	it('marks the verification stage failed, with the reason', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(verifierThrows);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const verify = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 3);
+		expect(verify.length).toBeGreaterThan(0);
+		const last = verify[verify.length - 1];
+		expect(last[2]).toBe('failed');
+		expect(String(last[4])).toContain('ran out of room');
+	});
+
+	it('refuses to chain a coding run on a plan nothing checked', async () => {
+		mocks.getJob.mockResolvedValueOnce(planningJob('unattended_chain'));
+		mocks.runEphemeralTurn.mockImplementation(verifierThrows);
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		// The gate that was written as defensive is now the one that matters.
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		// The one hard refusal left: nothing checked this plan at all.
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
+		expect(String(handoff[handoff.length - 1][3])).toContain('verification did not run');
 	});
 });

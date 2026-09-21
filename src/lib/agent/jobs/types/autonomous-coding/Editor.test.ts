@@ -43,7 +43,6 @@ describe('autonomous-coding Editor', () => {
 	it('renders every field without throwing', () => {
 		mount();
 		expect(screen.getByLabelText('Plan directory')).toBeTruthy();
-		expect(screen.getByLabelText('Phase verification command')).toBeTruthy();
 		expect(screen.getByLabelText('Context mode')).toBeTruthy();
 		expect(screen.getByLabelText('Signing fallback')).toBeTruthy();
 		expect(screen.getByLabelText('Max attempts per step')).toBeTruthy();
@@ -53,54 +52,6 @@ describe('autonomous-coding Editor', () => {
 		mount();
 		const box = screen.getByLabelText('Web research during preflight') as HTMLInputElement;
 		expect(box.checked).toBe(true);
-	});
-
-	it('renders the shared command snippet for both fields', () => {
-		// The step-check field only exists in per-step mode, and both fields
-		// come from one `{@render}` snippet — a snippet resolution problem
-		// would surface as a missing field or a mount error.
-		mount({ context_mode: 'step' });
-		expect(screen.getByLabelText('Step check command')).toBeTruthy();
-		expect(screen.getByLabelText('Phase verification command')).toBeTruthy();
-	});
-
-	it('hides the step check in per-phase mode', () => {
-		mount({ context_mode: 'phase' });
-		expect(screen.queryByLabelText('Step check command')).toBeNull();
-	});
-
-	it('offers catalog suggestions even with no readable project', () => {
-		// invoke rejects here, so both detection tiers come back empty. The
-		// dropdown must still be useful rather than absent.
-		mount();
-		const picker = screen.getByLabelText('Phase verification command suggestions');
-		expect(picker).toBeTruthy();
-		const values = Array.from(picker.querySelectorAll('option'))
-			.map((o) => (o as HTMLOptionElement).value)
-			.filter(Boolean);
-		expect(values).toContain('npm test');
-		expect(values).toContain('cargo test');
-	});
-
-	it('writes a picked suggestion into the config and resets the picker', async () => {
-		// The text box stays authoritative; the picker is an input method, not
-		// the value's home.
-		const { config } = mount();
-		const picker = screen.getByLabelText(
-			'Phase verification command suggestions'
-		) as HTMLSelectElement;
-		await fireEvent.change(picker, { target: { value: 'cargo test' } });
-
-		expect(config.verify_command).toBe('cargo test');
-		// Reset so the same suggestion can be chosen again after an edit.
-		expect(picker.value).toBe('');
-	});
-
-	it('keeps the deliberate inline guidance visible', () => {
-		// "Leave it blank" is a decision, not a description — hiding it behind
-		// a hover would break the preflight path for anyone who never hovers.
-		mount();
-		expect(screen.getByText(/Not sure\? Leave it blank\./)).toBeTruthy();
 	});
 
 	it('exposes help through tooltips rather than paragraphs', async () => {
@@ -132,5 +83,28 @@ describe('autonomous-coding Editor', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Browse…' }));
 		expect(await screen.findByText(/working directory first/)).toBeTruthy();
 		expect(mocks.open).not.toHaveBeenCalled();
+	});
+});
+
+describe('autonomous-coding Editor — no command fields', () => {
+	/**
+	 * The verification commands used to be two text boxes with a suggestion
+	 * picker behind them. They are gone: preflight can see the repo and run a
+	 * candidate to check it works, which is more than a user can do before the
+	 * project exists. A preference goes in the plan or the build prompt, where
+	 * it is context the model reasons about rather than a field it obeys.
+	 */
+	it('offers neither command field, in either context mode', () => {
+		for (const context_mode of ['phase', 'step']) {
+			const { unmount } = render(Editor, {
+				props: {
+					config: { ...autonomousCodingJobType.configDefaults!(), context_mode },
+					workingDir: '/repo'
+				}
+			});
+			expect(screen.queryByLabelText('Phase verification command')).toBeNull();
+			expect(screen.queryByLabelText('Step check command')).toBeNull();
+			unmount();
+		}
 	});
 });

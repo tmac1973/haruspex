@@ -8,7 +8,7 @@ import {
 	resolveToolCalls,
 	type ToolCallResolution
 } from '$lib/agent/parser';
-import type { ChatCompletionResponse } from '$lib/api';
+import type { ChatCompletionResponse, ToolDefinition } from '$lib/api';
 
 /**
  * Unwrap a resolution to its calls, so the assertions below read the same as
@@ -471,5 +471,96 @@ describe('resolveToolCalls — truncated and ambiguous calls', () => {
 		const result = resolveToolCalls(response);
 		expect(result.kind).toBe('calls');
 		expect(callsOf(result)).toHaveLength(2);
+	});
+});
+
+/**
+ * A guided-planning run failed three times writing a ~31,000-character phase
+ * file. Each attempt: four minutes of generation, then an fs_write_text call
+ * carrying a `path` and no `content`, and a tool error telling the model it
+ * had forgotten to compose the content. It had not — it ran out of budget
+ * mid-`content`, and the server repaired the cut-off JSON into a valid object
+ * by dropping the unfinished field. Parsed cleanly, so nothing noticed.
+ */
+describe('resolveToolCalls — truncated but parseable', () => {
+	const WRITE_TOOL: ToolDefinition = {
+		type: 'function',
+		function: {
+			name: 'fs_write_text',
+			description: 'Write a file.',
+			parameters: {
+				type: 'object',
+				properties: { path: { type: 'string' }, content: { type: 'string' } },
+				required: ['path', 'content']
+			}
+		}
+	};
+
+	const cutOff = (finish: string): ChatCompletionResponse => ({
+		content: '',
+		tool_calls: [
+			{
+				id: 'c1',
+				type: 'function',
+				function: { name: 'fs_write_text', arguments: '{"path":"plan/x/phase-05.md"}' }
+			}
+		],
+		finish_reason: finish
+	});
+
+	it('refuses a call missing a required argument under a length finish', () => {
+		const r = resolveToolCalls(cutOff('length'), [WRITE_TOOL]);
+		expect(r.kind).toBe('rejected');
+		if (r.kind === 'rejected') {
+			expect(r.reason).toContain('output limit');
+			expect(r.reason).toContain('content');
+		}
+	});
+
+	it('runs the same call when generation finished normally', () => {
+		// Not every missing argument is a truncation — a model that genuinely
+		// omits one should reach the tool and get the tool's own error.
+		const r = resolveToolCalls(cutOff('tool_calls'), [WRITE_TOOL]);
+		expect(r.kind).toBe('calls');
+	});
+
+	it('runs a complete call even under a length finish', () => {
+		const complete: ChatCompletionResponse = {
+			content: '',
+			tool_calls: [
+				{
+					id: 'c1',
+					type: 'function',
+					function: {
+						name: 'fs_write_text',
+						arguments: '{"path":"a.md","content":"hello"}'
+					}
+				}
+			],
+			finish_reason: 'length'
+		};
+		// The call is whole; the cut came after it.
+		expect(resolveToolCalls(complete, [WRITE_TOOL]).kind).toBe('calls');
+	});
+
+	it('falls back to running the call when no schema is available', () => {
+		// Without the schema there is no "required" list to judge against, and
+		// guessing would refuse legitimate calls.
+		expect(resolveToolCalls(cutOff('length')).kind).toBe('calls');
+	});
+
+	it('treats an empty string for a required argument as missing', () => {
+		const empty: ChatCompletionResponse = {
+			content: '',
+			tool_calls: [
+				{
+					id: 'c1',
+					type: 'function',
+					function: { name: 'fs_write_text', arguments: '{"path":"a.md","content":""}' }
+				}
+			],
+			finish_reason: 'length'
+		};
+		expect(resolveToolCalls(empty, [WRITE_TOOL]).kind).toBe('rejected');
 	});
 });

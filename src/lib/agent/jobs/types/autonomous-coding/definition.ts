@@ -7,12 +7,11 @@ import Editor from './Editor.svelte';
 /** The editor's working state (concrete values; '' = unset). */
 export interface AutonomousCodingEditorState {
 	plan_dir: string;
-	verify_command: string;
-	step_check_command: string;
 	max_attempts: number;
 	context_mode: 'step' | 'phase';
 	signing_fallback: 'unsigned' | 'skip';
 	create_branch: boolean;
+	use_git: boolean;
 	web_research: boolean;
 }
 
@@ -75,38 +74,35 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 	Editor,
 	configDefaults: (): AutonomousCodingEditorState & Record<string, unknown> => ({
 		plan_dir: '',
-		verify_command: '',
-		step_check_command: '',
 		max_attempts: 3,
 		context_mode: 'phase',
 		signing_fallback: 'unsigned',
 		create_branch: true,
-		web_research: true
+		web_research: true,
+		use_git: true
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAutonomousCodingConfig(typeConfig);
 		return {
 			plan_dir: c.plan_dir ?? '',
-			verify_command: c.verify_command ?? '',
-			step_check_command: c.step_check_command ?? '',
 			max_attempts: c.max_attempts ?? 3,
 			context_mode: c.context_mode ?? 'phase',
 			signing_fallback: c.signing_fallback ?? 'unsigned',
 			create_branch: c.create_branch ?? true,
-			web_research: c.web_research ?? true
+			web_research: c.web_research ?? true,
+			use_git: c.use_git ?? true
 		};
 	},
 	configToJson: (config) => {
 		const s = config as unknown as AutonomousCodingEditorState;
 		return JSON.stringify({
 			plan_dir: s.plan_dir.trim() || undefined,
-			verify_command: s.verify_command.trim() || undefined,
-			step_check_command: s.step_check_command.trim() || undefined,
 			max_attempts: s.max_attempts,
 			context_mode: s.context_mode,
 			signing_fallback: s.signing_fallback,
 			create_branch: s.create_branch,
-			web_research: s.web_research
+			web_research: s.web_research,
+			use_git: s.use_git
 		});
 	},
 	validate: ({ workingDir, config }) => {

@@ -105,6 +105,15 @@ export const FINALIZE = 3;
  * web_search / research_url are added when the job's web_research toggle is on
  * (the default) — see withWebResearch.
  */
+/**
+ * Preflight's toolset, minus the question tool when nobody is there to answer.
+ * Muteness is enforced by TOOLSET, not by prompt — the same way every stage
+ * after preflight is mute.
+ */
+function preflightTools(interactive: boolean): string[] {
+	return interactive ? PREFLIGHT_TOOLS : PREFLIGHT_TOOLS.filter((t) => t !== 'ask_user_question');
+}
+
 const PREFLIGHT_TOOLS = [
 	'fs_read_text',
 	'fs_list_dir',
@@ -221,16 +230,20 @@ function toChecklist(
 }
 
 /**
- * Resolve both verification commands. Precedence per command: explicit job
- * config > the preflight's DECISIONS file > (phase only) the guided-planning
- * overview, where planning settled the command with the user present — the
- * runner reading it directly means the contract survives a preflight that
- * fumbles the transcription. Files are read fresh at every call (a repair item
- * may fix a broken command there), but only when something still needs them —
- * explicit job config makes the reads dead weight. In phase mode the step
- * check is null by design (the Editor hides the field and the preflight
- * contract forbids recording one) — resolved here so the runner agrees with
- * both.
+ * Resolve both verification commands. Precedence per command: the preflight's
+ * DECISIONS file > (phase only) the guided-planning overview, where planning
+ * settled the command — the runner reading it directly means the contract
+ * survives a preflight that fumbles the transcription. Files are read fresh at
+ * every call, since a repair item may fix a broken command there.
+ *
+ * There is deliberately no job-config layer. Asking a user to type a test
+ * command up front is asking them to guess before anything exists; preflight
+ * can see the repo, run a candidate to check it works, and record what it
+ * chose. A user with a preference states it in the plan or the build prompt,
+ * where it is context the model reasons about rather than a field it obeys.
+ *
+ * In phase mode the step check is null by design (the preflight contract
+ * forbids recording one) — resolved here so the runner agrees.
  */
 async function resolveCommands(
 	ctx: JobRunContext,
@@ -239,25 +252,13 @@ async function resolveCommands(
 	planDir: string,
 	decisionsPath: string
 ): Promise<{ step: string | null; phase: string | null }> {
-	const wantStep = contextMode !== 'phase' && cfg.step_check_command == null;
-	const wantPhase = cfg.verify_command == null;
-	const text = wantStep || wantPhase ? ((await readPlanFile(ctx, decisionsPath)) ?? '') : '';
-	const phaseFromDecisions = wantPhase
-		? extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING)
-		: null;
+	const text = (await readPlanFile(ctx, decisionsPath)) ?? '';
+	const phaseFromDecisions = extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING);
 	const overviewText =
-		wantPhase && phaseFromDecisions === null
-			? ((await readPlanFile(ctx, `${planDir}overview.md`)) ?? '')
-			: '';
+		phaseFromDecisions === null ? ((await readPlanFile(ctx, `${planDir}overview.md`)) ?? '') : '';
 	return {
-		step:
-			contextMode === 'phase'
-				? null
-				: (cfg.step_check_command ?? extractDecisionCommand(text, STEP_CHECK_HEADING)),
-		phase:
-			cfg.verify_command ??
-			phaseFromDecisions ??
-			extractDecisionCommand(overviewText, VERIFICATION_COMMAND_HEADING)
+		step: contextMode === 'phase' ? null : extractDecisionCommand(text, STEP_CHECK_HEADING),
+		phase: phaseFromDecisions ?? extractDecisionCommand(overviewText, VERIFICATION_COMMAND_HEADING)
 	};
 }
 
@@ -267,6 +268,12 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 	// Resolved once — the single source of the mode default. Every consumer
 	// (preflight contract, loop branch, command resolution) reads this.
 	const contextMode: 'step' | 'phase' = cfg.context_mode ?? 'phase';
+	// A chained run was started by a guided-planning run that has already
+	// finished — there is nobody to interview. Resolved once here so the
+	// preflight's prompt, its toolset and its turn cannot disagree: a prompt
+	// that says "ask" with no tool, or a tool with no interactivity, is the
+	// failure recorded at ensureFileWritten's `mayAskUser` below.
+	const interactive = ctx.trigger !== 'chained';
 	void markRunStarted(runId, Date.now());
 
 	const startStep = (idx: number) => {
@@ -286,8 +293,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 
 	try {
 		if (ctx.trigger === 'scheduled') {
-			// The preflight is interactive by design — a run with nobody present
-			// would park at the question modal indefinitely.
+			// Still rejected. A hand-created job fired on a schedule reaches an
+			// interactive preflight with nobody present and parks at the question
+			// modal indefinitely. A `chained` run is different in the one way that
+			// matters: its preflight has been made mute, by toolset.
 			throw new Error(
 				'Autonomous coding runs start with an interactive preflight interview — ' +
 					'run this job manually, not on a schedule.'
@@ -311,10 +320,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			ctx,
 			planDir,
 			decisionsPath,
-			cfg.verify_command,
-			cfg.step_check_command,
 			contextMode,
-			webResearch
+			webResearch,
+			interactive,
+			cfg.open_findings
 		);
 		abortIfCancelled();
 		if (!outcome.ready) {
@@ -329,15 +338,15 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			systemPrompt: preflightPrompt(
 				planDir,
 				decisionsPath,
-				cfg.verify_command,
-				cfg.step_check_command,
 				contextMode,
-				webResearch
+				webResearch,
+				interactive,
+				cfg.open_findings
 			),
-			toolAllowlist: withWebResearch(PREFLIGHT_TOOLS, webResearch),
+			toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 			what: 'decisions file',
 			abortIfCancelled,
-			mayAskUser: true
+			mayAskUser: interactive
 		});
 		finishStep(
 			PREFLIGHT,
@@ -354,7 +363,12 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		// turn burns minutes of inference.
 		abortIfCancelled();
 		const signingFallback = cfg.signing_fallback ?? 'unsigned';
-		await ensureGitBaseline(ctx, signingFallback, cfg.create_branch ?? true);
+		const git: GitPolicy = { enabled: cfg.use_git !== false, fallback: signingFallback };
+		// Skipped wholesale when git is off: ensureGitBaseline would otherwise
+		// `git init` a directory the user never asked to version.
+		if (git.enabled) {
+			await ensureGitBaseline(ctx, signingFallback, cfg.create_branch ?? true);
+		}
 
 		// Stage 1 — Decompose, or resume: a parseable TODO-coding.md on disk IS
 		// the loop state (attempt counts, phases, repair cycles and all), so a
@@ -472,7 +486,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				abortIfCancelled();
 				if (v.passed) {
 					plan = setPhaseVerify(plan, phase.id, 'passed');
-					const c = await commitPhaseOutcome(ctx, phase, true, signingFallback);
+					const c = await commitPhaseOutcome(ctx, phase, true, git);
 					await record(
 						`## Phase ${phase.id} — ${phase.title}: verification PASSED` +
 							`${c.committed ? ' — phase committed' : ''}\n`
@@ -481,7 +495,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 					plan = setPhaseVerify(plan, phase.id, 'blocked');
 					// Commit the unverified work anyway, loudly marked: losing it
 					// would be worse, and the history stays honest.
-					const c = await commitPhaseOutcome(ctx, phase, false, signingFallback);
+					const c = await commitPhaseOutcome(ctx, phase, false, git);
 					await record(
 						`## Phase ${phase.id} — ${phase.title}: verification still failing after ` +
 							`${MAX_PHASE_REPAIR_CYCLES} repair cycle(s) — phase BLOCKED` +
@@ -528,7 +542,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				checklist: toChecklist(plan.items, target.id, maxAttempts)
 			});
 
-			const headBefore = await gitHead(ctx);
+			// Only meaningful to commitStepWork, which ignores it when git is off —
+			// and `git rev-parse HEAD` in a directory that is not a repo is a git
+			// call this run promised not to make.
+			const headBefore = git.enabled ? await gitHead(ctx) : null;
 			const result = await runIterationTurn(
 				ctx,
 				planDir,
@@ -564,13 +581,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				}
 			}
 			if (status === 'done') {
-				const commit = await commitStepWork(
-					ctx,
-					target,
-					plan.items.length,
-					headBefore,
-					signingFallback
-				);
+				const commit = await commitStepWork(ctx, target, plan.items.length, headBefore, git);
 				if (!commit.changed) {
 					// The minimal guard against checking items off on faith.
 					status = 'failed';
@@ -618,7 +629,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			what: 'report',
 			abortIfCancelled
 		});
-		await commitBestEffort(ctx, 'docs: autonomous coding run report', signingFallback);
+		await commitBestEffort(ctx, 'docs: autonomous coding run report', git);
 		finishStep(
 			FINALIZE,
 			(sum.blocked > 0 ? `Done with blockers (${sum.blocked})` : 'Done') + ` — ${reportPath}`
@@ -654,31 +665,34 @@ async function runPreflightTurn(
 	ctx: JobRunContext,
 	planDir: string,
 	decisionsPath: string,
-	verifyCommand: string | null,
-	stepCheckCommand: string | null,
 	contextMode: 'step' | 'phase',
-	webResearch: boolean
+	webResearch: boolean,
+	interactive: boolean,
+	openFindings: string[]
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
 	const turnResult = await ctx.runJobTurn({
-		userMessage:
-			`Run the preflight for the plan in ${planDir}. Interview me about anything ` +
-			`unresolved — after this I will not be available.`,
+		userMessage: interactive
+			? `Run the preflight for the plan in ${planDir}. Interview me about anything ` +
+				`unresolved — after this I will not be available.`
+			: `Run the preflight for the plan in ${planDir}. Nobody is available to ` +
+				`answer questions: settle every open decision yourself from the plan and ` +
+				`the working directory, and record what you chose.`,
 		contextSize: ctx.contextSize(),
 		visionSupported: ctx.visionSupported(),
 		maxIterations: PREFLIGHT_MAX_ITERATIONS,
-		interactive: true,
+		interactive,
 		writeRoot: planDir,
 		systemPrompt: preflightPrompt(
 			planDir,
 			decisionsPath,
-			verifyCommand,
-			stepCheckCommand,
 			contextMode,
-			webResearch
+			webResearch,
+			interactive,
+			openFindings
 		),
-		toolAllowlist: withWebResearch(PREFLIGHT_TOOLS, webResearch),
+		toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,
 		...base,
 		onToolStart: (call: ResolvedToolCall) => {
@@ -792,8 +806,11 @@ async function commitPhaseOutcome(
 	ctx: JobRunContext,
 	phase: { id: string; title: string },
 	verified: boolean,
-	fallback: SigningFallback
+	git: GitPolicy
 ): Promise<{ committed: boolean }> {
+	// Before stagePending: that runs `git add -A`, which has nothing to add to
+	// in a directory that is not a repo.
+	if (!git.enabled) return { committed: false };
 	if (!(await stagePending(ctx))) return { committed: false };
 	const marker = verified ? '' : ' [UNVERIFIED — phase verification failed]';
 	// commitTitle: phase.title is model-authored — sanitize before it is
@@ -801,7 +818,7 @@ async function commitPhaseOutcome(
 	const c = await gitCommit(
 		ctx,
 		`feat: ${commitTitle(`Phase ${phase.id} — ${phase.title}`)}${marker}`,
-		fallback
+		git
 	);
 	return { committed: c.committed };
 }
@@ -1252,7 +1269,14 @@ export async function ensureGitBaseline(
 	const unborn = (await gitHead(ctx)) === null;
 	if (dirty || unborn) {
 		await execInWorkdir(ctx, 'git add -A');
-		const c = await gitCommit(ctx, 'chore: pre-ralph baseline', fallback, { allowEmpty: true });
+		const c = await gitCommit(
+			ctx,
+			'chore: pre-ralph baseline',
+			{ enabled: true, fallback },
+			{
+				allowEmpty: true
+			}
+		);
 		if (c.skipped) {
 			// Skip mode + signing already broken at kickoff, while the user is
 			// still present: fail NOW with the fix, not at 3am with no commits.
@@ -1280,6 +1304,17 @@ export async function ensureGitBaseline(
 
 export type SigningFallback = 'unsigned' | 'skip';
 
+/**
+ * Whether this run uses git, and how it handles a signing failure when it does.
+ *
+ * One object rather than a loose boolean threaded beside `fallback`, because
+ * the two always travel together: every function that commits needs both, and
+ * a run with `enabled: false` has no use for a fallback at all. `gitCommit` is
+ * the single choke point every commit path funnels through, so the guard there
+ * covers the step, phase, baseline and report commits alike.
+ */
+export type GitPolicy = { enabled: boolean; fallback: SigningFallback };
+
 /** Heuristic: did a commit fail because the signer refused/expired? */
 function looksLikeSigningFailure(r: ExecResult): boolean {
 	return /gpg|sign|ssh-keygen|agent/i.test(`${r.stderr} ${r.stdout}`);
@@ -1297,9 +1332,11 @@ function looksLikeSigningFailure(r: ExecResult): boolean {
 async function gitCommit(
 	ctx: JobRunContext,
 	message: string,
-	fallback: SigningFallback,
+	git: GitPolicy,
 	opts: { allowEmpty?: boolean } = {}
 ): Promise<{ committed: boolean; unsigned: boolean; skipped: boolean; error?: string }> {
+	if (!git.enabled) return { committed: false, unsigned: false, skipped: false };
+	const { fallback } = git;
 	const flags = opts.allowEmpty ? ' --allow-empty' : '';
 	const first = await execInWorkdir(ctx, `git commit${flags} -m "${message}"`);
 	if (first.exit_code === 0) return { committed: true, unsigned: false, skipped: false };
@@ -1340,8 +1377,13 @@ async function commitStepWork(
 	target: TaskItem,
 	totalItems: number,
 	headBefore: string | null,
-	fallback: SigningFallback
+	git: GitPolicy
 ): Promise<{ changed: boolean; unsigned: boolean; commitSkipped: boolean }> {
+	// Without git there is no diff and no HEAD to compare, so the no-op
+	// detection this function exists for is unavailable. Report `changed: true`
+	// — the caller downgrades a "done" to a failed attempt on `changed: false`,
+	// and inventing that verdict from no evidence would fail real work.
+	if (!git.enabled) return { changed: true, unsigned: false, commitSkipped: false };
 	// stagePending re-checks .gitignore every step, not just at baseline: a run
 	// can INTRODUCE a stack mid-flight (observed: `npm install` at step 12 in a
 	// directory that had no package.json at baseline).
@@ -1355,7 +1397,7 @@ async function commitStepWork(
 		const c = await gitCommit(
 			ctx,
 			`feat: ${commitTitle(target.title)} [ralph ${target.id}/${total}]`,
-			fallback
+			git
 		);
 		if (c.error) {
 			throw new Error(`Step commit failed — is git user.name/user.email configured? ${c.error}`);
@@ -1369,12 +1411,13 @@ async function commitStepWork(
 async function commitBestEffort(
 	ctx: JobRunContext,
 	message: string,
-	fallback: SigningFallback
+	git: GitPolicy
 ): Promise<void> {
+	if (!git.enabled) return;
 	try {
 		await execInWorkdir(ctx, 'git add -A');
 		const staged = (await execInWorkdir(ctx, 'git diff --cached --quiet')).exit_code !== 0;
-		if (staged) await gitCommit(ctx, commitTitle(message), fallback);
+		if (staged) await gitCommit(ctx, commitTitle(message), git);
 	} catch {
 		// The report exists on disk either way; a missing commit is cosmetic.
 	}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { finalizeStreamText } from '$lib/markdown';
 import {
+	classifyFindings,
 	GUIDED_PLANNING_TOOLS,
 	guidedPlanningToolsets,
 	isPlanClean,
@@ -269,14 +270,8 @@ describe('planRevisePrompt — carries the same rule into revisions', () => {
 describe('verifierPrompt — embedded code is a reportable problem', () => {
 	const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md'));
 
-	it('adds embedded implementation code as category (d)', () => {
-		expect(prompt).toContain('d. EMBEDDED IMPLEMENTATION CODE');
-	});
-
-	it('keeps the malformed-file short-circuit category-count-agnostic', () => {
-		// It used to enumerate the other categories by letter, which went stale
-		// the moment a fifth was added.
-		expect(prompt).toContain('cannot be checked for the others');
+	it('adds embedded implementation code as category (c)', () => {
+		expect(prompt).toContain('c. EMBEDDED IMPLEMENTATION CODE');
 	});
 
 	it('does not let it fire on commands, layouts, or small data blocks', () => {
@@ -351,9 +346,9 @@ describe('phaseWritePrompt — build gates are commands, not programs', () => {
 describe('verifierPrompt — commands and unreachable steps', () => {
 	const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md'));
 
-	it('counts five categories consistently', () => {
-		expect(prompt).toContain('five kinds of problem');
-		expect(prompt).toContain('Report only those five kinds of problem');
+	it('counts four categories consistently', () => {
+		expect(prompt).toContain('four kinds of problem');
+		expect(prompt).toContain('Report only those four kinds of problem');
 	});
 
 	it('flags a program smuggled into a build-gate command', () => {
@@ -362,7 +357,7 @@ describe('verifierPrompt — commands and unreachable steps', () => {
 	});
 
 	it('adds the unreachable-step category with a worked example', () => {
-		expect(prompt).toContain('e. CONTRADICTORY OR UNREACHABLE STEP');
+		expect(prompt).toContain('d. CONTRADICTORY OR UNREACHABLE STEP');
 		expect(prompt).toContain('an action placed after a "Return"/"stop"');
 		expect(prompt).toContain('the check is dead');
 	});
@@ -546,5 +541,249 @@ describe('web research', () => {
 		]) {
 			expect(prompt).not.toContain('WEB RESEARCH');
 		}
+	});
+});
+
+/**
+ * Truncation, a missing "# Phase NN" heading and missing sections are decided
+ * by `phaseFileProblem`, which gates every phase write and every verification
+ * revision. The verifier used to be asked for them too — a reasoning model
+ * re-deriving a guarantee the runner already enforces, plus a paragraph of
+ * prompt telling it how to recover from finding one.
+ */
+describe('verifierPrompt — malformed files are the runner’s job, not the model’s', () => {
+	const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md'));
+
+	it('does not ask for malformed files', () => {
+		expect(prompt).not.toContain('MALFORMED');
+		expect(prompt).not.toContain('starts partway');
+	});
+
+	it('drops the recovery paragraph that only a malformed finding needed', () => {
+		expect(prompt).not.toContain('cannot be checked for the others');
+	});
+
+	it('keeps the four categories it is still the only judge of', () => {
+		expect(prompt).toContain('a. ORDERING');
+		expect(prompt).toContain('b. DEFERRED DECISIONS');
+		expect(prompt).toContain('c. EMBEDDED IMPLEMENTATION CODE');
+		expect(prompt).toContain('d. CONTRADICTORY OR UNREACHABLE STEP');
+	});
+});
+
+/**
+ * The runner has already read the overview for its own gates, so making the
+ * model fetch it spends a tool round trip to put the same bytes into the same
+ * context. Inlining costs the same prompt tokens and saves the round trip.
+ */
+describe('inlined overview', () => {
+	const OVERVIEW = '# Overview\n\nBuild a thing.';
+
+	it('gives the verifier the text and tells it not to read from disk', () => {
+		const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md', OVERVIEW));
+		expect(prompt).toContain('do NOT read it from disk');
+		expect(prompt).toContain('--- OVERVIEW (plan/x/overview.md) ---');
+		expect(prompt).toContain('Build a thing.');
+		// It must still fetch the phase files — those are the artifacts under review.
+		expect(prompt).toContain('read every phase-NN-*.md file in it');
+	});
+
+	it('gives the phase writer the text and tells it not to read from disk', () => {
+		const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false, OVERVIEW));
+		expect(prompt).toContain('do NOT read it from disk');
+		expect(prompt).toContain('--- OVERVIEW (plan/x/overview.md) ---');
+		expect(prompt).toContain('Build a thing.');
+		// Earlier phase files are still fetched — only the overview is inlined.
+		expect(prompt).toContain('Read any earlier phase files');
+	});
+
+	it('falls back to reading from disk when the text is unavailable', () => {
+		// No sandbox root means the runner cannot read it either, so the model
+		// must be told to — the alternative is a prompt that references an
+		// overview it was never given.
+		for (const prompt of [
+			flat(verifierPrompt('plan/x/', 'plan/x/overview.md', null)),
+			flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false, null))
+		]) {
+			expect(prompt).toContain('Read the overview at `plan/x/overview.md`');
+			expect(prompt).not.toContain('--- OVERVIEW');
+			expect(prompt).not.toContain('do NOT read it from disk');
+		}
+	});
+});
+
+/**
+ * A plan for a project the user is not versioning must not tell a coding run to
+ * commit. "## Rollback" stays in both modes: it is the last section of the
+ * template and therefore the tail-truncation detector inside
+ * REQUIRED_PHASE_SECTIONS, which `phaseFileProblem` gates every phase write
+ * and every verification revision against — and rollback without git is still
+ * real ("delete the files this phase created").
+ */
+describe('phaseWritePrompt — git-optional sections', () => {
+	const withGit = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false, null, true));
+	const noGit = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false, null, false));
+
+	it('asks for ## Commit only when the project uses git', () => {
+		expect(withGit).toContain('## Commit');
+		expect(noGit).not.toContain('## Commit');
+	});
+
+	it('asks for ## Rollback either way', () => {
+		expect(withGit).toContain('## Rollback');
+		expect(noGit).toContain('## Rollback');
+	});
+
+	it('defaults to git when the flag is omitted, so existing callers are unchanged', () => {
+		expect(flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false))).toContain('## Commit');
+	});
+});
+
+describe('phaseFileProblem — a git-off phase file is still gated', () => {
+	const body = (extra: string) =>
+		`# Phase 01 — Thing\n\n**Depends on:** nothing\n\n## Goal\n${'Detail. '.repeat(60)}\n${extra}`;
+
+	it('accepts a file with no ## Commit section', () => {
+		expect(
+			phaseFileProblem('plan/x/phase-01-thing.md', body('## Rollback\nDelete the files.\n'))
+		).toBeNull();
+	});
+
+	it('still rejects one whose tail is missing', () => {
+		// The whole reason ## Rollback survives git-off: without it this file —
+		// truncated mid-document — would read as acceptable.
+		const problem = phaseFileProblem('plan/x/phase-01-thing.md', body('## Test plan\nRun it.\n'));
+		expect(problem).toContain('Rollback');
+		expect(problem).toContain('truncated');
+	});
+});
+
+/**
+ * Severity exists to answer one question: could an unattended coding run
+ * survive this plan? It cannot resolve a "TBD" — ask_user_question is not in
+ * its toolset — so a deferred decision blocks, while over-specified code in a
+ * plan file is a quality problem the run can work through.
+ */
+describe('classifyFindings', () => {
+	it('sorts the four categories by what an unattended run can survive', () => {
+		const verdict = [
+			'Here are the problems I found:',
+			'- (a) phase-02-api.md: depends on phase 03',
+			'- (b) phase-03-ui.md: step 4 says "decide later"',
+			'- (c) phase-04-engine.md: the update loop block is a full implementation',
+			'- (d) phase-05-io.md: the check after the return can never run',
+			'That is everything.'
+		].join('\n');
+		const { blocking, advisory } = classifyFindings(verdict);
+		expect(blocking).toHaveLength(3);
+		expect(advisory).toHaveLength(1);
+		expect(advisory[0]).toContain('phase-04-engine.md');
+		expect(blocking.join(' ')).toContain('phase-02-api.md');
+		expect(blocking.join(' ')).toContain('phase-03-ui.md');
+		expect(blocking.join(' ')).toContain('phase-05-io.md');
+	});
+
+	it('treats an untagged or unknown-tagged bullet as blocking', () => {
+		// A verdict the runner cannot read must never read as permission to
+		// proceed — the whole gate rests on this.
+		const { blocking, advisory } = classifyFindings(
+			['- phase-01-x.md: something is wrong', '- (z) phase-02-y.md: something else'].join('\n')
+		);
+		expect(blocking).toHaveLength(2);
+		expect(advisory).toHaveLength(0);
+	});
+
+	it('ignores prose, so a model preamble cannot invent findings', () => {
+		const { blocking, advisory } = classifyFindings(
+			[
+				'I reviewed all five phase files against the overview.',
+				'- (c) phase-01-x.md: a long fenced block',
+				'Let me know if you want me to re-check.'
+			].join('\n')
+		);
+		expect(blocking).toHaveLength(0);
+		expect(advisory).toHaveLength(1);
+	});
+
+	it('returns nothing for a clean verdict', () => {
+		expect(classifyFindings('PLAN OK')).toEqual({ blocking: [], advisory: [] });
+	});
+
+	it('accepts asterisk bullets as well as dashes', () => {
+		const { blocking } = classifyFindings('* (a) phase-02-api.md: depends on phase 03');
+		expect(blocking).toHaveLength(1);
+	});
+
+	it('is the case Phase 05 relies on: advisory-only means nothing blocks', () => {
+		const { blocking } = classifyFindings('- (c) phase-01-x.md: a long fenced block');
+		expect(blocking).toHaveLength(0);
+	});
+});
+
+describe('verifierPrompt — findings are tagged', () => {
+	const prompt = flat(verifierPrompt('plan/x/', 'plan/x/overview.md'));
+
+	it('asks for the category letter on every bullet, with an example', () => {
+		expect(prompt).toContain('START EACH BULLET with the letter');
+		expect(prompt).toContain('- (a) phase-02-api.md');
+	});
+
+	it('keeps the PLAN OK contract isPlanClean depends on', () => {
+		expect(prompt).toContain('your ENTIRE reply must be exactly: PLAN OK');
+	});
+});
+
+/**
+ * A real run produced phase files of ~31,000 characters each. That cost three
+ * ways: the write turn truncated against its output budget, the verifier had
+ * to read every one of them, and the coding run reads them again. A phase file
+ * is a specification, not a transcript.
+ */
+describe('phaseWritePrompt — length', () => {
+	const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false));
+
+	it('gives a concrete target rather than "be concise"', () => {
+		expect(prompt).toContain('12,000 characters');
+	});
+
+	it('budgets characters, not lines', () => {
+		// A line target was tried first and met exactly — every file in a real
+		// run landed in 150-245 lines — while still running to 38 KB, because
+		// the model kept the line count and lengthened the lines.
+		expect(prompt).toContain('not a line count');
+		expect(prompt).toContain('fewer, longer lines does not make it shorter');
+	});
+
+	it('says who pays for the extra characters', () => {
+		expect(prompt).toContain('the verifier and the coding run both read again');
+	});
+
+	it('says what a phase file is for, so the target is followable', () => {
+		expect(prompt).toContain('SPECIFICATION');
+		expect(prompt).toContain('not a transcript');
+	});
+
+	it('treats overflow as an outline problem, not a licence to sprawl', () => {
+		// Otherwise "aim for 250" reads as "250 is the floor for a big phase".
+		expect(prompt).toContain('should have been two phases');
+	});
+
+	it('names the three things that pad a plan file', () => {
+		expect(prompt).toContain('restating what an earlier phase already settled');
+		expect(prompt).toContain('the overview holds the');
+		expect(prompt).toContain('prose around a list');
+	});
+
+	it('keeps the no-embedded-code rule, which is a different constraint', () => {
+		// Short and code-free are independent: a 150-line file can still be a
+		// source dump, and a 400-line one can be pure specification.
+		expect(prompt).toContain('SPECIFY THE WORK — DO NOT WRITE IT');
+		expect(prompt).toContain('Do NOT write the implementation');
+	});
+
+	it('does not contradict being exhaustive about the contract', () => {
+		// The length target trims narration, not specification — the file still
+		// has to carry signatures, data shapes and decision rules.
+		expect(prompt).toContain('Be exhaustive about the CONTRACT');
 	});
 });

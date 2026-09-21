@@ -164,7 +164,8 @@ impl Database {
                 SET status = ?1, output = ?2, error = ?3, finished_at = ?4,
                     tokens_prompt = ?7, tokens_completion = ?8, tokens_reasoning = ?9,
                     tokens_reasoning_exact = ?10, peak_prompt_tokens = ?11,
-                    model_calls = ?12, reasoning_ms = ?13, total_ms = ?14
+                    model_calls = ?12, reasoning_ms = ?13, total_ms = ?14,
+                    turn_stats = ?15
                 WHERE run_id = ?5 AND ordering = ?6",
             params![
                 status,
@@ -181,6 +182,7 @@ impl Database {
                 stats.map(|s| s.model_calls),
                 stats.map(|s| s.reasoning_ms),
                 stats.map(|s| s.total_ms),
+                stats.and_then(|s| s.turn_stats.clone()),
             ],
         )
         .map_err(|e| format!("Step finished update failed: {}", e))?;
@@ -268,7 +270,7 @@ impl Database {
                         status, output, started_at, finished_at, error,
                         tokens_prompt, tokens_completion, tokens_reasoning,
                         tokens_reasoning_exact, peak_prompt_tokens, model_calls,
-                        reasoning_ms, total_ms
+                        reasoning_ms, total_ms, turn_stats
                  FROM job_run_steps WHERE run_id = ?1
                  ORDER BY ordering ASC",
             )
@@ -301,6 +303,7 @@ impl Database {
                         model_calls,
                         reasoning_ms: row.get(16).unwrap_or(0),
                         total_ms: row.get(17).unwrap_or(0),
+                        turn_stats: row.get(18).unwrap_or(None),
                     }),
                 })
             })

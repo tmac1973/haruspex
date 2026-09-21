@@ -1,6 +1,6 @@
 import type { JobTypeDefinition, PlannedStep } from '../types';
 import { runGuidedPlanningPipeline } from './pipeline';
-import { parseGuidedPlanningConfig } from './config';
+import { type GuidedPlanningRunMode, parseGuidedPlanningConfig } from './config';
 import Editor from './Editor.svelte';
 
 /** The guided-planning editor's working state (concrete strings, '' = unset). */
@@ -9,6 +9,12 @@ export interface GuidedPlanningEditorState {
 	plan_output_dir: string;
 	skip_verification: boolean;
 	web_research: boolean;
+	use_git: boolean;
+	run_mode: GuidedPlanningRunMode;
+	// Concrete strings/numbers in the editor ('' and 0 = unset), converted back
+	// to nulls by configToJson.
+	coding_max_attempts: number;
+	coding_context_mode: '' | 'step' | 'phase';
 }
 
 /**
@@ -40,8 +46,29 @@ const GUIDED_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 	{
 		title: 'Approval',
 		description: 'Waiting for you to review the phase files and approve — or request changes.'
+	},
+	{
+		title: 'Handoff',
+		description:
+			'Starting an autonomous coding run on the finished plan, or recording why it did not — the run mode, or verification findings an unattended run could not survive.'
 	}
 ];
+
+/**
+ * The chained coding run's overrides, or undefined when nothing is pinned.
+ *
+ * Unset fields are omitted rather than stored as null: the coding job's own
+ * defaults and its preflight should settle anything the user did not pin, and
+ * an object of nulls reads as decisions somebody made.
+ */
+function codingRunJson(s: GuidedPlanningEditorState): Record<string, unknown> | undefined {
+	const out: Record<string, unknown> = {};
+	// Stored only when it differs from what the coding job would pick anyway.
+	if (s.coding_max_attempts > 0 && s.coding_max_attempts !== 3)
+		out.max_attempts = s.coding_max_attempts;
+	if (s.coding_context_mode) out.context_mode = s.coding_context_mode;
+	return Object.keys(out).length > 0 ? out : undefined;
+}
 
 function planGuidedSteps(): PlannedStep[] {
 	return GUIDED_STAGES.map((stage) => ({
@@ -68,7 +95,13 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		initial_description: '',
 		plan_output_dir: '',
 		skip_verification: false,
-		web_research: true
+		web_research: true,
+		use_git: true,
+		run_mode: 'attended',
+		// The coding job's own default, shown as itself. A 0 here meant "unset"
+		// and read on screen as "zero attempts", which is not a thing.
+		coding_max_attempts: 3,
+		coding_context_mode: ''
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
@@ -76,7 +109,11 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			initial_description: c.initial_description ?? '',
 			plan_output_dir: c.plan_output_dir ?? '',
 			skip_verification: c.skip_verification,
-			web_research: c.web_research
+			web_research: c.web_research,
+			use_git: c.use_git,
+			run_mode: c.run_mode,
+			coding_max_attempts: c.coding_run.max_attempts ?? 3,
+			coding_context_mode: c.coding_run.context_mode ?? ''
 		};
 	},
 	configToJson: (config) => {
@@ -86,7 +123,11 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			plan_output_dir: s.plan_output_dir.trim() || undefined,
 			skip_verification: s.skip_verification || undefined,
 			// Sparse like skip_verification: only the non-default value is stored.
-			web_research: s.web_research ? undefined : false
+			web_research: s.web_research ? undefined : false,
+			use_git: s.use_git ? undefined : false,
+			// Sparse: only a non-default mode is stored.
+			run_mode: s.run_mode === 'attended' ? undefined : s.run_mode,
+			coding_run: codingRunJson(s)
 		});
 	},
 	validate: ({ workingDir, config }) => {

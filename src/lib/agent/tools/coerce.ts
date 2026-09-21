@@ -25,10 +25,52 @@ interface ParamsSchema {
 	[key: string]: unknown;
 }
 
+/**
+ * The longest balanced `[...]` or `{...}` starting at position 0, or undefined.
+ *
+ * String-aware, so a bracket inside a label or description does not end the
+ * scan early.
+ */
+function balancedPrefix(s: string): string | undefined {
+	const open = s[0];
+	if (open !== '[' && open !== '{') return undefined;
+	const close = open === '[' ? ']' : '}';
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let i = 0; i < s.length; i++) {
+		const c = s[i];
+		if (escaped) {
+			escaped = false;
+			continue;
+		}
+		if (inString) {
+			if (c === '\\') escaped = true;
+			else if (c === '"') inString = false;
+			continue;
+		}
+		if (c === '"') inString = true;
+		else if (c === open) depth++;
+		else if (c === close && --depth === 0) return s.slice(0, i + 1);
+	}
+	return undefined;
+}
+
 function tryJson(s: string): unknown {
 	if (!s.startsWith('{') && !s.startsWith('[')) return undefined;
 	try {
 		return JSON.parse(s);
+	} catch {
+		// Fall through: a model that emitted a valid value and then kept typing
+		// is a different failure from one that emitted nonsense, and the first
+		// is recoverable. Observed in a real run — an ask_user_question whose
+		// options arrived as `[{…},{…},{…}], "recommended": true}]`, a valid
+		// array with a stray fragment of the enclosing object after it.
+	}
+	const prefix = balancedPrefix(s);
+	if (prefix === undefined || prefix.length === s.length) return undefined;
+	try {
+		return JSON.parse(prefix);
 	} catch {
 		return undefined;
 	}

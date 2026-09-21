@@ -3,18 +3,6 @@
 export interface AutonomousCodingConfig {
 	/** Folder of .md plan files, relative to working_dir. Required to run. */
 	plan_dir: string | null;
-	/**
-	 * Deep verification command (e.g. `npm test`), run by the RUNNER when each
-	 * phase's last item lands — not per item, and not by the model. null = the
-	 * preflight settles it (recorded in DECISIONS-coding.md).
-	 */
-	verify_command: string | null;
-	/**
-	 * Cheap static check (e.g. `npm run lint`, `tsc --noEmit`), run by the
-	 * RUNNER before every step commit so a broken file never lands. null = the
-	 * preflight settles it.
-	 */
-	step_check_command: string | null;
 	/** Failed attempts per item before it's marked BLOCKED. null = default (3). */
 	max_attempts: number | null;
 	/**
@@ -41,6 +29,22 @@ export interface AutonomousCodingConfig {
 	 */
 	create_branch: boolean | null;
 	/**
+	 * Use git at all. Off means no branch, no commits and no signing fallback —
+	 * for a machine without git installed, or a project the user does not want
+	 * versioned. null = default (true), so every job authored before this
+	 * existed keeps committing.
+	 */
+	use_git: boolean | null;
+	/**
+	 * Problems a guided-planning verifier reported and the planning run did not
+	 * fix, carried over so preflight settles them before any code is written.
+	 *
+	 * Empty for a hand-created job, and for a chained one whose last review
+	 * came back clean. Not a gate: a review cannot certify a plan clean, so
+	 * these are the defects that happened to be caught, not all of them.
+	 */
+	open_findings: string[];
+	/**
 	 * Offer web_search and research_url to the preflight interview, so it can
 	 * check versions and APIs past the model's training cutoff. The coding loop
 	 * has them regardless. null = default (true).
@@ -60,14 +64,6 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 	}
 	return {
 		plan_dir: typeof raw.plan_dir === 'string' && raw.plan_dir.length > 0 ? raw.plan_dir : null,
-		verify_command:
-			typeof raw.verify_command === 'string' && raw.verify_command.length > 0
-				? raw.verify_command
-				: null,
-		step_check_command:
-			typeof raw.step_check_command === 'string' && raw.step_check_command.length > 0
-				? raw.step_check_command
-				: null,
 		max_attempts:
 			typeof raw.max_attempts === 'number' && Number.isFinite(raw.max_attempts)
 				? raw.max_attempts
@@ -78,7 +74,11 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 				? raw.signing_fallback
 				: null,
 		create_branch: parseOptionalBool(raw.create_branch),
-		web_research: parseOptionalBool(raw.web_research)
+		web_research: parseOptionalBool(raw.web_research),
+		use_git: parseOptionalBool(raw.use_git),
+		open_findings: Array.isArray(raw.open_findings)
+			? raw.open_findings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+			: []
 	};
 }
 

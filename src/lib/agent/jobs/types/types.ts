@@ -44,7 +44,15 @@ export interface JobRunContext {
 	trigger: RunTrigger;
 	/** One ephemeral agent turn under the job harness (slot, auto-approve, backend). */
 	runJobTurn: (
-		opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'>
+		opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'> & {
+			/**
+			 * What kind of turn this is, for the per-kind token split on the
+			 * step's stats. Free-form and pipeline-owned — "planning.write",
+			 * "verify.review". Omit and the turn's calls are counted in the
+			 * step total but attributed to no kind.
+			 */
+			turnKind?: string;
+		}
 	) => Promise<EphemeralTurnResult>;
 	patchStep: (stepIndex: number, patch: Partial<RunStepState>) => void;
 	buildStreamCallbacks: (
@@ -61,6 +69,17 @@ export interface JobRunContext {
 	finalizeRun: (status: RunStatus, error: string | null) => void;
 	/** Runner-owned cleanup (clear the active abort, drain the queue). Call exactly once, when the pipeline settles. */
 	onSettled: () => void;
+	/**
+	 * Queue another job as a `chained` run, returning its run id or null when
+	 * it could not start (unknown job, or a job type unavailable on this
+	 * platform).
+	 *
+	 * Provided by the runner rather than imported by the pipeline: the runner
+	 * already imports every pipeline through the type registry, so a pipeline
+	 * importing `enqueue` back out of the runner is a cycle — one that only
+	 * surfaces when something imports a job definition directly.
+	 */
+	startChainedRun: (jobId: number) => Promise<number | null>;
 }
 
 /**

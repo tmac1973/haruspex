@@ -25,7 +25,7 @@ export interface JobRunSummary {
 	id: number;
 	job_id: number;
 	status: JobRunStatus;
-	trigger: 'manual' | 'scheduled';
+	trigger: 'manual' | 'scheduled' | 'chained';
 	queued_at: number;
 	started_at: number | null;
 	finished_at: number | null;
@@ -64,6 +64,21 @@ export interface StepStats {
 	tokens_reasoning_exact: boolean;
 	peak_prompt_tokens: number;
 	model_calls: number;
+	reasoning_ms: number;
+	total_ms: number;
+	/**
+	 * The same totals split by turn kind, as JSON, or null for a step recorded
+	 * before the split existed — which is different from a step whose turns
+	 * were all one kind. See `TurnKindStats`.
+	 */
+	turn_stats: string | null;
+}
+
+/** One turn kind's share of a step. Parsed out of `StepStats.turn_stats`. */
+export interface TurnKindStats {
+	calls: number;
+	tokens_completion: number;
+	tokens_reasoning: number;
 	reasoning_ms: number;
 	total_ms: number;
 }
@@ -121,7 +136,7 @@ export function getJobRun(runId: number): Promise<JobRunWithSteps | null> {
 
 export function createJobRun(
 	jobId: number,
-	trigger: 'manual' | 'scheduled',
+	trigger: 'manual' | 'scheduled' | 'chained',
 	stepPrompts: string[]
 ): Promise<number | null> {
 	return dbQuery<number | null>({

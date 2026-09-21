@@ -106,7 +106,8 @@ describe('registration barrel', () => {
 			'Outline',
 			'Planning',
 			'Verification',
-			'Approval'
+			'Approval',
+			'Handoff'
 		]);
 		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
 
@@ -137,33 +138,30 @@ describe('registration barrel', () => {
 		// Editor state round-trip: sparse JSON in, concrete defaults out, and back.
 		expect(coding.configFromJob(JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 5 }))).toEqual({
 			plan_dir: 'plan/x/',
-			verify_command: '',
-			step_check_command: '',
 			max_attempts: 5,
 			context_mode: 'phase',
 			signing_fallback: 'unsigned',
 			create_branch: true,
-			web_research: true
+			web_research: true,
+			use_git: true
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
-			verify_command: '',
-			step_check_command: '',
 			max_attempts: 3,
 			context_mode: 'phase',
 			signing_fallback: 'unsigned',
 			create_branch: true,
-			web_research: true
+			web_research: true,
+			use_git: true
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
-			verify_command: '',
-			step_check_command: '',
 			max_attempts: 3,
 			context_mode: 'phase',
 			signing_fallback: 'skip',
 			create_branch: false,
-			web_research: false
+			web_research: false,
+			use_git: false
 		});
 		expect(JSON.parse(json!)).toEqual({
 			plan_dir: 'plan/x/',
@@ -171,7 +169,8 @@ describe('registration barrel', () => {
 			context_mode: 'phase',
 			signing_fallback: 'skip',
 			create_branch: false,
-			web_research: false
+			web_research: false,
+			use_git: false
 		});
 
 		// Validation: working dir and plan dir are required; attempts bounded.

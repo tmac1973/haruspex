@@ -1,7 +1,7 @@
 /** Autonomous-coding prompts: preflight, decompose, the loop, finalize. */
 
 import { STEP_CHECK_HEADING, VERIFICATION_COMMAND_HEADING } from './planParse';
-import { interviewResearchRules } from '../webResearch';
+import { interviewResearchRules, writeResearchRules } from '../webResearch';
 
 /**
  * Shell rules every stage that can call `run_command` carries.
@@ -54,22 +54,39 @@ function shellSafetyRules(stage: 'preflight' | 'unattended'): string[] {
 export function preflightPrompt(
 	planDir: string,
 	decisionsPath: string,
-	verifyCommand: string | null,
-	stepCheckCommand: string | null,
 	contextMode: 'step' | 'phase',
-	webResearch: boolean
+	webResearch: boolean,
+	interactive: boolean = true,
+	openFindings: string[] = []
 ): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
 		'session the run is FULLY UNATTENDED — the user starts it and walks away, and',
-		'nothing can ask them anything mid-run. This is the LAST moment a human is',
-		'available. Your single job: make sure no decision is left open.',
-		'',
-		'HOW TO ASK THE USER ANYTHING (critical):',
-		'The ONLY way to ask is to CALL the `ask_user_question` tool with a `question`',
-		'string and an `options` array of {label, description}. The user cannot answer',
-		'prose — a question written as text is discarded and the session stalls. Ask',
-		'EXACTLY ONE question per tool call.',
+		'nothing can ask them anything mid-run.',
+		...(interactive
+			? [
+					'This is the LAST moment a human is',
+					'available. Your single job: make sure no decision is left open.',
+					'',
+					'HOW TO ASK THE USER ANYTHING (critical):',
+					'The ONLY way to ask is to CALL the `ask_user_question` tool with a `question`',
+					'string and an `options` array of {label, description}. The user cannot answer',
+					'prose — a question written as text is discarded and the session stalls. Ask',
+					'EXACTLY ONE question per tool call.'
+				]
+			: [
+					'NOBODY IS AVAILABLE NOW EITHER. This run was started automatically by a',
+					'guided-planning run that has already finished, so there is no one to',
+					'interview and you have NO tool with which to ask. Your single job: make',
+					'sure no decision is left open, by settling each one yourself.',
+					'',
+					'For every decision you would otherwise have asked about, choose the option',
+					'best supported by the plan and by what is actually in the working',
+					'directory, and record it in the decisions file with one line saying why.',
+					'The plan was written and verified with the user present — prefer what it',
+					'says over your own preference. Never stall waiting for an answer, and',
+					'never write a question into a file as though someone will read it.'
+				]),
 		'',
 		'Process:',
 		`1. Read EVERY plan file in \`${planDir}\` (fs_list_dir, fs_read_text), and`,
@@ -81,11 +98,20 @@ export function preflightPrompt(
 		'   - environment-dependent choices (package manager, language/tool versions,',
 		'     ports, paths, credentials, external services),',
 		'   - anything the plan assumes exists but does not.',
-		'   For EACH finding, ask the user ONE `ask_user_question` (2–4 concrete',
-		'   options). Do not batch. Do not proceed while any decision is open. If the',
-		'   user answers "proceed" or similar, stop asking and settle the rest with',
-		'   sensible defaults, recording each default you chose.',
-		...verificationContractStep(verifyCommand, stepCheckCommand, contextMode),
+		...(interactive
+			? [
+					'   For EACH finding, ask the user ONE `ask_user_question` (2–4 concrete',
+					'   options). Do not batch. Do not proceed while any decision is open. If the',
+					'   user answers "proceed" or similar, stop asking and settle the rest with',
+					'   sensible defaults, recording each default you chose.'
+				]
+			: [
+					'   For EACH finding, settle it yourself from the plan and the working',
+					'   directory, and record the choice and its one-line rationale. Do not',
+					'   stall on anything: an unsettled decision becomes a guess made later,',
+					'   in a worse position, by a run that cannot ask either.'
+				]),
+		...verificationContractStep(contextMode, interactive),
 		`4. Write \`${decisionsPath}\` with fs_write_text: a "# Coding decisions"`,
 		'   heading, then one "## <question>" section per decision with the chosen',
 		'   answer (including defaults you settled). If there were genuinely no open',
@@ -98,9 +124,57 @@ export function preflightPrompt(
 		'5. Call `submit_preflight` exactly once: ready=true when nothing is left',
 		'   ambiguous; ready=false with concrete blockers when the run cannot start',
 		'   (e.g. the plan directory is empty or the plans contradict each other).',
-		...(webResearch ? interviewResearchRules('the plan or any answer the user gives') : []),
+		// A mute preflight researches to CHECK facts, not to gather options it
+		// would then have to present — interviewResearchRules ends in an
+		// ask_user_question it has no tool for.
+		...openFindingsStep(openFindings, decisionsPath),
+		...(webResearch
+			? interactive
+				? interviewResearchRules('the plan or any answer the user gives')
+				: writeResearchRules()
+			: []),
 		...shellSafetyRules('preflight')
 	].join('\n');
+}
+
+/**
+ * Problems a plan reviewer found and nobody fixed, handed to preflight to
+ * settle before any code is written.
+ *
+ * The reviewer saw all of the plan at once, which preflight does not, so its
+ * diagnosis is worth taking seriously — and it usually names the resolution,
+ * because it was written to. But it read sixteen documents in one pass and can
+ * misread one, so the instruction is to check each against the plan rather
+ * than apply it verbatim.
+ *
+ * This is the whole reason the chained run starts at all. Verification cannot
+ * certify a plan clean — repeated reviews of one untouched plan report
+ * different problems each time — so the choice was never "chain a clean plan
+ * or refuse", it was "hand over what was found, or discover it at 4am".
+ */
+function openFindingsStep(findings: string[], decisionsPath: string): string[] {
+	if (findings.length === 0) return [];
+	return [
+		'',
+		`KNOWN PROBLEMS IN THIS PLAN (${findings.length}):`,
+		'An independent reviewer read the whole plan and reported these. They were',
+		'NOT fixed before this run started. Settle every one BEFORE writing code:',
+		'- Where the reviewer names a resolution, take it unless the plan clearly',
+		'  contradicts it. It saw the whole plan at once; you will not.',
+		'- Where it offers a choice, pick the option that changes the least and',
+		'  matches what the rest of the plan already does.',
+		'- Check each against the plan first. A reviewer reading sixteen files in',
+		'  one pass can misread one, and a "fix" for a problem that is not there',
+		'  costs more than the problem would have.',
+		`- Record each one in \`${decisionsPath}\` under its own "## " heading: what`,
+		'  the problem was, what you chose, and why. This is the only record the',
+		'  user will have of a decision they were not awake for.',
+		'- Fixing these is plan work, not code. Do not start implementing to make',
+		'  one go away.',
+		'',
+		...findings.map((f, i) => `  ${i + 1}. ${f.replace(/\s+/g, ' ').trim()}`),
+		''
+	];
 }
 
 /**
@@ -119,13 +193,18 @@ export function preflightPrompt(
  * still present to confirm. A command that was never executed is a guess, and
  * an unattended run built on a guess fails all night.
  */
-function verificationContractStep(
-	verifyCommand: string | null,
-	stepCheckCommand: string | null,
-	contextMode: 'step' | 'phase'
-): string[] {
+/**
+ * How a step that would normally interview the user is phrased when nobody is
+ * there. Kept as one helper so the two contract variants below cannot drift
+ * into disagreeing about what a chained run may do.
+ */
+function settleOrAsk(interactive: boolean, ask: string, settle: string): string {
+	return interactive ? ask : settle;
+}
+
+function verificationContractStep(contextMode: 'step' | 'phase', interactive: boolean): string[] {
 	if (contextMode === 'phase') {
-		return phaseContextContract(verifyCommand);
+		return phaseContextContract(interactive);
 	}
 	return [
 		'3. Settle the TWO commands the runner executes mechanically all night:',
@@ -136,12 +215,7 @@ function verificationContractStep(
 		'     `python -m py_compile`). Near-zero cost, nothing written or maintained.',
 		'   - PHASE VERIFICATION: runs when each phase of the plan completes — NOT',
 		'     per step. The real proof: the test suite if one exists.',
-		stepCheckCommand
-			? `   The user supplied a step check: \`${stepCheckCommand}\`.`
-			: '   The user left the step check blank — settle it yourself.',
-		verifyCommand
-			? `   The user supplied a phase verification command: \`${verifyCommand}\`.`
-			: '   The user left phase verification blank — settle it yourself.',
+		'   Both are yours to settle — there is no configured value to honour.',
 		"   For the phase verification, FIRST check the plan's overview.md for a",
 		`   "## ${VERIFICATION_COMMAND_HEADING}" section — guided planning settles it during`,
 		'   the planning interview. If present, RUN it and adopt it unless it fails.',
@@ -150,11 +224,16 @@ function verificationContractStep(
 		'      requirements.txt, go.mod, Makefile, and any existing test directory.',
 		'      A repo can have SEVERAL; cover every stack found, joining with `&&`',
 		'      so any failure fails the check. One command, one exit code.',
-		'   b. RUN each candidate once with run_command — including any the user',
-		'      supplied. A command you never executed is a guess. If a user-supplied',
-		'      command fails, do NOT silently substitute your own: show what',
-		'      happened and ask ONE `ask_user_question` offering a corrected',
-		'      command, a fallback, or running anyway.',
+		'   b. RUN each candidate once with run_command. A command you never',
+		'      executed is a guess. If a candidate the plan named fails, do NOT',
+		'      silently substitute your own: show what',
+		settleOrAsk(
+			interactive,
+			'      happened and ask ONE `ask_user_question` offering a corrected\n' +
+				'      command, a fallback, or running anyway.',
+			'      happened and settle on the best alternative you can verify by\n' +
+				'      running it, recording what you rejected and why.'
+		),
 		'   c. PREFER THE CHEAPEST CHECK THAT WOULD CATCH A REAL BREAKAGE. Depth of',
 		'      verification should match what exists, not be maximal from step one.',
 		'      When the repo has NO test suite, the honest options for phase',
@@ -162,10 +241,16 @@ function verificationContractStep(
 		'      big enough to earn the dependency), the same toolchain check as the',
 		'      step check (fine for a small project), or — LAST resort, and say',
 		'      why — a hand-written validation script.',
-		'   d. Ask the user ONE `ask_user_question` presenting both proposals with',
-		'      concrete options, cheapest first. Do NOT scaffold a test framework',
-		'      without asking — it adds dependencies to a project that may not want',
-		'      them.',
+		settleOrAsk(
+			interactive,
+			'   d. Ask the user ONE `ask_user_question` presenting both proposals with\n' +
+				'      concrete options, cheapest first. Do NOT scaffold a test framework\n' +
+				'      without asking — it adds dependencies to a project that may not want\n' +
+				'      them.',
+			'   d. Choose the cheapest of the two proposals that would catch a real\n' +
+				'      breakage. Do NOT scaffold a test framework: nobody is available to\n' +
+				'      approve adding dependencies to a project that may not want them.'
+		),
 		'   e. If they choose scaffolding, the scaffold itself is work the RUN does,',
 		'      not you: note it in the decisions file so it becomes the first thing',
 		'      the loop builds. Preflight writes no code.',
@@ -187,29 +272,35 @@ function verificationContractStep(
 }
 
 /** The single-command contract for continuous per-phase context runs. */
-function phaseContextContract(verifyCommand: string | null): string[] {
+function phaseContextContract(interactive: boolean): string[] {
 	return [
 		'3. Settle the ONE command the runner executes mechanically all night.',
 		'   This run uses continuous per-phase context: the model builds a whole',
 		'   phase, then the runner runs PHASE VERIFICATION — the real proof, the',
 		'   test suite if one exists. There is NO per-step check in this mode; do',
 		'   not ask the user about one and do not record one.',
-		verifyCommand
-			? `   The user supplied a verification command: \`${verifyCommand}\`.`
-			: '   The user left the verification command blank — settle it yourself.',
+		'   It is yours to settle — there is no configured value to honour.',
 		'   FIRST check the plan\'s overview.md for a "## Verification command"',
 		'   section: guided planning settles this during the planning interview,',
 		'   and its choice was confirmed by the user. If present, RUN it; adopt it',
 		'   unless it fails. Only interview the user when the plan has none.',
 		'   a. Detect the stack(s) from what is actually in the working directory,',
 		'      cover every stack found joining with `&&`. One command, one exit code.',
-		'   b. RUN the candidate once with run_command — including one the user',
-		'      supplied. A command you never executed is a guess. If a user-supplied',
-		'      command fails, do NOT silently substitute your own: show what',
-		'      happened and ask ONE `ask_user_question`.',
+		'   b. RUN the candidate once with run_command. A command you never',
+		'      executed is a guess. If a candidate the plan named fails, do NOT',
+		'      silently substitute your own: show what',
+		settleOrAsk(
+			interactive,
+			'      happened and ask ONE `ask_user_question`.',
+			'      happened and settle on the best alternative you can verify by running it.'
+		),
 		'   c. PREFER THE CHEAPEST CHECK THAT WOULD CATCH A REAL BREAKAGE; a',
 		'      hand-written validation script is the LAST resort, and scaffolding a',
-		'      test framework requires asking the user first.',
+		settleOrAsk(
+			interactive,
+			'      test framework requires asking the user first.',
+			'      test framework is not an option — nobody can approve the dependency.'
+		),
 		`   d. Record it under "## ${VERIFICATION_COMMAND_HEADING}" — that section only.`,
 		'   The recorded command MUST be READ-ONLY and side-effect free (no `git`,',
 		'   no installs, no file writes, no servers), fast, idempotent, and',

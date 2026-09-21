@@ -83,9 +83,41 @@
 	</label>
 </div>
 
+<div class="field run-mode">
+	<span class="label">
+		Run mode
+		<Tooltip
+			label="About run mode"
+			text="Attended stops at three checkpoints: the overview, the phase outline, and the finished plan. Unattended plan skips only the last one — the first two land while you are still answering interview questions, and are the cheapest place to catch a bad overview before it becomes an hour of planning. Nothing skips the interview itself."
+		/>
+	</span>
+	<select bind:value={cfg.run_mode} aria-label="Run mode">
+		<option value="attended">Attended — stop at every checkpoint</option>
+		<option value="unattended_plan">Unattended plan — skip the final approval</option>
+		<option value="unattended_chain">Unattended plan + code — start a coding run too</option>
+	</select>
+</div>
+
 <div class="toggle-row">
 	<label>
-		<input type="checkbox" bind:checked={cfg.skip_verification} />
+		<input type="checkbox" bind:checked={cfg.use_git} />
+		<span class="label">
+			Use git
+			<Tooltip
+				label="About using git"
+				text="Off drops the Commit section from every phase file, so a plan for a project you are not versioning never tells a coding run to commit. The Rollback section stays either way — rolling back without git means deleting the files a phase created. Turn this off for a project with no git repository, or one you do not want versioned."
+			/>
+		</span>
+	</label>
+</div>
+
+<div class="toggle-row">
+	<label>
+		<input
+			type="checkbox"
+			bind:checked={cfg.skip_verification}
+			disabled={cfg.run_mode === 'unattended_chain'}
+		/>
 		<span class="label">
 			Skip verification
 			<Tooltip
@@ -94,9 +126,75 @@
 			/>
 		</span>
 	</label>
+	{#if cfg.run_mode === 'unattended_chain'}
+		<p class="hint">Required in this mode — it decides whether the coding run may start.</p>
+	{/if}
 </div>
 
+{#if cfg.run_mode === 'unattended_chain'}
+	<details class="coding-run">
+		<summary>Coding run settings</summary>
+		<p class="hint">
+			The coding job is created and started without stopping, so this is the only chance to set it.
+			Leave anything blank to let the coding run's own preflight settle it.
+		</p>
+
+		<label class="sub">
+			Max attempts per step
+			<input
+				type="number"
+				min="1"
+				max="10"
+				bind:value={cfg.coding_max_attempts}
+				aria-label="Max attempts per step"
+			/>
+		</label>
+
+		<label class="sub">
+			Context mode
+			<select bind:value={cfg.coding_context_mode} aria-label="Context mode">
+				<option value="">Let the coding job decide</option>
+				<option value="phase">One continuous context per phase</option>
+				<option value="step">A fresh context per checklist item</option>
+			</select>
+		</label>
+	</details>
+{/if}
+
 <style>
+	.field.run-mode {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.field.run-mode select {
+		width: 100%;
+	}
+
+	.coding-run {
+		margin-top: 0.25rem;
+	}
+
+	.coding-run summary {
+		cursor: pointer;
+		font-weight: 500;
+	}
+
+	.coding-run .sub {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		margin-top: 0.5rem;
+		font-size: 0.9em;
+	}
+
+	.hint {
+		margin: 0.15rem 0 0 1.6rem;
+		font-size: 0.85em;
+		opacity: 0.7;
+	}
+
 	.toggle-row label {
 		display: flex;
 		align-items: center;

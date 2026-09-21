@@ -23,6 +23,7 @@ import type { Artifact, LintIssue, ToolContext } from '$lib/agent/tools';
 import { runTurnCore } from '$lib/agent/runTurn';
 import { buildSystemPrompt, looksLikeFileOutputRequest } from '$lib/agent/system-prompt';
 import { finalizeStreamText } from '$lib/markdown';
+import { formatTodayLong } from '$lib/utils/format';
 
 export interface EphemeralTurnOptions {
 	userMessage: string;
@@ -129,6 +130,61 @@ export interface EphemeralTurnResult {
 	rawText: string;
 }
 
+/**
+ * The ambient facts a turn needs that are true of the RUN rather than the task
+ * — stated for a caller that brought its own system prompt.
+ *
+ * `buildSystemPrompt` provides these, but a custom `systemPrompt` REPLACES it
+ * rather than adding to it, and every job pipeline passes its own. So guided
+ * planning and autonomous coding ran without ever being told the date or their
+ * working directory: a planning run tried `fs_list_dir /` and got "path
+ * escapes working directory" back, and reasoned about "the current stable
+ * release" of a crate with no idea what today is.
+ *
+ * Deliberately only what the runtime actually enforces or knows, so a
+ * pipeline's own instructions stay authoritative and this cannot contradict
+ * them. Chat-shaped sections of the full prompt — citation formatting, the
+ * response-format preference, memories, images — are NOT reproduced here: they
+ * are scoped to chat by design, and a job's prompt says how its own output
+ * should look.
+ */
+export function ambientContextNote(opts: {
+	workingDir: string | null;
+	writeRoot?: string | null;
+}): string {
+	const lines: string[] = [
+		'',
+		'',
+		`Today's date is ${formatTodayLong()}. Your training data has a cutoff, so what`,
+		'you recall about current versions, releases and events may be out of date —',
+		'check anything time-sensitive rather than reciting it.'
+	];
+
+	if (opts.workingDir) {
+		const root = opts.writeRoot?.trim();
+		lines.push(
+			'',
+			'WORKING DIRECTORY:',
+			`- You are in \`${opts.workingDir}\`. Every path you give a tool resolves against it.`,
+			'- Use relative paths: `.` is this directory, `src/main.rs` is a file in it.',
+			'- An absolute path works only if it points INSIDE this directory; anything',
+			'  outside it, and any path containing `..`, is refused.'
+		);
+		if (root) {
+			// Stricter than reads: writes must be relative AND under the root, so
+			// an absolute path is refused here even when it points inside the
+			// working directory. See isUnderWriteRoot.
+			lines.push(
+				`- You may only WRITE inside \`${root}\` (relative to the working directory).`,
+				'  A write anywhere else is refused, and a write path must be relative —',
+				'  an absolute one is refused even if it points inside the working directory.'
+			);
+		}
+	}
+
+	return lines.join('\n');
+}
+
 export async function runEphemeralTurn(
 	options: EphemeralTurnOptions
 ): Promise<EphemeralTurnResult> {
@@ -138,7 +194,15 @@ export async function runEphemeralTurn(
 	// beginning.").
 	const messages: ChatMessage[] = mergeLeadingSystemMessages([
 		options.systemPrompt != null
-			? { role: 'system', content: options.systemPrompt }
+			? {
+					role: 'system',
+					content:
+						options.systemPrompt +
+						ambientContextNote({
+							workingDir: options.workingDir,
+							writeRoot: options.writeRoot
+						})
+				}
 			: buildSystemPrompt(options.workingDir),
 		...(options.history ?? []),
 		{ role: 'user', content: options.userMessage }

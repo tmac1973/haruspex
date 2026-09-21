@@ -142,7 +142,8 @@ describe('jobRuns store', () => {
 			peak_prompt_tokens: 12400,
 			model_calls: 7,
 			reasoning_ms: 251000,
-			total_ms: 412000
+			total_ms: 412000,
+			turn_stats: null
 		};
 		mod.setStepStatsProvider((runId, ordering) => (runId === 5 && ordering === 2 ? stats : null));
 		await mod.markRunStepFinished(5, 2, 'succeeded', 'out', null, 600);

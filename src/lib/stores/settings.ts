@@ -421,6 +421,15 @@ export interface AppSettings {
 	 */
 	reasoningEffortDefaulted: boolean;
 	/**
+	 * True once the raised file-write output cap has been applied to this
+	 * install. Lets the migration tell "never changed it" (adopt the new
+	 * default) apart from "deliberately chose 32768" (leave it alone) — the
+	 * stored number alone cannot, since both read as 32768.
+	 *
+	 * Remove a release after the migration ships.
+	 */
+	maxResponseTokensFileWriteDefaulted: boolean;
+	/**
 	 * Extra instructions appended to the built-in system prompt. Empty
 	 * string means "no addition". Free-form text edited in Settings; we
 	 * append it verbatim under a CUSTOM INSTRUCTIONS heading so it sits
@@ -576,8 +585,23 @@ const defaultProxy: ProxyConfig = {
 export const DEFAULT_CONTEXT_SIZE = 32768;
 /** Output cap for a normal agent turn. Historically the only cap, hardcoded. */
 export const DEFAULT_MAX_RESPONSE_TOKENS = 8192;
-/** Output cap for file-writing turns — see `maxResponseTokensFileWrite`. */
-export const DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE = 32768;
+/**
+ * Output cap for file-writing turns — see `maxResponseTokensFileWrite`.
+ *
+ * Raised from 32768 after a guided-planning run failed three times writing a
+ * ~31,000-character phase file: the model spent its budget reasoning, hit the
+ * ceiling mid-`content`, and the call arrived with a path and nothing to
+ * write. A real project's files are large, and a user has no way to connect
+ * "requires non-empty content" to a number in Settings → Agent.
+ *
+ * Safe to raise on any backend: `clampToContext` caps the effective value at
+ * half the context window, so a small model gets a proportionate ceiling
+ * rather than one that starves its own prompt budget.
+ */
+export const DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE = 65536;
+
+/** What the file-write cap defaulted to before that. See the load() migration. */
+const LEGACY_MAX_RESPONSE_TOKENS_FILE_WRITE = 32768;
 /** Bounds for both caps, so a typo can't wedge every turn. */
 export const MIN_MAX_RESPONSE_TOKENS = 512;
 export const MAX_MAX_RESPONSE_TOKENS = 131072;
@@ -633,6 +657,7 @@ const defaults: AppSettings = {
 	// request time, so this is inert on models with no effort axis.
 	reasoningEffort: 'medium',
 	reasoningEffortDefaulted: true,
+	maxResponseTokensFileWriteDefaulted: true,
 	customSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
 	apiKeys: [],
@@ -737,11 +762,22 @@ function load(): AppSettings {
 			const alreadyDefaulted = parsed.reasoningEffortDefaulted === true;
 			const reasoningEffort =
 				alreadyDefaulted || storedEffort !== null ? storedEffort : defaults.reasoningEffort;
+			// Installs still sitting on the old file-write ceiling adopt the new
+			// one, once. A user who deliberately picks 32768 AFTER this ships
+			// keeps it, because the flag is already set by then.
+			const fileWriteDefaulted = parsed.maxResponseTokensFileWriteDefaulted === true;
+			const storedFileWrite = parsed.maxResponseTokensFileWrite;
+			const maxResponseTokensFileWrite =
+				!fileWriteDefaulted && storedFileWrite === LEGACY_MAX_RESPONSE_TOKENS_FILE_WRITE
+					? defaults.maxResponseTokensFileWrite
+					: (storedFileWrite ?? defaults.maxResponseTokensFileWrite);
 			return {
 				...defaults,
 				...parsed,
 				reasoningEffort,
 				reasoningEffortDefaulted: true,
+				maxResponseTokensFileWrite,
+				maxResponseTokensFileWriteDefaulted: true,
 				inferenceBackend: mergedInference,
 				apiKeys,
 				integrations: mergedIntegrations,

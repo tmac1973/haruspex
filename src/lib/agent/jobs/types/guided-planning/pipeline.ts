@@ -8,6 +8,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { createJob } from '$lib/stores/jobs.svelte';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '$lib/agent/tools/planning';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
@@ -20,7 +21,7 @@ import {
 	type JobRunStepStatus
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
-import { parseGuidedPlanningConfig, type GuidedPlanningConfig } from './config';
+import { parseGuidedPlanningConfig, RUN_MODE_LABELS, type GuidedPlanningConfig } from './config';
 import { interviewResearchRules, withWebResearch, writeResearchRules } from '../webResearch';
 import {
 	extractDecisionCommand,
@@ -111,8 +112,38 @@ export function guidedPlanningToolsets(webResearch: boolean): {
 	};
 }
 
-/** Max verifier→revise rounds before proceeding to approval regardless. */
-const MAX_VERIFY_ROUNDS = 3;
+/**
+ * How many review/revise rounds verification spends before proceeding to
+ * approval regardless.
+ *
+ * Raised from 3 once it was measured what a round actually buys. Three
+ * independent reviews of one untouched plan reported 4, 13 and 9 problems —
+ * the same plan, sampled differently each time — with a small core found by
+ * every pass and a long tail found by one. Each round does remove what it
+ * finds (run 52's rounds 1 and 2 left nothing behind for round 3), so more
+ * rounds mean fewer defects.
+ *
+ * They do NOT mean a clean plan, and nothing downstream may assume otherwise:
+ * a pass reporting zero is a sample that happened to catch nothing, not proof
+ * there is nothing to catch. This is tail-grinding, bounded by patience.
+ */
+const MAX_VERIFY_ROUNDS = 5;
+
+/**
+ * Output ceiling for the verifier turn.
+ *
+ * It is the one heavy turn that writes no file, so it inherits the ordinary
+ * `maxResponseTokens` — 8192 by default, which is not close to enough.
+ * Measured on run 51: 33 verifier calls generated 138,055 tokens, of which
+ * 135,540 were reasoning. It thinks at 98% to produce a couple of thousand
+ * tokens of findings, and a single call exceeding 8192 ended the run.
+ *
+ * Read-only turns cannot use the file-write ceiling (that setting means what
+ * it says), so this is pinned here. `resolveMaxResponseTokens` honours an
+ * explicit per-call value over both settings, and `clampToContext` still caps
+ * it at half the window on a smaller model.
+ */
+const VERIFIER_MAX_RESPONSE_TOKENS = 32768;
 
 /** A job's plan output folder, relative to working_dir (default plan/<slug>/). */
 function guidedPlanOutputDir(job: JobWithSteps, cfg: GuidedPlanningConfig): string {
@@ -335,19 +366,37 @@ const NO_EMBEDDED_CODE_RULES = [
 export function phaseWritePrompt(
 	outDir: string,
 	overviewPath: string,
-	webResearch: boolean
+	webResearch: boolean,
+	overviewText?: string | null,
+	useGit: boolean = true
 ): string {
 	return [
 		'You are writing ONE file of an approved, dependency-ordered implementation',
 		'plan. Planning only — never write or edit code. Every decision is already',
 		'made: do NOT ask questions, just write the one file you are told to write.',
 		'',
-		`Read the overview at \`${overviewPath}\` and any earlier phase files in`,
-		`\`${outDir}\` for context (fs_read_text, fs_list_dir). Then write EXACTLY the`,
+		...(overviewText
+			? [
+					`The overview (\`${overviewPath}\`) is reproduced at the end of this prompt —`,
+					`do NOT read it from disk. Read any earlier phase files in \`${outDir}\` for`,
+					'context (fs_read_text, fs_list_dir). Then write EXACTLY the'
+				]
+			: [
+					`Read the overview at \`${overviewPath}\` and any earlier phase files in`,
+					`\`${outDir}\` for context (fs_read_text, fs_list_dir). Then write EXACTLY the`
+				]),
 		'single phase file named in the instruction, with fs_write_text, using these',
 		'sections: a "# Phase NN — <title>" heading, a "Depends on:" / "Enables:" line,',
 		'then ## Goal, ## Files touched, ## Steps, ## Build gate, ## Test plan,',
-		'## Commit, ## Rollback. Resolve every decision in the text — never "TBD" or',
+		// "## Commit" only when the project uses git — a plan for an unversioned
+		// project must not instruct a coding run to do something it will not do.
+		// "## Rollback" stays either way: it is the last section of the template
+		// and therefore the tail-truncation detector in REQUIRED_PHASE_SECTIONS,
+		// and rollback without git is still real ("delete the files this phase
+		// created").
+		useGit
+			? '## Commit, ## Rollback. Resolve every decision in the text — never "TBD" or'
+			: '## Rollback. Resolve every decision in the text — never "TBD" or',
 		'"decide later".',
 		'',
 		'Steps are IMPLEMENTATION actions only — things that create or change the',
@@ -358,10 +407,29 @@ export function phaseWritePrompt(
 		'one off installing headless-browser packages and embedding a 50-test harness',
 		'into the shipped product file.',
 		'',
+		'LENGTH: keep the whole file under about 12,000 characters — roughly 1,500',
+		'words. That is a budget for the FILE. It is not a line count: folding the',
+		'same text into fewer, longer lines does not make it shorter, and every',
+		'character is one the verifier and the coding run both read again.',
+		'',
+		'A phase file is a SPECIFICATION a competent engineer implements, not a',
+		'transcript of the implementation. Name the signatures, data shapes, rules',
+		'and edge cases; do not narrate how to type them in. If a phase genuinely',
+		'needs more than that to specify, the outline is telling you it should have',
+		'been two phases — say so in ## Goal and specify the part that belongs here.',
+		'',
+		'Three things make these files long without making them clearer, so do not',
+		'do them: restating what an earlier phase already settled (reference it by',
+		'number instead), explaining WHY a decision was made (the overview holds the',
+		'rationale), and writing prose around a list that says the same thing.',
+		'',
 		...NO_EMBEDDED_CODE_RULES,
 		'',
 		`Write ONLY that one file, inside \`${outDir}\`. Then stop.`,
-		...(webResearch ? writeResearchRules() : [])
+		...(webResearch ? writeResearchRules() : []),
+		...(overviewText
+			? ['', `--- OVERVIEW (${overviewPath}) ---`, overviewText, '--- END OVERVIEW ---']
+			: [])
 	].join('\n');
 }
 
@@ -369,24 +437,46 @@ export function phaseWritePrompt(
  * Independent verifier system prompt. Fresh context (it reads the artifacts from
  * disk, never the planning conversation), read-only, single job: flag ordering
  * violations and deferred decisions. Signals "PLAN OK" when clean.
+ *
+ * `overviewText` inlines the overview instead of making the model fetch it: the
+ * runner has already read it for its own gates, so spending a tool round trip
+ * to put the same bytes into the same context is pure overhead. Pass null when
+ * it cannot be read (no sandbox root) and the model is told to read it instead.
+ *
+ * Deliberately does NOT ask about malformed files. Truncation, a missing
+ * "# Phase NN" heading and missing sections are decided mechanically by
+ * `phaseFileProblem`, which gates every phase write and every revision — so a
+ * malformed file cannot reach the verifier without failing the run first.
+ * Asking a reasoning model to re-derive a guarantee the runner already
+ * enforces cost a check, its reasoning, and a paragraph of prompt explaining
+ * how to recover from finding one.
  */
-export function verifierPrompt(outDir: string, overviewPath: string): string {
+export function verifierPrompt(
+	outDir: string,
+	overviewPath: string,
+	overviewText?: string | null
+): string {
 	return [
 		'You are an INDEPENDENT reviewer of a phased implementation plan. You did not',
 		'write it. Review it with fresh eyes and check ONLY what is listed below.',
 		'',
-		`1. Read the overview at \`${overviewPath}\`, then list \`${outDir}\` and read`,
-		'   every phase-NN-*.md file in it.',
-		'2. Look for exactly five kinds of problem:',
+		...(overviewText
+			? [
+					`1. The overview (\`${overviewPath}\`) is reproduced at the end of this`,
+					`   prompt — do NOT read it from disk. List \`${outDir}\` and read every`,
+					'   phase-NN-*.md file in it.'
+				]
+			: [
+					`1. Read the overview at \`${overviewPath}\`, then list \`${outDir}\` and read`,
+					'   every phase-NN-*.md file in it.'
+				]),
+		'2. Look for exactly four kinds of problem:',
 		'   a. ORDERING — any phase that depends on work introduced in a LATER phase',
 		'      (its "Depends on" names a higher-numbered phase, or its steps need',
 		'      something a later phase creates).',
 		'   b. DEFERRED DECISIONS — any "TBD", "decide later", "we’ll figure out", an',
 		'      unresolved either/or, or a step that does not say what to actually do.',
-		'   c. MALFORMED FILE — a phase file that is empty, truncated, starts partway',
-		'      through the document instead of at its "# Phase NN" heading, or is',
-		'      missing whole sections.',
-		'   d. EMBEDDED IMPLEMENTATION CODE — a phase file that WRITES the code',
+		'   c. EMBEDDED IMPLEMENTATION CODE — a phase file that WRITES the code',
 		'      instead of specifying it: function bodies, a complete source file, a',
 		'      test suite, or a block labelled "copy verbatim" / "source of truth".',
 		'      Plans specify signatures, data structures and rules; the code is',
@@ -397,7 +487,7 @@ export function verifierPrompt(outDir: string, overviewPath: string): string {
 		'      Also flag a COMMAND that embeds a program — `python -c "…"`,',
 		'      `node -e "…"`, a heredoc, a pasted REPL transcript. Build gates run',
 		'      real commands; a program inside one is a validator in disguise.',
-		'   e. CONTRADICTORY OR UNREACHABLE STEP — a step that cannot be followed as',
+		'   d. CONTRADICTORY OR UNREACHABLE STEP — a step that cannot be followed as',
 		'      written: an action placed after a "Return"/"stop" so it can never',
 		'      run, two steps specifying conflicting behaviour for the same case, or',
 		'      a step that references something the same file says does not exist.',
@@ -405,18 +495,18 @@ export function verifierPrompt(outDir: string, overviewPath: string): string {
 		'      whether the game should end in WON" — the check is dead. Quote the',
 		'      step and say what the correct order or resolution is.',
 		'',
-		'IMPORTANT: if a file is MALFORMED, report it under (c) and move straight on',
-		'to the next file. Do NOT try to decide whether it also counts as one of the',
-		'other problems, and do NOT try to infer what its missing parts would have',
-		'said — a malformed file cannot be checked for the others at all, and',
-		're-reading it will not fix that. One bullet, then move on.',
-		'',
 		'You write NOTHING to disk. Then respond:',
 		'- If there are NO problems, your ENTIRE reply must be exactly: PLAN OK',
-		'- Otherwise, reply with a short bulleted list — each bullet naming the phase',
-		'  file and the specific ordering / decision / malformed / embedded-code /',
-		'  unreachable-step problem to fix.',
-		'Report only those five kinds of problem — not style or scope opinions.'
+		'- Otherwise, reply with a short bulleted list. START EACH BULLET with the',
+		'  letter of the category it matched, in parentheses, then name the phase',
+		'  file and the specific problem. For example:',
+		'    - (a) phase-02-api.md: depends on phase 03, which is written later',
+		'    - (c) phase-04-engine.md: the "update loop" block is a full',
+		'      implementation — specify the signature and the rules instead',
+		'Report only those four kinds of problem — not style or scope opinions.',
+		...(overviewText
+			? ['', `--- OVERVIEW (${overviewPath}) ---`, overviewText, '--- END OVERVIEW ---']
+			: [])
 	].join('\n');
 }
 
@@ -580,6 +670,38 @@ export function phaseFileProblem(relPath: string, text: string): string | null {
 }
 
 /**
+ * Split a verifier verdict into findings that must block an unattended run and
+ * findings that merely want attention.
+ *
+ * Severity rides on the four categories the verifier already reports rather
+ * than a taxonomy of its own. (a) ordering, (b) deferred decisions and (d)
+ * contradictory or unreachable steps block; (c) embedded implementation code
+ * is advisory. The deciding question is what an UNATTENDED coding run could
+ * survive: it cannot resolve a "TBD", because `ask_user_question` is not in
+ * its toolset, so it would silently invent the decision. Over-specified code
+ * in a plan file is a quality problem, not a stop.
+ *
+ * Fails safe in two directions. Only lines that are bullets are considered, so
+ * a model's preamble cannot invent findings; and a bullet with no tag, or a
+ * letter outside a-d, counts as BLOCKING — a verdict the runner cannot read
+ * must never read as permission to proceed.
+ */
+export function classifyFindings(verdict: string): { blocking: string[]; advisory: string[] } {
+	if (isPlanClean(verdict)) return { blocking: [], advisory: [] };
+	const blocking: string[] = [];
+	const advisory: string[] = [];
+	for (const raw of verdict.split('\n')) {
+		const line = raw.trim();
+		if (!/^[-*]\s/.test(line)) continue;
+		const text = line.replace(/^[-*]\s+/, '');
+		const tag = /^\(([a-z])\)/i.exec(text)?.[1]?.toLowerCase();
+		if (tag === 'c') advisory.push(text);
+		else blocking.push(text);
+	}
+	return { blocking, advisory };
+}
+
+/**
  * The verifier reports a clean plan by replying with "PLAN OK".
  *
  * Relies on `finalText` having reasoning stripped: a model that emits a
@@ -616,6 +738,12 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	// Derived once so a turn's tools and its prompt's research rules can't
 	// disagree: every prompt below takes the same flag its toolset was built from.
 	const webResearch = cfg.web_research;
+	// Whether the plan may assume git. Drops "## Commit" from every phase file
+	// when off; "## Rollback" stays (see phaseWritePrompt).
+	const useGit = cfg.use_git;
+	// Which checkpoints this run stops at. Only the FINAL approval is
+	// conditional — the overview and outline checkpoints run in every mode.
+	const runMode = cfg.run_mode;
 	const toolsets = guidedPlanningToolsets(webResearch);
 	// A survey the user asked for ("research the PDF libraries and give me a
 	// choice") is a dozen search and read calls on top of the interview itself.
@@ -628,6 +756,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	const PLANNING = 2;
 	const VERIFY = 3;
 	const APPROVAL = 4;
+	const HANDOFF = 5;
 
 	const startStep = (idx: number) => {
 		const startedAt = Date.now();
@@ -664,10 +793,17 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// model self-corrects WITHIN the turn (cheaper than the post-turn
 		// `ensureWritten` retry). Set it on the turns whose job is to produce a file;
 		// leave it off for the read-only verifier turn.
-		opts: { tools?: string[]; expectsFileOutput?: boolean } = {}
+		opts: {
+			tools?: string[];
+			expectsFileOutput?: boolean;
+			kind?: string;
+			maxResponseTokens?: number;
+		} = {}
 	) => {
 		const result = await deps.runJobTurn({
 			userMessage,
+			turnKind: opts.kind,
+			maxResponseTokens: opts.maxResponseTokens,
 			contextSize: deps.contextSize(),
 			visionSupported: deps.visionSupported(),
 			maxIterations,
@@ -779,7 +915,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`the section's single fenced code block. Then write the overview back.`,
 				overviewRevisePrompt(outDir, overviewPath, webResearch),
 				15,
-				{ expectsFileOutput: true }
+				// The runner diagnosed this mechanically and handed over an exact
+				// instruction — the clearest candidate for cheaper reasoning.
+				{ expectsFileOutput: true, kind: 'repair.command' }
 			);
 		}
 	};
@@ -840,38 +978,146 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		stepIdx: number,
 		retryMessage: (problem: string) => string,
 		retryPrompt: string,
-		failureError: (problem: string) => string
+		failureError: (problem: string) => string,
+		kind = 'retry'
 	): Promise<void> => {
 		abortIfCancelled();
 		let problem = await check();
 		for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS && problem !== null; attempt++) {
 			abortIfCancelled();
-			await turn(stepIdx, retryMessage(problem), retryPrompt, 15, { expectsFileOutput: true });
+			await turn(stepIdx, retryMessage(problem), retryPrompt, 15, {
+				expectsFileOutput: true,
+				kind
+			});
 			abortIfCancelled();
 			problem = await check();
 		}
 		if (problem !== null) throw new Error(failureError(problem));
 	};
 
-	// Independent verifier (shown on the Verification step); revise once if it
-	// reports problems. Returns true when the plan is clean.
-	const verifyOnce = async (): Promise<boolean> => {
+	/**
+	 * Drop null entries, so an unset override is ABSENT from the created job's
+	 * config rather than present as null. Both read as "use the default" to the
+	 * coding parser, but the job editor shows what is actually stored, and a wall
+	 * of nulls reads as decisions somebody made.
+	 */
+	function definedOnly<T extends object>(o: T): Partial<T> {
+		return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null)) as Partial<T>;
+	}
+
+	/** A phase file, as the write tools name one. */
+	const isPhaseFile = (relPath: string): boolean =>
+		/(^|\/)phase-\d+[^/]*\.md$/.test(relPath.trim());
+
+	/**
+	 * Run a turn, reporting which phase files it actually wrote.
+	 *
+	 * Read off the tool-call stream rather than from timestamps on disk: the
+	 * question is what this turn chose to change, and a turn that writes a file
+	 * back unchanged still answers "yes, I acted on the findings".
+	 */
+	const turnWritingPhaseFiles = async (
+		stepIdx: number,
+		userMessage: string,
+		systemPrompt: string,
+		maxIterations: number,
+		kind: string
+	): Promise<string[]> => {
+		const written = new Set<string>();
+		const base = deps.buildStreamCallbacks(stepIdx);
+		const result = await deps.runJobTurn({
+			turnKind: kind,
+			userMessage,
+			contextSize: deps.contextSize(),
+			visionSupported: deps.visionSupported(),
+			maxIterations,
+			interactive: true,
+			writeRoot: outDir,
+			systemPrompt,
+			toolAllowlist: toolsets.planning,
+			expectsFileOutput: true,
+			...base,
+			onToolStart: (call: ResolvedToolCall) => {
+				const path = call.arguments?.path;
+				if (
+					(call.name === 'fs_write_text' || call.name === 'fs_edit_text') &&
+					typeof path === 'string' &&
+					isPhaseFile(path)
+				) {
+					written.add(path.trim());
+				}
+				base.onToolStart?.(call);
+			}
+		});
+		recordNote(stepIdx, result.finalText);
+		return [...written];
+	};
+
+	/** One independent review pass. Returns the verifier's verdict text. */
+	const verifyTurn = async (): Promise<string> => {
+		// Hand the verifier the overview rather than making it fetch a file the
+		// runner has already read for its own gates. Null (no sandbox root)
+		// falls back to the read-it-yourself wording.
+		const overviewText = await readWorkdirFile(overviewPath);
 		const verdict = await turn(
 			VERIFY,
 			`Review the phase files in ${outDir} against ${overviewPath}.`,
-			verifierPrompt(outDir, overviewPath),
+			verifierPrompt(outDir, overviewPath, overviewText),
 			25,
-			{ tools: toolsets.verifier }
+			{
+				tools: toolsets.verifier,
+				kind: 'verify.review',
+				maxResponseTokens: VERIFIER_MAX_RESPONSE_TOKENS
+			}
 		);
-		if (isPlanClean(verdict.finalText)) return true;
-		await turn(
+		return verdict.finalText;
+	};
+
+	/**
+	 * Apply a verdict, then hold the rewritten files to the same mechanical
+	 * standard a first write is held to.
+	 *
+	 * That gate is why the verifier no longer looks for malformed files: the
+	 * guarantee has to come from somewhere, and a revision is the one place a
+	 * well-formed file could become truncated without anything noticing.
+	 * Returns the phase files the revision wrote.
+	 */
+	const reviseTurn = async (verdict: string): Promise<string[]> => {
+		const revised = await turnWritingPhaseFiles(
 			VERIFY,
 			`A reviewer found problems with the phase files. Fix every one, keeping ` +
-				`strict dependency order:\n\n${verdict.finalText}`,
+				`strict dependency order:\n\n${verdict}`,
 			planRevisePrompt(outDir, webResearch),
 			35,
-			{ expectsFileOutput: true }
+			'verify.revise'
 		);
+		if (revised.length === 0) return revised;
+		const overviewText = await readWorkdirFile(overviewPath);
+		for (const relPath of revised) {
+			await ensureWritten(
+				checkPhaseFile(relPath),
+				VERIFY,
+				(problem) =>
+					`${relPath} is not correctly written after your revision: ${problem}. Do NOT ` +
+					`ask questions. Write the COMPLETE file to ${relPath} now with fs_write_text ` +
+					`(pass overwrite: true) — the whole document from its "# Phase NN — <title>" ` +
+					`heading through every required section, not a fragment. Then stop.`,
+				phaseWritePrompt(outDir, overviewPath, webResearch, overviewText, useGit),
+				(problem) =>
+					`${relPath} was left malformed by a verification revision and could not be ` +
+					`repaired after ${MAX_WRITE_ATTEMPTS} attempts — ${problem}.`,
+				'verify.retry'
+			);
+		}
+		return revised;
+	};
+
+	// Verify, and revise once if the verdict is not clean. Used by the approval
+	// checkpoint to re-check after a user-driven revision.
+	const verifyOnce = async (): Promise<boolean> => {
+		const verdict = await verifyTurn();
+		if (isPlanClean(verdict)) return true;
+		await reviseTurn(verdict);
 		return false;
 	};
 
@@ -947,6 +1193,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			interactive: true,
 			writeRoot: outDir,
 			systemPrompt,
+			turnKind: 'outline.interview',
 			toolAllowlist: toolsets.outline,
 			forceFinalTool: SUBMIT_PLAN_OUTLINE_TOOL,
 			...base,
@@ -986,6 +1233,91 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		);
 	};
 
+	// What the handoff needs to know: whether a review happened at all, and what
+	// it found. `verified` stays false when the stage is skipped, which is a
+	// different thing from a review that came back clean.
+	let verified = false;
+	/**
+	 * Everything the last review reported and the run did not fix, blocking and
+	 * advisory alike. Handed to the coding run rather than used to refuse it —
+	 * see `handoff`.
+	 */
+	let openFindings: string[] = [];
+
+	/**
+	 * Create and start the coding run, or explain why not. Returns the sentence
+	 * the Handoff stage finishes with.
+	 *
+	 * Never throws: a run that has already produced a good plan must not be
+	 * recorded as failed over a handoff it could not complete. Both `createJob`
+	 * and `enqueue` report failure by returning null rather than throwing, so
+	 * each is reported rather than propagated.
+	 */
+	const handoff = async (): Promise<string> => {
+		if (runMode !== 'unattended_chain') {
+			return `Skipped — run mode is "${RUN_MODE_LABELS[runMode]}"`;
+		}
+		// The only hard refusal left. "Reviewed and imperfect" and "nothing has
+		// looked at this" are different states, and only the second is unsafe.
+		if (!verified) {
+			return 'Not started — verification did not run, so nothing has checked this plan';
+		}
+
+		const codingJobId = await createJob({
+			name: `${job.name} — coding`,
+			description: `Started automatically by guided-planning run ${runId} from the plan in ${outDir}.`,
+			working_dir: job.working_dir,
+			auto_approve_tools: true,
+			schedule_kind: 'manual',
+			schedule_config: null,
+			next_due_at: null,
+			job_type: 'autonomous_coding',
+			// Inherited so the code is built on what the plan was built on — a
+			// chained run has no chance to be corrected before it executes.
+			model_remote_base_url: job.model_remote_base_url,
+			model_remote_api_key: job.model_remote_api_key,
+			model_remote_api_key_id: job.model_remote_api_key_id,
+			model_remote_model_id: job.model_remote_model_id,
+			model_remote_context_size: job.model_remote_context_size,
+			model_remote_vision_supported: job.model_remote_vision_supported,
+			model_advanced: job.model_advanced,
+			// Null overrides are left OUT rather than written as null, so the
+			// coding job's own parser applies its defaults and its preflight
+			// settles what nobody pinned — exactly as for a hand-created job.
+			type_config: JSON.stringify({
+				plan_dir: outDir,
+				use_git: useGit,
+				web_research: webResearch,
+				...definedOnly(cfg.coding_run),
+				// Handed over rather than gated on. Verification cannot certify a
+				// plan clean — three reviews of one untouched plan reported 4, 13
+				// and 9 problems — so refusing on a non-empty list would refuse
+				// forever, and refusing on an empty one would trust a sample. The
+				// coding run is told what the reviewer found and settles each
+				// before it writes code, which is strictly more than it knew when
+				// the gate was letting clean-looking plans through.
+				open_findings: openFindings
+			})
+		});
+		if (codingJobId === null) return 'Could not create the coding job — nothing was started';
+
+		// Said on both paths: it describes the job that now exists, which is
+		// true whether or not it also started.
+		const carried = openFindings.length
+			? ` Carried ${openFindings.length} unresolved finding(s) over for its preflight to settle.`
+			: ' The last review found nothing outstanding.';
+		const codingRunId = await deps.startChainedRun(codingJobId);
+		if (codingRunId === null) {
+			return (
+				`Created coding job ${codingJobId}, but it could not be started — ` +
+				`autonomous coding may be unavailable on this platform.${carried}`
+			);
+		}
+		return (
+			`Started coding job ${codingJobId} (run ${codingRunId}) on the plan in ${outDir}.` + carried
+		);
+	};
+
 	try {
 		// Stage 1 — Overview: interview + write, then the review checkpoint loop.
 		startStep(OVERVIEW);
@@ -994,7 +1326,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			cfg.initial_description?.trim() || 'Plan this project.',
 			overviewStagePrompt(outDir, overviewPath, webResearch),
 			interviewIterations,
-			{ expectsFileOutput: true }
+			{ expectsFileOutput: true, kind: 'overview.interview' }
 		);
 		await ensureWritten(
 			checkFileExists(overviewPath),
@@ -1006,7 +1338,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			overviewStagePrompt(outDir, overviewPath, webResearch),
 			() =>
 				`The overview was never written to ${overviewPath} after ${MAX_WRITE_ATTEMPTS} attempts. ` +
-				`The selected model may be too small to follow the write step reliably — try a larger model.`
+				`The selected model may be too small to follow the write step reliably — try a larger model.`,
+			'overview.retry'
 		);
 		await repairVerificationCommand();
 		let approved = false;
@@ -1036,7 +1369,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`Please revise the overview. The user asked for: ${answer.text}`,
 					overviewRevisePrompt(outDir, overviewPath, webResearch),
 					20,
-					{ expectsFileOutput: true }
+					{ expectsFileOutput: true, kind: 'overview.revise' }
 				);
 			}
 		}
@@ -1089,6 +1422,12 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// plan out of it. The shared outline goes in as context so deps line up.
 		startStep(PLANNING);
 		const outlineText = renderOutline(outline);
+		// Read once, here: the overview is settled (its checkpoint is approved and
+		// the outline was built from it), and every phase turn needs the same
+		// bytes. Inlining it costs the same prompt tokens as the model fetching
+		// it and saves a tool round trip per phase. Null (no sandbox root) falls
+		// back to the read-it-yourself wording.
+		const planningOverview = await readWorkdirFile(overviewPath);
 		for (const phase of outline) {
 			abortIfCancelled();
 			deps.patchStep(PLANNING, { streaming: `Writing phase ${phase.nn} — ${phase.title}` });
@@ -1098,9 +1437,13 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				`Now write ONLY Phase ${phase.nn} — ${phase.title} to \`${phase.relPath}\`. ` +
 				(phase.dependsOn.length ? `It depends on phase ${phase.dependsOn.join(', ')}. ` : '') +
 				(phase.summary ? `Scope: ${phase.summary}` : '');
-			await turn(PLANNING, writeMsg, phaseWritePrompt(outDir, overviewPath, webResearch), 30, {
-				expectsFileOutput: true
-			});
+			await turn(
+				PLANNING,
+				writeMsg,
+				phaseWritePrompt(outDir, overviewPath, webResearch, planningOverview, useGit),
+				30,
+				{ expectsFileOutput: true, kind: 'planning.write' }
+			);
 			await ensureWritten(
 				checkPhaseFile(phase.relPath),
 				PLANNING,
@@ -1110,11 +1453,12 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`overwrite: true to replace what's there) — the whole document from its ` +
 					`"# Phase ${phase.nn} — <title>" heading through every required section, not ` +
 					`a fragment or a continuation. Then stop.`,
-				phaseWritePrompt(outDir, overviewPath, webResearch),
+				phaseWritePrompt(outDir, overviewPath, webResearch, planningOverview, useGit),
 				(problem) =>
 					`Phase ${phase.nn} (${phase.relPath}) was still not written correctly after ` +
 					`${MAX_WRITE_ATTEMPTS} attempts — ${problem}. The selected model may be too small ` +
-					`to follow the write step reliably — try a larger model.`
+					`to follow the write step reliably — try a larger model.`,
+				'planning.retry'
 			);
 		}
 		finishStep(PLANNING, `Wrote ${outline.length} phase file(s) to ${outDir}`);
@@ -1129,49 +1473,121 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		if (cfg.skip_verification) {
 			finishStep(VERIFY, 'Skipped — verification is off for this job');
 		} else {
-			for (let round = 0; round < MAX_VERIFY_ROUNDS; round++) {
-				abortIfCancelled();
-				if (await verifyOnce()) break;
+			let clean = false;
+			let openProblems = '';
+			try {
+				for (let round = 0; round < MAX_VERIFY_ROUNDS; round++) {
+					abortIfCancelled();
+					const verdict = await verifyTurn();
+					if (isPlanClean(verdict)) {
+						clean = true;
+						break;
+					}
+					openProblems = verdict;
+					// The last round is verify-only. A revision on the final round is
+					// never re-read, so it costs a full rewrite of several phase files
+					// to reach an unknown state — where stopping here reaches a
+					// REPORTED one, which is what the approval checkpoint needs.
+					if (round === MAX_VERIFY_ROUNDS - 1) break;
+					abortIfCancelled();
+					const revised = await reviseTurn(verdict);
+					// Nothing written means the files are byte-identical, so the next
+					// review reads the same plan and reaches the same verdict. Stop
+					// rather than spend another full read of every phase file proving
+					// it — this is the case that otherwise burns every round.
+					if (revised.length === 0) break;
+				}
+				// Said plainly either way. This previously reported "Plan verified" on
+				// every run, including one that spent all its rounds and never got a
+				// clean verdict — so the one stage whose whole job is to tell you
+				// whether the plan is sound could not say no.
+				verified = true;
+				if (clean) {
+					finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
+				} else {
+					// Lead with the counts: the first question on reading this is how
+					// much of it has to be dealt with before the plan is usable.
+					const { blocking, advisory } = classifyFindings(openProblems);
+					openFindings = [...blocking, ...advisory];
+					finishStep(
+						VERIFY,
+						`Verification finished with problems still open — ${blocking.length} blocking, ` +
+							`${advisory.length} advisory. Review before approving:\n\n${openProblems}`
+					);
+				}
+			} catch (e) {
+				// A crashed verifier must not discard a finished plan. The phase
+				// files are written and the run has often spent an hour getting
+				// here; failing the whole run throws that away and, unattended,
+				// wastes the night. Report the stage as failed, leave `verified`
+				// false, and carry on — the handoff gate refuses to start a
+				// coding run on a plan nothing checked, which is the outcome
+				// this situation actually calls for.
+				//
+				// An abort is not a crash: a cancelled run must still cancel.
+				const { aborted, msg } = normalizeAbort(e);
+				if (aborted) throw e;
+				const finishedAt = Date.now();
+				deps.patchStep(VERIFY, { status: 'failed', error: msg, finishedAt });
+				void markRunStepFinished(runId, VERIFY, 'failed', null, msg, finishedAt);
 			}
-			finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
 		}
 
 		// Approval — plan / dependency-map approval checkpoint loop.
+		//
+		// The stage starts and finishes in EVERY mode, and only its question loop
+		// is conditional. Same precedent as a skipped verification: the step index
+		// stays put and the run view shows what was skipped, rather than silently
+		// renumbering the stages around it.
 		startStep(APPROVAL);
-		let planApproved = false;
-		while (!planApproved) {
-			abortIfCancelled();
-			const answer = await askUserQuestion(
-				{
-					question:
-						`I wrote the phased implementation plan to ${outDir} (phase-NN-*.md), ` +
-						`ordered by dependency and checked for unresolved decisions. Review it, ` +
-						`then approve — or type what you'd like changed.`,
-					options: [
-						{ label: 'Approve', description: 'The plan looks good — finish.', recommended: true },
-						{
-							label: 'I edited it myself — re-check',
-							description: 'I changed files on disk; re-read them before asking again.'
-						}
-					]
-				},
-				abort.signal
-			);
-			abortIfCancelled();
-			if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
-				planApproved = true;
-			} else if (answer.kind === 'freeText') {
-				await turn(
-					APPROVAL,
-					`Please revise the phased plan. The user asked for: ${answer.text}`,
-					planRevisePrompt(outDir, webResearch),
-					30,
-					{ expectsFileOutput: true }
+		if (runMode !== 'attended') {
+			// Named, never implied: the run view must not suggest a human approved
+			// a plan nobody looked at.
+			finishStep(APPROVAL, `Approved automatically — run mode is "${RUN_MODE_LABELS[runMode]}"`);
+		} else {
+			let planApproved = false;
+			while (!planApproved) {
+				abortIfCancelled();
+				const answer = await askUserQuestion(
+					{
+						question:
+							`I wrote the phased implementation plan to ${outDir} (phase-NN-*.md), ` +
+							`ordered by dependency and checked for unresolved decisions. Review it, ` +
+							`then approve — or type what you'd like changed.`,
+						options: [
+							{ label: 'Approve', description: 'The plan looks good — finish.', recommended: true },
+							{
+								label: 'I edited it myself — re-check',
+								description: 'I changed files on disk; re-read them before asking again.'
+							}
+						]
+					},
+					abort.signal
 				);
-				await verifyOnce(); // re-check after a user-driven revision
+				abortIfCancelled();
+				if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
+					planApproved = true;
+				} else if (answer.kind === 'freeText') {
+					await turn(
+						APPROVAL,
+						`Please revise the phased plan. The user asked for: ${answer.text}`,
+						planRevisePrompt(outDir, webResearch),
+						30,
+						{ expectsFileOutput: true, kind: 'approval.revise' }
+					);
+					await verifyOnce(); // re-check after a user-driven revision
+				}
 			}
+			finishStep(APPROVAL, `Plan approved → ${outDir}`);
 		}
-		finishStep(APPROVAL, `Plan approved → ${outDir}`);
+
+		// Handoff — start the coding run, or say why not.
+		//
+		// Runs in every mode and never prompts. The morning's first question is
+		// "did it chain, and if not why not", and the run timeline should answer
+		// it without anyone opening a log.
+		startStep(HANDOFF);
+		finishStep(HANDOFF, await handoff());
 
 		deps.finalizeRun('succeeded', null);
 	} catch (e) {
