@@ -50,7 +50,19 @@ export interface AutonomousCodingConfig {
 	 * has them regardless. null = default (true).
 	 */
 	web_research: boolean | null;
+	/**
+	 * Agent-loop turns one coding turn may spend before its result call is
+	 * FORCED. Settings → Shell's "Max steps per task" governs the chat shell
+	 * only and never reaches a job, so without this a job's budget is not
+	 * adjustable at all. null = default (200); clamped to 50–600.
+	 */
+	max_turns: number | null;
 }
+
+/** Default agent-loop turns per coding turn. */
+export const DEFAULT_MAX_TURNS = 200;
+export const MIN_MAX_TURNS = 50;
+export const MAX_MAX_TURNS = 600;
 
 export function parseAutonomousCodingConfig(json: string | null): AutonomousCodingConfig {
 	let raw: Record<string, unknown> = {};
@@ -75,6 +87,10 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 				: null,
 		create_branch: parseOptionalBool(raw.create_branch),
 		web_research: parseOptionalBool(raw.web_research),
+		max_turns:
+			typeof raw.max_turns === 'number' && Number.isFinite(raw.max_turns)
+				? Math.min(MAX_MAX_TURNS, Math.max(MIN_MAX_TURNS, Math.round(raw.max_turns)))
+				: null,
 		use_git: parseOptionalBool(raw.use_git),
 		open_findings: Array.isArray(raw.open_findings)
 			? raw.open_findings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)

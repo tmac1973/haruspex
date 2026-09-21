@@ -520,6 +520,52 @@ function verifyRule(stepCheckCommand: string | null, phaseVerifyCommand: string 
  * Finalize system prompt: write the morning-after report. Read-only except
  * the one report file.
  */
+/**
+ * The README turn. Separate from the report because they answer different
+ * questions for different readers: REPORT-coding.md is the run's own account
+ * of itself (what the loop did, what it could not do), README.md is the
+ * project's front door for someone who has never seen the run at all.
+ *
+ * The honesty clause is the point. A run can finish every checklist item and
+ * still leave the thing unrunnable — an observed run committed all 16 phases
+ * green with the entire front end missing, and nothing in the repo said so.
+ * A README that opens by claiming a finished project when the binary does
+ * nothing is worse than no README.
+ */
+export function readmePrompt(planDir: string, reportPath: string): string {
+	return [
+		'The unattended coding run has finished. Write the project README — the',
+		'documentation for someone who opens this repository knowing nothing about',
+		'the run. Do not write or edit any code, and write no file but README.md.',
+		'',
+		`1. Read \`${reportPath}\`, \`${planDir}TODO-coding.md\` and the plan's`,
+		'   overview, then LOOK AT THE TREE: the real entry points, the real build',
+		'   and run commands, what the tests actually cover. The plan says what was',
+		'   intended; the tree says what exists, and the README documents the tree.',
+		'2. Verify the commands you are about to publish. Run them (a build, a test',
+		'   run, a `--help`). A command in a README that does not work is the first',
+		'   thing the reader will try.',
+		'3. Write `README.md` at the repository root with fs_write_text:',
+		'   - "# <project name>" and a short paragraph on what it is.',
+		'   - "## Status" — FIRST, and honest. If parts of the plan were not built,',
+		'     were blocked, or are stubs, say so here in plain words, name them, and',
+		'     say what the user can and cannot do with the code today. If it is',
+		'     genuinely complete and runnable, say that instead.',
+		'   - "## Features" — what actually works, from the tree, not the plan.',
+		'   - "## Requirements" — toolchains, versions, anything to install first.',
+		'   - "## Build and run" — the exact commands, the ones you just ran.',
+		'   - "## Tests" — how to run them and what they cover.',
+		'   - "## Project layout" — the directories a newcomer needs.',
+		'   - "## Known gaps and next steps" — what is missing, roughly in the order',
+		'     someone should pick it up. Point at the report for the full history.',
+		'4. Never describe something as working because the plan said it would.',
+		'   If you did not see it in the tree or run it yourself, it goes under',
+		'   Status or Known gaps.',
+		'',
+		'Write ONLY `README.md`. Then stop.'
+	].join('\n');
+}
+
 export function finalizePrompt(planDir: string, reportPath: string): string {
 	return [
 		'The unattended coding run has finished. Write the report the user reads',

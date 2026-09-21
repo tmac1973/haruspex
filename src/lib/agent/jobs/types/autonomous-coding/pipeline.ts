@@ -42,6 +42,7 @@ import { notify } from '$lib/notify';
 import type { JobRunContext } from '../types';
 import type { StepChecklistEntry } from '../../runner.svelte';
 import {
+	DEFAULT_MAX_TURNS,
 	normalizePlanDir,
 	parseAutonomousCodingConfig,
 	type AutonomousCodingConfig
@@ -57,10 +58,13 @@ import {
 	parseTodoPlan,
 	phaseNeedingVerify,
 	recordFailure,
+	recordPhaseBuild,
+	recordPhaseBuildFailure,
 	renderOverview,
 	renderTodoPlan,
 	setPhaseVerify,
 	summarize,
+	MAX_PHASE_BUILD_ATTEMPTS,
 	MAX_PHASE_REPAIR_CYCLES,
 	type LoopPlan,
 	type TaskItem
@@ -74,6 +78,7 @@ import {
 	type PlanFile
 } from './planParse';
 import {
+	readmePrompt,
 	decomposePrompt,
 	finalizePrompt,
 	iterationPrompt,
@@ -85,6 +90,7 @@ export const PREFLIGHT = 0;
 export const DECOMPOSE = 1;
 export const LOOP = 2;
 export const FINALIZE = 3;
+export const DOCUMENT = 4;
 
 /**
  * Preflight toolset: read-only grounding, the one write (the decisions file,
@@ -175,12 +181,17 @@ const PREFLIGHT_MAX_ITERATIONS = 80;
 /** Decompose is read-and-report; generous room to read a big plan. */
 const DECOMPOSE_MAX_ITERATIONS = 60;
 /**
- * Agent-loop turns per coding iteration. One atomic step can take a lot of
- * read/edit/run round-trips; at the cap the result call is FORCED, so a
- * long iteration degrades to a recorded failure, never a silent stall.
+ * How much bigger a phase build turn's ceiling is than one coding turn's
+ * budget: a phase turn does the work of every item in the phase.
+ *
+ * The ceiling still scales with the item count (40 + 20/item) — this only
+ * caps it, and at the default `max_turns` of 200 that cap is 400, exactly
+ * what it was when the number was hard-coded.
  */
-const ITERATION_MAX_TURNS = 150;
+const PHASE_TURN_CEILING_MULT = 2;
 const FINALIZE_MAX_ITERATIONS = 30;
+/** README: reading the tree and actually running the commands it publishes. */
+const DOCUMENT_MAX_ITERATIONS = 60;
 
 /** Bounded retries for write guards / missing structured calls. */
 const MAX_WRITE_ATTEMPTS = 3;
@@ -416,6 +427,7 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		startStep(LOOP);
 		abortIfCancelled();
 		const maxAttempts = Math.max(1, Math.min(cfg.max_attempts ?? DEFAULT_MAX_ATTEMPTS, 10));
+		const maxTurns = cfg.max_turns ?? DEFAULT_MAX_TURNS;
 		let progress = (await readPlanFile(ctx, progressPath)) ?? '# Coding progress\n';
 		const recentNotes: string[] = [];
 		// Every entry from THIS run, so the loop step's persisted output keeps
@@ -525,7 +537,14 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 						setPlan: (p) => {
 							plan = p;
 						},
-						record
+						record,
+						git,
+						maxIterations: Math.min(
+							PHASE_TURN_CEILING_MULT * maxTurns,
+							40 +
+								plan.items.filter((i) => i.phase === target.phase && i.status === 'todo').length *
+									20
+						)
 					},
 					target.phase
 				);
@@ -553,7 +572,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				cmds.phase,
 				plan,
 				target,
-				recentNotes
+				recentNotes,
+				maxTurns
 			);
 			abortIfCancelled();
 
@@ -635,6 +655,32 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			(sum.blocked > 0 ? `Done with blockers (${sum.blocked})` : 'Done') + ` — ${reportPath}`
 		);
 
+		// Document — the project's own README, written last so it can describe
+		// what the run really left behind. A failure here must not fail a run
+		// that has already done its work and written its report, so the stage
+		// reports what happened and the run still succeeds.
+		startStep(DOCUMENT);
+		abortIfCancelled();
+		let readmeNote: string;
+		try {
+			await runReadmeTurn(ctx, planDir, reportPath);
+			await ensureFileWritten(ctx, DOCUMENT, {
+				relPath: 'README.md',
+				writeRoot: '',
+				systemPrompt: readmePrompt(planDir, reportPath),
+				toolAllowlist: FINALIZE_TOOLS,
+				what: 'README',
+				turnKind: 'document.retry',
+				abortIfCancelled
+			});
+			await commitBestEffort(ctx, 'docs: project README', git);
+			readmeNote = 'Wrote README.md';
+		} catch (e) {
+			if (abort.signal.aborted) throw e;
+			readmeNote = `README.md was not written — ${e instanceof Error ? e.message : String(e)}`;
+		}
+		finishStep(DOCUMENT, readmeNote);
+
 		ctx.finalizeRun('succeeded', null);
 		// The morning-after signal: the user started this and walked away.
 		void notify(
@@ -673,6 +719,7 @@ async function runPreflightTurn(
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
 	const turnResult = await ctx.runJobTurn({
+		turnKind: 'preflight',
 		userMessage: interactive
 			? `Run the preflight for the plan in ${planDir}. Interview me about anything ` +
 				`unresolved — after this I will not be available.`
@@ -742,6 +789,7 @@ async function obtainTaskList(
 			userMessage,
 			contextSize: ctx.contextSize(),
 			visionSupported: ctx.visionSupported(),
+			turnKind: 'decompose',
 			maxIterations: DECOMPOSE_MAX_ITERATIONS,
 			systemPrompt: decomposePrompt(planDir, decisionsPath),
 			toolAllowlist: DECOMPOSE_TOOLS,
@@ -832,17 +880,42 @@ interface PhaseTurnDeps {
 	getPlan: () => LoopPlan;
 	setPlan: (p: LoopPlan) => void;
 	record: (entry: string, clipped?: string) => Promise<void>;
+	/** Needed to ask git what the turn actually changed. */
+	git: GitPolicy;
+	/** Agent-loop turn budget for the build turn (job-configurable). */
+	maxIterations: number;
 }
+
+/**
+ * Phrases a build turn uses to say it did not build anything, checked against
+ * the note it submits.
+ *
+ * This is a real signal, not a guess: in an observed run five phase turns
+ * opened with one of these and every one of them was committed as a finished
+ * phase. The turn is the only witness to its own budget running out, and the
+ * strongest one — a turn that says it failed is failed. Anchored to the start
+ * of the note so a line like "the `not implemented` macro" in a summary of
+ * real work cannot trip it.
+ */
+const SELF_REPORTED_FAILURE =
+	/^\W*(not implemented|stuck\b|nothing (was )?(implemented|written|built)|no code (was )?written|blocked\b)/i;
 
 /**
  * Phase-context mode: ONE continuous turn builds the whole phase — no
  * per-item checks or reports (an earlier step-report protocol interleaved
  * bookkeeping with building and real models treated it as an obstacle; it
- * failed twice). When the turn ends, every item of the phase is marked done
- * ("the work happened") and the SHARED verification machinery takes over:
- * phaseNeedingVerify fires, the runner runs the verification command, repair
- * cycles backstop failures, and the phase is committed as a unit on its
- * verification outcome.
+ * failed twice). When the turn ends HAVING BUILT SOMETHING, every item of the
+ * phase is marked done ("the work happened") and the SHARED verification
+ * machinery takes over: phaseNeedingVerify fires, the runner runs the
+ * verification command, repair cycles backstop failures, and the phase is
+ * committed as a unit on its verification outcome.
+ *
+ * "Having built something" is checked, not assumed. The per-item path has
+ * always refused to check an item off on faith ("Claimed done but changed
+ * nothing"); this path used to mark nine items done off a turn that wrote no
+ * files and said so in its own summary. Two signals, either of which counts:
+ * the turn called a write tool outside the plan dir, or git sees a change
+ * outside the plan dir (which also catches work done through run_command).
  */
 async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promise<void> {
 	const phase = deps.getPlan().phases.find((p) => p.id === phaseId);
@@ -861,15 +934,17 @@ async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promis
 	].join('\n');
 
 	let phaseNote = '';
+	let wrote = 0;
 	const base = deps.ctx.buildStreamCallbacks(LOOP);
 	deps.ctx.patchStep(LOOP, {
 		streaming: `Phase ${phaseId} — ${phase?.title ?? ''} (continuous build)`
 	});
 	await deps.ctx.runJobTurn({
+		turnKind: 'loop.phase',
 		userMessage,
 		contextSize: deps.ctx.contextSize(),
 		visionSupported: deps.ctx.visionSupported(),
-		maxIterations: Math.min(400, 40 + items.length * 20),
+		maxIterations: deps.maxIterations,
 		systemPrompt: phaseTurnPrompt(deps.phaseVerifyCommand, deps.planDir),
 		toolAllowlist: PHASE_LOOP_TOOLS,
 		forceFinalTool: SUBMIT_PHASE_RESULT_TOOL,
@@ -878,13 +953,46 @@ async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promis
 			if (call.name === SUBMIT_PHASE_RESULT_TOOL && typeof call.arguments?.note === 'string') {
 				phaseNote = call.arguments.note;
 			}
+			if (call.name === 'fs_write_text' || call.name === 'fs_edit_text') {
+				const path = call.arguments?.path;
+				// A write into the plan dir is not phase work: the turn can
+				// legitimately touch notes there, and that must not count as
+				// having built the phase.
+				if (typeof path === 'string' && !path.trim().startsWith(deps.planDir)) wrote++;
+			}
 			base.onToolStart?.(call);
 		}
 	});
-	deps.setPlan(markPhaseItemsDone(deps.getPlan(), phaseId));
+
+	const note = phaseNote.trim();
+	const declaredFailure = SELF_REPORTED_FAILURE.test(note);
+	const dirty = await changedOutsidePlanDir(deps.ctx, deps.planDir, deps.git);
+	// `dirty` is null with git off — then the turn's own write calls are the
+	// only evidence there is.
+	const built = wrote > 0 || dirty === true;
+
+	if (!built || declaredFailure) {
+		const r = recordPhaseBuildFailure(deps.getPlan(), phaseId);
+		deps.setPlan(r.plan);
+		const why = !built
+			? `the turn changed nothing outside ${deps.planDir}`
+			: 'the turn reported that it did not implement the phase';
+		await deps.record(
+			`## Phase ${phaseId} — ${phase?.title ?? ''}: build turn produced NO WORK ` +
+				`(attempt ${r.builds}/${MAX_PHASE_BUILD_ATTEMPTS}) — ${why}\n\n` +
+				(r.exhausted
+					? `Phase BLOCKED: ${MAX_PHASE_BUILD_ATTEMPTS} build turns produced nothing. ` +
+						`Its items are marked blocked so the run moves on.\n\n`
+					: `Retrying the phase on a fresh context.\n\n`) +
+				`${clipNote(note || '(no summary given)')}\n`
+		);
+		return;
+	}
+
+	deps.setPlan(markPhaseItemsDone(recordPhaseBuild(deps.getPlan(), phaseId), phaseId));
 	await deps.record(
 		`## Phase ${phaseId} — ${phase?.title ?? ''}: build turn finished\n\n${clipNote(
-			phaseNote || '(no summary given)'
+			note || '(no summary given)'
 		)}\n`
 	);
 }
@@ -897,7 +1005,8 @@ async function runIterationTurn(
 	phaseVerifyCommand: string | null,
 	plan: LoopPlan,
 	target: TaskItem,
-	recentNotes: string[]
+	recentNotes: string[],
+	maxTurns: number
 ): Promise<{ itemId: string; status: 'done' | 'failed'; note: string }> {
 	const phase = plan.phases.find((p) => p.id === target.phase);
 	const userMessage = [
@@ -918,10 +1027,11 @@ async function runIterationTurn(
 	let captured: IterationResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(LOOP);
 	await ctx.runJobTurn({
+		turnKind: target.repair ? 'loop.repair' : 'loop.step',
 		userMessage,
 		contextSize: ctx.contextSize(),
 		visionSupported: ctx.visionSupported(),
-		maxIterations: ITERATION_MAX_TURNS,
+		maxIterations: maxTurns,
 		systemPrompt: iterationPrompt(stepCheckCommand, phaseVerifyCommand, planDir),
 		toolAllowlist: LOOP_TOOLS,
 		forceFinalTool: SUBMIT_ITERATION_RESULT_TOOL,
@@ -949,6 +1059,32 @@ async function runIterationTurn(
 	return { itemId: r.item_id || target.id, status: r.status, note: r.note };
 }
 
+/**
+ * The README turn. Writes at the repository ROOT, so unlike every other
+ * write-scoped turn here it gets no writeRoot — README.md is not a plan file.
+ * The toolset is the finalize one (read + shell + a single write), and the
+ * prompt tells it to run the commands it is about to publish.
+ */
+async function runReadmeTurn(
+	ctx: JobRunContext,
+	planDir: string,
+	reportPath: string
+): Promise<void> {
+	await ctx.runJobTurn({
+		turnKind: 'document.readme',
+		userMessage:
+			`Write README.md at the repository root, documenting what this run actually ` +
+			`produced. Check the tree and run the commands before you publish them.`,
+		contextSize: ctx.contextSize(),
+		visionSupported: ctx.visionSupported(),
+		maxIterations: DOCUMENT_MAX_ITERATIONS,
+		systemPrompt: readmePrompt(planDir, reportPath),
+		toolAllowlist: FINALIZE_TOOLS,
+		expectsFileOutput: true,
+		...ctx.buildStreamCallbacks(DOCUMENT)
+	});
+}
+
 /** The finalize turn (report write); completeness enforced by ensureFileWritten. */
 async function runFinalizeTurn(
 	ctx: JobRunContext,
@@ -956,6 +1092,7 @@ async function runFinalizeTurn(
 	reportPath: string
 ): Promise<void> {
 	await ctx.runJobTurn({
+		turnKind: 'finalize.report',
 		userMessage: `Write the report for this run to ${reportPath}.`,
 		contextSize: ctx.contextSize(),
 		visionSupported: ctx.visionSupported(),
@@ -1019,6 +1156,8 @@ async function ensureFileWritten(
 		 * "No interactive user is available" mid-interview.
 		 */
 		mayAskUser?: boolean;
+		/** Turn kind for the retry turns, so their cost lands under the stage. */
+		turnKind?: string;
 	}
 ): Promise<void> {
 	const exists = async (): Promise<boolean> => {
@@ -1036,6 +1175,7 @@ async function ensureFileWritten(
 		opts.abortIfCancelled();
 		if (await exists()) return;
 		await ctx.runJobTurn({
+			turnKind: opts.turnKind ?? 'write.retry',
 			userMessage:
 				`I don't see ${opts.relPath} on disk yet — you may have described writing it ` +
 				`without actually calling fs_write_text. ` +
@@ -1091,6 +1231,31 @@ function execInWorkdir(
 		// Windows); null on Linux/macOS → host default shell.
 		shell: getSettings().shellSelection
 	});
+}
+
+/**
+ * Did anything change outside the plan directory?
+ *
+ * The plan dir is excluded because the RUNNER writes into it — PROGRESS and
+ * TODO are rewritten every pass — so "the working tree is dirty" is true of
+ * every phase, built or not. Three commits of an observed run are titled
+ * `feat: Phase NN — …` and contain nothing but those two files.
+ *
+ * Returns null when git is off: there is no diff to consult, and the caller
+ * falls back to counting the turn's own write calls.
+ */
+async function changedOutsidePlanDir(
+	ctx: JobRunContext,
+	planDir: string,
+	git: GitPolicy
+): Promise<boolean | null> {
+	if (!git.enabled) return null;
+	const dir = planDir.replace(/\/+$/, '');
+	// --porcelain over `diff --quiet`: it reports untracked files too, and a
+	// phase that creates new source files creates untracked ones.
+	const r = await execInWorkdir(ctx, `git status --porcelain -- . ":(exclude)${dir}"`);
+	if (r.exit_code !== 0) return null;
+	return r.stdout.trim().length > 0;
 }
 
 async function gitHead(ctx: JobRunContext): Promise<string | null> {

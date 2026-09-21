@@ -158,6 +158,18 @@
 				<option value="step">A fresh context per checklist item</option>
 			</select>
 		</label>
+
+		<label class="sub">
+			Max model steps per turn
+			<input
+				type="number"
+				min="50"
+				max="600"
+				step="50"
+				bind:value={cfg.coding_max_turns}
+				aria-label="Max model steps per turn"
+			/>
+		</label>
 	</details>
 {/if}
 

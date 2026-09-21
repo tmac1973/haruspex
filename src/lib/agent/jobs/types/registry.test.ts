@@ -131,7 +131,8 @@ describe('registration barrel', () => {
 			'Preflight',
 			'Decompose',
 			'Coding loop',
-			'Finalize'
+			'Finalize',
+			'Document'
 		]);
 		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
 
@@ -143,7 +144,8 @@ describe('registration barrel', () => {
 			signing_fallback: 'unsigned',
 			create_branch: true,
 			web_research: true,
-			use_git: true
+			use_git: true,
+			max_turns: 200
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
@@ -152,7 +154,8 @@ describe('registration barrel', () => {
 			signing_fallback: 'unsigned',
 			create_branch: true,
 			web_research: true,
-			use_git: true
+			use_git: true,
+			max_turns: 200
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
@@ -161,7 +164,8 @@ describe('registration barrel', () => {
 			signing_fallback: 'skip',
 			create_branch: false,
 			web_research: false,
-			use_git: false
+			use_git: false,
+			max_turns: 400
 		});
 		expect(JSON.parse(json!)).toEqual({
 			plan_dir: 'plan/x/',
@@ -170,7 +174,8 @@ describe('registration barrel', () => {
 			signing_fallback: 'skip',
 			create_branch: false,
 			web_research: false,
-			use_git: false
+			use_git: false,
+			max_turns: 400
 		});
 
 		// Validation: working dir and plan dir are required; attempts bounded.
@@ -181,15 +186,22 @@ describe('registration barrel', () => {
 			coding.validate!({
 				...base,
 				workingDir: '/p',
-				config: { plan_dir: 'plan/', verify_command: '', max_attempts: 99 }
+				config: { plan_dir: 'plan/', max_attempts: 99, max_turns: 200 }
 			})
 		).toContain('Max attempts');
 		expect(
 			coding.validate!({
 				...base,
 				workingDir: '/p',
-				config: { plan_dir: 'plan/', verify_command: 'npm test', max_attempts: 3 }
+				config: { plan_dir: 'plan/', max_attempts: 3, max_turns: 200 }
 			})
 		).toBeNull();
+		expect(
+			coding.validate!({
+				...base,
+				workingDir: '/p',
+				config: { plan_dir: 'plan/', max_attempts: 3, max_turns: 5 }
+			})
+		).toContain('Max model steps');
 	});
 });

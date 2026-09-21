@@ -1,7 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { JobTypeDefinition, PlannedStep } from '../types';
 import { runAutonomousCodingPipeline } from './pipeline';
-import { parseAutonomousCodingConfig } from './config';
+import {
+	DEFAULT_MAX_TURNS,
+	MAX_MAX_TURNS,
+	MIN_MAX_TURNS,
+	parseAutonomousCodingConfig
+} from './config';
 import Editor from './Editor.svelte';
 
 /** The editor's working state (concrete values; '' = unset). */
@@ -13,6 +18,7 @@ export interface AutonomousCodingEditorState {
 	create_branch: boolean;
 	use_git: boolean;
 	web_research: boolean;
+	max_turns: number;
 }
 
 /**
@@ -39,6 +45,11 @@ const CODING_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 	{
 		title: 'Finalize',
 		description: 'Writing REPORT-coding.md: what was built, what is blocked and why, next steps.'
+	},
+	{
+		title: 'Document',
+		description:
+			'Writing README.md for the project itself — what it does, how to build and run it, and what the run did not finish.'
 	}
 ];
 
@@ -79,7 +90,8 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		signing_fallback: 'unsigned',
 		create_branch: true,
 		web_research: true,
-		use_git: true
+		use_git: true,
+		max_turns: DEFAULT_MAX_TURNS
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAutonomousCodingConfig(typeConfig);
@@ -90,7 +102,8 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			signing_fallback: c.signing_fallback ?? 'unsigned',
 			create_branch: c.create_branch ?? true,
 			web_research: c.web_research ?? true,
-			use_git: c.use_git ?? true
+			use_git: c.use_git ?? true,
+			max_turns: c.max_turns ?? DEFAULT_MAX_TURNS
 		};
 	},
 	configToJson: (config) => {
@@ -102,7 +115,8 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			signing_fallback: s.signing_fallback,
 			create_branch: s.create_branch,
 			web_research: s.web_research,
-			use_git: s.use_git
+			use_git: s.use_git,
+			max_turns: s.max_turns
 		});
 	},
 	validate: ({ workingDir, config }) => {
@@ -112,6 +126,8 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		if (!s.plan_dir.trim()) return 'A plan directory is required — the folder of plan files.';
 		if (!Number.isFinite(s.max_attempts) || s.max_attempts < 1 || s.max_attempts > 10)
 			return 'Max attempts per step must be between 1 and 10.';
+		if (!Number.isFinite(s.max_turns) || s.max_turns < MIN_MAX_TURNS || s.max_turns > MAX_MAX_TURNS)
+			return `Max model steps per turn must be between ${MIN_MAX_TURNS} and ${MAX_MAX_TURNS}.`;
 		return null;
 	},
 	planSteps: planCodingSteps,

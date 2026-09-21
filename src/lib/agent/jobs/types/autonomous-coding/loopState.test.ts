@@ -173,8 +173,11 @@ import {
 	markPhaseItemsDone,
 	parseTodoPlan,
 	phaseNeedingVerify,
+	recordPhaseBuild,
+	recordPhaseBuildFailure,
 	renderTodoPlan,
 	setPhaseVerify,
+	MAX_PHASE_BUILD_ATTEMPTS,
 	MAX_PHASE_REPAIR_CYCLES,
 	type LoopPlan
 } from './loopState';
@@ -182,8 +185,8 @@ import {
 function planFixture(): LoopPlan {
 	return {
 		phases: [
-			{ id: '01', title: 'Scaffold', verify: 'pending', repairs: 0 },
-			{ id: '02', title: 'Engine', verify: 'pending', repairs: 0 }
+			{ id: '01', title: 'Scaffold', verify: 'pending', repairs: 0, builds: 0 },
+			{ id: '02', title: 'Engine', verify: 'pending', repairs: 0, builds: 0 }
 		],
 		items: [
 			{
@@ -338,5 +341,65 @@ describe('markPhaseItemsDone', () => {
 		p.items[0].status = 'todo';
 		const out = markPhaseItemsDone(p, '01');
 		expect(out.items.map((i) => i.status)).toEqual(['done', 'blocked', 'todo']);
+	});
+});
+
+describe('recordPhaseBuildFailure', () => {
+	it('leaves the items alone under the cap, so the phase runs again', () => {
+		const r = recordPhaseBuildFailure(planFixture(), '02');
+		expect(r.builds).toBe(1);
+		expect(r.exhausted).toBe(false);
+		expect(r.plan.items.filter((i) => i.phase === '02').every((i) => i.status === 'todo')).toBe(
+			true
+		);
+		// Still pending: a phase that was never built has not failed verification.
+		expect(r.plan.phases.find((p) => p.id === '02')!.verify).toBe('pending');
+	});
+
+	it('blocks the phase at the cap so the run moves on', () => {
+		let plan = planFixture();
+		for (let i = 0; i < MAX_PHASE_BUILD_ATTEMPTS; i++) {
+			plan = recordPhaseBuildFailure(plan, '02').plan;
+		}
+		expect(plan.items.filter((i) => i.phase === '02').every((i) => i.status === 'blocked')).toBe(
+			true
+		);
+		expect(plan.phases.find((p) => p.id === '02')!.verify).toBe('blocked');
+		// Other phases are untouched.
+		expect(plan.phases.find((p) => p.id === '01')!.verify).toBe('pending');
+	});
+
+	it('does not resurrect an item that already finished', () => {
+		// Phase 01's items are all done in the fixture — a build failure on a
+		// phase the loop has already been through must not un-finish them.
+		let plan = planFixture();
+		for (let i = 0; i < MAX_PHASE_BUILD_ATTEMPTS; i++) {
+			plan = recordPhaseBuildFailure(plan, '01').plan;
+		}
+		expect(plan.items.filter((i) => i.phase === '01').every((i) => i.status === 'done')).toBe(true);
+	});
+});
+
+describe('build counts survive the markdown round trip', () => {
+	it('carries builds through render → parse', () => {
+		// TODO-coding.md IS the resume path: a count that does not round-trip
+		// resets the retry budget on every resume.
+		const plan = recordPhaseBuild(recordPhaseBuild(planFixture(), '01'), '01');
+		const back = parseTodoPlan(renderTodoPlan(plan))!;
+		expect(back.phases.find((p) => p.id === '01')!.builds).toBe(2);
+	});
+
+	it('reads a TODO file written before builds were tracked', () => {
+		const legacy = [
+			'# Coding TODO',
+			'',
+			'## Phase 01 — Scaffold (verify: pending, repairs: 1)',
+			'',
+			'- [ ] 01. One (attempts: 0)'
+		].join('\n');
+		const back = parseTodoPlan(legacy)!;
+		expect(back.phases).toHaveLength(1);
+		expect(back.phases[0].repairs).toBe(1);
+		expect(back.phases[0].builds).toBe(0);
 	});
 });

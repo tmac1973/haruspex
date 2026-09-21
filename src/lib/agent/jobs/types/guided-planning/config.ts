@@ -15,6 +15,7 @@
 export interface GuidedPlanningCodingRun {
 	max_attempts: number | null;
 	context_mode: 'step' | 'phase' | null;
+	max_turns: number | null;
 }
 
 export type GuidedPlanningRunMode = 'attended' | 'unattended_plan' | 'unattended_chain';
@@ -102,7 +103,12 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 			typeof cr.max_attempts === 'number' && Number.isFinite(cr.max_attempts)
 				? cr.max_attempts
 				: null,
-		context_mode: cr.context_mode === 'step' || cr.context_mode === 'phase' ? cr.context_mode : null
+		context_mode:
+			cr.context_mode === 'step' || cr.context_mode === 'phase' ? cr.context_mode : null,
+		// Not clamped here: the coding job's own parser clamps, and this is the
+		// same value flowing to the same place.
+		max_turns:
+			typeof cr.max_turns === 'number' && Number.isFinite(cr.max_turns) ? cr.max_turns : null
 	};
 	return {
 		initial_description:

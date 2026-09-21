@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { decomposePrompt, iterationPrompt, phaseTurnPrompt, preflightPrompt } from './prompts';
+import {
+	decomposePrompt,
+	iterationPrompt,
+	phaseTurnPrompt,
+	preflightPrompt,
+	readmePrompt
+} from './prompts';
 
 /**
  * The prompt is hard-wrapped for readability, so a phrase can straddle a line
@@ -471,5 +477,41 @@ describe('preflightPrompt — findings carried from planning', () => {
 		// break the numbered list apart.
 		const wrapped = flat(preflightPrompt(...args, ['(a) phase-01.md: one\n   two\n   three']));
 		expect(wrapped).toContain('1. (a) phase-01.md: one two three');
+	});
+});
+
+/**
+ * A run can finish every checklist item and still leave the project
+ * unrunnable. The README is the one document a newcomer reads first, so it is
+ * the worst possible place to repeat the plan's intentions as though they were
+ * facts.
+ */
+describe('readmePrompt', () => {
+	const p = readmePrompt('plan/x/', 'plan/x/REPORT-coding.md');
+
+	it('puts an honest status first', () => {
+		expect(p).toContain('"## Status" — FIRST, and honest');
+		expect(p).toContain('say what the user can and cannot do with the code today');
+	});
+
+	it('documents the tree, not the plan', () => {
+		expect(p).toContain('The plan says what was');
+		expect(p).toContain('the README documents the tree');
+		expect(p).toContain('Never describe something as working because the plan said it would');
+	});
+
+	it('makes it run the commands it publishes', () => {
+		// The first thing a reader tries is the build command.
+		expect(p).toContain('Verify the commands you are about to publish');
+	});
+
+	it('names the report so the full history is one click away', () => {
+		expect(p).toContain('plan/x/REPORT-coding.md');
+	});
+
+	it('writes exactly one file, at the root', () => {
+		expect(p).toContain('`README.md` at the repository root');
+		expect(p).toContain('Write ONLY `README.md`');
+		expect(p).toContain('Do not write or edit any code');
 	});
 });

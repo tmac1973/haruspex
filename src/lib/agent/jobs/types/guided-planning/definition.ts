@@ -1,6 +1,7 @@
 import type { JobTypeDefinition, PlannedStep } from '../types';
 import { runGuidedPlanningPipeline } from './pipeline';
 import { type GuidedPlanningRunMode, parseGuidedPlanningConfig } from './config';
+import { DEFAULT_MAX_TURNS } from '../autonomous-coding/config';
 import Editor from './Editor.svelte';
 
 /** The guided-planning editor's working state (concrete strings, '' = unset). */
@@ -15,6 +16,7 @@ export interface GuidedPlanningEditorState {
 	// to nulls by configToJson.
 	coding_max_attempts: number;
 	coding_context_mode: '' | 'step' | 'phase';
+	coding_max_turns: number;
 }
 
 /**
@@ -67,6 +69,8 @@ function codingRunJson(s: GuidedPlanningEditorState): Record<string, unknown> | 
 	if (s.coding_max_attempts > 0 && s.coding_max_attempts !== 3)
 		out.max_attempts = s.coding_max_attempts;
 	if (s.coding_context_mode) out.context_mode = s.coding_context_mode;
+	if (s.coding_max_turns > 0 && s.coding_max_turns !== DEFAULT_MAX_TURNS)
+		out.max_turns = s.coding_max_turns;
 	return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -101,7 +105,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		// The coding job's own default, shown as itself. A 0 here meant "unset"
 		// and read on screen as "zero attempts", which is not a thing.
 		coding_max_attempts: 3,
-		coding_context_mode: ''
+		coding_context_mode: '',
+		coding_max_turns: DEFAULT_MAX_TURNS
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
@@ -113,7 +118,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			use_git: c.use_git,
 			run_mode: c.run_mode,
 			coding_max_attempts: c.coding_run.max_attempts ?? 3,
-			coding_context_mode: c.coding_run.context_mode ?? ''
+			coding_context_mode: c.coding_run.context_mode ?? '',
+			coding_max_turns: c.coding_run.max_turns ?? DEFAULT_MAX_TURNS
 		};
 	},
 	configToJson: (config) => {

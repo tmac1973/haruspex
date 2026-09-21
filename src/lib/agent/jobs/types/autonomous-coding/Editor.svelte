@@ -153,6 +153,24 @@
 	/>
 </div>
 
+<div class="field attempts">
+	<span class="label">
+		Max model steps per turn
+		<Tooltip
+			label="About max model steps"
+			text="Tool and model steps one coding turn may spend before its result is forced. Settings → Shell's 'Max steps per task' covers the chat shell only and never applies to a job. Raise it for phases that need many read/edit/test round-trips. Default 200. 50–600."
+		/>
+	</span>
+	<input
+		type="number"
+		min="50"
+		max="600"
+		step="50"
+		bind:value={cfg.max_turns}
+		aria-label="Max model steps per turn"
+	/>
+</div>
+
 {#if cfg.use_git}
 	<div class="field branch">
 		<label class="check">
