@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/tmac1973/haruspex/compare/v0.2.1...v0.2.2) (2026-09-21)
+
+
+### Features
+
+* **jobs:** set up a plan and a build, go to bed, wake up to a testable project ([#250](https://github.com/tmac1973/haruspex/issues/250)) ([f00885b](https://github.com/tmac1973/haruspex/commit/f00885ba7681d756c583418ae019c75616fbfa56))
+
 ## [0.2.1](https://github.com/tmac1973/haruspex/compare/v0.2.0...v0.2.1) (2026-09-19)
 
 
