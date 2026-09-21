@@ -19,6 +19,7 @@ export interface AutonomousCodingEditorState {
 	use_git: boolean;
 	web_research: boolean;
 	max_turns: number;
+	mute_preflight: boolean;
 }
 
 /**
@@ -91,7 +92,8 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		create_branch: true,
 		web_research: true,
 		use_git: true,
-		max_turns: DEFAULT_MAX_TURNS
+		max_turns: DEFAULT_MAX_TURNS,
+		mute_preflight: false
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAutonomousCodingConfig(typeConfig);
@@ -103,7 +105,8 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			create_branch: c.create_branch ?? true,
 			web_research: c.web_research ?? true,
 			use_git: c.use_git ?? true,
-			max_turns: c.max_turns ?? DEFAULT_MAX_TURNS
+			max_turns: c.max_turns ?? DEFAULT_MAX_TURNS,
+			mute_preflight: c.mute_preflight ?? false
 		};
 	},
 	configToJson: (config) => {
@@ -116,7 +119,8 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			create_branch: s.create_branch,
 			web_research: s.web_research,
 			use_git: s.use_git,
-			max_turns: s.max_turns
+			max_turns: s.max_turns,
+			mute_preflight: s.mute_preflight
 		});
 	},
 	validate: ({ workingDir, config }) => {

@@ -280,11 +280,14 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 	// (preflight contract, loop branch, command resolution) reads this.
 	const contextMode: 'step' | 'phase' = cfg.context_mode ?? 'phase';
 	// A chained run was started by a guided-planning run that has already
-	// finished — there is nobody to interview. Resolved once here so the
-	// preflight's prompt, its toolset and its turn cannot disagree: a prompt
-	// that says "ask" with no tool, or a tool with no interactivity, is the
-	// failure recorded at ensureFileWritten's `mayAskUser` below.
-	const interactive = ctx.trigger !== 'chained';
+	// finished — there is nobody to interview. `mute_preflight` is the same
+	// state, chosen deliberately: a re-run against a plan whose decisions are
+	// already settled, or any run the user starts and walks away from.
+	// Resolved once here so the preflight's prompt, its toolset and its turn
+	// cannot disagree: a prompt that says "ask" with no tool, or a tool with
+	// no interactivity, is the failure recorded at ensureFileWritten's
+	// `mayAskUser` below.
+	const interactive = ctx.trigger !== 'chained' && cfg.mute_preflight !== true;
 	void markRunStarted(runId, Date.now());
 
 	const startStep = (idx: number) => {
@@ -304,10 +307,10 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 
 	try {
 		if (ctx.trigger === 'scheduled') {
-			// Still rejected. A hand-created job fired on a schedule reaches an
-			// interactive preflight with nobody present and parks at the question
-			// modal indefinitely. A `chained` run is different in the one way that
-			// matters: its preflight has been made mute, by toolset.
+			// Still rejected, and not on the strength of `interactive`: the job
+			// type sets supportsSchedule: false, so nothing offers a schedule to
+			// turn on in the first place, and a guard that read as "mute it and
+			// you may schedule it" would promise a UI that does not exist.
 			throw new Error(
 				'Autonomous coding runs start with an interactive preflight interview — ' +
 					'run this job manually, not on a schedule.'

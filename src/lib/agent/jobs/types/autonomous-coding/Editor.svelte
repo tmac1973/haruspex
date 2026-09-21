@@ -185,6 +185,17 @@
 	</div>
 {/if}
 
+<div class="field mute-preflight">
+	<label class="check">
+		<input type="checkbox" bind:checked={cfg.mute_preflight} />
+		<span>Settle decisions without asking</span>
+	</label>
+	<Tooltip
+		label="About settling decisions without asking"
+		text="Preflight normally interviews you about every open decision in the plan. With this on it settles each one itself from the plan and the working directory and records the choice in DECISIONS-coding.md — the same way a run chained from guided planning does. Use it when the plan already carries its decisions, or when you are starting the run and walking away."
+	/>
+</div>
+
 <div class="field web-research">
 	<label class="check">
 		<input type="checkbox" bind:checked={cfg.web_research} />

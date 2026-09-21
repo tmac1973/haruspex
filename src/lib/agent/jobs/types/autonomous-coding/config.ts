@@ -51,6 +51,20 @@ export interface AutonomousCodingConfig {
 	 */
 	web_research: boolean | null;
 	/**
+	 * Settle every open decision in preflight without asking, exactly as a
+	 * chained run does.
+	 *
+	 * A manually started run interviews the user, which is right the first time
+	 * a plan is used and wrong every time after: re-running a coding job
+	 * against a plan that already carries a DECISIONS file means sitting
+	 * through an interview to re-answer settled questions, and a run started
+	 * before bed parks on the question modal all night if it asks even one.
+	 * With this on the run is unattended from its first second, exactly like a
+	 * chained one. null = default (false), so nothing that used to interview
+	 * silently stops.
+	 */
+	mute_preflight: boolean | null;
+	/**
 	 * Agent-loop turns one coding turn may spend before its result call is
 	 * FORCED. Settings → Shell's "Max steps per task" governs the chat shell
 	 * only and never reaches a job, so without this a job's budget is not
@@ -87,6 +101,7 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 				: null,
 		create_branch: parseOptionalBool(raw.create_branch),
 		web_research: parseOptionalBool(raw.web_research),
+		mute_preflight: parseOptionalBool(raw.mute_preflight),
 		max_turns:
 			typeof raw.max_turns === 'number' && Number.isFinite(raw.max_turns)
 				? Math.min(MAX_MAX_TURNS, Math.max(MIN_MAX_TURNS, Math.round(raw.max_turns)))

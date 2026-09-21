@@ -145,7 +145,8 @@ describe('registration barrel', () => {
 			create_branch: true,
 			web_research: true,
 			use_git: true,
-			max_turns: 200
+			max_turns: 200,
+			mute_preflight: false
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
@@ -155,7 +156,8 @@ describe('registration barrel', () => {
 			create_branch: true,
 			web_research: true,
 			use_git: true,
-			max_turns: 200
+			max_turns: 200,
+			mute_preflight: false
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
@@ -165,7 +167,8 @@ describe('registration barrel', () => {
 			create_branch: false,
 			web_research: false,
 			use_git: false,
-			max_turns: 400
+			max_turns: 400,
+			mute_preflight: true
 		});
 		expect(JSON.parse(json!)).toEqual({
 			plan_dir: 'plan/x/',
@@ -175,7 +178,8 @@ describe('registration barrel', () => {
 			create_branch: false,
 			web_research: false,
 			use_git: false,
-			max_turns: 400
+			max_turns: 400,
+			mute_preflight: true
 		});
 
 		// Validation: working dir and plan dir are required; attempts bounded.

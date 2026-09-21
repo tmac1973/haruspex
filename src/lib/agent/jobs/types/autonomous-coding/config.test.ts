@@ -150,3 +150,23 @@ describe('max_turns', () => {
 		expect(parseAutonomousCodingConfig('{"max_turns":200.6}').max_turns).toBe(201);
 	});
 });
+
+describe('mute_preflight', () => {
+	it('defaults to null, so a manual run still interviews', () => {
+		// The interview is right the FIRST time a plan is used; nothing that
+		// used to ask may silently stop asking.
+		expect(parseAutonomousCodingConfig('{}').mute_preflight).toBeNull();
+	});
+
+	it('round-trips both settings', () => {
+		expect(parseAutonomousCodingConfig('{"mute_preflight":true}').mute_preflight).toBe(true);
+		expect(parseAutonomousCodingConfig('{"mute_preflight":false}').mute_preflight).toBe(false);
+	});
+
+	it('ignores a non-boolean rather than reading it as on', () => {
+		// "yes" must not mute a run the user expected to be asked about.
+		for (const raw of ['{"mute_preflight":"yes"}', '{"mute_preflight":1}']) {
+			expect(parseAutonomousCodingConfig(raw).mute_preflight).toBeNull();
+		}
+	});
+});

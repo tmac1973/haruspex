@@ -1574,6 +1574,63 @@ describe('jobs runner — autonomous coding', () => {
 		expect([...(preflight![0].toolAllowlist ?? [])]).toContain('ask_user_question');
 	});
 
+	/**
+	 * `mute_preflight` is the same muteness a chained run gets, chosen by hand.
+	 * It exists because re-running a coding job against a plan whose decisions
+	 * are already settled meant sitting through an interview to re-answer them
+	 * — and a run started before bed parks on the question modal all night if
+	 * preflight asks even once.
+	 */
+	describe('mute_preflight', () => {
+		const mutedJob = () =>
+			codingJob({
+				type_config: JSON.stringify({
+					plan_dir: 'plan/x/',
+					context_mode: 'step',
+					mute_preflight: true
+				})
+			});
+
+		async function runMuted() {
+			mocks.getJob.mockResolvedValueOnce(mutedJob());
+			wireGit();
+			mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1, 'manual');
+			await settle(getCurrentRun);
+			return mocks.runEphemeralTurn.mock.calls.find(
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				([o]: any[]) => o.forceFinalTool === 'submit_preflight'
+			)![0];
+		}
+
+		it('takes the question tool away from a manual run too', async () => {
+			// By toolset, like the chained path — not by asking the prompt nicely.
+			expect([...((await runMuted()).toolAllowlist ?? [])]).not.toContain('ask_user_question');
+		});
+
+		it('moves the prompt and the flag with it', async () => {
+			const preflight = await runMuted();
+			expect(preflight.interactive).toBe(false);
+			expect(preflight.systemPrompt).not.toContain('ask_user_question');
+			// The mute prompt's actual instruction: settle it, do not stall.
+			expect(preflight.systemPrompt).toContain('NOBODY IS AVAILABLE');
+		});
+
+		it('leaves the rest of the run exactly as it was', async () => {
+			mocks.getJob.mockResolvedValueOnce(mutedJob());
+			wireGit();
+			mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1, 'manual');
+			await settle(getCurrentRun);
+
+			// Muting preflight must not mute the job: it still decomposes, codes
+			// and reports.
+			expect(getCurrentRun()?.status).toBe('succeeded');
+		});
+	});
+
 	it('marks a chained preflight turn non-interactive', async () => {
 		mocks.getJob.mockResolvedValueOnce(codingJob());
 		wireGit();
