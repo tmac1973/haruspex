@@ -52,6 +52,23 @@ import type { AgentLoopOptions, CompletionMeta } from '../loop';
 // Lower than the conversation-level compaction threshold (0.8) so we
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
+
+/**
+ * The token budget the in-loop trim should aim at, or null when no trim is
+ * warranted this iteration.
+ *
+ * Split out so the policy is testable without driving a whole agent loop —
+ * and because the policy is the part that went wrong. The trim used to have
+ * no target at all: crossing the threshold stubbed every eligible tool result
+ * at once, which on a long coding turn discards the files the turn is working
+ * from. Aiming AT the threshold keeps the freed space proportional to the
+ * overage.
+ */
+export function inLoopTrimBudget(contextSize: number, promptTokens: number): number | null {
+	if (contextSize <= 0) return null;
+	if (promptTokens / contextSize < IN_LOOP_TRIM_THRESHOLD) return null;
+	return Math.floor(contextSize * IN_LOOP_TRIM_THRESHOLD);
+}
 // Last-resort per-call output cap, used only if the settings store can't be
 // read. The operative values come from Settings → Agent → Response Length,
 // resolved per turn by `resolveMaxResponseTokens` below.
@@ -793,16 +810,22 @@ async function runModelCall(
 		text: response.content
 	});
 
-	if (
-		ctx.contextSize > 0 &&
-		response.usage &&
-		response.usage.prompt_tokens / ctx.contextSize >= IN_LOOP_TRIM_THRESHOLD
-	) {
+	const trimBudget = response.usage
+		? inLoopTrimBudget(ctx.contextSize, response.usage.prompt_tokens)
+		: null;
+	if (trimBudget !== null && response.usage) {
 		// Logged because this is otherwise an invisible mutation: it silently
 		// stubs earlier tool results, and the only trace was the `[Trimmed:`
 		// marker buried inside a later prompt dump. When a run degrades in
 		// quality rather than failing outright, this is the line that says why.
-		if (trimOldToolMessages(ctx.messages)) {
+		//
+		// Trim back TO the threshold, not down to the floor. This fires
+		// pre-emptively — the request that triggered it fit — so there is no
+		// reason for it to be the more destructive of the two trims, and it
+		// used to be: it stubbed every eligible tool result the moment the
+		// prompt crossed 70%, which on a long coding turn is the turn's whole
+		// working memory in one step.
+		if (trimOldToolMessages(ctx.messages, { budget: trimBudget, tools: ctx.tools })) {
 			logDebug('agent', 'in-loop trim stubbed older tool results', {
 				promptTokens: response.usage.prompt_tokens,
 				contextSize: ctx.contextSize,
