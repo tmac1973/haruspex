@@ -408,7 +408,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 # Everything in one command. spirv-headers is required by llama.cpp's Vulkan
 # backend and is NOT pulled in by shaderc, so it must be listed explicitly.
 sudo pacman -S --needed base-devel cmake pkg-config \
-  webkit2gtk-4.1 libappindicator-gtk3 librsvg alsa-lib libxcb \
+  webkit2gtk-4.1 libayatana-appindicator librsvg alsa-lib libxcb \
   vulkan-headers shaderc spirv-headers fuse2 libsonic pcaudiolib rust nodejs npm
 ```
 
