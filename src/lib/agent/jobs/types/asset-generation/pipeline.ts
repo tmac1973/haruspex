@@ -22,6 +22,7 @@ import {
 	parseAssetGenerationConfig,
 	resolveSpecPath,
 	DEFAULT_ANCHOR_ATTEMPTS,
+	DEFAULT_CONCURRENCY,
 	DEFAULT_TARGET_SIZE,
 	MAX_GENERATION_EDGE
 } from './config';
@@ -36,7 +37,8 @@ import type { ResolvedToolCall } from '$lib/agent/parser';
 import { deriveSpec, type DerivePayload } from './derive';
 import { specDerivationPrompt, specRetryPrompt } from './prompts';
 import { establishAnchor } from './anchor';
-import type { AnchorOutcome } from './types';
+import { generateEntries } from './generate';
+import type { AnchorOutcome, EntryOutcome } from './types';
 
 /** Read-only: the derivation grounds itself in the project, it does not edit it. */
 const DERIVE_TOOLS = ['fs_read_text', 'fs_list_dir', 'code_grep', 'code_glob'];
@@ -63,14 +65,47 @@ function breakdown(spec: AssetSpec): string {
 	);
 }
 
-/** Report lands beside the spec — fixed here, not by whoever writes it later. */
 function samePalette(a: number[], b: number[]): boolean {
 	return a.length === b.length && a.every((c, i) => c === b[i]);
 }
 
+/** Report lands beside the spec — fixed here, not by whoever writes it later. */
 export function reportPathFor(specPath: string): string {
 	const slash = specPath.lastIndexOf('/');
 	return slash < 0 ? 'REPORT-assets.md' : `${specPath.slice(0, slash)}/REPORT-assets.md`;
+}
+
+/** Counts by status, so the stage line and the report cannot disagree. */
+function countByStatus(entries: EntryOutcome[]) {
+	const n = (s: EntryOutcome['status']) => entries.filter((e) => e.status === s).length;
+	return { done: n('done'), skipped: n('skipped'), failed: n('failed') };
+}
+
+/**
+ * Which coherence layers the run did without, and how many entries each cost.
+ *
+ * Aggregated rather than listed per entry: forty identical lines saying "no
+ * reference conditioning" is how a reader stops reading the report.
+ */
+function degradedSummary(entries: EntryOutcome[]): string {
+	const counts = new Map<string, number>();
+	for (const e of entries) {
+		for (const d of e.degraded) counts.set(d, (counts.get(d) ?? 0) + 1);
+	}
+	if (counts.size === 0) return '';
+	return `Degraded: ${[...counts].map(([d, n]) => `${d} (${n})`).join('; ')}.`;
+}
+
+async function workdirPathExists(ctx: JobRunContext, relPath: string): Promise<boolean> {
+	if (!ctx.job.working_dir) return false;
+	try {
+		return await invoke<boolean>('fs_path_exists', {
+			workdir: ctx.job.working_dir,
+			relPath
+		});
+	} catch {
+		return false;
+	}
 }
 
 async function readWorkdirFile(ctx: JobRunContext, relPath: string): Promise<string | null> {
@@ -240,6 +275,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		}
 		const entryCount = spec.entries.length;
 		let anchor: AnchorOutcome | null = null;
+		let entries: EntryOutcome[] = [];
 
 		startStep(ANCHOR);
 		abortIfCancelled();
@@ -286,7 +322,32 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 
 		startStep(GENERATE);
 		abortIfCancelled();
-		finishStep(GENERATE, 'Not implemented yet.');
+		const backend = resolveImageBackend();
+		// Asked once per run, not per entry: a backend that changed its mind
+		// mid-run would degrade half the set and not the other half, and the
+		// report would be unable to say why they do not match.
+		const caps = await backend.capabilities();
+		const generated = await generateEntries(spec, {
+			caps,
+			anchor: anchored.image,
+			concurrency: cfg.concurrency ?? DEFAULT_CONCURRENCY,
+			maxEdge: MAX_GENERATION_EDGE,
+			signal: abort.signal,
+			generate: (req, opts) => backend.generate(req, opts),
+			exists: (rel) => workdirPathExists(ctx, rel),
+			writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes),
+			progress: (n, total, id) => ctx.patchStep(GENERATE, { streaming: `${n}/${total} — ${id}` })
+		});
+		entries = generated.map((g) => g.outcome);
+		const tally = countByStatus(entries);
+		finishStep(
+			GENERATE,
+			[
+				`${tally.done} generated, ${tally.skipped} already present, ` +
+					`${tally.failed} failed of ${entryCount}.`,
+				...(degradedSummary(entries) ? [degradedSummary(entries)] : [])
+			].join('\n')
+		);
 
 		startStep(REPORT);
 		abortIfCancelled();
@@ -303,7 +364,8 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 					: `Anchor: ${anchor.imagePath} (${anchor.source}, ${anchor.approval}, ` +
 						`${anchor.paletteSize} colours).`,
 				'',
-				'Generation is not implemented yet.',
+				`Generated ${countByStatus(entries).done}, skipped ` +
+					`${countByStatus(entries).skipped}, failed ${countByStatus(entries).failed}.`,
 				''
 			].join('\n')
 		);

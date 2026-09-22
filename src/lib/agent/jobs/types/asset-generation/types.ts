@@ -25,7 +25,8 @@ export interface EntryOutcome {
 	id: string;
 	status: 'done' | 'skipped' | 'unresolved' | 'failed';
 	attempts: number;
-	seed: number;
+	/** The seed the backend resolved. Null when nothing was ever generated. */
+	seed: number | null;
 	durationMs: number;
 	/** Coherence layers this entry had to do without, in plain words. */
 	degraded: string[];

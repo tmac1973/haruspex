@@ -63,45 +63,54 @@ const settingsState = vi.hoisted(() => ({ imageBackendKind: 'none' as string }))
 const imageState = vi.hoisted(() => ({
 	kind: 'comfyui' as string,
 	generated: [] as Array<Record<string, unknown>>,
-	fail: null as Error | null
+	fail: null as Error | null,
+	/** Fail the nth generation only, 1-based. The anchor is the first. */
+	failNth: 0,
+	caps: {
+		referenceConditioning: true,
+		seamlessTiling: true,
+		loras: true,
+		maxLoras: 2
+	}
 }));
 
-vi.mock('$lib/image', () => ({
-	resolveImageBackend: () => ({
-		kind: imageState.kind,
-		capabilities: async () => ({
-			referenceConditioning: true,
-			seamlessTiling: true,
-			loras: true,
-			maxLoras: 2
-		}),
-		probe: async () => ({ ok: true, detail: 'stub' }),
-		generate: async (req: Record<string, unknown>) => {
-			imageState.generated.push(req);
-			if (imageState.fail) throw imageState.fail;
-			return {
-				images: [
-					{
-						bytes: new Uint8Array([137, 80, 78, 71]),
-						mimeType: 'image/png',
-						width: req.width,
-						height: req.height
-					}
-				],
-				meta: {
-					// The RESOLVED seed, as a real backend reports it — the recipe
-					// must never record the null we may have sent.
-					seed: req.seed ?? 4242,
-					model: req.model ?? 'stub.safetensors',
-					backend: 'comfyui',
-					sampler: { name: 'euler_ancestral', steps: 28, cfg: 7 },
-					loras: req.loras ?? [],
-					durationMs: 1
+vi.mock('$lib/image', async () => {
+	const { ImageBackendError } = await import('$lib/image/types');
+	return {
+		resolveImageBackend: () => ({
+			kind: imageState.kind,
+			capabilities: async () => imageState.caps,
+			probe: async () => ({ ok: true, detail: 'stub' }),
+			generate: async (req: Record<string, unknown>) => {
+				imageState.generated.push(req);
+				if (imageState.fail) throw imageState.fail;
+				if (imageState.generated.length === imageState.failNth) {
+					throw new ImageBackendError('rejected', 'the backend refused this prompt');
 				}
-			};
-		}
-	})
-}));
+				return {
+					images: [
+						{
+							bytes: new Uint8Array([137, 80, 78, 71]),
+							mimeType: 'image/png',
+							width: req.width,
+							height: req.height
+						}
+					],
+					meta: {
+						// The RESOLVED seed, as a real backend reports it — the recipe
+						// must never record the null we may have sent.
+						seed: req.seed ?? 4242,
+						model: req.model ?? 'stub.safetensors',
+						backend: 'comfyui',
+						sampler: { name: 'euler_ancestral', steps: 28, cfg: 7 },
+						loras: req.loras ?? [],
+						durationMs: 1
+					}
+				};
+			}
+		})
+	};
+});
 
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
@@ -2629,6 +2638,9 @@ describe('jobs runner — asset generation', () => {
 	const PALETTE = [0x11111111, 0x22222222, 0x33333333];
 	/** Every request the stub backend was asked for, in order. */
 	const generated = imageState.generated;
+	/** Just the anchor sheets — the entries share the same list. */
+	const anchorCalls = () => generated.filter((g) => String(g.prompt).includes('reference sheet'));
+	const entryCalls = () => generated.filter((g) => !String(g.prompt).includes('reference sheet'));
 
 	/** Shaped like the Rust default, which is what the real command returns. */
 	function profileFixture() {
@@ -2657,6 +2669,13 @@ describe('jobs runner — asset generation', () => {
 		imageState.kind = 'comfyui';
 		imageState.generated.length = 0;
 		imageState.fail = null;
+		imageState.failNth = 0;
+		imageState.caps = {
+			referenceConditioning: true,
+			seamlessTiling: true,
+			loras: true,
+			maxLoras: 2
+		};
 		settingsState.imageBackendKind = 'comfyui';
 	});
 	afterEach(() => {
@@ -2710,7 +2729,7 @@ describe('jobs runner — asset generation', () => {
 	 * `spec` null = no spec file on disk. `anchor` supplies a committed anchor
 	 * so a test can exercise the reuse path.
 	 */
-	function wireFs(spec: string | null, anchor?: { recipe: string | null }) {
+	function wireFs(spec: string | null, anchor?: { recipe: string | null }, present: string[] = []) {
 		const written: Array<{ relPath: string; content: string }> = [];
 		const wroteBytes: string[] = [];
 		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
@@ -2732,6 +2751,11 @@ describe('jobs runner — asset generation', () => {
 			if (cmd === 'fs_write_bytes') {
 				wroteBytes.push(rel);
 				return undefined;
+			}
+			if (cmd === 'fs_path_exists') return present.includes(rel);
+			if (cmd === 'image_effective_profile') return args?.profile;
+			if (cmd === 'image_normalize') {
+				return { bytes: [1, 2, 3, 4], stats: { alpha: 0.5, entropy: 3, palette_distance: 0.01 } };
 			}
 			if (cmd === 'image_default_profile') return profileFixture();
 			if (cmd === 'image_extract_palette') return PALETTE;
@@ -2769,7 +2793,7 @@ describe('jobs runner — asset generation', () => {
 		await enqueue(1);
 		await settle(getCurrentRun);
 
-		expect(generated).toHaveLength(0);
+		expect(anchorCalls()).toHaveLength(0);
 		expect(getCurrentRun()!.steps[1].output).toContain('Reused');
 	});
 
@@ -2798,7 +2822,7 @@ describe('jobs runner — asset generation', () => {
 		await enqueue(1);
 		await settle(getCurrentRun);
 
-		expect(generated).toHaveLength(1);
+		expect(anchorCalls()).toHaveLength(1);
 	});
 
 	it('falls back to generating when the recipe is corrupt, rather than failing', async () => {
@@ -2809,7 +2833,7 @@ describe('jobs runner — asset generation', () => {
 		await settle(getCurrentRun);
 
 		expect(getCurrentRun()?.status).toBe('succeeded');
-		expect(generated).toHaveLength(1);
+		expect(anchorCalls()).toHaveLength(1);
 	});
 
 	it('records the resolved seed and sampler in the recipe, not what it asked for', async () => {
@@ -2821,7 +2845,7 @@ describe('jobs runner — asset generation', () => {
 		await enqueue(1);
 		await settle(getCurrentRun);
 
-		expect(generated[0].seed).toBeNull();
+		expect(anchorCalls()[0].seed).toBeNull();
 		const recipe = JSON.parse(written.find((w) => w.relPath === ANCHOR_RECIPE)!.content);
 		expect(recipe.seed).toBe(4242);
 		expect(recipe.sampler).toEqual({ name: 'euler_ancestral', steps: 28, cfg: 7 });
@@ -2858,7 +2882,7 @@ describe('jobs runner — asset generation', () => {
 		await settle(getCurrentRun);
 
 		expect(getCurrentRun()?.status).toBe('succeeded');
-		expect(generated).toHaveLength(3);
+		expect(anchorCalls()).toHaveLength(3);
 		// The last ask must not offer a button that does nothing.
 		const lastOptions = mocks.askUserQuestion.mock.calls.at(-1)![0].options as Array<{
 			label: string;
@@ -2878,7 +2902,7 @@ describe('jobs runner — asset generation', () => {
 		await enqueue(1);
 		await settle(getCurrentRun);
 
-		const seeds = generated.map((g) => g.seed);
+		const seeds = anchorCalls().map((g) => g.seed);
 		expect(seeds[0]).toBeNull();
 		expect(new Set(seeds.slice(1)).size).toBe(2);
 	});
@@ -2894,7 +2918,7 @@ describe('jobs runner — asset generation', () => {
 		await settle(getCurrentRun);
 
 		expect(getCurrentRun()?.status).toBe('cancelled');
-		expect(generated).toHaveLength(2);
+		expect(anchorCalls()).toHaveLength(2);
 	});
 
 	it('ends the run when the user declines the anchor', async () => {
@@ -2908,7 +2932,7 @@ describe('jobs runner — asset generation', () => {
 		await settle(getCurrentRun);
 
 		expect(getCurrentRun()?.status).toBe('cancelled');
-		expect(generated).toHaveLength(1);
+		expect(anchorCalls()).toHaveLength(1);
 	});
 
 	it('shows the sheet and the spec together at the checkpoint', async () => {
@@ -2948,6 +2972,79 @@ describe('jobs runner — asset generation', () => {
 
 		expect(getCurrentRun()?.status).toBe('failed');
 		expect(getCurrentRun()!.steps[1].error).toContain('ComfyUI is not running');
+	});
+
+	it('generates, normalizes and writes every asset in the spec', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(3), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(entryCalls()).toHaveLength(3);
+		expect(written.bytes).toEqual([
+			'assets/generated/thing_0.png',
+			'assets/generated/thing_1.png',
+			'assets/generated/thing_2.png'
+		]);
+		expect(getCurrentRun()!.steps[2].output).toContain('3 generated');
+	});
+
+	it('skips the assets that are already on disk', async () => {
+		// Delete ten of a hundred, re-run, get exactly those ten back.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(3), { recipe: goodRecipe() }, ['assets/generated/thing_1.png']);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(entryCalls()).toHaveLength(2);
+		expect(written.bytes).not.toContain('assets/generated/thing_1.png');
+		expect(getCurrentRun()!.steps[2].output).toContain('1 already present');
+	});
+
+	it('reports which coherence layers the backend could not provide', async () => {
+		// Never silent. A user comparing two runs has no other way to know why
+		// one of them looks worse.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		imageState.caps = {
+			referenceConditioning: false,
+			seamlessTiling: true,
+			loras: true,
+			maxLoras: 2
+		};
+		wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(entryCalls().every((g) => g.referenceImage === undefined)).toBe(true);
+		expect(getCurrentRun()!.steps[2].output).toContain('no reference conditioning (2)');
+	});
+
+	it('conditions every asset on the anchor when the backend can', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(entryCalls().every((g) => (g.referenceImage as Uint8Array)?.length > 0)).toBe(true);
+		expect(getCurrentRun()!.steps[2].output).not.toContain('Degraded');
+	});
+
+	it('finishes with a report when one asset fails', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		imageState.failNth = 2;
+		const written = wireFs(goodSpec(3), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(getCurrentRun()!.steps[2].output).toContain('1 failed');
+		expect(written.map((w) => w.relPath)).toContain('assets/REPORT-assets.md');
 	});
 
 	it('fails when there is no spec and nothing to write one from', async () => {
