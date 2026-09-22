@@ -14,7 +14,7 @@ import { ImageBackendError } from '$lib/image/types';
 import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '$lib/image/types';
 import { buildEntryRequest } from './request';
 import {
-	amendNegative,
+	amendForRetry,
 	betterReport,
 	maybeJudge,
 	rejectionReason,
@@ -264,9 +264,17 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 				return;
 			}
 
-			const amended = amendNegative(request.negativePrompt ?? '', report.failed, spec.style.prompt);
+			// Amended from the ORIGINAL request each time, not from the last
+			// amendment: three rounds of compounding suffixes produce a prompt
+			// that is mostly corrections.
+			const amended = amendForRetry(
+				request.prompt,
+				request.negativePrompt ?? '',
+				report.failed,
+				spec.style.prompt
+			);
+			prompt = amended.prompt;
 			negativePrompt = amended.negativePrompt;
-			prompt = amended.promptSuffix ? `${request.prompt}, ${amended.promptSuffix}` : request.prompt;
 			// A new seed even for an entry that pinned one: a pinned seed that
 			// fails every check retries identically until the budget runs out.
 			seed = retrySeed();

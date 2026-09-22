@@ -78,6 +78,16 @@ describe('the isolation scaffold', () => {
 		expect(p).toContain('cobblestone');
 	});
 
+	it('names the background in a word, never in hex', () => {
+		// The bug that failed all four assets of the first real run: a prompt
+		// saying "#ff00ff" produces no magenta, so there is no background to
+		// remove and every sprite comes back fully opaque. Both prompt builders
+		// have made this mistake; this pins the entry one.
+		const p = entryPrompt(entry(), spec(), profile());
+		expect(p).toContain('magenta');
+		expect(p).not.toContain('#');
+	});
+
 	it('names the colour the profile will actually key against', () => {
 		// The prompt and the chroma key have one source. If they can name
 		// different colours the background survives into every asset.
@@ -86,8 +96,8 @@ describe('the isolation scaffold', () => {
 			spec(),
 			profile({ background: { ...profile().background, color: 0x00ff00ff } })
 		);
-		expect(p).toContain('#00ff00');
-		expect(p).not.toContain('#ff00ff');
+		expect(p).toContain('bright green');
+		expect(p).not.toContain('magenta');
 	});
 
 	it('leaves the style prompt with the last word', () => {

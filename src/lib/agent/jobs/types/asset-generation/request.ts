@@ -10,11 +10,16 @@
 import { joinNegativePrompts } from '$lib/assets/spec/types';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
 import type { ImageBackendCapabilities, ImageRequest, LoraRef } from '$lib/image/types';
-import { hexColor } from './anchor';
+import { colourWord } from './anchor';
 
 /**
  * The isolation scaffold, and it is a precondition of background removal
  * rather than a nicety.
+ *
+ * The colour is named in WORDS for the same reason the anchor's is: a prompt
+ * saying "#ff00ff" produces no magenta at all, so there is no background to
+ * remove and every sprite comes back fully opaque. The first real run of this
+ * pipeline failed all four assets that way.
  *
  * Measured against SD1.5: three prompts of the form "a sword, game item icon,
  * centered, on a flat solid magenta background" produced full-frame
@@ -51,7 +56,7 @@ export function wantsIsolation(kind: AssetEntry['kind']): boolean {
  * the same game.
  */
 export function entryPrompt(entry: AssetEntry, spec: AssetSpec, profile: NormalizeProfile): string {
-	const background = hexColor(profile.background.color);
+	const background = colourWord(profile.background.color);
 	const subject = wantsIsolation(entry.kind)
 		? isolationScaffold(entry.prompt, background)
 		: entry.prompt;

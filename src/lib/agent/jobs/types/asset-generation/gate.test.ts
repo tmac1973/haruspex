@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-	amendNegative,
+	amendForRetry,
 	betterReport,
 	describeFailures,
 	maybeJudge,
@@ -26,57 +26,74 @@ function report(failed: CheckName[], paletteDistance = 0): CheckReport {
 const entry: AssetEntry = { id: 'e', kind: 'sprite', prompt: 'a sword', out: 'a/e.png' };
 
 describe('the retry table', () => {
-	it('has an amendment and a label for every check the gate can fail', () => {
+	it('has an amendment for every check the gate can fail', () => {
 		// A check with no amendment retries with the identical prompt, which is
 		// the most expensive way to produce the same bad image three times.
 		for (const name of ALL) {
-			expect(RETRY_AMENDMENTS[name]?.length ?? 0).toBeGreaterThan(0);
+			const a = RETRY_AMENDMENTS[name];
+			expect((a?.positive ?? '') + (a?.negative ?? '')).not.toBe('');
 			expect(CHECK_LABELS[name]?.length ?? 0).toBeGreaterThan(0);
 		}
+	});
+
+	it('asks for an empty margin rather than forbidding one', () => {
+		// The bug that lost all four assets of the first real run: alpha_high
+		// means "fully opaque, no background to remove", and its amendment used
+		// to put "flat background" in the NEGATIVE prompt — telling the model to
+		// avoid the very thing that was missing. Three attempts, three
+		// identical failures, every asset.
+		const a = RETRY_AMENDMENTS.alpha_high;
+		expect(a.positive ?? '').toMatch(/empty|margin|alone/);
+		expect(a.negative ?? '').not.toMatch(/\bflat background\b/);
+	});
+
+	it('asks for a limited palette rather than forbidding one', () => {
+		// Same inversion: being off-style is the complaint, so a limited
+		// palette is the fix, not the thing to avoid.
+		const a = RETRY_AMENDMENTS.palette_distance;
+		expect(a.positive ?? '').toContain('limited palette');
+		expect(a.negative ?? '').not.toContain('limited palette');
 	});
 
 	it('pushes alpha in opposite directions for the two alpha failures', () => {
 		// Nothing opaque and fully opaque are opposite problems. One table
 		// entry for "alpha" would make the mapping unwritable.
-		expect(RETRY_AMENDMENTS.alpha_low).toContain('blank');
-		expect(RETRY_AMENDMENTS.alpha_high).toContain('background');
-		expect(RETRY_AMENDMENTS.alpha_low).not.toBe(RETRY_AMENDMENTS.alpha_high);
+		expect(RETRY_AMENDMENTS.alpha_low.negative).toContain('blank');
+		expect(RETRY_AMENDMENTS.alpha_high.positive).toContain('empty');
 	});
 });
 
-describe('amendNegative', () => {
-	it('appends the amendment to the entry negative rather than replacing it', () => {
-		const { negativePrompt } = amendNegative('no rust', ['entropy'], 'flat pixel art');
-		expect(negativePrompt).toContain('no rust');
-		expect(negativePrompt).toContain(RETRY_AMENDMENTS.entropy);
+describe('amendForRetry', () => {
+	it('appends what we want to the PROMPT and what we do not to the negative', () => {
+		const r = amendForRetry('a sword', 'no rust', ['alpha_high'], 'flat pixel art');
+		expect(r.prompt).toContain('a sword');
+		expect(r.prompt).toContain(RETRY_AMENDMENTS.alpha_high.positive!);
+		expect(r.negativePrompt).toContain('no rust');
+		expect(r.negativePrompt).toContain('full frame');
+		// The thing we are asking for must never land in the negative.
+		expect(r.negativePrompt).not.toContain('wide empty margins');
 	});
 
 	it('appends one amendment per failure', () => {
-		const { negativePrompt } = amendNegative('', ['alpha_low', 'entropy'], 'x');
-		expect(negativePrompt).toContain(RETRY_AMENDMENTS.alpha_low);
-		expect(negativePrompt).toContain(RETRY_AMENDMENTS.entropy);
+		const r = amendForRetry('a sword', '', ['alpha_low', 'entropy'], 'x');
+		expect(r.negativePrompt).toContain('blank');
+		expect(r.negativePrompt).toContain('featureless');
 	});
 
-	it('re-says the style for an off-style result, rather than saying what to avoid', () => {
-		// Being off-style is the one failure whose fix is a positive prompt.
-		const { promptSuffix, negativePrompt } = amendNegative(
-			'',
-			['palette_distance'],
-			'flat pixel art'
-		);
-		expect(promptSuffix).toBe('flat pixel art');
-		expect(negativePrompt).toContain('limited palette');
+	it('re-says the style for an off-style result, in the positive prompt', () => {
+		const r = amendForRetry('a sword', '', ['palette_distance'], 'flat pixel art');
+		expect(r.prompt).toContain('flat pixel art');
+		expect(r.prompt).toContain('limited palette');
+		expect(r.negativePrompt).not.toContain('flat pixel art');
 	});
 
-	it('leaves the prompt alone for every other failure', () => {
-		for (const f of ['alpha_low', 'alpha_high', 'entropy'] as CheckName[]) {
-			expect(amendNegative('', [f], 'flat pixel art').promptSuffix).toBe('');
-		}
+	it('leaves the prompt alone for a failure with no positive amendment', () => {
+		expect(amendForRetry('a sword', '', ['entropy'], 'flat pixel art').prompt).toBe('a sword');
 	});
 
 	it('emits no stray commas when there was no base negative', () => {
-		const { negativePrompt } = amendNegative('', ['entropy'], 'x');
-		expect(negativePrompt).not.toMatch(/^,|,\s*$|,\s*,/);
+		const r = amendForRetry('a sword', '', ['entropy'], 'x');
+		expect(r.negativePrompt).not.toMatch(/^,|,\s*$|,\s*,/);
 	});
 });
 

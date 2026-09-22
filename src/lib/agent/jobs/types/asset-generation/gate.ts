@@ -18,17 +18,42 @@ import type { AssetEntry } from '$lib/assets/spec/types';
 import type { AssetJudgement } from './tools';
 
 /**
- * What to append to the next attempt's negative prompt for each failure.
+ * How to amend the next attempt for each failure.
  *
  * A table rather than a judgement call: the amendment has to be reproducible,
  * and "ask the model what went wrong" is how a retry loop becomes a second
  * source of randomness on top of the one it is trying to correct.
+ *
+ * Direction matters, and getting it wrong is worse than having no amendment.
+ * These were originally all negatives, which inverted two of the four: a
+ * fully-opaque result was retried with "flat background" in the NEGATIVE
+ * prompt, telling the model to avoid the very thing that was missing, and an
+ * off-style result was retried with "limited palette" in the negative. Every
+ * retry made its own failure more likely, and the first real run of this
+ * pipeline lost all four assets to it with three identical attempts each.
+ *
+ * So each entry says explicitly which prompt it belongs in. What we want goes
+ * in `positive`; what we want less of goes in `negative`.
  */
-export const RETRY_AMENDMENTS: Record<CheckName, string> = {
-	alpha_low: 'blank, empty, transparent',
-	alpha_high: 'flat background, no subject isolation',
-	entropy: 'featureless, flat, low detail',
-	palette_distance: 'limited palette'
+export interface RetryAmendment {
+	positive?: string;
+	negative?: string;
+}
+
+export const RETRY_AMENDMENTS: Record<CheckName, RetryAmendment> = {
+	// Nothing opaque: the subject is missing, so say what not to produce.
+	alpha_low: { negative: 'blank, empty, transparent' },
+	// Fully opaque: there was no background to remove. Ask for the empty
+	// margin directly, and push away from the full-frame composition SD1.5
+	// falls into.
+	alpha_high: {
+		positive: 'tiny object alone in the centre, wide empty margins, plain unbroken backdrop',
+		negative: 'full frame, close-up, zoomed in, filling the frame, cropped, scenery, still life'
+	},
+	// Flat mush: say what not to produce.
+	entropy: { negative: 'featureless, flat, low detail, plain, empty' },
+	// Off-style: the fix is to say the style again, not to say what to avoid.
+	palette_distance: { positive: 'limited palette, flat blocks of colour' }
 };
 
 /** In plain words, for the report. */
@@ -44,24 +69,31 @@ export function describeFailures(failed: CheckName[]): string {
 }
 
 /**
- * The negative-prompt amendment for one round of failures.
+ * The prompt amendments for one round of failures.
  *
- * `palette_distance` also re-appends the style prompt, because being off-style
- * is the one failure whose fix is to say the style again rather than to say
- * what to avoid.
+ * Returns both halves. `palette_distance` also re-appends the style prompt,
+ * because being off-style is the one failure whose fix is to say the style
+ * again rather than to say what to avoid.
  */
-export function amendNegative(
-	base: string,
+export function amendForRetry(
+	basePrompt: string,
+	baseNegative: string,
 	failed: CheckName[],
 	stylePrompt: string
-): { negativePrompt: string; promptSuffix: string } {
-	const additions = failed.map((f) => RETRY_AMENDMENTS[f]).filter((a) => a.length > 0);
-	const negativePrompt = [base, ...additions]
-		.map((s) => s.trim())
-		.filter((s) => s.length > 0)
-		.join(', ');
-	const promptSuffix = failed.includes('palette_distance') ? stylePrompt : '';
-	return { negativePrompt, promptSuffix };
+): { prompt: string; negativePrompt: string } {
+	const join = (parts: Array<string | undefined>) =>
+		parts
+			.map((s) => (s ?? '').trim())
+			.filter((s) => s.length > 0)
+			.join(', ');
+
+	const positives = failed.map((f) => RETRY_AMENDMENTS[f]?.positive);
+	if (failed.includes('palette_distance')) positives.push(stylePrompt);
+
+	return {
+		prompt: join([basePrompt, ...positives]),
+		negativePrompt: join([baseNegative, ...failed.map((f) => RETRY_AMENDMENTS[f]?.negative)])
+	};
 }
 
 /**
