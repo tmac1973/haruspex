@@ -11,10 +11,11 @@ BINARIES_DIR="$PROJECT_ROOT/src-tauri/binaries"
 LIBS_DIR="$BINARIES_DIR/libs"
 TARGET_DIR="$PROJECT_ROOT/src-tauri/target/debug"
 
-# Only run if target dir exists
-if [ ! -d "$TARGET_DIR" ]; then
-    exit 0
-fi
+# Create the target dir rather than bailing when it is absent. On a fresh
+# clone dev-setup.sh runs before the first cargo build, so exiting here left
+# the libs unlinked while dev-setup still printed "Done" — and llama-server,
+# which finds its backends via /proc/self/exe, came up without a Vulkan one.
+mkdir -p "$TARGET_DIR"
 
 # Symlink .so/.dylib files from binaries/ and binaries/libs/ to target/debug/.
 #
