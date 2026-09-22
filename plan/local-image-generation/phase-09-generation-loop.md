@@ -33,10 +33,33 @@ that lets a weaker local engine still produce a usable, coherent set.
    entry-then-style rule, a generation size of
    `target_size * upscale` (already clamped in phase 04), `model` from
    `spec.style.model`, `loras` from `spec.style.loras`, `seed` from
-   `entry.seed` when set, and a background
+   `entry.seed` when set, and an ISOLATION scaffold (step 2a) plus a background
    instruction formatted from `profile.background.color` — the one source, so
    the prompt and the chroma key can never disagree. The anchor bytes go in
    `referenceImage` with the profile's `reference_strength`.
+2a. **Every sprite and icon prompt is wrapped in an isolation scaffold**, and
+   this is a precondition of the whole background-removal layer rather than a
+   nicety. Measured against SD1.5: three prompts saying "a sword, game item
+   icon, centered, on a flat solid magenta background" produced full-frame
+   compositions whose borders were only 38%, 46% and 56% one colour — there
+   was no background to remove, so every sprite came out fully opaque and
+   failed its alpha check. Rewritten as
+
+     "a single <subject>, one object only, small in frame, centred, isolated
+      on a plain flat <background> background, solid <background> backdrop,
+      lots of empty <background> space around it, product shot, simple"
+
+   with a negative prompt of
+
+     "background scenery, pattern, multiple objects, collage, tiled, busy,
+      border, frame, texture background, gradient, landscape, cropped,
+      close-up"
+
+   the same subjects reached 88% and 95% border coherence and keyed cleanly.
+   The scaffold is prepended and the negative appended, both before the
+   style's own strings, so `spec.style` still has the last word on look. It
+   is applied to `sprite` and `icon` only: a texture is meant to fill its
+   frame, and telling it to leave empty space would ruin it.
 3. Consult `capabilities()` once per run and degrade per entry:
    - no `referenceConditioning` → drop `referenceImage`, and record
      `degraded: 'no reference conditioning'` for that entry;
@@ -87,6 +110,11 @@ npm run check && npm run lint && npm run format:check && npm run test
   three times and the report counts two skipped.
 - Request building: style prompt is appended; anchor bytes are attached; entry
   size overrides the profile; a texture entry sets `seamless`.
+- The isolation scaffold wraps a `sprite` and an `icon` prompt and is ABSENT
+  from a `texture` prompt — a texture is meant to fill its frame. Asserted on
+  both, since applying it everywhere is the easy mistake.
+- The scaffold's background word is taken from `profile.background.color`, so
+  the prompt and the chroma key cannot name different colours.
 - Degradation: with a capabilities object reporting no reference conditioning,
   requests carry no `referenceImage` and every entry is recorded as degraded
   with that reason. Same for seamless; and with `maxLoras: 1` and two LoRAs

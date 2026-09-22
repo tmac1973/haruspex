@@ -66,9 +66,15 @@ asset added six months from now match the ones already shipped.
    - **unattended** — accept the first generation, and say so in the stage
      output so the report records that no human saw it.
 5. Extract the palette from the approved sheet with `image_extract_palette`,
-   passing the profile's `palette_size` and `background.color` as the exclusion
-   — keying happens per entry later and the key colour must never enter the
-   palette.
+   passing the profile's `palette_size` and `background.color` as the
+   exclusion — keying happens per entry later and the key colour must never
+   enter the palette.
+   Exclude the sheet's **dominant border colour** as well, found the same way
+   phase 04 finds a background to key. The configured key is what the prompt
+   asked for and models do not comply: an anchor asked for on magenta comes
+   back on whatever the model felt like, and excluding only magenta spends a
+   palette slot on a backdrop no asset will ever use. Both exclusions, or
+   neither is reliable.
 6. Write the palette back into `spec.normalize.palette` and re-render the spec,
    so the palette is versioned with the entries it governs.
 7. Write the anchor image to `spec.anchor.image` (PNG, unmodified — it is a
@@ -115,6 +121,9 @@ npm run check && npm run lint && npm run format:check && npm run test
   first generation is accepted, and the outcome records `approval: 'auto'`.
 - Palette extraction excludes the background colour — fixture-driven, and it
   fails if the exclusion is removed.
+- It also excludes a dominant border colour the prompt never asked for, which
+  is the case that actually happens: a sheet generated on an unrequested
+  backdrop must not spend a palette slot on it.
 - The spec is rewritten with the palette, and re-parsing it yields the same
   palette.
 - Git off: no git command is issued anywhere in the stage.

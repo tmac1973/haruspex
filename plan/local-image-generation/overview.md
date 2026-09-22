@@ -179,6 +179,13 @@ without standing up and hand-driving a diffusion stack.
   authored for this repository and carry its licence, recorded in the template
   registry (a ComfyUI API graph must parse as strict JSON, which has no
   comments) and asserted by a test.
+- **Models do not obey colour or composition instructions.** Measured on
+  SD1.5: asking for "a flat magenta background" yields whatever backdrop the
+  model prefers, and asking for an isolated centred object yields a full-frame
+  composition. Both are preconditions of background removal, so neither may be
+  left to the prompt alone — the prompt asks, and the pipeline verifies and
+  falls back. This is the same reasoning as the rest of the design, arrived at
+  the hard way rather than by argument.
 - **Generation is slow enough to be interrupted.** A backend can vanish
   mid-run. The job must treat that as a per-entry failure that the remaining
   entries retry through, not as a crash.

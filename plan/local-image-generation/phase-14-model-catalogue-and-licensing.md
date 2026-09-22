@@ -14,8 +14,8 @@ and cancellation. Nothing is downloaded until they choose.
 ## Files touched
 
 - `src-tauri/src/models.rs` — extend `ModelInfo` with `license: String`,
-  `license_url: String`, `commercial_use: bool`, `recommended: bool`, and
-  `family: ModelFamily` (`Llm | Whisper | Image`). Add the image entries to the
+  `license_url: String`, `commercial_use: bool`, `recommended: bool`,
+  `native_edge: u32` and `family: ModelFamily` (`Llm | Whisper | Image`). Add the image entries to the
   catalogue and `download_image_model`, alongside the existing
   `download_whisper_model`.
 - `src/lib/components/settings/ImageSection.svelte` — a model list with
@@ -37,13 +37,26 @@ and cancellation. Nothing is downloaded until they choose.
    leave the decision to the user reading it.
 3. The curated list, as GGUF/GGML weights the sidecar can load. The licences
    are the point of the phase; the figures are what the UI gates on:
+   Each entry also carries `native_edge`, the resolution the model was
+   trained at, because a profile's `upscale` is only correct relative to it:
+   SD1.5 degrades above 512 and SDXL produces artefacts below 1024, so a
+   32px target wants `upscale: 16` on one and `32` on the other. Selecting a
+   model sets the profile's upscale from this field rather than leaving the
+   user to discover why their sprites look wrong.
    - **Stable Diffusion 1.5** (q8) — CreativeML OpenRAIL-M,
-     `commercial_use: true`, ~2 GB download, ~4 GB VRAM. The small, fast
-     baseline and the deepest LoRA ecosystem.
-   - **SDXL 1.0** (q8) — CreativeML OpenRAIL++-M, `commercial_use: true`,
-     ~7 GB download, ~10 GB VRAM.
+     `commercial_use: true`, ~2 GB download, ~4 GB VRAM, `native_edge: 512`.
+     The small, fast baseline and the deepest LoRA ecosystem.
+   - **SDXL 1.0** — CreativeML OpenRAIL++-M, `commercial_use: true`, ~7 GB
+     download, ~10 GB VRAM, `native_edge: 1024`. Markedly better at following
+     composition instructions, which is a precondition of background removal
+     rather than a matter of taste.
    - **FLUX.1-schnell** (q4) — Apache 2.0, `commercial_use: true`, ~7 GB
-     download, ~12 GB VRAM. The most permissive licence here.
+     download, ~12 GB VRAM, `native_edge: 1024`. The most permissive licence
+     here, and the one with the largest caveat: Flux is a DiT, so the
+     UNet-oriented IP-Adapter and circular-padding node packs this plan
+     depends on do not apply to it. It is listed for plain generation and
+     reports `referenceConditioning: false` and `seamlessTiling: false`, which
+     the job degrades around — two of the three coherence layers unavailable.
    - **FLUX.1-dev** (q4) — non-commercial licence, `commercial_use: false`,
      ~7 GB download, ~12 GB VRAM. Present precisely so the warning path has a
      real entry to exercise, and never `recommended`.
@@ -93,8 +106,12 @@ cd .. && npm run check && npm run lint && npm run format:check && npm run test
   at 6 GB SD 1.5, and FLUX.1-dev is never recommended at any VRAM because
   `commercial_use` is false. This is a test over the catalogue data, so adding a non-permissive
   recommendation later fails the build.
-- Every image entry has a non-empty `license`, `license_url` and a non-zero
-  size and VRAM figure.
+- Every image entry has a non-empty `license`, `license_url`, a non-zero size
+  and VRAM figure, and a `native_edge`.
+- Selecting a model sets the profile's `upscale` so the generation edge lands
+  on that model's `native_edge` — a 32px target gets 16 on SD1.5 and 32 on
+  SDXL. The failure this prevents is silent: SDXL at 512 produces artefacts
+  and nothing in the pipeline would report it.
 - Download: progress events fire; cancel mid-download leaves no partial file in
   the models directory; a completed download is listed as present.
 - UI: a `commercial_use: false` model cannot be downloaded without the

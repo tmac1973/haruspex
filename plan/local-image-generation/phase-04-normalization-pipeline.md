@@ -49,7 +49,13 @@ conditioning can drift or be unavailable; palette and grid do not care.
    from here and add nothing:
    - `target_size: u32 = 32` — the output edge in pixels.
    - `upscale: u32 = 16` — generation happens at `target_size * upscale`, so 32
-     becomes 512. The downscale factor is exactly this number. The effective
+     becomes 512. The downscale factor is exactly this number.
+     **The right value depends on the model**, which is why it is a profile
+     field rather than a constant: SD1.5 is trained at 512 and degrades above
+     it, SDXL is trained at 1024 and produces artefacts below it. A 32px
+     target wants `upscale: 16` on SD1.5 and `32` on SDXL, and the latter is
+     exactly `MAX_GENERATION_EDGE`. Phase 14's catalogue entries carry the
+     upscale each model wants, so choosing a model sets it. The effective
      value is clamped so the generation edge never exceeds
      `MAX_GENERATION_EDGE = 1024`: `upscale.min(1024 / target_size).max(1)`.
      Without that clamp a `target_size` of 512 — which phase 06 permits —
