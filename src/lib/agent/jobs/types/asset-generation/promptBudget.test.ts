@@ -73,3 +73,30 @@ describe('fitStyle', () => {
 		expect(fitStyle(LONG, 60).text.length).toBeLessThanOrEqual(60);
 	});
 });
+
+describe('the instructions that produce a style', () => {
+	it('tell the model the window it has to fit, in every place one is asked for', async () => {
+		// The style is written by a model, not by the user — so trimming it
+		// afterwards treats the symptom. Every prompt and tool description
+		// that asks for one has to say why it must be short, or the next run
+		// writes 600 characters again and loses most of them.
+		const { specDerivationPrompt } = await import('./prompts');
+		const derivation = specDerivationPrompt('a roguelike', 'assets/spec.json');
+		expect(derivation).toContain('77 tokens');
+		expect(derivation).toMatch(/SHORT|short/);
+
+		// And the tool schema the model actually fills in.
+		const { getToolSchemas } = await import('$lib/agent/tools/registry');
+		await import('$lib/agent/tools/coding');
+		const schema = getToolSchemas({
+			hasWorkingDir: true,
+			toolAllowlist: ['submit_asset_spec']
+		})[0];
+		const style = (
+			schema.function.parameters as {
+				properties: { style: { properties: { prompt: { description: string } } } };
+			}
+		).properties.style.properties.prompt.description;
+		expect(style).toContain('77 tokens');
+	});
+});

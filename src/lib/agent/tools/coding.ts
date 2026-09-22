@@ -260,9 +260,11 @@ registerTool({
 							prompt: {
 								type: 'string',
 								description:
-									'The look, appended to every asset prompt: medium, palette, line weight, ' +
-									'lighting. e.g. "flat pixel art, limited palette, thick dark outline, no ' +
-									'gradients". Describe the STYLE only — never a subject.'
+									'The look, appended to every asset prompt. ONE SHORT LINE, at most about ' +
+									'25 words: the image model reads only the first 77 tokens of a prompt, and ' +
+									'a long style pushes the subject out of that window. Medium, palette and ' +
+									'line weight only. e.g. "flat pixel art, limited palette, thick dark ' +
+									'outline, no gradients". Never a subject, a camera angle or a genre.'
 							},
 							negativePrompt: {
 								type: 'string',
