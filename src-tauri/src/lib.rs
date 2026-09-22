@@ -9,6 +9,7 @@ mod feedback;
 mod fs_tools;
 mod hardware;
 mod image_cache;
+mod image_engine;
 mod image_gen;
 mod inference;
 mod inference_queue;
@@ -159,6 +160,8 @@ pub fn run() {
             }
         })
         .manage(LlamaServer::new())
+        // Nothing starts here: the image engine spawns on demand only.
+        .manage(image_engine::ImageEngine::new())
         .manage(McpInstaller::new())
         .manage(InferenceQueue::new())
         .manage(ProxyState::new())
@@ -244,6 +247,11 @@ pub fn run() {
             whisper::get_whisper_logs,
             whisper::clear_whisper_logs,
             whisper::transcribe_audio,
+            image_engine::image_engine_start,
+            image_engine::image_engine_stop,
+            image_engine::image_engine_status,
+            image_engine::image_engine_logs,
+            image_engine::image_engine_request,
             tts::tts_initialize,
             tts::tts_synthesize_and_play,
             tts::tts_stop_playback,

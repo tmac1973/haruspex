@@ -11,6 +11,7 @@
 	let imageBackendBaseUrl = $state(getSettings().imageBackendBaseUrl);
 	let imageBackendApiKey = $state(getSettings().imageBackendApiKey);
 	let imageComfyCheckpoint = $state(getSettings().imageComfyCheckpoint);
+	let imageLocalModelPath = $state(getSettings().imageLocalModelPath);
 	let imageComfyWorkflowPath = $state(getSettings().imageComfyWorkflowPath);
 	let imageComfyFieldMapPath = $state(getSettings().imageComfyFieldMapPath);
 
@@ -25,6 +26,57 @@
 	let controller: AbortController | null = null;
 
 	const configured = $derived(imageBackendKind !== 'none');
+	const isLocal = $derived(imageBackendKind === 'local');
+
+	// The bundled engine, if this platform has one. Asked once: the answer is
+	// a property of the install, not of the session.
+	let engine = $state<{ status: string; model: string | null; available: boolean } | null>(null);
+	let engineLogs = $state<string[]>([]);
+	let engineBusy = $state(false);
+
+	async function refreshEngine() {
+		try {
+			const st = await invoke<{
+				status: { type: string; message?: string };
+				model: string | null;
+				available: boolean;
+			}>('image_engine_status');
+			engine = {
+				status: st.status.type === 'Error' ? (st.status.message ?? 'Error') : st.status.type,
+				model: st.model,
+				available: st.available
+			};
+		} catch {
+			engine = null;
+		}
+	}
+
+	async function startEngine() {
+		engineBusy = true;
+		try {
+			await invoke('image_engine_start', { modelPath: imageLocalModelPath.trim() });
+		} catch (e) {
+			probeResult = { ok: false, detail: (e as { detail?: string })?.detail ?? String(e) };
+		} finally {
+			engineBusy = false;
+			await refreshEngine();
+			engineLogs = await invoke<string[]>('image_engine_logs').catch(() => []);
+		}
+	}
+
+	async function stopEngine() {
+		engineBusy = true;
+		try {
+			await invoke('image_engine_stop');
+		} finally {
+			engineBusy = false;
+			await refreshEngine();
+		}
+	}
+
+	$effect(() => {
+		if (isLocal) void refreshEngine();
+	});
 
 	function persistKind(e: Event) {
 		imageBackendKind = (e.currentTarget as HTMLSelectElement).value as ImageBackendKind;
@@ -95,6 +147,9 @@
 		<select value={imageBackendKind} onchange={persistKind} aria-label="Image backend">
 			<option value="none">None</option>
 			<option value="comfyui">ComfyUI</option>
+			{#if engine?.available !== false}
+				<option value="local">Bundled engine</option>
+			{/if}
 		</select>
 		<span>where pictures are generated</span>
 	</label>
@@ -104,7 +159,39 @@
 	</p>
 </section>
 
-{#if configured}
+{#if isLocal}
+	<section class="settings-section">
+		<h2>Bundled engine</h2>
+		<label class="row">
+			<input
+				type="text"
+				placeholder="/path/to/model.safetensors"
+				bind:value={imageLocalModelPath}
+				onblur={() => persist({ imageLocalModelPath: imageLocalModelPath.trim() })}
+				aria-label="Model file"
+			/>
+			<span>weights to load</span>
+		</label>
+		<p class="help">Nothing starts until you ask. Settings → Image.</p>
+		<div class="row">
+			<button onclick={startEngine} disabled={engineBusy || engine?.status === 'Ready'}>
+				{engineBusy ? 'Working…' : 'Start'}
+			</button>
+			<button onclick={stopEngine} disabled={engineBusy || engine?.status === 'Stopped'}>
+				Stop
+			</button>
+			<span class="status">{engine?.status ?? 'Unknown'}</span>
+		</div>
+		{#if engineLogs.length > 0}
+			<details>
+				<summary>Engine log</summary>
+				<pre class="logs">{engineLogs.slice(-40).join('\n')}</pre>
+			</details>
+		{/if}
+	</section>
+{/if}
+
+{#if configured && !isLocal}
 	<section class="settings-section">
 		<h2>Connection</h2>
 		<label class="row">

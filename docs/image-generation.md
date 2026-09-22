@@ -46,11 +46,30 @@ Two consequences for whoever wires the process up:
 
 - `scripts/link-sidecar-libs.sh` deliberately does **not** flatten `sd-libs/`
   into `target/debug/`. Doing so reintroduces exactly the collision above.
-- ggml discovers its compute backends relative to `/proc/self/exe`, so
-  launching `sd-server` needs more than `LD_LIBRARY_PATH` pointing at
-  `sd-libs/` — the binary has to be able to find `libggml-vulkan.so` beside
-  itself. That is the supervising code's problem to solve, and it is the first
-  thing to get wrong.
+- ggml discovers its compute backends by scanning the directory containing
+  `/proc/self/exe`, so `sd-server` **must be launched from a directory that
+  holds its own libraries**. `LD_LIBRARY_PATH` alone is not enough; it
+  resolves the direct links but not the backend scan. Measured on this
+  machine:
+
+  | Launch | Result |
+  | --- | --- |
+  | From `binaries/`, `LD_LIBRARY_PATH=sd-libs` | `No devices found!` — no backend at all |
+  | `GGML_BACKEND_PATH=sd-libs` (a directory) | `cannot read file data: Is a directory` |
+  | `GGML_BACKEND_PATH=…/libggml-vulkan.so` | Vulkan loads, then `backend 'cpu' was not found` |
+  | Binary placed **inside** `sd-libs/` | Vulkan + `libggml-cpu-zen4.so` both load; GPU detected |
+
+  `GGML_BACKEND_PATH` names a single backend file, so it cannot stand in for
+  the scan: ggml picks the CPU backend by microarchitecture from among a dozen
+  `libggml-cpu-*.so` variants, and hardcoding one would pin the build to a
+  chip. The supervisor therefore places the binary beside the libraries and
+  spawns it there.
+
+- `LD_LIBRARY_PATH` must list `sd-libs/` **before** the executable's own
+  directory, which is the opposite of what `sidecar_utils::library_paths`
+  does for every other sidecar. In a dev tree `target/debug` carries
+  llama.cpp's `libggml-base.so.0`, and with the usual ordering `ldd` resolves
+  sd-server against it — an older ABI under an identical soname.
 
 ### Refreshing the pin
 
