@@ -106,7 +106,15 @@ conditioning can drift or be unavailable; palette and grid do not care.
 8. `normalize_outline(img, color, width)`: the dilation the dark_times
    `asset-gen` uses — every transparent pixel touching an opaque one becomes the
    outline colour, repeated `width` times.
-9. `normalize()` returns the PNG bytes **and an `ImageStats`** — alpha
+9. The pass runs key → crop → despeckle → QUANTIZE → downscale → outline.
+   Quantizing before downscaling is the non-obvious step and it is what makes
+   the output legible: `downscale_integer` takes the modal colour of each
+   cell, which is right for pixel art and degenerates on a photograph, where
+   every pixel in a cell differs and there is no mode to find. Quantizing at
+   full resolution first leaves at most `palette_size` colours per cell, so
+   the mode is real. Measured on SDXL output: crossed swords went from a
+   broken X to legible and an apple from two stray dots to an apple.
+10. `normalize()` returns the PNG bytes **and an `ImageStats`** — alpha
    coverage, entropy over the quantized palette, and the palette distance from
    step 7. Phase 10 evaluates those numbers against thresholds; it never
    re-measures the image. `normalize()` runs: chroma key → crop → downscale →
@@ -114,9 +122,9 @@ conditioning can drift or be unavailable; palette and grid do not care.
    each step skipped per the effective profile. The order matters and is
    asserted by a test: keying after quantizing would snap the background into
    the palette, and outlining before downscaling would give a fractional border.
-10. Derive every profile type with `#[ts(export)]` and run
+11. Derive every profile type with `#[ts(export)]` and run
     `./scripts/export-ipc-types.sh`.
-11. The TS wrappers in `src/lib/assets/normalize.ts` are plain `invoke` calls
+12. The TS wrappers in `src/lib/assets/normalize.ts` are plain `invoke` calls
     with no logic, so the pipeline has one implementation and it is the Rust one.
 
 ## Build gate

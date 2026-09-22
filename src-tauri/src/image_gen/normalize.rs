@@ -1,8 +1,22 @@
-//! The mechanical coherence pass: key, crop, downscale, quantize, outline.
+//! The mechanical coherence pass: key, crop, quantize, downscale, outline.
 //!
-//! The order is load-bearing and asserted by a test. Keying after quantizing
-//! would snap the background into the palette; outlining before downscaling
-//! would give a border a fraction of a pixel wide.
+//! The order is load-bearing and asserted by tests.
+//!
+//! Keying comes first: keying after quantizing would snap the background into
+//! the palette, where it can never be removed. Outlining comes last:
+//! outlining before downscaling would give a border a fraction of a pixel
+//! wide.
+//!
+//! Quantizing BEFORE downscaling is the non-obvious one, and it is what makes
+//! the output legible. `downscale_integer` takes the modal colour of each
+//! source cell, which is exactly right for pixel art and degenerates on a
+//! photograph: every one of a cell's thousand pixels is a slightly different
+//! colour, so there is no mode and the "most common" colour is whichever
+//! happened to be scanned first. Quantizing at full resolution first leaves at
+//! most `palette_size` distinct colours per cell, so the mode is real and the
+//! downscale picks what actually dominates. Measured on SDXL output: crossed
+//! swords went from a broken X to legible, and an apple from two stray dots to
+//! an apple.
 
 use image::{Rgba, RgbaImage};
 
@@ -194,6 +208,10 @@ fn pad_to_square_multiple(img: &RgbaImage, target: u32) -> RgbaImage {
 /// Modal, not mean. Averaging is what turns pixel art into mush: it invents
 /// colours that are in no palette and blurs every hard edge the outline pass
 /// is about to try to find.
+///
+/// This assumes its input is already blocky, which is why `normalize`
+/// quantizes before calling it. Given continuous-tone input there is no mode
+/// to find and the result is arbitrary point-sampling.
 pub fn downscale_integer(img: &RgbaImage, target: u32) -> RgbaImage {
     let target = target.max(1);
     let padded = pad_to_square_multiple(img, target);
@@ -299,11 +317,6 @@ pub fn normalize(
         despeckle(&mut work, p.crop.min_island_fraction);
         work = crop_to_content(&work, p.crop.margin)?;
     }
-    work = downscale_integer(&work, p.target_size);
-
-    // An empty palette means the style anchor has not run yet. Measuring
-    // against a palette derived from this one image would report a flattering
-    // zero, so derive one and measure honestly.
     let palette = if p.palette.is_empty() {
         extract_palette(
             &work,
@@ -314,6 +327,7 @@ pub fn normalize(
         p.palette.clone()
     };
     let palette_distance = quantize_to(&mut work, &palette);
+    work = downscale_integer(&work, p.target_size);
 
     if p.outline.enabled {
         normalize_outline(&mut work, p.outline.color, p.outline.width);
@@ -329,7 +343,7 @@ pub fn normalize(
 
 #[cfg(test)]
 mod tests {
-    use super::super::profile::{pack, Outline};
+    use super::super::profile::{pack, Background, Crop, Outline};
     use super::*;
 
     const KEY: u32 = 0xFF_00_FF_FF;
@@ -493,6 +507,104 @@ mod tests {
         assert_eq!(img.get_pixel(7, 4).0, rgba(0x1A_1A_1A_FF));
         assert_eq!(img.get_pixel(7, 5).0, rgba(0x1A_1A_1A_FF));
         assert_eq!(img.get_pixel(7, 3).0[3], 0, "border must not be 3px");
+    }
+
+    #[test]
+    fn downscaling_takes_the_dominant_colour_not_the_first_one() {
+        // Why `normalize` quantizes before it downscales. Each 8x8 cell here
+        // is 1/64 a minority colour and 63/64 a majority colour — but every
+        // pixel carries a little noise, so no two are identical and there is
+        // no mode to find. Modal selection then falls back to whichever
+        // single-count colour `max_by_key` happens to return, which for equal
+        // keys is the LAST one scanned — so the minority pixel is placed at
+        // the end of each cell to make the arbitrariness visible.
+        //
+        // This is exactly what a photographic source looks like to
+        // `downscale_integer`, and it is why raw generations came out as
+        // arbitrary specks until quantization moved ahead of the downscale.
+        const MINORITY: [u8; 4] = [255, 0, 0, 255];
+        const MAJORITY: [u8; 4] = [0, 0, 255, 255];
+        let mut img = RgbaImage::new(16, 16);
+        for y in 0..16u32 {
+            for x in 0..16u32 {
+                // A distinct value per pixel, so no two are identical and no
+                // mode exists. An earlier version used `% 5`, which left five
+                // repeated colours and therefore a perfectly good mode — it
+                // failed against correct code.
+                let n = (y * 16 + x) as u8;
+                let base = if x % 8 == 7 && y % 8 == 7 {
+                    MINORITY
+                } else {
+                    MAJORITY
+                };
+                img.put_pixel(x, y, Rgba([base[0], n, base[2], 255]));
+            }
+        }
+
+        // Straight in: no mode exists, so one pixel in sixty-four decides.
+        let raw = downscale_integer(&img, 2);
+        assert_eq!(
+            raw.get_pixel(0, 0).0[0],
+            MINORITY[0],
+            "with no mode to find, the arbitrary pick should have won"
+        );
+
+        // Quantized first: the noise collapses and the majority is a real mode.
+        let mut q = img.clone();
+        quantize_to(&mut q, &[pack(MINORITY), pack(MAJORITY)]);
+        let good = downscale_integer(&q, 2);
+        assert_eq!(
+            good.get_pixel(0, 0).0,
+            MAJORITY,
+            "quantizing first should let the dominant colour win"
+        );
+    }
+
+    #[test]
+    fn normalize_quantizes_before_it_downscales() {
+        // The order guard. The test above proves the property of the two
+        // functions; this proves the pipeline actually composes them that way,
+        // which is the thing that can silently regress.
+        const MINORITY: [u8; 4] = [255, 0, 0, 255];
+        const MAJORITY: [u8; 4] = [0, 0, 255, 255];
+        let mut img = RgbaImage::new(16, 16);
+        for y in 0..16u32 {
+            for x in 0..16u32 {
+                let n = (y * 16 + x) as u8;
+                let base = if x % 8 == 7 && y % 8 == 7 {
+                    MINORITY
+                } else {
+                    MAJORITY
+                };
+                img.put_pixel(x, y, Rgba([base[0], n, base[2], 255]));
+            }
+        }
+        let base = NormalizeProfile::default();
+        let p = NormalizeProfile {
+            target_size: 2,
+            palette: vec![pack(MINORITY), pack(MAJORITY)],
+            crop: Crop {
+                enabled: false,
+                ..base.crop
+            },
+            outline: Outline {
+                enabled: false,
+                ..base.outline
+            },
+            // Nothing here is background; auto-detection would find the
+            // majority dominating the border and key the subject away.
+            background: Background {
+                auto_detect: false,
+                ..base.background
+            },
+            ..Default::default()
+        };
+        let (out, _) = normalize(&img, &p, AssetKind::Sprite).unwrap();
+        assert_eq!(
+            out.get_pixel(0, 0).0,
+            MAJORITY,
+            "downscaling before quantizing lets one pixel in sixty-four decide"
+        );
     }
 
     #[test]
