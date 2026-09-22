@@ -26,14 +26,16 @@ of this beats the procedural tiles a coding run already generates.
 ## Files touched
 
 - `src/lib/agent/jobs/types/asset-generation/anchor.ts` — `anchorPrompt`.
-- Possibly nothing else, if step 3 shows the base model was the limit.
 - `src/lib/image/comfyui/backend.ts` (or `client.ts`) — resolve a real seed
   when the request carries none.
 - `src/lib/image/types.ts` — the `ImageRequest.seed` contract.
 - `src/lib/agent/jobs/types/asset-generation/report.ts` — nothing structural;
   the seed column becomes meaningful once the backend reports one.
-- `plan/local-image-generation/` — record the comparison in step 3.
+- `plan/local-image-generation/` — record the comparisons in steps 3 and 4.
 - Tests for each.
+
+Step 3 comes first in practice: if a better base model fixes the silhouettes,
+most of step 1 is unnecessary and `anchor.ts` may not need touching at all.
 
 ## Steps
 
