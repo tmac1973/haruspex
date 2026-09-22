@@ -1,0 +1,61 @@
+{
+	"1": {
+		"class_type": "CheckpointLoaderSimple",
+		"inputs": { "ckpt_name": "" }
+	},
+	"2": {
+		"class_type": "LoraLoader",
+		"inputs": {
+			"lora_name": "",
+			"strength_model": 0,
+			"strength_clip": 0,
+			"model": ["1", 0],
+			"clip": ["1", 1]
+		}
+	},
+	"3": {
+		"class_type": "LoraLoader",
+		"inputs": {
+			"lora_name": "",
+			"strength_model": 0,
+			"strength_clip": 0,
+			"model": ["2", 0],
+			"clip": ["2", 1]
+		}
+	},
+	"4": {
+		"class_type": "CLIPTextEncode",
+		"inputs": { "text": "", "clip": ["3", 1] }
+	},
+	"5": {
+		"class_type": "CLIPTextEncode",
+		"inputs": { "text": "", "clip": ["3", 1] }
+	},
+	"6": {
+		"class_type": "EmptyLatentImage",
+		"inputs": { "width": 512, "height": 512, "batch_size": 1 }
+	},
+	"7": {
+		"class_type": "KSampler",
+		"inputs": {
+			"seed": 0,
+			"steps": 28,
+			"cfg": 7,
+			"sampler_name": "euler_ancestral",
+			"scheduler": "normal",
+			"denoise": 1,
+			"model": ["3", 0],
+			"positive": ["4", 0],
+			"negative": ["5", 0],
+			"latent_image": ["6", 0]
+		}
+	},
+	"8": {
+		"class_type": "VAEDecode",
+		"inputs": { "samples": ["7", 0], "vae": ["1", 2] }
+	},
+	"9": {
+		"class_type": "SaveImage",
+		"inputs": { "filename_prefix": "haruspex", "images": ["8", 0] }
+	}
+}
