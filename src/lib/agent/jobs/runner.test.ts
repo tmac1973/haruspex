@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
 import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
-import { registerImageBackend } from '$lib/image/registry';
 
 const mocks = vi.hoisted(() => ({
 	runEphemeralTurn: vi.fn(),
@@ -52,6 +51,57 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
  * gate reads it, so a run cannot even start without it.
  */
 const settingsState = vi.hoisted(() => ({ imageBackendKind: 'none' as string }));
+
+/**
+ * The image backend, mocked at the module rather than registered.
+ *
+ * `freshRunner()` resets modules, so the `$lib/image` barrel re-runs and
+ * re-registers the real ComfyUI backend — a stub put in the registry by
+ * `beforeEach` is clobbered on the next fresh import and the tests end up
+ * talking to a backend that tries to reach a server.
+ */
+const imageState = vi.hoisted(() => ({
+	kind: 'comfyui' as string,
+	generated: [] as Array<Record<string, unknown>>,
+	fail: null as Error | null
+}));
+
+vi.mock('$lib/image', () => ({
+	resolveImageBackend: () => ({
+		kind: imageState.kind,
+		capabilities: async () => ({
+			referenceConditioning: true,
+			seamlessTiling: true,
+			loras: true,
+			maxLoras: 2
+		}),
+		probe: async () => ({ ok: true, detail: 'stub' }),
+		generate: async (req: Record<string, unknown>) => {
+			imageState.generated.push(req);
+			if (imageState.fail) throw imageState.fail;
+			return {
+				images: [
+					{
+						bytes: new Uint8Array([137, 80, 78, 71]),
+						mimeType: 'image/png',
+						width: req.width,
+						height: req.height
+					}
+				],
+				meta: {
+					// The RESOLVED seed, as a real backend reports it — the recipe
+					// must never record the null we may have sent.
+					seed: req.seed ?? 4242,
+					model: req.model ?? 'stub.safetensors',
+					backend: 'comfyui',
+					sampler: { name: 'euler_ancestral', steps: 28, cfg: 7 },
+					loras: req.loras ?? [],
+					durationMs: 1
+				}
+			};
+		}
+	})
+}));
 
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
@@ -2574,40 +2624,76 @@ describe('guided_planning — handoff', () => {
  */
 describe('jobs runner — asset generation', () => {
 	const SPEC_PATH = 'assets/haruspex-assets.json';
+	const ANCHOR_IMAGE = 'assets/haruspex-anchor.png';
+	const ANCHOR_RECIPE = 'assets/haruspex-anchor.json';
+	const PALETTE = [0x11111111, 0x22222222, 0x33333333];
+	/** Every request the stub backend was asked for, in order. */
+	const generated = imageState.generated;
+
+	/** Shaped like the Rust default, which is what the real command returns. */
+	function profileFixture() {
+		return {
+			target_size: 32,
+			upscale: 16,
+			palette_size: 16,
+			palette: [],
+			background: {
+				color: 0xff00ffff,
+				tolerance: 40,
+				hue_tolerance_deg: 20,
+				min_saturation: 90,
+				min_value: 60,
+				auto_detect: true
+			},
+			crop: { enabled: true, margin: 1, min_island_fraction: 0.05 },
+			outline: { enabled: true, color: 0x1a1a1aff, width: 2 },
+			reference_strength: 0.6,
+			checks: { alpha_min: 0.05, alpha_max: 0.95, entropy_min: 1, palette_distance_max: 0.15 },
+			by_kind: {}
+		};
+	}
+
 	beforeEach(() => {
-		// The job type is gated on a configured backend, so the tests need one
-		// to exist before a run can start at all.
-		registerImageBackend({
-			kind: 'comfyui',
-			capabilities: async () => ({
-				referenceConditioning: true,
-				seamlessTiling: true,
-				loras: true,
-				maxLoras: 2
-			}),
-			probe: async () => ({ ok: true, detail: 'stub' }),
-			generate: async () => {
-				throw new Error('the skeleton generates nothing');
-			}
-		});
+		imageState.kind = 'comfyui';
+		imageState.generated.length = 0;
+		imageState.fail = null;
 		settingsState.imageBackendKind = 'comfyui';
 	});
 	afterEach(() => {
 		settingsState.imageBackendKind = 'none';
 	});
 
-	function goodSpec(entries = 2): string {
+	function goodSpec(entries = 2, over: Record<string, unknown> = {}): string {
 		return JSON.stringify({
 			version: 1,
 			style: { prompt: 'flat pixel art' },
-			anchor: { image: 'a/anchor.png', recipe: 'a/anchor.json' },
-			normalize: { target_size: 32 },
+			anchor: { image: ANCHOR_IMAGE, recipe: ANCHOR_RECIPE },
+			normalize: profileFixture(),
 			entries: Array.from({ length: entries }, (_, i) => ({
 				id: `thing_${i}`,
 				kind: i === 0 ? 'texture' : 'sprite',
 				prompt: 'a thing',
 				out: `assets/generated/thing_${i}.png`
-			}))
+			})),
+			...over
+		});
+	}
+
+	/** A committed recipe, as `tryReuse` expects to find one. */
+	function goodRecipe(over: Record<string, unknown> = {}): string {
+		return JSON.stringify({
+			version: 1,
+			prompt: 'a reference sheet',
+			negativePrompt: 'photo',
+			seed: 99,
+			backend: 'comfyui',
+			model: 'pinned.safetensors',
+			sampler: { name: 'euler', steps: 20, cfg: 6 },
+			loras: [],
+			size: 1024,
+			palette: PALETTE,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			...over
 		});
 	}
 
@@ -2620,25 +2706,39 @@ describe('jobs runner — asset generation', () => {
 		});
 	}
 
-	/** `spec` null = no spec file on disk. Records what was written. */
-	function wireFs(spec: string | null) {
+	/**
+	 * `spec` null = no spec file on disk. `anchor` supplies a committed anchor
+	 * so a test can exercise the reuse path.
+	 */
+	function wireFs(spec: string | null, anchor?: { recipe: string | null }) {
 		const written: Array<{ relPath: string; content: string }> = [];
+		const wroteBytes: string[] = [];
 		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			const rel = String(args?.relPath ?? '');
 			if (cmd === 'shell_platform_supported') return true;
 			if (cmd === 'fs_read_text_full') {
-				if (String(args?.relPath) === SPEC_PATH && spec !== null) return spec;
+				if (rel === SPEC_PATH && spec !== null) return spec;
+				if (rel === ANCHOR_RECIPE && anchor?.recipe != null) return anchor.recipe;
+				throw new Error('not found');
+			}
+			if (cmd === 'fs_read_bytes') {
+				if (rel === ANCHOR_IMAGE && anchor) return [137, 80, 78, 71];
 				throw new Error('not found');
 			}
 			if (cmd === 'fs_write_text') {
-				written.push({
-					relPath: String(args?.relPath),
-					content: String(args?.content)
-				});
+				written.push({ relPath: rel, content: String(args?.content) });
 				return undefined;
 			}
+			if (cmd === 'fs_write_bytes') {
+				wroteBytes.push(rel);
+				return undefined;
+			}
+			if (cmd === 'image_default_profile') return profileFixture();
+			if (cmd === 'image_extract_palette') return PALETTE;
+			if (cmd === 'image_store_bytes') return 'deadbeef';
 			return undefined;
 		});
-		return written;
+		return Object.assign(written, { bytes: wroteBytes });
 	}
 
 	async function settle(getCurrentRun: () => { status: string } | null) {
@@ -2657,6 +2757,197 @@ describe('jobs runner — asset generation', () => {
 		expect(spec.output).toContain('3 asset(s)');
 		expect(spec.output).toContain('sprite');
 		expect(spec.output).toContain('texture');
+	});
+
+	it('reuses the committed anchor without generating anything', async () => {
+		// The entire point of committing the image: the style is a versioned
+		// artifact, not something reconstructed from a recipe against weights
+		// and node versions that will have moved.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(generated).toHaveLength(0);
+		expect(getCurrentRun()!.steps[1].output).toContain('Reused');
+	});
+
+	it('restores the palette from the recipe when it reuses', async () => {
+		// A chained run derives a fresh spec every time, and a fresh spec ships
+		// an empty palette. Without the copy-back a reused anchor reaches the
+		// generation loop with nothing to quantize against, and the mechanical
+		// coherence layer is silently off for the whole run.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const wrote = written.filter((w) => w.relPath === SPEC_PATH);
+		expect(wrote).toHaveLength(1);
+		expect(JSON.parse(wrote[0].content).normalize.palette).toEqual(PALETTE);
+		expect(getCurrentRun()!.steps[1].output).toContain(`${PALETTE.length} colour`);
+	});
+
+	it('generates when the recipe is there but the image is not', async () => {
+		// A recipe alone reproduces nothing, so it is not a reusable anchor.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(generated).toHaveLength(1);
+	});
+
+	it('falls back to generating when the recipe is corrupt, rather than failing', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(), { recipe: '{ not json' });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(generated).toHaveLength(1);
+	});
+
+	it('records the resolved seed and sampler in the recipe, not what it asked for', async () => {
+		// The request carries seed null — "whatever you like". A recipe that
+		// wrote that down would reproduce nothing, which is the one job it has.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(generated[0].seed).toBeNull();
+		const recipe = JSON.parse(written.find((w) => w.relPath === ANCHOR_RECIPE)!.content);
+		expect(recipe.seed).toBe(4242);
+		expect(recipe.sampler).toEqual({ name: 'euler_ancestral', steps: 28, cfg: 7 });
+		expect(recipe.palette).toEqual(PALETTE);
+		expect(written.bytes).toContain(ANCHOR_IMAGE);
+	});
+
+	it('never asks when the run is unattended', async () => {
+		// The approval modal is the one checkpoint in the run. An unattended
+		// run parking on it overnight is the failure this job type exists to
+		// avoid.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ run_mode: 'unattended' }));
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(mocks.askUserQuestion).not.toHaveBeenCalled();
+		expect(getCurrentRun()!.steps[1].output).toContain('nobody saw it');
+	});
+
+	it('bounds regeneration by anchor_attempts, independently of max_attempts', async () => {
+		// One knob for both would mean raising per-asset retries also raised
+		// how many times the approval modal can be re-rolled.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 3, max_attempts: 9 }));
+		wireFs(goodSpec());
+		mocks.askUserQuestion
+			.mockResolvedValueOnce({ kind: 'selected', labels: ['Regenerate'] })
+			.mockResolvedValueOnce({ kind: 'selected', labels: ['Regenerate'] })
+			.mockResolvedValue({ kind: 'selected', labels: ['Approve'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(generated).toHaveLength(3);
+		// The last ask must not offer a button that does nothing.
+		const lastOptions = mocks.askUserQuestion.mock.calls.at(-1)![0].options as Array<{
+			label: string;
+		}>;
+		expect(lastOptions.map((o) => o.label)).not.toContain('Regenerate');
+	});
+
+	it('varies the seed between regenerations', async () => {
+		// Same seed, same picture — and the button looks broken.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 3 }));
+		wireFs(goodSpec());
+		mocks.askUserQuestion
+			.mockResolvedValueOnce({ kind: 'selected', labels: ['Regenerate'] })
+			.mockResolvedValueOnce({ kind: 'selected', labels: ['Regenerate'] })
+			.mockResolvedValue({ kind: 'selected', labels: ['Approve'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const seeds = generated.map((g) => g.seed);
+		expect(seeds[0]).toBeNull();
+		expect(new Set(seeds.slice(1)).size).toBe(2);
+	});
+
+	it('ends the run rather than looping when the answer is not one we offered', async () => {
+		// A loop that trusts its own option list to terminate it does not
+		// terminate. Regenerate is not offered on the last attempt.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 2 }));
+		wireFs(goodSpec());
+		mocks.askUserQuestion.mockResolvedValue({ kind: 'selected', labels: ['Regenerate'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('cancelled');
+		expect(generated).toHaveLength(2);
+	});
+
+	it('ends the run when the user declines the anchor', async () => {
+		// "Stop" means they want to edit the spec first, not that they want
+		// forty assets in a style they just rejected.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		mocks.askUserQuestion.mockResolvedValue({ kind: 'selected', labels: ['Stop'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('cancelled');
+		expect(generated).toHaveLength(1);
+	});
+
+	it('shows the sheet and the spec together at the checkpoint', async () => {
+		// The run's only checkpoint, so it answers both open questions at
+		// once: what is about to be made, and what it will look like.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(3));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const shown = getCurrentRun()!.steps[1].streaming ?? '';
+		expect(shown).toContain('haruspex-img://localhost/deadbeef');
+		expect(shown).toContain('3 asset(s)');
+	});
+
+	it('asks the backend for a clamped 2x2 sheet, pinned to the spec model', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(2, { style: { prompt: 'flat pixel art', model: 'pinned.safetensors' } }));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// profileFixture is 32 * 16 * 2 = 1024, which is also the clamp.
+		expect(generated[0].width).toBe(1024);
+		expect(generated[0].height).toBe(1024);
+		expect(generated[0].model).toBe('pinned.safetensors');
+	});
+
+	it('fails the run when the backend cannot produce an anchor', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		imageState.fail = new Error('ComfyUI is not running');
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()!.steps[1].error).toContain('ComfyUI is not running');
 	});
 
 	it('fails when there is no spec and nothing to write one from', async () => {
@@ -2818,17 +3109,47 @@ describe('jobs runner — asset generation', () => {
 		}
 	});
 
-	it('does not rewrite a spec the user already wrote', async () => {
+	it('does not derive over a spec the user already wrote', async () => {
 		// Theirs to fix, not ours to replace.
 		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
-		const written = wireFs(goodSpec());
+		wireFs(goodSpec());
 		mocks.runEphemeralTurn.mockImplementation(deriveTurns([]));
 		const { enqueue, getCurrentRun } = await freshRunner();
 		await enqueue(1);
 		await settle(getCurrentRun);
 
-		expect(written.map((w) => w.relPath)).not.toContain(SPEC_PATH);
 		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
+	});
+
+	it('leaves a settled spec byte-for-byte alone', async () => {
+		// The file is in the user's repo. A re-run that reuses the committed
+		// anchor and changes nothing must not leave their working tree dirty.
+		const settled = goodSpec(2, {
+			normalize: { ...profileFixture(), palette: PALETTE }
+		});
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(settled, { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(written.map((w) => w.relPath)).not.toContain(SPEC_PATH);
+	});
+
+	it('writes the palette back into a spec that had none, changing nothing else', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(2));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const wrote = written.filter((w) => w.relPath === SPEC_PATH);
+		expect(wrote).toHaveLength(1);
+		const after = JSON.parse(wrote[0].content);
+		expect(after.normalize.palette).toEqual(PALETTE);
+		expect(after.entries.map((e: { id: string }) => e.id)).toEqual(['thing_0', 'thing_1']);
+		expect(after.style.prompt).toBe('flat pixel art');
 	});
 
 	it('fails on a spec that cannot be parsed, naming the file', async () => {
@@ -2893,6 +3214,7 @@ describe('jobs runner — asset generation', () => {
 		// cannot cover — a run that was queued while a backend was configured
 		// and reaches the front of a twelve-hour queue after it was removed.
 		settingsState.imageBackendKind = 'none';
+		imageState.kind = 'none';
 		mocks.getJob.mockResolvedValueOnce(assetJob());
 		wireFs(goodSpec());
 		const { enqueue, getCurrentRun } = await freshRunner();

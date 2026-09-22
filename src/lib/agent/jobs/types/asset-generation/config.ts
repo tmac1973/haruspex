@@ -18,6 +18,8 @@ export const DEFAULT_CONCURRENCY = 1;
 export const DEFAULT_TARGET_SIZE = 32;
 export const MIN_TARGET_SIZE = 8;
 export const MAX_TARGET_SIZE = 512;
+/** Mirrors the Rust clamp; the anchor sheet obeys it too. */
+export const MAX_GENERATION_EDGE = 1024;
 
 export interface AssetGenerationConfig {
 	/** The spec file, relative to working_dir. null = the default path. */

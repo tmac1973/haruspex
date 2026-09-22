@@ -46,13 +46,12 @@ export function defaultProfile(): Promise<NormalizeProfile> {
 export function extractPalette(
 	bytes: Uint8Array,
 	count: number,
-	exclude?: { color: number; tolerance: number }
+	background?: NormalizeProfile['background']
 ): Promise<number[]> {
 	return invoke<number[]>('image_extract_palette', {
 		bytes: Array.from(bytes),
 		count,
-		excludeColor: exclude?.color ?? null,
-		excludeTolerance: exclude?.tolerance ?? null
+		background: background ?? null
 	});
 }
 

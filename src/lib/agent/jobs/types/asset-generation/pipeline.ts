@@ -18,7 +18,13 @@ import {
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
 import type { RunStatus } from '../../runner.svelte';
-import { parseAssetGenerationConfig, resolveSpecPath, DEFAULT_TARGET_SIZE } from './config';
+import {
+	parseAssetGenerationConfig,
+	resolveSpecPath,
+	DEFAULT_ANCHOR_ATTEMPTS,
+	DEFAULT_TARGET_SIZE,
+	MAX_GENERATION_EDGE
+} from './config';
 import { parseAssetSpec } from '$lib/assets/spec/parse';
 import { renderAssetSpec } from '$lib/assets/spec/write';
 import { validateAssetSpec } from '$lib/assets/spec/validate';
@@ -29,6 +35,8 @@ import { SUBMIT_ASSET_SPEC_TOOL } from '$lib/agent/tools/coding';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import { deriveSpec, type DerivePayload } from './derive';
 import { specDerivationPrompt, specRetryPrompt } from './prompts';
+import { establishAnchor } from './anchor';
+import type { AnchorOutcome } from './types';
 
 /** Read-only: the derivation grounds itself in the project, it does not edit it. */
 const DERIVE_TOOLS = ['fs_read_text', 'fs_list_dir', 'code_grep', 'code_glob'];
@@ -56,6 +64,10 @@ function breakdown(spec: AssetSpec): string {
 }
 
 /** Report lands beside the spec — fixed here, not by whoever writes it later. */
+function samePalette(a: number[], b: number[]): boolean {
+	return a.length === b.length && a.every((c, i) => c === b[i]);
+}
+
 export function reportPathFor(specPath: string): string {
 	const slash = specPath.lastIndexOf('/');
 	return slash < 0 ? 'REPORT-assets.md' : `${specPath.slice(0, slash)}/REPORT-assets.md`;
@@ -71,6 +83,32 @@ async function readWorkdirFile(ctx: JobRunContext, relPath: string): Promise<str
 	} catch {
 		return null;
 	}
+}
+
+async function readWorkdirBytes(ctx: JobRunContext, relPath: string): Promise<Uint8Array | null> {
+	if (!ctx.job.working_dir) return null;
+	try {
+		const bytes = await invoke<number[]>('fs_read_bytes', {
+			workdir: ctx.job.working_dir,
+			relPath
+		});
+		return new Uint8Array(bytes);
+	} catch {
+		return null;
+	}
+}
+
+async function writeWorkdirBytes(
+	ctx: JobRunContext,
+	relPath: string,
+	bytes: Uint8Array
+): Promise<void> {
+	await invoke('fs_write_bytes', {
+		workdir: ctx.job.working_dir,
+		relPath,
+		bytes: Array.from(bytes),
+		overwrite: true
+	});
 }
 
 async function writeWorkdirFile(
@@ -201,10 +239,50 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			);
 		}
 		const entryCount = spec.entries.length;
+		let anchor: AnchorOutcome | null = null;
 
 		startStep(ANCHOR);
 		abortIfCancelled();
-		finishStep(ANCHOR, 'Not implemented yet.');
+		const anchored = await establishAnchor(
+			spec,
+			{
+				workingDir: job.working_dir,
+				profile: spec.normalize,
+				anchorAttempts: cfg.anchor_attempts ?? DEFAULT_ANCHOR_ATTEMPTS,
+				attended: cfg.run_mode === 'attended',
+				signal: abort.signal,
+				present: (markdown) => ctx.patchStep(ANCHOR, { streaming: markdown }),
+				readFile: (rel) => readWorkdirFile(ctx, rel),
+				readBytes: (rel) => readWorkdirBytes(ctx, rel),
+				writeFile: (rel, content) => writeWorkdirFile(ctx, rel, content),
+				writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes)
+			},
+			MAX_GENERATION_EDGE
+		);
+		anchor = anchored.outcome;
+		const priorPalette = spec.normalize.palette ?? [];
+		spec = anchored.spec;
+		// The palette now lives in the spec, so it is versioned with the
+		// entries it governs and a later run inherits it without asking.
+		//
+		// Only when it actually changed, though. This file is the user's, and
+		// a re-run that reuses the committed anchor would otherwise rewrite it
+		// byte-for-byte every time — a dirty working tree on every run, in
+		// their repo, saying nothing happened.
+		const nextPalette = spec.normalize.palette ?? [];
+		if (!samePalette(priorPalette, nextPalette)) {
+			await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+		}
+		finishStep(
+			ANCHOR,
+			[
+				anchor.source === 'reused'
+					? `Reused the committed anchor at ${anchor.imagePath}`
+					: `Generated a style anchor in ${anchor.attempts} attempt(s) → ${anchor.imagePath}`,
+				`Palette: ${anchor.paletteSize} colour(s).`,
+				anchor.approval === 'auto' ? 'Accepted automatically — nobody saw it.' : 'Approved.'
+			].join('\n')
+		);
 
 		startStep(GENERATE);
 		abortIfCancelled();
@@ -220,7 +298,12 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				'',
 				`Spec: \`${specPath}\` — ${entryCount} asset(s).`,
 				'',
-				'Generation is not implemented yet; this run only read the spec.',
+				anchor === null
+					? 'No anchor.'
+					: `Anchor: ${anchor.imagePath} (${anchor.source}, ${anchor.approval}, ` +
+						`${anchor.paletteSize} colours).`,
+				'',
+				'Generation is not implemented yet.',
 				''
 			].join('\n')
 		);

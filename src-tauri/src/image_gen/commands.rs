@@ -7,9 +7,9 @@
 use image::{ImageEncoder, RgbaImage};
 use serde::Serialize;
 
-use super::normalize::normalize;
+use super::normalize::{dominant_border_color, normalize};
 use super::palette::extract_palette;
-use super::profile::{effective_profile, AssetKind, NormalizeProfile};
+use super::profile::{effective_profile, AssetKind, Background, NormalizeProfile};
 use super::stats::ImageStats;
 
 #[derive(Debug, Serialize, ts_rs::TS)]
@@ -56,16 +56,30 @@ pub fn image_normalize(
 }
 
 /// The shared palette, from the style anchor.
+///
+/// Passing a `background` excludes BOTH the colour the prompt asked for and
+/// the colour the image actually has round its edge. Both, because models do
+/// not comply: an anchor asked for on magenta comes back on whatever backdrop
+/// the model preferred, and excluding only magenta spends a palette slot on a
+/// backdrop no asset will ever use.
 #[tauri::command]
 pub fn image_extract_palette(
     bytes: Vec<u8>,
     count: u32,
-    exclude_color: Option<u32>,
-    exclude_tolerance: Option<u8>,
+    background: Option<Background>,
 ) -> Result<Vec<u32>, String> {
     let img = decode(&bytes)?;
-    let exclude = exclude_color.map(|c| (c, exclude_tolerance.unwrap_or(0)));
-    Ok(extract_palette(&img, count, exclude))
+    let Some(bg) = background else {
+        return Ok(extract_palette(&img, count, None));
+    };
+    let mut palette = extract_palette(&img, count, Some((bg.color, bg.tolerance)));
+    if let Some(found) = dominant_border_color(&img, &bg) {
+        // Re-extract with the real backdrop excluded, rather than dropping an
+        // entry afterwards: removing one leaves a palette short of the size
+        // the caller asked for, which is a colour the set will never get back.
+        palette = extract_palette(&img, count, Some((found, bg.tolerance)));
+    }
+    Ok(palette)
 }
 
 /// The shipped defaults.
@@ -158,8 +172,33 @@ mod tests {
         for x in 0..8 {
             img.put_pixel(x, 0, Rgba([20, 90, 40, 255]));
         }
-        let with = image_extract_palette(png(&img), 4, Some(0xFF_00_FF_FF), Some(40)).unwrap();
-        let without = image_extract_palette(png(&img), 4, None, None).unwrap();
+        let bg = NormalizeProfile::default().background;
+        let with = image_extract_palette(png(&img), 4, Some(bg)).unwrap();
+        let without = image_extract_palette(png(&img), 4, None).unwrap();
         assert!(with.len() < without.len(), "{with:?} vs {without:?}");
+    }
+
+    #[test]
+    fn palette_extraction_also_drops_the_backdrop_the_model_actually_used() {
+        // The case that happens. The prompt asked for magenta; the model
+        // produced crimson. Excluding only magenta spends a palette slot on a
+        // backdrop no asset will ever use.
+        let crimson = [150, 20, 60, 255];
+        let mut img = RgbaImage::from_pixel(16, 16, Rgba(crimson));
+        for y in 6..10 {
+            for x in 6..10 {
+                img.put_pixel(x, y, Rgba([20, 200, 90, 255]));
+            }
+        }
+        let bg = NormalizeProfile::default().background;
+        let palette = image_extract_palette(png(&img), 4, Some(bg)).unwrap();
+        for c in &palette {
+            let [r, g, b, _] = super::super::profile::rgba(*c);
+            let near_crimson = (r as i32 - crimson[0] as i32).abs() < 40
+                && (g as i32 - crimson[1] as i32).abs() < 40
+                && (b as i32 - crimson[2] as i32).abs() < 40;
+            assert!(!near_crimson, "the real backdrop leaked in: {c:08X}");
+        }
+        assert!(!palette.is_empty(), "the subject should still be there");
     }
 }
