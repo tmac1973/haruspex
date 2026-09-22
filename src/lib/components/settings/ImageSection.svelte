@@ -3,6 +3,7 @@
 	import { getSettings, updateSettings } from '$lib/stores/settings';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { resolveImageBackend } from '$lib/image';
+	import { invalidateTypeAvailability } from '$lib/agent/jobs/types/availability.svelte';
 	import { generateOneImage } from '$lib/image/generateOne';
 	import type { ImageBackendCapabilities, ImageBackendKind } from '$lib/image/types';
 
@@ -30,6 +31,10 @@
 		updateSettings({ imageBackendKind });
 		probeResult = null;
 		capabilities = null;
+		// The asset job type is gated on a configured backend, and that gate's
+		// answer is cached for the session. Without this, turning a backend on
+		// leaves the type missing from the job picker until the app restarts.
+		invalidateTypeAvailability();
 	}
 
 	const persist = (patch: Parameters<typeof updateSettings>[0]) => updateSettings(patch);
