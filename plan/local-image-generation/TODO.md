@@ -1,8 +1,9 @@
 # Local image generation — where this stands, and what to do next
 
 **Read this first.** It is written for a fresh session with no memory of the
-work. Everything below is on branch `feat/image-generation`, 41 commits ahead
-of `origin/main`, working tree clean, **nothing pushed**.
+work. Everything below is on branch `feat/image-generation`, 45 commits ahead
+of `origin/main`, working tree clean. The branch is pushed to
+`origin/feat/image-generation`; **nothing is merged to `main`**.
 
 Last worked on: 2026-09-22.
 
@@ -16,7 +17,7 @@ assets, generates each one, normalizes it to a pixel grid and a shared palette,
 checks it, and writes a report. Guided planning can chain into it, and it into
 autonomous coding, so an overnight run goes plan → art → code.
 
-The plan lives beside this file: `overview.md` and `phase-01..16`.
+The plan lives beside this file: `overview.md` and `phase-01..18`.
 
 ---
 
@@ -40,6 +41,8 @@ The plan lives beside this file: `overview.md` and `phase-01..16`.
 | 14 | Model catalogue and licensing | **done** |
 | 15 | Hardening, docs, end-to-end verification | **half done** — see below |
 | 16 | Anchor quality, seed honesty, quality baseline | **not started** |
+| 17 | Model residency on shared-memory (iGPU) machines | **not started** |
+| 18 | Settings → Image as a form, checkpoint dropdown | **not started** |
 
 ### Phase 15, precisely
 
@@ -215,6 +218,45 @@ Everything in the "not done" list above. Mostly needs hands on macOS/Windows
 machines and a human judging a contact sheet.
 
 ---
+
+### 5. Settings → Image is a sentence with input boxes in it — phase 18
+
+Independent of everything above, and cheap. The panel puts a trailing prose
+fragment after every control (`<input> <span>server address</span>`), so it
+reads as a sentence rather than a form, and the checkpoint is free text the
+user types from memory.
+
+The probe already fetches the full checkpoint list from
+`object_info/CheckpointLoaderSimple` and throws it away after testing the
+configured name for membership, so the dropdown is surfacing data already on
+the wire. Wanted shape: URL, optional API key, Probe, then a checkpoint picked
+from what the server reported.
+
+Worth doing whenever there is an hour spare — it touches none of the quality
+work and cannot conflict with it.
+
+### 6. The job needs both models at once, and an iGPU has room for one — phase 17
+
+Not urgent on the dev machines, and blocking for the laptops most users have.
+
+The asset job wants the LLM for the spec and quality-gate stages and the image
+model for the anchor and generation stages. On integrated graphics those are
+one shared pool. Measured on a Radeon 780M with 16 GB system RAM: the GPU can
+actually allocate ~7.7 GiB (`mem_info_gtt_total`, matching the Vulkan heap),
+while `mem_info_vram_total` — which is what `hardware.rs` reads — reports
+16384 MiB, an aperture rather than a reservation.
+
+Two defects fall out. `recommended_id` would offer that laptop SDXL at 6.94 GB
+against a 7.7 GiB ceiling it must also share with the LLM; and nothing
+sequences the two models, so both are resident at once. `hardware.rs` already
+carries a `gpu_integrated` flag and guards quant and context sizing with it —
+the image path is the one place that takes a bare `u32` and trusts it.
+
+Both engines already expose start/stop (`ImageEngine`, `LlamaServer`), so the
+sequencing is orchestration rather than new plumbing. The open question the
+phase must answer rather than assume: whether stopping the app's main
+inference server mid-run is safe, given something other than this job may be
+using it.
 
 ## How to run it
 
