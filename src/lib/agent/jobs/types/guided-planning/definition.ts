@@ -11,6 +11,7 @@ export interface GuidedPlanningEditorState {
 	skip_verification: boolean;
 	web_research: boolean;
 	use_git: boolean;
+	generate_assets: boolean;
 	run_mode: GuidedPlanningRunMode;
 	// Concrete strings/numbers in the editor ('' and 0 = unset), converted back
 	// to nulls by configToJson.
@@ -44,6 +45,11 @@ const GUIDED_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 		title: 'Verification',
 		description:
 			'An independent reviewer is reading the plan to check dependency ordering, unresolved (“TBD”) decisions, embedded code and unreachable steps. Can be switched off in the job editor.'
+	},
+	{
+		title: 'Assets',
+		description:
+			'Writing an asset spec from the finished plan, so a chained asset run can generate the art before any code is written. Only runs when "Also generate assets" is on.'
 	},
 	{
 		title: 'Approval',
@@ -101,6 +107,7 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		skip_verification: false,
 		web_research: true,
 		use_git: true,
+		generate_assets: false,
 		run_mode: 'attended',
 		// The coding job's own default, shown as itself. A 0 here meant "unset"
 		// and read on screen as "zero attempts", which is not a thing.
@@ -116,6 +123,7 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			skip_verification: c.skip_verification,
 			web_research: c.web_research,
 			use_git: c.use_git,
+			generate_assets: c.generate_assets,
 			run_mode: c.run_mode,
 			coding_max_attempts: c.coding_run.max_attempts ?? 3,
 			coding_context_mode: c.coding_run.context_mode ?? '',
@@ -131,6 +139,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			// Sparse like skip_verification: only the non-default value is stored.
 			web_research: s.web_research ? undefined : false,
 			use_git: s.use_git ? undefined : false,
+			// Opt-in, so only `true` is worth storing.
+			generate_assets: s.generate_assets || undefined,
 			// Sparse: only a non-default mode is stored.
 			run_mode: s.run_mode === 'attended' ? undefined : s.run_mode,
 			coding_run: codingRunJson(s)

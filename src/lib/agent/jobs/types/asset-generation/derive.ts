@@ -8,8 +8,10 @@
  */
 
 import type { AssetSpecEntryArg } from '$lib/agent/tools/coding';
+import type { PlanAssetEntryArg } from './tools';
 import {
 	ASSET_KINDS,
+	ID_PATTERN,
 	type AssetEntry,
 	type AssetKind,
 	type AssetSpec
@@ -74,5 +76,79 @@ export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): A
 		anchor: { image: DEFAULT_ANCHOR_IMAGE, recipe: DEFAULT_ANCHOR_RECIPE },
 		normalize: profile,
 		entries
+	};
+}
+
+export interface PlanDerivePayload {
+	style?: { prompt?: string; negativePrompt?: string };
+	entries?: PlanAssetEntryArg[];
+}
+
+export interface PlanDeriveResult {
+	spec: AssetSpec;
+	/** Ids the model submitted that the shape rule rejected, verbatim. */
+	rejected: string[];
+}
+
+/**
+ * Build a spec from guided planning's asset stage.
+ *
+ * The ids come from the model because they come from the plan, and they are
+ * VALIDATED rather than slugified. Slugifying would quietly turn an id the
+ * plan does not use into one it does not use either — the generated file and
+ * the code that loads it would disagree, and nothing would say so. A rejected
+ * id is reported instead, so the stage can put it in front of someone.
+ *
+ * A duplicate id is also a rejection. Two entries claiming the same id means
+ * the plan is ambiguous about which picture it wants, and picking one is a
+ * decision this code has no basis for making.
+ */
+export function derivePlanSpec(
+	payload: PlanDerivePayload,
+	profile: NormalizeProfile
+): PlanDeriveResult {
+	const entries: AssetEntry[] = [];
+	const rejected: string[] = [];
+	const seen = new Set<string>();
+
+	for (const raw of payload.entries ?? []) {
+		const id = (raw?.id ?? '').trim();
+		const prompt = (raw?.prompt ?? '').trim();
+		if (prompt.length === 0) {
+			rejected.push(id || '(an entry with no id)');
+			continue;
+		}
+		if (!ID_PATTERN.test(id) || seen.has(id)) {
+			rejected.push(id || '(an entry with no id)');
+			continue;
+		}
+		seen.add(id);
+		const kind = kindOf(raw.kind);
+		entries.push({
+			id,
+			kind,
+			prompt,
+			out: defaultOutPath(kind, id),
+			...(kind === 'texture' ? { seamless: true } : {}),
+			...(typeof raw.size === 'number' && raw.size > 0 ? { size: raw.size } : {}),
+			...(raw.negativePrompt?.trim() ? { negativePrompt: raw.negativePrompt.trim() } : {}),
+			...(raw.notes?.trim() ? { notes: raw.notes.trim() } : {})
+		});
+	}
+
+	return {
+		spec: {
+			version: 1,
+			style: {
+				prompt: (payload.style?.prompt ?? '').trim(),
+				...(payload.style?.negativePrompt?.trim()
+					? { negativePrompt: payload.style.negativePrompt.trim() }
+					: {})
+			},
+			anchor: { image: DEFAULT_ANCHOR_IMAGE, recipe: DEFAULT_ANCHOR_RECIPE },
+			normalize: profile,
+			entries
+		},
+		rejected
 	};
 }

@@ -9,6 +9,12 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { createJob } from '$lib/stores/jobs.svelte';
+import { resolveImageBackend } from '$lib/image';
+import { defaultProfile } from '$lib/assets/normalize';
+import { renderAssetSpec } from '$lib/assets/spec/write';
+import { validateAssetSpec } from '$lib/assets/spec/validate';
+import { derivePlanSpec, type PlanDerivePayload } from '../asset-generation/derive';
+import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from '../asset-generation/tools';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '$lib/agent/tools/planning';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
@@ -702,6 +708,51 @@ export function classifyFindings(verdict: string): { blocking: string[]; advisor
 }
 
 /**
+ * The asset stage: read the finished plan, list the images it needs.
+ *
+ * The ids are the point. This runs after the plan is written, so the plan
+ * already names its content — and the coding run that follows will reference
+ * exactly those names. A picture filed under an id the plan does not use is a
+ * picture nothing loads, which is why the tool takes an explicit `id` and the
+ * runner rejects one that does not match the shape rule rather than quietly
+ * inventing a tidier version.
+ */
+export function assetSpecPrompt(outDir: string, specPath: string): string {
+	return [
+		'You are listing the images a finished plan needs, so they can be generated',
+		'BEFORE any code is written.',
+		'',
+		'Process:',
+		`1. Read EVERY file in \`${outDir}\` (fs_list_dir, fs_read_text) — the overview`,
+		'   and every phase file. Ground yourself in the working directory too, so you',
+		'   do not list art the project already has.',
+		'2. Decide ONE shared style for the whole set. It is appended to every asset',
+		'   prompt and it is what makes the set look like one product, so describe the',
+		'   medium, palette, line weight and lighting — never a subject.',
+		'3. List every image the PLAN actually calls for, and nothing it does not.',
+		'   For each one:',
+		'   - `id`: the content id the plan already uses for this thing, copied',
+		'     EXACTLY. Lowercase letters, digits and underscores, starting with a',
+		'     letter. If the plan names it `iron_sword`, the id is `iron_sword` — not',
+		'     `ironSword`, not `iron-sword`, not `sword`. The code this plan produces',
+		'     will load the file by this name, so an id you improved is a file',
+		'     nothing opens. If the plan does not name an id for something it plainly',
+		'     needs, coin one in that form and use it consistently.',
+		'   - `kind`: `sprite` for an object or character needing a transparent',
+		'     background, `texture` for ground or walls that must tile seamlessly,',
+		'     `icon` for a small UI symbol.',
+		'   - `prompt`: the SUBJECT only. The shared style is added automatically, so',
+		'     repeating it here dilutes both.',
+		'4. If the plan needs no images at all, submit an empty entries list. That is',
+		'   a real answer — inventing decorative art nobody asked for costs GPU hours',
+		'   and puts files in the project that no code will ever reference.',
+		'',
+		`Call \`${SUBMIT_PLAN_ASSET_SPEC_TOOL}\` exactly once, at the end. Do not write`,
+		`any files yourself — the runner writes \`${specPath}\` from what you submit.`
+	].join('\n');
+}
+
+/**
  * The verifier reports a clean plan by replying with "PLAN OK".
  *
  * Relies on `finalText` having reasoning stripped: a model that emits a
@@ -755,8 +806,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	const OUTLINE = 1;
 	const PLANNING = 2;
 	const VERIFY = 3;
-	const APPROVAL = 4;
-	const HANDOFF = 5;
+	const ASSETS = 4;
+	const APPROVAL = 5;
+	const HANDOFF = 6;
 
 	const startStep = (idx: number) => {
 		const startedAt = Date.now();
@@ -798,8 +850,22 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			expectsFileOutput?: boolean;
 			kind?: string;
 			maxResponseTokens?: number;
+			/**
+			 * Whether this turn may call `ask_user_question`.
+			 *
+			 * Defaults to true, because the two interview turns are the whole
+			 * point of guided planning. Every turn AFTER the outline stage
+			 * passes false in an unattended mode: the user has walked away, and
+			 * a write turn that stops to ask parks the run until morning — the
+			 * exact failure the unattended chain exists to prevent. Removing
+			 * the tool is what makes that structural rather than a request in a
+			 * prompt the model may ignore.
+			 */
+			mayAsk?: boolean;
 		} = {}
 	) => {
+		const mayAsk = opts.mayAsk ?? true;
+		const tools = opts.tools ?? toolsets.planning;
 		const result = await deps.runJobTurn({
 			userMessage,
 			turnKind: opts.kind,
@@ -807,10 +873,10 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			contextSize: deps.contextSize(),
 			visionSupported: deps.visionSupported(),
 			maxIterations,
-			interactive: true,
+			interactive: mayAsk,
 			writeRoot: outDir,
 			systemPrompt,
-			toolAllowlist: opts.tools ?? toolsets.planning,
+			toolAllowlist: mayAsk ? tools : tools.filter((t) => t !== 'ask_user_question'),
 			expectsFileOutput: opts.expectsFileOutput,
 			...deps.buildStreamCallbacks(stepIdx)
 		});
@@ -859,6 +925,17 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		} catch {
 			return null;
 		}
+	};
+
+	/** Write a workdir file the runner owns — the spec, the overview's ids. */
+	const writeWorkdirFile = async (relPath: string, content: string): Promise<void> => {
+		if (!job.working_dir) return;
+		await invoke('fs_write_text', {
+			workdir: job.working_dir,
+			relPath,
+			content,
+			overwrite: true
+		});
 	};
 
 	const checkPhaseFile = (relPath: string) => async (): Promise<string | null> => {
@@ -917,7 +994,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				15,
 				// The runner diagnosed this mechanically and handed over an exact
 				// instruction — the clearest candidate for cheaper reasoning.
-				{ expectsFileOutput: true, kind: 'repair.command' }
+				{ expectsFileOutput: true, kind: 'repair.command', mayAsk: runMode === 'attended' }
 			);
 		}
 	};
@@ -1253,6 +1330,125 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	 * and `enqueue` report failure by returning null rather than throwing, so
 	 * each is reported rather than propagated.
 	 */
+	/**
+	 * Whether this run will actually chain an asset run.
+	 *
+	 * Three conditions, and all three are real: the user asked for it, the mode
+	 * chains anything at all, and there is a backend that could generate a
+	 * picture. The third is checked here rather than only in the editor because
+	 * a job authored while a backend was configured can be run after it was
+	 * removed, and a night's work must not be lost to a setting.
+	 */
+	const wantsAssets =
+		cfg.generate_assets && runMode === 'unattended_chain' && resolveImageBackend().kind !== 'none';
+
+	/** Where the spec goes. Beside the plan, not in the project root. */
+	const specPath = `${outDir}assets.json`;
+
+	/** Ids the asset stage settled on, for the handoff and for overview.md. */
+	let assetIds: string[] = [];
+
+	/**
+	 * Derive the asset spec from the finished plan and write it.
+	 *
+	 * Never throws, for the same reason verification does not: the phase files
+	 * are written and the run has often spent an hour getting here. A stage
+	 * that cannot produce a spec leaves `assetIds` empty, the handoff falls
+	 * back to starting the coding job directly, and the night is not lost.
+	 */
+	const writeAssetSpec = async (): Promise<string> => {
+		let payload: PlanDerivePayload | null = null;
+		try {
+			await deps.runJobTurn({
+				userMessage: `Read the plan in ${outDir} and list the images it needs.`,
+				systemPrompt: assetSpecPrompt(outDir, specPath),
+				turnKind: 'assets.derive',
+				contextSize: deps.contextSize(),
+				visionSupported: deps.visionSupported(),
+				maxIterations: 30,
+				// Read-only: this stage lists what the plan needs, it does not
+				// edit the plan. The runner writes the spec.
+				toolAllowlist: ['fs_read_text', 'fs_list_dir', 'code_grep', 'code_glob'],
+				forceFinalTool: SUBMIT_PLAN_ASSET_SPEC_TOOL,
+				...deps.buildStreamCallbacks(ASSETS),
+				onToolStart: (call: ResolvedToolCall) => {
+					if (call.name === SUBMIT_PLAN_ASSET_SPEC_TOOL) {
+						payload = call.arguments as PlanDerivePayload;
+					}
+				}
+			});
+		} catch (e) {
+			const { aborted, msg } = normalizeAbort(e);
+			if (aborted) throw e;
+			return `No spec written — the asset stage failed: ${msg}`;
+		}
+
+		if (!payload) {
+			return 'No spec written — the model never submitted one. The coding run will start without art.';
+		}
+
+		const profile = await defaultProfile();
+		const { spec, rejected } = derivePlanSpec(payload, profile);
+		if (spec.entries.length === 0) {
+			return rejected.length > 0
+				? `No spec written — every entry was rejected: ${rejected.join(', ')}.`
+				: 'No spec written — the plan needs no images.';
+		}
+		const problems = validateAssetSpec(spec);
+		if (problems.length > 0) {
+			return `No spec written — the derived spec has problems:\n${problems.join('\n')}`;
+		}
+
+		await writeWorkdirFile(specPath, renderAssetSpec(spec));
+		assetIds = spec.entries.map((e) => e.id);
+		await appendAssetsToOverview(spec.entries.map((e) => ({ id: e.id, out: e.out })));
+
+		// Rejections are reported, never swallowed. An id the shape rule
+		// refused is one the plan names and nothing will generate.
+		const rejectedNote = rejected.length
+			? `\n\n${rejected.length} entry(ies) were rejected for an unusable id and will NOT be ` +
+				`generated: ${rejected.join(', ')}.`
+			: '';
+		return (
+			`Wrote ${specPath} — ${spec.entries.length} asset(s): ${assetIds.join(', ')}.` + rejectedNote
+		);
+	};
+
+	/**
+	 * Put the ids in the document the coding run reads.
+	 *
+	 * The spec is a separate file and the coding run is told where it is, but
+	 * the overview is what the run actually reads first. Listing the ids there
+	 * is what makes "honour these names" something the model sees rather than
+	 * something we hoped it would look up.
+	 */
+	const appendAssetsToOverview = async (entries: Array<{ id: string; out: string }>) => {
+		const existing = await readWorkdirFile(overviewPath);
+		if (existing === null) return;
+		// Idempotent: a re-run must not stack four Assets sections.
+		const base = existing.split('\n## Assets\n')[0].trimEnd();
+		const rows = entries.map((e) => `| \`${e.id}\` | \`${e.out}\` |`);
+		await writeWorkdirFile(
+			overviewPath,
+			[
+				base,
+				'',
+				'## Assets',
+				'',
+				'These images are generated before any code is written. Load them by the',
+				'id below, from the path below. Do not rename an id.',
+				'',
+				'| Id | File |',
+				'| --- | --- |',
+				...rows,
+				''
+			].join('\n')
+		);
+	};
+
+	/** Set when the asset chain was wanted, attempted, and could not start. */
+	let assetChainFailed = false;
+
 	const handoff = async (): Promise<string> => {
 		if (runMode !== 'unattended_chain') {
 			return `Skipped — run mode is "${RUN_MODE_LABELS[runMode]}"`;
@@ -1261,6 +1457,70 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// looked at this" are different states, and only the second is unsafe.
 		if (!verified) {
 			return 'Not started — verification did not run, so nothing has checked this plan';
+		}
+
+		// The coding job's configuration, whoever ends up starting it. Built
+		// once so the chained asset run forwards exactly what guided planning
+		// would have used — a second copy would drift the day one of these
+		// fields changed.
+		const codingConfig = {
+			plan_dir: outDir,
+			use_git: useGit,
+			web_research: webResearch,
+			...definedOnly(cfg.coding_run),
+			// Handed over rather than gated on. Verification cannot certify a
+			// plan clean — three reviews of one untouched plan reported 4, 13
+			// and 9 problems — so refusing on a non-empty list would refuse
+			// forever, and refusing on an empty one would trust a sample. The
+			// coding run is told what the reviewer found and settles each
+			// before it writes code, which is strictly more than it knew when
+			// the gate was letting clean-looking plans through.
+			open_findings: openFindings
+		};
+
+		// Assets first when there are any: the coding run should be building
+		// against art that already exists, and the asset run starts the coding
+		// run itself once it is done.
+		if (assetIds.length > 0) {
+			const assetJobId = await createJob({
+				name: `${job.name} — assets`,
+				description:
+					`Started automatically by guided-planning run ${runId} from the plan in ${outDir}. ` +
+					`${assetIds.length} asset(s) to generate.`,
+				working_dir: job.working_dir,
+				auto_approve_tools: true,
+				schedule_kind: 'manual',
+				schedule_config: null,
+				next_due_at: null,
+				job_type: 'asset_generation',
+				model_remote_base_url: job.model_remote_base_url,
+				model_remote_api_key: job.model_remote_api_key,
+				model_remote_api_key_id: job.model_remote_api_key_id,
+				model_remote_model_id: job.model_remote_model_id,
+				model_remote_context_size: job.model_remote_context_size,
+				model_remote_vision_supported: job.model_remote_vision_supported,
+				model_advanced: job.model_advanced,
+				type_config: JSON.stringify({
+					spec_path: specPath,
+					run_mode: 'unattended',
+					// Forwarded, not applied: the asset run creates the coding
+					// job when it finishes, and knows which assets are missing.
+					coding_run: codingConfig
+				})
+			});
+			if (assetJobId !== null) {
+				const assetRunId = await deps.startChainedRun(assetJobId);
+				if (assetRunId !== null) {
+					return (
+						`Started asset job ${assetJobId} (run ${assetRunId}) on ${assetIds.length} ` +
+						`asset(s) from ${specPath}. It starts the coding run when it finishes.`
+					);
+				}
+			}
+			// Falls through to the coding job deliberately. A night's work must
+			// not be lost because the asset run could not start; the code is
+			// still worth building, and the handoff says what happened.
+			assetChainFailed = true;
 		}
 
 		const codingJobId = await createJob({
@@ -1284,28 +1544,22 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			// Null overrides are left OUT rather than written as null, so the
 			// coding job's own parser applies its defaults and its preflight
 			// settles what nobody pinned — exactly as for a hand-created job.
-			type_config: JSON.stringify({
-				plan_dir: outDir,
-				use_git: useGit,
-				web_research: webResearch,
-				...definedOnly(cfg.coding_run),
-				// Handed over rather than gated on. Verification cannot certify a
-				// plan clean — three reviews of one untouched plan reported 4, 13
-				// and 9 problems — so refusing on a non-empty list would refuse
-				// forever, and refusing on an empty one would trust a sample. The
-				// coding run is told what the reviewer found and settles each
-				// before it writes code, which is strictly more than it knew when
-				// the gate was letting clean-looking plans through.
-				open_findings: openFindings
-			})
+			type_config: JSON.stringify(codingConfig)
 		});
 		if (codingJobId === null) return 'Could not create the coding job — nothing was started';
 
 		// Said on both paths: it describes the job that now exists, which is
 		// true whether or not it also started.
-		const carried = openFindings.length
-			? ` Carried ${openFindings.length} unresolved finding(s) over for its preflight to settle.`
-			: ' The last review found nothing outstanding.';
+		const carried =
+			(assetChainFailed
+				? ' The asset run could not be started, so there is no generated art.'
+				: '') +
+			(cfg.generate_assets && !wantsAssets && runMode === 'unattended_chain'
+				? ' Assets were requested but no image backend is configured, so none were generated.'
+				: '') +
+			(openFindings.length
+				? ` Carried ${openFindings.length} unresolved finding(s) over for its preflight to settle.`
+				: ' The last review found nothing outstanding.');
 		const codingRunId = await deps.startChainedRun(codingJobId);
 		if (codingRunId === null) {
 			return (
@@ -1442,7 +1696,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				writeMsg,
 				phaseWritePrompt(outDir, overviewPath, webResearch, planningOverview, useGit),
 				30,
-				{ expectsFileOutput: true, kind: 'planning.write' }
+				{ expectsFileOutput: true, kind: 'planning.write', mayAsk: runMode === 'attended' }
 			);
 			await ensureWritten(
 				checkPhaseFile(phase.relPath),
@@ -1531,6 +1785,30 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				deps.patchStep(VERIFY, { status: 'failed', error: msg, finishedAt });
 				void markRunStepFinished(runId, VERIFY, 'failed', null, msg, finishedAt);
 			}
+		}
+
+		// Assets — write the spec the chained asset run will generate from.
+		//
+		// The stage starts and finishes in every mode, and only its work is
+		// conditional. Same precedent as a skipped verification: the step index
+		// stays put and the run view shows what was skipped, rather than
+		// silently renumbering the stages around it.
+		//
+		// It runs BEFORE the approval checkpoint so the ids are on disk and in
+		// overview.md by the time anyone reviews the plan. In unattended_chain
+		// that checkpoint asks nothing, so this adds no question after the
+		// outline stage — which is the property this whole branch exists to
+		// protect.
+		startStep(ASSETS);
+		if (!wantsAssets) {
+			finishStep(
+				ASSETS,
+				cfg.generate_assets
+					? `Skipped — run mode is "${RUN_MODE_LABELS[runMode]}", so nothing would run it`
+					: 'Skipped — asset generation is off for this job'
+			);
+		} else {
+			finishStep(ASSETS, await writeAssetSpec());
 		}
 
 		// Approval — plan / dependency-map approval checkpoint loop.

@@ -337,7 +337,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 			contextMode,
 			webResearch,
 			interactive,
-			cfg.open_findings
+			cfg.open_findings,
+			cfg.asset_spec_path
 		);
 		abortIfCancelled();
 		if (!outcome.ready) {
@@ -355,7 +356,8 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 				contextMode,
 				webResearch,
 				interactive,
-				cfg.open_findings
+				cfg.open_findings,
+				cfg.asset_spec_path
 			),
 			toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 			what: 'decisions file',
@@ -717,7 +719,8 @@ async function runPreflightTurn(
 	contextMode: 'step' | 'phase',
 	webResearch: boolean,
 	interactive: boolean,
-	openFindings: string[]
+	openFindings: string[],
+	assetSpecPath: string | null
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
@@ -740,7 +743,8 @@ async function runPreflightTurn(
 			contextMode,
 			webResearch,
 			interactive,
-			openFindings
+			openFindings,
+			assetSpecPath
 		),
 		toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,

@@ -107,6 +107,7 @@ describe('registration barrel', () => {
 			'Outline',
 			'Planning',
 			'Verification',
+			'Assets',
 			'Approval',
 			'Handoff'
 		]);

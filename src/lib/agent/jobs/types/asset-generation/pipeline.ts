@@ -9,6 +9,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { createJob } from '$lib/stores/jobs.svelte';
 import { normalizeAbort } from '$lib/utils/error';
 import {
 	markRunStarted,
@@ -18,6 +19,7 @@ import {
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
 import type { RunStatus } from '../../runner.svelte';
+import type { AssetGenerationConfig } from './config';
 import {
 	parseAssetGenerationConfig,
 	resolveSpecPath,
@@ -250,11 +252,87 @@ async function writeContactSheet(
 	}
 }
 
+/**
+ * Start the coding run this asset run was chained ahead of, or say why not.
+ *
+ * Never throws. A run that has already produced a set of assets must not be
+ * recorded as failed over a handoff it could not complete — `createJob` and
+ * `startChainedRun` both report failure by returning null, and each is
+ * reported rather than propagated. Same shape as guided planning's handoff,
+ * for the same reason: the morning's first question is "did it chain, and if
+ * not why not", and the run timeline should answer it.
+ */
+async function handoffToCoding(
+	ctx: JobRunContext,
+	cfg: AssetGenerationConfig,
+	specPath: string,
+	entries: EntryOutcome[]
+): Promise<string> {
+	const { job, runId } = ctx;
+	if (ctx.trigger !== 'chained') {
+		return 'Nothing chained — this run was started manually.';
+	}
+	if (!cfg.coding_run) {
+		return 'Nothing chained — this run carried no coding configuration.';
+	}
+
+	// The coding run's preflight can see which art is missing, so it plans
+	// around a gap instead of writing code that loads a file nobody made.
+	const missing = entries.filter((e) => e.status !== 'done' && e.status !== 'skipped');
+	const note = missing.length
+		? ` ${missing.length} asset(s) could not be produced and are NOT on disk: ` +
+			`${missing.map((e) => e.id).join(', ')}.`
+		: '';
+
+	const codingJobId = await createJob({
+		name: `${job.name} — coding`,
+		description:
+			`Started automatically by asset-generation run ${runId}. ` +
+			`The asset spec is at ${specPath}.${note}`,
+		working_dir: job.working_dir,
+		auto_approve_tools: true,
+		schedule_kind: 'manual',
+		schedule_config: null,
+		next_due_at: null,
+		job_type: 'autonomous_coding',
+		// Inherited so the code is built on what the plan was built on — a
+		// chained run has no chance to be corrected before it executes.
+		model_remote_base_url: job.model_remote_base_url,
+		model_remote_api_key: job.model_remote_api_key,
+		model_remote_api_key_id: job.model_remote_api_key_id,
+		model_remote_model_id: job.model_remote_model_id,
+		model_remote_context_size: job.model_remote_context_size,
+		model_remote_vision_supported: job.model_remote_vision_supported,
+		model_advanced: job.model_advanced,
+		type_config: JSON.stringify({
+			...cfg.coding_run,
+			// Set here, not carried: this run is the thing that knows where the
+			// spec ended up, and the preflight checks the plan's asset ids
+			// against it.
+			asset_spec_path: specPath
+		})
+	});
+	if (codingJobId === null) return 'Could not create the coding job — nothing was started.';
+
+	const codingRunId = await ctx.startChainedRun(codingJobId);
+	if (codingRunId === null) {
+		return (
+			`Created coding job ${codingJobId}, but it could not be started — ` +
+			`autonomous coding may be unavailable on this platform.${note}`
+		);
+	}
+	return `Started coding job ${codingJobId} (run ${codingRunId}) against ${specPath}.${note}`;
+}
+
 export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<void> {
 	const { job, runId, abort } = ctx;
 	const startedAt = Date.now();
 	const cfg = parseAssetGenerationConfig(job.type_config);
 	const specPath = resolveSpecPath(cfg);
+	// A chained run is unattended, whatever the config says. This keys on the
+	// TRIGGER, not on the stored mode: a hand-edited config must not be able to
+	// park an overnight chain on the anchor approval modal until morning.
+	const attended = ctx.trigger !== 'chained' && cfg.run_mode === 'attended';
 	const reportPath = reportPathFor(specPath);
 	const targetSize = cfg.target_size ?? DEFAULT_TARGET_SIZE;
 
@@ -377,7 +455,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				workingDir: job.working_dir,
 				profile: spec.normalize,
 				anchorAttempts: cfg.anchor_attempts ?? DEFAULT_ANCHOR_ATTEMPTS,
-				attended: cfg.run_mode === 'attended',
+				attended,
 				signal: abort.signal,
 				present: (markdown) => ctx.patchStep(ANCHOR, { streaming: markdown }),
 				readFile: (rel) => readWorkdirFile(ctx, rel),
@@ -482,12 +560,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 
 		startStep(HANDOFF);
 		abortIfCancelled();
-		finishStep(
-			HANDOFF,
-			ctx.trigger === 'chained'
-				? 'Nothing chained yet — the coding handoff is not implemented.'
-				: 'Nothing chained — this run was started manually.'
-		);
+		finishStep(HANDOFF, await handoffToCoding(ctx, cfg, specPath, entries));
 
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {

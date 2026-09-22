@@ -57,7 +57,8 @@ export function preflightPrompt(
 	contextMode: 'step' | 'phase',
 	webResearch: boolean,
 	interactive: boolean = true,
-	openFindings: string[] = []
+	openFindings: string[] = [],
+	assetSpecPath: string | null = null
 ): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
@@ -128,6 +129,7 @@ export function preflightPrompt(
 		// would then have to present — interviewResearchRules ends in an
 		// ask_user_question it has no tool for.
 		...openFindingsStep(openFindings, decisionsPath),
+		...assetSpecStep(assetSpecPath, decisionsPath),
 		...(webResearch
 			? interactive
 				? interviewResearchRules('the plan or any answer the user gives')
@@ -135,6 +137,40 @@ export function preflightPrompt(
 			: []),
 		...shellSafetyRules('preflight')
 	].join('\n');
+}
+
+/**
+ * The art that was generated before this run started.
+ *
+ * The spec is the contract between three things that were produced
+ * separately: the plan that named the content ids, the asset run that made a
+ * PNG per id, and the code this run is about to write to load them. Nothing
+ * mechanical ties them together — so preflight is told to check the ids
+ * against the file, which is the step that notices when they stopped agreeing,
+ * while there is still time to fix it in the decisions file rather than at 4am
+ * in a loader that throws.
+ *
+ * The instruction is explicitly NOT to generate or edit art: an entry missing
+ * from the spec means the asset run could not produce it, and inventing a
+ * placeholder would hide that from the person reading the report.
+ */
+function assetSpecStep(specPath: string | null, decisionsPath: string): string[] {
+	if (!specPath) return [];
+	return [
+		'',
+		'ART WAS GENERATED FOR THIS PLAN:',
+		`The asset spec is \`${specPath}\`, and the images it lists are already on`,
+		'disk at the `out` path of each entry. Before writing code:',
+		'- Read the spec. Every asset the plan references by id must appear in it,',
+		'  with the SAME id. Load images by that `out` path — never invent a path,',
+		'  and never rename an id to something you find tidier.',
+		'- Where the plan names an asset the spec does not list, that image does',
+		`  NOT exist. Record it in \`${decisionsPath}\` and decide what the code does`,
+		'  without it — a placeholder drawn in code, or the feature left out. Say',
+		'  which. Do NOT try to generate art; you have no tool for it, and a',
+		'  silently invented file is worse than a missing one.',
+		'- Where the spec lists an asset the plan never mentions, leave it alone.'
+	];
 }
 
 /**

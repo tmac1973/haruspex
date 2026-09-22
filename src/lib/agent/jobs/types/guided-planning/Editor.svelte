@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Tooltip from '$lib/components/Tooltip.svelte';
+	import { resolveImageBackend } from '$lib/image';
 	import type { GuidedPlanningEditorState } from './definition';
 
 	// The guided-planning section of the job editor (see JobTypeEditorProps):
@@ -21,6 +22,10 @@
 	// clobber it on edit. (JobEditor remounts this component per job/type,
 	// so initializing from the mount-time value is safe.)
 	let outputDirEdited = $state(!!cfg.plan_output_dir);
+
+	// Disabled rather than hidden: "why is there no asset option" is a worse
+	// question than "why is this greyed out", and the hint answers the second.
+	const imageBackendReady = resolveImageBackend().kind !== 'none';
 
 	function slugify(s: string): string {
 		return s
@@ -132,6 +137,22 @@
 </div>
 
 {#if cfg.run_mode === 'unattended_chain'}
+	<div class="toggle-row">
+		<label>
+			<input type="checkbox" bind:checked={cfg.generate_assets} disabled={!imageBackendReady} />
+			<span class="label">
+				Also generate assets
+				<Tooltip
+					label="About generating assets"
+					text="Writes an asset spec from the finished plan, then runs an asset-generation job before the coding job, so the code is built against art that already exists. Needs an image backend in Settings → Images."
+				/>
+			</span>
+		</label>
+		{#if !imageBackendReady}
+			<p class="hint">Needs an image backend — set one in Settings → Images.</p>
+		{/if}
+	</div>
+
 	<details class="coding-run">
 		<summary>Coding run settings</summary>
 		<p class="hint">

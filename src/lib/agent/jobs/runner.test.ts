@@ -194,13 +194,22 @@ function tick() {
  * so the run drives to completion.
  */
 function guidedTurns(
-	phases: Array<{ id: string; title: string; depends_on?: string[]; summary: string }>
+	phases: Array<{ id: string; title: string; depends_on?: string[]; summary: string }>,
+	assets?: { style: { prompt: string }; entries: Array<Record<string, unknown>> }
 ) {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	return async (opts: any) => {
 		if (opts.forceFinalTool === 'submit_plan_outline') {
 			opts.onToolStart?.({ id: 'outline', name: 'submit_plan_outline', arguments: { phases } });
 			return { finalText: 'outline submitted' };
+		}
+		if (opts.forceFinalTool === 'submit_plan_asset_spec') {
+			opts.onToolStart?.({
+				id: 'assets',
+				name: 'submit_plan_asset_spec',
+				arguments: assets ?? { style: { prompt: 'flat pixel art' }, entries: [] }
+			});
+			return { finalText: 'assets submitted' };
 		}
 		return { finalText: 'PLAN OK' };
 	};
@@ -2326,8 +2335,9 @@ describe('guided_planning — run mode', () => {
 		});
 	}
 
+	/** Stage 5 — Approval. Assets took index 4 when it was inserted. */
 	const approvalOutput = () => {
-		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
 		return String(calls[calls.length - 1]?.[3] ?? '');
 	};
 
@@ -2432,8 +2442,9 @@ describe('guided_planning — handoff', () => {
 		};
 	}
 
+	/** Stage 6 — Handoff. */
 	const handoffOutput = () => {
-		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
 		return String(calls[calls.length - 1]?.[3] ?? '');
 	};
 
@@ -3121,6 +3132,84 @@ describe('jobs runner — asset generation', () => {
 		);
 	});
 
+	it('starts the coding job it was chained ahead of', async () => {
+		mocks.getJob.mockImplementation(async (id: number) =>
+			id === 1
+				? assetJob({ coding_run: { plan_dir: 'plan/x/', use_git: true } })
+				: makeJob({ id: 901, job_type: 'autonomous_coding', steps: [], working_dir: '/repo' })
+		);
+		wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.job_type).toBe('autonomous_coding');
+		const cfg = JSON.parse(input.type_config);
+		expect(cfg.plan_dir).toBe('plan/x/');
+		// Set by this run, not carried: it is the thing that knows where the
+		// spec ended up.
+		expect(cfg.asset_spec_path).toBe(SPEC_PATH);
+		// Read from the persisted step, not getCurrentRun: starting the chained
+		// run makes IT the current run, so the asset run is no longer there.
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(handoff.at(-1)?.[3])).toContain('Started coding job');
+	});
+
+	it('tells the coding run which art is missing', async () => {
+		// So its preflight plans around the gap instead of writing code that
+		// loads a file nobody made.
+		mocks.getJob.mockImplementation(async (id: number) =>
+			id === 1
+				? assetJob({ coding_run: { plan_dir: 'plan/x/' }, max_attempts: 1 })
+				: makeJob({ id: 901, job_type: 'autonomous_coding', steps: [], working_dir: '/repo' })
+		);
+		wireFs(goodSpec(2), { recipe: goodRecipe() }, [], { passed: false, failed: ['entropy'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.description).toContain('could not be produced');
+		expect(input.description).toContain('thing_0');
+	});
+
+	it('chains nothing on a manual run, and says so', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ coding_run: { plan_dir: 'plan/x/' } }));
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(getCurrentRun()!.steps[4].output).toContain('started manually');
+	});
+
+	it('chains nothing when it carried no coding configuration', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(getCurrentRun()!.steps[4].output).toContain('no coding configuration');
+	});
+
+	it('runs unattended on a chained trigger even when the config says otherwise', async () => {
+		// A hand-edited config must not be able to park an overnight chain on
+		// the anchor approval modal until morning.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ run_mode: 'attended' }));
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(mocks.askUserQuestion).not.toHaveBeenCalled();
+	});
+
 	it('fails when there is no spec and nothing to write one from', async () => {
 		// Phase 06's skeleton finished happily here. Now the stage either has
 		// a spec or makes one, and neither being possible is a real failure.
@@ -3656,7 +3745,245 @@ describe('guided_planning — a crashed verifier does not discard the plan', () 
 		// The gate that was written as defensive is now the one that matters.
 		expect(mocks.createJob).not.toHaveBeenCalled();
 		// The one hard refusal left: nothing checked this plan at all.
-		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
 		expect(String(handoff[handoff.length - 1][3])).toContain('verification did not run');
+	});
+});
+
+/**
+ * The chain: guided planning → assets → coding, with nobody present.
+ *
+ * The property this whole branch exists to protect is one assertion — no turn
+ * after guided planning's outline stage may be able to ask a question. Every
+ * other test here is about the plumbing that gets there.
+ */
+describe('guided_planning — asset chain', () => {
+	const PLAN_DIR = 'plan/x/';
+	const SPEC = `${PLAN_DIR}assets.json`;
+
+	function planningJob(cfg: Record<string, unknown> = {}) {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: PLAN_DIR,
+				run_mode: 'unattended_chain',
+				generate_assets: true,
+				...cfg
+			})
+		});
+	}
+
+	const ENTRIES = [
+		{ id: 'iron_sword', kind: 'sprite', prompt: 'a sword' },
+		{ id: 'cobblestone', kind: 'texture', prompt: 'cobbles' }
+	];
+
+	function turns(entries = ENTRIES) {
+		return guidedTurns([{ id: '01', title: 'One', summary: 'first' }], {
+			style: { prompt: 'flat pixel art' },
+			entries
+		});
+	}
+
+	/** Files the run wrote, by relative path. `overview` seeds what is on disk. */
+	function wireWrites(overview = '# Overview\n\nSome plan.\n') {
+		const written: Array<{ relPath: string; content: string }> = [];
+		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			const rel = String(args?.relPath ?? '');
+			if (cmd === 'fs_path_exists') return true;
+			if (cmd === 'shell_platform_supported') return true;
+			if (cmd === 'fs_list_dir') {
+				return {
+					path: '',
+					entries: [{ name: 'phase-01-x.md', is_dir: false, size: 1 }],
+					truncated: false
+				};
+			}
+			if (cmd === 'fs_read_text_full') {
+				const prior = written.filter((w) => w.relPath === rel).at(-1);
+				if (prior) return prior.content;
+				if (rel.endsWith('overview.md')) return overview;
+				// Undefined, like the default mock: the phase-file write guard
+				// treats an unreadable file as "cannot verify, do not block",
+				// and a short string would fail its truncation check instead.
+				return undefined;
+			}
+			if (cmd === 'fs_write_text') {
+				written.push({ relPath: rel, content: String(args?.content) });
+				return undefined;
+			}
+			if (cmd === 'image_default_profile') {
+				return { target_size: 32, upscale: 16, palette_size: 16, palette: [], by_kind: {} };
+			}
+			return undefined;
+		});
+		return written;
+	}
+
+	/**
+	 * Run the planning job. `chainedJob` answers `getJob` for whatever the
+	 * handoff creates — without it `startChainedRun` returns null, the handoff
+	 * falls back to the coding job, and the test would be measuring the
+	 * fallback rather than the chain.
+	 */
+	async function run(job: JobWithSteps, turnImpl: unknown, chainedJob?: JobWithSteps) {
+		mocks.getJob.mockImplementation(async (id: number) => (id === 1 ? job : (chainedJob ?? null)));
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		mocks.runEphemeralTurn.mockImplementation(turnImpl as any);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+	}
+
+	/** The asset job guided planning creates, as the runner would load it back. */
+	function chainedAssetJob(cfg: Record<string, unknown> = {}) {
+		return makeJob({
+			id: 900,
+			job_type: 'asset_generation',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({ spec_path: SPEC, run_mode: 'unattended', ...cfg })
+		});
+	}
+
+	beforeEach(() => {
+		settingsState.imageBackendKind = 'comfyui';
+		imageState.kind = 'comfyui';
+	});
+	afterEach(() => {
+		settingsState.imageBackendKind = 'none';
+		imageState.kind = 'none';
+	});
+
+	it('writes the spec from the plan and starts an asset job, not a coding job', async () => {
+		const written = wireWrites();
+		await run(planningJob(), turns(), chainedAssetJob());
+
+		const spec = written.find((w) => w.relPath === SPEC);
+		expect(spec).toBeDefined();
+		expect(JSON.parse(spec!.content).entries.map((e: { id: string }) => e.id)).toEqual([
+			'iron_sword',
+			'cobblestone'
+		]);
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.job_type).toBe('asset_generation');
+		const cfg = JSON.parse(input.type_config);
+		expect(cfg.spec_path).toBe(SPEC);
+		expect(cfg.run_mode).toBe('unattended');
+		// The coding job's configuration rides along rather than being rebuilt.
+		expect(cfg.coding_run.plan_dir).toBe(PLAN_DIR);
+	});
+
+	it('puts the ids in overview.md, where the coding run will actually read them', async () => {
+		// The spec is a separate file. The overview is what the run reads first.
+		const written = wireWrites();
+		await run(planningJob(), turns());
+
+		const overview = written.filter((w) => w.relPath.endsWith('overview.md')).at(-1)!;
+		expect(overview.content).toContain('## Assets');
+		expect(overview.content).toContain('`iron_sword`');
+		expect(overview.content).toContain('assets/generated/texture/cobblestone.png');
+	});
+
+	it('does not stack a second Assets section when the overview already has one', async () => {
+		// The re-run case: a plan that has been through this stage before must
+		// come out with one Assets section, not two.
+		const written = wireWrites(
+			'# Overview\n\nSome plan.\n\n## Assets\n\n| Id | File |\n| --- | --- |\n| `stale` | `x.png` |\n'
+		);
+		await run(planningJob(), turns());
+		const overview = written.filter((w) => w.relPath.endsWith('overview.md')).at(-1)!;
+		expect(overview.content.split('## Assets')).toHaveLength(2);
+		expect(overview.content).not.toContain('stale');
+		expect(overview.content).toContain('Some plan.');
+	});
+
+	it('rejects an id the plan could not be using, rather than tidying it', async () => {
+		// A slugified id is a file nothing opens: the code loads what the plan
+		// says, and the plan does not say `iron_sword`.
+		const written = wireWrites();
+		await run(
+			planningJob(),
+			turns([
+				{ id: 'Iron Sword', kind: 'sprite', prompt: 'a sword' },
+				{ id: 'ok_one', kind: 'sprite', prompt: 'fine' }
+			])
+		);
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC)!.content);
+		expect(spec.entries.map((e: { id: string }) => e.id)).toEqual(['ok_one']);
+		const assetsStage = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(assetsStage.at(-1)?.[3])).toContain('Iron Sword');
+	});
+
+	it('starts the coding job directly when there is no image backend', async () => {
+		// A night's work must not be lost to a setting.
+		settingsState.imageBackendKind = 'none';
+		imageState.kind = 'none';
+		wireWrites();
+		await run(planningJob(), turns());
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
+		expect(String(handoff.at(-1)?.[3])).toContain('no image backend');
+	});
+
+	it('starts the coding job directly when the plan needs no images', async () => {
+		wireWrites();
+		await run(planningJob(), turns([]));
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
+		const assetsStage = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(assetsStage.at(-1)?.[3])).toContain('needs no images');
+	});
+
+	it('behaves exactly as before when asset generation is off', async () => {
+		wireWrites();
+		await run(planningJob({ generate_assets: false }), turns());
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
+		const assetsStage = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(assetsStage.at(-1)?.[3])).toContain('asset generation is off');
+	});
+
+	it('still reaches the Approval and Handoff stages, so indices do not shift', async () => {
+		wireWrites();
+		await run(planningJob({ generate_assets: false }), turns());
+		for (const idx of [4, 5, 6]) {
+			expect(mocks.markRunStepStarted.mock.calls.some((c: unknown[]) => c[1] === idx)).toBe(true);
+		}
+	});
+
+	it('never lets a turn ask a question after the outline stage', async () => {
+		// THE assertion. Everything else in this branch is plumbing that gets
+		// here: once the outline is approved, the run is on its own.
+		wireWrites();
+		const seen: Array<{ kind: string; tools: string[] }> = [];
+		await run(planningJob(), async (opts: Record<string, unknown>) => {
+			seen.push({
+				kind: String(opts.turnKind ?? ''),
+				tools: [...((opts.toolAllowlist as string[]) ?? [])]
+			});
+			return guidedTurns([{ id: '01', title: 'One', summary: 'first' }], {
+				style: { prompt: 'flat pixel art' },
+				entries: ENTRIES
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			})(opts as any);
+		});
+
+		const outlineAt = seen.findIndex((t) => t.kind.startsWith('outline'));
+		expect(outlineAt).toBeGreaterThanOrEqual(0);
+		const after = seen.slice(outlineAt + 1);
+		expect(after.length).toBeGreaterThan(0);
+		for (const t of after) {
+			expect(t.tools, `turn ${t.kind} can still ask`).not.toContain('ask_user_question');
+		}
 	});
 });

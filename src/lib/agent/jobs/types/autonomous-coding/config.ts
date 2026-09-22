@@ -45,6 +45,16 @@ export interface AutonomousCodingConfig {
 	 */
 	open_findings: string[];
 	/**
+	 * The asset spec a chained asset run wrote, relative to working_dir.
+	 *
+	 * Set only by that handoff. When present, preflight checks that every
+	 * asset id the plan references appears in the spec — which is what makes
+	 * "the coding run must honour the ids" real rather than hoped: the plan
+	 * names them, the spec was built from those names, and this is the step
+	 * that notices when they stopped agreeing.
+	 */
+	asset_spec_path: string | null;
+	/**
 	 * Offer web_search and research_url to the preflight interview, so it can
 	 * check versions and APIs past the model's training cutoff. The coding loop
 	 * has them regardless. null = default (true).
@@ -109,7 +119,11 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 		use_git: parseOptionalBool(raw.use_git),
 		open_findings: Array.isArray(raw.open_findings)
 			? raw.open_findings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
-			: []
+			: [],
+		asset_spec_path:
+			typeof raw.asset_spec_path === 'string' && raw.asset_spec_path.trim().length > 0
+				? raw.asset_spec_path.trim()
+				: null
 	};
 }
 
