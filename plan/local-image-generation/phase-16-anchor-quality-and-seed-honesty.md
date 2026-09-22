@@ -165,6 +165,43 @@ margin, and switching to it does not remove the need for steps 1 and 2 so much
 as re-aim them. Phase 14's catalogue should recommend it where VRAM allows,
 which it already does at ≥10 GB.
 
+### 3b. Let the model choose the anchor's subjects
+
+`anchorSubjects` picks round-robin across kinds, which on a real 89-entry
+spec chose a survivor, a heart symbol, a raider and a radiation symbol — two
+humanoids and two flat icons. SDXL rendered that as large character portraits,
+and the palette extracted from them was pink and grey, which every asset was
+then quantized into. Water, grass and asphalt all came out looking like the
+same brick.
+
+Two separate failures are tangled here and both need the same fix:
+
+- **Composition.** A subject list that is mostly humanoid characters produces
+  a character sheet, not a grid of small objects, whatever the closing
+  instruction says. Measured: the same frame with four short, varied subjects
+  produced a proper sheet; with two long humanoid subjects it produced one
+  figure filling the frame.
+- **Spread.** Four subjects cannot span the colours of a set containing
+  asphalt, concrete, grass, water, rust, blood and characters. Whatever four
+  are picked, the palette describes those four — and the palette governs
+  everything.
+
+Mechanical selection cannot fix either, because both need to know what the
+subjects LOOK like. The derivation turn does: it wrote the whole spec and has
+read the project. So the spec gains an explicit list — three or four short
+phrases, chosen for visual spread across the set's materials and colours, each
+a few words — and `anchorSubjects` uses it when present, falling back to the
+current round-robin when it is absent (an older spec, or a hand-written one).
+
+The prompt asks for spread in as many words: "pick three or four things that
+together cover the materials and colours of the whole set — not four
+characters, not four icons".
+
+Verify by measurement, not by eye alone: with the list present, the anchor's
+palette hue spread (phase 10's `image_palette_spread`) should use more buckets
+than the round-robin one it replaces on the same spec, and the assets' median
+`palette_distance` should fall.
+
 ### 4. Compare against the procedural baseline, and write the answer down
 
 A previous autonomous coding run produced tilemaps procedurally, in code, with
