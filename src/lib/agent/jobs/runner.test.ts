@@ -2641,6 +2641,10 @@ describe('jobs runner — asset generation', () => {
 	/** Just the anchor sheets — the entries share the same list. */
 	const anchorCalls = () => generated.filter((g) => String(g.prompt).includes('reference sheet'));
 	const entryCalls = () => generated.filter((g) => !String(g.prompt).includes('reference sheet'));
+	const turnsOfKind = (kind: string) =>
+		mocks.runEphemeralTurn.mock.calls.filter(
+			(call) => (call[0] as EphemeralTurnOptions & { turnKind?: string })?.turnKind === kind
+		);
 
 	/** Shaped like the Rust default, which is what the real command returns. */
 	function profileFixture() {
@@ -2729,7 +2733,12 @@ describe('jobs runner — asset generation', () => {
 	 * `spec` null = no spec file on disk. `anchor` supplies a committed anchor
 	 * so a test can exercise the reuse path.
 	 */
-	function wireFs(spec: string | null, anchor?: { recipe: string | null }, present: string[] = []) {
+	function wireFs(
+		spec: string | null,
+		anchor?: { recipe: string | null },
+		present: string[] = [],
+		checks: { passed: boolean; failed: string[] } = { passed: true, failed: [] }
+	) {
 		const written: Array<{ relPath: string; content: string }> = [];
 		const wroteBytes: string[] = [];
 		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
@@ -2742,6 +2751,9 @@ describe('jobs runner — asset generation', () => {
 			}
 			if (cmd === 'fs_read_bytes') {
 				if (rel === ANCHOR_IMAGE && anchor) return [137, 80, 78, 71];
+				// Anything this run wrote can be read back — the contact sheet
+				// tiles the files the generation stage just produced.
+				if (wroteBytes.includes(rel)) return [137, 80, 78, 71];
 				throw new Error('not found');
 			}
 			if (cmd === 'fs_write_text') {
@@ -2757,6 +2769,14 @@ describe('jobs runner — asset generation', () => {
 			if (cmd === 'image_normalize') {
 				return { bytes: [1, 2, 3, 4], stats: { alpha: 0.5, entropy: 3, palette_distance: 0.01 } };
 			}
+			if (cmd === 'image_check') {
+				return {
+					passed: checks.passed,
+					stats: { alpha: 0.5, entropy: 3, palette_distance: 0.01 },
+					failed: checks.failed
+				};
+			}
+			if (cmd === 'image_contact_sheet') return [137, 80, 78, 71];
 			if (cmd === 'image_default_profile') return profileFixture();
 			if (cmd === 'image_extract_palette') return PALETTE;
 			if (cmd === 'image_store_bytes') return 'deadbeef';
@@ -2986,7 +3006,8 @@ describe('jobs runner — asset generation', () => {
 		expect(written.bytes).toEqual([
 			'assets/generated/thing_0.png',
 			'assets/generated/thing_1.png',
-			'assets/generated/thing_2.png'
+			'assets/generated/thing_2.png',
+			'assets/contact-sheet.png'
 		]);
 		expect(getCurrentRun()!.steps[2].output).toContain('3 generated');
 	});
@@ -3045,6 +3066,59 @@ describe('jobs runner — asset generation', () => {
 		expect(getCurrentRun()?.status).toBe('succeeded');
 		expect(getCurrentRun()!.steps[2].output).toContain('1 failed');
 		expect(written.map((w) => w.relPath)).toContain('assets/REPORT-assets.md');
+	});
+
+	it('writes a report and a contact sheet beside the spec', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(3), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!;
+		expect(report.content).toContain('**3 generated**');
+		expect(report.content).toContain('![Contact sheet](assets/contact-sheet.png)');
+		expect(report.content).toContain('| `thing_0` |');
+		expect(written.bytes).toContain('assets/contact-sheet.png');
+		expect(getCurrentRun()!.steps[3].output).toContain('Every asset passed');
+	});
+
+	it('leads with the unresolved count and writes no file for those assets', async () => {
+		// The only number in the report that asks the user to do something.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ max_attempts: 2 }));
+		const written = wireFs(goodSpec(2), { recipe: goodRecipe() }, [], {
+			passed: false,
+			failed: ['entropy']
+		});
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// The work that was done is real, so the run still succeeded.
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(getCurrentRun()!.steps[3].output).toMatch(/^2 asset\(s\) could not be produced/);
+		expect(written.bytes).not.toContain('assets/generated/thing_0.png');
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!;
+		expect(report.content).toContain('## Not produced');
+		expect(report.content).toContain('Nothing was written to `assets/generated/thing_0.png`');
+		// Two entries, two attempts each.
+		expect(entryCalls()).toHaveLength(4);
+	});
+
+	it('makes no contact sheet when the run produced nothing', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ max_attempts: 1 }));
+		const written = wireFs(goodSpec(2), { recipe: goodRecipe() }, [], {
+			passed: false,
+			failed: ['alpha_low']
+		});
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(written.bytes).not.toContain('assets/contact-sheet.png');
+		expect(written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content).not.toContain(
+			'Contact sheet'
+		);
 	});
 
 	it('fails when there is no spec and nothing to write one from', async () => {
@@ -3215,7 +3289,8 @@ describe('jobs runner — asset generation', () => {
 		await enqueue(1);
 		await settle(getCurrentRun);
 
-		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
+		// Scoped to derivation: other turns (the vision judge) are expected.
+		expect(turnsOfKind('spec.derive')).toHaveLength(0);
 	});
 
 	it('leaves a settled spec byte-for-byte alone', async () => {

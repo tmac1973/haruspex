@@ -7,12 +7,20 @@
  * rather than a stack trace. The only thing that stops the loop is the user.
  */
 
-import { effectiveProfile, normalizeImage } from '$lib/assets/normalize';
+import { checkImage, effectiveProfile, normalizeImage } from '$lib/assets/normalize';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
-import type { ImageStats } from '$lib/ipc/gen/ImageStats';
+import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import { ImageBackendError } from '$lib/image/types';
 import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '$lib/image/types';
 import { buildEntryRequest } from './request';
+import {
+	amendNegative,
+	betterReport,
+	maybeJudge,
+	rejectionReason,
+	retrySeed,
+	type JudgeDeps
+} from './gate';
 import type { EntryOutcome } from './types';
 
 /** Absolute, drive-lettered, or climbing out of the working directory. */
@@ -29,6 +37,9 @@ export interface GenerateDeps {
 	anchor: Uint8Array | null;
 	concurrency: number;
 	maxEdge: number;
+	/** Generations allowed per entry before it is recorded unresolved. */
+	maxAttempts: number;
+	judge: JudgeDeps;
 	signal: AbortSignal;
 	generate: (req: ImageRequest, opts: { signal: AbortSignal }) => Promise<ImageResult>;
 	exists: (relPath: string) => Promise<boolean>;
@@ -37,10 +48,11 @@ export interface GenerateDeps {
 	progress: (done: number, total: number, id: string) => void;
 }
 
-/** What one entry produced, plus the stats phase 10's gate will read. */
+/** What one entry produced, plus the gate's verdict on it. */
 export interface EntryResult {
 	outcome: EntryOutcome;
-	stats: ImageStats | null;
+	/** The best report seen across attempts. Null when nothing was generated. */
+	report: CheckReport | null;
 }
 
 /** Transient means the backend may come back; permanent means retrying is theatre. */
@@ -109,10 +121,13 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 		abortIfCancelled();
 		const entry = spec.entries[index];
 		const started = Date.now();
-		const finish = (outcome: Omit<EntryOutcome, 'id' | 'durationMs'>, stats: ImageStats | null) => {
+		const finish = (
+			outcome: Omit<EntryOutcome, 'id' | 'durationMs'>,
+			report: CheckReport | null
+		) => {
 			results[index] = {
 				outcome: { id: entry.id, durationMs: Date.now() - started, ...outcome },
-				stats
+				report
 			};
 			done++;
 			deps.progress(done, spec.entries.length, entry.id);
@@ -146,46 +161,115 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 			maxEdge: deps.maxEdge
 		});
 
-		let result: ImageResult;
-		try {
-			result = await deps.generate(request, { signal: deps.signal });
-		} catch (e) {
-			if (isCancellation(e)) throw e;
-			if (!retry && isTransient(e)) {
-				// Re-queued once at the end of the run, in case the backend came
-				// back. Not counted as done yet — it has not finished.
-				transient.push(index);
+		let prompt = request.prompt;
+		let negativePrompt = request.negativePrompt ?? '';
+		let seed = request.seed;
+		let best: CheckReport | null = null;
+		let lastReason = '';
+		let lastSeed: number | null = null;
+
+		for (let attempt = 1; ; attempt++) {
+			abortIfCancelled();
+			let result: ImageResult;
+			try {
+				result = await deps.generate(
+					{ ...request, prompt, negativePrompt, seed },
+					{
+						signal: deps.signal
+					}
+				);
+			} catch (e) {
+				if (isCancellation(e)) throw e;
+				if (!retry && attempt === 1 && isTransient(e)) {
+					// Re-queued once at the end of the run, in case the backend
+					// came back. Not counted as done — it has not finished.
+					transient.push(index);
+					return;
+				}
+				finish(
+					{ status: 'failed', attempts: attempt, seed: lastSeed, degraded, reason: reasonOf(e) },
+					best
+				);
 				return;
 			}
-			finish({ status: 'failed', attempts: 1, seed: null, degraded, reason: reasonOf(e) }, null);
-			return;
-		}
+			lastSeed = result.meta.seed;
 
-		try {
-			const normalized = await normalizeImage(result.images[0].bytes, profile, entry.kind);
-			const bytes = new Uint8Array(normalized.bytes);
-			await deps.writeBytes(entry.out, bytes);
-			finish(
-				{
-					status: 'done',
-					attempts: 1,
-					seed: result.meta.seed,
-					degraded
-				},
-				normalized.stats
-			);
-		} catch (e) {
-			if (isCancellation(e)) throw e;
-			finish(
-				{
-					status: 'failed',
-					attempts: 1,
-					seed: result.meta.seed,
-					degraded,
-					reason: reasonOf(e)
-				},
-				null
-			);
+			let report: CheckReport;
+			let bytes: Uint8Array;
+			try {
+				const normalized = await normalizeImage(result.images[0].bytes, profile, entry.kind);
+				bytes = new Uint8Array(normalized.bytes);
+				report = await checkImage(normalized.stats, profile, entry.kind);
+			} catch (e) {
+				if (isCancellation(e)) throw e;
+				// Normalization refuses an image with nothing left in it, which
+				// is a rejection like any other — retried, not fatal.
+				lastReason = reasonOf(e);
+				if (attempt >= deps.maxAttempts) {
+					finish(
+						{
+							status: 'unresolved',
+							attempts: attempt,
+							seed: lastSeed,
+							degraded,
+							reason: lastReason
+						},
+						best
+					);
+					return;
+				}
+				seed = retrySeed();
+				continue;
+			}
+
+			// The judge costs a turn, so it only sees images that already
+			// passed the free checks — there is nothing to ask about a blank.
+			const verdict = report.passed ? await maybeJudge(entry, bytes, deps.judge) : null;
+			if (report.passed && (!verdict || verdict.ok)) {
+				try {
+					await deps.writeBytes(entry.out, bytes);
+				} catch (e) {
+					if (isCancellation(e)) throw e;
+					finish(
+						{
+							status: 'failed',
+							attempts: attempt,
+							seed: lastSeed,
+							degraded,
+							reason: reasonOf(e)
+						},
+						report
+					);
+					return;
+				}
+				finish({ status: 'done', attempts: attempt, seed: lastSeed, degraded }, report);
+				return;
+			}
+
+			best = betterReport(best, report);
+			lastReason = rejectionReason(report, verdict);
+			if (attempt >= deps.maxAttempts) {
+				// Nothing is written. A half-good PNG on disk would be skipped
+				// by the next run's skip-existing rule and never retried.
+				finish(
+					{
+						status: 'unresolved',
+						attempts: attempt,
+						seed: lastSeed,
+						degraded,
+						reason: lastReason
+					},
+					best
+				);
+				return;
+			}
+
+			const amended = amendNegative(request.negativePrompt ?? '', report.failed, spec.style.prompt);
+			negativePrompt = amended.negativePrompt;
+			prompt = amended.promptSuffix ? `${request.prompt}, ${amended.promptSuffix}` : request.prompt;
+			// A new seed even for an entry that pinned one: a pinned seed that
+			// fails every check retries identically until the budget runs out.
+			seed = retrySeed();
 		}
 	}
 
@@ -213,7 +297,7 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 				degraded: [],
 				reason: 'The backend never returned an image for this entry.'
 			},
-			stats: null
+			report: null
 		};
 	});
 }

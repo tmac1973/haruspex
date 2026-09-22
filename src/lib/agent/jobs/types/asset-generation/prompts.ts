@@ -50,3 +50,33 @@ export function specRetryPrompt(problems: string[]): string {
 		'submit.'
 	].join('\n');
 }
+
+/**
+ * The vision judge.
+ *
+ * Deliberately narrow. It is asked two things a mechanical check cannot
+ * answer — is this the right subject, and does it look like the rest of the
+ * set — and explicitly told not to grade craft, because a model asked for an
+ * opinion on quality will reject perfectly good 32-pixel art for being 32
+ * pixels.
+ */
+export function judgePrompt(subject: string, stylePrompt: string): string {
+	return [
+		'The first image is the style reference for a set of game assets.',
+		'The second is one generated asset from that set.',
+		'',
+		`The asset is supposed to be: ${subject}`,
+		`The shared style is: ${stylePrompt}`,
+		'',
+		'Answer two questions, and only these two:',
+		'1. Is the subject recognisably what it was supposed to be?',
+		'2. Does it belong to the same set as the reference — same palette, same',
+		'   medium, same level of detail?',
+		'',
+		'Do NOT judge craft, resolution or polish. These are small pixel-art',
+		'images and they are meant to look like it. Reject only if the subject is',
+		'wrong or absent, or the style plainly does not match.',
+		'',
+		`Call ${'submit_asset_judgement'} exactly once with your answer.`
+	].join('\n');
+}

@@ -15,8 +15,10 @@ import { invoke } from '@tauri-apps/api/core';
 import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
 import type { NormalizeResult } from '$lib/ipc/gen/NormalizeResult';
 import type { AssetKind } from '$lib/ipc/gen/AssetKind';
+import type { CheckReport } from '$lib/ipc/gen/CheckReport';
+import type { ImageStats } from '$lib/ipc/gen/ImageStats';
 
-export type { NormalizeProfile, NormalizeResult, AssetKind };
+export type { NormalizeProfile, NormalizeResult, AssetKind, CheckReport, ImageStats };
 
 /** Key, crop, downscale, quantize and outline one image. */
 export function normalizeImage(
@@ -40,6 +42,29 @@ export function normalizeImage(
  */
 export function defaultProfile(): Promise<NormalizeProfile> {
 	return invoke<NormalizeProfile>('image_default_profile');
+}
+
+/**
+ * Judge one normalization's measurements against the profile's thresholds.
+ *
+ * Takes the stats `normalizeImage` returned rather than the image:
+ * `palette_distance` is only knowable during quantization, so re-opening the
+ * output would be measuring evidence that has already been destroyed.
+ */
+export function checkImage(
+	stats: ImageStats,
+	profile: NormalizeProfile,
+	kind: AssetKind
+): Promise<CheckReport> {
+	return invoke<CheckReport>('image_check', { stats, profile, kind });
+}
+
+/** Tile a run's assets into one sheet — the artifact the set is judged on. */
+export function contactSheet(images: Uint8Array[], cell: number): Promise<Uint8Array> {
+	return invoke<number[]>('image_contact_sheet', {
+		images: images.map((b) => Array.from(b)),
+		cell
+	}).then((b) => new Uint8Array(b));
 }
 
 /** The shared palette, from the style anchor. */

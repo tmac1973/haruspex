@@ -55,6 +55,9 @@ const FULL: ImageBackendCapabilities = {
 
 const STATS = { alpha: 0.5, entropy: 3, palette_distance: 0.01 };
 
+/** Verdicts `image_check` hands back, one per call, then the last repeats. */
+const checkQueue: Array<{ passed: boolean; failed: string[] }> = [];
+
 interface Harness {
 	deps: GenerateDeps;
 	requests: ImageRequest[];
@@ -76,6 +79,8 @@ function harness(over: Partial<GenerateDeps> = {}, present: string[] = []): Harn
 		anchor: new Uint8Array([1, 2, 3]),
 		concurrency: 1,
 		maxEdge: 1024,
+		maxAttempts: 1,
+		judge: { visionSupported: false, enabled: false, judge: async () => null },
 		signal: controller.signal,
 		generate: async (req) => {
 			requests.push(req);
@@ -106,6 +111,7 @@ function harness(over: Partial<GenerateDeps> = {}, present: string[] = []): Harn
 }
 
 beforeEach(() => {
+	checkQueue.length = 0;
 	invoke.mockReset().mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
 		// A texture's resolved profile really differs from the base — otherwise
 		// "did it use the resolver?" is unobservable and the test is vacuous.
@@ -114,6 +120,13 @@ beforeEach(() => {
 			return args?.kind === 'texture' ? { ...base, upscale: 8, reference_strength: 0.9 } : base;
 		}
 		if (cmd === 'image_normalize') return { bytes: [1, 2, 3, 4], stats: STATS };
+		if (cmd === 'image_check') {
+			const v =
+				checkQueue.length > 1
+					? checkQueue.shift()!
+					: (checkQueue[0] ?? { passed: true, failed: [] });
+			return { passed: v.passed, stats: STATS, failed: v.failed };
+		}
 		return undefined;
 	});
 });
@@ -153,7 +166,7 @@ describe('skipping what already exists', () => {
 		const [r] = await generateEntries(specOf([{}]), h.deps);
 		expect(r.outcome.attempts).toBe(0);
 		expect(r.outcome.seed).toBeNull();
-		expect(r.stats).toBeNull();
+		expect(r.report).toBeNull();
 	});
 });
 
@@ -402,5 +415,177 @@ describe('progress', () => {
 		await generateEntries(spec, h.deps);
 		expect(seen.map(([n]) => n)).toEqual([1, 2, 3]);
 		expect(seen.every(([, t]) => t === 3)).toBe(true);
+	});
+});
+
+describe('the quality gate', () => {
+	function failing(rounds: Array<{ passed: boolean; failed: string[] }>) {
+		checkQueue.push(...rounds);
+	}
+
+	it('accepts an asset that passes on the first attempt, writing it once', async () => {
+		const h = harness({ maxAttempts: 3 });
+		const [r] = await generateEntries(specOf([{}]), h.deps);
+		expect(r.outcome.status).toBe('done');
+		expect(r.outcome.attempts).toBe(1);
+		expect(h.written).toEqual(['out/e0.png']);
+	});
+
+	it('retries a failed check with a new seed and an amended negative prompt', async () => {
+		failing([
+			{ passed: false, failed: ['entropy'] },
+			{ passed: true, failed: [] }
+		]);
+		const h = harness({ maxAttempts: 3 });
+		const [r] = await generateEntries(specOf([{}]), h.deps);
+
+		expect(r.outcome.status).toBe('done');
+		expect(r.outcome.attempts).toBe(2);
+		expect(h.requests).toHaveLength(2);
+		expect(h.requests[0].seed).not.toBe(h.requests[1].seed);
+		expect(h.requests[1].negativePrompt).toContain('featureless');
+		expect(h.requests[0].negativePrompt).not.toContain('featureless');
+		expect(h.written).toEqual(['out/e0.png']);
+	});
+
+	it('re-says the style in the prompt when the result was off-palette', async () => {
+		failing([
+			{ passed: false, failed: ['palette_distance'] },
+			{ passed: true, failed: [] }
+		]);
+		const h = harness({ maxAttempts: 2 });
+		await generateEntries(specOf([{}]), h.deps);
+		expect(h.requests[1].prompt).toContain('flat pixel art');
+		expect(h.requests[1].prompt.split('flat pixel art').length - 1).toBe(2);
+	});
+
+	it('writes NOTHING for an entry that never passes', async () => {
+		// A half-good PNG on disk would be skipped by the next run's
+		// skip-existing rule and never retried.
+		failing([{ passed: false, failed: ['alpha_low'] }]);
+		const h = harness({ maxAttempts: 3 });
+		const [r] = await generateEntries(specOf([{}]), h.deps);
+
+		expect(r.outcome.status).toBe('unresolved');
+		expect(r.outcome.attempts).toBe(3);
+		expect(h.written).toEqual([]);
+		expect(h.requests).toHaveLength(3);
+	});
+
+	it('keeps the best report across attempts, not the last', async () => {
+		failing([
+			{ passed: false, failed: ['alpha_low', 'entropy'] },
+			{ passed: false, failed: ['entropy'] },
+			{ passed: false, failed: ['alpha_low', 'entropy', 'palette_distance'] }
+		]);
+		const h = harness({ maxAttempts: 3 });
+		const [r] = await generateEntries(specOf([{}]), h.deps);
+		expect(r.report?.failed).toEqual(['entropy']);
+	});
+
+	it('varies the seed even for an entry that pinned one', async () => {
+		// A pinned seed that fails every check retries identically until the
+		// budget runs out.
+		failing([{ passed: false, failed: ['entropy'] }]);
+		const h = harness({ maxAttempts: 3 });
+		await generateEntries(specOf([{ seed: 7 }]), h.deps);
+		expect(h.requests[0].seed).toBe(7);
+		expect(new Set(h.requests.map((r) => r.seed)).size).toBe(3);
+	});
+
+	it('retries an image normalization refuses, rather than failing the entry', async () => {
+		// "Nothing left after removing the background" is a rejection like any
+		// other — a blank generation, caught one step earlier.
+		let n = 0;
+		invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'image_effective_profile') return args?.profile;
+			if (cmd === 'image_normalize') {
+				if (n++ === 0) throw new Error('Nothing left after removing the background');
+				return { bytes: [1, 2, 3, 4], stats: STATS };
+			}
+			if (cmd === 'image_check') return { passed: true, stats: STATS, failed: [] };
+			return undefined;
+		});
+		const h = harness({ maxAttempts: 3 });
+		const [r] = await generateEntries(specOf([{}]), h.deps);
+		expect(r.outcome.status).toBe('done');
+		expect(r.outcome.attempts).toBe(2);
+	});
+
+	it('records unresolved with the refusal when normalization never succeeds', async () => {
+		invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'image_effective_profile') return args?.profile;
+			if (cmd === 'image_normalize') throw new Error('the image is empty');
+			return undefined;
+		});
+		const h = harness({ maxAttempts: 2 });
+		const [r] = await generateEntries(specOf([{}]), h.deps);
+		expect(r.outcome.status).toBe('unresolved');
+		expect(r.outcome.reason).toContain('the image is empty');
+		expect(h.written).toEqual([]);
+	});
+});
+
+describe('the vision judge', () => {
+	it('is not asked about an image that already failed the free checks', async () => {
+		// There is nothing to ask about a blank.
+		checkQueue.push({ passed: false, failed: ['alpha_low'] });
+		const judge = vi.fn(async () => ({ ok: true, reason: 'fine' }));
+		const h = harness({
+			maxAttempts: 1,
+			judge: { enabled: true, visionSupported: true, judge }
+		});
+		await generateEntries(specOf([{}]), h.deps);
+		expect(judge).not.toHaveBeenCalled();
+	});
+
+	it('rejects a passing image and retries when the judge says no', async () => {
+		let n = 0;
+		const judge = vi.fn(async () => ({ ok: n++ > 0, reason: 'that is a hammer' }));
+		const h = harness({
+			maxAttempts: 3,
+			judge: { enabled: true, visionSupported: true, judge }
+		});
+		const [r] = await generateEntries(specOf([{}]), h.deps);
+		expect(r.outcome.status).toBe('done');
+		expect(r.outcome.attempts).toBe(2);
+		expect(h.written).toEqual(['out/e0.png']);
+	});
+
+	it('records the judge\u2019s own words when it exhausts the budget', async () => {
+		const judge = vi.fn(async () => ({ ok: false, reason: 'that is a hammer' }));
+		const h = harness({
+			maxAttempts: 2,
+			judge: { enabled: true, visionSupported: true, judge }
+		});
+		const [r] = await generateEntries(specOf([{}]), h.deps);
+		expect(r.outcome.status).toBe('unresolved');
+		expect(r.outcome.reason).toBe('that is a hammer');
+		expect(h.written).toEqual([]);
+	});
+
+	it('is handed the normalized bytes, not the raw generation', async () => {
+		// It is judging the asset the project will ship, not an intermediate.
+		const seen: Uint8Array[] = [];
+		const judge = vi.fn(async (_e, image: Uint8Array) => {
+			seen.push(image);
+			return { ok: true, reason: 'fine' };
+		});
+		const h = harness({
+			maxAttempts: 1,
+			judge: { enabled: true, visionSupported: true, judge }
+		});
+		await generateEntries(specOf([{}]), h.deps);
+		expect([...seen[0]]).toEqual([1, 2, 3, 4]);
+	});
+
+	it('accepts when the judge has no opinion', async () => {
+		// A turn that produced no judgement must not read as a rejection.
+		const h = harness({
+			maxAttempts: 1,
+			judge: { enabled: true, visionSupported: true, judge: async () => null }
+		});
+		const [r] = await generateEntries(specOf([{}]), h.deps);
+		expect(r.outcome.status).toBe('done');
 	});
 });

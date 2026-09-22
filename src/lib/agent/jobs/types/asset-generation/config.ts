@@ -15,6 +15,8 @@ export const RUN_MODE_LABELS: Record<AssetRunMode, string> = {
 export const DEFAULT_MAX_ATTEMPTS = 3;
 export const DEFAULT_ANCHOR_ATTEMPTS = 5;
 export const DEFAULT_CONCURRENCY = 1;
+/** On by default, but it only runs when the job's model can actually see. */
+export const DEFAULT_VISION_JUDGE = true;
 export const DEFAULT_TARGET_SIZE = 32;
 export const MIN_TARGET_SIZE = 8;
 export const MAX_TARGET_SIZE = 512;

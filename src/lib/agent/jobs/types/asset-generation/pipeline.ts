@@ -23,21 +23,26 @@ import {
 	resolveSpecPath,
 	DEFAULT_ANCHOR_ATTEMPTS,
 	DEFAULT_CONCURRENCY,
+	DEFAULT_MAX_ATTEMPTS,
 	DEFAULT_TARGET_SIZE,
+	DEFAULT_VISION_JUDGE,
 	MAX_GENERATION_EDGE
 } from './config';
 import { parseAssetSpec } from '$lib/assets/spec/parse';
 import { renderAssetSpec } from '$lib/assets/spec/write';
 import { validateAssetSpec } from '$lib/assets/spec/validate';
 import type { AssetSpec } from '$lib/assets/spec/types';
-import { defaultProfile } from '$lib/assets/normalize';
+import { contactSheet, defaultProfile } from '$lib/assets/normalize';
 import { resolveImageBackend } from '$lib/image';
 import { SUBMIT_ASSET_SPEC_TOOL } from '$lib/agent/tools/coding';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import { deriveSpec, type DerivePayload } from './derive';
-import { specDerivationPrompt, specRetryPrompt } from './prompts';
+import { judgePrompt, specDerivationPrompt, specRetryPrompt } from './prompts';
 import { establishAnchor } from './anchor';
+import { parseJudgement, SUBMIT_ASSET_JUDGEMENT_TOOL, type AssetJudgement } from './tools';
+import type { AssetEntry } from '$lib/assets/spec/types';
 import { generateEntries } from './generate';
+import { renderAssetReport } from './report';
 import type { AnchorOutcome, EntryOutcome } from './types';
 
 /** Read-only: the derivation grounds itself in the project, it does not edit it. */
@@ -159,8 +164,95 @@ async function writeWorkdirFile(
 	});
 }
 
+/** Bytes a vision model can be handed, without a file on disk in between. */
+function dataUrl(bytes: Uint8Array): string {
+	let binary = '';
+	for (const b of bytes) binary += String.fromCharCode(b);
+	return `data:image/png;base64,${btoa(binary)}`;
+}
+
+/**
+ * One judging turn: the anchor and the asset, side by side.
+ *
+ * Both images go in as one prior user message, because the question is a
+ * comparison — handed the asset alone the model has nothing to compare it to
+ * and grades craft instead, which is exactly what the prompt forbids.
+ *
+ * Returns null when the turn produced no judgement, which the gate treats as
+ * no opinion rather than as approval.
+ */
+async function judgeAsset(
+	ctx: JobRunContext,
+	spec: AssetSpec,
+	entry: AssetEntry,
+	image: Uint8Array,
+	anchor: Uint8Array
+): Promise<AssetJudgement | null> {
+	let verdict: AssetJudgement | null = null;
+	await ctx.runJobTurn({
+		userMessage: judgePrompt(entry.prompt, spec.style.prompt),
+		history: [
+			{
+				role: 'user',
+				content: [
+					{ type: 'image_url', image_url: { url: dataUrl(anchor) } },
+					{ type: 'image_url', image_url: { url: dataUrl(image) } }
+				]
+			}
+		],
+		contextSize: ctx.contextSize(),
+		visionSupported: true,
+		toolAllowlist: [SUBMIT_ASSET_JUDGEMENT_TOOL],
+		forceFinalTool: SUBMIT_ASSET_JUDGEMENT_TOOL,
+		maxIterations: 1,
+		turnKind: 'asset.judge',
+		onToolStart: (call: ResolvedToolCall) => {
+			if (call.name === SUBMIT_ASSET_JUDGEMENT_TOOL) verdict = parseJudgement(call.arguments);
+		}
+	});
+	return verdict;
+}
+
+/**
+ * Tile everything the run actually produced into one sheet beside the spec.
+ *
+ * "A contact sheet of the set reads as one game" is the criterion the feature
+ * is aimed at, and it is not checkable by opening forty PNGs one at a time.
+ * Failing to build it is never fatal — it is a review aid, not an asset.
+ */
+async function writeContactSheet(
+	ctx: JobRunContext,
+	spec: AssetSpec,
+	entries: EntryOutcome[],
+	specPath: string
+): Promise<string | null> {
+	const produced = entries
+		.filter((e) => e.status === 'done' || e.status === 'skipped')
+		.map((e) => spec.entries.find((x) => x.id === e.id)?.out)
+		.filter((p): p is string => typeof p === 'string');
+	if (produced.length === 0) return null;
+	try {
+		const images: Uint8Array[] = [];
+		for (const rel of produced) {
+			const bytes = await readWorkdirBytes(ctx, rel);
+			if (bytes && bytes.length > 0) images.push(bytes);
+		}
+		if (images.length === 0) return null;
+		// Four times the target size: a 32 px asset is illegible at 32 px.
+		const cell = (spec.normalize.target_size || DEFAULT_TARGET_SIZE) * 4;
+		const sheet = await contactSheet(images, cell);
+		const dir = specPath.lastIndexOf('/');
+		const rel = dir < 0 ? 'contact-sheet.png' : `${specPath.slice(0, dir)}/contact-sheet.png`;
+		await writeWorkdirBytes(ctx, rel, sheet);
+		return rel;
+	} catch {
+		return null;
+	}
+}
+
 export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<void> {
 	const { job, runId, abort } = ctx;
+	const startedAt = Date.now();
 	const cfg = parseAssetGenerationConfig(job.type_config);
 	const specPath = resolveSpecPath(cfg);
 	const reportPath = reportPathFor(specPath);
@@ -332,6 +424,13 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			anchor: anchored.image,
 			concurrency: cfg.concurrency ?? DEFAULT_CONCURRENCY,
 			maxEdge: MAX_GENERATION_EDGE,
+			maxAttempts: cfg.max_attempts ?? DEFAULT_MAX_ATTEMPTS,
+			judge: {
+				// Never fail an entry for a capability the user does not have.
+				visionSupported: ctx.visionSupported(),
+				enabled: cfg.vision_judge ?? DEFAULT_VISION_JUDGE,
+				judge: (entry, image) => judgeAsset(ctx, spec, entry, image, anchored.image)
+			},
 			signal: abort.signal,
 			generate: (req, opts) => backend.generate(req, opts),
 			exists: (rel) => workdirPathExists(ctx, rel),
@@ -351,25 +450,35 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 
 		startStep(REPORT);
 		abortIfCancelled();
+		const sheetPath = await writeContactSheet(ctx, spec, entries, specPath);
 		await writeWorkdirFile(
 			ctx,
 			reportPath,
+			renderAssetReport({
+				spec,
+				specPath,
+				anchor,
+				entries,
+				reports: new Map(generated.map((g) => [g.outcome.id, g.report])),
+				contactSheet: sheetPath,
+				// Said once in the document, not once per entry.
+				judgeSkipped: (cfg.vision_judge ?? DEFAULT_VISION_JUDGE) && !ctx.visionSupported(),
+				startedAt,
+				finishedAt: Date.now()
+			})
+		);
+		const unresolved = entries.filter((e) => e.status === 'unresolved').length;
+		finishStep(
+			REPORT,
 			[
-				'# Asset report',
-				'',
-				`Spec: \`${specPath}\` — ${entryCount} asset(s).`,
-				'',
-				anchor === null
-					? 'No anchor.'
-					: `Anchor: ${anchor.imagePath} (${anchor.source}, ${anchor.approval}, ` +
-						`${anchor.paletteSize} colours).`,
-				'',
-				`Generated ${countByStatus(entries).done}, skipped ` +
-					`${countByStatus(entries).skipped}, failed ${countByStatus(entries).failed}.`,
-				''
+				// The unresolved count leads: it is the only number in the report
+				// that asks the user to do something.
+				unresolved > 0
+					? `${unresolved} asset(s) could not be produced — see ${reportPath}.`
+					: 'Every asset passed.',
+				`Report: ${reportPath}` + (sheetPath ? `, contact sheet: ${sheetPath}` : '')
 			].join('\n')
 		);
-		finishStep(REPORT, `Done — ${reportPath}`);
 
 		startStep(HANDOFF);
 		abortIfCancelled();

@@ -112,6 +112,8 @@ export const IPC = {
 	get_whisper_model_path: 'get_whisper_model_path',
 	get_whisper_status: 'get_whisper_status',
 	has_any_model: 'has_any_model',
+	image_check: 'image_check',
+	image_contact_sheet: 'image_contact_sheet',
 	image_default_profile: 'image_default_profile',
 	image_effective_profile: 'image_effective_profile',
 	image_extract_palette: 'image_extract_palette',

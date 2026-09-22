@@ -11,10 +11,14 @@
 //!
 //! `profile.rs` holds every tunable the pipeline has, `palette.rs` the colour
 //! work, `normalize.rs` the pass itself, `stats.rs` what it measured on the
-//! way past, and `commands.rs` the three thin Tauri wrappers.
+//! way past, `checks.rs` the thresholds those measurements are judged
+//! against, `sheet.rs` the contact sheet a run is reviewed through, and
+//! `commands.rs` the thin Tauri wrappers.
 
+pub mod checks;
 pub mod commands;
 pub mod normalize;
 pub mod palette;
 pub mod profile;
+pub mod sheet;
 pub mod stats;
