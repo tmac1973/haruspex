@@ -12,6 +12,76 @@
 	let imageBackendApiKey = $state(getSettings().imageBackendApiKey);
 	let imageComfyCheckpoint = $state(getSettings().imageComfyCheckpoint);
 	let imageLocalModelPath = $state(getSettings().imageLocalModelPath);
+	let imageLocalModelId = $state(getSettings().imageLocalModelId);
+
+	interface ImageModel {
+		id: string;
+		filename: string;
+		description: string;
+		license: string;
+		license_url: string;
+		commercial_use: boolean;
+		native_edge: number;
+		size_bytes: number;
+		vram_mb: number;
+		downloaded: boolean;
+	}
+
+	let models = $state<ImageModel[]>([]);
+	let downloading = $state<string | null>(null);
+	let downloadError = $state('');
+
+	async function refreshModels() {
+		models = await invoke<ImageModel[]>('image_models').catch(() => []);
+	}
+
+	function gb(bytes: number): string {
+		return `${(bytes / 1e9).toFixed(1)} GB`;
+	}
+
+	async function downloadModel(m: ImageModel) {
+		// Asked before the download, not after: the point of the warning is to
+		// stop gigabytes arriving for a licence the user cannot use.
+		if (!m.commercial_use) {
+			const ok = window.confirm(
+				`${m.license}\n\nThis model may not be used commercially. Download it anyway?`
+			);
+			if (!ok) return;
+		}
+		downloading = m.id;
+		downloadError = '';
+		try {
+			await invoke('download_image_model', { id: m.id });
+			await selectModel(m);
+		} catch (e) {
+			downloadError = e instanceof Error ? e.message : String(e);
+		} finally {
+			downloading = null;
+			await refreshModels();
+		}
+	}
+
+	async function selectModel(m: ImageModel) {
+		imageLocalModelId = m.id;
+		persist({ imageLocalModelId: m.id });
+		await refreshEngine();
+	}
+
+	async function deleteModel(m: ImageModel) {
+		// The engine holds the file open while it runs.
+		await invoke('image_engine_stop').catch(() => {});
+		await invoke('delete_image_model', { id: m.id }).catch(() => {});
+		if (imageLocalModelId === m.id) {
+			imageLocalModelId = '';
+			persist({ imageLocalModelId: '' });
+		}
+		await refreshModels();
+		await refreshEngine();
+	}
+
+	$effect(() => {
+		if (isLocal) void refreshModels();
+	});
 	let imageComfyWorkflowPath = $state(getSettings().imageComfyWorkflowPath);
 	let imageComfyFieldMapPath = $state(getSettings().imageComfyFieldMapPath);
 
@@ -162,6 +232,38 @@
 {#if isLocal}
 	<section class="settings-section">
 		<h2>Bundled engine</h2>
+		{#each models as m (m.id)}
+			<div class="model" class:selected={imageLocalModelId === m.id}>
+				<div class="model-head">
+					<strong>{m.description}</strong>
+					{#if imageLocalModelId === m.id}<span class="badge">selected</span>{/if}
+				</div>
+				<p class="help">
+					{m.license}
+					<a href={m.license_url} target="_blank" rel="noreferrer">Full text</a>
+					· {gb(m.size_bytes)} · trained at {m.native_edge}px
+				</p>
+				{#if !m.commercial_use}
+					<p class="warn">Not licensed for commercial use.</p>
+				{/if}
+				<div class="row">
+					{#if m.downloaded}
+						<button onclick={() => selectModel(m)} disabled={imageLocalModelId === m.id}>
+							Use
+						</button>
+						<button onclick={() => deleteModel(m)}>Delete</button>
+					{:else}
+						<button onclick={() => downloadModel(m)} disabled={downloading !== null}>
+							{downloading === m.id ? 'Downloading…' : 'Download'}
+						</button>
+					{/if}
+				</div>
+			</div>
+		{/each}
+		{#if downloadError}
+			<p class="warn">{downloadError}</p>
+		{/if}
+
 		<label class="row">
 			<input
 				type="text"

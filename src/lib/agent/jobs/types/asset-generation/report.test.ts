@@ -51,6 +51,7 @@ function input(over: Partial<ReportInput> = {}): ReportInput {
 		reports: new Map<string, CheckReport | null>(),
 		contactSheet: 'a/contact-sheet.png',
 		judgeSkipped: false,
+		licensing: { modelName: 'SD 1.5', modelLicense: 'OpenRAIL-M.', loras: [] },
 		startedAt: 0,
 		finishedAt: 60_000,
 		...over
@@ -201,5 +202,53 @@ describe('the skipped judge', () => {
 
 	it('is not mentioned when the judge ran', () => {
 		expect(renderAssetReport(input())).not.toContain('does not accept');
+	});
+});
+
+describe('the licensing section', () => {
+	it('is present even when everything is known, because absence reads as fine', () => {
+		const md = renderAssetReport(input());
+		expect(md).toContain('## Licensing');
+		expect(md).toContain('OpenRAIL-M.');
+	});
+
+	it('says the licence is unknown for a checkpoint Haruspex did not provide', () => {
+		// A hand-placed file, or whatever ComfyUI has configured. Saying
+		// nothing would leave the reader assuming it is fine.
+		const md = renderAssetReport(
+			input({ licensing: { modelName: 'mystery.safetensors', modelLicense: null, loras: [] } })
+		);
+		expect(md).toContain('licence unknown');
+		expect(md).toContain('mystery.safetensors');
+	});
+
+	it('flags every LoRA as unknown, separately from the base model', () => {
+		// The finding this section exists for: a LoRA carries its own terms,
+		// many published ones were trained on art their author did not own,
+		// and a clean base-model licence must not be left standing for the
+		// whole output.
+		const md = renderAssetReport(
+			input({
+				licensing: {
+					modelName: 'SD 1.5',
+					modelLicense: 'OpenRAIL-M — commercial use allowed.',
+					loras: ['pixel-art-xl', 'retro-rpg']
+				}
+			})
+		);
+		expect(md).toContain('pixel-art-xl');
+		expect(md).toContain('retro-rpg');
+		expect(md).toContain('licence unknown');
+		expect(md).toContain('says nothing about these');
+		// And the base model's licence is still stated, not replaced.
+		expect(md).toContain('OpenRAIL-M');
+	});
+
+	it('says nothing about LoRAs when the spec named none', () => {
+		expect(renderAssetReport(input())).not.toContain('A LoRA carries its own terms');
+	});
+
+	it('notes that the output is generally not copyrightable', () => {
+		expect(renderAssetReport(input())).toContain('not copyrightable');
 	});
 });

@@ -1197,6 +1197,41 @@ impl ModelManager {
         Ok(final_path)
     }
 
+    /// Download one image-catalogue entry.
+    ///
+    /// Deliberately the same machinery as [`Self::download_model`] — progress
+    /// events, cancellation, the partial-file dance and the checksum — rather
+    /// than a second downloader. The only difference is the subdirectory and
+    /// the catalogue it looks the id up in.
+    pub async fn download_image_model(&self, app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+        let entry = crate::image_models::image_registry()
+            .into_iter()
+            .find(|m| m.id == id)
+            .ok_or_else(|| format!("Unknown image model: {id}"))?;
+
+        {
+            let mut cancel = self.cancel_flag.lock().await;
+            *cancel = false;
+        }
+
+        let rel = format!("{}/{}", crate::image_models::IMAGE_SUBDIR, entry.filename);
+        let final_path = self
+            .download_file(
+                app,
+                &entry.url,
+                &rel,
+                entry.size_bytes,
+                "Downloading image model",
+            )
+            .await?;
+
+        // Never optional here. Every catalogue entry ships a digest, and a
+        // multi-gigabyte download nobody checked is how a corrupted file
+        // becomes a confusing runtime failure hours later.
+        verify_sha256(&final_path, &entry.sha256, app, "Verifying image model").await?;
+        Ok(final_path)
+    }
+
     pub async fn cancel_download(&self) {
         let mut cancel = self.cancel_flag.lock().await;
         *cancel = true;

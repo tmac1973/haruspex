@@ -11,6 +11,7 @@ mod hardware;
 mod image_cache;
 mod image_engine;
 mod image_gen;
+mod image_models;
 mod inference;
 mod inference_queue;
 mod integrations;
@@ -252,6 +253,11 @@ pub fn run() {
             image_engine::image_engine_status,
             image_engine::image_engine_logs,
             image_engine::image_engine_request,
+            image_models::image_models,
+            image_models::image_model_recommended,
+            image_models::image_model_path,
+            image_models::download_image_model,
+            image_models::delete_image_model,
             tts::tts_initialize,
             tts::tts_synthesize_and_play,
             tts::tts_stop_playback,

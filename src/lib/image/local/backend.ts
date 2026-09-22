@@ -47,8 +47,22 @@ async function engineStatus(): Promise<EngineStatus> {
 	return await invoke<EngineStatus>('image_engine_status');
 }
 
-/** The weights this backend is configured to load. */
-function modelPath(): string {
+/**
+ * The weights this backend is configured to load.
+ *
+ * A catalogue id WINS over a hand-typed path when both are set, which is the
+ * precedence the settings type fixed: the id names something Haruspex
+ * downloaded and knows the licence of, the path is the escape hatch for a file
+ * it knows nothing about. An id that resolves to nothing on disk falls back to
+ * the path rather than failing — a half-finished download should not make a
+ * working custom model unreachable.
+ */
+async function modelPath(): Promise<string> {
+	const id = (getSettings().imageLocalModelId ?? '').trim();
+	if (id) {
+		const resolved = await invoke<string | null>('image_model_path', { id }).catch(() => null);
+		if (resolved) return resolved;
+	}
 	return (getSettings().imageLocalModelPath ?? '').trim();
 }
 
@@ -60,7 +74,7 @@ function modelPath(): string {
  * decide, it just asks.
  */
 async function ensureRunning(): Promise<void> {
-	const path = modelPath();
+	const path = await modelPath();
 	if (!path) {
 		throw new ImageBackendError('unconfigured', 'No image model is configured — Settings → Image.');
 	}
@@ -118,7 +132,7 @@ export const localBackend: ImageBackend = {
 				detail: 'No image engine is bundled for this platform.'
 			};
 		}
-		const path = modelPath();
+		const path = await modelPath();
 		if (!path) {
 			return { ok: false, detail: 'No model is selected — Settings → Image.' };
 		}
@@ -157,7 +171,7 @@ export const localBackend: ImageBackend = {
 			})),
 			meta: {
 				seed: seedFrom(payload, req.seed ?? -1),
-				model: modelPath(),
+				model: await modelPath(),
 				backend: 'local',
 				sampler,
 				// Echoed as RESOLVED: this build takes LoRAs from a directory

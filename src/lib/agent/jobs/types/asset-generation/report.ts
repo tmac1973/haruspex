@@ -23,8 +23,62 @@ export interface ReportInput {
 	contactSheet: string | null;
 	/** Set when the judge was wanted but the model could not see. */
 	judgeSkipped: boolean;
+	/** What is known about what may be done with the output. */
+	licensing: Licensing;
 	startedAt: number;
 	finishedAt: number;
+}
+
+/**
+ * What Haruspex knows about the licence of everything that shaped the output.
+ *
+ * `model` is null when the run used a checkpoint Haruspex did not provide —
+ * a hand-placed file, or ComfyUI's own configured default. `loras` lists any
+ * the spec named.
+ */
+export interface Licensing {
+	modelName: string;
+	modelLicense: string | null;
+	loras: string[];
+}
+
+/**
+ * The licensing section.
+ *
+ * Present in every report, including the boring case, because its job is to
+ * say what is NOT known and an absent section reads as "nothing to worry
+ * about". The LoRA line is the point: `AssetStyle.loras` lets a spec name
+ * one, most published pixel-art LoRAs carry their own terms, and many were
+ * trained on scraped commercial game art — so a LoRA can quietly contaminate
+ * output whose base model is perfectly clean. Haruspex cannot classify a file
+ * the user supplied, so it must not leave a clean base-model licence standing
+ * for the whole result.
+ */
+function licensingSection(l: Licensing): string[] {
+	const lines: string[] = ['## Licensing', ''];
+	lines.push(
+		l.modelLicense
+			? `Model: **${l.modelName}** — ${l.modelLicense}`
+			: `Model: **${l.modelName}** — licence unknown. Haruspex did not provide this ` +
+					`checkpoint and cannot state what may be done with what it produces.`
+	);
+	lines.push('');
+	if (l.loras.length > 0) {
+		lines.push(
+			`LoRAs: ${l.loras.map((n) => `\`${n}\``).join(', ')} — **licence unknown**.`,
+			'',
+			'A LoRA carries its own terms, separate from the base model, and many published',
+			'ones were trained on art their author did not own. The licence above covers the',
+			'checkpoint only; it says nothing about these.',
+			''
+		);
+	}
+	lines.push(
+		'Generated images are generally not copyrightable in their own right. Some storefronts',
+		'require AI-generated content to be disclosed.',
+		''
+	);
+	return lines;
 }
 
 function countByStatus(entries: EntryOutcome[]) {
@@ -166,5 +220,6 @@ export function renderAssetReport(input: ReportInput): string {
 	lines.push('## Assets', '', ...entryTable(input), '');
 	lines.push(...unresolvedSection(input));
 	lines.push(...degradedSection(input));
+	lines.push(...licensingSection(input.licensing));
 	return lines.join('\n');
 }

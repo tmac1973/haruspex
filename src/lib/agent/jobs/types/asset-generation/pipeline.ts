@@ -44,7 +44,7 @@ import { establishAnchor } from './anchor';
 import { parseJudgement, SUBMIT_ASSET_JUDGEMENT_TOOL, type AssetJudgement } from './tools';
 import type { AssetEntry } from '$lib/assets/spec/types';
 import { generateEntries } from './generate';
-import { renderAssetReport } from './report';
+import { renderAssetReport, type Licensing } from './report';
 import type { AnchorOutcome, EntryOutcome } from './types';
 
 /** Read-only: the derivation grounds itself in the project, it does not edit it. */
@@ -80,6 +80,40 @@ function samePalette(a: number[], b: number[]): boolean {
 export function reportPathFor(specPath: string): string {
 	const slash = specPath.lastIndexOf('/');
 	return slash < 0 ? 'REPORT-assets.md' : `${specPath.slice(0, slash)}/REPORT-assets.md`;
+}
+
+/**
+ * What is known about the licence of everything that shaped this run.
+ *
+ * The catalogue is the only thing that can answer for a checkpoint, and it
+ * only answers for one Haruspex downloaded. A hand-placed file, or whatever
+ * ComfyUI has configured, is reported as unknown rather than given the
+ * benefit of the doubt — and any LoRA the spec named is unknown regardless,
+ * because a LoRA carries its own terms and Haruspex cannot classify a file
+ * the user supplied.
+ */
+async function resolveLicensing(spec: AssetSpec): Promise<Licensing> {
+	const loras = (spec.style.loras ?? []).map((l) => l.name).filter((n) => n.trim().length > 0);
+	const model = (spec.style.model ?? '').trim();
+	try {
+		const catalogue =
+			await invoke<Array<{ id: string; filename: string; license: string; description: string }>>(
+				'image_models'
+			);
+		const match = catalogue.find(
+			(m) => m.id === model || m.filename === model || model.endsWith(m.filename)
+		);
+		if (match) {
+			return { modelName: match.description, modelLicense: match.license, loras };
+		}
+	} catch {
+		// No catalogue is not a reason to claim a licence.
+	}
+	return {
+		modelName: model || "the backend's configured default",
+		modelLicense: null,
+		loras
+	};
 }
 
 /** Counts by status, so the stage line and the report cannot disagree. */
@@ -541,6 +575,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				contactSheet: sheetPath,
 				// Said once in the document, not once per entry.
 				judgeSkipped: (cfg.vision_judge ?? DEFAULT_VISION_JUDGE) && !ctx.visionSupported(),
+				licensing: await resolveLicensing(spec),
 				startedAt,
 				finishedAt: Date.now()
 			})

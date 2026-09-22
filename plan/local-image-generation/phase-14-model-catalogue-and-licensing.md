@@ -27,6 +27,31 @@ and cancellation. Nothing is downloaded until they choose.
 - `src-tauri/src/models.rs` tests; `ImageSection.test.ts`.
 - `CLAUDE.md` — note the third model family in the dev-setup section.
 
+## Deviations, as built
+
+Two, both recorded rather than silently taken.
+
+**A separate `ImageModelInfo` and `image_registry()`, not a `family` variant
+on `ModelInfo`.** The two field sets barely overlap: an LLM entry carries a
+vision projector, an MTP source and a KV-cache growth rate, none of which mean
+anything for a diffusion checkpoint, while an image entry carries a licence
+and a native resolution, which mean nothing for an LLM. One struct would give
+every entry a column of nulls — the unused knob this codebase keeps out of its
+types — and would put the LLM download path at risk for a feature that does
+not touch it. The machinery IS shared: downloads go through
+`ModelManager::download_file` and `verify_sha256`, so progress, cancellation
+and checksums behave exactly as they do for an LLM. `ModelFamily` was not
+added at all, since whisper has a single hardcoded file and its own command
+and would never construct a `Whisper` variant.
+
+**No FLUX.1-dev entry.** The plan wanted one "precisely so the warning path
+has a real entry to exercise". Flux needs separate text encoders and a VAE —
+three or four downloads and a different shape of entry — and it is a DiT, so
+it loses two of three coherence layers. Shipping a model we would warn about,
+which most users should not pick, to exercise a code path is the wrong trade:
+the non-commercial rule is covered by a test over a synthetic entry instead,
+and the "licence unknown" path has a real user in the hand-placed-file case.
+
 ## Steps
 
 1. Add `family` to `ModelInfo` and default every existing entry to its current

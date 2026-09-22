@@ -2792,6 +2792,16 @@ describe('jobs runner — asset generation', () => {
 				};
 			}
 			if (cmd === 'image_contact_sheet') return [137, 80, 78, 71];
+			if (cmd === 'image_models') {
+				return [
+					{
+						id: 'sd15',
+						filename: 'v1-5-pruned-emaonly-fp16.safetensors',
+						description: 'Stable Diffusion 1.5',
+						license: 'CreativeML OpenRAIL-M — commercial use allowed.'
+					}
+				];
+			}
 			if (cmd === 'image_default_profile') return profileFixture();
 			if (cmd === 'image_extract_palette') return PALETTE;
 			if (cmd === 'image_store_bytes') return ANCHOR_HASH;
@@ -3216,6 +3226,63 @@ describe('jobs runner — asset generation', () => {
 
 		expect(getCurrentRun()?.status).toBe('succeeded');
 		expect(mocks.askUserQuestion).not.toHaveBeenCalled();
+	});
+
+	it('states the licence of a catalogue model in the report', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(1, { style: { prompt: 'flat pixel art', model: 'sd15' } }), {
+			recipe: goodRecipe()
+		});
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).toContain('## Licensing');
+		expect(report).toContain('OpenRAIL-M');
+		expect(report).not.toContain('licence unknown');
+	});
+
+	it('does not lend a catalogue licence to a model it does not cover', async () => {
+		// A hand-placed checkpoint, or whatever the backend has configured.
+		// Claiming the first catalogue entry's licence would be worse than
+		// saying nothing, because the reader would act on it.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(
+			goodSpec(1, { style: { prompt: 'flat pixel art', model: 'mystery.safetensors' } }),
+			{ recipe: goodRecipe() }
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).toContain('licence unknown');
+		expect(report).toContain('mystery.safetensors');
+		expect(report).not.toContain('OpenRAIL-M');
+	});
+
+	it('flags a LoRA as unknown even beside a known base model', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(
+			goodSpec(1, {
+				style: {
+					prompt: 'flat pixel art',
+					model: 'sd15',
+					loras: [{ name: 'pixel-xl', strength: 1 }]
+				}
+			}),
+			{ recipe: goodRecipe() }
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).toContain('pixel-xl');
+		expect(report).toContain('licence unknown');
+		// The base model's licence still stands for the base model.
+		expect(report).toContain('OpenRAIL-M');
 	});
 
 	it('fails when there is no spec and nothing to write one from', async () => {

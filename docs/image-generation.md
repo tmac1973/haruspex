@@ -104,8 +104,56 @@ The pinned build reports:
 It serves three HTTP APIs: its own `/sdcpp/v1/*`, an AUTOMATIC1111-compatible
 `/sdapi/v1/*`, and an OpenAI-compatible `/v1/images/*`.
 
+## Models
+
+Two curated checkpoints, both single-file and both UNet:
+
+| Model | Licence | Commercial | Native edge | Size |
+| --- | --- | --- | --- | --- |
+| Stable Diffusion 1.5 | CreativeML OpenRAIL-M | yes | 512 | 2.1 GB |
+| Stable Diffusion XL 1.0 | CreativeML OpenRAIL++-M | yes | 1024 | 6.9 GB |
+
+Every checksum and size in the catalogue was read from the publisher's own
+object metadata rather than quoted, and SD1.5's was confirmed byte-for-byte
+against a downloaded copy.
+
+`native_edge` is not decoration. A normalize profile's `upscale` is only
+meaningful relative to it: SD1.5 degrades above 512 and SDXL produces
+artefacts below 1024, so a 32px target wants `upscale: 16` on one and `32` on
+the other. Measured — an SDXL sprite sheet generated at 512 comes out as mush.
+
+### Why only these two
+
+**UNet.** Two of the three coherence layers — IP-Adapter reference
+conditioning and circular-padding seamless tiling — are UNet techniques that
+do not carry to a DiT. A Flux, Qwen or Z-Image entry would ship with two of
+three layers reporting false. The DiT remedy for tiling is offset-and-inpaint
+(shift the tile by half, inpaint the seams, shift back), which is real work
+rather than a flag.
+
+**Single file.** Flux and SD3.5 need separate text encoders and a VAE
+alongside the diffusion weights — three or four downloads per model and a
+different shape of catalogue entry.
+
+Deliberately excluded, so the decision is not revisited by accident: SD3.5
+(Stability community licence, revenue threshold), Bria FIBO (non-commercial),
+FLUX.1-dev and FLUX.2-dev (non-commercial weights; FLUX.2-dev requires a paid
+commercial licence).
+
+### The LoRA is the licensing trap
+
+`AssetStyle.loras` lets a spec name LoRAs, and most published pixel-art LoRAs
+carry their own terms — many were trained on art their author did not own. A
+LoRA can therefore contaminate output whose base model is perfectly clean.
+
+Haruspex cannot classify a file the user supplies, so it does not pretend to:
+every run report carries a Licensing section naming the base model's licence,
+and any LoRA the spec named is listed as **licence unknown** beside it. A
+checkpoint Haruspex did not provide — a hand-placed file, or whatever ComfyUI
+has configured — is reported as unknown too, rather than given the benefit of
+the doubt.
+
 ### What is not here yet
 
-Nothing starts this binary. There is no sidecar registration, no settings, no
-model download, and no code path that reaches it — a user who never opts in
-sees no change at all beyond a larger install.
+The bundled engine has never generated an asset through a full job run; phase
+15 is where the local path is verified end to end.
