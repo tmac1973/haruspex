@@ -31,6 +31,17 @@ export function normalizeImage(
 	});
 }
 
+/**
+ * The shipped default profile.
+ *
+ * Fetched rather than duplicated: every number in it was arrived at by
+ * measuring real output, and a second copy in TypeScript would drift from
+ * those measurements the day one of them changed.
+ */
+export function defaultProfile(): Promise<NormalizeProfile> {
+	return invoke<NormalizeProfile>('image_default_profile');
+}
+
 /** The shared palette, from the style anchor. */
 export function extractPalette(
 	bytes: Uint8Array,

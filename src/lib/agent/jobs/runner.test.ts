@@ -2659,15 +2659,176 @@ describe('jobs runner — asset generation', () => {
 		expect(spec.output).toContain('texture');
 	});
 
-	it('succeeds with nothing to do when there is no spec yet', async () => {
+	it('fails when there is no spec and nothing to write one from', async () => {
+		// Phase 06's skeleton finished happily here. Now the stage either has
+		// a spec or makes one, and neither being possible is a real failure.
 		mocks.getJob.mockResolvedValueOnce(assetJob());
 		wireFs(null);
 		const { enqueue, getCurrentRun } = await freshRunner();
 		await enqueue(1);
 		await settle(getCurrentRun);
 
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain('describe what to make');
+	});
+
+	/** A derivation turn that submits `entries`, or nothing when null. */
+	function deriveTurns(entries: unknown[] | null, style = 'flat pixel art') {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		return async (o: any) => {
+			if (o.forceFinalTool === 'submit_asset_spec') {
+				if (entries !== null) {
+					o.onToolStart?.({
+						id: 's',
+						name: 'submit_asset_spec',
+						arguments: { style: { prompt: style }, entries }
+					});
+				}
+				return { finalText: 'submitted' };
+			}
+			return { finalText: 'ok' };
+		};
+	}
+
+	it('derives a spec from the description and writes it', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'a pixel-art roguelike' }));
+		const written = wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([
+				{ title: 'Iron Sword', kind: 'sprite', prompt: 'a straight longsword' },
+				{ title: 'Cobblestones', kind: 'texture', prompt: 'grey cobbles' }
+			])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
 		expect(getCurrentRun()?.status).toBe('succeeded');
-		expect(getCurrentRun()!.steps[0].output).toContain('No spec');
+		const spec = written.find((w) => w.relPath === SPEC_PATH);
+		expect(spec).toBeDefined();
+		const parsed = JSON.parse(spec!.content);
+		expect(parsed.entries).toHaveLength(2);
+		expect(getCurrentRun()!.steps[0].output).toContain('Wrote');
+	});
+
+	it('assigns ids and output paths itself, never the model', async () => {
+		// The game references these by name. A model that renames a thing
+		// halfway down a list leaves the project pointing at nothing.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		const written = wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([
+				{ title: 'Iron Sword', kind: 'sprite', prompt: 'p', id: 'MODEL_CHOSE', out: '/etc/evil' },
+				{ title: 'iron sword', kind: 'sprite', prompt: 'p' }
+			])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const parsed = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(parsed.entries.map((e: { id: string }) => e.id)).toEqual(['iron_sword', 'iron_sword_2']);
+		expect(parsed.entries[0].out).toBe('assets/generated/sprite/iron_sword.png');
+	});
+
+	it('marks a derived texture seamless and leaves a sprite alone', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		const written = wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([
+				{ title: 'Cobbles', kind: 'texture', prompt: 'p' },
+				{ title: 'Sword', kind: 'sprite', prompt: 'p' }
+			])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const parsed = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(parsed.entries[0].seamless).toBe(true);
+		expect(parsed.entries[1].seamless).toBeUndefined();
+	});
+
+	it('populates the anchor paths phase 08 will read', async () => {
+		// The field most easily forgotten, because nothing here uses it.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		const written = wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([{ title: 'Sword', kind: 'sprite', prompt: 'p' }])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const parsed = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(parsed.anchor.image).toBe('assets/haruspex-anchor.png');
+		expect(parsed.anchor.recipe).toBe('assets/haruspex-anchor.json');
+	});
+
+	it('retries once with the problems quoted, then fails', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		wireFs(null);
+		// Every entry has an empty prompt, so validation never passes.
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([{ title: 'Sword', kind: 'sprite', prompt: '' }])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		const derives = mocks.runEphemeralTurn.mock.calls.filter(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => o.forceFinalTool === 'submit_asset_spec'
+		);
+		expect(derives).toHaveLength(2);
+		expect(String(derives[1][0].userMessage)).toContain('lists no assets');
+	});
+
+	it('fails when the model never submits anything', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(deriveTurns(null));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain('No spec was submitted');
+	});
+
+	it('never offers a question tool, in either run mode', async () => {
+		// The anchor stage owns the run's single checkpoint. A question here
+		// would be a second one, and in unattended mode it would park forever.
+		for (const run_mode of ['attended', 'unattended']) {
+			mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x', run_mode }));
+			wireFs(null);
+			mocks.runEphemeralTurn.mockImplementation(
+				deriveTurns([{ title: 'Sword', kind: 'sprite', prompt: 'p' }])
+			);
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			for (const [o] of mocks.runEphemeralTurn.mock.calls) {
+				expect([...((o as { toolAllowlist?: string[] }).toolAllowlist ?? [])]).not.toContain(
+					'ask_user_question'
+				);
+			}
+		}
+	});
+
+	it('does not rewrite a spec the user already wrote', async () => {
+		// Theirs to fix, not ours to replace.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		const written = wireFs(goodSpec());
+		mocks.runEphemeralTurn.mockImplementation(deriveTurns([]));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(written.map((w) => w.relPath)).not.toContain(SPEC_PATH);
+		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
 	});
 
 	it('fails on a spec that cannot be parsed, naming the file', async () => {

@@ -68,6 +68,18 @@ pub fn image_extract_palette(
     Ok(extract_palette(&img, count, exclude))
 }
 
+/// The shipped defaults.
+///
+/// Exposed so the TypeScript side never carries a second copy of them. Every
+/// number in `NormalizeProfile` was arrived at by measuring real output — the
+/// entropy floor, the chroma tolerances, the generation-edge clamp — and a
+/// duplicate set in another language would drift from the measurements the
+/// day one of them changed.
+#[tauri::command]
+pub fn image_default_profile() -> NormalizeProfile {
+    NormalizeProfile::default()
+}
+
 /// Resolve a profile's per-kind overrides.
 ///
 /// Exposed so the TypeScript loop reads `reference_strength`, the background
@@ -126,6 +138,18 @@ mod tests {
         let direct = effective_profile(&base, AssetKind::Texture);
         assert_eq!(via_command.crop.enabled, direct.crop.enabled);
         assert_eq!(via_command.checks.alpha_min, direct.checks.alpha_min);
+    }
+
+    #[test]
+    fn the_default_profile_command_is_the_shipped_default() {
+        let via_command = image_default_profile();
+        let direct = NormalizeProfile::default();
+        assert_eq!(via_command.target_size, direct.target_size);
+        assert_eq!(via_command.checks.entropy_min, direct.checks.entropy_min);
+        assert_eq!(via_command.background.color, direct.background.color);
+        // The per-kind overrides must travel with it, or a caller building a
+        // spec from this would ship a profile that crops textures.
+        assert!(!via_command.by_kind.is_empty());
     }
 
     #[test]
