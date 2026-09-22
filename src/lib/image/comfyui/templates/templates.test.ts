@@ -52,6 +52,33 @@ describe('the bundled workflows', () => {
 		}
 	});
 
+	it('gives every seamless workflow BOTH halves of circular padding', () => {
+		// SeamlessTile alone validates, runs, and produces an image that does
+		// not tile — the decode has to be circular too. A silent quality
+		// failure rather than an error, and the only reason it was caught is
+		// that the output was measured rather than looked at.
+		for (const t of TEMPLATES.filter((x) => x.supports.seamless)) {
+			const classes = Object.values(t.graph).map((n) => n.class_type);
+			expect({ id: t.id, model: classes.includes('SeamlessTile') }).toEqual({
+				id: t.id,
+				model: true
+			});
+			expect({ id: t.id, decode: classes.includes('CircularVAEDecode') }).toEqual({
+				id: t.id,
+				decode: true
+			});
+			expect(classes).not.toContain('VAEDecode');
+		}
+	});
+
+	it('leaves plain workflows decoding normally', () => {
+		for (const t of TEMPLATES.filter((x) => !x.supports.seamless)) {
+			const classes = Object.values(t.graph).map((n) => n.class_type);
+			expect(classes).toContain('VAEDecode');
+			expect(classes).not.toContain('CircularVAEDecode');
+		}
+	});
+
 	it('conditions through IP-Adapter rather than img2img', () => {
 		// The distinction the whole design rests on. img2img re-denoises the
 		// reference, so it returns the reference; asked for a green pear

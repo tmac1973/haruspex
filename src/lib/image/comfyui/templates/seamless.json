@@ -63,10 +63,11 @@
 		}
 	},
 	"8": {
-		"class_type": "VAEDecode",
+		"class_type": "CircularVAEDecode",
 		"inputs": {
 			"samples": ["7", 0],
-			"vae": ["1", 2]
+			"vae": ["1", 2],
+			"tiling": "enable"
 		}
 	},
 	"9": {
@@ -79,8 +80,9 @@
 	"11": {
 		"class_type": "SeamlessTile",
 		"inputs": {
+			"model": ["3", 0],
 			"tiling": "enable",
-			"model": ["3", 0]
+			"copy_model": "Make a copy"
 		}
 	}
 }

@@ -70,13 +70,34 @@ pipeline also quantizes to a shared palette and snaps to a pixel grid
 afterwards. The adapter gets an image into the neighbourhood; the mechanical
 pass is what makes a set uniform.
 
-## `SeamlessTile` is not a core node
+## Seamless tiling needs a node pack, and needs BOTH halves
 
-Neither `seamless.json` nor `seamless_reference.json` will run on a stock
-ComfyUI: `SeamlessTile` comes from a custom node pack, and a server without it
-rejects the prompt with `kind: 'rejected'` and the node's name in the message.
-Seamless tiling is a declared capability precisely so this degrades per entry
-rather than failing a run.
+`seamless.json` and `seamless_reference.json` require
+[`ComfyUI-seamless-tiling`](https://github.com/spinagon/ComfyUI-seamless-tiling).
+A server without it rejects the prompt with `kind: 'rejected'` and the node's
+name in the message; seamless tiling is a declared capability precisely so that
+degrades per entry rather than failing a run.
+
+Two nodes, not one, and the second is the one that is easy to miss:
+
+- `SeamlessTile` switches the model's convolutions to circular padding.
+- `CircularVAEDecode` replaces `VAEDecode` and does the same for the decode.
+
+A graph with only the first **validates, runs, and produces an image that does
+not tile** — a silent quality failure rather than an error. Measured on a
+cobblestone texture, comparing the wrap edges against two adjacent interior
+columns of the same image:
+
+|                      | wrap L\|R | wrap T\|B | interior baseline |
+| -------------------- | --------- | --------- | ----------------- |
+| no tiling            | 43.5      | 36.4      | 20.1 / 21.5       |
+| seamless             | 16.2      | 23.5      | 21.1 / 20.6       |
+| seamless + reference | 4.4       | 19.7      | 13.9 / 17.6       |
+
+An image tiles when its wrap error is no worse than its own interior — the
+control is twice as discontinuous at the edges as it is anywhere else, and the
+tiled versions are at or below baseline. That comparison is the test to re-run
+if this ever regresses; a visual check at tile scale is not sensitive enough.
 
 ## Editing one
 
