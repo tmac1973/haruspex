@@ -179,7 +179,25 @@ impl Default for NormalizeProfile {
         NormalizeProfile {
             target_size: 32,
             upscale: 16,
-            palette_size: 16,
+            // Measured, not guessed — and 16 was a guess that made the whole
+            // gate unreachable.
+            //
+            // `palette_distance` is the fraction of pixels further than
+            // ΔRGB 48 from the entry they snap to, and a small palette puts a
+            // FLOOR under that number regardless of how on-style the image
+            // is. Measuring three real anchors against palettes extracted
+            // from themselves — the best case any asset can achieve — the
+            // floor was 0.107..0.194 at 14 colours, 0.066..0.087 at 24, and
+            // 0.026..0.035 at 32. With `palette_distance_max` at 0.15 the old
+            // default therefore failed images that were perfectly in style,
+            // including the anchor the palette came from. Four real
+            // generations scored 0.205..0.564 at 14 colours and 0.011..0.128
+            // at 32.
+            //
+            // 32 is still a hard limit — the era this imitates shipped 16 to
+            // 256 — so the coherence layer still forces a shared palette; it
+            // just no longer spends its entire budget on being small.
+            palette_size: 32,
             palette: Vec::new(),
             background: Background {
                 color: 0xFF_00_FF_FF,
@@ -338,6 +356,23 @@ pub fn pack(c: [u8; 4]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_palette_is_large_enough_for_the_distance_check_to_be_reachable() {
+        // A small palette puts a FLOOR under `palette_distance` regardless of
+        // how on-style an image is: measured against palettes extracted from
+        // the images themselves, the floor was ~0.11-0.19 at 14 colours
+        // against a ceiling of 0.15. The gate was unreachable — it failed the
+        // anchor its own palette came from. Guard the relationship, not the
+        // number, so a future tune of either has to keep them compatible.
+        let p = NormalizeProfile::default();
+        assert!(
+            p.palette_size >= 24,
+            "palette_size {} leaves no headroom under palette_distance_max",
+            p.palette_size
+        );
+        assert!(p.checks.palette_distance_max > 0.1);
+    }
 
     #[test]
     fn texture_disables_crop_and_outline_and_expects_opacity() {

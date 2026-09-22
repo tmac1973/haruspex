@@ -8,7 +8,7 @@ use image::{ImageEncoder, RgbaImage};
 use serde::Serialize;
 
 use super::checks::{evaluate, CheckReport};
-use super::normalize::{dominant_border_color, normalize};
+use super::normalize::{chroma_key, dominant_border_color, normalize};
 use super::palette::extract_palette;
 use super::profile::{effective_profile, AssetKind, Background, NormalizeProfile};
 use super::sheet::contact_sheet;
@@ -98,12 +98,42 @@ pub fn image_extract_palette(
     let Some(bg) = background else {
         return Ok(extract_palette(&img, count, None));
     };
-    let mut palette = extract_palette(&img, count, Some((bg.color, bg.tolerance)));
-    if let Some(found) = dominant_border_color(&img, &bg) {
-        // Re-extract with the real backdrop excluded, rather than dropping an
-        // entry afterwards: removing one leaves a palette short of the size
-        // the caller asked for, which is a colour the set will never get back.
-        palette = extract_palette(&img, count, Some((found, bg.tolerance)));
+
+    // KEY THE IMAGE FIRST, then take the palette from what survives.
+    //
+    // Excluding a single colour is not enough, and the first real run proved
+    // it: the style anchor's backdrop was a mottled dusty pink covering most
+    // of the frame, so median cut — which allocates boxes by pixel population
+    // — spent ten of its fourteen entries on near-identical shades of it.
+    // Every asset then quantized toward pink and failed the palette-distance
+    // check as wildly off-style.
+    //
+    // Excluding the "dominant border colour" did not save it either: the
+    // sheet had a dark vignette at its very edge, so the border vote returned
+    // #3f0819 while the actual field was #b3597a.
+    //
+    // Keying is the honest operation. It is exactly what every asset gets,
+    // and `extract_palette` already skips transparent pixels — so the palette
+    // ends up describing the pixels that will actually survive, whatever
+    // shade the backdrop turned out to be.
+    let mut keyed = img.clone();
+    let key = if bg.auto_detect {
+        dominant_border_color(&img, &bg).unwrap_or(bg.color)
+    } else {
+        bg.color
+    };
+    chroma_key(&mut keyed, key, &bg);
+
+    let palette = extract_palette(&keyed, count, Some((key, bg.tolerance)));
+    // A key that removed everything leaves nothing to describe. Fall back to
+    // the unkeyed image rather than handing back an empty palette, which
+    // would silently disable quantization for the whole set.
+    if palette.is_empty() {
+        // Nothing survived the key. Excluding it a second time would return
+        // empty again, so take the image as it is: a palette containing the
+        // backdrop is poor, and a palette of nothing silently disables
+        // quantization for the whole set, which is worse.
+        return Ok(extract_palette(&img, count, None));
     }
     Ok(palette)
 }
@@ -318,6 +348,64 @@ mod tests {
         let with = image_extract_palette(png(&img), 4, Some(bg)).unwrap();
         let without = image_extract_palette(png(&img), 4, None).unwrap();
         assert!(with.len() < without.len(), "{with:?} vs {without:?}");
+    }
+
+    #[test]
+    fn palette_extraction_is_not_swamped_by_a_mottled_backdrop() {
+        // The failure that lost a whole run. Median cut allocates boxes by
+        // pixel POPULATION, so a backdrop covering most of the frame takes
+        // most of the palette — and because it is mottled rather than flat,
+        // excluding one colour leaves the rest of its family behind. Ten of
+        // fourteen entries came back as near-identical shades of one pink,
+        // every asset quantized toward it, and all four failed the
+        // palette-distance check as wildly off-style.
+        let mut img = RgbaImage::new(64, 64);
+        // A mottled backdrop: ONE HUE across a wide brightness range, which
+        // is what a diffusion model actually paints. The spread matters — the
+        // darkest and lightest shades here are ~94 apart in plain RGB, well
+        // beyond the tolerance, so excluding a single colour provably leaves
+        // most of the family behind. Keying catches them all because it keys
+        // on hue with saturation and value floors, not on distance alone.
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            let t = 0.6 + 0.4 * (((x / 4 + y / 4) % 5) as f32 / 4.0);
+            *p = Rgba([
+                (0xb3 as f32 * t) as u8,
+                (0x59 as f32 * t) as u8,
+                (0x79 as f32 * t) as u8,
+                255,
+            ]);
+        }
+        // A small subject in colours nothing like it.
+        for y in 26..38 {
+            for x in 26..38 {
+                img.put_pixel(x, y, Rgba([20, 150, 30, 255]));
+            }
+        }
+        for y in 28..32 {
+            for x in 40..46 {
+                img.put_pixel(x, y, Rgba([240, 230, 210, 255]));
+            }
+        }
+
+        let bg = NormalizeProfile::default().background;
+        let palette = image_extract_palette(png(&img), 8, Some(bg)).unwrap();
+        assert!(!palette.is_empty());
+        for c in &palette {
+            let [r, g, b, _] = super::super::profile::rgba(*c);
+            let backdrop = r > 150 && (0x40..0x90).contains(&g) && (0x60..0xa0).contains(&b);
+            assert!(!backdrop, "the backdrop took a palette slot: {c:08X}");
+        }
+    }
+
+    #[test]
+    fn palette_extraction_survives_a_key_that_removes_everything() {
+        // A palette of nothing silently disables quantization for the whole
+        // set, which is worse than a palette containing the backdrop.
+        let img = RgbaImage::from_pixel(16, 16, Rgba([0xb3, 0x59, 0x79, 255]));
+        let bg = NormalizeProfile::default().background;
+        assert!(!image_extract_palette(png(&img), 4, Some(bg))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

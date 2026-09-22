@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	hexColor,
 	colourWord,
+	anchorSubjects,
 	anchorPrompt,
 	anchorNegativePrompt,
 	anchorEdge,
@@ -106,12 +107,82 @@ describe('anchorPrompt', () => {
 		expect(p).not.toContain('#');
 	});
 
-	it('asks for several isolated subjects across different types', () => {
-		const p = anchorPrompt(spec(), profile());
-		expect(p).toContain('character');
-		expect(p).toContain('weapon');
-		expect(p).toContain('furniture');
-		expect(p.toLowerCase()).toContain('isolated');
+	it('asks for isolated subjects', () => {
+		expect(anchorPrompt(spec(), profile()).toLowerCase()).toContain('isolated');
+	});
+
+	it('shows the spec\u2019s own subjects, so the palette covers them', () => {
+		// The failure that produced nothing: a generic sheet in a muted earthy
+		// style has no grey for an iron sword and no red for a health potion,
+		// so every asset measures as wildly off-style against a palette that
+		// never contained its colours.
+		const p = anchorPrompt(
+			spec({
+				entries: [
+					{ id: 'a', kind: 'sprite', prompt: 'an iron sword', out: 'a.png' },
+					{ id: 'b', kind: 'icon', prompt: 'a gold coin', out: 'b.png' }
+				]
+			} as Partial<AssetSpec>),
+			profile()
+		);
+		expect(p).toContain('an iron sword');
+		expect(p).toContain('a gold coin');
+	});
+});
+
+describe('anchorSubjects', () => {
+	function entries(list: Array<[string, string]>) {
+		return list.map(([kind, prompt], i) => ({
+			id: `e${i}`,
+			kind,
+			prompt,
+			out: `o${i}.png`
+		}));
+	}
+
+	it('samples across kinds rather than taking the first four', () => {
+		// A spec of forty swords and one coin must not produce a sheet of four
+		// swords — the coin's colours would never reach the palette.
+		const subjects = anchorSubjects(
+			spec({
+				entries: entries([
+					['sprite', 'sword one'],
+					['sprite', 'sword two'],
+					['sprite', 'sword three'],
+					['sprite', 'sword four'],
+					['icon', 'a gold coin']
+				])
+			} as Partial<AssetSpec>)
+		);
+		expect(subjects).toContain('a gold coin');
+	});
+
+	it('leaves textures out, because naming one fills the whole frame with it', () => {
+		const subjects = anchorSubjects(
+			spec({
+				entries: entries([
+					['sprite', 'an iron sword'],
+					['texture', 'grey cobblestone floor']
+				])
+			} as Partial<AssetSpec>)
+		);
+		expect(subjects).toContain('an iron sword');
+		expect(subjects).not.toContain('cobblestone');
+	});
+
+	it('falls back to a generic list when the spec is all textures', () => {
+		// Better a generic anchor than one that sabotages its own backdrop.
+		const subjects = anchorSubjects(
+			spec({ entries: entries([['texture', 'cobblestone']]) } as Partial<AssetSpec>)
+		);
+		expect(subjects).toContain('a character');
+		expect(subjects).not.toContain('cobblestone');
+	});
+
+	it('never asks for more subjects than a sheet can show', () => {
+		const many = entries(Array.from({ length: 20 }, (_, i) => ['sprite', `thing ${i}`]));
+		const subjects = anchorSubjects(spec({ entries: many } as Partial<AssetSpec>));
+		expect(subjects.split(', ')).toHaveLength(4);
 	});
 });
 

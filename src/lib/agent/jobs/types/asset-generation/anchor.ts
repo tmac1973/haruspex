@@ -96,9 +96,56 @@ export function anchorPrompt(spec: AssetSpec, profile: NormalizeProfile): string
 	return [
 		`${spec.style.prompt}.`,
 		`A sprite sheet of separate game sprites on a plain solid ${bg} background:`,
-		`a character, a hand-held weapon, a piece of furniture, and a small prop.`,
+		`${anchorSubjects(spec)}.`,
 		`Each sprite small, centred and isolated, surrounded by empty ${bg} space.`
 	].join(' ');
+}
+
+/** How many of the spec's own subjects the anchor is asked to show. */
+const ANCHOR_SUBJECTS = 4;
+
+/**
+ * The subjects the anchor sheet shows: the spec's own, wherever possible.
+ *
+ * This is what makes the palette USABLE, and the first real run proved the
+ * point by failing without it. A generic sheet of "a character, a weapon, a
+ * piece of furniture" in a muted earthy style yielded a palette of browns,
+ * greens and creams — with no grey for an iron sword and no red for a health
+ * potion. Every asset then measured as wildly off-style against a palette
+ * that never contained its colours, and the run produced nothing.
+ *
+ * The anchor exists to define the style for THIS spec's assets, so it should
+ * be made of them. One sprite per distinct subject, sampled across kinds so a
+ * spec of forty swords does not produce a sheet of four swords.
+ *
+ * Textures are deliberately excluded. Naming ground or terrain among the
+ * subjects makes the model render the whole frame as that texture, which
+ * destroys the flat backdrop the chroma key depends on — the same rule the
+ * generic list had to obey. A spec of nothing but textures therefore falls
+ * back to the generic list rather than sabotaging its own anchor.
+ */
+export function anchorSubjects(spec: AssetSpec): string {
+	const usable = spec.entries.filter((e) => e.kind !== 'texture' && e.prompt.trim().length > 0);
+	if (usable.length === 0) {
+		return 'a character, a hand-held weapon, a piece of furniture, and a small prop';
+	}
+	// Round-robin by kind, so a long run of one kind does not crowd out the
+	// others and leave their colours out of the palette.
+	const byKind = new Map<string, string[]>();
+	for (const e of usable) {
+		byKind.set(e.kind, [...(byKind.get(e.kind) ?? []), e.prompt.trim()]);
+	}
+	const queues = [...byKind.values()];
+	const picked: string[] = [];
+	for (let i = 0; picked.length < ANCHOR_SUBJECTS; i++) {
+		const before = picked.length;
+		for (const q of queues) {
+			if (picked.length >= ANCHOR_SUBJECTS) break;
+			if (i < q.length) picked.push(q[i]);
+		}
+		if (picked.length === before) break;
+	}
+	return picked.join(', ');
 }
 
 /**
