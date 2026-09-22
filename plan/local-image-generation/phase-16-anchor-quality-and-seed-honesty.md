@@ -112,9 +112,57 @@ comparison.
 below 1024, so a 32px target wants `upscale: 32`, not the 16 that suits SD1.5.
 Comparing the two at the same generation edge measures the wrong thing.
 
-Run the same four-entry spec on both and compare `palette_distance`, the
-attempt counts, and whether a human can tell what each asset is. If SDXL fixes
-the silhouettes, most of step 1 may be unnecessary.
+**This has now been run, and the answer is yes for sprites and no for
+textures.** Same prompts, same seeds, SDXL at 1024 against SD1.5 at 512,
+measured through the real pipeline with a 32-colour palette from an SDXL
+anchor:
+
+| Asset | SD1.5 | SDXL |
+| --- | --- | --- |
+| iron sword | 3 attempts, silhouette unreadable | **PASS**, alpha 0.186, pal 0.093 |
+| health potion | failed all 3 attempts, produced nothing | **PASS**, alpha 0.245, pal 0.038 |
+| gold coin | passed, looked decent | fails AlphaHigh — filled the frame |
+| cobblestone | passed, looked decent | fails Entropy at 0.00 — see below |
+
+The anchor is the clearest difference: SD1.5 produced dozens of sprites about
+24px across, SDXL produced fourteen at roughly 200px, each a clean, readable
+pixel-art object with a bold outline on a flat backdrop. That is the reference
+IP-Adapter should have been transferring all along, and it strongly suggests
+step 1's prompt rewrite is treating a symptom of a weak base model.
+
+Three new findings came out of the same run, and each is a real piece of work
+rather than a tuning knob:
+
+**Textures need a feature scale, and SDXL makes this worse.** The cobblestone
+came back as hundreds of tiny tiles across 1024px. Downscaled to 32px each
+stone is under a pixel, they average together, and the result is a flat grey
+field — entropy 0.00, which the gate correctly rejects as mush. SD1.5 passed
+the same prompt only because it produced coarser features by accident. A
+texture prompt has to say how many features should span the tile ("large
+stones, five or six across"), because the generation edge and the target size
+together decide whether any detail survives. This is the mirror of the sprite
+problem: sprites want ONE large subject, textures want FEW large features.
+
+**Naming the key colour can put it inside the subject.** The isolation
+scaffold says "magenta" three times, and SDXL rendered a magenta symbol on the
+face of the gold coin. Global chroma keying then punches a hole through the
+middle of the asset. This is in direct tension with the fix that made entry
+prompts name the colour in words at all — a hex string produced no background,
+and a colour word produces a background the model may also use as a design
+colour. The principled repair is not in the prompt: key only regions CONNECTED
+to the border, by flood fill, rather than every matching pixel globally. Then
+a magenta detail enclosed by the subject survives and a magenta backdrop does
+not. `normalize.rs::chroma_key` is global today.
+
+**Isolation is still not guaranteed.** The coin filled the frame despite
+"small in frame, centred, lots of empty space around it". Better prompt
+adherence raises the hit rate; it does not make the scaffold reliable, so the
+retry path that phase 10 fixed remains load-bearing.
+
+Taken together: SDXL is the better base for sprites and icons by a wide
+margin, and switching to it does not remove the need for steps 1 and 2 so much
+as re-aim them. Phase 14's catalogue should recommend it where VRAM allows,
+which it already does at ≥10 GB.
 
 ### 4. Compare against the procedural baseline, and write the answer down
 
