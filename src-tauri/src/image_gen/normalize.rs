@@ -8,7 +8,8 @@ use image::{Rgba, RgbaImage};
 
 use super::palette::{extract_palette, quantize_to};
 use super::profile::{
-    effective_profile, pack, rgba, AssetKind, NormalizeProfile, BORDER_DOMINANCE,
+    effective_profile, is_background, pack, rgba, AssetKind, Background, NormalizeProfile,
+    BORDER_DOMINANCE,
 };
 use super::stats::{entropy_bits, ImageStats};
 
@@ -17,21 +18,25 @@ use super::stats::{entropy_bits, ImageStats};
 /// A threshold, not a matte. The prompt asks the model for a flat background
 /// of exactly this colour, which makes removal deterministic, fast, and
 /// testable against a fixture — none of which is true of a segmentation model.
-pub fn chroma_key(img: &mut RgbaImage, key: u32, tolerance: u8) {
+pub fn chroma_key(img: &mut RgbaImage, key: u32, bg: &Background) {
     let k = rgba(key);
-    let tol = tolerance as f32;
     for p in img.pixels_mut() {
         if p.0[3] == 0 {
             continue;
         }
-        let d = ((p.0[0] as f32 - k[0] as f32).powi(2)
-            + (p.0[1] as f32 - k[1] as f32).powi(2)
-            + (p.0[2] as f32 - k[2] as f32).powi(2))
-        .sqrt();
-        if d <= tol {
+        if is_background(p.0, k, bg) {
             p.0 = [0, 0, 0, 0];
         }
     }
+}
+
+/// Fraction of pixels that are not fully transparent.
+fn opaque_fraction(img: &RgbaImage) -> f32 {
+    let total = (img.width() * img.height()) as f32;
+    if total == 0.0 {
+        return 0.0;
+    }
+    img.pixels().filter(|p| p.0[3] != 0).count() as f32 / total
 }
 
 /// The colour covering most of the image border, if one clearly dominates.
@@ -39,7 +44,7 @@ pub fn chroma_key(img: &mut RgbaImage, key: u32, tolerance: u8) {
 /// Returns `None` when no colour holds at least [`BORDER_DOMINANCE`] of the
 /// border — a subject that fills the frame has no background to find, and
 /// keying its own edge colour would eat the subject.
-pub fn dominant_border_color(img: &RgbaImage, tolerance: u8) -> Option<u32> {
+pub fn dominant_border_color(img: &RgbaImage, bg: &Background) -> Option<u32> {
     let (w, h) = img.dimensions();
     if w < 2 || h < 2 {
         return None;
@@ -54,21 +59,15 @@ pub fn dominant_border_color(img: &RgbaImage, tolerance: u8) -> Option<u32> {
         border.push(img.get_pixel(w - 1, y).0);
     }
     let total = border.len() as f32;
-    // Cluster by the SAME tolerance the key will use, so "dominant" means
-    // "would be removed together" rather than "byte-identical" — a diffusion
-    // background is never flat to the bit.
-    let tol = tolerance as f32;
+    // Cluster by the SAME test the key will use, so "dominant" means "would
+    // be removed together". Clustering on distance while keying on hue would
+    // reject a lit backdrop as incoherent and then have been able to remove
+    // it perfectly.
     let mut best: Option<(u32, f32)> = None;
     for candidate in &border {
         let n = border
             .iter()
-            .filter(|c| {
-                let d = ((c[0] as f32 - candidate[0] as f32).powi(2)
-                    + (c[1] as f32 - candidate[1] as f32).powi(2)
-                    + (c[2] as f32 - candidate[2] as f32).powi(2))
-                .sqrt();
-                d <= tol
-            })
+            .filter(|c| is_background(**c, *candidate, bg))
             .count() as f32;
         if best.is_none_or(|(_, b)| n > b) {
             best = Some((pack(*candidate), n));
@@ -76,6 +75,71 @@ pub fn dominant_border_color(img: &RgbaImage, tolerance: u8) -> Option<u32> {
     }
     best.filter(|(_, n)| n / total >= BORDER_DOMINANCE)
         .map(|(c, _)| c)
+}
+
+/// Remove opaque islands far smaller than the largest one.
+///
+/// Keying is never perfect: a few pixels of background survive in the corners,
+/// and a few specks of subject-coloured noise survive in the background. Those
+/// specks cost nothing on their own and wreck the crop that follows — the
+/// bounding box of "all opaque pixels" becomes the whole frame, so a sword
+/// that should fill 32px is reduced to a smudge in one corner with the rest
+/// of the image empty. Measured on real output: an SDXL sword at 8.7% alpha
+/// cropped to nothing useful until the specks went.
+///
+/// A component survives if it is at least `min_fraction` of the largest one.
+/// Relative rather than absolute, because a subject may legitimately be small
+/// and still be the only thing there.
+pub fn despeckle(img: &mut RgbaImage, min_fraction: f32) {
+    let (w, h) = img.dimensions();
+    let mut label = vec![u32::MAX; (w * h) as usize];
+    let mut sizes: Vec<u32> = Vec::new();
+    let idx = |x: u32, y: u32| (y * w + x) as usize;
+
+    for y in 0..h {
+        for x in 0..w {
+            if img.get_pixel(x, y).0[3] == 0 || label[idx(x, y)] != u32::MAX {
+                continue;
+            }
+            let id = sizes.len() as u32;
+            let mut n = 0u32;
+            let mut stack = vec![(x, y)];
+            label[idx(x, y)] = id;
+            while let Some((cx, cy)) = stack.pop() {
+                n += 1;
+                let neighbours = [
+                    (cx.wrapping_sub(1), cy),
+                    (cx + 1, cy),
+                    (cx, cy.wrapping_sub(1)),
+                    (cx, cy + 1),
+                ];
+                for (nx, ny) in neighbours {
+                    if nx >= w || ny >= h {
+                        continue;
+                    }
+                    if img.get_pixel(nx, ny).0[3] == 0 || label[idx(nx, ny)] != u32::MAX {
+                        continue;
+                    }
+                    label[idx(nx, ny)] = id;
+                    stack.push((nx, ny));
+                }
+            }
+            sizes.push(n);
+        }
+    }
+
+    let Some(&largest) = sizes.iter().max() else {
+        return;
+    };
+    let floor = (largest as f32 * min_fraction).max(1.0);
+    for y in 0..h {
+        for x in 0..w {
+            let l = label[idx(x, y)];
+            if l != u32::MAX && (sizes[l as usize] as f32) < floor {
+                img.put_pixel(x, y, Rgba([0, 0, 0, 0]));
+            }
+        }
+    }
 }
 
 /// Tightest box around the opaque pixels, expanded by `margin`.
@@ -215,17 +279,24 @@ pub fn normalize(
     let p = effective_profile(profile, kind);
     let mut work = img.clone();
 
-    // The configured key first; the border only when that found nothing. The
-    // prompt still asks for magenta because it sometimes works, and when it
-    // does this costs one pass over the image.
-    chroma_key(&mut work, p.background.color, p.background.tolerance);
-    let keyed_any = work.pixels().any(|px| px.0[3] == 0);
-    if !keyed_any && p.background.auto_detect {
-        if let Some(found) = dominant_border_color(&work, p.background.tolerance) {
-            chroma_key(&mut work, found, p.background.tolerance);
+    // The configured key first; the border when that did not do the job.
+    //
+    // "Did not do the job" is measured against the same threshold the quality
+    // gate uses for "the background was never removed", not against "removed
+    // nothing at all". An earlier version tried the fallback only when the key
+    // matched zero pixels, and a handful of stray hits — a few background-hued
+    // pixels inside the subject — were enough to suppress the border detection
+    // that was doing all the actual work. Two of three SDXL sprites came out
+    // fully opaque because of it.
+    chroma_key(&mut work, p.background.color, &p.background);
+    if p.background.auto_detect && opaque_fraction(&work) > p.checks.alpha_max {
+        if let Some(found) = dominant_border_color(&work, &p.background) {
+            chroma_key(&mut work, found, &p.background);
         }
     }
     if p.crop.enabled {
+        // Before cropping, not after: the specks are what break the crop.
+        despeckle(&mut work, p.crop.min_island_fraction);
         work = crop_to_content(&work, p.crop.margin)?;
     }
     work = downscale_integer(&work, p.target_size);
@@ -248,10 +319,8 @@ pub fn normalize(
         normalize_outline(&mut work, p.outline.color, p.outline.width);
     }
 
-    let total = (work.width() * work.height()) as f32;
-    let opaque = work.pixels().filter(|px| px.0[3] != 0).count() as f32;
     let stats = ImageStats {
-        alpha: if total == 0.0 { 0.0 } else { opaque / total },
+        alpha: opaque_fraction(&work),
         entropy: entropy_bits(&work),
         palette_distance,
     };
@@ -281,17 +350,50 @@ mod tests {
     fn chroma_key_removes_the_background_and_nothing_else() {
         let mut img = keyed(4, 4);
         img.put_pixel(1, 1, Rgba([20, 90, 40, 255]));
-        chroma_key(&mut img, KEY, 40);
+        chroma_key(&mut img, KEY, &NormalizeProfile::default().background);
         assert_eq!(img.get_pixel(0, 0).0[3], 0);
         assert_eq!(img.get_pixel(1, 1).0, [20, 90, 40, 255]);
     }
 
     #[test]
-    fn a_pixel_just_outside_tolerance_survives() {
+    fn a_pixel_of_a_different_hue_survives() {
         let mut img = keyed(2, 2);
-        // 60 away in one channel, tolerance 40.
-        img.put_pixel(0, 0, Rgba([0xFF - 60, 0x00, 0xFF, 255]));
-        chroma_key(&mut img, KEY, 40);
+        img.put_pixel(0, 0, Rgba([20, 200, 60, 255]));
+        chroma_key(&mut img, KEY, &NormalizeProfile::default().background);
+        assert_ne!(img.get_pixel(0, 0).0[3], 0);
+    }
+
+    #[test]
+    fn the_same_hue_at_a_different_brightness_is_still_background() {
+        // The case that matters on real output. A studio-lit backdrop is one
+        // colour with a gradient across it: measured on an SDXL generation it
+        // ran from rgb(122,5,73) to rgb(204,51,142), an RGB distance of ~110,
+        // while its hue moved 4 degrees. Distance alone removes a third of it
+        // and leaves the rest as confetti round the subject.
+        let mut img = keyed(4, 4);
+        for (i, c) in [[122, 5, 73, 255], [204, 51, 142, 255], [159, 12, 101, 255]]
+            .into_iter()
+            .enumerate()
+        {
+            img.put_pixel(i as u32, 0, Rgba(c));
+        }
+        let mut bg = NormalizeProfile::default().background;
+        // Keyed against the backdrop actually found, as auto-detection does.
+        bg.color = pack([186, 2, 105, 255]);
+        chroma_key(&mut img, bg.color, &bg);
+        for i in 0..3u32 {
+            assert_eq!(img.get_pixel(i, 0).0[3], 0, "gradient sample {i} survived");
+        }
+    }
+
+    #[test]
+    fn a_pale_subject_is_not_eaten_by_hue_matching() {
+        // The saturation floor. A pale pink bottle shares magenta's hue and
+        // must survive, or widening the net to span a gradient would start
+        // removing subjects.
+        let mut img = keyed(4, 4);
+        img.put_pixel(0, 0, Rgba([245, 225, 238, 255]));
+        chroma_key(&mut img, KEY, &NormalizeProfile::default().background);
         assert_ne!(img.get_pixel(0, 0).0[3], 0);
     }
 

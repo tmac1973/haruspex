@@ -4,4 +4,9 @@ export type Crop = { enabled: boolean,
 /**
  * Transparent pixels kept around the subject after cropping.
  */
-margin: number, };
+margin: number, 
+/**
+ * An opaque island smaller than this fraction of the largest one is
+ * removed before cropping. See [`super::normalize::despeckle`].
+ */
+min_island_fraction: number, };

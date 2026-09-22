@@ -7,8 +7,41 @@ export type Background = {
 color: number, 
 /**
  * How far from the key still counts as background, in RGB distance.
+ *
+ * Only catches a FLAT background. Kept because a flat one is what the
+ * prompt asks for and occasionally gets.
  */
 tolerance: number, 
+/**
+ * How far from the key's hue still counts as background, in degrees.
+ *
+ * This is the one that works on real output. A studio-lit backdrop is
+ * one colour with a lighting gradient across it: measured on an SDXL
+ * generation, the background ranged from rgb(122,5,73) to
+ * rgb(204,51,142) — an RGB distance of about 110, far outside any
+ * sane `tolerance` — while its hue moved only from 321° to 325°.
+ * Matching on hue spans the gradient; matching on distance catches a
+ * third of it and leaves the rest as coloured confetti round the subject.
+ */
+hue_tolerance_deg: number, 
+/**
+ * Minimum saturation (0-255) for the hue test to apply.
+ *
+ * Hue is meaningless for greys and near-whites — every one of them would
+ * match every key — so an unsaturated pixel is judged on distance alone.
+ */
+min_saturation: number, 
+/**
+ * Minimum value/brightness (0-255) for the hue test to apply.
+ *
+ * Saturation alone does not protect dark pixels: rgb(21,9,25) is visually
+ * black but computes to 0.64 saturation, because saturation is relative
+ * to a tiny maximum. Its hue is noise, and on a cobblestone texture that
+ * noise landed near magenta often enough to key a quarter of the mortar
+ * away. Hue only means something on a pixel that is both colourful and
+ * bright enough to have a colour.
+ */
+min_value: number, 
 /**
  * Fall back to the colour that dominates the image border when `color`
  * is not actually present.

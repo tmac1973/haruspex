@@ -31,7 +31,34 @@ pub struct Background {
     /// Packed `0xRRGGBBAA`. The colour the prompt asks for.
     pub color: u32,
     /// How far from the key still counts as background, in RGB distance.
+    ///
+    /// Only catches a FLAT background. Kept because a flat one is what the
+    /// prompt asks for and occasionally gets.
     pub tolerance: u8,
+    /// How far from the key's hue still counts as background, in degrees.
+    ///
+    /// This is the one that works on real output. A studio-lit backdrop is
+    /// one colour with a lighting gradient across it: measured on an SDXL
+    /// generation, the background ranged from rgb(122,5,73) to
+    /// rgb(204,51,142) — an RGB distance of about 110, far outside any
+    /// sane `tolerance` — while its hue moved only from 321° to 325°.
+    /// Matching on hue spans the gradient; matching on distance catches a
+    /// third of it and leaves the rest as coloured confetti round the subject.
+    pub hue_tolerance_deg: u8,
+    /// Minimum saturation (0-255) for the hue test to apply.
+    ///
+    /// Hue is meaningless for greys and near-whites — every one of them would
+    /// match every key — so an unsaturated pixel is judged on distance alone.
+    pub min_saturation: u8,
+    /// Minimum value/brightness (0-255) for the hue test to apply.
+    ///
+    /// Saturation alone does not protect dark pixels: rgb(21,9,25) is visually
+    /// black but computes to 0.64 saturation, because saturation is relative
+    /// to a tiny maximum. Its hue is noise, and on a cobblestone texture that
+    /// noise landed near magenta often enough to key a quarter of the mortar
+    /// away. Hue only means something on a pixel that is both colourful and
+    /// bright enough to have a colour.
+    pub min_value: u8,
     /// Fall back to the colour that dominates the image border when `color`
     /// is not actually present.
     ///
@@ -59,6 +86,9 @@ pub struct Crop {
     pub enabled: bool,
     /// Transparent pixels kept around the subject after cropping.
     pub margin: u32,
+    /// An opaque island smaller than this fraction of the largest one is
+    /// removed before cropping. See [`super::normalize::despeckle`].
+    pub min_island_fraction: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
@@ -154,11 +184,15 @@ impl Default for NormalizeProfile {
             background: Background {
                 color: 0xFF_00_FF_FF,
                 tolerance: 40,
+                hue_tolerance_deg: 20,
+                min_saturation: 90,
+                min_value: 60,
                 auto_detect: true,
             },
             crop: Crop {
                 enabled: true,
                 margin: 1,
+                min_island_fraction: 0.05,
             },
             outline: Outline {
                 enabled: true,
@@ -238,6 +272,62 @@ pub fn rgba(packed: u32) -> [u8; 4] {
         (packed >> 8) as u8,
         packed as u8,
     ]
+}
+
+/// Hue in degrees (0-360) and saturation (0-255).
+///
+/// Value is not returned because the hue test deliberately ignores it for
+/// MATCHING — a lighting gradient is exactly a change in value. It is still
+/// used as a floor for whether the test applies at all; see `min_value`.
+pub fn hue_saturation(c: [u8; 4]) -> (f32, u8) {
+    let r = c[0] as f32;
+    let g = c[1] as f32;
+    let b = c[2] as f32;
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let d = max - min;
+    if d == 0.0 {
+        return (0.0, 0);
+    }
+    let h = if max == r {
+        60.0 * (((g - b) / d) % 6.0)
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    let sat = if max == 0.0 {
+        0
+    } else {
+        ((d / max) * 255.0) as u8
+    };
+    ((h + 360.0) % 360.0, sat)
+}
+
+/// Is `pixel` the background, by either test?
+///
+/// Distance for a flat backdrop, hue for a lit one. The union rather than a
+/// choice: the prompt asks for flat and sometimes gets it, and a real
+/// generation is usually a gradient.
+pub fn is_background(pixel: [u8; 4], key: [u8; 4], bg: &Background) -> bool {
+    let dr = pixel[0] as f32 - key[0] as f32;
+    let dg = pixel[1] as f32 - key[1] as f32;
+    let db = pixel[2] as f32 - key[2] as f32;
+    if (dr * dr + dg * dg + db * db).sqrt() <= bg.tolerance as f32 {
+        return true;
+    }
+    let (ph, ps) = hue_saturation(pixel);
+    let (kh, ks) = hue_saturation(key);
+    let pv = pixel[0].max(pixel[1]).max(pixel[2]);
+    let kv = key[0].max(key[1]).max(key[2]);
+    if ps < bg.min_saturation || ks < bg.min_saturation {
+        return false;
+    }
+    if pv < bg.min_value || kv < bg.min_value {
+        return false;
+    }
+    let diff = (ph - kh).abs();
+    diff.min(360.0 - diff) <= bg.hue_tolerance_deg as f32
 }
 
 /// Pack `[r, g, b, a]`.
