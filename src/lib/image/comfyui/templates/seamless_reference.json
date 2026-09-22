@@ -54,8 +54,8 @@
 			"cfg": 7,
 			"sampler_name": "euler_ancestral",
 			"scheduler": "normal",
-			"denoise": 0.6,
-			"model": ["11", 0],
+			"denoise": 1.0,
+			"model": ["13", 0],
 			"positive": ["4", 0],
 			"negative": ["5", 0],
 			"latent_image": ["10", 0]
@@ -76,10 +76,32 @@
 		}
 	},
 	"10": {
-		"class_type": "VAEEncode",
+		"class_type": "EmptyLatentImage",
 		"inputs": {
-			"pixels": ["6", 0],
-			"vae": ["1", 2]
+			"width": 512,
+			"height": 512,
+			"batch_size": 1
+		}
+	},
+	"12": {
+		"class_type": "IPAdapterUnifiedLoader",
+		"inputs": {
+			"model": ["11", 0],
+			"preset": "STANDARD (medium strength)"
+		}
+	},
+	"13": {
+		"class_type": "IPAdapterAdvanced",
+		"inputs": {
+			"model": ["12", 0],
+			"ipadapter": ["12", 1],
+			"image": ["6", 0],
+			"weight": 0.8,
+			"weight_type": "style transfer",
+			"combine_embeds": "concat",
+			"start_at": 0.0,
+			"end_at": 1.0,
+			"embeds_scaling": "V only"
 		}
 	},
 	"11": {

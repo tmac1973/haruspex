@@ -39,17 +39,36 @@ describe('the bundled workflows', () => {
 		}
 	});
 
-	it('binds a size only where the graph has a latent to size', () => {
-		// A reference graph takes its size from the uploaded image, so binding
-		// width/height would name inputs that do not exist — an error, not a
-		// no-op, which is why the two groups differ.
+	it('binds a size in every workflow', () => {
+		// Including the reference ones. They condition through IP-Adapter and
+		// sample a FRESH latent, so they have a size of their own — unlike the
+		// img2img version they replaced, which inherited the reference's size
+		// along with, fatally, the reference's subject.
 		for (const t of TEMPLATES) {
-			if (t.supports.reference) {
-				expect(t.map.width).toBeUndefined();
-				expect(t.map.referenceImage).toBeDefined();
-			} else {
-				expect(t.map.width).toBeDefined();
-			}
+			expect({ id: t.id, hasWidth: t.map.width !== undefined }).toEqual({
+				id: t.id,
+				hasWidth: true
+			});
+		}
+	});
+
+	it('conditions through IP-Adapter rather than img2img', () => {
+		// The distinction the whole design rests on. img2img re-denoises the
+		// reference, so it returns the reference; asked for a green pear
+		// conditioned on an apple it produced the apple. IP-Adapter leaves
+		// composition to the prompt.
+		for (const t of TEMPLATES.filter((x) => x.supports.reference)) {
+			const graph = t.graph;
+			const classes = Object.values(graph).map((n) => n.class_type);
+			expect(classes).toContain('IPAdapterAdvanced');
+			expect(classes).not.toContain('VAEEncode');
+			// A fresh latent at full denoise: nothing of the reference's own
+			// structure survives into the result.
+			expect(graph['7'].inputs.denoise).toBe(1.0);
+			const adapter = Object.entries(graph).find(
+				([, n]) => n.class_type === 'IPAdapterAdvanced'
+			)![1];
+			expect(adapter.inputs.weight_type).toBe('style transfer');
 		}
 	});
 });

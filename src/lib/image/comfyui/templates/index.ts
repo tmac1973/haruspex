@@ -47,27 +47,47 @@ const COMMON: Omit<FieldMap, 'outputNode'> = {
 	loras: { kind: 'loraSlots', nodes: ['2', '3'], source: '1' }
 };
 
-/** Sizes come from the latent in a text-to-image graph. */
-const SIZE_FROM_LATENT: Pick<FieldMap, 'width' | 'height'> = {
+/** Text-to-image graphs size their own empty latent, node 6. */
+const SIZE_PLAIN: Pick<FieldMap, 'width' | 'height'> = {
 	width: { kind: 'scalar', node: '6', input: 'width' },
 	height: { kind: 'scalar', node: '6', input: 'height' }
 };
 
 /**
- * A reference graph takes its size from the uploaded image, so there is no
- * width/height binding — and there must not be one, since binding a node input
- * that does not exist is an error rather than a no-op.
+ * Reference graphs also sample a fresh latent — node 10, because node 6 is the
+ * LoadImage carrying the reference.
+ *
+ * That they sample a fresh latent at all is the whole design. The obvious
+ * implementation is img2img: feed the reference in as the latent and denoise
+ * partway. Tried against a real server, it does exactly what it says — it
+ * returns the REFERENCE, restyled. Asked for "a green pear" conditioned on a
+ * picture of an apple, img2img at denoise 0.6 produced the apple again. There
+ * is no denoise value that gives a different subject in the same style:
+ * turn it up and the style goes, turn it down and the subject comes back.
+ *
+ * IP-Adapter is the mechanism that actually separates them. It injects the
+ * reference into the model's attention (`weight_type: "style transfer"`) and
+ * leaves composition entirely to the prompt, so the subject is the prompt's
+ * and the palette and feel are the reference's.
  */
+const SIZE_REFERENCE: Pick<FieldMap, 'width' | 'height'> = {
+	width: { kind: 'scalar', node: '10', input: 'width' },
+	height: { kind: 'scalar', node: '10', input: 'height' }
+};
+
 const REFERENCE_BINDINGS: Pick<FieldMap, 'referenceImage' | 'referenceStrength'> = {
 	referenceImage: { kind: 'uploaded', node: '6', input: 'image' },
-	referenceStrength: { kind: 'scalar', node: '7', input: 'denoise' }
+	// The IP-Adapter weight, not a denoise. Measured against SD1.5: 0.6 shifts
+	// the palette clearly while leaving the subject alone, 0.9 is strong, and
+	// above that the reference's own forms start bleeding into the output.
+	referenceStrength: { kind: 'scalar', node: '13', input: 'weight' }
 };
 
 export const TEMPLATES: WorkflowTemplate[] = [
 	{
 		id: 'txt2img',
 		graph: txt2imgGraph as ComfyGraph,
-		map: { outputNode: '9', ...COMMON, ...SIZE_FROM_LATENT },
+		map: { outputNode: '9', ...COMMON, ...SIZE_PLAIN },
 		license: LICENSE,
 		source: SOURCE,
 		supports: { reference: false, seamless: false }
@@ -75,7 +95,7 @@ export const TEMPLATES: WorkflowTemplate[] = [
 	{
 		id: 'reference',
 		graph: referenceGraph as ComfyGraph,
-		map: { outputNode: '9', ...COMMON, ...REFERENCE_BINDINGS },
+		map: { outputNode: '9', ...COMMON, ...SIZE_REFERENCE, ...REFERENCE_BINDINGS },
 		license: LICENSE,
 		source: SOURCE,
 		supports: { reference: true, seamless: false }
@@ -83,7 +103,7 @@ export const TEMPLATES: WorkflowTemplate[] = [
 	{
 		id: 'seamless',
 		graph: seamlessGraph as ComfyGraph,
-		map: { outputNode: '9', ...COMMON, ...SIZE_FROM_LATENT },
+		map: { outputNode: '9', ...COMMON, ...SIZE_PLAIN },
 		license: LICENSE,
 		source: SOURCE,
 		supports: { reference: false, seamless: true }
@@ -91,7 +111,7 @@ export const TEMPLATES: WorkflowTemplate[] = [
 	{
 		id: 'seamless_reference',
 		graph: seamlessReferenceGraph as ComfyGraph,
-		map: { outputNode: '9', ...COMMON, ...REFERENCE_BINDINGS },
+		map: { outputNode: '9', ...COMMON, ...SIZE_REFERENCE, ...REFERENCE_BINDINGS },
 		license: LICENSE,
 		source: SOURCE,
 		supports: { reference: true, seamless: true }
