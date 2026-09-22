@@ -152,7 +152,8 @@ and a colour word produces a background the model may also use as a design
 colour. The principled repair is not in the prompt: key only regions CONNECTED
 to the border, by flood fill, rather than every matching pixel globally. Then
 a magenta detail enclosed by the subject survives and a magenta backdrop does
-not. `normalize.rs::chroma_key` is global today.
+not. **Done** — `normalize.rs::chroma_key` floods inward from the border, and
+on the coin that rescued 40,833 pixels the global key would have punched out.
 
 **Isolation is still not guaranteed.** The coin filled the frame despite
 "small in frame, centred, lots of empty space around it". Better prompt

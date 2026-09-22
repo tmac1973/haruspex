@@ -27,19 +27,85 @@ use super::profile::{
 };
 use super::stats::{entropy_bits, ImageStats};
 
-/// Set alpha 0 on every pixel within `tolerance` of the key colour.
+/// Remove the background: every pixel within `tolerance` of the key colour
+/// that is CONNECTED TO THE BORDER.
 ///
 /// A threshold, not a matte. The prompt asks the model for a flat background
 /// of exactly this colour, which makes removal deterministic, fast, and
 /// testable against a fixture — none of which is true of a segmentation model.
+///
+/// The connectivity is the part that was learned the hard way. Keying every
+/// matching pixel globally punches holes through the subject whenever the
+/// model uses the key colour as a DESIGN colour, and it does: the isolation
+/// prompt names the colour three times to get a flat backdrop, and SDXL
+/// duly rendered a magenta symbol on the face of a gold coin. Globally keyed,
+/// that asset ships with a hole through the middle of it.
+///
+/// A background is the region the subject sits ON, which is reachable from
+/// the edge of the frame. So this floods inward from the border and stops at
+/// the subject's outline.
+///
+/// The deliberate trade-off: a key-coloured region fully ENCLOSED by the
+/// subject is kept. At these sizes a design detail in the key colour is far
+/// more likely than a genuine see-through hole, and the failure modes are not
+/// symmetric — a kept detail is quantized into the palette and looks like the
+/// art, while a wrongly removed one is a hole nothing can repair later.
 pub fn chroma_key(img: &mut RgbaImage, key: u32, bg: &Background) {
     let k = rgba(key);
-    for p in img.pixels_mut() {
-        if p.0[3] == 0 {
-            continue;
+    let (w, h) = img.dimensions();
+    if w == 0 || h == 0 {
+        return;
+    }
+    let idx = |x: u32, y: u32| (y * w + x) as usize;
+    let mut seen = vec![false; (w * h) as usize];
+    let mut stack: Vec<(u32, u32)> = Vec::new();
+
+    // Seed from every border pixel that is already background-coloured.
+    let seed = |x: u32, y: u32, seen: &mut Vec<bool>, stack: &mut Vec<(u32, u32)>| {
+        if seen[idx(x, y)] {
+            return;
         }
-        if is_background(p.0, k, bg) {
-            p.0 = [0, 0, 0, 0];
+        let px = img.get_pixel(x, y).0;
+        if px[3] != 0 && is_background(px, k, bg) {
+            seen[idx(x, y)] = true;
+            stack.push((x, y));
+        }
+    };
+    for x in 0..w {
+        seed(x, 0, &mut seen, &mut stack);
+        seed(x, h - 1, &mut seen, &mut stack);
+    }
+    for y in 0..h {
+        seed(0, y, &mut seen, &mut stack);
+        seed(w - 1, y, &mut seen, &mut stack);
+    }
+
+    // Flood inward. Four-connected: a diagonal leak would let the background
+    // slip through a one-pixel gap in an outline, which at 32px is most of
+    // them.
+    while let Some((x, y)) = stack.pop() {
+        img.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
+        let visit = |nx: u32, ny: u32, seen: &mut Vec<bool>, stack: &mut Vec<(u32, u32)>| {
+            if seen[idx(nx, ny)] {
+                return;
+            }
+            let px = img.get_pixel(nx, ny).0;
+            if px[3] != 0 && is_background(px, k, bg) {
+                seen[idx(nx, ny)] = true;
+                stack.push((nx, ny));
+            }
+        };
+        if x > 0 {
+            visit(x - 1, y, &mut seen, &mut stack);
+        }
+        if x + 1 < w {
+            visit(x + 1, y, &mut seen, &mut stack);
+        }
+        if y > 0 {
+            visit(x, y - 1, &mut seen, &mut stack);
+        }
+        if y + 1 < h {
+            visit(x, y + 1, &mut seen, &mut stack);
         }
     }
 }
@@ -358,6 +424,100 @@ mod tests {
                 img.put_pixel(x, y, Rgba(c));
             }
         }
+    }
+
+    #[test]
+    fn keying_keeps_a_key_coloured_detail_enclosed_by_the_subject() {
+        // The bug this exists for. The isolation prompt names the key colour
+        // three times to get a flat backdrop, and a model will happily use it
+        // as a design colour too: SDXL put a magenta symbol on the face of a
+        // gold coin. Keyed globally, that asset ships with a hole through the
+        // middle of it.
+        let bg = NormalizeProfile::default().background;
+        let mut img = RgbaImage::from_pixel(16, 16, Rgba(rgba(bg.color)));
+        // A solid subject covering the middle.
+        for y in 4..12 {
+            for x in 4..12 {
+                img.put_pixel(x, y, Rgba([200, 170, 40, 255]));
+            }
+        }
+        // A detail inside it, in the key colour.
+        img.put_pixel(7, 7, Rgba(rgba(bg.color)));
+        img.put_pixel(8, 7, Rgba(rgba(bg.color)));
+
+        chroma_key(&mut img, bg.color, &bg);
+
+        assert_eq!(img.get_pixel(0, 0).0[3], 0, "the backdrop must go");
+        assert_eq!(img.get_pixel(5, 5).0[3], 255, "the subject must stay");
+        assert_ne!(
+            img.get_pixel(7, 7).0[3],
+            0,
+            "an enclosed detail in the key colour must not be punched out"
+        );
+    }
+
+    #[test]
+    fn keying_removes_a_backdrop_that_reaches_the_border_through_a_gap() {
+        // Four-connected flooding, and a one-pixel channel is enough: the
+        // background outside a subject is one region however narrow the route.
+        let bg = NormalizeProfile::default().background;
+        let mut img = RgbaImage::from_pixel(16, 16, Rgba([200, 170, 40, 255]));
+        // A pocket of backdrop joined to the edge by a single-pixel channel.
+        for y in 6..10 {
+            for x in 6..10 {
+                img.put_pixel(x, y, Rgba(rgba(bg.color)));
+            }
+        }
+        for y in 0..6 {
+            img.put_pixel(7, y, Rgba(rgba(bg.color)));
+        }
+
+        chroma_key(&mut img, bg.color, &bg);
+
+        assert_eq!(img.get_pixel(7, 8).0[3], 0, "reachable backdrop must go");
+        assert_eq!(img.get_pixel(2, 2).0[3], 255, "the subject must stay");
+    }
+
+    #[test]
+    fn keying_floods_in_all_four_directions() {
+        // One corridor per direction, each reachable ONLY by travelling that
+        // way. Without this the flood can pass a test by reaching everything
+        // via the other three, and a dropped direction leaves background
+        // stranded inside real sprites.
+        let bg = NormalizeProfile::default().background;
+        let key = Rgba(rgba(bg.color));
+        let mut img = RgbaImage::from_pixel(21, 21, Rgba([200, 170, 40, 255]));
+
+        for x in 0..=8 {
+            img.put_pixel(x, 1, key); // enters left, must travel RIGHT
+        }
+        for x in 12..21 {
+            img.put_pixel(x, 3, key); // enters right, must travel LEFT
+        }
+        for y in 0..=8 {
+            img.put_pixel(5, y, key); // enters top, must travel DOWN
+        }
+        for y in 12..21 {
+            img.put_pixel(7, y, key); // enters bottom, must travel UP
+        }
+
+        chroma_key(&mut img, bg.color, &bg);
+
+        assert_eq!(img.get_pixel(8, 1).0[3], 0, "rightward");
+        assert_eq!(img.get_pixel(12, 3).0[3], 0, "leftward");
+        assert_eq!(img.get_pixel(5, 8).0[3], 0, "downward");
+        assert_eq!(img.get_pixel(7, 12).0[3], 0, "upward");
+    }
+
+    #[test]
+    fn keying_a_frame_filling_subject_removes_nothing() {
+        // No border pixel is background, so there is nothing to flood from.
+        // The gate catches this as AlphaHigh; keying must not invent a result.
+        let bg = NormalizeProfile::default().background;
+        let mut img = RgbaImage::from_pixel(8, 8, Rgba([200, 170, 40, 255]));
+        img.put_pixel(4, 4, Rgba(rgba(bg.color)));
+        chroma_key(&mut img, bg.color, &bg);
+        assert!(img.pixels().all(|p| p.0[3] == 255));
     }
 
     #[test]
