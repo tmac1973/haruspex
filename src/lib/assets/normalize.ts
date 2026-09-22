@@ -17,8 +17,16 @@ import type { NormalizeResult } from '$lib/ipc/gen/NormalizeResult';
 import type { AssetKind } from '$lib/ipc/gen/AssetKind';
 import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { ImageStats } from '$lib/ipc/gen/ImageStats';
+import type { PaletteSpread } from '$lib/ipc/gen/PaletteSpread';
 
-export type { NormalizeProfile, NormalizeResult, AssetKind, CheckReport, ImageStats };
+export type {
+	NormalizeProfile,
+	NormalizeResult,
+	AssetKind,
+	CheckReport,
+	ImageStats,
+	PaletteSpread
+};
 
 /** Key, crop, downscale, quantize and outline one image. */
 export function normalizeImage(
@@ -65,6 +73,16 @@ export function contactSheet(images: Uint8Array[], cell: number): Promise<Uint8A
 		images: images.map((b) => Array.from(b)),
 		cell
 	}).then((b) => new Uint8Array(b));
+}
+
+/**
+ * Whether a palette is spread out enough to be worth imposing on a set.
+ *
+ * The anchor's palette governs every asset, so one that has collapsed onto a
+ * single hue does not make a set cohere — it makes every asset that colour.
+ */
+export function paletteSpread(palette: number[]): Promise<PaletteSpread> {
+	return invoke<PaletteSpread>('image_palette_spread', { palette });
 }
 
 /** The shared palette, from the style anchor. */

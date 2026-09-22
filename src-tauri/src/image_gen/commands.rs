@@ -9,8 +9,10 @@ use serde::Serialize;
 
 use super::checks::{evaluate, CheckReport};
 use super::normalize::{chroma_key, dominant_border_color, normalize};
-use super::palette::extract_palette;
-use super::profile::{effective_profile, AssetKind, Background, NormalizeProfile};
+use super::palette::{extract_palette, hue_spread};
+use super::profile::{
+    effective_profile, AssetKind, Background, NormalizeProfile, PALETTE_HUE_DOMINANCE,
+};
 use super::sheet::contact_sheet;
 use super::stats::ImageStats;
 
@@ -72,6 +74,32 @@ pub fn image_normalize(
 #[tauri::command]
 pub fn image_check(stats: ImageStats, profile: NormalizeProfile, kind: AssetKind) -> CheckReport {
     evaluate(&stats, &effective_profile(&profile, kind))
+}
+
+/// Whether a palette is spread out enough to be worth imposing on a set.
+///
+/// The anchor's palette governs every asset, so one that has collapsed onto a
+/// single hue does not make the set cohere — it makes every asset that
+/// colour, whatever its prompt asked for.
+#[tauri::command]
+pub fn image_palette_spread(palette: Vec<u32>) -> PaletteSpread {
+    let (dominant_fraction, buckets_used) = hue_spread(&palette);
+    PaletteSpread {
+        dominant_fraction,
+        buckets_used: buckets_used as u32,
+        ok: dominant_fraction <= PALETTE_HUE_DOMINANCE,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct PaletteSpread {
+    /// Share of entries in the single most populated hue bucket.
+    pub dominant_fraction: f32,
+    /// How many of the twelve hue buckets have anything in them.
+    #[ts(type = "number")]
+    pub buckets_used: u32,
+    pub ok: bool,
 }
 
 /// Tile a run's assets into one sheet.

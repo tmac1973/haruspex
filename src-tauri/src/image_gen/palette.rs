@@ -7,7 +7,9 @@
 
 use image::RgbaImage;
 
-use super::profile::{pack, rgba, PALETTE_DISTANCE_CUTOFF};
+use super::profile::{
+    hue_saturation, pack, rgba, PALETTE_DISTANCE_CUTOFF, PALETTE_GREY_SATURATION,
+};
 
 /// Perceptually weighted squared distance. Green dominates luminance, so a
 /// plain Euclidean metric over-values blue and picks visibly wrong entries.
@@ -122,6 +124,34 @@ pub fn extract_palette(img: &RgbaImage, n: u32, exclude: Option<(u32, u8)>) -> V
     out
 }
 
+/// How spread out a palette's hues are.
+///
+/// Returns the fraction of entries in the single most populated hue bucket,
+/// and how many buckets have anything in them. Twelve 30-degree buckets;
+/// greys are excluded, because a deliberately desaturated palette is a style
+/// rather than a collapse.
+///
+/// This exists because the anchor's palette is imposed on every asset in the
+/// set. One that has collapsed onto a single hue does not make the set
+/// cohere, it makes every asset that colour — and nothing downstream can
+/// recover, because quantization has by then thrown the evidence away.
+pub fn hue_spread(palette: &[u32]) -> (f32, usize) {
+    if palette.is_empty() {
+        return (0.0, 0);
+    }
+    let mut buckets = [0u32; 12];
+    for c in palette {
+        let (h, s) = hue_saturation(rgba(*c));
+        if s < PALETTE_GREY_SATURATION {
+            continue;
+        }
+        buckets[((h / 30.0) as usize).min(11)] += 1;
+    }
+    let top = *buckets.iter().max().unwrap_or(&0);
+    let used = buckets.iter().filter(|b| **b > 0).count();
+    (top as f32 / palette.len() as f32, used)
+}
+
 /// Snap every pixel to its nearest palette entry.
 ///
 /// Returns the fraction of opaque pixels that were further than
@@ -222,6 +252,57 @@ mod tests {
     fn extraction_skips_transparent_pixels() {
         let img = solid(4, 4, [10, 10, 10, 0]);
         assert!(extract_palette(&img, 4, None).is_empty());
+    }
+
+    #[test]
+    fn a_collapsed_palette_is_reported_as_one_hue() {
+        // The failure this exists for: an anchor that rendered a scene had
+        // its ground keyed away as background, leaving foliage, and 31 of 32
+        // entries came back green. Every asset was then quantized into it,
+        // and a shopping cart came out as a bush.
+        let greens: Vec<u32> = (0..16)
+            .map(|i| pack([0x20 + i * 4, 0x70 + i * 6, 0x20 + i * 3, 255]))
+            .collect();
+        let (dominant, used) = hue_spread(&greens);
+        assert!(dominant > 0.6, "dominant {dominant}");
+        assert!(used <= 2, "used {used}");
+    }
+
+    #[test]
+    fn a_varied_palette_is_reported_as_spread_out() {
+        let mixed = vec![
+            pack([0xc0, 0x30, 0x30, 255]),
+            pack([0xc0, 0x90, 0x30, 255]),
+            pack([0xb0, 0xc0, 0x30, 255]),
+            pack([0x30, 0xc0, 0x50, 255]),
+            pack([0x30, 0xb0, 0xc0, 255]),
+            pack([0x30, 0x40, 0xc0, 255]),
+            pack([0x90, 0x30, 0xc0, 255]),
+            pack([0xc0, 0x30, 0x90, 255]),
+        ];
+        let (dominant, used) = hue_spread(&mixed);
+        assert!(dominant <= 0.3, "dominant {dominant}");
+        assert!(used >= 6, "used {used}");
+    }
+
+    #[test]
+    fn a_desaturated_palette_is_not_a_collapsed_one() {
+        // "Cold concrete greys, dusty beige" is a style, not a failure.
+        // Counting greys as one enormous hue bucket would reject it.
+        let greys: Vec<u32> = (0..12)
+            .map(|i| {
+                let v = 0x20 + i * 16;
+                pack([v, v, v, 255])
+            })
+            .collect();
+        let (dominant, used) = hue_spread(&greys);
+        assert_eq!(dominant, 0.0, "greys must not count toward any hue");
+        assert_eq!(used, 0);
+    }
+
+    #[test]
+    fn an_empty_palette_reports_nothing_rather_than_dividing_by_zero() {
+        assert_eq!(hue_spread(&[]), (0.0, 0));
     }
 
     #[test]

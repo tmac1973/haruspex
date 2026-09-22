@@ -14,6 +14,13 @@ export interface AnchorOutcome {
 	approval: 'approved' | 'auto';
 	/** Generations spent. 0 when reused. */
 	attempts: number;
+	/**
+	 * Anchors thrown away because their palette had collapsed onto one hue.
+	 *
+	 * Recorded rather than silent: a run that needed four attempts to get a
+	 * usable palette is telling you the style prompt describes a scene.
+	 */
+	rejected: number;
 	paletteSize: number;
 	/** Where the committed anchor lives, relative to the working directory. */
 	imagePath: string;

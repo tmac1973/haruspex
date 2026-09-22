@@ -80,6 +80,27 @@ pub struct Background {
 /// ambiguous image is left alone and fails the alpha check honestly instead.
 pub const BORDER_DOMINANCE: f32 = 0.6;
 
+/// How much of a palette may share one hue before it is not a palette.
+///
+/// The anchor's palette is imposed on every asset in the set, so a palette
+/// that collapsed onto one hue turns every asset that colour regardless of
+/// its prompt. Found in a real run: an anchor that rendered an overgrown
+/// scene rather than a sheet of subjects had its ground keyed away as
+/// background, leaving foliage — 31 of 32 palette entries were green, and a
+/// shopping cart, a traffic signal and an oil drum all came out as bushes.
+///
+/// Calibrated against five real anchors, hue in twelve 30-degree buckets with
+/// greys counted apart: the broken one put 75% in one bucket, while four that
+/// produced usable sets ranged 25%..47%. 60% sits clear of both.
+pub const PALETTE_HUE_DOMINANCE: f32 = 0.6;
+
+/// Below this saturation a colour is grey, and grey is not a hue.
+///
+/// A deliberately desaturated palette — "cold concrete greys, dusty beige" —
+/// is a legitimate style, not a collapsed palette, so greys are excluded from
+/// the dominance measure rather than counted as one enormous bucket.
+pub const PALETTE_GREY_SATURATION: u8 = 40;
+
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct Crop {

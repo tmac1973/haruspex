@@ -106,7 +106,16 @@ function anchorLine(anchor: AnchorOutcome | null): string {
 		anchor.approval === 'approved'
 			? 'approved by a human'
 			: 'accepted automatically — nobody saw it';
-	return `${how}, ${who}. Palette: ${anchor.paletteSize} colour(s). Recipe: \`${anchor.recipePath}\`.`;
+	const discarded =
+		anchor.rejected > 0
+			? ` ${anchor.rejected} earlier attempt(s) were discarded for a palette that had ` +
+				`collapsed onto one colour — usually a sign the style prompt describes a scene ` +
+				`rather than a subject.`
+			: '';
+	return (
+		`${how}, ${who}. Palette: ${anchor.paletteSize} colour(s). ` +
+		`Recipe: \`${anchor.recipePath}\`.${discarded}`
+	);
 }
 
 function statusWord(s: EntryOutcome['status']): string {

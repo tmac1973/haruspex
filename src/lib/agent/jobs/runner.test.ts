@@ -2752,7 +2752,9 @@ describe('jobs runner — asset generation', () => {
 		spec: string | null,
 		anchor?: { recipe: string | null },
 		present: string[] = [],
-		checks: { passed: boolean; failed: string[] } = { passed: true, failed: [] }
+		checks: { passed: boolean; failed: string[] } = { passed: true, failed: [] },
+		/** Share of the anchor palette in one hue bucket; >0.6 is unusable. */
+		spread = 0.3
 	) {
 		const written: Array<{ relPath: string; content: string }> = [];
 		const wroteBytes: string[] = [];
@@ -2804,6 +2806,9 @@ describe('jobs runner — asset generation', () => {
 			}
 			if (cmd === 'image_default_profile') return profileFixture();
 			if (cmd === 'image_extract_palette') return PALETTE;
+			if (cmd === 'image_palette_spread') {
+				return { dominant_fraction: spread, buckets_used: 6, ok: spread <= 0.6 };
+			}
 			if (cmd === 'image_store_bytes') return ANCHOR_HASH;
 			return undefined;
 		});
@@ -3283,6 +3288,65 @@ describe('jobs runner — asset generation', () => {
 		expect(report).toContain('licence unknown');
 		// The base model's licence still stands for the base model.
 		expect(report).toContain('OpenRAIL-M');
+	});
+
+	it('throws away an anchor whose palette collapsed onto one colour', async () => {
+		// The failure this check exists for: an anchor that rendered a scene
+		// had its ground keyed away as background, leaving foliage. 31 of 32
+		// palette entries were green, every asset was quantized into it, and
+		// a shopping cart came out as a bush. A human approved it on sight,
+		// because it was a handsome picture — which is why this runs BEFORE
+		// the question rather than as part of it.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 4 }));
+		wireFs(goodSpec(), undefined, [], { passed: true, failed: [] }, 0.9);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// Four generations, and the user was asked only once — on the last,
+		// when there was nothing left to re-roll.
+		expect(anchorCalls()).toHaveLength(4);
+		expect(mocks.askUserQuestion.mock.calls.length).toBe(1);
+	});
+
+	it('tells the user when it asks them to approve an unusable anchor', async () => {
+		// Approving a sheet nobody said was unusable is how this reached a
+		// hundred assets.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 1 }));
+		wireFs(goodSpec(), undefined, [], { passed: true, failed: [] }, 0.9);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const asked = mocks.askUserQuestion.mock.calls.at(-1)![0];
+		expect(asked.question).toContain('90%');
+		expect(asked.question).toContain('single colour');
+	});
+
+	it('records discarded anchors in the report, as a signal about the spec', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 3 }));
+		const written = wireFs(goodSpec(), undefined, [], { passed: true, failed: [] }, 0.9);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).toContain('discarded');
+		expect(report).toContain('collapsed onto one colour');
+	});
+
+	it('accepts a spread palette on the first try, and says nothing about it', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(), undefined, [], { passed: true, failed: [] }, 0.3);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(anchorCalls()).toHaveLength(1);
+		const asked = mocks.askUserQuestion.mock.calls.at(-1)![0];
+		expect(asked.question).not.toContain('single colour');
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).not.toContain('discarded');
 	});
 
 	it('fails when there is no spec and nothing to write one from', async () => {

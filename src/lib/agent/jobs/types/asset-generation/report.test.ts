@@ -35,6 +35,7 @@ function anchor(over: Partial<AnchorOutcome> = {}): AnchorOutcome {
 		source: 'generated',
 		approval: 'approved',
 		attempts: 1,
+		rejected: 0,
 		paletteSize: 16,
 		imagePath: 'a/anchor.png',
 		recipePath: 'a/anchor.json',

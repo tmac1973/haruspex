@@ -12,7 +12,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { askUserQuestion } from '$lib/stores/userQuestion.svelte';
 import { registerLocalImage } from '$lib/images/resolve.svelte';
-import { extractPalette } from '$lib/assets/normalize';
+import { extractPalette, paletteSpread } from '$lib/assets/normalize';
+import type { PaletteSpread } from '$lib/ipc/gen/PaletteSpread';
 import type { AssetSpec, AnchorRecipe } from '$lib/assets/spec/types';
 import { resolveImageBackend } from '$lib/image';
 import type { ImageResult } from '$lib/image/types';
@@ -230,6 +231,10 @@ export async function establishAnchor(
 	let seed: number | null = null;
 	let result: ImageResult | null = null;
 	let approval: AnchorOutcome['approval'] = 'auto';
+	let palette: number[] = [];
+	let spread: PaletteSpread | null = null;
+	/** Anchors thrown away for an unusable palette, for the run's report. */
+	let rejected = 0;
 
 	for (;;) {
 		attempts++;
@@ -245,6 +250,30 @@ export async function establishAnchor(
 			},
 			{ signal: deps.signal }
 		);
+
+		// The anchor's own quality gate, and it runs BEFORE the human is
+		// asked. Every asset is quantized into this palette, so one that has
+		// collapsed onto a single hue turns the whole set that colour
+		// whatever each prompt asked for — and that is not a question a human
+		// can answer by looking at the sheet. In the run that produced this
+		// check the anchor was a handsome overgrown scene, approved on sight,
+		// and its ground was keyed away as background leaving foliage: 31 of
+		// 32 palette entries green, and a shopping cart came out as a bush.
+		palette = await extractPalette(
+			result.images[0].bytes,
+			deps.profile.palette_size,
+			deps.profile.background
+		);
+		spread = await paletteSpread(palette);
+		const usable = spread.ok;
+		if (!usable && attempts < deps.anchorAttempts) {
+			// Silently is wrong, but so is asking: it is mechanically
+			// unusable, so re-roll and say so in the outcome.
+			rejected++;
+			seed = Math.floor(Math.random() * 2_147_483_647);
+			continue;
+		}
+
 		if (!deps.attended) break;
 
 		// Show the sheet and the spec together: this is the run's only
@@ -266,7 +295,17 @@ export async function establishAnchor(
 			height: img.height,
 			source: 'style anchor'
 		});
-		deps.present(`${url ? `![Style anchor](${url})\n\n` : ''}${specSummary(spec)}`);
+		// Named in the question when it applies. A human approving a sheet
+		// they were not told is unusable is how this bug reached a hundred
+		// assets.
+		const warning =
+			spread && !spread.ok
+				? `\n\n**Warning:** ${Math.round(spread.dominant_fraction * 100)}% of this anchor's ` +
+					`palette is a single colour, so every asset will be pushed toward it whatever its ` +
+					`prompt says. This usually means the sheet is a scene rather than separate ` +
+					`subjects on a plain background.`
+				: '';
+		deps.present(`${url ? `![Style anchor](${url})\n\n` : ''}${specSummary(spec)}${warning}`);
 		const last = attempts >= deps.anchorAttempts;
 		const answer = await askUserQuestion(
 			{
@@ -275,7 +314,8 @@ export async function establishAnchor(
 				imageUrl: url ?? undefined,
 				question:
 					`This is the style every asset will be generated in, and the list it will be ` +
-					`applied to. Approve to generate them${last ? '' : ', or ask for a different anchor'}.`,
+					`applied to. Approve to generate them${last ? '' : ', or ask for a different anchor'}.` +
+					(warning ? ` ${warning.replace(/\*\*/g, '').trim()}` : ''),
 				options: [
 					{ label: 'Approve', description: 'Use this style.', recommended: true },
 					...(last ? [] : [{ label: 'Regenerate', description: 'Try a different anchor.' }]),
@@ -304,9 +344,6 @@ export async function establishAnchor(
 	}
 
 	const image = result.images[0].bytes;
-	// Exclude both the colour the prompt asked for and the one the sheet
-	// actually has round its edge; the model rarely produces the former.
-	const palette = await extractPalette(image, deps.profile.palette_size, deps.profile.background);
 
 	const recipe: AnchorRecipe = {
 		version: 1,
@@ -332,6 +369,7 @@ export async function establishAnchor(
 			source: 'generated',
 			approval,
 			attempts,
+			rejected,
 			paletteSize: palette.length,
 			imagePath: spec.anchor.image,
 			recipePath: spec.anchor.recipe
@@ -370,6 +408,7 @@ async function tryReuse(spec: AssetSpec, deps: AnchorDeps): Promise<AnchorResult
 			source: 'reused',
 			approval: 'approved',
 			attempts: 0,
+			rejected: 0,
 			paletteSize: recipe.palette.length,
 			imagePath: spec.anchor.image,
 			recipePath: spec.anchor.recipe
