@@ -9,8 +9,14 @@ Private local AI desktop app — Tauri 2.x + SvelteKit 5 + llama.cpp sidecar.
 - **LLM Inference**: llama-server sidecar (port 8765, OpenAI-compatible API)
 - **Speech-to-Text**: whisper-server sidecar (port 8766, whisper.cpp)
 - **Text-to-Speech**: koko sidecar (port 3001, Kokoros OpenAI-compatible API)
+- **Image generation**: ComfyUI (a server the user runs) or the bundled
+  sd-server sidecar (port 8767, stable-diffusion.cpp). Off by default; nothing
+  starts until Settings → Image selects one. See `docs/image-generation.md`.
 - **Integrations**: MCP servers (stdio + streamable HTTP), IMAP email, CalDAV/CardDAV, screen capture
 - **Default model**: Qwen 3.5 9B (Q4_K_M, ~5.7 GB)
+- **Image models**: a second curated catalogue (SD1.5, SDXL), downloaded to
+  `models/image/` through the same machinery, with licence and commercial-use
+  as first-class fields
 
 ## Dev Setup
 
@@ -63,7 +69,7 @@ Binaries and `.so` files are gitignored. Run `./scripts/link-sidecar-libs.sh` to
 | 3001 | koko (TTS) |
 | 8765 | llama-server |
 | 8766 | whisper-server |
-| 8767 | sd-server (reserved — nothing starts it yet) |
+| 8767 | sd-server, when the bundled image engine is running |
 | 9876 | Blender, when its companion addon is running |
 | 9080 | Godot's editor bridge, when its addon is enabled |
 

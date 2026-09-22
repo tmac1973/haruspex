@@ -1,11 +1,164 @@
 # Image generation
 
-Haruspex can generate images through a local diffusion backend. Two are
-planned: **ComfyUI**, which you run yourself, and a bundled **sd-server**
-(stable-diffusion.cpp) that needs no separate install. Only the first is wired
-up today; this page records what the second is pinned to and how to refresh it.
+Haruspex generates game art from a short description, through a diffusion
+model running on your own machine. Nothing is sent anywhere and nothing starts
+until you opt in.
+
+## Choosing a backend
+
+Settings → Image offers two, and they are genuinely different trades.
+
+**ComfyUI** talks to a server you run. Pick it if you already have ComfyUI, or
+want custom workflows, IP-Adapter and node packs the bundled engine does not
+have. It is the only backend that currently provides all three coherence
+layers (see below).
+
+One caveat, and it bites immediately: ComfyUI rejects any request carrying an
+`Origin` header with a flat 403, and a webview always sends one. Start it with
+`--enable-cors-header` or Haruspex cannot reach it. A narrow origin is safer
+than the default `*`, which lets any page you visit drive your ComfyUI.
+
+**Bundled engine** is stable-diffusion.cpp, shipped with Haruspex. Pick it if
+you want image generation with nothing to install. It starts on demand, stops
+when you say, and reports honestly that it cannot do reference conditioning —
+the job degrades around that rather than pretending.
+
+**None** is the default. No process, no download, no startup cost.
+
+## The asset job
+
+Create a job of type **Asset generation**, point it at a project directory,
+and either write a spec or describe what you want and let the run write one.
+
+### The spec
+
+One JSON file in your project, and the contract between you, guided planning
+and the job. A minimal one:
+
+```json
+{
+  "version": 1,
+  "style": {
+    "prompt": "16-bit pixel art, flat shading, bold dark outline, muted palette",
+    "negativePrompt": "photo, 3d render, gradient shading"
+  },
+  "anchor": {
+    "image": "assets/haruspex-anchor.png",
+    "recipe": "assets/haruspex-anchor.json"
+  },
+  "normalize": { "target_size": 32, "upscale": 32, "palette_size": 32 },
+  "entries": [
+    { "id": "iron_sword", "kind": "sprite", "prompt": "an iron sword",
+      "out": "assets/generated/sprite/iron_sword.png" },
+    { "id": "cobblestone", "kind": "texture", "prompt": "grey cobblestone floor",
+      "out": "assets/generated/texture/cobblestone.png", "seamless": true }
+  ]
+}
+```
+
+`style.prompt` is appended to every entry and is what makes the set cohere.
+`kind` decides how the image is treated: a `sprite` or `icon` is isolated on a
+flat background which is then keyed out, a `texture` is meant to fill its
+frame and is neither cropped nor outlined. `id` is what your code will load
+the asset by, so it is validated rather than invented — a run refuses an id it
+cannot use instead of quietly tidying it into one your code does not name.
+
+`upscale` must suit the model: generation happens at `target_size * upscale`,
+and SD1.5 degrades above 512 while SDXL produces artefacts below 1024. A 32px
+target wants 16 on SD1.5 and 32 on SDXL.
+
+### The style anchor, and why it is committed
+
+The first thing a run produces is one reference sheet showing several of the
+spec's own subjects, in the spec's style. Every asset is then generated
+conditioned on it, and the palette is extracted from it.
+
+Both the image and the recipe that made it are written into your project and
+should be committed. That is the point: the style becomes a versioned artifact
+rather than something reconstructed from a recipe against model weights and
+node versions that will have moved. Adding ten sprites next month matches the
+hundred already shipped because it is literally the same reference image.
+
+A run reuses a committed anchor and does not regenerate it. To change the
+style deliberately, delete `haruspex-anchor.png`.
+
+### Adding assets later
+
+Add entries to the spec and run the job again. Entries whose output file
+already exists are skipped, so only the new ones are generated — and they are
+conditioned on the same committed anchor, so they match.
+
+To regenerate a few, delete exactly those files and re-run.
+
+## The three coherence layers
+
+A set looks like a set because of three independent mechanisms, not one:
+
+1. **Reference conditioning** — each asset is generated conditioned on the
+   anchor. Needs IP-Adapter; the bundled engine reports this as unavailable.
+2. **A shared palette** — every asset is quantized to colours extracted from
+   the anchor. Mechanical, and works on any backend.
+3. **A shared pixel grid** — every asset is downscaled to the same target size
+   by the same modal downscale. Also mechanical.
+
+Layers 2 and 3 do not depend on the model behaving, which is why a backend
+missing layer 1 still produces a usable set. When a layer is unavailable the
+report says which, per asset, rather than silently producing worse art.
+
+## Reading a report
+
+Each run writes `REPORT-assets.md` and `contact-sheet.png` beside the spec.
+
+- **Degraded** names each coherence layer the backend could not provide and
+  which assets it cost. Those assets were still made; they may match less
+  closely.
+- **Not produced** names each asset that never passed its checks, with the
+  reason and the closest attempt. **Nothing is written for these** — a
+  half-good PNG on disk would be skipped by the next run and never retried, so
+  re-running retries exactly them.
+- **Licensing** states the base model's licence, and lists any LoRA as licence
+  unknown. See below.
+- **The contact sheet** is the artifact to actually look at. Whether the set
+  reads as one game is the criterion the whole feature exists for, and it is
+  the one thing no check can answer.
+
+## Licensing
+
+Both catalogue models permit commercial use. The trap is not the base model.
+
+`style.loras` lets a spec name LoRAs, and most published pixel-art LoRAs carry
+their own terms — many were trained on art their author did not own. A LoRA
+can therefore contaminate output whose base model is perfectly clean.
+
+Haruspex cannot classify a file you supply, so it does not pretend to: the
+report names every LoRA as **licence unknown**, and a checkpoint Haruspex did
+not provide is reported as unknown too rather than given the benefit of the
+doubt. Generated images are generally not copyrightable in their own right,
+and some storefronts require AI-generated content to be disclosed.
+
+## The manual checklist
+
+Two of this feature's success criteria cannot be tested, and are checked by
+hand. `endToEnd.test.ts` records which and why.
+
+1. **Does the contact sheet read as one game?** Open it. If not, name the
+   layer that failed — reference conditioning, palette, or grid.
+2. **Delete ten outputs and re-run: do the ten that come back match?** The
+   mechanical half is tested (reuse makes no backend call, exactly the missing
+   files regenerate, the palette is restored). Whether they MATCH is a
+   judgement.
+
+Live end-to-end checks are opt-in so CI never reaches for a GPU:
+
+```bash
+HARUSPEX_IMAGE_E2E=1 HARUSPEX_IMAGE_BACKEND_URL=http://127.0.0.1:8188 \
+  npx vitest run endToEnd
+```
 
 ## The bundled sd-server binary
+
+Reference material for maintainers below; nothing here is needed to use the
+feature.
 
 | | |
 | --- | --- |
@@ -153,7 +306,13 @@ checkpoint Haruspex did not provide — a hand-placed file, or whatever ComfyUI
 has configured — is reported as unknown too, rather than given the benefit of
 the doubt.
 
-### What is not here yet
+### What is verified, and what is not
 
-The bundled engine has never generated an asset through a full job run; phase
-15 is where the local path is verified end to end.
+Verified against a running engine: SD1.5 loads from a co-located binary,
+Vulkan and the CPU backend both register, `/sdcpp/v1/capabilities` answers
+200, and `/sdapi/v1/txt2img` returns `images` as base64 with `info` as a JSON
+string carrying the resolved seed.
+
+NOT yet verified: a full asset job end to end against the bundled engine, and
+anything at all on macOS or Windows. Those are hand checks — see the manual
+checklist above.
