@@ -14,7 +14,7 @@
  * like success.
  */
 
-import type { ImageRequest } from '../types';
+import type { ImageRequest, LoraRef } from '../types';
 
 /** One node in an API-format graph. */
 export interface GraphNode {
@@ -39,13 +39,26 @@ export interface UploadedBinding {
 }
 
 /**
- * A fixed set of LoRA loader nodes. Slot i takes `loras[i]`; every unused slot
- * has its strengths zeroed so a template with three slots and one LoRA does
- * not apply two leftovers from whatever the graph shipped with.
+ * A chain of LoRA loader nodes. Slot i takes `loras[i]`; unused slots are
+ * REMOVED from the graph and the chain spliced back together.
+ *
+ * Zeroing their strengths is not enough, and a real server is the only place
+ * that shows it: ComfyUI validates `lora_name` against the LoRAs actually
+ * installed, so a loader left in the graph with an empty name fails
+ * validation and takes the whole prompt down with it — on any server with no
+ * LoRAs, which is most of them. A strength of 0 on a node that was refused
+ * before it ran buys nothing.
+ *
+ * `source` is the node feeding the chain (the checkpoint loader). When every
+ * slot is unused the chain vanishes entirely and consumers are spliced
+ * straight back to it.
  */
 export interface LoraSlotsBinding {
 	kind: 'loraSlots';
+	/** Loader nodes, in chain order: `source` → nodes[0] → nodes[1] → … */
 	nodes: string[];
+	/** What feeds the first slot, and what consumers fall back to. */
+	source: string;
 }
 
 export interface FieldMap {
@@ -158,21 +171,59 @@ export function applyFieldMap(
 		setScalar(out, map.referenceImage, derived.referenceFilename);
 	}
 
-	if (map.loras) {
-		const wanted = req.loras ?? [];
-		map.loras.nodes.forEach((node, i) => {
-			if (missingNode(out, node)) {
-				throw new Error(`Workflow has no LoRA node "${node}".`);
-			}
-			const lora = wanted[i];
-			const inputs = out[node].inputs;
-			inputs.lora_name = lora ? lora.name : (inputs.lora_name ?? '');
-			// Zeroed rather than left alone: an unused slot must contribute
-			// nothing, whatever the template shipped with.
-			inputs.strength_model = lora ? lora.strength : 0;
-			inputs.strength_clip = lora ? lora.strength : 0;
-		});
-	}
+	if (map.loras) applyLoraChain(out, map.loras, req.loras ?? []);
 
 	return out;
+}
+
+/**
+ * Replace every reference to `from` with one to `to`.
+ *
+ * A link in an API-format graph is `[nodeId, outputIndex]`, so splicing a node
+ * out of a chain means rewriting the id and leaving the index alone — the
+ * loaders pass model and clip through on the same output slots the checkpoint
+ * uses, which is what makes the splice safe.
+ */
+function relink(graph: ComfyGraph, from: string, to: string): void {
+	for (const node of Object.values(graph)) {
+		for (const [name, value] of Object.entries(node.inputs)) {
+			if (Array.isArray(value) && value.length === 2 && value[0] === from) {
+				node.inputs[name] = [to, value[1]];
+			}
+		}
+	}
+}
+
+/**
+ * Fill the LoRA slots that are used and delete the ones that are not.
+ *
+ * See [`LoraSlotsBinding`] for why deletion rather than zeroing: an unused
+ * loader is not inert, it is invalid, and ComfyUI refuses the whole prompt.
+ */
+function applyLoraChain(graph: ComfyGraph, binding: LoraSlotsBinding, wanted: LoraRef[]): void {
+	for (const node of binding.nodes) {
+		if (missingNode(graph, node)) throw new Error(`Workflow has no LoRA node "${node}".`);
+	}
+	if (missingNode(graph, binding.source)) {
+		throw new Error(`Workflow has no node "${binding.source}" to feed the LoRA chain.`);
+	}
+
+	const used = Math.min(wanted.length, binding.nodes.length);
+	for (let i = 0; i < used; i++) {
+		const inputs = graph[binding.nodes[i]].inputs;
+		inputs.lora_name = wanted[i].name;
+		inputs.strength_model = wanted[i].strength;
+		inputs.strength_clip = wanted[i].strength;
+	}
+
+	const unused = binding.nodes.slice(used);
+	if (unused.length === 0) return;
+
+	// Everything downstream referenced the chain's last node; after pruning it
+	// must reference the last SURVIVING one — or the source, when the whole
+	// chain goes.
+	const oldTail = binding.nodes[binding.nodes.length - 1];
+	const newTail = used > 0 ? binding.nodes[used - 1] : binding.source;
+	if (oldTail !== newTail) relink(graph, oldTail, newTail);
+	for (const node of unused) delete graph[node];
 }

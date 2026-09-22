@@ -44,7 +44,7 @@ const COMMON: Omit<FieldMap, 'outputNode'> = {
 	samplerName: { kind: 'scalar', node: '7', input: 'sampler_name' },
 	samplerSteps: { kind: 'scalar', node: '7', input: 'steps' },
 	samplerCfg: { kind: 'scalar', node: '7', input: 'cfg' },
-	loras: { kind: 'loraSlots', nodes: ['2', '3'] }
+	loras: { kind: 'loraSlots', nodes: ['2', '3'], source: '1' }
 };
 
 /** Sizes come from the latent in a text-to-image graph. */

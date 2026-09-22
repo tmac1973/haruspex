@@ -35,8 +35,20 @@ lets `index.ts` share one set of bindings:
 | `10`     | `VAEEncode`                      | reference graphs only               |
 | `11`     | `SeamlessTile`                   | seamless graphs only                |
 
-Unused LoRA slots have both strengths set to 0 on every request, so a template
-never applies a LoRA the caller did not ask for.
+Unused LoRA slots are **removed** from the graph and the chain spliced back to
+node `1`. Zeroing their strength is not enough: ComfyUI validates `lora_name`
+against the LoRAs actually installed, so a loader left behind with an empty
+name is refused and takes the whole prompt down with it. On a server with no
+LoRAs — which is most of them — that made every generation fail. Unit tests
+passed on the zeroing version; the first real server rejected everything.
+
+## `SeamlessTile` is not a core node
+
+Neither `seamless.json` nor `seamless_reference.json` will run on a stock
+ComfyUI: `SeamlessTile` comes from a custom node pack, and a server without it
+rejects the prompt with `kind: 'rejected'` and the node's name in the message.
+Seamless tiling is a declared capability precisely so this degrades per entry
+rather than failing a run.
 
 ## Editing one
 
