@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { hexColor, anchorPrompt, anchorNegativePrompt, anchorEdge, specSummary } from './anchor';
+import {
+	hexColor,
+	colourWord,
+	anchorPrompt,
+	anchorNegativePrompt,
+	anchorEdge,
+	specSummary
+} from './anchor';
 import type { AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
 
 function profile(over: Partial<NormalizeProfile> = {}): NormalizeProfile {
@@ -44,24 +51,67 @@ describe('hexColor', () => {
 	});
 });
 
+describe('colourWord', () => {
+	it('names the key colours a chroma key is actually set to', () => {
+		// Measured against SD1.5: a prompt saying "#ff00ff" produces no magenta
+		// at all, and the request for a flat backdrop is silently lost. The same
+		// prompt saying "magenta" produces a flat field the key removes cleanly.
+		expect(colourWord(0xff00ffff)).toBe('magenta');
+		expect(colourWord(0x00ff00ff)).toBe('bright green');
+		expect(colourWord(0x000000ff)).toBe('black');
+	});
+
+	it('snaps a near-miss to the nearest word rather than inventing one', () => {
+		expect(colourWord(0xfa05f0ff)).toBe('magenta');
+	});
+});
+
 describe('anchorPrompt', () => {
-	it('names the key colour the profile will actually key against', () => {
-		// Not a constant. Asking for one colour and keying another is how the
-		// background survives into every asset in the set.
+	it('leads with the style, because whatever opens the prompt picks the medium', () => {
+		// Paid for in bad generations: subjects-first, style-appended produced a
+		// competent OIL PAINTING of a chair; style-first produced pixel art of
+		// the same subjects. The medium is the entire point of a style anchor.
+		const p = anchorPrompt(spec(), profile());
+		expect(p.startsWith('flat pixel art, muted palette')).toBe(true);
+	});
+
+	it('never says "reference sheet" or "grid"', () => {
+		// That phrasing produced a flat brown floor plan — abstract rectangles,
+		// no subject at all — twice out of two. The model reads "sheet" and
+		// "grid" as the picture's content.
+		const p = anchorPrompt(spec(), profile()).toLowerCase();
+		expect(p).not.toContain('reference sheet');
+		expect(p).not.toContain('grid');
+		expect(p).not.toContain('2x2');
+	});
+
+	it('asks for no ground or terrain among the subjects', () => {
+		// "a patch of ground" made the model render the whole background as
+		// grass, destroying the flat backdrop the chroma key depends on.
+		const p = anchorPrompt(spec(), profile()).toLowerCase();
+		// Word boundaries: "background" legitimately contains "ground".
+		for (const word of ['ground', 'terrain', 'grass', 'floor']) {
+			expect(p).not.toMatch(new RegExp(`\\b${word}\\b`));
+		}
+	});
+
+	it('names the background in a word, not in hex', () => {
+		// The prompt and the chroma key have one source; a hex string the model
+		// cannot read means the background survives into every asset.
 		const p = anchorPrompt(
 			spec(),
 			profile({ background: { ...profile().background, color: 0x00ff00ff } })
 		);
-		expect(p).toContain('#00ff00');
+		expect(p).toContain('bright green');
+		expect(p).not.toContain('#');
 	});
 
-	it('carries the style prompt through, and asks for separated subjects', () => {
+	it('asks for several isolated subjects across different types', () => {
 		const p = anchorPrompt(spec(), profile());
-		expect(p).toContain('flat pixel art, muted palette');
-		// The reference has to show the style across subject TYPES, which is
-		// the whole reason it is one image of four things.
-		expect(p).toContain('2x2');
-		expect(p.toLowerCase()).toContain('separated');
+		expect(p).toContain('character');
+		expect(p).toContain('weapon');
+		expect(p).toContain('furniture');
+		expect(p.toLowerCase()).toContain('isolated');
 	});
 });
 
@@ -70,6 +120,15 @@ describe('anchorNegativePrompt', () => {
 		const n = anchorNegativePrompt(spec({ style: { prompt: 'x', negativePrompt: 'blurry' } }));
 		expect(n).toContain('blurry');
 		expect(n).toContain('busy background');
+	});
+
+	it('names the abstractions that "sheet" pulls toward', () => {
+		// Removing the words from the positive prompt is not enough on its own;
+		// the model still drifts to floor plans and blueprints.
+		const n = anchorNegativePrompt(spec());
+		for (const word of ['grid', 'floor plan', 'blueprint', 'abstract']) {
+			expect(n).toContain(word);
+		}
 	});
 
 	it('does not emit a leading comma when the style has no negative', () => {

@@ -37,6 +37,16 @@ export interface UserQuestionRequest {
 	options: UserQuestionOption[];
 	/** When true the user may pick several options. Free-text is always allowed. */
 	allowMultiple?: boolean;
+	/**
+	 * An image the question is ABOUT, as a `haruspex-img://` URL.
+	 *
+	 * Some questions cannot be answered from words. "Approve this style" is
+	 * one: the asset job's anchor checkpoint showed its sheet in the run
+	 * timeline and then opened a modal over the top of it, asking the user to
+	 * approve a picture the modal was covering. The thing being judged belongs
+	 * next to the question that judges it.
+	 */
+	imageUrl?: string;
 }
 
 /**

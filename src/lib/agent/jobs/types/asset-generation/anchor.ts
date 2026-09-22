@@ -11,6 +11,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { askUserQuestion } from '$lib/stores/userQuestion.svelte';
+import { registerLocalImage } from '$lib/images/resolve.svelte';
 import { extractPalette } from '$lib/assets/normalize';
 import type { AssetSpec, AnchorRecipe } from '$lib/assets/spec/types';
 import { resolveImageBackend } from '$lib/image';
@@ -18,7 +19,7 @@ import type { ImageResult } from '$lib/image/types';
 import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
 import type { AnchorOutcome } from './types';
 
-/** `0xRRGGBBAA` as the `#RRGGBB` a prompt can say out loud. */
+/** `0xRRGGBBAA` as `#RRGGBB`. For the recipe and the UI, never for a prompt. */
 export function hexColor(packed: number): string {
 	const r = (packed >>> 24) & 0xff;
 	const g = (packed >>> 16) & 0xff;
@@ -27,25 +28,92 @@ export function hexColor(packed: number): string {
 }
 
 /**
+ * The nearest colour a diffusion model has a word for.
+ *
+ * Measured against SD1.5: a prompt saying "#ff00ff" produces no magenta at
+ * all — the model does not read hex, and the request for a flat backdrop is
+ * silently lost, which is why background auto-detect had to exist. The same
+ * prompt saying "magenta" produces a flat magenta field the chroma key
+ * removes cleanly.
+ *
+ * A short table rather than a full colour-naming library: the background is a
+ * chroma key, so in practice it is one of a handful of saturated colours
+ * chosen precisely because nothing in the art will be that colour.
+ */
+const COLOUR_WORDS: ReadonlyArray<{ rgb: [number, number, number]; name: string }> = [
+	{ rgb: [255, 0, 255], name: 'magenta' },
+	{ rgb: [0, 255, 0], name: 'bright green' },
+	{ rgb: [0, 255, 255], name: 'cyan' },
+	{ rgb: [255, 0, 0], name: 'red' },
+	{ rgb: [0, 0, 255], name: 'blue' },
+	{ rgb: [255, 255, 0], name: 'yellow' },
+	{ rgb: [255, 255, 255], name: 'white' },
+	{ rgb: [0, 0, 0], name: 'black' },
+	{ rgb: [128, 128, 128], name: 'grey' }
+];
+
+export function colourWord(packed: number): string {
+	const r = (packed >>> 24) & 0xff;
+	const g = (packed >>> 16) & 0xff;
+	const b = (packed >>> 8) & 0xff;
+	let best = COLOUR_WORDS[0];
+	let bestD = Number.POSITIVE_INFINITY;
+	for (const c of COLOUR_WORDS) {
+		const d = (r - c.rgb[0]) ** 2 + (g - c.rgb[1]) ** 2 + (b - c.rgb[2]) ** 2;
+		if (d < bestD) {
+			bestD = d;
+			best = c;
+		}
+	}
+	return best.name;
+}
+
+/**
  * The anchor's own prompt: several distinct subjects in one frame.
  *
- * One image containing four things is far easier for a model than four images
- * that agree with each other, and it demonstrates the style applied ACROSS
+ * One image containing several things is far easier for a model than several
+ * images that agree with each other, and it demonstrates the style ACROSS
  * subject types — which is what a reference has to show, since the assets
  * conditioned on it will be characters and props and ground alike.
+ *
+ * Three rules here were paid for in bad generations against SD1.5, each
+ * reproducible at a fixed seed:
+ *
+ *   1. THE STYLE GOES FIRST. Leading with the subjects and appending the
+ *      style produced a competent oil painting of a chair; leading with
+ *      "16-bit pixel art, flat shading, bold dark outline" produced pixel art
+ *      of the same subjects. Whatever opens the prompt decides the medium,
+ *      and the medium is the entire point of a style anchor.
+ *   2. NO "REFERENCE SHEET", NO "2x2 GRID". That phrasing produced a flat
+ *      brown floor plan — abstract rectangles, no subject at all — twice out
+ *      of two. The model reads "sheet" and "grid" as the picture's content.
+ *   3. NO GROUND OR TERRAIN AS A SUBJECT. Asking for "a patch of ground"
+ *      among the subjects made the model render the whole background as
+ *      grass, destroying the flat backdrop the key depends on.
  */
 export function anchorPrompt(spec: AssetSpec, profile: NormalizeProfile): string {
-	const bg = hexColor(profile.background.color);
+	const bg = colourWord(profile.background.color);
 	return [
-		`A reference sheet showing four separate subjects arranged in a 2x2 grid:`,
-		`a character, a hand-held object, a piece of furniture, and a patch of ground.`,
-		`Each clearly separated from the others, on a plain flat ${bg} background.`,
-		spec.style.prompt
+		`${spec.style.prompt}.`,
+		`A sprite sheet of separate game sprites on a plain solid ${bg} background:`,
+		`a character, a hand-held weapon, a piece of furniture, and a small prop.`,
+		`Each sprite small, centred and isolated, surrounded by empty ${bg} space.`
 	].join(' ');
 }
 
+/**
+ * The anchor's negative prompt.
+ *
+ * `ANCHOR_NEGATIVE`'s second half is the antidote to rule 2 above: without
+ * naming the abstractions explicitly, "sheet" and "grid" pull the model
+ * toward floor plans and blueprints even when the words are gone.
+ */
+export const ANCHOR_NEGATIVE =
+	'photo, 3d render, text, watermark, busy background, ' +
+	'grid, floor plan, map, blueprint, abstract, rectangles, maze, pattern, landscape, scenery';
+
 export function anchorNegativePrompt(spec: AssetSpec): string {
-	return [spec.style.negativePrompt ?? '', 'photo, 3d render, text, watermark, busy background']
+	return [spec.style.negativePrompt ?? '', ANCHOR_NEGATIVE]
 		.filter((s) => s.trim().length > 0)
 		.join(', ');
 }
@@ -135,16 +203,29 @@ export async function establishAnchor(
 		// Show the sheet and the spec together: this is the run's only
 		// checkpoint, so it answers both open questions at once — what is
 		// about to be made, and what it will look like.
+		const img = result.images[0];
 		const hash = await invoke<string>('image_store_bytes', {
-			bytes: Array.from(result.images[0].bytes),
-			mime: result.images[0].mimeType,
-			width: result.images[0].width,
-			height: result.images[0].height
+			bytes: Array.from(img.bytes),
+			mime: img.mimeType,
+			width: img.width,
+			height: img.height
 		});
-		deps.present(`![Style anchor](haruspex-img://localhost/${hash})\n\n${specSummary(spec)}`);
+		// Registered, not merely stored. The renderer drops a markdown image it
+		// cannot resolve — deliberately, so a failed fetch looks like a slow one
+		// — and nothing resolves an image the app generated itself.
+		const url = registerLocalImage(hash, {
+			mime: img.mimeType,
+			width: img.width,
+			height: img.height,
+			source: 'style anchor'
+		});
+		deps.present(`${url ? `![Style anchor](${url})\n\n` : ''}${specSummary(spec)}`);
 		const last = attempts >= deps.anchorAttempts;
 		const answer = await askUserQuestion(
 			{
+				// The sheet goes IN the question. It used to be shown only in the
+				// run timeline, which this modal then covered.
+				imageUrl: url ?? undefined,
 				question:
 					`This is the style every asset will be generated in, and the list it will be ` +
 					`applied to. Approve to generate them${last ? '' : ', or ask for a different anchor'}.`,

@@ -20,6 +20,7 @@ import type { ImageRow } from '$lib/ipc/gen/ImageRow';
 import { getSettings } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
 import { SvelteMap } from 'svelte/reactivity';
+import { imageSrc } from './url';
 import {
 	eligibleImages,
 	imageUrlsInText,
@@ -55,6 +56,44 @@ export function resolvedImage(url: string): ImageRow | undefined {
 /** Test seam. */
 export function clearResolvedImages(): void {
 	resolved.clear();
+}
+
+/**
+ * Make an image the app itself produced renderable.
+ *
+ * The map is normally filled by `resolveReplyImages`, which fetches what a
+ * model's reply asked for. An image WE generated and stored — a job's style
+ * anchor, say — never goes through that path, so its markdown reference
+ * resolved to nothing and the renderer dropped it silently, exactly as it
+ * drops a failed fetch. That is correct for a remote URL and wrong here: the
+ * bytes are already in the cache and there is nothing to wait for.
+ *
+ * Returns the URL to write into the markdown, or null if the hash is not one.
+ */
+export function registerLocalImage(
+	hash: string,
+	meta: { mime: string; width: number; height: number; source?: string }
+): string | null {
+	const url = imageSrc(hash);
+	if (!url) return null;
+	resolved.set(url, {
+		hash,
+		source_url: url,
+		source: meta.source ?? 'generated',
+		mime: meta.mime,
+		width: meta.width,
+		height: meta.height,
+		bytes: 0,
+		// No provenance to show: we made it. A caption crediting nobody is
+		// worse than no caption.
+		license: null,
+		attribution: null,
+		description_url: null,
+		embeddable: true,
+		created_at: Date.now(),
+		last_used_at: Date.now()
+	});
+	return url;
 }
 
 /**

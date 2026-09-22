@@ -2647,11 +2647,15 @@ describe('jobs runner — asset generation', () => {
 	const ANCHOR_IMAGE = 'assets/haruspex-anchor.png';
 	const ANCHOR_RECIPE = 'assets/haruspex-anchor.json';
 	const PALETTE = [0x11111111, 0x22222222, 0x33333333];
+	/** A real content hash shape: the image cache rejects anything else. */
+	const ANCHOR_HASH = 'a'.repeat(64);
 	/** Every request the stub backend was asked for, in order. */
 	const generated = imageState.generated;
 	/** Just the anchor sheets — the entries share the same list. */
-	const anchorCalls = () => generated.filter((g) => String(g.prompt).includes('reference sheet'));
-	const entryCalls = () => generated.filter((g) => !String(g.prompt).includes('reference sheet'));
+	/** The anchor's prompt is the only one asking for a sheet of sprites. */
+	const isAnchor = (g: Record<string, unknown>) => String(g.prompt).includes('A sprite sheet');
+	const anchorCalls = () => generated.filter(isAnchor);
+	const entryCalls = () => generated.filter((g) => !isAnchor(g));
 	const turnsOfKind = (kind: string) =>
 		mocks.runEphemeralTurn.mock.calls.filter(
 			(call) => (call[0] as EphemeralTurnOptions & { turnKind?: string })?.turnKind === kind
@@ -2790,7 +2794,7 @@ describe('jobs runner — asset generation', () => {
 			if (cmd === 'image_contact_sheet') return [137, 80, 78, 71];
 			if (cmd === 'image_default_profile') return profileFixture();
 			if (cmd === 'image_extract_palette') return PALETTE;
-			if (cmd === 'image_store_bytes') return 'deadbeef';
+			if (cmd === 'image_store_bytes') return ANCHOR_HASH;
 			return undefined;
 		});
 		return Object.assign(written, { bytes: wroteBytes });
@@ -2976,8 +2980,12 @@ describe('jobs runner — asset generation', () => {
 		await settle(getCurrentRun);
 
 		const shown = getCurrentRun()!.steps[1].streaming ?? '';
-		expect(shown).toContain('haruspex-img://localhost/deadbeef');
+		expect(shown).toContain(`haruspex-img://localhost/${ANCHOR_HASH}`);
 		expect(shown).toContain('3 asset(s)');
+		// And in the modal itself. Showing it only in the timeline meant the
+		// modal covered the very thing it was asking about.
+		const asked = mocks.askUserQuestion.mock.calls.at(-1)![0];
+		expect(asked.imageUrl).toBe(`haruspex-img://localhost/${ANCHOR_HASH}`);
 	});
 
 	it('asks the backend for a clamped 2x2 sheet, pinned to the spec model', async () => {
