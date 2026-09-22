@@ -88,6 +88,46 @@ and cancellation. Nothing is downloaded until they choose.
    path still works when no id is set, and is reported as "custom" with no
    licence claim, because Haruspex cannot know one.
 8. Deleting a model that is currently loaded stops the engine first.
+9. **The LoRA is the licensing trap, not the base model.** `AssetStyle.loras`
+   lets a spec name LoRAs, and most published pixel-art LoRAs carry their own
+   terms — many trained on scraped commercial game art — so a LoRA can quietly
+   contaminate a pipeline whose base model is clean. Haruspex cannot classify a
+   file the user supplies, so it must not imply it has: a spec that names a
+   LoRA is reported as "custom, licence unknown" in the run report next to the
+   base model's licence, the same way a hand-placed checkpoint selected by path
+   is. The honest position is to say what we do not know rather than to leave a
+   clean base-model licence standing for the whole output.
+10. **Catalogue exclusions, recorded so they are not revisited by accident.**
+   SD3.5 is under Stability's community licence, which carries a revenue
+   threshold; Bria FIBO is non-commercial and needs licensing from Bria;
+   FLUX.1-dev and FLUX.2-dev have non-commercial weight licences and FLUX.2-dev
+   requires a paid licence for commercial use. Only FLUX.1-dev is listed, and
+   only to exercise the warning path.
+11. **Newer permissive options worth evaluating when this phase is built.**
+   Not committed to here, because none has been run against this pipeline and
+   the catalogue's figures are meant to be confirmed against a downloaded
+   artifact rather than quoted:
+   - **Qwen-Image-2512** (Apache 2.0, ~20B, FP8/GGUF to fit a single 32 GB
+     card), with **Qwen-Image-Edit** as its sibling. The Edit model is the
+     interesting part and is discussed in step 12.
+   - **Z-Image-Turbo** (Apache 2.0, 6B, ~8 steps, fits 16 GB) — the
+     fast-iteration option. One roundup notes the repo licence and the weight
+     licence should be checked separately; verify the weight file before
+     listing it as `commercial_use: true`.
+   - **FLUX.2 [klein]** (Apache 2.0, 4B, ~8 GB) and **HiDream-O1** (MIT).
+   Each is a DiT, so step 12 applies to all of them.
+12. **Seamless tiling does not transfer from UNet to DiT, and neither does
+   IP-Adapter.** The circular-padding trick this plan uses (`SeamlessTile` +
+   `CircularVAEDecode`) works on UNet models like SD1.5 and SDXL and does not
+   work well on DiT models — Flux, Qwen, Z-Image. The remedy for DiT is
+   **offset-and-inpaint**: shift the tile by half, inpaint the visible seams,
+   shift back. Adding a DiT model to the catalogue therefore means either
+   implementing that path or continuing to report `seamlessTiling: false` and
+   letting the job degrade, which it already does honestly. What must not
+   happen is a catalogue entry claiming a capability the backend cannot
+   deliver — that is precisely the "capability claim nobody checks" failure
+   `image/types.ts` warns about, and the job would stop degrading and start
+   silently shipping seamed textures.
 
 ## Build gate
 

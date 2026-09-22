@@ -26,6 +26,7 @@ of this beats the procedural tiles a coding run already generates.
 ## Files touched
 
 - `src/lib/agent/jobs/types/asset-generation/anchor.ts` — `anchorPrompt`.
+- Possibly nothing else, if step 3 shows the base model was the limit.
 - `src/lib/image/comfyui/backend.ts` (or `client.ts`) — resolve a real seed
   when the request carries none.
 - `src/lib/image/types.ts` — the `ImageRequest.seed` contract.
@@ -90,7 +91,30 @@ Care is needed not to break determinism where it is wanted: an entry that pins
 `seed` in the spec must still be reproducible, and the anchor reuse path must
 not start regenerating because a seed changed.
 
-### 3. Compare against the procedural baseline, and write the answer down
+### 3. Try a better base model before redesigning the anchor further
+
+SD1.5 is weak at following composition instructions, and every failure in this
+phase is a composition failure: a subject that fills the frame instead of
+sitting small in it, a sheet of dozens of sprites instead of a few, a silhouette
+that does not read. Phase 14's catalogue already records the reason to expect
+better — SDXL is "markedly better at following composition instructions, which
+is a precondition of background removal rather than a matter of taste".
+
+SDXL is the cheapest thing to try, since it is UNet-based and therefore keeps
+both coherence layers this pipeline depends on: IP-Adapter conditioning and
+circular-padding seamless tiling. A DiT model (Flux, Qwen, Z-Image) loses both
+and would have to be evaluated against a degraded pipeline, which confounds the
+comparison.
+
+`native_edge` matters here and is easy to get wrong: SDXL produces artefacts
+below 1024, so a 32px target wants `upscale: 32`, not the 16 that suits SD1.5.
+Comparing the two at the same generation edge measures the wrong thing.
+
+Run the same four-entry spec on both and compare `palette_distance`, the
+attempt counts, and whether a human can tell what each asset is. If SDXL fixes
+the silhouettes, most of step 1 may be unnecessary.
+
+### 4. Compare against the procedural baseline, and write the answer down
 
 A previous autonomous coding run produced tilemaps procedurally, in code, with
 no diffusion model at all. On the evidence so far those may look *better* than
