@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
 import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
+import { registerImageBackend } from '$lib/image/registry';
 
 const mocks = vi.hoisted(() => ({
 	runEphemeralTurn: vi.fn(),
@@ -46,9 +47,16 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
 	setStepStatsProvider: mocks.setStepStatsProvider
 }));
 
+/**
+ * The one settings field a test needs to change: the asset job's availability
+ * gate reads it, so a run cannot even start without it.
+ */
+const settingsState = vi.hoisted(() => ({ imageBackendKind: 'none' as string }));
+
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
 		contextSize: 8192,
+		imageBackendKind: settingsState.imageBackendKind,
 		inferenceBackend: { mode: 'local' as const },
 		// What a job inherits when it sets no reasoning policy of its own —
 		// the runner records the RESOLVED values with the run.
@@ -2555,6 +2563,206 @@ describe('guided_planning — handoff', () => {
 			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
 		);
 		expect(mocks.askUserQuestion.mock.calls.length).toBe(2);
+	});
+});
+
+/**
+ * The asset-generation skeleton. Every stage but Spec is a placeholder here;
+ * what is being checked is the machinery around them — the queue, the run
+ * view, cancellation, the availability gate and where the report lands — so
+ * that when the stages are filled in, a failure is the stage's fault.
+ */
+describe('jobs runner — asset generation', () => {
+	const SPEC_PATH = 'assets/haruspex-assets.json';
+	beforeEach(() => {
+		// The job type is gated on a configured backend, so the tests need one
+		// to exist before a run can start at all.
+		registerImageBackend({
+			kind: 'comfyui',
+			capabilities: async () => ({
+				referenceConditioning: true,
+				seamlessTiling: true,
+				loras: true,
+				maxLoras: 2
+			}),
+			probe: async () => ({ ok: true, detail: 'stub' }),
+			generate: async () => {
+				throw new Error('the skeleton generates nothing');
+			}
+		});
+		settingsState.imageBackendKind = 'comfyui';
+	});
+	afterEach(() => {
+		settingsState.imageBackendKind = 'none';
+	});
+
+	function goodSpec(entries = 2): string {
+		return JSON.stringify({
+			version: 1,
+			style: { prompt: 'flat pixel art' },
+			anchor: { image: 'a/anchor.png', recipe: 'a/anchor.json' },
+			normalize: { target_size: 32 },
+			entries: Array.from({ length: entries }, (_, i) => ({
+				id: `thing_${i}`,
+				kind: i === 0 ? 'texture' : 'sprite',
+				prompt: 'a thing',
+				out: `assets/generated/thing_${i}.png`
+			}))
+		});
+	}
+
+	function assetJob(over: Record<string, unknown> = {}): JobWithSteps {
+		return makeJob({
+			job_type: 'asset_generation',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({ spec_path: SPEC_PATH, ...over })
+		});
+	}
+
+	/** `spec` null = no spec file on disk. Records what was written. */
+	function wireFs(spec: string | null) {
+		const written: Array<{ relPath: string; content: string }> = [];
+		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'shell_platform_supported') return true;
+			if (cmd === 'fs_read_text_full') {
+				if (String(args?.relPath) === SPEC_PATH && spec !== null) return spec;
+				throw new Error('not found');
+			}
+			if (cmd === 'fs_write_text') {
+				written.push({
+					relPath: String(args?.relPath),
+					content: String(args?.content)
+				});
+				return undefined;
+			}
+			return undefined;
+		});
+		return written;
+	}
+
+	async function settle(getCurrentRun: () => { status: string } | null) {
+		for (let i = 0; i < 300 && getCurrentRun()?.status === 'running'; i++) await tick();
+	}
+
+	it('reports the spec it found, broken down by kind', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(3));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		const spec = getCurrentRun()!.steps[0];
+		expect(spec.output).toContain('3 asset(s)');
+		expect(spec.output).toContain('sprite');
+		expect(spec.output).toContain('texture');
+	});
+
+	it('succeeds with nothing to do when there is no spec yet', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(null);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(getCurrentRun()!.steps[0].output).toContain('No spec');
+	});
+
+	it('fails on a spec that cannot be parsed, naming the file', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs('{ not json');
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain(SPEC_PATH);
+	});
+
+	it('fails on a spec that parses but is wrong, listing the problems', async () => {
+		// A spec the user wrote and got wrong is theirs to fix, not ours to
+		// silently rewrite.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(
+			JSON.stringify({
+				version: 1,
+				style: { prompt: 'p' },
+				anchor: { image: 'a', recipe: 'b' },
+				normalize: {},
+				entries: [{ id: 'BAD ID', kind: 'sprite', prompt: 'p', out: '../escape.png' }]
+			})
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain('outside the working directory');
+	});
+
+	it('writes the report beside the spec, not at the project root', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(written.map((w) => w.relPath)).toContain('assets/REPORT-assets.md');
+	});
+
+	it('runs all five stages, Handoff included', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const steps = getCurrentRun()!.steps;
+		expect(steps).toHaveLength(5);
+		expect(steps.every((s) => s.status === 'succeeded')).toBe(true);
+		expect(steps[4].output).toContain('manually');
+	});
+
+	it('will not even enqueue when no image backend is configured', async () => {
+		// The availability gate refuses before a run row exists, which is
+		// better than a failed run: there is nothing to explain and nothing in
+		// the history. The pipeline keeps its own check for the case this
+		// cannot cover — a run that was queued while a backend was configured
+		// and reaches the front of a twelve-hour queue after it was removed.
+		settingsState.imageBackendKind = 'none';
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+
+		expect(await enqueue(1)).toBeNull();
+		expect(getCurrentRun()).toBeNull();
+	});
+
+	it('queues behind an active run rather than overlapping it', async () => {
+		// The runner is single-slot FIFO and an asset job shares that queue
+		// with planning and coding runs. Nothing else asserts it for this type,
+		// and `concurrency` in the config makes the question worth settling.
+		const planning = makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({ initial_description: 'x', plan_output_dir: 'plan/x/' })
+		});
+		mocks.getJob.mockImplementation(async (id: number) => (id === 2 ? assetJob() : planning));
+		wireFs(goodSpec());
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		const first = await enqueue(1);
+		const second = await enqueue(2);
+		// Both accepted, but only one is the current run at any moment.
+		expect(first).not.toBeNull();
+		expect(second).not.toBeNull();
+		expect(getCurrentRun()!.jobId).toBe(1);
 	});
 });
 

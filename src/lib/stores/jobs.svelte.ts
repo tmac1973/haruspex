@@ -12,7 +12,12 @@ export type ScheduleKind = 'manual' | 'hourly' | 'daily' | 'weekly' | 'interval'
  *
  * Each type's behavior lives in its module under `$lib/agent/jobs/types/<id>/`.
  */
-export type JobType = 'research' | 'audit' | 'guided_planning' | 'autonomous_coding';
+export type JobType =
+	| 'research'
+	| 'audit'
+	| 'guided_planning'
+	| 'autonomous_coding'
+	| 'asset_generation';
 
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
