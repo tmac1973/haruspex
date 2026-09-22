@@ -7,7 +7,9 @@
 use image::{Rgba, RgbaImage};
 
 use super::palette::{extract_palette, quantize_to};
-use super::profile::{effective_profile, pack, rgba, AssetKind, NormalizeProfile};
+use super::profile::{
+    effective_profile, pack, rgba, AssetKind, NormalizeProfile, BORDER_DOMINANCE,
+};
 use super::stats::{entropy_bits, ImageStats};
 
 /// Set alpha 0 on every pixel within `tolerance` of the key colour.
@@ -30,6 +32,50 @@ pub fn chroma_key(img: &mut RgbaImage, key: u32, tolerance: u8) {
             p.0 = [0, 0, 0, 0];
         }
     }
+}
+
+/// The colour covering most of the image border, if one clearly dominates.
+///
+/// Returns `None` when no colour holds at least [`BORDER_DOMINANCE`] of the
+/// border — a subject that fills the frame has no background to find, and
+/// keying its own edge colour would eat the subject.
+pub fn dominant_border_color(img: &RgbaImage, tolerance: u8) -> Option<u32> {
+    let (w, h) = img.dimensions();
+    if w < 2 || h < 2 {
+        return None;
+    }
+    let mut border: Vec<[u8; 4]> = Vec::new();
+    for x in 0..w {
+        border.push(img.get_pixel(x, 0).0);
+        border.push(img.get_pixel(x, h - 1).0);
+    }
+    for y in 1..h.saturating_sub(1) {
+        border.push(img.get_pixel(0, y).0);
+        border.push(img.get_pixel(w - 1, y).0);
+    }
+    let total = border.len() as f32;
+    // Cluster by the SAME tolerance the key will use, so "dominant" means
+    // "would be removed together" rather than "byte-identical" — a diffusion
+    // background is never flat to the bit.
+    let tol = tolerance as f32;
+    let mut best: Option<(u32, f32)> = None;
+    for candidate in &border {
+        let n = border
+            .iter()
+            .filter(|c| {
+                let d = ((c[0] as f32 - candidate[0] as f32).powi(2)
+                    + (c[1] as f32 - candidate[1] as f32).powi(2)
+                    + (c[2] as f32 - candidate[2] as f32).powi(2))
+                .sqrt();
+                d <= tol
+            })
+            .count() as f32;
+        if best.is_none_or(|(_, b)| n > b) {
+            best = Some((pack(*candidate), n));
+        }
+    }
+    best.filter(|(_, n)| n / total >= BORDER_DOMINANCE)
+        .map(|(c, _)| c)
 }
 
 /// Tightest box around the opaque pixels, expanded by `margin`.
@@ -169,7 +215,16 @@ pub fn normalize(
     let p = effective_profile(profile, kind);
     let mut work = img.clone();
 
+    // The configured key first; the border only when that found nothing. The
+    // prompt still asks for magenta because it sometimes works, and when it
+    // does this costs one pass over the image.
     chroma_key(&mut work, p.background.color, p.background.tolerance);
+    let keyed_any = work.pixels().any(|px| px.0[3] == 0);
+    if !keyed_any && p.background.auto_detect {
+        if let Some(found) = dominant_border_color(&work, p.background.tolerance) {
+            chroma_key(&mut work, found, p.background.tolerance);
+        }
+    }
     if p.crop.enabled {
         work = crop_to_content(&work, p.crop.margin)?;
     }
@@ -407,5 +462,53 @@ mod tests {
             }
             assert!(p.palette.contains(&pack([px.0[0], px.0[1], px.0[2], 255])));
         }
+    }
+}
+
+/// Normalize a real generated image and write the result next to it.
+///
+/// Fixtures prove the arithmetic; they cannot tell you whether a 512px
+/// diffusion output survives the pass and still reads as the thing it was.
+/// Every bug found in the ComfyUI workflows was invisible to unit tests and
+/// obvious the moment real bytes went through, so this exists to make that
+/// check one command rather than a scratch script.
+///
+///   HARUSPEX_NORM_IN=/path/a.png HARUSPEX_NORM_KIND=sprite \
+///     cargo test --lib normalize_a_real_image -- --ignored --nocapture
+#[cfg(test)]
+mod live {
+    use super::super::profile::AssetKind;
+    use super::*;
+
+    #[test]
+    #[ignore = "needs a real generated PNG; set HARUSPEX_NORM_IN"]
+    fn normalize_a_real_image() {
+        let Ok(path) = std::env::var("HARUSPEX_NORM_IN") else {
+            eprintln!("set HARUSPEX_NORM_IN to a PNG");
+            return;
+        };
+        let kind = match std::env::var("HARUSPEX_NORM_KIND").as_deref() {
+            Ok("texture") => AssetKind::Texture,
+            Ok("icon") => AssetKind::Icon,
+            _ => AssetKind::Sprite,
+        };
+        let img = image::open(&path)
+            .expect("could not read the input")
+            .to_rgba8();
+        let (out, stats) = normalize(&img, &NormalizeProfile::default(), kind)
+            .unwrap_or_else(|e| panic!("normalize failed: {e}"));
+        let dest = format!("{path}.normalized.png");
+        out.save(&dest).expect("could not write the output");
+        println!(
+            "{} {:?} -> {} {}x{}  alpha {:.3}  entropy {:.2} bits  off-palette {:.3}",
+            path,
+            kind,
+            dest,
+            out.width(),
+            out.height(),
+            stats.alpha,
+            stats.entropy,
+            stats.palette_distance
+        );
     }
 }

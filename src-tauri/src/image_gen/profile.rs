@@ -28,12 +28,30 @@ pub const MAX_GENERATION_EDGE: u32 = 1024;
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct Background {
-    /// Packed `0xRRGGBBAA`. Flat chroma magenta, asked for in the prompt and
-    /// keyed out here.
+    /// Packed `0xRRGGBBAA`. The colour the prompt asks for.
     pub color: u32,
-    /// How far from `color` still counts as background, in RGB distance.
+    /// How far from the key still counts as background, in RGB distance.
     pub tolerance: u8,
+    /// Fall back to the colour that dominates the image border when `color`
+    /// is not actually present.
+    ///
+    /// This is not a nicety, it is what makes keying work at all. The prompt
+    /// asks for a flat magenta background and SD1.5 simply does not comply —
+    /// a sword asked for on `#FF00FF` came back on dark crimson, so the key
+    /// matched nothing and every sprite arrived fully opaque with its
+    /// background intact. Sampling the border needs no cooperation from the
+    /// model, which is the same reason the rest of this module imposes
+    /// coherence rather than requesting it.
+    pub auto_detect: bool,
 }
+
+/// How much of the border one colour must cover before it is believed to be
+/// the background.
+///
+/// A subject that fills the frame has no background to remove, and keying its
+/// own edge colour would eat the subject. Requiring a clear majority means an
+/// ambiguous image is left alone and fails the alpha check honestly instead.
+pub const BORDER_DOMINANCE: f32 = 0.6;
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
@@ -60,7 +78,7 @@ pub struct CheckThresholds {
     pub alpha_min: f32,
     /// Above this the background was never keyed out.
     pub alpha_max: f32,
-    /// Shannon entropy over the output's colours, in bits. Catches flat mush.
+    /// Shannon entropy over the SUBJECT's colours, in bits. Catches flat mush.
     pub entropy_min: f32,
     /// Fraction of pixels that were further than [`PALETTE_DISTANCE_CUTOFF`]
     /// from their palette entry *before* snapping. High means the generation
@@ -78,6 +96,7 @@ pub const PALETTE_DISTANCE_CUTOFF: f32 = 48.0;
 pub struct KindOverride {
     pub crop_enabled: Option<bool>,
     pub outline_enabled: Option<bool>,
+    pub background_auto: Option<bool>,
     pub alpha_min: Option<f32>,
     pub alpha_max: Option<f32>,
 }
@@ -119,6 +138,10 @@ impl Default for NormalizeProfile {
             KindOverride {
                 crop_enabled: Some(false),
                 outline_enabled: Some(false),
+                // A texture's border IS content. Border sampling would find
+                // the texture itself dominating the edge and key the whole
+                // thing away — caught by a test the moment auto-detect landed.
+                background_auto: Some(false),
                 alpha_min: Some(0.999),
                 alpha_max: Some(1.0),
             },
@@ -131,6 +154,7 @@ impl Default for NormalizeProfile {
             background: Background {
                 color: 0xFF_00_FF_FF,
                 tolerance: 40,
+                auto_detect: true,
             },
             crop: Crop {
                 enabled: true,
@@ -145,7 +169,14 @@ impl Default for NormalizeProfile {
             checks: CheckThresholds {
                 alpha_min: 0.05,
                 alpha_max: 0.95,
-                entropy_min: 2.0,
+                // Calibrated against real SD1.5 output at 32px rather than
+                // guessed. Measured: a good keyed sword 1.91, a good hat 3.27,
+                // unkeyed full-frame sprites 2.9-3.7, cobblestone textures
+                // 1.30-1.87, and a generation that came back as a stray fleck
+                // 0.64. A floor of 2.0 — the original guess — rejects the good
+                // sword and both good textures; 1.0 separates every good case
+                // from every bad one with margin at both ends.
+                entropy_min: 1.0,
                 palette_distance_max: 0.15,
             },
             by_kind,
@@ -185,6 +216,9 @@ pub fn effective_profile(profile: &NormalizeProfile, kind: AssetKind) -> Normali
     if let Some(v) = o.outline_enabled {
         out.outline.enabled = v;
     }
+    if let Some(v) = o.background_auto {
+        out.background.auto_detect = v;
+    }
     if let Some(v) = o.alpha_min {
         out.checks.alpha_min = v;
     }
@@ -220,6 +254,7 @@ mod tests {
         let p = effective_profile(&NormalizeProfile::default(), AssetKind::Texture);
         assert!(!p.crop.enabled);
         assert!(!p.outline.enabled);
+        assert!(!p.background.auto_detect, "a texture's border is content");
         assert_eq!(p.checks.alpha_min, 0.999);
         assert_eq!(p.checks.alpha_max, 1.0);
     }

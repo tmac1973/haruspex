@@ -2,11 +2,23 @@
 
 export type Background = { 
 /**
- * Packed `0xRRGGBBAA`. Flat chroma magenta, asked for in the prompt and
- * keyed out here.
+ * Packed `0xRRGGBBAA`. The colour the prompt asks for.
  */
 color: number, 
 /**
- * How far from `color` still counts as background, in RGB distance.
+ * How far from the key still counts as background, in RGB distance.
  */
-tolerance: number, };
+tolerance: number, 
+/**
+ * Fall back to the colour that dominates the image border when `color`
+ * is not actually present.
+ *
+ * This is not a nicety, it is what makes keying work at all. The prompt
+ * asks for a flat magenta background and SD1.5 simply does not comply —
+ * a sword asked for on `#FF00FF` came back on dark crimson, so the key
+ * matched nothing and every sprite arrived fully opaque with its
+ * background intact. Sampling the border needs no cooperation from the
+ * model, which is the same reason the rest of this module imposes
+ * coherence rather than requesting it.
+ */
+auto_detect: boolean, };

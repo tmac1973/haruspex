@@ -3,4 +3,4 @@
 /**
  * Per-kind overrides. Every field optional; `None` means "use the base".
  */
-export type KindOverride = { crop_enabled: boolean | null, outline_enabled: boolean | null, alpha_min: number | null, alpha_max: number | null, };
+export type KindOverride = { crop_enabled: boolean | null, outline_enabled: boolean | null, background_auto: boolean | null, alpha_min: number | null, alpha_max: number | null, };

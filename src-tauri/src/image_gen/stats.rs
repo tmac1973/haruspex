@@ -20,22 +20,26 @@ pub struct ImageStats {
     pub palette_distance: f32,
 }
 
-/// Shannon entropy of the colour histogram, in bits.
+/// Shannon entropy of the SUBJECT's colour histogram, in bits.
 ///
 /// Over a 16-colour palette the ceiling is 4 bits, reached when every colour
 /// is equally common. A flat grey generation — the most frequent bad output a
 /// model produces — scores near zero, which is what the gate's floor catches.
-/// Transparent pixels are one bucket, so a sprite on empty background is not
-/// penalised for the background.
+///
+/// Transparent pixels are excluded entirely rather than counted as one
+/// bucket. Counting them measures "how varied is the canvas", and a correctly
+/// keyed sprite is mostly canvas: a perfectly good sword came out at 1.07
+/// bits and would have been rejected for the crime of having its background
+/// removed. What the check is for is whether the SUBJECT has any content, so
+/// the subject is what it measures.
 pub fn entropy_bits(img: &RgbaImage) -> f32 {
     let mut counts: Vec<(u32, u32)> = Vec::new();
     let mut total = 0u32;
     for p in img.pixels() {
-        let key = if p.0[3] == 0 {
-            0
-        } else {
-            ((p.0[0] as u32) << 24) | ((p.0[1] as u32) << 16) | ((p.0[2] as u32) << 8) | 0xFF
-        };
+        if p.0[3] == 0 {
+            continue;
+        }
+        let key = ((p.0[0] as u32) << 24) | ((p.0[1] as u32) << 16) | ((p.0[2] as u32) << 8) | 0xFF;
         match counts.iter_mut().find(|(k, _)| *k == key) {
             Some((_, n)) => *n += 1,
             None => counts.push((key, 1)),
@@ -78,16 +82,26 @@ mod tests {
     }
 
     #[test]
-    fn transparent_pixels_share_one_bucket() {
-        // A sprite on empty background must not be scored as if the
-        // background were varied content.
-        let mut a = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 0, 0]));
-        let mut b = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 0, 0]));
-        b.put_pixel(0, 0, Rgba([9, 9, 9, 0]));
-        b.put_pixel(1, 0, Rgba([200, 7, 3, 0]));
-        a.put_pixel(2, 2, Rgba([1, 2, 3, 255]));
-        b.put_pixel(2, 2, Rgba([1, 2, 3, 255]));
-        assert_eq!(entropy_bits(&a), entropy_bits(&b));
+    fn transparent_pixels_are_ignored_entirely() {
+        // Not counted as a bucket: a keyed sprite is mostly transparent, and
+        // counting the background crushes the score of a perfectly good
+        // sprite for the crime of having had its background removed.
+        let mut small = RgbaImage::from_pixel(32, 32, Rgba([0, 0, 0, 0]));
+        let mut big = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 0, 0]));
+        for (img, side) in [(&mut small, 32u32), (&mut big, 4u32)] {
+            let _ = side;
+            img.put_pixel(0, 0, Rgba([255, 0, 0, 255]));
+            img.put_pixel(1, 0, Rgba([0, 0, 255, 255]));
+        }
+        // Same subject, wildly different amounts of background: same score.
+        assert!((entropy_bits(&small) - entropy_bits(&big)).abs() < 1e-5);
+        assert!((entropy_bits(&small) - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_fully_transparent_image_scores_zero() {
+        let img = RgbaImage::from_pixel(8, 8, Rgba([0, 0, 0, 0]));
+        assert_eq!(entropy_bits(&img), 0.0);
     }
 
     #[test]

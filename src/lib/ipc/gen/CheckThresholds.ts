@@ -13,7 +13,7 @@ alpha_min: number,
  */
 alpha_max: number, 
 /**
- * Shannon entropy over the output's colours, in bits. Catches flat mush.
+ * Shannon entropy over the SUBJECT's colours, in bits. Catches flat mush.
  */
 entropy_min: number, 
 /**
