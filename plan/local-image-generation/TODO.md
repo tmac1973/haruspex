@@ -198,6 +198,46 @@ conditioning.
 **Do 1 and 2 separately, in that order.** Doing both at once means not knowing
 which helped.
 
+**Qwen-Image 2.1 (released 2026, checked 2026-09-22).** 7B on an MMDiT
+architecture, native 2K, generation and editing in a single checkpoint — and
+it outputs **RGBA with a real alpha channel**. Licence: Qwen Research
+License, **non-commercial only**; commercial use needs a separate agreement
+from Alibaba. Earlier Qwen-Image releases were Apache 2.0; this one is not.
+
+Three things follow, and they pull in different directions.
+
+*The alpha channel may delete a whole layer of this design.* Background
+removal is a chroma key against a flat backdrop the prompt asks for and the
+model does not reliably give — that is the constraint in overview.md
+("Models do not obey colour or composition instructions"), and it is the
+direct cause of lessons (3) and (6): naming the key colour bleeds it into
+the art, and naming ground among the anchor subjects destroys the backdrop.
+A model that emits its own alpha needs no key, no flat backdrop, and no
+colour named in the prompt at all. That is a bigger win than the 77-token
+fix, and it is worth measuring on that basis alone.
+
+*7B is tractable where ~20B was not.* The sizing note above is about the
+original Qwen-Image and does not carry over. This is in Z-Image-Turbo's
+class rather than a 9070 XT-only experiment.
+
+*The licence disqualifies it as a default.* An overview goal is to default
+to commercially safe weights "so a user who later sells their game is
+protected by the default rather than by having read a licence", and
+`recommended_id` never recommends a non-commercial model at any VRAM. So
+2.1 can be a catalogue entry with `commercial_use: false` behind the
+existing confirm dialog, and it can be what WE evaluate against — but it
+cannot become what a user gets by doing nothing. Whatever it teaches about
+alpha has to be portable to a permissive model, or it is a dead end for the
+shipped default.
+
+Still unchecked: whether ComfyUI's Qwen-Image 2.1 support covers what this
+pipeline needs, and whether stable-diffusion.cpp can load it at all — the
+bundled engine matters more than the ComfyUI path for shipping.
+
+Either way it does not displace issue 1 — the anchor-subject fix is cheaper,
+is a known cause, and its result is what tells you whether a better base
+model is even needed.
+
 ### 3. Phase 16's other steps
 
 - **Seed honesty** (step 2): `seed: null` resolves to the template default 0
