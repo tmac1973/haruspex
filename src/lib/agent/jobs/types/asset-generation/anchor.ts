@@ -18,6 +18,7 @@ import type { AssetSpec, AnchorRecipe } from '$lib/assets/spec/types';
 import { resolveImageBackend } from '$lib/image';
 import type { ImageResult } from '$lib/image/types';
 import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
+import { fitStyle } from './promptBudget';
 import type { AnchorOutcome } from './types';
 
 /** `0xRRGGBBAA` as `#RRGGBB`. For the recipe and the UI, never for a prompt. */
@@ -94,8 +95,13 @@ export function colourWord(packed: number): string {
  */
 export function anchorPrompt(spec: AssetSpec, profile: NormalizeProfile): string {
 	const bg = colourWord(profile.background.color);
+	// Trimmed to the text encoder's window. A long style pushes the sheet's
+	// own composition instruction out of CLIP's 77 tokens, and the model then
+	// renders the style with no subject at all — measured: a 637-character
+	// style produced abstract blobs with none of the four named subjects.
+	const style = fitStyle(spec.style.prompt).text;
 	return [
-		`${spec.style.prompt}.`,
+		`${style}.`,
 		`A sprite sheet of separate game sprites on a plain solid ${bg} background:`,
 		`${anchorSubjects(spec)}.`,
 		`Each sprite small, centred and isolated, surrounded by empty ${bg} space.`

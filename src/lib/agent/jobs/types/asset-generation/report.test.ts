@@ -53,6 +53,7 @@ function input(over: Partial<ReportInput> = {}): ReportInput {
 		contactSheet: 'a/contact-sheet.png',
 		judgeSkipped: false,
 		licensing: { modelName: 'SD 1.5', modelLicense: 'OpenRAIL-M.', loras: [] },
+		styleTruncated: false,
 		startedAt: 0,
 		finishedAt: 60_000,
 		...over
@@ -251,5 +252,19 @@ describe('the licensing section', () => {
 
 	it('notes that the output is generally not copyrightable', () => {
 		expect(renderAssetReport(input())).toContain('not copyrightable');
+	});
+});
+
+describe('the truncated-style note', () => {
+	it('tells the user when their style did not fit, and why', () => {
+		// Silently dropping half of what they wrote is how a user concludes
+		// the feature simply does not work.
+		const md = renderAssetReport(input({ styleTruncated: true }));
+		expect(md).toContain('77 tokens');
+		expect(md).toContain('style.prompt');
+	});
+
+	it('says nothing when the style fitted', () => {
+		expect(renderAssetReport(input())).not.toContain('77 tokens');
 	});
 });

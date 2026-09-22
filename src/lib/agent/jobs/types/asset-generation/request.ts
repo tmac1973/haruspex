@@ -11,6 +11,7 @@ import { joinNegativePrompts } from '$lib/assets/spec/types';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
 import type { ImageBackendCapabilities, ImageRequest, LoraRef } from '$lib/image/types';
 import { colourWord } from './anchor';
+import { fitStyle } from './promptBudget';
 
 /**
  * The isolation scaffold, and it is a precondition of background removal
@@ -60,7 +61,11 @@ export function entryPrompt(entry: AssetEntry, spec: AssetSpec, profile: Normali
 	const subject = wantsIsolation(entry.kind)
 		? isolationScaffold(entry.prompt, background)
 		: entry.prompt;
-	return [subject, spec.style.prompt].filter((s) => s.trim().length > 0).join(', ');
+	// Same window, same reason as the anchor: the isolation scaffold plus a
+	// subject plus a richly written style runs well past CLIP's 77 tokens, and
+	// what falls off the end is whatever came last.
+	const style = fitStyle(spec.style.prompt).text;
+	return [subject, style].filter((s) => s.trim().length > 0).join(', ');
 }
 
 export function entryNegativePrompt(entry: AssetEntry, spec: AssetSpec): string {

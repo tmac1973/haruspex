@@ -100,6 +100,23 @@ describe('the isolation scaffold', () => {
 		expect(p).not.toContain('magenta');
 	});
 
+	it('trims a long style so the subject and scaffold survive', () => {
+		// Entry prompts have the same window as the anchor's, and more in it:
+		// the isolation scaffold plus a subject plus a richly written style
+		// runs well past CLIP's 77 tokens, and what falls off is the style's
+		// tail — or, unchecked, the subject.
+		const long =
+			'16-bit era top-down pixel art for a roguelike, 32x32 pixel scale, crisp chunky pixels ' +
+			'with hard pixel edges, strictly no anti-aliasing; near-orthogonal top-down view with a ' +
+			'slight 3/4 tilt; desaturated post-apocalyptic palette of ash grey, rust orange-brown, ' +
+			'faded olive drab, dusty beige and oxidised teal; bold near-black 1px outline on every ' +
+			'silhouette; flat limited shading of two or three tones per surface; overhead daylight';
+		const p = entryPrompt(entry(), spec({ style: { prompt: long } }), profile());
+		expect(p).toContain('a sword');
+		expect(p).toContain('one object only');
+		expect(p).not.toContain('overhead daylight');
+	});
+
 	it('leaves the style prompt with the last word', () => {
 		const p = entryPrompt(entry(), spec(), profile());
 		expect(p.indexOf('flat pixel art')).toBeGreaterThan(p.indexOf('one object only'));

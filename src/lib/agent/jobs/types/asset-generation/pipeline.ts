@@ -44,6 +44,7 @@ import { establishAnchor } from './anchor';
 import { parseJudgement, SUBMIT_ASSET_JUDGEMENT_TOOL, type AssetJudgement } from './tools';
 import type { AssetEntry } from '$lib/assets/spec/types';
 import { generateEntries } from './generate';
+import { fitStyle } from './promptBudget';
 import { renderAssetReport, type Licensing } from './report';
 import type { AnchorOutcome, EntryOutcome } from './types';
 
@@ -576,6 +577,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				// Said once in the document, not once per entry.
 				judgeSkipped: (cfg.vision_judge ?? DEFAULT_VISION_JUDGE) && !ctx.visionSupported(),
 				licensing: await resolveLicensing(spec),
+				styleTruncated: fitStyle(spec.style.prompt).truncated,
 				startedAt,
 				finishedAt: Date.now()
 			})

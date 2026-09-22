@@ -107,6 +107,25 @@ describe('anchorPrompt', () => {
 		expect(p).not.toContain('#');
 	});
 
+	it('trims a long style so the sheet instruction survives the encoder window', () => {
+		// The failure this prevents: a 637-character style pushed the anchor's
+		// own composition instruction past CLIP's 77 tokens, and the model
+		// rendered abstract blobs with none of the named subjects in them.
+		const long =
+			'16-bit era top-down pixel art for a roguelike, 32x32 pixel scale, crisp chunky pixels ' +
+			'with hard pixel edges, strictly no anti-aliasing; near-orthogonal top-down view with a ' +
+			'slight 3/4 tilt; desaturated post-apocalyptic palette of ash grey, rust orange-brown, ' +
+			'faded olive drab, dusty beige and oxidised teal; bold near-black 1px outline on every ' +
+			'silhouette; flat limited shading of two or three tones per surface; overhead daylight';
+		const p = anchorPrompt(spec({ style: { prompt: long } }), profile());
+		// The style's tail is gone…
+		expect(p).not.toContain('overhead daylight');
+		// …and what the prompt exists to say is still in there.
+		expect(p).toContain('sprite sheet');
+		expect(p).toContain('magenta');
+		expect(p.startsWith('16-bit era top-down pixel art')).toBe(true);
+	});
+
 	it('asks for isolated subjects', () => {
 		expect(anchorPrompt(spec(), profile()).toLowerCase()).toContain('isolated');
 	});

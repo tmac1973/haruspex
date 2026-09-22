@@ -25,6 +25,8 @@ export interface ReportInput {
 	judgeSkipped: boolean;
 	/** What is known about what may be done with the output. */
 	licensing: Licensing;
+	/** Set when `style.prompt` did not fit the text encoder's window. */
+	styleTruncated: boolean;
 	startedAt: number;
 	finishedAt: number;
 }
@@ -222,6 +224,17 @@ export function renderAssetReport(input: ReportInput): string {
 		lines.push(
 			'The vision judge was enabled but this run’s model does not accept',
 			'images, so every asset was accepted on the mechanical checks alone.',
+			''
+		);
+	}
+
+	if (input.styleTruncated) {
+		lines.push(
+			'Your style prompt was longer than the text encoder accepts, so only its',
+			'opening clauses were used. CLIP reads 77 tokens; past that the subject of',
+			'the picture falls out of the window and the model renders the style alone.',
+			'Shorten `style.prompt` to keep control of what is dropped — it should',
+			'describe the medium and palette, not the subject or the camera.',
 			''
 		);
 	}
