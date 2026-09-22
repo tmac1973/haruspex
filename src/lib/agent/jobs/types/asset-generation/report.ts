@@ -27,6 +27,11 @@ export interface ReportInput {
 	licensing: Licensing;
 	/** Set when `style.prompt` did not fit the text encoder's window. */
 	styleTruncated: boolean;
+	/**
+	 * The edge assets were generated at, and the one the model was trained
+	 * at. `nativeEdge` is null when the checkpoint is not one we know.
+	 */
+	sizing: { edge: number; nativeEdge: number | null };
 	startedAt: number;
 	finishedAt: number;
 }
@@ -224,6 +229,24 @@ export function renderAssetReport(input: ReportInput): string {
 		lines.push(
 			'The vision judge was enabled but this run’s model does not accept',
 			'images, so every asset was accepted on the mechanical checks alone.',
+			''
+		);
+	}
+
+	const { edge, nativeEdge } = input.sizing;
+	if (nativeEdge !== null && edge !== nativeEdge) {
+		// Not corrected automatically: the spec is the user's file. But a
+		// mismatch here is not a matter of taste — SDXL produces artefacts
+		// below its native 1024 and SD1.5 degrades above its 512 — so it is
+		// said plainly rather than left to be discovered in the output.
+		lines.push(
+			`Assets were generated at ${edge}px, but this model was trained at ` +
+				`${nativeEdge}px. ${
+					edge < nativeEdge
+						? 'Generating below native resolution produces mush at these sizes.'
+						: 'Generating above native resolution produces artefacts and duplicated subjects.'
+				}`,
+			`Set \`normalize.upscale\` to ${Math.max(1, Math.round(nativeEdge / (input.spec.normalize.target_size || 32)))} in the spec to match.`,
 			''
 		);
 	}

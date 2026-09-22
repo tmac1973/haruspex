@@ -50,7 +50,11 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
  * The one settings field a test needs to change: the asset job's availability
  * gate reads it, so a run cannot even start without it.
  */
-const settingsState = vi.hoisted(() => ({ imageBackendKind: 'none' as string }));
+const settingsState = vi.hoisted(() => ({
+	imageBackendKind: 'none' as string,
+	imageComfyCheckpoint: '' as string,
+	imageLocalModelId: '' as string
+}));
 
 /**
  * The image backend, mocked at the module rather than registered.
@@ -116,6 +120,8 @@ vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
 		contextSize: 8192,
 		imageBackendKind: settingsState.imageBackendKind,
+		imageComfyCheckpoint: settingsState.imageComfyCheckpoint,
+		imageLocalModelId: settingsState.imageLocalModelId,
 		inferenceBackend: { mode: 'local' as const },
 		// What a job inherits when it sets no reasoning policy of its own —
 		// the runner records the RESOLVED values with the run.
@@ -2696,6 +2702,8 @@ describe('jobs runner — asset generation', () => {
 			maxLoras: 2
 		};
 		settingsState.imageBackendKind = 'comfyui';
+		settingsState.imageComfyCheckpoint = '';
+		settingsState.imageLocalModelId = '';
 	});
 	afterEach(() => {
 		settingsState.imageBackendKind = 'none';
@@ -2800,7 +2808,15 @@ describe('jobs runner — asset generation', () => {
 						id: 'sd15',
 						filename: 'v1-5-pruned-emaonly-fp16.safetensors',
 						description: 'Stable Diffusion 1.5',
-						license: 'CreativeML OpenRAIL-M — commercial use allowed.'
+						license: 'CreativeML OpenRAIL-M — commercial use allowed.',
+						native_edge: 512
+					},
+					{
+						id: 'sdxl',
+						filename: 'sd_xl_base_1.0.safetensors',
+						description: 'Stable Diffusion XL 1.0',
+						license: 'CreativeML OpenRAIL++-M — commercial use allowed.',
+						native_edge: 1024
 					}
 				];
 			}
@@ -3347,6 +3363,43 @@ describe('jobs runner — asset generation', () => {
 		expect(asked.question).not.toContain('single colour');
 		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
 		expect(report).not.toContain('discarded');
+	});
+
+	it('sizes a derived spec to the checkpoint, not to a constant', async () => {
+		// Generation happens at target_size * upscale, and SDXL produces mush
+		// below its native 1024 just as SD1.5 degrades above its 512. A
+		// shipped default of 16 silently halves SDXL's resolution and the
+		// user finds out by looking at bad sprites.
+		settingsState.imageComfyCheckpoint = 'sd_xl_base_1.0.safetensors';
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'a roguelike' }));
+		const written = wireFs(null, { recipe: goodRecipe() });
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([{ title: 'Iron sword', kind: 'sprite', prompt: 'an iron sword' }])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(spec.normalize.upscale).toBe(32);
+		expect(spec.normalize.target_size * spec.normalize.upscale).toBe(1024);
+	});
+
+	it('keeps the default upscale for a checkpoint it does not recognise', async () => {
+		// Never a guess: inferring a native edge from a filename would be
+		// wrong exactly when it matters.
+		settingsState.imageComfyCheckpoint = 'someones-pixel-mix-v4.safetensors';
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'a roguelike' }));
+		const written = wireFs(null, { recipe: goodRecipe() });
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([{ title: 'Iron sword', kind: 'sprite', prompt: 'an iron sword' }])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(spec.normalize.upscale).toBe(16);
 	});
 
 	it('fails when there is no spec and nothing to write one from', async () => {

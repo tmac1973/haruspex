@@ -45,6 +45,7 @@ import { parseJudgement, SUBMIT_ASSET_JUDGEMENT_TOOL, type AssetJudgement } from
 import type { AssetEntry } from '$lib/assets/spec/types';
 import { generateEntries } from './generate';
 import { fitStyle } from './promptBudget';
+import { nativeEdgeFor, upscaleForEdge } from './nativeEdge';
 import { renderAssetReport, type Licensing } from './report';
 import type { AnchorOutcome, EntryOutcome } from './types';
 
@@ -426,7 +427,18 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 						`exists, or describe what to make.`
 				);
 			}
-			const profile = { ...(await defaultProfile()), target_size: targetSize };
+			// The upscale follows the MODEL, not a constant. Generation happens
+			// at target_size * upscale, and SDXL produces artefacts below its
+			// native 1024 just as SD1.5 degrades above its 512 — so a shipped
+			// default of 16 silently halves SDXL's resolution and the user
+			// discovers it by looking at bad sprites.
+			const base = await defaultProfile();
+			const edge = await nativeEdgeFor(undefined);
+			const profile = {
+				...base,
+				target_size: targetSize,
+				upscale: edge === null ? base.upscale : upscaleForEdge(targetSize, edge)
+			};
 			let derived: AssetSpec | null = null;
 			let problems: string[] = [];
 			for (let attempt = 0; attempt < MAX_DERIVE_ATTEMPTS; attempt++) {
@@ -578,6 +590,10 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				judgeSkipped: (cfg.vision_judge ?? DEFAULT_VISION_JUDGE) && !ctx.visionSupported(),
 				licensing: await resolveLicensing(spec),
 				styleTruncated: fitStyle(spec.style.prompt).truncated,
+				sizing: {
+					edge: Math.min(spec.normalize.target_size * spec.normalize.upscale, MAX_GENERATION_EDGE),
+					nativeEdge: await nativeEdgeFor(spec.style.model)
+				},
 				startedAt,
 				finishedAt: Date.now()
 			})

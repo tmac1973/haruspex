@@ -9,7 +9,7 @@ function spec(): AssetSpec {
 		version: 1,
 		style: { prompt: 'flat pixel art' },
 		anchor: { image: 'a/anchor.png', recipe: 'a/anchor.json' },
-		normalize: { target_size: 32 },
+		normalize: { target_size: 32, upscale: 16 },
 		entries: [
 			{ id: 'sword', kind: 'sprite', prompt: 'a sword', out: 'a/sword.png' },
 			{ id: 'stone', kind: 'texture', prompt: 'cobblestone', out: 'a/stone.png' },
@@ -54,6 +54,7 @@ function input(over: Partial<ReportInput> = {}): ReportInput {
 		judgeSkipped: false,
 		licensing: { modelName: 'SD 1.5', modelLicense: 'OpenRAIL-M.', loras: [] },
 		styleTruncated: false,
+		sizing: { edge: 512, nativeEdge: 512 },
 		startedAt: 0,
 		finishedAt: 60_000,
 		...over
@@ -266,5 +267,33 @@ describe('the truncated-style note', () => {
 
 	it('says nothing when the style fitted', () => {
 		expect(renderAssetReport(input())).not.toContain('77 tokens');
+	});
+});
+
+describe('the generation-size note', () => {
+	it('says so when assets were generated below the model\u2019s native edge', () => {
+		// The failure it prevents: a shipped upscale of 16 silently halves
+		// SDXL's resolution, and the user finds out by looking at mush.
+		const md = renderAssetReport(input({ sizing: { edge: 512, nativeEdge: 1024 } }));
+		expect(md).toContain('512px');
+		expect(md).toContain('1024px');
+		expect(md).toContain('mush');
+		expect(md).toContain('normalize.upscale');
+	});
+
+	it('says so when they were generated above it', () => {
+		const md = renderAssetReport(input({ sizing: { edge: 1024, nativeEdge: 512 } }));
+		expect(md).toContain('artefacts');
+	});
+
+	it('says nothing when they match', () => {
+		expect(renderAssetReport(input())).not.toContain('was trained at');
+	});
+
+	it('says nothing about a checkpoint it does not know', () => {
+		// A guess about an unrecognised fine-tune would be wrong exactly when
+		// it matters.
+		const md = renderAssetReport(input({ sizing: { edge: 512, nativeEdge: null } }));
+		expect(md).not.toContain('was trained at');
 	});
 });
