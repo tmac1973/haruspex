@@ -40,6 +40,12 @@ GDK_BACKEND=x11 npm run tauri dev
 | `koko-{triple}` | Kokoros | CPU | Text-to-speech |
 | `node-{triple}` | nodejs.org | — | Runs npm-packaged MCP servers |
 | `uv-{triple}` | astral-sh/uv | — | Runs PyPI-packaged MCP servers |
+| `sd-server-{triple}` | stable-diffusion.cpp | Vulkan / Metal | Local image generation |
+
+`sd-server` is DOWNLOADED, not built — upstream ships a Vulkan/Metal binary for
+every triple we target. Its shared libraries live in `binaries/sd-libs/`, apart
+from `binaries/libs/`, because it carries its own ggml whose sonames collide
+with llama.cpp's; see `docs/image-generation.md`.
 
 `node` and `uv` are bundled so a user never needs a terminal to install an MCP
 server. They are fetched by `./scripts/fetch-node.sh` and `./scripts/fetch-uv.sh`;
@@ -57,6 +63,7 @@ Binaries and `.so` files are gitignored. Run `./scripts/link-sidecar-libs.sh` to
 | 3001 | koko (TTS) |
 | 8765 | llama-server |
 | 8766 | whisper-server |
+| 8767 | sd-server (reserved — nothing starts it yet) |
 | 9876 | Blender, when its companion addon is running |
 | 9080 | Godot's editor bridge, when its addon is enabled |
 

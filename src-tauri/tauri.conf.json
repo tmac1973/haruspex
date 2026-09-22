@@ -41,10 +41,12 @@
       "binaries/koko",
       "binaries/ruff",
       "binaries/node",
-      "binaries/uv"
+      "binaries/uv",
+      "binaries/sd-server"
     ],
     "resources": [
       "binaries/libs/*",
+      "binaries/sd-libs/*",
       "binaries/espeak-ng-data/*",
       "binaries/espeak-ng-data/lang/*",
       "binaries/espeak-ng-data/lang/*/*",

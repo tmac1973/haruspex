@@ -16,7 +16,13 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 0
 fi
 
-# Symlink .so/.dylib files from binaries/ and binaries/libs/ to target/debug/
+# Symlink .so/.dylib files from binaries/ and binaries/libs/ to target/debug/.
+#
+# binaries/sd-libs/ is deliberately NOT in this list. sd-server carries its own
+# ggml, whose unversioned and .so.0 names are identical to llama.cpp's while
+# the version behind them is older — flattening both into one directory
+# overwrites the soname llama-server loads and breaks the LLM sidecar. See
+# docs/image-generation.md.
 for dir in "$BINARIES_DIR" "$LIBS_DIR"; do
     [ -d "$dir" ] || continue
     for lib in "$dir"/*.so* "$dir"/*.dylib; do
