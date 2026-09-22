@@ -926,3 +926,40 @@ describe('MCP servers', () => {
 		expect(getSettings().integrations.email).toEqual(before);
 	});
 });
+
+/**
+ * Image generation is entirely opt-in. An install that has never touched it
+ * must see `'none'` — no backend resolved, no process started, no weights
+ * downloaded. That is why these fields need no migration flag: absent reads as
+ * off, which is the correct state.
+ */
+describe('image backend settings', () => {
+	it('defaults to no backend and empty connection details', () => {
+		const s = getSettings();
+		expect(s.imageBackendKind).toBe('none');
+		expect(s.imageBackendBaseUrl).toBe('');
+		expect(s.imageBackendApiKey).toBe('');
+		expect(s.imageComfyCheckpoint).toBe('');
+	});
+
+	it('defaults both custom-workflow paths to empty', () => {
+		// Half-configured is a probe-time error, so the shipped state must be
+		// neither-configured rather than one of the two.
+		const s = getSettings();
+		expect(s.imageComfyWorkflowPath).toBe('');
+		expect(s.imageComfyFieldMapPath).toBe('');
+	});
+
+	it('defaults both local-model fields to empty', () => {
+		const s = getSettings();
+		expect(s.imageLocalModelId).toBe('');
+		expect(s.imageLocalModelPath).toBe('');
+	});
+
+	it('persists a configured backend', () => {
+		updateSettings({ imageBackendKind: 'comfyui', imageBackendBaseUrl: 'http://box:8188' });
+		expect(getSettings().imageBackendKind).toBe('comfyui');
+		expect(getSettings().imageBackendBaseUrl).toBe('http://box:8188');
+		updateSettings({ imageBackendKind: 'none', imageBackendBaseUrl: '' });
+	});
+});

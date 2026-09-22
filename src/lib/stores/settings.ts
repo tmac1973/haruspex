@@ -8,6 +8,7 @@ import type { BackendDescriptor, EffortCaps } from '$lib/inference/descriptor';
 
 import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
 import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
+import type { ImageBackendKind } from '$lib/image/types';
 import type { DavAccount } from '$lib/ipc/gen/DavAccount';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
 import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
@@ -534,6 +535,37 @@ export interface AppSettings {
 	 */
 	codeCommandExec: 'auto' | 'pty' | 'oneshot';
 	/**
+	 * Which image backend generates pictures, if any. `'none'` is not a
+	 * placeholder — it is the shipped default and the correct state for every
+	 * install that has never opted in. Nothing is downloaded and no process
+	 * starts until this moves off it.
+	 */
+	imageBackendKind: ImageBackendKind;
+	/** Base URL of the configured image backend (ComfyUI). */
+	imageBackendBaseUrl: string;
+	/**
+	 * Optional bearer token for the image backend. Sent as an Authorization
+	 * header on HTTP requests and never anywhere else — in particular never in
+	 * a URL, which would write it into logs and histories.
+	 */
+	imageBackendApiKey: string;
+	/** Checkpoint a request with no explicit model resolves to. */
+	imageComfyCheckpoint: string;
+	/**
+	 * A user-exported ComfyUI workflow and the field map that says which node
+	 * input carries each parameter. Both or neither: one without the other is
+	 * a configuration error the backend's probe reports.
+	 */
+	imageComfyWorkflowPath: string;
+	imageComfyFieldMapPath: string;
+	/**
+	 * Weights for the locally managed engine. The id refers to a catalogue
+	 * entry and WINS when both are set; the path is the escape hatch for a file
+	 * the catalogue does not know about.
+	 */
+	imageLocalModelId: string;
+	imageLocalModelPath: string;
+	/**
 	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
 	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
 	 * → test → fix), so this is higher than chat/shell. Raise it for big tasks;
@@ -675,7 +707,17 @@ const defaults: AppSettings = {
 	codeCommandExec: 'auto',
 	codeMaxIterations: 40,
 	memoryEnabled: false,
-	memoryConfirmWrites: true
+	memoryConfirmWrites: true,
+	// Image generation is entirely opt-in: 'none' means no process, no
+	// download and no startup cost for anyone who never turns it on.
+	imageBackendKind: 'none',
+	imageBackendBaseUrl: '',
+	imageBackendApiKey: '',
+	imageComfyCheckpoint: '',
+	imageComfyWorkflowPath: '',
+	imageComfyFieldMapPath: '',
+	imageLocalModelId: '',
+	imageLocalModelPath: ''
 };
 
 function load(): AppSettings {
