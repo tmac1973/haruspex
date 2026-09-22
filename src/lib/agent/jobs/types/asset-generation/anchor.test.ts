@@ -96,6 +96,15 @@ describe('anchorPrompt', () => {
 		}
 	});
 
+	it('names the background colour exactly once', () => {
+		// Measured on SDXL at one seed: naming it twice tinted 30% of the
+		// subjects' own pixels that colour, once tinted 12%. The palette is
+		// made of the art's colours, so a backdrop said twice is how a whole
+		// set comes out pink.
+		const p = anchorPrompt(spec(), profile());
+		expect(p.split('magenta')).toHaveLength(2);
+	});
+
 	it('names the background in a word, not in hex', () => {
 		// The prompt and the chroma key have one source; a hex string the model
 		// cannot read means the background survives into every asset.
@@ -196,6 +205,62 @@ describe('anchorSubjects', () => {
 		);
 		expect(subjects).toContain('a character');
 		expect(subjects).not.toContain('cobblestone');
+	});
+
+	it('takes the subject, not the whole entry prompt', () => {
+		// An entry prompt says everything ONE image needs. Four of them joined
+		// ran the anchor to 140 tokens, past CLIP's 77, and the composition
+		// instruction that comes last fell out of the window: the sheet came
+		// back as a single character filling the frame, no isolation and no
+		// key colour.
+		const subjects = anchorSubjects(
+			spec({
+				entries: [
+					{
+						id: 'a',
+						kind: 'sprite',
+						prompt:
+							'lone scavenger survivor in patched duster coat and respirator, ' +
+							'seen top-down from directly above facing down',
+						out: 'a.png'
+					}
+				]
+			} as Partial<AssetSpec>)
+		);
+		expect(subjects.length).toBeLessThanOrEqual(40);
+		expect(subjects.startsWith('lone scavenger survivor')).toBe(true);
+		expect(subjects).not.toContain('top-down');
+	});
+
+	it('shortens a long subject that has no clause break', () => {
+		const subjects = anchorSubjects(
+			spec({
+				entries: [{ id: 'a', kind: 'sprite', prompt: 'x'.repeat(200), out: 'a.png' }]
+			} as Partial<AssetSpec>)
+		);
+		expect(subjects.length).toBeLessThanOrEqual(40);
+	});
+
+	it('keeps the whole anchor prompt inside the encoder window', () => {
+		// Four long entry prompts plus the frame is what blew it. The guard is
+		// on the result, not on any one part, because each part was individually
+		// reasonable.
+		const long = (n: number) =>
+			`subject ${n} with a great many descriptive words about it, seen from directly above`;
+		const p = anchorPrompt(
+			spec({
+				entries: [0, 1, 2, 3, 4, 5].map((n) => ({
+					id: `e${n}`,
+					kind: 'sprite',
+					prompt: long(n),
+					out: `e${n}.png`
+				}))
+			} as Partial<AssetSpec>),
+			profile()
+		);
+		// ~3.7 characters per CLIP token. 100 is measured-working; the failure
+		// that prompted this was 140.
+		expect(p.length / 3.7).toBeLessThan(100);
 	});
 
 	it('never asks for more subjects than a sheet can show', () => {

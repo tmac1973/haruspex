@@ -33,10 +33,14 @@ import { fitStyle } from './promptBudget';
  * to leave empty space around a centred subject would ruin it.
  */
 export function isolationScaffold(subject: string, background: string): string {
+	// ONCE. Measured on SDXL: naming the key colour twice tinted 30% of the
+	// subject's own pixels that colour and once tinted 12%. Said three times,
+	// as this did, the subject comes out wearing the backdrop — and since the
+	// palette is extracted from the art, the whole set goes that colour.
 	return (
 		`a single ${subject}, one object only, small in frame, centred, ` +
-		`isolated on a plain flat ${background} background, solid ${background} backdrop, ` +
-		`lots of empty ${background} space around it, product shot, simple`
+		`isolated on a plain flat ${background} background, ` +
+		`lots of empty space around it, product shot, simple`
 	);
 }
 

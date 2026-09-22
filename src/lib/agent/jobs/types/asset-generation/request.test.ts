@@ -70,6 +70,14 @@ describe('the isolation scaffold', () => {
 		}
 	});
 
+	it('names the key colour exactly once', () => {
+		// It used to say it three times. Measured on SDXL: twice tinted 30% of
+		// the subject's own pixels that colour — the subject comes out wearing
+		// the backdrop, and the palette is made from the subject.
+		const p = entryPrompt(entry(), spec(), profile());
+		expect(p.split('magenta')).toHaveLength(2);
+	});
+
 	it('is absent from a texture, which is meant to fill its frame', () => {
 		expect(wantsIsolation('texture')).toBe(false);
 		const p = entryPrompt(entry({ kind: 'texture', prompt: 'cobblestone' }), spec(), profile());

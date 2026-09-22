@@ -99,14 +99,62 @@ export function anchorPrompt(spec: AssetSpec, profile: NormalizeProfile): string
 	// own composition instruction out of CLIP's 77 tokens, and the model then
 	// renders the style with no subject at all — measured: a 637-character
 	// style produced abstract blobs with none of the four named subjects.
-	const style = fitStyle(spec.style.prompt).text;
-	return [
-		`${style}.`,
-		`A sprite sheet of separate game sprites on a plain solid ${bg} background:`,
-		`${anchorSubjects(spec)}.`,
-		`Each sprite small, centred and isolated, surrounded by empty ${bg} space.`
-	].join(' ');
+	//
+	// The colour is named ONCE. Measured on SDXL at a fixed seed: naming it
+	// twice tinted 30% of the subjects' own pixels that colour, once tinted
+	// 12%, and not naming it at all tinted none. The backdrop bleeds into the
+	// art, and the art's colours are what the palette is made of — so a
+	// magenta backdrop said twice is how a set comes out pink.
+	const subjects = anchorSubjects(spec);
+	const opening = `A sprite sheet of separate game sprites on a plain solid ${bg} background:`;
+	const closing = 'Each sprite small, centred and isolated, with empty space around it.';
+
+	// Budget the WHOLE prompt, not the style alone. Every part here was
+	// individually reasonable and the total was 140 tokens, which put the
+	// closing sentence — the one that asks for isolation — outside the
+	// encoder's window. The style takes whatever the frame and subjects leave.
+	const spare = ANCHOR_PROMPT_CHARS - opening.length - closing.length - subjects.length - 4;
+	const style = fitStyle(spec.style.prompt, Math.max(MIN_STYLE_CHARS, spare)).text;
+	return [`${style}.`, opening, `${subjects}.`, closing].join(' ');
 }
+
+/**
+ * The whole anchor prompt's character budget.
+ *
+ * CLIP reads 77 tokens and a chunk past that carries little weight. 370
+ * characters is about 100 tokens — measured working at 339, and measured
+ * failing badly at 519, where the closing instruction fell out of the window
+ * and the sheet came back as one character filling the frame.
+ */
+const ANCHOR_PROMPT_CHARS = 370;
+
+/** Never squeeze the style to nothing: it is what decides the medium. */
+const MIN_STYLE_CHARS = 60;
+
+/**
+ * The first clause of an entry's prompt, which is the subject itself.
+ *
+ * An entry prompt is written for ONE image and says everything that image
+ * needs — "lone scavenger survivor in patched duster coat and respirator,
+ * seen top-down from directly above facing down" is 100 characters of which
+ * three words are the subject. Four of those joined together ran the anchor
+ * prompt to 140 tokens, past CLIP's 77, and the composition instruction that
+ * comes last — "small, centred and isolated" — fell out of the window. The
+ * sheet came back as one character filling the frame on a plain backdrop,
+ * with no isolation and no key colour.
+ */
+function subjectHead(prompt: string): string {
+	const head = prompt.split(',')[0].trim();
+	// A subject with no commas may still be long; take a readable prefix
+	// rather than the whole paragraph.
+	if (head.length <= SUBJECT_HEAD_CHARS) return head;
+	const cut = head.slice(0, SUBJECT_HEAD_CHARS);
+	const lastSpace = cut.lastIndexOf(' ');
+	return lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
+}
+
+/** Longest a single anchor subject may be. Four of these plus the frame fit. */
+const SUBJECT_HEAD_CHARS = 40;
 
 /** How many of the spec's own subjects the anchor is asked to show. */
 const ANCHOR_SUBJECTS = 4;
@@ -152,7 +200,7 @@ export function anchorSubjects(spec: AssetSpec): string {
 		}
 		if (picked.length === before) break;
 	}
-	return picked.join(', ');
+	return picked.map(subjectHead).join(', ');
 }
 
 /**
