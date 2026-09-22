@@ -9,6 +9,7 @@ mod feedback;
 mod fs_tools;
 mod hardware;
 mod image_cache;
+mod image_gen;
 mod inference;
 mod inference_queue;
 mod integrations;
@@ -221,6 +222,9 @@ pub fn run() {
             image_cache::commands::image_resolve,
             image_cache::commands::image_sweep,
             image_cache::commands::image_store_bytes,
+            image_gen::commands::image_normalize,
+            image_gen::commands::image_extract_palette,
+            image_gen::commands::image_effective_profile,
             inference::probe_inference_server,
             inference_queue::inference_acquire,
             inference_queue::inference_cancel,
