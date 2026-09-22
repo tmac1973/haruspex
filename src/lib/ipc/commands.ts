@@ -111,6 +111,7 @@ export const IPC = {
 	get_whisper_status: 'get_whisper_status',
 	has_any_model: 'has_any_model',
 	image_resolve: 'image_resolve',
+	image_store_bytes: 'image_store_bytes',
 	image_sweep: 'image_sweep',
 	import_model: 'import_model',
 	inference_acquire: 'inference_acquire',

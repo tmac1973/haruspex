@@ -220,6 +220,7 @@ pub fn run() {
             proxy::images::proxy_fetch_url_images,
             image_cache::commands::image_resolve,
             image_cache::commands::image_sweep,
+            image_cache::commands::image_store_bytes,
             inference::probe_inference_server,
             inference_queue::inference_acquire,
             inference_queue::inference_cancel,

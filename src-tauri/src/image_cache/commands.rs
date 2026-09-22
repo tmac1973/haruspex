@@ -141,3 +141,110 @@ pub async fn image_sweep(app: AppHandle, db: State<'_, Database>) -> Result<(), 
     let dir = cache_dir(&app)?;
     sweep_orphans(&db, &dir)
 }
+
+/// Store bytes the app produced itself, and return their hash.
+///
+/// The cache exists for images fetched from the web, but its storage half is
+/// exactly what a locally generated image needs: content-addressed on disk,
+/// served to the webview over `haruspex-img://`, swept when nothing references
+/// it. Going through it rather than a `data:` URL keeps a multi-megabyte PNG
+/// out of the DOM and out of the conversation.
+///
+/// Three things differ from `image_resolve` and each is deliberate:
+///
+///   - there is no URL, so `source_url` carries the synthetic
+///     `haruspex-generated:<hash>` — the column is `UNIQUE`, and a constant
+///     would make the second generated image collide with the first;
+///   - `source` is `generated`, which the licence rules do not treat as a
+///     scrape, because we made these pixels;
+///   - `embeddable` is true. Nothing was borrowed, so nothing is encumbered.
+#[tauri::command]
+pub async fn image_store_bytes(
+    app: AppHandle,
+    db: State<'_, Database>,
+    bytes: Vec<u8>,
+    mime: String,
+    width: u32,
+    height: u32,
+) -> Result<String, String> {
+    check_storable(&bytes)?;
+    let dir = cache_dir(&app)?;
+    let hash = hash_bytes(&bytes);
+
+    // Identical bytes are the same image. Writing is already idempotent; this
+    // keeps the row's timestamps honest too.
+    if let Some(row) = db.image_by_hash(&hash)? {
+        write_bytes(&dir, &hash, &bytes)?;
+        db.touch_images(std::slice::from_ref(&row.hash))?;
+        return Ok(hash);
+    }
+
+    write_bytes(&dir, &hash, &bytes)?;
+    db.insert_image(&ImageRow {
+        hash: hash.clone(),
+        source_url: format!("haruspex-generated:{hash}"),
+        source: "generated".into(),
+        mime,
+        width,
+        height,
+        bytes: bytes.len() as i64,
+        license: None,
+        attribution: None,
+        description_url: None,
+        embeddable: true,
+        created_at: 0,
+        last_used_at: 0,
+    })?;
+    evict_to_cap(&db, &dir)?;
+    debug!("stored generated image {hash}");
+    Ok(hash)
+}
+
+/// The guards on [`image_store_bytes`], split out because the command itself
+/// needs an `AppHandle` and a `Database` and so cannot be unit tested.
+///
+/// An empty body is refused rather than stored: it would hash, write a
+/// zero-byte file, and serve a broken image forever, which is worse than a
+/// visible error at the point of failure.
+pub fn check_storable(bytes: &[u8]) -> Result<(), String> {
+    if bytes.is_empty() {
+        return Err("Refusing to store an empty image.".into());
+    }
+    if bytes.len() as u64 > super::MAX_IMAGE_BYTES {
+        return Err(format!(
+            "Image is {} bytes, over the {} byte cache limit.",
+            bytes.len(),
+            super::MAX_IMAGE_BYTES
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    #[test]
+    fn refuses_an_empty_body() {
+        let err = check_storable(&[]).unwrap_err();
+        assert!(err.contains("empty"), "{err}");
+    }
+
+    #[test]
+    fn refuses_a_body_over_the_cache_ceiling() {
+        let too_big = vec![0u8; (super::super::MAX_IMAGE_BYTES + 1) as usize];
+        let err = check_storable(&too_big).unwrap_err();
+        assert!(err.contains("over the"), "{err}");
+    }
+
+    #[test]
+    fn accepts_a_body_exactly_at_the_ceiling() {
+        let exact = vec![0u8; super::super::MAX_IMAGE_BYTES as usize];
+        assert!(check_storable(&exact).is_ok());
+    }
+
+    #[test]
+    fn accepts_an_ordinary_png() {
+        assert!(check_storable(&[137, 80, 78, 71]).is_ok());
+    }
+}
