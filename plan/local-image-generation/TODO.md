@@ -220,23 +220,80 @@ fix, and it is worth measuring on that basis alone.
 original Qwen-Image and does not carry over. This is in Z-Image-Turbo's
 class rather than a 9070 XT-only experiment.
 
-*The licence disqualifies it as a default.* An overview goal is to default
-to commercially safe weights "so a user who later sells their game is
-protected by the default rather than by having read a licence", and
-`recommended_id` never recommends a non-commercial model at any VRAM. So
-2.1 can be a catalogue entry with `commercial_use: false` behind the
-existing confirm dialog, and it can be what WE evaluate against — but it
-cannot become what a user gets by doing nothing. Whatever it teaches about
-alpha has to be portable to a permissive model, or it is a dead end for the
-shipped default.
+*The licence disqualifies it as a default — and the confusion about it is
+worth resolving once, here.* The question people keep asking is whether you
+may sell an image the model made. Read against the licence text
+(checked 2026-09-23):
+
+- §2(a) grants use of the **Materials** "FOR NON-COMMERCIAL PURPOSES ONLY".
+- §1(i) defines Non-Commercial as "for research or evaluation purposes only".
+- §1(f) defines Materials as the model and its documentation. **Outputs are
+  not in that definition**, and the licence is otherwise silent on them.
+- Qwen's developers have said publicly that outputs are not licensed
+  Materials and that users retain the rights to them.
+
+So the two questions have different answers, which is where the confusion
+comes from. *Who owns the image* — you do. *May you run the model to make
+it for a commercial game* — that is use of the Materials, and §2(a) does not
+grant it outside research or evaluation. Owning the output does not
+retroactively license the generation.
+
+That is the reading that matters for us, because Haruspex's whole point is a
+user making art for a game they may sell. Two caveats worth carrying: a
+statement on social media is not an amendment to a licence, and none of this
+is legal advice — if this model ever becomes load-bearing, it needs a real
+answer rather than a plan file's.
+
+The consequence is unchanged. An overview goal is to default to commercially
+safe weights "so a user who later sells their game is protected by the
+default rather than by having read a licence", and `recommended_id` never
+recommends a non-commercial model at any VRAM. So 2.1 can be a catalogue
+entry with `commercial_use: false` behind the existing confirm dialog, and it
+can be what WE evaluate against — but it cannot be what a user gets by doing
+nothing.
 
 Still unchecked: whether ComfyUI's Qwen-Image 2.1 support covers what this
 pipeline needs, and whether stable-diffusion.cpp can load it at all — the
 bundled engine matters more than the ComfyUI path for shipping.
 
-Either way it does not displace issue 1 — the anchor-subject fix is cheaper,
-is a known cause, and its result is what tells you whether a better base
-model is even needed.
+### 2b. Ming-Image-0.1-Design — MIT, 6B, RGBA (checked 2026-09-23)
+
+**Potentially the most interesting of the three, because of the licence.**
+Ant Group's inclusionAI open-sourced the Ming-Image-0.1-Design family around
+17 September 2026. Confirmed from the model card: 6B, **MIT licence**, and
+RGBA output with transparent backgrounds.
+
+MIT is the thing Qwen 2.1 cannot offer. It clears the commercial-safety goal
+outright, which means — unlike 2.1 — this one *could* become a default rather
+than an opt-in catalogue entry a user has to accept a warning for. If its
+alpha channel works for our subjects, it removes the chroma key, the flat
+backdrop, and the key-colour bleed (lessons 3 and 6) with no licence asterisk
+attached.
+
+A sibling model, Ming-Image-0.1-Design-Layer, decomposes a flattened design
+into a requested number of RGBA layers. Worth a thought against the anchor
+problem: an anchor that came back as separable layers is a different and
+possibly better object than one we extract a palette from.
+
+Two serious caveats, neither fatal but both real:
+
+- **It is a design model, not a game-art model.** The card says UI,
+  infographics, posters and other text-rich visual designs. Nothing says it
+  can render a readable 32px sword silhouette, and lesson (7) is that
+  composition ability is a precondition of everything downstream here. This
+  is the first thing to measure and the most likely reason it fails.
+- **The tooling is not there yet.** The card's validated hardware is one
+  80 GiB CUDA GPU, and it mentions neither ComfyUI nor GGUF. Community INT8
+  weights exist. Reports describe a quiet release with no endpoint and a
+  Quick Start that 404s. So the bundled stable-diffusion.cpp path — the one
+  that matters for shipping — is unproven and may be a long way off.
+
+Order of checks, cheapest first: can it draw a game sprite at all; then can
+anything we ship actually run it.
+
+Either of these does not displace issue 1 — the anchor-subject fix is
+cheaper, is a known cause, and its result is what tells you whether a better
+base model is even needed.
 
 ### 3. Phase 16's other steps
 
