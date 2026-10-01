@@ -4,14 +4,6 @@ Haruspex generates game art from a short description, through a diffusion
 model running on your own machine. Nothing is sent anywhere and nothing starts
 until you opt in.
 
-> **Changing.** The pipeline is moving from SD1.5/SDXL to Ming-Image, a model
-> that produces transparent images, with sprites generated several to a sheet
-> (`plan/local-image-generation/`, phases 17–25). Reference conditioning
-> (IP-Adapter) has already been removed; sections below that describe it are
-> out of date until this guide is rewritten in phase 25. The ComfyUI backend
-> runs Ming-Image and Qwen-Image-2.1 today — see
-> `src/lib/image/comfyui/templates/README.md`.
-
 ## Choosing a backend
 
 Settings → Image offers two, and they are genuinely different trades.
@@ -34,9 +26,10 @@ family with what the server is missing, and Install puts the files there:
 - **Neither**: a list of files, folders and links to copy.
 
 **Bundled engine** is stable-diffusion.cpp, shipped with Haruspex. Pick it if
-you want image generation with nothing to install. It starts on demand, stops
-when you say, and reports honestly that it cannot do reference conditioning —
-the job degrades around that rather than pretending.
+you want image generation with nothing to install. It starts on demand and
+stops when you say. It runs SD1.5 and SDXL only — Ming-Image does not run
+usably in it yet — so on it the job makes one image per asset on a keyed
+background, with no tiling, and the report says so.
 
 **None** is the default. No process, no download, no startup cost.
 
@@ -54,7 +47,7 @@ and the job. A minimal one:
 {
   "version": 1,
   "style": {
-    "prompt": "16-bit pixel art, flat shading, bold dark outline, muted palette",
+    "prompt": "16-bit pixel art, flat shading, bold dark outline, muted colours",
     "negativePrompt": "photo, 3d render, gradient shading"
   },
   "anchor": {
@@ -64,69 +57,88 @@ and the job. A minimal one:
   "normalize": { "target_size": 32, "upscale": 32, "palette_size": 32 },
   "entries": [
     { "id": "iron_sword", "kind": "sprite", "prompt": "an iron sword",
-      "out": "assets/generated/sprite/iron_sword.png" },
+      "sheet": "items", "out": "assets/generated/sprite/iron_sword.png" },
     { "id": "cobblestone", "kind": "texture", "prompt": "grey cobblestone floor",
       "out": "assets/generated/texture/cobblestone.png", "seamless": true }
   ]
 }
 ```
 
-`style.prompt` is appended to every entry and is what makes the set cohere.
-`kind` decides how the image is treated: a `sprite` or `icon` is isolated on a
-flat background which is then keyed out, a `texture` is meant to fill its
-frame and is neither cropped nor outlined. `id` is what your code will load
+`style.prompt` goes into every prompt and is what makes the set cohere. It
+names the medium, the line weight and how saturated the colours are — never a
+colour scheme, which would tint every asset ("rust and concrete" turns the
+grass brown); each entry's prompt carries its own colours. `kind` decides how
+the image is treated: a `sprite` or `icon` is cut out on a transparent
+background, a `texture` fills its frame, tiles, and is neither cropped nor
+outlined. `sheet` groups sprites and icons that are drawn together — see
+below. `id` is what your code will load
 the asset by, so it is validated rather than invented — a run refuses an id it
 cannot use instead of quietly tidying it into one your code does not name.
 
-`upscale` must suit the model: generation happens at `target_size * upscale`,
-and SD1.5 degrades above 512 while SDXL produces artefacts below 1024. A 32px
-target wants 16 on SD1.5 and 32 on SDXL.
+On Ming-Image, sprites and icons are drawn up to nine to a 1024 sheet whatever
+the target size, and a texture at 1024. `upscale` matters only on the bundled
+engine's SD models, where generation happens at `target_size * upscale`: a
+32 px target wants 16 on SD1.5 and 32 on SDXL.
 
-### The style anchor, and why it is committed
+### Sheets
 
-The first thing a run produces is one reference sheet showing several of the
-spec's own subjects, in the spec's style. Every asset is then generated
-conditioned on it, and the palette is extracted from it.
+Sprites and icons with the same `sheet` name are drawn together, nine at a
+time, with each one's position spelled out in the prompt. Drawn together they
+share a scale, a view and a look, which no amount of conditioning achieved
+one image at a time. Group things that belong side by side: items with items,
+characters with characters. A coin beside a building comes out as a giant
+coin or a toy building.
 
-Both the image and the recipe that made it are written into your project and
-should be committed. That is the point: the style becomes a versioned artifact
-rather than something reconstructed from a recipe against model weights and
-node versions that will have moved. Adding ten sprites next month matches the
-hundred already shipped because it is literally the same reference image.
+Each sheet is cut into its sprites by transparency and checked against what
+was asked for: a subject missing, two drawn touching, one in the wrong place.
+The subjects that failed go round again together, as a smaller sheet. Each
+sheet is reduced to its own palette.
 
-A run reuses a committed anchor and does not regenerate it. To change the
-style deliberately, delete `haruspex-anchor.png`.
+Textures are made one at a time and made to tile: Ming generates the surface,
+then the seams are rolled into the middle and repainted. A texture whose seam
+still shows is rejected and retried.
+
+### The anchor, and why it is committed
+
+The first sheet a run draws is the anchor: real assets from the spec (the
+sheet `anchorSheet` names, or the first sheet of sprites), shown to you for
+approval when the run is attended. It is written into your project with the
+recipe that made it, and should be committed. A later run reuses it rather
+than drawing it again, so the look you approved is the look the set keeps.
+
+To change the style deliberately, delete `haruspex-anchor.png`.
 
 ### Adding assets later
 
 Add entries to the spec and run the job again. Entries whose output file
-already exists are skipped, so only the new ones are generated — and they are
-conditioned on the same committed anchor, so they match.
+already exists are skipped, so only the new ones are generated, drawn together
+on their sheets under the same style line.
 
-To regenerate a few, delete exactly those files and re-run.
+To regenerate a few, delete exactly those files and re-run. They come back as
+smaller sheets of their own group.
 
-## The three coherence layers
+## How a set stays one set
 
-A set looks like a set because of three independent mechanisms, not one:
+1. **Drawn together.** Subjects on one sheet share scale, view and rendering
+   because the model drew them as one picture.
+2. **One style line** in every prompt, describing the medium, never colours.
+3. **A shared pixel grid** — every asset is downscaled to the same target
+   size by the same modal downscale.
+4. **Its own palette per sheet** — each sheet is quantized to colours taken
+   from that sheet. A shared palette was tried and failed: an anchor with no
+   gold in it made every gold coin a rejection.
 
-1. **Reference conditioning** — each asset is generated conditioned on the
-   anchor. Needs IP-Adapter; the bundled engine reports this as unavailable.
-2. **A shared palette** — every asset is quantized to colours extracted from
-   the anchor. Mechanical, and works on any backend.
-3. **A shared pixel grid** — every asset is downscaled to the same target size
-   by the same modal downscale. Also mechanical.
-
-Layers 2 and 3 do not depend on the model behaving, which is why a backend
-missing layer 1 still produces a usable set. When a layer is unavailable the
-report says which, per asset, rather than silently producing worse art.
+Reference images were tried and dropped: they made sets less consistent, not
+more (`plan/local-image-generation/measurements-phase-17.md`).
 
 ## Reading a report
 
 Each run writes `REPORT-assets.md` and `contact-sheet.png` beside the spec.
 
-- **Degraded** names each coherence layer the backend could not provide and
-  which assets it cost. Those assets were still made; they may match less
-  closely.
+- **Sheets** lists each sheet generation: whether it cut exactly, and what
+  was missing, touching or rejected.
+- **Degraded** names what the backend could not provide (transparency,
+  tiling) and which assets it cost. Those assets were still made.
 - **Not produced** names each asset that never passed its checks, with the
   reason and the closest attempt. **Nothing is written for these** — a
   half-good PNG on disk would be skipped by the next run and never retried, so
@@ -139,7 +151,11 @@ Each run writes `REPORT-assets.md` and `contact-sheet.png` beside the spec.
 
 ## Licensing
 
-Both catalogue models permit commercial use. The trap is not the base model.
+Ming-Image is MIT: commercial use allowed. Qwen-Image-2.1 is under the Qwen
+Research License — research and evaluation only — and Haruspex asks before
+installing it; the images are yours, but running the model for commercial
+work is what the licence restricts. The bundled engine's SD1.5 and SDXL both
+permit commercial use. Beyond the base model, the trap is LoRAs.
 
 `style.loras` lets a spec name LoRAs, and most published pixel-art LoRAs carry
 their own terms — many were trained on art their author did not own. A LoRA
@@ -156,8 +172,8 @@ and some storefronts require AI-generated content to be disclosed.
 Two of this feature's success criteria cannot be tested, and are checked by
 hand. `endToEnd.test.ts` records which and why.
 
-1. **Does the contact sheet read as one game?** Open it. If not, name the
-   layer that failed — reference conditioning, palette, or grid.
+1. **Does the contact sheet read as one game?** Open it. If not, say what
+   differs — scale, view, colour, detail — and which sheets.
 2. **Delete ten outputs and re-run: do the ten that come back match?** The
    mechanical half is tested (reuse makes no backend call, exactly the missing
    files regenerate, the palette is restored). Whether they MATCH is a
@@ -274,7 +290,21 @@ It serves three HTTP APIs: its own `/sdcpp/v1/*`, an AUTOMATIC1111-compatible
 
 ## Models
 
-Two curated checkpoints, both single-file and both UNet:
+**On ComfyUI**, Settings → Image installs these into the server (see Choosing
+a backend):
+
+| Model | Licence | Commercial | Files | Size |
+| --- | --- | --- | --- | --- |
+| Ming-Image 0.1 Design (default) | MIT | yes | DiT int8, Ling-mini w4a8 encoder, VAE | ~19 GB |
+| Qwen-Image-2.1 | Qwen Research License | no | DiT int8, Qwen3-VL 8B int8 encoder, VAE | ~17 GB |
+
+Ming runs in about 8 GB of VRAM and 24 GB of RAM, with its text encoder on
+the CPU. Ming has no RGBA mode of its own that works: transparency comes from
+starting the sample from a transparent canvas, with an RGBA phrase in the
+prompt (`src/lib/image/comfyui/templates/README.md`).
+
+**On the bundled engine**, two curated checkpoints, both single-file and both
+UNet:
 
 | Model | Licence | Commercial | Native edge | Size |
 | --- | --- | --- | --- | --- |
@@ -290,14 +320,16 @@ meaningful relative to it: SD1.5 degrades above 512 and SDXL produces
 artefacts below 1024, so a 32px target wants `upscale: 16` on one and `32` on
 the other. Measured — an SDXL sprite sheet generated at 512 comes out as mush.
 
-### Why only these two
+### Why only these two on the bundled engine
 
-**UNet.** Two of the three coherence layers — IP-Adapter reference
-conditioning and circular-padding seamless tiling — are UNet techniques that
-do not carry to a DiT. A Flux, Qwen or Z-Image entry would ship with two of
-three layers reporting false. The DiT remedy for tiling is offset-and-inpaint
-(shift the tile by half, inpaint the seams, shift back), which is real work
-rather than a flag. The ComfyUI backend does it for Ming-Image, in one graph
+stable-diffusion.cpp documents Ming-Image, but the build measured here needed
+its 36.7 GB BF16 text encoder and sampled at about 120 s a step
+(`measurements-phase-17.md` §4), so Ming stays ComfyUI-only for now.
+
+**UNet.** The bundled engine's SD path tiles by circular padding, a UNet
+technique that does not carry to a DiT. The DiT remedy is offset-and-inpaint
+(shift the tile by half, inpaint the seams, shift back), which the ComfyUI
+backend does for Ming-Image in one graph
 (`src/lib/image/comfyui/templates/README.md`); the bundled engine does not.
 
 **Single file.** Flux and SD3.5 need separate text encoders and a VAE

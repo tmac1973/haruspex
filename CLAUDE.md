@@ -14,9 +14,11 @@ Private local AI desktop app — Tauri 2.x + SvelteKit 5 + llama.cpp sidecar.
   starts until Settings → Image selects one. See `docs/image-generation.md`.
 - **Integrations**: MCP servers (stdio + streamable HTTP), IMAP email, CalDAV/CardDAV, screen capture
 - **Default model**: Qwen 3.5 9B (Q4_K_M, ~5.7 GB)
-- **Image models**: a second curated catalogue (SD1.5, SDXL), downloaded to
-  `models/image/` through the same machinery, with licence and commercial-use
-  as first-class fields
+- **Image models**: Ming-Image 0.1 Design (MIT; the default, ComfyUI) and
+  Qwen-Image-2.1 (non-commercial), installed into the user's ComfyUI from
+  Settings → Image (`comfy_models.rs`); the bundled engine's catalogue is
+  SD1.5 and SDXL, downloaded to `models/image/`. Licence and commercial use
+  are first-class fields in both
 
 ## Dev Setup
 
