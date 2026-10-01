@@ -39,3 +39,26 @@ describe('deriveSpec', () => {
 		]);
 	});
 });
+
+describe('the anchor sheet', () => {
+	const entries = [
+		{ title: 'Iron sword', kind: 'sprite', prompt: 'an iron sword', sheet: 'Items' },
+		{ title: 'Ghoul', kind: 'sprite', prompt: 'a ghoul', sheet: 'characters' }
+	];
+
+	it('is carried when it names a sheet the entries use', () => {
+		const spec = deriveSpec(
+			{ style: { prompt: 'x' }, anchorSheet: 'Items', entries },
+			{} as NormalizeProfile
+		);
+		expect(spec.anchor.sheet).toBe('items');
+	});
+
+	it('is dropped when it names no sheet that exists', () => {
+		const spec = deriveSpec(
+			{ style: { prompt: 'x' }, anchorSheet: 'vehicles', entries },
+			{} as NormalizeProfile
+		);
+		expect(spec.anchor.sheet).toBeUndefined();
+	});
+});

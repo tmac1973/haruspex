@@ -754,4 +754,38 @@ describe('sheets', () => {
 		expect(calls).toBe(2);
 		expect(results.every((r) => r.outcome.status === 'done')).toBe(true);
 	});
+
+	it('cuts the anchor sheet from the image the Anchor stage already made', async () => {
+		// The approved anchor IS the first sheet: its assets must come from that
+		// image, not from a fresh one nobody saw.
+		splits.push({ pieces: THREE });
+		const h = harness({ caps: SHEETS });
+		const pre = await h.deps.generate(
+			{ prompt: 'anchor', width: 1024, height: 1024, seed: 5 },
+			{
+				signal: h.controller.signal
+			}
+		);
+		h.requests.length = 0;
+		h.deps.pregenerated = new Map([['sprites', pre]]);
+		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(h.requests).toHaveLength(0);
+		expect(results.every((r) => r.outcome.status === 'done')).toBe(true);
+	});
+
+	it('does not reuse the anchor sheet when some of its assets are already on disk', async () => {
+		// The cut would no longer line up with what is asked for.
+		splits.push({ pieces: [THREE[0], THREE[1]] });
+		const h = harness({ caps: SHEETS }, ['out/e1.png']);
+		const pre = await h.deps.generate(
+			{ prompt: 'anchor', width: 1024, height: 1024, seed: 5 },
+			{
+				signal: h.controller.signal
+			}
+		);
+		h.requests.length = 0;
+		h.deps.pregenerated = new Map([['sprites', pre]]);
+		await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(h.requests).toHaveLength(1);
+	});
 });

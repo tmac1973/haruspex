@@ -505,6 +505,13 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		let anchor: AnchorOutcome | null = null;
 		let entries: EntryOutcome[] = [];
 
+		// Asked once per run, not per entry: a backend that changed its mind
+		// mid-run would degrade half the set and not the other half, and the
+		// report would be unable to say why they do not match. Asked before
+		// the anchor, because whether the anchor is a real sheet depends on it.
+		const backend = resolveImageBackend();
+		const caps = await backend.capabilities();
+
 		startStep(ANCHOR);
 		abortIfCancelled();
 		const anchored = await establishAnchor(
@@ -519,7 +526,8 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				readFile: (rel) => readWorkdirFile(ctx, rel),
 				readBytes: (rel) => readWorkdirBytes(ctx, rel),
 				writeFile: (rel, content) => writeWorkdirFile(ctx, rel, content),
-				writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes)
+				writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes),
+				caps
 			},
 			MAX_GENERATION_EDGE
 		);
@@ -550,11 +558,6 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 
 		startStep(GENERATE);
 		abortIfCancelled();
-		const backend = resolveImageBackend();
-		// Asked once per run, not per entry: a backend that changed its mind
-		// mid-run would degrade half the set and not the other half, and the
-		// report would be unable to say why they do not match.
-		const caps = await backend.capabilities();
 		const sheets: SheetOutcome[] = [];
 		const generated = await generateEntries(spec, {
 			caps,
@@ -572,7 +575,10 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			exists: (rel) => workdirPathExists(ctx, rel),
 			writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes),
 			progress: (n, total, id) => ctx.patchStep(GENERATE, { streaming: `${n}/${total} — ${id}` }),
-			onSheet: (o) => sheets.push(o)
+			onSheet: (o) => sheets.push(o),
+			pregenerated: anchored.pregenerated
+				? new Map([[anchored.pregenerated.sheetId, anchored.pregenerated.result]])
+				: undefined
 		});
 		entries = generated.map((g) => g.outcome);
 		const tally = countByStatus(entries);

@@ -10,4 +10,10 @@ export type SplitResult = { pieces: Array<SheetPiece>,
  * 17: 6 of 103 transparent-start generations did, all with the layout
  * intact, so a keyed sheet is still usable — but the report counts them.
  */
-keyed: boolean, };
+keyed: boolean, 
+/**
+ * The sheet's palette when one was asked for, from the cut sheet — so the
+ * transparent canvas and any keyed backdrop cannot enter it. Empty
+ * otherwise.
+ */
+palette: Array<number>, };

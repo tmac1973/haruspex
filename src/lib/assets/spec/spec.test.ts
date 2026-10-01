@@ -173,6 +173,12 @@ describe('sheets', () => {
 			...x
 		}));
 
+	it('round-trips the anchor sheet', () => {
+		const s = spec({ anchor: { image: 'a.png', recipe: 'a.json', sheet: 'items' } });
+		expect(ok(renderAssetSpec(s)).anchor.sheet).toBe('items');
+		expect(renderAssetSpec(spec())).not.toContain('"sheet"');
+	});
+
 	it('round-trips the sheet an entry is drawn on', () => {
 		const s = spec({ entries: entries({ sheet: 'items' }) });
 		expect(ok(renderAssetSpec(s)).entries[0].sheet).toBe('items');

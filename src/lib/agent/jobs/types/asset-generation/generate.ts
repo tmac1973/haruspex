@@ -42,6 +42,12 @@ export interface GenerateDeps {
 	progress: (done: number, total: number, id: string) => void;
 	/** Every generation of a sheet, as it happens, for the report. */
 	onSheet?: (outcome: SheetOutcome) => void;
+	/**
+	 * Sheets already generated, by sheet id — the style anchor, which IS the
+	 * first sheet. Used as that sheet's first round instead of a new request,
+	 * so the assets cut from it are the ones the user approved.
+	 */
+	pregenerated?: Map<string, ImageResult>;
 }
 
 /** What one entry produced, plus the gate's verdict on it. */

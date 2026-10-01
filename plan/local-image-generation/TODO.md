@@ -52,10 +52,10 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 | 16 | Anchor quality, seed honesty, baseline | **superseded**, never started |
 | 17 | Measurements that decide the design | **done** — `measurements-phase-17.md` |
 | 18 | Transparency in the backend; Ming + Qwen workflows | **done** — live-checked on Ming and Qwen 2.1 |
-| 19 | Multi-file catalogue: Ming, Qwen 2.1 | not started |
+| 19 | Multi-file catalogue: Ming, Qwen 2.1 | **next** — only the local engine reads it, and that is blocked (24) |
 | 20 | Normalization for alpha; cutting a sheet | **done** |
 | 21 | Generate sprites and icons in sheets | **done** — live sheets cut 9/9 |
-| 22 | The first sheet is the anchor | **next** |
+| 22 | The first sheet is the anchor | **done** |
 | 23 | Textures | not started |
 | 24 | Bundled engine runs Ming | **blocked** — sd.cpp cannot run Ming usably here (§4) |
 | 25 | Verify end to end; procedural comparison | not started |

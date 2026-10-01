@@ -26,6 +26,8 @@ import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
 
 export interface DerivePayload {
 	style?: { prompt?: string; negativePrompt?: string };
+	/** The sheet the model chose as the style anchor. */
+	anchorSheet?: string;
 	entries?: AssetSpecEntryArg[];
 }
 
@@ -49,6 +51,12 @@ export function sheetName(raw: unknown, kind: AssetKind): string | undefined {
 		.replace(/^_+|_+$/g, '')
 		.slice(0, 48);
 	return ID_PATTERN.test(slug) ? slug : undefined;
+}
+
+/** The anchor sheet the model named, when it names a sheet that exists. */
+function anchorSheetOf(raw: unknown, entries: AssetEntry[]): { sheet?: string } {
+	const name = sheetName(raw, 'sprite');
+	return name && entries.some((e) => e.sheet === name) ? { sheet: name } : {};
 }
 
 /**
@@ -93,7 +101,11 @@ export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): A
 			// configured with" rather than a choice nobody made.
 		},
 		// Phase 08 reads these paths, so this stage must populate them.
-		anchor: { image: DEFAULT_ANCHOR_IMAGE, recipe: DEFAULT_ANCHOR_RECIPE },
+		anchor: {
+			image: DEFAULT_ANCHOR_IMAGE,
+			recipe: DEFAULT_ANCHOR_RECIPE,
+			...anchorSheetOf(payload.anchorSheet, entries)
+		},
 		normalize: profile,
 		entries
 	};

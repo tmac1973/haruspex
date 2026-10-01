@@ -66,6 +66,12 @@ export interface AssetEntry {
 export interface AnchorRef {
 	image: string;
 	recipe: string;
+	/**
+	 * The sheet that serves as the style anchor, by its entries' `sheet` name.
+	 * Chosen by the derivation turn for spread across the set's materials and
+	 * colours. Unset means the first sheet of sprites.
+	 */
+	sheet?: string;
 }
 
 /**
@@ -88,6 +94,9 @@ export interface AnchorRecipe {
 	size: number;
 	palette: number[];
 	createdAt: string;
+	/** When the anchor is a sheet of real assets: which sheet, and its entries. */
+	sheet?: string;
+	entries?: string[];
 }
 
 export interface AssetStyle {

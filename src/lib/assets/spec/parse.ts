@@ -110,7 +110,8 @@ export function parseAssetSpec(json: string): ParseResult {
 		style: style(o.style),
 		anchor: {
 			image: str(anchor.image, DEFAULT_ANCHOR_IMAGE),
-			recipe: str(anchor.recipe, DEFAULT_ANCHOR_RECIPE)
+			recipe: str(anchor.recipe, DEFAULT_ANCHOR_RECIPE),
+			...(optionalStr(anchor.sheet) ? { sheet: str(anchor.sheet) } : {})
 		},
 		normalize: o.normalize as NormalizeProfile,
 		entries: o.entries.map(entry).filter((e): e is AssetEntry => e !== null),

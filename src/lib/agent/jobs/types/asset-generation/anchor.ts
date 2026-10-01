@@ -1,6 +1,12 @@
 /**
- * The style anchor: one reference sheet every asset is conditioned on, and the
+ * The style anchor: one reference sheet every asset is matched to, and the
  * exact recipe that produced it, both committed into the project.
+ *
+ * On a backend that gives alpha the anchor is the first real sheet the set
+ * needs (`anchorSheetPlan`): approving it approves real assets, its palette
+ * comes from the set's own subjects, and the Generate stage cuts its assets
+ * from this very image. On a backend without alpha it is the older separate
+ * picture of representative subjects, which an SD checkpoint needs.
  *
  * Committing it is the whole point. The style becomes a versioned artifact
  * rather than something reconstructed from a recipe against model weights and
@@ -12,13 +18,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { askUserQuestion } from '$lib/stores/userQuestion.svelte';
 import { registerLocalImage } from '$lib/images/resolve.svelte';
-import { extractPalette, paletteSpread } from '$lib/assets/normalize';
+import { extractPalette, paletteSpread, splitSheet } from '$lib/assets/normalize';
 import type { PaletteSpread } from '$lib/ipc/gen/PaletteSpread';
 import type { AssetSpec, AnchorRecipe } from '$lib/assets/spec/types';
 import { resolveImageBackend } from '$lib/image';
-import type { ImageResult } from '$lib/image/types';
+import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '$lib/image/types';
 import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
 import { fitStyle } from './promptBudget';
+import { planSheets, sheetRequest, SHEET_EDGE, type SheetPlan } from './sheets';
 import type { AnchorOutcome } from './types';
 
 /** `0xRRGGBBAA` as `#RRGGBB`. For the recipe and the UI, never for a prompt. */
@@ -244,14 +251,75 @@ export interface AnchorDeps {
 	readBytes: (relPath: string) => Promise<Uint8Array | null>;
 	writeFile: (relPath: string, content: string) => Promise<void>;
 	writeBytes: (relPath: string, bytes: Uint8Array) => Promise<void>;
+	/** What the backend can do. A sheet anchor needs transparency. */
+	caps?: ImageBackendCapabilities;
 }
 
 export interface AnchorResult {
 	outcome: AnchorOutcome;
-	/** The reference every entry is conditioned on. */
+	/** The anchor image: what the judge compares every asset with. */
 	image: Uint8Array;
 	/** The spec with the palette filled in. */
 	spec: AssetSpec;
+	/** When the anchor is a sheet of real assets: the generation to cut them from. */
+	pregenerated?: { sheetId: string; result: ImageResult };
+}
+
+/**
+ * The sheet that serves as the anchor: the one the spec names, else the first
+ * sheet of sprites, else the first sheet at all. Null when nothing goes on a
+ * sheet — a set of textures only.
+ */
+export function anchorSheetPlan(spec: AssetSpec): SheetPlan | null {
+	const plans = planSheets(spec.entries);
+	const named = spec.anchor.sheet;
+	const chosen = named ? plans.find((p) => p.id === named || p.id === `${named}_1`) : undefined;
+	return chosen ?? plans.find((p) => p.kind === 'sprite') ?? plans[0] ?? null;
+}
+
+/** One anchor generation, whichever kind, and the palette taken from it. */
+interface AnchorShot {
+	request: ImageRequest;
+	result: ImageResult;
+	palette: number[];
+}
+
+async function shoot(
+	spec: AssetSpec,
+	deps: AnchorDeps,
+	plan: SheetPlan | null,
+	seed: number | null,
+	edge: number
+): Promise<AnchorShot> {
+	const backend = resolveImageBackend();
+	if (plan) {
+		const request = { ...sheetRequest(plan.entries, spec), seed };
+		const result = await backend.generate(request, { signal: deps.signal });
+		// From the CUT sheet: the transparent canvas, and any backdrop an
+		// opaque sheet had keyed, cannot enter it — only the subjects can.
+		const split = await splitSheet(result.images[0].bytes, {
+			alphaThreshold: deps.profile.alpha_threshold ?? undefined,
+			background: deps.profile.background,
+			paletteSize: deps.profile.palette_size
+		});
+		return { request, result, palette: split.palette };
+	}
+	const request: ImageRequest = {
+		prompt: anchorPrompt(spec, deps.profile),
+		negativePrompt: anchorNegativePrompt(spec),
+		width: edge,
+		height: edge,
+		seed,
+		model: spec.style.model,
+		loras: spec.style.loras
+	};
+	const result = await backend.generate(request, { signal: deps.signal });
+	const palette = await extractPalette(
+		result.images[0].bytes,
+		deps.profile.palette_size,
+		deps.profile.background
+	);
+	return { request, result, palette };
 }
 
 /** A short "what is about to be made", shown beside the sheet. */
@@ -279,9 +347,10 @@ export async function establishAnchor(
 	const reused = await tryReuse(spec, deps);
 	if (reused) return reused;
 
-	const backend = resolveImageBackend();
-	const edge = anchorEdge(deps.profile, maxEdge);
+	const plan = deps.caps?.transparency ? anchorSheetPlan(spec) : null;
+	const edge = plan ? SHEET_EDGE : anchorEdge(deps.profile, maxEdge);
 	let attempts = 0;
+	let shot: AnchorShot | null = null;
 	let seed: number | null = null;
 	let result: ImageResult | null = null;
 	let approval: AnchorOutcome['approval'] = 'auto';
@@ -292,18 +361,8 @@ export async function establishAnchor(
 
 	for (;;) {
 		attempts++;
-		result = await backend.generate(
-			{
-				prompt: anchorPrompt(spec, deps.profile),
-				negativePrompt: anchorNegativePrompt(spec),
-				width: edge,
-				height: edge,
-				seed,
-				model: spec.style.model,
-				loras: spec.style.loras
-			},
-			{ signal: deps.signal }
-		);
+		shot = await shoot(spec, deps, plan, seed, edge);
+		result = shot.result;
 
 		// The anchor's own quality gate, and it runs BEFORE the human is
 		// asked. Every asset is quantized into this palette, so one that has
@@ -313,11 +372,7 @@ export async function establishAnchor(
 		// check the anchor was a handsome overgrown scene, approved on sight,
 		// and its ground was keyed away as background leaving foliage: 31 of
 		// 32 palette entries green, and a shopping cart came out as a bush.
-		palette = await extractPalette(
-			result.images[0].bytes,
-			deps.profile.palette_size,
-			deps.profile.background
-		);
+		palette = shot.palette;
 		spread = await paletteSpread(palette);
 		const usable = spread.ok;
 		if (!usable && attempts < deps.anchorAttempts) {
@@ -359,7 +414,13 @@ export async function establishAnchor(
 					`prompt says. This usually means the sheet is a scene rather than separate ` +
 					`subjects on a plain background.`
 				: '';
-		deps.present(`${url ? `![Style anchor](${url})\n\n` : ''}${specSummary(spec)}${warning}`);
+		const onSheet = plan
+			? `\n\nThis sheet is real assets — ${plan.entries.map((e) => e.id).join(', ')} — and ` +
+				`they are cut from it if you approve.`
+			: '';
+		deps.present(
+			`${url ? `![Style anchor](${url})\n\n` : ''}${specSummary(spec)}${onSheet}${warning}`
+		);
 		const last = attempts >= deps.anchorAttempts;
 		const answer = await askUserQuestion(
 			{
@@ -401,8 +462,8 @@ export async function establishAnchor(
 
 	const recipe: AnchorRecipe = {
 		version: 1,
-		prompt: anchorPrompt(spec, deps.profile),
-		negativePrompt: anchorNegativePrompt(spec),
+		prompt: shot!.request.prompt,
+		negativePrompt: shot!.request.negativePrompt ?? '',
 		// The RESOLVED seed, not the null we may have sent: a recipe recording
 		// "whatever you like" reproduces nothing.
 		seed: result.meta.seed,
@@ -412,7 +473,8 @@ export async function establishAnchor(
 		loras: result.meta.loras,
 		size: edge,
 		palette,
-		createdAt: new Date().toISOString()
+		createdAt: new Date().toISOString(),
+		...(plan ? { sheet: plan.id, entries: plan.entries.map((e) => e.id) } : {})
 	};
 
 	await deps.writeBytes(spec.anchor.image, image);
@@ -429,7 +491,8 @@ export async function establishAnchor(
 			recipePath: spec.anchor.recipe
 		},
 		image,
-		spec: { ...spec, normalize: { ...spec.normalize, palette } }
+		spec: { ...spec, normalize: { ...spec.normalize, palette } },
+		...(plan ? { pregenerated: { sheetId: plan.id, result } } : {})
 	};
 }
 

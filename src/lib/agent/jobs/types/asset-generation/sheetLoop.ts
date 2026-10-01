@@ -136,6 +136,11 @@ async function generateRound(
 	started: number
 ): Promise<ImageResult | null> {
 	const asked = pending.map((i) => ctx.spec.entries[i]);
+	// The anchor sheet was generated (and approved) in the Anchor stage; its
+	// first round is that image, as long as every one of its subjects is still
+	// wanted — otherwise the cut would not line up with what is asked for.
+	const pre = round === 1 ? ctx.deps.pregenerated?.get(plan.id) : undefined;
+	if (pre && asked.length === plan.entries.length) return pre;
 	try {
 		return await ctx.deps.generate(sheetRequest(asked, ctx.spec), { signal: ctx.deps.signal });
 	} catch (e) {

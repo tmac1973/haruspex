@@ -126,11 +126,17 @@ export function effectiveProfile(
  */
 export function splitSheet(
 	bytes: Uint8Array,
-	opts: { alphaThreshold?: number; background?: NormalizeProfile['background'] } = {}
+	opts: {
+		alphaThreshold?: number;
+		background?: NormalizeProfile['background'];
+		/** Also extract the cut sheet's palette, this many colours. */
+		paletteSize?: number;
+	} = {}
 ): Promise<SplitResult> {
 	return invoke<SplitResult>('image_split_sheet', {
 		bytes: Array.from(bytes),
 		alphaThreshold: opts.alphaThreshold ?? null,
-		background: opts.background ?? null
+		background: opts.background ?? null,
+		paletteSize: opts.paletteSize ?? null
 	});
 }

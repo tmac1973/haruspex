@@ -274,6 +274,13 @@ registerTool({
 						},
 						required: ['prompt']
 					},
+					anchorSheet: {
+						type: 'string',
+						description:
+							'The one sheet name, from the entries, whose subjects together cover the ' +
+							"set's materials and colours best — it becomes the style every other asset " +
+							'is matched to. Not four characters, not four icons: a spread.'
+					},
 					entries: {
 						type: 'array',
 						description: 'Every image the project needs.',

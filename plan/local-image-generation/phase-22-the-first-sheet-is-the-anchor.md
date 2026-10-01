@@ -66,6 +66,29 @@ cross-sheet consistency.
    palette, and which entry ids came from it. Reuse keys on the recipe as it
    does now: an unchanged recipe makes no backend call.
 
+## Deviations, as built
+
+- **The old anchor stays, for backends without alpha.** Phase 18 kept the SD
+  family on ComfyUI, and an SD checkpoint cannot make sheets; so
+  `establishAnchor` makes a sheet anchor only when the backend reports
+  transparency, and the separate picture of representative subjects
+  otherwise. `anchorPrompt`, `anchorSubjects` and their tests stay with it.
+- **The anchor's assets are cut from the anchor image itself.** The anchor
+  generation is handed to the Generate stage (`deps.pregenerated`) as that
+  sheet's first round, so the assets written are the ones the person
+  approved, not a fresh generation nobody saw. If some of the sheet's assets
+  are already on disk the cut would not line up, so the sheet is generated
+  again for just the missing ones.
+- **The palette comes from the cut sheet in Rust.** `image_split_sheet`
+  extracts it after keying and hardening, when only the subjects are opaque —
+  which is the same as "from the pieces", without sending them back across
+  the IPC boundary.
+- **The capability check moved before the Anchor stage**, since what the
+  anchor is depends on it.
+- **Not live-run as a stage.** The sheet generation and cut it relies on were
+  live-checked in phase 21; running the stage itself needs the app, which is
+  phase 25.
+
 ## Build gate
 
 ```

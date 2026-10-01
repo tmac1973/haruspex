@@ -40,7 +40,11 @@ export function renderAssetSpec(spec: AssetSpec): string {
 			model: spec.style.model,
 			loras: spec.style.loras
 		}),
-		anchor: { image: spec.anchor.image, recipe: spec.anchor.recipe },
+		anchor: defined({
+			image: spec.anchor.image,
+			recipe: spec.anchor.recipe,
+			sheet: spec.anchor.sheet
+		}),
 		normalize: spec.normalize,
 		entries: spec.entries.map(orderedEntry)
 	};

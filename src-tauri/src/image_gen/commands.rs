@@ -131,6 +131,10 @@ pub struct SplitResult {
     /// 17: 6 of 103 transparent-start generations did, all with the layout
     /// intact, so a keyed sheet is still usable — but the report counts them.
     pub keyed: bool,
+    /// The sheet's palette when one was asked for, from the cut sheet — so the
+    /// transparent canvas and any keyed backdrop cannot enter it. Empty
+    /// otherwise.
+    pub palette: Vec<u32>,
 }
 
 /// Cut a generated sheet into its sprites, in reading order.
@@ -141,11 +145,15 @@ pub struct SplitResult {
 /// dominates its border, since a model asked for transparency names no
 /// backdrop — and is otherwise one piece, which the caller reads as a failed
 /// sheet.
+///
+/// With `palette_size`, also extracts the sheet's palette: the style anchor
+/// is a sheet, and its palette is what every later asset is quantized to.
 #[tauri::command]
 pub fn image_split_sheet(
     bytes: Vec<u8>,
     alpha_threshold: Option<u8>,
     background: Option<Background>,
+    palette_size: Option<u32>,
 ) -> Result<SplitResult, String> {
     let mut img = decode(&bytes)?;
     let mut keyed = false;
@@ -173,7 +181,15 @@ pub fn image_split_sheet(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    Ok(SplitResult { pieces, keyed })
+    // After keying and hardening: only the subjects' own pixels are opaque.
+    let palette = palette_size
+        .map(|n| extract_palette(&img, n, None))
+        .unwrap_or_default();
+    Ok(SplitResult {
+        pieces,
+        keyed,
+        palette,
+    })
 }
 
 /// Tile a run's assets into one sheet.
@@ -314,6 +330,7 @@ mod tests {
             png(&img),
             None,
             Some(NormalizeProfile::default().background),
+            None,
         )
         .unwrap();
         assert!(!r.keyed);
@@ -326,16 +343,21 @@ mod tests {
             png(&opaque_sheet()),
             None,
             Some(NormalizeProfile::default().background),
+            Some(8),
         )
         .unwrap();
         assert!(r.keyed);
         assert_eq!(r.pieces.len(), 2);
+        // The keyed grey backdrop never reaches the palette; the subjects do.
+        assert!(!r.palette.contains(&0x80_80_80_FF), "{:x?}", r.palette);
+        assert!(r.palette.contains(&0x14_5A_28_FF), "{:x?}", r.palette);
     }
 
     #[test]
     fn an_opaque_sheet_without_a_background_to_key_is_one_piece() {
         // The caller reads one piece as a failed sheet; nothing is guessed.
-        let r = image_split_sheet(png(&opaque_sheet()), None, None).unwrap();
+        let r = image_split_sheet(png(&opaque_sheet()), None, None, None).unwrap();
+        assert!(r.palette.is_empty());
         assert!(!r.keyed);
         assert_eq!(r.pieces.len(), 1);
     }
