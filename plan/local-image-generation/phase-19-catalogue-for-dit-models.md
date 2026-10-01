@@ -1,5 +1,18 @@
 # Phase 19 — A catalogue for multi-file DiT models
 
+> **Revised (2026-10-01).** This catalogue now also feeds phase 27, which
+> installs the files into the user's ComfyUI. Each file therefore also names
+> its ComfyUI folder kind (`diffusion_models`, `text_encoders`, `vae`). Sizes
+> and SHA-256 come from Hugging Face's tree API (the LFS `oid`):
+> `Comfy-Org/Ming-Image` — `diffusion_models/ming_image_0.1_design_int8_convrot`
+> 6 175 239 953, `text_encoders/ming_image_0.1_ling_mini_2.0_w4a8` 12 813 574 339,
+> `vae/ming_image_vae_bf16` 253 816 696; `Comfy-Org/Qwen-Image-2.1` —
+> `diffusion_models/qwen_image_2.1_int8_convrot` 7 256 783 064,
+> `text_encoders/qwen3vl_8b_int8_convrot` 9 350 798 360,
+> `vae/qwen_image_2.1_vae_bf16` 675 509 688. The ComfyUI half ships first;
+> the local-engine half (paths per role in `local/backend.ts`, the tokenizer)
+> still waits on 24.
+
 **Depends on:** 17 (step 5), 18 · **Enables:** 24.
 
 ## Goal

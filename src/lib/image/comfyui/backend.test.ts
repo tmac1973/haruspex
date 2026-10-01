@@ -75,7 +75,7 @@ function happyServer() {
 				ok: true,
 				status: 200,
 				json: async () => b,
-				text: async () => '',
+				text: async () => JSON.stringify(b),
 				arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer
 			}) as Response;
 		if (url.includes('/prompt')) return body({ prompt_id: 'p1' });

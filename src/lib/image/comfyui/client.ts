@@ -1,15 +1,25 @@
 /**
  * The ComfyUI HTTP and WebSocket surface.
  *
- * Plain `fetch` and `WebSocket`, the way `src/lib/api.ts` talks to the
- * inference server — the CSP already allows `http:` and `ws:`, and routing
- * this through Rust would buy nothing.
+ * In the app every call goes through Rust (`src-tauri/src/comfy.rs`). A
+ * request from the webview carries an `Origin`, which ComfyUI's origin check
+ * rejects on loopback and a remote server answers without CORS headers — so a
+ * stock ComfyUI failed with "Load failed" unless it was started with
+ * `--enable-cors-header`. From Rust there is no `Origin`, and the progress
+ * socket can send the API key as a header, which a browser socket cannot.
+ *
+ * Outside the app — unit tests, and the opt-in live tests under Node — there
+ * is no Rust to call, so the same calls go through `fetch` and `WebSocket`.
+ * Node sends no `Origin` either.
  *
  * Every failure is mapped onto an `ImageBackendError.kind` the caller branches
  * on: a refused connection is `unreachable` and worth retrying later, a 4xx is
  * `rejected` and is not.
  */
 
+import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
+import type { ComfyError } from '$lib/ipc/gen/ComfyError';
+import type { ComfySocketEvent } from '$lib/ipc/gen/ComfySocketEvent';
 import { ImageBackendError, type ImageProgress } from '../types';
 import type { ComfyGraph } from './fieldMap';
 
@@ -33,9 +43,80 @@ export interface HistoryImage {
 	type: string;
 }
 
+/** One call, whichever way it goes. */
+interface Call {
+	path: string;
+	method?: 'GET' | 'POST';
+	/** Sent as JSON. */
+	body?: unknown;
+}
+
 function trimUrl(base: string): string {
 	return base.trim().replace(/\/+$/, '');
 }
+
+function describe(e: unknown): string {
+	return e instanceof Error ? e.message : String(e);
+}
+
+// ---- Through Rust (the app) -------------------------------------------------
+
+let nextId = 0;
+
+/** Map a `ComfyError` from Rust onto the kinds callers branch on. */
+function fromRust(e: unknown, path: string, signal?: AbortSignal): ImageBackendError {
+	const err = (e !== null && typeof e === 'object' && 'kind' in e ? e : null) as ComfyError | null;
+	switch (err?.kind) {
+		case 'cancelled':
+			return new ImageBackendError('cancelled', 'Generation cancelled.');
+		case 'timeout':
+		case 'unreachable':
+			return new ImageBackendError(err.kind, err.message);
+		case 'rejected':
+			return new ImageBackendError('rejected', `The image backend refused ${path}.`, {
+				status: err.status,
+				body: err.body
+			});
+		default:
+			// Not ours: an IPC failure, or a cancel that raced the answer.
+			if (signal?.aborted) return new ImageBackendError('cancelled', 'Generation cancelled.');
+			return new ImageBackendError(
+				'unreachable',
+				`The request to the image backend failed — ${describe(e)}`
+			);
+	}
+}
+
+async function viaRust<T>(
+	command: 'comfy_json' | 'comfy_bytes',
+	cfg: ClientConfig,
+	call: Call,
+	signal?: AbortSignal
+): Promise<T> {
+	if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
+	const id = `comfy-${++nextId}`;
+	const onAbort = () => void invoke('comfy_cancel', { id }).catch(() => {});
+	signal?.addEventListener('abort', onAbort, { once: true });
+	try {
+		return await invoke<T>(command, {
+			call: {
+				base_url: cfg.baseUrl,
+				api_key: cfg.apiKey,
+				method: call.method ?? 'GET',
+				path: call.path,
+				body: call.body ?? null,
+				timeout_ms: HTTP_TIMEOUT_MS,
+				id
+			}
+		});
+	} catch (e) {
+		throw fromRust(e, call.path, signal);
+	} finally {
+		signal?.removeEventListener('abort', onAbort);
+	}
+}
+
+// ---- Through fetch (tests, Node) --------------------------------------------
 
 function authHeaders(cfg: ClientConfig): Record<string, string> {
 	// Absent rather than empty: a bare local ComfyUI has no auth, and an empty
@@ -43,25 +124,20 @@ function authHeaders(cfg: ClientConfig): Record<string, string> {
 	return cfg.apiKey.trim() ? { Authorization: `Bearer ${cfg.apiKey.trim()}` } : {};
 }
 
-function describe(e: unknown): string {
-	return e instanceof Error ? e.message : String(e);
-}
-
-async function request(
-	cfg: ClientConfig,
-	path: string,
-	init: RequestInit = {},
-	signal?: AbortSignal
-): Promise<Response> {
+async function viaFetch(cfg: ClientConfig, call: Call, signal?: AbortSignal): Promise<Response> {
 	const controller = new AbortController();
 	const onAbort = () => controller.abort();
 	signal?.addEventListener('abort', onAbort, { once: true });
 	const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
 	let res: Response;
 	try {
-		res = await fetch(`${trimUrl(cfg.baseUrl)}${path}`, {
-			...init,
-			headers: { ...authHeaders(cfg), ...(init.headers ?? {}) },
+		res = await fetch(`${trimUrl(cfg.baseUrl)}${call.path}`, {
+			method: call.method ?? 'GET',
+			headers: {
+				...authHeaders(cfg),
+				...(call.body !== undefined ? { 'Content-Type': 'application/json' } : {})
+			},
+			body: call.body !== undefined ? JSON.stringify(call.body) : undefined,
 			signal: controller.signal
 		});
 	} catch (e) {
@@ -71,7 +147,7 @@ async function request(
 		throw new ImageBackendError(
 			timedOut ? 'timeout' : 'unreachable',
 			timedOut
-				? `The image backend did not answer ${path} within ${HTTP_TIMEOUT_MS / 1000}s.`
+				? `The image backend did not answer ${call.path} within ${HTTP_TIMEOUT_MS / 1000}s.`
 				: `Could not reach the image backend at ${trimUrl(cfg.baseUrl)} — ${describe(e)}`
 		);
 	} finally {
@@ -80,7 +156,7 @@ async function request(
 	}
 	if (!res.ok) {
 		const body = await res.text().catch(() => '');
-		throw new ImageBackendError('rejected', `The image backend refused ${path}.`, {
+		throw new ImageBackendError('rejected', `The image backend refused ${call.path}.`, {
 			status: res.status,
 			body: body.slice(0, 200)
 		});
@@ -88,35 +164,43 @@ async function request(
 	return res;
 }
 
+// ---- Either -----------------------------------------------------------------
+
+/** A call whose answer is JSON. Text comes back as a string, nothing as null. */
+export async function requestJson(
+	cfg: ClientConfig,
+	call: Call,
+	signal?: AbortSignal
+): Promise<unknown> {
+	if (isTauri()) return viaRust<unknown>('comfy_json', cfg, call, signal);
+	const text = await (await viaFetch(cfg, call, signal)).text();
+	if (text.trim() === '') return null;
+	try {
+		return JSON.parse(text);
+	} catch {
+		return text;
+	}
+}
+
+async function requestBytes(
+	cfg: ClientConfig,
+	call: Call,
+	signal?: AbortSignal
+): Promise<Uint8Array> {
+	if (isTauri()) {
+		return new Uint8Array(await viaRust<ArrayBuffer>('comfy_bytes', cfg, call, signal));
+	}
+	return new Uint8Array(await (await viaFetch(cfg, call, signal)).arrayBuffer());
+}
+
 /** `GET /system_stats`, for the probe. */
 export async function systemStats(cfg: ClientConfig): Promise<Record<string, unknown>> {
-	return (await (await request(cfg, '/system_stats')).json()) as Record<string, unknown>;
+	return ((await requestJson(cfg, { path: '/system_stats' })) ?? {}) as Record<string, unknown>;
 }
 
 /** `GET /object_info/<class>`, used to check a configured checkpoint exists. */
 export async function objectInfo(cfg: ClientConfig, cls: string): Promise<unknown> {
-	return await (await request(cfg, `/object_info/${cls}`)).json();
-}
-
-/** Upload a reference image; returns the server-side filename to bind. */
-export async function uploadImage(
-	cfg: ClientConfig,
-	bytes: Uint8Array,
-	name: string,
-	signal?: AbortSignal
-): Promise<string> {
-	const form = new FormData();
-	form.append('image', new Blob([bytes as BlobPart], { type: 'image/png' }), name);
-	form.append('overwrite', 'true');
-	const res = await request(cfg, '/upload/image', { method: 'POST', body: form }, signal);
-	const json = (await res.json()) as { name?: string; subfolder?: string };
-	if (!json.name) {
-		throw new ImageBackendError(
-			'rejected',
-			'The image backend accepted an upload but named no file.'
-		);
-	}
-	return json.subfolder ? `${json.subfolder}/${json.name}` : json.name;
+	return await requestJson(cfg, { path: `/object_info/${cls}` });
 }
 
 /** Queue a graph; returns its prompt id. */
@@ -126,18 +210,12 @@ export async function submit(
 	clientId: string,
 	signal?: AbortSignal
 ): Promise<string> {
-	const res = await request(
+	const json = (await requestJson(
 		cfg,
-		'/prompt',
-		{
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ prompt: graph, client_id: clientId })
-		},
+		{ path: '/prompt', method: 'POST', body: { prompt: graph, client_id: clientId } },
 		signal
-	);
-	const json = (await res.json()) as { prompt_id?: string };
-	if (!json.prompt_id) {
+	)) as { prompt_id?: string } | null;
+	if (!json?.prompt_id) {
 		throw new ImageBackendError('rejected', 'The image backend queued nothing for this workflow.');
 	}
 	return json.prompt_id;
@@ -146,7 +224,7 @@ export async function submit(
 /** Stop whatever is running. Best-effort: a failure here must not mask why. */
 export async function interrupt(cfg: ClientConfig): Promise<void> {
 	try {
-		await request(cfg, '/interrupt', { method: 'POST' });
+		await requestJson(cfg, { path: '/interrupt', method: 'POST' });
 	} catch {
 		// The run is already ending; a failed interrupt changes nothing.
 	}
@@ -159,8 +237,7 @@ export async function history(
 	outputNode: string,
 	signal?: AbortSignal
 ): Promise<HistoryImage[] | null> {
-	const res = await request(cfg, `/history/${promptId}`, {}, signal);
-	const json = (await res.json()) as Record<
+	const json = ((await requestJson(cfg, { path: `/history/${promptId}` }, signal)) ?? {}) as Record<
 		string,
 		{ outputs?: Record<string, { images?: HistoryImage[] }> }
 	>;
@@ -187,18 +264,31 @@ export async function view(
 		subfolder: img.subfolder ?? '',
 		type: img.type ?? 'output'
 	});
-	const res = await request(cfg, `/view?${q}`, {}, signal);
-	return new Uint8Array(await res.arrayBuffer());
+	return requestBytes(cfg, { path: `/view?${q}` }, signal);
+}
+
+/** What one socket message means for progress, if anything. */
+function progressOf(
+	type: string,
+	value?: number | null,
+	max?: number | null
+): ImageProgress | null {
+	if (type === 'progress') {
+		return { phase: 'running', step: Number(value ?? 0), totalSteps: Number(max ?? 0) };
+	}
+	if (type === 'execution_start') return { phase: 'running' };
+	if (type === 'status') return { phase: 'queued' };
+	return null;
 }
 
 /**
  * Progress over the WebSocket.
  *
- * The URL carries NO api key. A socket cannot send headers, and the obvious
- * workaround — a query parameter — writes the secret into server logs, proxy
- * logs and browser history. Progress is cosmetic; a secret is not. When the
- * socket is refused, the caller polls `/history` instead and reports
- * indeterminate progress.
+ * Through Rust the key goes in an `Authorization` header. A browser socket
+ * cannot send headers, and the obvious workaround — a query parameter — writes
+ * the secret into server logs, proxy logs and browser history; so outside the
+ * app the socket goes without it, and a server that requires it is polled
+ * instead. Progress is cosmetic; a secret is not.
  *
  * Returns a closer; call it when the generation ends.
  */
@@ -208,45 +298,87 @@ export function subscribe(
 	onProgress: (p: ImageProgress) => void,
 	onFailure: () => void
 ): () => void {
-	const url = `${trimUrl(cfg.baseUrl).replace(/^http/, 'ws')}/ws?clientId=${encodeURIComponent(clientId)}`;
-	let socket: WebSocket;
-	try {
-		socket = new WebSocket(url);
-	} catch {
-		onFailure();
-		return () => {};
-	}
 	let idle = setTimeout(onFailure, SOCKET_IDLE_MS);
 	const bump = () => {
 		clearTimeout(idle);
 		idle = setTimeout(onFailure, SOCKET_IDLE_MS);
 	};
+	return isTauri()
+		? subscribeViaRust(cfg, clientId, onProgress, onFailure, bump, () => clearTimeout(idle))
+		: subscribeViaSocket(cfg, clientId, onProgress, onFailure, bump, () => clearTimeout(idle));
+}
 
+function subscribeViaRust(
+	cfg: ClientConfig,
+	clientId: string,
+	onProgress: (p: ImageProgress) => void,
+	onFailure: () => void,
+	bump: () => void,
+	stopIdle: () => void
+): () => void {
+	const id = `comfy-ws-${++nextId}`;
+	const channel = new Channel<ComfySocketEvent>();
+	channel.onmessage = (ev) => {
+		if (ev.kind === 'closed') {
+			stopIdle();
+			return;
+		}
+		bump();
+		const p = progressOf(ev.type, ev.value, ev.max);
+		if (p) onProgress(p);
+	};
+	invoke('comfy_subscribe', {
+		baseUrl: cfg.baseUrl,
+		apiKey: cfg.apiKey,
+		clientId,
+		id,
+		channel
+	}).catch(() => {
+		stopIdle();
+		onFailure();
+	});
+	return () => {
+		stopIdle();
+		void invoke('comfy_cancel', { id }).catch(() => {});
+	};
+}
+
+function subscribeViaSocket(
+	cfg: ClientConfig,
+	clientId: string,
+	onProgress: (p: ImageProgress) => void,
+	onFailure: () => void,
+	bump: () => void,
+	stopIdle: () => void
+): () => void {
+	const url = `${trimUrl(cfg.baseUrl).replace(/^http/, 'ws')}/ws?clientId=${encodeURIComponent(clientId)}`;
+	let socket: WebSocket;
+	try {
+		socket = new WebSocket(url);
+	} catch {
+		stopIdle();
+		onFailure();
+		return () => {};
+	}
 	socket.onmessage = (ev) => {
 		bump();
 		if (typeof ev.data !== 'string') return;
 		try {
-			const msg = JSON.parse(ev.data) as { type?: string; data?: Record<string, unknown> };
-			if (msg.type === 'progress') {
-				onProgress({
-					phase: 'running',
-					step: Number(msg.data?.value ?? 0),
-					totalSteps: Number(msg.data?.max ?? 0)
-				});
-			} else if (msg.type === 'execution_start') {
-				onProgress({ phase: 'running' });
-			} else if (msg.type === 'status') {
-				onProgress({ phase: 'queued' });
-			}
+			const msg = JSON.parse(ev.data) as {
+				type?: string;
+				data?: { value?: number; max?: number };
+			};
+			const p = msg.type ? progressOf(msg.type, msg.data?.value, msg.data?.max) : null;
+			if (p) onProgress(p);
 		} catch {
 			// A message shape we do not know is not a failure worth surfacing.
 		}
 	};
 	socket.onerror = () => onFailure();
-	socket.onclose = () => clearTimeout(idle);
+	socket.onclose = () => stopIdle();
 
 	return () => {
-		clearTimeout(idle);
+		stopIdle();
 		try {
 			socket.close();
 		} catch {

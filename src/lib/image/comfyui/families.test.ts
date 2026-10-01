@@ -76,7 +76,8 @@ describe('resolveCompanions', () => {
 					ok: true,
 					status: 200,
 					json: async () => ({ [cls]: { input: { required: { [input]: [lists[cls]] } } } }),
-					text: async () => ''
+					text: async () =>
+						JSON.stringify({ [cls]: { input: { required: { [input]: [lists[cls]] } } } })
 				} as Response;
 			})
 		);

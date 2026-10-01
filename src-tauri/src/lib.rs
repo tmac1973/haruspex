@@ -2,6 +2,7 @@ mod app_log;
 mod audio;
 mod clipboard;
 mod code_tools;
+mod comfy;
 mod db;
 mod desktop;
 mod env_util;
@@ -255,6 +256,10 @@ pub fn run() {
             image_engine::image_engine_status,
             image_engine::image_engine_logs,
             image_engine::image_engine_request,
+            comfy::comfy_json,
+            comfy::comfy_bytes,
+            comfy::comfy_cancel,
+            comfy::comfy_subscribe,
             image_models::image_models,
             image_models::image_model_recommended,
             image_models::image_model_path,

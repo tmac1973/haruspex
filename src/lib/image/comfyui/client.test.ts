@@ -89,7 +89,7 @@ describe('failure mapping', () => {
 		const abort = new Error('aborted');
 		abort.name = 'AbortError';
 		fetchMock.mockRejectedValue(abort);
-		await expect(api.uploadImage(cfg, new Uint8Array(), 'x.png', c.signal)).rejects.toMatchObject({
+		await expect(api.history(cfg, 'p1', '9', c.signal)).rejects.toMatchObject({
 			kind: 'cancelled'
 		});
 	});
@@ -115,20 +115,6 @@ describe('history', () => {
 		// happily and returns no images; the message has to say so.
 		fetchMock.mockResolvedValue(ok({ p1: { outputs: { '8': {} } } }));
 		await expect(api.history(cfg, 'p1', '9')).rejects.toThrow(/SaveImage/);
-	});
-});
-
-describe('uploadImage', () => {
-	it('returns the server-side filename, subfolder included', async () => {
-		fetchMock.mockResolvedValue(ok({ name: 'a.png', subfolder: 'up' }));
-		expect(await api.uploadImage(cfg, new Uint8Array([1]), 'a.png')).toBe('up/a.png');
-	});
-
-	it('rejects an upload the server named nothing for', async () => {
-		fetchMock.mockResolvedValue(ok({}));
-		await expect(api.uploadImage(cfg, new Uint8Array([1]), 'a.png')).rejects.toMatchObject({
-			kind: 'rejected'
-		});
 	});
 });
 
