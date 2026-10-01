@@ -17,7 +17,7 @@ import type { ImageResult } from '$lib/image/types';
 import { betterReport, judgeUnavailable, maybeJudge, rejectionReason } from './gate';
 import type { GenerateDeps } from './generate';
 import { escapesWorkdir, isCancellation, isTransient, reasonOf } from './guards';
-import { assignCells, sheetRequest, type CellResult, type SheetPlan } from './sheets';
+import { assignCells, padding, sheetRequest, type CellResult, type SheetPlan } from './sheets';
 import type { EntryOutcome, SheetOutcome } from './types';
 
 type Outcome = Omit<EntryOutcome, 'id' | 'durationMs'>;
@@ -130,6 +130,7 @@ async function processCell(
 async function generateRound(
 	plan: SheetPlan,
 	pending: number[],
+	pads: AssetEntry[],
 	round: number,
 	ctx: SheetLoopContext,
 	tally: Tally,
@@ -142,7 +143,9 @@ async function generateRound(
 	const pre = round === 1 ? ctx.deps.pregenerated?.get(plan.id) : undefined;
 	if (pre && asked.length === plan.entries.length) return pre;
 	try {
-		return await ctx.deps.generate(sheetRequest(asked, ctx.spec), { signal: ctx.deps.signal });
+		return await ctx.deps.generate(sheetRequest([...asked, ...pads], ctx.spec), {
+			signal: ctx.deps.signal
+		});
 	} catch (e) {
 		if (isCancellation(e)) throw e;
 		if (!ctx.retry && round === 1 && isTransient(e)) {
@@ -218,7 +221,16 @@ export async function runSheet(plan: SheetPlan, ctx: SheetLoopContext): Promise<
 
 	for (let round = 1; pending.length > 0; round++) {
 		if (ctx.deps.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-		const result = await generateRound(plan, pending, round, ctx, tally, started);
+		// The anchor sheet's first round is already drawn, unpadded.
+		const pre =
+			round === 1 && ctx.deps.pregenerated?.has(plan.id) && pending.length === plan.entries.length;
+		const pads = pre
+			? []
+			: padding(
+					pending.map((i) => ctx.spec.entries[i]),
+					ctx.spec.entries
+				);
+		const result = await generateRound(plan, pending, pads, round, ctx, tally, started);
 		if (!result) return;
 		for (const i of pending) tally.attempts.set(i, (tally.attempts.get(i) ?? 0) + 1);
 		const seed = result.meta.seed;
@@ -238,7 +250,9 @@ export async function runSheet(plan: SheetPlan, ctx: SheetLoopContext): Promise<
 			...ctx,
 			profile: { ...ctx.profile, palette: split.palette }
 		};
-		const cells = assignCells(split.pieces, pending.length);
+		// Every subject drawn is placed, so the layout is judged as drawn; the
+		// padding's cells are then dropped unread.
+		const cells = assignCells(split.pieces, pending.length + pads.length).slice(0, pending.length);
 		const sheet: SheetOutcome = {
 			id: plan.id,
 			round,

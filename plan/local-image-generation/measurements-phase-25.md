@@ -64,10 +64,24 @@ three untouched neighbours from the same sheet).
   large diagonal weapons; the keycard came out clean where the supplies are
   weathered; the campfire flatter, with a greenish ring.
 
-Proposed, not built: a re-run or retry sheet of one to three subjects is
-padded with a few finished members of the same group, drawn alongside and
-discarded after the cut. Drawing together is what fixes scale and finish
-(phase 21); the padding gives a small sheet something to draw together with.
-Costs nothing: the sheet is generated either way, at the same size.
+**Built: padding.** A re-run or retry sheet of one to three subjects is filled
+to four with finished members of the same group, drawn alongside and
+discarded after the cut (`sheets.ts` `padding`). Drawing together is what
+fixes scale and finish (phase 21); the padding gives a small sheet something
+to draw together with, at no cost — the sheet is 1024 either way.
+
+The same ten re-run padded (`rerun_padded_compare.png`: original, unpadded,
+padded, neighbours; ComfyUI's history confirms every sheet went out with four
+subjects). 6 of 6 sheets cut exactly.
+
+| | unpadded | padded |
+|---|---|---|
+| shotgun | small, horizontal | large, diagonal, like its neighbours — **fixed** |
+| mailbox | green, clean | grey, weathered — **fixed** |
+| keycard | clean, shiny | some wear, still lighter than the supplies — better |
+| campfire | flatter, greenish ring | flatter, sandy ring — not fixed |
+| the other six | in style | in style |
+
+Scale and angle follow the padding reliably; finish only partly.
 
 Not run: the bundled engine, which cannot run Ming (phase 24).

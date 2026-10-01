@@ -645,13 +645,16 @@ describe('sheets', () => {
 		]);
 	});
 
-	it('regenerates only the subject the sheet left out, as a single sprite', async () => {
-		splits.push({ pieces: [THREE[0], THREE[2]] }, { pieces: [[512, 512]] });
+	it('regenerates the subject the sheet left out, drawn beside finished ones', async () => {
+		// The retry is padded with the group's finished subjects so it is
+		// drawn at their scale; only its own cell is kept.
+		splits.push({ pieces: [THREE[0], THREE[2]] }, { pieces: THREE });
 		const seen: SheetOutcome[] = [];
 		const h = harness({ caps: SHEETS, maxAttempts: 2, onSheet: (o) => seen.push(o) });
 		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
 		expect(h.requests).toHaveLength(2);
-		expect(h.requests[1].prompt).toMatch(/A single game sprite of a thing\./);
+		expect(h.requests[1].prompt).toMatch(/three separate game sprites/);
+		expect(h.written).toEqual(['out/e0.png', 'out/e2.png', 'out/e1.png']);
 		expect(results.map((r) => [r.outcome.status, r.outcome.attempts])).toEqual([
 			['done', 1],
 			['done', 2],
@@ -681,12 +684,26 @@ describe('sheets', () => {
 		expect(h.requests[1].transparent).toBe(true);
 	});
 
-	it('asks a sheet only for the subjects not already on disk', async () => {
-		splits.push({ pieces: [THREE[0], THREE[1]] });
+	it('regenerates only the subjects not already on disk, never overwriting the rest', async () => {
+		// e1 is on disk. It is drawn again as padding, beside e0 and e2, but
+		// its file is not touched.
+		splits.push({ pieces: THREE });
 		const h = harness({ caps: SHEETS }, ['out/e1.png']);
 		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
 		expect(results[1].outcome.status).toBe('skipped');
-		expect(h.requests[0].prompt).toMatch(/two separate game sprites/);
+		expect(h.requests[0].prompt).toMatch(/three separate game sprites/);
+		expect(h.written).toEqual(['out/e0.png', 'out/e2.png']);
+	});
+
+	it('pads a small sheet only from its own group', async () => {
+		splits.push({ pieces: [[512, 512]] });
+		const h = harness({ caps: SHEETS });
+		await generateEntries(
+			specOf([{ sheet: 'weapons' }, { sheet: 'items', prompt: 'a coin' }]),
+			h.deps
+		);
+		// Two sheets of one, each with nothing else in its group to borrow.
+		expect(h.requests.map((r) => r.prompt.includes('single game sprite'))).toEqual([true, true]);
 	});
 
 	it('shows a suspect piece to the judge even when the judge is off', async () => {

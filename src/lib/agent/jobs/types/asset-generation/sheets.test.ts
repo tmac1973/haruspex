@@ -3,6 +3,7 @@ import {
 	assignCells,
 	expectedCentre,
 	gridFor,
+	padding,
 	planSheets,
 	sheetPrompt,
 	sheetRequest,
@@ -211,5 +212,29 @@ describe('expectedCentre', () => {
 		const cells = assignCells(pieces, 7);
 		expect(cells[4].status).toBe('missing');
 		expect(cells[6]).toMatchObject({ status: 'ok', piece: pieces[5] });
+	});
+});
+
+describe('padding', () => {
+	const all = [
+		entry('pistol', { sheet: 'weapons' }),
+		entry('shotgun', { sheet: 'weapons' }),
+		entry('rifle', { sheet: 'weapons' }),
+		entry('knife', { sheet: 'weapons' }),
+		entry('crowbar', { sheet: 'weapons' }),
+		entry('coin', { sheet: 'items' }),
+		entry('grass', { kind: 'texture' })
+	];
+
+	it('fills a lone subject up to four from its own group', () => {
+		expect(padding([all[1]], all).map((e) => e.id)).toEqual(['pistol', 'rifle', 'knife']);
+	});
+
+	it('leaves a sheet of four or more alone', () => {
+		expect(padding(all.slice(0, 4), all)).toEqual([]);
+	});
+
+	it('never borrows from another group, and is empty when the group has no one else', () => {
+		expect(padding([all[5]], all)).toEqual([]);
 	});
 });

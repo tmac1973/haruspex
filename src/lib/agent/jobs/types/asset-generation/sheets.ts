@@ -69,6 +69,35 @@ export function planSheets(entries: AssetEntry[], size = SHEET_SIZE): SheetPlan[
 	return plans;
 }
 
+/** The group key `planSheets` sorts an entry into. */
+function groupOf(e: AssetEntry): string {
+	return e.sheet ?? `${e.kind}s`;
+}
+
+/** A small sheet is filled up to this many subjects with finished members of its group. */
+export const PAD_TO = 4;
+
+/**
+ * Finished members of the asked-for subjects' group, to draw beside them and
+ * throw away after the cut.
+ *
+ * A subject drawn alone, or with one other, picks its own scale, angle and
+ * finish: phase 25's re-run drew a lone shotgun small and horizontal beside
+ * large diagonal weapons, and a keycard clean among weathered supplies.
+ * Drawing together is what fixes those (phase 21); padding gives a small
+ * sheet something to draw together with. It costs nothing — the sheet is
+ * generated at the same size either way.
+ *
+ * Only for a sheet of `PAD_TO - 1` or fewer, and only from the same group.
+ */
+export function padding(asked: AssetEntry[], all: AssetEntry[], to = PAD_TO): AssetEntry[] {
+	if (asked.length === 0 || asked.length >= to) return [];
+	const group = groupOf(asked[0]);
+	return all
+		.filter((e) => sheetable(e.kind) && groupOf(e) === group && !asked.includes(e))
+		.slice(0, to - asked.length);
+}
+
 /** Columns and rows for `n` subjects: as square as possible, rows filled first. */
 export function gridFor(n: number): { cols: number; rows: number } {
 	const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
