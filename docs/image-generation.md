@@ -16,15 +16,22 @@ until you opt in.
 
 Settings → Image offers two, and they are genuinely different trades.
 
-**ComfyUI** talks to a server you run. Pick it if you already have ComfyUI, or
-want custom workflows, IP-Adapter and node packs the bundled engine does not
-have. It is the only backend that currently provides all three coherence
-layers (see below).
+**ComfyUI** talks to a server you run, started as it comes (`python
+main.py`); Haruspex calls it from Rust, so it needs no CORS flag. Pick it if
+you already have ComfyUI or want custom workflows. It runs Ming-Image (the
+default: transparent sprites, seamless textures) and Qwen-Image-2.1
+(non-commercial).
 
-One caveat, and it bites immediately: ComfyUI rejects any request carrying an
-`Origin` header with a flat 403, and a webview always sends one. Start it with
-`--enable-cors-header` or Haruspex cannot reach it. A narrow origin is safer
-than the default `*`, which lets any page you visit drive your ComfyUI.
+The models go on the server. After Probe, Settings → Image lists each model
+family with what the server is missing, and Install puts the files there:
+
+- **ComfyUI on this machine**: Haruspex downloads into ComfyUI's own model
+  folders (it asks the server where they are), with progress and a checksum.
+- **ComfyUI elsewhere, running ComfyUI-Manager** (`--enable-manager`, or the
+  older custom node): the downloads are queued with Manager on the server. It
+  shows no progress. On a server that does not listen on loopback, Manager
+  only installs models when its `network_mode` is `personal_cloud`.
+- **Neither**: a list of files, folders and links to copy.
 
 **Bundled engine** is stable-diffusion.cpp, shipped with Haruspex. Pick it if
 you want image generation with nothing to install. It starts on demand, stops

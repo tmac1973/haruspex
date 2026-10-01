@@ -105,6 +105,27 @@ export async function resolveCompanions(
 	return { textEncoder, vae };
 }
 
+/** Whether the server has an acceptable text encoder and VAE for `family`, without throwing. */
+export async function hasCompanions(
+	cfg: api.ClientConfig,
+	family: Exclude<ModelFamily, 'sd'>
+): Promise<{ textEncoder: boolean; vae: boolean }> {
+	const want = WANTED[family];
+	const [encoders, vaes] = await Promise.all([
+		optionsOf(cfg, 'CLIPLoader', 'clip_name'),
+		optionsOf(cfg, 'VAELoader', 'vae_name')
+	]);
+	return {
+		textEncoder: pickCompanion(encoders, want.textEncoder) !== null,
+		vae: pickCompanion(vaes, want.vae) !== null
+	};
+}
+
+/** The server's diffusion models (`models/diffusion_models`), any family. */
+export async function listDiffusionModels(cfg: api.ClientConfig): Promise<string[]> {
+	return optionsOf(cfg, 'UNETLoader', 'unet_name');
+}
+
 const FAMILY_LABELS: Record<ModelFamily, string> = {
 	ming: 'Ming-Image',
 	qwen21: 'Qwen-Image-2.1, non-commercial',

@@ -2,6 +2,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { getSettings, updateSettings } from '$lib/stores/settings';
 	import Tooltip from '$lib/components/Tooltip.svelte';
+	import ComfyModels from './ComfyModels.svelte';
 	import { resolveImageBackend } from '$lib/image';
 	import { invalidateTypeAvailability } from '$lib/agent/jobs/types/availability.svelte';
 	import { generateOneImage } from '$lib/image/generateOne';
@@ -88,6 +89,8 @@
 
 	let probing = $state(false);
 	let probeResult = $state<ProbeResult | null>(null);
+	/** Bumped after each probe that reached the server, so the model rows re-check. */
+	let probeCount = $state(0);
 	let capabilities = $state<ImageBackendCapabilities | null>(null);
 	/** What the server can run, from the last probe that could say. */
 	let serverModels = $state<ModelOption[]>([]);
@@ -177,7 +180,10 @@
 		try {
 			const backend = resolveImageBackend();
 			probeResult = await backend.probe();
-			if (probeResult.models) serverModels = probeResult.models;
+			if (probeResult.models) {
+				serverModels = probeResult.models;
+				probeCount++;
+			}
 			capabilities = probeResult.ok ? await backend.capabilities() : null;
 		} catch (e) {
 			probeResult = { ok: false, detail: e instanceof Error ? e.message : String(e) };
@@ -385,6 +391,10 @@
 			</p>
 		{/if}
 	</section>
+
+	{#if probeCount > 0}
+		<ComfyModels {probeCount} onInstalled={() => void probe()} />
+	{/if}
 
 	<section class="settings-section">
 		<h2>Test generation</h2>

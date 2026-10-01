@@ -52,7 +52,7 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 | 16 | Anchor quality, seed honesty, baseline | **superseded**, never started |
 | 17 | Measurements that decide the design | **done** — `measurements-phase-17.md` |
 | 18 | Transparency in the backend; Ming + Qwen workflows | **done** — live-checked on Ming and Qwen 2.1 |
-| 19 | Multi-file catalogue: Ming, Qwen 2.1 | **next** — now also feeds 27; the local-engine half waits on 24 |
+| 19 | Multi-file catalogue: Ming, Qwen 2.1 | ComfyUI half **done** (`comfy_models.rs`, for 27); the local-engine half waits on 24 |
 | 20 | Normalization for alpha; cutting a sheet | **done** |
 | 21 | Generate sprites and icons in sheets | **done** — live sheets cut 9/9 |
 | 22 | The first sheet is the anchor | **done** |
@@ -60,7 +60,7 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 | 24 | Bundled engine runs Ming | **blocked** — sd.cpp cannot run Ming usably here (§4) |
 | 25 | Verify end to end; procedural comparison | not started |
 | 26 | ComfyUI through Rust: no CORS flag | **done** |
-| 27 | Install a model's files into ComfyUI: direct, Manager, by hand | after 19 and 26 |
+| 27 | Install a model's files into ComfyUI: direct, Manager, by hand | **built** — Manager route live-tested (Ming VAE via Manager 4.2.2); direct route awaiting its live check |
 
 Critical path: 18 → 20 → 21 → 22. 19 and 23 can interleave once 18 is in.
 Then 26 → 19 → 27 → 25: a stock ComfyUI, set up from Settings, before the

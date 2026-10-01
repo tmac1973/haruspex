@@ -1232,6 +1232,45 @@ impl ModelManager {
         Ok(final_path)
     }
 
+    /// Clear a cancel left over from an earlier download.
+    pub async fn reset_cancel(&self) {
+        *self.cancel_flag.lock().await = false;
+    }
+
+    /// Download one file into `dir`, which need not be the models directory —
+    /// a ComfyUI model folder, for instance — verified against `sha256`. The
+    /// `.partial` sits beside the target and is only renamed once verified,
+    /// so the folder never holds a half-written file under its real name.
+    /// An existing file is left alone.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn download_into(
+        &self,
+        app: &AppHandle,
+        url: &str,
+        dir: &Path,
+        filename: &str,
+        expected_size: u64,
+        sha256: &str,
+        stage_label: &str,
+    ) -> Result<PathBuf, String> {
+        let final_path = dir.join(filename);
+        if final_path.exists() {
+            return Ok(final_path);
+        }
+        let partial_path = dir.join(format!("{filename}.partial"));
+        self.download_to_partial(
+            app,
+            url,
+            &partial_path,
+            &final_path,
+            expected_size,
+            stage_label,
+            Some((sha256, "Verifying download")),
+        )
+        .await?;
+        Ok(final_path)
+    }
+
     pub async fn cancel_download(&self) {
         let mut cancel = self.cancel_flag.lock().await;
         *cancel = true;

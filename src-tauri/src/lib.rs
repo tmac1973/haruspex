@@ -3,6 +3,7 @@ mod audio;
 mod clipboard;
 mod code_tools;
 mod comfy;
+mod comfy_models;
 mod db;
 mod desktop;
 mod env_util;
@@ -260,6 +261,9 @@ pub fn run() {
             comfy::comfy_bytes,
             comfy::comfy_cancel,
             comfy::comfy_subscribe,
+            comfy_models::comfy_model_catalogue,
+            comfy_models::comfy_can_install_directly,
+            comfy_models::comfy_install_direct,
             image_models::image_models,
             image_models::image_model_recommended,
             image_models::image_model_path,
