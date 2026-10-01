@@ -60,7 +60,7 @@
 		Asset size
 		<Tooltip
 			label="About asset size"
-			text="The output edge in pixels. Generation happens much larger and is downscaled to this, so a small number here is not a small generation. Powers of two only."
+			text="The output edge in pixels, for every asset. It wins over the spec: an existing spec is changed to match on the next run, and assets already on disk keep their size until deleted. Generation happens much larger and is downscaled to this. Powers of two only."
 		/>
 	</span>
 	<input

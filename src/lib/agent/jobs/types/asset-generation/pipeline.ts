@@ -46,7 +46,7 @@ import { parseJudgement, SUBMIT_ASSET_JUDGEMENT_TOOL, type AssetJudgement } from
 import type { AssetEntry } from '$lib/assets/spec/types';
 import { generateEntries } from './generate';
 import { fitStyle } from './promptBudget';
-import { nativeEdgeFor, upscaleForEdge } from './nativeEdge';
+import { applyJobSize, nativeEdgeFor, upscaleForEdge } from './nativeEdge';
 import { renderAssetReport, type Licensing } from './report';
 import type { AnchorOutcome, EntryOutcome, SheetOutcome } from './types';
 
@@ -432,6 +432,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			// A spec the user wrote is theirs. Parsed and validated, never
 			// silently rewritten — a run that "fixes" someone's file by
 			// replacing it has destroyed the thing it was asked to work from.
+			// The one thing the job overrides is the asset size, and it says so.
 			const parsed = parseAssetSpec(json);
 			if ('errors' in parsed) {
 				throw new Error(`The spec at ${specPath} could not be read:\n${parsed.errors.join('\n')}`);
@@ -441,7 +442,21 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				throw new Error(`The spec at ${specPath} has problems:\n${problems.join('\n')}`);
 			}
 			spec = parsed.spec;
-			finishStep(SPEC, `${specPath} — ${spec.entries.length} asset(s): ${breakdown(spec)}`);
+			let resized = '';
+			if (cfg.target_size !== null) {
+				const sized = applyJobSize(spec, cfg.target_size, await nativeEdgeFor(spec.style.model));
+				if (sized.from !== null) {
+					spec = sized.spec;
+					await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+					resized =
+						`\nAsset size changed from ${sized.from} to ${cfg.target_size} px to match the job. ` +
+						`Assets already on disk keep their old size; delete them to remake them.`;
+				}
+			}
+			finishStep(
+				SPEC,
+				`${specPath} — ${spec.entries.length} asset(s): ${breakdown(spec)}${resized}`
+			);
 		} else {
 			if (!cfg.description) {
 				throw new Error(

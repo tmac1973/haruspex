@@ -3063,6 +3063,33 @@ describe('jobs runner — asset generation', () => {
 		expect(getCurrentRun()!.steps[2].output).toContain('3 generated');
 	});
 
+	it("makes an existing spec's asset size match the job, and says so", async () => {
+		// The job is authoritative: a size set in the job used to do nothing at
+		// all once a spec existed, which is a trap the user walked into.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ target_size: 64 }));
+		const written = wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(spec.normalize.target_size).toBe(64);
+		expect(getCurrentRun()!.steps[0].output).toContain('Asset size changed from 32 to 64 px');
+	});
+
+	it('leaves the spec alone when the job sets no size', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// The anchor stage may still write the palette back; the size it never touches.
+		const spec = written.find((w) => w.relPath === SPEC_PATH);
+		if (spec) expect(JSON.parse(spec.content).normalize.target_size).toBe(32);
+		expect(getCurrentRun()!.steps[0].output).not.toContain('Asset size changed');
+	});
+
 	it('skips the assets that are already on disk', async () => {
 		// Delete ten of a hundred, re-run, get exactly those ten back.
 		mocks.getJob.mockResolvedValueOnce(assetJob());

@@ -1,5 +1,6 @@
+import type { AssetSpec } from '$lib/assets/spec/types';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { nativeEdgeFor, upscaleForEdge } from './nativeEdge';
+import { applyJobSize, nativeEdgeFor, upscaleForEdge } from './nativeEdge';
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
@@ -82,5 +83,25 @@ describe('nativeEdgeFor', () => {
 		invoke.mockRejectedValue(new Error('no such command'));
 		settings.imageComfyCheckpoint = 'sd_xl_base_1.0.safetensors';
 		await expect(nativeEdgeFor(undefined)).resolves.toBeNull();
+	});
+});
+
+describe('applyJobSize', () => {
+	const spec = (target_size: number, upscale: number) =>
+		({ normalize: { target_size, upscale } }) as unknown as AssetSpec;
+
+	it('makes the spec match the job, and the edge follow the model', () => {
+		const r = applyJobSize(spec(32, 16), 64, 1024);
+		expect(r.from).toBe(32);
+		expect(r.spec.normalize).toMatchObject({ target_size: 64, upscale: 16 });
+	});
+
+	it('keeps the upscale when the model is not one it knows', () => {
+		expect(applyJobSize(spec(32, 16), 64, null).spec.normalize.upscale).toBe(16);
+	});
+
+	it('changes nothing when the sizes already agree', () => {
+		const s = spec(64, 16);
+		expect(applyJobSize(s, 64, 1024)).toEqual({ spec: s, from: null });
 	});
 });

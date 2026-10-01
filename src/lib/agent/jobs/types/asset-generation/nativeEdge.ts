@@ -14,6 +14,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings } from '$lib/stores/settings';
+import type { AssetSpec } from '$lib/assets/spec/types';
 import { MAX_GENERATION_EDGE } from './config';
 
 /** What a catalogue entry tells us about the model it names. */
@@ -64,4 +65,30 @@ export function upscaleForEdge(targetSize: number, nativeEdge: number): number {
 	const target = Math.max(1, targetSize);
 	const edge = Math.min(Math.max(1, nativeEdge), MAX_GENERATION_EDGE);
 	return Math.max(1, Math.round(edge / target));
+}
+
+/**
+ * Bring a spec's asset size into line with the job's.
+ *
+ * The job is authoritative: one number living in two places, where changing
+ * it in the job silently did nothing once a spec existed, was a trap a user
+ * walked straight into. The generation edge follows the model, as it does
+ * when a spec is first derived — `upscale` is set so `target_size * upscale`
+ * lands on `nativeEdge` when that is known, and left alone when it is not.
+ *
+ * Returns the spec unchanged, and `from: null`, when the sizes already agree.
+ */
+export function applyJobSize(
+	spec: AssetSpec,
+	targetSize: number,
+	nativeEdge: number | null
+): { spec: AssetSpec; from: number | null } {
+	const from = spec.normalize.target_size;
+	if (from === targetSize) return { spec, from: null };
+	const upscale =
+		nativeEdge === null ? spec.normalize.upscale : upscaleForEdge(targetSize, nativeEdge);
+	return {
+		spec: { ...spec, normalize: { ...spec.normalize, target_size: targetSize, upscale } },
+		from
+	};
 }
