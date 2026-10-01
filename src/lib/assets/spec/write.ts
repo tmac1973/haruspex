@@ -17,6 +17,7 @@ function orderedEntry(e: AssetEntry): Record<string, unknown> {
 	return defined({
 		id: e.id,
 		kind: e.kind,
+		sheet: e.sheet,
 		prompt: e.prompt,
 		negativePrompt: e.negativePrompt,
 		out: e.out,

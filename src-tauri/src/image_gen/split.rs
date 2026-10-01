@@ -489,4 +489,29 @@ mod fixtures {
             "the merged column is {tallest}px tall"
         );
     }
+
+    /// Cut a real sheet and report the pieces. See `sheets.live.test.ts`.
+    ///
+    ///   HARUSPEX_SPLIT_IN=/tmp/sheet.png \
+    ///     cargo test --lib split_a_real_sheet -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn split_a_real_sheet() {
+        let Ok(path) = std::env::var("HARUSPEX_SPLIT_IN") else {
+            eprintln!("set HARUSPEX_SPLIT_IN to a PNG");
+            return;
+        };
+        let img = load(&std::fs::read(&path).expect("could not read the input"));
+        let pieces = split_sheet(&img, SplitOptions::default());
+        println!("{path}: {} piece(s)", pieces.len());
+        for (i, p) in pieces.iter().enumerate() {
+            println!(
+                "  {i}: at ({}, {}) {}x{}  centre ({:.0}, {:.0})  area {}",
+                p.x, p.y, p.width, p.height, p.cx, p.cy, p.area
+            );
+            p.image
+                .save(format!("{path}.piece{i}.png"))
+                .expect("could not write a piece");
+        }
+    }
 }

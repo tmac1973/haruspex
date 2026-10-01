@@ -47,7 +47,7 @@ import { generateEntries } from './generate';
 import { fitStyle } from './promptBudget';
 import { nativeEdgeFor, upscaleForEdge } from './nativeEdge';
 import { renderAssetReport, type Licensing } from './report';
-import type { AnchorOutcome, EntryOutcome } from './types';
+import type { AnchorOutcome, EntryOutcome, SheetOutcome } from './types';
 
 /** Read-only: the derivation grounds itself in the project, it does not edit it. */
 const DERIVE_TOOLS = ['fs_read_text', 'fs_list_dir', 'code_grep', 'code_glob'];
@@ -137,6 +137,17 @@ function degradedSummary(entries: EntryOutcome[]): string {
 	}
 	if (counts.size === 0) return '';
 	return `Degraded: ${[...counts].map(([d, n]) => `${d} (${n})`).join('; ')}.`;
+}
+
+/** The stage line for sheets: how many cut exactly leads, as in the report. */
+function sheetSummary(sheets: SheetOutcome[]): string {
+	const exact = sheets.filter((s) => s.exact).length;
+	const keyed = sheets.filter((s) => s.keyed).length;
+	return (
+		`Sheets: ${exact} of ${sheets.length} cut exactly` +
+		(keyed > 0 ? `, ${keyed} keyed from an opaque backdrop` : '') +
+		'.'
+	);
 }
 
 async function workdirPathExists(ctx: JobRunContext, relPath: string): Promise<boolean> {
@@ -544,6 +555,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		// mid-run would degrade half the set and not the other half, and the
 		// report would be unable to say why they do not match.
 		const caps = await backend.capabilities();
+		const sheets: SheetOutcome[] = [];
 		const generated = await generateEntries(spec, {
 			caps,
 			concurrency: cfg.concurrency ?? DEFAULT_CONCURRENCY,
@@ -559,7 +571,8 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			generate: (req, opts) => backend.generate(req, opts),
 			exists: (rel) => workdirPathExists(ctx, rel),
 			writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes),
-			progress: (n, total, id) => ctx.patchStep(GENERATE, { streaming: `${n}/${total} — ${id}` })
+			progress: (n, total, id) => ctx.patchStep(GENERATE, { streaming: `${n}/${total} — ${id}` }),
+			onSheet: (o) => sheets.push(o)
 		});
 		entries = generated.map((g) => g.outcome);
 		const tally = countByStatus(entries);
@@ -568,6 +581,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			[
 				`${tally.done} generated, ${tally.skipped} already present, ` +
 					`${tally.failed} failed of ${entryCount}.`,
+				...(sheets.length > 0 ? [sheetSummary(sheets)] : []),
 				...(degradedSummary(entries) ? [degradedSummary(entries)] : [])
 			].join('\n')
 		);
@@ -584,6 +598,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				anchor,
 				entries,
 				reports: new Map(generated.map((g) => [g.outcome.id, g.report])),
+				sheets,
 				contactSheet: sheetPath,
 				// Said once in the document, not once per entry.
 				judgeSkipped: (cfg.vision_judge ?? DEFAULT_VISION_JUDGE) && !ctx.visionSupported(),

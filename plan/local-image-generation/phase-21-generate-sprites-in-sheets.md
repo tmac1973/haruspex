@@ -101,6 +101,34 @@ verified, never trusted.
 - **Relative scale within a sheet is lost** at normalization: every piece is
   cropped and scaled to the target size, as single assets were before.
 
+## Deviations, as built
+
+- **Ming needs its RGBA phrase as well as the transparent start.** The first
+  live sheet through `sheetRequest` came back opaque on a painted concrete
+  backdrop. A/B at fixed seeds: the same sheet prompt without
+  "RGBA, 4-channel, transparent background." was opaque 4 of 4 times at
+  seeds that were transparent 4 of 4 times with it. Phase 17 had always used
+  the phrase, so this was invisible until the job built its own prompt. The
+  fix is in the image layer (`ming_t2i_rgba` now wraps the prompt), not here.
+- **Sheets only when the backend reports transparency.** Textures, and every
+  entry on a backend without alpha (an SD checkpoint on ComfyUI), keep the
+  one-image-per-entry path unchanged. `promptBudget.ts` and `nativeEdge.ts`
+  stay for that path, since phase 18 kept the SD family.
+- **Pieces go to the nearest expected position, not a uniform grid cell.** A
+  short last row is drawn centred, so the seventh of seven sits in the middle
+  column; a uniform grid called it missing. `expectedCentre` places it where
+  the model draws it, and a piece whose body covers another subject's
+  position is a merge.
+- **A retry sheet of one is a single centred sprite**, asked for as such.
+- **The loop lives in `sheetLoop.ts`**, with the guards both paths share in
+  `guards.ts`; outcomes reach the report through `deps.onSheet` rather than a
+  changed return type.
+- **The live check is in two halves.** `sheets.live.test.ts` generates a real
+  sheet through `sheetRequest`; `split_a_real_sheet` (Rust, ignored) cuts it.
+  Two random-seed sheets: 9 of 9 pieces each, every subject right and in
+  order. A full job run inside the app was not done here — it needs Tauri —
+  and is phase 25's.
+
 ## Build gate
 
 ```

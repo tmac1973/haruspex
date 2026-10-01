@@ -236,6 +236,7 @@ export interface AssetSpecEntryArg {
 	prompt?: string;
 	size?: number;
 	seamless?: boolean;
+	sheet?: string;
 	negativePrompt?: string;
 	notes?: string;
 }
@@ -295,6 +296,14 @@ registerTool({
 									description:
 										'What to draw, subject only — the shared style is added automatically. ' +
 										'e.g. "a straight iron longsword, blade upward".'
+								},
+								sheet: {
+									type: 'string',
+									description:
+										'Sprites and icons only. A short group name, e.g. "items" or "characters": ' +
+										'entries with the same name are drawn together on one sheet, at one scale ' +
+										'and from one view. Group things that belong side by side; never a coin ' +
+										'with a building.'
 								},
 								negativePrompt: {
 									type: 'string',

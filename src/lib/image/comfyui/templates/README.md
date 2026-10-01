@@ -29,7 +29,9 @@ vendor's own code (inclusionAI/Ming-Image#5). Its VAE round-trips alpha
 exactly, so decoding is not the problem; the model simply does not steer to a
 transparent latent from text.
 
-It does when sampling starts from the latent of a transparent canvas.
+It does when sampling starts from the latent of a transparent canvas **and**
+the prompt carries one of the RGBA phrases — neither alone works (the start
+without the phrase: 0 of 4 at seeds that gave 4 of 4 with it).
 `ming_t2i_rgba.json` builds that canvas inside the graph — `EmptyImage` joined
 with a `SolidMask` of 1.0, which `JoinImageWithAlpha` turns into alpha 0 —
 encodes it, and denoises at 0.9. Measured: 10 of 10 sheets and 48 of 48 single

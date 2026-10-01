@@ -17,7 +17,12 @@ export const DEFAULT_ANCHOR_ATTEMPTS = 5;
 export const DEFAULT_CONCURRENCY = 1;
 /** On by default, but it only runs when the job's model can actually see. */
 export const DEFAULT_VISION_JUDGE = true;
-export const DEFAULT_TARGET_SIZE = 32;
+/**
+ * 64, not 32. Measured on Ming-Image sheets (phase 17): items survive 32 px,
+ * but characters, vehicles and buildings turn to mush; 64 holds up for
+ * everything tested. 32 stays available per spec and per entry.
+ */
+export const DEFAULT_TARGET_SIZE = 64;
 export const MIN_TARGET_SIZE = 8;
 export const MAX_TARGET_SIZE = 512;
 /** Mirrors the Rust clamp; the anchor sheet obeys it too. */

@@ -10,7 +10,6 @@
 import { checkImage, effectiveProfile, normalizeImage } from '$lib/assets/normalize';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
 import type { CheckReport } from '$lib/ipc/gen/CheckReport';
-import { ImageBackendError } from '$lib/image/types';
 import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '$lib/image/types';
 import { buildEntryRequest } from './request';
 import {
@@ -21,15 +20,12 @@ import {
 	retrySeed,
 	type JudgeDeps
 } from './gate';
-import type { EntryOutcome } from './types';
+import { escapesWorkdir, isCancellation, isTransient, reasonOf } from './guards';
+import { planSheets, type SheetPlan } from './sheets';
+import { runSheet as runSheetLoop } from './sheetLoop';
+import type { EntryOutcome, SheetOutcome } from './types';
 
-/** Absolute, drive-lettered, or climbing out of the working directory. */
-export function escapesWorkdir(p: string): boolean {
-	const n = p.replace(/\\/g, '/');
-	if (n.startsWith('/')) return true;
-	if (/^[a-zA-Z]:/.test(n)) return true;
-	return n.split('/').includes('..');
-}
+export { escapesWorkdir } from './guards';
 
 export interface GenerateDeps {
 	caps: ImageBackendCapabilities;
@@ -44,6 +40,8 @@ export interface GenerateDeps {
 	writeBytes: (relPath: string, bytes: Uint8Array) => Promise<void>;
 	/** `n/total — <id>`, for the stage's streaming line. */
 	progress: (done: number, total: number, id: string) => void;
+	/** Every generation of a sheet, as it happens, for the report. */
+	onSheet?: (outcome: SheetOutcome) => void;
 }
 
 /** What one entry produced, plus the gate's verdict on it. */
@@ -51,20 +49,6 @@ export interface EntryResult {
 	outcome: EntryOutcome;
 	/** The best report seen across attempts. Null when nothing was generated. */
 	report: CheckReport | null;
-}
-
-/** Transient means the backend may come back; permanent means retrying is theatre. */
-function isTransient(e: unknown): boolean {
-	return e instanceof ImageBackendError && (e.kind === 'unreachable' || e.kind === 'timeout');
-}
-
-function isCancellation(e: unknown): boolean {
-	if (e instanceof ImageBackendError) return e.kind === 'cancelled';
-	return e instanceof DOMException && e.name === 'AbortError';
-}
-
-function reasonOf(e: unknown): string {
-	return e instanceof Error ? e.message : String(e);
 }
 
 /**
@@ -278,14 +262,58 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 		}
 	}
 
-	const all = spec.entries.map((_, i) => i);
-	await pool(all, deps.concurrency, (i) => runOne(i, false));
+	/** Record one entry's result, as `runOne`'s `finish` does. */
+	function record(
+		index: number,
+		started: number,
+		outcome: Omit<EntryOutcome, 'id' | 'durationMs'>,
+		report: CheckReport | null
+	) {
+		const entry = spec.entries[index];
+		results[index] = {
+			outcome: { id: entry.id, durationMs: Date.now() - started, ...outcome },
+			report
+		};
+		done++;
+		deps.progress(done, spec.entries.length, entry.id);
+	}
 
-	if (transient.length > 0) {
+	const transientSheets: SheetPlan[] = [];
+
+	async function runSheet(plan: SheetPlan, retry: boolean): Promise<void> {
+		abortIfCancelled();
+		await runSheetLoop(plan, {
+			spec,
+			deps,
+			profile: profiles.get(plan.kind) ?? spec.normalize,
+			retry,
+			record,
+			requeue: (p) => transientSheets.push(p)
+		});
+	}
+
+	const sheets = deps.caps.transparency ? planSheets(spec.entries) : [];
+	const onSheets = new Set(sheets.flatMap((p) => p.entries));
+	const singles = spec.entries.map((_, i) => i).filter((i) => !onSheets.has(spec.entries[i]));
+	await pool(singles, deps.concurrency, (i) => runOne(i, false));
+	await pool(
+		sheets.map((_, k) => k),
+		deps.concurrency,
+		(k) => runSheet(sheets[k], false)
+	);
+
+	if (transient.length > 0 || transientSheets.length > 0) {
 		abortIfCancelled();
 		const queued = [...transient];
 		transient.length = 0;
 		await pool(queued, deps.concurrency, (i) => runOne(i, true));
+		const queuedSheets = [...transientSheets];
+		transientSheets.length = 0;
+		await pool(
+			queuedSheets.map((_, k) => k),
+			deps.concurrency,
+			(k) => runSheet(queuedSheets[k], true)
+		);
 	}
 
 	return results.map((r, i) => {

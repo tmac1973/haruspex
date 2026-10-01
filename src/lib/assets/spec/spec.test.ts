@@ -163,6 +163,47 @@ describe('round trip', () => {
 	});
 });
 
+describe('sheets', () => {
+	const entries = (...e: Array<Partial<AssetSpec['entries'][number]>>) =>
+		e.map((x, i) => ({
+			id: `e${i}`,
+			kind: 'sprite' as const,
+			prompt: 'p',
+			out: `o/${i}.png`,
+			...x
+		}));
+
+	it('round-trips the sheet an entry is drawn on', () => {
+		const s = spec({ entries: entries({ sheet: 'items' }) });
+		expect(ok(renderAssetSpec(s)).entries[0].sheet).toBe('items');
+	});
+
+	it('accepts entries of one kind sharing a sheet', () => {
+		expect(
+			validateAssetSpec(spec({ entries: entries({ sheet: 'items' }, { sheet: 'items' }) }))
+		).toEqual([]);
+	});
+
+	it('refuses a sheet that mixes kinds, naming both entries', () => {
+		const p = validateAssetSpec(
+			spec({ entries: entries({ sheet: 'items' }, { sheet: 'items', kind: 'icon' }) })
+		).join(' ');
+		expect(p).toMatch(/e1: sheet "items" mixes a icon with e0, a sprite/);
+	});
+
+	it('refuses a texture on a sheet', () => {
+		const p = validateAssetSpec(
+			spec({ entries: entries({ sheet: 'ground', kind: 'texture', seamless: true }) })
+		).join(' ');
+		expect(p).toMatch(/texture fills its own frame/);
+	});
+
+	it('refuses a sheet name that is not filename-safe', () => {
+		const p = validateAssetSpec(spec({ entries: entries({ sheet: 'Small Items' }) })).join(' ');
+		expect(p).toMatch(/sheet name "Small Items"/);
+	});
+});
+
 describe('validate', () => {
 	const problems = (over: Partial<AssetSpec>) => validateAssetSpec(spec(over)).join(' | ');
 

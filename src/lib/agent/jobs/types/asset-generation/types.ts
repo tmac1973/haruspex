@@ -39,3 +39,24 @@ export interface EntryOutcome {
 	degraded: string[];
 	reason?: string;
 }
+
+/**
+ * One generation of one sheet. A sheet whose cells failed is generated again
+ * with only those subjects, so one sheet can have several of these.
+ */
+export interface SheetOutcome {
+	id: string;
+	/** 1 for the first generation of this sheet, 2 for its first retry. */
+	round: number;
+	/** The entries asked for, in order. */
+	subjects: string[];
+	/** Every subject cut cleanly where it was asked for. */
+	exact: boolean;
+	/** The sheet came back opaque and its backdrop had to be keyed. */
+	keyed: boolean;
+	missing: number;
+	merged: number;
+	/** Cut, but rejected by the quality gate or the judge. */
+	rejected: number;
+	seed: number | null;
+}

@@ -24,6 +24,8 @@ export function validateAssetSpec(spec: AssetSpec): string[] {
 	const problems: string[] = [];
 	const seenIds = new Set<string>();
 	const seenOut = new Map<string, string>();
+	/** The kind each named sheet was first seen with, and by which entry. */
+	const sheetKinds = new Map<string, { kind: string; by: string }>();
 
 	if (spec.entries.length === 0) {
 		problems.push('The spec lists no assets to generate.');
@@ -64,6 +66,27 @@ export function validateAssetSpec(spec: AssetSpec): string[] {
 		}
 		if (e.kind === 'texture' && e.seamless === false) {
 			problems.push(`${at}: a texture with seamless off will not tile — drop one or the other.`);
+		}
+
+		if (e.sheet !== undefined) {
+			if (!ID_PATTERN.test(e.sheet)) {
+				problems.push(
+					`${at}: the sheet name "${e.sheet}" must start with a letter and use only lowercase letters, digits and underscores.`
+				);
+			}
+			if (e.kind === 'texture') {
+				problems.push(
+					`${at}: a texture fills its own frame and cannot share a sheet — drop "sheet".`
+				);
+			}
+			const first = sheetKinds.get(e.sheet);
+			if (first && first.kind !== e.kind) {
+				problems.push(
+					`${at}: sheet "${e.sheet}" mixes a ${e.kind} with ${first.by}, a ${first.kind}; a sheet holds one kind.`
+				);
+			} else if (!first) {
+				sheetKinds.set(e.sheet, { kind: e.kind, by: at });
+			}
 		}
 	}
 	return problems;

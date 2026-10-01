@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { TEMPLATES, qwen21Transparent, selectTemplate, templatesFor } from './index';
+import {
+	TEMPLATES,
+	mingTransparent,
+	qwen21Transparent,
+	selectTemplate,
+	templatesFor
+} from './index';
 import { validateFieldMap } from '../fieldMap';
 
 describe('the bundled workflows', () => {
@@ -106,7 +112,14 @@ describe('Ming-Image', () => {
 		const mask = g[(join.inputs.alpha as [string, number])[0]];
 		expect(mask.class_type).toBe('SolidMask');
 		expect(mask.inputs.value).toBe(1);
-		expect(rgba.wrapPrompt).toBeUndefined();
+	});
+
+	it('also says RGBA in the prompt, because neither half works alone', () => {
+		// The start without the phrase gave no alpha at 4 of 4 seeds that gave
+		// it 4 of 4 times with the phrase.
+		expect(rgba.wrapPrompt?.('a sword')).toBe(mingTransparent('a sword'));
+		expect(mingTransparent('a sword')).toBe('RGBA, 4-channel, transparent background. a sword');
+		expect(plain.wrapPrompt).toBeUndefined();
 	});
 
 	it('denoises the canvas at 0.9, and a plain request fully', () => {

@@ -19,6 +19,7 @@ import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { ImageStats } from '$lib/ipc/gen/ImageStats';
 import type { PaletteSpread } from '$lib/ipc/gen/PaletteSpread';
 import type { SheetPiece } from '$lib/ipc/gen/SheetPiece';
+import type { SplitResult } from '$lib/ipc/gen/SplitResult';
 
 export type {
 	NormalizeProfile,
@@ -27,7 +28,8 @@ export type {
 	CheckReport,
 	ImageStats,
 	PaletteSpread,
-	SheetPiece
+	SheetPiece,
+	SplitResult
 };
 
 /** Key, crop, downscale, quantize and outline one image. */
@@ -118,11 +120,17 @@ export function effectiveProfile(
  *
  * Reports what is there, never what was asked for: two sprites drawn touching
  * come back as one piece, and a missing one as one piece fewer. The caller
- * knows how many subjects it asked for and where, and judges the cut.
+ * knows how many subjects it asked for and where, and judges the cut. A sheet
+ * that came back opaque is keyed by its border colour when `background` is
+ * given, and `keyed` says so.
  */
-export function splitSheet(bytes: Uint8Array, alphaThreshold?: number): Promise<SheetPiece[]> {
-	return invoke<SheetPiece[]>('image_split_sheet', {
+export function splitSheet(
+	bytes: Uint8Array,
+	opts: { alphaThreshold?: number; background?: NormalizeProfile['background'] } = {}
+): Promise<SplitResult> {
+	return invoke<SplitResult>('image_split_sheet', {
 		bytes: Array.from(bytes),
-		alphaThreshold: alphaThreshold ?? null
+		alphaThreshold: opts.alphaThreshold ?? null,
+		background: opts.background ?? null
 	});
 }

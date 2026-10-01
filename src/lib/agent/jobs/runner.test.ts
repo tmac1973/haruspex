@@ -71,7 +71,9 @@ const imageState = vi.hoisted(() => ({
 	/** Fail the nth generation only, 1-based. The anchor is the first. */
 	failNth: 0,
 	caps: {
-		transparency: true,
+		// One image per entry: the runner tests predate sheets, which
+		// generate.test.ts covers.
+		transparency: false,
 		seamlessTiling: true,
 		loras: true,
 		maxLoras: 2
@@ -2695,7 +2697,7 @@ describe('jobs runner — asset generation', () => {
 		imageState.fail = null;
 		imageState.failNth = 0;
 		imageState.caps = {
-			transparency: true,
+			transparency: false,
 			seamlessTiling: true,
 			loras: true,
 			maxLoras: 2
@@ -3079,7 +3081,7 @@ describe('jobs runner — asset generation', () => {
 		// one of them looks worse.
 		mocks.getJob.mockResolvedValueOnce(assetJob());
 		imageState.caps = {
-			transparency: true,
+			transparency: false,
 			seamlessTiling: false,
 			loras: true,
 			maxLoras: 2
@@ -3380,7 +3382,8 @@ describe('jobs runner — asset generation', () => {
 		await settle(getCurrentRun);
 
 		const spec = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
-		expect(spec.normalize.upscale).toBe(32);
+		// 16 at the default 64 px target; what matters is the product.
+		expect(spec.normalize.upscale).toBe(1024 / spec.normalize.target_size);
 		expect(spec.normalize.target_size * spec.normalize.upscale).toBe(1024);
 	});
 

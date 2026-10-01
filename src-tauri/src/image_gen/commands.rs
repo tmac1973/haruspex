@@ -8,7 +8,7 @@ use image::{ImageEncoder, RgbaImage};
 use serde::Serialize;
 
 use super::checks::{evaluate, CheckReport};
-use super::normalize::{chroma_key, dominant_border_color, harden_alpha, normalize};
+use super::normalize::{carries_alpha, chroma_key, dominant_border_color, harden_alpha, normalize};
 use super::palette::{extract_palette, hue_spread};
 use super::profile::{
     effective_profile, AssetKind, Background, NormalizeProfile, DEFAULT_ALPHA_THRESHOLD,
@@ -122,20 +122,43 @@ pub struct SheetPiece {
     pub area: u32,
 }
 
+/// The pieces of one sheet, and how its background was removed.
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct SplitResult {
+    pub pieces: Vec<SheetPiece>,
+    /// True when the sheet came back opaque and its backdrop was keyed. Phase
+    /// 17: 6 of 103 transparent-start generations did, all with the layout
+    /// intact, so a keyed sheet is still usable — but the report counts them.
+    pub keyed: bool,
+}
+
 /// Cut a generated sheet into its sprites, in reading order.
 ///
 /// Soft edges are hardened first at `alpha_threshold` (the profile's, or the
-/// default), so a fringe pixel cannot bridge two neighbours. The sheet must
-/// already be transparent: an opaque one is one piece, and the caller keys it
-/// first.
+/// default), so a fringe pixel cannot bridge two neighbours. A sheet that came
+/// back opaque is keyed first when `background` is given — by the colour that
+/// dominates its border, since a model asked for transparency names no
+/// backdrop — and is otherwise one piece, which the caller reads as a failed
+/// sheet.
 #[tauri::command]
 pub fn image_split_sheet(
     bytes: Vec<u8>,
     alpha_threshold: Option<u8>,
-) -> Result<Vec<SheetPiece>, String> {
+    background: Option<Background>,
+) -> Result<SplitResult, String> {
     let mut img = decode(&bytes)?;
+    let mut keyed = false;
+    if !carries_alpha(&img) {
+        if let Some(bg) = background {
+            if let Some(found) = dominant_border_color(&img, &bg) {
+                chroma_key(&mut img, found, &bg);
+                keyed = true;
+            }
+        }
+    }
     harden_alpha(&mut img, alpha_threshold.unwrap_or(DEFAULT_ALPHA_THRESHOLD));
-    split_sheet(&img, SplitOptions::default())
+    let pieces = split_sheet(&img, SplitOptions::default())
         .into_iter()
         .map(|p| {
             Ok(SheetPiece {
@@ -149,7 +172,8 @@ pub fn image_split_sheet(
                 area: p.area,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(SplitResult { pieces, keyed })
 }
 
 /// Tile a run's assets into one sheet.
@@ -264,6 +288,56 @@ mod tests {
         // A re-run must not dirty a committed asset.
         let img = RgbaImage::from_pixel(8, 8, Rgba([10, 20, 30, 255]));
         assert_eq!(png(&img), png(&img));
+    }
+
+    /// Two squares on a flat grey backdrop, as an opaque sheet comes back.
+    fn opaque_sheet() -> RgbaImage {
+        let mut img = RgbaImage::from_pixel(200, 100, Rgba([128, 128, 128, 255]));
+        for y in 20..80 {
+            for x in 20..80 {
+                img.put_pixel(x, y, Rgba([20, 90, 40, 255]));
+                img.put_pixel(x + 100, y, Rgba([90, 40, 20, 255]));
+            }
+        }
+        img
+    }
+
+    #[test]
+    fn a_transparent_sheet_is_cut_without_keying() {
+        let mut img = opaque_sheet();
+        for p in img.pixels_mut() {
+            if p.0 == [128, 128, 128, 255] {
+                p.0 = [0, 0, 0, 0];
+            }
+        }
+        let r = image_split_sheet(
+            png(&img),
+            None,
+            Some(NormalizeProfile::default().background),
+        )
+        .unwrap();
+        assert!(!r.keyed);
+        assert_eq!(r.pieces.len(), 2);
+    }
+
+    #[test]
+    fn an_opaque_sheet_is_keyed_by_its_border_and_says_so() {
+        let r = image_split_sheet(
+            png(&opaque_sheet()),
+            None,
+            Some(NormalizeProfile::default().background),
+        )
+        .unwrap();
+        assert!(r.keyed);
+        assert_eq!(r.pieces.len(), 2);
+    }
+
+    #[test]
+    fn an_opaque_sheet_without_a_background_to_key_is_one_piece() {
+        // The caller reads one piece as a failed sheet; nothing is guessed.
+        let r = image_split_sheet(png(&opaque_sheet()), None, None).unwrap();
+        assert!(!r.keyed);
+        assert_eq!(r.pieces.len(), 1);
     }
 
     #[test]

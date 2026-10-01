@@ -34,6 +34,24 @@ function kindOf(raw: unknown): AssetKind {
 }
 
 /**
+ * A sheet name the spec will accept, or nothing.
+ *
+ * Slugified rather than rejected: "Small items" is a perfectly good group, and
+ * failing the whole derivation over its capital letter would be absurd. A
+ * texture's is dropped — it fills its own frame.
+ */
+export function sheetName(raw: unknown, kind: AssetKind): string | undefined {
+	if (kind === 'texture' || typeof raw !== 'string') return undefined;
+	const slug = raw
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '_')
+		.replace(/^_+|_+$/g, '')
+		.slice(0, 48);
+	return ID_PATTERN.test(slug) ? slug : undefined;
+}
+
+/**
  * Build a spec from what the model submitted plus the run's own settings.
  *
  * `profile` is the shipped default with the job's target size applied; it is
@@ -49,9 +67,11 @@ export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): A
 		const kind = kindOf(raw.kind);
 		const id = uniqueId(title, taken);
 		taken.add(id);
+		const sheet = sheetName(raw.sheet, kind);
 		entries.push({
 			id,
 			kind,
+			...(sheet ? { sheet } : {}),
 			prompt,
 			out: defaultOutPath(kind, id),
 			// A texture must tile; nothing else is asked to.

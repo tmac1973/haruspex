@@ -242,6 +242,7 @@ describe('generate', () => {
 		expect(g['2'].inputs.clip_name).toBe('ming_image_0.1_ling_mini_2.0_w4a8.safetensors');
 		expect(g['3'].inputs.vae_name).toBe('ming_image_vae_bf16.safetensors');
 		expect(g['7'].inputs.noise_seed).toBe(7);
+		expect(g['4'].inputs.text).toBe('RGBA, 4-channel, transparent background. a tin can');
 		expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/upload'))).toBe(false);
 		// The sampler reported is the one the Ming graph ran, not SD's.
 		expect(r.meta.sampler).toEqual(TEMPLATES.find((t) => t.id === 'ming_t2i_rgba')!.defaultSampler);

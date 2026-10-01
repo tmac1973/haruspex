@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { generateEntries, escapesWorkdir, type GenerateDeps } from './generate';
+import type { SheetOutcome } from './types';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
 import { ImageBackendError } from '$lib/image/types';
 import type { ImageBackendCapabilities, ImageRequest } from '$lib/image/types';
@@ -45,8 +46,13 @@ function specOf(entries: Partial<AssetEntry>[]): AssetSpec {
 	} as AssetSpec;
 }
 
+/**
+ * Everything but transparency: these tests drive the one-image-per-entry path,
+ * which is what a backend without alpha gets. The sheet path has its own
+ * `describe` below.
+ */
 const FULL: ImageBackendCapabilities = {
-	transparency: true,
+	transparency: false,
 	seamlessTiling: true,
 	loras: true,
 	maxLoras: 2
@@ -584,5 +590,168 @@ describe('the vision judge', () => {
 		});
 		const [r] = await generateEntries(specOf([{}]), h.deps);
 		expect(r.outcome.status).toBe('done');
+	});
+});
+
+describe('sheets', () => {
+	const SHEETS: ImageBackendCapabilities = { ...FULL, transparency: true };
+
+	/** What `image_split_sheet` returns, one per call, then the last repeats. */
+	const splits: Array<{ pieces: Array<[number, number]>; keyed?: boolean }> = [];
+
+	beforeEach(() => {
+		splits.length = 0;
+		const base = invoke.getMockImplementation()!;
+		invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'image_split_sheet') {
+				const s = splits.length > 1 ? splits.shift()! : splits[0];
+				return {
+					keyed: s.keyed ?? false,
+					pieces: s.pieces.map(([cx, cy]) => ({
+						bytes: [7],
+						x: cx - 100,
+						y: cy - 100,
+						width: 200,
+						height: 200,
+						cx,
+						cy,
+						area: 40_000
+					}))
+				};
+			}
+			return base(cmd, args);
+		});
+	});
+
+	/** Centres of a 2×2 layout of three subjects on a 1024 sheet. */
+	const THREE: Array<[number, number]> = [
+		[256, 256],
+		[768, 256],
+		[512, 768]
+	];
+
+	it('makes three sprites from one transparent request', async () => {
+		splits.push({ pieces: THREE });
+		const seen: SheetOutcome[] = [];
+		const h = harness({ caps: SHEETS, onSheet: (o) => seen.push(o) });
+		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(h.requests).toHaveLength(1);
+		expect(h.requests[0]).toMatchObject({ transparent: true, width: 1024, height: 1024 });
+		expect(h.written).toEqual(['out/e0.png', 'out/e1.png', 'out/e2.png']);
+		expect(results.every((r) => r.outcome.status === 'done' && r.outcome.seed === 42)).toBe(true);
+		expect(seen).toEqual([
+			expect.objectContaining({ id: 'sprites', round: 1, exact: true, missing: 0, merged: 0 })
+		]);
+	});
+
+	it('regenerates only the subject the sheet left out, as a single sprite', async () => {
+		splits.push({ pieces: [THREE[0], THREE[2]] }, { pieces: [[512, 512]] });
+		const seen: SheetOutcome[] = [];
+		const h = harness({ caps: SHEETS, maxAttempts: 2, onSheet: (o) => seen.push(o) });
+		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(h.requests).toHaveLength(2);
+		expect(h.requests[1].prompt).toMatch(/A single game sprite of a thing\./);
+		expect(results.map((r) => [r.outcome.status, r.outcome.attempts])).toEqual([
+			['done', 1],
+			['done', 2],
+			['done', 1]
+		]);
+		expect(seen.map((s) => [s.round, s.subjects, s.missing])).toEqual([
+			[1, ['e0', 'e1', 'e2'], 1],
+			[2, ['e1'], 0]
+		]);
+	});
+
+	it('records a subject the sheet never delivered, within budget, as unresolved', async () => {
+		splits.push({ pieces: [THREE[0], THREE[2]] });
+		const h = harness({ caps: SHEETS, maxAttempts: 1 });
+		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(results[1].outcome).toMatchObject({ status: 'unresolved', attempts: 1 });
+		expect(results[1].outcome.reason).toMatch(/Missing from its sheet/);
+		expect(h.written).not.toContain('out/e1.png');
+	});
+
+	it('keeps textures on their own path', async () => {
+		splits.push({ pieces: [[512, 512]] });
+		const h = harness({ caps: SHEETS });
+		await generateEntries(specOf([{ kind: 'texture' }, {}]), h.deps);
+		expect(h.requests).toHaveLength(2);
+		expect(h.requests[0].transparent).toBeUndefined();
+		expect(h.requests[1].transparent).toBe(true);
+	});
+
+	it('asks a sheet only for the subjects not already on disk', async () => {
+		splits.push({ pieces: [THREE[0], THREE[1]] });
+		const h = harness({ caps: SHEETS }, ['out/e1.png']);
+		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(results[1].outcome.status).toBe('skipped');
+		expect(h.requests[0].prompt).toMatch(/two separate game sprites/);
+	});
+
+	it('shows a suspect piece to the judge even when the judge is off', async () => {
+		// One subject missing makes the layout inexact, so the pieces that were
+		// found were found by position alone — and a sword drawn where the
+		// potion should be would pass every mechanical check.
+		splits.push({ pieces: [THREE[0], THREE[2]] });
+		const judged: string[] = [];
+		const h = harness({
+			caps: SHEETS,
+			judge: {
+				visionSupported: true,
+				enabled: false,
+				judge: async (e) => {
+					judged.push(e.id);
+					return { ok: true, reason: '' };
+				}
+			}
+		});
+		await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(judged).toEqual(['e0', 'e2']);
+	});
+
+	it('does not judge an exact sheet when the judge is off', async () => {
+		splits.push({ pieces: THREE });
+		const judged: string[] = [];
+		const h = harness({
+			caps: SHEETS,
+			judge: {
+				visionSupported: true,
+				enabled: false,
+				judge: async (e) => {
+					judged.push(e.id);
+					return { ok: true, reason: '' };
+				}
+			}
+		});
+		await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(judged).toEqual([]);
+	});
+
+	it('reports a sheet keyed from an opaque backdrop', async () => {
+		splits.push({ pieces: THREE, keyed: true });
+		const seen: SheetOutcome[] = [];
+		const h = harness({ caps: SHEETS, onSheet: (o) => seen.push(o) });
+		await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(seen[0].keyed).toBe(true);
+		const split = invoke.mock.calls.find(([cmd]) => cmd === 'image_split_sheet');
+		// The background goes with the call, so an opaque sheet can be keyed.
+		expect(split![1].background).toBeDefined();
+	});
+
+	it('re-queues a sheet once when the backend is briefly unreachable', async () => {
+		splits.push({ pieces: THREE });
+		let calls = 0;
+		const base = harness({ caps: SHEETS });
+		const h = harness({
+			caps: SHEETS,
+			generate: async (req, opts) => {
+				calls++;
+				if (calls === 1) throw new ImageBackendError('unreachable', 'down');
+				return base.deps.generate(req, opts);
+			}
+		});
+		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(calls).toBe(2);
+		expect(results.every((r) => r.outcome.status === 'done')).toBe(true);
 	});
 });

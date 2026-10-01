@@ -86,6 +86,18 @@ const MING_BINDINGS: Omit<FieldMap, 'outputNode' | 'width' | 'height'> = {
 
 const MING_SAMPLER: SamplerSettings = { name: 'euler', steps: 12, cfg: 1 };
 
+/**
+ * One of Ming's documented RGBA phrases, and it is NOT optional.
+ *
+ * Neither half works alone. The phrase without the transparent start gave
+ * alpha 0 times in 20; the transparent start without the phrase gave alpha 0
+ * times in 4 at seeds that gave it 4 times in 4 with the phrase (phase 21,
+ * `p21_noprefix_*` in the spike folder). Together they are reliable.
+ */
+export function mingTransparent(prompt: string): string {
+	return `RGBA, 4-channel, transparent background. ${prompt.trim()}`;
+}
+
 // ---- Qwen-Image-2.1 -------------------------------------------------------------
 
 const QWEN21_BINDINGS: FieldMap = {
@@ -154,7 +166,8 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		 * Ming ignores its documented RGBA prompt prefixes — in ComfyUI, in the
 		 * demo Space and in the vendor's own code. It does produce alpha when
 		 * sampling starts from the latent of a transparent canvas at denoise
-		 * 0.9: 10 of 10 sheets and 48 of 48 singles in the spike and phase 17.
+		 * 0.9, together with one of its RGBA phrases (`mingTransparent`): 10 of
+		 * 10 sheets and 48 of 48 singles in the spike and phase 17.
 		 * The canvas is built inside the graph (an image and a fully-set mask,
 		 * joined), so there is nothing to upload; measured byte-identical to
 		 * uploading a transparent PNG.
@@ -177,7 +190,8 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		license: LICENSE,
 		source: SOURCE,
 		supports: { transparent: true, seamless: false },
-		defaultSampler: MING_SAMPLER
+		defaultSampler: MING_SAMPLER,
+		wrapPrompt: mingTransparent
 	},
 	{
 		id: 'qwen21_t2i',

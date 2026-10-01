@@ -40,6 +40,15 @@ export interface AssetEntry {
 	size?: number;
 	seamless?: boolean;
 	/**
+	 * Which sheet this entry is drawn on, with the others that share the name.
+	 *
+	 * A sheet renders its subjects at one scale and from one view, so it
+	 * groups things that belong together — items with items, characters with
+	 * characters. Sprites and icons only; a texture fills its own frame.
+	 * Entries that name none are grouped by kind, in spec order.
+	 */
+	sheet?: string;
+	/**
 	 * Pins this entry's seed so one asset can be made reproducible. The
 	 * quality gate's retries still vary it — a pinned seed that fails every
 	 * check would otherwise retry identically forever.

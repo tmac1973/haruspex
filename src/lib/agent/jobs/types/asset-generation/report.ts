@@ -11,7 +11,7 @@
 import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { AssetSpec } from '$lib/assets/spec/types';
 import { describeFailures } from './gate';
-import type { AnchorOutcome, EntryOutcome } from './types';
+import type { AnchorOutcome, EntryOutcome, SheetOutcome } from './types';
 
 export interface ReportInput {
 	spec: AssetSpec;
@@ -19,6 +19,8 @@ export interface ReportInput {
 	anchor: AnchorOutcome | null;
 	entries: EntryOutcome[];
 	reports: Map<string, CheckReport | null>;
+	/** Every generation of every sheet, in order. Empty when nothing used one. */
+	sheets?: SheetOutcome[];
 	/** Relative path of the contact sheet, or null when none was made. */
 	contactSheet: string | null;
 	/** Set when the judge was wanted but the model could not see. */
@@ -198,6 +200,42 @@ function degradedSection(input: ReportInput): string[] {
 	];
 }
 
+/**
+ * The sheets, generation by generation.
+ *
+ * The aggregate line leads with how many cut exactly, because that is the
+ * number that says whether the sheet size suits this model: a run where most
+ * sheets came back with subjects missing or touching is telling you to ask
+ * for fewer per sheet.
+ */
+function sheetSection(sheets: SheetOutcome[]): string[] {
+	if (sheets.length === 0) return [];
+	const exact = sheets.filter((s) => s.exact).length;
+	const keyed = sheets.filter((s) => s.keyed).length;
+	const retries = sheets.filter((s) => s.round > 1).length;
+	const lines = [
+		'## Sheets',
+		'',
+		`**${exact} of ${sheets.length} sheet generation(s) cut exactly.** ` +
+			`${retries} were retries of subjects an earlier sheet did not deliver.` +
+			(keyed > 0
+				? ` ${keyed} came back on an opaque backdrop, which was keyed rather than regenerated.`
+				: ''),
+		'',
+		'| Sheet | Round | Subjects | Exact | Missing | Touching | Rejected | Keyed | Seed |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- |'
+	];
+	for (const s of sheets) {
+		lines.push(
+			`| \`${s.id}\` | ${s.round} | ${s.subjects.length} | ${s.exact ? 'yes' : 'no'} | ` +
+				`${s.missing} | ${s.merged} | ${s.rejected} | ${s.keyed ? 'yes' : '—'} | ` +
+				`${s.seed ?? '—'} |`
+		);
+	}
+	lines.push('');
+	return lines;
+}
+
 export function renderAssetReport(input: ReportInput): string {
 	const t = countByStatus(input.entries);
 	const total = input.entries.length;
@@ -262,6 +300,7 @@ export function renderAssetReport(input: ReportInput): string {
 		);
 	}
 
+	lines.push(...sheetSection(input.sheets ?? []));
 	lines.push('## Assets', '', ...entryTable(input), '');
 	lines.push(...unresolvedSection(input));
 	lines.push(...degradedSection(input));

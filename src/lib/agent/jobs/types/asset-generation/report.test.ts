@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { renderAssetReport, type ReportInput } from './report';
 import type { AssetSpec } from '$lib/assets/spec/types';
 import type { CheckReport } from '$lib/ipc/gen/CheckReport';
-import type { AnchorOutcome, EntryOutcome } from './types';
+import type { AnchorOutcome, EntryOutcome, SheetOutcome } from './types';
 
 function spec(): AssetSpec {
 	return {
@@ -295,5 +295,38 @@ describe('the generation-size note', () => {
 		// it matters.
 		const md = renderAssetReport(input({ sizing: { edge: 512, nativeEdge: null } }));
 		expect(md).not.toContain('was trained at');
+	});
+});
+
+describe('the sheets section', () => {
+	const sheet = (over: Partial<SheetOutcome> = {}): SheetOutcome => ({
+		id: 'items',
+		round: 1,
+		subjects: ['a', 'b', 'c'],
+		exact: true,
+		keyed: false,
+		missing: 0,
+		merged: 0,
+		rejected: 0,
+		seed: 7,
+		...over
+	});
+
+	it('is absent when nothing was drawn on a sheet', () => {
+		expect(renderAssetReport(input())).not.toContain('## Sheets');
+	});
+
+	it('leads with how many sheets cut exactly, and counts retries and keyed ones', () => {
+		const r = renderAssetReport(
+			input({
+				sheets: [
+					sheet({ exact: false, missing: 1, keyed: true }),
+					sheet({ round: 2, subjects: ['b'] })
+				]
+			})
+		);
+		expect(r).toContain('**1 of 2 sheet generation(s) cut exactly.** 1 were retries');
+		expect(r).toContain('1 came back on an opaque backdrop');
+		expect(r).toContain('| `items` | 1 | 3 | no | 1 | 0 | 0 | yes | 7 |');
 	});
 });
