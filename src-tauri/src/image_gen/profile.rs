@@ -169,6 +169,24 @@ pub struct NormalizeProfile {
     pub outline: Outline,
     pub checks: CheckThresholds,
     pub by_kind: BTreeMap<AssetKind, KindOverride>,
+    /// Alpha at or above which a pixel counts as opaque; below, it is cleared.
+    ///
+    /// A model that produces alpha leaves a soft edge — up to 4% of pixels
+    /// partly transparent on Ming-Image — and pixel art has none. Optional so
+    /// the specs committed before it existed still load; read it through
+    /// [`NormalizeProfile::alpha_threshold`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub alpha_threshold: Option<u8>,
+}
+
+/// Midway: a soft edge pixel goes to whichever side it is nearer.
+pub const DEFAULT_ALPHA_THRESHOLD: u8 = 128;
+
+impl NormalizeProfile {
+    pub fn alpha_threshold(&self) -> u8 {
+        self.alpha_threshold.unwrap_or(DEFAULT_ALPHA_THRESHOLD)
+    }
 }
 
 impl Default for NormalizeProfile {
@@ -244,6 +262,7 @@ impl Default for NormalizeProfile {
                 palette_distance_max: 0.15,
             },
             by_kind,
+            alpha_threshold: None,
         }
     }
 }

@@ -130,6 +130,7 @@ export const IPC = {
 	image_normalize: 'image_normalize',
 	image_palette_spread: 'image_palette_spread',
 	image_resolve: 'image_resolve',
+	image_split_sheet: 'image_split_sheet',
 	image_store_bytes: 'image_store_bytes',
 	image_sweep: 'image_sweep',
 	import_model: 'import_model',

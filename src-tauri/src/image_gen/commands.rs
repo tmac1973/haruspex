@@ -8,12 +8,14 @@ use image::{ImageEncoder, RgbaImage};
 use serde::Serialize;
 
 use super::checks::{evaluate, CheckReport};
-use super::normalize::{chroma_key, dominant_border_color, normalize};
+use super::normalize::{chroma_key, dominant_border_color, harden_alpha, normalize};
 use super::palette::{extract_palette, hue_spread};
 use super::profile::{
-    effective_profile, AssetKind, Background, NormalizeProfile, PALETTE_HUE_DOMINANCE,
+    effective_profile, AssetKind, Background, NormalizeProfile, DEFAULT_ALPHA_THRESHOLD,
+    PALETTE_HUE_DOMINANCE,
 };
 use super::sheet::contact_sheet;
+use super::split::{split_sheet, SplitOptions};
 use super::stats::ImageStats;
 
 #[derive(Debug, Serialize, ts_rs::TS)]
@@ -100,6 +102,54 @@ pub struct PaletteSpread {
     #[ts(type = "number")]
     pub buckets_used: u32,
     pub ok: bool,
+}
+
+/// One sprite cut from a sheet, with where it sat.
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct SheetPiece {
+    /// The piece alone, cropped to its box, as PNG.
+    pub bytes: Vec<u8>,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    /// Area-weighted centre, in sheet pixels — what a caller assigns to a
+    /// grid cell by.
+    pub cx: f32,
+    pub cy: f32,
+    /// Opaque pixels; a merge of two sprites shows up as an outlier here.
+    pub area: u32,
+}
+
+/// Cut a generated sheet into its sprites, in reading order.
+///
+/// Soft edges are hardened first at `alpha_threshold` (the profile's, or the
+/// default), so a fringe pixel cannot bridge two neighbours. The sheet must
+/// already be transparent: an opaque one is one piece, and the caller keys it
+/// first.
+#[tauri::command]
+pub fn image_split_sheet(
+    bytes: Vec<u8>,
+    alpha_threshold: Option<u8>,
+) -> Result<Vec<SheetPiece>, String> {
+    let mut img = decode(&bytes)?;
+    harden_alpha(&mut img, alpha_threshold.unwrap_or(DEFAULT_ALPHA_THRESHOLD));
+    split_sheet(&img, SplitOptions::default())
+        .into_iter()
+        .map(|p| {
+            Ok(SheetPiece {
+                bytes: encode(&p.image)?,
+                x: p.x,
+                y: p.y,
+                width: p.width,
+                height: p.height,
+                cx: p.cx,
+                cy: p.cy,
+                area: p.area,
+            })
+        })
+        .collect()
 }
 
 /// Tile a run's assets into one sheet.

@@ -18,6 +18,12 @@ pub struct ImageStats {
     pub entropy: f32,
     /// Fraction of opaque pixels that were off-palette before snapping.
     pub palette_distance: f32,
+    /// True when the background had to be keyed because the image carried no
+    /// alpha of its own — a model asked for transparency that did not give it.
+    /// Absent in stats made before this was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub keyed: Option<bool>,
 }
 
 /// Shannon entropy of the SUBJECT's colour histogram, in bits.

@@ -23,4 +23,13 @@ palette_size: number,
 /**
  * Empty until the style anchor fills it. Packed `0xRRGGBBAA`.
  */
-palette: Array<number>, background: Background, crop: Crop, outline: Outline, checks: CheckThresholds, by_kind: { [key in AssetKind]?: KindOverride }, };
+palette: Array<number>, background: Background, crop: Crop, outline: Outline, checks: CheckThresholds, by_kind: { [key in AssetKind]?: KindOverride }, 
+/**
+ * Alpha at or above which a pixel counts as opaque; below, it is cleared.
+ *
+ * A model that produces alpha leaves a soft edge — up to 4% of pixels
+ * partly transparent on Ming-Image — and pixel art has none. Optional so
+ * the specs committed before it existed still load; read it through
+ * [`NormalizeProfile::alpha_threshold`].
+ */
+alpha_threshold?: number, };

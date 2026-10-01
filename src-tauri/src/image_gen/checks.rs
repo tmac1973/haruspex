@@ -77,6 +77,7 @@ mod tests {
             alpha,
             entropy,
             palette_distance,
+            keyed: None,
         }
     }
 

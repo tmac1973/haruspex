@@ -18,6 +18,7 @@ import type { AssetKind } from '$lib/ipc/gen/AssetKind';
 import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { ImageStats } from '$lib/ipc/gen/ImageStats';
 import type { PaletteSpread } from '$lib/ipc/gen/PaletteSpread';
+import type { SheetPiece } from '$lib/ipc/gen/SheetPiece';
 
 export type {
 	NormalizeProfile,
@@ -25,7 +26,8 @@ export type {
 	AssetKind,
 	CheckReport,
 	ImageStats,
-	PaletteSpread
+	PaletteSpread,
+	SheetPiece
 };
 
 /** Key, crop, downscale, quantize and outline one image. */
@@ -101,13 +103,26 @@ export function extractPalette(
 /**
  * Resolve a profile's per-kind overrides.
  *
- * Call this before building a request, so the reference strength and
- * background colour a generation uses come from the same resolver that will
- * normalize the result.
+ * Call this before building a request, so the background colour and size a
+ * generation uses come from the same resolver that will normalize the result.
  */
 export function effectiveProfile(
 	profile: NormalizeProfile,
 	kind: AssetKind
 ): Promise<NormalizeProfile> {
 	return invoke<NormalizeProfile>('image_effective_profile', { profile, kind });
+}
+
+/**
+ * Cut a generated sheet into its sprites, in reading order.
+ *
+ * Reports what is there, never what was asked for: two sprites drawn touching
+ * come back as one piece, and a missing one as one piece fewer. The caller
+ * knows how many subjects it asked for and where, and judges the cut.
+ */
+export function splitSheet(bytes: Uint8Array, alphaThreshold?: number): Promise<SheetPiece[]> {
+	return invoke<SheetPiece[]>('image_split_sheet', {
+		bytes: Array.from(bytes),
+		alphaThreshold: alphaThreshold ?? null
+	});
 }

@@ -12,4 +12,10 @@ entropy: number,
 /**
  * Fraction of opaque pixels that were off-palette before snapping.
  */
-palette_distance: number, };
+palette_distance: number, 
+/**
+ * True when the background had to be keyed because the image carried no
+ * alpha of its own — a model asked for transparency that did not give it.
+ * Absent in stats made before this was recorded.
+ */
+keyed?: boolean, };

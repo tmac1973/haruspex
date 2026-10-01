@@ -229,6 +229,7 @@ pub fn run() {
             image_gen::commands::image_check,
             image_gen::commands::image_palette_spread,
             image_gen::commands::image_contact_sheet,
+            image_gen::commands::image_split_sheet,
             image_gen::commands::image_normalize,
             image_gen::commands::image_extract_palette,
             image_gen::commands::image_effective_profile,

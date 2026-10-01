@@ -2,6 +2,10 @@
 //!
 //! The order is load-bearing and asserted by tests.
 //!
+//! An image that arrives with real alpha — a model asked for transparency —
+//! skips the key entirely: there is no backdrop to remove, and what sits under
+//! its transparent pixels is arbitrary colour a key could mistake for one.
+//!
 //! Keying comes first: keying after quantizing would snap the background into
 //! the palette, where it can never be removed. Outlining comes last:
 //! outlining before downscaling would give a border a fraction of a pixel
@@ -155,6 +159,47 @@ pub fn dominant_border_color(img: &RgbaImage, bg: &Background) -> Option<u32> {
     }
     best.filter(|(_, n)| n / total >= BORDER_DOMINANCE)
         .map(|(c, _)| c)
+}
+
+/// Fraction of fully transparent pixels above which an image is taken to carry
+/// its own background.
+///
+/// Well below anything a real cut-out produces — the worst transparent sheet
+/// measured was 53% clear — and well above what a keyed SD image has before
+/// keying, which is none.
+pub const CARRIES_ALPHA_FLOOR: f32 = 0.05;
+
+/// Does this image already have a transparent background?
+pub fn carries_alpha(img: &RgbaImage) -> bool {
+    let total = (img.width() as usize * img.height() as usize).max(1);
+    let clear = img.pixels().filter(|p| p.0[3] < 8).count();
+    clear as f32 / total as f32 > CARRIES_ALPHA_FLOOR
+}
+
+/// Make every pixel fully opaque or fully transparent, and blank the colour of
+/// the transparent ones.
+///
+/// Pixel art has no soft edge, and everything after this treats alpha 0 as
+/// "not there": the modal downscale keys on it, quantization keeps alpha
+/// as-is, so a pixel at alpha 60 would survive into the output as a
+/// translucent fringe.
+///
+/// Done at full resolution, before the modal downscale rather than after: the
+/// downscale votes, it does not average, so there is no blending for a later
+/// threshold to tidy up — a soft pixel would simply be a vote for a colour
+/// that is neither the subject nor the background.
+///
+/// The colour under alpha 0 is zeroed because it is not nothing: Qwen-Image
+/// leaves purple there and Ming-Image grey, and anything that reads RGB
+/// without checking alpha — a palette, a border-colour guess — would see it.
+pub fn harden_alpha(img: &mut RgbaImage, threshold: u8) {
+    for p in img.pixels_mut() {
+        if p.0[3] < threshold {
+            p.0 = [0, 0, 0, 0];
+        } else {
+            p.0[3] = 255;
+        }
+    }
 }
 
 /// Remove opaque islands far smaller than the largest one.
@@ -362,21 +407,11 @@ pub fn normalize(
 ) -> Result<(RgbaImage, ImageStats), String> {
     let p = effective_profile(profile, kind);
     let mut work = img.clone();
+    let keyed = !carries_alpha(&work);
+    harden_alpha(&mut work, p.alpha_threshold());
 
-    // The configured key first; the border when that did not do the job.
-    //
-    // "Did not do the job" is measured against the same threshold the quality
-    // gate uses for "the background was never removed", not against "removed
-    // nothing at all". An earlier version tried the fallback only when the key
-    // matched zero pixels, and a handful of stray hits — a few background-hued
-    // pixels inside the subject — were enough to suppress the border detection
-    // that was doing all the actual work. Two of three SDXL sprites came out
-    // fully opaque because of it.
-    chroma_key(&mut work, p.background.color, &p.background);
-    if p.background.auto_detect && opaque_fraction(&work) > p.checks.alpha_max {
-        if let Some(found) = dominant_border_color(&work, &p.background) {
-            chroma_key(&mut work, found, &p.background);
-        }
+    if keyed {
+        key_background(&mut work, &p);
     }
     if p.crop.enabled {
         // Before cropping, not after: the specks are what break the crop.
@@ -403,13 +438,33 @@ pub fn normalize(
         alpha: opaque_fraction(&work),
         entropy: entropy_bits(&work),
         palette_distance,
+        keyed: Some(keyed),
     };
     Ok((work, stats))
 }
 
+/// Remove a backdrop the image was generated on.
+fn key_background(work: &mut RgbaImage, p: &NormalizeProfile) {
+    // The configured key first; the border when that did not do the job.
+    //
+    // "Did not do the job" is measured against the same threshold the quality
+    // gate uses for "the background was never removed", not against "removed
+    // nothing at all". An earlier version tried the fallback only when the key
+    // matched zero pixels, and a handful of stray hits — a few background-hued
+    // pixels inside the subject — were enough to suppress the border detection
+    // that was doing all the actual work. Two of three SDXL sprites came out
+    // fully opaque because of it.
+    chroma_key(work, p.background.color, &p.background);
+    if p.background.auto_detect && opaque_fraction(work) > p.checks.alpha_max {
+        if let Some(found) = dominant_border_color(work, &p.background) {
+            chroma_key(work, found, &p.background);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::super::profile::{pack, Background, Crop, Outline};
+    use super::super::profile::{pack, Background, Crop, Outline, DEFAULT_ALPHA_THRESHOLD};
     use super::*;
 
     const KEY: u32 = 0xFF_00_FF_FF;
@@ -815,6 +870,107 @@ mod tests {
         let img = keyed(32, 32);
         let err = normalize(&img, &NormalizeProfile::default(), AssetKind::Sprite).unwrap_err();
         assert!(err.contains("empty"), "{err}");
+    }
+
+    /// A transparent canvas with an opaque subject on it, as a model that
+    /// produces alpha draws one: the subject touching the left edge, and the
+    /// colour under the transparent pixels deliberately the key colour.
+    fn cut_out(subject: [u8; 4]) -> RgbaImage {
+        let mut img = RgbaImage::from_pixel(64, 64, Rgba([255, 0, 255, 0]));
+        block(&mut img, 0, 20, 31, 43, subject);
+        img
+    }
+
+    fn no_outline() -> NormalizeProfile {
+        NormalizeProfile {
+            outline: Outline {
+                enabled: false,
+                ..NormalizeProfile::default().outline
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn an_image_with_its_own_alpha_is_not_keyed() {
+        // A magenta subject touching the border: the key would flood in from
+        // the edge and remove it. With real alpha there is no backdrop to
+        // remove, so the key must not run at all.
+        let img = cut_out([250, 10, 240, 255]);
+        let (out, stats) = normalize(&img, &no_outline(), AssetKind::Sprite).unwrap();
+        assert_eq!(stats.keyed, Some(false));
+        let magenta = out
+            .pixels()
+            .filter(|p| p.0[3] != 0 && p.0[0] > 200 && p.0[1] < 60 && p.0[2] > 200)
+            .count();
+        assert!(magenta > 0, "the subject was keyed away");
+    }
+
+    #[test]
+    fn an_opaque_image_is_still_keyed_and_says_so() {
+        let mut img = keyed(64, 64);
+        block(&mut img, 16, 16, 47, 47, [20, 90, 40, 255]);
+        let (_, stats) = normalize(&img, &NormalizeProfile::default(), AssetKind::Sprite).unwrap();
+        assert_eq!(stats.keyed, Some(true));
+    }
+
+    #[test]
+    fn a_soft_edge_comes_out_hard() {
+        // A DiT leaves a few percent of pixels partly transparent. Without
+        // hardening they survive quantization (which keeps alpha) as a
+        // translucent fringe in the pixel art.
+        let mut img = cut_out([30, 90, 40, 255]);
+        block(&mut img, 32, 20, 35, 43, [30, 90, 40, 200]);
+        block(&mut img, 36, 20, 39, 43, [30, 90, 40, 60]);
+        let (out, _) = normalize(&img, &no_outline(), AssetKind::Sprite).unwrap();
+        for p in out.pixels() {
+            assert!(
+                p.0[3] == 0 || p.0[3] == 255,
+                "soft pixel survived: {:?}",
+                p.0
+            );
+        }
+    }
+
+    #[test]
+    fn the_colour_under_a_soft_edge_never_reaches_the_palette() {
+        // Qwen-Image leaves purple under its transparent pixels. A pixel at
+        // alpha 60 still has that colour, and extracting a palette from it
+        // would spend a slot on a colour no asset contains.
+        let mut img = cut_out([30, 90, 40, 255]);
+        block(&mut img, 32, 0, 63, 63, [160, 40, 200, 60]);
+        let mut hardened = img.clone();
+        harden_alpha(&mut hardened, DEFAULT_ALPHA_THRESHOLD);
+        let palette = extract_palette(&hardened, 8, None);
+        let purple = palette.iter().any(|&c| {
+            let [r, g, b, _] = rgba(c);
+            r > 120 && g < 80 && b > 160
+        });
+        assert!(!purple, "purple entered the palette: {palette:x?}");
+        assert!(hardened
+            .pixels()
+            .all(|p| p.0[3] == 255 || p.0 == [0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn the_threshold_comes_from_the_profile() {
+        let mut img = cut_out([30, 90, 40, 255]);
+        block(&mut img, 32, 20, 47, 43, [30, 90, 40, 100]);
+        let wide = |t: Option<u8>| {
+            let p = NormalizeProfile {
+                alpha_threshold: t,
+                crop: Crop {
+                    enabled: true,
+                    ..NormalizeProfile::default().crop
+                },
+                ..no_outline()
+            };
+            let (out, _) = normalize(&img, &p, AssetKind::Sprite).unwrap();
+            out.pixels().filter(|p| p.0[3] != 0).count()
+        };
+        // At the default 128 the alpha-100 band is cleared; at 64 it is kept,
+        // so more of the frame is subject.
+        assert!(wide(Some(64)) > wide(None));
     }
 
     #[test]

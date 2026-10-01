@@ -63,6 +63,27 @@ not in the job.
    white backdrops and cut four of six sheets cleanly; a model that fails to
    give alpha on one image must still produce a set.
 
+## Deviations, as built
+
+- **Hardening happens before the downscale, not after.** Step 3 assumed the
+  downscale averages; it votes (modal colour per cell), so there is no blending
+  for a later threshold to tidy, and a soft pixel left in would be a vote for
+  a colour that is neither subject nor background. `harden_alpha` runs first,
+  on every image, and also blanks the colour under alpha 0 — which is step 2.
+- **The join is by pixel distance, not dilation.** Islands are joined when any
+  two of their edge pixels sit within the gap (bounding boxes only shortlist a
+  pair), so an L-shaped sprite cannot swallow a neighbour its box happens to
+  wrap. The gap is 0.15 × the median piece's side.
+- **The second fixture is a touching sheet, not a merge of two.** On the real
+  sheet chosen for it, four sprites in one column touch at alpha ≥ 128 (8% of
+  the gap row is opaque), so they are one piece at any join gap including 0.
+  The test asserts seven pieces and one of them most of the sheet tall — the
+  caller sees a merge. The sheet was chosen because it is a real fault, not
+  because it is the fault the plan imagined.
+- **`alpha_threshold` and `keyed` are optional fields**, so specs and stats
+  written before them still load: `NormalizeProfile::alpha_threshold()`
+  defaults to 128, and `ImageStats.keyed` is absent on old stats.
+
 ## Build gate
 
 ```

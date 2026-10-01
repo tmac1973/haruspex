@@ -53,8 +53,8 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 | 17 | Measurements that decide the design | **done** — `measurements-phase-17.md` |
 | 18 | Transparency in the backend; Ming + Qwen workflows | **done** — live-checked on Ming and Qwen 2.1 |
 | 19 | Multi-file catalogue: Ming, Qwen 2.1 | not started |
-| 20 | Normalization for alpha; cutting a sheet | **next** |
-| 21 | Generate sprites and icons in sheets | not started |
+| 20 | Normalization for alpha; cutting a sheet | **done** |
+| 21 | Generate sprites and icons in sheets | **next** |
 | 22 | The first sheet is the anchor | not started |
 | 23 | Textures | not started |
 | 24 | Bundled engine runs Ming | **blocked** — sd.cpp cannot run Ming usably here (§4) |
