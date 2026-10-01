@@ -180,8 +180,8 @@ pub fn image_default_profile() -> NormalizeProfile {
 
 /// Resolve a profile's per-kind overrides.
 ///
-/// Exposed so the TypeScript loop reads `reference_strength`, the background
-/// colour and the generation edge from the SAME resolver that normalizes —
+/// Exposed so the TypeScript loop reads the background colour and the
+/// generation edge from the SAME resolver that normalizes —
 /// a second implementation in TS is how the two would drift.
 #[tauri::command]
 pub fn image_effective_profile(profile: NormalizeProfile, kind: AssetKind) -> NormalizeProfile {

@@ -13,7 +13,7 @@ beforeEach(() => vi.restoreAllMocks());
 const stub: ImageBackend = {
 	kind: 'comfyui',
 	capabilities: async () => ({
-		referenceConditioning: true,
+		transparency: true,
 		seamlessTiling: true,
 		loras: true,
 		maxLoras: 2
@@ -63,7 +63,7 @@ describe('the none backend', () => {
 
 	it('reports no capabilities, so every coherence layer degrades', async () => {
 		expect(await noneBackend.capabilities()).toEqual({
-			referenceConditioning: false,
+			transparency: false,
 			seamlessTiling: false,
 			loras: false,
 			maxLoras: 0

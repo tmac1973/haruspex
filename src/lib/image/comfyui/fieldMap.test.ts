@@ -14,8 +14,10 @@ function graph(): ComfyGraph {
 			inputs: { lora_name: 'shipped2', strength_model: 0.9, strength_clip: 0.9 }
 		},
 		'4': { class_type: 'CLIPTextEncode', inputs: { text: '' } },
-		'6': { class_type: 'LoadImage', inputs: { image: '' } },
-		'7': { class_type: 'KSampler', inputs: { seed: 0, steps: 20, denoise: 1 } },
+		'5': { class_type: 'CLIPLoader', inputs: { clip_name: '' } },
+		'6': { class_type: 'EmptyImage', inputs: { width: 1024, height: 1024 } },
+		'7': { class_type: 'KSampler', inputs: { seed: 0, steps: 20, cfg: 7 } },
+		'8': { class_type: 'SolidMask', inputs: { width: 1024, height: 1024 } },
 		'9': { class_type: 'SaveImage', inputs: { filename_prefix: 'x' } }
 	};
 }
@@ -26,8 +28,16 @@ function map(): FieldMap {
 		prompt: { kind: 'scalar', node: '4', input: 'text' },
 		seed: { kind: 'scalar', node: '7', input: 'seed' },
 		model: { kind: 'scalar', node: '1', input: 'ckpt_name' },
-		referenceImage: { kind: 'uploaded', node: '6', input: 'image' },
-		referenceStrength: { kind: 'scalar', node: '7', input: 'denoise' },
+		textEncoder: { kind: 'scalar', node: '5', input: 'clip_name' },
+		samplerCfg: { kind: 'scalar', node: '7', input: 'cfg' },
+		width: [
+			{ kind: 'scalar', node: '6', input: 'width' },
+			{ kind: 'scalar', node: '8', input: 'width' }
+		],
+		height: [
+			{ kind: 'scalar', node: '6', input: 'height' },
+			{ kind: 'scalar', node: '8', input: 'height' }
+		],
 		loras: { kind: 'loraSlots', nodes: ['2', '3'], source: '1' }
 	};
 }
@@ -57,15 +67,21 @@ describe('applyFieldMap', () => {
 	});
 
 	it('leaves the template default in place for a value the request omits', () => {
-		const out = applyFieldMap(graph(), map(), req({ referenceStrength: undefined }));
-		expect(out['7'].inputs.denoise).toBe(1);
+		const out = applyFieldMap(graph(), map(), req({ sampler: undefined }));
+		expect(out['7'].inputs.cfg).toBe(7);
 	});
 
-	it('binds the uploaded FILENAME for a reference, never the bytes', () => {
-		const out = applyFieldMap(graph(), map(), req({ referenceImage: new Uint8Array([1, 2, 3]) }), {
-			referenceFilename: 'haruspex-ref.png'
-		});
-		expect(out['6'].inputs.image).toBe('haruspex-ref.png');
+	it('writes a size to every node bound to it', () => {
+		// A transparent canvas is an image and a mask joined; if only one of
+		// them took the request's size, the join would fail on the server.
+		const out = applyFieldMap(graph(), map(), req({ width: 640, height: 384 }));
+		expect([out['6'].inputs.width, out['8'].inputs.width]).toEqual([640, 640]);
+		expect([out['6'].inputs.height, out['8'].inputs.height]).toEqual([384, 384]);
+	});
+
+	it('binds a resolved companion file', () => {
+		const out = applyFieldMap(graph(), map(), req(), { textEncoder: 'ling_w4a8.safetensors' });
+		expect(out['5'].inputs.clip_name).toBe('ling_w4a8.safetensors');
 	});
 
 	it('prefers a derived model over the one on the request', () => {
@@ -171,6 +187,17 @@ describe('validateFieldMap', () => {
 		const bad = {
 			...map(),
 			loras: { kind: 'loraSlots' as const, nodes: ['2', '404'], source: '1' }
+		};
+		expect(validateFieldMap(graph(), bad).join(' ')).toMatch(/"404"/);
+	});
+
+	it('reports one slot of a multi-node binding pointing at nothing', () => {
+		const bad: FieldMap = {
+			...map(),
+			width: [
+				{ kind: 'scalar', node: '6', input: 'width' },
+				{ kind: 'scalar', node: '404', input: 'width' }
+			]
 		};
 		expect(validateFieldMap(graph(), bad).join(' ')).toMatch(/"404"/);
 	});

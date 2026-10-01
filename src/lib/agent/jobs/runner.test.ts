@@ -71,7 +71,7 @@ const imageState = vi.hoisted(() => ({
 	/** Fail the nth generation only, 1-based. The anchor is the first. */
 	failNth: 0,
 	caps: {
-		referenceConditioning: true,
+		transparency: true,
 		seamlessTiling: true,
 		loras: true,
 		maxLoras: 2
@@ -2684,7 +2684,6 @@ describe('jobs runner — asset generation', () => {
 			},
 			crop: { enabled: true, margin: 1, min_island_fraction: 0.05 },
 			outline: { enabled: true, color: 0x1a1a1aff, width: 2 },
-			reference_strength: 0.6,
 			checks: { alpha_min: 0.05, alpha_max: 0.95, entropy_min: 1, palette_distance_max: 0.15 },
 			by_kind: {}
 		};
@@ -2696,7 +2695,7 @@ describe('jobs runner — asset generation', () => {
 		imageState.fail = null;
 		imageState.failNth = 0;
 		imageState.caps = {
-			referenceConditioning: true,
+			transparency: true,
 			seamlessTiling: true,
 			loras: true,
 			maxLoras: 2
@@ -3080,28 +3079,28 @@ describe('jobs runner — asset generation', () => {
 		// one of them looks worse.
 		mocks.getJob.mockResolvedValueOnce(assetJob());
 		imageState.caps = {
-			referenceConditioning: false,
-			seamlessTiling: true,
+			transparency: true,
+			seamlessTiling: false,
 			loras: true,
 			maxLoras: 2
 		};
+		// Entry 0 is a texture; the backend cannot tile it.
 		wireFs(goodSpec(2), { recipe: goodRecipe() });
 		const { enqueue, getCurrentRun } = await freshRunner();
 		await enqueue(1);
 		await settle(getCurrentRun);
 
-		expect(entryCalls().every((g) => g.referenceImage === undefined)).toBe(true);
-		expect(getCurrentRun()!.steps[2].output).toContain('no reference conditioning (2)');
+		expect(entryCalls().every((g) => g.seamless === undefined)).toBe(true);
+		expect(getCurrentRun()!.steps[2].output).toContain('not seamless (1)');
 	});
 
-	it('conditions every asset on the anchor when the backend can', async () => {
+	it('records no degradation when the backend provides every layer', async () => {
 		mocks.getJob.mockResolvedValueOnce(assetJob());
 		wireFs(goodSpec(2), { recipe: goodRecipe() });
 		const { enqueue, getCurrentRun } = await freshRunner();
 		await enqueue(1);
 		await settle(getCurrentRun);
 
-		expect(entryCalls().every((g) => (g.referenceImage as Uint8Array)?.length > 0)).toBe(true);
 		expect(getCurrentRun()!.steps[2].output).not.toContain('Degraded');
 	});
 

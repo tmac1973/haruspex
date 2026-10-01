@@ -10,8 +10,8 @@
  * The pinned build serves three HTTP APIs at once — its own `/sdcpp/v1/*`, an
  * AUTOMATIC1111-compatible `/sdapi/v1/*`, and an OpenAI-compatible
  * `/v1/images/*`. This adapter uses the A1111 one: it is the only one of the
- * three that carries every parameter the job needs (negative prompt, seed,
- * sampler, denoising strength and an init image) in a shape that is stable
+ * three that carries every parameter the job needs (negative prompt, seed and
+ * sampler) in a shape that is stable
  * across the wider ecosystem rather than specific to one project's release.
  */
 
@@ -49,11 +49,6 @@ export function serves(route: string): boolean {
  * off-style art — so when a version bump drops a feature, the committed
  * fixture changes and a test fails, rather than the claim quietly outliving
  * the build that justified it.
- *
- * Reference conditioning additionally requires an img2img route: the flag
- * says IP-Adapter was compiled in, and the route is how a reference image
- * would actually reach it. Either one missing means the layer is unavailable,
- * and phase 09's generation loop degrades per entry around it.
  */
 export function declaredCapabilities(): ImageBackendCapabilities {
 	return capabilitiesFrom(FIXTURE);
@@ -69,9 +64,8 @@ export function declaredCapabilities(): ImageBackendCapabilities {
  */
 export function capabilitiesFrom(fixture: SdCapabilityFixture): ImageBackendCapabilities {
 	const c = fixture.capabilities;
-	const hasImg2Img = fixture.routes.includes(ROUTES.img2img);
 	return {
-		referenceConditioning: c.referenceConditioning && hasImg2Img,
+		transparency: c.transparency,
 		seamlessTiling: c.seamlessTiling,
 		loras: c.loras,
 		maxLoras: c.loras ? c.maxLoras : 0
@@ -89,8 +83,6 @@ export interface A1111Request {
 	sampler_name: string;
 	batch_size: 1;
 	n_iter: 1;
-	init_images?: string[];
-	denoising_strength?: number;
 }
 
 /** Base64 of a PNG, without a data: prefix — what `init_images` expects. */
@@ -114,29 +106,21 @@ export function fromBase64(b64: string): Uint8Array {
 export const DEFAULT_SAMPLER = { name: 'euler_a', steps: 28, cfg: 7 } as const;
 
 /**
- * Where the reference image goes when there is one.
+ * The request body for one generation.
  *
- * img2img with a low denoising strength is NOT the same operation as
- * IP-Adapter style transfer, and this is the honest mapping of what the build
- * offers: it starts from the reference rather than from noise, so the subject
- * of the reference bleeds into the result. That is exactly the failure the
- * ComfyUI path abandoned img2img for. Until this backend can do real
- * reference conditioning the capability is reported false, which is why
- * `declaredCapabilities` gates it on the route and why the job degrades.
+ * Always txt2img. The img2img route used to carry a reference image, which was
+ * never the IP-Adapter style transfer the ComfyUI path had and is gone with it;
+ * phase 24 may bring img2img back to start Ming-Image from a transparent
+ * canvas, once this engine can run that model at all.
  */
-export function buildRequest(
-	req: {
-		prompt: string;
-		negativePrompt?: string;
-		seed: number | null;
-		width: number;
-		height: number;
-		sampler?: { name: string; steps: number; cfg: number };
-		referenceImage?: Uint8Array;
-		referenceStrength?: number;
-	},
-	caps: ImageBackendCapabilities
-): { route: string; body: A1111Request } {
+export function buildRequest(req: {
+	prompt: string;
+	negativePrompt?: string;
+	seed: number | null;
+	width: number;
+	height: number;
+	sampler?: { name: string; steps: number; cfg: number };
+}): { route: string; body: A1111Request } {
 	const sampler = req.sampler ?? DEFAULT_SAMPLER;
 	const body: A1111Request = {
 		prompt: req.prompt,
@@ -152,21 +136,6 @@ export function buildRequest(
 		batch_size: 1,
 		n_iter: 1
 	};
-
-	if (caps.referenceConditioning && req.referenceImage && req.referenceImage.length > 0) {
-		return {
-			route: ROUTES.img2img,
-			body: {
-				...body,
-				init_images: [toBase64(req.referenceImage)],
-				// The API's strength is how far to travel FROM the reference,
-				// so a caller asking to be pulled hard toward it wants a low
-				// number here. Inverting it in one place keeps every caller on
-				// one meaning of "reference strength".
-				denoising_strength: 1 - (req.referenceStrength ?? 0.6)
-			}
-		};
-	}
 	return { route: ROUTES.txt2img, body };
 }
 

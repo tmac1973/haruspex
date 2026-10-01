@@ -26,7 +26,6 @@ function profile(over: Partial<NormalizeProfile> = {}): NormalizeProfile {
 		},
 		crop: { enabled: true, margin: 1, min_island_fraction: 0.05 },
 		outline: { enabled: true, color: 0x1a1a1aff, width: 2 },
-		reference_strength: 0.6,
 		checks: { alpha_min: 0.05, alpha_max: 0.95, entropy_min: 1, palette_distance_max: 0.15 },
 		by_kind: {},
 		...over
@@ -49,14 +48,13 @@ function spec(over: Partial<AssetSpec> = {}): AssetSpec {
 }
 
 const FULL: ImageBackendCapabilities = {
-	referenceConditioning: true,
+	transparency: true,
 	seamlessTiling: true,
 	loras: true,
 	maxLoras: 2
 };
 
-const ANCHOR = new Uint8Array([1, 2, 3]);
-const OPTS = { anchor: ANCHOR, maxEdge: 1024 };
+const OPTS = { maxEdge: 1024 };
 
 describe('the isolation scaffold', () => {
 	it('wraps a sprite and an icon', () => {
@@ -162,10 +160,8 @@ describe('entryEdge', () => {
 });
 
 describe('buildEntryRequest with a fully capable backend', () => {
-	it('attaches the anchor at the profile strength', () => {
-		const { request, degraded } = buildEntryRequest(entry(), spec(), profile(), FULL, OPTS);
-		expect(request.referenceImage).toBe(ANCHOR);
-		expect(request.referenceStrength).toBe(0.6);
+	it('records nothing when the backend can do everything asked', () => {
+		const { degraded } = buildEntryRequest(entry(), spec(), profile(), FULL, OPTS);
 		expect(degraded).toEqual([]);
 	});
 
@@ -206,14 +202,6 @@ describe('buildEntryRequest with a fully capable backend', () => {
 });
 
 describe('degradation', () => {
-	it('drops the reference and says so when the backend cannot condition', () => {
-		const caps = { ...FULL, referenceConditioning: false };
-		const { request, degraded } = buildEntryRequest(entry(), spec(), profile(), caps, OPTS);
-		expect(request.referenceImage).toBeUndefined();
-		expect(request.referenceStrength).toBeUndefined();
-		expect(degraded).toContain('no reference conditioning');
-	});
-
 	it('generates a texture anyway when the backend cannot tile, and records it', () => {
 		// A visible seam beats a missing texture; the report says which it is.
 		const caps = { ...FULL, seamlessTiling: false };
@@ -266,14 +254,5 @@ describe('degradation', () => {
 	it('records nothing when no LoRAs were asked for', () => {
 		const caps = { ...FULL, loras: false, maxLoras: 0 };
 		expect(buildEntryRequest(entry(), spec(), profile(), caps, OPTS).degraded).toEqual([]);
-	});
-
-	it('records nothing about conditioning when there is no anchor to attach', () => {
-		const caps = { ...FULL, referenceConditioning: false };
-		const { degraded } = buildEntryRequest(entry(), spec(), profile(), caps, {
-			anchor: null,
-			maxEdge: 1024
-		});
-		expect(degraded).toEqual([]);
 	});
 });

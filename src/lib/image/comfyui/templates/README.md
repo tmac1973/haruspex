@@ -1,41 +1,65 @@
 # Bundled ComfyUI workflows
 
-These four API-format graphs were authored for Haruspex and carry the same
-licence as the rest of this repository. `index.ts` records that per template,
-and a test asserts it — a ComfyUI API graph has to parse as strict JSON, and
-JSON has no comments, so the provenance cannot live in the files themselves.
+These API-format graphs were authored for Haruspex and carry the same licence
+as the rest of this repository. `index.ts` records that per template, and a
+test asserts it — a ComfyUI API graph has to parse as strict JSON, and JSON has
+no comments, so the provenance cannot live in the files themselves.
 
-| File                      | Reference | Seamless | For                               |
-| ------------------------- | --------- | -------- | --------------------------------- |
-| `txt2img.json`            | —         | —        | Plain generation                  |
-| `reference.json`          | yes       | —        | Conditioned on the style anchor   |
-| `seamless.json`           | —         | yes      | Edge-wrapping terrain             |
-| `seamless_reference.json` | yes       | yes      | Terrain conditioned on the anchor |
+They are grouped by **model family**, read from the configured model's
+filename (`../families.ts`): a graph that loads an SD checkpoint cannot load a
+DiT that ships its text encoder and VAE as separate files.
 
-The fourth is not redundant. A terrain entry is generated seamless _and_
-conditioned on the anchor, so a three-template set would make selection pick
-one and drop the other — while `capabilities()` still reported reference
-conditioning, so nothing would record a degradation and the texture half of
-every set would quietly lose its style.
+| File                 | Family         | Transparent | Seamless | For                             |
+| -------------------- | -------------- | ----------- | -------- | ------------------------------- |
+| `txt2img.json`       | SD             | —           | —        | Plain generation                |
+| `seamless.json`      | SD             | —           | yes      | Edge-wrapping terrain           |
+| `ming_t2i.json`      | Ming-Image     | —           | —        | Plain generation                |
+| `ming_t2i_rgba.json` | Ming-Image     | yes         | —        | Sprites with real alpha         |
+| `qwen21_t2i.json`    | Qwen-Image-2.1 | by prompt   | —        | Both; alpha is a prompt wrapper |
 
-## Shape
+Reference conditioning (IP-Adapter) is gone. It is UNet-only, neither DiT family
+can use it, and phase 17 measured a Ming reference image as making sets less
+consistent, not more (`plan/local-image-generation/measurements-phase-17.md`).
 
-Every graph descends from `txt2img.json` and keeps its node ids, which is what
+## Ming-Image makes alpha from a transparent start
+
+Ming-Image-0.1-Design ignores its documented RGBA prompt prefixes — 0 of 20
+prompts in ComfyUI, 0 of 3 in the public demo, and the same reported against the
+vendor's own code (inclusionAI/Ming-Image#5). Its VAE round-trips alpha
+exactly, so decoding is not the problem; the model simply does not steer to a
+transparent latent from text.
+
+It does when sampling starts from the latent of a transparent canvas.
+`ming_t2i_rgba.json` builds that canvas inside the graph — `EmptyImage` joined
+with a `SolidMask` of 1.0, which `JoinImageWithAlpha` turns into alpha 0 —
+encodes it, and denoises at 0.9. Measured: 10 of 10 sheets and 48 of 48 single
+sprites transparent; 0.95 and 1.0 stay opaque. Building the canvas in the graph
+was measured byte-identical to uploading a transparent PNG, and needs no upload.
+
+Both Ming graphs pin `ModelSamplingFlux` at `max_shift` 1.35 with a 1024
+reference size — the vendor's own flow shift from 1024 up. At 2048 ComfyUI's
+stock extrapolated shift gives no alpha at all.
+
+Both DiT families run their text encoder on the CPU (`CLIPLoader`
+`device: cpu`). On a 16 GB card the encoder and the DiT cannot both stay
+resident, and Qwen-Image-2.1's RGBA VAE then runs out of memory at decode. The
+cost is about a minute per distinct prompt; sampling is unaffected.
+
+## SD graphs: shape
+
+Both SD graphs descend from `txt2img.json` and keep its node ids, which is what
 lets `index.ts` share one set of bindings:
 
-| Node     | Class                            | Bound to                             |
-| -------- | -------------------------------- | ------------------------------------ |
-| `1`      | `CheckpointLoaderSimple`         | `model`                              |
-| `2`, `3` | `LoraLoader`                     | LoRA slots 0 and 1                   |
-| `4`, `5` | `CLIPTextEncode`                 | `prompt`, `negativePrompt`           |
-| `6`      | `EmptyLatentImage` / `LoadImage` | size, or the uploaded reference      |
-| `7`      | `KSampler`                       | `seed`, sampler settings, `denoise`  |
-| `8`      | `VAEDecode`                      | —                                    |
-| `9`      | `SaveImage`                      | the output node                      |
-| `10`     | `EmptyLatentImage`               | size, reference graphs only          |
-| `11`     | `SeamlessTile`                   | seamless graphs only                 |
-| `12`     | `IPAdapterUnifiedLoader`         | reference graphs only                |
-| `13`     | `IPAdapterAdvanced`              | `referenceStrength` (adapter weight) |
+| Node     | Class                    | Bound to                   |
+| -------- | ------------------------ | -------------------------- |
+| `1`      | `CheckpointLoaderSimple` | `model`                    |
+| `2`, `3` | `LoraLoader`             | LoRA slots 0 and 1         |
+| `4`, `5` | `CLIPTextEncode`         | `prompt`, `negativePrompt` |
+| `6`      | `EmptyLatentImage`       | size                       |
+| `7`      | `KSampler`               | `seed`, sampler settings   |
+| `8`      | `VAEDecode`              | —                          |
+| `9`      | `SaveImage`              | the output node            |
+| `11`     | `SeamlessTile`           | seamless graph only        |
 
 Unused LoRA slots are **removed** from the graph and the chain spliced back to
 node `1`. Zeroing their strength is not enough: ComfyUI validates `lora_name`
@@ -44,35 +68,9 @@ name is refused and takes the whole prompt down with it. On a server with no
 LoRAs — which is most of them — that made every generation fail. Unit tests
 passed on the zeroing version; the first real server rejected everything.
 
-## Reference conditioning is IP-Adapter, not img2img
-
-The reference graphs need
-[`ComfyUI_IPAdapter_plus`](https://github.com/cubiq/ComfyUI_IPAdapter_plus)
-plus a CLIP-vision encoder in `models/clip_vision/` and an adapter in
-`models/ipadapter/`. That is one custom node pack and ~2.5GB of weights, and it
-is not optional.
-
-The obvious cheaper implementation is img2img: feed the reference in as the
-latent, denoise partway. It was tried against a real server and it does exactly
-what img2img does — it hands back the REFERENCE. Asked for "a green pear"
-conditioned on a photo of an apple, at `denoise: 0.6`, it produced the apple.
-There is no denoise value that gives a different subject in the same style:
-raise it and the style goes, lower it and the subject comes back.
-
-IP-Adapter injects the reference into the model's attention with
-`weight_type: "style transfer"` and leaves composition entirely to the prompt,
-so the graphs sample a fresh empty latent at `denoise: 1.0`. Measured on SD1.5:
-`weight` 0.6 shifts the palette clearly while leaving the subject alone, 0.9 is
-strong, and past that the reference's own forms start appearing in the output.
-
-It transfers palette and feel more than fine rendering detail, which is why the
-pipeline also quantizes to a shared palette and snaps to a pixel grid
-afterwards. The adapter gets an image into the neighbourhood; the mechanical
-pass is what makes a set uniform.
-
 ## Seamless tiling needs a node pack, and needs BOTH halves
 
-`seamless.json` and `seamless_reference.json` require
+`seamless.json` requires
 [`ComfyUI-seamless-tiling`](https://github.com/spinagon/ComfyUI-seamless-tiling).
 A server without it rejects the prompt with `kind: 'rejected'` and the node's
 name in the message; seamless tiling is a declared capability precisely so that
@@ -88,11 +86,10 @@ not tile** — a silent quality failure rather than an error. Measured on a
 cobblestone texture, comparing the wrap edges against two adjacent interior
 columns of the same image:
 
-|                      | wrap L\|R | wrap T\|B | interior baseline |
-| -------------------- | --------- | --------- | ----------------- |
-| no tiling            | 43.5      | 36.4      | 20.1 / 21.5       |
-| seamless             | 16.2      | 23.5      | 21.1 / 20.6       |
-| seamless + reference | 4.4       | 19.7      | 13.9 / 17.6       |
+|           | wrap L\|R | wrap T\|B | interior baseline |
+| --------- | --------- | --------- | ----------------- |
+| no tiling | 43.5      | 36.4      | 20.1 / 21.5       |
+| seamless  | 16.2      | 23.5      | 21.1 / 20.6       |
 
 An image tiles when its wrap error is no worse than its own interior — the
 control is twice as discontinuous at the edges as it is anywhere else, and the
@@ -111,7 +108,8 @@ default parameters, which looks exactly like success.
 
 Set **Settings → Image → Custom workflow** to an API-format export plus a field
 map in the same shape as `index.ts`'s. Both or neither: one without the other
-fails the probe. A custom workflow replaces all four, and its declared
+fails the probe. A custom workflow replaces all the bundled ones, never claims
+transparency (there is no way to ask a graph how it would make alpha), and its declared
 `supports` decides what `capabilities()` reports — a graph with no LoRA slots
 reports `loras: false`, and the asset job degrades rather than silently
 dropping them.

@@ -546,7 +546,6 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		const caps = await backend.capabilities();
 		const generated = await generateEntries(spec, {
 			caps,
-			anchor: anchored.image,
 			concurrency: cfg.concurrency ?? DEFAULT_CONCURRENCY,
 			maxEdge: MAX_GENERATION_EDGE,
 			maxAttempts: cfg.max_attempts ?? DEFAULT_MAX_ATTEMPTS,

@@ -13,14 +13,6 @@ import {
 	DEFAULT_SAMPLER
 } from './adapter';
 import type { SdCapabilityFixture } from './adapter';
-import type { ImageBackendCapabilities } from '../types';
-
-const FULL: ImageBackendCapabilities = {
-	referenceConditioning: true,
-	seamlessTiling: true,
-	loras: true,
-	maxLoras: 4
-};
 
 const req = {
 	prompt: 'a sword',
@@ -49,21 +41,27 @@ describe('the committed fixture', () => {
 		expect(declared.loras).toBe(FIXTURE.capabilities.loras);
 	});
 
+	it('claims no transparency until the engine can produce it', () => {
+		// Phase 17: the pinned build cannot run Ming-Image usably, so nothing
+		// this engine loads gives alpha.
+		expect(declaredCapabilities().transparency).toBe(false);
+	});
+
 	it('agrees with the rule applied to itself', () => {
 		expect(declaredCapabilities()).toEqual(capabilitiesFrom(FIXTURE));
 	});
 });
 
 /**
- * Tested against fixtures OTHER than the committed one on purpose. The
- * committed fixture currently has every capability switched on, so asserting
- * only against it passes identically for a hardcoded `true` — which is the
- * exact bug the fixture exists to prevent.
+ * Tested against fixtures OTHER than the committed one on purpose. Asserting
+ * only against the committed fixture passes identically for a hardcoded value
+ * whenever that fixture happens to agree with it — which is the exact bug the
+ * fixture exists to prevent.
  */
 describe('capabilitiesFrom', () => {
 	const fixture = (over: Partial<SdCapabilityFixture> = {}): SdCapabilityFixture => ({
 		version: 'test',
-		capabilities: { referenceConditioning: true, seamlessTiling: true, loras: true, maxLoras: 4 },
+		capabilities: { transparency: false, seamlessTiling: true, loras: true, maxLoras: 4 },
 		flags: {},
 		routes: [ROUTES.txt2img, ROUTES.img2img, ROUTES.ready],
 		...over
@@ -72,33 +70,10 @@ describe('capabilitiesFrom', () => {
 	it('reports what the fixture says, not what we hope', () => {
 		const d = capabilitiesFrom(
 			fixture({
-				capabilities: {
-					referenceConditioning: false,
-					seamlessTiling: false,
-					loras: false,
-					maxLoras: 0
-				}
+				capabilities: { transparency: true, seamlessTiling: false, loras: false, maxLoras: 0 }
 			})
 		);
-		expect(d).toEqual({
-			referenceConditioning: false,
-			seamlessTiling: false,
-			loras: false,
-			maxLoras: 0
-		});
-	});
-
-	it('withdraws reference conditioning when no route could carry a reference', () => {
-		// The flag says IP-Adapter was compiled in; the route is how an image
-		// would actually reach it. Either missing means the layer is
-		// unavailable, and claiming it anyway is how the job stops degrading
-		// and starts silently shipping off-style art.
-		const d = capabilitiesFrom(fixture({ routes: [ROUTES.txt2img, ROUTES.ready] }));
-		expect(d.referenceConditioning).toBe(false);
-	});
-
-	it('keeps reference conditioning when both the flag and the route are there', () => {
-		expect(capabilitiesFrom(fixture()).referenceConditioning).toBe(true);
+		expect(d).toEqual({ transparency: true, seamlessTiling: false, loras: false, maxLoras: 0 });
 	});
 
 	it('reports no LoRA slots when LoRAs are unsupported', () => {
@@ -106,12 +81,7 @@ describe('capabilitiesFrom', () => {
 		// reads as "slots available", and it would degrade nothing.
 		const d = capabilitiesFrom(
 			fixture({
-				capabilities: {
-					referenceConditioning: true,
-					seamlessTiling: true,
-					loras: false,
-					maxLoras: 4
-				}
+				capabilities: { transparency: false, seamlessTiling: true, loras: false, maxLoras: 4 }
 			})
 		);
 		expect(d.loras).toBe(false);
@@ -127,22 +97,19 @@ describe('buildRequest', () => {
 	it('sends -1 rather than 0 when no seed was pinned', () => {
 		// This API reads 0 as a seed. Every unpinned request would produce the
 		// identical image, and a retry would repeat its own failure.
-		expect(buildRequest(req, FULL).body.seed).toBe(-1);
+		expect(buildRequest(req).body.seed).toBe(-1);
 	});
 
 	it('passes a pinned seed through untouched', () => {
-		expect(buildRequest({ ...req, seed: 7 }, FULL).body.seed).toBe(7);
+		expect(buildRequest({ ...req, seed: 7 }).body.seed).toBe(7);
 	});
 
-	it('uses txt2img and attaches nothing when there is no reference', () => {
-		const { route, body } = buildRequest(req, FULL);
-		expect(route).toBe(ROUTES.txt2img);
-		expect(body.init_images).toBeUndefined();
-		expect(body.denoising_strength).toBeUndefined();
+	it('uses txt2img', () => {
+		expect(buildRequest(req).route).toBe(ROUTES.txt2img);
 	});
 
 	it('carries the prompt, negative prompt and size', () => {
-		const { body } = buildRequest(req, FULL);
+		const { body } = buildRequest(req);
 		expect(body.prompt).toBe('a sword');
 		expect(body.negative_prompt).toBe('blurry');
 		expect(body.width).toBe(512);
@@ -152,40 +119,10 @@ describe('buildRequest', () => {
 	});
 
 	it('falls back to the pinned build’s sampler when none is given', () => {
-		const { body } = buildRequest(req, FULL);
+		const { body } = buildRequest(req);
 		expect(body.sampler_name).toBe(DEFAULT_SAMPLER.name);
 		expect(body.steps).toBe(DEFAULT_SAMPLER.steps);
 		expect(body.cfg_scale).toBe(DEFAULT_SAMPLER.cfg);
-	});
-
-	it('switches to img2img and inverts the strength when conditioning is possible', () => {
-		// The API's strength is how far to travel FROM the reference, so a
-		// caller asking to be pulled hard toward it wants a LOW number. One
-		// place inverts it so every caller keeps one meaning.
-		const { route, body } = buildRequest(
-			{ ...req, referenceImage: new Uint8Array([1, 2, 3]), referenceStrength: 0.8 },
-			FULL
-		);
-		expect(route).toBe(ROUTES.img2img);
-		expect(body.init_images).toHaveLength(1);
-		expect(body.denoising_strength).toBeCloseTo(0.2);
-	});
-
-	it('ignores a reference the backend cannot use', () => {
-		// Sending init_images to a backend reporting no conditioning would
-		// quietly turn every generation into an img2img of the anchor.
-		const caps = { ...FULL, referenceConditioning: false };
-		const { route, body } = buildRequest(
-			{ ...req, referenceImage: new Uint8Array([1, 2, 3]) },
-			caps
-		);
-		expect(route).toBe(ROUTES.txt2img);
-		expect(body.init_images).toBeUndefined();
-	});
-
-	it('ignores an empty reference', () => {
-		const { route } = buildRequest({ ...req, referenceImage: new Uint8Array() }, FULL);
-		expect(route).toBe(ROUTES.txt2img);
 	});
 });
 

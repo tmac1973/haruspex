@@ -1,18 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { TEMPLATES, selectTemplate } from './index';
+import { TEMPLATES, qwen21Transparent, selectTemplate, templatesFor } from './index';
 import { validateFieldMap } from '../fieldMap';
 
 describe('the bundled workflows', () => {
-	it('ships all four combinations of reference and seamless', () => {
-		// The fourth is not redundant. A terrain texture is generated seamless
-		// AND conditioned on the style anchor; with three templates, selection
-		// picks one and drops the other while capabilities() still claims
-		// reference conditioning — so nothing records a degradation and the
-		// texture half of every set quietly loses its style.
-		const combos = TEMPLATES.map((t) => `${t.supports.reference}/${t.supports.seamless}`).sort();
-		expect(combos).toEqual(['false/false', 'false/true', 'true/false', 'true/true']);
-	});
-
 	it('every map matches its graph', () => {
 		// The test that catches a template edited out of sync with its map.
 		for (const t of TEMPLATES) {
@@ -33,21 +23,34 @@ describe('the bundled workflows', () => {
 		}
 	});
 
-	it('gives every workflow LoRA slots', () => {
+	it('binds a size, a seed, a prompt and a model in every workflow', () => {
 		for (const t of TEMPLATES) {
-			expect(t.map.loras?.nodes.length ?? 0).toBeGreaterThan(0);
+			const m = t.map;
+			expect({
+				id: t.id,
+				bound: [m.width, m.height, m.seed, m.prompt, m.model].every((b) => b !== undefined)
+			}).toEqual({ id: t.id, bound: true });
 		}
 	});
 
-	it('binds a size in every workflow', () => {
-		// Including the reference ones. They condition through IP-Adapter and
-		// sample a FRESH latent, so they have a size of their own — unlike the
-		// img2img version they replaced, which inherited the reference's size
-		// along with, fatally, the reference's subject.
-		for (const t of TEMPLATES) {
-			expect({ id: t.id, hasWidth: t.map.width !== undefined }).toEqual({
+	it('gives each family a plain workflow', () => {
+		// Selection falls back to an opaque one; a family without one would
+		// leave a request with nowhere to go.
+		for (const family of ['sd', 'ming', 'qwen21'] as const) {
+			expect(
+				selectTemplate({ transparent: false, seamless: false }, templatesFor(family))
+			).toBeDefined();
+		}
+	});
+
+	it('binds the separate text encoder and VAE in every DiT workflow', () => {
+		// Without these the graph loads whatever filename the template shipped
+		// with — an empty string, which the server refuses.
+		for (const t of TEMPLATES.filter((x) => x.family !== 'sd')) {
+			expect({ id: t.id, te: !!t.map.textEncoder, vae: !!t.map.vae }).toEqual({
 				id: t.id,
-				hasWidth: true
+				te: true,
+				vae: true
 			});
 		}
 	});
@@ -71,52 +74,104 @@ describe('the bundled workflows', () => {
 		}
 	});
 
-	it('leaves plain workflows decoding normally', () => {
-		for (const t of TEMPLATES.filter((x) => !x.supports.seamless)) {
+	it('claims seamless tiling only for the SD family', () => {
+		// Circular padding is a UNet trick; neither DiT family tiles by it, and
+		// a claim nobody checks is how a job ships seamed textures.
+		const claimed = TEMPLATES.filter((t) => t.supports.seamless).map((t) => t.family);
+		expect(new Set(claimed)).toEqual(new Set(['sd']));
+	});
+
+	it('carries no IP-Adapter: reference conditioning is gone', () => {
+		for (const t of TEMPLATES) {
 			const classes = Object.values(t.graph).map((n) => n.class_type);
-			expect(classes).toContain('VAEDecode');
-			expect(classes).not.toContain('CircularVAEDecode');
+			expect(classes.some((c) => c.startsWith('IPAdapter'))).toBe(false);
+		}
+	});
+});
+
+describe('Ming-Image', () => {
+	const rgba = TEMPLATES.find((t) => t.id === 'ming_t2i_rgba')!;
+	const plain = TEMPLATES.find((t) => t.id === 'ming_t2i')!;
+
+	it('makes alpha by starting from a transparent canvas, not from words', () => {
+		// Ming ignores its documented RGBA prefixes (0 of 20 prompts, plus the
+		// vendor's own code); it gives alpha when sampling starts from the
+		// latent of a transparent canvas. The canvas: an image joined with a
+		// mask of 1.0, which JoinImageWithAlpha turns into alpha 0.
+		const g = rgba.graph;
+		const latent = g[(g['12'].inputs.latent_image as [string, number])[0]];
+		expect(latent.class_type).toBe('VAEEncode');
+		const join = g[(latent.inputs.pixels as [string, number])[0]];
+		expect(join.class_type).toBe('JoinImageWithAlpha');
+		const mask = g[(join.inputs.alpha as [string, number])[0]];
+		expect(mask.class_type).toBe('SolidMask');
+		expect(mask.inputs.value).toBe(1);
+		expect(rgba.wrapPrompt).toBeUndefined();
+	});
+
+	it('denoises the canvas at 0.9, and a plain request fully', () => {
+		// 0.9 gave alpha 10 of 10 times; 0.95 and 1.0 stayed opaque.
+		expect(rgba.graph['10'].inputs.denoise).toBe(0.9);
+		expect(plain.graph['10'].inputs.denoise).toBe(1);
+	});
+
+	it('sizes the canvas image and mask together', () => {
+		expect(rgba.map.width).toEqual([
+			{ kind: 'scalar', node: '14', input: 'width' },
+			{ kind: 'scalar', node: '15', input: 'width' }
+		]);
+	});
+
+	it("samples at the vendor's shift, which is what gives alpha at 2048", () => {
+		for (const t of [plain, rgba]) {
+			expect(t.graph['5'].inputs).toMatchObject({ max_shift: 1.35, width: 1024, height: 1024 });
 		}
 	});
 
-	it('conditions through IP-Adapter rather than img2img', () => {
-		// The distinction the whole design rests on. img2img re-denoises the
-		// reference, so it returns the reference; asked for a green pear
-		// conditioned on an apple it produced the apple. IP-Adapter leaves
-		// composition to the prompt.
-		for (const t of TEMPLATES.filter((x) => x.supports.reference)) {
-			const graph = t.graph;
-			const classes = Object.values(graph).map((n) => n.class_type);
-			expect(classes).toContain('IPAdapterAdvanced');
-			expect(classes).not.toContain('VAEEncode');
-			// A fresh latent at full denoise: nothing of the reference's own
-			// structure survives into the result.
-			expect(graph['7'].inputs.denoise).toBe(1.0);
-			const adapter = Object.entries(graph).find(
-				([, n]) => n.class_type === 'IPAdapterAdvanced'
-			)![1];
-			expect(adapter.inputs.weight_type).toBe('style transfer');
-		}
+	it('runs its text encoder on the CPU', () => {
+		// On 16 GB the encoder and the DiT cannot both stay resident.
+		for (const t of [plain, rgba]) expect(t.graph['2'].inputs.device).toBe('cpu');
+	});
+});
+
+describe('Qwen-Image-2.1', () => {
+	it('makes alpha with the wrapper from its own template', () => {
+		const t = selectTemplate({ transparent: true, seamless: false }, templatesFor('qwen21'))!;
+		expect(t.wrapPrompt?.('a sword')).toBe(qwen21Transparent('a sword'));
+		expect(qwen21Transparent('a sword')).toMatch(/^This is an RGBA format image/);
+	});
+
+	it('wraps nothing for an opaque request', () => {
+		const t = selectTemplate({ transparent: false, seamless: false }, templatesFor('qwen21'))!;
+		expect(t.wrapPrompt).toBeUndefined();
 	});
 });
 
 describe('selectTemplate', () => {
 	it('picks the exact combination asked for', () => {
-		expect(selectTemplate({ reference: false, seamless: false })?.id).toBe('txt2img');
-		expect(selectTemplate({ reference: true, seamless: false })?.id).toBe('reference');
-		expect(selectTemplate({ reference: false, seamless: true })?.id).toBe('seamless');
-		expect(selectTemplate({ reference: true, seamless: true })?.id).toBe('seamless_reference');
+		expect(selectTemplate({ transparent: false, seamless: true }, templatesFor('sd'))?.id).toBe(
+			'seamless'
+		);
+		expect(selectTemplate({ transparent: true, seamless: false }, templatesFor('ming'))?.id).toBe(
+			'ming_t2i_rgba'
+		);
 	});
 
-	it('keeps the reference when the request is also seamless', () => {
-		// The regression this whole fourth template exists for.
-		const t = selectTemplate({ reference: true, seamless: true });
-		expect(t?.supports.reference).toBe(true);
-		expect(t?.map.referenceImage).toBeDefined();
+	it('keeps transparency and drops seamless when a family cannot do both', () => {
+		// A seamless sprite on Ming: tiling is lost (and capabilities said so),
+		// the alpha is not.
+		expect(selectTemplate({ transparent: true, seamless: true }, templatesFor('ming'))?.id).toBe(
+			'ming_t2i_rgba'
+		);
 	});
 
-	it('returns undefined when the set cannot serve the combination', () => {
-		const only = TEMPLATES.filter((t) => t.id === 'txt2img');
-		expect(selectTemplate({ reference: true, seamless: false }, only)).toBeUndefined();
+	it('falls back to opaque when a family cannot do alpha', () => {
+		expect(selectTemplate({ transparent: true, seamless: false }, templatesFor('sd'))?.id).toBe(
+			'txt2img'
+		);
+	});
+
+	it('returns undefined from an empty set', () => {
+		expect(selectTemplate({ transparent: false, seamless: false }, [])).toBeUndefined();
 	});
 });

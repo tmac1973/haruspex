@@ -7,9 +7,9 @@
  * Image's "Test generation" button uses exactly this, so the additive claim is
  * exercised rather than asserted.
  *
- * It adds nothing on top of the backend. No palette, no downscale, no style
- * reference: a chat turn asking for a picture of a cat must not come back
- * quantized to somebody's tileset.
+ * It adds nothing on top of the backend. No palette, no downscale, no cut-out:
+ * a chat turn asking for a picture of a cat must not come back quantized to
+ * somebody's tileset.
  */
 
 import { resolveImageBackend } from './backend';
@@ -27,8 +27,11 @@ export interface GenerateOneOptions {
 	onProgress?: (p: ImageProgress) => void;
 }
 
-/** A square that every model in the catalogue can produce. */
-export const DEFAULT_EDGE = 512;
+/**
+ * A square every supported model produces well. Both DiT families were trained
+ * at 1024 and up; SDXL produces artefacts below 1024.
+ */
+export const DEFAULT_EDGE = 1024;
 
 export async function generateOneImage(opts: GenerateOneOptions): Promise<ImageResult> {
 	const backend = resolveImageBackend();

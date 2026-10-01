@@ -10,7 +10,7 @@ function fake(kind: ImageBackendKind, marker = 'a'): ImageBackend {
 	return {
 		kind,
 		capabilities: async () => ({
-			referenceConditioning: false,
+			transparency: false,
 			seamlessTiling: false,
 			loras: false,
 			maxLoras: 0

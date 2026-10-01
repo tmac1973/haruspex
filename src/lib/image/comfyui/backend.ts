@@ -1,8 +1,9 @@
 /**
  * The ComfyUI backend.
  *
- * Picks a workflow for what the request asks for, substitutes the parameters
- * through its field map, queues it, follows progress, and returns the bytes.
+ * Works out the configured model's family, picks that family's workflow for
+ * what the request asks for, substitutes the parameters through its field map,
+ * queues it, follows progress, and returns the bytes.
  *
  * `capabilities()` is COMPUTED from the active templates rather than asserted.
  * A user workflow with no LoRA slots reports `loras: false`, and the caller
@@ -21,11 +22,23 @@ import {
 } from '../types';
 import type { GenerateOptions, ImageBackend } from '../backend';
 import { applyFieldMap, validateFieldMap, type ComfyGraph, type FieldMap } from './fieldMap';
-import { selectTemplate, TEMPLATES, type WorkflowTemplate } from './templates';
+import { selectTemplate, templatesFor, type WorkflowTemplate } from './templates';
+import { familyOf, hasModel, resolveCompanions, type ModelFamily } from './families';
 import * as api from './client';
 
-/** What the bundled graphs sample with when a request says nothing. */
+/** What a custom workflow samples with when a request says nothing. */
 export const DEFAULT_SAMPLER: SamplerSettings = { name: 'euler_ancestral', steps: 28, cfg: 7 };
+
+/**
+ * A seed for a request that left it to the backend.
+ *
+ * Resolved here rather than left to the template: a template's own default is
+ * a constant, so every unpinned request ran at the same seed, a retry repeated
+ * the attempt it was retrying, and `meta.seed` reported a value nobody chose.
+ */
+export function randomSeed(): number {
+	return Math.floor(Math.random() * 2_147_483_647);
+}
 
 function config(): api.ClientConfig {
 	const s = getSettings();
@@ -37,7 +50,7 @@ function config(): api.ClientConfig {
  * neither path is set; throws when exactly one is, because half-configured is
  * a mistake rather than a mode.
  */
-async function customTemplate(): Promise<WorkflowTemplate | null> {
+async function customTemplate(family: ModelFamily): Promise<WorkflowTemplate | null> {
 	const s = getSettings();
 	const graphPath = s.imageComfyWorkflowPath.trim();
 	const mapPath = s.imageComfyFieldMapPath.trim();
@@ -65,20 +78,28 @@ async function customTemplate(): Promise<WorkflowTemplate | null> {
 	}
 	return {
 		id: 'custom',
+		family,
 		graph,
 		map,
 		license: 'Supplied by the user.',
 		source: graphPath,
 		supports: {
-			reference: Boolean(map.referenceImage),
-			seamless: true // A custom graph is trusted about its own tiling.
-		}
+			// A custom graph cannot be asked how it would make alpha, so it is
+			// never claimed; it is trusted about its own tiling.
+			transparent: false,
+			seamless: true
+		},
+		defaultSampler: DEFAULT_SAMPLER
 	};
 }
 
-async function activeTemplates(): Promise<WorkflowTemplate[]> {
-	const custom = await customTemplate();
-	return custom ? [custom] : TEMPLATES;
+function configuredModel(): string {
+	return getSettings().imageComfyCheckpoint.trim();
+}
+
+async function activeTemplates(family: ModelFamily): Promise<WorkflowTemplate[]> {
+	const custom = await customTemplate(family);
+	return custom ? [custom] : templatesFor(family);
 }
 
 function capabilitiesOf(templates: WorkflowTemplate[]): ImageBackendCapabilities {
@@ -87,54 +108,84 @@ function capabilitiesOf(templates: WorkflowTemplate[]): ImageBackendCapabilities
 		...templates.map((t) => (t.map.loras ? t.map.loras.nodes.length : 0))
 	);
 	return {
-		referenceConditioning: templates.some((t) => t.supports.reference),
+		transparency: templates.some((t) => t.supports.transparent),
 		seamlessTiling: templates.some((t) => t.supports.seamless),
 		loras: loraNodes > 0,
 		maxLoras: loraNodes
 	};
 }
 
-/** The template for this request, with a message naming what is missing. */
+/** The template for this request. Falls back as `selectTemplate` describes. */
 function templateFor(req: ImageRequest, templates: WorkflowTemplate[]): WorkflowTemplate {
-	const want = { reference: Boolean(req.referenceImage), seamless: Boolean(req.seamless) };
-	const exact = selectTemplate(want, templates);
-	if (exact) return exact;
-	// A custom workflow is the only single-template case; it serves everything
-	// it can and the caller degrades against `capabilities()`.
-	if (templates.length === 1) return templates[0];
-	throw new ImageBackendError(
-		'unconfigured',
-		`No bundled workflow generates ${want.seamless ? 'seamless ' : ''}images${
-			want.reference ? ' conditioned on a reference' : ''
-		}.`
-	);
+	const want = { transparent: Boolean(req.transparent), seamless: Boolean(req.seamless) };
+	const picked = selectTemplate(want, templates) ?? templates[0];
+	if (!picked) {
+		throw new ImageBackendError('unconfigured', 'No bundled workflow serves this model.');
+	}
+	return picked;
 }
 
-async function probeCheckpoint(cfg: api.ClientConfig, name: string): Promise<string | null> {
-	if (!name.trim()) {
-		return 'No checkpoint is set — Settings → Image.';
+async function probeModel(
+	cfg: api.ClientConfig,
+	family: ModelFamily,
+	name: string
+): Promise<string | null> {
+	if (!name) {
+		return 'No model is set — Settings → Image.';
 	}
-	try {
-		const info = (await api.objectInfo(cfg, 'CheckpointLoaderSimple')) as Record<
-			string,
-			{ input?: { required?: { ckpt_name?: [string[]] } } }
-		>;
-		const names = info.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0];
-		if (Array.isArray(names) && names.length > 0 && !names.includes(name)) {
-			return `The backend does not have a checkpoint called "${name}".`;
+	// A server that will not answer object_info still answers system_stats;
+	// this check is a convenience, not a gate.
+	if ((await hasModel(cfg, family, name)) === false) {
+		return family === 'sd'
+			? `The backend does not have a checkpoint called "${name}".`
+			: `The backend does not have a diffusion model called "${name}" in models/diffusion_models.`;
+	}
+	if (family !== 'sd') {
+		try {
+			await resolveCompanions(cfg, family);
+		} catch (e) {
+			return e instanceof Error ? e.message : String(e);
 		}
-	} catch {
-		// A server that will not answer object_info still answers system_stats;
-		// this check is a convenience, not a gate.
 	}
 	return null;
+}
+
+/**
+ * The graph for one request, with everything the request left open resolved:
+ * the model and its family, the family's workflow and companion files, the
+ * sampler the workflow runs, and a real seed.
+ */
+async function prepare(cfg: api.ClientConfig, req: ImageRequest) {
+	const model = (req.model ?? configuredModel()).trim();
+	const family = familyOf(model);
+	const template = templateFor(req, await activeTemplates(family));
+	const companions =
+		family !== 'sd' && (template.map.textEncoder || template.map.vae)
+			? await resolveCompanions(cfg, family)
+			: undefined;
+
+	const sampler = req.sampler ?? template.defaultSampler;
+	const loras: LoraRef[] = (req.loras ?? []).slice(0, template.map.loras?.nodes.length ?? 0);
+	const seed = req.seed ?? randomSeed();
+	const prompt =
+		req.transparent && template.supports.transparent && template.wrapPrompt
+			? template.wrapPrompt(req.prompt)
+			: req.prompt;
+
+	const graph = applyFieldMap(
+		template.graph,
+		template.map,
+		{ ...req, prompt, seed, sampler, loras },
+		{ model, ...companions }
+	);
+	return { template, graph, model, sampler, loras, seed };
 }
 
 export const comfyUiBackend: ImageBackend = {
 	kind: 'comfyui',
 
 	async capabilities() {
-		return capabilitiesOf(await activeTemplates());
+		return capabilitiesOf(await activeTemplates(familyOf(configuredModel())));
 	},
 
 	async probe() {
@@ -142,9 +193,11 @@ export const comfyUiBackend: ImageBackend = {
 		if (!cfg.baseUrl.trim()) {
 			return { ok: false, detail: 'No backend URL is set — Settings → Image.' };
 		}
+		const model = configuredModel();
+		const family = familyOf(model);
 		let templates: WorkflowTemplate[];
 		try {
-			templates = await activeTemplates();
+			templates = await activeTemplates(family);
 		} catch (e) {
 			return { ok: false, detail: e instanceof Error ? e.message : String(e) };
 		}
@@ -160,7 +213,7 @@ export const comfyUiBackend: ImageBackend = {
 			const stats = await api.systemStats(cfg);
 			const devices = stats.devices as Array<{ name?: string }> | undefined;
 			const device = devices?.[0]?.name ?? 'unknown device';
-			const bad = await probeCheckpoint(cfg, getSettings().imageComfyCheckpoint);
+			const bad = await probeModel(cfg, family, model);
 			if (bad) return { ok: false, detail: bad };
 			return { ok: true, detail: `Connected — ${device}.` };
 		} catch (e) {
@@ -171,30 +224,8 @@ export const comfyUiBackend: ImageBackend = {
 	async generate(req: ImageRequest, opts: GenerateOptions = {}): Promise<ImageResult> {
 		const cfg = config();
 		const started = Date.now();
-		const templates = await activeTemplates();
-		const template = templateFor(req, templates);
-
-		const model = (req.model ?? getSettings().imageComfyCheckpoint).trim();
-		const sampler = req.sampler ?? DEFAULT_SAMPLER;
-		const loras: LoraRef[] = (req.loras ?? []).slice(0, template.map.loras?.nodes.length ?? 0);
+		const { template, graph, model, sampler, loras, seed } = await prepare(cfg, req);
 		const clientId = crypto.randomUUID();
-
-		let referenceFilename: string | undefined;
-		if (req.referenceImage && template.map.referenceImage) {
-			referenceFilename = await api.uploadImage(
-				cfg,
-				req.referenceImage,
-				`haruspex-ref-${clientId}.png`,
-				opts.signal
-			);
-		}
-
-		const graph = applyFieldMap(
-			template.graph,
-			template.map,
-			{ ...req, sampler, loras },
-			{ referenceFilename, model }
-		);
 		// Unique per request so concurrent submissions cannot be confused for
 		// one another in /history.
 		const save = graph[template.map.outputNode];
@@ -237,7 +268,7 @@ export const comfyUiBackend: ImageBackend = {
 					height: req.height
 				})),
 				meta: {
-					seed: req.seed ?? 0,
+					seed,
 					model,
 					backend: 'comfyui',
 					sampler,

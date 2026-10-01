@@ -318,16 +318,16 @@
 		<label class="row">
 			<input
 				type="text"
-				placeholder="sd15.safetensors"
+				placeholder="ming_image_0.1_design_int8_convrot.safetensors"
 				bind:value={imageComfyCheckpoint}
 				onblur={() => persist({ imageComfyCheckpoint: imageComfyCheckpoint.trim() })}
-				aria-label="Default checkpoint"
+				aria-label="Default model"
 			/>
 			<span>
-				default checkpoint
+				default model
 				<Tooltip
-					label="About the checkpoint"
-					text="The model a generation uses when nothing else names one. It must be a checkpoint the server already has; the probe below checks."
+					label="About the model"
+					text="The model a generation uses when nothing else names one, by its filename on the server. A Ming-Image or Qwen-Image-2.1 file in models/diffusion_models brings its own text encoder and VAE, which are found by name; anything else is treated as an SD checkpoint. The probe below checks."
 				/>
 			</span>
 		</label>
@@ -340,8 +340,9 @@
 		</div>
 		{#if capabilities}
 			<p class="help">
-				Supports: reference conditioning {capabilities.referenceConditioning ? 'yes' : 'no'},
-				seamless tiling {capabilities.seamlessTiling ? 'yes' : 'no'}, LoRA slots {capabilities.maxLoras}.
+				Supports: transparency {capabilities.transparency ? 'yes' : 'no'}, seamless tiling {capabilities.seamlessTiling
+					? 'yes'
+					: 'no'}, LoRA slots {capabilities.maxLoras}.
 			</p>
 		{/if}
 	</section>

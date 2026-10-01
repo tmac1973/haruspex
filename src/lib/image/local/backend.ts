@@ -151,8 +151,7 @@ export const localBackend: ImageBackend = {
 		await ensureRunning();
 		opts.onProgress?.({ phase: 'running' });
 
-		const caps = declaredCapabilities();
-		const { route, body } = buildRequest(req, caps);
+		const { route, body } = buildRequest(req);
 		const started = Date.now();
 		const payload = await call(route, body, opts.signal);
 

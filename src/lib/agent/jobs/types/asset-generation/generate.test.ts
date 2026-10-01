@@ -23,7 +23,6 @@ function profile(over: Partial<NormalizeProfile> = {}): NormalizeProfile {
 		},
 		crop: { enabled: true, margin: 1, min_island_fraction: 0.05 },
 		outline: { enabled: true, color: 0x1a1a1aff, width: 2 },
-		reference_strength: 0.6,
 		checks: { alpha_min: 0.05, alpha_max: 0.95, entropy_min: 1, palette_distance_max: 0.15 },
 		by_kind: {},
 		...over
@@ -47,7 +46,7 @@ function specOf(entries: Partial<AssetEntry>[]): AssetSpec {
 }
 
 const FULL: ImageBackendCapabilities = {
-	referenceConditioning: true,
+	transparency: true,
 	seamlessTiling: true,
 	loras: true,
 	maxLoras: 2
@@ -76,7 +75,6 @@ function harness(over: Partial<GenerateDeps> = {}, present: string[] = []): Harn
 
 	const deps: GenerateDeps = {
 		caps: FULL,
-		anchor: new Uint8Array([1, 2, 3]),
 		concurrency: 1,
 		maxEdge: 1024,
 		maxAttempts: 1,
@@ -117,7 +115,7 @@ beforeEach(() => {
 		// "did it use the resolver?" is unobservable and the test is vacuous.
 		if (cmd === 'image_effective_profile') {
 			const base = args?.profile as NormalizeProfile;
-			return args?.kind === 'texture' ? { ...base, upscale: 8, reference_strength: 0.9 } : base;
+			return args?.kind === 'texture' ? { ...base, upscale: 8 } : base;
 		}
 		if (cmd === 'image_normalize') return { bytes: [1, 2, 3, 4], stats: STATS };
 		if (cmd === 'image_check') {
@@ -201,13 +199,12 @@ describe('per-kind profiles', () => {
 		await generateEntries(spec, h.deps);
 		expect(h.requests[0].width).toBe(32 * 16);
 		expect(h.requests[1].width).toBe(32 * 8);
-		expect(h.requests[1].referenceStrength).toBe(0.9);
 	});
 
 	it('normalizes with the resolved profile too', async () => {
 		await generateEntries(specOf([{ kind: 'texture' }]), harness().deps);
 		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
-		expect((call![1].profile as NormalizeProfile).reference_strength).toBe(0.9);
+		expect((call![1].profile as NormalizeProfile).upscale).toBe(8);
 	});
 });
 

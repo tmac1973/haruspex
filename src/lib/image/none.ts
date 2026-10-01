@@ -12,7 +12,7 @@ import { ImageBackendError, type ImageBackendCapabilities } from './types';
 const NOT_CONFIGURED = 'No image backend configured — Settings → Image.';
 
 const NO_CAPABILITIES: ImageBackendCapabilities = {
-	referenceConditioning: false,
+	transparency: false,
 	seamlessTiling: false,
 	loras: false,
 	maxLoras: 0

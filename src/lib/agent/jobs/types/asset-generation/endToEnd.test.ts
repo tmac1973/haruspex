@@ -54,7 +54,6 @@ function profile(over: Partial<NormalizeProfile> = {}): NormalizeProfile {
 		},
 		crop: { enabled: true, margin: 1, min_island_fraction: 0.05 },
 		outline: { enabled: true, color: 0x1a1a1aff, width: 2 },
-		reference_strength: 0.6,
 		checks: { alpha_min: 0.05, alpha_max: 0.95, entropy_min: 1, palette_distance_max: 0.15 },
 		by_kind: {},
 		...over

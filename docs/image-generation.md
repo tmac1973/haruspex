@@ -4,6 +4,14 @@ Haruspex generates game art from a short description, through a diffusion
 model running on your own machine. Nothing is sent anywhere and nothing starts
 until you opt in.
 
+> **Changing.** The pipeline is moving from SD1.5/SDXL to Ming-Image, a model
+> that produces transparent images, with sprites generated several to a sheet
+> (`plan/local-image-generation/`, phases 17–25). Reference conditioning
+> (IP-Adapter) has already been removed; sections below that describe it are
+> out of date until this guide is rewritten in phase 25. The ComfyUI backend
+> runs Ming-Image and Qwen-Image-2.1 today — see
+> `src/lib/image/comfyui/templates/README.md`.
+
 ## Choosing a backend
 
 Settings → Image offers two, and they are genuinely different trades.

@@ -3,10 +3,11 @@
  *
  * A graph is a flat map of node id → `{ class_type, inputs }`, so every
  * parameter has to be addressed as "this input of that node". One
- * `{node, input}` slot covers most of them, but not all: a reference image is
- * uploaded first and the graph receives the server-side FILENAME, and a
- * variable-length LoRA list has to land in a fixed set of loader nodes. Those
- * are the two reasons this has binding kinds rather than a flat record.
+ * `{node, input}` slot covers most of them, but not all: a size may have to
+ * reach several nodes at once (a transparent canvas is an image and a mask of
+ * the same size), and a variable-length LoRA list has to land in a fixed set
+ * of loader nodes. Those are the reasons this has binding kinds rather than a
+ * flat record.
  *
  * A binding naming a node or input the graph does not contain is an error, not
  * a silent no-op. A typo would otherwise produce a perfectly good picture made
@@ -31,12 +32,12 @@ export interface ScalarBinding {
 	input: string;
 }
 
-/** The uploaded reference: the graph gets a filename, never the bytes. */
-export interface UploadedBinding {
-	kind: 'uploaded';
-	node: string;
-	input: string;
-}
+/**
+ * A value that must land in several places at once. Every slot gets the same
+ * value; a graph that disagreed with itself about its own size would fail on
+ * the server, or worse, run at whichever size won.
+ */
+export type MultiBinding = ScalarBinding | ScalarBinding[];
 
 /**
  * A chain of LoRA loader nodes. Slot i takes `loras[i]`; unused slots are
@@ -67,23 +68,26 @@ export interface FieldMap {
 	prompt?: ScalarBinding;
 	negativePrompt?: ScalarBinding;
 	seed?: ScalarBinding;
-	width?: ScalarBinding;
-	height?: ScalarBinding;
+	width?: MultiBinding;
+	height?: MultiBinding;
 	model?: ScalarBinding;
+	/** A DiT family's separate text encoder file. */
+	textEncoder?: ScalarBinding;
+	/** A DiT family's separate VAE file. */
+	vae?: ScalarBinding;
 	samplerName?: ScalarBinding;
 	samplerSteps?: ScalarBinding;
 	samplerCfg?: ScalarBinding;
-	referenceImage?: UploadedBinding;
-	referenceStrength?: ScalarBinding;
 	loras?: LoraSlotsBinding;
 }
 
 /** Values a binding can carry that are not on the request verbatim. */
 export interface DerivedValues {
-	/** Server-side filename returned by the upload, for `referenceImage`. */
-	referenceFilename?: string;
-	/** Resolved checkpoint, after the settings default is applied. */
+	/** Resolved model, after the settings default is applied. */
 	model?: string;
+	/** Resolved from the server's own file lists, for a DiT family. */
+	textEncoder?: string;
+	vae?: string;
 }
 
 function missingNode(graph: ComfyGraph, node: string): boolean {
@@ -116,7 +120,12 @@ export function validateFieldMap(graph: ComfyGraph, map: FieldMap): string[] {
 	}
 	for (const [label, binding] of Object.entries(map)) {
 		if (label === 'outputNode' || !binding || typeof binding !== 'object') continue;
-		const b = binding as ScalarBinding | UploadedBinding | LoraSlotsBinding;
+		if (Array.isArray(binding)) {
+			if (binding.length === 0) problems.push(`${label} binds no slots; omit it instead.`);
+			binding.forEach((b: ScalarBinding, i) => checkSlot(`${label} [${i}]`, b.node, b.input));
+			continue;
+		}
+		const b = binding as ScalarBinding | LoraSlotsBinding;
 		if (b.kind === 'loraSlots') {
 			if (b.nodes.length === 0) {
 				problems.push('The LoRA binding declares no slots; omit it instead.');
@@ -129,11 +138,13 @@ export function validateFieldMap(graph: ComfyGraph, map: FieldMap): string[] {
 	return problems;
 }
 
-function setScalar(graph: ComfyGraph, b: ScalarBinding | UploadedBinding, value: unknown): void {
-	if (missingNode(graph, b.node) || missingInput(graph, b.node, b.input)) {
-		throw new Error(`Workflow has no input "${b.input}" on node "${b.node}".`);
+function setScalar(graph: ComfyGraph, binding: MultiBinding, value: unknown): void {
+	for (const b of Array.isArray(binding) ? binding : [binding]) {
+		if (missingNode(graph, b.node) || missingInput(graph, b.node, b.input)) {
+			throw new Error(`Workflow has no input "${b.input}" on node "${b.node}".`);
+		}
+		graph[b.node].inputs[b.input] = value;
 	}
-	graph[b.node].inputs[b.input] = value;
 }
 
 /**
@@ -149,26 +160,23 @@ export function applyFieldMap(
 ): ComfyGraph {
 	const out: ComfyGraph = structuredClone(graph);
 
-	const scalars: Array<[ScalarBinding | undefined, unknown]> = [
+	const scalars: Array<[MultiBinding | undefined, unknown]> = [
 		[map.prompt, req.prompt],
 		[map.negativePrompt, req.negativePrompt],
 		[map.seed, req.seed],
 		[map.width, req.width],
 		[map.height, req.height],
 		[map.model, derived.model ?? req.model],
+		[map.textEncoder, derived.textEncoder],
+		[map.vae, derived.vae],
 		[map.samplerName, req.sampler?.name],
 		[map.samplerSteps, req.sampler?.steps],
-		[map.samplerCfg, req.sampler?.cfg],
-		[map.referenceStrength, req.referenceStrength]
+		[map.samplerCfg, req.sampler?.cfg]
 	];
 	for (const [binding, value] of scalars) {
 		// An absent value leaves the template's own default in place; an absent
 		// binding means this template does not take that parameter at all.
 		if (binding && value !== undefined && value !== null) setScalar(out, binding, value);
-	}
-
-	if (map.referenceImage && derived.referenceFilename) {
-		setScalar(out, map.referenceImage, derived.referenceFilename);
 	}
 
 	if (map.loras) applyLoraChain(out, map.loras, req.loras ?? []);

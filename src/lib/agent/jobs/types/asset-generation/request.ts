@@ -112,19 +112,10 @@ export function buildEntryRequest(
 	spec: AssetSpec,
 	profile: NormalizeProfile,
 	caps: ImageBackendCapabilities,
-	opts: { anchor: Uint8Array | null; maxEdge: number; seed?: number | null }
+	opts: { maxEdge: number; seed?: number | null }
 ): BuiltRequest {
 	const degraded: Degradation[] = [];
 	const edge = entryEdge(entry, profile, opts.maxEdge);
-
-	let referenceImage: Uint8Array | undefined;
-	if (opts.anchor && opts.anchor.length > 0) {
-		if (caps.referenceConditioning) {
-			referenceImage = opts.anchor;
-		} else {
-			degraded.push('no reference conditioning');
-		}
-	}
 
 	const seamless = entry.seamless ?? entry.kind === 'texture';
 	if (seamless && !caps.seamlessTiling) {
@@ -153,8 +144,6 @@ export function buildEntryRequest(
 			height: edge,
 			seed: opts.seed ?? entry.seed ?? null,
 			model: spec.style.model,
-			referenceImage,
-			referenceStrength: referenceImage ? profile.reference_strength : undefined,
 			loras: loras.length > 0 ? loras : undefined,
 			seamless: seamless && caps.seamlessTiling ? true : undefined
 		},

@@ -8,35 +8,46 @@
  * fields — the overview's constraint is that the bundled workflows are ours
  * and carry this repository's licence, so it needs somewhere checkable to live.
  *
- * Four templates, not three. A terrain texture is both seamless AND
- * conditioned on the style anchor, so a set without `seamless_reference` makes
- * template selection choose one and silently drop the other — with
- * `capabilities()` still reporting reference conditioning, so nothing records
- * a degradation and the whole texture half of a set quietly loses its style.
+ * Templates are grouped by model family (`families.ts`), because a graph that
+ * loads an SD checkpoint cannot load a DiT that ships its text encoder and VAE
+ * as separate files, and the two DiT families do not share a sampler.
  */
 
 import txt2imgGraph from './txt2img.json';
-import referenceGraph from './reference.json';
 import seamlessGraph from './seamless.json';
-import seamlessReferenceGraph from './seamless_reference.json';
+import mingGraph from './ming_t2i.json';
+import mingRgbaGraph from './ming_t2i_rgba.json';
+import qwen21Graph from './qwen21_t2i.json';
 import type { ComfyGraph, FieldMap } from '../fieldMap';
+import type { ModelFamily } from '../families';
+import type { SamplerSettings } from '../../types';
 
 export interface WorkflowTemplate {
 	id: string;
+	family: ModelFamily;
 	graph: ComfyGraph;
 	map: FieldMap;
 	/** Licence of the graph itself. */
 	license: string;
 	/** Who authored it. */
 	source: string;
-	supports: { reference: boolean; seamless: boolean };
+	supports: { transparent: boolean; seamless: boolean };
+	/** What the graph samples with when the request names nothing. */
+	defaultSampler: SamplerSettings;
+	/**
+	 * Applied to the prompt when this template serves a transparent request.
+	 * For a model that turns alpha on with words rather than with the graph.
+	 */
+	wrapPrompt?: (prompt: string) => string;
 }
 
 const LICENSE = 'Same licence as Haruspex itself.';
 const SOURCE = 'Authored for Haruspex.';
 
-/** The bindings every bundled graph shares; they all descend from txt2img. */
-const COMMON: Omit<FieldMap, 'outputNode'> = {
+// ---- SD-family checkpoints ---------------------------------------------------
+
+/** The bindings both SD graphs share; seamless descends from txt2img. */
+const SD_BINDINGS: Omit<FieldMap, 'outputNode'> = {
 	prompt: { kind: 'scalar', node: '4', input: 'text' },
 	negativePrompt: { kind: 'scalar', node: '5', input: 'text' },
 	seed: { kind: 'scalar', node: '7', input: 'seed' },
@@ -44,89 +55,176 @@ const COMMON: Omit<FieldMap, 'outputNode'> = {
 	samplerName: { kind: 'scalar', node: '7', input: 'sampler_name' },
 	samplerSteps: { kind: 'scalar', node: '7', input: 'steps' },
 	samplerCfg: { kind: 'scalar', node: '7', input: 'cfg' },
-	loras: { kind: 'loraSlots', nodes: ['2', '3'], source: '1' }
-};
-
-/** Text-to-image graphs size their own empty latent, node 6. */
-const SIZE_PLAIN: Pick<FieldMap, 'width' | 'height'> = {
+	loras: { kind: 'loraSlots', nodes: ['2', '3'], source: '1' },
 	width: { kind: 'scalar', node: '6', input: 'width' },
 	height: { kind: 'scalar', node: '6', input: 'height' }
 };
 
+const SD_SAMPLER: SamplerSettings = { name: 'euler_ancestral', steps: 28, cfg: 7 };
+
+// ---- Ming-Image ----------------------------------------------------------------
+
 /**
- * Reference graphs also sample a fresh latent — node 10, because node 6 is the
- * LoadImage carrying the reference.
+ * Ming's text encoder runs on the CPU in both graphs. On a 16 GB card the
+ * encoder and the DiT cannot both stay resident, and measured on a 9070 XT the
+ * CPU costs ~65 s once per distinct prompt while sampling stays at ~19 s.
  *
- * That they sample a fresh latent at all is the whole design. The obvious
- * implementation is img2img: feed the reference in as the latent and denoise
- * partway. Tried against a real server, it does exactly what it says — it
- * returns the REFERENCE, restyled. Asked for "a green pear" conditioned on a
- * picture of an apple, img2img at denoise 0.6 produced the apple again. There
- * is no denoise value that gives a different subject in the same style:
- * turn it up and the style goes, turn it down and the subject comes back.
- *
- * IP-Adapter is the mechanism that actually separates them. It injects the
- * reference into the model's attention (`weight_type: "style transfer"`) and
- * leaves composition entirely to the prompt, so the subject is the prompt's
- * and the palette and feel are the reference's.
+ * `ModelSamplingFlux` is pinned at `max_shift` 1.35 against a 1024 reference
+ * size, which is the vendor's own shift at every size from 1024 up. At 1024
+ * the stock template's 1.15 works as well; at 2048 only 1.35 gives alpha.
  */
-const SIZE_REFERENCE: Pick<FieldMap, 'width' | 'height'> = {
-	width: { kind: 'scalar', node: '10', input: 'width' },
-	height: { kind: 'scalar', node: '10', input: 'height' }
+const MING_BINDINGS: Omit<FieldMap, 'outputNode' | 'width' | 'height'> = {
+	prompt: { kind: 'scalar', node: '4', input: 'text' },
+	seed: { kind: 'scalar', node: '7', input: 'noise_seed' },
+	model: { kind: 'scalar', node: '1', input: 'unet_name' },
+	textEncoder: { kind: 'scalar', node: '2', input: 'clip_name' },
+	vae: { kind: 'scalar', node: '3', input: 'vae_name' },
+	samplerName: { kind: 'scalar', node: '8', input: 'sampler_name' },
+	samplerSteps: { kind: 'scalar', node: '10', input: 'steps' }
+	// No cfg: the vendor samples at CFG 1, which BasicGuider is.
 };
 
-const REFERENCE_BINDINGS: Pick<FieldMap, 'referenceImage' | 'referenceStrength'> = {
-	referenceImage: { kind: 'uploaded', node: '6', input: 'image' },
-	// The IP-Adapter weight, not a denoise. Measured against SD1.5: 0.6 shifts
-	// the palette clearly while leaving the subject alone, 0.9 is strong, and
-	// above that the reference's own forms start bleeding into the output.
-	referenceStrength: { kind: 'scalar', node: '13', input: 'weight' }
+const MING_SAMPLER: SamplerSettings = { name: 'euler', steps: 12, cfg: 1 };
+
+// ---- Qwen-Image-2.1 -------------------------------------------------------------
+
+const QWEN21_BINDINGS: FieldMap = {
+	outputNode: '9',
+	prompt: { kind: 'scalar', node: '4', input: 'prompt' },
+	negativePrompt: { kind: 'scalar', node: '4', input: 'negative_prompt' },
+	seed: { kind: 'scalar', node: '7', input: 'seed' },
+	model: { kind: 'scalar', node: '1', input: 'unet_name' },
+	textEncoder: { kind: 'scalar', node: '2', input: 'clip_name' },
+	vae: { kind: 'scalar', node: '3', input: 'vae_name' },
+	samplerName: { kind: 'scalar', node: '7', input: 'sampler_name' },
+	samplerSteps: { kind: 'scalar', node: '7', input: 'steps' },
+	samplerCfg: { kind: 'scalar', node: '7', input: 'cfg' },
+	width: { kind: 'scalar', node: '6', input: 'width' },
+	height: { kind: 'scalar', node: '6', input: 'height' }
 };
+
+const QWEN21_SAMPLER: SamplerSettings = { name: 'euler', steps: 25, cfg: 1 };
+
+/** The wrapper from the model's own template; its VAE always carries alpha. */
+export function qwen21Transparent(prompt: string): string {
+	return (
+		`This is an RGBA format image with transparency. ${prompt.trim()} ` +
+		'The image has an alpha channel and a transparent background.'
+	);
+}
 
 export const TEMPLATES: WorkflowTemplate[] = [
 	{
 		id: 'txt2img',
+		family: 'sd',
 		graph: txt2imgGraph as ComfyGraph,
-		map: { outputNode: '9', ...COMMON, ...SIZE_PLAIN },
+		map: { outputNode: '9', ...SD_BINDINGS },
 		license: LICENSE,
 		source: SOURCE,
-		supports: { reference: false, seamless: false }
-	},
-	{
-		id: 'reference',
-		graph: referenceGraph as ComfyGraph,
-		map: { outputNode: '9', ...COMMON, ...SIZE_REFERENCE, ...REFERENCE_BINDINGS },
-		license: LICENSE,
-		source: SOURCE,
-		supports: { reference: true, seamless: false }
+		supports: { transparent: false, seamless: false },
+		defaultSampler: SD_SAMPLER
 	},
 	{
 		id: 'seamless',
+		family: 'sd',
 		graph: seamlessGraph as ComfyGraph,
-		map: { outputNode: '9', ...COMMON, ...SIZE_PLAIN },
+		map: { outputNode: '9', ...SD_BINDINGS },
 		license: LICENSE,
 		source: SOURCE,
-		supports: { reference: false, seamless: true }
+		supports: { transparent: false, seamless: true },
+		defaultSampler: SD_SAMPLER
 	},
 	{
-		id: 'seamless_reference',
-		graph: seamlessReferenceGraph as ComfyGraph,
-		map: { outputNode: '9', ...COMMON, ...SIZE_REFERENCE, ...REFERENCE_BINDINGS },
+		id: 'ming_t2i',
+		family: 'ming',
+		graph: mingGraph as ComfyGraph,
+		map: {
+			outputNode: '9',
+			...MING_BINDINGS,
+			width: { kind: 'scalar', node: '6', input: 'width' },
+			height: { kind: 'scalar', node: '6', input: 'height' }
+		},
 		license: LICENSE,
 		source: SOURCE,
-		supports: { reference: true, seamless: true }
+		supports: { transparent: false, seamless: false },
+		defaultSampler: MING_SAMPLER
+	},
+	{
+		/**
+		 * Ming ignores its documented RGBA prompt prefixes — in ComfyUI, in the
+		 * demo Space and in the vendor's own code. It does produce alpha when
+		 * sampling starts from the latent of a transparent canvas at denoise
+		 * 0.9: 10 of 10 sheets and 48 of 48 singles in the spike and phase 17.
+		 * The canvas is built inside the graph (an image and a fully-set mask,
+		 * joined), so there is nothing to upload; measured byte-identical to
+		 * uploading a transparent PNG.
+		 */
+		id: 'ming_t2i_rgba',
+		family: 'ming',
+		graph: mingRgbaGraph as ComfyGraph,
+		map: {
+			outputNode: '9',
+			...MING_BINDINGS,
+			width: [
+				{ kind: 'scalar', node: '14', input: 'width' },
+				{ kind: 'scalar', node: '15', input: 'width' }
+			],
+			height: [
+				{ kind: 'scalar', node: '14', input: 'height' },
+				{ kind: 'scalar', node: '15', input: 'height' }
+			]
+		},
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: true, seamless: false },
+		defaultSampler: MING_SAMPLER
+	},
+	{
+		id: 'qwen21_t2i',
+		family: 'qwen21',
+		graph: qwen21Graph as ComfyGraph,
+		map: QWEN21_BINDINGS,
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: false, seamless: false },
+		defaultSampler: QWEN21_SAMPLER
+	},
+	{
+		// The same graph: Qwen turns alpha on with words, not with the graph.
+		id: 'qwen21_t2i_rgba',
+		family: 'qwen21',
+		graph: qwen21Graph as ComfyGraph,
+		map: QWEN21_BINDINGS,
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: true, seamless: false },
+		defaultSampler: QWEN21_SAMPLER,
+		wrapPrompt: qwen21Transparent
 	}
 ];
 
 /**
- * The template for a request, by what it asks for. All four combinations are
- * covered; see the note at the top for why the fourth exists.
+ * The template for a request, from the templates one family offers.
+ *
+ * Exact first. Failing that, keep transparency and drop seamless — neither DiT
+ * family tiles, and the caller already knows that from `capabilities()` and
+ * records it. Failing that, an opaque one: a backend that cannot do alpha
+ * still generates, and says so in `capabilities().transparency`.
  */
 export function selectTemplate(
-	want: { reference: boolean; seamless: boolean },
-	from: WorkflowTemplate[] = TEMPLATES
+	want: { transparent: boolean; seamless: boolean },
+	from: WorkflowTemplate[]
 ): WorkflowTemplate | undefined {
-	return from.find(
-		(t) => t.supports.reference === want.reference && t.supports.seamless === want.seamless
+	const match = (transparent: boolean, seamless: boolean) =>
+		from.find((t) => t.supports.transparent === transparent && t.supports.seamless === seamless);
+	return (
+		match(want.transparent, want.seamless) ??
+		match(want.transparent, false) ??
+		match(false, want.seamless) ??
+		match(false, false)
 	);
+}
+
+export function templatesFor(family: ModelFamily): WorkflowTemplate[] {
+	return TEMPLATES.filter((t) => t.family === family);
 }

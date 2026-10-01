@@ -43,7 +43,7 @@ let fail: ImageBackendError | null = null;
 const stub: ImageBackend = {
 	kind: 'comfyui',
 	capabilities: async () => ({
-		referenceConditioning: true,
+		transparency: true,
 		seamlessTiling: true,
 		loras: true,
 		maxLoras: 2
@@ -94,12 +94,11 @@ describe('generateOneImage', () => {
 	});
 
 	it('adds nothing the caller did not ask for', async () => {
-		// The layer above adds palettes and style references. A chat turn
-		// asking for a picture of a cat must not come back quantized to
-		// somebody's tileset.
+		// The layer above adds palettes and cut-outs. A chat turn asking for a
+		// picture of a cat must not come back quantized to somebody's tileset,
+		// or with its background removed.
 		await generateOneImage({ prompt: 'a cat' });
-		expect(seen[0].referenceImage).toBeUndefined();
-		expect(seen[0].referenceStrength).toBeUndefined();
+		expect(seen[0].transparent).toBeUndefined();
 		expect(seen[0].loras).toBeUndefined();
 		expect(seen[0].seamless).toBeUndefined();
 	});

@@ -16,7 +16,6 @@ const profile = (): NormalizeProfile =>
 		background: { color: 0xff00ffff, tolerance: 40, auto_detect: true },
 		crop: { enabled: true, margin: 1 },
 		outline: { enabled: true, color: 0x1a1a1aff, width: 2 },
-		reference_strength: 0.6,
 		checks: { alpha_min: 0.05, alpha_max: 0.95, entropy_min: 1.0, palette_distance_max: 0.15 },
 		by_kind: {}
 	}) as unknown as NormalizeProfile;

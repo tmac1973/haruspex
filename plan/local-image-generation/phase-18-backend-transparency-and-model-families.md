@@ -77,6 +77,34 @@ unable to ask for a cut-out at all.
 8. **Keep seamless out of the DiT families.** Neither family tiles by circular
    padding, so both report `seamlessTiling: false`. Phase 23 owns textures.
 
+## Deviations, as built
+
+- **No upload for the transparent canvas.** Step 4 planned to build a PNG in
+  memory and upload it. The canvas is built inside the graph instead —
+  `EmptyImage` joined with a `SolidMask` of 1.0 — measured byte-identical to
+  the uploaded version. No upload path, no files accumulating in ComfyUI's
+  input folder. `FieldMap.width`/`height` can now bind several nodes, because
+  the image and the mask must take the same size.
+- **The SD graphs stay, as the `sd` family.** `txt2img` and `seamless` remain
+  for a ComfyUI user who still points at an SD checkpoint — an unmatched
+  filename is `sd`, so existing settings keep working. Only the IP-Adapter
+  graphs (`reference`, `seamless_reference`) and every reference field went.
+  The catalogue's SD entries are phase 19's to remove.
+- **Companion files are found, not configured.** A DiT family's text encoder
+  and VAE are picked from ComfyUI's own loader lists by filename pattern
+  (`families.ts`), preferring the smallest encoder, rather than adding two
+  more settings.
+- **The workflow follows the requested model**, not only the configured one,
+  so a spec that pins a Ming model gets the Ming graph whatever the default
+  is. `capabilities()` still answers for the configured model.
+- **Qwen-Image-2.1 ran live too**, not only Ming: one transparent sprite came
+  back with real alpha through `SaveImage`, text encoder on the CPU, no
+  out-of-memory.
+- **`reference_strength` left the Rust profile** with the rest of the
+  IP-Adapter plumbing; old specs that carry it still load (tested).
+- **The single-image default edge is now 1024** (was 512): every supported
+  model is trained at 1024 or above.
+
 ## Build gate
 
 ```

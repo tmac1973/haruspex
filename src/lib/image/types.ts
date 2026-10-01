@@ -43,10 +43,13 @@ export interface ImageRequest {
 	 * and `ImageResult.meta.model` would have no source.
 	 */
 	model?: string;
-	/** Style reference, conditioned on when the backend supports it. */
-	referenceImage?: Uint8Array;
-	/** How strongly to pull toward `referenceImage`, 0..1. */
-	referenceStrength?: number;
+	/**
+	 * Ask for a result whose background is alpha 0. How a model gets there is
+	 * the backend's business — one wants a prompt prefix, another has to start
+	 * sampling from a transparent canvas — so a caller only says what it wants
+	 * and reads `capabilities().transparency` to know whether it will get it.
+	 */
+	transparent?: boolean;
 	loras?: LoraRef[];
 	sampler?: SamplerSettings;
 	/** Ask for an edge-wrapping result (terrain textures). */
@@ -101,7 +104,8 @@ export interface ImageProgress {
  * somewhere, and a backend that lies costs the user a run of off-style art.
  */
 export interface ImageBackendCapabilities {
-	referenceConditioning: boolean;
+	/** `transparent: true` yields real alpha for the configured model. */
+	transparency: boolean;
 	seamlessTiling: boolean;
 	loras: boolean;
 	/** LoRA slots available; 0 when `loras` is false. */

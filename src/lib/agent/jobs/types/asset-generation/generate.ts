@@ -33,8 +33,6 @@ export function escapesWorkdir(p: string): boolean {
 
 export interface GenerateDeps {
 	caps: ImageBackendCapabilities;
-	/** The committed reference every entry is conditioned on. */
-	anchor: Uint8Array | null;
 	concurrency: number;
 	maxEdge: number;
 	/** Generations allowed per entry before it is recorded unresolved. */
@@ -157,7 +155,6 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 
 		const profile = profiles.get(entry.kind) ?? spec.normalize;
 		const { request, degraded } = buildEntryRequest(entry, spec, profile, deps.caps, {
-			anchor: deps.anchor,
 			maxEdge: deps.maxEdge
 		});
 

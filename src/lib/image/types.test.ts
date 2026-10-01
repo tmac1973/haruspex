@@ -2,11 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { ImageBackendError, type ImageRequest } from './types';
 
 describe('ImageRequest', () => {
-	it('survives JSON round-tripping once the reference bytes are dropped', () => {
+	it('survives JSON round-tripping', () => {
 		// The request crosses a boundary in every backend (an HTTP body, a
-		// Tauri command). Nothing non-serialisable may creep into it; the
-		// reference image is the one binary field and every backend handles it
-		// separately.
+		// Tauri command). Nothing non-serialisable may creep into it.
 		const req: ImageRequest = {
 			prompt: 'a tin can',
 			negativePrompt: 'blurry',
@@ -14,7 +12,7 @@ describe('ImageRequest', () => {
 			height: 512,
 			seed: 7,
 			model: 'sd15.safetensors',
-			referenceStrength: 0.6,
+			transparent: true,
 			loras: [{ name: 'pixel', strength: 0.8 }],
 			sampler: { name: 'euler_ancestral', steps: 28, cfg: 7 },
 			seamless: false

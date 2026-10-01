@@ -167,14 +167,6 @@ pub struct NormalizeProfile {
     pub background: Background,
     pub crop: Crop,
     pub outline: Outline,
-    /// How strongly a generation is pulled toward the anchor, 0..1.
-    ///
-    /// It lives here rather than on the request because it is a property of
-    /// the style, and this is where style settings are versioned. Measured
-    /// against SD1.5 IP-Adapter: 0.6 shifts the palette clearly while leaving
-    /// the subject alone, 0.9 is strong, and past that the reference's own
-    /// forms start appearing in the output.
-    pub reference_strength: f32,
     pub checks: CheckThresholds,
     pub by_kind: BTreeMap<AssetKind, KindOverride>,
 }
@@ -238,7 +230,6 @@ impl Default for NormalizeProfile {
                 color: 0x1A_1A_1A_FF,
                 width: 2,
             },
-            reference_strength: 0.6,
             checks: CheckThresholds {
                 alpha_min: 0.05,
                 alpha_max: 0.95,
@@ -448,6 +439,22 @@ mod tests {
         let p = effective_profile(&base, AssetKind::Sprite);
         assert_eq!(p.upscale, 2);
         assert_eq!(p.target_size * p.upscale, MAX_GENERATION_EDGE);
+    }
+
+    #[test]
+    fn a_spec_written_before_reference_strength_was_removed_still_loads() {
+        // Committed specs carry `reference_strength` from the IP-Adapter era.
+        // They are the user's files; a profile that refused them would turn a
+        // field nobody reads any more into a run that cannot start.
+        let mut v = serde_json::to_value(NormalizeProfile::default()).unwrap();
+        v.as_object_mut()
+            .unwrap()
+            .insert("reference_strength".into(), serde_json::json!(0.6));
+        let p: NormalizeProfile = serde_json::from_value(v).unwrap();
+        assert_eq!(
+            serde_json::to_value(p).unwrap(),
+            serde_json::to_value(NormalizeProfile::default()).unwrap()
+        );
     }
 
     #[test]

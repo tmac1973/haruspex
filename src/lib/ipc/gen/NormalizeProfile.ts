@@ -23,14 +23,4 @@ palette_size: number,
 /**
  * Empty until the style anchor fills it. Packed `0xRRGGBBAA`.
  */
-palette: Array<number>, background: Background, crop: Crop, outline: Outline, 
-/**
- * How strongly a generation is pulled toward the anchor, 0..1.
- *
- * It lives here rather than on the request because it is a property of
- * the style, and this is where style settings are versioned. Measured
- * against SD1.5 IP-Adapter: 0.6 shifts the palette clearly while leaving
- * the subject alone, 0.9 is strong, and past that the reference's own
- * forms start appearing in the output.
- */
-reference_strength: number, checks: CheckThresholds, by_kind: { [key in AssetKind]?: KindOverride }, };
+palette: Array<number>, background: Background, crop: Crop, outline: Outline, checks: CheckThresholds, by_kind: { [key in AssetKind]?: KindOverride }, };
