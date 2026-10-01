@@ -45,3 +45,29 @@ props to set against them).
   silhouette cue per character ("in a red jacket", "hunched, pale"), which the
   derivation guidance now asks for entries generally but not for characters
   that share a sheet.
+
+## The re-run criterion (step 2)
+
+Ten finished sprites from six sheets were deleted from `asset-test` and the
+job re-run on Ming (`~/Projects/asset-spike/p25/rerun_compare.png`: old, new,
+three untouched neighbours from the same sheet).
+
+- **Mechanically right.** Exactly the ten came back, none failed, the other
+  72 were not touched. They were drawn as one small sheet per group (2, 1, 2,
+  1, 1 and 3 subjects); 6 of 7 generations cut exactly, `campfire` took one
+  retry.
+- **Style holds**: outline weight, shading, pixel density and grime match the
+  neighbours for mailbox, hydrant, road sign, crates, barrier, pill bottle and
+  battery.
+- **Scale, angle and finish drift when a subject is drawn with few others.**
+  The shotgun, alone on its sheet, came out small, thin and horizontal beside
+  large diagonal weapons; the keycard came out clean where the supplies are
+  weathered; the campfire flatter, with a greenish ring.
+
+Proposed, not built: a re-run or retry sheet of one to three subjects is
+padded with a few finished members of the same group, drawn alongside and
+discarded after the cut. Drawing together is what fixes scale and finish
+(phase 21); the padding gives a small sheet something to draw together with.
+Costs nothing: the sheet is generated either way, at the same size.
+
+Not run: the bundled engine, which cannot run Ming (phase 24).
