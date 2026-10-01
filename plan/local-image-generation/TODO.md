@@ -1,10 +1,10 @@
 # Local image generation — where this stands, and what to do next
 
 **Read this first.** It is written for a fresh session with no memory of the
-work. Everything below is on branch `feat/image-generation`, 41 commits ahead
-of `origin/main`, working tree clean, **nothing pushed**.
+work. Everything below is on branch `feat/image-generation`, **nothing
+pushed**.
 
-Last worked on: 2026-09-22.
+Last worked on: 2026-09-30.
 
 ---
 
@@ -12,233 +12,151 @@ Last worked on: 2026-09-22.
 
 Haruspex generates game art from a short description, using a diffusion model
 on the user's own machine. A job type (`asset_generation`) walks a spec of
-assets, generates each one, normalizes it to a pixel grid and a shared palette,
-checks it, and writes a report. Guided planning can chain into it, and it into
+assets, generates them, normalizes them to a pixel grid and a shared palette,
+checks them, and writes a report. Guided planning can chain into it, and it into
 autonomous coding, so an overnight run goes plan → art → code.
 
-The plan lives beside this file: `overview.md` and `phase-01..16`.
+The plan lives beside this file: `overview.md` (read its "Revision" section
+first) and `phase-01..25`.
 
 ---
+
+## Where it stands
+
+Phases 01–15 built a pipeline around SD1.5/SDXL: an IP-Adapter style anchor, a
+chroma-keyed backdrop, per-asset generation. It works end to end, and its
+output was poor.
+
+On 2026-09-30 a spike compared two newer models that produce alpha —
+Qwen-Image-2.1 and Ming-Image-0.1-Design — and they were far better. **Read
+`spike-2026-09-30-dit-models.md`.** The short version:
+
+- Generate several sprites in ONE image (a 3×3 sheet), cut them apart by
+  alpha. They share a style by construction. This replaces IP-Adapter.
+- **Ming-Image (MIT)** is the default. Its documented transparency prompts do
+  not work; starting the sampler from the VAE latent of a transparent canvas
+  at denoise 0.9 does (10 of 10 at 1024; at 2048 also needs `max_shift` 1.35).
+- **Qwen-Image-2.1** is non-commercial (Qwen Research License); an option only.
+- Sheets have layout faults (5 of 12 cut exactly into nine) — verify the cut.
+- 64 px, not 32, as the default target size.
+- Textures are unsolved.
+
+The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 
 ## Phase status
 
 | Phase | What it is | State |
 | --- | --- | --- |
-| 01 | Image backend interface, registry, settings | **done** |
-| 02 | ComfyUI backend, bundled field-mapped workflows | **done** |
-| 03 | Settings → Image, probe, single-image test path | **done** |
-| 04 | Rust normalization pipeline (key, crop, quantize, downscale, outline) | **done** |
-| 05 | Asset spec schema, parser, writer, validation | **done** |
-| 06 | `asset_generation` job type, five stages | **done** |
-| 07 | Spec stage — load or derive | **done** |
-| 08 | Style anchor stage | **done** |
-| 09 | Generation loop, per-entry degradation | **done** |
-| 10 | Quality gate, bounded retries, report, contact sheet | **done** |
-| 11 | Chain: guided planning → assets → coding | **done, never run for real** |
-| 12 | Fetch/bundle the stable-diffusion.cpp sidecar | **done** |
-| 13 | Local engine supervision + backend | **done, never run through a job** |
-| 14 | Model catalogue and licensing | **done** |
-| 15 | Hardening, docs, end-to-end verification | **half done** — see below |
-| 16 | Anchor quality, seed honesty, quality baseline | **not started** |
+| 01–14 | Backend, ComfyUI, settings, normalization, spec, job, anchor, loop, gate, chain, local engine, catalogue | **done** (SD-era; parts replaced by 18–24) |
+| 15 | Hardening, docs, end-to-end | **half done** — remainder folded into 25 |
+| 16 | Anchor quality, seed honesty, baseline | **superseded**, never started |
+| 17 | Measurements that decide the design | **done** — `measurements-phase-17.md` |
+| 18 | Transparency in the backend; Ming + Qwen workflows | **next** |
+| 19 | Multi-file catalogue: Ming, Qwen 2.1 | not started |
+| 20 | Normalization for alpha; cutting a sheet | not started |
+| 21 | Generate sprites and icons in sheets | not started |
+| 22 | The first sheet is the anchor | not started |
+| 23 | Textures | not started |
+| 24 | Bundled engine runs Ming | **blocked** — sd.cpp cannot run Ming usably here (§4) |
+| 25 | Verify end to end; procedural comparison | not started |
 
-### Phase 15, precisely
+Critical path: 18 → 20 → 21 → 22. 19 and 23 can interleave once 18 is in.
+24 waits on a newer sd.cpp or different hardware.
 
-Done: the success criteria that can be tests are tests
-(`asset-generation/endToEnd.test.ts`), the Windows path-escape rules have their
-own group, live checks are env-gated behind `HARUSPEX_IMAGE_E2E=1` +
-`HARUSPEX_IMAGE_BACKEND_URL`, and `docs/image-generation.md` is a full guide.
-
-**Not done, and all of it needs a human at a machine:**
-
-- The coherence judgement — open a run's `contact-sheet.png` and decide whether
-  the set reads as one game. No test can answer this. If it fails, name the
-  layer (reference conditioning, palette, or grid) and the remedy is bounded to
-  DATA: profile defaults, prompt wording, sampler settings.
-- A full asset job against the **bundled engine**. The engine is verified to
-  start, load SD1.5, register Vulkan and answer both routes; no job has ever
-  run through it.
-- **macOS and Windows: nothing is verified at all.** The `sd-libs`
-  co-location logic is Linux-tested only; macOS uses `DYLD_LIBRARY_PATH` and
-  Metal.
-- Packaged builds: that sidecars and `sd-libs` land correctly and nothing
-  starts at boot.
-
----
-
-## The state of the art it actually produces
-
-Be honest about this: **the pipeline works end to end, and the output is not
-good yet.**
-
-The last real run (89 entries, post-apocalyptic top-down tileset, SDXL via
-ComfyUI) produced assets that all looked alike — everything pink and grey and
-brick-shaped, including water and grass. Earlier runs produced everything green.
-An earlier smaller run (4 entries) produced a decent coin and cobblestone and a
-poor sword.
-
-The user's own read: the procedurally generated tilemaps an earlier autonomous
-coding run produced **may look better** than these. That comparison is phase 16
-step 4 and is still outstanding.
+Phase 17 settled (read `measurements-phase-17.md`): transparent start works
+on singles (48/48); nine per sheet at 1024 with positions spelled out (8/8
+exact, subjects right) and never 2048; sheets stay consistent through the
+style line plus the palette — reference images made it worse; Ming runs in
+~7 GB VRAM + ~24 GB RAM, so SD1.5/SDXL go; the bundled sd-server cannot run
+Ming usably on this machine yet.
 
 ---
 
 ## Lessons learned — do not rediscover these
 
-Each one cost a real run.
-
-### About the pipeline
+### About the models
 
 1. **The anchor's palette governs everything.** Every asset is quantized into
-   colours extracted from the style anchor. An anchor whose palette collapsed
-   onto one hue turns the whole set that colour whatever each prompt says. This
-   is the single highest-leverage thing in the design and the one most likely
-   to be wrong.
-2. **CLIP reads 77 tokens.** SD1.5 and SDXL both. A longer prompt is not
-   rejected — ComfyUI chunks it — but later chunks barely register, so whatever
-   comes last is effectively dropped. Most failures traced back to this.
-   Reordering does not help; only total length does.
-3. **Naming the key colour bleeds it into the art.** Measured on SDXL:
-   naming it twice tinted 30% of subject pixels that colour, once 12%, a
-   neutral backdrop 0%. Since the palette comes from the art, a magenta
-   backdrop said twice is how a set comes out pink.
-4. **Style-first decides the medium** — leading with subjects and appending the
-   style produced an oil painting; leading with "16-bit pixel art" produced
-   pixel art. But this only holds when the style is SHORT, because of (2).
-5. **"reference sheet" and "2x2 grid" produce floor plans.** Reliably.
-6. **Naming ground or terrain as an anchor subject fills the background with
-   it**, destroying the flat backdrop the key depends on. Textures are excluded
-   from anchor subjects for this reason.
-7. **SDXL is markedly better than SD1.5 at composition**, which is a
-   precondition of background removal rather than a matter of taste. Measured:
-   subjects SD1.5 could not produce at all came out cleanly. `upscale` must be
-   32 for SDXL (native 1024) and 16 for SD1.5 (native 512) at a 32px target;
-   generating below native produces mush.
-8. **Textures need a stated feature scale.** SDXL rendered cobblestone as
-   hundreds of tiny tiles; downscaled to 32px each stone was under a pixel and
-   the result was flat grey (entropy 0.00). Sprites want ONE large subject;
-   textures want FEW large features.
-9. **`seed: null` is not random** — it falls through to the workflow template's
-   default of 0. Every unpinned first attempt is identical. This is phase 16
-   step 2 and is still unfixed.
+   the anchor's colours. A palette that collapsed onto one hue turns the whole
+   set that colour. Still true after the pivot — phase 22 takes the palette
+   from the cut pieces of the anchor sheet.
+2. **CLIP reads 77 tokens** (SD1.5 and SDXL). Neither DiT family uses CLIP;
+   `promptBudget.ts` goes in phase 21.
+3. **Naming the key colour bleeds it into the art** (SDXL: said twice, 30% of
+   subject pixels). Only matters on the opaque fallback now.
+4. **Style-first decides the medium** on SD models. Not re-measured on DiT.
+5. **"reference sheet" and "2x2 grid" produce floor plans on SD.** Not true on
+   DiT: "a sprite sheet of nine separate game sprites in a 3 by 3 grid"
+   produced exactly that on both Qwen and Ming.
+6. **Ground or terrain as an anchor subject fills the background** (SD).
+7. **Generation size must match the model.** SDXL at 1024, SD1.5 at 512. The
+   DiT models generate at 1024 and 2048; a sheet cell must be at least four
+   times the target size.
+8. **Textures need a stated feature scale**, or detail averages to grey.
+9. **`seed: null` is not random** — it falls through to the template's 0.
+   Fixed in phase 18.
+10. **Ming's RGBA prefixes do nothing** — in ComfyUI, the demo Space and the
+    vendor's own code (inclusionAI/Ming-Image#5). The transparent-canvas start
+    is the recipe. Its VAE round-trips alpha exactly, so do not blame decode.
+11. **Top-down view is ignored in sheets** by both DiT models.
+12. **Separate generations drift** in pixel scale and style even on the good
+    models. Coherence comes from batching into a sheet.
 
 ### About working on this
 
-10. **Stubbed tests hid every one of these.** The suite was green through all
-    of it. Every real bug came from running the thing against real ComfyUI and
-    looking at the output.
-11. **Measure before changing a threshold.** Twice a threshold looked wrong and
-    the real cause was upstream: `palette_distance_max` looked too tight but
-    `palette_size` was too small, and a hue check looked broken but the palette
-    was full of backdrop. Both times the fix was the cause, not the number.
-12. **Beware vacuous tests.** Several mutations survived because a test only
-    exercised the currently-committed fixture, which had everything switched
-    on — a hardcoded `true` passed identically. Test a function against
-    synthetic inputs, not just against today's data.
-13. **Do not iterate on prompts with single samples.** Diffusion output is high
-    variance; one generation proves little. Fixed seeds and A/B pairs, or don't
-    bother.
+13. **Stubbed tests hid every model problem.** The suite was green through all
+    of them. Every real bug came from running against a real model and looking
+    at the output.
+14. **Measure before changing a threshold.** Twice a threshold looked wrong and
+    the cause was upstream.
+15. **Beware vacuous tests.** Test a function against synthetic inputs, not
+    just today's fixture.
+16. **Do not iterate on prompts with single samples.** Fixed seeds, several of
+    them, and count.
+17. **Check a claim against a second implementation before debugging your
+    own.** Ming's missing alpha looked like a ComfyUI bug for an hour; the
+    demo Space and a vendor issue showed it was the model.
 
 ---
 
-## Open issues, in the order worth doing
+## How to run things
 
-### 1. Let the derivation turn choose the anchor subjects — phase 16 step 3b
+### ComfyUI
 
-**This is the next thing to do.** `anchorSubjects()` picks round-robin across
-kinds, which on the real spec chose a survivor, a heart icon, a raider and a
-radiation icon — two humanoids and two flat symbols. SDXL rendered large
-character portraits, the palette came out pink and grey, and every asset was
-quantized into it.
-
-Two tangled failures, one fix:
-
-- **Composition** — a subject list that is mostly humanoid characters composes
-  as a character sheet whatever the closing instruction says.
-- **Spread** — four subjects cannot span a set containing asphalt, concrete,
-  grass, water, rust, blood and characters. Whatever four are picked, the
-  palette describes those four.
-
-Neither is fixable mechanically, because both need to know what the subjects
-LOOK like. The derivation turn does: it wrote all 89 entries. So add an
-explicit list to the spec — three or four short phrases chosen for visual
-spread — and have `anchorSubjects()` use it when present, falling back to the
-current behaviour when absent (older and hand-written specs).
-
-Verify by measurement, not eye: with the list present, `image_palette_spread`
-should use more hue buckets on the same spec, and the assets' median
-`palette_distance` should fall.
-
-### 2. Evaluate a non-CLIP model — related to phase 16 step 3
-
-Qwen-Image or Z-Image-Turbo use an LLM text encoder rather than CLIP, so
-lesson (2) — the 77-token window, which caused most of the failures — simply
-does not apply. Every workaround built for it (style budgets, subject
-truncation, whole-prompt budgeting) is scaffolding around a limitation these
-models do not have.
-
-The cost: both are DiTs, so IP-Adapter reference conditioning and
-circular-padding seamless tiling stop working — two of three coherence layers.
-The DiT tiling remedy is offset-and-inpaint (shift the tile by half, inpaint
-the seams, shift back), which is real work.
-
-But the reframe matters: those layers exist because SD1.5 drifts. A model that
-follows prompts well enough may not need reference conditioning at all, and
-palette and grid are mechanical and keep working. That is a thing to measure,
-not assume.
-
-Practical: **Z-Image-Turbo first** (6B, Apache 2.0, ~8 steps, fits 16 GB) —
-same no-CLIP benefit, fast enough to iterate. Qwen-Image is ~20B and needs a Q4
-GGUF on a 9070 XT. Qwen-Image-Edit is the long game: generate one hero asset
-then *edit* it into variants, which is a better coherence strategy than
-conditioning.
-
-**Do 1 and 2 separately, in that order.** Doing both at once means not knowing
-which helped.
-
-### 3. Phase 16's other steps
-
-- **Seed honesty** (step 2): `seed: null` resolves to the template default 0
-  rather than a random seed, so `meta.seed` records a seed nobody chose and the
-  anchor recipe's reproducibility claim is weaker than it reads.
-- **Texture feature scale** (from the SDXL findings): texture prompts need to
-  say how many features span the tile.
-- **Isolation is not guaranteed** — a coin filled the frame despite being told
-  not to. Better prompt adherence raises the hit rate; phase 10's retry path
-  stays load-bearing.
-- **The procedural comparison** (step 4): generate the same small set both ways
-  and write down which looks better, including if the answer is the procedural
-  one. It decides how much further this is worth pushing.
-
-### 4. Finish phase 15
-
-Everything in the "not done" list above. Mostly needs hands on macOS/Windows
-machines and a human judging a contact sheet.
-
----
-
-## How to run it
-
-ComfyUI lives at `~/comfy/ComfyUI`. Start it with its own venv (uv-managed
-Python 3.12, ROCm torch — do NOT use the system `python3`):
+`~/comfy/ComfyUI`, its own venv (uv-managed Python 3.12, ROCm torch — do NOT
+use the system `python3`). Updated on 2026-09-30 from `e638023d` to
+`8cfe5e1e` for Ming-Image support.
 
 ```bash
 cd ~/comfy/ComfyUI
 .venv/bin/python main.py --listen 127.0.0.1 --port 8188 --enable-cors-header
 ```
 
-**`--enable-cors-header` is required.** ComfyUI returns 403 to any request
-carrying an `Origin` header, and a webview always sends one. Without it
-Haruspex cannot reach it at all. (A narrow origin is safer than the default
-`*`, which lets any page you visit drive your ComfyUI.)
+`--enable-cors-header` is required for Haruspex (ComfyUI returns 403 to any
+request carrying an `Origin`, and a webview always sends one). The spike
+scripts do not need it.
 
-Settings → Image: backend ComfyUI, URL `http://127.0.0.1:8188`, checkpoint
-`sd_xl_base_1.0.safetensors`.
+Models on disk (~110 GB): Ming int8 DiT + w4a8, int8 and BF16 text encoders
++ VAE (the BF16 encoder, 36.7 GB, only for the sd.cpp test — delete it if
+disk matters); Qwen-Image-2.1 int8 + Qwen3-VL int8 + VAE; Z-Image-Turbo
+int8; SDXL; SD1.5.
 
-Test projects: `~/Projects/asset-test` (89 entries, the hard case) and
-`~/Projects/asset-smoke` (4 entries, quick).
+On this 16 GB card: run text encoders with `device: cpu` (Qwen's RGBA VAE
+otherwise runs out of memory). Z-Image hit ROCm GPU faults that killed
+ComfyUI unless models were freed between runs; `spike.py` restarts ComfyUI
+when that happens.
 
-To re-run cleanly: delete `assets/haruspex-anchor.png` and `.json`, delete
-`assets/generated/`, and check `normalize.upscale` is 32 for SDXL.
+### The spike
+
+`~/Projects/asset-spike/` — not in the repo. `spike.py` drives ComfyUI
+directly (graphs for Qwen 2.1, Z-Image, Ming); `mingclear2.py` and
+`mingclear3.py` are the transparent-start recipe; `cut.py` cuts sheets;
+`sheet.py` builds comparison sheets. Phase 17 continues here.
+
+### Test projects
+
+`~/Projects/asset-test` (82 entries, post-apocalyptic top-down, the hard case)
+and `~/Projects/asset-smoke` (4 entries, quick).
 
 ## The build gate
 
@@ -248,7 +166,8 @@ cd .. && npm run check && npm run lint && npm run format:check && npm run test
 ./scripts/export-ipc-types.sh   # must report no drift
 ```
 
-At last commit: 1090 Rust tests, 2432 JS tests, clippy silent, no drift.
+At the last code commit: 1090 Rust tests, 2432 JS tests, clippy silent, no
+drift.
 
 ## Also outstanding, unrelated to images
 

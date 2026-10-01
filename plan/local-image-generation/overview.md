@@ -1,5 +1,38 @@
 # Image Generation Backend and Asset Job — Project Overview
 
+## Revision — 2026-09-30: DiT models with alpha, and sheets
+
+Phases 01–15 built the design below and it works end to end, but its output
+on SD1.5 and SDXL was poor, and most of the failures traced to the models:
+CLIP's 77-token window, backdrops that had to be keyed, composition the model
+ignored. The spike in `spike-2026-09-30-dit-models.md` compared two newer
+models that produce alpha, and the difference was large enough to change the
+design. Phases 17–25 carry the change; phase 16 is superseded.
+
+What changed, and what did not:
+
+- **Model.** Ming-Image-0.1-Design (MIT) is the default. Qwen-Image-2.1 is
+  offered as a non-commercial option. SD1.5 and SDXL leave the catalogue
+  unless phase 17 finds a machine class only they can serve.
+- **Coherence.** Subjects are generated several to a sheet and cut apart by
+  alpha, so a sheet shares a style by construction. That replaces
+  reference-conditioned generation (IP-Adapter, which is UNet-only). The
+  palette and the pixel grid stay as the mechanical layers; how sheets stay
+  consistent with each other is measured in phase 17 and built in phase 22.
+- **The anchor** is the first real sheet the set needs, not a separate
+  picture of chosen subjects. It is still the one checkpoint, still committed
+  with its recipe.
+- **Background removal.** The model produces alpha; the chroma key remains
+  only as the fallback for an opaque result.
+- **Textures** are their own open problem (phase 23), with procedural
+  generation an allowed answer.
+- **Unchanged:** the backend layer's boundary and single-image call, the spec
+  as the contract, the job's five stages, the quality gate and report, the
+  chain, the licensing rule, and every non-goal.
+
+Where a decision below no longer holds, it is marked *(superseded)* and left
+in place, so the reasoning that led to it stays readable.
+
 ## Problem
 
 Haruspex can plan a game and build it unattended, but it cannot make the art. A
@@ -38,7 +71,8 @@ model problem.
   layer, never a refactor of it.
 - Make style coherence a **property of the pipeline**, not of the prompt, via
   three independent layers: an approved style anchor, reference-conditioned
-  generation, and mechanical normalization.
+  generation, and mechanical normalization. *(Superseded: sheets replace
+  reference conditioning — see Revision.)*
 - Make the style **reproducible months later** by committing the anchor and its
   full recipe into the project alongside the assets it produced.
 - Keep the job **chainable**: guided planning can emit the asset spec, and the
@@ -179,7 +213,9 @@ without standing up and hand-driving a diffusion stack.
   authored for this repository and carry its licence, recorded in the template
   registry (a ComfyUI API graph must parse as strict JSON, which has no
   comments) and asserted by a test.
-- **Models do not obey colour or composition instructions.** Measured on
+- **Models do not obey colour or composition instructions.** *(Largely
+  superseded — true of SD1.5 and SDXL, much less of the DiT models; the
+  verify-and-fall-back rule still applies to sheet layout.)* Measured on
   SD1.5: asking for "a flat magenta background" yields whatever backdrop the
   model prefers, and asking for an isolated centred object yields a full-frame
   composition. Both are preconditions of background removal, so neither may be
@@ -227,10 +263,13 @@ without standing up and hand-driving a diffusion stack.
   with the asset-generation job built on top of it. A job-only design has
   nowhere for local engine management to live.
 - **Backend order** → ComfyUI over HTTP first, with the locally managed engine
-  in later phases behind the same interface. ControlNet, LoRAs, IP-Adapter and
+  in later phases behind the same interface. *(The order holds; the IP-Adapter
+  and seamless-tiling reasoning no longer does — neither applies to a DiT.)*
+  ControlNet, LoRAs, IP-Adapter and
   seamless-tiling nodes only exist in that ecosystem, so the hard part — style
   consistency — is proven before anything is bundled.
-- **Consistency strategy** → Style anchor, plus reference-conditioned
+- **Consistency strategy** *(superseded — sheets, palette and grid; phases
+  21–22)* → Style anchor, plus reference-conditioned
   generation, plus mechanical normalization. Three independent layers, so that
   if conditioning drifts the mechanical pass still homogenises the result.
 - **Terrain tiling** → Stop at seamless textures; the consuming game does its
@@ -268,7 +307,8 @@ without standing up and hand-driving a diffusion stack.
   makes the single-image call usable by a consumer with no project directory.
 - **Normalization** → Rust, using the existing `image = "0.25"` dependency.
   Background removal is a deterministic chroma key against a flat background
-  requested in the prompt, not a segmentation model — unit-testable with
+  requested in the prompt *(superseded — the model's own alpha, with the key
+  kept as fallback; phase 20)*, not a segmentation model — unit-testable with
   fixture PNGs, and nothing extra to ship.
 - **Spec format** → JSON at a conventional path inside the project, holding the
   entry list, the anchor recipe path and the normalization settings.
@@ -282,6 +322,7 @@ without standing up and hand-driving a diffusion stack.
   against art that already exists. The plan is the single source of asset ids;
   the chain writes them into the plan and hands the coding run the spec path so
   its preflight can check them.
-- **Anchor form** → One contact sheet containing several representative
+- **Anchor form** *(superseded — the first real sheet of the set; phase 22)*
+  → One contact sheet containing several representative
   subjects, generated as a single coherent image. The shared palette is
   extracted from it, and it is the reference every entry is conditioned on.

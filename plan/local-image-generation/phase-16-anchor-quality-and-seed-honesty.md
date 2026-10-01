@@ -1,5 +1,18 @@
 # Phase 16 — Anchor composition, seed honesty, and a quality baseline
 
+> **Superseded on 2026-09-30** by the DiT pivot (overview, "Revision";
+> `spike-2026-09-30-dit-models.md`). Never started. Where each step went:
+>
+> - Step 1 (a few large subjects in the anchor) — moot: the anchor is now
+>   the first real sheet (phase 22).
+> - Step 2 (seed honesty) — phase 18, step 7, unchanged.
+> - Step 3 (try a better base model) — done, and it is why the plan changed.
+> - Step 3b (the model chooses the anchor's subjects) — phase 22, step 1,
+>   aimed at choosing the anchor sheet.
+> - Step 4 (the procedural comparison) — phase 25, step 3.
+>
+> Kept for its measurements, which are still true of SD1.5 and SDXL.
+
 **Depends on:** 10 (the gate, so a quality change can be measured rather than
 admired) · **Enables:** nothing — this is follow-up work deferred from the
 first real end-to-end runs.
