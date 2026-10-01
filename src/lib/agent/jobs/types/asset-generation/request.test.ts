@@ -3,7 +3,9 @@ import {
 	buildEntryRequest,
 	entryEdge,
 	entryNegativePrompt,
+	checkProfile,
 	entryPrompt,
+	TEXTURE_SEAM_MAX,
 	textureScaffold,
 	wantsIsolation,
 	ISOLATION_NEGATIVE
@@ -288,5 +290,15 @@ describe('a texture on a DiT backend', () => {
 		const caps = { ...FULL, transparency: false };
 		const { request } = buildEntryRequest(texture('cobblestone'), spec(), profile(), caps, OPTS);
 		expect(request.prompt).toBe('cobblestone, flat pixel art');
+	});
+});
+
+describe('checkProfile', () => {
+	it('checks the seam only of a texture the backend was asked to tile', () => {
+		const tiled = buildEntryRequest(entry({ kind: 'texture' }), spec(), profile(), FULL, OPTS);
+		expect(checkProfile(profile(), tiled.request).checks.seam_max).toBe(TEXTURE_SEAM_MAX);
+		const caps = { ...FULL, seamlessTiling: false };
+		const plain = buildEntryRequest(entry({ kind: 'texture' }), spec(), profile(), caps, OPTS);
+		expect(checkProfile(profile(), plain.request).checks.seam_max).toBeUndefined();
 	});
 });

@@ -79,6 +79,17 @@ describe('applyFieldMap', () => {
 		expect([out['6'].inputs.height, out['8'].inputs.height]).toEqual([384, 384]);
 	});
 
+	it('writes a scaled size, rounded, where a slot asks for a fraction', () => {
+		// A half-size crop, as the seamless graph rolls its image by half.
+		const m = map();
+		m.width = [
+			{ kind: 'scalar', node: '6', input: 'width' },
+			{ kind: 'scalar', node: '8', input: 'width', scale: 0.375 }
+		];
+		const out = applyFieldMap(graph(), m, req({ width: 1000 }));
+		expect([out['6'].inputs.width, out['8'].inputs.width]).toEqual([1000, 375]);
+	});
+
 	it('binds a resolved companion file', () => {
 		const out = applyFieldMap(graph(), map(), req(), { textEncoder: 'ling_w4a8.safetensors' });
 		expect(out['5'].inputs.clip_name).toBe('ling_w4a8.safetensors');

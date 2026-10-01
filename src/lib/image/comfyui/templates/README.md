@@ -9,13 +9,14 @@ They are grouped by **model family**, read from the configured model's
 filename (`../families.ts`): a graph that loads an SD checkpoint cannot load a
 DiT that ships its text encoder and VAE as separate files.
 
-| File                 | Family         | Transparent | Seamless | For                             |
-| -------------------- | -------------- | ----------- | -------- | ------------------------------- |
-| `txt2img.json`       | SD             | —           | —        | Plain generation                |
-| `seamless.json`      | SD             | —           | yes      | Edge-wrapping terrain           |
-| `ming_t2i.json`      | Ming-Image     | —           | —        | Plain generation                |
-| `ming_t2i_rgba.json` | Ming-Image     | yes         | —        | Sprites with real alpha         |
-| `qwen21_t2i.json`    | Qwen-Image-2.1 | by prompt   | —        | Both; alpha is a prompt wrapper |
+| File                     | Family         | Transparent | Seamless | For                             |
+| ------------------------ | -------------- | ----------- | -------- | ------------------------------- |
+| `txt2img.json`           | SD             | —           | —        | Plain generation                |
+| `seamless.json`          | SD             | —           | yes      | Edge-wrapping terrain           |
+| `ming_t2i.json`          | Ming-Image     | —           | —        | Plain generation                |
+| `ming_t2i_rgba.json`     | Ming-Image     | yes         | —        | Sprites with real alpha         |
+| `ming_t2i_seamless.json` | Ming-Image     | —           | yes      | Textures, by offset and inpaint |
+| `qwen21_t2i.json`        | Qwen-Image-2.1 | by prompt   | —        | Both; alpha is a prompt wrapper |
 
 Reference conditioning (IP-Adapter) is gone. It is UNet-only, neither DiT family
 can use it, and phase 17 measured a Ming reference image as making sets less
@@ -123,3 +124,22 @@ padding to circular. It is not part of core ComfyUI; a server without it will
 reject the prompt, which surfaces as `ImageBackendError` with `kind: 'rejected'`
 and the server's own message. Seamless generation is a declared capability, so
 a backend that cannot do it degrades per entry with the reason recorded.
+
+## Ming-Image tiles by offset and inpaint
+
+Circular padding is a UNet trick and does nothing for a DiT. `ming_t2i_seamless.json`
+generates as `ming_t2i.json` does, then, in the same graph:
+
+1. rolls the image by half in both axes (four `ImageCrop` quadrants pasted back
+   diagonally opposite), so the wrap seams cross in the middle and the new
+   edges — the old middle — wrap by construction;
+2. repaints a cross a quarter of the size wide over the seams, at denoise 1.0,
+   with `DifferentialDiffusion` and a mask built at an eighth of the size,
+   blurred and scaled up, so the repaint fades into what is kept;
+3. pastes the repaint back through the same mask and saves that.
+
+A border Ming draws round a texture ends up in the cross and is repainted away.
+Measured in phase 23 against a hard-edged band (the repaint showed as a stripe
+of a different tone), a 0.9 denoise (the old border survived) and an eighth-wide
+band (lane markings broke): `plan/local-image-generation/measurements-phase-23.md`.
+It costs a second sampling pass.

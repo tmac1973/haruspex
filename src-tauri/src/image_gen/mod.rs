@@ -13,7 +13,8 @@
 //! work, `normalize.rs` the pass itself, `stats.rs` what it measured on the
 //! way past, `checks.rs` the thresholds those measurements are judged
 //! against, `sheet.rs` the contact sheet a run is reviewed through,
-//! `split.rs` the cut that turns one generated sheet into its sprites, and
+//! `split.rs` the cut that turns one generated sheet into its sprites,
+//! `tiling.rs` whether a texture tiles, and
 //! `commands.rs` the thin Tauri wrappers.
 
 pub mod checks;
@@ -24,3 +25,4 @@ pub mod profile;
 pub mod sheet;
 pub mod split;
 pub mod stats;
+pub mod tiling;

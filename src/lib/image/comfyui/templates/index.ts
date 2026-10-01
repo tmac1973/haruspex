@@ -17,8 +17,9 @@ import txt2imgGraph from './txt2img.json';
 import seamlessGraph from './seamless.json';
 import mingGraph from './ming_t2i.json';
 import mingRgbaGraph from './ming_t2i_rgba.json';
+import mingSeamlessGraph from './ming_t2i_seamless.json';
 import qwen21Graph from './qwen21_t2i.json';
-import type { ComfyGraph, FieldMap } from '../fieldMap';
+import type { ComfyGraph, FieldMap, ScalarBinding } from '../fieldMap';
 import type { ModelFamily } from '../families';
 import type { SamplerSettings } from '../../types';
 
@@ -85,6 +86,62 @@ const MING_BINDINGS: Omit<FieldMap, 'outputNode' | 'width' | 'height'> = {
 };
 
 const MING_SAMPLER: SamplerSettings = { name: 'euler', steps: 12, cfg: 1 };
+
+/** A slot that takes the request's width or height times `scale`. */
+function at(node: string, input: string, scale?: number): ScalarBinding {
+	return scale === undefined
+		? { kind: 'scalar', node, input }
+		: { kind: 'scalar', node, input, scale };
+}
+
+/**
+ * Where `ming_t2i_seamless.json` needs the size, axis by axis.
+ *
+ * Pass one rolls the image by half (crops and pastes 20-27) and repaints a
+ * cross over the seams, through a mask built at an eighth of the size and
+ * scaled up so its blur is wide (30-37). Pass two rolls the result by a
+ * quarter (60-67) and repaints two patches (70-76): where the cross's arms
+ * met the image edges, each end was painted without its wrap partner.
+ */
+function seamlessSize(axis: 'width' | 'height'): ScalarBinding[] {
+	const w = axis === 'width';
+	const pos = w ? 'x' : 'y';
+	const [across, along] = w ? ['31', '32'] : ['32', '31'];
+	// Pass two's crops: [node, size along this axis, offset along this axis].
+	const quarter: Array<[string, number, number]> = w
+		? [
+				['60', 3 / 4, 0],
+				['61', 1 / 4, 3 / 4],
+				['62', 3 / 4, 0],
+				['63', 1 / 4, 3 / 4]
+			]
+		: [
+				['60', 3 / 4, 0],
+				['61', 3 / 4, 0],
+				['62', 1 / 4, 3 / 4],
+				['63', 1 / 4, 3 / 4]
+			];
+	return [
+		at('6', axis),
+		// Pass one.
+		...['20', '21', '22', '23'].map((n) => at(n, axis, 1 / 2)),
+		...(w ? ['21', '23', '25', '27'] : ['22', '23', '26', '27']).map((n) => at(n, pos, 1 / 2)),
+		at('30', axis, 1 / 8),
+		at(across, axis, 1 / 32),
+		at(along, axis, 1 / 8),
+		at(w ? '33' : '34', pos, 3 / 64),
+		at('37', axis),
+		// Pass two.
+		...quarter.map(([n, size]) => at(n, axis, size)),
+		...quarter.filter(([, , off]) => off > 0).map(([n, , off]) => at(n, pos, off)),
+		...(w ? ['64', '66'] : ['64', '65']).map((n) => at(n, pos, 1 / 4)),
+		at('70', axis, 1 / 8),
+		at('71', axis, 3 / 64),
+		at('72', pos, w ? 9 / 128 : 1 / 128),
+		at('73', pos, w ? 1 / 128 : 9 / 128),
+		at('76', axis)
+	];
+}
 
 /**
  * One of Ming's documented RGBA phrases, and it is NOT optional.
@@ -163,6 +220,33 @@ export const TEMPLATES: WorkflowTemplate[] = [
 	},
 	{
 		/**
+		 * Offset and inpaint, in one graph. Generate; roll the image by half
+		 * so the wrap seams cross in the middle; repaint a soft-edged cross a
+		 * quarter of the size wide over them, with DifferentialDiffusion so
+		 * the repaint fades into what is kept. The cross's arms run to the
+		 * image edges, where each end is painted without its wrap partner, so
+		 * a second pass rolls by a quarter and repaints those two spots. The
+		 * output's edges were the generation's middle, so they wrap. A frame
+		 * Ming drew round the texture is in the cross, and goes.
+		 * Measured against a hard-edged band, a narrower one and a lower
+		 * denoise in phase 23 (`measurements-phase-23.md`).
+		 */
+		id: 'ming_t2i_seamless',
+		family: 'ming',
+		graph: mingSeamlessGraph as ComfyGraph,
+		map: {
+			outputNode: '9',
+			...MING_BINDINGS,
+			width: seamlessSize('width'),
+			height: seamlessSize('height')
+		},
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: false, seamless: true },
+		defaultSampler: MING_SAMPLER
+	},
+	{
+		/**
 		 * Ming ignores its documented RGBA prompt prefixes — in ComfyUI, in the
 		 * demo Space and in the vendor's own code. It does produce alpha when
 		 * sampling starts from the latent of a transparent canvas at denoise
@@ -220,8 +304,8 @@ export const TEMPLATES: WorkflowTemplate[] = [
 /**
  * The template for a request, from the templates one family offers.
  *
- * Exact first. Failing that, keep transparency and drop seamless — neither DiT
- * family tiles, and the caller already knows that from `capabilities()` and
+ * Exact first. Failing that, keep transparency and drop seamless — no graph
+ * does both, and the caller already knows that from `capabilities()` and
  * records it. Failing that, an opaque one: a backend that cannot do alpha
  * still generates, and says so in `capabilities().transparency`.
  */

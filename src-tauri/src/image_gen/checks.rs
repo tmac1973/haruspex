@@ -28,6 +28,7 @@ pub enum CheckName {
     AlphaHigh,
     Entropy,
     PaletteDistance,
+    Seam,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
@@ -59,6 +60,11 @@ pub fn evaluate(stats: &ImageStats, profile: &NormalizeProfile) -> CheckReport {
     if stats.palette_distance > c.palette_distance_max {
         failed.push(CheckName::PaletteDistance);
     }
+    if let (Some(max), Some(seam)) = (c.seam_max, stats.seam) {
+        if seam > max {
+            failed.push(CheckName::Seam);
+        }
+    }
 
     CheckReport {
         passed: failed.is_empty(),
@@ -78,6 +84,7 @@ mod tests {
             entropy,
             palette_distance,
             keyed: None,
+            seam: None,
         }
     }
 
@@ -194,5 +201,25 @@ mod tests {
         let b = evaluate(&s, &p);
         assert_eq!(a.failed, b.failed);
         assert_eq!(a.passed, b.passed);
+    }
+
+    #[test]
+    fn a_seam_fails_only_when_the_texture_was_meant_to_tile() {
+        let texture = effective_profile(&NormalizeProfile::default(), AssetKind::Texture);
+        let seamed = ImageStats {
+            alpha: 1.0,
+            seam: Some(4.5),
+            ..stats(1.0, 3.0, 0.01)
+        };
+        // No threshold: the backend could not tile, and the report says so.
+        assert!(evaluate(&seamed, &texture).passed);
+        let mut tiling = texture.clone();
+        tiling.checks.seam_max = Some(3.0);
+        assert_eq!(evaluate(&seamed, &tiling).failed, vec![CheckName::Seam]);
+        let clean = ImageStats {
+            seam: Some(1.2),
+            ..seamed
+        };
+        assert!(evaluate(&clean, &tiling).passed);
     }
 }

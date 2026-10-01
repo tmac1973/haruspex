@@ -53,7 +53,11 @@ export const RETRY_AMENDMENTS: Record<CheckName, RetryAmendment> = {
 	// Flat mush: say what not to produce.
 	entropy: { negative: 'featureless, flat, low detail, plain, empty' },
 	// Off-style: the fix is to say the style again, not to say what to avoid.
-	palette_distance: { positive: 'limited palette, flat blocks of colour' }
+	palette_distance: { positive: 'limited palette, flat blocks of colour' },
+	// A seam left after tiling is nearly always a border the model drew round
+	// the texture that the repaint did not cover. Ming takes no negative
+	// prompt, so there the retry's new seed is what fixes it; SD reads this.
+	seam: { negative: 'border, frame, vignette, darker edges' }
 };
 
 /** In plain words, for the report. */
@@ -61,7 +65,8 @@ export const CHECK_LABELS: Record<CheckName, string> = {
 	alpha_low: 'almost nothing opaque — the generation came back blank',
 	alpha_high: 'fully opaque — the background was never removed',
 	entropy: 'too little detail — flat mush',
-	palette_distance: 'off-style — too far from the anchor palette'
+	palette_distance: 'off-style — too far from its palette',
+	seam: 'a visible seam when tiled'
 };
 
 export function describeFailures(failed: CheckName[]): string {

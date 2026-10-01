@@ -30,6 +30,7 @@ use super::profile::{
     BORDER_DOMINANCE,
 };
 use super::stats::{entropy_bits, ImageStats};
+use super::tiling::seam_ratio;
 
 /// Remove the background: every pixel within `tolerance` of the key colour
 /// that is CONNECTED TO THE BORDER.
@@ -439,6 +440,7 @@ pub fn normalize(
         entropy: entropy_bits(&work),
         palette_distance,
         keyed: Some(keyed),
+        seam: (kind == AssetKind::Texture).then(|| seam_ratio(&work)),
     };
     Ok((work, stats))
 }
@@ -863,6 +865,7 @@ mod tests {
         assert_eq!(stats.alpha, 1.0, "a texture stays fully opaque");
         let has_outline = out.pixels().any(|p| pack(p.0) == 0x1A_1A_1A_FF);
         assert!(!has_outline, "a texture must not be outlined");
+        assert!(stats.seam.is_some(), "a texture's seam is measured");
     }
 
     #[test]

@@ -109,11 +109,11 @@ describe('capabilities', () => {
 		});
 	});
 
-	it('change with the model: Ming gives alpha, and neither tiles nor takes LoRAs', async () => {
+	it('change with the model: Ming gives alpha and tiles, but takes no LoRAs', async () => {
 		updateSettings({ imageComfyCheckpoint: MING });
 		expect(await comfyUiBackend.capabilities()).toEqual({
 			transparency: true,
-			seamlessTiling: false,
+			seamlessTiling: true,
 			loras: false,
 			maxLoras: 0
 		});

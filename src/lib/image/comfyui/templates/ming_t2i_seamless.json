@@ -1,0 +1,528 @@
+{
+	"1": {
+		"class_type": "UNETLoader",
+		"inputs": {
+			"unet_name": "",
+			"weight_dtype": "default"
+		}
+	},
+	"2": {
+		"class_type": "CLIPLoader",
+		"inputs": {
+			"clip_name": "",
+			"type": "qwen_image",
+			"device": "cpu"
+		}
+	},
+	"3": {
+		"class_type": "VAELoader",
+		"inputs": {
+			"vae_name": ""
+		}
+	},
+	"4": {
+		"class_type": "CLIPTextEncode",
+		"inputs": {
+			"text": "",
+			"clip": ["2", 0]
+		}
+	},
+	"5": {
+		"class_type": "ModelSamplingFlux",
+		"inputs": {
+			"model": ["1", 0],
+			"max_shift": 1.35,
+			"base_shift": 0.5,
+			"width": 1024,
+			"height": 1024
+		}
+	},
+	"6": {
+		"class_type": "EmptyLatentImage",
+		"inputs": {
+			"width": 1024,
+			"height": 1024,
+			"batch_size": 1
+		}
+	},
+	"7": {
+		"class_type": "RandomNoise",
+		"inputs": {
+			"noise_seed": 0
+		}
+	},
+	"8": {
+		"class_type": "KSamplerSelect",
+		"inputs": {
+			"sampler_name": "euler"
+		}
+	},
+	"9": {
+		"class_type": "SaveImage",
+		"inputs": {
+			"filename_prefix": "haruspex",
+			"images": ["84", 0]
+		}
+	},
+	"10": {
+		"class_type": "BasicScheduler",
+		"inputs": {
+			"model": ["5", 0],
+			"scheduler": "simple",
+			"steps": 12,
+			"denoise": 1
+		}
+	},
+	"11": {
+		"class_type": "BasicGuider",
+		"inputs": {
+			"model": ["5", 0],
+			"conditioning": ["4", 0]
+		}
+	},
+	"12": {
+		"class_type": "SamplerCustomAdvanced",
+		"inputs": {
+			"noise": ["7", 0],
+			"guider": ["11", 0],
+			"sampler": ["8", 0],
+			"sigmas": ["10", 0],
+			"latent_image": ["6", 0]
+		}
+	},
+	"13": {
+		"class_type": "VAEDecode",
+		"inputs": {
+			"samples": ["12", 0],
+			"vae": ["3", 0]
+		}
+	},
+	"20": {
+		"class_type": "ImageCrop",
+		"inputs": {
+			"image": ["13", 0],
+			"width": 512,
+			"height": 512,
+			"x": 0,
+			"y": 0
+		}
+	},
+	"21": {
+		"class_type": "ImageCrop",
+		"inputs": {
+			"image": ["13", 0],
+			"width": 512,
+			"height": 512,
+			"x": 512,
+			"y": 0
+		}
+	},
+	"22": {
+		"class_type": "ImageCrop",
+		"inputs": {
+			"image": ["13", 0],
+			"width": 512,
+			"height": 512,
+			"x": 0,
+			"y": 512
+		}
+	},
+	"23": {
+		"class_type": "ImageCrop",
+		"inputs": {
+			"image": ["13", 0],
+			"width": 512,
+			"height": 512,
+			"x": 512,
+			"y": 512
+		}
+	},
+	"24": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["13", 0],
+			"source": ["23", 0],
+			"x": 0,
+			"y": 0,
+			"resize_source": false
+		}
+	},
+	"25": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["24", 0],
+			"source": ["22", 0],
+			"x": 512,
+			"y": 0,
+			"resize_source": false
+		}
+	},
+	"26": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["25", 0],
+			"source": ["21", 0],
+			"x": 0,
+			"y": 512,
+			"resize_source": false
+		}
+	},
+	"27": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["26", 0],
+			"source": ["20", 0],
+			"x": 512,
+			"y": 512,
+			"resize_source": false
+		}
+	},
+	"30": {
+		"class_type": "SolidMask",
+		"inputs": {
+			"value": 0,
+			"width": 128,
+			"height": 128
+		}
+	},
+	"31": {
+		"class_type": "SolidMask",
+		"inputs": {
+			"value": 1,
+			"width": 32,
+			"height": 128
+		}
+	},
+	"32": {
+		"class_type": "SolidMask",
+		"inputs": {
+			"value": 1,
+			"width": 128,
+			"height": 32
+		}
+	},
+	"33": {
+		"class_type": "MaskComposite",
+		"inputs": {
+			"destination": ["30", 0],
+			"source": ["31", 0],
+			"x": 48,
+			"y": 0,
+			"operation": "add"
+		}
+	},
+	"34": {
+		"class_type": "MaskComposite",
+		"inputs": {
+			"destination": ["33", 0],
+			"source": ["32", 0],
+			"x": 0,
+			"y": 48,
+			"operation": "add"
+		}
+	},
+	"35": {
+		"class_type": "MaskToImage",
+		"inputs": {
+			"mask": ["34", 0]
+		}
+	},
+	"36": {
+		"class_type": "ImageBlur",
+		"inputs": {
+			"image": ["35", 0],
+			"blur_radius": 16,
+			"sigma": 0.5
+		}
+	},
+	"37": {
+		"class_type": "ImageScale",
+		"inputs": {
+			"image": ["36", 0],
+			"upscale_method": "bilinear",
+			"width": 1024,
+			"height": 1024,
+			"crop": "disabled"
+		}
+	},
+	"38": {
+		"class_type": "ImageToMask",
+		"inputs": {
+			"image": ["37", 0],
+			"channel": "red"
+		}
+	},
+	"39": {
+		"class_type": "MaskComposite",
+		"inputs": {
+			"destination": ["38", 0],
+			"source": ["38", 0],
+			"x": 0,
+			"y": 0,
+			"operation": "add"
+		}
+	},
+	"40": {
+		"class_type": "VAEEncode",
+		"inputs": {
+			"pixels": ["27", 0],
+			"vae": ["3", 0]
+		}
+	},
+	"41": {
+		"class_type": "SetLatentNoiseMask",
+		"inputs": {
+			"samples": ["40", 0],
+			"mask": ["39", 0]
+		}
+	},
+	"42": {
+		"class_type": "DifferentialDiffusion",
+		"inputs": {
+			"model": ["5", 0]
+		}
+	},
+	"43": {
+		"class_type": "BasicGuider",
+		"inputs": {
+			"model": ["42", 0],
+			"conditioning": ["4", 0]
+		}
+	},
+	"44": {
+		"class_type": "BasicScheduler",
+		"inputs": {
+			"model": ["5", 0],
+			"scheduler": "simple",
+			"steps": 12,
+			"denoise": 1
+		}
+	},
+	"46": {
+		"class_type": "SamplerCustomAdvanced",
+		"inputs": {
+			"noise": ["7", 0],
+			"guider": ["43", 0],
+			"sampler": ["8", 0],
+			"sigmas": ["44", 0],
+			"latent_image": ["41", 0]
+		}
+	},
+	"47": {
+		"class_type": "VAEDecode",
+		"inputs": {
+			"samples": ["46", 0],
+			"vae": ["3", 0]
+		}
+	},
+	"48": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["27", 0],
+			"source": ["47", 0],
+			"x": 0,
+			"y": 0,
+			"resize_source": false,
+			"mask": ["39", 0]
+		}
+	},
+	"60": {
+		"class_type": "ImageCrop",
+		"inputs": {
+			"image": ["48", 0],
+			"width": 768,
+			"height": 768,
+			"x": 0,
+			"y": 0
+		}
+	},
+	"61": {
+		"class_type": "ImageCrop",
+		"inputs": {
+			"image": ["48", 0],
+			"width": 256,
+			"height": 768,
+			"x": 768,
+			"y": 0
+		}
+	},
+	"62": {
+		"class_type": "ImageCrop",
+		"inputs": {
+			"image": ["48", 0],
+			"width": 768,
+			"height": 256,
+			"x": 0,
+			"y": 768
+		}
+	},
+	"63": {
+		"class_type": "ImageCrop",
+		"inputs": {
+			"image": ["48", 0],
+			"width": 256,
+			"height": 256,
+			"x": 768,
+			"y": 768
+		}
+	},
+	"64": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["48", 0],
+			"source": ["60", 0],
+			"x": 256,
+			"y": 256,
+			"resize_source": false
+		}
+	},
+	"65": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["64", 0],
+			"source": ["61", 0],
+			"x": 0,
+			"y": 256,
+			"resize_source": false
+		}
+	},
+	"66": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["65", 0],
+			"source": ["62", 0],
+			"x": 256,
+			"y": 0,
+			"resize_source": false
+		}
+	},
+	"67": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["66", 0],
+			"source": ["63", 0],
+			"x": 0,
+			"y": 0,
+			"resize_source": false
+		}
+	},
+	"70": {
+		"class_type": "SolidMask",
+		"inputs": {
+			"value": 0,
+			"width": 128,
+			"height": 128
+		}
+	},
+	"71": {
+		"class_type": "SolidMask",
+		"inputs": {
+			"value": 1,
+			"width": 48,
+			"height": 48
+		}
+	},
+	"72": {
+		"class_type": "MaskComposite",
+		"inputs": {
+			"destination": ["70", 0],
+			"source": ["71", 0],
+			"x": 72,
+			"y": 8,
+			"operation": "add"
+		}
+	},
+	"73": {
+		"class_type": "MaskComposite",
+		"inputs": {
+			"destination": ["72", 0],
+			"source": ["71", 0],
+			"x": 8,
+			"y": 72,
+			"operation": "add"
+		}
+	},
+	"74": {
+		"class_type": "MaskToImage",
+		"inputs": {
+			"mask": ["73", 0]
+		}
+	},
+	"75": {
+		"class_type": "ImageBlur",
+		"inputs": {
+			"image": ["74", 0],
+			"blur_radius": 8,
+			"sigma": 0.5
+		}
+	},
+	"76": {
+		"class_type": "ImageScale",
+		"inputs": {
+			"image": ["75", 0],
+			"upscale_method": "bilinear",
+			"width": 1024,
+			"height": 1024,
+			"crop": "disabled"
+		}
+	},
+	"77": {
+		"class_type": "ImageToMask",
+		"inputs": {
+			"image": ["76", 0],
+			"channel": "red"
+		}
+	},
+	"78": {
+		"class_type": "MaskComposite",
+		"inputs": {
+			"destination": ["77", 0],
+			"source": ["77", 0],
+			"x": 0,
+			"y": 0,
+			"operation": "add"
+		}
+	},
+	"80": {
+		"class_type": "VAEEncode",
+		"inputs": {
+			"pixels": ["67", 0],
+			"vae": ["3", 0]
+		}
+	},
+	"81": {
+		"class_type": "SetLatentNoiseMask",
+		"inputs": {
+			"samples": ["80", 0],
+			"mask": ["78", 0]
+		}
+	},
+	"82": {
+		"class_type": "SamplerCustomAdvanced",
+		"inputs": {
+			"noise": ["7", 0],
+			"guider": ["43", 0],
+			"sampler": ["8", 0],
+			"sigmas": ["44", 0],
+			"latent_image": ["81", 0]
+		}
+	},
+	"83": {
+		"class_type": "VAEDecode",
+		"inputs": {
+			"samples": ["82", 0],
+			"vae": ["3", 0]
+		}
+	},
+	"84": {
+		"class_type": "ImageCompositeMasked",
+		"inputs": {
+			"destination": ["67", 0],
+			"source": ["83", 0],
+			"x": 0,
+			"y": 0,
+			"resize_source": false,
+			"mask": ["78", 0]
+		}
+	}
+}

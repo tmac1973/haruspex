@@ -108,6 +108,22 @@ export function textureScaffold(subject: string, style: string): string {
 }
 
 /**
+ * Above this seam ratio a tiled texture has a seam you can see.
+ *
+ * Measured on fifty generated textures at 64 px (phase 23): every one that
+ * looked right scored at most 1.8, every one with a visible seam 4.3 or more.
+ * Set only on a request that asked the backend to tile; see `CheckThresholds`.
+ */
+export const TEXTURE_SEAM_MAX = 3;
+
+/** The profile a texture is checked against: with the seam check if it was made to tile. */
+export function checkProfile(profile: NormalizeProfile, request: ImageRequest): NormalizeProfile {
+	return request.seamless
+		? { ...profile, checks: { ...profile.checks, seam_max: TEXTURE_SEAM_MAX } }
+		: profile;
+}
+
+/**
  * The edge to generate at, from the effective profile.
  *
  * An entry may override `target_size`; the upscale and the clamp still apply,

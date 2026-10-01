@@ -18,4 +18,9 @@ palette_distance: number,
  * alpha of its own — a model asked for transparency that did not give it.
  * Absent in stats made before this was recorded.
  */
-keyed?: boolean, };
+keyed?: boolean, 
+/**
+ * For a texture: the seam ratio (`tiling::seam_ratio`) of the output as
+ * shipped. About 1 when it tiles. Absent for sprites and icons.
+ */
+seam?: number, };

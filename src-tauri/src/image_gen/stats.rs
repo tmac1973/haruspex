@@ -24,6 +24,11 @@ pub struct ImageStats {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub keyed: Option<bool>,
+    /// For a texture: the seam ratio (`tiling::seam_ratio`) of the output as
+    /// shipped. About 1 when it tiles. Absent for sprites and icons.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub seam: Option<f32>,
 }
 
 /// Shannon entropy of the SUBJECT's colour histogram, in bits.

@@ -290,7 +290,8 @@ conditioning and circular-padding seamless tiling — are UNet techniques that
 do not carry to a DiT. A Flux, Qwen or Z-Image entry would ship with two of
 three layers reporting false. The DiT remedy for tiling is offset-and-inpaint
 (shift the tile by half, inpaint the seams, shift back), which is real work
-rather than a flag.
+rather than a flag. The ComfyUI backend does it for Ming-Image, in one graph
+(`src/lib/image/comfyui/templates/README.md`); the bundled engine does not.
 
 **Single file.** Flux and SD3.5 need separate text encoders and a VAE
 alongside the diffusion weights — three or four downloads per model and a

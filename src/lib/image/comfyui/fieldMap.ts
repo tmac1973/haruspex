@@ -30,12 +30,17 @@ export interface ScalarBinding {
 	kind: 'scalar';
 	node: string;
 	input: string;
+	/**
+	 * A numeric value lands multiplied by this, rounded: a crop at half the
+	 * width, a mask band at a quarter of it. Omitted means the value as is.
+	 */
+	scale?: number;
 }
 
 /**
  * A value that must land in several places at once. Every slot gets the same
- * value; a graph that disagreed with itself about its own size would fail on
- * the server, or worse, run at whichever size won.
+ * value (times its own `scale`); a graph that disagreed with itself about its
+ * own size would fail on the server, or worse, run at whichever size won.
  */
 export type MultiBinding = ScalarBinding | ScalarBinding[];
 
@@ -143,7 +148,8 @@ function setScalar(graph: ComfyGraph, binding: MultiBinding, value: unknown): vo
 		if (missingNode(graph, b.node) || missingInput(graph, b.node, b.input)) {
 			throw new Error(`Workflow has no input "${b.input}" on node "${b.node}".`);
 		}
-		graph[b.node].inputs[b.input] = value;
+		graph[b.node].inputs[b.input] =
+			b.scale !== undefined && typeof value === 'number' ? Math.round(value * b.scale) : value;
 	}
 }
 

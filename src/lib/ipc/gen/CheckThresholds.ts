@@ -21,4 +21,10 @@ entropy_min: number,
  * from their palette entry *before* snapping. High means the generation
  * was off-style and quantization papered over it.
  */
-palette_distance_max: number, };
+palette_distance_max: number, 
+/**
+ * Above this a texture has a visible seam. Unset unless the texture was
+ * generated to tile: one from a backend that cannot tile would fail a
+ * check it had no way to pass. Set by the job, per request.
+ */
+seam_max?: number, };

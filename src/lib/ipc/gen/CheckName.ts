@@ -8,4 +8,4 @@
  * retry table amends the prompt in opposite directions for them. A single
  * `Alpha` variant would make that mapping unwritable.
  */
-export type CheckName = "alpha_low" | "alpha_high" | "entropy" | "palette_distance";
+export type CheckName = "alpha_low" | "alpha_high" | "entropy" | "palette_distance" | "seam";

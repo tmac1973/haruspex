@@ -135,6 +135,12 @@ pub struct CheckThresholds {
     /// from their palette entry *before* snapping. High means the generation
     /// was off-style and quantization papered over it.
     pub palette_distance_max: f32,
+    /// Above this a texture has a visible seam. Unset unless the texture was
+    /// generated to tile: one from a backend that cannot tile would fail a
+    /// check it had no way to pass. Set by the job, per request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub seam_max: Option<f32>,
 }
 
 /// How far a pixel may sit from its palette entry before it counts as
@@ -260,6 +266,7 @@ impl Default for NormalizeProfile {
                 // from every bad one with margin at both ends.
                 entropy_min: 1.0,
                 palette_distance_max: 0.15,
+                seam_max: None,
             },
             by_kind,
             alpha_threshold: None,

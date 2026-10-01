@@ -11,7 +11,7 @@ import { checkImage, effectiveProfile, normalizeImage } from '$lib/assets/normal
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
 import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '$lib/image/types';
-import { buildEntryRequest } from './request';
+import { buildEntryRequest, checkProfile } from './request';
 import {
 	amendForRetry,
 	betterReport,
@@ -150,10 +150,14 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 			return;
 		}
 
-		const profile = profiles.get(entry.kind) ?? spec.normalize;
-		const { request, degraded } = buildEntryRequest(entry, spec, profile, deps.caps, {
-			maxEdge: deps.maxEdge
-		});
+		const { request, degraded } = buildEntryRequest(
+			entry,
+			spec,
+			profiles.get(entry.kind) ?? spec.normalize,
+			deps.caps,
+			{ maxEdge: deps.maxEdge }
+		);
+		const profile = checkProfile(profiles.get(entry.kind) ?? spec.normalize, request);
 
 		let prompt = request.prompt;
 		let negativePrompt = request.negativePrompt ?? '';

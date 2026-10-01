@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { applyFieldMap } from '../fieldMap';
 import {
 	TEMPLATES,
 	mingTransparent,
@@ -61,12 +62,12 @@ describe('the bundled workflows', () => {
 		}
 	});
 
-	it('gives every seamless workflow BOTH halves of circular padding', () => {
+	it('gives every SD seamless workflow BOTH halves of circular padding', () => {
 		// SeamlessTile alone validates, runs, and produces an image that does
 		// not tile — the decode has to be circular too. A silent quality
 		// failure rather than an error, and the only reason it was caught is
 		// that the output was measured rather than looked at.
-		for (const t of TEMPLATES.filter((x) => x.supports.seamless)) {
+		for (const t of TEMPLATES.filter((x) => x.supports.seamless && x.family === 'sd')) {
 			const classes = Object.values(t.graph).map((n) => n.class_type);
 			expect({ id: t.id, model: classes.includes('SeamlessTile') }).toEqual({
 				id: t.id,
@@ -80,11 +81,11 @@ describe('the bundled workflows', () => {
 		}
 	});
 
-	it('claims seamless tiling only for the SD family', () => {
-		// Circular padding is a UNet trick; neither DiT family tiles by it, and
-		// a claim nobody checks is how a job ships seamed textures.
+	it('claims seamless tiling for SD and Ming, and not for Qwen', () => {
+		// A claim nobody checks is how a job ships seamed textures: SD tiles by
+		// circular padding, Ming by offset and inpaint, Qwen by neither.
 		const claimed = TEMPLATES.filter((t) => t.supports.seamless).map((t) => t.family);
-		expect(new Set(claimed)).toEqual(new Set(['sd']));
+		expect(new Set(claimed)).toEqual(new Set(['sd', 'ming']));
 	});
 
 	it('carries no IP-Adapter: reference conditioning is gone', () => {
@@ -144,6 +145,93 @@ describe('Ming-Image', () => {
 	it('runs its text encoder on the CPU', () => {
 		// On 16 GB the encoder and the DiT cannot both stay resident.
 		for (const t of [plain, rgba]) expect(t.graph['2'].inputs.device).toBe('cpu');
+	});
+});
+
+describe('Ming-Image seamless', () => {
+	const t = TEMPLATES.find((x) => x.id === 'ming_t2i_seamless')!;
+	const out = (width: number, height: number) =>
+		applyFieldMap(t.graph, t.map, { prompt: 'grass', width, height, seed: 1 });
+
+	it('outputs the rolled, repaired image, not the raw generation', () => {
+		const save = t.graph[t.map.outputNode].inputs.images as [string, number];
+		expect(t.graph[save[0]].class_type).toBe('ImageCompositeMasked');
+		expect(t.graph[save[0]].inputs.mask).toEqual(['78', 0]);
+	});
+
+	it('repaints at full strength in the middle of the band', () => {
+		// ImageBlur's sigma is in kernel-normalised units, not pixels, and a
+		// blurred band peaks below 1; at 0.8 the old border survived the
+		// repaint. The mask is added to itself so its middle is solid.
+		expect(t.graph['39'].inputs).toMatchObject({
+			destination: ['38', 0],
+			source: ['38', 0],
+			operation: 'add'
+		});
+		expect(t.graph['41'].inputs.mask).toEqual(['39', 0]);
+		expect(t.graph['36'].inputs).toMatchObject({ blur_radius: 16, sigma: 0.5 });
+	});
+
+	it('repaints fully, blended by DifferentialDiffusion', () => {
+		const classes = Object.values(t.graph).map((n) => n.class_type);
+		expect(classes).toContain('DifferentialDiffusion');
+		expect(classes).toContain('SetLatentNoiseMask');
+		expect(t.graph['44'].inputs.denoise).toBe(1);
+	});
+
+	it('rolls by half: every quadrant lands diagonally opposite', () => {
+		const g = out(768, 512);
+		const crop = (n: string) => [
+			g[n].inputs.x,
+			g[n].inputs.y,
+			g[n].inputs.width,
+			g[n].inputs.height
+		];
+		expect(crop('20')).toEqual([0, 0, 384, 256]);
+		expect(crop('23')).toEqual([384, 256, 384, 256]);
+		const paste = (n: string) => [g[n].inputs.source, g[n].inputs.x, g[n].inputs.y];
+		// The bottom-right quadrant goes top-left, and so on round.
+		expect(paste('24')).toEqual([['23', 0], 0, 0]);
+		expect(paste('25')).toEqual([['22', 0], 384, 0]);
+		expect(paste('26')).toEqual([['21', 0], 0, 256]);
+		expect(paste('27')).toEqual([['20', 0], 384, 256]);
+	});
+
+	it('rolls the repaired image by a quarter for the second pass', () => {
+		const g = out(1024, 512);
+		const crop = (n: string) => [
+			g[n].inputs.x,
+			g[n].inputs.y,
+			g[n].inputs.width,
+			g[n].inputs.height
+		];
+		expect(crop('60')).toEqual([0, 0, 768, 384]);
+		expect(crop('61')).toEqual([768, 0, 256, 384]);
+		expect(crop('62')).toEqual([0, 384, 768, 128]);
+		expect(crop('63')).toEqual([768, 384, 256, 128]);
+		const paste = (n: string) => [g[n].inputs.source, g[n].inputs.x, g[n].inputs.y];
+		expect(paste('64')).toEqual([['60', 0], 256, 128]);
+		expect(paste('65')).toEqual([['61', 0], 0, 128]);
+		expect(paste('66')).toEqual([['62', 0], 256, 0]);
+		expect(paste('67')).toEqual([['63', 0], 0, 0]);
+	});
+
+	it('patches where the cross met the edges, clear of the edges', () => {
+		// After a quarter roll the arm ends sit at (3/4, 1/4) and (1/4, 3/4).
+		const g = out(1024, 1024);
+		expect([g['71'].inputs.width, g['71'].inputs.height]).toEqual([48, 48]);
+		expect([g['72'].inputs.x, g['72'].inputs.y]).toEqual([72, 8]);
+		expect([g['73'].inputs.x, g['73'].inputs.y]).toEqual([8, 72]);
+		expect([g['76'].inputs.width, g['76'].inputs.height]).toEqual([1024, 1024]);
+	});
+
+	it('centres a cross a quarter of the size wide, at an eighth scale', () => {
+		const g = out(1024, 1024);
+		expect([g['30'].inputs.width, g['30'].inputs.height]).toEqual([128, 128]);
+		expect([g['31'].inputs.width, g['31'].inputs.height]).toEqual([32, 128]);
+		expect([g['32'].inputs.width, g['32'].inputs.height]).toEqual([128, 32]);
+		expect([g['33'].inputs.x, g['34'].inputs.y]).toEqual([48, 48]);
+		expect([g['37'].inputs.width, g['37'].inputs.height]).toEqual([1024, 1024]);
 	});
 });
 
