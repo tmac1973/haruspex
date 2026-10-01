@@ -374,7 +374,10 @@ export async function establishAnchor(
 		// 32 palette entries green, and a shopping cart came out as a bush.
 		palette = shot.palette;
 		spread = await paletteSpread(palette);
-		const usable = spread.ok;
+		// Only for the older anchor, whose palette every asset is forced into.
+		// A sheet anchor's palette is imposed on nothing — each sheet takes its
+		// own — so a sheet of grey metal items is not a reason to re-roll.
+		const usable = plan !== null || spread.ok;
 		if (!usable && attempts < deps.anchorAttempts) {
 			// Silently is wrong, but so is asking: it is mechanically
 			// unusable, so re-roll and say so in the outcome.
@@ -408,7 +411,7 @@ export async function establishAnchor(
 		// they were not told is unusable is how this bug reached a hundred
 		// assets.
 		const warning =
-			spread && !spread.ok
+			!plan && spread && !spread.ok
 				? `\n\n**Warning:** ${Math.round(spread.dominant_fraction * 100)}% of this anchor's ` +
 					`palette is a single colour, so every asset will be pushed toward it whatever its ` +
 					`prompt says. This usually means the sheet is a scene rather than separate ` +

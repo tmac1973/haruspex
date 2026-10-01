@@ -607,6 +607,7 @@ describe('sheets', () => {
 				const s = splits.length > 1 ? splits.shift()! : splits[0];
 				return {
 					keyed: s.keyed ?? false,
+					palette: [0x123456ff],
 					pieces: s.pieces.map(([cx, cy]) => ({
 						bytes: [7],
 						x: cx - 100,
@@ -810,5 +811,37 @@ describe('sheets', () => {
 			'not checked by the judge — Failed to connect to the AI model. Is it still loading?'
 		]);
 		expect(h.written).toContain('out/e0.png');
+	});
+
+	it("quantizes a sheet's pieces to that sheet's own palette, not the anchor's", async () => {
+		// The run that found this: an anchor of a sword and a potion has no
+		// gold, and a gold coin was rejected three times for being gold.
+		splits.push({ pieces: THREE });
+		const spec = specOf([{}, {}, {}]);
+		spec.normalize = { ...spec.normalize, palette: [0xff0000ff] };
+		await generateEntries(spec, harness({ caps: SHEETS }).deps);
+		const split = invoke.mock.calls.find(([cmd]) => cmd === 'image_split_sheet');
+		expect(split![1].paletteSize).toBe(16);
+		const normalized = invoke.mock.calls.filter(([cmd]) => cmd === 'image_normalize');
+		expect(normalized).toHaveLength(3);
+		for (const [, args] of normalized) {
+			expect((args.profile as NormalizeProfile).palette).toEqual([0x123456ff]);
+		}
+	});
+
+	it('lets a lone image take its own palette too, on a backend with alpha', async () => {
+		const spec = specOf([{ kind: 'texture' }]);
+		spec.normalize = { ...spec.normalize, palette: [0xff0000ff] };
+		await generateEntries(spec, harness({ caps: SHEETS }).deps);
+		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
+		expect((call![1].profile as NormalizeProfile).palette).toEqual([]);
+	});
+
+	it('still imposes the anchor palette on the one-image-per-entry path', async () => {
+		const spec = specOf([{}]);
+		spec.normalize = { ...spec.normalize, palette: [0xff0000ff] };
+		await generateEntries(spec, harness({ caps: FULL }).deps);
+		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
+		expect((call![1].profile as NormalizeProfile).palette).toEqual([0xff0000ff]);
 	});
 });

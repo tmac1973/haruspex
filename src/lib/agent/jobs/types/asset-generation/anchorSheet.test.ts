@@ -179,4 +179,17 @@ describe('a sheet anchor', () => {
 		expect(r.outcome.source).toBe('reused');
 		expect(r.pregenerated).toBeUndefined();
 	});
+
+	it('is not re-rolled for a palette that leans on one colour', async () => {
+		// Its palette is imposed on nothing: each sheet takes its own.
+		invoke.mockImplementation(async (cmd: string) => {
+			if (cmd === 'image_split_sheet') return { pieces: [], keyed: false, palette: PALETTE };
+			if (cmd === 'image_palette_spread')
+				return { ok: false, dominant_fraction: 0.9, buckets_used: 1 };
+			return undefined;
+		});
+		const r = await establishAnchor(spec(), deps().deps, 1024);
+		expect(backend.requests).toHaveLength(1);
+		expect(r.outcome.rejected).toBe(0);
+	});
 });

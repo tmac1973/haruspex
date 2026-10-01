@@ -76,10 +76,12 @@ Ming usably on this machine yet.
 
 ### About the models
 
-1. **The anchor's palette governs everything.** Every asset is quantized into
-   the anchor's colours. A palette that collapsed onto one hue turns the whole
-   set that colour. Still true after the pivot — phase 22 takes the palette
-   from the cut pieces of the anchor sheet.
+1. **A shared palette governs everything it is imposed on.** Every asset
+   quantized into the anchor's colours takes on those colours: a collapsed
+   palette turned whole SD sets one colour, and on the first sheet run an
+   anchor without gold got a gold coin rejected three times. On backends with
+   alpha each sheet now takes its own palette; the shared one is only imposed
+   on the SD path.
 2. **CLIP reads 77 tokens** (SD1.5 and SDXL). Neither DiT family uses CLIP;
    `promptBudget.ts` goes in phase 21.
 3. **Naming the key colour bleeds it into the art** (SDXL: said twice, 30% of

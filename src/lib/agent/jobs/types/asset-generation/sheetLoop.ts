@@ -225,8 +225,19 @@ export async function runSheet(plan: SheetPlan, ctx: SheetLoopContext): Promise<
 
 		const split = await splitSheet(result.images[0].bytes, {
 			alphaThreshold: ctx.profile.alpha_threshold ?? undefined,
-			background: ctx.profile.background
+			background: ctx.profile.background,
+			paletteSize: ctx.profile.palette_size
 		});
+		// Each sheet is reduced to ITS OWN palette. Subjects drawn together
+		// already share a look, and separate sheets measured as close to each
+		// other as one sheet is to itself at another seed (phase 17). Forcing
+		// every sheet into the anchor's colours is what failed: an anchor of a
+		// sword and a potion has no gold, and a gold coin was rejected three
+		// times for being gold.
+		const roundCtx: SheetLoopContext = {
+			...ctx,
+			profile: { ...ctx.profile, palette: split.palette }
+		};
 		const cells = assignCells(split.pieces, pending.length);
 		const sheet: SheetOutcome = {
 			id: plan.id,
@@ -242,7 +253,8 @@ export async function runSheet(plan: SheetPlan, ctx: SheetLoopContext): Promise<
 
 		const next: number[] = [];
 		for (const [k, i] of pending.entries()) {
-			if (await settleCell(i, cells[k], { ctx, tally, sheet, seed, started })) next.push(i);
+			if (await settleCell(i, cells[k], { ctx: roundCtx, tally, sheet, seed, started }))
+				next.push(i);
 		}
 
 		ctx.deps.onSheet?.(sheet);

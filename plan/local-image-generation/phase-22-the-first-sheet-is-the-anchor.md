@@ -89,6 +89,19 @@ cross-sheet consistency.
   live-checked in phase 21; running the stage itself needs the app, which is
   phase 25.
 
+- **Revised after the first real run (2026-10-01): each sheet takes its own
+  palette.** "Prompt plus the anchor's palette" failed on the first job: the
+  anchor sheet (a sword and a potion) had no gold in its 32 colours, and the
+  gold coin was rejected three times as "too far from the anchor palette".
+  On a backend with alpha, each sheet is now quantized to a palette extracted
+  from that sheet, and a lone image (a texture) to its own. Phase 17 had
+  already measured separate sheets as close to each other as one sheet is to
+  itself at another seed, so the shared palette was buying little and costing
+  every colour the anchor happened not to contain. The anchor's palette is
+  still extracted and recorded, but imposed on nothing, so a sheet anchor is
+  no longer re-rolled for a palette that leans on one colour. The one
+  shared palette remains on the one-image-per-entry path (SD backends).
+
 ## Build gate
 
 ```

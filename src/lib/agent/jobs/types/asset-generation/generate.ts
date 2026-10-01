@@ -97,7 +97,13 @@ async function pool(items: number[], limit: number, worker: (i: number) => Promi
 }
 
 export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Promise<EntryResult[]> {
-	const profiles = await profilesByKind(spec, spec.normalize);
+	// On a backend that gives alpha, nothing is forced into the anchor's
+	// colours: each sheet takes its own palette (`sheetLoop.ts`), and an image
+	// made alone — a texture — takes its own, extracted by normalization. A
+	// shared palette is only imposed on the older one-image-per-entry path,
+	// where it is what holds a set of separately drawn images together.
+	const base = deps.caps.transparency ? { ...spec.normalize, palette: [] } : spec.normalize;
+	const profiles = await profilesByKind(spec, base);
 	const results: (EntryResult | null)[] = spec.entries.map(() => null);
 	const transient: number[] = [];
 	let done = 0;
