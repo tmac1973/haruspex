@@ -3144,6 +3144,8 @@ describe('jobs runner — asset generation', () => {
 		expect(getCurrentRun()?.status).toBe('succeeded');
 		expect(getCurrentRun()!.steps[2].output).toContain('1 failed');
 		expect(written.map((w) => w.relPath)).toContain('assets/REPORT-assets.md');
+		// Not "Every asset passed": a run with nothing generated said that.
+		expect(getCurrentRun()!.steps[3].output).toContain('1 asset(s) could not be produced');
 	});
 
 	it('writes a report and a contact sheet beside the spec', async () => {

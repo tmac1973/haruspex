@@ -644,14 +644,18 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				finishedAt: Date.now()
 			})
 		);
-		const unresolved = entries.filter((e) => e.status === 'unresolved').length;
+		// Failed (the backend or a write gave up) and unresolved (never passed
+		// its checks) are both assets the run did not produce.
+		const missing = entries.filter(
+			(e) => e.status === 'unresolved' || e.status === 'failed'
+		).length;
 		finishStep(
 			REPORT,
 			[
-				// The unresolved count leads: it is the only number in the report
+				// The missing count leads: it is the only number in the report
 				// that asks the user to do something.
-				unresolved > 0
-					? `${unresolved} asset(s) could not be produced — see ${reportPath}.`
+				missing > 0
+					? `${missing} asset(s) could not be produced — see ${reportPath}.`
 					: 'Every asset passed.',
 				`Report: ${reportPath}` + (sheetPath ? `, contact sheet: ${sheetPath}` : '')
 			].join('\n')
