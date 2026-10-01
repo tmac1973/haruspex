@@ -24,12 +24,32 @@ export interface GenerateOptions {
 	onProgress?: (p: ImageProgress) => void;
 }
 
+/** A model the backend can run, for a settings dropdown. */
+export interface ModelOption {
+	/** What a request names: the filename on the server. */
+	name: string;
+	/** What the user reads. */
+	label: string;
+}
+
+export interface ProbeResult {
+	ok: boolean;
+	/** Shown to the user verbatim. */
+	detail: string;
+	/**
+	 * Models the backend can run, when it can say. Present even when `ok` is
+	 * false for a reason other than reachability — "no model is set" is
+	 * exactly when the list is wanted.
+	 */
+	models?: ModelOption[];
+}
+
 export interface ImageBackend {
 	kind: ImageBackendKind;
 	/** What this backend can do. Consulted per run, not per request. */
 	capabilities(): Promise<ImageBackendCapabilities>;
-	/** Is it reachable and usable? `detail` is shown to the user verbatim. */
-	probe(): Promise<{ ok: boolean; detail: string }>;
+	/** Is it reachable and usable? */
+	probe(): Promise<ProbeResult>;
 	generate(req: ImageRequest, opts?: GenerateOptions): Promise<ImageResult>;
 }
 

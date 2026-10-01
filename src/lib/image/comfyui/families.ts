@@ -105,6 +105,31 @@ export async function resolveCompanions(
 	return { textEncoder, vae };
 }
 
+const FAMILY_LABELS: Record<ModelFamily, string> = {
+	ming: 'Ming-Image',
+	qwen21: 'Qwen-Image-2.1, non-commercial',
+	sd: 'SD checkpoint'
+};
+
+/**
+ * Every model the server has that a bundled workflow can run: the diffusion
+ * models of a known DiT family, then the SD checkpoints. A diffusion model of
+ * any other family is left out — it would be run as an SD checkpoint and fail.
+ */
+export async function listModels(
+	cfg: api.ClientConfig
+): Promise<Array<{ name: string; label: string; family: ModelFamily }>> {
+	const [dits, checkpoints] = await Promise.all([
+		optionsOf(cfg, 'UNETLoader', 'unet_name').catch(() => []),
+		optionsOf(cfg, 'CheckpointLoaderSimple', 'ckpt_name').catch(() => [])
+	]);
+	const known = dits
+		.map((name) => ({ name, family: familyOf(name) }))
+		.filter((m) => m.family !== 'sd');
+	const sd = checkpoints.map((name) => ({ name, family: 'sd' as const }));
+	return [...known, ...sd].map((m) => ({ ...m, label: `${m.name} — ${FAMILY_LABELS[m.family]}` }));
+}
+
 /** Does the server have this diffusion model (DiT families) or checkpoint (SD)? */
 export async function hasModel(
 	cfg: api.ClientConfig,

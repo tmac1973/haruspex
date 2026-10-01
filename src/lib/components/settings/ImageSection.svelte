@@ -6,6 +6,7 @@
 	import { invalidateTypeAvailability } from '$lib/agent/jobs/types/availability.svelte';
 	import { generateOneImage } from '$lib/image/generateOne';
 	import type { ImageBackendCapabilities, ImageBackendKind } from '$lib/image/types';
+	import type { ModelOption, ProbeResult } from '$lib/image/backend';
 
 	let imageBackendKind = $state(getSettings().imageBackendKind);
 	let imageBackendBaseUrl = $state(getSettings().imageBackendBaseUrl);
@@ -86,8 +87,17 @@
 	let imageComfyFieldMapPath = $state(getSettings().imageComfyFieldMapPath);
 
 	let probing = $state(false);
-	let probeResult = $state<{ ok: boolean; detail: string } | null>(null);
+	let probeResult = $state<ProbeResult | null>(null);
 	let capabilities = $state<ImageBackendCapabilities | null>(null);
+	/** What the server can run, from the last probe that could say. */
+	let serverModels = $state<ModelOption[]>([]);
+	/** The dropdown's options: the server's, plus the saved one if it is not among them. */
+	const modelOptions = $derived.by((): ModelOption[] => {
+		const current = imageComfyCheckpoint.trim();
+		if (!current || serverModels.some((m) => m.name === current)) return serverModels;
+		const why = serverModels.length > 0 ? 'not on the server' : 'probe to check';
+		return [{ name: current, label: `${current} — ${why}` }, ...serverModels];
+	});
 
 	let generating = $state(false);
 	let testError = $state('');
@@ -167,6 +177,7 @@
 		try {
 			const backend = resolveImageBackend();
 			probeResult = await backend.probe();
+			if (probeResult.models) serverModels = probeResult.models;
 			capabilities = probeResult.ok ? await backend.capabilities() : null;
 		} catch (e) {
 			probeResult = { ok: false, detail: e instanceof Error ? e.message : String(e) };
@@ -174,6 +185,30 @@
 			probing = false;
 		}
 	}
+
+	function chooseModel(e: Event) {
+		imageComfyCheckpoint = (e.currentTarget as HTMLSelectElement).value;
+		persist({ imageComfyCheckpoint });
+		// Re-checked at once: a DiT model also needs its text encoder and VAE
+		// on the server, and that is the probe's job to say.
+		void probe();
+	}
+
+	function saveUrl() {
+		const next = imageBackendBaseUrl.trim();
+		const changed = next !== getSettings().imageBackendBaseUrl;
+		persist({ imageBackendBaseUrl: next });
+		if (changed && next) void probe();
+	}
+
+	// Probe once on opening, so the model list is there without a click.
+	let probedOnOpen = false;
+	$effect(() => {
+		if (configured && !isLocal && !probedOnOpen && imageBackendBaseUrl.trim()) {
+			probedOnOpen = true;
+			void probe();
+		}
+	});
 
 	async function testGeneration() {
 		if (generating) {
@@ -213,20 +248,17 @@
 
 <section class="settings-section">
 	<h2>Image backend</h2>
-	<label class="row">
-		<select value={imageBackendKind} onchange={persistKind} aria-label="Image backend">
+	<div class="fields">
+		<label for="image-backend">Backend:</label>
+		<select id="image-backend" value={imageBackendKind} onchange={persistKind}>
 			<option value="none">None</option>
 			<option value="comfyui">ComfyUI</option>
 			{#if engine?.available !== false}
 				<option value="local">Bundled engine</option>
 			{/if}
 		</select>
-		<span>where pictures are generated</span>
-	</label>
-	<p class="help">
-		Off by default. Nothing is downloaded and no process starts until you pick one. Settings →
-		Image.
-	</p>
+	</div>
+	<p class="help">Off until you pick one; nothing is downloaded or started before that.</p>
 </section>
 
 {#if isLocal}
@@ -264,17 +296,17 @@
 			<p class="warn">{downloadError}</p>
 		{/if}
 
-		<label class="row">
+		<div class="fields">
+			<label for="image-local-model">Model file:</label>
 			<input
+				id="image-local-model"
 				type="text"
 				placeholder="/path/to/model.safetensors"
 				bind:value={imageLocalModelPath}
 				onblur={() => persist({ imageLocalModelPath: imageLocalModelPath.trim() })}
-				aria-label="Model file"
 			/>
-			<span>weights to load</span>
-		</label>
-		<p class="help">Nothing starts until you ask. Settings → Image.</p>
+		</div>
+		<p class="help">Nothing starts until you ask.</p>
 		<div class="row">
 			<button onclick={startEngine} disabled={engineBusy || engine?.status === 'Ready'}>
 				{engineBusy ? 'Working…' : 'Start'}
@@ -296,41 +328,48 @@
 {#if configured && !isLocal}
 	<section class="settings-section">
 		<h2>Connection</h2>
-		<label class="row">
+		<div class="fields">
+			<label for="image-url">Server address:</label>
 			<input
+				id="image-url"
 				type="text"
-				placeholder="http://localhost:8188"
+				placeholder="http://127.0.0.1:8188"
 				bind:value={imageBackendBaseUrl}
-				onblur={() => persist({ imageBackendBaseUrl: imageBackendBaseUrl.trim() })}
-				aria-label="Backend URL"
+				onblur={saveUrl}
 			/>
-			<span>server address</span>
-		</label>
-		<label class="row">
+
+			<label for="image-key">API key:</label>
 			<input
+				id="image-key"
 				type="password"
+				placeholder="only if the server needs one"
 				bind:value={imageBackendApiKey}
 				onblur={() => persist({ imageBackendApiKey: imageBackendApiKey.trim() })}
-				aria-label="API key"
 			/>
-			<span>API key, if the server needs one</span>
-		</label>
-		<label class="row">
-			<input
-				type="text"
-				placeholder="ming_image_0.1_design_int8_convrot.safetensors"
-				bind:value={imageComfyCheckpoint}
-				onblur={() => persist({ imageComfyCheckpoint: imageComfyCheckpoint.trim() })}
-				aria-label="Default model"
-			/>
-			<span>
-				default model
+
+			<label for="image-model">
+				Model:
 				<Tooltip
 					label="About the model"
-					text="The model a generation uses when nothing else names one, by its filename on the server. A Ming-Image or Qwen-Image-2.1 file in models/diffusion_models brings its own text encoder and VAE, which are found by name; anything else is treated as an SD checkpoint. The probe below checks."
+					text="Models the server can run, listed by Probe. A Ming-Image or Qwen-Image-2.1 file in models/diffusion_models brings its own text encoder and VAE, which are found by name; anything in models/checkpoints is run as an SD checkpoint."
 				/>
-			</span>
-		</label>
+			</label>
+			<select
+				id="image-model"
+				value={imageComfyCheckpoint}
+				onchange={chooseModel}
+				disabled={modelOptions.length === 0}
+			>
+				{#if modelOptions.length === 0}
+					<option value="">Probe to list the server's models</option>
+				{:else if !imageComfyCheckpoint}
+					<option value="" disabled>Choose a model</option>
+				{/if}
+				{#each modelOptions as m (m.name)}
+					<option value={m.name}>{m.label}</option>
+				{/each}
+			</select>
+		</div>
 
 		<div class="actions">
 			<button onclick={probe} disabled={probing}>{probing ? 'Probing…' : 'Probe'}</button>
@@ -362,31 +401,47 @@
 
 	<details class="settings-section">
 		<summary><h2>Custom workflow</h2></summary>
-		<label class="row">
+		<div class="fields">
+			<label for="image-workflow">Workflow:</label>
 			<input
+				id="image-workflow"
 				type="text"
+				placeholder="API-format workflow JSON"
 				bind:value={imageComfyWorkflowPath}
 				onblur={() => persist({ imageComfyWorkflowPath: imageComfyWorkflowPath.trim() })}
-				aria-label="Workflow path"
 			/>
-			<span>API-format workflow JSON</span>
-		</label>
-		<label class="row">
+
+			<label for="image-fieldmap">Field map:</label>
 			<input
+				id="image-fieldmap"
 				type="text"
+				placeholder="field map JSON"
 				bind:value={imageComfyFieldMapPath}
 				onblur={() => persist({ imageComfyFieldMapPath: imageComfyFieldMapPath.trim() })}
-				aria-label="Field map path"
 			/>
-			<span>field map JSON</span>
-		</label>
-		<p class="help">
-			Replaces the built-in workflows. Set both or neither — one without the other fails the probe.
+		</div>
+		<p class="help" title="Set both or neither — one without the other fails the probe.">
+			Replaces the built-in workflows.
 		</p>
 	</details>
 {/if}
 
 <style>
+	/* Label, then its control, one per line. */
+	.fields {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		align-items: center;
+		gap: 8px 12px;
+		margin-top: 8px;
+	}
+
+	.fields input,
+	.fields select {
+		width: 100%;
+		min-width: 0;
+	}
+
 	.actions {
 		display: flex;
 		align-items: center;

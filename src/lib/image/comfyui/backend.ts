@@ -23,7 +23,7 @@ import {
 import type { GenerateOptions, ImageBackend } from '../backend';
 import { applyFieldMap, validateFieldMap, type ComfyGraph, type FieldMap } from './fieldMap';
 import { selectTemplate, templatesFor, type WorkflowTemplate } from './templates';
-import { familyOf, hasModel, resolveCompanions, type ModelFamily } from './families';
+import { familyOf, hasModel, listModels, resolveCompanions, type ModelFamily } from './families';
 import * as api from './client';
 
 /** What a custom workflow samples with when a request says nothing. */
@@ -213,9 +213,12 @@ export const comfyUiBackend: ImageBackend = {
 			const stats = await api.systemStats(cfg);
 			const devices = stats.devices as Array<{ name?: string }> | undefined;
 			const device = devices?.[0]?.name ?? 'unknown device';
+			// Listed before the model is checked: "no model is set" is exactly
+			// when the user needs to see what there is to choose from.
+			const models = (await listModels(cfg)).map(({ name, label }) => ({ name, label }));
 			const bad = await probeModel(cfg, family, model);
-			if (bad) return { ok: false, detail: bad };
-			return { ok: true, detail: `Connected — ${device}.` };
+			if (bad) return { ok: false, detail: bad, models };
+			return { ok: true, detail: `Connected — ${device}.`, models };
 		} catch (e) {
 			return { ok: false, detail: e instanceof Error ? e.message : String(e) };
 		}

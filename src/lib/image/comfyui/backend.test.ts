@@ -138,9 +138,30 @@ describe('probe', () => {
 		expect(r.detail).toMatch(/No model is set/);
 	});
 
+	it('lists the models the server can run, even when none is set yet', async () => {
+		// "No model is set" is exactly when the list is wanted. A diffusion
+		// model of a family no bundled workflow runs is left out: it would be
+		// run as an SD checkpoint and fail.
+		LISTS.UNETLoader[1].push('z_image_turbo_int8_convrot.safetensors');
+		updateSettings({ imageComfyCheckpoint: '' });
+		happyServer();
+		const r = await comfyUiBackend.probe();
+		LISTS.UNETLoader[1].pop();
+		expect(r.ok).toBe(false);
+		expect(r.models).toEqual([
+			{ name: MING, label: `${MING} — Ming-Image` },
+			{ name: QWEN21, label: `${QWEN21} — Qwen-Image-2.1, non-commercial` },
+			{ name: 'sd15.safetensors', label: 'sd15.safetensors — SD checkpoint' },
+			{ name: 'sdxl.safetensors', label: 'sdxl.safetensors — SD checkpoint' }
+		]);
+	});
+
 	it('names the device it found on success', async () => {
 		happyServer();
-		expect(await comfyUiBackend.probe()).toEqual({ ok: true, detail: 'Connected — AMD R9700.' });
+		expect(await comfyUiBackend.probe()).toMatchObject({
+			ok: true,
+			detail: 'Connected — AMD R9700.'
+		});
 	});
 
 	it('checks a DiT model and its companion files, naming what is missing', async () => {
