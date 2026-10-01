@@ -60,7 +60,7 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 | 24 | Bundled engine runs Ming | **blocked** — sd.cpp cannot run Ming usably here (§4) |
 | 25 | Verify end to end; procedural comparison | not started |
 | 26 | ComfyUI through Rust: no CORS flag | **done** |
-| 27 | Install a model's files into ComfyUI: direct, Manager, by hand | **built** — Manager route live-tested (Ming VAE via Manager 4.2.2); direct route awaiting its live check |
+| 27 | Install a model's files into ComfyUI: direct, Manager, by hand | **done** — both routes live-tested: Manager 4.2.2 and direct, each installing Ming's VAE with its checksum |
 
 Critical path: 18 → 20 → 21 → 22. 19 and 23 can interleave once 18 is in.
 Then 26 → 19 → 27 → 25: a stock ComfyUI, set up from Settings, before the
