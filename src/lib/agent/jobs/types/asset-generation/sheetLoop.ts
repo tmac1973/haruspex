@@ -14,7 +14,7 @@ import { checkImage, normalizeImage, splitSheet } from '$lib/assets/normalize';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
 import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { ImageResult } from '$lib/image/types';
-import { betterReport, maybeJudge, rejectionReason } from './gate';
+import { betterReport, judgeUnavailable, maybeJudge, rejectionReason } from './gate';
 import type { GenerateDeps } from './generate';
 import { escapesWorkdir, isCancellation, isTransient, reasonOf } from './guards';
 import { assignCells, sheetRequest, type CellResult, type SheetPlan } from './sheets';
@@ -74,7 +74,7 @@ async function admit(plan: SheetPlan, ctx: SheetLoopContext, started: number): P
 
 /** What one cell came to: written, or a reason to try again. */
 type CellVerdict =
-	| { done: true; report: CheckReport }
+	| { done: true; report: CheckReport; degraded: string[] }
 	| { done: false; reason: string; report: CheckReport | null; rejected: boolean };
 
 /**
@@ -111,19 +111,19 @@ async function processCell(
 		if (isCancellation(e)) throw e;
 		return { done: false, reason: reasonOf(e), report: null, rejected: true };
 	}
-	const { judge } = ctx.deps;
-	let verdict = null;
-	if (report.passed) {
-		verdict =
-			cell.suspect && judge.visionSupported
-				? await judge.judge(entry, bytes)
-				: await maybeJudge(entry, bytes, judge);
-	}
+	// A suspect piece — found by position alone because the layout did not
+	// come out as asked, or sharing its cell — is shown to the judge whenever
+	// the model can see, whatever the judge setting.
+	const judged = report.passed
+		? await maybeJudge(entry, bytes, ctx.deps.judge, cell.suspect)
+		: { verdict: null };
+	const verdict = judged.verdict;
 	if (!report.passed || (verdict && !verdict.ok)) {
 		return { done: false, reason: rejectionReason(report, verdict), report, rejected: true };
 	}
+	const degraded = judged.unavailable ? [judgeUnavailable(judged.unavailable)] : [];
 	await ctx.deps.writeBytes(entry.out, bytes);
-	return { done: true, report };
+	return { done: true, report, degraded };
 }
 
 /** Generate one round; null when it failed or was handed back. */
@@ -193,7 +193,8 @@ async function settleCell(
 		return false;
 	}
 	if (verdict.done) {
-		ctx.record(i, started, { status: 'done', attempts, seed, degraded: [] }, verdict.report);
+		const outcome: Outcome = { status: 'done', attempts, seed, degraded: verdict.degraded };
+		ctx.record(i, started, outcome, verdict.report);
 		return false;
 	}
 	if (verdict.rejected) sheet.rejected++;

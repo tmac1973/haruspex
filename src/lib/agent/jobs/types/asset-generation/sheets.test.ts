@@ -105,6 +105,13 @@ describe('sheetPrompt', () => {
 		expect(p).toContain('Row 2, left to right: a coin; a wrench.');
 	});
 
+	it('says one row as one row, not as a grid', () => {
+		// "a two by one grid" came back as two by two, with an extra subject.
+		const p = sheetPrompt([entry('sword'), entry('potion')], 'pixel art');
+		expect(p).toContain('two separate game sprites side by side in a single row');
+		expect(p).not.toContain('grid');
+	});
+
 	it('asks for one subject as a single centred sprite, not a sheet of one', () => {
 		const p = sheetPrompt([entry('sword')], 'pixel art');
 		expect(p).toContain('A single game sprite of a sword.');

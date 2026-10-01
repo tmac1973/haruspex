@@ -137,18 +137,39 @@ export interface JudgeDeps {
 	judge: (entry: AssetEntry, image: Uint8Array) => Promise<AssetJudgement | null>;
 }
 
+/** What came of asking the judge. */
+export interface JudgeOutcome {
+	/** Null when the judge did not run or could not: "no opinion", never approval. */
+	verdict: AssetJudgement | null;
+	/** Why it could not, when it was asked and failed. */
+	unavailable?: string;
+}
+
 /**
- * Run the judge if it is both wanted and possible.
+ * Run the judge if it is wanted — or `force`d — and possible.
  *
- * Returns null when it did not run, which the caller must treat as "no
- * opinion" rather than as approval — the distinction is what keeps the report
- * able to say the judge was skipped.
+ * A judge that fails is no opinion, not a failed asset. The judge is the
+ * job's chat model, and that model being down (still loading, or pushed out of
+ * memory by the image backend) once cost a run two good sprites that had
+ * already passed every mechanical check. The caller records `unavailable` so
+ * the report can say which assets nobody looked at.
  */
 export async function maybeJudge(
 	entry: AssetEntry,
 	image: Uint8Array,
-	deps: JudgeDeps
-): Promise<AssetJudgement | null> {
-	if (!deps.enabled || !deps.visionSupported) return null;
-	return await deps.judge(entry, image);
+	deps: JudgeDeps,
+	force = false
+): Promise<JudgeOutcome> {
+	if (!deps.visionSupported || (!deps.enabled && !force)) return { verdict: null };
+	try {
+		return { verdict: await deps.judge(entry, image) };
+	} catch (e) {
+		if (e instanceof DOMException && e.name === 'AbortError') throw e;
+		return { verdict: null, unavailable: e instanceof Error ? e.message : String(e) };
+	}
+}
+
+/** The degradation line for an asset the judge was meant to see and could not. */
+export function judgeUnavailable(reason: string): string {
+	return `not checked by the judge — ${reason.replace(/[.\s]+$/, '')}`;
 }

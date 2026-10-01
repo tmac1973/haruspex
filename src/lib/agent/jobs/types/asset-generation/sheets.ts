@@ -120,11 +120,17 @@ export function sheetPrompt(entries: AssetEntry[], style: string): string {
 		const row = entries.slice(r * cols, (r + 1) * cols).map(subject);
 		if (row.length > 0) lines.push(`Row ${r + 1}, left to right: ${row.join('; ')}.`);
 	}
+	// One row is said as one row. "A two by one grid" was read as two by
+	// two: the model drew a second potion under the first, which made the
+	// layout inexact and both sprites suspect. Measured on two subjects at
+	// seeds 1-4: "side by side in a single row" cut exactly 3 times of 4,
+	// "a two by one grid" once.
+	const layout =
+		rows === 1 ? `side by side in a single row` : `in a ${word(cols)} by ${word(rows)} grid`;
 	return (
-		`${lead}. A sprite sheet of ${word(entries.length)} separate game sprites in a ` +
-		`${word(cols)} by ${word(rows)} grid with wide empty gaps between them, all drawn at ` +
-		`the same scale and in the same style. ${lines.join(' ')} ` +
-		'No text, no labels, no frames.'
+		`${lead}. A sprite sheet of ${word(entries.length)} separate game sprites ${layout} ` +
+		`with wide empty gaps between them, all drawn at the same scale and in the same style. ` +
+		`${lines.join(' ')} No text, no labels, no frames.`
 	);
 }
 

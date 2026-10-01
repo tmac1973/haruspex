@@ -169,7 +169,7 @@ describe('maybeJudge', () => {
 			}
 		});
 		expect(called).toBe(true);
-		expect(v?.ok).toBe(true);
+		expect(v.verdict?.ok).toBe(true);
 	});
 
 	it('is skipped when the model cannot see, and says nothing rather than failing', async () => {
@@ -177,13 +177,50 @@ describe('maybeJudge', () => {
 		const judge = async () => ({ ok: false, reason: 'should not run' });
 		expect(
 			await maybeJudge(entry, image, { enabled: true, visionSupported: false, judge })
-		).toBeNull();
+		).toEqual({
+			verdict: null
+		});
 	});
 
 	it('is skipped when it is turned off', async () => {
 		const judge = async () => ({ ok: false, reason: 'should not run' });
 		expect(
 			await maybeJudge(entry, image, { enabled: false, visionSupported: true, judge })
-		).toBeNull();
+		).toEqual({
+			verdict: null
+		});
+	});
+
+	it('runs when forced, even when turned off', async () => {
+		const judge = async () => ({ ok: false, reason: 'wrong subject' });
+		const v = await maybeJudge(
+			entry,
+			image,
+			{ enabled: false, visionSupported: true, judge },
+			true
+		);
+		expect(v.verdict?.ok).toBe(false);
+	});
+
+	it('is no opinion, not a failure, when the judge cannot run', async () => {
+		// The judge is the job's chat model. Down — still loading, or pushed out
+		// of memory by the image backend — it once cost a run two good sprites.
+		const judge = async () => {
+			throw new Error('Failed to connect to the AI model. Is it still loading?');
+		};
+		const v = await maybeJudge(entry, image, { enabled: true, visionSupported: true, judge });
+		expect(v).toEqual({
+			verdict: null,
+			unavailable: 'Failed to connect to the AI model. Is it still loading?'
+		});
+	});
+
+	it('still stops on cancellation', async () => {
+		const judge = async () => {
+			throw new DOMException('Aborted', 'AbortError');
+		};
+		await expect(
+			maybeJudge(entry, image, { enabled: true, visionSupported: true, judge })
+		).rejects.toThrow('Aborted');
 	});
 });

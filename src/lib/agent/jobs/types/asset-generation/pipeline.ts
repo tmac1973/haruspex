@@ -36,6 +36,7 @@ import { validateAssetSpec } from '$lib/assets/spec/validate';
 import type { AssetSpec } from '$lib/assets/spec/types';
 import { contactSheet, defaultProfile } from '$lib/assets/normalize';
 import { resolveImageBackend } from '$lib/image';
+import { getSettings } from '$lib/stores/settings';
 import { SUBMIT_ASSET_SPEC_TOOL } from '$lib/agent/tools/coding';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import { deriveSpec, type DerivePayload } from './derive';
@@ -96,7 +97,9 @@ export function reportPathFor(specPath: string): string {
  */
 async function resolveLicensing(spec: AssetSpec): Promise<Licensing> {
 	const loras = (spec.style.loras ?? []).map((l) => l.name).filter((n) => n.trim().length > 0);
-	const model = (spec.style.model ?? '').trim();
+	// Named even when the spec leaves it to the backend: "the configured
+	// default" tells a reader nothing about what made their art.
+	const model = (spec.style.model ?? '').trim() || configuredModelName();
 	try {
 		const catalogue =
 			await invoke<Array<{ id: string; filename: string; license: string; description: string }>>(
@@ -116,6 +119,14 @@ async function resolveLicensing(spec: AssetSpec): Promise<Licensing> {
 		modelLicense: null,
 		loras
 	};
+}
+
+/** The model the configured backend uses when a spec names none. */
+function configuredModelName(): string {
+	const s = getSettings();
+	if (s.imageBackendKind === 'comfyui') return s.imageComfyCheckpoint.trim();
+	if (s.imageBackendKind === 'local') return (s.imageLocalModelId || s.imageLocalModelPath).trim();
+	return '';
 }
 
 /** Counts by status, so the stage line and the report cannot disagree. */

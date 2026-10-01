@@ -15,6 +15,7 @@ import { buildEntryRequest } from './request';
 import {
 	amendForRetry,
 	betterReport,
+	judgeUnavailable,
 	maybeJudge,
 	rejectionReason,
 	retrySeed,
@@ -211,7 +212,9 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 
 			// The judge costs a turn, so it only sees images that already
 			// passed the free checks — there is nothing to ask about a blank.
-			const verdict = report.passed ? await maybeJudge(entry, bytes, deps.judge) : null;
+			const judged = report.passed ? await maybeJudge(entry, bytes, deps.judge) : { verdict: null };
+			const verdict = judged.verdict;
+			if (judged.unavailable) degraded.push(judgeUnavailable(judged.unavailable));
 			if (report.passed && (!verdict || verdict.ok)) {
 				try {
 					await deps.writeBytes(entry.out, bytes);

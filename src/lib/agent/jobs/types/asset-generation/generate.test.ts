@@ -788,4 +788,27 @@ describe('sheets', () => {
 		await generateEntries(specOf([{}, {}, {}]), h.deps);
 		expect(h.requests).toHaveLength(1);
 	});
+
+	it('keeps a cut piece when the judge it was sent to cannot run, and says so', async () => {
+		// The run that found this: an inexact anchor sheet made both sprites
+		// suspect, the forced judge called a chat model that was not loaded,
+		// and two sprites that had passed every check were recorded as failed.
+		splits.push({ pieces: [THREE[0], THREE[2]] });
+		const h = harness({
+			caps: SHEETS,
+			judge: {
+				visionSupported: true,
+				enabled: false,
+				judge: async () => {
+					throw new Error('Failed to connect to the AI model. Is it still loading?');
+				}
+			}
+		});
+		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(results[0].outcome.status).toBe('done');
+		expect(results[0].outcome.degraded).toEqual([
+			'not checked by the judge — Failed to connect to the AI model. Is it still loading?'
+		]);
+		expect(h.written).toContain('out/e0.png');
+	});
 });
