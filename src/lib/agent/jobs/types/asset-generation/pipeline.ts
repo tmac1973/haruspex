@@ -250,7 +250,7 @@ async function judgeAsset(
 ): Promise<AssetJudgement | null> {
 	let verdict: AssetJudgement | null = null;
 	await ctx.runJobTurn({
-		userMessage: judgePrompt(entry.prompt, spec.style.prompt),
+		userMessage: judgePrompt(entry.prompt, spec.style.prompt, entry.kind),
 		history: [
 			{
 				role: 'user',

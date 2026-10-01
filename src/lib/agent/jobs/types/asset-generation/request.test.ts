@@ -4,6 +4,7 @@ import {
 	entryEdge,
 	entryNegativePrompt,
 	entryPrompt,
+	textureScaffold,
 	wantsIsolation,
 	ISOLATION_NEGATIVE
 } from './request';
@@ -254,5 +255,38 @@ describe('degradation', () => {
 	it('records nothing when no LoRAs were asked for', () => {
 		const caps = { ...FULL, loras: false, maxLoras: 0 };
 		expect(buildEntryRequest(entry(), spec(), profile(), caps, OPTS).degraded).toEqual([]);
+	});
+});
+
+describe('a texture on a DiT backend', () => {
+	const texture = (prompt: string) => entry({ kind: 'texture', prompt });
+
+	it('is seen from directly above, with the style leading', () => {
+		const { request } = buildEntryRequest(
+			texture('cracked asphalt'),
+			spec(),
+			profile(),
+			FULL,
+			OPTS
+		);
+		expect(request.prompt).toMatch(/^flat pixel art\. A flat game texture of cracked asphalt/);
+		expect(request.prompt).toContain('seen from directly above');
+		expect(request.prompt).toContain('no perspective, no horizon, no grid lines');
+	});
+
+	it('drops "seamlessly tiling", which draws a grid of tiles', () => {
+		const p = textureScaffold('seamlessly tiling green weeds over pavement', 'pixel art');
+		expect(p).toContain('texture of green weeds over pavement,');
+		expect(p).not.toMatch(/seamless|tiling/);
+	});
+
+	it('sees a wall straight on', () => {
+		expect(textureScaffold('dirty red brick wall', 'pixel art')).toContain('seen straight on');
+	});
+
+	it('keeps the short prompt on an SD checkpoint, which reads 77 tokens', () => {
+		const caps = { ...FULL, transparency: false };
+		const { request } = buildEntryRequest(texture('cobblestone'), spec(), profile(), caps, OPTS);
+		expect(request.prompt).toBe('cobblestone, flat pixel art');
 	});
 });

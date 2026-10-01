@@ -263,9 +263,10 @@ registerTool({
 								description:
 									'The look, appended to every asset prompt. ONE SHORT LINE, at most about ' +
 									'25 words: the image model reads only the first 77 tokens of a prompt, and ' +
-									'a long style pushes the subject out of that window. Medium, palette and ' +
-									'line weight only. e.g. "flat pixel art, limited palette, thick dark ' +
-									'outline, no gradients". Never a subject, a camera angle or a genre.'
+									'a long style pushes the subject out of that window. Medium, line weight ' +
+									'and saturation only. e.g. "flat pixel art, limited palette, thick dark ' +
+									'outline, no gradients". Never a colour scheme (it tints every asset), ' +
+									'a subject, a camera angle or a genre.'
 							},
 							negativePrompt: {
 								type: 'string',
@@ -277,9 +278,9 @@ registerTool({
 					anchorSheet: {
 						type: 'string',
 						description:
-							'The one sheet name, from the entries, whose subjects together cover the ' +
-							"set's materials and colours best — it becomes the style every other asset " +
-							'is matched to. Not four characters, not four icons: a spread.'
+							'The one sheet name, from the entries, whose subjects together show the ' +
+							"set's look best. It is generated first, for approval before the rest. " +
+							'Not four characters, not four icons: a spread.'
 					},
 					entries: {
 						type: 'array',
@@ -301,8 +302,9 @@ registerTool({
 								prompt: {
 									type: 'string',
 									description:
-										'What to draw, subject only — the shared style is added automatically. ' +
-										'e.g. "a straight iron longsword, blade upward".'
+										'What to draw, subject only, with its own colours — the shared style is ' +
+										'added automatically. e.g. "a straight iron longsword, blade upward". ' +
+										'For a texture, the surface alone: "seamless" or "tiling" draws a grid.'
 								},
 								sheet: {
 									type: 'string',

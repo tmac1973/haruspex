@@ -56,7 +56,7 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 | 20 | Normalization for alpha; cutting a sheet | **done** |
 | 21 | Generate sprites and icons in sheets | **done** — live sheets cut 9/9 |
 | 22 | The first sheet is the anchor | **done** |
-| 23 | Textures | not started |
+| 23 | Textures | in progress — prompts done (`measurements-phase-23.md`); seam metric and tiling next |
 | 24 | Bundled engine runs Ming | **blocked** — sd.cpp cannot run Ming usably here (§4) |
 | 25 | Verify end to end; procedural comparison | not started |
 

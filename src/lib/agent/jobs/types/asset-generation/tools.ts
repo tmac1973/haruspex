@@ -107,10 +107,11 @@ registerTool({
 							prompt: {
 								type: 'string',
 								description:
-									'ONE SHORT LINE, at most about 25 words: medium, palette and line ' +
-									'weight. The image model reads only the first 77 tokens of a prompt, ' +
-									'so a long style pushes the subject out of the window. Never a ' +
-									'subject, a camera angle or a genre.'
+									'ONE SHORT LINE, at most about 25 words: medium, line weight and ' +
+									'saturation. The image model reads only the first 77 tokens of a ' +
+									'prompt, so a long style pushes the subject out of the window. Never ' +
+									'a colour scheme (it tints every asset), a subject, a camera angle ' +
+									'or a genre.'
 							},
 							negativePrompt: {
 								type: 'string',

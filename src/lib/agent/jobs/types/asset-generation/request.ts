@@ -81,6 +81,33 @@ export function entryNegativePrompt(entry: AssetEntry, spec: AssetSpec): string 
 }
 
 /**
+ * A texture as a DiT model draws it best, measured on Ming-Image (phase 23).
+ *
+ * Without a view the model draws the surface as a scene: a road receding to a
+ * horizon, a warehouse floor with the warehouse around it. "Seamlessly tiling"
+ * draws a grid of tiles, so it is taken out of the subject; the seam is the
+ * backend's job, not the prompt's. Ground is seen from directly above — "straight
+ * on" brought the road's perspective back at one seed of two — and a wall straight
+ * on, which drew clean brick where "from above" has no meaning.
+ *
+ * Not used on SD checkpoints: CLIP reads 77 tokens, and this costs about 35.
+ */
+export function textureScaffold(subject: string, style: string): string {
+	const surface = subject
+		.replace(/^\s*seamless(ly)?(\s+tiling)?[\s,]+/i, '')
+		.replace(/[.\s]+$/, '');
+	const view = /\b(wall|facade|fa\u00e7ade|front)\b/i.test(surface)
+		? 'straight on'
+		: 'from directly above';
+	const lead = style.trim().replace(/[.\s]+$/, '');
+	return (
+		`${lead ? `${lead}. ` : ''}A flat game texture of ${surface}, seen ${view}. ` +
+		'One continuous surface filling the whole frame edge to edge: ' +
+		'no perspective, no horizon, no grid lines, no border, no frame.'
+	);
+}
+
+/**
  * The edge to generate at, from the effective profile.
  *
  * An entry may override `target_size`; the upscale and the clamp still apply,
@@ -138,7 +165,11 @@ export function buildEntryRequest(
 
 	return {
 		request: {
-			prompt: entryPrompt(entry, spec, profile),
+			// A backend with alpha is a DiT model, which reads a whole sentence.
+			prompt:
+				entry.kind === 'texture' && caps.transparency
+					? textureScaffold(entry.prompt, spec.style.prompt)
+					: entryPrompt(entry, spec, profile),
 			negativePrompt: entryNegativePrompt(entry, spec),
 			width: edge,
 			height: edge,
