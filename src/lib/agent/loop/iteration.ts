@@ -20,7 +20,13 @@ import {
 	type Usage
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
-import { executeTool, getToolSchemas, type PendingImage, type ToolContext } from '$lib/agent/tools';
+import {
+	coerceCallArguments,
+	executeTool,
+	getToolSchemas,
+	type PendingImage,
+	type ToolContext
+} from '$lib/agent/tools';
 import { isFetchFailureResult, isToolErrorResult } from '$lib/agent/tools/_helpers';
 import type { ToolDefinition } from '$lib/api';
 import {
@@ -1420,7 +1426,11 @@ async function executeToolCalls(
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 		logDebug('agent', `tool start: ${call.name}`, { args: call.arguments });
-		options.onToolStart(call);
+		// Coerced, as the executor will see them. A stage that captures a
+		// structured answer here read the model's raw arguments: an `entries`
+		// array sent as a JSON string was walked character by character, and
+		// a night's asset spec was rejected as dozens of "entries with no id".
+		options.onToolStart({ ...call, arguments: coerceCallArguments(call.name, call.arguments) });
 		// Race the tool call against the abort signal. Most tools dispatch
 		// to Tauri commands or fetch and don't honor signal themselves, so
 		// without this race a cancel mid-tool waits for the tool to finish

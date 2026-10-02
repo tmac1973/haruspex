@@ -203,7 +203,11 @@ function tick() {
  */
 function guidedTurns(
 	phases: Array<{ id: string; title: string; depends_on?: string[]; summary: string }>,
-	assets?: { style: { prompt: string }; entries: Array<Record<string, unknown>> }
+	assets?: {
+		style: { prompt: string };
+		entries: Array<Record<string, unknown>>;
+		targetSize?: number;
+	}
 ) {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	return async (opts: any) => {
@@ -4100,6 +4104,51 @@ describe('guided_planning — asset chain', () => {
 		expect(cfg.run_mode).toBe('unattended');
 		// The coding job's configuration rides along rather than being rebuilt.
 		expect(cfg.coding_run.plan_dir).toBe(PLAN_DIR);
+	});
+
+	it('forwards the size the plan draws at, which the asset job would otherwise default', async () => {
+		// The job's size wins over the spec's, and its default is 64: a 32 px
+		// game got 64 px art.
+		wireWrites();
+		await run(
+			planningJob(),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }], {
+				style: { prompt: 'flat pixel art' },
+				targetSize: 16,
+				entries: ENTRIES
+			}),
+			chainedAssetJob()
+		);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.target_size).toBe(16);
+	});
+
+	it('tells every planning turn the art is coming, but not the asset stage', async () => {
+		// Without it the interview asked where the art comes from and how its
+		// files are named — both already decided by the chain.
+		wireWrites();
+		await run(planningJob(), turns(), chainedAssetJob());
+		const prompts = mocks.runEphemeralTurn.mock.calls.map((c: unknown[]) =>
+			String((c[0] as { systemPrompt?: string }).systemPrompt ?? '')
+		);
+		const assetStage = prompts.filter((p: string) => p.startsWith('You are listing the images'));
+		const planning = prompts.filter(
+			(p: string) => p.length > 0 && !p.startsWith('You are listing the images')
+		);
+		expect(assetStage).toHaveLength(1);
+		expect(assetStage[0]).not.toContain('ART IS GENERATED');
+		expect(planning.length).toBeGreaterThan(2);
+		expect(planning.every((p: string) => p.includes('ART IS GENERATED'))).toBe(true);
+		expect(planning[0]).toContain('assets/generated/sprite/<id>.png');
+	});
+
+	it('says nothing about generated art when asset generation is off', async () => {
+		wireWrites();
+		await run(planningJob({ generate_assets: false }), turns());
+		const prompts = mocks.runEphemeralTurn.mock.calls.map((c: unknown[]) =>
+			String((c[0] as { systemPrompt?: string }).systemPrompt ?? '')
+		);
+		expect(prompts.some((p: string) => p.includes('ART IS GENERATED'))).toBe(false);
 	});
 
 	it('puts the ids in overview.md, where the coding run will actually read them', async () => {

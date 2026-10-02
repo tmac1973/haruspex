@@ -85,3 +85,32 @@ subjects). 6 of 6 sheets cut exactly.
 Scale and angle follow the padding reliably; finish only partly.
 
 Not run: the bundled engine, which cannot run Ming (phase 24).
+
+## The full chain (step 1), first attempt — 2026-10-02
+
+Guided planning → assets → coding in `~/Projects/p25-chain`, unattended after
+the interview. Run 75 (planning) succeeded; the asset stage wrote no spec and
+the chain went straight to coding (run 76, cancelled). Three faults:
+
+1. **The spec was lost to unparsed arguments.** The model sent `entries` as a
+   JSON string. The tool registry coerces that before a tool runs, but the
+   stage captured the raw arguments in `onToolStart`, and `derivePlanSpec`
+   walked the string one character at a time: dozens of "(an entry with no
+   id)". Fixed where it applies to every stage: `onToolStart` now receives
+   the coerced arguments (`loop/iteration.ts`), and `derivePlanSpec` takes
+   nothing from entries that are not a list.
+2. **The interview did not know art was coming.** It asked where the art
+   comes from (recommending drawing it in code) and how the files are named
+   (offering three layouts, none of them the one the asset stage writes).
+   Every planning turn is now told the paths and that this is decided
+   (`generatedArtNote`), and to state the pixel size.
+3. **The chained asset job drew at 64 px for a 32 px game.** The job's size
+   wins over the spec's and was never set. The plan's tool now reports
+   `targetSize`, the spec carries it, and the chained job is created with it.
+
+Also: the plan tool now takes `sheet` and `anchorSheet` as the standalone one
+does, so a chained run's sprites are grouped rather than all on "sprites".
+
+Separately, verification left five blocking findings for coding's preflight
+(a gate expecting `imported: 3 modules` from `len(sys.modules)`, among others).
+Plan quality, not assets; noted here, not addressed.

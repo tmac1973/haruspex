@@ -82,6 +82,7 @@ export interface PlanAssetEntryArg {
 	id: string;
 	kind?: string;
 	prompt?: string;
+	sheet?: string;
 	size?: number;
 	seamless?: boolean;
 	negativePrompt?: string;
@@ -120,6 +121,18 @@ registerTool({
 						},
 						required: ['prompt']
 					},
+					targetSize: {
+						type: 'number',
+						description:
+							'The pixel size the plan draws its tiles and sprites at, e.g. 32. Every ' +
+							'asset is made at this size.'
+					},
+					anchorSheet: {
+						type: 'string',
+						description:
+							'The one sheet name, from the entries, whose subjects together show the ' +
+							"set's look best. Not four characters, not four icons: a spread."
+					},
 					entries: {
 						type: 'array',
 						description: 'Every image the plan needs, and nothing it does not.',
@@ -141,7 +154,17 @@ registerTool({
 								},
 								prompt: {
 									type: 'string',
-									description: 'The SUBJECT only. The shared style is added automatically.'
+									description:
+										'The SUBJECT only, with its own colours. The shared style is added ' +
+										'automatically. For a texture, the surface alone: "seamless" or ' +
+										'"tiling" draws a grid.'
+								},
+								sheet: {
+									type: 'string',
+									description:
+										'Sprites and icons only. A short group name, e.g. "items" or ' +
+										'"enemies": entries with the same name are drawn together, at one ' +
+										'scale and from one view. Never a coin with a building.'
 								},
 								size: { type: 'number', description: 'Pixel size, if this one differs.' },
 								seamless: { type: 'boolean', description: 'Must tile. Implied for textures.' },

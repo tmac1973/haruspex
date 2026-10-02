@@ -114,6 +114,16 @@ export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): A
 export interface PlanDerivePayload {
 	style?: { prompt?: string; negativePrompt?: string };
 	entries?: PlanAssetEntryArg[];
+	anchorSheet?: string;
+	/** The pixel size the plan draws its art at. */
+	targetSize?: number;
+}
+
+/** A target size worth honouring: a sprite edge, not a typo. */
+export function planTargetSize(raw: unknown): number | undefined {
+	return typeof raw === 'number' && Number.isInteger(raw) && raw >= 8 && raw <= 256
+		? raw
+		: undefined;
 }
 
 export interface PlanDeriveResult {
@@ -143,7 +153,10 @@ export function derivePlanSpec(
 	const rejected: string[] = [];
 	const seen = new Set<string>();
 
-	for (const raw of payload.entries ?? []) {
+	// Anything but a list is not a list of entries. A JSON string here (a model
+	// stringifying the array) was once iterated character by character.
+	const list = Array.isArray(payload.entries) ? payload.entries : [];
+	for (const raw of list) {
 		const id = (raw?.id ?? '').trim();
 		const prompt = (raw?.prompt ?? '').trim();
 		if (prompt.length === 0) {
@@ -156,9 +169,11 @@ export function derivePlanSpec(
 		}
 		seen.add(id);
 		const kind = kindOf(raw.kind);
+		const sheet = sheetName(raw.sheet, kind);
 		entries.push({
 			id,
 			kind,
+			...(sheet ? { sheet } : {}),
 			prompt,
 			out: defaultOutPath(kind, id),
 			...(kind === 'texture' ? { seamless: true } : {}),
@@ -177,8 +192,15 @@ export function derivePlanSpec(
 					? { negativePrompt: payload.style.negativePrompt.trim() }
 					: {})
 			},
-			anchor: { image: DEFAULT_ANCHOR_IMAGE, recipe: DEFAULT_ANCHOR_RECIPE },
-			normalize: profile,
+			anchor: {
+				image: DEFAULT_ANCHOR_IMAGE,
+				recipe: DEFAULT_ANCHOR_RECIPE,
+				...anchorSheetOf(payload.anchorSheet, entries)
+			},
+			normalize: {
+				...profile,
+				target_size: planTargetSize(payload.targetSize) ?? profile.target_size
+			},
 			entries
 		},
 		rejected

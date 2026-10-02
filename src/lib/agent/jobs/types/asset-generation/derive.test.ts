@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { deriveSpec, sheetName } from './derive';
+import { derivePlanSpec, deriveSpec, sheetName, type PlanDerivePayload } from './derive';
+import { coerceCallArguments } from '$lib/agent/tools';
+import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from './tools';
 import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
 
 describe('sheetName', () => {
@@ -60,5 +62,66 @@ describe('the anchor sheet', () => {
 			{} as NormalizeProfile
 		);
 		expect(spec.anchor.sheet).toBeUndefined();
+	});
+});
+
+describe('derivePlanSpec', () => {
+	const profile = { target_size: 64, palette_size: 32 } as unknown as NormalizeProfile;
+	const entry = (id: string, over: Record<string, unknown> = {}) => ({
+		id,
+		kind: 'sprite',
+		prompt: `a ${id}`,
+		...over
+	});
+
+	it('reads entries a model sent as a JSON string, once the tool coerces them', () => {
+		// The failure that skipped a night's art: `entries` arrived as a string,
+		// was walked character by character, and every "entry" had no id.
+		const raw = {
+			style: '{"prompt":"pixel art"}',
+			entries: JSON.stringify([entry('coin'), entry('grass', { kind: 'texture' })])
+		};
+		const { spec, rejected } = derivePlanSpec(
+			coerceCallArguments(SUBMIT_PLAN_ASSET_SPEC_TOOL, raw) as PlanDerivePayload,
+			profile
+		);
+		expect(rejected).toEqual([]);
+		expect(spec.entries.map((e) => e.id)).toEqual(['coin', 'grass']);
+		expect(spec.style.prompt).toBe('pixel art');
+	});
+
+	it('takes nothing from entries that are not a list, rather than one entry per character', () => {
+		const { spec, rejected } = derivePlanSpec(
+			{ entries: '[{"id":"coin"}]' as unknown as PlanDerivePayload['entries'] },
+			profile
+		);
+		expect(spec.entries).toEqual([]);
+		expect(rejected).toEqual([]);
+	});
+
+	it('keeps sheets and the anchor sheet, and draws at the plan size', () => {
+		const { spec } = derivePlanSpec(
+			{
+				targetSize: 32,
+				anchorSheet: 'Items',
+				entries: [
+					entry('coin', { sheet: 'Items' }),
+					entry('potion', { sheet: 'items' }),
+					entry('grass', { kind: 'texture', sheet: 'items' })
+				]
+			},
+			profile
+		);
+		expect(spec.entries.map((e) => e.sheet)).toEqual(['items', 'items', undefined]);
+		expect(spec.anchor.sheet).toBe('items');
+		expect(spec.normalize.target_size).toBe(32);
+	});
+
+	it('ignores a size that is not a sprite edge', () => {
+		for (const targetSize of [0, 3, 1024, 32.5]) {
+			expect(derivePlanSpec({ targetSize, entries: [] }, profile).spec.normalize.target_size).toBe(
+				64
+			);
+		}
 	});
 });

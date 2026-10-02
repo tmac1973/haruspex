@@ -23,7 +23,9 @@ const api = vi.hoisted(() => ({
 
 const toolsMock = vi.hoisted(() => ({
 	executeTool: vi.fn(),
-	getToolSchemas: vi.fn()
+	getToolSchemas: vi.fn(),
+	// The real one coerces against the tool's schema; identity unless a test says otherwise.
+	coerceCallArguments: vi.fn((_name: string, args: Record<string, unknown>) => args)
 }));
 
 vi.mock('$lib/api', () => ({
@@ -51,7 +53,8 @@ vi.mock('$lib/api', () => ({
 
 vi.mock('$lib/agent/tools', () => ({
 	executeTool: toolsMock.executeTool,
-	getToolSchemas: toolsMock.getToolSchemas
+	getToolSchemas: toolsMock.getToolSchemas,
+	coerceCallArguments: toolsMock.coerceCallArguments
 }));
 
 vi.mock('$lib/stores/settings', () => ({
@@ -412,6 +415,35 @@ describe('runAgentLoop: truncation before any tool call', () => {
 		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
 		const err = cb.onError.mock.calls[0][0] as Error;
 		expect(err.message).toContain('response limit');
+	});
+});
+
+describe('runAgentLoop: what onToolStart sees', () => {
+	it('is the arguments as the tool will run with them, coerced to its schema', async () => {
+		// A stage that captures a structured answer from onToolStart read the
+		// model's raw arguments: `entries` sent as a JSON string was walked
+		// character by character, and a night's asset spec came out empty.
+		nonStreamQueue.push(
+			toolCallResponse([
+				{ id: 'c1', name: 'submit_plan_asset_spec', args: '{"entries":"[{\\"id\\":\\"coin\\"}]"}' }
+			]),
+			textResponse('done')
+		);
+		toolsMock.executeTool.mockResolvedValue({ result: 'recorded' });
+		toolsMock.coerceCallArguments.mockImplementationOnce((_n, args) => ({
+			...args,
+			entries: JSON.parse(String(args.entries))
+		}));
+		const { options, cb } = makeOptions();
+		await runAgentLoop(options);
+		expect(toolsMock.coerceCallArguments).toHaveBeenCalledWith('submit_plan_asset_spec', {
+			entries: '[{"id":"coin"}]'
+		});
+		expect(cb.onToolStart).toHaveBeenCalledWith({
+			id: 'c1',
+			name: 'submit_plan_asset_spec',
+			arguments: { entries: [{ id: 'coin' }] }
+		});
 	});
 });
 

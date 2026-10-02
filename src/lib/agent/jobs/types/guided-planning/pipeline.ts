@@ -717,6 +717,34 @@ export function classifyFindings(verdict: string): { blocking: string[]; advisor
  * runner rejects one that does not match the shape rule rather than quietly
  * inventing a tidier version.
  */
+/**
+ * Told to every planning turn when this run will generate art.
+ *
+ * Without it the interview asked where the art comes from, recommended
+ * drawing it in code, then asked how the files should be named — three
+ * questions whose answers the chain had already decided, and two of the
+ * offered answers would have produced a plan that ignored the generated art.
+ * The paths are `defaultOutPath`'s; the ids are the plan's own, which the
+ * asset stage copies exactly.
+ */
+export function generatedArtNote(): string {
+	return [
+		'ART IS GENERATED FOR THIS PLAN. Once the plan is finished, an asset run makes',
+		"the project's art as PNG files BEFORE any code is written:",
+		'- `assets/generated/sprite/<id>.png`: characters, enemies, items, effects',
+		'  (transparent background);',
+		'- `assets/generated/texture/<id>.png`: ground and walls (tiles seamlessly);',
+		'- `assets/generated/icon/<id>.png`: small UI symbols.',
+		'`<id>` is the content id the plan uses for that thing: lowercase letters,',
+		'digits and underscores. The code must load these files by these paths,',
+		'scaled to the tile size when loaded, and must not draw art in code, plan',
+		'placeholder art, or fall back silently when a file is missing. This is',
+		'decided: do NOT ask the user where the art comes from, or how its files are',
+		'named or laid out. DO settle the pixel size the art is drawn at (for',
+		'example 32 px) and state it in the overview.'
+	].join('\n');
+}
+
 export function assetSpecPrompt(outDir: string, specPath: string): string {
 	return [
 		'You are listing the images a finished plan needs, so they can be generated',
@@ -749,6 +777,13 @@ export function assetSpecPrompt(outDir: string, specPath: string): string {
 		'   - `prompt`: the SUBJECT only, with its own colours. The shared style is',
 		'     added automatically, so repeating it here dilutes both. For a texture,',
 		'     name the surface, not "seamless" or "tiling" — those draw a grid of tiles.',
+		'   - `sheet` (sprites and icons): a short group name. Entries with the same',
+		'     name are drawn together, up to nine at a time, at ONE scale and from ONE',
+		'     view — so group things that belong side by side: items with items,',
+		'     enemies with enemies. A coin beside a building comes out as a giant coin.',
+		'   Also give `targetSize`, the pixel size the plan draws its tiles and sprites',
+		'   at (e.g. 32), and `anchorSheet`, the one sheet that best shows the look of',
+		'   the whole set — a spread, not four of one thing.',
 		'4. If the plan needs no images at all, submit an empty entries list. That is',
 		'   a real answer — inventing decorative art nobody asked for costs GPU hours',
 		'   and puts files in the project that no code will ever reference.',
@@ -801,6 +836,33 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	// Which checkpoints this run stops at. Only the FINAL approval is
 	// conditional — the overview and outline checkpoints run in every mode.
 	const runMode = cfg.run_mode;
+	/**
+	 * Whether this run will actually chain an asset run.
+	 *
+	 * Three conditions, and all three are real: the user asked for it, the mode
+	 * chains anything at all, and there is a backend that could generate a
+	 * picture. The third is checked here rather than only in the editor because
+	 * a job authored while a backend was configured can be run after it was
+	 * removed, and a night's work must not be lost to a setting.
+	 */
+	const wantsAssets =
+		cfg.generate_assets && runMode === 'unattended_chain' && resolveImageBackend().kind !== 'none';
+	// Every planning turn is told the art is coming, and where it will be —
+	// except the asset stage itself, whose prompt is about nothing else.
+	if (wantsAssets) {
+		const run = deps.runJobTurn;
+		deps = {
+			...deps,
+			runJobTurn: (o) =>
+				run(
+					// A turn with no prompt of its own gets the default one, which a
+					// prompt passed here would REPLACE; those are left alone.
+					o.turnKind === 'assets.derive' || o.systemPrompt == null
+						? o
+						: { ...o, systemPrompt: `${o.systemPrompt}\n\n${generatedArtNote()}` }
+				)
+		};
+	}
 	const toolsets = guidedPlanningToolsets(webResearch);
 	// A survey the user asked for ("research the PDF libraries and give me a
 	// choice") is a dozen search and read calls on top of the interview itself.
@@ -1336,23 +1398,17 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	 * and `enqueue` report failure by returning null rather than throwing, so
 	 * each is reported rather than propagated.
 	 */
-	/**
-	 * Whether this run will actually chain an asset run.
-	 *
-	 * Three conditions, and all three are real: the user asked for it, the mode
-	 * chains anything at all, and there is a backend that could generate a
-	 * picture. The third is checked here rather than only in the editor because
-	 * a job authored while a backend was configured can be run after it was
-	 * removed, and a night's work must not be lost to a setting.
-	 */
-	const wantsAssets =
-		cfg.generate_assets && runMode === 'unattended_chain' && resolveImageBackend().kind !== 'none';
-
 	/** Where the spec goes. Beside the plan, not in the project root. */
 	const specPath = `${outDir}assets.json`;
 
 	/** Ids the asset stage settled on, for the handoff and for overview.md. */
 	let assetIds: string[] = [];
+	/**
+	 * The size the plan draws its art at. Forwarded to the asset job, because
+	 * a job's size wins over its spec's and the job default is 64: a 32 px
+	 * game would otherwise get 64 px art.
+	 */
+	let assetTargetSize: number | undefined;
 
 	/**
 	 * Derive the asset spec from the finished plan and write it.
@@ -1407,6 +1463,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 
 		await writeWorkdirFile(specPath, renderAssetSpec(spec));
 		assetIds = spec.entries.map((e) => e.id);
+		assetTargetSize = spec.normalize.target_size;
 		await appendAssetsToOverview(spec.entries.map((e) => ({ id: e.id, out: e.out })));
 
 		// Rejections are reported, never swallowed. An id the shape rule
@@ -1509,6 +1566,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				type_config: JSON.stringify({
 					spec_path: specPath,
 					run_mode: 'unattended',
+					...(assetTargetSize ? { target_size: assetTargetSize } : {}),
 					// Forwarded, not applied: the asset run creates the coding
 					// job when it finishes, and knows which assets are missing.
 					coding_run: codingConfig

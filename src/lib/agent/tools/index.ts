@@ -18,7 +18,7 @@ import './contacts';
 import './screen';
 
 // Re-export registry API
-export { getToolSchemas, executeTool, getDisplayLabel } from './registry';
+export { getToolSchemas, executeTool, getDisplayLabel, coerceCallArguments } from './registry';
 export { registerMcpTools, unregisterMcpServer } from './mcp';
 
 // Re-export types used by consumers
