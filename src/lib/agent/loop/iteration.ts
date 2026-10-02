@@ -212,7 +212,15 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			visionSupported: options.visionSupported ?? true,
 			shellMode,
 			codeMode,
-			toolAllowlist: options.toolAllowlist
+			// The forced final tool is always offered. A stage once listed its
+			// read tools but not its submit tool: the model, correctly, never
+			// called a tool it was not given, and the forced call then named a
+			// tool missing from the request, which vLLM refuses with a 400 — so
+			// the turn ended empty and a chain lost its art.
+			toolAllowlist:
+				options.toolAllowlist && options.forceFinalTool
+					? [...options.toolAllowlist, options.forceFinalTool]
+					: options.toolAllowlist
 		}),
 		signal: options.signal,
 		workingDir,

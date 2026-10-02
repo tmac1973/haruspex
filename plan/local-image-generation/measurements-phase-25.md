@@ -114,3 +114,23 @@ does, so a chained run's sprites are grouped rather than all on "sprites".
 Separately, verification left five blocking findings for coding's preflight
 (a gate expecting `imported: 3 modules` from `len(sys.modules)`, among others).
 Plan quality, not assets; noted here, not addressed.
+
+## The full chain, second attempt — 2026-10-02
+
+The interview asked nothing about art this time, and the plan named the art
+correctly (phase 07 loads all twelve ids, from `texture/` or `tile/`). The
+asset stage still wrote no spec: "the model never submitted one".
+
+Cause: the stage's tool allowlist named its read tools but not its own submit
+tool, the only forced-tool stage that did so. The model, correctly, never
+called a tool it was not offered; the loop then forced a call to that tool in
+a request that did not contain it, which vLLM refuses ("The tool specified in
+`tool_choice` does not match any of the specified `tools`", 400), and the
+turn ended empty. The first attempt only got as far as it did because the
+model called the unoffered tool anyway.
+
+Fixed in the stage, and structurally in the loop: a forced final tool is now
+always added to a turn's allowlist. Checked outside the app against the same
+model and plan: with the tool offered, the model submitted on its eighth call
+— 12 entries as a real list, `targetSize` 32, `anchorSheet` `characters`,
+grouped into characters, pickups and hud, ids matching the plan's.

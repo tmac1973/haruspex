@@ -1430,7 +1430,13 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				maxIterations: 30,
 				// Read-only: this stage lists what the plan needs, it does not
 				// edit the plan. The runner writes the spec.
-				toolAllowlist: ['fs_read_text', 'fs_list_dir', 'code_grep', 'code_glob'],
+				toolAllowlist: [
+					'fs_read_text',
+					'fs_list_dir',
+					'code_grep',
+					'code_glob',
+					SUBMIT_PLAN_ASSET_SPEC_TOOL
+				],
 				forceFinalTool: SUBMIT_PLAN_ASSET_SPEC_TOOL,
 				...deps.buildStreamCallbacks(ASSETS),
 				onToolStart: (call: ResolvedToolCall) => {
