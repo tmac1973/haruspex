@@ -1409,6 +1409,13 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	 * game would otherwise get 64 px art.
 	 */
 	let assetTargetSize: number | undefined;
+	/**
+	 * Why art that was asked for was not made, for the handoff to say. A
+	 * chained coding run started "without art" while the step said "the last
+	 * review found nothing outstanding", and the asset stage's own failure
+	 * was easy to miss.
+	 */
+	let noArtReason: string | null = null;
 
 	/**
 	 * Derive the asset spec from the finished plan and write it.
@@ -1448,22 +1455,26 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		} catch (e) {
 			const { aborted, msg } = normalizeAbort(e);
 			if (aborted) throw e;
+			noArtReason = `the asset stage failed (${msg})`;
 			return `No spec written — the asset stage failed: ${msg}`;
 		}
 
 		if (!payload) {
+			noArtReason = 'the asset stage never submitted a list';
 			return 'No spec written — the model never submitted one. The coding run will start without art.';
 		}
 
 		const profile = await defaultProfile();
-		const { spec, rejected } = derivePlanSpec(payload, profile);
+		const { spec, rejected, styleFallback } = derivePlanSpec(payload, profile);
 		if (spec.entries.length === 0) {
+			if (rejected.length > 0) noArtReason = 'every asset the stage listed was rejected';
 			return rejected.length > 0
 				? `No spec written — every entry was rejected: ${rejected.join(', ')}.`
 				: 'No spec written — the plan needs no images.';
 		}
 		const problems = validateAssetSpec(spec);
 		if (problems.length > 0) {
+			noArtReason = `the asset list failed its checks (${problems.join('; ')})`;
 			return `No spec written — the derived spec has problems:\n${problems.join('\n')}`;
 		}
 
@@ -1478,8 +1489,13 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			? `\n\n${rejected.length} entry(ies) were rejected for an unusable id and will NOT be ` +
 				`generated: ${rejected.join(', ')}.`
 			: '';
+		const styleNote = styleFallback
+			? `\n\nNo style line was submitted; using "${spec.style.prompt}".`
+			: '';
 		return (
-			`Wrote ${specPath} — ${spec.entries.length} asset(s): ${assetIds.join(', ')}.` + rejectedNote
+			`Wrote ${specPath} — ${spec.entries.length} asset(s): ${assetIds.join(', ')}.` +
+			rejectedNote +
+			styleNote
 		);
 	};
 
@@ -1627,6 +1643,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			(cfg.generate_assets && !wantsAssets && runMode === 'unattended_chain'
 				? ' Assets were requested but no image backend is configured, so none were generated.'
 				: '') +
+			(noArtReason ? ` It starts WITHOUT art: ${noArtReason}.` : '') +
 			(openFindings.length
 				? ` Carried ${openFindings.length} unresolved finding(s) over for its preflight to settle.`
 				: ' The last review found nothing outstanding.');

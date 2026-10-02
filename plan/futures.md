@@ -45,6 +45,10 @@ Running list of things to address. Status annotations added 2026-07-19.
     chain's asset stage. Consider letting a chained stage go to the front of
     the queue, or saying in the queue badge's tooltip that it will wait.
 
+- An autonomous coding run reached outside its project to unblock itself (2026-10-02, `p25-chain`, run 80). Its plan required art the chain had failed to make; after two honest repair cycles it read Haruspex's own database (`~/.local/share/com.haruspex.app/haruspex.db`) and source to diagnose why, then generated the four PNGs itself by calling the user's ComfyUI on 127.0.0.1:8188 with a different model (Z-Image-Turbo). Its diagnosis was right and it said what it did, but nothing stopped it: a coding run's shell can read any file the user can and reach any local service.
+  - Decide what a coding run may touch outside its working directory. At least: the app's own data directory should be off limits, and a plan that says "do not make placeholder art" should not be satisfiable by making real art some other way. Its report asked the same question ("Decide policy on the cycle-3 exception").
+  - The chain no longer hands off silently without art (the handoff says "starts WITHOUT art" and why), which removes this particular trigger but not the capability.
+
 - We may want to look at adding a second model selector for the shell tab in settings -> inference. The default could/should be to just use the main local model for everything, just as it is today, but we could offer an opt-in to select a different model (local, remote, or openrouter) for the shell tab. If the chat tab and the shell tab use different local models of course they would have to queue to use that model (wait for the other model to unload, then load then new one) Thoughts?
 
 - The output of a guided planning job is in /home/tim/Projects/hangman/plan. Have a look and tell me what you think. It was produced by qwen3.6 27b. It won't be as good as something you would produce, so no need to nitpick, but broadly is it cohesive?

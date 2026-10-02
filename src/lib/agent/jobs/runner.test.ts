@@ -4151,6 +4151,33 @@ describe('guided_planning — asset chain', () => {
 		expect(prompts.some((p: string) => p.includes('ART IS GENERATED'))).toBe(false);
 	});
 
+	it('writes the spec with a fallback style when none was submitted, and says so', async () => {
+		const written = wireWrites();
+		await run(
+			planningJob(),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }], {
+				style: { prompt: '' },
+				entries: ENTRIES
+			}),
+			chainedAssetJob()
+		);
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC)!.content);
+		expect(spec.style.prompt.length).toBeGreaterThan(0);
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('asset_generation');
+		const assetsStage = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(assetsStage.at(-1)?.[3])).toContain('No style line was submitted');
+	});
+
+	it('says the coding run starts WITHOUT art, and why, when the art was lost', async () => {
+		wireWrites();
+		await run(planningJob(), turns([{ id: 'Not An Id', kind: 'sprite', prompt: 'x' }]));
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
+		expect(String(handoff.at(-1)?.[3])).toContain(
+			'starts WITHOUT art: every asset the stage listed was rejected'
+		);
+	});
+
 	it('puts the ids in overview.md, where the coding run will actually read them', async () => {
 		// The spec is a separate file. The overview is what the run reads first.
 		const written = wireWrites();

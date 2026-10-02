@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { derivePlanSpec, deriveSpec, sheetName, type PlanDerivePayload } from './derive';
+import {
+	FALLBACK_STYLE,
+	derivePlanSpec,
+	deriveSpec,
+	sheetName,
+	type PlanDerivePayload
+} from './derive';
 import { coerceCallArguments } from '$lib/agent/tools';
 import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from './tools';
 import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
@@ -123,5 +129,47 @@ describe('derivePlanSpec', () => {
 				64
 			);
 		}
+	});
+});
+
+describe('the style line', () => {
+	const profile = { target_size: 64, palette_size: 32 } as unknown as NormalizeProfile;
+	const entries = [{ id: 'coin', kind: 'sprite', prompt: 'a coin' }];
+
+	it('accepts a plain string where the schema asks for { prompt }', () => {
+		// The third chain sent it that way; coercion cannot make an object out
+		// of prose, the style came through empty, and the spec failed.
+		const r = derivePlanSpec(
+			{
+				style: 'chunky pixel art, dark outlines' as unknown as PlanDerivePayload['style'],
+				entries
+			},
+			profile
+		);
+		expect(r.spec.style.prompt).toBe('chunky pixel art, dark outlines');
+		expect(r.styleFallback).toBe(false);
+	});
+
+	it('falls back to a neutral line rather than losing the art', () => {
+		for (const style of [undefined, { prompt: '  ' }, 42]) {
+			const r = derivePlanSpec(
+				{ style: style as unknown as PlanDerivePayload['style'], entries },
+				profile
+			);
+			expect(r.spec.style.prompt).toBe(FALLBACK_STYLE);
+			expect(r.styleFallback).toBe(true);
+			expect(r.spec.entries).toHaveLength(1);
+		}
+	});
+
+	it('does the same for a standalone derivation', () => {
+		const spec = deriveSpec(
+			{
+				style: 'flat pixel art' as unknown as { prompt?: string },
+				entries: [{ title: 'Coin', kind: 'sprite', prompt: 'a coin' }]
+			},
+			profile
+		);
+		expect(spec.style.prompt).toBe('flat pixel art');
 	});
 });

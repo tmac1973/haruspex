@@ -53,6 +53,40 @@ export function sheetName(raw: unknown, kind: AssetKind): string | undefined {
 	return ID_PATTERN.test(slug) ? slug : undefined;
 }
 
+/**
+ * Used when a derivation submits no style line at all. Neutral on purpose:
+ * medium and line only, no colours (a colour scheme tints every asset). The
+ * style line adds coherence; losing a whole set of art because it is missing
+ * would be far worse than this.
+ */
+export const FALLBACK_STYLE = 'pixel art, flat shading, clean dark outlines';
+
+/**
+ * The style as submitted. A model may send the line as a plain string where
+ * the schema asks for `{ prompt }` — the obvious intent — and the tool's
+ * coercion cannot make an object out of prose. That once came through as an
+ * empty style, failed validation, and a chain went to coding with no art.
+ */
+export function styleOf(raw: unknown): {
+	prompt: string;
+	negativePrompt?: string;
+	fallback: boolean;
+} {
+	const obj =
+		typeof raw === 'string'
+			? { prompt: raw }
+			: raw && typeof raw === 'object'
+				? (raw as { prompt?: unknown; negativePrompt?: unknown })
+				: {};
+	const prompt = typeof obj.prompt === 'string' ? obj.prompt.trim() : '';
+	const negative = typeof obj.negativePrompt === 'string' ? obj.negativePrompt.trim() : '';
+	return {
+		prompt: prompt || FALLBACK_STYLE,
+		...(negative ? { negativePrompt: negative } : {}),
+		fallback: prompt.length === 0
+	};
+}
+
 /** The anchor sheet the model named, when it names a sheet that exists. */
 function anchorSheetOf(raw: unknown, entries: AssetEntry[]): { sheet?: string } {
 	const name = sheetName(raw, 'sprite');
@@ -68,7 +102,8 @@ function anchorSheetOf(raw: unknown, entries: AssetEntry[]): { sheet?: string } 
 export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): AssetSpec {
 	const taken = new Set<string>();
 	const entries: AssetEntry[] = [];
-	for (const raw of payload.entries ?? []) {
+	const style = styleOf(payload.style);
+	for (const raw of Array.isArray(payload.entries) ? payload.entries : []) {
 		const title = (raw?.title ?? '').trim();
 		const prompt = (raw?.prompt ?? '').trim();
 		if (title.length === 0 || prompt.length === 0) continue;
@@ -92,10 +127,8 @@ export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): A
 	return {
 		version: 1,
 		style: {
-			prompt: (payload.style?.prompt ?? '').trim(),
-			...(payload.style?.negativePrompt?.trim()
-				? { negativePrompt: payload.style.negativePrompt.trim() }
-				: {})
+			prompt: style.prompt,
+			...(style.negativePrompt ? { negativePrompt: style.negativePrompt } : {})
 			// `model` and `loras` are left unset: a derivation has no basis for
 			// pinning either, and unset means "whatever the backend is
 			// configured with" rather than a choice nobody made.
@@ -130,6 +163,8 @@ export interface PlanDeriveResult {
 	spec: AssetSpec;
 	/** Ids the model submitted that the shape rule rejected, verbatim. */
 	rejected: string[];
+	/** True when no style line was submitted and `FALLBACK_STYLE` stands in. */
+	styleFallback: boolean;
 }
 
 /**
@@ -150,6 +185,7 @@ export function derivePlanSpec(
 	profile: NormalizeProfile
 ): PlanDeriveResult {
 	const entries: AssetEntry[] = [];
+	const style = styleOf(payload.style);
 	const rejected: string[] = [];
 	const seen = new Set<string>();
 
@@ -187,10 +223,8 @@ export function derivePlanSpec(
 		spec: {
 			version: 1,
 			style: {
-				prompt: (payload.style?.prompt ?? '').trim(),
-				...(payload.style?.negativePrompt?.trim()
-					? { negativePrompt: payload.style.negativePrompt.trim() }
-					: {})
+				prompt: style.prompt,
+				...(style.negativePrompt ? { negativePrompt: style.negativePrompt } : {})
 			},
 			anchor: {
 				image: DEFAULT_ANCHOR_IMAGE,
@@ -203,6 +237,7 @@ export function derivePlanSpec(
 			},
 			entries
 		},
-		rejected
+		rejected,
+		styleFallback: style.fallback
 	};
 }

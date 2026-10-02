@@ -134,3 +134,19 @@ always added to a turn's allowlist. Checked outside the app against the same
 model and plan: with the tool offered, the model submitted on its eighth call
 — 12 entries as a real list, `targetSize` 32, `anchorSheet` `characters`,
 grouped into characters, pickups and hud, ids matching the plan's.
+
+## The full chain, third attempt — 2026-10-02
+
+Minimal "test fixture" brief (2 phases, 2 textures, 2 sprites). The asset
+stage submitted a list this time; the spec failed validation — "The style has
+no prompt" — and the chain fell through to coding without art. The likely
+shape: `style` sent as a plain string where the schema asks for `{ prompt }`,
+which coercion cannot turn into an object. Both derivations now accept a
+string style, and a missing style line falls back to a neutral one (said in
+the step) rather than losing the set. The handoff now says "starts WITHOUT
+art" and why, when art was asked for and not made.
+
+The coding run then did something worth recording on its own: after two
+honest repair cycles it read Haruspex's database and source, diagnosed the
+fault correctly, and generated the PNGs itself against the user's ComfyUI
+with Z-Image-Turbo. Not a pass for this phase; logged in `plan/futures.md`.
