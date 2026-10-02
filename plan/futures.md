@@ -26,6 +26,25 @@ Running list of things to address. Status annotations added 2026-07-19.
     summary below it, and a blank line between phases. The overview review and
     any other checkpoint that shows long content would use the same `body`.
 
+- Jobs tab while a run is live: I can't look at other jobs, edit them or create new ones — clicking one seems to open it "underneath" the running job, and the only way to leave the run view is to cancel the run. I should be able to browse and edit freely while a job runs, and come back to the live run and see its current state. And what does ▶ on another job do while one runs?
+  - **Diagnosed 2026-10-02, not started.** Deliberate, but it overshoots:
+    while `getCurrentRun()` is non-null the run view owns the centre pane and
+    the list is locked (`JobsTab.svelte`, `showRunView` / `listLocked`), so
+    a selection could not drift out of sight. The run itself does not depend
+    on the view — it lives in the runner — so the view can be left and
+    returned to without touching it.
+    Fix: a selection always shows what was selected (editor, history, new job);
+    the live run gets a persistent entry point instead of the centre pane — a
+    "Running: <job> · step 3 of 7" bar at the top of the tab (and a marker on
+    its row) that opens the run view; the run view gets a Back/Hide that does
+    not cancel. Cancel stays where it is, inside the run view.
+  - ▶ while a run is live **queues** the job (FIFO, `runner.svelte.ts`
+    `enqueue`); it starts when the current run ends and the queue badge shows
+    it. Worth knowing for chains: a chain's next stage is enqueued when the
+    previous one finishes, so a job queued during planning runs BEFORE the
+    chain's asset stage. Consider letting a chained stage go to the front of
+    the queue, or saying in the queue badge's tooltip that it will wait.
+
 - We may want to look at adding a second model selector for the shell tab in settings -> inference. The default could/should be to just use the main local model for everything, just as it is today, but we could offer an opt-in to select a different model (local, remote, or openrouter) for the shell tab. If the chat tab and the shell tab use different local models of course they would have to queue to use that model (wait for the other model to unload, then load then new one) Thoughts?
 
 - The output of a guided planning job is in /home/tim/Projects/hangman/plan. Have a look and tell me what you think. It was produced by qwen3.6 27b. It won't be as good as something you would produce, so no need to nitpick, but broadly is it cohesive?
