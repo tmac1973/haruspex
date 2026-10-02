@@ -15,6 +15,16 @@ Running list of things to address. Status annotations added 2026-07-19.
 - It would be nice to able to specify a different model for each phase of a job. I.E. do the planning with one model, verification with the next.
 
 - In the guided planning job the step 2 outline approval modal presents a wall of text that the agent has written that is not very nice to look at. The font is a bit large, there's no visual breaks between the phases outlined. We should work on this.
+  - **Diagnosed 2026-10-02, not started.** The whole question, outline
+    included, is rendered inside the modal's `<h2>`
+    (`UserQuestionModal.svelte:117`), so every line is heading-size bold; and
+    `renderOutline` writes each phase as one line, "Phase 01 — title: summary",
+    with no blank line between phases (`guided-planning/pipeline.ts:1712`).
+    Fix: give `askUserQuestion` an optional `body`, rendered as normal-weight
+    markdown under a short heading ("Here's the plan outline — 8 phases"); have
+    `renderOutline` emit a bold "Phase 01 — Title (depends on 01)" line, the
+    summary below it, and a blank line between phases. The overview review and
+    any other checkpoint that shows long content would use the same `body`.
 
 - We may want to look at adding a second model selector for the shell tab in settings -> inference. The default could/should be to just use the main local model for everything, just as it is today, but we could offer an opt-in to select a different model (local, remote, or openrouter) for the shell tab. If the chat tab and the shell tab use different local models of course they would have to queue to use that model (wait for the other model to unload, then load then new one) Thoughts?
 
