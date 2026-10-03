@@ -46,6 +46,14 @@ describe('guided planning stage models in the editor', () => {
 		expect(JSON.parse(toJson(loaded)).chain_models.coding.model_remote_model_id).toBe('fast');
 	});
 
+	it('round-trips a stage set to the Settings model', () => {
+		const saved = toJson(state({ chain_coding_model: emptyModelForm('settings') }));
+		const loaded = guidedPlanningJobType.configFromJob(
+			saved
+		) as unknown as GuidedPlanningEditorState;
+		expect(loaded.chain_coding_model?.source).toBe('settings');
+	});
+
 	it('refuses a chosen stage with no server or model, rather than save it as "same"', () => {
 		const validate = (s: GuidedPlanningEditorState) =>
 			guidedPlanningJobType.validate?.({

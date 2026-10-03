@@ -621,10 +621,12 @@
 	}
 
 	/* Collapsible section shell + header. */
+	/* Not overflow: hidden. That clipped every dropdown inside a card (the
+	   OpenRouter model list showed two rows); the header rounds its own
+	   corners instead. */
 	.collapse {
 		border: 1px solid var(--border);
 		border-radius: 9px;
-		overflow: hidden;
 		margin-bottom: 10px;
 	}
 
@@ -636,9 +638,14 @@
 		padding: 11px 13px;
 		background: var(--bg-secondary);
 		border: none;
+		border-radius: 8px;
 		cursor: pointer;
 		color: var(--text-primary);
 		text-align: left;
+	}
+
+	.collapse-head[aria-expanded='true'] {
+		border-radius: 8px 8px 0 0;
 	}
 
 	.chevron {

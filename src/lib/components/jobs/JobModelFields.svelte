@@ -30,13 +30,16 @@
 	let {
 		form = $bindable(),
 		name,
-		allowSettings = true
+		allowSettings = true,
+		settingsLabel
 	}: {
 		form: JobModelForm;
 		/** The source radio group's name; unique per instance on a page. */
 		name: string;
-		/** Offer "Settings model". A chain stage's override is always a specific server. */
+		/** Offer "Settings model". */
 		allowSettings?: boolean;
+		/** The Settings option's wording, when "(default)" would be wrong. */
+		settingsLabel?: { title: string; description: string };
 	} = $props();
 
 	// Transient: what the last probe or catalog load found. Never saved.
@@ -57,8 +60,10 @@
 			[
 				{
 					value: 'settings',
-					title: 'Settings model (default)',
-					description: 'Uses whatever backend Settings has active (local or remote).'
+					title: settingsLabel?.title ?? 'Settings model (default)',
+					description:
+						settingsLabel?.description ??
+						'Uses whatever backend Settings has active (local or remote).'
 				},
 				{
 					value: 'remote',

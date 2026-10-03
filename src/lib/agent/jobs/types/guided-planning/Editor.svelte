@@ -40,10 +40,17 @@
 	}
 
 	function setStageModel(key: StageKey, choice: string) {
-		// A chosen stage is always a specific server: "Same as this job" already
-		// covers the Settings model.
 		cfg[key] = choice === 'choose' ? (cfg[key] ?? emptyModelForm('remote')) : null;
 	}
+
+	// "Same as this job" is the planning job's model. The Settings model is a
+	// different choice whenever this job has its own server: the local model
+	// for the coding run, say, while planning runs remotely.
+	const STAGE_SETTINGS = {
+		title: 'Settings model',
+		description:
+			'Whatever Settings → Inference has active — the local model, or the server set there.'
+	};
 
 	$effect(() => {
 		if (!outputDirEdited) {
@@ -233,7 +240,11 @@
 		</select>
 		{#if cfg[key]}
 			<div class="stage-fields">
-				<JobModelFields bind:form={cfg[key]} name={`${key}-source`} allowSettings={false} />
+				<JobModelFields
+					bind:form={cfg[key]}
+					name={`${key}-source`}
+					settingsLabel={STAGE_SETTINGS}
+				/>
 			</div>
 		{/if}
 	</div>

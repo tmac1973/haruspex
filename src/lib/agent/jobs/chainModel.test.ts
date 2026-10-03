@@ -83,6 +83,27 @@ describe('parseChainModel', () => {
 	});
 });
 
+describe('a stage on the Settings model', () => {
+	it('is an override with an explicit null server, kept apart from "same as this job"', () => {
+		const settings = parseChainModel({
+			...fast,
+			model_remote_base_url: null,
+			model_remote_model_id: null
+		});
+		expect(settings).not.toBeNull();
+		expect(settings!.model_remote_base_url).toBeNull();
+		// So a planner on its own server can hand coding to the local model.
+		expect(stageModelColumns(job, settings).model_remote_base_url).toBeNull();
+	});
+
+	it('is not an empty object, nor a model id with no server', () => {
+		expect(parseChainModel({})).toBeNull();
+		expect(
+			parseChainModel({ model_remote_base_url: null, model_remote_model_id: 'fast' })
+		).toBeNull();
+	});
+});
+
 describe('parseModelColumns', () => {
 	it('accepts all-null columns: the Settings model is a real answer here', () => {
 		const settings = parseModelColumns({

@@ -100,11 +100,13 @@ describe('guided-planning Editor', () => {
 			}
 		});
 
-		it('shows the model fields for a chosen stage, without a "Settings model" source', () => {
+		it('shows the model fields for a chosen stage, with the Settings model as a choice', () => {
 			mount({ run_mode: 'unattended_chain', chain_coding_model: emptyModelForm('remote') });
 			expect((screen.getByLabelText('Coding run model') as HTMLSelectElement).value).toBe('choose');
 			expect(screen.getByText('Remote server')).toBeTruthy();
-			// "Same as this job" already covers the Settings model.
+			// The local model while planning runs remotely: not the same as
+			// "Same as this job", and not marked "(default)" here.
+			expect(screen.getByText('Settings model')).toBeTruthy();
 			expect(screen.queryByText('Settings model (default)')).toBeNull();
 		});
 	});

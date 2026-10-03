@@ -3922,6 +3922,25 @@ describe('guided_planning — chained coding run settings', () => {
 		expect(handoff()).toContain('on fast');
 	});
 
+	it('runs the coding job on the Settings model when that is the stage’s choice', async () => {
+		// Planning on its own server, coding on the local model.
+		await runIt(
+			planningWith({
+				chain_models: {
+					coding: {
+						...cols('http://x', 'x'),
+						model_remote_base_url: null,
+						model_remote_model_id: null
+					}
+				}
+			})
+		);
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.model_remote_base_url).toBeNull();
+		expect(input.model_remote_model_id).toBeNull();
+		expect(handoff()).toContain('the Settings model');
+	});
+
 	it('ignores a half-filled stage model rather than run on it', async () => {
 		await runIt(
 			planningWith({ chain_models: { coding: { model_remote_base_url: 'http://fast' } } })

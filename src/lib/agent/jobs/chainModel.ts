@@ -55,12 +55,27 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 
  * A stored override, read defensively. Anything malformed is null ("same as
  * this job"), never a half-filled override: a stage silently pointed at a
  * server with no model is worse than one that inherits.
+ *
+ * An override whose URL is present and null is the Settings model: whatever
+ * Settings → Inference has active, the local model included. That differs
+ * from "same as this job" whenever the planning job has its own server.
  */
 export function parseChainModel(raw: unknown): ChainModel | null {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 	const r = raw as Record<string, unknown>;
 	const baseUrl = str(r.model_remote_base_url);
 	const modelId = str(r.model_remote_model_id);
+	if ('model_remote_base_url' in r && r.model_remote_base_url === null && !modelId) {
+		return {
+			model_remote_base_url: null,
+			model_remote_api_key: null,
+			model_remote_api_key_id: null,
+			model_remote_model_id: null,
+			model_remote_context_size: null,
+			model_remote_vision_supported: null,
+			model_advanced: str(r.model_advanced)
+		};
+	}
 	if (!baseUrl || !modelId) return null;
 	const ctx = r.model_remote_context_size;
 	const vision = r.model_remote_vision_supported;
