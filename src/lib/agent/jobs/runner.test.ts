@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { beforeAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
 import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
 
@@ -185,6 +185,14 @@ function makeJob(overrides: Partial<JobWithSteps> = {}): JobWithSteps {
 		...overrides
 	};
 }
+
+// The first import transforms the runner's whole module graph. On a slow CI
+// runner that alone took most of a test's 5 s, and the first test timed out on
+// Windows. Pay it once here; later imports after resetModules reuse the
+// transformed modules.
+beforeAll(async () => {
+	await import('$lib/agent/jobs/runner.svelte');
+}, 60_000);
 
 async function freshRunner() {
 	vi.resetModules();
