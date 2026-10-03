@@ -257,12 +257,60 @@ export async function submit(
 	return json.prompt_id;
 }
 
-/** Stop whatever is running. Best-effort: a failure here must not mask why. */
-export async function interrupt(cfg: ClientConfig): Promise<void> {
+/** The prompt ids ComfyUI is running and has waiting. Null when it can't say. */
+export async function queueState(
+	cfg: ClientConfig
+): Promise<{ running: string[]; pending: string[] } | null> {
 	try {
-		await requestJson(cfg, { path: '/interrupt', method: 'POST' });
+		const q = (await requestJson(cfg, { path: '/queue' })) as {
+			queue_running?: unknown;
+			queue_pending?: unknown;
+		} | null;
+		// Each entry is [number, prompt_id, graph, extra, outputs].
+		const ids = (list: unknown): string[] =>
+			Array.isArray(list)
+				? list
+						.map((e) => (Array.isArray(e) ? e[1] : undefined))
+						.filter((id): id is string => typeof id === 'string')
+				: [];
+		return { running: ids(q?.queue_running), pending: ids(q?.queue_pending) };
 	} catch {
-		// The run is already ending; a failed interrupt changes nothing.
+		return null;
+	}
+}
+
+/** Take prompts out of the queue before they start. */
+export async function deletePending(cfg: ClientConfig, ids: string[]): Promise<void> {
+	await requestJson(cfg, { path: '/queue', method: 'POST', body: { delete: ids } });
+}
+
+/**
+ * Stop our prompt and nothing else. Best-effort, never throws: the run is
+ * already ending, and a failed clean-up must not mask why.
+ *
+ * Waiting, it is deleted from the queue. Running, it is interrupted with its
+ * id, which newer ComfyUI honours by stopping only that prompt; older servers
+ * ignore the body, but they are only asked when ours is the one running.
+ *
+ * When the queue can't be read, nothing is done. An unconditional
+ * `/interrupt` stops whatever the server is running, another client's job on
+ * a shared ComfyUI included, which is the bug this replaced.
+ */
+export async function cancelPrompt(cfg: ClientConfig, promptId: string): Promise<void> {
+	const q = await queueState(cfg);
+	if (!q) return;
+	try {
+		if (q.pending.includes(promptId)) {
+			await deletePending(cfg, [promptId]);
+		} else if (q.running.includes(promptId)) {
+			await requestJson(cfg, {
+				path: '/interrupt',
+				method: 'POST',
+				body: { prompt_id: promptId }
+			});
+		}
+	} catch {
+		// Best-effort; see above.
 	}
 }
 

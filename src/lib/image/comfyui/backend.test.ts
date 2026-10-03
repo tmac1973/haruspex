@@ -337,3 +337,70 @@ describe('generate', () => {
 		expect(seen).toContain('downloading');
 	});
 });
+
+describe('cancelling', () => {
+	/** A job that never finishes, on a server whose queue shows `p1` in `state`. */
+	function slowServer(state: 'running' | 'pending', submitDelay = 0) {
+		fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+			const body = (b: unknown) =>
+				({
+					ok: true,
+					status: 200,
+					json: async () => b,
+					text: async () => JSON.stringify(b)
+				}) as Response;
+			const path = new URL(url).pathname;
+			if (path === '/prompt') {
+				if (submitDelay) await new Promise((r) => setTimeout(r, submitDelay));
+				return body({ prompt_id: 'p1' });
+			}
+			if (path === '/queue' && (init?.method ?? 'GET') === 'GET') {
+				const entry = [0, 'p1', {}, {}, []];
+				return body(
+					state === 'running'
+						? { queue_running: [entry], queue_pending: [] }
+						: { queue_running: [], queue_pending: [entry] }
+				);
+			}
+			if (path === '/system_stats') return body({ devices: [{ name: 'AMD R9700' }] });
+			const cls = url.split('/object_info/')[1];
+			if (cls && LISTS[cls]) {
+				const [input, names] = LISTS[cls];
+				return body({ [cls]: { input: { required: { [input]: [names] } } } });
+			}
+			return body({}); // /history: not done yet
+		});
+	}
+	const callsTo = (path: string) =>
+		fetchMock.mock.calls.filter((c) => new URL(String(c[0])).pathname === path);
+
+	it('interrupts exactly our running prompt', async () => {
+		slowServer('running');
+		const c = new AbortController();
+		const run = comfyUiBackend.generate(req(), { signal: c.signal });
+		await vi.waitFor(() => expect(callsTo('/prompt')).toHaveLength(1));
+		c.abort();
+		await expect(run).rejects.toMatchObject({ kind: 'cancelled' });
+		await vi.waitFor(() => expect(callsTo('/interrupt')).toHaveLength(1));
+		expect(JSON.parse((callsTo('/interrupt')[0][1] as RequestInit).body as string)).toEqual({
+			prompt_id: 'p1'
+		});
+	});
+
+	it('settles at once when cancelled mid-submit, then removes what was queued', async () => {
+		slowServer('pending', 50);
+		const c = new AbortController();
+		const run = comfyUiBackend.generate(req(), { signal: c.signal });
+		await vi.waitFor(() => expect(callsTo('/prompt')).toHaveLength(1));
+		c.abort();
+		// Cancelled before submit has answered.
+		await expect(run).rejects.toMatchObject({ kind: 'cancelled' });
+		// Once it has, the prompt it queued is taken back out, not left to run.
+		await vi.waitFor(() =>
+			expect(
+				callsTo('/queue').some((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
+			).toBe(true)
+		);
+		expect(callsTo('/interrupt')).toHaveLength(0);
+	});
+});

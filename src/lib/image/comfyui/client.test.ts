@@ -248,3 +248,61 @@ describe('rejectionMessage', () => {
 		expect(api.rejectionMessage('/view', 'Not Found')).toBe('The image backend refused /view.');
 	});
 });
+
+/**
+ * Cancelling used to POST /interrupt unconditionally, which stops whatever the
+ * server is running: another client's job on a shared ComfyUI included.
+ */
+describe('cancelPrompt', () => {
+	/** A server whose queue holds `running` and `pending`; records each call. */
+	function server(queue: { running: string[]; pending: string[] } | 'broken') {
+		const calls: Array<{ path: string; method: string; body: unknown }> = [];
+		fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+			const path = new URL(url).pathname;
+			calls.push({
+				path,
+				method: init?.method ?? 'GET',
+				body: init?.body ? JSON.parse(init.body as string) : undefined
+			});
+			if (path === '/queue' && (init?.method ?? 'GET') === 'GET') {
+				if (queue === 'broken') throw new Error('down');
+				const entry = (id: string) => [0, id, {}, {}, []];
+				return ok({
+					queue_running: queue.running.map(entry),
+					queue_pending: queue.pending.map(entry)
+				});
+			}
+			return ok({});
+		});
+		return calls;
+	}
+
+	it('takes a waiting prompt out of the queue, and interrupts nothing', async () => {
+		const calls = server({ running: ['theirs'], pending: ['ours'] });
+		await api.cancelPrompt(cfg, 'ours');
+		expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /queue', 'POST /queue']);
+		expect(calls[1].body).toEqual({ delete: ['ours'] });
+	});
+
+	it('interrupts a running prompt by its id', async () => {
+		const calls = server({ running: ['ours'], pending: [] });
+		await api.cancelPrompt(cfg, 'ours');
+		expect(calls.at(-1)).toEqual({
+			path: '/interrupt',
+			method: 'POST',
+			body: { prompt_id: 'ours' }
+		});
+	});
+
+	it('leaves the server alone when our prompt is not there', async () => {
+		const calls = server({ running: ['theirs'], pending: ['theirs too'] });
+		await api.cancelPrompt(cfg, 'ours');
+		expect(calls.map((c) => c.path)).toEqual(['/queue']);
+	});
+
+	it('does nothing at all when the queue cannot be read', async () => {
+		const calls = server('broken');
+		await expect(api.cancelPrompt(cfg, 'ours')).resolves.toBeUndefined();
+		expect(calls.map((c) => c.path)).toEqual(['/queue']);
+	});
+});
