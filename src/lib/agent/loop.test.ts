@@ -418,6 +418,24 @@ describe('runAgentLoop: truncation before any tool call', () => {
 	});
 });
 
+describe('runAgentLoop: the model a tool sees', () => {
+	it("is the turn's own, so a tool's model calls follow the job", async () => {
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'r1', name: 'research_url', args: '{"url":"https://x.test"}' }]),
+			textResponse('done')
+		);
+		toolsMock.executeTool.mockResolvedValue({ result: 'ok' });
+		const backend = { baseUrl: 'http://compute:3000' };
+		const { options } = makeOptions({ backend });
+		await runAgentLoop(options);
+		expect(toolsMock.executeTool).toHaveBeenCalledWith(
+			'research_url',
+			{ url: 'https://x.test' },
+			expect.objectContaining({ backend })
+		);
+	});
+});
+
 describe('runAgentLoop: the forced final tool', () => {
 	it('is always offered, even when the allowlist leaves it out', async () => {
 		// The chain's asset stage listed its read tools but not its submit tool.

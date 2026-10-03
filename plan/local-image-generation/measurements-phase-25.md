@@ -150,3 +150,21 @@ The coding run then did something worth recording on its own: after two
 honest repair cycles it read Haruspex's database and source, diagnosed the
 fault correctly, and generated the PNGs itself against the user's ComfyUI
 with Z-Image-Turbo. Not a pass for this phase; logged in `plan/futures.md`.
+
+## The full chain, fourth attempt — 2026-10-02: passed
+
+Same test-fixture brief. Planning (run 81) wrote `assets.json` with four
+assets (grass, stone, player, coin) and started the asset job; the asset job
+(run 82, 18:43–18:49) generated all four — one sheet retry, the coin — and
+started the coding job; coding (run 83, 18:49–18:54) finished 2 of 2 phases,
+11 of 11 steps, no repairs. The PNGs' timestamps fall inside the asset run and
+the coding run left them untouched; its tests load them (`Ran 8 tests … OK`).
+The interview asked nothing about art.
+
+Art: grass tiles seamlessly, stone stacks, the player and coin are clean but
+the coin came out the player's size, and the player's piece kept a small orb
+the model drew touching it (noted in `plan/futures.md`).
+
+Found on the way: `research_url` summarised every page on the GLOBAL model
+(`runSubAgent` took no backend), so a chain on compute:3000 was also calling
+whatever Settings pointed at — compute2. Tools now receive the turn's backend.

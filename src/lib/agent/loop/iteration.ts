@@ -1455,6 +1455,7 @@ async function executeToolCalls(
 				codeMode: ctx.codeMode,
 				codeAutoApprove: ctx.codeAutoApprove,
 				interactive: ctx.interactive,
+				backend: ctx.backend,
 				askUser: ctx.askUser,
 				writeRoot: ctx.writeRoot,
 				shellCwd: ctx.shellCwd,

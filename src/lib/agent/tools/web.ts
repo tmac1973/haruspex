@@ -199,7 +199,12 @@ registerTool({
 		];
 
 		try {
-			const findings = await runSubAgent(messages, RESEARCH_AGENT_MAX_TOKENS, ctx.signal);
+			const findings = await runSubAgent(
+				messages,
+				RESEARCH_AGENT_MAX_TOKENS,
+				ctx.signal,
+				ctx.backend
+			);
 			if (!findings) {
 				return toolResult(`Sub-agent returned no findings for ${url}.`);
 			}

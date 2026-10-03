@@ -1,4 +1,4 @@
-import type { ToolDefinition } from '$lib/api';
+import type { BackendOverride, ToolDefinition } from '$lib/api';
 import type { Artifact } from '$lib/sandbox/sandbox';
 import type { LintIssue } from '$lib/sandbox/lint';
 
@@ -94,6 +94,14 @@ export interface ToolContext {
 	 * such tools fail safe instead.
 	 */
 	interactive?: boolean;
+	/**
+	 * The model this turn runs on, for a tool that makes model calls of its own
+	 * (`research_url`'s page summary). Null or absent means Settings. Without
+	 * it those calls went to the global model while a job ran on its own: a
+	 * chain configured for one server summarised every page it researched on
+	 * another.
+	 */
+	backend?: BackendOverride | null;
 	/**
 	 * Where `ask_user_question` sends its question, when the person who can
 	 * answer is not at this keyboard.
