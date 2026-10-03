@@ -1453,6 +1453,7 @@ async function executeToolCalls(
 				workingDir: ctx.workingDir,
 				signal,
 				pendingImages: ctx.pendingImages,
+				visionSupported: ctx.options.visionSupported ?? true,
 				deepResearch: ctx.deepResearch,
 				shellMode: ctx.shellMode,
 				codeMode: ctx.codeMode,

@@ -155,3 +155,28 @@ The overview's gate. `check-ipc` must pass.
 ## Rollback
 
 Revert the commit and re-export the IPC types.
+
+## As built — notes
+
+- **Parents are not created.** `fs_write_bytes_absolute` refuses a missing
+  folder, like `fs_write_text_absolute`; the plan said it would create them.
+  It also refuses the app data directory, and takes `dry_run`, so the tool
+  refuses an existing file or a missing folder *before* drawing rather than
+  after a minute of GPU.
+- **`fs_read_bytes_absolute`** is new, for `palette_from` (capped at the
+  write limit).
+- **`makeSingleAsset` lives in `src/lib/assets/single.ts`,** not
+  `src/lib/image/`: the layering rule keeps asset vocabulary out of the image
+  layer. A plain `image` is drawn at 512–1024 px whatever `size` says; the
+  models make mush below that.
+- **Gating is by name:** `make_asset` has category `image`, so the Chat
+  filter drops it by name and the code filter admits it on
+  `imageGeneration` (backend set up and interactive). `runShellTurn` now
+  passes `interactive: true`, which is true of the Shell tab and also means a
+  Shell turn is no longer treated as unattended while a job's auto-approve
+  scope happens to be active.
+- **The picture goes to the model only when it can see** — new
+  `ToolContext.visionSupported`, set by the loop.
+- **Progress** uses the existing `installStatus` line, through a shared
+  `markStepProgress` (chat now uses it too).
+- **Not done:** the manual checks. They need the app with an image backend.

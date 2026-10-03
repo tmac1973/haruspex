@@ -224,6 +224,85 @@ pub async fn fs_write_text_absolute(
     Ok(())
 }
 
+/// Write binary content (an image the Shell assistant made) to an absolute
+/// path. Same rules as [`fs_write_text_absolute`]: atomic, no overwrite unless
+/// asked, and no parent directories made for it.
+///
+/// It also refuses Haruspex's own data directory: a picture written there by
+/// mistake would sit beside the database and models, where nobody looks.
+#[tauri::command]
+pub async fn fs_write_bytes_absolute(
+    app: tauri::AppHandle,
+    path: String,
+    bytes: Vec<u8>,
+    overwrite: Option<bool>,
+    wsl_distro: Option<String>,
+    dry_run: Option<bool>,
+) -> Result<(), String> {
+    use tauri::Manager;
+    let resolved = require_absolute(&path, wsl_distro.as_deref())?;
+    if let Ok(data) = app.path().app_data_dir() {
+        if refuse_app_data(&resolved, &data) {
+            return Err(format!(
+                "Refusing to write into Haruspex's own data directory ({}). Choose a path in the project.",
+                data.display()
+            ));
+        }
+    }
+    if bytes.len() > MAX_WRITE_BYTES {
+        return Err(format!(
+            "Content too large ({} bytes). Maximum write is {} bytes.",
+            bytes.len(),
+            MAX_WRITE_BYTES
+        ));
+    }
+    refuse_if_exists(&resolved, overwrite, &path)?;
+    if let Some(parent) = resolved.parent() {
+        if !parent.exists() {
+            return Err(format!(
+                "Parent directory does not exist: {}. Create it via the shell first.",
+                parent.display()
+            ));
+        }
+    }
+    // Every refusal above, without the write: `make_asset` asks before it
+    // spends a minute of GPU on a file it could not have written.
+    if dry_run == Some(true) {
+        return Ok(());
+    }
+    write_atomic(&resolved, &bytes).await
+}
+
+/// Read a file as bytes, for `make_asset`'s `palette_from`. Capped at the
+/// write limit: it is for an image in the project, not an arbitrary blob.
+#[tauri::command]
+pub async fn fs_read_bytes_absolute(
+    path: String,
+    wsl_distro: Option<String>,
+) -> Result<Vec<u8>, String> {
+    let resolved = require_absolute(&path, wsl_distro.as_deref())?;
+    let meta = tokio::fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Cannot read {path}: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("Not a file: {path}"));
+    }
+    if meta.len() as usize > MAX_WRITE_BYTES {
+        return Err(format!(
+            "{path} is too large ({} bytes, limit {MAX_WRITE_BYTES}).",
+            meta.len()
+        ));
+    }
+    tokio::fs::read(&resolved)
+        .await
+        .map_err(|e| format!("Cannot read {path}: {e}"))
+}
+
+/// Is `path` inside `data` (the app data directory)?
+fn refuse_app_data(path: &std::path::Path, data: &std::path::Path) -> bool {
+    path.starts_with(data)
+}
+
 #[tauri::command]
 pub async fn fs_edit_text_absolute(
     path: String,
@@ -366,5 +445,32 @@ mod tests {
             listing.entries.iter().any(|e| e.name == "hosts"),
             "expected hosts in /etc listing"
         );
+    }
+
+    #[test]
+    fn the_app_data_directory_is_refused_and_a_project_is_not() {
+        let data = std::path::Path::new("/home/u/.local/share/com.haruspex.app");
+        assert!(super::refuse_app_data(&data.join("images/x.png"), data));
+        assert!(!super::refuse_app_data(
+            std::path::Path::new("/home/u/game/assets/coin.png"),
+            data
+        ));
+    }
+
+    #[tokio::test]
+    async fn reads_bytes_and_refuses_a_directory() {
+        let dir = std::env::temp_dir().join(format!("haruspex-read-bytes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("coin.png");
+        std::fs::write(&file, [0x89, b'P', b'N', b'G']).unwrap();
+        let bytes = fs_read_bytes_absolute(file.to_string_lossy().into_owned(), None)
+            .await
+            .unwrap();
+        assert_eq!(bytes, vec![0x89, b'P', b'N', b'G']);
+        let err = fs_read_bytes_absolute(dir.to_string_lossy().into_owned(), None)
+            .await
+            .unwrap_err();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.starts_with("Not a file"), "{err}");
     }
 }

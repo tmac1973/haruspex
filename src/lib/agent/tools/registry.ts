@@ -136,6 +136,9 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// Chat, deliberately: a server enabled in one place should not silently
 	// vanish in the other.
 	if (reg.category === 'mcp') return isMcpToolEnabled(name);
+	// Art for the project, written into it. Chat's `generate_image` is for
+	// pictures in an answer, so it stays out.
+	if (name === 'make_asset') return opts.imageGeneration;
 	return false;
 }
 
@@ -167,6 +170,8 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'contacts' && !opts.hasContacts) return false;
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
 	if (reg.category === 'image' && !opts.imageGeneration) return false;
+	// make_asset writes into a project; Chat has no project.
+	if (name === 'make_asset') return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
 	// MCP tools are per-tool switchable, so the category alone is not the
 	// answer; see isMcpToolEnabled for how an explicit choice beats the
