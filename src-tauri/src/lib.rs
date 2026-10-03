@@ -29,6 +29,7 @@ mod runtimes;
 mod sandbox_fetch;
 mod sandbox_save;
 mod sandbox_sync;
+mod secrets;
 mod server;
 mod shell;
 mod sidecar_process;
@@ -383,6 +384,9 @@ pub fn run() {
             integrations::email::commands::email_prepare_summary,
             integrations::email::commands::email_cancel,
             integrations::email::commands::email_forget_session,
+            secrets::secret_available,
+            secrets::secret_set,
+            secrets::secret_delete,
             app_log::get_app_logs,
             app_log::clear_app_logs,
             links::open_url,

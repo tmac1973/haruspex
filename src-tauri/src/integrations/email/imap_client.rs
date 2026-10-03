@@ -28,7 +28,7 @@ use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
-use super::auth::EmailAccount;
+use super::auth::{self, EmailAccount};
 use super::parser::{
     listing_from_header, parse_rfc5322, parse_with_body, EmailListing, NormalizedMessage,
 };
@@ -217,6 +217,7 @@ pub async fn connect_and_login(
 /// cached: the account under test may not be saved yet.
 pub async fn test_connection(account: &EmailAccount) -> Result<(), String> {
     let t = TIMEOUTS;
+    let account = &auth::resolve(account).await?;
     let mut session = connect_and_login(account, &t).await?;
     // SELECT INBOX as an extra sanity check — catches the case where
     // LOGIN succeeds but the mailbox is unavailable (rare but happens
@@ -489,6 +490,7 @@ pub async fn list_recent(
     filters: &ListFilters,
 ) -> Result<Vec<EmailListing>, String> {
     let t = TIMEOUTS;
+    let account = &auth::resolve(account).await?;
     let mut session = checkout(account, &t).await?;
     let out = list_in(&mut session, account, filters, &t).await;
     if out.is_ok() {
@@ -625,6 +627,7 @@ pub async fn fetch_full(
     message_id: &str,
 ) -> Result<NormalizedMessage, String> {
     let t = TIMEOUTS;
+    let account = &auth::resolve(account).await?;
     let mut session = checkout(account, &t).await?;
     let out = read_in(&mut session, account, message_id, &t).await;
     if out.is_ok() {
@@ -852,6 +855,7 @@ mod tests {
             provider: super::super::provider::EmailProvider::Custom,
             email_address: "a@example.com".into(),
             password: "pw".into(),
+            password_ref: None,
             imap_host: "127.0.0.1".into(),
             imap_port: port,
             imap_tls: TlsMode::Implicit,

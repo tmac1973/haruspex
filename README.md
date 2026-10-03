@@ -312,7 +312,7 @@ Microsoft 365 and Outlook.com are **not** supported. Microsoft turned off basic 
 - `email_summarize_message` — summarises one full message in a separate call, the same way web pages are summarised.
 - `email_read_full` — returns one full message as-is, when a summary is not enough.
 
-All three are hidden from the model completely unless an account is switched on. Credentials are stored in the same local settings file as your other secrets (no system keyring). Messages are fetched with `BODY.PEEK[]`, so reading one never marks it as read. There is no sending at all.
+All three are hidden from the model completely unless an account is switched on. Email passwords are kept in the system keychain (GNOME Keyring or KWallet on Linux, Keychain on macOS, Credential Manager on Windows) where there is one, and in the local settings file otherwise; calendar and contacts credentials are in the settings file. Messages are fetched with `BODY.PEEK`, so reading one never marks it as read. There is no sending at all.
 
 ## Calendar and contacts
 

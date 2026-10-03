@@ -43,6 +43,12 @@ provider: EmailProvider,
  */
 emailAddress: string, 
 /**
- * App password (plaintext). Used as the SASL password.
+ * App password, inline. Empty when it is kept in the system keychain
+ * under `password_ref` — the usual case where a keychain exists.
  */
-password: string, imapHost: string, imapPort: number, imapTls: TlsMode, smtpHost: string, smtpPort: number, smtpTls: TlsMode, };
+password: string, 
+/**
+ * The keychain entry holding the password (`"email:<id>"`). Rust reads
+ * it when it connects; the webview never sees the value again.
+ */
+passwordRef?: string, imapHost: string, imapPort: number, imapTls: TlsMode, smtpHost: string, smtpPort: number, smtpTls: TlsMode, };

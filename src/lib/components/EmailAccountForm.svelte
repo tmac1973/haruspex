@@ -9,12 +9,18 @@
 	 * from the matching preset. The user can override any field after
 	 * that by typing in it. Picking "Custom" blanks the presets and
 	 * lets the user type whatever they want.
+	 *
+	 * The password is the exception to save-on-edit: it is committed only by
+	 * Save password, after a test connection, and goes to the system keychain
+	 * when there is one (`stores/emailSecrets`). The field never shows a
+	 * stored password; empty means "keep the one saved".
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { untrack } from 'svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import type { EmailAccount, EmailProviderId, EmailTlsMode } from '$lib/stores/settings';
 	import type { EmailProviderPreset } from '$lib/ipc/gen/EmailProviderPreset';
+	import { withStoredPassword } from '$lib/stores/emailSecrets';
 
 	type ProviderPreset = EmailProviderPreset;
 
@@ -31,7 +37,9 @@
 	// meaningful edit so the parent's working list stays authoritative.
 	let label = $state(untrack(() => account.label));
 	let emailAddress = $state(untrack(() => account.emailAddress));
-	let password = $state(untrack(() => account.password));
+	// A new password being typed; never the stored one.
+	let password = $state('');
+	let saving = $state(false);
 	let provider = $state<EmailProviderId>(untrack(() => account.provider));
 	let imapHost = $state(untrack(() => account.imapHost));
 	let imapPort = $state<number | ''>(untrack(() => account.imapPort));
@@ -52,12 +60,12 @@
 		return presets.find((p) => p.id === provider);
 	}
 
-	function commit() {
-		onChange({
+	/** The account as the fields describe it, with its stored password as it is. */
+	function fields(): EmailAccount {
+		return {
 			...account,
 			label,
 			emailAddress,
-			password,
 			provider,
 			enabled,
 			// sendEnabled stays false in 10.1 — see README and plan doc.
@@ -68,7 +76,17 @@
 			smtpHost,
 			smtpPort: typeof smtpPort === 'number' ? smtpPort : 0,
 			smtpTls
-		});
+		};
+	}
+
+	function commit() {
+		onChange(fields());
+	}
+
+	/** What a test connects with: the typed password, else the stored one. */
+	function testPayload(): EmailAccount {
+		const f = { ...fields(), enabled: true };
+		return password ? { ...f, password, passwordRef: undefined } : f;
 	}
 
 	function onProviderChange(next: EmailProviderId) {
@@ -91,23 +109,7 @@
 		testOk = false;
 		commit();
 		try {
-			await invoke('email_test_connection', {
-				account: {
-					id: account.id,
-					label,
-					enabled: true,
-					sendEnabled: false,
-					provider,
-					emailAddress,
-					password,
-					imapHost,
-					imapPort: typeof imapPort === 'number' ? imapPort : 0,
-					imapTls,
-					smtpHost,
-					smtpPort: typeof smtpPort === 'number' ? smtpPort : 0,
-					smtpTls
-				}
-			});
+			await invoke('email_test_connection', { account: testPayload() });
 			testOk = true;
 		} catch (e) {
 			testError = String(e);
@@ -115,6 +117,31 @@
 			testing = false;
 		}
 	}
+
+	/** Test with the new password, then keep it — in the keychain if there is one. */
+	async function savePassword() {
+		saving = true;
+		testError = null;
+		testOk = false;
+		try {
+			await invoke('email_test_connection', { account: testPayload() });
+			onChange(await withStoredPassword(fields(), password));
+			password = '';
+			testOk = true;
+		} catch (e) {
+			testError = String(e);
+		} finally {
+			saving = false;
+		}
+	}
+
+	const passwordPlaceholder = $derived(
+		account.passwordRef
+			? 'Saved in the system keychain'
+			: account.password
+				? 'Saved in Haruspex settings'
+				: '16-character app password'
+	);
 
 	const preset = $derived(currentPreset());
 </script>
@@ -181,14 +208,24 @@
 
 	<div class="field">
 		<label for="email-password-{account.id}">App password</label>
-		<input
-			id="email-password-{account.id}"
-			type="password"
-			bind:value={password}
-			placeholder="16-character app password"
-			autocomplete="off"
-			onblur={commit}
-		/>
+		<div class="inline">
+			<input
+				id="email-password-{account.id}"
+				type="password"
+				bind:value={password}
+				placeholder={passwordPlaceholder}
+				autocomplete="off"
+			/>
+			<button
+				type="button"
+				class="btn"
+				onclick={savePassword}
+				disabled={!password || saving}
+				title="Tests the connection, then keeps the password in the system keychain where there is one."
+			>
+				{saving ? 'Saving…' : 'Save password'}
+			</button>
+		</div>
 	</div>
 
 	<details class="advanced">
@@ -294,6 +331,15 @@
 	.field-row {
 		display: flex;
 		gap: 0.5rem;
+	}
+
+	.inline {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.inline input {
+		flex: 1;
 	}
 
 	.field-row .field {

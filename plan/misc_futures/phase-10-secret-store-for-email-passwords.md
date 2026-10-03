@@ -136,3 +136,25 @@ inline field, so those accounts lose their password. **Before reverting,**
 ship a one-off restore: read each `password_ref` back through Rust and write
 it inline. Otherwise, after reverting, re-enter each password in Settings →
 Email.
+
+## As built — notes
+
+- **keyring 3 with `async-secret-service` + `crypto-rust`** on Linux (zbus,
+  pure Rust) rather than `sync-secret-service`, which links libdbus and
+  would need `libdbus-1-dev` on every build machine.
+- **Every keychain call runs on a thread of its own with a 30 s limit.**
+  keyring's tokio Secret Service backend can deadlock on a tokio thread, and
+  a locked KWallet may wait on an unlock prompt.
+- **Tests use a `Store` trait** with an in-memory store, not keyring's mock,
+  whose entries don't share storage between `Entry` instances.
+- **`secret_set`/`secret_delete` only accept `email:` keys**, so the webview
+  cannot overwrite entries it doesn't own.
+- **The migration lives in `stores/emailSecrets.ts`** (keeps `settings.ts`
+  free of IPC) and runs from the layout's bootstrap. It re-reads the
+  accounts before writing, so an edit made while the keychain was busy wins.
+- **Save password tests the connection first and keeps nothing if the test
+  fails.** Test connection with an empty field uses the kept password.
+- **The kept password is deleted from `EmailSection`'s delete,** where
+  accounts are removed.
+- **Not done:** the manual checks on a real keychain and on a session
+  without one.
