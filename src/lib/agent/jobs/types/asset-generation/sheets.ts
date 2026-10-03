@@ -187,6 +187,39 @@ export interface CellResult {
 	 * cell with another — assigned, but worth a second look by the judge.
 	 */
 	suspect: boolean;
+	/**
+	 * Why the piece itself looks joined to a neighbour, when it does: it opens
+	 * into two or more parts (`lobes`), or it is much wider or taller than the
+	 * rest of its row (`size`). The layout can be exact and this still set; a
+	 * coin drawn touching a player is cut out as part of the player.
+	 */
+	why?: 'lobes' | 'size';
+}
+
+/** A piece this much wider or taller than its row's median is suspect. */
+const SIZE_OUTLIER = 1.6;
+
+/** Mark pieces that look joined to a neighbour (see `CellResult.why`). */
+function joinedNeighbour(piece: SheetPiece, rowMates: SheetPiece[]): CellResult['why'] {
+	if (piece.lobes >= 2) return 'lobes';
+	const others = rowMates.filter((p) => p !== piece);
+	if (others.length === 0) return undefined;
+	const median = (xs: number[]) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+	const w = median(others.map((p) => p.width));
+	const h = median(others.map((p) => p.height));
+	if (piece.width > w * SIZE_OUTLIER || piece.height > h * SIZE_OUTLIER) return 'size';
+	return undefined;
+}
+
+/** Add `why`, and `suspect` with it, to every cell whose piece looks joined. */
+function flagJoined(cells: CellResult[], pieces: SheetPiece[]): CellResult[] {
+	const rows = rowsOf(pieces);
+	return cells.map((c) => {
+		if (c.status !== 'ok' || !c.piece) return c;
+		const row = rows.find((r) => r.includes(c.piece!)) ?? [c.piece];
+		const why = joinedNeighbour(c.piece, row);
+		return why ? { ...c, suspect: true, why } : c;
+	});
 }
 
 /** Group pieces into rows the way a reader would: by centre, with slack. */
@@ -244,7 +277,10 @@ export function assignCells(pieces: SheetPiece[], n: number, edge = SHEET_EDGE):
 	const found = rowsOf(pieces);
 	const expected = Array.from({ length: rows }, (_, r) => Math.min(cols, n - r * cols));
 	if (found.length === rows && found.every((row, r) => row.length === expected[r])) {
-		return found.flat().map((piece) => ({ status: 'ok' as const, piece, suspect: false }));
+		return flagJoined(
+			found.flat().map((piece) => ({ status: 'ok' as const, piece, suspect: false })),
+			pieces
+		);
 	}
 
 	const centres = Array.from({ length: n }, (_, i) => expectedCentre(i, n, edge));
@@ -272,11 +308,14 @@ export function assignCells(pieces: SheetPiece[], n: number, edge = SHEET_EDGE):
 		});
 	}
 
-	return Array.from({ length: n }, (_, i): CellResult => {
-		if (merged.has(i)) return { status: 'merge', suspect: true };
-		const here = byCell.get(i) ?? [];
-		if (here.length === 0) return { status: 'missing', suspect: true };
-		const largest = here.reduce((a, b) => (b.area > a.area ? b : a));
-		return { status: 'ok', piece: largest, suspect: true };
-	});
+	return flagJoined(
+		Array.from({ length: n }, (_, i): CellResult => {
+			if (merged.has(i)) return { status: 'merge', suspect: true };
+			const here = byCell.get(i) ?? [];
+			if (here.length === 0) return { status: 'missing', suspect: true };
+			const largest = here.reduce((a, b) => (b.area > a.area ? b : a));
+			return { status: 'ok', piece: largest, suspect: true };
+		}),
+		pieces
+	);
 }

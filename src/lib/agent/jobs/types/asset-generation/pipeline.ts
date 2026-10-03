@@ -247,11 +247,12 @@ async function judgeAsset(
 	spec: AssetSpec,
 	entry: AssetEntry,
 	image: Uint8Array,
-	anchor: Uint8Array
+	anchor: Uint8Array,
+	hint?: string
 ): Promise<AssetJudgement | null> {
 	let verdict: AssetJudgement | null = null;
 	await ctx.runJobTurn({
-		userMessage: judgePrompt(entry.prompt, spec.style.prompt, entry.kind),
+		userMessage: judgePrompt(entry.prompt, spec.style.prompt, entry.kind, hint),
 		history: [
 			{
 				role: 'user',
@@ -590,7 +591,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				// Never fail an entry for a capability the user does not have.
 				visionSupported: ctx.visionSupported(),
 				enabled: cfg.vision_judge ?? DEFAULT_VISION_JUDGE,
-				judge: (entry, image) => judgeAsset(ctx, spec, entry, image, anchored.image)
+				judge: (entry, image, hint) => judgeAsset(ctx, spec, entry, image, anchored.image, hint)
 			},
 			signal: abort.signal,
 			generate: (req, opts) => backend.generate(req, opts),

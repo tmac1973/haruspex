@@ -633,7 +633,11 @@ describe('sheets', () => {
 	const SHEETS: ImageBackendCapabilities = { ...FULL, transparency: true };
 
 	/** What `image_split_sheet` returns, one per call, then the last repeats. */
-	const splits: Array<{ pieces: Array<[number, number]>; keyed?: boolean }> = [];
+	/** Each piece is [cx, cy] or [cx, cy, lobes]. */
+	const splits: Array<{
+		pieces: Array<[number, number] | [number, number, number]>;
+		keyed?: boolean;
+	}> = [];
 
 	beforeEach(() => {
 		splits.length = 0;
@@ -644,7 +648,7 @@ describe('sheets', () => {
 				return {
 					keyed: s.keyed ?? false,
 					palette: [0x123456ff],
-					pieces: s.pieces.map(([cx, cy]) => ({
+					pieces: s.pieces.map(([cx, cy, lobes = 1]) => ({
 						bytes: [7],
 						x: cx - 100,
 						y: cy - 100,
@@ -652,7 +656,8 @@ describe('sheets', () => {
 						height: 200,
 						cx,
 						cy,
-						area: 40_000
+						area: 40_000,
+						lobes
 					}))
 				};
 			}
@@ -761,6 +766,40 @@ describe('sheets', () => {
 		});
 		await generateEntries(specOf([{}, {}, {}]), h.deps);
 		expect(judged).toEqual(['e0', 'e2']);
+	});
+
+	it('shows a piece with a neighbour stuck to it to the judge, saying what to look for', async () => {
+		// The p25 player came out with a coin on its side; the layout was exact,
+		// so nothing looked at it.
+		splits.push({ pieces: [THREE[0], [768, 256, 2], THREE[2]] });
+		const asked: Array<[string, string | undefined]> = [];
+		const seen: SheetOutcome[] = [];
+		const h = harness({
+			caps: SHEETS,
+			onSheet: (o) => seen.push(o),
+			judge: {
+				visionSupported: true,
+				enabled: false,
+				judge: async (e, _img, hint) => {
+					asked.push([e.id, hint]);
+					return { ok: true, reason: '' };
+				}
+			}
+		});
+		await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(asked.map(([id]) => id)).toEqual(['e1']);
+		expect(asked[0][1]).toMatch(/second object drawn touching the subject.*besides e1/);
+		// The layout still came out as asked.
+		expect(seen[0].exact).toBe(true);
+	});
+
+	it('writes it anyway when nobody can look, and says it may be joined', async () => {
+		splits.push({ pieces: [THREE[0], [768, 256, 2], THREE[2]] });
+		const h = harness({ caps: SHEETS });
+		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(h.written).toContain('out/e1.png');
+		expect(results[1].outcome.degraded).toContain('may be joined to a neighbour');
+		expect(results[0].outcome.degraded).not.toContain('may be joined to a neighbour');
 	});
 
 	it('does not judge an exact sheet when the judge is off', async () => {

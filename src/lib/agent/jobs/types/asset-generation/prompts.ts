@@ -81,7 +81,12 @@ export function specRetryPrompt(problems: string[]): string {
  * opinion on quality will reject perfectly good 32-pixel art for being 32
  * pixels.
  */
-export function judgePrompt(subject: string, stylePrompt: string, kind?: AssetKind): string {
+export function judgePrompt(
+	subject: string,
+	stylePrompt: string,
+	kind?: AssetKind,
+	hint?: string
+): string {
 	const texture = kind === 'texture';
 	return [
 		'The first image is the style reference for a set of game assets.',
@@ -89,6 +94,7 @@ export function judgePrompt(subject: string, stylePrompt: string, kind?: AssetKi
 		'',
 		`The asset is supposed to be: ${subject}`,
 		`The shared style is: ${stylePrompt}`,
+		...(hint ? ['', hint] : []),
 		'',
 		texture
 			? 'Answer three questions, and only these three:'

@@ -120,6 +120,9 @@ pub struct SheetPiece {
     pub cy: f32,
     /// Opaque pixels; a merge of two sprites shows up as an outlier here.
     pub area: u32,
+    /// Substantial parts once thin joins are opened: 2+ when a neighbour was
+    /// drawn touching this sprite (`split::lobes`).
+    pub lobes: u32,
 }
 
 /// The pieces of one sheet, and how its background was removed.
@@ -178,6 +181,7 @@ pub fn image_split_sheet(
                 cx: p.cx,
                 cy: p.cy,
                 area: p.area,
+                lobes: p.lobes,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;

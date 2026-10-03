@@ -36,6 +36,10 @@ pub struct Piece {
     pub cy: f32,
     /// Opaque pixels.
     pub area: u32,
+    /// How many substantial parts the piece falls into once its thin joins are
+    /// opened (`lobes`). 1 for a sprite; 2 or more when a small neighbour was
+    /// drawn touching it and came out as part of it.
+    pub lobes: u32,
     /// Just this piece's pixels, cropped to its box. A neighbour whose box
     /// overlaps is not copied in.
     pub image: RgbaImage,
@@ -257,6 +261,7 @@ pub fn split_sheet(img: &RgbaImage, opts: SplitOptions) -> Vec<Piece> {
                 cx: sx as f32 / area.max(1) as f32,
                 cy: sy as f32 / area.max(1) as f32,
                 area,
+                lobes: lobes(&image),
                 image,
             }
         })
@@ -264,6 +269,105 @@ pub fn split_sheet(img: &RgbaImage, opts: SplitOptions) -> Vec<Piece> {
 
     reading_order(&mut pieces);
     pieces
+}
+
+/// How many substantial parts a cut piece is made of.
+///
+/// The piece's opaque mask is opened (eroded, then dilated) with a square
+/// kernel a twenty-fifth of its shorter side, at least 2 px. A sprite's own
+/// thin parts, like a sword's blade or a leg, are wider than that and survive.
+/// A neck where a coin was drawn touching a player is narrower and breaks.
+/// Parts left with at least 4% of the piece's area are counted; the slivers
+/// an opening leaves along edges are not.
+///
+/// Pieces are already cut and a few hundred pixels across, and the filters are
+/// separable, so this costs little next to the cut itself.
+pub fn lobes(img: &RgbaImage) -> u32 {
+    let (w, h) = img.dimensions();
+    if w == 0 || h == 0 {
+        return 0;
+    }
+    let (w, h) = (w as usize, h as usize);
+    let mask: Vec<bool> = img.pixels().map(|p| p.0[3] != 0).collect();
+    let total = mask.iter().filter(|&&m| m).count();
+    if total == 0 {
+        return 0;
+    }
+    let k = ((w.min(h) as f32) * 0.04).round().max(2.0) as usize;
+    let r = k / 2;
+    let opened = dilate(&erode(&mask, w, h, r), w, h, r);
+
+    let floor = ((total as f32) * 0.04).ceil() as usize;
+    let mut seen = vec![false; w * h];
+    let mut count = 0u32;
+    for start in 0..w * h {
+        if !opened[start] || seen[start] {
+            continue;
+        }
+        let mut size = 0usize;
+        let mut stack = vec![start];
+        seen[start] = true;
+        while let Some(i) = stack.pop() {
+            size += 1;
+            let (x, y) = ((i % w) as i64, (i / w) as i64);
+            for dy in -1..=1i64 {
+                for dx in -1..=1i64 {
+                    let (nx, ny) = (x + dx, y + dy);
+                    if nx < 0 || ny < 0 || nx >= w as i64 || ny >= h as i64 {
+                        continue;
+                    }
+                    let j = ny as usize * w + nx as usize;
+                    if opened[j] && !seen[j] {
+                        seen[j] = true;
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        if size >= floor {
+            count += 1;
+        }
+    }
+    count.max(1)
+}
+
+/// A pixel survives when every pixel within `r` of it, in a square, is set.
+fn erode(m: &[bool], w: usize, h: usize, r: usize) -> Vec<bool> {
+    let rows = filter_1d(m, w, h, r, true, true);
+    filter_1d(&rows, w, h, r, false, true)
+}
+
+/// A pixel is set when any pixel within `r` of it, in a square, is set.
+fn dilate(m: &[bool], w: usize, h: usize, r: usize) -> Vec<bool> {
+    let rows = filter_1d(m, w, h, r, true, false);
+    filter_1d(&rows, w, h, r, false, false)
+}
+
+/// One pass of a separable min (`all`) or max filter, along rows or columns.
+/// Outside the image counts as unset, so erosion eats in from the edges.
+fn filter_1d(m: &[bool], w: usize, h: usize, r: usize, along_rows: bool, all: bool) -> Vec<bool> {
+    let mut out = vec![false; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let (pos, len) = if along_rows { (x, w) } else { (y, h) };
+            let lo = pos.saturating_sub(r);
+            let hi = (pos + r).min(len - 1);
+            let edge = pos < r || pos + r >= len;
+            let at = |i: usize| {
+                if along_rows {
+                    m[y * w + i]
+                } else {
+                    m[i * w + x]
+                }
+            };
+            out[y * w + x] = if all {
+                !edge && (lo..=hi).all(at)
+            } else {
+                (lo..=hi).any(at)
+            };
+        }
+    }
+    out
 }
 
 /// Rows first, then left to right within a row.
@@ -467,7 +571,12 @@ mod fixtures {
         let img = load(include_bytes!(
             "../../tests/fixtures/image_gen/ming_sheet_items.png"
         ));
-        assert_eq!(split_sheet(&img, SplitOptions::default()).len(), 9);
+        let pieces = split_sheet(&img, SplitOptions::default());
+        assert_eq!(pieces.len(), 9);
+        // Real sprites, thin parts and all, are one lobe each: a false lobe
+        // count sends a good sprite to the judge for nothing.
+        let lobes: Vec<u32> = pieces.iter().map(|p| p.lobes).collect();
+        assert_eq!(lobes, vec![1; 9], "lobes per piece: {lobes:?}");
     }
 
     #[test]
@@ -487,6 +596,12 @@ mod fixtures {
         assert!(
             tallest > img.height() * 3 / 4,
             "the merged column is {tallest}px tall"
+        );
+        let merged = pieces.iter().max_by_key(|p| p.height).unwrap();
+        assert!(
+            merged.lobes >= 2,
+            "four sprites joined at thin points should open into several lobes, got {}",
+            merged.lobes
         );
     }
 
@@ -513,5 +628,53 @@ mod fixtures {
                 .save(format!("{path}.piece{i}.png"))
                 .expect("could not write a piece");
         }
+    }
+}
+
+#[cfg(test)]
+mod lobe_tests {
+    use super::*;
+
+    fn canvas(w: u32, h: u32) -> RgbaImage {
+        RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]))
+    }
+
+    fn fill(img: &mut RgbaImage, x0: u32, y0: u32, x1: u32, y1: u32) {
+        for y in y0..y1 {
+            for x in x0..x1 {
+                img.put_pixel(x, y, Rgba([200, 50, 50, 255]));
+            }
+        }
+    }
+
+    #[test]
+    fn a_plain_shape_is_one_lobe() {
+        let mut img = canvas(200, 200);
+        fill(&mut img, 20, 20, 180, 180);
+        assert_eq!(lobes(&img), 1);
+    }
+
+    #[test]
+    fn a_small_neighbour_joined_by_a_thin_neck_is_a_second_lobe() {
+        // A player with a coin drawn touching its side.
+        let mut img = canvas(240, 200);
+        fill(&mut img, 0, 0, 160, 200); // the player
+        fill(&mut img, 200, 80, 240, 120); // the coin, 40 × 40
+        fill(&mut img, 160, 99, 200, 101); // a 2 px neck
+        assert_eq!(lobes(&img), 2);
+    }
+
+    #[test]
+    fn a_sprites_own_thin_arm_stays_part_of_it() {
+        // An L: a body and a 14 px-wide arm. The kernel is ~8 px here.
+        let mut img = canvas(200, 200);
+        fill(&mut img, 0, 0, 80, 200);
+        fill(&mut img, 80, 186, 200, 200);
+        assert_eq!(lobes(&img), 1);
+    }
+
+    #[test]
+    fn an_empty_piece_has_no_lobes() {
+        assert_eq!(lobes(&canvas(50, 50)), 0);
     }
 }
