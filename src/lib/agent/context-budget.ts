@@ -178,6 +178,14 @@ export function trimOldToolMessages(
 }
 
 export interface ContextManagedInfo {
+	/**
+	 * `trim`: the in-loop trim after a call came back over 70% of the window,
+	 * which stubs older tool results only. `fit`: the pre-send fit, which may
+	 * go on to truncate messages and drop turns.
+	 */
+	kind: 'trim' | 'fit';
+	/** The fit reached its last resort, halving messages until they fit. */
+	forced: boolean;
 	/** Older tool results were stubbed. */
 	trimmedTools: boolean;
 	/** Number of oversized messages head/tail-truncated. */
@@ -327,11 +335,14 @@ export function fitMessagesToBudget(
 	}
 
 	// Step 4: pathological fallback — guarantee the fit.
-	if (!fits()) {
+	const forced = !fits();
+	if (forced) {
 		forceFit(messages, effectiveBudget, opts.tools);
 	}
 
 	return {
+		kind: 'fit',
+		forced,
 		trimmedTools,
 		truncatedMessages,
 		droppedTurns,

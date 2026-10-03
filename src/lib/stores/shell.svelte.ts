@@ -956,7 +956,11 @@ export class ShellSession {
 				onAdmitted: () => (this.ticket = null),
 				onAssistantDelta: (full) => (this.streamingContent = full),
 				onCallStats: (stats) => (lastCallStats = stats),
-				onContextManaged: (info) => (this.contextNotice = describeContextManaged(info)),
+				// The notice is for the pre-send fit, which can drop turns; the
+				// in-loop trim only stubs old tool results and happens often.
+				onContextManaged: (info) => {
+					if (info.kind === 'fit') this.contextNotice = describeContextManaged(info);
+				},
 				onToolStart: (call) => {
 					this.searchSteps = [...this.searchSteps, newRunningStep(call)];
 				},

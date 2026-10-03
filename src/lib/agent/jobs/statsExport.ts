@@ -65,7 +65,9 @@ function phaseEntry(row: StatsExportRow) {
 		model_calls: s.calls,
 		model_ms: s.totalMs,
 		reasoning_ms: s.reasoningMs,
-		tokens_per_second: rate === null ? null : round1(rate)
+		tokens_per_second: rate === null ? null : round1(rate),
+		trim_events: s.trimEvents,
+		pressure_max: s.pressureMax
 	};
 }
 

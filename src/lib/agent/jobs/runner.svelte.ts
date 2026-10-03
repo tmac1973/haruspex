@@ -11,6 +11,7 @@
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue } from '$lib/agent/tools';
 import type { CallStats, SearchStep } from '$lib/agent/loop';
+import type { ContextManagedInfo } from '$lib/agent/context-budget';
 import {
 	runEphemeralTurn,
 	type EphemeralTurnOptions,
@@ -255,6 +256,13 @@ export interface StepThinkingStats {
 	/** Number of model calls folded in — the sample size behind the estimate. */
 	calls: number;
 	/**
+	 * Times the loop cut the conversation to fit the window: in-loop trims
+	 * and pre-send fits together. A step that never ran short has 0.
+	 */
+	trimEvents: number;
+	/** The worst of those cuts, or null when there were none. */
+	pressureMax: ContextPressure | null;
+	/**
 	 * The same figures split by the kind of turn that produced them, keyed by
 	 * the label a pipeline passed as `turnKind`. Absent for a step whose turns
 	 * declared none.
@@ -265,6 +273,50 @@ export interface StepThinkingStats {
 	 * where to turn it down needs the split, not the total.
 	 */
 	byKind?: Record<string, KindThinkingStats>;
+}
+
+/**
+ * How hard a step ran into its context window, mildest first: `trim` stubbed
+ * old tool results, `fit` cut more before a send, `forced` had to halve
+ * messages to fit at all.
+ */
+export type ContextPressure = 'trim' | 'fit' | 'forced';
+
+const PRESSURE_RANK: Record<ContextPressure, number> = { trim: 1, fit: 2, forced: 3 };
+
+/** The worse of two pressures. */
+function worse(a: ContextPressure | null, b: ContextPressure): ContextPressure {
+	return a && PRESSURE_RANK[a] >= PRESSURE_RANK[b] ? a : b;
+}
+
+/** An empty tally, for an event that arrives before the step's first call. */
+function emptyStats(): StepThinkingStats {
+	return {
+		reasoningMs: 0,
+		totalMs: 0,
+		reasoningTokens: 0,
+		totalTokens: 0,
+		promptTokens: 0,
+		peakPromptTokens: 0,
+		reasoningExact: true,
+		calls: 0,
+		trimEvents: 0,
+		pressureMax: null
+	};
+}
+
+/** Fold one trim or fit into a step's totals. */
+export function addContextEvent(
+	prev: StepThinkingStats | null,
+	info: ContextManagedInfo
+): StepThinkingStats {
+	const base = prev ?? emptyStats();
+	const kind: ContextPressure = info.kind === 'trim' ? 'trim' : info.forced ? 'forced' : 'fit';
+	return {
+		...base,
+		trimEvents: base.trimEvents + 1,
+		pressureMax: worse(base.pressureMax, kind)
+	};
 }
 
 /** One turn kind's share of a step. */
@@ -311,7 +363,9 @@ export function addCallStats(
 		promptTokens: (prev?.promptTokens ?? 0) + call.promptTokens,
 		peakPromptTokens: Math.max(prev?.peakPromptTokens ?? 0, call.promptTokens),
 		reasoningExact: (prev?.reasoningExact ?? true) && call.reasoningExact,
-		calls: (prev?.calls ?? 0) + 1
+		calls: (prev?.calls ?? 0) + 1,
+		trimEvents: prev?.trimEvents ?? 0,
+		pressureMax: prev?.pressureMax ?? null
 	};
 }
 
@@ -331,7 +385,9 @@ export function stepStatsWire(stats: StepThinkingStats | null): StepStats | null
 		model_calls: stats.calls,
 		reasoning_ms: stats.reasoningMs,
 		total_ms: stats.totalMs,
-		turn_stats: stats.byKind ? JSON.stringify(wireKinds(stats.byKind)) : null
+		turn_stats: stats.byKind ? JSON.stringify(wireKinds(stats.byKind)) : null,
+		trim_events: stats.trimEvents,
+		pressure_max: stats.pressureMax
 	};
 }
 
@@ -373,7 +429,9 @@ export function stepStatsFromWire(stats: StepStats | null): StepThinkingStats | 
 		promptTokens: stats.tokens_prompt,
 		peakPromptTokens: stats.peak_prompt_tokens,
 		reasoningExact: stats.tokens_reasoning_exact,
-		calls: stats.model_calls
+		calls: stats.model_calls,
+		trimEvents: stats.trim_events ?? 0,
+		pressureMax: stats.pressure_max ?? null
 	};
 }
 
@@ -683,6 +741,13 @@ function observabilityCallbacks(runId: number) {
 			const idx = liveStep();
 			patchStep(runId, idx, {
 				thinking: addCallStats(current.steps[idx]?.thinking ?? null, stats, currentTurnKind)
+			});
+		},
+		onContextManaged: (info: ContextManagedInfo) => {
+			if (!current || current.id !== runId) return;
+			const idx = liveStep();
+			patchStep(runId, idx, {
+				thinking: addContextEvent(current.steps[idx]?.thinking ?? null, info)
 			});
 		},
 		onReasoning: (reasoning: string) => {

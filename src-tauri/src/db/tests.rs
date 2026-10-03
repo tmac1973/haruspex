@@ -875,6 +875,8 @@ fn step_stats_round_trip_and_absence_is_not_zero() {
         reasoning_ms: 1_683_000,
         total_ms: 2_712_000,
         turn_stats: Some(r#"{"planning.write":{"calls":5,"tokens_reasoning":9000}}"#.to_string()),
+        trim_events: 4,
+        pressure_max: Some("forced".into()),
     };
     db.mark_run_step_finished(run_id, 0, "succeeded", Some("out"), None, 200, Some(&stats))
         .unwrap();
@@ -895,6 +897,8 @@ fn step_stats_round_trip_and_absence_is_not_zero() {
         Some(r#"{"planning.write":{"calls":5,"tokens_reasoning":9000}}"#)
     );
     assert_eq!(recorded.model_calls, 31);
+    assert_eq!(recorded.trim_events, 4);
+    assert_eq!(recorded.pressure_max.as_deref(), Some("forced"));
     assert_eq!(recorded.reasoning_ms, 1_683_000);
     assert_eq!(recorded.total_ms, 2_712_000);
 

@@ -12,20 +12,23 @@ describe('parseGuidedPlanningConfig', () => {
 		);
 		expect(cfg.initial_description).toBe('Build a hangman game');
 		expect(cfg.plan_output_dir).toBe('plan/hangman/');
-		expect(cfg.skip_verification).toBe(true);
+		// How a skip was stored before verification had three settings.
+		expect(cfg.verification).toBe('skip');
 	});
 
 	/**
-	 * Verification is the run's longest stage, so skipping it must be an
-	 * explicit choice — every job authored before the toggle existed has no
-	 * such key and must keep verifying.
+	 * Verification is the run's longest stage, so less of it must be an
+	 * explicit choice — every job authored before the setting existed has no
+	 * such key and must keep verifying fully.
 	 */
-	it('verifies by default when the key is absent, malformed, or not a boolean', () => {
-		expect(parseGuidedPlanningConfig(null).skip_verification).toBe(false);
-		expect(parseGuidedPlanningConfig('{').skip_verification).toBe(false);
-		expect(parseGuidedPlanningConfig('{"initial_description":"x"}').skip_verification).toBe(false);
+	it('verifies fully by default when the key is absent, malformed, or unknown', () => {
+		expect(parseGuidedPlanningConfig(null).verification).toBe('full');
+		expect(parseGuidedPlanningConfig('{').verification).toBe('full');
+		expect(parseGuidedPlanningConfig('{"initial_description":"x"}').verification).toBe('full');
 		// A truthy non-boolean is not a decision the user made.
-		expect(parseGuidedPlanningConfig('{"skip_verification":"yes"}').skip_verification).toBe(false);
+		expect(parseGuidedPlanningConfig('{"skip_verification":"yes"}').verification).toBe('full');
+		expect(parseGuidedPlanningConfig('{"verification":"sometimes"}').verification).toBe('full');
+		expect(parseGuidedPlanningConfig('{"verification":"lite"}').verification).toBe('lite');
 	});
 
 	/**
@@ -88,17 +91,19 @@ describe('unattended_chain requires verification', () => {
 		// Enforced in the parser, not only the Editor: the severity gate is the
 		// one thing between a bad plan and hours of unwatched code, and a
 		// hand-edited type_config must not be able to remove it.
-		const cfg = parseGuidedPlanningConfig(
-			'{"run_mode":"unattended_chain","skip_verification":true}'
-		);
-		expect(cfg.run_mode).toBe('unattended_chain');
-		expect(cfg.skip_verification).toBe(false);
+		// A skip there becomes lite: one independent read is what the gate
+		// needs, and the user asked for less checking, not more.
+		for (const skip of ['"skip_verification":true', '"verification":"skip"']) {
+			const cfg = parseGuidedPlanningConfig(`{"run_mode":"unattended_chain",${skip}}`);
+			expect(cfg.run_mode).toBe('unattended_chain');
+			expect(cfg.verification).toBe('lite');
+		}
 	});
 
-	it('leaves the toggle alone in the other modes', () => {
+	it('leaves the setting alone in the other modes', () => {
 		for (const mode of ['attended', 'unattended_plan']) {
-			const cfg = parseGuidedPlanningConfig(`{"run_mode":"${mode}","skip_verification":true}`);
-			expect(cfg.skip_verification).toBe(true);
+			const cfg = parseGuidedPlanningConfig(`{"run_mode":"${mode}","verification":"skip"}`);
+			expect(cfg.verification).toBe('skip');
 		}
 	});
 });

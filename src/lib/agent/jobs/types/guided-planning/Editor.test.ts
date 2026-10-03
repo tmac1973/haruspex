@@ -63,17 +63,22 @@ describe('guided-planning Editor', () => {
 		expect(cfg.coding_max_attempts).toBe(3);
 	});
 
-	it('disables skip-verification in the chain mode, and says why', () => {
+	it('offers no skip in the chain mode, and says why', () => {
 		mount({ run_mode: 'unattended_chain' });
-		const box = screen.getByRole('checkbox', { name: /Skip verification/ }) as HTMLInputElement;
-		expect(box.disabled).toBe(true);
+		const select = screen.getByLabelText('Verification') as HTMLSelectElement;
+		const skip = [...select.options].find((o) => o.value === 'skip')!;
+		expect(skip.disabled).toBe(true);
 		expect(screen.getByText(/decides whether the coding run may start/)).toBeTruthy();
 	});
 
-	it('leaves skip-verification usable in the other modes', () => {
+	it('offers full, lite and skip in the other modes', () => {
 		mount({ run_mode: 'unattended_plan' });
-		const box = screen.getByRole('checkbox', { name: /Skip verification/ }) as HTMLInputElement;
-		expect(box.disabled).toBe(false);
+		const select = screen.getByLabelText('Verification') as HTMLSelectElement;
+		expect([...select.options].map((o) => [o.value, o.disabled])).toEqual([
+			['full', false],
+			['lite', false],
+			['skip', false]
+		]);
 	});
 
 	describe('stage models', () => {

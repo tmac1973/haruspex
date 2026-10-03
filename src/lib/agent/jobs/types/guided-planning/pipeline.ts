@@ -847,6 +847,89 @@ export function assetSpecPrompt(outDir: string, specPath: string): string {
  * burned all MAX_VERIFY_ROUNDS and fired a revise turn against files that
  * were already correct. See `stripThinkBlocks` in $lib/markdown.
  */
+/** What a verification pass ended with. */
+export interface VerifyOutcome {
+	/** A verify read came back clean. Never true for a lite run that revised. */
+	clean: boolean;
+	/** The verdict whose problems are still open; '' when clean. */
+	openProblems: string;
+	/** Verify reads made. */
+	rounds: number;
+}
+
+/**
+ * Verify and revise the plan.
+ *
+ * - `full`: until a verify comes back clean, up to MAX_VERIFY_ROUNDS reads.
+ *   The last round is verify-only, and a revise that wrote nothing ends it.
+ * - `lite`: one read, one revise if it found problems, no re-read. Whether the
+ *   revise fixed anything is unknown, so the first verdict stays open.
+ */
+export async function verifyPlan(
+	mode: 'full' | 'lite',
+	io: {
+		verify: () => Promise<string>;
+		revise: (verdict: string) => Promise<string[]>;
+		abortIfCancelled: () => void;
+	}
+): Promise<VerifyOutcome> {
+	const maxRounds = mode === 'lite' ? 1 : MAX_VERIFY_ROUNDS;
+	let openProblems = '';
+	for (let round = 0; round < maxRounds; round++) {
+		io.abortIfCancelled();
+		const verdict = await io.verify();
+		if (isPlanClean(verdict)) return { clean: true, openProblems: '', rounds: round + 1 };
+		openProblems = verdict;
+		// Lite revises once after its only read. Full's last round is
+		// verify-only: a revision there is never re-read, so it costs a full
+		// rewrite of several phase files to reach an unknown state — where
+		// stopping reaches a REPORTED one, which is what approval needs.
+		if (mode === 'full' && round === maxRounds - 1)
+			return { clean: false, openProblems, rounds: round + 1 };
+		io.abortIfCancelled();
+		const revised = await io.revise(verdict);
+		if (mode === 'lite') return { clean: false, openProblems, rounds: 1 };
+		// Nothing written means the files are byte-identical, so the next
+		// review reads the same plan and reaches the same verdict. Stop rather
+		// than spend another full read of every phase file proving it.
+		if (revised.length === 0) return { clean: false, openProblems, rounds: round + 1 };
+	}
+	return { clean: false, openProblems, rounds: maxRounds };
+}
+
+/**
+ * The Verification stage's line, and the findings carried to the handoff.
+ * Said plainly either way: this once reported "Plan verified" on every run,
+ * including ones that never got a clean verdict.
+ */
+export function verificationSummary(
+	mode: 'full' | 'lite',
+	outcome: VerifyOutcome
+): { message: string; findings: string[] } {
+	if (outcome.clean) {
+		return {
+			message:
+				mode === 'lite'
+					? 'Verification: lite (1 round) — no problems found'
+					: 'Plan verified — dependency-ordered, no deferred decisions',
+			findings: []
+		};
+	}
+	// Lead with the counts: the first question on reading this is how much of
+	// it has to be dealt with before the plan is usable.
+	const { blocking, advisory } = classifyFindings(outcome.openProblems);
+	const counts = `${blocking.length} blocking, ${advisory.length} advisory`;
+	return {
+		message:
+			mode === 'lite'
+				? `Verification: lite (1 round) — revised once for ${counts}, not re-checked. ` +
+					`They go to the coding run as open findings:\n\n${outcome.openProblems}`
+				: `Verification finished with problems still open — ${counts}. ` +
+					`Review before approving:\n\n${outcome.openProblems}`,
+		findings: [...blocking, ...advisory]
+	};
+}
+
 export function isPlanClean(verdict: string): boolean {
 	return verdict.trim().toUpperCase().startsWith('PLAN OK');
 }
@@ -1838,51 +1921,19 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// index stays put and the run view shows what was skipped rather than
 		// silently renumbering the stages around it.
 		startStep(VERIFY);
-		if (cfg.skip_verification) {
+		if (cfg.verification === 'skip') {
 			finishStep(VERIFY, 'Skipped — verification is off for this job');
 		} else {
-			let clean = false;
-			let openProblems = '';
 			try {
-				for (let round = 0; round < MAX_VERIFY_ROUNDS; round++) {
-					abortIfCancelled();
-					const verdict = await verifyTurn();
-					if (isPlanClean(verdict)) {
-						clean = true;
-						break;
-					}
-					openProblems = verdict;
-					// The last round is verify-only. A revision on the final round is
-					// never re-read, so it costs a full rewrite of several phase files
-					// to reach an unknown state — where stopping here reaches a
-					// REPORTED one, which is what the approval checkpoint needs.
-					if (round === MAX_VERIFY_ROUNDS - 1) break;
-					abortIfCancelled();
-					const revised = await reviseTurn(verdict);
-					// Nothing written means the files are byte-identical, so the next
-					// review reads the same plan and reaches the same verdict. Stop
-					// rather than spend another full read of every phase file proving
-					// it — this is the case that otherwise burns every round.
-					if (revised.length === 0) break;
-				}
-				// Said plainly either way. This previously reported "Plan verified" on
-				// every run, including one that spent all its rounds and never got a
-				// clean verdict — so the one stage whose whole job is to tell you
-				// whether the plan is sound could not say no.
+				const outcome = await verifyPlan(cfg.verification, {
+					verify: verifyTurn,
+					revise: reviseTurn,
+					abortIfCancelled
+				});
 				verified = true;
-				if (clean) {
-					finishStep(VERIFY, 'Plan verified — dependency-ordered, no deferred decisions');
-				} else {
-					// Lead with the counts: the first question on reading this is how
-					// much of it has to be dealt with before the plan is usable.
-					const { blocking, advisory } = classifyFindings(openProblems);
-					openFindings = [...blocking, ...advisory];
-					finishStep(
-						VERIFY,
-						`Verification finished with problems still open — ${blocking.length} blocking, ` +
-							`${advisory.length} advisory. Review before approving:\n\n${openProblems}`
-					);
-				}
+				const summary = verificationSummary(cfg.verification, outcome);
+				openFindings = summary.findings;
+				finishStep(VERIFY, summary.message);
 			} catch (e) {
 				// A crashed verifier must not discard a finished plan. The phase
 				// files are written and the run has often spent an hour getting

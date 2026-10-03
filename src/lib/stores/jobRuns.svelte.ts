@@ -72,6 +72,10 @@ export interface StepStats {
 	 * were all one kind. See `TurnKindStats`.
 	 */
 	turn_stats: string | null;
+	/** Times the step's context was trimmed or fitted; 0 or absent when never. */
+	trim_events?: number;
+	/** The worst of those: 'trim', 'fit' or 'forced'; null when there were none. */
+	pressure_max?: 'trim' | 'fit' | 'forced' | null;
 }
 
 /** One turn kind's share of a step. Parsed out of `StepStats.turn_stats`. */

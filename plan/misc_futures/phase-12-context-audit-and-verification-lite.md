@@ -163,3 +163,23 @@ Two commits:
 Revert the commits. The new columns stay in the database, unused, as earlier
 added columns have. Configs with `verification` set are read by the old code
 as "verify", which is the safe default.
+
+## As built — notes (first commit)
+
+- **The hook:** `ContextManagedInfo` has `kind` and `forced`. The in-loop
+  trim fires it (`kind: 'trim'`, `beforeEst` is the server's prompt count);
+  the pre-send and overflow-retry fits fire `kind: 'fit'` with `forced` set
+  when the halving fallback ran. The Shell's notice still shows fits only.
+- **Per step:** `trim_events` counts every trim and fit; `pressure_max` is
+  the worst (`trim` < `fit` < `forced`). They live on the step's
+  `StepThinkingStats` beside the token figures, are written with them, and
+  are in the Export JSON. The Tokens card's Peak ctx cell reads "… ·
+  trimmed N×" with the worst kind in its tooltip.
+- **Verification:** `verification: 'full' | 'lite' | 'skip'` replaces
+  `skip_verification`, which still parses (`true` → `skip`). The
+  orchestration is `verifyPlan()` / `verificationSummary()`, exported and
+  unit-tested; the pipeline has no end-to-end harness. In lite, `verified`
+  is set only after the revise turn succeeds, so a crashed revise leaves the
+  plan unverified like a crashed full run.
+- **Not done:** steps 3–4. `measurements-phase-12.md` is a template saying
+  nothing has been measured; the `perf` commit waits on it.

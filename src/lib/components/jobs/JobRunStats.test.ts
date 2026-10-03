@@ -13,6 +13,8 @@ function stats(over: Partial<StepThinkingStats> = {}): StepThinkingStats {
 		peakPromptTokens: 4000,
 		reasoningExact: true,
 		calls: 1,
+		trimEvents: 0,
+		pressureMax: null,
 		...over
 	};
 }
@@ -210,5 +212,22 @@ describe('JobRunStats', () => {
 		// percentage of its own, so a whole-row check would always match.
 		const peakCell = screen.getByText('Run total').closest('tr')!.querySelector('td:last-child')!;
 		expect(peakCell.textContent).toBe('9K');
+	});
+
+	it('says how often a phase was trimmed, and only when it was', () => {
+		render(JobRunStats, {
+			rows: [
+				{
+					label: 'Research',
+					stats: stats({ peakPromptTokens: 20_000, trimEvents: 4, pressureMax: 'fit' })
+				},
+				{ label: 'Write', stats: stats({ peakPromptTokens: 8_000 }) }
+			],
+			contextSize: 32_768
+		});
+		const trimmed = screen.getByText(/trimmed 4×/);
+		expect(trimmed.textContent).toContain('61%');
+		expect(trimmed.getAttribute('title')).toMatch(/cut before a send/);
+		expect(screen.getAllByText(/trimmed/)).toHaveLength(1);
 	});
 });

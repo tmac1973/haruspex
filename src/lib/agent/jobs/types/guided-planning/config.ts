@@ -31,6 +31,19 @@ export interface GuidedPlanningCodingRun {
 
 export type GuidedPlanningRunMode = 'attended' | 'unattended_plan' | 'unattended_chain';
 
+/**
+ * How hard the plan is checked before approval.
+ *
+ * - `full`: verify and revise until clean, up to MAX_VERIFY_ROUNDS rounds.
+ * - `lite`: one verify, one revise if it found problems, no second verify.
+ *   Everything that verify found goes to the handoff as open findings, since
+ *   nothing confirms the revise fixed it.
+ * - `skip`: no verification.
+ */
+export type GuidedPlanningVerification = 'full' | 'lite' | 'skip';
+
+export const VERIFICATION_MODES: readonly GuidedPlanningVerification[] = ['full', 'lite', 'skip'];
+
 const RUN_MODES: readonly GuidedPlanningRunMode[] = [
 	'attended',
 	'unattended_plan',
@@ -50,12 +63,12 @@ export interface GuidedPlanningConfig {
 	/** Plan output folder relative to working_dir. null = derive plan/<slug>/. */
 	plan_output_dir: string | null;
 	/**
-	 * Skip the independent verification stage. It is a fresh-context read of
-	 * every phase file plus several revise rounds, which on a local model
-	 * is the longest stage of the run — worth skipping when the plan is small
-	 * or you intend to read it yourself. Defaults to running it.
+	 * The independent verification stage: a fresh-context read of every phase
+	 * file plus revise rounds, which on a local model is the longest stage of
+	 * the run. `lite` or `skip` when the plan is small or you will read it
+	 * yourself. Defaults to `full`. See `GuidedPlanningVerification`.
 	 */
-	skip_verification: boolean;
+	verification: GuidedPlanningVerification;
 	/**
 	 * Offer web_search and research_url to the interview and write turns (never
 	 * the verifier), so the plan is not bounded by the model's training cutoff.
@@ -119,7 +132,15 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 	const mode: GuidedPlanningRunMode = RUN_MODES.includes(raw.run_mode as GuidedPlanningRunMode)
 		? (raw.run_mode as GuidedPlanningRunMode)
 		: 'attended';
-	const skipVerification = raw.skip_verification === true;
+	// `skip_verification: true` is how a skip was stored before the setting
+	// had three values; anything else unrecognised is a full check.
+	const verification: GuidedPlanningVerification = VERIFICATION_MODES.includes(
+		raw.verification as GuidedPlanningVerification
+	)
+		? (raw.verification as GuidedPlanningVerification)
+		: raw.skip_verification === true
+			? 'skip'
+			: 'full';
 	// A malformed nested object behaves like no nested object, the same way a
 	// malformed config behaves like no config above.
 	const cr =
@@ -158,11 +179,12 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		// needs a configured backend, so it is opt-in.
 		generate_assets: raw.generate_assets === true,
 		run_mode: mode,
-		// Absent (every job authored before this existed) means verify. Forced
-		// off for unattended_chain HERE, not only in the Editor: the severity
-		// gate is the one thing standing between a bad plan and hours of
-		// unwatched code, and a hand-edited type_config must not remove it.
-		skip_verification: mode === 'unattended_chain' ? false : skipVerification,
+		// Never skipped in unattended_chain, enforced HERE and not only in the
+		// Editor: the severity gate is the one thing standing between a bad plan
+		// and hours of unwatched code, and a hand-edited type_config must not
+		// remove it. A skip there becomes lite, not full — one independent read
+		// is what the gate needs, and the user asked for less, not more.
+		verification: mode === 'unattended_chain' && verification === 'skip' ? 'lite' : verification,
 		coding_run: codingRun,
 		chain_models: {
 			assets: parseChainModel(cm.assets),
