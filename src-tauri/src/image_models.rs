@@ -1,31 +1,70 @@
-//! The curated image-model catalogue, with licensing as a first-class field.
+//! The bundled engine's image models, with licensing as a first-class field.
 //!
 //! Separate from [`crate::models`]'s registry rather than a `family` variant
-//! inside it, which is a deliberate departure from this phase's plan. The two
-//! field sets barely overlap: an LLM entry carries a vision projector, an MTP
-//! source and a KV-cache growth rate, none of which mean anything for a
-//! diffusion checkpoint, while an image entry carries a licence and a native
-//! resolution, which mean nothing for an LLM. Folding them into one struct
-//! would give every entry a column of nulls — the "unused knob" this codebase
-//! keeps out of its types — and would put the LLM download path at risk for a
-//! feature that does not touch it.
+//! inside it: an LLM entry carries a vision projector, an MTP source and a
+//! KV-cache growth rate, none of which mean anything here, while an image
+//! entry carries a licence and several files with distinct roles.
 //!
-//! What IS shared is the machinery: downloads go through
-//! `ModelManager::download_file` and `verify_sha256`, so progress,
-//! cancellation, the partial-file dance and the checksum all behave exactly as
-//! they do for an LLM.
+//! Each entry is a SET of files — the diffusion model, its text encoder, its
+//! VAE and, for Ming, a tokenizer — because both models this engine runs ship
+//! them separately. SD1.5 and SDXL, the single-file checkpoints this catalogue
+//! started with, are gone: their output was not worth shipping
+//! (`plan/local-image-generation/measurements-phase-24-gguf.md`).
+//!
+//! The weights are GGUF, not the int8/bf16 safetensors ComfyUI uses. On Vulkan
+//! without bf16 support those ran at ~40-120 s a step; GGUF runs a 1024 sheet
+//! in about 35-50 s. Ming has no published GGUF, so ours is converted from
+//! Comfy-Org's bf16 files and hosted on Hugging Face (MIT permits it).
+//!
+//! Downloads go through `ModelManager::download_into`, so progress, resume,
+//! cancellation and the SHA-256 check behave exactly as they do for an LLM.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::AppHandle;
 
 use crate::models::ModelManager;
 
-/// Where image weights live, under the shared models directory.
+/// Where image weights live, under the shared models directory. Each entry
+/// gets its own folder beneath this.
 pub const IMAGE_SUBDIR: &str = "image";
 
-/// One downloadable checkpoint.
+/// What a file is for. Each maps to one sd-server flag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFileRole {
+    Diffusion,
+    TextEncoder,
+    Vae,
+    Tokenizer,
+}
+
+impl ImageFileRole {
+    /// The sd-server flag that takes this file.
+    pub fn flag(self) -> &'static str {
+        match self {
+            Self::Diffusion => "--diffusion-model",
+            Self::TextEncoder => "--llm",
+            Self::Vae => "--vae",
+            Self::Tokenizer => "--tokenizer",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct ImageModelFile {
+    pub role: ImageFileRole,
+    pub filename: String,
+    pub url: String,
+    pub sha256: String,
+    #[ts(type = "number")]
+    pub size_bytes: u64,
+}
+
+/// One downloadable model.
 ///
 /// Every field here is read by something. `license` and `license_url` are
 /// shown; `commercial_use` is acted on, because a licence string alone leaves
@@ -34,116 +73,184 @@ pub const IMAGE_SUBDIR: &str = "image";
 #[ts(export)]
 pub struct ImageModelInfo {
     pub id: String,
-    pub filename: String,
-    pub url: String,
-    pub sha256: String,
-    #[ts(type = "number")]
-    pub size_bytes: u64,
+    /// The family `image/comfyui/families.ts` names: how a request is built.
+    pub family: String,
     pub description: String,
     /// One short sentence, per the project's UI copy rule. The full text sits
     /// behind `license_url`.
     pub license: String,
     pub license_url: String,
     /// Acted on, not merely displayed: a `false` entry is never recommended
-    /// at any VRAM and the UI asks for confirmation before downloading it.
+    /// and the UI asks for confirmation before downloading it.
     pub commercial_use: bool,
-    /// The edge this model was trained at.
-    ///
-    /// A profile's `upscale` is only meaningful relative to it: SD1.5
-    /// degrades above 512 and SDXL produces artefacts below 1024, so a 32px
-    /// target wants `upscale: 16` on one and `32` on the other. Measured, not
-    /// quoted — an SDXL sprite sheet generated at 512 comes out as mush.
+    /// The edge it generates at natively. Sheets are drawn at 1024.
     #[ts(type = "number")]
     pub native_edge: u32,
     /// Approximate VRAM to run it, for the recommendation and the warning.
     #[ts(type = "number")]
     pub vram_mb: u32,
+    pub files: Vec<ImageModelFile>,
+    /// Sum of `files`.
+    #[ts(type = "number")]
+    pub size_bytes: u64,
+    /// True when every file is on disk.
     pub downloaded: bool,
 }
 
-/// The shipped catalogue.
-///
-/// Both entries are UNet models, which is not an accident. The three
-/// coherence layers this feature depends on — reference conditioning,
-/// seamless tiling and a shared palette — only two of which survive on a DiT:
-/// IP-Adapter and circular-padding tiling are UNet techniques and do not
-/// carry to Flux, Qwen or Z-Image. A DiT entry would therefore ship with two
-/// of three layers reporting false, and `docs/image-generation.md` records
-/// what implementing the DiT path would take.
-///
-/// Both are also single-file. Flux and SD3.5 need separate text encoders and
-/// a VAE alongside the diffusion weights, which is three or four downloads
-/// per model and a different shape of catalogue entry; that is a real reason
-/// they are absent rather than an oversight.
-///
-/// Every `sha256` and `size_bytes` below was read from the publisher's own
-/// object metadata rather than quoted, and the SD1.5 checksum was confirmed
-/// byte-for-byte against a downloaded copy.
-pub fn image_registry() -> Vec<ImageModelInfo> {
-    vec![
-        ImageModelInfo {
-            id: "sd15".to_string(),
-            filename: "v1-5-pruned-emaonly-fp16.safetensors".to_string(),
-            url: "https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/main/v1-5-pruned-emaonly-fp16.safetensors".to_string(),
-            sha256: "e9476a13728cd75d8279f6ec8bad753a66a1957ca375a1464dc63b37db6e3916".to_string(),
-            size_bytes: 2_132_696_762,
-            description: "Stable Diffusion 1.5 — small and fast, the deepest LoRA ecosystem (~2.1 GB)".to_string(),
-            license: "CreativeML OpenRAIL-M — commercial use allowed, with use restrictions.".to_string(),
-            license_url: "https://huggingface.co/spaces/CompVis/stable-diffusion-license".to_string(),
-            commercial_use: true,
-            native_edge: 512,
-            vram_mb: 4_096,
-            downloaded: false,
-        },
-        ImageModelInfo {
-            id: "sdxl".to_string(),
-            filename: "sd_xl_base_1.0.safetensors".to_string(),
-            url: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors".to_string(),
-            sha256: "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b".to_string(),
-            size_bytes: 6_938_078_334,
-            description: "Stable Diffusion XL 1.0 — markedly better at following composition (~6.9 GB)".to_string(),
-            license: "CreativeML OpenRAIL++-M — commercial use allowed, with use restrictions.".to_string(),
-            license_url: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/LICENSE.md".to_string(),
-            commercial_use: true,
-            native_edge: 1_024,
-            vram_mb: 10_240,
-            downloaded: false,
-        },
-    ]
-}
+const MING_GGUF: &str =
+    "https://huggingface.co/voltaire321/Ming-Image-0.1-Design-GGUF/resolve/main";
 
-/// The entry to suggest for a machine with `vram_mb` of video memory.
-///
-/// Resolved against the probed machine rather than fixed in the data, so
-/// "recommended" is a rule instead of a hope. SDXL follows composition
-/// instructions markedly better — which is a precondition of background
-/// removal rather than a matter of taste, measured against SD1.5 on the same
-/// prompts and seeds — so it wins wherever it fits. A model that cannot be
-/// used commercially is never recommended at any VRAM.
-pub fn recommended_id(vram_mb: u32) -> &'static str {
-    if vram_mb >= 10_240 {
-        "sdxl"
-    } else {
-        "sd15"
+fn file(role: ImageFileRole, url: &str, sha256: &str, size_bytes: u64) -> ImageModelFile {
+    ImageModelFile {
+        role,
+        filename: url.rsplit('/').next().unwrap_or(url).to_string(),
+        url: url.to_string(),
+        sha256: sha256.to_string(),
+        size_bytes,
     }
 }
 
+fn entry(
+    id: &str,
+    family: &str,
+    description: &str,
+    license: (&str, &str),
+    commercial_use: bool,
+    vram_mb: u32,
+    files: Vec<ImageModelFile>,
+) -> ImageModelInfo {
+    ImageModelInfo {
+        id: id.into(),
+        family: family.into(),
+        description: description.into(),
+        license: license.0.into(),
+        license_url: license.1.into(),
+        commercial_use,
+        native_edge: 1024,
+        vram_mb,
+        size_bytes: files.iter().map(|f| f.size_bytes).sum(),
+        files,
+        downloaded: false,
+    }
+}
+
+/// The shipped catalogue. Every `sha256` and `size_bytes` was read from the
+/// publisher's Hugging Face metadata (the LFS `oid`), and the GGUFs were
+/// checked byte-for-byte against the files measured.
+pub fn image_registry() -> Vec<ImageModelInfo> {
+    use ImageFileRole::*;
+    vec![
+        entry(
+            "ming",
+            "ming",
+            "Ming-Image 0.1 Design — transparent sprites, the default (~17 GB)",
+            (
+                "MIT — commercial use allowed.",
+                "https://huggingface.co/inclusionAI/Ming-Image-0.1-Design",
+            ),
+            true,
+            12_288,
+            vec![
+                file(
+                    Diffusion,
+                    &format!("{MING_GGUF}/ming_image_0.1_design-Q8_0.gguf"),
+                    "260ded24503b35b80b6eb4a5949f664b26f6c00b46e8ec6e6d00942593eb120b",
+                    6_541_979_808,
+                ),
+                file(
+                    TextEncoder,
+                    &format!("{MING_GGUF}/ming_ling_mini_2.0-Q4_K.gguf"),
+                    "70f7ea31d3e1ffa917e70b961e5d422b2a8b19327c3522033a381b1a4b766002",
+                    10_518_620_096,
+                ),
+                file(
+                    Vae,
+                    "https://huggingface.co/Comfy-Org/Ming-Image/resolve/main/vae/ming_image_vae_bf16.safetensors",
+                    "7f5bed402dc8c77dc2e0ab1929a85d4df433b7cf7b599dfa8c353da98db0b90a",
+                    253_816_696,
+                ),
+                file(
+                    Tokenizer,
+                    "https://huggingface.co/inclusionAI/Ming-Image-0.1-Design/resolve/main/mllm/tokenizer.json",
+                    "e7ff01708d504f7bf4dbf7f5815adde57bab9a40e7f563ab6ad1acace4464917",
+                    12_210_709,
+                ),
+            ],
+        ),
+        entry(
+            "qwen21",
+            "qwen21",
+            "Qwen-Image 2.1 — transparent by prompt, non-commercial (~10 GB)",
+            (
+                "Qwen Research License — research and evaluation only.",
+                "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
+            ),
+            false,
+            10_240,
+            vec![
+                file(
+                    Diffusion,
+                    "https://huggingface.co/leejet/Qwen-Image-2.1-GGUF/resolve/main/qwen_image_2.1-Q4_K.gguf",
+                    "29f9c83c249ff0292fb2943fceddfa2319b446601866c82a4f8be062abea72c2",
+                    4_197_494_816,
+                ),
+                file(
+                    TextEncoder,
+                    "https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+                    "67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2",
+                    5_027_784_800,
+                ),
+                file(
+                    Vae,
+                    "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors",
+                    "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+                    675_509_688,
+                ),
+            ],
+        ),
+    ]
+}
+
+/// The entry to suggest. Only one can be: Qwen-Image-2.1 may not be used
+/// commercially, and a model that cannot be is never recommended.
+pub fn recommended_id(_vram_mb: u32) -> &'static str {
+    "ming"
+}
+
+/// The folder an entry's files live in.
+pub fn model_dir(models_dir: &Path, id: &str) -> PathBuf {
+    models_dir.join(IMAGE_SUBDIR).join(id)
+}
+
 /// The catalogue with `downloaded` filled in from disk.
-pub fn catalogue_with_state(models_dir: &std::path::Path) -> Vec<ImageModelInfo> {
-    let dir = models_dir.join(IMAGE_SUBDIR);
+pub fn catalogue_with_state(models_dir: &Path) -> Vec<ImageModelInfo> {
     image_registry()
         .into_iter()
         .map(|mut m| {
-            m.downloaded = dir.join(&m.filename).is_file();
+            let dir = model_dir(models_dir, &m.id);
+            m.downloaded = m.files.iter().all(|f| dir.join(&f.filename).is_file());
             m
         })
         .collect()
 }
 
-/// Where a catalogue entry's weights live once downloaded.
-pub fn model_path(models_dir: &std::path::Path, id: &str) -> Option<PathBuf> {
+/// What sd-server needs to load an entry: each file's flag and path, plus the
+/// entry's own options. `None` for an unknown id or a set not fully on disk.
+pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
     let entry = image_registry().into_iter().find(|m| m.id == id)?;
-    Some(models_dir.join(IMAGE_SUBDIR).join(entry.filename))
+    let dir = model_dir(models_dir, id);
+    let mut args = Vec::new();
+    for f in &entry.files {
+        let path = dir.join(&f.filename);
+        if !path.is_file() {
+            return None;
+        }
+        args.push(f.role.flag().to_string());
+        args.push(path.to_string_lossy().to_string());
+    }
+    // Flash attention in the diffusion model: measured with it for both.
+    args.push("--diffusion-fa".to_string());
+    Some(args)
 }
 
 // Tauri commands
@@ -160,45 +267,55 @@ pub async fn image_model_recommended(vram_mb: u32) -> Result<String, ()> {
     Ok(recommended_id(vram_mb).to_string())
 }
 
-/// Resolve a catalogue id to a path on disk, or nothing when it is not there.
-///
-/// The backend calls this before starting the engine: an id names a
-/// catalogue entry, and the engine needs a file.
-#[tauri::command]
-pub async fn image_model_path(
-    state: tauri::State<'_, ModelManager>,
-    id: String,
-) -> Result<Option<String>, ()> {
-    Ok(model_path(state.models_dir(), &id)
-        .filter(|p| p.is_file())
-        .map(|p| p.to_string_lossy().to_string()))
-}
-
-/// Download one catalogue entry, reusing the LLM download path.
+/// Download every file of one entry that is not already on disk, each
+/// verified. Progress arrives as `download-progress` events, one file at a time.
 #[tauri::command]
 pub async fn download_image_model(
     app: AppHandle,
     state: tauri::State<'_, ModelManager>,
     id: String,
     proxy: Option<crate::proxy::ProxyConfig>,
-) -> Result<String, String> {
+) -> Result<(), String> {
+    let entry = image_registry()
+        .into_iter()
+        .find(|m| m.id == id)
+        .ok_or_else(|| format!("Unknown image model: {id}"))?;
+    let dir = model_dir(state.models_dir(), &id);
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
     state.set_proxy(proxy).await;
-    let path = state.download_image_model(&app, &id).await?;
-    Ok(path.to_string_lossy().to_string())
+    state.reset_cancel().await;
+    for f in &entry.files {
+        state
+            .download_into(
+                &app,
+                &f.url,
+                &dir,
+                &f.filename,
+                f.size_bytes,
+                &f.sha256,
+                &format!("Downloading {}", f.filename),
+            )
+            .await?;
+    }
+    Ok(())
 }
 
-/// Delete a downloaded entry. Stopping the engine first is the caller's job —
-/// the engine holds the file open while it runs.
+/// Delete an entry's files. Stopping the engine first is the caller's job —
+/// the engine holds them open while it runs.
 #[tauri::command]
 pub async fn delete_image_model(
     state: tauri::State<'_, ModelManager>,
     id: String,
 ) -> Result<(), String> {
-    let path =
-        model_path(state.models_dir(), &id).ok_or_else(|| format!("Unknown image model: {id}"))?;
-    if path.is_file() {
-        std::fs::remove_file(&path)
-            .map_err(|e| format!("Could not delete {}: {e}", path.display()))?;
+    if !image_registry().iter().any(|m| m.id == id) {
+        return Err(format!("Unknown image model: {id}"));
+    }
+    let dir = model_dir(state.models_dir(), &id);
+    if dir.is_dir() {
+        std::fs::remove_dir_all(&dir)
+            .map_err(|e| format!("Could not delete {}: {e}", dir.display()))?;
     }
     Ok(())
 }
@@ -208,36 +325,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_entry_carries_the_things_a_download_needs() {
+    fn every_file_can_be_downloaded_and_verified() {
         // A missing checksum means an unverified multi-gigabyte download, and
-        // a missing size means no progress bar. Both have to be present for
-        // every entry or one can be added without them.
+        // a missing size means no progress bar.
         for m in image_registry() {
-            assert!(!m.id.is_empty(), "id");
-            assert!(m.url.starts_with("https://"), "{}: url must be https", m.id);
-            assert_eq!(m.sha256.len(), 64, "{}: sha256 must be a full digest", m.id);
-            assert!(
-                m.sha256.chars().all(|c| c.is_ascii_hexdigit()),
-                "{}: sha256 must be hex",
-                m.id
+            assert!(!m.files.is_empty(), "{}", m.id);
+            for f in &m.files {
+                assert!(f.url.starts_with("https://huggingface.co/"), "{}", f.url);
+                assert!(f.url.ends_with(&f.filename), "{}", f.url);
+                assert_eq!(f.sha256.len(), 64, "{}", f.filename);
+                assert!(f.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+                assert!(f.size_bytes > 0, "{}", f.filename);
+            }
+            assert_eq!(
+                m.size_bytes,
+                m.files.iter().map(|f| f.size_bytes).sum::<u64>()
             );
-            assert!(m.size_bytes > 0, "{}: size", m.id);
-            assert!(m.filename.ends_with(".safetensors"), "{}: filename", m.id);
+        }
+    }
+
+    #[test]
+    fn every_entry_has_the_files_its_family_needs() {
+        use ImageFileRole::*;
+        for m in image_registry() {
+            let roles: Vec<ImageFileRole> = m.files.iter().map(|f| f.role).collect();
+            for need in [Diffusion, TextEncoder, Vae] {
+                assert!(roles.contains(&need), "{}: {need:?}", m.id);
+            }
+            // Ming's Ling text encoder carries no tokenizer of its own.
+            assert_eq!(m.family == "ming", roles.contains(&Tokenizer), "{}", m.id);
         }
     }
 
     #[test]
     fn every_entry_states_a_licence_and_whether_it_may_be_sold() {
-        // The licence is the point of this catalogue. A blank one would leave
-        // the UI showing nothing where the decision should be.
         for m in image_registry() {
-            assert!(!m.license.is_empty(), "{}: license", m.id);
-            assert!(
-                m.license_url.starts_with("https://"),
-                "{}: license_url",
-                m.id
-            );
+            assert!(!m.license.is_empty(), "{}", m.id);
+            assert!(m.license_url.starts_with("https://"), "{}", m.id);
         }
+        let r = image_registry();
+        assert!(r.iter().find(|m| m.id == "ming").unwrap().commercial_use);
+        assert!(!r.iter().find(|m| m.id == "qwen21").unwrap().commercial_use);
     }
 
     #[test]
@@ -250,97 +378,65 @@ mod tests {
     }
 
     #[test]
-    fn every_entry_declares_the_edge_it_was_trained_at() {
-        // A profile's upscale is only meaningful relative to this: generating
-        // SDXL at SD1.5's 512 produces mush, which is the failure the field
-        // exists to prevent.
-        for m in image_registry() {
-            assert!(
-                m.native_edge == 512 || m.native_edge == 1024,
-                "{}: native_edge {} is neither of the two this pipeline handles",
-                m.id,
-                m.native_edge
-            );
-        }
-    }
-
-    #[test]
-    fn the_recommendation_fits_the_machine_it_is_made_for() {
-        // A recommendation that does not fit is worse than none: the download
-        // is gigabytes and the failure arrives at generation time.
-        for vram in [0u32, 4_096, 8_192, 10_240, 24_576] {
-            let id = recommended_id(vram);
-            let entry = image_registry().into_iter().find(|m| m.id == id).unwrap();
-            if vram > 0 {
-                assert!(
-                    entry.vram_mb <= vram.max(4_096),
-                    "recommended {id} needs {} MB at {vram} MB",
-                    entry.vram_mb
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_bigger_model_is_recommended_only_where_it_fits() {
-        assert_eq!(recommended_id(4_096), "sd15");
-        assert_eq!(recommended_id(8_192), "sd15");
-        assert_eq!(recommended_id(10_240), "sdxl");
-        assert_eq!(recommended_id(24_576), "sdxl");
-    }
-
-    #[test]
     fn a_model_that_cannot_be_sold_is_never_recommended() {
-        // Not a property of today's catalogue — both entries permit commercial
-        // use — but of the rule, so adding a restricted entry cannot make it
-        // the default by accident.
-        for vram in [0u32, 8_192, 10_240, 65_536] {
+        for vram in [0u32, 8_192, 16_384, 65_536] {
             let id = recommended_id(vram);
             let entry = image_registry().into_iter().find(|m| m.id == id).unwrap();
             assert!(entry.commercial_use, "{id} was recommended at {vram} MB");
         }
     }
 
-    #[test]
-    fn a_path_is_only_reported_for_a_known_id() {
-        let dir = std::path::Path::new("/tmp/haruspex-image-models");
-        assert!(model_path(dir, "sd15").is_some());
-        assert!(model_path(dir, "not-a-model").is_none());
+    fn temp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("haruspex-img-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        d
     }
 
     #[test]
-    fn weights_land_under_the_image_subdirectory() {
-        // Beside the LLM GGUFs rather than among them: the LLM picker lists
-        // what it finds in the models dir.
-        let dir = std::path::Path::new("/tmp/haruspex-image-models");
-        let p = model_path(dir, "sd15").unwrap();
-        assert_eq!(p.parent().unwrap(), dir.join(IMAGE_SUBDIR));
-    }
-
-    #[test]
-    fn nothing_is_marked_downloaded_when_the_directory_is_empty() {
-        let dir = std::env::temp_dir().join(format!("haruspex-img-cat-{}", std::process::id()));
-        let cat = catalogue_with_state(&dir);
-        assert_eq!(cat.len(), image_registry().len());
-        assert!(cat.iter().all(|m| !m.downloaded));
-    }
-
-    #[test]
-    fn a_file_on_disk_marks_its_entry_downloaded() {
-        let dir = std::env::temp_dir().join(format!("haruspex-img-dl-{}", std::process::id()));
-        let sub = dir.join(IMAGE_SUBDIR);
+    fn an_entry_is_downloaded_only_when_every_file_is_there() {
+        let dir = temp("partial");
+        let m = image_registry()
+            .into_iter()
+            .find(|m| m.id == "ming")
+            .unwrap();
+        let sub = model_dir(&dir, "ming");
         std::fs::create_dir_all(&sub).unwrap();
-        let entry = &image_registry()[0];
-        std::fs::write(sub.join(&entry.filename), b"weights").unwrap();
+        for f in &m.files[..m.files.len() - 1] {
+            std::fs::write(sub.join(&f.filename), b"x").unwrap();
+        }
+        let ming = |d: &Path| {
+            catalogue_with_state(d)
+                .into_iter()
+                .find(|m| m.id == "ming")
+                .unwrap()
+        };
+        assert!(!ming(&dir).downloaded, "one file short");
+        assert!(engine_args(&dir, "ming").is_none());
+        std::fs::write(sub.join(&m.files.last().unwrap().filename), b"x").unwrap();
+        assert!(ming(&dir).downloaded);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
-        let cat = catalogue_with_state(&dir);
-        let found = cat.iter().find(|m| m.id == entry.id).unwrap();
-        assert!(found.downloaded);
-        assert!(cat
-            .iter()
-            .filter(|m| m.id != entry.id)
-            .all(|m| !m.downloaded));
-
+    #[test]
+    fn the_engine_gets_one_flag_per_file_in_the_entrys_own_folder() {
+        let dir = temp("args");
+        let m = image_registry()
+            .into_iter()
+            .find(|m| m.id == "ming")
+            .unwrap();
+        let sub = model_dir(&dir, "ming");
+        std::fs::create_dir_all(&sub).unwrap();
+        for f in &m.files {
+            std::fs::write(sub.join(&f.filename), b"x").unwrap();
+        }
+        let args = engine_args(&dir, "ming").unwrap();
+        let after = |flag: &str| args[args.iter().position(|a| a == flag).unwrap() + 1].clone();
+        assert!(after("--diffusion-model").ends_with("image/ming/ming_image_0.1_design-Q8_0.gguf"));
+        assert!(after("--llm").ends_with("ming_ling_mini_2.0-Q4_K.gguf"));
+        assert!(after("--vae").ends_with("ming_image_vae_bf16.safetensors"));
+        assert!(after("--tokenizer").ends_with("tokenizer.json"));
+        assert!(args.contains(&"--diffusion-fa".to_string()));
+        assert!(engine_args(&dir, "not-a-model").is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
 }

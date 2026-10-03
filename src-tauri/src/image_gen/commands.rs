@@ -4,7 +4,7 @@
 //! is a thin wrapper over a pure function so the behaviour lives somewhere
 //! unit tests can reach it.
 
-use image::{ImageEncoder, RgbaImage};
+use image::{ImageEncoder, Rgba, RgbaImage};
 use serde::Serialize;
 
 use super::checks::{evaluate, CheckReport};
@@ -263,6 +263,25 @@ pub fn image_extract_palette(
 /// entropy floor, the chroma tolerances, the generation-edge clamp — and a
 /// duplicate set in another language would drift from the measurements the
 /// day one of them changed.
+/// A fully transparent PNG, for starting a transparent generation from.
+///
+/// Ming-Image gives alpha only when sampling starts from the latent of a
+/// transparent canvas (plus its RGBA phrase); the ComfyUI graph builds that
+/// canvas itself, and the bundled engine takes it as an img2img init image.
+#[tauri::command]
+pub fn image_clear_canvas(width: u32, height: u32) -> Result<Vec<u8>, String> {
+    if width == 0 || height == 0 || width > 4096 || height > 4096 {
+        return Err(format!(
+            "A canvas of {width}x{height} is not one to generate at."
+        ));
+    }
+    encode(&RgbaImage::from_pixel(
+        width,
+        height,
+        Rgba([128, 128, 128, 0]),
+    ))
+}
+
 #[tauri::command]
 pub fn image_default_profile() -> NormalizeProfile {
     NormalizeProfile::default()
@@ -604,5 +623,14 @@ mod tests {
             assert!(!near_crimson, "the real backdrop leaked in: {c:08X}");
         }
         assert!(!palette.is_empty(), "the subject should still be there");
+    }
+
+    #[test]
+    fn a_clear_canvas_is_fully_transparent_at_the_size_asked() {
+        let png = image_clear_canvas(64, 32).unwrap();
+        let img = image::load_from_memory(&png).unwrap().to_rgba8();
+        assert_eq!(img.dimensions(), (64, 32));
+        assert!(img.pixels().all(|p| p.0[3] == 0));
+        assert!(image_clear_canvas(0, 32).is_err());
     }
 }

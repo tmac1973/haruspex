@@ -10,7 +10,10 @@ import {
 	seedFrom,
 	serves,
 	toBase64,
-	DEFAULT_SAMPLER
+	CLEAR_START_STRENGTH,
+	DEFAULT_SAMPLER,
+	FAMILY_SAMPLER,
+	familyOfId
 } from './adapter';
 import type { SdCapabilityFixture } from './adapter';
 
@@ -108,6 +111,15 @@ describe('buildRequest', () => {
 		expect(buildRequest(req).route).toBe(ROUTES.txt2img);
 	});
 
+	it('starts from the clear canvas when given one, as Ming needs for alpha', () => {
+		const { route, body } = buildRequest({ ...req, clearStart: 'AAAA' });
+		expect(route).toBe(ROUTES.img2img);
+		expect(body.init_images).toEqual(['AAAA']);
+		expect(body.denoising_strength).toBe(CLEAR_START_STRENGTH);
+		expect(CLEAR_START_STRENGTH).toBe(0.9);
+		expect(buildRequest(req).body.init_images).toBeUndefined();
+	});
+
 	it('carries the prompt, negative prompt and size', () => {
 		const { body } = buildRequest(req);
 		expect(body.prompt).toBe('a sword');
@@ -169,5 +181,31 @@ describe('reading a response', () => {
 		expect(seedFrom({}, 7)).toBe(7);
 		expect(seedFrom({ info: 'not json' }, 7)).toBe(7);
 		expect(seedFrom({ info: JSON.stringify({ seed: 'x' }) }, 7)).toBe(7);
+	});
+});
+
+describe('per family', () => {
+	it('knows only the catalogue ids it can run', () => {
+		expect(familyOfId('ming')).toBe('ming');
+		expect(familyOfId('qwen21')).toBe('qwen21');
+		expect(familyOfId('sdxl')).toBeNull();
+		expect(familyOfId('')).toBeNull();
+	});
+
+	it('claims transparency for both families, and no tiling or LoRAs', () => {
+		// --circular is a UNet trick; offset-and-inpaint is ComfyUI-only so far.
+		for (const f of ['ming', 'qwen21'] as const) {
+			expect(declaredCapabilities(f)).toEqual({
+				transparency: true,
+				seamlessTiling: false,
+				loras: false,
+				maxLoras: 0
+			});
+		}
+	});
+
+	it('samples each family as measured', () => {
+		expect(FAMILY_SAMPLER.ming).toEqual({ name: 'euler', steps: 12, cfg: 1 });
+		expect(FAMILY_SAMPLER.qwen21).toEqual({ name: 'euler', steps: 25, cfg: 1 });
 	});
 });

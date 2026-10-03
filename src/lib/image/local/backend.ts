@@ -20,14 +20,18 @@ import {
 	type ImageRequest,
 	type ImageResult
 } from '../types';
+import { mingTransparent, qwen21Transparent } from '../comfyui/templates';
 import {
-	DEFAULT_SAMPLER,
+	FAMILY_SAMPLER,
 	FIXTURE,
 	ROUTES,
 	buildRequest,
 	declaredCapabilities,
+	familyOfId,
 	imagesFrom,
-	seedFrom
+	seedFrom,
+	toBase64,
+	type LocalFamily
 } from './adapter';
 
 /** Mirrors `image_engine::IMAGE_PORT`. Used by the UI, not to build URLs —
@@ -48,22 +52,14 @@ async function engineStatus(): Promise<EngineStatus> {
 }
 
 /**
- * The weights this backend is configured to load.
+ * The catalogue entry this backend is configured to run.
  *
- * A catalogue id WINS over a hand-typed path when both are set, which is the
- * precedence the settings type fixed: the id names something Haruspex
- * downloaded and knows the licence of, the path is the escape hatch for a file
- * it knows nothing about. An id that resolves to nothing on disk falls back to
- * the path rather than failing — a half-finished download should not make a
- * working custom model unreachable.
+ * Catalogue only: each entry is a set of files with known roles and a known
+ * licence. The hand-typed single-file path the SD catalogue allowed has no
+ * meaning for a model that needs four files.
  */
-async function modelPath(): Promise<string> {
-	const id = (getSettings().imageLocalModelId ?? '').trim();
-	if (id) {
-		const resolved = await invoke<string | null>('image_model_path', { id }).catch(() => null);
-		if (resolved) return resolved;
-	}
-	return (getSettings().imageLocalModelPath ?? '').trim();
+function modelId(): string {
+	return (getSettings().imageLocalModelId ?? '').trim();
 }
 
 /**
@@ -95,13 +91,15 @@ export function engineSetupMessage(kind: string | undefined, detail: string): st
 	}
 }
 
-async function ensureRunning(): Promise<void> {
-	const path = await modelPath();
-	if (!path) {
+async function ensureRunning(): Promise<LocalFamily> {
+	const id = modelId();
+	const family = familyOfId(id);
+	if (!family) {
 		throw new ImageBackendError('unconfigured', 'No image model is configured — Settings → Image.');
 	}
 	try {
-		await invoke('image_engine_start', { modelPath: path });
+		await invoke('image_engine_start', { modelId: id });
+		return family;
 	} catch (e) {
 		// The command returns a typed reason; the ones the user can act on are
 		// configuration, the rest are the engine failing to come up.
@@ -140,7 +138,7 @@ export const localBackend: ImageBackend = {
 	kind: 'local',
 
 	async capabilities(): Promise<ImageBackendCapabilities> {
-		return declaredCapabilities();
+		return declaredCapabilities(familyOfId(modelId()));
 	},
 
 	async probe() {
@@ -151,12 +149,12 @@ export const localBackend: ImageBackend = {
 				detail: 'No image engine is bundled for this platform.'
 			};
 		}
-		const path = await modelPath();
-		if (!path) {
+		const id = modelId();
+		if (!familyOfId(id)) {
 			return { ok: false, detail: 'No model is selected — Settings → Image.' };
 		}
 		if (st.status.type === 'Ready') {
-			return { ok: true, detail: `Running, ${st.model ?? path}.` };
+			return { ok: true, detail: `Running, ${st.model ?? id}.` };
 		}
 		if (st.status.type === 'Error') {
 			return { ok: false, detail: st.status.message ?? 'The engine reported an error.' };
@@ -167,10 +165,27 @@ export const localBackend: ImageBackend = {
 	},
 
 	async generate(req: ImageRequest, opts: GenerateOptions = {}): Promise<ImageResult> {
-		await ensureRunning();
+		const family = await ensureRunning();
 		opts.onProgress?.({ phase: 'running' });
 
-		const { route, body } = buildRequest(req);
+		const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
+		// Transparency as each family makes it: Ming from a clear canvas AND its
+		// RGBA phrase (neither alone works), Qwen from its phrase alone.
+		let prompt = req.prompt;
+		let clearStart: string | undefined;
+		if (req.transparent) {
+			if (family === 'ming') {
+				prompt = mingTransparent(req.prompt);
+				const canvas = await invoke<number[]>('image_clear_canvas', {
+					width: req.width,
+					height: req.height
+				});
+				clearStart = toBase64(new Uint8Array(canvas));
+			} else {
+				prompt = qwen21Transparent(req.prompt);
+			}
+		}
+		const { route, body } = buildRequest({ ...req, prompt, sampler, clearStart });
 		const started = Date.now();
 		const payload = await call(route, body, opts.signal);
 
@@ -179,7 +194,6 @@ export const localBackend: ImageBackend = {
 			throw new ImageBackendError('rejected', `The image engine returned no image from ${route}.`);
 		}
 
-		const sampler = req.sampler ?? { ...DEFAULT_SAMPLER };
 		return {
 			images: images.map((bytes) => ({
 				bytes,
@@ -189,7 +203,7 @@ export const localBackend: ImageBackend = {
 			})),
 			meta: {
 				seed: seedFrom(payload, req.seed ?? -1),
-				model: await modelPath(),
+				model: modelId(),
 				backend: 'local',
 				sampler,
 				// Echoed as RESOLVED: this build takes LoRAs from a directory

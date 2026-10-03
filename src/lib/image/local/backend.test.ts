@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { engineSetupMessage } from './backend';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+const settings = vi.hoisted(() => ({ imageLocalModelId: 'ming' }));
+vi.mock('$lib/stores/settings', () => ({ getSettings: () => settings }));
+
+import { engineSetupMessage, localBackend } from './backend';
 
 describe('engineSetupMessage', () => {
 	it('says what is missing and what to do, not just a fragment', () => {
@@ -18,5 +24,72 @@ describe('engineSetupMessage', () => {
 	it('leaves the failures that are not set-up to the caller', () => {
 		expect(engineSetupMessage('Timeout', 'no answer')).toBeNull();
 		expect(engineSetupMessage(undefined, 'boom')).toBeNull();
+	});
+});
+
+describe('generate', () => {
+	beforeEach(() => {
+		tauri.invoke
+			.mockReset()
+			.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+				if (cmd === 'image_clear_canvas') return [1, 2, 3];
+				if (cmd === 'image_engine_request') {
+					return JSON.stringify({ images: ['AQID'], info: JSON.stringify({ seed: 5 }), args });
+				}
+				return undefined;
+			});
+	});
+	const sent = () => {
+		const call = tauri.invoke.mock.calls.find(([c]) => c === 'image_engine_request')!;
+		return { path: call[1].path as string, body: JSON.parse(call[1].body as string) };
+	};
+
+	it('starts the engine on the catalogue id, not a file path', async () => {
+		settings.imageLocalModelId = 'ming';
+		await localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 });
+		expect(tauri.invoke).toHaveBeenCalledWith('image_engine_start', { modelId: 'ming' });
+	});
+
+	it('makes Ming transparent from a clear canvas AND its RGBA phrase', async () => {
+		settings.imageLocalModelId = 'ming';
+		const r = await localBackend.generate({
+			prompt: 'a coin',
+			width: 1024,
+			height: 1024,
+			seed: 1,
+			transparent: true
+		});
+		expect(tauri.invoke).toHaveBeenCalledWith('image_clear_canvas', { width: 1024, height: 1024 });
+		const { path, body } = sent();
+		expect(path).toBe('/sdapi/v1/img2img');
+		expect(body.init_images).toEqual(['AQID']);
+		expect(body.prompt).toMatch(/^RGBA, 4-channel, transparent background\. a coin/);
+		expect(body).toMatchObject({ steps: 12, cfg_scale: 1 });
+		expect(r.meta).toMatchObject({ seed: 5, model: 'ming', backend: 'local' });
+	});
+
+	it('makes Qwen transparent by prompt alone, from noise', async () => {
+		settings.imageLocalModelId = 'qwen21';
+		await localBackend.generate({
+			prompt: 'a coin',
+			width: 512,
+			height: 512,
+			seed: 1,
+			transparent: true
+		});
+		const { path, body } = sent();
+		expect(path).toBe('/sdapi/v1/txt2img');
+		expect(body.init_images).toBeUndefined();
+		expect(body.prompt).toMatch(/^This is an RGBA format image with transparency\. a coin/);
+		expect(body.steps).toBe(25);
+		expect(tauri.invoke).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
+	});
+
+	it('refuses an id it cannot run, before starting anything', async () => {
+		settings.imageLocalModelId = 'sdxl';
+		await expect(
+			localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 })
+		).rejects.toMatchObject({ kind: 'unconfigured' });
+		expect(tauri.invoke).not.toHaveBeenCalledWith('image_engine_start', expect.anything());
 	});
 });

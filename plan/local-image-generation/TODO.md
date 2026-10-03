@@ -57,7 +57,7 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 | 21 | Generate sprites and icons in sheets | **done** — live sheets cut 9/9 |
 | 22 | The first sheet is the anchor | **done** |
 | 23 | Textures | **done** — prompts, seam gate, offset-and-inpaint on Ming (`measurements-phase-23.md`) |
-| 24 | Bundled engine runs Ming | **blocked** — sd.cpp cannot run Ming usably here (§4) |
+| 24 | Bundled engine runs Ming | **in progress** — unblocked by GGUF (`measurements-phase-24-gguf.md`); catalogue, engine and backend rewritten; live check through sd-server pending |
 | 25 | Verify end to end; procedural comparison | **in progress** — comparison and re-run done (`measurements-phase-25.md`), docs rewritten; the full chain run, failure paths, macOS/Windows remain |
 | 26 | ComfyUI through Rust: no CORS flag | **done** |
 | 27 | Install a model's files into ComfyUI: direct, Manager, by hand | **done** — both routes live-tested: Manager 4.2.2 and direct, each installing Ming's VAE with its checksum |

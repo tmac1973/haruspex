@@ -30,7 +30,7 @@ BINARIES_DIR="$PROJECT_ROOT/src-tauri/binaries"
 # Upstream publishes no semver tags; releases are named `master-<n>-<sha>`.
 # Recorded in docs/image-generation.md too, and check-constants.mjs fails the
 # build when the two disagree.
-SDCPP_VERSION="master-890-74988b2"
+SDCPP_VERSION="master-929-3f8527a"
 
 TARGET=""
 while [[ $# -gt 0 ]]; do

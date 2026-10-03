@@ -41,17 +41,27 @@ export function serves(route: string): boolean {
 	return FIXTURE.routes.includes(route);
 }
 
+/** The families this engine runs; a catalogue id is its family. */
+export type LocalFamily = 'ming' | 'qwen21';
+
+export function familyOfId(id: string): LocalFamily | null {
+	return id === 'ming' || id === 'qwen21' ? id : null;
+}
+
 /**
- * What the backend declares it can do.
+ * What the backend declares it can do, for the model it would run.
  *
- * Read from the fixture, never asserted here. A capability claim nobody
- * checks is how the asset job stops degrading and starts silently shipping
- * off-style art — so when a version bump drops a feature, the committed
- * fixture changes and a test fails, rather than the claim quietly outliving
- * the build that justified it.
+ * The build's compiled-in features come from the fixture, never asserted
+ * here: when a version bump drops one, the committed fixture changes and a
+ * test fails. What a model can do on top of that is this engine's to say —
+ * and both families draw transparent images (Ming from a clear start, Qwen by
+ * prompt), neither tiles here (`--circular` is a UNet trick; the DiT remedy,
+ * offset-and-inpaint, is ComfyUI-only for now), and neither takes our LoRAs.
  */
-export function declaredCapabilities(): ImageBackendCapabilities {
-	return capabilitiesFrom(FIXTURE);
+export function declaredCapabilities(family: LocalFamily | null = null): ImageBackendCapabilities {
+	const build = capabilitiesFrom(FIXTURE);
+	if (!family) return build;
+	return { transparency: true, seamlessTiling: false, loras: false, maxLoras: 0 };
 }
 
 /**
@@ -73,6 +83,10 @@ export function capabilitiesFrom(fixture: SdCapabilityFixture): ImageBackendCapa
 }
 
 export interface A1111Request {
+	/** img2img only: the start image, base64 PNG. */
+	init_images?: string[];
+	/** img2img only: how far from the start image to go, 0..1. */
+	denoising_strength?: number;
 	prompt: string;
 	negative_prompt: string;
 	seed: number;
@@ -102,16 +116,27 @@ export function fromBase64(b64: string): Uint8Array {
 	return out;
 }
 
-/** Sampler names differ per build; this is the pinned build's default. */
-export const DEFAULT_SAMPLER = { name: 'euler_a', steps: 28, cfg: 7 } as const;
+/** Each family's sampler, as measured (`measurements-phase-24-gguf.md`). */
+export const FAMILY_SAMPLER: Record<LocalFamily, { name: string; steps: number; cfg: number }> = {
+	ming: { name: 'euler', steps: 12, cfg: 1 },
+	qwen21: { name: 'euler', steps: 25, cfg: 1 }
+};
+
+/** For a request with no family to go by. */
+export const DEFAULT_SAMPLER = FAMILY_SAMPLER.ming;
+
+/**
+ * Ming gives alpha only from the latent of a transparent canvas, at this
+ * strength, with its RGBA phrase: 0.95 and 1.0 stay opaque, lower draws the
+ * subject smaller (phase 17).
+ */
+export const CLEAR_START_STRENGTH = 0.9;
 
 /**
  * The request body for one generation.
  *
- * Always txt2img. The img2img route used to carry a reference image, which was
- * never the IP-Adapter style transfer the ComfyUI path had and is gone with it;
- * phase 24 may bring img2img back to start Ming-Image from a transparent
- * canvas, once this engine can run that model at all.
+ * txt2img, unless `clearStart` carries a transparent canvas: then img2img
+ * from it, which is how Ming-Image makes alpha here as in ComfyUI.
  */
 export function buildRequest(req: {
 	prompt: string;
@@ -120,6 +145,8 @@ export function buildRequest(req: {
 	width: number;
 	height: number;
 	sampler?: { name: string; steps: number; cfg: number };
+	/** A transparent PNG of the request's size, base64. */
+	clearStart?: string;
 }): { route: string; body: A1111Request } {
 	const sampler = req.sampler ?? DEFAULT_SAMPLER;
 	const body: A1111Request = {
@@ -136,6 +163,16 @@ export function buildRequest(req: {
 		batch_size: 1,
 		n_iter: 1
 	};
+	if (req.clearStart) {
+		return {
+			route: ROUTES.img2img,
+			body: {
+				...body,
+				init_images: [req.clearStart],
+				denoising_strength: CLEAR_START_STRENGTH
+			}
+		};
+	}
 	return { route: ROUTES.txt2img, body };
 }
 

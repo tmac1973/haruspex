@@ -171,19 +171,28 @@ impl ImageEngine {
         self.model.lock().await.clone()
     }
 
-    /// Start the engine against `model_path`, or return a named reason.
+    /// Start the engine on catalogue entry `model_id`, or return a named reason.
     ///
-    /// Idempotent for the same weights: a second call while ready or starting
-    /// returns immediately. Different weights restart, because the alternative
-    /// is generating from a checkpoint nobody asked for.
-    pub async fn start(&self, app: &AppHandle, model_path: &str) -> Result<(), ImageEngineError> {
-        let want = model_path.trim();
+    /// Idempotent for the same model: a second call while ready or starting
+    /// returns immediately. A different model restarts, because the
+    /// alternative is generating from weights nobody asked for.
+    pub async fn start(
+        &self,
+        app: &AppHandle,
+        models_dir: &Path,
+        model_id: &str,
+    ) -> Result<(), ImageEngineError> {
+        let want = model_id.trim();
         if want.is_empty() {
             return Err(ImageEngineError::NoModel);
         }
-        if !Path::new(want).exists() {
-            return Err(ImageEngineError::ModelMissing(want.to_string()));
-        }
+        let model_args = crate::image_models::engine_args(models_dir, want).ok_or_else(|| {
+            ImageEngineError::ModelMissing(
+                crate::image_models::model_dir(models_dir, want)
+                    .display()
+                    .to_string(),
+            )
+        })?;
 
         {
             let status = self.status.lock().await;
@@ -230,14 +239,12 @@ impl ImageEngine {
             .command(exe.to_string_lossy().to_string())
             .env(LIB_PATH_VAR, lib_path)
             .current_dir(libs.clone())
-            .args([
-                "--model".to_string(),
-                want.to_string(),
+            .args(model_args.into_iter().chain([
                 "--listen-ip".to_string(),
                 "127.0.0.1".to_string(),
                 "--listen-port".to_string(),
                 IMAGE_PORT.to_string(),
-            ]);
+            ]));
 
         let (rx, child) = cmd.spawn().map_err(|e| {
             let msg = e.to_string();
@@ -362,9 +369,10 @@ fn first_sidecar_in(dir: &Path) -> Option<PathBuf> {
 pub async fn image_engine_start(
     app: AppHandle,
     state: tauri::State<'_, ImageEngine>,
-    model_path: String,
+    models: tauri::State<'_, crate::models::ModelManager>,
+    model_id: String,
 ) -> Result<(), ImageEngineError> {
-    state.start(&app, &model_path).await
+    state.start(&app, models.models_dir(), &model_id).await
 }
 
 #[tauri::command]

@@ -8,26 +8,15 @@
 	import { generateOneImage } from '$lib/image/generateOne';
 	import type { ImageBackendCapabilities, ImageBackendKind } from '$lib/image/types';
 	import type { ModelOption, ProbeResult } from '$lib/image/backend';
+	import type { ImageModelInfo } from '$lib/ipc/gen/ImageModelInfo';
 
 	let imageBackendKind = $state(getSettings().imageBackendKind);
 	let imageBackendBaseUrl = $state(getSettings().imageBackendBaseUrl);
 	let imageBackendApiKey = $state(getSettings().imageBackendApiKey);
 	let imageComfyCheckpoint = $state(getSettings().imageComfyCheckpoint);
-	let imageLocalModelPath = $state(getSettings().imageLocalModelPath);
 	let imageLocalModelId = $state(getSettings().imageLocalModelId);
 
-	interface ImageModel {
-		id: string;
-		filename: string;
-		description: string;
-		license: string;
-		license_url: string;
-		commercial_use: boolean;
-		native_edge: number;
-		size_bytes: number;
-		vram_mb: number;
-		downloaded: boolean;
-	}
+	type ImageModel = ImageModelInfo;
 
 	let models = $state<ImageModel[]>([]);
 	let downloading = $state<string | null>(null);
@@ -137,7 +126,7 @@
 	async function startEngine() {
 		engineBusy = true;
 		try {
-			await invoke('image_engine_start', { modelPath: imageLocalModelPath.trim() });
+			await invoke('image_engine_start', { modelId: imageLocalModelId.trim() });
 		} catch (e) {
 			probeResult = { ok: false, detail: (e as { detail?: string })?.detail ?? String(e) };
 		} finally {
@@ -276,10 +265,10 @@
 					<strong>{m.description}</strong>
 					{#if imageLocalModelId === m.id}<span class="badge">selected</span>{/if}
 				</div>
-				<p class="help">
+				<p class="help" title={m.files.map((f) => `${f.role}: ${f.filename}`).join('\n')}>
 					{m.license}
 					<a href={m.license_url} target="_blank" rel="noreferrer">Full text</a>
-					· {gb(m.size_bytes)} · trained at {m.native_edge}px
+					· {gb(m.size_bytes)} in {m.files.length} files
 				</p>
 				{#if !m.commercial_use}
 					<p class="warn">Not licensed for commercial use.</p>
@@ -302,16 +291,6 @@
 			<p class="warn">{downloadError}</p>
 		{/if}
 
-		<div class="fields">
-			<label for="image-local-model">Model file:</label>
-			<input
-				id="image-local-model"
-				type="text"
-				placeholder="/path/to/model.safetensors"
-				bind:value={imageLocalModelPath}
-				onblur={() => persist({ imageLocalModelPath: imageLocalModelPath.trim() })}
-			/>
-		</div>
 		<p class="help">Nothing starts until you ask.</p>
 		<div class="row">
 			<button onclick={startEngine} disabled={engineBusy || engine?.status === 'Ready'}>

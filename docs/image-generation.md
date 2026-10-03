@@ -27,9 +27,10 @@ family with what the server is missing, and Install puts the files there:
 
 **Bundled engine** is stable-diffusion.cpp, shipped with Haruspex. Pick it if
 you want image generation with nothing to install. It starts on demand and
-stops when you say. It runs SD1.5 and SDXL only — Ming-Image does not run
-usably in it yet — so on it the job makes one image per asset on a keyed
-background, with no tiling, and the report says so.
+stops when you say. It runs Ming-Image (the default) and, as an opt-in,
+Qwen-Image-2.1, from GGUF weights downloaded in Settings → Image. Sheets and
+transparency work as on ComfyUI; textures do not tile here yet, and the report
+says so.
 
 **None** is the default. No process, no download, no startup cost.
 
@@ -194,7 +195,7 @@ feature.
 | | |
 | --- | --- |
 | Upstream | [leejet/stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) |
-| Pinned version | `master-890-74988b2` |
+| Pinned version | `master-929-3f8527a` |
 | Acquired by | `./scripts/fetch-sdcpp.sh` (a download, not a build) |
 | Lands at | `src-tauri/binaries/sd-server-<triple>` |
 | Its libraries | `src-tauri/binaries/sd-libs/` |
@@ -303,43 +304,25 @@ the CPU. Ming has no RGBA mode of its own that works: transparency comes from
 starting the sample from a transparent canvas, with an RGBA phrase in the
 prompt (`src/lib/image/comfyui/templates/README.md`).
 
-**On the bundled engine**, two curated checkpoints, both single-file and both
-UNet:
+**On the bundled engine**, the same two models as GGUF files, downloaded into
+the app's models folder (`models/image/<id>/`) and checked against their
+SHA-256:
 
-| Model | Licence | Commercial | Native edge | Size |
+| Model | Licence | Commercial | Files | Size |
 | --- | --- | --- | --- | --- |
-| Stable Diffusion 1.5 | CreativeML OpenRAIL-M | yes | 512 | 2.1 GB |
-| Stable Diffusion XL 1.0 | CreativeML OpenRAIL++-M | yes | 1024 | 6.9 GB |
+| Ming-Image 0.1 Design (default) | MIT | yes | DiT Q8_0, Ling-mini-2.0 Q4_K, VAE, tokenizer | ~17 GB |
+| Qwen-Image-2.1 | Qwen Research License | no | DiT Q4_K, Qwen3-VL-8B Q4_K_M, VAE | ~10 GB |
 
-Every checksum and size in the catalogue was read from the publisher's own
-object metadata rather than quoted, and SD1.5's was confirmed byte-for-byte
-against a downloaded copy.
+GGUF, not the int8/bf16 safetensors ComfyUI loads: on Vulkan without bf16
+support those ran at 40–120 s a step, GGUF draws a 1024 sheet in about 35–50 s
+(`plan/local-image-generation/measurements-phase-24-gguf.md`). Ming has no
+published GGUF; ours is converted from Comfy-Org's bf16 files with
+`sd-cli -M convert` and hosted at
+[voltaire321/Ming-Image-0.1-Design-GGUF](https://huggingface.co/voltaire321/Ming-Image-0.1-Design-GGUF).
+A Q4_K Ming DiT was tried and lost the pixel-art rendering; it is not offered.
 
-`native_edge` is not decoration. A normalize profile's `upscale` is only
-meaningful relative to it: SD1.5 degrades above 512 and SDXL produces
-artefacts below 1024, so a 32px target wants `upscale: 16` on one and `32` on
-the other. Measured — an SDXL sprite sheet generated at 512 comes out as mush.
-
-### Why only these two on the bundled engine
-
-stable-diffusion.cpp documents Ming-Image, but the build measured here needed
-its 36.7 GB BF16 text encoder and sampled at about 120 s a step
-(`measurements-phase-17.md` §4), so Ming stays ComfyUI-only for now.
-
-**UNet.** The bundled engine's SD path tiles by circular padding, a UNet
-technique that does not carry to a DiT. The DiT remedy is offset-and-inpaint
-(shift the tile by half, inpaint the seams, shift back), which the ComfyUI
-backend does for Ming-Image in one graph
-(`src/lib/image/comfyui/templates/README.md`); the bundled engine does not.
-
-**Single file.** Flux and SD3.5 need separate text encoders and a VAE
-alongside the diffusion weights — three or four downloads per model and a
-different shape of catalogue entry.
-
-Deliberately excluded, so the decision is not revisited by accident: SD3.5
-(Stability community licence, revenue threshold), Bria FIBO (non-commercial),
-FLUX.1-dev and FLUX.2-dev (non-commercial weights; FLUX.2-dev requires a paid
-commercial licence).
+SD1.5 and SDXL were the bundled engine's first catalogue and are gone: their
+output was not worth shipping.
 
 ### The LoRA is the licensing trap
 
@@ -356,11 +339,10 @@ the doubt.
 
 ### What is verified, and what is not
 
-Verified against a running engine: SD1.5 loads from a co-located binary,
-Vulkan and the CPU backend both register, `/sdcpp/v1/capabilities` answers
-200, and `/sdapi/v1/txt2img` returns `images` as base64 with `info` as a JSON
-string carrying the resolved seed.
+Verified with `sd-cli` from `master-929` and the GGUF weights: Ming and Qwen
+each draw a transparent 1024 sheet, laid out exactly, in 35–50 s on an RX 9070
+XT (Vulkan); Ming's alpha needs the clear start, Qwen's only its phrase.
 
-NOT yet verified: a full asset job end to end against the bundled engine, and
-anything at all on macOS or Windows. Those are hand checks — see the manual
-checklist above.
+NOT yet verified: the same through `sd-server`'s `/sdapi/v1/img2img` route as
+the app calls it (in particular that alpha survives it), a full asset job
+against the bundled engine, and anything at all on macOS or Windows.
