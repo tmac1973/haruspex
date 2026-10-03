@@ -1,5 +1,5 @@
 <#
-Run one test suite on the source tree in ~\haruspex-src: the Windows agent's
+Run one test suite on the source tree in ~\.haruspex-test\src: the Windows agent's
 suite runner (the Mac has run-suite.sh).
 
   unit      npm run check + test, cargo clippy + test (what CI runs)
@@ -8,11 +8,11 @@ suite runner (the Mac has run-suite.sh).
 #>
 param([string]$Suite = 'unit')
 $ErrorActionPreference = 'Stop'
-Set-Location (Join-Path $HOME 'haruspex-src')
+Set-Location (Join-Path $HOME '.haruspex-test\src')
 $env:Path = (Join-Path $HOME '.cargo\bin') + ';' +
     [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
     [Environment]::GetEnvironmentVariable('Path', 'User')
-$cache = Join-Path $HOME 'haruspex-cache'
+$cache = Join-Path $HOME '.haruspex-test\cache'
 New-Item -ItemType Directory -Force -Path $cache | Out-Null
 # Outside the source tree, which is replaced on every run: keeps incremental
 # builds across runs.

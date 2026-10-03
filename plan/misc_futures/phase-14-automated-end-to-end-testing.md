@@ -29,12 +29,19 @@ different driver: Appium's Mac2 driver, which works through the accessibility
 tree. It covers fewer flows (step 8), and what it can't reach stays on a short
 manual checklist (step 9).
 
-**Physical runners, not VMs.**
-- They can't be snapshotted, so each run starts clean by running as a
-  dedicated OS user whose app data is wiped first. The user's own Haruspex
-  data, under their own account, is never touched.
-- If the Windows PC has a GPU, its nightly run also covers local inference
-  and the bundled image engine, the one thing no hosted runner can test.
+**The user's own machines, as the user.**
+- The Mac mini and the Windows PC are the user's everyday machines, so tests
+  run as the user, in their session. A dedicated CI user would need its
+  desktop to be the one on screen for UI tests, and has none of the user's
+  credentials.
+- **The test build is isolated by app identifier.** Every e2e build uses
+  `tauri build --config '{"identifier":"com.haruspex.app.e2e"}'`, so its app
+  data and WebView storage live apart from the user's real Haruspex.
+- **A clean start** wipes only that identifier's folders.
+- **A sidecar port clash** with the user's running Haruspex fails cleanly:
+  phase 13 frees a port only from a process of the same install.
+- **The Windows PC's integrated GPU** lets its nightly run cover local
+  inference with a small model, the one thing no hosted runner can test.
 
 ## Files touched
 
@@ -152,28 +159,33 @@ manual checklist (step 9).
 
    Each spec skips with a stated reason when its variables are absent.
 8. **The self-hosted runners: the Mac mini and the Windows PC.** Already
-   scripted in `scripts/ci-runner/` (see its README). A person runs the two
-   setup scripts on each machine once. The same scripts install the
-   `remote-test.sh` agent, which runs a suite from the user's Linux box over
-   SSH on the working tree. The nightly workflow takes the agent's lock
-   (`~/haruspex-ci/busy`) for its whole run, so the two never collide. What
-   the scripts do:
-   - **A dedicated OS user, `haruspex-ci`, on each machine.** The GitHub
-     Actions runner is installed as a service under that user, with the labels
-     `self-hosted, haruspex-live, macos | windows`, plus `igpu` or `gpu` on
-     Windows. The user's Windows PC has an AMD integrated GPU, so `igpu`.
-   - **Clean start.** The nightly workflow's first step deletes that user's
-     Haruspex app data (`~/Library/Application Support/com.haruspex.app` and
-     the WebKit storage for the identifier on macOS;
-     `%APPDATA%\com.haruspex.app` and `%LOCALAPPDATA%\com.haruspex.app` on
-     Windows), and kills any leftover Haruspex process owned by that user.
-   - **Windows:** WebView2, VS Build Tools and msedgedriver. Specs run on the
-     interactive desktop session: the runner service is set to log on as
-     `haruspex-ci` with auto-logon, because WebView2 needs a desktop.
-   - **macOS:** Xcode command-line tools, Node 22, and Appium with the Mac2
-     driver (`appium driver install mac2`). Grant the runner's terminal
-     Accessibility and Screen Recording in System Settings → Privacy &
-     Security once.
+   scripted in `scripts/ci-runner/` (`setup-macos.sh`, `setup-windows.ps1`;
+   see its README). The user runs one script per machine, once, from their
+   own account. The same scripts install the `remote-test.sh` agent, which
+   runs a suite from the user's Linux box over SSH on the working tree. The
+   nightly workflow takes the agent's lock (`~/.haruspex-test/busy`) for its
+   whole run, so the two never collide. What the scripts and this phase add:
+   - **The runner runs as the user**, started at their login, in their
+     session. Labels: `self-hosted, haruspex-live, macos | windows`, plus
+     `igpu` (this Windows PC) or `gpu` on Windows.
+   - **Clean start.** The nightly workflow's first step deletes the e2e
+     identifier's data only:
+     - macOS: `~/Library/Application Support/com.haruspex.app.e2e` and its
+       WebKit storage;
+     - Windows: `%APPDATA%\com.haruspex.app.e2e` and
+       `%LOCALAPPDATA%\com.haruspex.app.e2e`.
+
+     It then kills any leftover e2e build process, matched by its path, never
+     by name.
+   - **Unlocked session.** UI specs need the session unlocked. The workflow's
+     first step checks this (macOS: `CGSSessionScreenIsLocked` from `ioreg`;
+     Windows: a `LogonUI` process present) and skips the UI specs with that
+     reason, rather than failing on a locked screen. The `unit` suite runs
+     either way.
+   - **Windows:** msedgedriver is fetched at run time to match the installed
+     WebView2.
+   - **macOS:** Appium's Mac2 driver needs the Accessibility and Screen
+     Recording grants the setup script asks the user for.
    - **Mac specs** (`e2e/mac/`, WebdriverIO plus Appium Mac2) cover:
      - launch;
      - seeding remote mode: write `haruspex-settings` through a debug-only
@@ -185,7 +197,7 @@ manual checklist (step 9).
        the stale sd-server. That's phase 13's macOS path.
    - **`igpu`/`gpu`-tagged Windows run:** the live suite also runs one
      local-model chat, with the smallest catalogue model downloaded once into
-     the runner user's models folder. A bundled-engine test image is
+     the e2e identifier's models folder. A bundled-engine test image is
      `gpu`-only. On `igpu` it runs only on a manual dispatch with
      `image: true`, because Ming at 1024 on shared memory takes many minutes.
    - **Secrets:** the live suite's variables are repository secrets, used

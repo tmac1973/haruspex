@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# The Mac mini's end of `remote-test.sh`. Installed to ~/haruspex-ci/ by
-# macos-2-runner.sh; called over SSH as haruspex-ci.
+# The Mac's end of `remote-test.sh`. Installed to ~/.haruspex-test/ by
+# setup-macos.sh; called over SSH as you.
 #
-#   ci-remote.sh start <suite>   unpack ~/haruspex-ci/src.tgz and start <suite>
-#                                in the desktop session (via the LaunchAgent)
+#   ci-remote.sh direct <suite>  unpack ~/.haruspex-test/src.tgz and run <suite>
+#                                right here, streaming its output (suites that
+#                                need no desktop: unit)
+#   ci-remote.sh start <suite>   unpack it and start <suite> in the desktop
+#                                session (via the LaunchAgent)
 #   ci-remote.sh wait            stream the log until the suite ends; exit
 #                                with its exit code
 #   ci-remote.sh run             what the LaunchAgent runs (not for SSH)
@@ -13,31 +16,42 @@
 
 set -euo pipefail
 
-CI="$HOME/haruspex-ci"
-SRC="$HOME/haruspex-src"
+CI="$HOME/.haruspex-test"
+SRC="$CI/src"
 LABEL=com.haruspex.ci-run
 LOCK="$CI/busy"
 LOG="$CI/run.log"
 DONE="$CI/done"
 
+prepare() {
+    if [[ -e "$LOCK" ]]; then
+        echo "busy: $(cat "$LOCK")" >&2
+        exit 75
+    fi
+    echo "remote-test $1 since $(date)" >"$LOCK"
+    # Keep node_modules (npm ci decides whether to redo it) and nothing else,
+    # so a file deleted locally is deleted here.
+    mkdir -p "$SRC"
+    find "$SRC" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} +
+    tar -xzf "$CI/src.tgz" -C "$SRC"
+    rm -f "$DONE" "$LOG"
+}
+
 case "${1:-}" in
+    direct)
+        suite=${2:-unit}
+        prepare "$suite"
+        trap 'rm -f "$LOCK"' EXIT
+        "$CI/run-suite.sh" "$suite" 2>&1 | tee "$LOG"
+        exit "${PIPESTATUS[0]}"
+        ;;
     start)
         suite=${2:-unit}
-        if [[ -e "$LOCK" ]]; then
-            echo "busy: $(cat "$LOCK")" >&2
-            exit 75
-        fi
-        echo "remote-test $suite since $(date)" >"$LOCK"
-        # Keep node_modules (npm ci decides whether to redo it) and nothing
-        # else, so a file deleted locally is deleted here.
-        mkdir -p "$SRC"
-        find "$SRC" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} +
-        tar -xzf "$CI/src.tgz" -C "$SRC"
-        rm -f "$DONE" "$LOG"
+        prepare "$suite"
         echo "$suite" >"$CI/request"
         launchctl kickstart -k "gui/$(id -u)/$LABEL" || {
             rm -f "$LOCK"
-            echo "Could not start the in-session agent. Is haruspex-ci logged in to its desktop?" >&2
+            echo "Could not start the in-session agent. Are you logged in to the Mac's desktop?" >&2
             exit 1
         }
         echo "started $suite"
