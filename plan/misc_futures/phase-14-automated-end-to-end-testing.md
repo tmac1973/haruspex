@@ -151,12 +151,17 @@ manual checklist (step 9).
    - after phase 11, a reply sent to the test mailbox arrives there.
 
    Each spec skips with a stated reason when its variables are absent.
-8. **MANUAL — the self-hosted runners: the Mac mini and the Windows PC.** A
-   person does this step once; record the result in `docs/testing.md`.
+8. **The self-hosted runners: the Mac mini and the Windows PC.** Already
+   scripted in `scripts/ci-runner/` (see its README). A person runs the two
+   setup scripts on each machine once. The same scripts install the
+   `remote-test.sh` agent, which runs a suite from the user's Linux box over
+   SSH on the working tree. The nightly workflow takes the agent's lock
+   (`~/haruspex-ci/busy`) for its whole run, so the two never collide. What
+   the scripts do:
    - **A dedicated OS user, `haruspex-ci`, on each machine.** The GitHub
      Actions runner is installed as a service under that user, with the labels
-     `self-hosted, haruspex-live, macos | windows` and, if the Windows PC has a
-     usable GPU, `gpu`.
+     `self-hosted, haruspex-live, macos | windows`, plus `igpu` or `gpu` on
+     Windows. The user's Windows PC has an AMD integrated GPU, so `igpu`.
    - **Clean start.** The nightly workflow's first step deletes that user's
      Haruspex app data (`~/Library/Application Support/com.haruspex.app` and
      the WebKit storage for the identifier on macOS;
@@ -178,16 +183,20 @@ manual checklist (step 9).
      - Settings → Image → Generate test image against ComfyUI;
      - kill the app (`kill -9`), relaunch, and assert the orphan sweep removed
        the stale sd-server. That's phase 13's macOS path.
-   - **GPU-tagged Windows run:** the live suite also runs one local-model chat
-     (a small model downloaded once into the runner user's models folder) and
-     one bundled-engine test image.
+   - **`igpu`/`gpu`-tagged Windows run:** the live suite also runs one
+     local-model chat, with the smallest catalogue model downloaded once into
+     the runner user's models folder. A bundled-engine test image is
+     `gpu`-only. On `igpu` it runs only on a manual dispatch with
+     `image: true`, because Ming at 1024 on shared memory takes many minutes.
    - **Secrets:** the live suite's variables are repository secrets, used
      only by `nightly.yml`, which runs at 03:00 local time and on demand.
    - **Security, because the repo is public:**
-     - `nightly.yml` has no `pull_request` trigger;
-     - the self-hosted runners sit in a runner group restricted to
-       `nightly.yml`, so a fork PR can never run on the user's machines;
-     - "Require approval for all outside collaborators" stays on.
+     - `nightly.yml` has no `pull_request` trigger, and no other workflow
+       uses the `haruspex-live` label;
+     - the fork-PR approval policy is `all_external_contributors`. Runner
+       groups don't exist for a personal-account repo, so this setting is
+       what stops a PR that edits a workflow from running on the user's
+       machines.
 9. **`docs/testing.md`.**
    - What each layer covers, and the command to run it locally.
    - How to add a scenario: the JSON shape, and how to record one by running
