@@ -57,6 +57,40 @@ pub struct ImageEngine {
     /// The weights the running process was started with, so a request for
     /// different ones restarts rather than silently generating from the old.
     model: Mutex<Option<String>>,
+    /// `GGML_VK_VISIBLE_DEVICES` for this machine, decided on the first start
+    /// (see [`discrete_vulkan_devices`]). `None` until then; `Some(None)` when
+    /// nothing needs pinning.
+    vk_devices: Mutex<Option<Option<String>>>,
+}
+
+/// The discrete Vulkan devices, when an integrated one sits beside them.
+///
+/// sd.cpp's auto-fit places the model on the device with the most free
+/// memory, and an integrated GPU reports the system's RAM as its own: on a
+/// Ryzen with a 9070 XT it put Ming on the iGPU (32 GB "free") instead of the
+/// card (14 GB). ggml prints every device at start, `uma: 1` for integrated;
+/// this reads that list and returns the indices to keep, comma-separated, or
+/// `None` when there is nothing to choose between.
+pub fn discrete_vulkan_devices(log: &[String]) -> Option<String> {
+    let mut discrete = Vec::new();
+    let mut integrated = false;
+    for line in log {
+        let Some(rest) = line.trim().strip_prefix("ggml_vulkan: ") else {
+            continue;
+        };
+        let Some((index, tail)) = rest.split_once(" = ") else {
+            continue;
+        };
+        let Ok(index) = index.trim().parse::<u32>() else {
+            continue;
+        };
+        match tail.split('|').find_map(|f| f.trim().strip_prefix("uma: ")) {
+            Some("0") => discrete.push(index.to_string()),
+            Some(_) => integrated = true,
+            None => {}
+        }
+    }
+    (integrated && !discrete.is_empty()).then(|| discrete.join(","))
 }
 
 /// Why a start failed, as a discriminant rather than a sentence.
@@ -155,6 +189,7 @@ impl ImageEngine {
             child: Mutex::new(None),
             log: new_log_buffer(),
             model: Mutex::new(None),
+            vk_devices: Mutex::new(None),
         }
     }
 
@@ -223,41 +258,48 @@ impl ImageEngine {
         *self.model.lock().await = Some(want.to_string());
         info!("Starting sd-server on port {IMAGE_PORT}");
 
-        let libs_str = libs.to_string_lossy().to_string();
-        // sd-libs FIRST. The exe directory carries llama.cpp's ggml under the
-        // same sonames at a different ABI; putting it first resolves
-        // sd-server against the wrong library.
-        let existing = std::env::var(LIB_PATH_VAR).unwrap_or_default();
-        let lib_path = if existing.is_empty() {
-            libs_str.clone()
-        } else {
-            format!("{libs_str}{LIB_PATH_SEP}{existing}")
-        };
-
-        let cmd = app
-            .shell()
-            .command(exe.to_string_lossy().to_string())
-            .env(LIB_PATH_VAR, lib_path)
-            .current_dir(libs.clone())
-            .args(model_args.into_iter().chain([
+        let args: Vec<String> = model_args
+            .into_iter()
+            .chain([
                 "--listen-ip".to_string(),
                 "127.0.0.1".to_string(),
                 "--listen-port".to_string(),
                 IMAGE_PORT.to_string(),
-            ]));
-
-        let (rx, child) = cmd.spawn().map_err(|e| {
-            let msg = e.to_string();
-            ImageEngineError::Spawn(msg)
-        })?;
-        *self.child.lock().await = Some(child);
-        spawn_log_reader(
-            "sd-server",
-            rx,
-            Arc::clone(&self.status),
-            Arc::clone(&self.log),
-            &[],
-        );
+            ])
+            .collect();
+        let decided = self.vk_devices.lock().await.clone();
+        self.spawn(app, &exe, &libs, &args, decided.clone().flatten())
+            .await?;
+        if decided.is_none() {
+            // First start on this machine: read the device list ggml prints
+            // before loading anything, and restart pinned to the discrete GPU
+            // if auto-fit could pick an integrated one.
+            let pin = self.wait_for_devices().await;
+            *self.vk_devices.lock().await = Some(pin.clone());
+            if let Some(ids) = pin {
+                info!("sd-server: pinning to discrete Vulkan device(s) {ids}");
+                // Stopped first: the old process's log reader marks the engine
+                // as errored when it exits, unless it was stopped on purpose —
+                // and that exit can land after the new process has started.
+                *self.status.lock().await = SidecarStatus::Stopped;
+                if let Err(e) = kill_child(&self.child, "sd-server").await {
+                    warn!("sd-server: {e}");
+                }
+                for _ in 0..30 {
+                    if snapshot_logs(&self.log)
+                        .await
+                        .iter()
+                        .any(|l| l.starts_with("[terminated]"))
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+                crate::sidecar_utils::clear_logs(&self.log).await;
+                *self.status.lock().await = SidecarStatus::Starting;
+                self.spawn(app, &exe, &libs, &args, Some(ids)).await?;
+            }
+        }
 
         let url = format!("{}{READY_PATH}", base_url(IMAGE_PORT));
         let status_for_poll = Arc::clone(&self.status);
@@ -291,6 +333,67 @@ impl ImageEngine {
         };
         *self.status.lock().await = SidecarStatus::Error(msg.clone());
         Err(ImageEngineError::Timeout(msg))
+    }
+
+    /// Spawn sd-server with `args`, restricted to the Vulkan devices `vk` names.
+    async fn spawn(
+        &self,
+        app: &AppHandle,
+        exe: &Path,
+        libs: &Path,
+        args: &[String],
+        vk: Option<String>,
+    ) -> Result<(), ImageEngineError> {
+        let libs_str = libs.to_string_lossy().to_string();
+        // sd-libs FIRST. The exe directory carries llama.cpp's ggml under the
+        // same sonames at a different ABI; putting it first resolves
+        // sd-server against the wrong library.
+        let existing = std::env::var(LIB_PATH_VAR).unwrap_or_default();
+        let lib_path = if existing.is_empty() {
+            libs_str.clone()
+        } else {
+            format!("{libs_str}{LIB_PATH_SEP}{existing}")
+        };
+
+        let mut cmd = app
+            .shell()
+            .command(exe.to_string_lossy().to_string())
+            .env(LIB_PATH_VAR, lib_path)
+            .current_dir(libs)
+            .args(args);
+        if let Some(ids) = vk {
+            cmd = cmd.env("GGML_VK_VISIBLE_DEVICES", ids);
+        }
+
+        let (rx, child) = cmd
+            .spawn()
+            .map_err(|e| ImageEngineError::Spawn(e.to_string()))?;
+        *self.child.lock().await = Some(child);
+        spawn_log_reader(
+            "sd-server",
+            rx,
+            Arc::clone(&self.status),
+            Arc::clone(&self.log),
+            &[],
+        );
+        Ok(())
+    }
+
+    /// The device list from a fresh process's log, waited for briefly: ggml
+    /// prints it before any weights load, so it is there within a second or
+    /// two. `None` (pin nothing) when it never appears — Metal, or no Vulkan.
+    async fn wait_for_devices(&self) -> Option<String> {
+        for _ in 0..50 {
+            let lines = snapshot_logs(&self.log).await;
+            if lines
+                .iter()
+                .any(|l| l.contains("load_backend") || l.contains("loading"))
+            {
+                return discrete_vulkan_devices(&lines);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        discrete_vulkan_devices(&snapshot_logs(&self.log).await)
     }
 
     /// Stop the engine. A no-op when nothing is running.
@@ -549,5 +652,39 @@ mod tests {
         e.stop().await;
         e.stop().await;
         assert_eq!(e.status().await, SidecarStatus::Stopped);
+    }
+
+    fn lines(text: &str) -> Vec<String> {
+        text.lines().map(String::from).collect()
+    }
+
+    #[test]
+    fn pins_the_discrete_gpu_when_an_integrated_one_sits_beside_it() {
+        // The log from the first real start: auto-fit put Ming on Vulkan1,
+        // the Ryzen iGPU, because it reports 32 GB of shared RAM as free.
+        let log = lines(
+            "ggml_vulkan: Found 2 Vulkan devices:\n\
+             ggml_vulkan: 0 = AMD Radeon RX 9070 XT (RADV GFX1201) (radv) | uma: 0 | fp16: dot2 | bf16: 0\n\
+             ggml_vulkan: 1 = AMD Ryzen 7 9800X3D 8-Core Processor (RADV RAPHAEL_MENDOCINO) (radv) | uma: 1 | fp16: dot2\n\
+             load_backend: loaded Vulkan backend from libggml-vulkan.so",
+        );
+        assert_eq!(discrete_vulkan_devices(&log), Some("0".into()));
+    }
+
+    #[test]
+    fn pins_nothing_when_there_is_nothing_to_choose_between() {
+        let one = lines("ggml_vulkan: 0 = AMD Radeon RX 9070 XT (radv) | uma: 0 | fp16: dot2");
+        assert_eq!(discrete_vulkan_devices(&one), None);
+        let laptop = lines("ggml_vulkan: 0 = Intel(R) Graphics (ADL GT2) | uma: 1 | fp16: 1");
+        assert_eq!(
+            discrete_vulkan_devices(&laptop),
+            None,
+            "an iGPU alone is still the GPU"
+        );
+        assert_eq!(discrete_vulkan_devices(&lines("Metal: Apple M3")), None);
+        let two = lines(
+            "ggml_vulkan: 0 = Radeon iGPU | uma: 1\nggml_vulkan: 1 = RX 7900 | uma: 0\nggml_vulkan: 2 = RX 6600 | uma: 0",
+        );
+        assert_eq!(discrete_vulkan_devices(&two), Some("1,2".into()));
     }
 }

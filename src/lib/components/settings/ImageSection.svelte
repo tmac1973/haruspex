@@ -151,7 +151,15 @@
 	});
 
 	function persistKind(e: Event) {
+		const was = imageBackendKind;
 		imageBackendKind = (e.currentTarget as HTMLSelectElement).value as ImageBackendKind;
+		// Leaving the bundled engine stops it: nothing else uses it, and it
+		// holds ~7 GB of VRAM that ComfyUI or a game would want back.
+		if (was === 'local' && imageBackendKind !== 'local') {
+			void invoke('image_engine_stop')
+				.catch(() => {})
+				.then(() => refreshEngine());
+		}
 		updateSettings({ imageBackendKind });
 		probeResult = null;
 		capabilities = null;
@@ -374,7 +382,9 @@
 	{#if probeCount > 0}
 		<ComfyModels {probeCount} onInstalled={() => void probe()} />
 	{/if}
+{/if}
 
+{#if configured}
 	<section class="settings-section">
 		<h2>Test generation</h2>
 		<div class="actions">
@@ -387,7 +397,9 @@
 		{/if}
 		<p class="help">Makes one picture through the configured backend. Nothing else is affected.</p>
 	</section>
+{/if}
 
+{#if configured && !isLocal}
 	<details class="settings-section">
 		<summary><h2>Custom workflow</h2></summary>
 		<div class="fields">
@@ -416,6 +428,20 @@
 {/if}
 
 <style>
+	/* The engine's own log: long lines scroll inside the box, not the page. */
+	.logs {
+		max-height: 16rem;
+		max-width: 100%;
+		overflow: auto;
+		white-space: pre;
+		font-size: 0.75em;
+		padding: 8px;
+		margin-top: 6px;
+		border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+		border-radius: 6px;
+		background: var(--code-bg, rgba(127, 127, 127, 0.08));
+	}
+
 	/* Label, then its control, one per line. */
 	.fields {
 		display: grid;
