@@ -1,8 +1,8 @@
+use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
 use log::info;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
-use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
@@ -21,7 +21,7 @@ const WHISPER_PORT: u16 = ports::WHISPER;
 pub type WhisperStatus = SidecarStatus;
 
 pub struct WhisperServer {
-    child: Mutex<Option<CommandChild>>,
+    child: Mutex<Option<SidecarChild>>,
     status: Arc<Mutex<WhisperStatus>>,
     log_buffer: LogBuffer,
 }
@@ -37,7 +37,7 @@ impl WhisperServer {
 
     pub async fn start(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
         self.stop().await?;
-        kill_process_on_port(WHISPER_PORT, "whisper-server").await;
+        kill_process_on_port(WHISPER_PORT, "whisper-server", sidecar_registry(app)).await?;
 
         {
             let mut status = self.status.lock().await;
@@ -64,9 +64,7 @@ impl WhisperServer {
         // Set library path so whisper-server can find its bundled shared libraries
         let sidecar = with_library_paths(sidecar, app);
 
-        let (rx, child) = sidecar
-            .spawn()
-            .map_err(|e| format!("Failed to spawn whisper-server: {}", e))?;
+        let (rx, child) = spawn_sidecar(sidecar, "whisper-server", sidecar_registry(app))?;
 
         {
             let mut c = self.child.lock().await;

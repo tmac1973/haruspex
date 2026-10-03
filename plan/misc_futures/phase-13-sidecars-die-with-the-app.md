@@ -2,6 +2,32 @@
 
 Depends on: — / Enables: —
 
+## As built — notes
+
+- **One spawner thread.** `PR_SET_PDEATHSIG` fires when the parent *thread*
+  exits, not the process. Every sidecar is therefore spawned from one
+  dedicated thread that lives as long as the app (`sidecar_process.rs`); a
+  tokio worker that retired would have killed a healthy sidecar.
+- **The plugin still builds the command.** It resolves the path and carries
+  the env, and is converted with its own `From<Command> for
+  std::process::Command`. Events are the plugin's `CommandEvent`, split by
+  `tauri::utils::io::read_line`, so the log readers didn't change. Only
+  `CommandChild` became `SidecarChild`. stdin stays an open pipe, as before.
+- **The sweep kills with SIGKILL,** the existing `orphans::kill_pid`, rather
+  than SIGTERM then SIGKILL. The kernel frees the VRAM either way.
+- **The registry moved** from `integrations/mcp/orphans.rs` to `src/orphans.rs`,
+  keyed by kind (`mcp`, `sidecars`). `deregister_pid` stops a late exit from
+  forgetting a restarted process.
+- **"Ours" for a port holder** means its command line contains the app
+  executable's directory, or the registry recorded that pid with a matching
+  program. The registry case covers AppImage, which mounts at a new path
+  every launch.
+- **The MCP leak** was rmcp's `Drop`, which only *schedules* the kill on a
+  detached task. That task never ran when the runtime ended (every test), so
+  the timeout path now kills the pid synchronously.
+- **Windows** (the Job Object) is compiled only by CI's Windows job, which
+  runs on a PR labelled `windows-ci`.
+
 ## Goal
 
 No sidecar outlives the app, however the app ends: a clean quit, a crash,

@@ -503,6 +503,15 @@ impl McpSupervisor {
                 Ok(())
             }
             Err(reason) => {
+                // Dropping the transport only SCHEDULES rmcp's kill on a
+                // detached task, which never runs if the runtime is shutting
+                // down (or, in tests, ends with the test) — the hung server was
+                // left running every time. Kill it here, synchronously.
+                if let Some(pid) = pid {
+                    if !exited.load(Ordering::SeqCst) {
+                        orphans::kill_pid(pid);
+                    }
+                }
                 *status.lock().await = SidecarStatus::Error(reason.clone());
                 orphans::deregister(self.registry(), &id);
                 warn!("mcp: server {id} failed to start: {reason}");
@@ -863,6 +872,13 @@ mod tests {
             matches!(sup.status("mute").await, SidecarStatus::Error(_)),
             "got {err}"
         );
+        // Killed, not merely abandoned: this test used to leave one hung
+        // fixture behind per run.
+        #[cfg(unix)]
+        {
+            let pid = sup.pid_for("mute").await.expect("it was spawned");
+            assert!(!pid_is_alive(pid), "the hung server {pid} is still running");
+        }
     }
 
     #[tokio::test]

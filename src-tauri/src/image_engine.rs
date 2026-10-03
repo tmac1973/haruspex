@@ -22,10 +22,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
 use log::{info, warn};
 use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
 use crate::sidecar_utils::{
@@ -52,7 +52,7 @@ const LIBS_SUBDIR: &str = "sd-libs";
 
 pub struct ImageEngine {
     status: Arc<Mutex<SidecarStatus>>,
-    child: Mutex<Option<CommandChild>>,
+    child: Mutex<Option<SidecarChild>>,
     log: LogBuffer,
     /// The weights the running process was started with, so a request for
     /// different ones restarts rather than silently generating from the old.
@@ -239,7 +239,9 @@ impl ImageEngine {
         }
 
         self.stop().await;
-        kill_process_on_port(IMAGE_PORT, "sd-server").await;
+        kill_process_on_port(IMAGE_PORT, "sd-server", sidecar_registry(app))
+            .await
+            .map_err(ImageEngineError::Spawn)?;
 
         let libs = sd_libs_dir(app).ok_or_else(|| {
             ImageEngineError::SidecarMissing(format!("no {LIBS_SUBDIR} directory was bundled"))
@@ -365,9 +367,8 @@ impl ImageEngine {
             cmd = cmd.env("GGML_VK_VISIBLE_DEVICES", ids);
         }
 
-        let (rx, child) = cmd
-            .spawn()
-            .map_err(|e| ImageEngineError::Spawn(e.to_string()))?;
+        let (rx, child) = spawn_sidecar(cmd, "sd-server", sidecar_registry(app))
+            .map_err(ImageEngineError::Spawn)?;
         *self.child.lock().await = Some(child);
         spawn_log_reader(
             "sd-server",
