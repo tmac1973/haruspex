@@ -116,6 +116,26 @@ describe('generate', () => {
 		expect(r.meta.seed).toBe(5);
 	});
 
+	it('returns the texture it drew, untiled and saying why, when the seam pass fails', async () => {
+		settings.imageLocalModelId = 'qwen21';
+		const base = tauri.invoke.getMockImplementation()!;
+		tauri.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'image_engine_request' && String(args?.path).endsWith('img2img')) {
+				throw new Error('500 {"error":"generate_image returned no results"}');
+			}
+			return base(cmd, args);
+		});
+		const r = await localBackend.generate({
+			prompt: 'grass',
+			width: 1024,
+			height: 1024,
+			seed: 1,
+			seamless: true
+		});
+		expect(Array.from(r.images[0].bytes)).toEqual([1, 2, 3]);
+		expect(r.meta.seamFailed).toMatch(/generate_image returned no results/);
+	});
+
 	it('draws a tiling texture opaque even when asked for transparency too', async () => {
 		settings.imageLocalModelId = 'ming';
 		await localBackend.generate({

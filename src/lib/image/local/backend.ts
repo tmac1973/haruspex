@@ -234,9 +234,17 @@ export const localBackend: ImageBackend = {
 			throw new ImageBackendError('rejected', `The image engine returned no image from ${route}.`);
 		}
 		const seed = seedFrom(payload, req.seed ?? -1);
+		let seamFailed: string | undefined;
 		if (seamless) {
 			opts.onProgress?.({ phase: 'running', detail: 'Repainting the seams' });
-			images = [await tile(images[0], { ...req, prompt, sampler, seed }, opts.signal)];
+			try {
+				images = [await tile(images[0], { ...req, prompt, sampler, seed }, opts.signal)];
+			} catch (e) {
+				if (opts.signal?.aborted) throw e;
+				// Keep the texture the engine did draw. Losing it over the seam
+				// pass cost a run all nine of its textures.
+				seamFailed = e instanceof Error ? e.message : String(e);
+			}
 		}
 
 		return {
@@ -255,7 +263,8 @@ export const localBackend: ImageBackend = {
 				// rather than per request, so nothing was applied here and
 				// saying otherwise would put a lie in the anchor recipe.
 				loras: [],
-				durationMs: Date.now() - started
+				durationMs: Date.now() - started,
+				...(seamFailed ? { seamFailed } : {})
 			}
 		};
 	}

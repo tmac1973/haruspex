@@ -11,7 +11,7 @@ import { checkImage, effectiveProfile, normalizeImage } from '$lib/assets/normal
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
 import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '$lib/image/types';
-import { buildEntryRequest, checkProfile } from './request';
+import { NOT_SEAMLESS, buildEntryRequest, checkProfile } from './request';
 import {
 	amendForRetry,
 	betterReport,
@@ -158,6 +158,7 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 			{ maxEdge: deps.maxEdge }
 		);
 		const profile = checkProfile(profiles.get(entry.kind) ?? spec.normalize, request);
+		const normalizeOnly = profiles.get(entry.kind) ?? spec.normalize;
 
 		let prompt = request.prompt;
 		let negativePrompt = request.negativePrompt ?? '';
@@ -191,13 +192,19 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 				return;
 			}
 			lastSeed = result.meta.seed;
+			// The backend drew the texture but could not make it tile. Judged
+			// without the seam gate — retrying would hit the same wall and lose
+			// the texture — and reported as not seamless.
+			const untiled = request.seamless && result.meta.seamFailed;
+			if (untiled && !degraded.includes(NOT_SEAMLESS)) degraded.push(NOT_SEAMLESS);
+			const attemptProfile = untiled ? normalizeOnly : profile;
 
 			let report: CheckReport;
 			let bytes: Uint8Array;
 			try {
-				const normalized = await normalizeImage(result.images[0].bytes, profile, entry.kind);
+				const normalized = await normalizeImage(result.images[0].bytes, attemptProfile, entry.kind);
 				bytes = new Uint8Array(normalized.bytes);
-				report = await checkImage(normalized.stats, profile, entry.kind);
+				report = await checkImage(normalized.stats, attemptProfile, entry.kind);
 			} catch (e) {
 				if (isCancellation(e)) throw e;
 				// Normalization refuses an image with nothing left in it, which

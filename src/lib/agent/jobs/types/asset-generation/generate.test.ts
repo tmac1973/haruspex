@@ -174,6 +174,42 @@ describe('skipping what already exists', () => {
 	});
 });
 
+describe('a texture the backend could not tile', () => {
+	const untiled = (over: Partial<GenerateDeps> = {}) =>
+		harness({
+			generate: async () => ({
+				images: [{ bytes: new Uint8Array([9]), mimeType: 'image/png', width: 512, height: 512 }],
+				meta: {
+					seed: 42,
+					model: 'qwen21',
+					backend: 'local' as const,
+					sampler: { name: 'euler', steps: 25, cfg: 1 },
+					loras: [],
+					durationMs: 1,
+					seamFailed: 'vae encode compute failed'
+				}
+			}),
+			...over
+		});
+
+	it('is kept, judged without the seam gate, and reported as not seamless', async () => {
+		// The run that lost all nine of its textures to a failed seam pass.
+		const h = untiled();
+		const [r] = await generateEntries(specOf([{ kind: 'texture', seamless: true }]), h.deps);
+		expect(r.outcome.status).toBe('done');
+		expect(h.written).toEqual(['out/e0.png']);
+		expect(r.outcome.degraded).toEqual(['not seamless']);
+		const check = invoke.mock.calls.find(([cmd]) => cmd === 'image_check');
+		expect((check![1].profile as NormalizeProfile).checks.seam_max).toBeUndefined();
+	});
+
+	it('still gates the seam on a texture that did tile', async () => {
+		await generateEntries(specOf([{ kind: 'texture', seamless: true }]), harness().deps);
+		const check = invoke.mock.calls.find(([cmd]) => cmd === 'image_check');
+		expect((check![1].profile as NormalizeProfile).checks.seam_max).toBe(3);
+	});
+});
+
 describe('per-kind profiles', () => {
 	it('resolves each kind once, through the Rust resolver', async () => {
 		// Once per KIND, not once per entry: the branch that disables cropping

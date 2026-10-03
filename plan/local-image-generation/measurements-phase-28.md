@@ -57,3 +57,24 @@ gates, 64, all five pass, bases included — Ming draws repetitive textures, so
 the base alone often nearly tiles, and the pass is what makes it exact.
 
 Cost: one extra img2img per texture, ~20 s on this machine.
+
+## Qwen 2.1: the seam pass could not run — 2026-10-03
+
+dark_times_4 on Qwen 2.1 lost all nine textures: each base was drawn, then
+the seam pass failed at once with `generate_image returned no results`. On
+the idle engine, Qwen img2img worked at 512 and 768 and failed at 1024, mask
+or no mask; txt2img at 1024 was fine. A throwaway server with only the VAE
+on the GPU logged the cause:
+
+    model manager cannot make enough memory available on Vulkan0:
+      need 5390.30 MB device … available 4075.56 MB
+    vae encode compute failed
+
+Qwen's VAE (Wan's) needs ~5.4 GB to encode a 1024 image; with Qwen's weights
+loaded a 16 GB card has ~4 GB left. Ming's VAE is far smaller, which is why
+the pass was only ever tested working. With `--vae-tiling` the same request
+succeeded, and the engine now starts Qwen with it.
+
+Also: a texture whose seam pass fails is now kept, judged without the seam
+gate, and reported "not seamless", instead of failing — retrying hits the
+same wall.

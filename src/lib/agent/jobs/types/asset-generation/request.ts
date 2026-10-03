@@ -138,6 +138,9 @@ export function entryEdge(entry: AssetEntry, profile: NormalizeProfile, maxEdge:
 /** A coherence layer this entry had to do without, in the words the report prints. */
 export type Degradation = string;
 
+/** A texture that was asked to tile and does not. */
+export const NOT_SEAMLESS: Degradation = 'not seamless';
+
 export interface BuiltRequest {
 	request: ImageRequest;
 	degraded: Degradation[];
@@ -164,7 +167,7 @@ export function buildEntryRequest(
 	if (seamless && !caps.seamlessTiling) {
 		// Generated anyway: a visible seam beats a missing texture, and the
 		// report says which it is.
-		degraded.push('not seamless');
+		degraded.push(NOT_SEAMLESS);
 	}
 
 	const wanted: LoraRef[] = spec.style.loras ?? [];

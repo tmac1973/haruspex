@@ -259,6 +259,13 @@ pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
         args.push("--backend".to_string());
         args.push("te=cpu".to_string());
     }
+    // Qwen's VAE (Wan's) needs ~5.4 GB to ENCODE a 1024 image, and with Qwen's
+    // weights loaded only ~4 GB is left on a 16 GB card: every img2img — the
+    // seam pass on a texture — failed at once with "vae encode compute
+    // failed". Tiled, it fits. txt2img never encodes, so sprites were fine.
+    if entry.family == "qwen21" {
+        args.push("--vae-tiling".to_string());
+    }
     Some(args)
 }
 
@@ -456,6 +463,29 @@ mod tests {
             "Ming's text encoder runs on the CPU"
         );
         assert!(engine_args(&dir, "not-a-model").is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn qwen_encodes_in_tiles_and_ming_does_not() {
+        // Qwen's VAE cannot encode a 1024 image untiled beside its weights on a
+        // 16 GB card; every img2img (the seam pass) failed.
+        let dir = temp("tiling");
+        for id in ["ming", "qwen21"] {
+            let m = image_registry().into_iter().find(|m| m.id == id).unwrap();
+            let sub = model_dir(&dir, id);
+            std::fs::create_dir_all(&sub).unwrap();
+            for f in &m.files {
+                std::fs::write(sub.join(&f.filename), b"x").unwrap();
+            }
+        }
+        let tiles = |id: &str| {
+            engine_args(&dir, id)
+                .unwrap()
+                .contains(&"--vae-tiling".into())
+        };
+        assert!(tiles("qwen21"));
+        assert!(!tiles("ming"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -77,6 +77,12 @@ export interface ImageResultMeta {
 	sampler: SamplerSettings;
 	loras: LoraRef[];
 	durationMs: number;
+	/**
+	 * Set when a seamless request came back WITHOUT tiling: the backend drew
+	 * the texture but its seam pass failed, and says why. The image is still
+	 * returned — a visible seam beats a missing texture.
+	 */
+	seamFailed?: string;
 	/** Backend-specific payload, for debugging only. Never parsed. */
 	raw?: unknown;
 }
