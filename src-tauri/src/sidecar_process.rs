@@ -29,7 +29,7 @@ use shared_child::SharedChild;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::process::{Command as StdCommand, Stdio};
-use std::sync::{mpsc, Arc, OnceLock, RwLock};
+use std::sync::{mpsc, Arc, OnceLock};
 use tauri::async_runtime::{block_on, channel, Receiver, Sender};
 use tauri_plugin_shell::process::{Command, CommandEvent, TerminatedPayload};
 
@@ -137,14 +137,18 @@ fn spawn_prepared(
     );
 
     let (tx, rx) = channel(1);
-    // Terminated must come after the last output line. Readers hold the read
-    // lock until their pipe closes; the waiter takes the write lock to send.
-    let guard = Arc::new(RwLock::new(()));
+    // Terminated must come after the last output line, so the waiter joins
+    // both readers (each ends when its pipe closes) before sending it. A lock
+    // the readers take inside their own threads, as the shell plugin does,
+    // leaves a window: a process that exits at once can let the waiter win
+    // before a reader has started, and its output then arrives after
+    // Terminated or not at all (seen on CI).
+    let mut readers = Vec::new();
     if let Some(out) = child.take_stdout() {
-        spawn_reader(tx.clone(), guard.clone(), out, CommandEvent::Stdout);
+        readers.push(spawn_reader(tx.clone(), out, CommandEvent::Stdout));
     }
     if let Some(err) = child.take_stderr() {
-        spawn_reader(tx.clone(), guard.clone(), err, CommandEvent::Stderr);
+        readers.push(spawn_reader(tx.clone(), err, CommandEvent::Stderr));
     }
     let waiter = child.clone();
     let reg = registry.clone();
@@ -160,7 +164,9 @@ fn spawn_prepared(
             Err(e) => CommandEvent::Error(e.to_string()),
         };
         orphans::deregister_pid(reg.as_deref(), id, pid);
-        let _lock = guard.write().unwrap_or_else(|p| p.into_inner());
+        for reader in readers {
+            let _ = reader.join();
+        }
         let _ = block_on(tx.send(event));
     });
 
@@ -177,12 +183,10 @@ fn spawn_prepared(
 
 fn spawn_reader<R: std::io::Read + Send + 'static>(
     tx: Sender<CommandEvent>,
-    guard: Arc<RwLock<()>>,
     pipe: R,
     wrap: fn(Vec<u8>) -> CommandEvent,
-) {
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        let _lock = guard.read().unwrap_or_else(|p| p.into_inner());
         let mut reader = BufReader::new(pipe);
         loop {
             let mut buf = Vec::new();
@@ -199,7 +203,7 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
                 }
             }
         }
-    });
+    })
 }
 
 /// Linux: ask the kernel to SIGTERM the child when its parent thread (the

@@ -452,7 +452,12 @@ mod tests {
         }
         let args = engine_args(&dir, "ming").unwrap();
         let after = |flag: &str| args[args.iter().position(|a| a == flag).unwrap() + 1].clone();
-        assert!(after("--diffusion-model").ends_with("image/ming/ming_image_0.1_design-Q8_0.gguf"));
+        // Component-wise, so it holds with Windows separators too.
+        assert!(Path::new(&after("--diffusion-model")).ends_with(
+            Path::new("image")
+                .join("ming")
+                .join("ming_image_0.1_design-Q8_0.gguf")
+        ));
         assert!(after("--llm").ends_with("ming_ling_mini_2.0-Q4_K.gguf"));
         assert!(after("--vae").ends_with("ming_image_vae_bf16.safetensors"));
         assert!(after("--tokenizer").ends_with("tokenizer.json"));

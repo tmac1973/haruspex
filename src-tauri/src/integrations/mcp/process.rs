@@ -877,7 +877,20 @@ mod tests {
         #[cfg(unix)]
         {
             let pid = sup.pid_for("mute").await.expect("it was spawned");
-            assert!(!pid_is_alive(pid), "the hung server {pid} is still running");
+            // SIGKILL is delivered at once, but under load the process can take
+            // a moment to finish dying.
+            let mut alive = true;
+            for _ in 0..40 {
+                alive = pid_is_alive(pid);
+                if !alive {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            assert!(
+                !alive,
+                "the hung server {pid} is still running 2 s after the deadline"
+            );
         }
     }
 
