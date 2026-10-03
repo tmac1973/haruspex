@@ -11,7 +11,7 @@
 # HARUSPEX_MAC_HOST / HARUSPEX_WIN_HOST.
 #
 # It packs the files git tracks or would track (so target/ and node_modules
-# stay here), copies them over, starts the suite in the CI user's desktop
+# stay here), copies them over, starts the suite in your desktop
 # session, streams the log, and exits with the suite's result. With `both`,
 # the two run at once and the logs go to files, printed when each finishes.
 
@@ -43,13 +43,25 @@ pack() {
 run_on() {
     local os=$1 host=$2 tgz=$3
     echo "-- $os ($host): copying $(du -h "$tgz" | cut -f1)"
-    scp -q "$tgz" "$host:haruspex-ci/src.tgz"
+    scp -q "$tgz" "$host:.haruspex-test/src.tgz"
+    # unit needs no desktop: it runs in the SSH session itself, so it works
+    # with the machine locked or nobody signed in. UI suites go through the
+    # agent in your desktop session.
     if [[ $os == mac ]]; then
-        ssh "$host" '~/haruspex-ci/ci-remote.sh start' "$suite"
-        ssh "$host" '~/haruspex-ci/ci-remote.sh wait'
+        if [[ $suite == unit ]]; then
+            ssh "$host" '~/.haruspex-test/ci-remote.sh direct' "$suite"
+        else
+            ssh "$host" '~/.haruspex-test/ci-remote.sh start' "$suite"
+            ssh "$host" '~/.haruspex-test/ci-remote.sh wait'
+        fi
     else
-        ssh "$host" "powershell -NoProfile -ExecutionPolicy Bypass -File haruspex-ci\\ci-remote.ps1 -Action start -Suite $suite"
-        ssh "$host" "powershell -NoProfile -ExecutionPolicy Bypass -File haruspex-ci\\ci-remote.ps1 -Action wait"
+        local ps="powershell -NoProfile -ExecutionPolicy Bypass -File .haruspex-test\\ci-remote.ps1"
+        if [[ $suite == unit ]]; then
+            ssh "$host" "$ps -Action direct -Suite $suite"
+        else
+            ssh "$host" "$ps -Action start -Suite $suite"
+            ssh "$host" "$ps -Action wait"
+        fi
     fi
 }
 

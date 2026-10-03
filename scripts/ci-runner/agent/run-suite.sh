@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run one test suite on the source tree in ~/haruspex-src: the Mac agent's
+# Run one test suite on the source tree in ~/.haruspex-test/src: the Mac agent's
 # suite runner (Windows has run-suite.ps1).
 #
 #   unit      npm run check + test, cargo clippy + test (what CI runs)
@@ -9,11 +9,11 @@
 
 set -euo pipefail
 suite=${1:-unit}
-cd "$HOME/haruspex-src"
+cd "$HOME/.haruspex-test/src"
 export PATH="$HOME/.npm-global/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Outside the source tree, which is replaced on every run: keeps incremental
 # builds across runs.
-export CARGO_TARGET_DIR="$HOME/haruspex-cache/target"
+export CARGO_TARGET_DIR="$HOME/.haruspex-test/cache/target"
 
 echo "== $suite on $(hostname) at $(date)"
 # remote-test.sh records what it sent: the tree has no .git.
@@ -21,8 +21,8 @@ echo "== $(cat .remote-test-rev 2>/dev/null || echo 'unknown revision') · node 
 
 # npm ci only when the lockfile changed.
 lock_hash=$(shasum -a 256 package-lock.json | cut -d' ' -f1)
-stamp="$HOME/haruspex-cache/npm-lock.sha256"
-mkdir -p "$HOME/haruspex-cache"
+stamp="$HOME/.haruspex-test/cache/npm-lock.sha256"
+mkdir -p "$HOME/.haruspex-test/cache"
 if [[ ! -d node_modules || "$(cat "$stamp" 2>/dev/null)" != "$lock_hash" ]]; then
     echo "== npm ci"
     npm ci
