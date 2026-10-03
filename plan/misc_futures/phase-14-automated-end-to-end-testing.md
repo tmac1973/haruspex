@@ -184,8 +184,17 @@ manual checklist (step 9).
      either way.
    - **Windows:** msedgedriver is fetched at run time to match the installed
      WebView2.
-   - **macOS:** Appium's Mac2 driver needs the Accessibility and Screen
-     Recording grants the setup script asks the user for.
+   - **macOS:** Appium's Mac2 driver needs full Xcode, and so an Apple
+     account. The user has none, so it is opt-in (`setup-macos.sh
+     --with-xcode`).
+     - Without it, the Mac runs the `unit` suite and a process-level spec
+       with no UI driver: launch the e2e build, wait for its window process,
+       `kill -9` it, relaunch, and assert the orphan sweep removed the stale
+       sidecar. That's phase 13's macOS path.
+     - The Mac2 specs run only when `appium` is on PATH, and skip with that
+       reason otherwise.
+     - With Xcode, the Mac2 driver also needs the Accessibility and Screen
+       Recording grants the script asks for.
    - **Mac specs** (`e2e/mac/`, WebdriverIO plus Appium Mac2) cover:
      - launch;
      - seeding remote mode: write `haruspex-settings` through a debug-only

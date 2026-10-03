@@ -39,9 +39,15 @@ for your password through `sudo`):
 
     ./scripts/ci-runner/setup-macos.sh --ssh-key "<your Linux public key>"
 
-If it can't install Xcode from the App Store, it says so; install Xcode, then
-run it again. When it opens System Settings, allow Accessibility and Screen
-Recording for Terminal. macOS doesn't let a script do that.
+**No Apple account needed.** Apple's Command Line Tools, which Homebrew
+installs, are enough for building, the `unit` suite and the
+launch/kill/relaunch checks. Only the scripted UI tests (`e2e-mac`) need full
+Xcode, which the App Store won't give out without an Apple account.
+
+To add those later, run it again with `--with-xcode`. It installs Xcode and
+Appium's Mac2 driver, then opens System Settings so you can allow
+Accessibility and Screen Recording for Terminal. macOS doesn't let a script do
+that.
 
 **Windows.** In PowerShell opened with *Run as administrator*, from your own
 account:
