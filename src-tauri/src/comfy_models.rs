@@ -285,10 +285,14 @@ pub async fn comfy_install_direct(
     let answer = folder_answer(&base_url, &api_key).await?;
     let folders = local_folders(&answer)
         .ok_or("ComfyUI's model folders are not on this machine, or cannot be written.")?;
+    let _slot = state.begin_download(&format!("comfy:{family}"))?;
     state.set_proxy(proxy).await;
     state.reset_cancel().await;
     let mut installed = Vec::new();
-    for f in missing(&set, &folders) {
+    let todo = missing(&set, &folders);
+    let count = todo.len();
+    for (i, f) in todo.into_iter().enumerate() {
+        let of = format!("{} of {count}: {}", i + 1, f.filename);
         let dir = &folders[&f.folder][0];
         state
             .download_into(
@@ -298,7 +302,8 @@ pub async fn comfy_install_direct(
                 &f.filename,
                 f.size_bytes,
                 &f.sha256,
-                &format!("Downloading {}", f.filename),
+                &format!("Downloading {of}"),
+                &format!("Verifying {of}"),
             )
             .await?;
         installed.push(f.filename.clone());

@@ -73,6 +73,7 @@ export const IPC = {
 	detect_browser: 'detect_browser',
 	download_image_model: 'download_image_model',
 	download_model: 'download_model',
+	download_status: 'download_status',
 	download_whisper_model: 'download_whisper_model',
 	email_list_providers: 'email_list_providers',
 	email_list_recent: 'email_list_recent',

@@ -196,6 +196,7 @@ pub fn run() {
             models::context_fit_ceiling,
             models::download_model,
             models::cancel_download,
+            models::download_status,
             hardware::cmd_detect_hardware,
             models::import_model,
             models::get_models_dir,

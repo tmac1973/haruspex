@@ -289,13 +289,17 @@ pub async fn download_image_model(
         .into_iter()
         .find(|m| m.id == id)
         .ok_or_else(|| format!("Unknown image model: {id}"))?;
+    let _slot = state.begin_download(&format!("image:{id}"))?;
     let dir = model_dir(state.models_dir(), &id);
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
     state.set_proxy(proxy).await;
     state.reset_cancel().await;
-    for f in &entry.files {
+    let count = entry.files.len();
+    for (i, f) in entry.files.iter().enumerate() {
+        // "2 of 4" in the label, so a screen can say which file it is on.
+        let of = format!("{} of {count}: {}", i + 1, f.filename);
         state
             .download_into(
                 &app,
@@ -304,7 +308,8 @@ pub async fn download_image_model(
                 &f.filename,
                 f.size_bytes,
                 &f.sha256,
-                &format!("Downloading {}", f.filename),
+                &format!("Downloading {of}"),
+                &format!("Verifying {of}"),
             )
             .await?;
     }

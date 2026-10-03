@@ -3,6 +3,13 @@
 	import { getSettings, updateSettings } from '$lib/stores/settings';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import ComfyModels from './ComfyModels.svelte';
+	import DownloadProgressBar from './DownloadProgressBar.svelte';
+	import {
+		cancelDownload,
+		getActiveDownload,
+		runDownload,
+		syncDownloads
+	} from '$lib/stores/downloads.svelte';
 	import { resolveImageBackend } from '$lib/image';
 	import { invalidateTypeAvailability } from '$lib/agent/jobs/types/availability.svelte';
 	import { generateOneImage } from '$lib/image/generateOne';
@@ -19,8 +26,22 @@
 	type ImageModel = ImageModelInfo;
 
 	let models = $state<ImageModel[]>([]);
-	let downloading = $state<string | null>(null);
 	let downloadError = $state('');
+	/** Any download, here or elsewhere: one runs at a time (Rust enforces it). */
+	const active = $derived(getActiveDownload());
+	const keyOf = (m: ImageModel) => `image:${m.id}`;
+
+	// A download that outlived a closed Settings is shown again on opening, and
+	// the list refreshes when whatever was downloading ends.
+	$effect(() => {
+		void syncDownloads();
+	});
+	let wasActive = false;
+	$effect(() => {
+		const now = active !== null;
+		if (wasActive && !now) void refreshModels();
+		wasActive = now;
+	});
 
 	async function refreshModels() {
 		models = await invoke<ImageModel[]>('image_models').catch(() => []);
@@ -39,15 +60,15 @@
 			);
 			if (!ok) return;
 		}
-		downloading = m.id;
 		downloadError = '';
 		try {
-			await invoke('download_image_model', { id: m.id });
+			await runDownload(keyOf(m), () =>
+				invoke('download_image_model', { id: m.id, proxy: getSettings().proxy })
+			);
 			await selectModel(m);
 		} catch (e) {
 			downloadError = e instanceof Error ? e.message : String(e);
 		} finally {
-			downloading = null;
 			await refreshModels();
 		}
 	}
@@ -287,12 +308,19 @@
 							Use
 						</button>
 						<button onclick={() => deleteModel(m)}>Delete</button>
-					{:else}
-						<button onclick={() => downloadModel(m)} disabled={downloading !== null}>
-							{downloading === m.id ? 'Downloading…' : 'Download'}
+					{:else if active?.key !== keyOf(m)}
+						<button
+							onclick={() => downloadModel(m)}
+							disabled={active !== null}
+							title={active ? 'Another download is running.' : undefined}
+						>
+							Download
 						</button>
 					{/if}
 				</div>
+				{#if active?.key === keyOf(m)}
+					<DownloadProgressBar progress={active.progress} oncancel={cancelDownload} />
+				{/if}
 			</div>
 		{/each}
 		{#if downloadError}
