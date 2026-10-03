@@ -135,7 +135,7 @@ for key in "${SSH_KEYS[@]+"${SSH_KEYS[@]}"}"; do
     }
     grep -qxF "$key" "$HOME/.ssh/authorized_keys" || echo "$key" >>"$HOME/.ssh/authorized_keys"
 done
-[[ -s "$HOME/.ssh/authorized_keys" ]] || echo "warning: no SSH key yet — re-run with --ssh-key \"\$(cat ~/.ssh/id_ed25519.pub)\" from your Linux box's key"
+[[ -s "$HOME/.ssh/authorized_keys" ]] || echo "warning: no SSH key yet — re-run with --ssh-key \"<output of cat ~/.ssh/id_ed25519.pub on your Linux box>\""
 cp "$HERE/agent/ci-remote.sh" "$HERE/agent/run-suite.sh" "$HOME/haruspex-ci/"
 chmod +x "$HOME/haruspex-ci/"*.sh
 plist="$HOME/Library/LaunchAgents/com.haruspex.ci-run.plist"

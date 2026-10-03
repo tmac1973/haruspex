@@ -37,8 +37,9 @@ room. Pass `--allow-sleep` / `-AllowSleep` to leave the power settings alone.
    then run it again.
 2. Log in as `haruspex-ci`, using Fast User Switching so your session stays
    open, and run:
-   `/Users/Shared/haruspex-ci/macos-2-runner.sh --ssh-key "$(cat ~/.ssh/id_ed25519.pub)"`.
-   Paste the key from your **Linux box**; it is the public half.
+   `/Users/Shared/haruspex-ci/macos-2-runner.sh --ssh-key "<your Linux public key>"`.
+   The key is the output of `cat ~/.ssh/id_ed25519.pub` **on your Linux box**:
+   the public half, safe to copy across.
 3. Turn on the two permissions it opens: Accessibility and Screen Recording.
    macOS doesn't let a script do this.
 4. Leave `haruspex-ci` logged in.
