@@ -386,6 +386,8 @@ describe('parseContextOverflow', () => {
 describe('describeContextManaged', () => {
 	it('mentions each action taken', () => {
 		const text = describeContextManaged({
+			kind: 'fit',
+			forced: false,
 			trimmedTools: true,
 			truncatedMessages: 2,
 			droppedTurns: 3,

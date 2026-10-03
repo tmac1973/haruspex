@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { beforeAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
 import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
 
@@ -185,6 +185,14 @@ function makeJob(overrides: Partial<JobWithSteps> = {}): JobWithSteps {
 		...overrides
 	};
 }
+
+// The first import transforms the runner's whole module graph. On a slow CI
+// runner that alone took most of a test's 5 s, and the first test timed out on
+// Windows. Pay it once here; later imports after resetModules reuse the
+// transformed modules.
+beforeAll(async () => {
+	await import('$lib/agent/jobs/runner.svelte');
+}, 60_000);
 
 async function freshRunner() {
 	vi.resetModules();
@@ -2116,7 +2124,51 @@ describe('jobs runner — run observability', () => {
 			// resets between the turns inside a step.
 			peakPromptTokens: 9000,
 			reasoningExact: true,
-			calls: 2
+			calls: 2,
+			trimEvents: 0,
+			pressureMax: null
+		});
+	});
+
+	it('counts the step’s trims and fits, keeping the worst', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		const event = (kind: 'trim' | 'fit', forced = false) => ({
+			kind,
+			forced,
+			trimmedTools: true,
+			truncatedMessages: 0,
+			droppedTurns: 0,
+			beforeEst: 30000,
+			afterEst: 20000
+		});
+		mocks.runEphemeralTurn.mockImplementationOnce(async (opts: EphemeralTurnOptions) => {
+			opts.onContextManaged?.(event('trim'));
+			opts.onContextManaged?.(event('fit', true));
+			opts.onContextManaged?.(event('trim'));
+			opts.onCallStats?.({
+				durationMs: 1000,
+				completionTokens: 100,
+				promptTokens: 30000,
+				reasoningChars: 0,
+				answerChars: 40,
+				reasoningTokens: 0,
+				reasoningExact: true,
+				reasoningMs: 0
+			});
+			return { finalText: 'ok', rawText: 'ok' };
+		});
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const provider = mocks.setStepStatsProvider.mock.calls.at(-1)?.[0] as (
+			runId: number,
+			ordering: number
+		) => { trim_events: number; pressure_max: string | null } | null;
+		expect(provider(getCurrentRun()!.id, 0)).toMatchObject({
+			trim_events: 3,
+			pressure_max: 'forced'
 		});
 	});
 
@@ -2162,7 +2214,9 @@ describe('jobs runner — run observability', () => {
 			total_ms: 1000,
 			// This job type declares no turn kinds, so there is no split to
 			// record — distinct from a step whose turns were all one kind.
-			turn_stats: null
+			turn_stats: null,
+			trim_events: 0,
+			pressure_max: null
 		});
 		// A step that made no model calls records nothing rather than zeros —
 		// otherwise a checkpoint stage waiting on the user reads as free work.

@@ -133,23 +133,21 @@
 	</label>
 </div>
 
-<div class="toggle-row">
-	<label>
-		<input
-			type="checkbox"
-			bind:checked={cfg.skip_verification}
-			disabled={cfg.run_mode === 'unattended_chain'}
+<div class="field">
+	<span class="label">
+		Verification
+		<Tooltip
+			label="About verification"
+			text="An independent fresh-context review of every phase file — dependency ordering, unresolved decisions, embedded code, unreachable steps. Full revises and re-checks until clean, up to five rounds; it is usually the longest stage of a run. Lite reads once and revises once, and passes whatever it found to the coding run as open findings. Skip when the plan is small or you will review it yourself."
 		/>
-		<span class="label">
-			Skip verification
-			<Tooltip
-				label="About skipping verification"
-				text="Verification is an independent fresh-context review of every phase file — dependency ordering, unresolved decisions, embedded code, unreachable steps — with up to three revise rounds. It is usually the longest stage of a run. Skip it when the plan is small or you intend to review it yourself; the approval checkpoint still shows you the files either way."
-			/>
-		</span>
-	</label>
+	</span>
+	<select bind:value={cfg.verification} aria-label="Verification">
+		<option value="full">Full — revise until clean</option>
+		<option value="lite">Lite — one check, one revise</option>
+		<option value="skip" disabled={cfg.run_mode === 'unattended_chain'}>Skip</option>
+	</select>
 	{#if cfg.run_mode === 'unattended_chain'}
-		<p class="hint">Required in this mode — it decides whether the coding run may start.</p>
+		<p class="hint">At least lite in this mode — it decides whether the coding run may start.</p>
 	{/if}
 </div>
 

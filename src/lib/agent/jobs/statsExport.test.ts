@@ -12,6 +12,8 @@ function stats(over: Partial<StepThinkingStats> = {}): StepThinkingStats {
 		peakPromptTokens: 4000,
 		reasoningExact: true,
 		calls: 1,
+		trimEvents: 0,
+		pressureMax: null,
 		...over
 	};
 }

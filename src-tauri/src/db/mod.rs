@@ -254,6 +254,13 @@ pub struct StepStats {
     /// shape is the client's (`TurnKindStats`), and a column per kind would
     /// need a migration every time a pipeline names a new one.
     pub turn_stats: Option<String>,
+    /// Times the step's conversation was trimmed or fitted to the window.
+    #[serde(default)]
+    pub trim_events: i64,
+    /// The worst of those cuts: "trim", "fit" or "forced"; None when there
+    /// were none.
+    #[serde(default)]
+    pub pressure_max: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -685,6 +692,11 @@ impl Database {
             // steps recorded before it read back as "not measured", which is
             // different from a step whose turns were all one kind.
             "ALTER TABLE job_run_steps ADD COLUMN turn_stats TEXT",
+            // Context pressure per step: how often the loop cut the
+            // conversation to fit, and the worst cut ('trim' | 'fit' |
+            // 'forced'). NULL for steps recorded before it.
+            "ALTER TABLE job_run_steps ADD COLUMN trim_events INTEGER",
+            "ALTER TABLE job_run_steps ADD COLUMN pressure_max TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

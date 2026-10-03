@@ -13,7 +13,11 @@
 	import { save } from '@tauri-apps/plugin-dialog';
 	import { invoke } from '@tauri-apps/api/core';
 	import { formatDuration, formatTokens } from '$lib/utils/format';
-	import type { RunEnvironment, StepThinkingStats } from '$lib/agent/jobs/runner.svelte';
+	import type {
+		ContextPressure,
+		RunEnvironment,
+		StepThinkingStats
+	} from '$lib/agent/jobs/runner.svelte';
 	import {
 		buildStatsExport,
 		statsExportFilename,
@@ -126,6 +130,18 @@
 		if (!contextSize || contextSize <= 0) return formatTokens(peak);
 		return `${formatTokens(peak)} (${Math.round((peak / contextSize) * 100)}%)`;
 	}
+
+	/** The peak, and how often the phase had to cut its conversation to fit. */
+	function phasePeakCell(stats: StepThinkingStats): string {
+		const peak = peakCell(stats.peakPromptTokens);
+		return stats.trimEvents > 0 ? `${peak} · trimmed ${stats.trimEvents}×` : peak;
+	}
+
+	const PRESSURE_NOTE: Record<ContextPressure, string> = {
+		trim: 'Worst: older tool results stubbed after a call passed 70% of the window.',
+		fit: 'Worst: history cut before a send to fit the window.',
+		forced: 'Worst: messages halved to fit at all — this phase ran out of room.'
+	};
 </script>
 
 <section class="run-stats">
@@ -185,7 +201,9 @@
 								<td>{row.stats.calls}</td>
 								<td>{formatDuration(row.stats.totalMs)}</td>
 								<td>{rateCell(row.stats)}</td>
-								<td>{peakCell(row.stats.peakPromptTokens)}</td>
+								<td title={row.stats.pressureMax ? PRESSURE_NOTE[row.stats.pressureMax] : undefined}
+									>{phasePeakCell(row.stats)}</td
+								>
 							{:else}
 								<!-- A phase that ran no model calls (a checkpoint waiting
 								     on you) spent nothing and records nothing. -->

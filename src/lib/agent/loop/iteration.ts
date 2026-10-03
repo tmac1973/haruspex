@@ -848,6 +848,15 @@ async function runModelCall(
 				contextSize: ctx.contextSize,
 				ratio: +(response.usage.prompt_tokens / ctx.contextSize).toFixed(3)
 			});
+			options.onContextManaged?.({
+				kind: 'trim',
+				forced: false,
+				trimmedTools: true,
+				truncatedMessages: 0,
+				droppedTurns: 0,
+				beforeEst: response.usage.prompt_tokens,
+				afterEst: estimateMessagesTokens(ctx.messages, ctx.tools)
+			});
 		}
 	}
 

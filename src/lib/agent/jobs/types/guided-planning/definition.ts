@@ -1,6 +1,10 @@
 import type { JobTypeDefinition, PlannedStep } from '../types';
 import { runGuidedPlanningPipeline } from './pipeline';
-import { type GuidedPlanningRunMode, parseGuidedPlanningConfig } from './config';
+import {
+	type GuidedPlanningRunMode,
+	type GuidedPlanningVerification,
+	parseGuidedPlanningConfig
+} from './config';
 import { DEFAULT_MAX_TURNS } from '../autonomous-coding/config';
 import { modelColumnsFromForm, modelFormFromColumns, type JobModelForm } from '../../jobModelForm';
 import type { ChainModel } from '../../chainModel';
@@ -10,7 +14,7 @@ import Editor from './Editor.svelte';
 export interface GuidedPlanningEditorState {
 	initial_description: string;
 	plan_output_dir: string;
-	skip_verification: boolean;
+	verification: GuidedPlanningVerification;
 	web_research: boolean;
 	use_git: boolean;
 	generate_assets: boolean;
@@ -123,7 +127,7 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 	configDefaults: () => ({
 		initial_description: '',
 		plan_output_dir: '',
-		skip_verification: false,
+		verification: 'full',
 		web_research: true,
 		use_git: true,
 		generate_assets: false,
@@ -141,7 +145,7 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		return {
 			initial_description: c.initial_description ?? '',
 			plan_output_dir: c.plan_output_dir ?? '',
-			skip_verification: c.skip_verification,
+			verification: c.verification,
 			web_research: c.web_research,
 			use_git: c.use_git,
 			generate_assets: c.generate_assets,
@@ -160,8 +164,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		return JSON.stringify({
 			initial_description: s.initial_description.trim() || undefined,
 			plan_output_dir: s.plan_output_dir.trim() || undefined,
-			skip_verification: s.skip_verification || undefined,
-			// Sparse like skip_verification: only the non-default value is stored.
+			// Sparse: only a non-default value is stored.
+			verification: s.verification === 'full' ? undefined : s.verification,
 			web_research: s.web_research ? undefined : false,
 			use_git: s.use_git ? undefined : false,
 			// Opt-in, so only `true` is worth storing.

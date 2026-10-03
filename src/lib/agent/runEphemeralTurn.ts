@@ -17,6 +17,7 @@
 import { mergeLeadingSystemMessages } from '$lib/api';
 import type { BackendOverride, ChatMessage, Usage } from '$lib/api';
 import type { CallStats } from '$lib/agent/loop';
+import type { ContextManagedInfo } from '$lib/agent/context-budget';
 import type { SamplingParams } from '$lib/stores/settings';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import type { Artifact, LintIssue, ToolContext } from '$lib/agent/tools';
@@ -107,6 +108,8 @@ export interface EphemeralTurnOptions {
 	onUsageUpdate?: (usage: Usage) => void;
 	/** Per-call timing and reasoning/answer split. See `CallStats`. */
 	onCallStats?: (stats: CallStats) => void;
+	/** Each time the loop trimmed or fitted the conversation to the window. */
+	onContextManaged?: (info: ContextManagedInfo) => void;
 	/**
 	 * Reasoning text as each model call returns it. The only route for a
 	 * forced-tool turn, which never streams.
@@ -234,6 +237,7 @@ export async function runEphemeralTurn(
 			writeRoot: options.writeRoot,
 			onUsageUpdate: options.onUsageUpdate,
 			onCallStats: options.onCallStats,
+			onContextManaged: options.onContextManaged,
 			onReasoning: options.onReasoning,
 			thinkingEnabled: options.thinkingEnabled,
 			reasoningEffort: options.reasoningEffort,
