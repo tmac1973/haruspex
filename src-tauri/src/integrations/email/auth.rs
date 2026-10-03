@@ -144,7 +144,7 @@ impl EmailAccount {
             }),
             None => Err(format!(
                 "The password for {} is missing from the system keychain — enter it again in \
-                 Settings → Email",
+                 Settings → Integrations",
                 self.email_address
             )),
         }
@@ -234,7 +234,7 @@ mod tests {
         a.password_ref = Some("email:test-1".into());
         let err = a.resolved_from(&Memory::default()).unwrap_err();
         assert!(err.contains("alice@example.com"), "{err}");
-        assert!(err.contains("Settings → Email"), "{err}");
+        assert!(err.contains("Settings → Integrations"), "{err}");
     }
 
     #[test]
