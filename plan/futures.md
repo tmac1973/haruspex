@@ -4,16 +4,6 @@ Running list of things to address. Status annotations added 2026-07-19.
 
 ## Open
 
-- When in jobs with a different model than the system settings the model and context size indicator in the top right corner show the model/context usage for the system settings, not the model used for the job. Ideally the indicator would change when viewing a running job to indicate the model/context for that running job, but change back to the system model/context when viewing the chat/shell tabs. Alternatively we could put that info in the job step card instead and just not show the model/context indicator in the upper right when on the jobs tab. This might be the more flexible option
-  - **Planned — `plan/archive/job-observability/`, phase 02.** Doing both, not either:
-    per-step usage in the step cards (the durable per-step record, and the only
-    place that shows a per-phase context growing) plus retargeting the top-right
-    indicator while a live run is in view. Root cause of the missing numbers is
-    that `runEphemeralTurn` never exposed the loop's `onUsageUpdate` hook, so no
-    job turn has ever reported usage at all.
-
-- It would be nice to able to specify a different model for each phase of a job. I.E. do the planning with one model, verification with the next.
-
 - In the guided planning job the step 2 outline approval modal presents a wall of text that the agent has written that is not very nice to look at. The font is a bit large, there's no visual breaks between the phases outlined. We should work on this.
   - **Diagnosed 2026-10-02, not started.** The whole question, outline
     included, is rendered inside the modal's `<h2>`
@@ -49,26 +39,19 @@ Running list of things to address. Status annotations added 2026-07-19.
   - Decide what a coding run may touch outside its working directory. At least: the app's own data directory should be off limits, and a plan that says "do not make placeholder art" should not be satisfiable by making real art some other way. Its report asked the same question ("Decide policy on the cycle-3 exception").
   - The chain no longer hands off silently without art (the handoff says "starts WITHOUT art" and why), which removes this particular trigger but not the capability.
 
-- Chained jobs inherit the planning job's model, always (server, model, key, context, reasoning). Right as the default; add an optional per-stage override in the planning editor — "Coding run model" (and "Asset run model") defaulting to "same as this job" — so a chain can plan with a strong model and code with a fast one. Close to the per-phase model item above.
-- A chained coding job is named "<job> — assets — coding": the asset job appends " — coding" to its own name. Should be "<job> — coding".
+- Chained jobs inherit the planning job's model, always (server, model, key, context, reasoning). Right as the default; add an optional per-stage override in the planning editor — "Coding run model" (and "Asset run model") defaulting to "same as this job" — so a chain can plan with a strong model and code with a fast one.
+- A chained coding job is named "<job> — assets — coding": the asset job appends " — coding" to its own name (`asset-generation/pipeline.ts:346`). Should be "<job> — coding".
 - Sheet cutting kept a small object the model drew touching the player as part of the player sprite (p25 chain, `player.png` has a coin-like orb beside it). A merge is only detected when a piece's body covers another subject's expected centre; a small neighbour drawn against a sprite does not. Consider a size check (a piece much wider than its siblings, or two lobes joined by a thin neck) and showing such a piece to the judge.
 
-- Cancelling an image generation calls ComfyUI's `/interrupt`, which stops whatever the server is running — another client's job on a shared ComfyUI included. Delete our own prompt from the queue (`POST /queue` with `delete`) and interrupt only when the running prompt is ours (`GET /queue` shows its id).
+- Cancelling an image generation calls ComfyUI's `/interrupt` (`comfyui/client.ts`, `interrupt`), which stops whatever the server is running — another client's job on a shared ComfyUI included. Delete our own prompt from the queue (`POST /queue` with `delete`) and interrupt only when the running prompt is ours (`GET /queue` shows its id).
 
-- We may want to look at adding a second model selector for the shell tab in settings -> inference. The default could/should be to just use the main local model for everything, just as it is today, but we could offer an opt-in to select a different model (local, remote, or openrouter) for the shell tab. If the chat tab and the shell tab use different local models of course they would have to queue to use that model (wait for the other model to unload, then load then new one) Thoughts?
+- **Image generation as a tool in Chat and the Shell assistant** (added 2026-10-03). When Settings → Image has a backend on, offer the model a tool that generates an image. In Chat: "draw me …", with the result shown inline. In the Shell assistant with code mode on: generate art into the working directory during an interactive coding session — a sprite, an icon, a texture — reusing the asset job's normalisation (transparency, cutting, tiling) rather than a raw image.
 
-- The output of a guided planning job is in /home/tim/Projects/hangman/plan. Have a look and tell me what you think. It was produced by qwen3.6 27b. It won't be as good as something you would produce, so no need to nitpick, but broadly is it cohesive?
-  - **Still open.** Those files were read repeatedly as test fixtures while building the
-    write-path fixes, but never actually reviewed as a plan. There is now a second,
-    larger sample too: `/home/tim/Projects/hangman2/plan/test-plan/` (158 KB vs 89 KB,
-    and the run that produced it caught a real bug in its own phase 03 during
-    verification).
+- **Email: review the integration, then add composing and sending** (added 2026-10-03). First a review pass on the existing IMAP integration — correctness, efficiency (connections, fetch sizes, caching), and error handling. Then, behind a Settings → Email toggle (off by default), let the model compose and send mail: replies to a message and new mail. Nothing is sent without the user reviewing it first — the model drafts, the user sees and can edit the draft, and only the user's click sends.
 
-- **Owed: manual verification of agentic memory on a real profile.** All five phases
-  shipped 2026-08-24, but the plan was archived with its verification pass still
-  outstanding — nothing has exercised extraction, recall and incognito against a
-  profile with real history rather than test fixtures. Plan:
-  `plan/archive/agentic-memory/`.
+- **Sidecars outlive the app when it is killed** (found 2026-10-03; planned as `plan/misc_futures/` phase 13). The Qwen sd-server from a job ran on for ~6 h after the dev app restarted, holding 9 GB of VRAM (a game ran badly until it was killed by hand); koko was 2 days old against a 14-minute-old app. The Exit-handler stop only runs on a clean quit — a `tauri dev` rebuild, a crash or a SIGKILL skips it. Fix at spawn: on Linux `prctl(PR_SET_PDEATHSIG)` in `pre_exec`, on Windows a job object with kill-on-close, and on every platform a startup sweep that stops a stale sidecar still holding our port (match by binary path, never by name). Also leaking: Rust tests leave `mcp-echo-server.js hang` processes behind (15 found), and headless Chromium from dead app instances (4 found).
+
+- **Move API keys to the OS keychain** (added 2026-10-03). Every secret — the stored API keys, the remote inference key, the Brave key, the image backend key — is plain text in the settings blob. `plan/misc_futures/` phase 10 builds a `secrets` store and moves email passwords onto it; move the rest onto the same store.
 
 - **Owed: Windows and macOS pass for inline chat images.** All seven phases shipped
   2026-08-30 and were verified on Linux against both Qwen 3.6 35B and the default
@@ -86,12 +69,18 @@ Running list of things to address. Status annotations added 2026-07-19.
     turn each round against files that were already correct.
   - Measured on the same job, before → after: **verification 41 min → 12 min**, total
     **65 min → 42 min**, while producing a *larger* plan (89 KB → 158 KB).
+  - **Skip verification is done** (`skip_verification` on guided planning; forced
+    off in an unattended chain).
   - **Still open:** the context audit across other job types (research, audit,
-    autonomous-coding), a "verification lite" mode, and a skip-verification checkbox.
+    autonomous-coding) and a "verification lite" mode.
     Deliberately deferred so they could be scoped against real numbers rather than
     against the 41-minute figure, which turned out to be mostly a bug.
 
 ## Done
+
+- ~~The model and context indicator shows the global model while a job runs on its own model.~~
+  - **Done** (`plan/archive/job-observability/`, phase 02): job turns report usage
+    through `onUsageUpdate`, and `ContextIndicator` follows the live run.
 
 - ~~I've had a few issues where during a guided planning job one of the plan files that had been written in step 3 and then was going through verification in step 4 seeming got corrupted. When read the plan file in question started with step 9, and everything that presumably had existing in the file before step 9 was gone. No idea how this happened, whether it was a fault of the llm or something else entirely, but lets audit the job and tooling to make sure it wasn't because of some truncation or something that was caused by our code.~~
   - **Fixed in PR #187** — and yes, it was our code, in three independent places.
@@ -108,9 +97,4 @@ Running list of things to address. Status annotations added 2026-07-19.
 
 ## Notes
 
-- **#1, #2 and the shell-tab selector are really one project.** All three are the same
-  underlying change: model selection stops being a single global and becomes
-  per-context — per-job, per-phase, per-tab. Built piecemeal they'd touch the same
-  selector and queueing code three times over. Worth planning together even if shipped
-  separately.
 - **The outline modal is genuinely standalone and small.** Good filler work.
