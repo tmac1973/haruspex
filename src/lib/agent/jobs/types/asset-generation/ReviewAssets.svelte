@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import Modal from '$lib/components/Modal.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
@@ -71,8 +72,11 @@
 		}
 	}
 
+	// On open only. `load` reads the tiles it replaces (to release their URLs);
+	// tracked, that made this effect re-run every time the images arrived,
+	// emptying the grid again — the dialog showed nothing.
 	$effect(() => {
-		if (open) void load();
+		if (open) untrack(() => void load());
 	});
 
 	function toggle(id: string) {
