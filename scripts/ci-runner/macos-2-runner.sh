@@ -155,6 +155,13 @@ launchctl bootout "gui/$(id -u)/com.haruspex.ci-run" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$plist"
 echo "ok: agent installed; remote-test.sh starts suites in this session"
 
+step "No screensaver or screen lock for $(id -un)"
+# A locked screen stops UI tests even though the machine is awake.
+defaults -currentHost write com.apple.screensaver idleTime -int 0
+echo "Turning off the screen lock asks for $(id -un)'s password:"
+sysadminctl -screenLock off -password - || echo "warning: could not turn the screen lock off; do it in System Settings → Lock Screen"
+echo "ok: screensaver off, no password after the display sleeps"
+
 step "Two permissions macOS will not let a script grant"
 cat <<EOF
 In System Settings → Privacy & Security, turn these on:

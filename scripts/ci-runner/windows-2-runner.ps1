@@ -117,6 +117,12 @@ if (-not (Get-Process Runner.Listener -ErrorAction SilentlyContinue)) {
 }
 Write-Host "ok: runner $Name running, and starts at every logon of $env:USERNAME"
 
+Step "No screensaver or lock for $env:USERNAME"
+# A locked desktop stops UI tests even though the machine is awake.
+Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name ScreenSaveActive -Value '0'
+Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name ScreenSaverIsSecure -Value '0'
+Write-Host 'ok: screensaver off'
+
 Step 'SSH key and the remote-test agent'
 $sshDir = Join-Path $HOME '.ssh'
 $keys = Join-Path $sshDir 'authorized_keys'

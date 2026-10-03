@@ -19,9 +19,20 @@ with phase 14; until then they say so.
 Each machine runs as a dedicated standard user, `haruspex-ci`. Your own account
 and its Haruspex data are never touched.
 
+Get the scripts on each machine by cloning the repo, or pulling `main`, from
+your own account. This file is `scripts/ci-runner/README.md` there too.
+
+**Always reachable.** By default both scripts keep the machine awake: no sleep
+or hibernation, wake on network access, and (Mac) power back on after a power
+cut. Part 2 turns off the CI user's screensaver and screen lock, because a
+locked desktop stops UI tests. Automatic login (`--auto-login`, `-AutoLogon`)
+brings `haruspex-ci` back after an update restart, without a trip to the other
+room. Pass `--allow-sleep` / `-AllowSleep` to leave the power settings alone.
+
 **Mac mini**
 1. From your admin account:
-   `./scripts/ci-runner/macos-1-admin.sh --keep-awake`.
+   `./scripts/ci-runner/macos-1-admin.sh --auto-login`.
+   Automatic login needs FileVault off; the script says if it's on.
    If it can't install Xcode from the App Store, it says so; install Xcode,
    then run it again.
 2. Log in as `haruspex-ci`, using Fast User Switching so your session stays
@@ -34,8 +45,7 @@ and its Haruspex data are never touched.
 
 **Windows PC**
 1. In an Administrator PowerShell:
-   `powershell -ExecutionPolicy Bypass -File scripts\ci-runner\windows-1-admin.ps1 -KeepAwake`.
-   Add `-AutoLogon` to have the machine log `haruspex-ci` in at boot.
+   `powershell -ExecutionPolicy Bypass -File scripts\ci-runner\windows-1-admin.ps1 -AutoLogon`.
 2. Sign in as `haruspex-ci` and run:
    `powershell -ExecutionPolicy Bypass -File C:\Users\Public\haruspex-ci\windows-2-runner.ps1 -SshKey "<your Linux public key>"`.
    The integrated AMD GPU is labelled `igpu`.

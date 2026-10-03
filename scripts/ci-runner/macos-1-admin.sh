@@ -2,25 +2,34 @@
 # Haruspex live-test runner, macOS part 1 of 2: machine-wide setup.
 #
 # Run from an ADMIN account on the Mac mini:
-#   ./scripts/ci-runner/macos-1-admin.sh [--keep-awake]
+#   ./scripts/ci-runner/macos-1-admin.sh [--auto-login] [--allow-sleep]
 #
 # Installs Homebrew, Node 22, the GitHub CLI and (if it can) Xcode, enables UI
 # automation, turns on Remote Login (SSH) for the CI user, and creates the
 # `haruspex-ci` user the runner works as. Then log in as haruspex-ci and run
 # part 2. Safe to re-run: every step skips what is already done.
 #
-#   --keep-awake   never sleep, and wake at 02:50 for the nightly run
+# By default the Mac never sleeps, wakes on network access and powers back on
+# after a power cut, so it is always there for remote-test.sh and the nightly
+# run.
+#
+#   --auto-login   log haruspex-ci in at boot, so a restart (an update, a power
+#                  cut) comes back ready to test. Needs FileVault off.
+#   --allow-sleep  leave the power settings alone
 
 set -euo pipefail
 
 CI_USER=haruspex-ci
 SHARED=/Users/Shared/haruspex-ci
-KEEP_AWAKE=0
+KEEP_AWAKE=1
+AUTO_LOGIN=0
 for arg in "$@"; do
     case "$arg" in
-        --keep-awake) KEEP_AWAKE=1 ;;
+        --allow-sleep) KEEP_AWAKE=0 ;;
+        --auto-login) AUTO_LOGIN=1 ;;
+        --keep-awake) ;; # the default now; accepted for old instructions
         -h | --help)
-            sed -n '2,14p' "$0"
+            sed -n '2,19p' "$0"
             exit 0
             ;;
         *)
@@ -117,10 +126,26 @@ sudo chmod -R a+rX "$SHARED"
 echo "ok: $SHARED"
 
 if [[ $KEEP_AWAKE == 1 ]]; then
-    step "Keep awake for the nightly run"
-    sudo pmset -a sleep 0 disksleep 0
-    sudo pmset repeat wakeorpoweron MTWRFSU 02:50:00
-    echo "ok: sleep off, daily wake at 02:50"
+    step "Always awake"
+    # The display may sleep; the machine never does. womp: wake for network
+    # access. autorestart: power on again after a power cut.
+    sudo pmset -a sleep 0 disksleep 0 womp 1 autorestart 1
+    sudo systemsetup -setrestartfreeze on >/dev/null 2>&1 || true
+    echo "ok: never sleeps, wakes for the network, restarts after a power cut or a freeze"
+fi
+
+if [[ $AUTO_LOGIN == 1 ]]; then
+    step "Log $CI_USER in at boot"
+    if fdesetup status | grep -q 'On'; then
+        todo+=("Automatic login needs FileVault off (System Settings → Privacy & Security → FileVault); then re-run with --auto-login.")
+    else
+        echo "Automatic login stores $CI_USER's password; enter it:"
+        if sudo sysadminctl -autologin set -userName "$CI_USER" -password -; then
+            echo "ok: $CI_USER logs in at boot"
+        else
+            todo+=("Set automatic login by hand: System Settings → Users & Groups → Automatically log in as → $CI_USER.")
+        fi
+    fi
 fi
 
 step "Done"

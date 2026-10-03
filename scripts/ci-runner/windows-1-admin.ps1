@@ -2,7 +2,7 @@
 Haruspex live-test runner, Windows part 1 of 2: machine-wide setup.
 
 Run in an ADMINISTRATOR PowerShell on the Windows machine:
-  powershell -ExecutionPolicy Bypass -File scripts\ci-runner\windows-1-admin.ps1 [-KeepAwake] [-AutoLogon]
+  powershell -ExecutionPolicy Bypass -File scripts\ci-runner\windows-1-admin.ps1 [-AutoLogon] [-AllowSleep]
 
 Installs Git, Node 22, the GitHub CLI, the Visual Studio C++ build tools,
 WebView2 and the OpenSSH server (for remote-test.sh on your Linux box), and
@@ -10,15 +10,19 @@ creates the `haruspex-ci` user the runner works as. Then log in as
 haruspex-ci and run part 2. Safe to re-run: every step skips what is already
 done.
 
-  -KeepAwake   never sleep on mains power, and wake at 02:50 for the nightly run
+By default the PC never sleeps or hibernates and asks for no sign-in when the
+display wakes, so it is always there for remote-test.sh and the nightly run.
+
   -AutoLogon   log haruspex-ci in automatically at boot (Sysinternals Autologon;
-               the password is stored as an LSA secret, not in plain text).
-               Without it, leave haruspex-ci signed in with Switch user.
+               the password is stored as an LSA secret, not in plain text), so
+               an update restart comes back ready to test. Recommended.
+  -AllowSleep  leave the power settings alone
 #>
 #Requires -RunAsAdministrator
 param(
-    [switch]$KeepAwake,
-    [switch]$AutoLogon
+    [switch]$AutoLogon,
+    [switch]$AllowSleep,
+    [switch]$KeepAwake  # the default now; accepted for old instructions
 )
 $ErrorActionPreference = 'Stop'
 $CiUser = 'haruspex-ci'
@@ -98,17 +102,21 @@ if ($AutoLogon) {
     Write-Host "ok: Windows will log in as $CiUser at boot"
 }
 
-if ($KeepAwake) {
-    Step 'Keep awake for the nightly run'
-    powercfg /change standby-timeout-ac 0
-    powercfg /change hibernate-timeout-ac 0
-    # A task that does nothing but wake the machine at 02:50.
-    $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit 0'
-    $trigger = New-ScheduledTaskTrigger -Daily -At '02:50'
-    $settings = New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable
-    Register-ScheduledTask -TaskName 'Haruspex CI wake' -Action $action -Trigger $trigger `
-        -Settings $settings -User 'SYSTEM' -Force | Out-Null
-    Write-Host 'ok: no sleep on mains power, daily wake at 02:50'
+if (-not $AllowSleep) {
+    Step 'Always awake'
+    foreach ($kind in 'standby-timeout', 'hibernate-timeout') {
+        powercfg /change "$kind-ac" 0
+        powercfg /change "$kind-dc" 0
+    }
+    # Also turns off Fast Startup, whose half-shutdown skips the logon the
+    # runner starts at.
+    powercfg /hibernate off
+    # No sign-in prompt when the display wakes; a locked desktop stops UI tests.
+    powercfg /setacvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 0
+    powercfg /setdcvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 0
+    powercfg /setactive SCHEME_CURRENT
+    Unregister-ScheduledTask -TaskName 'Haruspex CI wake' -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Host 'ok: never sleeps or hibernates; no sign-in when the display wakes'
 }
 
 Step 'Graphics'
@@ -116,6 +124,9 @@ Get-CimInstance Win32_VideoController | ForEach-Object { Write-Host "  $($_.Name
 Write-Host '  Part 2 labels the runner igpu or gpu from this; pass -Gpu none|igpu|gpu to override.'
 
 Step 'Done'
+if (-not $AutoLogon) {
+    $todo += "After a restart (Windows Update), sign $CiUser in again, or re-run with -AutoLogon so it happens by itself."
+}
 foreach ($t in $todo) { Write-Host "Still to do: $t" -ForegroundColor Yellow }
 Write-Host @"
 Next:
