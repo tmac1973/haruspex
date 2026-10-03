@@ -365,6 +365,51 @@ const NO_EMBEDDED_CODE_RULES = [
 ];
 
 /**
+ * One phase of the approved outline. The runner controls the NN numbering and
+ * the filename (never the model), so each phase's write target is
+ * deterministic and verifiable.
+ */
+export interface NormalizedPhase {
+	nn: string;
+	title: string;
+	relPath: string;
+	dependsOn: string[];
+	summary: string;
+}
+
+/**
+ * The outline as the phase-writing prompts receive it: one line per phase.
+ * Its format is part of every phase prompt, so it stays as it is; the
+ * approval checkpoint uses `renderOutlineForReview`.
+ */
+export function renderOutline(phases: NormalizedPhase[]): string {
+	return phases
+		.map(
+			(p) =>
+				`Phase ${p.nn} — ${p.title}` +
+				(p.dependsOn.length ? ` (depends on ${p.dependsOn.join(', ')})` : '') +
+				(p.summary ? `: ${p.summary}` : '')
+		)
+		.join('\n');
+}
+
+/**
+ * The outline for a person to read: each phase a bold title line, its summary
+ * as a paragraph, a blank line between phases. Markdown, shown as the
+ * approval question's body.
+ */
+export function renderOutlineForReview(phases: NormalizedPhase[]): string {
+	return phases
+		.map(
+			(p) =>
+				`**Phase ${p.nn} — ${p.title}**` +
+				(p.dependsOn.length ? ` · depends on ${p.dependsOn.join(', ')}` : '') +
+				(p.summary ? `\n\n${p.summary}` : '')
+		)
+		.join('\n\n');
+}
+
+/**
  * Stage 2b (per-phase write) system prompt: write EXACTLY ONE phase file from
  * the approved outline. The runner drives one of these per phase, so the model
  * only ever has to do a single thing — write one file — rather than "write them
@@ -1267,17 +1312,6 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		return false;
 	};
 
-	// One normalized phase from the approved outline: the runner controls the NN
-	// numbering and filename (never the model), so the per-phase write target is
-	// deterministic and verifiable.
-	interface NormalizedPhase {
-		nn: string;
-		title: string;
-		relPath: string;
-		dependsOn: string[];
-		summary: string;
-	}
-
 	const slugify = (s: string): string =>
 		s
 			.toLowerCase()
@@ -1311,16 +1345,6 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			};
 		});
 	};
-
-	const renderOutline = (phases: NormalizedPhase[]): string =>
-		phases
-			.map(
-				(p) =>
-					`Phase ${p.nn} — ${p.title}` +
-					(p.dependsOn.length ? ` (depends on ${p.dependsOn.join(', ')})` : '') +
-					(p.summary ? `: ${p.summary}` : '')
-			)
-			.join('\n');
 
 	// Outline turn: interview + ground + `submit_plan_outline`. The phase list is
 	// captured off the tool-call stream (the executor just acks); the call is
@@ -1735,9 +1759,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			const answer = await askUserQuestion(
 				{
 					question:
-						`Here's the plan outline — ${outline.length} phase(s), in dependency order:\n\n` +
-						`${renderOutline(outline)}\n\n` +
-						`Approve to write the phase files, or type what you'd like changed.`,
+						`Here's the plan outline — ${outline.length} phase(s), in dependency order. ` +
+						`Approve it, or type what you'd like changed.`,
+					body: renderOutlineForReview(outline),
 					options: [
 						{
 							label: 'Approve',

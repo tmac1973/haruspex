@@ -33,7 +33,14 @@ export interface UserQuestionOption {
 }
 
 export interface UserQuestionRequest {
+	/** The heading: one short sentence. Longer content goes in `body`. */
 	question: string;
+	/**
+	 * Longer content shown under the question, as markdown at normal weight.
+	 * The whole question used to sit in the modal's heading, so an outline of
+	 * eight phases was a wall of heading-size bold text.
+	 */
+	body?: string;
 	options: UserQuestionOption[];
 	/** When true the user may pick several options. Free-text is always allowed. */
 	allowMultiple?: boolean;
