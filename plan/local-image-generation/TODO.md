@@ -52,13 +52,13 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 | 16 | Anchor quality, seed honesty, baseline | **superseded**, never started |
 | 17 | Measurements that decide the design | **done** — `measurements-phase-17.md` |
 | 18 | Transparency in the backend; Ming + Qwen workflows | **done** — live-checked on Ming and Qwen 2.1 |
-| 19 | Multi-file catalogue: Ming, Qwen 2.1 | ComfyUI half **done** (`comfy_models.rs`, for 27); the local-engine half waits on 24 |
+| 19 | Multi-file catalogue: Ming, Qwen 2.1 | **done** — ComfyUI (`comfy_models.rs`) and the bundled engine (`image_models.rs`, GGUF) |
 | 20 | Normalization for alpha; cutting a sheet | **done** |
 | 21 | Generate sprites and icons in sheets | **done** — live sheets cut 9/9 |
 | 22 | The first sheet is the anchor | **done** |
 | 23 | Textures | **done** — prompts, seam gate, offset-and-inpaint on Ming (`measurements-phase-23.md`) |
-| 24 | Bundled engine runs Ming | **in progress** — unblocked by GGUF (`measurements-phase-24-gguf.md`); catalogue, engine and backend rewritten; live check through sd-server pending |
-| 25 | Verify end to end; procedural comparison | **in progress** — comparison and re-run done (`measurements-phase-25.md`), docs rewritten; the full chain run, failure paths, macOS/Windows remain |
+| 24 | Bundled engine runs Ming | **done** — GGUF (`measurements-phase-24-gguf.md`); Ming and Qwen 2.1 smoke jobs passed through the app |
+| 25 | Verify end to end; procedural comparison | **Linux done** — comparison, re-run, full chain, failure paths (`measurements-phase-25.md`); macOS and Windows remain |
 | 26 | ComfyUI through Rust: no CORS flag | **done** |
 | 27 | Install a model's files into ComfyUI: direct, Manager, by hand | **done** — both routes live-tested: Manager 4.2.2 and direct, each installing Ming's VAE with its checksum |
 | 28 | Seamless textures on the bundled engine | **done** — roll, masked img2img at 0.75, tone-matched composite (`measurements-phase-28.md`); five textures tile |
@@ -66,7 +66,6 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 Critical path: 18 → 20 → 21 → 22. 19 and 23 can interleave once 18 is in.
 Then 26 → 19 → 27 → 25: a stock ComfyUI, set up from Settings, before the
 end-to-end check.
-24 waits on a newer sd.cpp or different hardware.
 
 Phase 17 settled (read `measurements-phase-17.md`): transparent start works
 on singles (48/48); nine per sheet at 1024 with positions spelled out (8/8
