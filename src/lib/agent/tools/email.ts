@@ -58,7 +58,7 @@ interface EmailSummarizerInput {
  * naturally identifies an account by). Empty/undefined returns all
  * enabled accounts (multi-account fan-out).
  */
-function resolveEmailAccounts(selector?: string): EmailAccount[] {
+export function resolveEmailAccounts(selector?: string): EmailAccount[] {
 	const all = getSettings().integrations.email.accounts.filter((a) => a.enabled);
 	if (!selector) return all;
 	const byId = all.filter((a) => a.id === selector);
@@ -74,7 +74,7 @@ function resolveEmailAccounts(selector?: string): EmailAccount[] {
  * side when the turn is aborted: a stalled server otherwise holds the call
  * (and the IMAP session) until its own time limit.
  */
-async function emailCall<T>(
+export async function emailCall<T>(
 	command: string,
 	args: Record<string, unknown>,
 	signal?: AbortSignal

@@ -62,18 +62,18 @@ describe('settings navigation', () => {
 
 		rail('Integrations').click();
 		await settle();
-		expect(document.body.textContent).toContain('Email (read-only)');
+		expect(document.body.textContent).toContain('with Allow sending drafts messages');
 
 		screen.getByText('Add email account').click();
 		await settle();
 
 		rail('General').click();
 		await settle();
-		expect(document.body.textContent).not.toContain('Email (read-only)');
+		expect(document.body.textContent).not.toContain('with Allow sending drafts messages');
 
 		rail('Integrations').click();
 		await settle();
-		expect(document.body.textContent).toContain('Email (read-only)');
+		expect(document.body.textContent).toContain('with Allow sending drafts messages');
 	});
 
 	it('returns to Integrations after a calendar account was added', async () => {
@@ -103,7 +103,7 @@ describe('settings navigation', () => {
 			['Memory', 'Memory'],
 			['Network', 'Network'],
 			['Screen', 'Screen capture'],
-			['Integrations', 'Email (read-only)'],
+			['Integrations', 'with Allow sending drafts messages'],
 			['General', 'General']
 		] as const) {
 			rail(label).click();

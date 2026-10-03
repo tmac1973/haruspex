@@ -3,6 +3,7 @@ import './web';
 import './fs-read';
 import './fs-write';
 import './email';
+import './email-compose';
 import './sandbox';
 import './code';
 import './shell-interactive';

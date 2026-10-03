@@ -4,6 +4,7 @@ import { toolResult, toolError } from './types';
 import { coerceArgsToSchema } from './coerce';
 import {
 	hasEnabledEmailAccount,
+	hasSendableEmailAccount,
 	hasEnabledCalendarAccount,
 	hasEnabledContactsAccount,
 	getSettings
@@ -61,6 +62,11 @@ interface ToolFilterOpts {
 	 * this filter too, and must not spend GPU minutes drawing for nobody.
 	 */
 	imageGeneration: boolean;
+	/**
+	 * An account has Allow sending on AND someone is there to review the
+	 * draft. A job never gets `email_compose`, allowlist or not.
+	 */
+	sendableEmail: boolean;
 }
 
 // Tools exposed to the Shell-tab assistant (non-Code mode). Reads only —
@@ -166,6 +172,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'memory-write' && !opts.memoryWritable) return false;
 	if (reg.category === 'fs' && !opts.hasWorkingDir) return false;
 	if (reg.category === 'email' && !opts.hasEmail) return false;
+	if (name === 'email_compose' && !opts.sendableEmail) return false;
 	if (reg.category === 'calendar' && !opts.hasCalendar) return false;
 	if (reg.category === 'contacts' && !opts.hasContacts) return false;
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
@@ -210,7 +217,10 @@ export function getToolSchemas(opts: {
 		const allow = new Set(opts.toolAllowlist);
 		const schemas: ToolDefinition[] = [];
 		for (const reg of tools.values()) {
-			if (allow.has(reg.schema.function.name)) schemas.push(reg.schema);
+			const name = reg.schema.function.name;
+			// Sending is reviewed by a person at the keyboard, and an allowlisted
+			// turn is a job's: no allowlist can grant it.
+			if (allow.has(name) && name !== 'email_compose') schemas.push(reg.schema);
 		}
 		return schemas;
 	}
@@ -225,6 +235,7 @@ export function getToolSchemas(opts: {
 		hasContacts: hasEnabledContactsAccount(),
 		screenCapture: getSettings().screenCaptureEnabled,
 		imageGeneration: (opts.interactive ?? false) && getSettings().imageBackendKind !== 'none',
+		sendableEmail: (opts.interactive ?? false) && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
 	};

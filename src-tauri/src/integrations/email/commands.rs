@@ -15,7 +15,8 @@
 use super::auth::EmailAccount;
 use super::imap_client::{self, ListFilters};
 use super::parser::{EmailListing, NormalizedMessage};
-use super::provider::{EmailProviderPreset, PRESETS};
+use super::provider::{saves_sent_copy, EmailProviderPreset, PRESETS};
+use super::smtp_client::{self, OutgoingMessage, ReplyContext};
 use super::sub_agent::{self, SummarizerInput};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -167,4 +168,63 @@ pub async fn email_prepare_summary(
     })
     .await?;
     Ok(sub_agent::prepare(&msg).into())
+}
+
+/// Log in to the account's SMTP server without sending: Settings' check
+/// when Allow sending is on.
+#[tauri::command]
+pub async fn email_test_smtp(account: EmailAccount) -> Result<(), String> {
+    smtp_client::test_smtp(&account).await
+}
+
+/// What a send did.
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct SendOutcome {
+    /// The new message's Message-ID, without angle brackets.
+    pub message_id: String,
+    /// Why no copy was saved to Sent, when one could not be. The message
+    /// itself was sent.
+    #[ts(optional)]
+    pub sent_copy_error: Option<String>,
+}
+
+/// Send a message the user approved in the review dialog, then file a copy
+/// in Sent unless the provider does that itself. Only the dialog's Send
+/// button invokes this.
+#[tauri::command]
+pub async fn email_send(
+    account: EmailAccount,
+    message: OutgoingMessage,
+) -> Result<SendOutcome, String> {
+    let sent = smtp_client::send_message(&account, &message).await?;
+    let sent_copy_error = if saves_sent_copy(account.provider) {
+        None
+    } else {
+        imap_client::append_sent(&account, &sent.raw)
+            .await
+            .err()
+            .map(|e| format!("Sent, but could not save a copy to Sent: {e}"))
+    };
+    Ok(SendOutcome {
+        message_id: sent.message_id,
+        sent_copy_error,
+    })
+}
+
+/// The reply to a listed message: recipients, subject, threading headers
+/// and the quoted original, read through the bounded full-read path.
+#[tauri::command]
+pub async fn email_reply_context(
+    account: EmailAccount,
+    message_id: String,
+    call_id: Option<String>,
+) -> Result<ReplyContext, String> {
+    let own = account.email_address.clone();
+    let msg = cancellable(call_id, async move {
+        imap_client::fetch_full(&account, &message_id).await
+    })
+    .await?;
+    Ok(smtp_client::reply_context(&msg, &own))
 }

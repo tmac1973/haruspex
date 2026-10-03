@@ -116,6 +116,12 @@ pub const PRESETS: &[EmailProviderPreset] = &[
     },
 ];
 
+/// Whether the provider's SMTP server files a copy of what it sends in Sent
+/// itself. Appending one too would leave every message there twice.
+pub fn saves_sent_copy(provider: EmailProvider) -> bool {
+    matches!(provider, EmailProvider::Gmail | EmailProvider::Fastmail)
+}
+
 /// Look up a preset by its id string. Returns `None` for `"custom"`
 /// (no preset) or any unknown value. Unused by the current command
 /// surface (the frontend looks presets up itself from the list

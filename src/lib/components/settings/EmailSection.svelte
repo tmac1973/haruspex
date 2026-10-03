@@ -89,12 +89,13 @@
 </script>
 
 <section class="settings-section">
-	<h2>Email (read-only)</h2>
-	<p class="section-help">
-		Multi-provider IMAP access for reading recent email and summarizing it. Supports Gmail,
-		Fastmail, iCloud, Yahoo, and any IMAP host you can reach. Every preset requires 2FA to be
-		enabled on the provider and an app password (not your login password). Sending email arrives in
-		a later phase.
+	<h2>Email</h2>
+	<p
+		class="section-help"
+		title="Gmail, Fastmail, iCloud, Yahoo or any IMAP host. Each needs an app password, which requires 2FA on the account."
+	>
+		The assistant reads and summarizes mail, and with Allow sending drafts messages you review
+		before they go.
 	</p>
 
 	{#if keychain === false}
