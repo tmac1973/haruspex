@@ -381,6 +381,8 @@ pub fn run() {
             integrations::email::commands::email_list_recent,
             integrations::email::commands::email_read_full,
             integrations::email::commands::email_prepare_summary,
+            integrations::email::commands::email_cancel,
+            integrations::email::commands::email_forget_session,
             app_log::get_app_logs,
             app_log::clear_app_logs,
             links::open_url,

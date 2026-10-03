@@ -63,9 +63,14 @@ mod tests {
             from_name: "F".into(),
             from_email: "f@x".into(),
             to: vec![],
+            cc: vec![],
+            reply_to: String::new(),
             date: "".into(),
             body: body.into(),
             has_attachments: false,
+            rfc_message_id: String::new(),
+            in_reply_to: String::new(),
+            references: vec![],
         }
     }
 

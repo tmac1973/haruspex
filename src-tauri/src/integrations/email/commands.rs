@@ -18,6 +18,56 @@ use super::parser::{EmailListing, NormalizedMessage};
 use super::provider::{EmailProviderPreset, PRESETS};
 use super::sub_agent::{self, SummarizerInput};
 use serde::Serialize;
+use std::collections::HashMap;
+use std::future::Future;
+use std::sync::{Mutex, OnceLock};
+use tokio::task::AbortHandle;
+
+fn running() -> &'static Mutex<HashMap<String, AbortHandle>> {
+    static RUNNING: OnceLock<Mutex<HashMap<String, AbortHandle>>> = OnceLock::new();
+    RUNNING.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Run a call as a task registered under `call_id`, so [`email_cancel`] can
+/// stop it. The IMAP session it holds is dropped with it, never kept: see
+/// `imap_client`'s checkout.
+async fn cancellable<T: Send + 'static>(
+    call_id: Option<String>,
+    work: impl Future<Output = Result<T, String>> + Send + 'static,
+) -> Result<T, String> {
+    let task = tokio::spawn(work);
+    let lock = || running().lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(id) = &call_id {
+        lock().insert(id.clone(), task.abort_handle());
+    }
+    let out = task.await;
+    if let Some(id) = &call_id {
+        lock().remove(id);
+    }
+    match out {
+        Ok(r) => r,
+        Err(e) if e.is_cancelled() => Err("Cancelled".to_string()),
+        Err(e) => Err(format!("The email call failed: {e}")),
+    }
+}
+
+/// Stop a call. An unknown id has already finished.
+#[tauri::command]
+pub fn email_cancel(call_id: String) {
+    if let Some(h) = running()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(&call_id)
+    {
+        h.abort();
+    }
+}
+
+/// Log the account in afresh next time: it was edited in Settings.
+#[tauri::command]
+pub fn email_forget_session(account_id: String) {
+    imap_client::forget(&account_id);
+}
 
 /// Serialized shape of `SummarizerInput` returned to the frontend.
 /// Using a distinct `#[derive(Serialize)]` struct (instead of
@@ -71,20 +121,21 @@ pub async fn email_list_recent(
     from: Option<String>,
     subject_contains: Option<String>,
     max_results: Option<u32>,
+    call_id: Option<String>,
 ) -> Result<Vec<EmailListing>, String> {
     let filters = ListFilters {
         hours,
         since_date,
         from,
         subject_contains,
-        // Default to 25 — enough headroom for the model to see a
-        // typical inbox-day's worth of messages (most of which are
-        // promotional noise it filters before summarizing). The
-        // schema description in tools.ts tells the model to only
-        // summarize 3-5 of these, so a larger listing is fine.
-        max_results: max_results.unwrap_or(25),
+        // Enough headroom for a typical inbox-day, most of it noise the
+        // model skips; it is told to summarise only 3–5.
+        max_results: max_results.unwrap_or(imap_client::DEFAULT_MAX_RESULTS),
     };
-    imap_client::list_recent(&account, &filters).await
+    cancellable(call_id, async move {
+        imap_client::list_recent(&account, &filters).await
+    })
+    .await
 }
 
 /// Return the full normalized message for one UID. Backs the
@@ -93,8 +144,12 @@ pub async fn email_list_recent(
 pub async fn email_read_full(
     account: EmailAccount,
     message_id: String,
+    call_id: Option<String>,
 ) -> Result<NormalizedMessage, String> {
-    imap_client::fetch_full(&account, &message_id).await
+    cancellable(call_id, async move {
+        imap_client::fetch_full(&account, &message_id).await
+    })
+    .await
 }
 
 /// Fetch a message and return the prepared `SummarizerInput` (body
@@ -105,7 +160,11 @@ pub async fn email_read_full(
 pub async fn email_prepare_summary(
     account: EmailAccount,
     message_id: String,
+    call_id: Option<String>,
 ) -> Result<SummarizerInputJson, String> {
-    let msg = imap_client::fetch_full(&account, &message_id).await?;
+    let msg = cancellable(call_id, async move {
+        imap_client::fetch_full(&account, &message_id).await
+    })
+    .await?;
     Ok(sub_agent::prepare(&msg).into())
 }

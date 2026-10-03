@@ -92,7 +92,8 @@ describe('email_list_recent', () => {
 			sinceDate: null,
 			from: null,
 			subjectContains: null,
-			maxResults: null
+			maxResults: null,
+			callId: expect.any(String)
 		});
 		expect(mocks.invoke).toHaveBeenNthCalledWith(2, 'email_list_recent', {
 			account: home,
@@ -100,7 +101,8 @@ describe('email_list_recent', () => {
 			sinceDate: null,
 			from: null,
 			subjectContains: null,
-			maxResults: null
+			maxResults: null,
+			callId: expect.any(String)
 		});
 	});
 
@@ -160,27 +162,29 @@ describe('email_list_recent', () => {
 			sinceDate: '10-Apr-2026',
 			from: 'alice',
 			subjectContains: 'invoice',
-			maxResults: 5
+			maxResults: 5,
+			callId: expect.any(String)
 		});
 	});
 
-	it('surfaces a per-account fetch failure as an error listing, not a throw', async () => {
+	it('reports a failing account apart from the messages, where trimming cannot drop it', async () => {
 		const work = account({ id: 'acct-1', label: 'Work' });
 		const home = account({ id: 'acct-2', label: 'Home' });
 		setEmailAccounts([work, home]);
 		mocks.invoke
-			.mockRejectedValueOnce('IMAP connect timed out')
-			.mockResolvedValueOnce([listing('m1', '2026-06-01', 'acct-2')]);
+			.mockRejectedValueOnce('imap.example.com did not answer LOGIN within 20 s')
+			.mockResolvedValueOnce([
+				listing('m1', '2026-06-01', 'acct-2'),
+				listing('m2', '2026-06-02', 'acct-2')
+			]);
 
-		const out = await executeTool('email_list_recent', {}, ctx);
-		const rows = JSON.parse(out.result);
+		const out = await executeTool('email_list_recent', { max_results: 1 }, ctx);
+		const result = JSON.parse(out.result);
 
-		expect(rows).toHaveLength(2);
-		const errorRow = rows.find((r: { messageId: string }) => r.messageId === 'error-acct-1');
-		expect(errorRow.subject).toBe('[error fetching Work]');
-		expect(errorRow.snippet).toContain('IMAP connect timed out');
-		// The good account's results still come through.
-		expect(rows.some((r: { messageId: string }) => r.messageId === 'm1')).toBe(true);
+		expect(result.messages.map((r: { messageId: string }) => r.messageId)).toEqual(['m2']);
+		expect(result.errors).toEqual([
+			{ account: 'Work', error: 'imap.example.com did not answer LOGIN within 20 s' }
+		]);
 	});
 
 	it('merges accounts sorted by date descending and trims to max_results', async () => {
@@ -192,9 +196,44 @@ describe('email_list_recent', () => {
 			.mockResolvedValueOnce([listing('middle', '2026-06-05', 'acct-2')]);
 
 		const out = await executeTool('email_list_recent', { max_results: 2 }, ctx);
-		const rows = JSON.parse(out.result);
+		const result = JSON.parse(out.result);
 
-		expect(rows.map((r: { messageId: string }) => r.messageId)).toEqual(['newest', 'middle']);
+		expect(result.messages.map((r: { messageId: string }) => r.messageId)).toEqual([
+			'newest',
+			'middle'
+		]);
+		expect(result.errors).toBeUndefined();
+	});
+
+	it('queries the accounts at once, not one after another', async () => {
+		setEmailAccounts([account({ id: 'acct-1' }), account({ id: 'acct-2', label: 'Home' })]);
+		const pending: ((v: unknown) => void)[] = [];
+		mocks.invoke.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));
+
+		const run = executeTool('email_list_recent', {}, ctx);
+		await vi.waitFor(() => expect(pending).toHaveLength(2));
+		pending.forEach((resolve) => resolve([]));
+		await run;
+	});
+
+	it('cancels the Rust call when the turn is aborted', async () => {
+		setEmailAccounts([account()]);
+		const ctrl = new AbortController();
+		let rejectList: (e: unknown) => void = () => {};
+		mocks.invoke.mockImplementation((cmd: string) =>
+			cmd === 'email_list_recent'
+				? new Promise((_, reject) => (rejectList = reject))
+				: Promise.resolve()
+		);
+
+		const run = executeTool('email_list_recent', {}, { ...ctx, signal: ctrl.signal });
+		await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
+		const callId = mocks.invoke.mock.calls[0][1].callId;
+		ctrl.abort();
+		rejectList('Cancelled');
+
+		await expect(run).rejects.toThrow(/Abort/);
+		expect(mocks.invoke).toHaveBeenCalledWith('email_cancel', { callId });
 	});
 });
 
@@ -224,7 +263,8 @@ describe('email_read_full', () => {
 
 		expect(mocks.invoke).toHaveBeenCalledWith('email_read_full', {
 			account: acct,
-			messageId: 'm1'
+			messageId: 'm1',
+			callId: expect.any(String)
 		});
 		expect(JSON.parse(out.result)).toEqual(msg);
 	});
@@ -281,7 +321,8 @@ describe('email_summarize_message', () => {
 
 		expect(mocks.invoke).toHaveBeenCalledWith('email_prepare_summary', {
 			account: account(),
-			messageId: 'm1'
+			messageId: 'm1',
+			callId: expect.any(String)
 		});
 
 		// Sub-agent gets a system + user message pair and the summary cap.

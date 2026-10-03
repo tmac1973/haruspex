@@ -76,6 +76,8 @@ export const IPC = {
 	download_model: 'download_model',
 	download_status: 'download_status',
 	download_whisper_model: 'download_whisper_model',
+	email_cancel: 'email_cancel',
+	email_forget_session: 'email_forget_session',
 	email_list_providers: 'email_list_providers',
 	email_list_recent: 'email_list_recent',
 	email_prepare_summary: 'email_prepare_summary',

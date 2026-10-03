@@ -20,4 +20,6 @@ pub mod imap_client;
 pub mod parser;
 pub mod provider;
 pub mod smtp_client;
+pub mod structure;
 pub mod sub_agent;
+pub mod text;

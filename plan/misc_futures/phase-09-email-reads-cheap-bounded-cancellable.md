@@ -165,3 +165,31 @@ The overview's gate. `check-ipc` must pass.
 Revert the commit and re-export the IPC types. Handles in the new form become
 unreadable to the old code, so the model has to list mail again. Nothing is
 stored.
+
+## As built — notes
+
+- **Headers, not ENVELOPE.** The list's first fetch asks for
+  `BODY.PEEK[HEADER.FIELDS (DATE FROM SUBJECT MESSAGE-ID)]` instead of
+  ENVELOPE, so mail-parser decodes encoded words and dates as it does for a
+  full read. FLAGS is not fetched; nothing used it.
+- **Dates are UTC** (`2026-04-07T10:14:00Z`), so listings from several
+  accounts sort correctly as strings. Each listing carries a non-serialised
+  timestamp for the Rust-side sort and the `hours` cut.
+- **SINCE goes a day further back than `hours`.** The server compares dates
+  in its own time zone, so the UTC date could skip a message near midnight;
+  the exact cut is made afterwards.
+- **New modules:** `structure.rs` (BODYSTRUCTURE → flat parts, text-part
+  choice, decoding a partial part through mail-parser) and `text.rs`
+  (HTML-to-text, quote stripping). A cut part drops its last line before
+  decoding, so a broken base64 quad or `=XX` escape is never decoded.
+- **The session cache is also keyed by the login** (a hash of host, port,
+  TLS mode, address and password), so a changed password never reuses a
+  session even without `email_forget_session`. The forget is called from
+  `settings/EmailSection.svelte`, where accounts are saved (edit and delete),
+  not from `EmailAccountForm.svelte`.
+- **Quotes:** a "Forwarded message" divider is no longer cut — a forward's
+  content is the message. An Outlook "-----Original Message-----" still
+  cuts to the end.
+- **Not done:** an attachment count in the listing (only `hasAttachments`,
+  to keep listings small), and the manual measurements, which need a real
+  account.

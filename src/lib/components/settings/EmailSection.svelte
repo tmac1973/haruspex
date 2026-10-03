@@ -60,14 +60,21 @@
 		setEmailAccounts(emailAccounts);
 	}
 
+	/** The backend keeps a logged-in session per account; an edit must not reuse it. */
+	function forgetSession(id: string) {
+		invoke('email_forget_session', { accountId: id }).catch(() => {});
+	}
+
 	function updateEmailAccount(id: string, next: EmailAccount) {
 		emailAccounts = emailAccounts.map((a) => (a.id === id ? next : a));
 		setEmailAccounts(emailAccounts);
+		forgetSession(id);
 	}
 
 	function deleteEmailAccount(id: string) {
 		emailAccounts = emailAccounts.filter((a) => a.id !== id);
 		setEmailAccounts(emailAccounts);
+		forgetSession(id);
 	}
 
 	onMount(loadEmailPresets);
