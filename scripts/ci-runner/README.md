@@ -11,6 +11,11 @@ never collide:
   nightly live suite and `gh workflow run` on pushed code
   (`plan/misc_futures/` phase 14).
 
+These are separate from CI's hosted `windows` and `macos` jobs, which compile
+and unit-test on GitHub's machines. Those run only on a PR labelled
+`windows-ci` / `macos-ci`, on a manual dispatch, and after a merge to main,
+because they take ~15 minutes each.
+
 Suites: `unit` (what CI runs) works now. `e2e-app`, `e2e-mac` and `live` arrive
 with phase 14; until then they say so.
 

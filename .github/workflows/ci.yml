@@ -121,11 +121,17 @@ jobs:
   # behavior. Single combined job — Windows runner minutes bill at a higher rate
   # than the Linux frontend/backend split.
   #
-  # It's slow (~15 min) but runs on every PR and every push to main: the repo is
-  # public, so its minutes are free, and the macOS job below runs alongside it.
-  # A platform bug caught here is a manual test pass nobody has to do.
+  # It's slow (~15 min), so it does NOT run on every PR push. It runs on a PR
+  # that carries the `windows-ci` label (Shell-tab, fs_tools, sidecar and other
+  # platform-specific work), on a manual dispatch (Actions tab → CI → Run
+  # workflow), and after every merge to main, which catches anything nobody
+  # labelled.
   windows:
     runs-on: windows-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      contains(github.event.pull_request.labels.*.name, 'windows-ci')
     steps:
       # Check out with LF intact so rustfmt/prettier and `git diff` aren't fooled
       # by CRLF churn on the Windows runner (autocrlf defaults to true there).
@@ -183,8 +189,13 @@ jobs:
   # `#[cfg(target_os = "macos")]` branches (screen capture, the orphan sweep's
   # `ps` probe, Metal paths) that neither the Linux nor the Windows job builds.
   # macos-latest is Apple Silicon, the platform the bundled engines target.
+  # Slow too, so the same triggers as Windows, with the `macos-ci` label.
   macos:
     runs-on: macos-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      contains(github.event.pull_request.labels.*.name, 'macos-ci')
     steps:
       - uses: actions/checkout@v4
 
