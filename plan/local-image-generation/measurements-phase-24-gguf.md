@@ -38,3 +38,23 @@ on its own and succeeded.
   so sd.cpp's auto-fit splits it. Smaller cards need the encoder on the CPU
   (not yet timed) or a smaller quant.
 - **Pin.** `fetch-sdcpp.sh` pins `master-890`; Ming needs ≥ `master-929`.
+
+## VRAM, and the server route — measured 2026-10-02
+
+One transparent 1024 Ming sheet, `sd-cli`, peak VRAM above a 2.0 GB desktop
+baseline:
+
+| | all on GPU | text encoder on CPU |
+|---|---|---|
+| wall time | 39 s | **27 s** |
+| peak VRAM | 9.4 GB | **7.2 GB** |
+| prompt encoding | 10.5 s | 4.1 s |
+
+With the encoder "on the GPU", sd.cpp's auto-fit kept its 9.3 GB of weights in
+RAM and streamed them over, so the CPU is both cheaper and faster; the engine
+now passes `--backend te=cpu` for Ming. Both runs' first full-size VAE decode
+wanted ~11 GB and retried in 256 px tiles on its own.
+
+Through `sd-server` with the app's exact arguments and its `/sdapi/v1/img2img`
+body (clear canvas, strength 0.9, RGBA phrase): RGBA, 0.846 transparent, the
+seed reported in `info`, 26 s, sheet exact.

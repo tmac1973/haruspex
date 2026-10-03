@@ -339,10 +339,15 @@ the doubt.
 
 ### What is verified, and what is not
 
-Verified with `sd-cli` from `master-929` and the GGUF weights: Ming and Qwen
-each draw a transparent 1024 sheet, laid out exactly, in 35–50 s on an RX 9070
-XT (Vulkan); Ming's alpha needs the clear start, Qwen's only its phrase.
+Verified on an RX 9070 XT (Vulkan) with `master-929` and the GGUF weights:
+Ming and Qwen each draw a transparent 1024 sheet, laid out exactly; Ming's
+alpha needs the clear start, Qwen's only its phrase. Through `sd-server`'s
+`/sdapi/v1/img2img`, as the app calls it, Ming's sheet came back RGBA, 85%
+transparent, with the seed reported, in 26 s.
 
-NOT yet verified: the same through `sd-server`'s `/sdapi/v1/img2img` route as
-the app calls it (in particular that alpha survives it), a full asset job
-against the bundled engine, and anything at all on macOS or Windows.
+Ming needs about **8 GB of VRAM and 10 GB of free RAM**: its text encoder runs
+on the CPU, which is also faster (27 s a sheet and 7.2 GB peak, against 39 s
+and 9.4 GB with it on the GPU, where sd.cpp copies its weights over each time).
+
+NOT yet verified: a full asset job against the bundled engine, and anything
+at all on macOS or Windows.

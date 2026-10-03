@@ -149,7 +149,9 @@ pub fn image_registry() -> Vec<ImageModelInfo> {
                 "https://huggingface.co/inclusionAI/Ming-Image-0.1-Design",
             ),
             true,
-            12_288,
+            // Measured: 7.2 GB peak with the text encoder on the CPU, which
+            // then needs ~10 GB of RAM.
+            8_192,
             vec![
                 file(
                     Diffusion,
@@ -250,6 +252,13 @@ pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
     }
     // Flash attention in the diffusion model: measured with it for both.
     args.push("--diffusion-fa".to_string());
+    // Ming's text encoder on the CPU. Faster, not slower: with it on the GPU
+    // sd.cpp keeps its 9.3 GB of weights in RAM and copies them over each
+    // time — 39 s a sheet and 9.4 GB of VRAM, against 27 s and 7.2 GB.
+    if entry.family == "ming" {
+        args.push("--backend".to_string());
+        args.push("te=cpu".to_string());
+    }
     Some(args)
 }
 
@@ -436,6 +445,11 @@ mod tests {
         assert!(after("--vae").ends_with("ming_image_vae_bf16.safetensors"));
         assert!(after("--tokenizer").ends_with("tokenizer.json"));
         assert!(args.contains(&"--diffusion-fa".to_string()));
+        assert_eq!(
+            after("--backend"),
+            "te=cpu",
+            "Ming's text encoder runs on the CPU"
+        );
         assert!(engine_args(&dir, "not-a-model").is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
