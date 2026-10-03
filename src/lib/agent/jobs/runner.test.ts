@@ -990,6 +990,20 @@ describe('jobs runner — multi-step pipelines', () => {
 });
 
 describe('jobs runner — FIFO queue', () => {
+	it('puts a chained stage ahead of runs queued by hand, keeping chained stages in order', async () => {
+		// The active run never finishes, so everything else queues behind it.
+		mocks.runEphemeralTurn.mockReturnValue(new Promise(() => {}));
+		mocks.getJob.mockImplementation(async (id: number) => makeJob({ id, name: `job ${id}` }));
+		const { enqueue, getPendingQueue } = await freshRunner();
+		await enqueue(1);
+		await enqueue(2, 'manual');
+		await enqueue(3, 'manual');
+		await enqueue(4, 'chained');
+		await enqueue(5, 'chained');
+		await enqueue(6, 'scheduled');
+		expect(getPendingQueue().map((q) => q.jobId)).toEqual([4, 5, 2, 3, 6]);
+	});
+
 	it('drains the next queued run when the current one succeeds', async () => {
 		mocks.getJob.mockResolvedValueOnce(makeJob()).mockResolvedValueOnce(makeJob());
 

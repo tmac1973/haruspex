@@ -26,6 +26,7 @@
 		type JobStepInput,
 		type JobType
 	} from '$lib/stores/jobs.svelte';
+	import { getCurrentRun } from '$lib/agent/jobs/runner.svelte';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
@@ -360,6 +361,11 @@
 		jobType === 'research' ? `${steps.length} step${steps.length === 1 ? '' : 's'}` : ''
 	);
 
+	/** This job has a run going. It already ran from a snapshot taken at enqueue. */
+	const isRunning = $derived(
+		jobId !== 'new' && getCurrentRun()?.status === 'running' && getCurrentRun()?.jobId === jobId
+	);
+
 	// Job delete awaits ConfirmDialog approval.
 	let confirmingDelete = $state(false);
 
@@ -545,6 +551,9 @@
 			</section>
 		</div>
 
+		{#if isRunning}
+			<p class="running-note">This job is running. Changes apply to its next run.</p>
+		{/if}
 		{#if error}
 			<div class="error-box editor-error">{error}</div>
 		{/if}
@@ -556,8 +565,10 @@
 						type="button"
 						class="btn btn-danger"
 						onclick={() => (confirmingDelete = true)}
-						disabled={saving}
-						title="Delete this job and its entire run history. Cannot be undone."
+						disabled={saving || isRunning}
+						title={isRunning
+							? 'Cancel or finish its run first'
+							: 'Delete this job and its entire run history. Cannot be undone.'}
 					>
 						Delete
 					</button>
@@ -722,6 +733,12 @@
 
 	.hint {
 		font-style: italic;
+	}
+
+	.running-note {
+		margin: 0 0 8px;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
 	}
 
 	.editor-error {
