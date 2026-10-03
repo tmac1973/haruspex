@@ -186,3 +186,15 @@ case needed them), except where noted.
 | Engine binary missing | Rust names it `SidecarMissing`, but the UI showed only the detail: "sd-server" | a sentence and the fix: reinstall, or `./scripts/fetch-sdcpp.sh` in a dev checkout (start path read, message tested; a live check needs the app on the bundled engine) |
 
 Also fixed: a reason ending in "?" was printed "there?." in the report.
+
+## Asset review, first real use — 2026-10-02
+
+On the p25 chain: the player sprite with a coin stuck to it was marked in
+Review assets with a note ("should not have a coin, character should face
+forward"). The file moved to `assets/generated/sprite/.history/`, the note
+landed in the player's prompt, and the job re-ran on just that sprite — once
+the backend was set back to ComfyUI; the first re-run failed at once with "No
+image model is configured" because Settings pointed at the bundled engine with
+nothing downloaded. The dialog now probes the backend when it opens and will
+not move anything while it is not ready. The regenerated player was accepted,
+and the game (`python3 game.py`) runs with the art.

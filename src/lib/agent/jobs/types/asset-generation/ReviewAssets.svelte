@@ -7,6 +7,7 @@
 	import { renderAssetSpec } from '$lib/assets/spec/write';
 	import type { AssetEntry, AssetSpec } from '$lib/assets/spec/types';
 	import { enqueue } from '$lib/agent/jobs/runner.svelte';
+	import { resolveImageBackend } from '$lib/image';
 	import { regenerateMarked, type ReviewMark } from './review';
 
 	// Look through a finished set and send the ones you do not like back.
@@ -33,12 +34,28 @@
 	let tiles = $state<Tile[]>([]);
 	let error = $state('');
 	let busy = $state(false);
+	/**
+	 * Why nothing could be made right now, from the backend's own probe. Checked
+	 * before anything is moved: a review whose run then fails on "no model is
+	 * configured" has set an asset aside for nothing.
+	 */
+	let notReady = $state('');
 	/** Marked ids, with the note for each. */
 	let marks = $state<Record<string, string>>({});
 	const markedCount = $derived(Object.keys(marks).length);
 
+	async function checkBackend() {
+		try {
+			const probe = await resolveImageBackend().probe();
+			notReady = probe.ok ? '' : probe.detail;
+		} catch (e) {
+			notReady = e instanceof Error ? e.message : String(e);
+		}
+	}
+
 	async function load() {
 		error = '';
+		void checkBackend();
 		marks = {};
 		for (const t of tiles) if (t.url) URL.revokeObjectURL(t.url);
 		tiles = [];
@@ -90,7 +107,7 @@
 	}
 
 	async function regenerate() {
-		if (!spec || markedCount === 0) return;
+		if (!spec || markedCount === 0 || notReady) return;
 		busy = true;
 		error = '';
 		const chosen: ReviewMark[] = Object.entries(marks).map(([id, note]) => ({ id, note }));
@@ -125,6 +142,7 @@
 			text="Each one you mark is moved to a .history folder beside it, so nothing is lost, and the job is run again: it makes only what is missing, drawn beside finished assets of the same group so they match. A note is added to that asset's prompt in the spec, and stays there."
 		/>
 	</p>
+	{#if notReady}<p class="warn">Nothing can be made right now: {notReady}</p>{/if}
 	{#if error}<p class="warn">{error}</p>{/if}
 	<div class="grid">
 		{#each tiles as t (t.entry.id)}
@@ -157,7 +175,7 @@
 	</div>
 	<div class="actions">
 		<button onclick={onclose} disabled={busy}>Cancel</button>
-		<button class="primary" onclick={regenerate} disabled={busy || markedCount === 0}>
+		<button class="primary" onclick={regenerate} disabled={busy || markedCount === 0 || !!notReady}>
 			{busy ? 'Starting…' : `Make ${markedCount || ''} again`}
 		</button>
 	</div>

@@ -20,8 +20,10 @@ const spec = {
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
-	enqueue: vi.fn(async () => 7)
+	enqueue: vi.fn(async () => 7),
+	probe: vi.fn(async () => ({ ok: true, detail: 'Connected.' }))
 }));
+vi.mock('$lib/image', () => ({ resolveImageBackend: () => ({ probe: mocks.probe }) }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/agent/jobs/runner.svelte', () => ({ enqueue: mocks.enqueue }));
 
@@ -29,6 +31,7 @@ import ReviewAssets from './ReviewAssets.svelte';
 
 beforeEach(() => {
 	mocks.enqueue.mockClear();
+	mocks.probe.mockReset().mockResolvedValue({ ok: true, detail: 'Connected.' });
 	mocks.invoke
 		.mockReset()
 		.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
@@ -88,5 +91,23 @@ describe('ReviewAssets', () => {
 				/^assets\/generated\/sprite\/\.history\/player-\d{8}-\d{6}\.png$/
 			)
 		});
+	});
+
+	it('says why nothing can be made, and moves nothing, when the backend is not ready', async () => {
+		// The first real review ran with no bundled model configured: the run
+		// failed at once, after the sprite had already been set aside.
+		mocks.probe.mockResolvedValue({
+			ok: false,
+			detail: 'No model is selected — Settings → Image.'
+		});
+		open();
+		await waitFor(() => screen.getByAltText('player'));
+		await waitFor(() => screen.getByText(/Nothing can be made right now: No model is selected/));
+		await fireEvent.click(screen.getByAltText('player'));
+		const make = screen.getByRole('button', { name: /Make 1 again/ }) as HTMLButtonElement;
+		expect(make.disabled).toBe(true);
+		await fireEvent.click(make);
+		expect(mocks.invoke.mock.calls.some(([c]) => c === 'fs_move_in_workdir')).toBe(false);
+		expect(mocks.enqueue).not.toHaveBeenCalled();
 	});
 });
