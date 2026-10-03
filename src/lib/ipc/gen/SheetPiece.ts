@@ -16,4 +16,9 @@ cx: number, cy: number,
 /**
  * Opaque pixels; a merge of two sprites shows up as an outlier here.
  */
-area: number, };
+area: number, 
+/**
+ * Substantial parts once thin joins are opened: 2+ when a neighbour was
+ * drawn touching this sprite (`split::lobes`).
+ */
+lobes: number, };

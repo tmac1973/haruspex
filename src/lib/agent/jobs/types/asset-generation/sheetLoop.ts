@@ -77,6 +77,17 @@ type CellVerdict =
 	| { done: true; report: CheckReport; degraded: string[] }
 	| { done: false; reason: string; report: CheckReport | null; rejected: boolean };
 
+/** The degradation for a piece that looks joined to a neighbour nobody judged. */
+export const MAY_BE_JOINED = 'may be joined to a neighbour';
+
+/** The judge's extra sentence for a piece that looks joined to a neighbour. */
+export function joinedHint(subject: string): string {
+	return (
+		`This cut may include a second object drawn touching the subject — fail it if ` +
+		`anything besides ${subject} is attached.`
+	);
+}
+
 /**
  * Normalize, check and (maybe) judge one cut piece, and write it if it passes.
  *
@@ -114,14 +125,18 @@ async function processCell(
 	// A suspect piece — found by position alone because the layout did not
 	// come out as asked, or sharing its cell — is shown to the judge whenever
 	// the model can see, whatever the judge setting.
+	const hint = cell.why ? joinedHint(entry.id) : undefined;
 	const judged = report.passed
-		? await maybeJudge(entry, bytes, ctx.deps.judge, cell.suspect)
+		? await maybeJudge(entry, bytes, ctx.deps.judge, cell.suspect, hint)
 		: { verdict: null };
 	const verdict = judged.verdict;
 	if (!report.passed || (verdict && !verdict.ok)) {
 		return { done: false, reason: rejectionReason(report, verdict), report, rejected: true };
 	}
 	const degraded = judged.unavailable ? [judgeUnavailable(judged.unavailable)] : [];
+	// Nobody looked, and it looks joined: written, but the report says so and
+	// the review dialog has it to hand.
+	if (cell.why && !judged.verdict) degraded.push(MAY_BE_JOINED);
 	await ctx.deps.writeBytes(entry.out, bytes);
 	return { done: true, report, degraded };
 }
@@ -257,7 +272,9 @@ export async function runSheet(plan: SheetPlan, ctx: SheetLoopContext): Promise<
 			id: plan.id,
 			round,
 			subjects: pending.map((i) => ctx.spec.entries[i].id),
-			exact: cells.every((c) => c.status === 'ok' && !c.suspect),
+			// The layout came out as asked. A neighbour stuck to a sprite is
+			// flagged per cell (`why`), not by calling the sheet inexact.
+			exact: cells.every((c) => c.status === 'ok' && !(c.suspect && !c.why)),
 			keyed: split.keyed,
 			missing: cells.filter((c) => c.status === 'missing').length,
 			merged: cells.filter((c) => c.status === 'merge').length,

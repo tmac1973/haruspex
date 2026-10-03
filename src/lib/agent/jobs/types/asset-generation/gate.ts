@@ -139,7 +139,8 @@ export interface JudgeDeps {
 	/** False when the job's model cannot see. The judge is then skipped. */
 	visionSupported: boolean;
 	enabled: boolean;
-	judge: (entry: AssetEntry, image: Uint8Array) => Promise<AssetJudgement | null>;
+	/** `hint` is one more sentence for the judge, about what to look for. */
+	judge: (entry: AssetEntry, image: Uint8Array, hint?: string) => Promise<AssetJudgement | null>;
 }
 
 /** What came of asking the judge. */
@@ -163,11 +164,12 @@ export async function maybeJudge(
 	entry: AssetEntry,
 	image: Uint8Array,
 	deps: JudgeDeps,
-	force = false
+	force = false,
+	hint?: string
 ): Promise<JudgeOutcome> {
 	if (!deps.visionSupported || (!deps.enabled && !force)) return { verdict: null };
 	try {
-		return { verdict: await deps.judge(entry, image) };
+		return { verdict: await deps.judge(entry, image, hint) };
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'AbortError') throw e;
 		return { verdict: null, unavailable: e instanceof Error ? e.message : String(e) };

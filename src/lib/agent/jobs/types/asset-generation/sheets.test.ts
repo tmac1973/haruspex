@@ -28,7 +28,7 @@ function spec(over: Partial<AssetSpec> = {}): AssetSpec {
 }
 
 /** A piece centred at (cx, cy), `side` px square. */
-function piece(cx: number, cy: number, side = 200): SheetPiece {
+function piece(cx: number, cy: number, side = 200, lobes = 1): SheetPiece {
 	return {
 		bytes: [1],
 		x: Math.round(cx - side / 2),
@@ -37,7 +37,8 @@ function piece(cx: number, cy: number, side = 200): SheetPiece {
 		height: side,
 		cx,
 		cy,
-		area: side * side
+		area: side * side,
+		lobes
 	};
 }
 
@@ -236,5 +237,30 @@ describe('padding', () => {
 
 	it('never borrows from another group, and is empty when the group has no one else', () => {
 		expect(padding([all[5]], all)).toEqual([]);
+	});
+});
+
+/**
+ * A small object drawn touching a sprite is cut out as part of it, and the
+ * layout can still be exact: the p25 chain's player came out with a coin
+ * stuck to its side and nothing looked at it.
+ */
+describe('a neighbour stuck to a sprite', () => {
+	it('flags a piece that opens into two lobes, even on an exact layout', () => {
+		const pieces = grid9();
+		pieces[4] = { ...pieces[4], lobes: 2 };
+		const cells = assignCells(pieces, 9);
+		expect(cells[4]).toMatchObject({ status: 'ok', suspect: true, why: 'lobes' });
+		expect(cells.filter((c) => c.why)).toHaveLength(1);
+	});
+
+	it('flags a piece much wider than the rest of its row', () => {
+		const pieces = grid9();
+		pieces[1] = { ...pieces[1], width: 400 };
+		expect(assignCells(pieces, 9)[1]).toMatchObject({ suspect: true, why: 'size' });
+	});
+
+	it('flags nothing on a uniform sheet', () => {
+		expect(assignCells(grid9(), 9).some((c) => c.why || c.suspect)).toBe(false);
 	});
 });
