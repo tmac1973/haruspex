@@ -28,10 +28,22 @@ let awaited = false;
 let listening: Promise<void> | null = null;
 let poll: ReturnType<typeof setInterval> | null = null;
 
+/** What `download_status` says is downloading: a key, or nothing. */
+async function runningKey(): Promise<string | null> {
+	const key = await invoke<unknown>('download_status').catch(() => null);
+	return typeof key === 'string' && key ? key : null;
+}
+
 function ensureListening(): Promise<void> {
 	listening ??= listen<DownloadProgress>('download-progress', (e) => {
 		if (active) active.progress = e.payload;
-	}).then(() => undefined);
+	}).then(
+		() => undefined,
+		(e) => {
+			listening = null; // try again next time
+			throw e;
+		}
+	);
 	return listening;
 }
 
@@ -50,16 +62,18 @@ export function isDownloading(key: string): boolean {
  * reload. Polls Rust until it ends, since nothing here awaits it.
  */
 export async function syncDownloads(): Promise<void> {
-	await ensureListening();
+	// Progress events are a nicety; a webview that cannot listen still shows
+	// which download is running.
+	await ensureListening().catch(() => {});
 	if (awaited) return;
-	const key = await invoke<string | null>('download_status').catch(() => null);
+	const key = await runningKey();
 	if (!key) {
 		active = null;
 		return;
 	}
 	if (active?.key !== key) active = { key, progress: null };
 	poll ??= setInterval(async () => {
-		const still = await invoke<string | null>('download_status').catch(() => null);
+		const still = await runningKey();
 		if (!still && !awaited) {
 			active = null;
 			if (poll) clearInterval(poll);

@@ -76,6 +76,22 @@ describe('syncDownloads', () => {
 		expect(getActiveDownload()).toBeNull();
 	});
 
+	it('ignores an answer that is not a key', async () => {
+		// A catch-all test mock answered [] — and the settings screens threw
+		// on `key.startsWith`.
+		tauri.invoke.mockResolvedValue([]);
+		await syncDownloads();
+		expect(getActiveDownload()).toBeNull();
+	});
+
+	it('still syncs when progress events cannot be listened for', async () => {
+		const { listen } = await import('@tauri-apps/api/event');
+		vi.mocked(listen).mockRejectedValueOnce(new Error('no event bridge'));
+		tauri.invoke.mockResolvedValue('llm:qwen');
+		await syncDownloads();
+		expect(getActiveDownload()?.key).toBe('llm:qwen');
+	});
+
 	it('shows nothing when nothing is downloading', async () => {
 		tauri.invoke.mockResolvedValue(null);
 		await syncDownloads();
