@@ -5,6 +5,7 @@
 	import JobRunView from '$lib/components/jobs/JobRunView.svelte';
 	import JobRunHistory from '$lib/components/jobs/JobRunHistory.svelte';
 	import JobRunDetail from '$lib/components/jobs/JobRunDetail.svelte';
+	import LiveRunBar from '$lib/components/jobs/LiveRunBar.svelte';
 	import UnsavedChangesDialog from '$lib/components/jobs/UnsavedChangesDialog.svelte';
 	import { isJobsLoaded, loadJobs } from '$lib/stores/jobs.svelte';
 	import { enqueue, getCurrentRun } from '$lib/agent/jobs/runner.svelte';
@@ -12,18 +13,18 @@
 	let selectedId = $state<number | 'new' | null>(null);
 	let selectedRunId = $state<number | null>(null);
 	const currentRun = $derived(getCurrentRun());
-	const showRunView = $derived(currentRun !== null);
-	const numericSelectedId = $derived(typeof selectedId === 'number' ? selectedId : null);
-
 	/**
-	 * The run view owns the centre pane for as long as a run is live, so
-	 * picking another job in the sidebar highlighted a row and changed
-	 * nothing visible. Rather than let the selection drift out of sight, the
-	 * list is locked while a run is active — the ▶ buttons stay live, since
-	 * queueing a run behind the active one is a real action with visible
-	 * feedback in the queue badge.
+	 * Whether the run view is showing. A live run no longer takes the pane:
+	 * the view opens for a run started here, and when the bar is clicked;
+	 * Hide and Close shut it. A run started elsewhere (chained, scheduled,
+	 * drained from the queue) leaves it as it was, so a user watching one
+	 * chain stage keeps watching the next and a user browsing keeps
+	 * browsing. Arriving at the tab with a run going shows it, as before.
 	 */
-	const listLocked = $derived(showRunView);
+	let runViewOpen = $state(getCurrentRun() !== null);
+	const showRunView = $derived(runViewOpen && currentRun !== null);
+	const runLive = $derived(currentRun?.status === 'running');
+	const numericSelectedId = $derived(typeof selectedId === 'number' ? selectedId : null);
 
 	/** What the editor exposes to this tab. See JobEditor's exported functions. */
 	interface EditorApi {
@@ -55,7 +56,12 @@
 	}
 
 	function selectJob(id: number | 'new') {
-		if (listLocked || id === selectedId) return;
+		if (id === selectedId) {
+			// Re-selecting the job you are on is how you get back to it from
+			// the run view.
+			runViewOpen = false;
+			return;
+		}
 		if (guard({ kind: 'select', id })) return;
 		applySelect(id);
 	}
@@ -63,6 +69,7 @@
 	function applySelect(id: number | 'new') {
 		selectedId = id;
 		selectedRunId = null;
+		runViewOpen = false;
 	}
 
 	function clearSelection() {
@@ -82,6 +89,7 @@
 		if (runId !== null) {
 			selectedId = jobId;
 			selectedRunId = null;
+			runViewOpen = true;
 		}
 	}
 
@@ -117,10 +125,13 @@
 </script>
 
 <div class="jobs-tab">
-	<JobList {selectedId} locked={listLocked} onselect={selectJob} onrun={requestRun} />
+	<JobList {selectedId} onselect={selectJob} onrun={requestRun} />
 	<div class="center-pane">
+		{#if runLive && !showRunView}
+			<LiveRunBar onopen={() => (runViewOpen = true)} />
+		{/if}
 		{#if showRunView}
-			<JobRunView ondone={() => undefined} />
+			<JobRunView ondone={() => (runViewOpen = false)} onhide={() => (runViewOpen = false)} />
 		{:else if selectedRunId !== null}
 			{#key selectedRunId}
 				<JobRunDetail runId={selectedRunId} onclose={closeRunDetail} />

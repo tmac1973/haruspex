@@ -19,9 +19,15 @@ vi.mock('$lib/stores/jobs.svelte', () => ({
 	getJobs: () => [job]
 }));
 
+const runner = vi.hoisted(() => ({
+	current: null as null | { jobId: number; jobName: string; status: string },
+	queue: [] as Array<{ jobName: string }>
+}));
+
 vi.mock('$lib/agent/jobs/runner.svelte', () => ({
-	getCurrentRun: () => null,
-	getQueueDepth: () => 0
+	getCurrentRun: () => runner.current,
+	getQueueDepth: () => runner.queue.length,
+	getPendingQueue: () => runner.queue
 }));
 
 vi.mock('$lib/agent/jobs/types', () => ({
@@ -36,6 +42,8 @@ vi.mock('$lib/agent/jobs/types', () => ({
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	runner.current = null;
+	runner.queue = [];
 });
 
 describe('JobList', () => {
@@ -48,44 +56,51 @@ describe('JobList', () => {
 	});
 
 	/**
-	 * The run view owns the centre pane while a run is live, so a selection
-	 * made during one highlighted a row and changed nothing visible — the
-	 * user's click appeared to do nothing at all.
+	 * A live run no longer locks the list: you browse and edit while it runs,
+	 * and the run's own job is marked so you can find it.
 	 */
-	describe('while a run owns the pane', () => {
-		it('ignores row clicks and keyboard activation', async () => {
+	describe('while a run is live', () => {
+		beforeEach(() => {
+			runner.current = { jobId: 7, jobName: 'Hangman plan', status: 'running' };
+		});
+
+		it('still selects jobs and opens New', async () => {
 			const onselect = vi.fn();
-			render(JobList, { selectedId: null, locked: true, onselect, onrun: vi.fn() });
+			render(JobList, { selectedId: null, onselect, onrun: vi.fn() });
+			await fireEvent.click(screen.getByText('Hangman plan'));
+			await fireEvent.click(screen.getByText('+ New'));
+			expect(onselect).toHaveBeenCalledWith(7);
+			expect(onselect).toHaveBeenCalledWith('new');
+		});
 
+		it('marks the running job', () => {
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
 			const row = screen.getByText('Hangman plan').closest('.row')!;
-			await fireEvent.click(row);
-			await fireEvent.keyDown(row, { key: 'Enter' });
-			expect(onselect).not.toHaveBeenCalled();
+			expect(row.querySelector('[aria-label="Running"]')).not.toBeNull();
 		});
 
-		it('says why, and takes the row out of the tab order', () => {
-			render(JobList, { selectedId: null, locked: true, onselect: vi.fn(), onrun: vi.fn() });
-
-			const row = screen.getByText('Hangman plan').closest('.row')!;
-			expect(row.getAttribute('aria-disabled')).toBe('true');
-			expect(row.getAttribute('tabindex')).toBe('-1');
-			expect(row.getAttribute('title')).toMatch(/run is in progress/i);
-		});
-
-		it('disables New, which would also open an invisible editor', () => {
-			render(JobList, { selectedId: null, locked: true, onselect: vi.fn(), onrun: vi.fn() });
-			expect((screen.getByText('+ New') as HTMLButtonElement).disabled).toBe(true);
-		});
-
-		it('still lets a run be queued behind the active one', async () => {
-			// Queueing has visible feedback (the queue badge) and is a real
-			// action, so it is deliberately not part of the lock.
+		it('says ▶ will run now or after the current run', async () => {
 			const onrun = vi.fn();
-			render(JobList, { selectedId: null, locked: true, onselect: vi.fn(), onrun });
-
-			await fireEvent.click(screen.getByTitle('Run now'));
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun });
+			await fireEvent.click(screen.getByTitle('Run now, or after the current run finishes'));
 			expect(onrun).toHaveBeenCalledWith(7);
 		});
+
+		it('lists the running and queued jobs, in order, in the badge tooltip', () => {
+			runner.queue = [{ jobName: 'Game — coding' }, { jobName: 'Audit' }];
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+			expect(
+				screen
+					.getByText(/1 running/)
+					.closest('.queue-badge')!
+					.getAttribute('title')
+			).toBe('Running: Hangman plan\n1. Game — coding\n2. Audit');
+		});
+	});
+
+	it('marks nothing when no run is live', () => {
+		render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+		expect(document.querySelector('[aria-label="Running"]')).toBeNull();
 	});
 
 	/**

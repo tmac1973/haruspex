@@ -3,7 +3,8 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/sve
 
 const mocks = vi.hoisted(() => ({
 	enqueue: vi.fn<(jobId: number, trigger: string) => Promise<number | null>>(async () => 1),
-	currentRun: null as { status: string } | null,
+	currentRun: null as Record<string, unknown> | null,
+	cancel: vi.fn(),
 	// Signatures matter here: a bare `vi.fn()` types its calls as [], and the
 	// assertions read back the job input the editor saved.
 	updateJob: vi.fn<(id: number, input: { name: string }) => Promise<boolean>>(async () => true),
@@ -16,7 +17,10 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('$lib/agent/jobs/runner.svelte', () => ({
 	enqueue: mocks.enqueue,
 	getCurrentRun: () => mocks.currentRun,
-	getQueueDepth: () => 0
+	getQueueDepth: () => 0,
+	getPendingQueue: () => [],
+	cancel: mocks.cancel,
+	clearCurrentRun: vi.fn()
 }));
 
 const savedJob = {
@@ -172,16 +176,83 @@ describe('JobsTab — switching jobs with unsaved edits', () => {
  * The run view owns the centre pane while a run is live, so a selection made
  * during one highlighted a row and changed nothing the user could see.
  */
-describe('JobsTab — while a run owns the pane', () => {
-	it('locks the job list', async () => {
-		mocks.currentRun = { status: 'running' };
-		render(JobsTab);
+/** A live run of job 8, in the shape the run view reads. */
+function liveRun(status = 'running') {
+	return {
+		id: 50,
+		jobId: 8,
+		jobName: 'Other job',
+		jobType: 'research',
+		contextSize: 0,
+		environment: {},
+		steps: [],
+		currentStepIndex: 0,
+		status,
+		error: null,
+		waitingForSlot: false,
+		startedAt: Date.now(),
+		finishedAt: null
+	};
+}
 
-		const row = screen.getByText('Hangman plan').closest('.row')!;
-		expect(row.getAttribute('aria-disabled')).toBe('true');
-		await fireEvent.click(row);
-		// No editor opened behind the run view.
-		expect(screen.queryByDisplayValue('Hangman plan')).toBeNull();
+/**
+ * A live run used to take the centre pane and lock the list, so the only way
+ * to look at anything else was to cancel it.
+ */
+describe('JobsTab — browsing while a run is live', () => {
+	it('opens on the live run when you arrive with one going', () => {
+		mocks.currentRun = liveRun();
+		render(JobsTab);
+		expect(screen.getByRole('button', { name: 'Hide' })).toBeTruthy();
+	});
+
+	it('shows the job you pick, with a bar back to the run, without cancelling it', async () => {
+		mocks.currentRun = liveRun();
+		render(JobsTab);
+		await fireEvent.click(screen.getByText('Hangman plan'));
+		expect(await screen.findByDisplayValue('Hangman plan')).toBeTruthy();
+		expect(screen.getByText(/Running:/)).toBeTruthy();
+		expect(mocks.cancel).not.toHaveBeenCalled();
+
+		await fireEvent.click(screen.getByTitle('Show the live run'));
+		expect(screen.getByRole('button', { name: 'Hide' })).toBeTruthy();
+	});
+
+	it('Hide goes back to your jobs and leaves the run going', async () => {
+		mocks.currentRun = liveRun();
+		render(JobsTab);
+		await fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
+		expect(screen.queryByRole('button', { name: 'Hide' })).toBeNull();
+		expect(screen.getByText(/Running:/)).toBeTruthy();
+		expect(mocks.cancel).not.toHaveBeenCalled();
+	});
+
+	it('creates a job while a run is live', async () => {
+		mocks.currentRun = liveRun();
+		render(JobsTab);
+		await fireEvent.click(screen.getByText('+ New'));
+		expect(await screen.findByRole('combobox', { name: /job type/i })).toBeTruthy();
+	});
+
+	it('shows a finished run until Close, with no "Running" bar', () => {
+		mocks.currentRun = liveRun('succeeded');
+		render(JobsTab);
+		expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
+		expect(screen.queryByText(/Running:/)).toBeNull();
+	});
+
+	it('marks the running job in the editor and keeps it from being deleted', async () => {
+		mocks.currentRun = { ...liveRun(), jobId: 7, jobName: 'Hangman plan' };
+		render(JobsTab);
+		await fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
+		// The bar names the job too; click its row in the list.
+		const list = document.querySelector('.job-list') as HTMLElement;
+		await fireEvent.click(within(list).getByText('Hangman plan'));
+		await screen.findByDisplayValue('Hangman plan');
+		expect(screen.getByText('This job is running. Changes apply to its next run.')).toBeTruthy();
+		expect((screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled).toBe(
+			true
+		);
 	});
 });
 

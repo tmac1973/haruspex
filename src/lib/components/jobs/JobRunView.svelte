@@ -19,9 +19,11 @@
 
 	interface Props {
 		ondone: () => void;
+		/** Leave the view without touching the run. */
+		onhide?: () => void;
 	}
 
-	const { ondone }: Props = $props();
+	const { ondone, onhide }: Props = $props();
 
 	const run = $derived(getCurrentRun());
 
@@ -116,6 +118,14 @@
 			</div>
 			<div class="header-right">
 				{#if run.status === 'running'}
+					{#if onhide}
+						<button
+							type="button"
+							class="secondary"
+							title="Keep it running and go back to your jobs"
+							onclick={onhide}>Hide</button
+						>
+					{/if}
 					<button type="button" class="danger" onclick={() => cancel(run.id)}>Cancel</button>
 				{:else}
 					<button type="button" class="secondary" onclick={close}>Close</button>

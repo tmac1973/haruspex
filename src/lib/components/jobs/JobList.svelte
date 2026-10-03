@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getJobs, type JobSummary } from '$lib/stores/jobs.svelte';
-	import { getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
+	import { getCurrentRun, getPendingQueue, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
@@ -12,24 +12,23 @@
 
 	interface Props {
 		selectedId: number | 'new' | null;
-		/**
-		 * Selection is unavailable — a run owns the centre pane, so switching
-		 * jobs would highlight a row and show nothing. Rows go inert; the run
-		 * buttons stay live, because queueing behind the active run works and
-		 * shows up in the queue badge.
-		 */
-		locked?: boolean;
 		onselect: (id: number | 'new') => void;
 		/** Asks the tab to run this job — it may prompt about unsaved edits first. */
 		onrun: (jobId: number) => void;
 	}
 
-	const { selectedId, locked = false, onselect, onrun }: Props = $props();
+	const { selectedId, onselect, onrun }: Props = $props();
 
 	const running = $derived(getCurrentRun()?.status === 'running');
+	const runningJobId = $derived(running ? (getCurrentRun()?.jobId ?? null) : null);
+	/** The badge's tooltip: what is running and what waits, in order. */
+	const queueTitle = $derived.by(() => {
+		const lines: string[] = [];
+		if (running) lines.push(`Running: ${getCurrentRun()?.jobName}`);
+		getPendingQueue().forEach((q, i) => lines.push(`${i + 1}. ${q.jobName}`));
+		return lines.join('\n');
+	});
 	const queueDepth = $derived(getQueueDepth());
-
-	const LOCKED_HINT = 'A run is in progress — it has the pane until it finishes or you cancel it';
 
 	function handleRun(e: MouseEvent, jobId: number) {
 		e.stopPropagation();
@@ -80,12 +79,7 @@
 		<div class="header-left">
 			<span class="title">Jobs</span>
 			{#if running || queueDepth > 0}
-				<span
-					class="queue-badge"
-					title={running
-						? `1 running${queueDepth > 0 ? ` · ${queueDepth} queued` : ''}`
-						: `${queueDepth} queued`}
-				>
+				<span class="queue-badge" title={queueTitle}>
 					{#if running}1 running{/if}{#if running && queueDepth > 0}
 						·
 					{/if}{#if queueDepth > 0}{queueDepth} queued{/if}
@@ -96,8 +90,7 @@
 			type="button"
 			class="new-btn"
 			class:active={selectedId === 'new'}
-			disabled={locked}
-			title={locked ? LOCKED_HINT : 'Create a new job'}
+			title="Create a new job"
 			onclick={() => onselect('new')}
 		>
 			+ New
@@ -114,15 +107,15 @@
 				<div
 					class="row"
 					class:selected={selectedId === job.id}
-					class:locked
 					role="button"
-					tabindex={locked ? -1 : 0}
-					aria-disabled={locked}
-					title={locked ? LOCKED_HINT : undefined}
-					use:activatable={() => !locked && onselect(job.id)}
+					tabindex="0"
+					use:activatable={() => onselect(job.id)}
 				>
 					<div class="row-main">
 						<span class="name">
+							{#if job.id === runningJobId}
+								<span class="running-dot" role="img" aria-label="Running" title="Running"></span>
+							{/if}
 							{job.name}
 							<span class="badge {def?.badgeTone ?? ''}">{def?.badgeLabel ?? job.job_type}</span>
 						</span>
@@ -137,7 +130,7 @@
 						title={!isJobTypeAvailable(job.job_type)
 							? 'This job type is not available on this platform'
 							: running
-								? 'Queue this run after the active one'
+								? 'Run now, or after the current run finishes'
 								: 'Run now'}
 						disabled={(job.step_count === 0 && def?.hasPlannedSteps !== false) ||
 							!isJobTypeAvailable(job.job_type)}
@@ -152,6 +145,16 @@
 </div>
 
 <style>
+	.running-dot {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		margin-right: 4px;
+		border-radius: 50%;
+		background: var(--accent);
+		vertical-align: middle;
+	}
+
 	.job-list {
 		width: 260px;
 		min-width: 260px;
@@ -248,15 +251,6 @@
 
 	.row:hover {
 		background: var(--bg-primary);
-	}
-
-	.row.locked {
-		cursor: default;
-		opacity: 0.55;
-	}
-
-	.row.locked:hover {
-		background: transparent;
 	}
 
 	.row.selected {

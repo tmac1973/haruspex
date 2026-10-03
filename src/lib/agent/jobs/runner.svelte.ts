@@ -566,7 +566,16 @@ export async function enqueue(
 	const queued: QueuedRun = { runId, job, trigger };
 
 	if (current?.status === 'running') {
-		pending.push(queued);
+		if (trigger === 'chained') {
+			// A chain's next stage goes ahead of runs queued by hand: it is the
+			// rest of a run already under way. Behind any chained run already
+			// queued, so stages keep their order.
+			const firstUnchained = pending.findIndex((q) => q.trigger !== 'chained');
+			if (firstUnchained === -1) pending.push(queued);
+			else pending.splice(firstUnchained, 0, queued);
+		} else {
+			pending.push(queued);
+		}
 		logDebug('jobs', 'queued behind active run', {
 			runId,
 			jobId,
