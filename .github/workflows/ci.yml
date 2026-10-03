@@ -3,11 +3,16 @@ on:
   push:
     branches: [main]
   pull_request:
+    # `labeled` so adding windows-ci / macos-ci starts that job straight away,
+    # rather than on the PR's next push.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    # A label changes nothing these jobs check; they ran on the push.
+    if: github.event.action != 'labeled'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,6 +48,8 @@ jobs:
 
   backend:
     runs-on: ubuntu-latest
+    # A label changes nothing these jobs check; they ran on the push.
+    if: github.event.action != 'labeled'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -121,8 +128,9 @@ jobs:
   # behavior. Single combined job — Windows runner minutes bill at a higher rate
   # than the Linux frontend/backend split.
   #
-  # It's slow (~15 min), so it does NOT run on every PR push. It runs on a PR
-  # that carries the `windows-ci` label (Shell-tab, fs_tools, sidecar and other
+  # It's slow (~15 min), so it does NOT run on every PR push. It runs when the
+  # `windows-ci` label is added to a PR, on every later push to a PR that
+  # carries it (Shell-tab, fs_tools, sidecar and other
   # platform-specific work), on a manual dispatch (Actions tab → CI → Run
   # workflow), and after every merge to main, which catches anything nobody
   # labelled.
@@ -131,7 +139,9 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      contains(github.event.pull_request.labels.*.name, 'windows-ci')
+      (github.event.action == 'labeled' && github.event.label.name == 'windows-ci') ||
+      (github.event.action != 'labeled' &&
+        contains(github.event.pull_request.labels.*.name, 'windows-ci'))
     steps:
       # Check out with LF intact so rustfmt/prettier and `git diff` aren't fooled
       # by CRLF churn on the Windows runner (autocrlf defaults to true there).
@@ -195,7 +205,9 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      contains(github.event.pull_request.labels.*.name, 'macos-ci')
+      (github.event.action == 'labeled' && github.event.label.name == 'macos-ci') ||
+      (github.event.action != 'labeled' &&
+        contains(github.event.pull_request.labels.*.name, 'macos-ci'))
     steps:
       - uses: actions/checkout@v4
 
