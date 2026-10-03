@@ -80,6 +80,9 @@ and a lighter verification mode for guided planning.
    why.
 7. **No sidecar outlives the app,** however the app ends, and a port is only
    ever freed from a process that is ours.
+8. **Most of the manual test pass is automated:** UI flows and the real app
+   run on every PR against a scripted fake LLM, and a nightly live suite runs
+   on self-hosted Proxmox VMs.
 
 ## Non-goals
 
@@ -111,6 +114,7 @@ and a lighter verification mode for guided planning.
 | 11 | Email: compose and send, after review | 09, 10 |
 | 12 | Context audit and verification lite | — |
 | 13 | Sidecars die with the app | — |
+| 14 | Automated end-to-end testing | — |
 
 The phases are independent except where noted, so they can be done in any
 order. 07 lays down the single-image core that 08 reuses. 11 needs 09's
