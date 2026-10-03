@@ -17,6 +17,7 @@ import './calendar';
 import './contacts';
 import './screen';
 import './image-gen';
+import './make-asset';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel, coerceCallArguments } from './registry';

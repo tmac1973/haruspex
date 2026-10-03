@@ -46,6 +46,8 @@ export interface ShellTurnOptions {
 	onCallStats?: (stats: { durationMs: number; completionTokens: number }) => void;
 	onContextManaged?: (info: ContextManagedInfo) => void;
 	onToolStart?: (call: ResolvedToolCall) => void;
+	/** A long tool's status line ("Drawing… 12 s"), for its step in the sidebar. */
+	onToolProgress?: (call: ResolvedToolCall, status: string) => void;
 	onToolEnd?: (
 		call: ResolvedToolCall,
 		result: string,
@@ -106,11 +108,15 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			// `maxResponseTokens` instead.
 			expectsFileOutput: false,
 			visionSupported: options.visionSupported ?? true,
+			// Someone is at the keyboard. Tools that spend real time (make_asset)
+			// are offered only when a person is there to see the result.
+			interactive: true,
 			signal: options.signal,
 			onUsageUpdate: (usage) => updateContextUsage(usage, options.contextSize),
 			onCallStats: (stats) => options.onCallStats?.(stats),
 			onContextManaged: (info) => options.onContextManaged?.(info),
 			onToolStart: (call) => options.onToolStart?.(call),
+			onToolProgress: (call, status) => options.onToolProgress?.(call, status),
 			onToolEnd: (call, result, thumbDataUrl, artifacts) =>
 				options.onToolEnd?.(call, result, thumbDataUrl, artifacts)
 		},

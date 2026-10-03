@@ -52,6 +52,20 @@ beforeEach(() => {
 });
 
 describe('runShellTurn', () => {
+	it('runs attended and passes a tool’s progress through', async () => {
+		const onToolProgress = vi.fn();
+		mocks.runAgentLoop.mockImplementationOnce(async (opts: AgentLoopOptions) => {
+			opts.onToolProgress?.({ id: 't1', name: 'make_asset', arguments: {} }, 'Drawing… 3 s');
+			opts.onComplete();
+		});
+		await runShellTurn({ messages, contextSize: 8192, onToolProgress });
+		expect(loopOptions().interactive).toBe(true);
+		expect(onToolProgress).toHaveBeenCalledWith(
+			expect.objectContaining({ name: 'make_asset' }),
+			'Drawing… 3 s'
+		);
+	});
+
 	it('returns the assembled streamed text, stripped and trimmed', async () => {
 		const deltas: string[] = [];
 		mocks.runAgentLoop.mockImplementationOnce(async (opts: AgentLoopOptions) => {

@@ -23,7 +23,7 @@ import { mergeLeadingSystemMessages, type ChatMessage } from '$lib/api';
 import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
 import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
 import type { SearchStep, AgentStopReason } from '$lib/agent/loop';
-import { markStepDone, newRunningStep } from '$lib/agent/steps';
+import { markStepDone, markStepProgress, newRunningStep } from '$lib/agent/steps';
 import { describeContextManaged } from '$lib/agent/context-budget';
 import { logDebug } from '$lib/debug-log';
 import { getSettings } from '$lib/stores/settings';
@@ -959,6 +959,9 @@ export class ShellSession {
 				onContextManaged: (info) => (this.contextNotice = describeContextManaged(info)),
 				onToolStart: (call) => {
 					this.searchSteps = [...this.searchSteps, newRunningStep(call)];
+				},
+				onToolProgress: (call, status) => {
+					this.searchSteps = markStepProgress(this.searchSteps, call, status);
 				},
 				onToolEnd: (call, result, thumbDataUrl, artifacts) => {
 					this.searchSteps = markStepDone(this.searchSteps, call, result, thumbDataUrl, artifacts);

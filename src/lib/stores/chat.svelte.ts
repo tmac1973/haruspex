@@ -12,7 +12,7 @@ import {
 	type AgentStopReason
 } from '$lib/agent/loop';
 import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
-import { markStepDone, newRunningStep } from '$lib/agent/steps';
+import { markStepDone, markStepProgress, newRunningStep } from '$lib/agent/steps';
 import { shouldCompact, compactConversation, remapIndexedRecords } from '$lib/agent/compaction';
 import {
 	estimateMessagesTokens,
@@ -1132,9 +1132,7 @@ function buildAgentLoopCallbacks(
 			conversation.searchSteps = [...conversation.searchSteps, newRunningStep(call)];
 		},
 		onToolProgress: (call, status) => {
-			conversation.searchSteps = conversation.searchSteps.map((s) =>
-				s.id === call.id ? { ...s, installStatus: status } : s
-			);
+			conversation.searchSteps = markStepProgress(conversation.searchSteps, call, status);
 		},
 		onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues, heroImage) => {
 			conversation.searchSteps = markStepDone(

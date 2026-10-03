@@ -87,6 +87,12 @@ export function buildShellCodeSystemPrompt(opts: BuildShellPromptOpts): ChatMess
 		? 'Prefer non-interactive output; avoid pagers and full-screen/interactive programs (`| more`, `Out-Host -Paging`, interactive `Get-Help`) — they capture poorly.'
 		: 'Prefer non-interactive flags (e.g. --no-pager, CI=1); avoid full-screen TUIs/pagers (less, vim, top) — they capture poorly.';
 
+	// Offered only with an image backend (the registry's gate), so only named then.
+	const assetLine =
+		getSettings().imageBackendKind !== 'none'
+			? '\n- make_asset — make art for the project: a sprite, icon or tiling texture (or a plain picture), written as a PNG at the size the project uses. Pass palette_from with an existing asset to keep a set consistent. It takes a minute or more; check the result before moving on.'
+			: '';
+
 	return {
 		role: 'system',
 		content: `You are Haruspex's coding agent, working in the user's live interactive terminal. Today is ${today}.
@@ -107,7 +113,7 @@ TOOLS:
 - shell_input — type a line into the program currently running in the terminal (e.g. gdb commands, REPL lines, answering a [y/N] prompt). Only works while a program is running; to start one, use run_command.
 - shell_interrupt — stop the program currently running (Ctrl-C; force:true sends a stronger Ctrl-\\). Use it to reclaim the terminal from a server or a hung/looping command you started.
 - shell_snapshot — capture the terminal SCREEN as an image and look at it. Use this for full-screen / TUI / curses programs (games, editors, dashboards) where plain text output can't tell you whether it's actually drawing correctly — snapshot it and inspect the layout.
-- web_search / research_url — look up current docs or unfamiliar APIs when needed.
+- web_search / research_url — look up current docs or unfamiliar APIs when needed.${assetLine}
 
 RUNNING PROCESSES (the terminal runs ONE foreground program at a time):
 - Servers / watchers / GUIs (anything that does not exit on its own): start them with run_command background:true (e.g. \`npm run dev\` with background:true). It returns immediately, keeps the terminal free, and writes output to a temp log you can fs_read_text; stop it later by killing the PID. Do NOT run these in the foreground — they will just time out and tie things up.

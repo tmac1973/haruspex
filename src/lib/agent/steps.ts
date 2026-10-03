@@ -18,6 +18,18 @@ export function newRunningStep(call: ResolvedToolCall): SearchStep {
 }
 
 /**
+ * Return a new steps array with `status` as the running step's transient
+ * status line ("Drawing… 12 s"), shown until the step is done.
+ */
+export function markStepProgress(
+	steps: SearchStep[],
+	call: ResolvedToolCall,
+	status: string
+): SearchStep[] {
+	return steps.map((s) => (s.id === call.id ? { ...s, installStatus: status } : s));
+}
+
+/**
  * Return a new steps array with the step matching `call` transitioned to
  * `done` and its result fields filled in. Clears any transient
  * `installStatus`. Callers that don't surface lint diagnostics simply omit
