@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), imageKind: 'none' }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/stores/jobs.svelte', () => ({
@@ -9,7 +9,10 @@ vi.mock('$lib/stores/jobs.svelte', () => ({
 	getJob: vi.fn()
 }));
 
+vi.mock('$lib/image', () => ({ resolveImageBackend: () => ({ kind: mocks.imageKind }) }));
+
 import Editor from './Editor.svelte';
+import { emptyModelForm } from '../../jobModelForm';
 import { guidedPlanningJobType } from './definition';
 
 /**
@@ -71,5 +74,40 @@ describe('guided-planning Editor', () => {
 		mount({ run_mode: 'unattended_plan' });
 		const box = screen.getByRole('checkbox', { name: /Skip verification/ }) as HTMLInputElement;
 		expect(box.disabled).toBe(false);
+	});
+
+	describe('stage models', () => {
+		it('offers a coding-run model only in the chain mode, defaulting to this job’s', () => {
+			mount({ run_mode: 'unattended_plan' });
+			expect(screen.queryByLabelText('Coding run model')).toBeNull();
+			document.body.innerHTML = '';
+			mount({ run_mode: 'unattended_chain' });
+			const picker = screen.getByLabelText('Coding run model') as HTMLSelectElement;
+			expect(picker.value).toBe('same');
+			expect(screen.queryByText('Remote server')).toBeNull();
+		});
+
+		it('offers an asset-run model only when assets are generated', () => {
+			mocks.imageKind = 'comfyui';
+			try {
+				mount({ run_mode: 'unattended_chain', generate_assets: false });
+				expect(screen.queryByLabelText('Asset run model')).toBeNull();
+				document.body.innerHTML = '';
+				mount({ run_mode: 'unattended_chain', generate_assets: true });
+				expect(screen.getByLabelText('Asset run model')).toBeTruthy();
+			} finally {
+				mocks.imageKind = 'none';
+			}
+		});
+
+		it('shows the model fields for a chosen stage, with the Settings model as a choice', () => {
+			mount({ run_mode: 'unattended_chain', chain_coding_model: emptyModelForm('remote') });
+			expect((screen.getByLabelText('Coding run model') as HTMLSelectElement).value).toBe('choose');
+			expect(screen.getByText('Remote server')).toBeTruthy();
+			// The local model while planning runs remotely: not the same as
+			// "Same as this job", and not marked "(default)" here.
+			expect(screen.getByText('Settings model')).toBeTruthy();
+			expect(screen.queryByText('Settings model (default)')).toBeNull();
+		});
 	});
 });

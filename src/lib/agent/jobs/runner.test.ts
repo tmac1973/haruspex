@@ -3735,6 +3735,92 @@ describe('jobs runner — asset generation', () => {
 		expect(second).not.toBeNull();
 		expect(getCurrentRun()!.jobId).toBe(1);
 	});
+
+	/** A job's model columns pointing at `model` on `url`. */
+	const cols = (url: string, model: string) => ({
+		model_remote_base_url: url,
+		model_remote_api_key: null,
+		model_remote_api_key_id: 'key-1',
+		model_remote_model_id: model,
+		model_remote_context_size: 32768,
+		model_remote_vision_supported: false,
+		model_advanced: null
+	});
+	const modelOf = (input: Record<string, unknown>) => ({
+		model_remote_base_url: input.model_remote_base_url,
+		model_remote_api_key: input.model_remote_api_key,
+		model_remote_api_key_id: input.model_remote_api_key_id,
+		model_remote_model_id: input.model_remote_model_id,
+		model_remote_context_size: input.model_remote_context_size,
+		model_remote_vision_supported: input.model_remote_vision_supported,
+		model_advanced: input.model_advanced
+	});
+
+	/** A chained asset job on its own model, as guided planning creates it. */
+	function chainedAsset(over: Record<string, unknown>) {
+		return makeJob({
+			...cols('http://art', 'art'),
+			name: 'Game — assets',
+			job_type: 'asset_generation',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				spec_path: SPEC_PATH,
+				coding_run: { plan_dir: 'plan/x/' },
+				...over
+			})
+		});
+	}
+
+	async function chainFrom(asset: JobWithSteps) {
+		mocks.getJob.mockImplementation(async (id: number) =>
+			id === 1
+				? asset
+				: makeJob({ id: 901, job_type: 'autonomous_coding', steps: [], working_dir: '/repo' })
+		);
+		wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+		return mocks.createJob.mock.calls[0][0];
+	}
+
+	it('names the coding job after the plan, not "… — assets — coding"', async () => {
+		const input = await chainFrom(
+			chainedAsset({ chain_base_name: 'Game', chain_coding_model: cols('http://big', 'big') })
+		);
+		expect(input.name).toBe('Game — coding');
+	});
+
+	it('runs the coding job on the model it was handed, not its own', async () => {
+		const input = await chainFrom(
+			chainedAsset({ chain_base_name: 'Game', chain_coding_model: cols('http://fast', 'fast') })
+		);
+		expect(modelOf(input)).toEqual(cols('http://fast', 'fast'));
+	});
+
+	it('hands on the Settings model when that is what it was given', async () => {
+		// All-null columns are the planner on Settings: valid, not "absent".
+		const settings = {
+			model_remote_base_url: null,
+			model_remote_api_key: null,
+			model_remote_api_key_id: null,
+			model_remote_model_id: null,
+			model_remote_context_size: null,
+			model_remote_vision_supported: null,
+			model_advanced: null
+		};
+		const input = await chainFrom(
+			chainedAsset({ chain_base_name: 'Game', chain_coding_model: settings })
+		);
+		expect(modelOf(input)).toEqual(settings);
+	});
+
+	it('keeps today’s behaviour for an asset job made by hand', async () => {
+		const input = await chainFrom(chainedAsset({}));
+		expect(input.name).toBe('Game — assets — coding');
+		expect(modelOf(input)).toEqual(cols('http://art', 'art'));
+	});
 });
 
 describe('guided_planning — chained coding run settings', () => {
@@ -3776,6 +3862,90 @@ describe('guided_planning — chained coding run settings', () => {
 		// hand-created job.
 		expect('max_attempts' in cfg).toBe(false);
 		expect('context_mode' in cfg).toBe(false);
+	});
+
+	/** A job's model columns pointing at `model` on `url`. */
+	const cols = (url: string, model: string) => ({
+		model_remote_base_url: url,
+		model_remote_api_key: null,
+		model_remote_api_key_id: 'key-1',
+		model_remote_model_id: model,
+		model_remote_context_size: 32768,
+		model_remote_vision_supported: false,
+		model_advanced: null
+	});
+	const modelOf = (input: Record<string, unknown>) => ({
+		model_remote_base_url: input.model_remote_base_url,
+		model_remote_api_key: input.model_remote_api_key,
+		model_remote_api_key_id: input.model_remote_api_key_id,
+		model_remote_model_id: input.model_remote_model_id,
+		model_remote_context_size: input.model_remote_context_size,
+		model_remote_vision_supported: input.model_remote_vision_supported,
+		model_advanced: input.model_advanced
+	});
+
+	function planningWith(typeConfig: Record<string, unknown>, own = cols('http://big', 'big')) {
+		return makeJob({
+			...own,
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/',
+				run_mode: 'unattended_chain',
+				...typeConfig
+			})
+		});
+	}
+
+	const handoff = () =>
+		String(
+			mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6).at(-1)?.[3] ?? ''
+		);
+
+	it('names the coding job after the plan', async () => {
+		await runIt(planningWith({}));
+		expect(mocks.createJob.mock.calls[0][0].name).toBe('Test job — coding');
+	});
+
+	it('runs the coding job on the planning job’s model when nothing is chosen', async () => {
+		await runIt(planningWith({}));
+		expect(modelOf(mocks.createJob.mock.calls[0][0])).toEqual(cols('http://big', 'big'));
+	});
+
+	it('runs the coding job on the coding stage’s model, and says which', async () => {
+		await runIt(planningWith({ chain_models: { coding: cols('http://fast', 'fast') } }));
+		const input = mocks.createJob.mock.calls[0][0];
+		// Whole, not merged: the key id is the override's, not the planner's.
+		expect(modelOf(input)).toEqual(cols('http://fast', 'fast'));
+		expect(handoff()).toContain('on fast');
+	});
+
+	it('runs the coding job on the Settings model when that is the stage’s choice', async () => {
+		// Planning on its own server, coding on the local model.
+		await runIt(
+			planningWith({
+				chain_models: {
+					coding: {
+						...cols('http://x', 'x'),
+						model_remote_base_url: null,
+						model_remote_model_id: null
+					}
+				}
+			})
+		);
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.model_remote_base_url).toBeNull();
+		expect(input.model_remote_model_id).toBeNull();
+		expect(handoff()).toContain('the Settings model');
+	});
+
+	it('ignores a half-filled stage model rather than run on it', async () => {
+		await runIt(
+			planningWith({ chain_models: { coding: { model_remote_base_url: 'http://fast' } } })
+		);
+		expect(modelOf(mocks.createJob.mock.calls[0][0])).toEqual(cols('http://big', 'big'));
 	});
 });
 
@@ -4284,5 +4454,53 @@ describe('guided_planning — asset chain', () => {
 		for (const t of after) {
 			expect(t.tools, `turn ${t.kind} can still ask`).not.toContain('ask_user_question');
 		}
+	});
+
+	/** A job's model columns pointing at `model` on `url`. */
+	const cols = (url: string, model: string) => ({
+		model_remote_base_url: url,
+		model_remote_api_key: null,
+		model_remote_api_key_id: 'key-1',
+		model_remote_model_id: model,
+		model_remote_context_size: 32768,
+		model_remote_vision_supported: false,
+		model_advanced: null
+	});
+	const modelOf = (input: Record<string, unknown>) => ({
+		model_remote_base_url: input.model_remote_base_url,
+		model_remote_api_key: input.model_remote_api_key,
+		model_remote_api_key_id: input.model_remote_api_key_id,
+		model_remote_model_id: input.model_remote_model_id,
+		model_remote_context_size: input.model_remote_context_size,
+		model_remote_vision_supported: input.model_remote_vision_supported,
+		model_advanced: input.model_advanced
+	});
+
+	it('gives the asset job its stage’s model, and hands it the coding stage’s to pass on', async () => {
+		wireWrites();
+		const planner = makeJob({
+			...cols('http://big', 'big'),
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			name: 'Game',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: PLAN_DIR,
+				run_mode: 'unattended_chain',
+				generate_assets: true,
+				chain_models: { assets: cols('http://art', 'art') }
+			})
+		});
+		await run(planner, turns(), chainedAssetJob());
+
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.job_type).toBe('asset_generation');
+		expect(modelOf(input)).toEqual(cols('http://art', 'art'));
+		const cfg = JSON.parse(input.type_config);
+		expect(cfg.chain_base_name).toBe('Game');
+		// "Same as this job" for coding is the PLANNER's model, not the asset
+		// stage's override.
+		expect(cfg.chain_coding_model).toEqual(cols('http://big', 'big'));
 	});
 });

@@ -10,6 +10,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { createJob } from '$lib/stores/jobs.svelte';
+import { modelColumnsOf } from '../../chainModel';
 import { normalizeAbort } from '$lib/utils/error';
 import {
 	markRunStarted,
@@ -343,7 +344,7 @@ async function handoffToCoding(
 		: '';
 
 	const codingJobId = await createJob({
-		name: `${job.name} — coding`,
+		name: `${cfg.chain_base_name ?? job.name} — coding`,
 		description:
 			`Started automatically by asset-generation run ${runId}. ` +
 			`The asset spec is at ${specPath}.${note}`,
@@ -353,15 +354,10 @@ async function handoffToCoding(
 		schedule_config: null,
 		next_due_at: null,
 		job_type: 'autonomous_coding',
-		// Inherited so the code is built on what the plan was built on — a
-		// chained run has no chance to be corrected before it executes.
-		model_remote_base_url: job.model_remote_base_url,
-		model_remote_api_key: job.model_remote_api_key,
-		model_remote_api_key_id: job.model_remote_api_key_id,
-		model_remote_model_id: job.model_remote_model_id,
-		model_remote_context_size: job.model_remote_context_size,
-		model_remote_vision_supported: job.model_remote_vision_supported,
-		model_advanced: job.model_advanced,
+		// The coding stage's model as the planning job resolved it, so an
+		// asset-stage override never leaks into the code. A hand-made asset
+		// job carries none and hands on its own.
+		...(cfg.chain_coding_model ?? modelColumnsOf(job)),
 		type_config: JSON.stringify({
 			...cfg.coding_run,
 			// Set here, not carried: this run is the thing that knows where the

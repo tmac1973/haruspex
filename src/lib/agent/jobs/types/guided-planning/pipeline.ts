@@ -28,6 +28,7 @@ import {
 } from '$lib/stores/jobRuns.svelte';
 import type { JobRunContext } from '../types';
 import { parseGuidedPlanningConfig, RUN_MODE_LABELS, type GuidedPlanningConfig } from './config';
+import { describeStageModel, stageModelColumns } from '../../chainModel';
 import { interviewResearchRules, withWebResearch, writeResearchRules } from '../webResearch';
 import {
 	extractDecisionCommand,
@@ -1544,6 +1545,12 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			return 'Not started — verification did not run, so nothing has checked this plan';
 		}
 
+		// Each stage's model, decided now: a chained job is born and started
+		// in the same breath. "Same as this job" means THIS (the planning)
+		// job, for both stages, even when the asset stage has its own.
+		const assetsModel = stageModelColumns(job, cfg.chain_models.assets);
+		const codingModel = stageModelColumns(job, cfg.chain_models.coding);
+
 		// The coding job's configuration, whoever ends up starting it. Built
 		// once so the chained asset run forwards exactly what guided planning
 		// would have used — a second copy would drift the day one of these
@@ -1578,16 +1585,15 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				schedule_config: null,
 				next_due_at: null,
 				job_type: 'asset_generation',
-				model_remote_base_url: job.model_remote_base_url,
-				model_remote_api_key: job.model_remote_api_key,
-				model_remote_api_key_id: job.model_remote_api_key_id,
-				model_remote_model_id: job.model_remote_model_id,
-				model_remote_context_size: job.model_remote_context_size,
-				model_remote_vision_supported: job.model_remote_vision_supported,
-				model_advanced: job.model_advanced,
+				...assetsModel,
 				type_config: JSON.stringify({
 					spec_path: specPath,
 					run_mode: 'unattended',
+					// The asset run creates the coding job when it finishes:
+					// it names it after the plan, and runs it on the coding
+					// stage's model, which it has no other way to know.
+					chain_base_name: job.name,
+					chain_coding_model: codingModel,
 					...(assetTargetSize ? { target_size: assetTargetSize } : {}),
 					// Forwarded, not applied: the asset run creates the coding
 					// job when it finishes, and knows which assets are missing.
@@ -1599,7 +1605,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				if (assetRunId !== null) {
 					return (
 						`Started asset job ${assetJobId} (run ${assetRunId}) on ${assetIds.length} ` +
-						`asset(s) from ${specPath}. It starts the coding run when it finishes.`
+						`asset(s) from ${specPath}, on ${describeStageModel(assetsModel)}. It starts ` +
+						`the coding run, on ${describeStageModel(codingModel)}, when it finishes.`
 					);
 				}
 			}
@@ -1618,15 +1625,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			schedule_config: null,
 			next_due_at: null,
 			job_type: 'autonomous_coding',
-			// Inherited so the code is built on what the plan was built on — a
-			// chained run has no chance to be corrected before it executes.
-			model_remote_base_url: job.model_remote_base_url,
-			model_remote_api_key: job.model_remote_api_key,
-			model_remote_api_key_id: job.model_remote_api_key_id,
-			model_remote_model_id: job.model_remote_model_id,
-			model_remote_context_size: job.model_remote_context_size,
-			model_remote_vision_supported: job.model_remote_vision_supported,
-			model_advanced: job.model_advanced,
+			// The coding stage's model: this job's, or its override.
+			...codingModel,
 			// Null overrides are left OUT rather than written as null, so the
 			// coding job's own parser applies its defaults and its preflight
 			// settles what nobody pinned — exactly as for a hand-created job.
@@ -1650,12 +1650,15 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		const codingRunId = await deps.startChainedRun(codingJobId);
 		if (codingRunId === null) {
 			return (
-				`Created coding job ${codingJobId}, but it could not be started — ` +
+				`Created coding job ${codingJobId} on ${describeStageModel(codingModel)}, but it ` +
+				`could not be started — ` +
 				`autonomous coding may be unavailable on this platform.${carried}`
 			);
 		}
 		return (
-			`Started coding job ${codingJobId} (run ${codingRunId}) on the plan in ${outDir}.` + carried
+			`Started coding job ${codingJobId} (run ${codingRunId}) on the plan in ${outDir}, ` +
+			`on ${describeStageModel(codingModel)}.` +
+			carried
 		);
 	};
 

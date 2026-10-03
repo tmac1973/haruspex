@@ -1,5 +1,6 @@
 /** Asset-generation `type_config` JSON shape. */
 
+import { parseModelColumns, type ModelColumns } from '../../chainModel';
 import { DEFAULT_SPEC_PATH } from '$lib/assets/spec/paths';
 
 /** Which checkpoints the run stops at. */
@@ -66,6 +67,13 @@ export interface AssetGenerationConfig {
 	 * way guided planning carries its own. Null for a standalone run.
 	 */
 	coding_run: Record<string, unknown> | null;
+	/** Set by a chain: the planning job's name, for the coding job's name. */
+	chain_base_name: string | null;
+	/**
+	 * Set by a chain: the coding stage's model as the planning job resolved it.
+	 * All-null columns are valid and mean the Settings model.
+	 */
+	chain_coding_model: ModelColumns | null;
 }
 
 function clampInt(v: unknown, lo: number, hi: number): number | null {
@@ -117,7 +125,12 @@ export function parseAssetGenerationConfig(json: string | null): AssetGeneration
 		coding_run:
 			raw.coding_run && typeof raw.coding_run === 'object' && !Array.isArray(raw.coding_run)
 				? (raw.coding_run as Record<string, unknown>)
-				: null
+				: null,
+		chain_base_name:
+			typeof raw.chain_base_name === 'string' && raw.chain_base_name.trim()
+				? raw.chain_base_name.trim()
+				: null,
+		chain_coding_model: parseModelColumns(raw.chain_coding_model)
 	};
 }
 

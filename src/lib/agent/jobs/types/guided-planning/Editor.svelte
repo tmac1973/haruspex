@@ -2,6 +2,10 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { resolveImageBackend } from '$lib/image';
 	import type { GuidedPlanningEditorState } from './definition';
+	import JobModelFields from '$lib/components/jobs/JobModelFields.svelte';
+	import { emptyModelForm } from '$lib/agent/jobs/jobModelForm';
+
+	type StageKey = 'chain_assets_model' | 'chain_coding_model';
 
 	// The guided-planning section of the job editor (see JobTypeEditorProps):
 	// the seed idea and the plan output folder. The output dir auto-derives
@@ -34,6 +38,19 @@
 			.replace(/[^a-z0-9]+/g, '-')
 			.replace(/^-+|-+$/g, '');
 	}
+
+	function setStageModel(key: StageKey, choice: string) {
+		cfg[key] = choice === 'choose' ? (cfg[key] ?? emptyModelForm('remote')) : null;
+	}
+
+	// "Same as this job" is the planning job's model. The Settings model is a
+	// different choice whenever this job has its own server: the local model
+	// for the coding run, say, while planning runs remotely.
+	const STAGE_SETTINGS = {
+		title: 'Settings model',
+		description:
+			'Whatever Settings → Inference has active — the local model, or the server set there.'
+	};
 
 	$effect(() => {
 		if (!outputDirEdited) {
@@ -153,6 +170,19 @@
 		{/if}
 	</div>
 
+	{#if cfg.generate_assets && imageBackendReady}
+		{@render stageModel(
+			'chain_assets_model',
+			'Asset run model',
+			'The model the asset run uses to write prompts and judge the art. The image backend itself is set in Settings → Image.'
+		)}
+	{/if}
+	{@render stageModel(
+		'chain_coding_model',
+		'Coding run model',
+		'The model that writes the code. A fast model here and a strong one for planning is the usual reason to change it.'
+	)}
+
 	<details class="coding-run">
 		<summary>Coding run settings</summary>
 		<p class="hint">
@@ -194,7 +224,45 @@
 	</details>
 {/if}
 
+{#snippet stageModel(key: StageKey, label: string, tip: string)}
+	<div class="field stage-model">
+		<span class="label">
+			{label}
+			<Tooltip label={`About the ${label.toLowerCase()}`} text={tip} />
+		</span>
+		<select
+			value={cfg[key] ? 'choose' : 'same'}
+			onchange={(e) => setStageModel(key, e.currentTarget.value)}
+			aria-label={label}
+		>
+			<option value="same">Same as this job</option>
+			<option value="choose">Choose…</option>
+		</select>
+		{#if cfg[key]}
+			<div class="stage-fields">
+				<JobModelFields
+					bind:form={cfg[key]}
+					name={`${key}-source`}
+					settingsLabel={STAGE_SETTINGS}
+				/>
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
 <style>
+	.stage-model {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.stage-fields {
+		margin-left: 1rem;
+		padding-left: 0.75rem;
+		border-left: 2px solid var(--border);
+	}
+
 	.field.run-mode {
 		display: flex;
 		flex-direction: column;

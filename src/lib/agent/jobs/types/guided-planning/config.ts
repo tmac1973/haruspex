@@ -11,6 +11,17 @@
  *
  * Phase 05 widens this with `unattended_chain`.
  */
+import { parseChainModel, type ChainModel } from '../../chainModel';
+
+/**
+ * The model each chained stage runs on. Null means "same as this job", the
+ * default; a value pins that stage to its own server and model.
+ */
+export interface GuidedPlanningChainModels {
+	assets: ChainModel | null;
+	coding: ChainModel | null;
+}
+
 /** Overrides applied to the coding job a chained run creates. */
 export interface GuidedPlanningCodingRun {
 	max_attempts: number | null;
@@ -91,6 +102,8 @@ export interface GuidedPlanningConfig {
 	 * whatever it is born with is what runs all night.
 	 */
 	coding_run: GuidedPlanningCodingRun;
+	/** Only read in `unattended_chain`; ignored otherwise. */
+	chain_models: GuidedPlanningChainModels;
 }
 
 export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningConfig {
@@ -125,6 +138,10 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		max_turns:
 			typeof cr.max_turns === 'number' && Number.isFinite(cr.max_turns) ? cr.max_turns : null
 	};
+	const cm =
+		raw.chain_models && typeof raw.chain_models === 'object' && !Array.isArray(raw.chain_models)
+			? (raw.chain_models as Record<string, unknown>)
+			: {};
 	return {
 		initial_description:
 			typeof raw.initial_description === 'string' && raw.initial_description.length > 0
@@ -146,6 +163,10 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		// gate is the one thing standing between a bad plan and hours of
 		// unwatched code, and a hand-edited type_config must not remove it.
 		skip_verification: mode === 'unattended_chain' ? false : skipVerification,
-		coding_run: codingRun
+		coding_run: codingRun,
+		chain_models: {
+			assets: parseChainModel(cm.assets),
+			coding: parseChainModel(cm.coding)
+		}
 	};
 }
