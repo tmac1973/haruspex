@@ -140,7 +140,9 @@ fn smtp_error(host: &str, e: &lettre::transport::smtp::Error) -> String {
     if e.is_timeout() {
         format!("{host} did not answer within {} s", SMTP_TIMEOUT.as_secs())
     } else if text.contains("535") || text.contains("534") || text.to_lowercase().contains("auth") {
-        format!("{host} refused the login — check the app password in Settings → Email ({text})")
+        format!(
+            "{host} refused the login — check the app password in Settings → Integrations ({text})"
+        )
     } else {
         format!("Sending through {host} failed: {text}")
     }
@@ -164,13 +166,13 @@ async fn bounded<T>(
 fn require_sending(account: &EmailAccount) -> Result<(), String> {
     if !account.send_enabled {
         return Err(format!(
-            "Sending is off for {} — turn on Allow sending in Settings → Email",
+            "Sending is off for {} — turn on Allow sending in Settings → Integrations",
             account.email_address
         ));
     }
     if account.smtp_host.trim().is_empty() || account.smtp_port == 0 {
         return Err(format!(
-            "No SMTP server is set for {} — Settings → Email",
+            "No SMTP server is set for {} — Settings → Integrations",
             account.email_address
         ));
     }

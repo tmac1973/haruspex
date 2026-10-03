@@ -31,7 +31,7 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 - **Memory (off by default)** — When you turn it on, Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". All of it stays on this device — the text never leaves it. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](#memory))
 - **Open in shell** — If an answer ends with "run this command", press the `>_` button to open the whole conversation in a new Shell tab, where the commands become buttons you can run.
 - **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](#remote-access))
-- **Email (off by default, read-only)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. It can never send. ([details](#email-integration))
+- **Email (off by default)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. Turn on **Allow sending** and it can also draft replies and new mail — but every draft opens for you to edit, and only your click on Send sends it. ([details](#email-integration))
 - **Calendar and contacts (off by default, read-only)** — Connect a CalDAV/CardDAV account (Nextcloud, Fastmail, iCloud, Radicale, Baikal, Synology) and ask what is on this week or how to reach someone. ([details](#calendar-and-contacts))
 - **MCP integrations (off by default)** — Connect other services through MCP servers. Haruspex installs and runs them itself, so you never need a terminal. ([details](#mcp-integrations))
 - **Screen capture (off by default)** — Ask about what is on your screen. There is also a camera button in the chat box for attaching a screenshot yourself. ([details](#screen-capture))
@@ -52,6 +52,8 @@ Audit, guided planning and autonomous coding are coding-focused. They need a lar
 
 ### Image generation (off by default)
 
+- **Pictures in Chat** — Ask Chat to draw something and the picture appears in the answer, and stays with the conversation. ([details](#image-generation))
+- **Art for the project you are coding** — In the Shell's Code mode, ask for "a 32 px coin sprite in assets/" and the assistant writes a finished sprite, icon or tiling texture into your project, made the same way the asset job makes them. It can match the colours of an asset you already have.
 - **Game art from a description** — The asset generation job draws a project's sprites, icons and tiling textures in one consistent style, checks each one, and writes them into the project. Guided planning can hand off to it and then to autonomous coding, so you can go from an idea to a game with its own art in one unattended run. ([details](#image-generation))
 - **Runs on your machine** — Either a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, or a bundled engine that needs nothing installed. Nothing starts until you pick one in Settings → Image.
 
@@ -180,7 +182,7 @@ There are five kinds of job:
 
 - **Research** — A list of steps that run in order. Each step is a fresh conversation that receives the previous step's output, so you can chain "search → summarise → write a report" into one run. Each step can turn on deep research on its own.
 - **Audit** — Used to audit code bases. Runs one prompt many times independently, groups the findings, checks each group against the source, and writes one report sorted into confirmed / refuted / uncertain. Running it many times cancels out the noise a small model produces in any single run. You can set the number of runs, the step budget per run, a read-only tool restriction, your own instructions, and an output file.
-- **Guided planning** — Turns a rough idea into a written project overview and a plan split into phases, in the right dependency order. It asks you one question at a time and reads your codebase as it goes. It writes an `overview.md` and `phase-NN-*.md` files, and stops at checkpoints so you can review or change things. A separate reviewer pass then looks for missing steps and decisions still marked "TBD". It only plans — it never writes code. A long run picks up where it left off if the app restarts.
+- **Guided planning** — Turns a rough idea into a written project overview and a plan split into phases, in the right dependency order. It asks you one question at a time and reads your codebase as it goes. It writes an `overview.md` and `phase-NN-*.md` files, and stops at checkpoints so you can review or change things. A separate reviewer then reads the plan fresh, looking for missing steps and decisions still marked "TBD". **Full** verification revises until the reviewer is satisfied; **Lite** reads once and revises once, and hands anything it found to the coding run; **Skip** leaves it to you. It only plans — it never writes code. A long run picks up where it left off if the app restarts.
 - **Autonomous coding** — Takes a folder of plan files (usually from a guided planning job), asks you about every open decision up front, then writes the code unattended: one small step at a time, each one checked and committed, with a deeper check at the end of every phase. Each run gets its own git branch. It finishes by writing a report of what it built, what is blocked and why, and what comes next.
 
 - **Asset generation** — Draws the images a project needs from a spec: sprites and icons in sheets, textures that tile. It writes the spec itself if you describe what you want, or a guided planning job writes one with the plan. See [Image generation](#image-generation).
@@ -192,6 +194,8 @@ Guided planning can run unattended and **chain** into asset generation and then 
 **Scheduling.** Run a job by hand, or on a preset (hourly / daily / weekly) or a fixed interval while the app is open. While a job is running, Haruspex keeps your machine from going to sleep. Autonomous coding cannot be scheduled, because it starts by asking you questions.
 
 **Per-job model.** By default a job uses your global backend (Settings → Inference backend). Any job can instead point at its own OpenAI-compatible server: base URL, optional API key, model ID, context size and whether it can see images. This is useful for sending a heavy audit or planning job to a bigger or faster model. Because that remote model and your local `llama-server` are separate, a job running remotely **does not block the Chat or Shell tabs** from using your local model at the same time.
+
+**Token figures.** Each run's **Tokens** card shows what every step spent and how close it came to filling the model's context window. A step that ran out of room says so — "trimmed 4×" — and the tooltip says how hard it had to cut. **Export JSON** saves the lot.
 
 Audit, guided planning, autonomous coding and asset generation need a working directory — the model reads your code and writes its files there. Research jobs work with or without one.
 
@@ -208,6 +212,10 @@ There are two models, both available on either backend:
 | --- | --- | --- |
 | [Ming-Image 0.1 Design](https://huggingface.co/inclusionAI/Ming-Image-0.1-Design) (default) | MIT — commercial use allowed | ~8 GB VRAM and ~10 GB RAM |
 | Qwen-Image 2.1 | Qwen Research License — **non-commercial only** | ~12 GB VRAM |
+
+**In Chat.** With a backend picked, ask Chat to draw, paint or illustrate something. The picture appears in the answer and is kept with the conversation. A model that forgets to place it still gets it shown under the answer. When the image model in use is licensed for non-commercial use only, the assistant is told so it can tell you.
+
+**In the Shell.** In Code mode the assistant can make a sprite, icon or tiling texture — or a plain picture — and write it into the project as a PNG at the size you ask for. It is drawn and checked the way the asset job does it: transparent background, cropped, reduced to a palette. Point it at an existing asset to match its colours. It will not overwrite a file unless you ask.
 
 The bundled engine runs Ming from a GGUF conversion we host at [voltaire321/Ming-Image-0.1-Design-GGUF](https://huggingface.co/voltaire321/Ming-Image-0.1-Design-GGUF).
 
@@ -290,7 +298,7 @@ We include it because some people want a frontier model — usually for the codi
 
 ## Email integration
 
-Haruspex can connect to your email over IMAP so the model can summarise recent messages, find mail from a certain person, or read one full message when you ask. It is **off by default**, **read-only** and works with several providers.
+Haruspex can connect to your email over IMAP so the model can summarise recent messages, find mail from a certain person, or read one full message when you ask. With **Allow sending** on, it can also draft mail for you to review and send. It is **off by default** and works with several providers.
 
 Every provider needs 2-factor authentication on your account plus an **app password** — a 16-character code the provider creates for Haruspex. It is not your normal login password.
 
@@ -304,7 +312,7 @@ Every provider needs 2-factor authentication on your account plus an **app passw
 
 Microsoft 365 and Outlook.com are **not** supported. Microsoft turned off basic authentication for those accounts, so there is no app-password path. OAuth support is planned later.
 
-**Setup.** `Settings → Integrations → Email`, click "Add email account", pick a provider, enter your address and app password, click "Test connection", then switch the account on.
+**Setup.** `Settings → Integrations → Email`, click "Add email account", pick a provider, enter your address and app password, click **Save password** (it tests the connection first), then switch the account on.
 
 **Tools.** With at least one account switched on, the model gets three tools:
 
@@ -312,7 +320,7 @@ Microsoft 365 and Outlook.com are **not** supported. Microsoft turned off basic 
 - `email_summarize_message` — summarises one full message in a separate call, the same way web pages are summarised.
 - `email_read_full` — returns one full message as-is, when a summary is not enough.
 
-All three are hidden from the model completely unless an account is switched on. Email passwords are kept in the system keychain (GNOME Keyring or KWallet on Linux, Keychain on macOS, Credential Manager on Windows) where there is one, and in the local settings file otherwise; calendar and contacts credentials are in the settings file. Messages are fetched with `BODY.PEEK`, so reading one never marks it as read.
+All three are hidden from the model completely unless an account is switched on. A list reads only each message's headers and the start of its text, so it stays quick on a large inbox, and reading a huge message skips its attachments. A slow server fails within half a minute instead of hanging, and stopping a reply stops the fetch. Email passwords are kept in the system keychain (GNOME Keyring or KWallet on Linux, Keychain on macOS, Credential Manager on Windows) where there is one, and in the local settings file otherwise; calendar and contacts credentials are in the settings file. Messages are fetched with `BODY.PEEK`, so reading one never marks it as read.
 
 **Sending.** Sending is off until you turn on **Allow sending** for an account, which also asks for its SMTP server. The model then gets `email_compose`, which opens a draft — a reply or a new message — in a review dialog. You can edit everything, and nothing goes out until you click **Send**; discarding it tells the model you declined. Replies thread under the original, and a copy is filed in Sent. Jobs never get the tool, and auto-approve does not apply to it.
 
@@ -394,7 +402,7 @@ This is how small local models behave: after a long research turn, they prefer t
 
 ### Image generation is new
 
-The asset job has been run end to end on Linux with an AMD GPU. It has not yet been tested on macOS or Windows. Generation uses your GPU heavily: while it runs, the bundled engine holds most of a 16 GB card, so expect the rest of the system's GPU work to suffer.
+The asset job has been run end to end on Linux with an AMD GPU. Drawing in Chat and art in the Shell are newer and so far only covered by automated tests. All of it builds and passes its tests on macOS and Windows, but nobody has generated images there yet. Generation uses your GPU heavily: while it runs, the bundled engine holds most of a 16 GB card, so expect the rest of the system's GPU work to suffer.
 
 ### Presentations and image search are experimental
 
@@ -493,6 +501,10 @@ A Mac and a Windows PC can be set up as test machines, with suites run on them
 from Linux over SSH. Setup is two scripts per machine; see
 [`scripts/ci-runner/README.md`](./scripts/ci-runner/README.md).
 
+### CI
+
+Every pull request runs the Linux lint, type-check and test jobs. The Windows and macOS jobs are slow, so they run after every merge to `main`, from **Actions → CI → Run workflow**, or on a pull request labelled `windows-ci` or `macos-ci` — adding the label starts that job straight away.
+
 ### Make targets
 
 Run `make help` to see all targets:
@@ -538,6 +550,7 @@ Use `make reset-data` to wipe this directory and start fresh (Linux/macOS).
 | docx / xlsx                | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes |
 | odt / ods / odp / pptx     | Hand-written zip+XML following the OASIS OpenDocument and OOXML specs                                                                                                           |
 | MCP client                 | [rmcp](https://crates.io/crates/rmcp) (stdio and streamable HTTP), with [node](https://nodejs.org/) and [uv](https://github.com/astral-sh/uv) bundled to run servers |
+| Email                      | [async-imap](https://crates.io/crates/async-imap) and [mail-parser](https://crates.io/crates/mail-parser) for reading, [lettre](https://crates.io/crates/lettre) for sending, [keyring](https://crates.io/crates/keyring) for the system keychain |
 | Calendar / contacts        | CalDAV and CardDAV over [quick-xml](https://crates.io/crates/quick-xml), with [rrule](https://crates.io/crates/rrule) for recurrence |
 | Screen capture             | XDG desktop portal on Linux ([ashpd](https://crates.io/crates/ashpd)), [xcap](https://crates.io/crates/xcap) on macOS and Windows |
 | Database                   | SQLite (via rusqlite)                                                                                                                                                           |

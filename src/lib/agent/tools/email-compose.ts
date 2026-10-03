@@ -30,7 +30,7 @@ function addressList(raw: unknown): string[] | undefined {
 function composeAccount(selector: string | undefined): EmailAccount | string {
 	const sendable = sendableAccounts();
 	if (sendable.length === 0) {
-		return 'No email account has sending allowed. The user can turn on Allow sending in Settings → Email.';
+		return 'No email account has sending allowed. The user can turn on Allow sending in Settings → Integrations.';
 	}
 	if (!selector) {
 		return sendable.length === 1
@@ -40,7 +40,7 @@ function composeAccount(selector: string | undefined): EmailAccount | string {
 	const ids = new Set(resolveEmailAccounts(selector).map((a) => a.id));
 	return (
 		sendable.find((a) => ids.has(a.id)) ??
-		`No account matching ${selector} has sending allowed (Settings → Email).`
+		`No account matching ${selector} has sending allowed (Settings → Integrations).`
 	);
 }
 
