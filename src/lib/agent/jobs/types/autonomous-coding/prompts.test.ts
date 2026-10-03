@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	decomposePrompt,
+	finalizePrompt,
 	iterationPrompt,
 	phaseTurnPrompt,
 	preflightPrompt,
@@ -513,5 +514,39 @@ describe('readmePrompt', () => {
 		expect(p).toContain('`README.md` at the repository root');
 		expect(p).toContain('Write ONLY `README.md`');
 		expect(p).toContain('Do not write or edit any code');
+	});
+});
+
+describe('the project boundary', () => {
+	it('tells every shell-using turn where its boundary is', () => {
+		for (const prompt of [
+			iterationPrompt(null, null, 'plan/x/'),
+			phaseTurnPrompt(null, 'plan/x/')
+		]) {
+			const p = flat(prompt);
+			expect(p).toContain('YOUR BOUNDARY IS THE PROJECT DIRECTORY');
+			// The failure it exists for: making missing art some other way.
+			expect(p).toContain('never produce the missing input some other way');
+		}
+	});
+
+	it('asks the report to list what was refused, only when something was', () => {
+		const refused = flat(
+			finalizePrompt('plan/x/', 'plan/x/REPORT-coding.md', [
+				{
+					command: 'sqlite3 ~/.local/share/com.haruspex.app/haruspex.db',
+					reasons: ["touches Haruspex's data directory"]
+				},
+				{
+					command: 'curl localhost:8188/prompt',
+					reasons: ["calls Haruspex's image backend (port 8188)"]
+				}
+			])
+		);
+		expect(refused).toContain('## Blocked at the boundary');
+		expect(refused).toContain('`curl localhost:8188/prompt` — calls Haruspex');
+		expect(flat(finalizePrompt('plan/x/', 'plan/x/REPORT-coding.md'))).not.toContain(
+			'Blocked at the boundary'
+		);
 	});
 });

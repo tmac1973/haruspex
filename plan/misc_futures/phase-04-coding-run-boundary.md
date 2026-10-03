@@ -2,6 +2,31 @@
 
 Depends on: — / Enables: —
 
+## As built — notes
+
+- **Refusals reach the report through a subscription,** not `ToolContext`.
+  `boundary.ts` exports `onBoundaryRefusal` and `reportBoundaryRefusal`.
+  `runAutonomousCodingPipeline` listens for the whole run (try/finally) and
+  hands the list to `finalizePrompt`. Runs are serialized, and only
+  unattended turns refuse; attended ones ask. So this avoids threading a
+  callback through `AgentLoopOptions`, the loop context, `runEphemeralTurn`
+  and `runJobTurn`.
+- **An install directory is guarded only if its path contains "haruspex".**
+  A packaged Linux build runs from `/usr/bin`, and guarding that would refuse
+  every command naming `/usr/bin`. The data, settings, cache and log
+  directories are always guarded.
+- **Paths and ports come labelled from Rust** (`ProtectedPath`,
+  `ProtectedPort`), so a refusal names what was reached: "touches Haruspex's
+  data directory", "calls Haruspex's image engine (port 8767)".
+- **The image backend's port** is guarded when its URL is loopback. The
+  frontend passes it as `extra_ports`, and the cache is keyed on it.
+- **Windows paths compare without regard to case,** and `%USERPROFILE%` and
+  `$env:USERPROFILE` count as home, alongside `~`, `$HOME` and `${HOME}`.
+- **Also fixed:** the existing unattended-risk refusal joined `RiskMatch`
+  objects, so a model was told "Command blocked ([object Object])". It now
+  joins their descriptions.
+- **Not done:** the manual run in the test plan. It needs the app and a model.
+
 ## Goal
 
 An autonomous coding run's shell must not reach Haruspex itself: its data

@@ -5,6 +5,7 @@
 // (executor factories, command maps) so the name provably exists in Rust.
 
 export const IPC = {
+	app_protected_targets: 'app_protected_targets',
 	cancel_download: 'cancel_download',
 	capture_screen: 'capture_screen',
 	clear_app_logs: 'clear_app_logs',

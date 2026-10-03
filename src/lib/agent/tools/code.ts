@@ -5,7 +5,8 @@ import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { getSettings } from '$lib/stores/settings';
-import { classifyShellRisk } from '$lib/shell/risky-commands';
+import { classifyShellRisk, type RiskMatch } from '$lib/shell/risky-commands';
+import { checkBoundary, protectedTargets, reportBoundaryRefusal } from '$lib/shell/boundary';
 import { isAutoApproveActive } from '$lib/stores/approvalOverride';
 import {
 	askCommandApproval,
@@ -41,6 +42,33 @@ async function ensureCommandApproved(
 	command: string,
 	ctx: ToolContext
 ): Promise<'ok' | { message: string }> {
+	// The boundary comes first, ahead of every shortcut below: auto-approve
+	// and "allow for this session" are exactly how an unattended run used to
+	// reach Haruspex's own database and services unasked.
+	const targets = await protectedTargets();
+	const boundary = targets ? checkBoundary(command, targets, codeRoot(ctx)) : null;
+	if (boundary?.matched) {
+		if (isAutoApproveActive() && !ctx.interactive) {
+			reportBoundaryRefusal({ command, reasons: boundary.reasons });
+			return {
+				message: toolError(
+					`Command blocked: it reaches outside this project (${boundary.reasons.join('; ')}). ` +
+						`The project directory is your boundary — if you are blocked by something ` +
+						`outside it, say so in your report instead of working around it. Do not retry ` +
+						`this command.`
+				)
+			};
+		}
+		// Attended: always ask, whatever was allowed for the session.
+		const extra = classifyShellRisk(command);
+		const boundaryReasons: RiskMatch[] = boundary.reasons.map((description) => ({
+			label: 'outside the project',
+			description
+		}));
+		return askAboutCommand(command, [...boundaryReasons, ...(extra.matched ? extra.reasons : [])], {
+			sessionApprovable: false
+		});
+	}
 	if (ctx.codeAutoApprove || isSessionApproved()) return 'ok';
 	const risk = classifyShellRisk(command);
 	if (!risk.matched) return 'ok';
@@ -57,7 +85,7 @@ async function ensureCommandApproved(
 	if (isAutoApproveActive() && !ctx.interactive) {
 		return {
 			message: toolError(
-				`Command blocked (${risk.reasons.join('; ')}): risky commands are unavailable ` +
+				`Command blocked (${risk.reasons.map((r) => r.description).join('; ')}): risky commands are unavailable ` +
 					`in unattended runs — there is nobody present to approve them. Take a safer ` +
 					`route: prefer the fs_* tools for file work, and avoid destructive commands. ` +
 					`Scratch files themselves are fine — write them to the system temp directory ` +
@@ -66,9 +94,22 @@ async function ensureCommandApproved(
 			)
 		};
 	}
+	return askAboutCommand(command, risk.reasons, { sessionApprovable: true });
+}
+
+/**
+ * The approval modal. A boundary reason is never approvable for the session:
+ * "allow everything risky for now" was given for an `rm`, not for reading
+ * Haruspex's database.
+ */
+async function askAboutCommand(
+	command: string,
+	reasons: RiskMatch[],
+	opts: { sessionApprovable: boolean }
+): Promise<'ok' | { message: string }> {
 	let choice;
 	try {
-		choice = await askCommandApproval({ command, reasons: risk.reasons });
+		choice = await askCommandApproval({ command, reasons });
 	} catch (e) {
 		return { message: toolInvokeError('run_command approval', e) };
 	}
@@ -78,7 +119,7 @@ async function ensureCommandApproved(
 				'Command denied by the user. Do not retry it — ask how they would like to proceed or take a different approach.'
 		};
 	}
-	if (choice === 'allow_session') approveSession();
+	if (choice === 'allow_session' && opts.sessionApprovable) approveSession();
 	return 'ok';
 }
 

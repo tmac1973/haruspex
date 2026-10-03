@@ -1,5 +1,6 @@
 /** Autonomous-coding prompts: preflight, decompose, the loop, finalize. */
 
+import type { BoundaryRefusal } from '$lib/shell/boundary';
 import { STEP_CHECK_HEADING, VERIFICATION_COMMAND_HEADING } from './planParse';
 import { interviewResearchRules, writeResearchRules } from '../webResearch';
 
@@ -38,7 +39,15 @@ function shellSafetyRules(stage: 'preflight' | 'unattended'): string[] {
 		'directory (/tmp on Linux/macOS, %TEMP% on Windows), never into the working',
 		'directory — and then LEAVE THEM THERE. Do not tidy up. The OS clears temp on',
 		'its own, and the cleanup command is exactly the one that gets stopped; a',
-		'leftover scratch file costs nothing, deleting it costs an approval or a turn.'
+		'leftover scratch file costs nothing, deleting it costs an approval or a turn.',
+		'',
+		'YOUR BOUNDARY IS THE PROJECT DIRECTORY:',
+		'Work only inside it. Never read, query or call Haruspex itself — its data',
+		'directory, its database, its source, or the servers it runs on localhost',
+		'(the chat model, speech, the image engine, the image backend). Commands',
+		'that do are blocked. If something outside the project stops you — art the',
+		'chain failed to make, a service that is down — say so in your report;',
+		'never produce the missing input some other way.'
 	];
 }
 
@@ -602,7 +611,11 @@ export function readmePrompt(planDir: string, reportPath: string): string {
 	].join('\n');
 }
 
-export function finalizePrompt(planDir: string, reportPath: string): string {
+export function finalizePrompt(
+	planDir: string,
+	reportPath: string,
+	refusals: BoundaryRefusal[] = []
+): string {
 	return [
 		'The unattended coding run has finished. Write the report the user reads',
 		'when they come back. Do not write or edit any code — only the one report',
@@ -616,6 +629,14 @@ export function finalizePrompt(planDir: string, reportPath: string): string {
 		'   the TODO file\'s phase headings carry this), "## Blocked items" (each',
 		'   blocked item or phase with its failure history and your best diagnosis),',
 		'   and "## Suggested next steps" (concrete, for a human).',
+		...(refusals.length > 0
+			? [
+					'   Also a "## Blocked at the boundary" section: each command below was',
+					'   refused because it reached outside the project. List each one, why, and',
+					'   what the user would need to do so the run does not need it:',
+					...refusals.map((r) => `   - \`${r.command}\` — ${r.reasons.join('; ')}`)
+				]
+			: []),
 		`   Write ONLY that one file, inside \`${planDir}\`. Then stop.`
 	].join('\n');
 }
