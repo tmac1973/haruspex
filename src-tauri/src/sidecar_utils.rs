@@ -541,8 +541,10 @@ mod tests {
         let err = kill_process_on_port(port, "test-sidecar", None)
             .await
             .expect_err("not ours");
+        // Named by its command line, whatever the platform calls Python
+        // (macOS: ".../Python.app/Contents/MacOS/Python").
         assert!(
-            err.contains("another program") && err.contains("python3"),
+            err.contains("another program") && err.to_lowercase().contains("python"),
             "{err}"
         );
         assert!(
