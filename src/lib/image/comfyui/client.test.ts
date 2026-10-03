@@ -266,10 +266,10 @@ describe('cancelPrompt', () => {
 			});
 			if (path === '/queue' && (init?.method ?? 'GET') === 'GET') {
 				if (queue === 'broken') throw new Error('down');
-				const entry = (id: string) => [0, id, {}, {}, []];
+				const queued = (id: string) => [0, id, {}, {}, []];
 				return ok({
-					queue_running: queue.running.map(entry),
-					queue_pending: queue.pending.map(entry)
+					queue_running: queue.running.map(queued),
+					queue_pending: queue.pending.map(queued)
 				});
 			}
 			return ok({});

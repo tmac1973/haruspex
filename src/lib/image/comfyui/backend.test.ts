@@ -355,11 +355,11 @@ describe('cancelling', () => {
 				return body({ prompt_id: 'p1' });
 			}
 			if (path === '/queue' && (init?.method ?? 'GET') === 'GET') {
-				const entry = [0, 'p1', {}, {}, []];
+				const queued = [0, 'p1', {}, {}, []];
 				return body(
 					state === 'running'
-						? { queue_running: [entry], queue_pending: [] }
-						: { queue_running: [], queue_pending: [entry] }
+						? { queue_running: [queued], queue_pending: [] }
+						: { queue_running: [], queue_pending: [queued] }
 				);
 			}
 			if (path === '/system_stats') return body({ devices: [{ name: 'AMD R9700' }] });
