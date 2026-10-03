@@ -181,6 +181,40 @@ async function prepare(cfg: api.ClientConfig, req: ImageRequest) {
 	return { template, graph, model, sampler, loras, seed };
 }
 
+/**
+ * `p`, unless `signal` aborts first: then `onAbort` runs and this rejects as
+ * cancelled at once, while `p` carries on.
+ */
+function untilAborted<T>(
+	p: Promise<T>,
+	signal: AbortSignal | undefined,
+	onAbort: () => void
+): Promise<T> {
+	if (!signal) return p;
+	const cancelled = () => new ImageBackendError('cancelled', 'Generation cancelled.');
+	if (signal.aborted) {
+		onAbort();
+		return Promise.reject(cancelled());
+	}
+	return new Promise<T>((resolve, reject) => {
+		const abort = () => {
+			onAbort();
+			reject(cancelled());
+		};
+		signal.addEventListener('abort', abort, { once: true });
+		p.then(
+			(v) => {
+				signal.removeEventListener('abort', abort);
+				resolve(v);
+			},
+			(e) => {
+				signal.removeEventListener('abort', abort);
+				reject(e);
+			}
+		);
+	});
+}
+
 export const comfyUiBackend: ImageBackend = {
 	kind: 'comfyui',
 
@@ -244,8 +278,19 @@ export const comfyUiBackend: ImageBackend = {
 			}
 		);
 
+		let promptId: string | null = null;
 		try {
-			const promptId = await api.submit(cfg, graph, clientId, opts.signal);
+			// Not given the abort signal: a submit cut short can leave the prompt
+			// queued with its id lost, and it would then run anyway. A cancel
+			// during submit settles at once; the prompt is removed once submit
+			// says what it was.
+			const submitting = api.submit(cfg, graph, clientId);
+			promptId = await untilAborted(submitting, opts.signal, () => {
+				submitting.then(
+					(id) => api.cancelPrompt(cfg, id),
+					() => {}
+				);
+			});
 			const deadline = started + api.GENERATION_TIMEOUT_MS;
 			let images: api.HistoryImage[] | null = null;
 			while (images === null) {
@@ -281,7 +326,8 @@ export const comfyUiBackend: ImageBackend = {
 			};
 		} catch (e) {
 			if (opts.signal?.aborted) {
-				await api.interrupt(cfg);
+				// In the background: the generation settles as cancelled now.
+				if (promptId) void api.cancelPrompt(cfg, promptId);
 				throw new ImageBackendError('cancelled', 'Generation cancelled.');
 			}
 			throw e;
