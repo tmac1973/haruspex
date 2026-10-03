@@ -456,6 +456,8 @@ pub fn run() {
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;
                     let _ = tts.stop().await;
+                    // ~7 GB of VRAM for Ming: left behind, it outlived the app.
+                    app.state::<image_engine::ImageEngine>().stop().await;
                     browser.shutdown().await;
                 });
             }
