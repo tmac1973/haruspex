@@ -61,7 +61,7 @@ export function familyOfId(id: string): LocalFamily | null {
 export function declaredCapabilities(family: LocalFamily | null = null): ImageBackendCapabilities {
 	const build = capabilitiesFrom(FIXTURE);
 	if (!family) return build;
-	return { transparency: true, seamlessTiling: false, loras: false, maxLoras: 0 };
+	return { transparency: true, seamlessTiling: true, loras: false, maxLoras: 0 };
 }
 
 /**
@@ -85,6 +85,9 @@ export function capabilitiesFrom(fixture: SdCapabilityFixture): ImageBackendCapa
 export interface A1111Request {
 	/** img2img only: the start image, base64 PNG. */
 	init_images?: string[];
+	/** img2img only: what to repaint, base64 grey PNG, white = repaint. The
+	 *  pinned build reads `mask`; it ignores `mask_image` on this route. */
+	mask?: string;
 	/** img2img only: how far from the start image to go, 0..1. */
 	denoising_strength?: number;
 	prompt: string;
@@ -133,6 +136,13 @@ export const DEFAULT_SAMPLER = FAMILY_SAMPLER.ming;
 export const CLEAR_START_STRENGTH = 0.9;
 
 /**
+ * How far the seam repaint departs from the rolled texture. 0.6 left the old
+ * seam showing; 1.0 redrew the band at a different scale from the rest
+ * (cobbles half the size); 0.75 matched (`measurements-phase-28.md`).
+ */
+export const SEAM_REPAINT_STRENGTH = 0.75;
+
+/**
  * The request body for one generation.
  *
  * txt2img, unless `clearStart` carries a transparent canvas: then img2img
@@ -147,6 +157,8 @@ export function buildRequest(req: {
 	sampler?: { name: string; steps: number; cfg: number };
 	/** A transparent PNG of the request's size, base64. */
 	clearStart?: string;
+	/** The seam pass: the rolled texture and the mask over its seams, base64. */
+	repaint?: { image: string; mask: string };
 }): { route: string; body: A1111Request } {
 	const sampler = req.sampler ?? DEFAULT_SAMPLER;
 	const body: A1111Request = {
@@ -163,6 +175,17 @@ export function buildRequest(req: {
 		batch_size: 1,
 		n_iter: 1
 	};
+	if (req.repaint) {
+		return {
+			route: ROUTES.img2img,
+			body: {
+				...body,
+				init_images: [req.repaint.image],
+				mask: req.repaint.mask,
+				denoising_strength: SEAM_REPAINT_STRENGTH
+			}
+		};
+	}
 	if (req.clearStart) {
 		return {
 			route: ROUTES.img2img,

@@ -61,6 +61,7 @@ The plan was rewritten around this: phases 17–25. Phase 16 is superseded.
 | 25 | Verify end to end; procedural comparison | **in progress** — comparison and re-run done (`measurements-phase-25.md`), docs rewritten; the full chain run, failure paths, macOS/Windows remain |
 | 26 | ComfyUI through Rust: no CORS flag | **done** |
 | 27 | Install a model's files into ComfyUI: direct, Manager, by hand | **done** — both routes live-tested: Manager 4.2.2 and direct, each installing Ming's VAE with its checksum |
+| 28 | Seamless textures on the bundled engine | **done** — roll, masked img2img at 0.75, tone-matched composite (`measurements-phase-28.md`); five textures tile |
 
 Critical path: 18 → 20 → 21 → 22. 19 and 23 can interleave once 18 is in.
 Then 26 → 19 → 27 → 25: a stock ComfyUI, set up from Settings, before the

@@ -63,7 +63,7 @@ fn edge_ratio(img: &RgbaImage) -> f32 {
 }
 
 /// The image shifted by half its size in both axes, wrapping round.
-fn rolled_by_half(img: &RgbaImage) -> RgbaImage {
+pub fn rolled_by_half(img: &RgbaImage) -> RgbaImage {
     let (w, h) = img.dimensions();
     RgbaImage::from_fn(w, h, |x, y| {
         *img.get_pixel((x + w / 2) % w, (y + h / 2) % h)
@@ -75,6 +75,64 @@ fn rolled_by_half(img: &RgbaImage) -> RgbaImage {
 /// does not.
 pub fn seam_ratio(img: &RgbaImage) -> f32 {
     edge_ratio(img).max(edge_ratio(&rolled_by_half(img)))
+}
+
+/// The repaint mask for a texture rolled by half: a cross a quarter of the size
+/// wide over the old seams, feathered, and doubled so its middle is solid
+/// (a blurred band peaks below full strength, and at less than full strength
+/// the old seam survives). White is repainted; black is kept.
+pub fn seam_mask(w: u32, h: u32) -> image::GrayImage {
+    let band_w = (w / 4).max(1);
+    let band_h = (h / 4).max(1);
+    let (x0, y0) = (w / 2 - band_w / 2, h / 2 - band_h / 2);
+    let hard = image::GrayImage::from_fn(w, h, |x, y| {
+        let inside = (x >= x0 && x < x0 + band_w) || (y >= y0 && y < y0 + band_h);
+        image::Luma([if inside { 255 } else { 0 }])
+    });
+    // A 48 px blur at 1024, scaled to the size, as measured.
+    let sigma = (w.min(h) as f32 / 1024.0) * 48.0;
+    let soft = image::imageops::blur(&hard, sigma.max(1.0));
+    image::GrayImage::from_fn(w, h, |x, y| {
+        image::Luma([soft.get_pixel(x, y).0[0].saturating_mul(2)])
+    })
+}
+
+/// `top` over `base` through `mask` (white = top). Outside the mask the base is
+/// kept to the byte: those pixels are what makes the rolled texture wrap, and a
+/// pass through the VAE would nudge them.
+///
+/// Inside it the repaint is first matched to the base's tone, per channel, over
+/// the masked area: masked img2img can come back darker across the whole band
+/// (water did, by about a tenth), which tiles as a grid of stripes even when
+/// every detail joins up.
+pub fn composite(base: &RgbaImage, top: &RgbaImage, mask: &image::GrayImage) -> RgbaImage {
+    let shift = tone_shift(base, top, mask);
+    RgbaImage::from_fn(base.width(), base.height(), |x, y| {
+        let a = mask.get_pixel(x, y).0[0] as f32 / 255.0;
+        let (b, t) = (base.get_pixel(x, y).0, top.get_pixel(x, y).0);
+        let mix = |i: usize| {
+            let t = (t[i] as f32 + shift[i]).clamp(0.0, 255.0);
+            (t * a + b[i] as f32 * (1.0 - a)).round() as u8
+        };
+        image::Rgba([mix(0), mix(1), mix(2), 255])
+    })
+}
+
+/// Per channel, what to add to `top` so its mask-weighted mean is `base`'s.
+fn tone_shift(base: &RgbaImage, top: &RgbaImage, mask: &image::GrayImage) -> [f32; 3] {
+    let (mut sb, mut st, mut w) = ([0f64; 3], [0f64; 3], 0f64);
+    for ((b, t), m) in base.pixels().zip(top.pixels()).zip(mask.pixels()) {
+        let a = m.0[0] as f64;
+        w += a;
+        for i in 0..3 {
+            sb[i] += b.0[i] as f64 * a;
+            st[i] += t.0[i] as f64 * a;
+        }
+    }
+    if w == 0.0 {
+        return [0.0; 3];
+    }
+    std::array::from_fn(|i| ((sb[i] - st[i]) / w) as f32)
 }
 
 #[cfg(test)]
@@ -173,6 +231,103 @@ mod tests {
                 p.file_stem().unwrap().to_string_lossy(),
                 seam_ratio(&img)
             );
+        }
+    }
+
+    #[test]
+    fn roll_moves_every_pixel_and_wraps() {
+        let img = RgbaImage::from_fn(8, 4, |x, y| grey((x * 10 + y) as u8));
+        let r = rolled_by_half(&img);
+        assert_eq!(r.get_pixel(4, 2), img.get_pixel(0, 0));
+        assert_eq!(r.get_pixel(0, 0), img.get_pixel(4, 2));
+        assert_eq!(
+            rolled_by_half(&r),
+            img,
+            "rolling by half twice is the identity"
+        );
+    }
+
+    #[test]
+    fn the_mask_covers_the_middle_cross_and_spares_the_corners() {
+        let m = seam_mask(1024, 1024);
+        assert_eq!(
+            m.get_pixel(512, 512).0[0],
+            255,
+            "solid where the seams cross"
+        );
+        assert_eq!(m.get_pixel(512, 20).0[0], 255, "and along each arm");
+        assert_eq!(m.get_pixel(100, 100).0[0], 0, "corners kept");
+        let feather = m.get_pixel(512 - 128 - 40, 100).0[0];
+        assert!(
+            feather > 0 && feather < 255,
+            "soft at the band's edge: {feather}"
+        );
+    }
+
+    #[test]
+    fn the_composite_keeps_the_base_exactly_outside_the_mask() {
+        let base = RgbaImage::from_fn(16, 16, |x, y| grey((x * 7 + y * 3) as u8));
+        let top = RgbaImage::from_pixel(16, 16, grey(250));
+        let mask =
+            image::GrayImage::from_fn(16, 16, |x, _| image::Luma([if x < 8 { 0 } else { 255 }]));
+        let c = composite(&base, &top, &mask);
+        for y in 0..16 {
+            assert_eq!(c.get_pixel(3, y), base.get_pixel(3, y));
+            assert_ne!(c.get_pixel(12, y), base.get_pixel(12, y));
+        }
+    }
+
+    #[test]
+    fn a_repaint_that_came_back_darker_is_brought_back_to_the_base_tone() {
+        let base = RgbaImage::from_pixel(16, 16, grey(120));
+        let top = RgbaImage::from_fn(16, 16, |x, _| grey(if x % 2 == 0 { 90 } else { 110 }));
+        let mask = image::GrayImage::from_pixel(16, 16, image::Luma([255]));
+        let c = composite(&base, &top, &mask);
+        let mean = c.pixels().map(|p| p.0[0] as f32).sum::<f32>() / 256.0;
+        assert!((mean - 120.0).abs() < 0.5, "tone restored: {mean}");
+        assert_ne!(c.get_pixel(0, 0), c.get_pixel(1, 0), "detail kept");
+    }
+
+    /// The seam pass by hand, against a live engine (`measurements-phase-28.md`).
+    /// HARUSPEX_SEAM_STEP=prepare turns each `<name>.base.png` in HARUSPEX_SEAM_DIR
+    /// into `<name>.rolled.png` and `<name>.mask.png`; =finish blends each
+    /// `<name>.repaint.png` into `<name>.tile.png` and prints both seam ratios.
+    #[test]
+    #[ignore]
+    fn seam_pass() {
+        let dir = std::path::PathBuf::from(std::env::var("HARUSPEX_SEAM_DIR").unwrap());
+        let finish = std::env::var("HARUSPEX_SEAM_STEP").as_deref() == Ok("finish");
+        for e in std::fs::read_dir(&dir).unwrap() {
+            let p = e.unwrap().path();
+            let Some(name) = p
+                .to_string_lossy()
+                .strip_suffix(".base.png")
+                .map(String::from)
+            else {
+                continue;
+            };
+            let base = image::open(&p).unwrap().to_rgba8();
+            let rolled = rolled_by_half(&base);
+            let mask = seam_mask(base.width(), base.height());
+            if finish {
+                let top = image::open(format!("{name}.repaint.png"))
+                    .unwrap()
+                    .to_rgba8();
+                let tile = composite(&rolled, &top, &mask);
+                tile.save(format!("{name}.tile.png")).unwrap();
+                println!(
+                    "{:<24} base {:>5.2}  tile {:>5.2}",
+                    std::path::Path::new(&name)
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy(),
+                    seam_ratio(&base),
+                    seam_ratio(&tile)
+                );
+            } else {
+                rolled.save(format!("{name}.rolled.png")).unwrap();
+                mask.save(format!("{name}.mask.png")).unwrap();
+            }
         }
     }
 }

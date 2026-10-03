@@ -33,6 +33,8 @@ describe('generate', () => {
 			.mockReset()
 			.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
 				if (cmd === 'image_clear_canvas') return [1, 2, 3];
+				if (cmd === 'image_seam_inputs') return { rolled: [4, 5, 6], mask: [7, 8, 9] };
+				if (cmd === 'image_seam_finish') return [9, 9, 9];
 				if (cmd === 'image_engine_request') {
 					return JSON.stringify({ images: ['AQID'], info: JSON.stringify({ seed: 5 }), args });
 				}
@@ -83,6 +85,49 @@ describe('generate', () => {
 		expect(body.prompt).toMatch(/^This is an RGBA format image with transparency\. a coin/);
 		expect(body.steps).toBe(25);
 		expect(tauri.invoke).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
+	});
+
+	it('tiles by rolling, repainting the seams through the mask, and blending back', async () => {
+		settings.imageLocalModelId = 'ming';
+		const r = await localBackend.generate({
+			prompt: 'cobblestones',
+			width: 1024,
+			height: 1024,
+			seed: 1,
+			seamless: true
+		});
+		const calls = tauri.invoke.mock.calls.filter(([c]) => c === 'image_engine_request');
+		expect(calls.map(([, a]) => a.path)).toEqual(['/sdapi/v1/txt2img', '/sdapi/v1/img2img']);
+		const repaint = JSON.parse(calls[1][1].body as string);
+		expect(repaint).toMatchObject({
+			init_images: ['BAUG'],
+			mask: 'BwgJ',
+			denoising_strength: 0.75,
+			prompt: 'cobblestones'
+		});
+		// A seed of its own: the base's would redraw the base's layout.
+		expect(repaint.seed).toBe(6);
+		expect(tauri.invoke).toHaveBeenCalledWith('image_seam_inputs', { bytes: [1, 2, 3] });
+		expect(tauri.invoke).toHaveBeenCalledWith('image_seam_finish', {
+			rolled: [4, 5, 6],
+			repainted: [1, 2, 3]
+		});
+		expect(Array.from(r.images[0].bytes)).toEqual([9, 9, 9]);
+		expect(r.meta.seed).toBe(5);
+	});
+
+	it('draws a tiling texture opaque even when asked for transparency too', async () => {
+		settings.imageLocalModelId = 'ming';
+		await localBackend.generate({
+			prompt: 'grass',
+			width: 512,
+			height: 512,
+			seed: 1,
+			seamless: true,
+			transparent: true
+		});
+		expect(tauri.invoke).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
+		expect(sent().body.prompt).toBe('grass');
 	});
 
 	it('refuses an id it cannot run, before starting anything', async () => {

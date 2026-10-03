@@ -28,9 +28,8 @@ family with what the server is missing, and Install puts the files there:
 **Bundled engine** is stable-diffusion.cpp, shipped with Haruspex. Pick it if
 you want image generation with nothing to install. It starts on demand and
 stops when you say. It runs Ming-Image (the default) and, as an opt-in,
-Qwen-Image-2.1, from GGUF weights downloaded in Settings → Image. Sheets and
-transparency work as on ComfyUI; textures do not tile here yet, and the report
-says so.
+Qwen-Image-2.1, from GGUF weights downloaded in Settings → Image. Sheets,
+transparency and tiling textures work as on ComfyUI.
 
 **None** is the default. No process, no download, no startup cost.
 
@@ -95,9 +94,11 @@ was asked for: a subject missing, two drawn touching, one in the wrong place.
 The subjects that failed go round again together, as a smaller sheet. Each
 sheet is reduced to its own palette.
 
-Textures are made one at a time and made to tile: Ming generates the surface,
-then the seams are rolled into the middle and repainted. A texture whose seam
-still shows is rejected and retried.
+Textures are made one at a time and made to tile: the model generates the
+surface, then the seams are rolled into the middle and repainted. A texture
+whose seam still shows is rejected and retried. On the bundled engine the
+repaint is a masked img2img pass (a 256 px cross at 1024, strength 0.75), and
+everything outside the mask is kept exactly, so the edges wrap by construction.
 
 ### The anchor, and why it is committed
 
@@ -283,7 +284,7 @@ The pinned build reports:
 | Capability | Flag |
 | --- | --- |
 | Reference conditioning | `--ip-adapter` (with `--clip_vision`) |
-| Seamless tiling | `--circular` |
+| Seamless tiling | `--circular` (a UNet trick; Ming and Qwen are DiTs, so textures tile by offset-and-inpaint instead) |
 | LoRAs | `--lora-model-dir` |
 
 It serves three HTTP APIs: its own `/sdcpp/v1/*`, an AUTOMATIC1111-compatible

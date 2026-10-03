@@ -282,6 +282,48 @@ pub fn image_clear_canvas(width: u32, height: u32) -> Result<Vec<u8>, String> {
     ))
 }
 
+/// What a seamless repaint starts from: the texture rolled by half, so its
+/// seams cross in the middle, and the mask over them. PNG bytes, both.
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct SeamInputs {
+    pub rolled: Vec<u8>,
+    pub mask: Vec<u8>,
+}
+
+#[tauri::command]
+pub fn image_seam_inputs(bytes: Vec<u8>) -> Result<SeamInputs, String> {
+    let img = decode(&bytes)?;
+    let (w, h) = img.dimensions();
+    let rolled = super::tiling::rolled_by_half(&img);
+    let mask = super::tiling::seam_mask(w, h);
+    let mut mask_png = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut mask_png)
+        .write_image(mask.as_raw(), w, h, image::ExtendedColorType::L8)
+        .map_err(|e| format!("Could not encode the mask: {e}"))?;
+    Ok(SeamInputs {
+        rolled: encode(&rolled)?,
+        mask: mask_png,
+    })
+}
+
+/// The repaint blended into the rolled texture through the mask. The result is
+/// the tile: its edges are the original's middle, so they wrap.
+#[tauri::command]
+pub fn image_seam_finish(rolled: Vec<u8>, repainted: Vec<u8>) -> Result<Vec<u8>, String> {
+    let base = decode(&rolled)?;
+    let top = decode(&repainted)?;
+    if base.dimensions() != top.dimensions() {
+        return Err(format!(
+            "The repaint came back {:?}, the texture is {:?}.",
+            top.dimensions(),
+            base.dimensions()
+        ));
+    }
+    let mask = super::tiling::seam_mask(base.width(), base.height());
+    encode(&super::tiling::composite(&base, &top, &mask))
+}
+
 #[tauri::command]
 pub fn image_default_profile() -> NormalizeProfile {
     NormalizeProfile::default()

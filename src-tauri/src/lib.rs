@@ -238,6 +238,8 @@ pub fn run() {
             image_gen::commands::image_effective_profile,
             image_gen::commands::image_default_profile,
             image_gen::commands::image_clear_canvas,
+            image_gen::commands::image_seam_inputs,
+            image_gen::commands::image_seam_finish,
             inference::probe_inference_server,
             inference_queue::inference_acquire,
             inference_queue::inference_cancel,

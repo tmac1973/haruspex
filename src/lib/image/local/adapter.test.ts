@@ -11,6 +11,7 @@ import {
 	serves,
 	toBase64,
 	CLEAR_START_STRENGTH,
+	SEAM_REPAINT_STRENGTH,
 	DEFAULT_SAMPLER,
 	FAMILY_SAMPLER,
 	familyOfId
@@ -120,6 +121,17 @@ describe('buildRequest', () => {
 		expect(buildRequest(req).body.init_images).toBeUndefined();
 	});
 
+	it('repaints through the mask, under the key this build reads', () => {
+		const { route, body } = buildRequest({ ...req, repaint: { image: 'IMG', mask: 'MASK' } });
+		expect(route).toBe(ROUTES.img2img);
+		expect(body).toMatchObject({
+			init_images: ['IMG'],
+			mask: 'MASK',
+			denoising_strength: SEAM_REPAINT_STRENGTH
+		});
+		expect(body).not.toHaveProperty('mask_image');
+	});
+
 	it('carries the prompt, negative prompt and size', () => {
 		const { body } = buildRequest(req);
 		expect(body.prompt).toBe('a sword');
@@ -192,12 +204,12 @@ describe('per family', () => {
 		expect(familyOfId('')).toBeNull();
 	});
 
-	it('claims transparency for both families, and no tiling or LoRAs', () => {
-		// --circular is a UNet trick; offset-and-inpaint is ComfyUI-only so far.
+	it('claims transparency and tiling for both families, and no LoRAs', () => {
+		// Tiling by offset-and-inpaint, not --circular, which a DiT ignores.
 		for (const f of ['ming', 'qwen21'] as const) {
 			expect(declaredCapabilities(f)).toEqual({
 				transparency: true,
-				seamlessTiling: false,
+				seamlessTiling: true,
 				loras: false,
 				maxLoras: 0
 			});
