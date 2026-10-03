@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { finalizeStreamText } from '$lib/markdown';
 import {
 	classifyFindings,
+	renderOutline,
+	renderOutlineForReview,
+	type NormalizedPhase,
 	GUIDED_PLANNING_TOOLS,
 	guidedPlanningToolsets,
 	isPlanClean,
@@ -785,5 +788,47 @@ describe('phaseWritePrompt — length', () => {
 		// The length target trims narration, not specification — the file still
 		// has to carry signatures, data shapes and decision rules.
 		expect(prompt).toContain('Be exhaustive about the CONTRACT');
+	});
+});
+
+describe('outline rendering', () => {
+	const phases: NormalizedPhase[] = [
+		{
+			nn: '01',
+			title: 'Core',
+			relPath: 'plan/x/phase-01-core.md',
+			dependsOn: [],
+			summary: 'the model'
+		},
+		{
+			nn: '02',
+			title: 'UI',
+			relPath: 'plan/x/phase-02-ui.md',
+			dependsOn: ['01'],
+			summary: 'the screens'
+		},
+		{
+			nn: '03',
+			title: 'Polish',
+			relPath: 'plan/x/phase-03-polish.md',
+			dependsOn: ['01', '02'],
+			summary: ''
+		}
+	];
+
+	it('keeps the prompt form exactly as the phase writers have always read it', () => {
+		expect(renderOutline(phases)).toBe(
+			'Phase 01 — Core: the model\n' +
+				'Phase 02 — UI (depends on 01): the screens\n' +
+				'Phase 03 — Polish (depends on 01, 02)'
+		);
+	});
+
+	it('gives each phase a bold title line, its summary below, and a blank line between', () => {
+		expect(renderOutlineForReview(phases)).toBe(
+			'**Phase 01 — Core**\n\nthe model\n\n' +
+				'**Phase 02 — UI** · depends on 01\n\nthe screens\n\n' +
+				'**Phase 03 — Polish** · depends on 01, 02'
+		);
 	});
 });

@@ -99,3 +99,12 @@ describe('userQuestion store', () => {
 		await expect(next).resolves.toEqual({ kind: 'selected', labels: ['B'] });
 	});
 });
+
+describe('userQuestion body', () => {
+	it('carries the body to the pending question unchanged', async () => {
+		const p = askUserQuestion({ question: 'Approve?', body: '**Phase 01**\n\nfirst', options: [] });
+		expect(getPendingQuestion()?.body).toBe('**Phase 01**\n\nfirst');
+		resolveUserQuestion({ kind: 'freeText', text: 'ok' });
+		await p;
+	});
+});

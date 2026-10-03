@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { renderMarkdown } from '$lib/markdown';
 	/**
 	 * Modal for the reusable ask_user_question primitive. Mounted once in the
 	 * root layout — subscribes to the userQuestion store and opens whenever a
@@ -115,6 +116,10 @@
 					<img class="subject" src={pending.imageUrl} alt="" />
 				{/if}
 				<h2 id="user-question-title">{pending.question}</h2>
+				{#if pending.body}
+					<!-- Sanitised by renderMarkdown, as chat answers are. -->
+					<div class="qbody-text markdown">{@html renderMarkdown(pending.body)}</div>
+				{/if}
 				{#if pending.allowMultiple}
 					<p class="hint">Select one or more, or write your own answer.</p>
 				{/if}
@@ -176,6 +181,25 @@
 </Modal>
 
 <style>
+	.qbody-text {
+		font-size: 0.9rem;
+		font-weight: normal;
+		line-height: 1.5;
+		margin: 0.25rem 0 0.75rem;
+	}
+
+	/* Headings inside the body never outrank the question. */
+	.qbody-text :global(h1),
+	.qbody-text :global(h2),
+	.qbody-text :global(h3) {
+		font-size: 1rem;
+		margin: 0.75rem 0 0.25rem;
+	}
+
+	.qbody-text :global(p) {
+		margin: 0 0 0.6rem;
+	}
+
 	.qbody {
 		position: relative;
 		display: flex;

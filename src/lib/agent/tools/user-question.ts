@@ -37,6 +37,11 @@ registerTool({
 				type: 'object',
 				properties: {
 					question: { type: 'string', description: 'The question to ask the user.' },
+					body: {
+						type: 'string',
+						description:
+							'Longer context shown under the question, in markdown — keep the question itself one sentence.'
+					},
 					options: {
 						type: 'array',
 						description: 'The choices to offer (2–6 is ideal).',
@@ -122,6 +127,7 @@ registerTool({
 		const answer = await ask(
 			{
 				question,
+				...(typeof args.body === 'string' && args.body.trim() ? { body: args.body.trim() } : {}),
 				options,
 				allowMultiple: args.allow_multiple === true
 			},

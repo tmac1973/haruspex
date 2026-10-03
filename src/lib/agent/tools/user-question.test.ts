@@ -83,3 +83,26 @@ describe('ask_user_question — options that yield nothing', () => {
 		expect(out.result).toContain('type their own answer');
 	});
 });
+
+describe('ask_user_question body', () => {
+	it('passes a body to the modal under the question, and none when blank', async () => {
+		const asked: Array<{ question: string; body?: string }> = [];
+		const askUser = async (req: { question: string; body?: string }) => {
+			asked.push(req);
+			return { kind: 'selected' as const, labels: ['A'] };
+		};
+		const ctx = { ...baseCtx, interactive: true, askUser } as ToolContext;
+		await executeTool(
+			'ask_user_question',
+			{ question: 'Pick one', body: '  **Context** here  ', options: [{ label: 'A' }] },
+			ctx
+		);
+		await executeTool(
+			'ask_user_question',
+			{ question: 'Pick one', body: '   ', options: [{ label: 'A' }] },
+			ctx
+		);
+		expect(asked[0].body).toBe('**Context** here');
+		expect('body' in asked[1]).toBe(false);
+	});
+});

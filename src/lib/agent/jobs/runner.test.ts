@@ -589,6 +589,37 @@ describe('jobs runner — guards', () => {
 		expect(writes.some((m) => m.includes('plan/x/phase-03-three.md'))).toBe(true);
 	});
 
+	it('asks a one-line question at the outline checkpoint, with the outline as its body', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'guided_planning',
+				steps: [],
+				working_dir: '/repo',
+				type_config: JSON.stringify({ plan_output_dir: 'plan/x/' })
+			})
+		);
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([
+				{ id: '01', title: 'One', summary: 'first' },
+				{ id: '02', title: 'Two', depends_on: ['01'], summary: 'second' }
+			])
+		);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const outlineAsk = mocks.askUserQuestion.mock.calls
+			.map((c: unknown[]) => c[0] as { question: string; body?: string })
+			.find((q) => q.question.includes('plan outline'));
+		expect(outlineAsk).toBeDefined();
+		// The heading stays a sentence; the phases are in the body.
+		expect(outlineAsk!.question).not.toContain('\n');
+		expect(outlineAsk!.question).not.toContain('Phase 01');
+		expect(outlineAsk!.body).toBe(
+			'**Phase 01 — One**\n\nfirst\n\n**Phase 02 — Two** · depends on 01\n\nsecond'
+		);
+	});
+
 	it('fails honestly when the model never submits a plan outline', async () => {
 		mocks.getJob.mockResolvedValueOnce(
 			makeJob({
