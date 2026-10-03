@@ -220,6 +220,8 @@ jobs:
         run: |
           mkdir -p src-tauri/binaries/libs
           touch src-tauri/binaries/libs/.placeholder
+          mkdir -p src-tauri/binaries/sd-libs
+          touch src-tauri/binaries/sd-libs/.placeholder
           # espeak-ng-data may not exist if koko bundling didn't find espeak data
           if [ ! -f src-tauri/binaries/espeak-ng-data/phontab ]; then
             mkdir -p src-tauri/binaries/espeak-ng-data/lang/placeholder

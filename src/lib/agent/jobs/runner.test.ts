@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { JobWithSteps } from '$lib/stores/jobs.svelte';
 import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
 
@@ -46,9 +46,84 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
 	setStepStatsProvider: mocks.setStepStatsProvider
 }));
 
+/**
+ * The one settings field a test needs to change: the asset job's availability
+ * gate reads it, so a run cannot even start without it.
+ */
+const settingsState = vi.hoisted(() => ({
+	imageBackendKind: 'none' as string,
+	imageComfyCheckpoint: '' as string,
+	imageLocalModelId: '' as string
+}));
+
+/**
+ * The image backend, mocked at the module rather than registered.
+ *
+ * `freshRunner()` resets modules, so the `$lib/image` barrel re-runs and
+ * re-registers the real ComfyUI backend — a stub put in the registry by
+ * `beforeEach` is clobbered on the next fresh import and the tests end up
+ * talking to a backend that tries to reach a server.
+ */
+const imageState = vi.hoisted(() => ({
+	kind: 'comfyui' as string,
+	generated: [] as Array<Record<string, unknown>>,
+	fail: null as Error | null,
+	/** Fail the nth generation only, 1-based. The anchor is the first. */
+	failNth: 0,
+	caps: {
+		// One image per entry: the runner tests predate sheets, which
+		// generate.test.ts covers.
+		transparency: false,
+		seamlessTiling: true,
+		loras: true,
+		maxLoras: 2
+	}
+}));
+
+vi.mock('$lib/image', async () => {
+	const { ImageBackendError } = await import('$lib/image/types');
+	return {
+		resolveImageBackend: () => ({
+			kind: imageState.kind,
+			capabilities: async () => imageState.caps,
+			probe: async () => ({ ok: true, detail: 'stub' }),
+			generate: async (req: Record<string, unknown>) => {
+				imageState.generated.push(req);
+				if (imageState.fail) throw imageState.fail;
+				if (imageState.generated.length === imageState.failNth) {
+					throw new ImageBackendError('rejected', 'the backend refused this prompt');
+				}
+				return {
+					images: [
+						{
+							bytes: new Uint8Array([137, 80, 78, 71]),
+							mimeType: 'image/png',
+							width: req.width,
+							height: req.height
+						}
+					],
+					meta: {
+						// The RESOLVED seed, as a real backend reports it — the recipe
+						// must never record the null we may have sent.
+						seed: req.seed ?? 4242,
+						model: req.model ?? 'stub.safetensors',
+						backend: 'comfyui',
+						sampler: { name: 'euler_ancestral', steps: 28, cfg: 7 },
+						loras: req.loras ?? [],
+						durationMs: 1
+					}
+				};
+			}
+		})
+	};
+});
+
 vi.mock('$lib/stores/settings', () => ({
 	getSettings: () => ({
 		contextSize: 8192,
+		imageBackendKind: settingsState.imageBackendKind,
+		imageComfyCheckpoint: settingsState.imageComfyCheckpoint,
+		imageLocalModelId: settingsState.imageLocalModelId,
 		inferenceBackend: { mode: 'local' as const },
 		// What a job inherits when it sets no reasoning policy of its own —
 		// the runner records the RESOLVED values with the run.
@@ -127,13 +202,26 @@ function tick() {
  * so the run drives to completion.
  */
 function guidedTurns(
-	phases: Array<{ id: string; title: string; depends_on?: string[]; summary: string }>
+	phases: Array<{ id: string; title: string; depends_on?: string[]; summary: string }>,
+	assets?: {
+		style: { prompt: string };
+		entries: Array<Record<string, unknown>>;
+		targetSize?: number;
+	}
 ) {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	return async (opts: any) => {
 		if (opts.forceFinalTool === 'submit_plan_outline') {
 			opts.onToolStart?.({ id: 'outline', name: 'submit_plan_outline', arguments: { phases } });
 			return { finalText: 'outline submitted' };
+		}
+		if (opts.forceFinalTool === 'submit_plan_asset_spec') {
+			opts.onToolStart?.({
+				id: 'assets',
+				name: 'submit_plan_asset_spec',
+				arguments: assets ?? { style: { prompt: 'flat pixel art' }, entries: [] }
+			});
+			return { finalText: 'assets submitted' };
 		}
 		return { finalText: 'PLAN OK' };
 	};
@@ -1574,6 +1662,63 @@ describe('jobs runner — autonomous coding', () => {
 		expect([...(preflight![0].toolAllowlist ?? [])]).toContain('ask_user_question');
 	});
 
+	/**
+	 * `mute_preflight` is the same muteness a chained run gets, chosen by hand.
+	 * It exists because re-running a coding job against a plan whose decisions
+	 * are already settled meant sitting through an interview to re-answer them
+	 * — and a run started before bed parks on the question modal all night if
+	 * preflight asks even once.
+	 */
+	describe('mute_preflight', () => {
+		const mutedJob = () =>
+			codingJob({
+				type_config: JSON.stringify({
+					plan_dir: 'plan/x/',
+					context_mode: 'step',
+					mute_preflight: true
+				})
+			});
+
+		async function runMuted() {
+			mocks.getJob.mockResolvedValueOnce(mutedJob());
+			wireGit();
+			mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1, 'manual');
+			await settle(getCurrentRun);
+			return mocks.runEphemeralTurn.mock.calls.find(
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				([o]: any[]) => o.forceFinalTool === 'submit_preflight'
+			)![0];
+		}
+
+		it('takes the question tool away from a manual run too', async () => {
+			// By toolset, like the chained path — not by asking the prompt nicely.
+			expect([...((await runMuted()).toolAllowlist ?? [])]).not.toContain('ask_user_question');
+		});
+
+		it('moves the prompt and the flag with it', async () => {
+			const preflight = await runMuted();
+			expect(preflight.interactive).toBe(false);
+			expect(preflight.systemPrompt).not.toContain('ask_user_question');
+			// The mute prompt's actual instruction: settle it, do not stall.
+			expect(preflight.systemPrompt).toContain('NOBODY IS AVAILABLE');
+		});
+
+		it('leaves the rest of the run exactly as it was', async () => {
+			mocks.getJob.mockResolvedValueOnce(mutedJob());
+			wireGit();
+			mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1, 'manual');
+			await settle(getCurrentRun);
+
+			// Muting preflight must not mute the job: it still decomposes, codes
+			// and reports.
+			expect(getCurrentRun()?.status).toBe('succeeded');
+		});
+	});
+
 	it('marks a chained preflight turn non-interactive', async () => {
 		mocks.getJob.mockResolvedValueOnce(codingJob());
 		wireGit();
@@ -1618,6 +1763,243 @@ describe('jobs runner — autonomous coding', () => {
 
 		// The control for the test above: absent must not behave like off.
 		expect(commands.some((c) => c.includes('git commit'))).toBe(true);
+	});
+
+	/**
+	 * Phase-context mode — the DEFAULT, and until now the only mode with no
+	 * integration test. A 12-hour run committed five phases whose build turns
+	 * had written nothing and said so, because this path marked every item
+	 * done the moment the turn returned.
+	 */
+	describe('phase-context mode', () => {
+		function phaseJob(over: Record<string, unknown> = {}): JobWithSteps {
+			return codingJob({
+				type_config: JSON.stringify({ plan_dir: 'plan/x/', context_mode: 'phase', ...over })
+			});
+		}
+
+		/**
+		 * `dirty` controls what `git status --porcelain` reports OUTSIDE the plan
+		 * dir — the runner's own PROGRESS/TODO writes always leave the tree dirty,
+		 * so this is the signal that separates a built phase from an empty one.
+		 */
+		function wirePhaseGit(dirty: boolean) {
+			const commands: string[] = [];
+			mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+				if (cmd === 'fs_path_exists') return true;
+				if (cmd === 'shell_platform_supported') return true;
+				if (cmd === 'run_command_capture') {
+					const command = String(args?.command ?? '');
+					commands.push(command);
+					const ok = { stdout: '', stderr: '', exit_code: 0, duration_ms: 1, killed: false };
+					if (command.includes('status --porcelain')) {
+						return { ...ok, stdout: dirty ? ' M crates/core/src/lib.rs\n' : '' };
+					}
+					if (command.includes('--cached')) return { ...ok, exit_code: 1 };
+					if (command.includes('rev-parse HEAD')) return { ...ok, stdout: 'headhash' };
+					return ok;
+				}
+				return undefined;
+			});
+			return commands;
+		}
+
+		/** Drives preflight → one-phase decompose → phase build turn → finalize. */
+		function phaseTurns(note: string, opts: { write?: boolean } = {}) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			return async (o: any) => {
+				if (o.forceFinalTool === 'submit_preflight') {
+					o.onToolStart?.({
+						id: 'p',
+						name: 'submit_preflight',
+						arguments: { ready: true, decisions_resolved: 0 }
+					});
+					return { finalText: 'ready' };
+				}
+				if (o.forceFinalTool === 'submit_task_list') {
+					o.onToolStart?.({
+						id: 't',
+						name: 'submit_task_list',
+						arguments: {
+							items: [
+								{ title: 'One', description: 'first', phase: 'Scaffold' },
+								{ title: 'Two', description: 'second', phase: 'Scaffold' }
+							]
+						}
+					});
+					return { finalText: 'list' };
+				}
+				if (o.forceFinalTool === 'submit_phase_result') {
+					if (opts.write) {
+						o.onToolStart?.({
+							id: 'w',
+							name: 'fs_write_text',
+							arguments: { path: 'crates/core/src/lib.rs' }
+						});
+					}
+					o.onToolStart?.({ id: 'r', name: 'submit_phase_result', arguments: { note } });
+					return { finalText: 'phase' };
+				}
+				return { finalText: 'written' };
+			};
+		}
+
+		const loopOutput = () => {
+			const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 2);
+			return String(calls[calls.length - 1]?.[3] ?? '');
+		};
+
+		it('marks the phase done when the turn actually wrote something', async () => {
+			mocks.getJob.mockResolvedValueOnce(phaseJob());
+			wirePhaseGit(true);
+			mocks.runEphemeralTurn.mockImplementation(phaseTurns('Phase 01 complete.', { write: true }));
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			expect(loopOutput()).toContain('2 done, 0 blocked');
+			expect(loopOutput()).toContain('build turn finished');
+		});
+
+		it('refuses to mark a phase done when nothing outside the plan dir changed', async () => {
+			// The runner's own PROGRESS/TODO writes are inside the plan dir, so a
+			// dirty tree there is not evidence of anything.
+			mocks.getJob.mockResolvedValueOnce(phaseJob());
+			const commands = wirePhaseGit(false);
+			mocks.runEphemeralTurn.mockImplementation(phaseTurns('Phase 01 complete.'));
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			expect(loopOutput()).toContain('produced NO WORK');
+			expect(loopOutput()).toContain('changed nothing outside plan/x/');
+			expect(loopOutput()).not.toContain('2 done, 0 blocked');
+			// The exclusion is the whole point: without it the runner's own
+			// PROGRESS/TODO rewrites make every phase look built.
+			expect(commands.some((c) => c.includes('status --porcelain -- . ":(exclude)plan/x"'))).toBe(
+				true
+			);
+		});
+
+		it('believes a turn that says it did not implement the phase, over the diff', async () => {
+			// The turn is the only witness to its own budget running out. This is
+			// the exact opening line five phases of a real run submitted.
+			mocks.getJob.mockResolvedValueOnce(phaseJob());
+			wirePhaseGit(true);
+			mocks.runEphemeralTurn.mockImplementation(
+				phaseTurns('NOT IMPLEMENTED — this turn consumed itself in reading and wrote no code.', {
+					write: true
+				})
+			);
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			expect(loopOutput()).toContain('produced NO WORK');
+			expect(loopOutput()).toContain('reported that it did not implement');
+		});
+
+		it('does not count a write into the plan dir as building the phase', async () => {
+			mocks.getJob.mockResolvedValueOnce(phaseJob());
+			wirePhaseGit(false);
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			mocks.runEphemeralTurn.mockImplementation(async (o: any) => {
+				if (o.forceFinalTool === 'submit_phase_result') {
+					o.onToolStart?.({
+						id: 'w',
+						name: 'fs_write_text',
+						arguments: { path: 'plan/x/NOTES.md' }
+					});
+					o.onToolStart?.({ id: 'r', name: 'submit_phase_result', arguments: { note: 'done' } });
+					return { finalText: 'phase' };
+				}
+				return phaseTurns('done')(o);
+			});
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			expect(loopOutput()).toContain('produced NO WORK');
+		});
+
+		it('blocks the phase after three empty build turns instead of spinning', async () => {
+			mocks.getJob.mockResolvedValueOnce(phaseJob());
+			wirePhaseGit(false);
+			mocks.runEphemeralTurn.mockImplementation(phaseTurns('STUCK — no code written this turn.'));
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			const out = loopOutput();
+			expect(out).toContain('attempt 1/3');
+			expect(out).toContain('attempt 3/3');
+			expect(out).toContain('Phase BLOCKED');
+			// The run still finishes and reports, rather than looping forever.
+			expect(getCurrentRun()?.status).toBe('succeeded');
+			expect(out).toContain('2 blocked');
+		});
+
+		it("falls back to the turn's own writes when git is off", async () => {
+			mocks.getJob.mockResolvedValueOnce(phaseJob({ use_git: false }));
+			wirePhaseGit(false);
+			mocks.runEphemeralTurn.mockImplementation(phaseTurns('Phase 01 complete.', { write: true }));
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			// No diff to consult, so the write calls are the only evidence — and
+			// they must still be enough, or a git-free run can never build a phase.
+			expect(loopOutput()).toContain('2 done, 0 blocked');
+		});
+	});
+
+	describe('the README stage', () => {
+		it('writes README.md at the repo root after the report', async () => {
+			mocks.getJob.mockResolvedValueOnce(codingJob());
+			wireGit();
+			mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			const steps = getCurrentRun()!.steps;
+			expect(steps.at(-1)!.output).toContain('README.md');
+			// Root, not the plan dir: it is the project's front door, not a plan file.
+			const readmeTurn = mocks.runEphemeralTurn.mock.calls
+				.map(([o]) => o)
+				.find((o) => String(o.userMessage ?? '').includes('README.md'));
+			expect(readmeTurn.writeRoot).toBeFalsy();
+			expect(readmeTurn.systemPrompt).toContain('## Status');
+		});
+
+		it('still succeeds when the README cannot be written', async () => {
+			mocks.getJob.mockResolvedValueOnce(codingJob());
+			mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+				if (cmd === 'fs_path_exists') return String(args?.relPath) !== 'README.md';
+				if (cmd === 'shell_platform_supported') return true;
+				if (cmd === 'run_command_capture') {
+					return { stdout: '', stderr: '', exit_code: 0, duration_ms: 1, killed: false };
+				}
+				return undefined;
+			});
+			mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			// A run that did its work and wrote its report must not be recorded as
+			// failed over the documentation step.
+			expect(getCurrentRun()?.status).toBe('succeeded');
+			expect(getCurrentRun()!.steps.at(-1)!.output).toContain('was not written');
+		});
 	});
 });
 
@@ -1965,8 +2347,9 @@ describe('guided_planning — run mode', () => {
 		});
 	}
 
+	/** Stage 5 — Approval. Assets took index 4 when it was inserted. */
 	const approvalOutput = () => {
-		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
 		return String(calls[calls.length - 1]?.[3] ?? '');
 	};
 
@@ -2071,8 +2454,9 @@ describe('guided_planning — handoff', () => {
 		};
 	}
 
+	/** Stage 6 — Handoff. */
 	const handoffOutput = () => {
-		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
 		return String(calls[calls.length - 1]?.[3] ?? '');
 	};
 
@@ -2261,6 +2645,1095 @@ describe('guided_planning — handoff', () => {
 			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
 		);
 		expect(mocks.askUserQuestion.mock.calls.length).toBe(2);
+	});
+});
+
+/**
+ * The asset-generation skeleton. Every stage but Spec is a placeholder here;
+ * what is being checked is the machinery around them — the queue, the run
+ * view, cancellation, the availability gate and where the report lands — so
+ * that when the stages are filled in, a failure is the stage's fault.
+ */
+describe('jobs runner — asset generation', () => {
+	const SPEC_PATH = 'assets/haruspex-assets.json';
+	const ANCHOR_IMAGE = 'assets/haruspex-anchor.png';
+	const ANCHOR_RECIPE = 'assets/haruspex-anchor.json';
+	const PALETTE = [0x11111111, 0x22222222, 0x33333333];
+	/** A real content hash shape: the image cache rejects anything else. */
+	const ANCHOR_HASH = 'a'.repeat(64);
+	/** Every request the stub backend was asked for, in order. */
+	const generated = imageState.generated;
+	/** Just the anchor sheets — the entries share the same list. */
+	/** The anchor's prompt is the only one asking for a sheet of sprites. */
+	const isAnchor = (g: Record<string, unknown>) => String(g.prompt).includes('A sprite sheet');
+	const anchorCalls = () => generated.filter(isAnchor);
+	const entryCalls = () => generated.filter((g) => !isAnchor(g));
+	const turnsOfKind = (kind: string) =>
+		mocks.runEphemeralTurn.mock.calls.filter(
+			(call) => (call[0] as EphemeralTurnOptions & { turnKind?: string })?.turnKind === kind
+		);
+
+	/** Shaped like the Rust default, which is what the real command returns. */
+	function profileFixture() {
+		return {
+			target_size: 32,
+			upscale: 16,
+			palette_size: 16,
+			palette: [],
+			background: {
+				color: 0xff00ffff,
+				tolerance: 40,
+				hue_tolerance_deg: 20,
+				min_saturation: 90,
+				min_value: 60,
+				auto_detect: true
+			},
+			crop: { enabled: true, margin: 1, min_island_fraction: 0.05 },
+			outline: { enabled: true, color: 0x1a1a1aff, width: 2 },
+			checks: { alpha_min: 0.05, alpha_max: 0.95, entropy_min: 1, palette_distance_max: 0.15 },
+			by_kind: {}
+		};
+	}
+
+	beforeEach(() => {
+		imageState.kind = 'comfyui';
+		imageState.generated.length = 0;
+		imageState.fail = null;
+		imageState.failNth = 0;
+		imageState.caps = {
+			transparency: false,
+			seamlessTiling: true,
+			loras: true,
+			maxLoras: 2
+		};
+		settingsState.imageBackendKind = 'comfyui';
+		settingsState.imageComfyCheckpoint = '';
+		settingsState.imageLocalModelId = '';
+	});
+	afterEach(() => {
+		settingsState.imageBackendKind = 'none';
+	});
+
+	function goodSpec(entries = 2, over: Record<string, unknown> = {}): string {
+		return JSON.stringify({
+			version: 1,
+			style: { prompt: 'flat pixel art' },
+			anchor: { image: ANCHOR_IMAGE, recipe: ANCHOR_RECIPE },
+			normalize: profileFixture(),
+			entries: Array.from({ length: entries }, (_, i) => ({
+				id: `thing_${i}`,
+				kind: i === 0 ? 'texture' : 'sprite',
+				prompt: 'a thing',
+				out: `assets/generated/thing_${i}.png`
+			})),
+			...over
+		});
+	}
+
+	/** A committed recipe, as `tryReuse` expects to find one. */
+	function goodRecipe(over: Record<string, unknown> = {}): string {
+		return JSON.stringify({
+			version: 1,
+			prompt: 'a reference sheet',
+			negativePrompt: 'photo',
+			seed: 99,
+			backend: 'comfyui',
+			model: 'pinned.safetensors',
+			sampler: { name: 'euler', steps: 20, cfg: 6 },
+			loras: [],
+			size: 1024,
+			palette: PALETTE,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			...over
+		});
+	}
+
+	function assetJob(over: Record<string, unknown> = {}): JobWithSteps {
+		return makeJob({
+			job_type: 'asset_generation',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({ spec_path: SPEC_PATH, ...over })
+		});
+	}
+
+	/**
+	 * `spec` null = no spec file on disk. `anchor` supplies a committed anchor
+	 * so a test can exercise the reuse path.
+	 */
+	function wireFs(
+		spec: string | null,
+		anchor?: { recipe: string | null },
+		present: string[] = [],
+		checks: { passed: boolean; failed: string[] } = { passed: true, failed: [] },
+		/** Share of the anchor palette in one hue bucket; >0.6 is unusable. */
+		spread = 0.3
+	) {
+		const written: Array<{ relPath: string; content: string }> = [];
+		const wroteBytes: string[] = [];
+		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			const rel = String(args?.relPath ?? '');
+			if (cmd === 'shell_platform_supported') return true;
+			if (cmd === 'fs_read_text_full') {
+				if (rel === SPEC_PATH && spec !== null) return spec;
+				if (rel === ANCHOR_RECIPE && anchor?.recipe != null) return anchor.recipe;
+				throw new Error('not found');
+			}
+			if (cmd === 'fs_read_bytes') {
+				if (rel === ANCHOR_IMAGE && anchor) return [137, 80, 78, 71];
+				// Anything this run wrote can be read back — the contact sheet
+				// tiles the files the generation stage just produced.
+				if (wroteBytes.includes(rel)) return [137, 80, 78, 71];
+				throw new Error('not found');
+			}
+			if (cmd === 'fs_write_text') {
+				written.push({ relPath: rel, content: String(args?.content) });
+				return undefined;
+			}
+			if (cmd === 'fs_write_bytes') {
+				wroteBytes.push(rel);
+				return undefined;
+			}
+			if (cmd === 'fs_path_exists') return present.includes(rel);
+			if (cmd === 'image_effective_profile') return args?.profile;
+			if (cmd === 'image_normalize') {
+				return { bytes: [1, 2, 3, 4], stats: { alpha: 0.5, entropy: 3, palette_distance: 0.01 } };
+			}
+			if (cmd === 'image_check') {
+				return {
+					passed: checks.passed,
+					stats: { alpha: 0.5, entropy: 3, palette_distance: 0.01 },
+					failed: checks.failed
+				};
+			}
+			if (cmd === 'image_contact_sheet') return [137, 80, 78, 71];
+			if (cmd === 'image_models') {
+				return [
+					{
+						id: 'sd15',
+						filename: 'v1-5-pruned-emaonly-fp16.safetensors',
+						description: 'Stable Diffusion 1.5',
+						license: 'CreativeML OpenRAIL-M — commercial use allowed.',
+						native_edge: 512
+					},
+					{
+						id: 'sdxl',
+						filename: 'sd_xl_base_1.0.safetensors',
+						description: 'Stable Diffusion XL 1.0',
+						license: 'CreativeML OpenRAIL++-M — commercial use allowed.',
+						native_edge: 1024
+					}
+				];
+			}
+			if (cmd === 'image_default_profile') return profileFixture();
+			if (cmd === 'image_extract_palette') return PALETTE;
+			if (cmd === 'image_palette_spread') {
+				return { dominant_fraction: spread, buckets_used: 6, ok: spread <= 0.6 };
+			}
+			if (cmd === 'image_store_bytes') return ANCHOR_HASH;
+			return undefined;
+		});
+		return Object.assign(written, { bytes: wroteBytes });
+	}
+
+	async function settle(getCurrentRun: () => { status: string } | null) {
+		for (let i = 0; i < 300 && getCurrentRun()?.status === 'running'; i++) await tick();
+	}
+
+	it('reports the spec it found, broken down by kind', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(3));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		const spec = getCurrentRun()!.steps[0];
+		expect(spec.output).toContain('3 asset(s)');
+		expect(spec.output).toContain('sprite');
+		expect(spec.output).toContain('texture');
+	});
+
+	it('reuses the committed anchor without generating anything', async () => {
+		// The entire point of committing the image: the style is a versioned
+		// artifact, not something reconstructed from a recipe against weights
+		// and node versions that will have moved.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(anchorCalls()).toHaveLength(0);
+		expect(getCurrentRun()!.steps[1].output).toContain('Reused');
+	});
+
+	it('restores the palette from the recipe when it reuses', async () => {
+		// A chained run derives a fresh spec every time, and a fresh spec ships
+		// an empty palette. Without the copy-back a reused anchor reaches the
+		// generation loop with nothing to quantize against, and the mechanical
+		// coherence layer is silently off for the whole run.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const wrote = written.filter((w) => w.relPath === SPEC_PATH);
+		expect(wrote).toHaveLength(1);
+		expect(JSON.parse(wrote[0].content).normalize.palette).toEqual(PALETTE);
+		expect(getCurrentRun()!.steps[1].output).toContain(`${PALETTE.length} colour`);
+	});
+
+	it('generates when the recipe is there but the image is not', async () => {
+		// A recipe alone reproduces nothing, so it is not a reusable anchor.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(anchorCalls()).toHaveLength(1);
+	});
+
+	it('falls back to generating when the recipe is corrupt, rather than failing', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(), { recipe: '{ not json' });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(anchorCalls()).toHaveLength(1);
+	});
+
+	it('records the resolved seed and sampler in the recipe, not what it asked for', async () => {
+		// The request carries seed null — "whatever you like". A recipe that
+		// wrote that down would reproduce nothing, which is the one job it has.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(anchorCalls()[0].seed).toBeNull();
+		const recipe = JSON.parse(written.find((w) => w.relPath === ANCHOR_RECIPE)!.content);
+		expect(recipe.seed).toBe(4242);
+		expect(recipe.sampler).toEqual({ name: 'euler_ancestral', steps: 28, cfg: 7 });
+		expect(recipe.palette).toEqual(PALETTE);
+		expect(written.bytes).toContain(ANCHOR_IMAGE);
+	});
+
+	it('never asks when the run is unattended', async () => {
+		// The approval modal is the one checkpoint in the run. An unattended
+		// run parking on it overnight is the failure this job type exists to
+		// avoid.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ run_mode: 'unattended' }));
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(mocks.askUserQuestion).not.toHaveBeenCalled();
+		expect(getCurrentRun()!.steps[1].output).toContain('nobody saw it');
+	});
+
+	it('bounds regeneration by anchor_attempts, independently of max_attempts', async () => {
+		// One knob for both would mean raising per-asset retries also raised
+		// how many times the approval modal can be re-rolled.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 3, max_attempts: 9 }));
+		wireFs(goodSpec());
+		mocks.askUserQuestion
+			.mockResolvedValueOnce({ kind: 'selected', labels: ['Regenerate'] })
+			.mockResolvedValueOnce({ kind: 'selected', labels: ['Regenerate'] })
+			.mockResolvedValue({ kind: 'selected', labels: ['Approve'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(anchorCalls()).toHaveLength(3);
+		// The last ask must not offer a button that does nothing.
+		const lastOptions = mocks.askUserQuestion.mock.calls.at(-1)![0].options as Array<{
+			label: string;
+		}>;
+		expect(lastOptions.map((o) => o.label)).not.toContain('Regenerate');
+	});
+
+	it('varies the seed between regenerations', async () => {
+		// Same seed, same picture — and the button looks broken.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 3 }));
+		wireFs(goodSpec());
+		mocks.askUserQuestion
+			.mockResolvedValueOnce({ kind: 'selected', labels: ['Regenerate'] })
+			.mockResolvedValueOnce({ kind: 'selected', labels: ['Regenerate'] })
+			.mockResolvedValue({ kind: 'selected', labels: ['Approve'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const seeds = anchorCalls().map((g) => g.seed);
+		expect(seeds[0]).toBeNull();
+		expect(new Set(seeds.slice(1)).size).toBe(2);
+	});
+
+	it('ends the run rather than looping when the answer is not one we offered', async () => {
+		// A loop that trusts its own option list to terminate it does not
+		// terminate. Regenerate is not offered on the last attempt.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 2 }));
+		wireFs(goodSpec());
+		mocks.askUserQuestion.mockResolvedValue({ kind: 'selected', labels: ['Regenerate'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('cancelled');
+		expect(anchorCalls()).toHaveLength(2);
+	});
+
+	it('ends the run when the user declines the anchor', async () => {
+		// "Stop" means they want to edit the spec first, not that they want
+		// forty assets in a style they just rejected.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		mocks.askUserQuestion.mockResolvedValue({ kind: 'selected', labels: ['Stop'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('cancelled');
+		expect(anchorCalls()).toHaveLength(1);
+	});
+
+	it('shows the sheet and the spec together at the checkpoint', async () => {
+		// The run's only checkpoint, so it answers both open questions at
+		// once: what is about to be made, and what it will look like.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(3));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const shown = getCurrentRun()!.steps[1].streaming ?? '';
+		expect(shown).toContain(`haruspex-img://localhost/${ANCHOR_HASH}`);
+		expect(shown).toContain('3 asset(s)');
+		// And in the modal itself. Showing it only in the timeline meant the
+		// modal covered the very thing it was asking about.
+		const asked = mocks.askUserQuestion.mock.calls.at(-1)![0];
+		expect(asked.imageUrl).toBe(`haruspex-img://localhost/${ANCHOR_HASH}`);
+	});
+
+	it('asks the backend for a clamped 2x2 sheet, pinned to the spec model', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(2, { style: { prompt: 'flat pixel art', model: 'pinned.safetensors' } }));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// profileFixture is 32 * 16 * 2 = 1024, which is also the clamp.
+		expect(generated[0].width).toBe(1024);
+		expect(generated[0].height).toBe(1024);
+		expect(generated[0].model).toBe('pinned.safetensors');
+	});
+
+	it('fails the run when the backend cannot produce an anchor', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		imageState.fail = new Error('ComfyUI is not running');
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()!.steps[1].error).toContain('ComfyUI is not running');
+	});
+
+	it('generates, normalizes and writes every asset in the spec', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(3), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(entryCalls()).toHaveLength(3);
+		expect(written.bytes).toEqual([
+			'assets/generated/thing_0.png',
+			'assets/generated/thing_1.png',
+			'assets/generated/thing_2.png',
+			'assets/contact-sheet.png'
+		]);
+		expect(getCurrentRun()!.steps[2].output).toContain('3 generated');
+	});
+
+	it("makes an existing spec's asset size match the job, and says so", async () => {
+		// The job is authoritative: a size set in the job used to do nothing at
+		// all once a spec existed, which is a trap the user walked into.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ target_size: 64 }));
+		const written = wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(spec.normalize.target_size).toBe(64);
+		expect(getCurrentRun()!.steps[0].output).toContain('Asset size changed from 32 to 64 px');
+	});
+
+	it('leaves the spec alone when the job sets no size', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// The anchor stage may still write the palette back; the size it never touches.
+		const spec = written.find((w) => w.relPath === SPEC_PATH);
+		if (spec) expect(JSON.parse(spec.content).normalize.target_size).toBe(32);
+		expect(getCurrentRun()!.steps[0].output).not.toContain('Asset size changed');
+	});
+
+	it('skips the assets that are already on disk', async () => {
+		// Delete ten of a hundred, re-run, get exactly those ten back.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(3), { recipe: goodRecipe() }, ['assets/generated/thing_1.png']);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(entryCalls()).toHaveLength(2);
+		expect(written.bytes).not.toContain('assets/generated/thing_1.png');
+		expect(getCurrentRun()!.steps[2].output).toContain('1 already present');
+	});
+
+	it('reports which coherence layers the backend could not provide', async () => {
+		// Never silent. A user comparing two runs has no other way to know why
+		// one of them looks worse.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		imageState.caps = {
+			transparency: false,
+			seamlessTiling: false,
+			loras: true,
+			maxLoras: 2
+		};
+		// Entry 0 is a texture; the backend cannot tile it.
+		wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(entryCalls().every((g) => g.seamless === undefined)).toBe(true);
+		expect(getCurrentRun()!.steps[2].output).toContain('not seamless (1)');
+	});
+
+	it('records no degradation when the backend provides every layer', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()!.steps[2].output).not.toContain('Degraded');
+	});
+
+	it('finishes with a report when one asset fails', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		imageState.failNth = 2;
+		const written = wireFs(goodSpec(3), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(getCurrentRun()!.steps[2].output).toContain('1 failed');
+		expect(written.map((w) => w.relPath)).toContain('assets/REPORT-assets.md');
+		// Not "Every asset passed": a run with nothing generated said that.
+		expect(getCurrentRun()!.steps[3].output).toContain('1 asset(s) could not be produced');
+	});
+
+	it('writes a report and a contact sheet beside the spec', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(3), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!;
+		expect(report.content).toContain('**3 generated**');
+		expect(report.content).toContain('![Contact sheet](assets/contact-sheet.png)');
+		expect(report.content).toContain('| `thing_0` |');
+		expect(written.bytes).toContain('assets/contact-sheet.png');
+		expect(getCurrentRun()!.steps[3].output).toContain('Every asset passed');
+	});
+
+	it('leads with the unresolved count and writes no file for those assets', async () => {
+		// The only number in the report that asks the user to do something.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ max_attempts: 2 }));
+		const written = wireFs(goodSpec(2), { recipe: goodRecipe() }, [], {
+			passed: false,
+			failed: ['entropy']
+		});
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// The work that was done is real, so the run still succeeded.
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(getCurrentRun()!.steps[3].output).toMatch(/^2 asset\(s\) could not be produced/);
+		expect(written.bytes).not.toContain('assets/generated/thing_0.png');
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!;
+		expect(report.content).toContain('## Not produced');
+		expect(report.content).toContain('Nothing was written to `assets/generated/thing_0.png`');
+		// Two entries, two attempts each.
+		expect(entryCalls()).toHaveLength(4);
+	});
+
+	it('makes no contact sheet when the run produced nothing', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ max_attempts: 1 }));
+		const written = wireFs(goodSpec(2), { recipe: goodRecipe() }, [], {
+			passed: false,
+			failed: ['alpha_low']
+		});
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(written.bytes).not.toContain('assets/contact-sheet.png');
+		expect(written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content).not.toContain(
+			'Contact sheet'
+		);
+	});
+
+	it('starts the coding job it was chained ahead of', async () => {
+		mocks.getJob.mockImplementation(async (id: number) =>
+			id === 1
+				? assetJob({ coding_run: { plan_dir: 'plan/x/', use_git: true } })
+				: makeJob({ id: 901, job_type: 'autonomous_coding', steps: [], working_dir: '/repo' })
+		);
+		wireFs(goodSpec(2), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.job_type).toBe('autonomous_coding');
+		const cfg = JSON.parse(input.type_config);
+		expect(cfg.plan_dir).toBe('plan/x/');
+		// Set by this run, not carried: it is the thing that knows where the
+		// spec ended up.
+		expect(cfg.asset_spec_path).toBe(SPEC_PATH);
+		// Read from the persisted step, not getCurrentRun: starting the chained
+		// run makes IT the current run, so the asset run is no longer there.
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(handoff.at(-1)?.[3])).toContain('Started coding job');
+	});
+
+	it('tells the coding run which art is missing', async () => {
+		// So its preflight plans around the gap instead of writing code that
+		// loads a file nobody made.
+		mocks.getJob.mockImplementation(async (id: number) =>
+			id === 1
+				? assetJob({ coding_run: { plan_dir: 'plan/x/' }, max_attempts: 1 })
+				: makeJob({ id: 901, job_type: 'autonomous_coding', steps: [], working_dir: '/repo' })
+		);
+		wireFs(goodSpec(2), { recipe: goodRecipe() }, [], { passed: false, failed: ['entropy'] });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.description).toContain('could not be produced');
+		expect(input.description).toContain('thing_0');
+	});
+
+	it('chains nothing on a manual run, and says so', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ coding_run: { plan_dir: 'plan/x/' } }));
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(getCurrentRun()!.steps[4].output).toContain('started manually');
+	});
+
+	it('chains nothing when it carried no coding configuration', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(getCurrentRun()!.steps[4].output).toContain('no coding configuration');
+	});
+
+	it('runs unattended on a chained trigger even when the config says otherwise', async () => {
+		// A hand-edited config must not be able to park an overnight chain on
+		// the anchor approval modal until morning.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ run_mode: 'attended' }));
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(mocks.askUserQuestion).not.toHaveBeenCalled();
+	});
+
+	it('states the licence of a catalogue model in the report', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(1, { style: { prompt: 'flat pixel art', model: 'sd15' } }), {
+			recipe: goodRecipe()
+		});
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).toContain('## Licensing');
+		expect(report).toContain('OpenRAIL-M');
+		expect(report).not.toContain('licence unknown');
+	});
+
+	it('does not lend a catalogue licence to a model it does not cover', async () => {
+		// A hand-placed checkpoint, or whatever the backend has configured.
+		// Claiming the first catalogue entry's licence would be worse than
+		// saying nothing, because the reader would act on it.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(
+			goodSpec(1, { style: { prompt: 'flat pixel art', model: 'mystery.safetensors' } }),
+			{ recipe: goodRecipe() }
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).toContain('licence unknown');
+		expect(report).toContain('mystery.safetensors');
+		expect(report).not.toContain('OpenRAIL-M');
+	});
+
+	it('flags a LoRA as unknown even beside a known base model', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(
+			goodSpec(1, {
+				style: {
+					prompt: 'flat pixel art',
+					model: 'sd15',
+					loras: [{ name: 'pixel-xl', strength: 1 }]
+				}
+			}),
+			{ recipe: goodRecipe() }
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).toContain('pixel-xl');
+		expect(report).toContain('licence unknown');
+		// The base model's licence still stands for the base model.
+		expect(report).toContain('OpenRAIL-M');
+	});
+
+	it('throws away an anchor whose palette collapsed onto one colour', async () => {
+		// The failure this check exists for: an anchor that rendered a scene
+		// had its ground keyed away as background, leaving foliage. 31 of 32
+		// palette entries were green, every asset was quantized into it, and
+		// a shopping cart came out as a bush. A human approved it on sight,
+		// because it was a handsome picture — which is why this runs BEFORE
+		// the question rather than as part of it.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 4 }));
+		wireFs(goodSpec(), undefined, [], { passed: true, failed: [] }, 0.9);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// Four generations, and the user was asked only once — on the last,
+		// when there was nothing left to re-roll.
+		expect(anchorCalls()).toHaveLength(4);
+		expect(mocks.askUserQuestion.mock.calls.length).toBe(1);
+	});
+
+	it('tells the user when it asks them to approve an unusable anchor', async () => {
+		// Approving a sheet nobody said was unusable is how this reached a
+		// hundred assets.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 1 }));
+		wireFs(goodSpec(), undefined, [], { passed: true, failed: [] }, 0.9);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const asked = mocks.askUserQuestion.mock.calls.at(-1)![0];
+		expect(asked.question).toContain('90%');
+		expect(asked.question).toContain('single colour');
+	});
+
+	it('records discarded anchors in the report, as a signal about the spec', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ anchor_attempts: 3 }));
+		const written = wireFs(goodSpec(), undefined, [], { passed: true, failed: [] }, 0.9);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).toContain('discarded');
+		expect(report).toContain('collapsed onto one colour');
+	});
+
+	it('accepts a spread palette on the first try, and says nothing about it', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(), undefined, [], { passed: true, failed: [] }, 0.3);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(anchorCalls()).toHaveLength(1);
+		const asked = mocks.askUserQuestion.mock.calls.at(-1)![0];
+		expect(asked.question).not.toContain('single colour');
+		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!.content;
+		expect(report).not.toContain('discarded');
+	});
+
+	it('sizes a derived spec to the checkpoint, not to a constant', async () => {
+		// Generation happens at target_size * upscale, and SDXL produces mush
+		// below its native 1024 just as SD1.5 degrades above its 512. A
+		// shipped default of 16 silently halves SDXL's resolution and the
+		// user finds out by looking at bad sprites.
+		settingsState.imageComfyCheckpoint = 'sd_xl_base_1.0.safetensors';
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'a roguelike' }));
+		const written = wireFs(null, { recipe: goodRecipe() });
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([{ title: 'Iron sword', kind: 'sprite', prompt: 'an iron sword' }])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		// 16 at the default 64 px target; what matters is the product.
+		expect(spec.normalize.upscale).toBe(1024 / spec.normalize.target_size);
+		expect(spec.normalize.target_size * spec.normalize.upscale).toBe(1024);
+	});
+
+	it('keeps the default upscale for a checkpoint it does not recognise', async () => {
+		// Never a guess: inferring a native edge from a filename would be
+		// wrong exactly when it matters.
+		settingsState.imageComfyCheckpoint = 'someones-pixel-mix-v4.safetensors';
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'a roguelike' }));
+		const written = wireFs(null, { recipe: goodRecipe() });
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([{ title: 'Iron sword', kind: 'sprite', prompt: 'an iron sword' }])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(spec.normalize.upscale).toBe(16);
+	});
+
+	it('fails when there is no spec and nothing to write one from', async () => {
+		// Phase 06's skeleton finished happily here. Now the stage either has
+		// a spec or makes one, and neither being possible is a real failure.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(null);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain('describe what to make');
+	});
+
+	/** A derivation turn that submits `entries`, or nothing when null. */
+	function deriveTurns(entries: unknown[] | null, style = 'flat pixel art') {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		return async (o: any) => {
+			if (o.forceFinalTool === 'submit_asset_spec') {
+				if (entries !== null) {
+					o.onToolStart?.({
+						id: 's',
+						name: 'submit_asset_spec',
+						arguments: { style: { prompt: style }, entries }
+					});
+				}
+				return { finalText: 'submitted' };
+			}
+			return { finalText: 'ok' };
+		};
+	}
+
+	it('derives a spec from the description and writes it', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'a pixel-art roguelike' }));
+		const written = wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([
+				{ title: 'Iron Sword', kind: 'sprite', prompt: 'a straight longsword' },
+				{ title: 'Cobblestones', kind: 'texture', prompt: 'grey cobbles' }
+			])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		const spec = written.find((w) => w.relPath === SPEC_PATH);
+		expect(spec).toBeDefined();
+		const parsed = JSON.parse(spec!.content);
+		expect(parsed.entries).toHaveLength(2);
+		expect(getCurrentRun()!.steps[0].output).toContain('Wrote');
+	});
+
+	it('assigns ids and output paths itself, never the model', async () => {
+		// The game references these by name. A model that renames a thing
+		// halfway down a list leaves the project pointing at nothing.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		const written = wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([
+				{ title: 'Iron Sword', kind: 'sprite', prompt: 'p', id: 'MODEL_CHOSE', out: '/etc/evil' },
+				{ title: 'iron sword', kind: 'sprite', prompt: 'p' }
+			])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const parsed = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(parsed.entries.map((e: { id: string }) => e.id)).toEqual(['iron_sword', 'iron_sword_2']);
+		expect(parsed.entries[0].out).toBe('assets/generated/sprite/iron_sword.png');
+	});
+
+	it('marks a derived texture seamless and leaves a sprite alone', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		const written = wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([
+				{ title: 'Cobbles', kind: 'texture', prompt: 'p' },
+				{ title: 'Sword', kind: 'sprite', prompt: 'p' }
+			])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const parsed = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(parsed.entries[0].seamless).toBe(true);
+		expect(parsed.entries[1].seamless).toBeUndefined();
+	});
+
+	it('populates the anchor paths phase 08 will read', async () => {
+		// The field most easily forgotten, because nothing here uses it.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		const written = wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([{ title: 'Sword', kind: 'sprite', prompt: 'p' }])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const parsed = JSON.parse(written.find((w) => w.relPath === SPEC_PATH)!.content);
+		expect(parsed.anchor.image).toBe('assets/haruspex-anchor.png');
+		expect(parsed.anchor.recipe).toBe('assets/haruspex-anchor.json');
+	});
+
+	it('retries once with the problems quoted, then fails', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		wireFs(null);
+		// Every entry has an empty prompt, so validation never passes.
+		mocks.runEphemeralTurn.mockImplementation(
+			deriveTurns([{ title: 'Sword', kind: 'sprite', prompt: '' }])
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		const derives = mocks.runEphemeralTurn.mock.calls.filter(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			([o]: any[]) => o.forceFinalTool === 'submit_asset_spec'
+		);
+		expect(derives).toHaveLength(2);
+		expect(String(derives[1][0].userMessage)).toContain('lists no assets');
+	});
+
+	it('fails when the model never submits anything', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		wireFs(null);
+		mocks.runEphemeralTurn.mockImplementation(deriveTurns(null));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain('No spec was submitted');
+	});
+
+	it('never offers a question tool, in either run mode', async () => {
+		// The anchor stage owns the run's single checkpoint. A question here
+		// would be a second one, and in unattended mode it would park forever.
+		for (const run_mode of ['attended', 'unattended']) {
+			mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x', run_mode }));
+			wireFs(null);
+			mocks.runEphemeralTurn.mockImplementation(
+				deriveTurns([{ title: 'Sword', kind: 'sprite', prompt: 'p' }])
+			);
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			for (const [o] of mocks.runEphemeralTurn.mock.calls) {
+				expect([...((o as { toolAllowlist?: string[] }).toolAllowlist ?? [])]).not.toContain(
+					'ask_user_question'
+				);
+			}
+		}
+	});
+
+	it('does not derive over a spec the user already wrote', async () => {
+		// Theirs to fix, not ours to replace.
+		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'x' }));
+		wireFs(goodSpec());
+		mocks.runEphemeralTurn.mockImplementation(deriveTurns([]));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		// Scoped to derivation: other turns (the vision judge) are expected.
+		expect(turnsOfKind('spec.derive')).toHaveLength(0);
+	});
+
+	it('leaves a settled spec byte-for-byte alone', async () => {
+		// The file is in the user's repo. A re-run that reuses the committed
+		// anchor and changes nothing must not leave their working tree dirty.
+		const settled = goodSpec(2, {
+			normalize: { ...profileFixture(), palette: PALETTE }
+		});
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(settled, { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(written.map((w) => w.relPath)).not.toContain(SPEC_PATH);
+	});
+
+	it('writes the palette back into a spec that had none, changing nothing else', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec(2));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const wrote = written.filter((w) => w.relPath === SPEC_PATH);
+		expect(wrote).toHaveLength(1);
+		const after = JSON.parse(wrote[0].content);
+		expect(after.normalize.palette).toEqual(PALETTE);
+		expect(after.entries.map((e: { id: string }) => e.id)).toEqual(['thing_0', 'thing_1']);
+		expect(after.style.prompt).toBe('flat pixel art');
+	});
+
+	it('fails on a spec that cannot be parsed, naming the file', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs('{ not json');
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain(SPEC_PATH);
+	});
+
+	it('fails on a spec that parses but is wrong, listing the problems', async () => {
+		// A spec the user wrote and got wrong is theirs to fix, not ours to
+		// silently rewrite.
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(
+			JSON.stringify({
+				version: 1,
+				style: { prompt: 'p' },
+				anchor: { image: 'a', recipe: 'b' },
+				normalize: {},
+				entries: [{ id: 'BAD ID', kind: 'sprite', prompt: 'p', out: '../escape.png' }]
+			})
+		);
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('failed');
+		expect(getCurrentRun()?.error).toContain('outside the working directory');
+	});
+
+	it('writes the report beside the spec, not at the project root', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		const written = wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(written.map((w) => w.relPath)).toContain('assets/REPORT-assets.md');
+	});
+
+	it('runs all five stages, Handoff included', async () => {
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		const steps = getCurrentRun()!.steps;
+		expect(steps).toHaveLength(5);
+		expect(steps.every((s) => s.status === 'succeeded')).toBe(true);
+		expect(steps[4].output).toContain('manually');
+	});
+
+	it('will not even enqueue when no image backend is configured', async () => {
+		// The availability gate refuses before a run row exists, which is
+		// better than a failed run: there is nothing to explain and nothing in
+		// the history. The pipeline keeps its own check for the case this
+		// cannot cover — a run that was queued while a backend was configured
+		// and reaches the front of a twelve-hour queue after it was removed.
+		settingsState.imageBackendKind = 'none';
+		imageState.kind = 'none';
+		mocks.getJob.mockResolvedValueOnce(assetJob());
+		wireFs(goodSpec());
+		const { enqueue, getCurrentRun } = await freshRunner();
+
+		expect(await enqueue(1)).toBeNull();
+		expect(getCurrentRun()).toBeNull();
+	});
+
+	it('queues behind an active run rather than overlapping it', async () => {
+		// The runner is single-slot FIFO and an asset job shares that queue
+		// with planning and coding runs. Nothing else asserts it for this type,
+		// and `concurrency` in the config makes the question worth settling.
+		const planning = makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({ initial_description: 'x', plan_output_dir: 'plan/x/' })
+		});
+		mocks.getJob.mockImplementation(async (id: number) => (id === 2 ? assetJob() : planning));
+		wireFs(goodSpec());
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		const first = await enqueue(1);
+		const second = await enqueue(2);
+		// Both accepted, but only one is the current run at any moment.
+		expect(first).not.toBeNull();
+		expect(second).not.toBeNull();
+		expect(getCurrentRun()!.jobId).toBe(1);
 	});
 });
 
@@ -2499,7 +3972,317 @@ describe('guided_planning — a crashed verifier does not discard the plan', () 
 		// The gate that was written as defensive is now the one that matters.
 		expect(mocks.createJob).not.toHaveBeenCalled();
 		// The one hard refusal left: nothing checked this plan at all.
-		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
 		expect(String(handoff[handoff.length - 1][3])).toContain('verification did not run');
+	});
+});
+
+/**
+ * The chain: guided planning → assets → coding, with nobody present.
+ *
+ * The property this whole branch exists to protect is one assertion — no turn
+ * after guided planning's outline stage may be able to ask a question. Every
+ * other test here is about the plumbing that gets there.
+ */
+describe('guided_planning — asset chain', () => {
+	const PLAN_DIR = 'plan/x/';
+	const SPEC = `${PLAN_DIR}assets.json`;
+
+	function planningJob(cfg: Record<string, unknown> = {}) {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: PLAN_DIR,
+				run_mode: 'unattended_chain',
+				generate_assets: true,
+				...cfg
+			})
+		});
+	}
+
+	const ENTRIES = [
+		{ id: 'iron_sword', kind: 'sprite', prompt: 'a sword' },
+		{ id: 'cobblestone', kind: 'texture', prompt: 'cobbles' }
+	];
+
+	function turns(entries = ENTRIES) {
+		return guidedTurns([{ id: '01', title: 'One', summary: 'first' }], {
+			style: { prompt: 'flat pixel art' },
+			entries
+		});
+	}
+
+	/** Files the run wrote, by relative path. `overview` seeds what is on disk. */
+	function wireWrites(overview = '# Overview\n\nSome plan.\n') {
+		const written: Array<{ relPath: string; content: string }> = [];
+		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			const rel = String(args?.relPath ?? '');
+			if (cmd === 'fs_path_exists') return true;
+			if (cmd === 'shell_platform_supported') return true;
+			if (cmd === 'fs_list_dir') {
+				return {
+					path: '',
+					entries: [{ name: 'phase-01-x.md', is_dir: false, size: 1 }],
+					truncated: false
+				};
+			}
+			if (cmd === 'fs_read_text_full') {
+				const prior = written.filter((w) => w.relPath === rel).at(-1);
+				if (prior) return prior.content;
+				if (rel.endsWith('overview.md')) return overview;
+				// Undefined, like the default mock: the phase-file write guard
+				// treats an unreadable file as "cannot verify, do not block",
+				// and a short string would fail its truncation check instead.
+				return undefined;
+			}
+			if (cmd === 'fs_write_text') {
+				written.push({ relPath: rel, content: String(args?.content) });
+				return undefined;
+			}
+			if (cmd === 'image_default_profile') {
+				return { target_size: 32, upscale: 16, palette_size: 16, palette: [], by_kind: {} };
+			}
+			return undefined;
+		});
+		return written;
+	}
+
+	/**
+	 * Run the planning job. `chainedJob` answers `getJob` for whatever the
+	 * handoff creates — without it `startChainedRun` returns null, the handoff
+	 * falls back to the coding job, and the test would be measuring the
+	 * fallback rather than the chain.
+	 */
+	async function run(job: JobWithSteps, turnImpl: unknown, chainedJob?: JobWithSteps) {
+		mocks.getJob.mockImplementation(async (id: number) => (id === 1 ? job : (chainedJob ?? null)));
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		mocks.runEphemeralTurn.mockImplementation(turnImpl as any);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+	}
+
+	/** The asset job guided planning creates, as the runner would load it back. */
+	function chainedAssetJob(cfg: Record<string, unknown> = {}) {
+		return makeJob({
+			id: 900,
+			job_type: 'asset_generation',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({ spec_path: SPEC, run_mode: 'unattended', ...cfg })
+		});
+	}
+
+	beforeEach(() => {
+		settingsState.imageBackendKind = 'comfyui';
+		imageState.kind = 'comfyui';
+	});
+	afterEach(() => {
+		settingsState.imageBackendKind = 'none';
+		imageState.kind = 'none';
+	});
+
+	it('writes the spec from the plan and starts an asset job, not a coding job', async () => {
+		const written = wireWrites();
+		await run(planningJob(), turns(), chainedAssetJob());
+
+		const spec = written.find((w) => w.relPath === SPEC);
+		expect(spec).toBeDefined();
+		expect(JSON.parse(spec!.content).entries.map((e: { id: string }) => e.id)).toEqual([
+			'iron_sword',
+			'cobblestone'
+		]);
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const input = mocks.createJob.mock.calls[0][0];
+		expect(input.job_type).toBe('asset_generation');
+		const cfg = JSON.parse(input.type_config);
+		expect(cfg.spec_path).toBe(SPEC);
+		expect(cfg.run_mode).toBe('unattended');
+		// The coding job's configuration rides along rather than being rebuilt.
+		expect(cfg.coding_run.plan_dir).toBe(PLAN_DIR);
+	});
+
+	it('forwards the size the plan draws at, which the asset job would otherwise default', async () => {
+		// The job's size wins over the spec's, and its default is 64: a 32 px
+		// game got 64 px art.
+		wireWrites();
+		await run(
+			planningJob(),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }], {
+				style: { prompt: 'flat pixel art' },
+				targetSize: 16,
+				entries: ENTRIES
+			}),
+			chainedAssetJob()
+		);
+		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		expect(cfg.target_size).toBe(16);
+	});
+
+	it('tells every planning turn the art is coming, but not the asset stage', async () => {
+		// Without it the interview asked where the art comes from and how its
+		// files are named — both already decided by the chain.
+		wireWrites();
+		await run(planningJob(), turns(), chainedAssetJob());
+		const prompts = mocks.runEphemeralTurn.mock.calls.map((c: unknown[]) =>
+			String((c[0] as { systemPrompt?: string }).systemPrompt ?? '')
+		);
+		const assetStage = prompts.filter((p: string) => p.startsWith('You are listing the images'));
+		const planning = prompts.filter(
+			(p: string) => p.length > 0 && !p.startsWith('You are listing the images')
+		);
+		expect(assetStage).toHaveLength(1);
+		expect(assetStage[0]).not.toContain('ART IS GENERATED');
+		expect(planning.length).toBeGreaterThan(2);
+		expect(planning.every((p: string) => p.includes('ART IS GENERATED'))).toBe(true);
+		expect(planning[0]).toContain('assets/generated/sprite/<id>.png');
+	});
+
+	it('says nothing about generated art when asset generation is off', async () => {
+		wireWrites();
+		await run(planningJob({ generate_assets: false }), turns());
+		const prompts = mocks.runEphemeralTurn.mock.calls.map((c: unknown[]) =>
+			String((c[0] as { systemPrompt?: string }).systemPrompt ?? '')
+		);
+		expect(prompts.some((p: string) => p.includes('ART IS GENERATED'))).toBe(false);
+	});
+
+	it('writes the spec with a fallback style when none was submitted, and says so', async () => {
+		const written = wireWrites();
+		await run(
+			planningJob(),
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }], {
+				style: { prompt: '' },
+				entries: ENTRIES
+			}),
+			chainedAssetJob()
+		);
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC)!.content);
+		expect(spec.style.prompt.length).toBeGreaterThan(0);
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('asset_generation');
+		const assetsStage = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(assetsStage.at(-1)?.[3])).toContain('No style line was submitted');
+	});
+
+	it('says the coding run starts WITHOUT art, and why, when the art was lost', async () => {
+		wireWrites();
+		await run(planningJob(), turns([{ id: 'Not An Id', kind: 'sprite', prompt: 'x' }]));
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
+		expect(String(handoff.at(-1)?.[3])).toContain(
+			'starts WITHOUT art: every asset the stage listed was rejected'
+		);
+	});
+
+	it('puts the ids in overview.md, where the coding run will actually read them', async () => {
+		// The spec is a separate file. The overview is what the run reads first.
+		const written = wireWrites();
+		await run(planningJob(), turns());
+
+		const overview = written.filter((w) => w.relPath.endsWith('overview.md')).at(-1)!;
+		expect(overview.content).toContain('## Assets');
+		expect(overview.content).toContain('`iron_sword`');
+		expect(overview.content).toContain('assets/generated/texture/cobblestone.png');
+	});
+
+	it('does not stack a second Assets section when the overview already has one', async () => {
+		// The re-run case: a plan that has been through this stage before must
+		// come out with one Assets section, not two.
+		const written = wireWrites(
+			'# Overview\n\nSome plan.\n\n## Assets\n\n| Id | File |\n| --- | --- |\n| `stale` | `x.png` |\n'
+		);
+		await run(planningJob(), turns());
+		const overview = written.filter((w) => w.relPath.endsWith('overview.md')).at(-1)!;
+		expect(overview.content.split('## Assets')).toHaveLength(2);
+		expect(overview.content).not.toContain('stale');
+		expect(overview.content).toContain('Some plan.');
+	});
+
+	it('rejects an id the plan could not be using, rather than tidying it', async () => {
+		// A slugified id is a file nothing opens: the code loads what the plan
+		// says, and the plan does not say `iron_sword`.
+		const written = wireWrites();
+		await run(
+			planningJob(),
+			turns([
+				{ id: 'Iron Sword', kind: 'sprite', prompt: 'a sword' },
+				{ id: 'ok_one', kind: 'sprite', prompt: 'fine' }
+			])
+		);
+		const spec = JSON.parse(written.find((w) => w.relPath === SPEC)!.content);
+		expect(spec.entries.map((e: { id: string }) => e.id)).toEqual(['ok_one']);
+		const assetsStage = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(assetsStage.at(-1)?.[3])).toContain('Iron Sword');
+	});
+
+	it('starts the coding job directly when there is no image backend', async () => {
+		// A night's work must not be lost to a setting.
+		settingsState.imageBackendKind = 'none';
+		imageState.kind = 'none';
+		wireWrites();
+		await run(planningJob(), turns());
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
+		expect(String(handoff.at(-1)?.[3])).toContain('no image backend');
+	});
+
+	it('starts the coding job directly when the plan needs no images', async () => {
+		wireWrites();
+		await run(planningJob(), turns([]));
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
+		const assetsStage = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(assetsStage.at(-1)?.[3])).toContain('needs no images');
+	});
+
+	it('behaves exactly as before when asset generation is off', async () => {
+		wireWrites();
+		await run(planningJob({ generate_assets: false }), turns());
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
+		const assetsStage = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(assetsStage.at(-1)?.[3])).toContain('asset generation is off');
+	});
+
+	it('still reaches the Approval and Handoff stages, so indices do not shift', async () => {
+		wireWrites();
+		await run(planningJob({ generate_assets: false }), turns());
+		for (const idx of [4, 5, 6]) {
+			expect(mocks.markRunStepStarted.mock.calls.some((c: unknown[]) => c[1] === idx)).toBe(true);
+		}
+	});
+
+	it('never lets a turn ask a question after the outline stage', async () => {
+		// THE assertion. Everything else in this branch is plumbing that gets
+		// here: once the outline is approved, the run is on its own.
+		wireWrites();
+		const seen: Array<{ kind: string; tools: string[] }> = [];
+		await run(planningJob(), async (opts: Record<string, unknown>) => {
+			seen.push({
+				kind: String(opts.turnKind ?? ''),
+				tools: [...((opts.toolAllowlist as string[]) ?? [])]
+			});
+			return guidedTurns([{ id: '01', title: 'One', summary: 'first' }], {
+				style: { prompt: 'flat pixel art' },
+				entries: ENTRIES
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			})(opts as any);
+		});
+
+		const outlineAt = seen.findIndex((t) => t.kind.startsWith('outline'));
+		expect(outlineAt).toBeGreaterThanOrEqual(0);
+		const after = seen.slice(outlineAt + 1);
+		expect(after.length).toBeGreaterThan(0);
+		for (const t of after) {
+			expect(t.tools, `turn ${t.kind} can still ask`).not.toContain('ask_user_question');
+		}
 	});
 });

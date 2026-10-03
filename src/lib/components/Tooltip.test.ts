@@ -94,4 +94,18 @@ describe('Tooltip', () => {
 		expect(document.activeElement).not.toBe(input);
 		label.remove();
 	});
+
+	it('opens below its trigger when there is no room above', async () => {
+		// Positioned against the viewport so a card's overflow cannot clip it;
+		// the asset job editor cut the top off one that opened upwards.
+		render(Tooltip, { text: HELP });
+		const trigger = screen.getByRole('button', { name: 'More information' });
+		trigger.getBoundingClientRect = () =>
+			({ top: 4, bottom: 20, left: 100, right: 116, width: 16, height: 16 }) as DOMRect;
+		await fireEvent.mouseEnter(screen.getByTestId('tooltip-wrap'));
+		await new Promise((r) => setTimeout(r, 0));
+		const tip = screen.getByRole('tooltip');
+		expect(tip.style.top).toBe('26px');
+		expect(tip.style.visibility).toBe('visible');
+	});
 });

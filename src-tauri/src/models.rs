@@ -790,6 +790,44 @@ pub struct ModelManager {
     cancel_flag: Arc<Mutex<bool>>,
     /// The app's proxy config, set by the download command. See `set_proxy`.
     proxy: Arc<Mutex<Option<crate::proxy::ProxyConfig>>>,
+    /// What is downloading now, if anything. See [`ModelManager::begin_download`].
+    active: Arc<std::sync::Mutex<Option<String>>>,
+}
+
+/// Holds the download slot; frees it when dropped — done, failed or cancelled.
+pub struct ActiveDownload {
+    slot: Arc<std::sync::Mutex<Option<String>>>,
+}
+
+impl Drop for ActiveDownload {
+    fn drop(&mut self) {
+        *self.slot.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+}
+
+/// Take the one download slot for `key`, or say what holds it.
+///
+/// One download at a time: the cancel flag and the progress events are shared,
+/// so two at once could not be told apart or cancelled separately — and two of
+/// the SAME model would both append to one `.partial`, corrupting it. That
+/// happened as soon as Settings could be left and reopened mid-download, which
+/// forgets the first and offers the button again.
+fn take_slot(
+    slot: &Arc<std::sync::Mutex<Option<String>>>,
+    key: &str,
+) -> Result<ActiveDownload, String> {
+    let mut held = slot.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(other) = held.as_deref() {
+        return Err(if other == key {
+            "This model is already downloading.".to_string()
+        } else {
+            format!("Another download is running ({other}) — wait for it or cancel it.")
+        });
+    }
+    *held = Some(key.to_string());
+    Ok(ActiveDownload {
+        slot: Arc::clone(slot),
+    })
 }
 
 /// Total expected size for a (possibly resumed) download. When resuming, the
@@ -826,7 +864,21 @@ impl ModelManager {
             models_dir,
             cancel_flag: Arc::new(Mutex::new(false)),
             proxy: Arc::new(Mutex::new(None)),
+            active: Arc::new(std::sync::Mutex::new(None)),
         }
+    }
+
+    /// Take the download slot for `key` (`llm:<id>`, `image:<id>`, `comfy:<family>`).
+    pub fn begin_download(&self, key: &str) -> Result<ActiveDownload, String> {
+        take_slot(&self.active, key)
+    }
+
+    /// What is downloading now, for a screen opened after the download began.
+    pub fn active_download(&self) -> Option<String> {
+        self.active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     pub fn models_dir(&self) -> &Path {
@@ -1197,6 +1249,53 @@ impl ModelManager {
         Ok(final_path)
     }
 
+    /// Download one image-catalogue entry.
+    ///
+    /// Deliberately the same machinery as [`Self::download_model`] — progress
+    /// events, cancellation, the partial-file dance and the checksum — rather
+    /// than a second downloader. The only difference is the subdirectory and
+    /// the catalogue it looks the id up in.
+    /// Clear a cancel left over from an earlier download.
+    pub async fn reset_cancel(&self) {
+        *self.cancel_flag.lock().await = false;
+    }
+
+    /// Download one file into `dir`, which need not be the models directory —
+    /// a ComfyUI model folder, for instance — verified against `sha256`, with
+    /// `stage_label` shown while downloading and `verify_label` while checking. The
+    /// `.partial` sits beside the target and is only renamed once verified,
+    /// so the folder never holds a half-written file under its real name.
+    /// An existing file is left alone.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn download_into(
+        &self,
+        app: &AppHandle,
+        url: &str,
+        dir: &Path,
+        filename: &str,
+        expected_size: u64,
+        sha256: &str,
+        stage_label: &str,
+        verify_label: &str,
+    ) -> Result<PathBuf, String> {
+        let final_path = dir.join(filename);
+        if final_path.exists() {
+            return Ok(final_path);
+        }
+        let partial_path = dir.join(format!("{filename}.partial"));
+        self.download_to_partial(
+            app,
+            url,
+            &partial_path,
+            &final_path,
+            expected_size,
+            stage_label,
+            Some((sha256, verify_label)),
+        )
+        .await?;
+        Ok(final_path)
+    }
+
     pub async fn cancel_download(&self) {
         let mut cancel = self.cancel_flag.lock().await;
         *cancel = true;
@@ -1413,9 +1512,17 @@ pub async fn download_model(
     model_id: String,
     proxy: Option<crate::proxy::ProxyConfig>,
 ) -> Result<String, String> {
+    let _slot = state.begin_download(&format!("llm:{model_id}"))?;
     state.set_proxy(proxy).await;
     let path = state.download_model(&app, &model_id).await?;
     Ok(path.to_string_lossy().to_string())
+}
+
+/// What is downloading now (`llm:<id>`, `image:<id>`, `comfy:<family>`), or
+/// nothing. Progress for it keeps arriving as `download-progress` events.
+#[tauri::command]
+pub fn download_status(state: tauri::State<'_, ModelManager>) -> Option<String> {
+    state.active_download()
 }
 
 #[tauri::command]
@@ -2142,5 +2249,24 @@ mod tests {
         );
 
         fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[test]
+    fn one_download_at_a_time_and_the_slot_frees_itself() {
+        let slot = Arc::new(std::sync::Mutex::new(None));
+        let held = take_slot(&slot, "image:ming").unwrap();
+        assert_eq!(
+            take_slot(&slot, "image:ming").err().unwrap(),
+            "This model is already downloading."
+        );
+        assert!(take_slot(&slot, "llm:qwen")
+            .err()
+            .unwrap()
+            .contains("Another download is running (image:ming)"));
+        drop(held);
+        assert!(
+            take_slot(&slot, "llm:qwen").is_ok(),
+            "freed when the first ended"
+        );
     }
 }

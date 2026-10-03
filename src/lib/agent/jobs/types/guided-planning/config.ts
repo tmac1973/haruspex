@@ -15,6 +15,7 @@
 export interface GuidedPlanningCodingRun {
 	max_attempts: number | null;
 	context_mode: 'step' | 'phase' | null;
+	max_turns: number | null;
 }
 
 export type GuidedPlanningRunMode = 'attended' | 'unattended_plan' | 'unattended_chain';
@@ -60,6 +61,21 @@ export interface GuidedPlanningConfig {
 	 */
 	use_git: boolean;
 	/**
+	 * Write an asset spec from the finished plan and chain an asset run ahead
+	 * of the coding run, so the code is built against art that already exists.
+	 *
+	 * Only does anything in `unattended_chain`: in every other mode nothing is
+	 * chained, and a stage that wrote a spec no run would ever read would be
+	 * work nobody asked for. Defaults to off — an image backend is a thing the
+	 * user has to have configured, and a plan run must not start failing
+	 * because a default turned on.
+	 *
+	 * There is deliberately no `asset_run` override block here. The handoff
+	 * passes the three fields it actually sets, and an override object nothing
+	 * reads would be an unchecked claim.
+	 */
+	generate_assets: boolean;
+	/**
 	 * Which checkpoints the run stops at. See `GuidedPlanningRunMode`.
 	 * Anything unrecognised reads as `attended`: a malformed config must not
 	 * silently make a run unattended.
@@ -102,7 +118,12 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 			typeof cr.max_attempts === 'number' && Number.isFinite(cr.max_attempts)
 				? cr.max_attempts
 				: null,
-		context_mode: cr.context_mode === 'step' || cr.context_mode === 'phase' ? cr.context_mode : null
+		context_mode:
+			cr.context_mode === 'step' || cr.context_mode === 'phase' ? cr.context_mode : null,
+		// Not clamped here: the coding job's own parser clamps, and this is the
+		// same value flowing to the same place.
+		max_turns:
+			typeof cr.max_turns === 'number' && Number.isFinite(cr.max_turns) ? cr.max_turns : null
 	};
 	return {
 		initial_description:
@@ -116,6 +137,9 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		// Absent means on, for older jobs too; only an explicit false opts out.
 		web_research: raw.web_research !== false,
 		use_git: raw.use_git !== false,
+		// Absent means off, unlike the two above: this one costs GPU time and
+		// needs a configured backend, so it is opt-in.
+		generate_assets: raw.generate_assets === true,
 		run_mode: mode,
 		// Absent (every job authored before this existed) means verify. Forced
 		// off for unattended_chain HERE, not only in the Editor: the severity

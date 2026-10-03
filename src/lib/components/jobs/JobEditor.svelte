@@ -1190,7 +1190,7 @@
 				{#if openSections.type}
 					<div class="collapse-body">
 						{#key `${jobId}:${jobType}`}
-							<TypeEditor bind:config={typeConfig} bind:steps jobName={name} {workingDir} />
+							<TypeEditor bind:config={typeConfig} bind:steps jobName={name} {workingDir} {jobId} />
 						{/key}
 					</div>
 				{/if}

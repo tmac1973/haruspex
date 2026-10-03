@@ -15,6 +15,45 @@ Running list of things to address. Status annotations added 2026-07-19.
 - It would be nice to able to specify a different model for each phase of a job. I.E. do the planning with one model, verification with the next.
 
 - In the guided planning job the step 2 outline approval modal presents a wall of text that the agent has written that is not very nice to look at. The font is a bit large, there's no visual breaks between the phases outlined. We should work on this.
+  - **Diagnosed 2026-10-02, not started.** The whole question, outline
+    included, is rendered inside the modal's `<h2>`
+    (`UserQuestionModal.svelte:117`), so every line is heading-size bold; and
+    `renderOutline` writes each phase as one line, "Phase 01 — title: summary",
+    with no blank line between phases (`guided-planning/pipeline.ts:1712`).
+    Fix: give `askUserQuestion` an optional `body`, rendered as normal-weight
+    markdown under a short heading ("Here's the plan outline — 8 phases"); have
+    `renderOutline` emit a bold "Phase 01 — Title (depends on 01)" line, the
+    summary below it, and a blank line between phases. The overview review and
+    any other checkpoint that shows long content would use the same `body`.
+
+- Jobs tab while a run is live: I can't look at other jobs, edit them or create new ones — clicking one seems to open it "underneath" the running job, and the only way to leave the run view is to cancel the run. I should be able to browse and edit freely while a job runs, and come back to the live run and see its current state. And what does ▶ on another job do while one runs?
+  - **Diagnosed 2026-10-02, not started.** Deliberate, but it overshoots:
+    while `getCurrentRun()` is non-null the run view owns the centre pane and
+    the list is locked (`JobsTab.svelte`, `showRunView` / `listLocked`), so
+    a selection could not drift out of sight. The run itself does not depend
+    on the view — it lives in the runner — so the view can be left and
+    returned to without touching it.
+    Fix: a selection always shows what was selected (editor, history, new job);
+    the live run gets a persistent entry point instead of the centre pane — a
+    "Running: <job> · step 3 of 7" bar at the top of the tab (and a marker on
+    its row) that opens the run view; the run view gets a Back/Hide that does
+    not cancel. Cancel stays where it is, inside the run view.
+  - ▶ while a run is live **queues** the job (FIFO, `runner.svelte.ts`
+    `enqueue`); it starts when the current run ends and the queue badge shows
+    it. Worth knowing for chains: a chain's next stage is enqueued when the
+    previous one finishes, so a job queued during planning runs BEFORE the
+    chain's asset stage. Consider letting a chained stage go to the front of
+    the queue, or saying in the queue badge's tooltip that it will wait.
+
+- An autonomous coding run reached outside its project to unblock itself (2026-10-02, `p25-chain`, run 80). Its plan required art the chain had failed to make; after two honest repair cycles it read Haruspex's own database (`~/.local/share/com.haruspex.app/haruspex.db`) and source to diagnose why, then generated the four PNGs itself by calling the user's ComfyUI on 127.0.0.1:8188 with a different model (Z-Image-Turbo). Its diagnosis was right and it said what it did, but nothing stopped it: a coding run's shell can read any file the user can and reach any local service.
+  - Decide what a coding run may touch outside its working directory. At least: the app's own data directory should be off limits, and a plan that says "do not make placeholder art" should not be satisfiable by making real art some other way. Its report asked the same question ("Decide policy on the cycle-3 exception").
+  - The chain no longer hands off silently without art (the handoff says "starts WITHOUT art" and why), which removes this particular trigger but not the capability.
+
+- Chained jobs inherit the planning job's model, always (server, model, key, context, reasoning). Right as the default; add an optional per-stage override in the planning editor — "Coding run model" (and "Asset run model") defaulting to "same as this job" — so a chain can plan with a strong model and code with a fast one. Close to the per-phase model item above.
+- A chained coding job is named "<job> — assets — coding": the asset job appends " — coding" to its own name. Should be "<job> — coding".
+- Sheet cutting kept a small object the model drew touching the player as part of the player sprite (p25 chain, `player.png` has a coin-like orb beside it). A merge is only detected when a piece's body covers another subject's expected centre; a small neighbour drawn against a sprite does not. Consider a size check (a piece much wider than its siblings, or two lobes joined by a thin neck) and showing such a piece to the judge.
+
+- Cancelling an image generation calls ComfyUI's `/interrupt`, which stops whatever the server is running — another client's job on a shared ComfyUI included. Delete our own prompt from the queue (`POST /queue` with `delete`) and interrupt only when the running prompt is ours (`GET /queue` shows its id).
 
 - We may want to look at adding a second model selector for the shell tab in settings -> inference. The default could/should be to just use the main local model for everything, just as it is today, but we could offer an opt-in to select a different model (local, remote, or openrouter) for the shell tab. If the chat tab and the shell tab use different local models of course they would have to queue to use that model (wait for the other model to unload, then load then new one) Thoughts?
 

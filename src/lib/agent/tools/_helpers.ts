@@ -7,7 +7,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { chatCompletion, type ChatMessage } from '$lib/api';
+import { chatCompletion, type BackendOverride, type ChatMessage } from '$lib/api';
 import { getChatTemplateKwargs, getSamplingParams, getSettings } from '$lib/stores/settings';
 import type { FetchedPage } from '$lib/ipc/gen/FetchedPage';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
@@ -116,15 +116,17 @@ export function toolInvokeError(command: string, e: unknown): string {
 export async function runSubAgent(
 	messages: ChatMessage[],
 	maxTokens: number,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	backend?: BackendOverride | null
 ): Promise<string> {
-	// Sub-agent calls always run against the global Settings backend (they
-	// carry no per-request override), so resolve the global descriptor here.
-	const descriptor = resolveBackendDescriptor();
+	// On the calling turn's model: a job's own server, or Settings when the
+	// turn has no override (chat).
+	const descriptor = resolveBackendDescriptor(backend ?? undefined);
 	const sampling = getSamplingParams(descriptor);
 	const response = await chatCompletion(
 		{
 			messages,
+			backend: backend ?? undefined,
 			...sampling,
 			max_tokens: maxTokens,
 			// Force thinking off (second arg) rather than inheriting the global setting.

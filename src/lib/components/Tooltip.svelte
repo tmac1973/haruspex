@@ -13,6 +13,12 @@
 	 * the input every time the tooltip is toggled — the same trap the coding
 	 * editor already documents for its `<details>` block. The trigger is a
 	 * `<button type="button">` that stops the click, so the label never sees it.
+	 *
+	 * The popover is positioned against the VIEWPORT (`position: fixed`), not its
+	 * parent. Positioned against the parent it was clipped by any card or scroll
+	 * container with `overflow` set — the asset job's editor cut the top off its
+	 * spec tooltip. It opens above the trigger, below when there is no room, and
+	 * is kept inside the window horizontally.
 	 */
 	import { tick } from 'svelte';
 
@@ -28,10 +34,44 @@
 	let open = $state(false);
 	let id = $props.id();
 	let trigger = $state<HTMLButtonElement | null>(null);
+	let popover = $state<HTMLSpanElement | null>(null);
+	/** Viewport coordinates, set once the popover can be measured. */
+	let place = $state<{ top: number; left: number } | null>(null);
+
+	/** Gap between trigger and popover, and the margin kept from the window edge. */
+	const GAP = 6;
+	const MARGIN = 8;
+
+	async function position() {
+		await tick();
+		if (!open || !trigger || !popover) return;
+		const t = trigger.getBoundingClientRect();
+		const p = popover.getBoundingClientRect();
+		const above = t.top - GAP - p.height;
+		const top = above >= MARGIN ? above : t.bottom + GAP;
+		const centred = t.left + t.width / 2 - p.width / 2;
+		const left = Math.max(MARGIN, Math.min(centred, window.innerWidth - p.width - MARGIN));
+		place = { top, left };
+	}
 
 	function show() {
 		open = true;
+		place = null;
+		void position();
 	}
+
+	// Fixed to the viewport, so it has to follow its trigger when anything
+	// scrolls — including the inner scroll containers, hence the capture.
+	$effect(() => {
+		if (!open) return;
+		const follow = () => void position();
+		window.addEventListener('scroll', follow, true);
+		window.addEventListener('resize', follow);
+		return () => {
+			window.removeEventListener('scroll', follow, true);
+			window.removeEventListener('resize', follow);
+		};
+	});
 
 	function hide() {
 		open = false;
@@ -43,7 +83,8 @@
 		// (a collapsible section header) from treating it as a toggle.
 		event.preventDefault();
 		event.stopPropagation();
-		open = !open;
+		if (open) hide();
+		else show();
 	}
 
 	async function onKeydown(event: KeyboardEvent) {
@@ -77,7 +118,15 @@
 		<span aria-hidden="true">ⓘ</span>
 	</button>
 	{#if open}
-		<span class="tooltip-popover" {id} role="tooltip">{text}</span>
+		<span
+			class="tooltip-popover"
+			{id}
+			role="tooltip"
+			bind:this={popover}
+			style:top={place ? `${place.top}px` : '0px'}
+			style:left={place ? `${place.left}px` : '0px'}
+			style:visibility={place ? 'visible' : 'hidden'}>{text}</span
+		>
 	{/if}
 </span>
 
@@ -110,11 +159,9 @@
 	}
 
 	.tooltip-popover {
-		position: absolute;
-		bottom: calc(100% + 6px);
-		left: 50%;
-		transform: translateX(-50%);
-		z-index: 50;
+		/* Against the viewport, so no ancestor's overflow can clip it. */
+		position: fixed;
+		z-index: 1000;
 		/* Wide enough for a paragraph, capped so it never spans the editor. */
 		width: max-content;
 		max-width: 320px;

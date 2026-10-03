@@ -61,7 +61,8 @@ describe('registration barrel', () => {
 			'research',
 			'audit',
 			'guided_planning',
-			'autonomous_coding'
+			'autonomous_coding',
+			'asset_generation'
 		]);
 	});
 
@@ -106,6 +107,7 @@ describe('registration barrel', () => {
 			'Outline',
 			'Planning',
 			'Verification',
+			'Assets',
 			'Approval',
 			'Handoff'
 		]);
@@ -131,7 +133,8 @@ describe('registration barrel', () => {
 			'Preflight',
 			'Decompose',
 			'Coding loop',
-			'Finalize'
+			'Finalize',
+			'Document'
 		]);
 		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
 
@@ -143,7 +146,9 @@ describe('registration barrel', () => {
 			signing_fallback: 'unsigned',
 			create_branch: true,
 			web_research: true,
-			use_git: true
+			use_git: true,
+			max_turns: 200,
+			mute_preflight: false
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
@@ -152,7 +157,9 @@ describe('registration barrel', () => {
 			signing_fallback: 'unsigned',
 			create_branch: true,
 			web_research: true,
-			use_git: true
+			use_git: true,
+			max_turns: 200,
+			mute_preflight: false
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
@@ -161,7 +168,9 @@ describe('registration barrel', () => {
 			signing_fallback: 'skip',
 			create_branch: false,
 			web_research: false,
-			use_git: false
+			use_git: false,
+			max_turns: 400,
+			mute_preflight: true
 		});
 		expect(JSON.parse(json!)).toEqual({
 			plan_dir: 'plan/x/',
@@ -170,7 +179,9 @@ describe('registration barrel', () => {
 			signing_fallback: 'skip',
 			create_branch: false,
 			web_research: false,
-			use_git: false
+			use_git: false,
+			max_turns: 400,
+			mute_preflight: true
 		});
 
 		// Validation: working dir and plan dir are required; attempts bounded.
@@ -181,15 +192,62 @@ describe('registration barrel', () => {
 			coding.validate!({
 				...base,
 				workingDir: '/p',
-				config: { plan_dir: 'plan/', verify_command: '', max_attempts: 99 }
+				config: { plan_dir: 'plan/', max_attempts: 99, max_turns: 200 }
 			})
 		).toContain('Max attempts');
 		expect(
 			coding.validate!({
 				...base,
 				workingDir: '/p',
-				config: { plan_dir: 'plan/', verify_command: 'npm test', max_attempts: 3 }
+				config: { plan_dir: 'plan/', max_attempts: 3, max_turns: 200 }
 			})
 		).toBeNull();
+		expect(
+			coding.validate!({
+				...base,
+				workingDir: '/p',
+				config: { plan_dir: 'plan/', max_attempts: 3, max_turns: 5 }
+			})
+		).toContain('Max model steps');
+	});
+
+	it('asset generation: gated on a backend, five stages from the start', async () => {
+		const { getJobType } = await import('./index');
+		const assets = getJobType('asset_generation')!;
+		expect(assets.hasPlannedSteps).toBe(false);
+		// Availability, not platform: the job is meaningless with nowhere to
+		// generate, and offering it would be offering a run that cannot start.
+		expect(typeof assets.available).toBe('function');
+		// The anchor checkpoint would park a scheduled run on a modal.
+		expect(assets.supportsSchedule).toBe(false);
+
+		const stages = assets.planSteps({ steps: [] } as unknown as JobWithSteps);
+		expect(stages.map((s) => s.authored)).toEqual([
+			'Spec',
+			'Style anchor',
+			'Generate',
+			'Report',
+			'Handoff'
+		]);
+		// Five from the start, Handoff included. A later phase fills it in;
+		// adding a stage then would move every index after it.
+		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
+
+		const defaults = assets.configDefaults();
+		expect(assets.configFromJob(null)).toEqual(defaults);
+		const json = assets.configToJson({ ...defaults, description: 'a pixel-art roguelike' });
+		expect(JSON.parse(json!).description).toBe('a pixel-art roguelike');
+
+		const base = { name: 'x', steps: [], config: defaults };
+		expect(assets.validate!({ ...base, workingDir: '' })).toContain('working directory');
+		expect(assets.validate!({ ...base, workingDir: '/p' })).toBeNull();
+		// Clamped by the parser, refused by the editor: a user typing 30 is
+		// told rather than silently given 32.
+		expect(
+			assets.validate!({ ...base, workingDir: '/p', config: { ...defaults, target_size: 30 } })
+		).toContain('power of two');
+		expect(
+			assets.validate!({ ...base, workingDir: '/p', config: { ...defaults, concurrency: 99 } })
+		).toContain('Simultaneous');
 	});
 });

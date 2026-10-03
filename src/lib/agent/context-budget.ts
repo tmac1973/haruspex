@@ -67,25 +67,111 @@ export function estimateMessagesTokens(messages: ChatMessage[], tools?: ToolDefi
 }
 
 /**
- * Replace older tool-message content with a short stub. Returns true if
- * any messages were trimmed. Moved here from the agent loop so both the
- * loop and the pre-send guard share one implementation.
+ * Name the call a tool result answered, for its stub.
+ *
+ * A stub that says only "4000 chars dropped" tells the model nothing it can
+ * act on. Naming the call — `fs_read_text(crates/core/src/lib.rs)` — turns
+ * "call the tool again if needed" into an instruction with an argument, and
+ * distinguishes a result that was evicted from a file that does not exist.
+ * That distinction is the whole problem this stub caused: a run that lost its
+ * reads to trimming reported the code as missing from disk.
  */
-export function trimOldToolMessages(messages: ChatMessage[]): boolean {
+function describeToolCall(messages: ChatMessage[], toolIdx: number): string {
+	const id = messages[toolIdx].tool_call_id;
+	if (!id) return '';
+	for (let i = toolIdx - 1; i >= 0; i--) {
+		const call = messages[i].tool_calls?.find((c) => c.id === id);
+		if (!call) continue;
+		let arg = '';
+		try {
+			const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+			const key = ['path', 'relPath', 'pattern', 'query', 'command', 'url'].find(
+				(k) => typeof args[k] === 'string'
+			);
+			if (key) arg = String(args[key]).slice(0, 120);
+		} catch {
+			// Unparseable arguments: the name alone is still worth having.
+		}
+		return arg ? `${call.function.name}(${arg})` : call.function.name;
+	}
+	return '';
+}
+
+function stubFor(messages: ChatMessage[], idx: number, text: string): string {
+	const what = describeToolCall(messages, idx);
+	return (
+		`[Trimmed: ${text.length} chars dropped to free context. The result of ` +
+		`${what || 'an earlier tool call'} is no longer in scope — it was DROPPED TO SAVE ` +
+		`SPACE, which says nothing about what it contained. Call the tool again if you ` +
+		`still need it.]`
+	);
+}
+
+/** A tool message that is still holding real content, with its cost. */
+interface TrimCandidate {
+	idx: number;
+	text: string;
+	tokens: number;
+}
+
+function trimCandidates(messages: ChatMessage[]): TrimCandidate[] {
 	const toolIndices: number[] = [];
 	for (let i = 0; i < messages.length; i++) {
 		if (messages[i].role === 'tool') toolIndices.push(i);
 	}
-	if (toolIndices.length <= PRESERVE_RECENT_TOOL_MESSAGES) return false;
-	const trimUpTo = toolIndices.length - PRESERVE_RECENT_TOOL_MESSAGES;
-	let trimmed = false;
-	for (let k = 0; k < trimUpTo; k++) {
-		const idx = toolIndices[k];
-		const msg = messages[idx];
-		const text = messageText(msg.content);
+	if (toolIndices.length <= PRESERVE_RECENT_TOOL_MESSAGES) return [];
+	const older = toolIndices.slice(0, toolIndices.length - PRESERVE_RECENT_TOOL_MESSAGES);
+	const out: TrimCandidate[] = [];
+	for (const idx of older) {
+		const text = messageText(messages[idx].content);
 		if (text.startsWith('[Trimmed:')) continue;
-		const stub = `[Trimmed: ${text.length} chars dropped to free context. Earlier tool result is no longer in scope — refer to more recent results or call the tool again if needed.]`;
-		messages[idx] = { ...msg, content: stub };
+		out.push({ idx, text, tokens: messageTokens(messages[idx]) });
+	}
+	return out;
+}
+
+/**
+ * Stub older tool results to free context. Returns true if anything was
+ * trimmed. Shared by the pre-send guard and the agent loop's in-loop trim.
+ *
+ * `budget` is the point of this function's shape. Without one it stubs every
+ * tool result but the last few, which for a long agentic turn means throwing
+ * away that turn's working memory in a single step — a coding run that had
+ * read twenty source files was left holding three, concluded the code was not
+ * on disk, and spent the rest of its budget re-discovering that. With a budget
+ * it stubs the EXPENSIVE results first and stops the moment the messages fit,
+ * so a turn a little over the line loses one big file read instead of all of
+ * them.
+ *
+ * Largest-first, not oldest-first: the goal is to free tokens, and a 60-token
+ * `fs_list_dir` result costs nothing to keep while a 40k file read is the
+ * whole problem. Age still decides eligibility — the most recent
+ * PRESERVE_RECENT_TOOL_MESSAGES results are never touched at any size.
+ */
+export function trimOldToolMessages(
+	messages: ChatMessage[],
+	opts: { budget?: number; tools?: ToolDefinition[] } = {}
+): boolean {
+	const candidates = trimCandidates(messages);
+	if (candidates.length === 0) return false;
+
+	// No budget: the caller wants everything eligible gone (the historical
+	// behaviour, kept for callers that have no estimate to aim at).
+	if (opts.budget === undefined) {
+		for (const c of candidates) {
+			messages[c.idx] = { ...messages[c.idx], content: stubFor(messages, c.idx, c.text) };
+		}
+		return true;
+	}
+
+	let running = estimateMessagesTokens(messages, opts.tools);
+	if (running <= opts.budget) return false;
+	let trimmed = false;
+	for (const c of [...candidates].sort((a, b) => b.tokens - a.tokens)) {
+		if (running <= opts.budget) break;
+		const stub = stubFor(messages, c.idx, c.text);
+		messages[c.idx] = { ...messages[c.idx], content: stub };
+		running -= c.tokens - (estimateTokens(stub) + PER_MESSAGE_OVERHEAD_TOKENS);
 		trimmed = true;
 	}
 	return trimmed;
@@ -206,8 +292,14 @@ export function fitMessagesToBudget(
 	const beforeEst = estimateMessagesTokens(messages, opts.tools);
 	if (beforeEst <= effectiveBudget) return null;
 
-	// Step 1: stub older tool messages.
-	const trimmedTools = trimOldToolMessages(messages);
+	// Step 1: stub older tool messages — only as many, and only as expensive,
+	// as it takes to fit. The later steps are strictly more destructive (whole
+	// turns dropped), so this one buying just enough is what keeps them from
+	// running at all.
+	const trimmedTools = trimOldToolMessages(messages, {
+		budget: effectiveBudget,
+		tools: opts.tools
+	});
 
 	// Step 2: head/tail-truncate oversized single messages, largest first.
 	let truncatedMessages = 0;

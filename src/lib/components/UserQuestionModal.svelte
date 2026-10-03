@@ -108,6 +108,12 @@
 			     the guided-planning outline) or a tall option list must never
 			     push Submit off-screen. -->
 			<div class="scroll-region">
+				{#if pending.imageUrl}
+					<!-- Above the question, not below it: it is the subject, and a
+					     reader who has to scroll past the options to find it has
+					     already been asked to decide without it. -->
+					<img class="subject" src={pending.imageUrl} alt="" />
+				{/if}
 				<h2 id="user-question-title">{pending.question}</h2>
 				{#if pending.allowMultiple}
 					<p class="hint">Select one or more, or write your own answer.</p>
@@ -207,6 +213,18 @@
 
 	.hint {
 		margin: 0 0 8px;
+	}
+
+	.subject {
+		display: block;
+		width: 100%;
+		max-height: 46vh;
+		object-fit: contain;
+		border-radius: 6px;
+		margin-bottom: 0.75rem;
+		/* A generated sheet is usually keyed on a flat colour; the checker makes
+		   a transparent result distinguishable from a white one. */
+		background: repeating-conic-gradient(#3c3c3c 0% 25%, #505050 0% 50%) 50% / 16px 16px;
 	}
 
 	.options {

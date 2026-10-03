@@ -313,6 +313,20 @@ export async function executeTool(
 }
 
 /**
+ * A call's arguments as its executor will see them: coerced toward the tool's
+ * schema (see coerce.ts). For anything that reads a call before it runs — a
+ * stage capturing a structured answer from `onToolStart` — so it reads the
+ * same arguments the tool does. Unknown tools pass through unchanged.
+ */
+export function coerceCallArguments(
+	name: string,
+	args: Record<string, unknown>
+): Record<string, unknown> {
+	const reg = tools.get(name);
+	return reg ? coerceArgsToSchema(reg.schema.function.parameters, args) : args;
+}
+
+/**
  * Closest registered tool name for a hallucinated one, so the model can
  * recover in one step instead of dead-ending on "Unknown tool".
  */

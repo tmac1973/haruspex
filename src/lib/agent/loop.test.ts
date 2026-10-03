@@ -23,7 +23,9 @@ const api = vi.hoisted(() => ({
 
 const toolsMock = vi.hoisted(() => ({
 	executeTool: vi.fn(),
-	getToolSchemas: vi.fn()
+	getToolSchemas: vi.fn(),
+	// The real one coerces against the tool's schema; identity unless a test says otherwise.
+	coerceCallArguments: vi.fn((_name: string, args: Record<string, unknown>) => args)
 }));
 
 vi.mock('$lib/api', () => ({
@@ -51,7 +53,8 @@ vi.mock('$lib/api', () => ({
 
 vi.mock('$lib/agent/tools', () => ({
 	executeTool: toolsMock.executeTool,
-	getToolSchemas: toolsMock.getToolSchemas
+	getToolSchemas: toolsMock.getToolSchemas,
+	coerceCallArguments: toolsMock.coerceCallArguments
 }));
 
 vi.mock('$lib/stores/settings', () => ({
@@ -412,6 +415,80 @@ describe('runAgentLoop: truncation before any tool call', () => {
 		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
 		const err = cb.onError.mock.calls[0][0] as Error;
 		expect(err.message).toContain('response limit');
+	});
+});
+
+describe('runAgentLoop: the model a tool sees', () => {
+	it("is the turn's own, so a tool's model calls follow the job", async () => {
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'r1', name: 'research_url', args: '{"url":"https://x.test"}' }]),
+			textResponse('done')
+		);
+		toolsMock.executeTool.mockResolvedValue({ result: 'ok' });
+		const backend = { baseUrl: 'http://compute:3000' };
+		const { options } = makeOptions({ backend });
+		await runAgentLoop(options);
+		expect(toolsMock.executeTool).toHaveBeenCalledWith(
+			'research_url',
+			{ url: 'https://x.test' },
+			expect.objectContaining({ backend })
+		);
+	});
+});
+
+describe('runAgentLoop: the forced final tool', () => {
+	it('is always offered, even when the allowlist leaves it out', async () => {
+		// The chain's asset stage listed its read tools but not its submit tool.
+		// The model never called a tool it was not given, and the forced call
+		// then named a tool missing from the request: vLLM refused it with a
+		// 400, the turn ended empty, and the chain lost its art.
+		nonStreamQueue.push(textResponse('done'));
+		const { options } = makeOptions({
+			toolAllowlist: ['fs_read_text'],
+			forceFinalTool: 'submit_plan_asset_spec'
+		});
+		await runAgentLoop(options).catch(() => {});
+		expect(toolsMock.getToolSchemas).toHaveBeenCalledWith(
+			expect.objectContaining({ toolAllowlist: ['fs_read_text', 'submit_plan_asset_spec'] })
+		);
+	});
+
+	it('leaves an unrestricted turn unrestricted', async () => {
+		nonStreamQueue.push(textResponse('done'));
+		const { options } = makeOptions({ forceFinalTool: 'submit_plan_asset_spec' });
+		await runAgentLoop(options).catch(() => {});
+		expect(toolsMock.getToolSchemas).toHaveBeenCalledWith(
+			expect.objectContaining({ toolAllowlist: undefined })
+		);
+	});
+});
+
+describe('runAgentLoop: what onToolStart sees', () => {
+	it('is the arguments as the tool will run with them, coerced to its schema', async () => {
+		// A stage that captures a structured answer from onToolStart read the
+		// model's raw arguments: `entries` sent as a JSON string was walked
+		// character by character, and a night's asset spec came out empty.
+		nonStreamQueue.push(
+			toolCallResponse([
+				{ id: 'c1', name: 'submit_plan_asset_spec', args: '{"entries":"[{\\"id\\":\\"coin\\"}]"}' }
+			]),
+			textResponse('done')
+		);
+		toolsMock.executeTool.mockResolvedValue({ result: 'recorded' });
+		toolsMock.coerceCallArguments.mockImplementationOnce((_n, args) => ({
+			...args,
+			entries: JSON.parse(String(args.entries))
+		}));
+		const { options, cb } = makeOptions();
+		await runAgentLoop(options);
+		expect(toolsMock.coerceCallArguments).toHaveBeenCalledWith('submit_plan_asset_spec', {
+			entries: '[{"id":"coin"}]'
+		});
+		expect(cb.onToolStart).toHaveBeenCalledWith({
+			id: 'c1',
+			name: 'submit_plan_asset_spec',
+			arguments: { entries: [{ id: 'coin' }] }
+		});
 	});
 });
 

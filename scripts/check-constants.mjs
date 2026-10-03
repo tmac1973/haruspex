@@ -29,6 +29,9 @@ function extract(source, regex, label, file) {
 	return m[1];
 }
 
+const sdcpp = readFileSync(join(root, 'scripts/fetch-sdcpp.sh'), 'utf8');
+const sdcppDoc = readFileSync(join(root, 'docs/image-generation.md'), 'utf8');
+
 const ts = readFileSync(join(root, 'src/lib/ports.ts'), 'utf8');
 const rs = readFileSync(join(root, 'src-tauri/src/sidecar_utils.rs'), 'utf8');
 
@@ -49,6 +52,16 @@ const pairs = [
 		rs: extract(rs, /const TTS: u16 = (\d+);/, 'ports::TTS', 'sidecar_utils.rs')
 	},
 	{
+		// An unpinned sidecar is a reproducibility hole, and a pin recorded in
+		// two places is a pin that drifts. The doc is what a human reads; the
+		// script is what actually fetches.
+		name: 'sd-server version',
+		tsFile: 'scripts/fetch-sdcpp.sh',
+		rsFile: 'docs/image-generation.md',
+		ts: extract(sdcpp, /SDCPP_VERSION="([^"]+)"/, 'SDCPP_VERSION', 'fetch-sdcpp.sh'),
+		rs: extract(sdcppDoc, /\| Pinned version \| `([^`]+)` \|/, 'the pinned version row', 'image-generation.md')
+	},
+	{
 		name: 'loopback host',
 		ts: extract(ts, /LOOPBACK = '([^']+)'/, 'LOOPBACK', 'ports.ts'),
 		rs: extract(rs, /const LOOPBACK: &str = "([^"]+)";/, 'LOOPBACK', 'sidecar_utils.rs')
@@ -58,9 +71,12 @@ const pairs = [
 const drifted = pairs.filter((p) => p.ts !== p.rs);
 if (drifted.length > 0) {
 	for (const p of drifted) {
+		// Named per pair: most of these are the TS/Rust port constants, but
+		// not all, and a message pointing at the wrong file costs more time
+		// than the drift it reports.
 		console.error(
-			`check-constants: ${p.name} drifted — src/lib/ports.ts has ${p.ts}, ` +
-				`src-tauri/src/sidecar_utils.rs has ${p.rs}`
+			`check-constants: ${p.name} drifted — ${p.tsFile ?? 'src/lib/ports.ts'} has ${p.ts}, ` +
+				`${p.rsFile ?? 'src-tauri/src/sidecar_utils.rs'} has ${p.rs}`
 		);
 	}
 	process.exit(1);

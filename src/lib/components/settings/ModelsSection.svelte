@@ -5,14 +5,21 @@
 	 * Only mounted in local-inference mode; in remote mode no local
 	 * llama-server runs and the catalog is irrelevant.
 	 *
-	 * State that needs to survive an active download (downloading id,
-	 * progress, error) lives inside this component. The active model
+	 * The download in progress lives in `stores/downloads.svelte`, not here:
+	 * it outlives this card, and a card that forgot it on reopening offered
+	 * Download again mid-download. The download error is local. The active model
 	 * path is queried fresh from Rust on each refresh — the route also
 	 * caches it for the Server card, but that's a separate
 	 * `get_active_model_path` call on its own card.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
-	import { downloadModelWithProgress } from '$lib/models/download';
+	import {
+		cancelDownload as cancelActiveDownload,
+		getActiveDownload,
+		runDownload,
+		syncDownloads
+	} from '$lib/stores/downloads.svelte';
+	import DownloadProgressBar from './DownloadProgressBar.svelte';
 	import { onMount } from 'svelte';
 	import { restartServerWhenIdle, stopServer } from '$lib/stores/server.svelte';
 	import {
@@ -23,15 +30,15 @@
 		setLegacyModelNoticeDismissed,
 		updateSettings
 	} from '$lib/stores/settings';
-	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
+	import { formatBytes } from '$lib/utils/format';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
 	import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
 
 	let models = $state<ModelInfo[]>([]);
 	let activeModelPath = $state<string | null>(null);
-	let downloading = $state<string | null>(null);
-	let downloadProgress = $state<DownloadProgress | null>(null);
+	const active = $derived(getActiveDownload());
+	/** The catalogue id downloading, when what downloads is an LLM. */
+	const downloading = $derived(active?.key.startsWith('llm:') ? active.key.slice(4) : null);
 	let downloadError = $state<string | null>(null);
 	let modelsDir = $state('');
 	// Whether the "show retired models" section is expanded. Legacy models
@@ -77,20 +84,16 @@
 	}
 
 	async function downloadModel(modelId: string) {
-		downloading = modelId;
-		downloadProgress = { downloaded: 0, total: 0, speed_bps: 0, stage: 'Starting...' };
 		downloadError = null;
-
 		try {
-			const modelPath = await downloadModelWithProgress(modelId, (p) => (downloadProgress = p));
-			downloading = null;
-			downloadProgress = null;
+			// Model weights are our own egress: they follow the app proxy.
+			const modelPath = await runDownload(`llm:${modelId}`, () =>
+				invoke<string>('download_model', { modelId, proxy: getSettings().proxy })
+			);
 			await refreshModels();
 			// Auto-start server with the newly downloaded model
 			await switchModel(modelPath.split('/').pop()!);
 		} catch (e) {
-			downloading = null;
-			downloadProgress = null;
 			downloadError = String(e);
 		}
 	}
@@ -133,12 +136,20 @@
 	}
 
 	async function cancelDownload() {
-		await invoke('cancel_download');
-		downloading = null;
-		downloadProgress = null;
+		await cancelActiveDownload();
 	}
 
+	// A download that outlived a closed Settings is shown again; the list
+	// refreshes when it ends.
+	let wasDownloading = false;
+	$effect(() => {
+		const now = downloading !== null;
+		if (wasDownloading && !now) void refreshModels();
+		wasDownloading = now;
+	});
+
 	onMount(async () => {
+		void syncDownloads();
 		await refreshModels();
 		modelsDir = await invoke<string>('get_models_dir');
 	});
@@ -182,29 +193,16 @@
 					<button
 						class="btn btn-primary"
 						onclick={() => downloadModel(model.id)}
-						disabled={downloading !== null}
+						disabled={active !== null}
+						title={active ? 'Another download is running.' : undefined}
 					>
 						Download
 					</button>
 				{/if}
 			</div>
 		</div>
-		{#if downloading === model.id && downloadProgress}
-			<div class="download-inline">
-				<div class="progress-mini">
-					<div
-						class="progress-fill"
-						style="width: {downloadProgress.total > 0
-							? (downloadProgress.downloaded / downloadProgress.total) * 100
-							: 0}%"
-					></div>
-				</div>
-				<span class="progress-text">
-					{#if downloadProgress.stage}{downloadProgress.stage} &middot;
-					{/if}{formatBytes(downloadProgress.downloaded)} / {formatBytes(downloadProgress.total)}
-					&middot; {formatBytesPerSecond(downloadProgress.speed_bps)}
-				</span>
-			</div>
+		{#if downloading === model.id}
+			<DownloadProgressBar progress={active?.progress ?? null} />
 		{/if}
 	</div>
 {/snippet}
@@ -403,29 +401,6 @@
 		display: flex;
 		gap: 8px;
 		align-items: center;
-	}
-	.download-inline {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-	.progress-mini {
-		flex: 1;
-		min-width: 120px;
-		height: 6px;
-		background: var(--border);
-		border-radius: 3px;
-		overflow: hidden;
-	}
-	.progress-fill {
-		height: 100%;
-		background: var(--accent);
-		transition: width 0.2s;
-	}
-	.progress-text {
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		white-space: nowrap;
 	}
 	/* Spacing override of the global .error-box. */
 	.error-box {

@@ -25,9 +25,11 @@ src-tauri/binaries/koko-*
 src-tauri/binaries/ruff-*
 src-tauri/binaries/node-*
 src-tauri/binaries/uv-*
+src-tauri/binaries/sd-server-*
 src-tauri/binaries/node-modules/
 src-tauri/binaries/*.so*
 src-tauri/binaries/libs/
+src-tauri/binaries/sd-libs/
 src-tauri/binaries/espeak-ng-data/
 
 # Pyodide runtime (downloaded by scripts/fetch-pyodide.sh, ~14 MB)

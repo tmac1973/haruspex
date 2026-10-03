@@ -45,12 +45,48 @@ export interface AutonomousCodingConfig {
 	 */
 	open_findings: string[];
 	/**
+	 * The asset spec a chained asset run wrote, relative to working_dir.
+	 *
+	 * Set only by that handoff. When present, preflight checks that every
+	 * asset id the plan references appears in the spec — which is what makes
+	 * "the coding run must honour the ids" real rather than hoped: the plan
+	 * names them, the spec was built from those names, and this is the step
+	 * that notices when they stopped agreeing.
+	 */
+	asset_spec_path: string | null;
+	/**
 	 * Offer web_search and research_url to the preflight interview, so it can
 	 * check versions and APIs past the model's training cutoff. The coding loop
 	 * has them regardless. null = default (true).
 	 */
 	web_research: boolean | null;
+	/**
+	 * Settle every open decision in preflight without asking, exactly as a
+	 * chained run does.
+	 *
+	 * A manually started run interviews the user, which is right the first time
+	 * a plan is used and wrong every time after: re-running a coding job
+	 * against a plan that already carries a DECISIONS file means sitting
+	 * through an interview to re-answer settled questions, and a run started
+	 * before bed parks on the question modal all night if it asks even one.
+	 * With this on the run is unattended from its first second, exactly like a
+	 * chained one. null = default (false), so nothing that used to interview
+	 * silently stops.
+	 */
+	mute_preflight: boolean | null;
+	/**
+	 * Agent-loop turns one coding turn may spend before its result call is
+	 * FORCED. Settings → Shell's "Max steps per task" governs the chat shell
+	 * only and never reaches a job, so without this a job's budget is not
+	 * adjustable at all. null = default (200); clamped to 50–600.
+	 */
+	max_turns: number | null;
 }
+
+/** Default agent-loop turns per coding turn. */
+export const DEFAULT_MAX_TURNS = 200;
+export const MIN_MAX_TURNS = 50;
+export const MAX_MAX_TURNS = 600;
 
 export function parseAutonomousCodingConfig(json: string | null): AutonomousCodingConfig {
 	let raw: Record<string, unknown> = {};
@@ -75,10 +111,19 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 				: null,
 		create_branch: parseOptionalBool(raw.create_branch),
 		web_research: parseOptionalBool(raw.web_research),
+		mute_preflight: parseOptionalBool(raw.mute_preflight),
+		max_turns:
+			typeof raw.max_turns === 'number' && Number.isFinite(raw.max_turns)
+				? Math.min(MAX_MAX_TURNS, Math.max(MIN_MAX_TURNS, Math.round(raw.max_turns)))
+				: null,
 		use_git: parseOptionalBool(raw.use_git),
 		open_findings: Array.isArray(raw.open_findings)
 			? raw.open_findings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
-			: []
+			: [],
+		asset_spec_path:
+			typeof raw.asset_spec_path === 'string' && raw.asset_spec_path.trim().length > 0
+				? raw.asset_spec_path.trim()
+				: null
 	};
 }
 

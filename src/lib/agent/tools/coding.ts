@@ -218,3 +218,124 @@ registerTool({
 		return toolResult('Iteration result recorded.');
 	}
 });
+
+export const SUBMIT_ASSET_SPEC_TOOL = 'submit_asset_spec';
+
+/**
+ * One asset as emitted by the spec-derivation turn.
+ *
+ * Deliberately no `id` and no `out`. The runner assigns both, the same way it
+ * assigns coding item ids: a model that renames a thing halfway down a list
+ * leaves the game referencing something that does not exist, and a model that
+ * chooses output paths can collide two of them or escape the project.
+ */
+export interface AssetSpecEntryArg {
+	/** Human title, e.g. "Iron sword". The runner slugifies it into an id. */
+	title: string;
+	kind?: string;
+	prompt?: string;
+	size?: number;
+	seamless?: boolean;
+	sheet?: string;
+	negativePrompt?: string;
+	notes?: string;
+}
+
+registerTool({
+	category: 'coding',
+	schema: {
+		type: 'function',
+		function: {
+			name: SUBMIT_ASSET_SPEC_TOOL,
+			description:
+				'Report the list of images this project needs, as structured data. Call this ' +
+				'exactly once, at the end. Cover everything the project actually needs and ' +
+				'nothing it does not.',
+			parameters: {
+				type: 'object',
+				properties: {
+					style: {
+						type: 'object',
+						description: 'What every asset has in common. This is what makes the set cohere.',
+						properties: {
+							prompt: {
+								type: 'string',
+								description:
+									'The look, appended to every asset prompt. ONE SHORT LINE, at most about ' +
+									'25 words: the image model reads only the first 77 tokens of a prompt, and ' +
+									'a long style pushes the subject out of that window. Medium, line weight ' +
+									'and saturation only. e.g. "flat pixel art, limited palette, thick dark ' +
+									'outline, no gradients". Never a colour scheme (it tints every asset), ' +
+									'a subject, a camera angle or a genre.'
+							},
+							negativePrompt: {
+								type: 'string',
+								description: 'What every asset must avoid, e.g. "photo, 3d render, gradient".'
+							}
+						},
+						required: ['prompt']
+					},
+					anchorSheet: {
+						type: 'string',
+						description:
+							'The one sheet name, from the entries, whose subjects together show the ' +
+							"set's look best. It is generated first, for approval before the rest. " +
+							'Not four characters, not four icons: a spread.'
+					},
+					entries: {
+						type: 'array',
+						description: 'Every image the project needs.',
+						items: {
+							type: 'object',
+							properties: {
+								title: {
+									type: 'string',
+									description: 'What the thing is, e.g. "Iron sword". Two or three words.'
+								},
+								kind: {
+									type: 'string',
+									enum: ['sprite', 'texture', 'icon'],
+									description:
+										'sprite: an object or character on a transparent background. texture: ' +
+										'ground or wall that must tile seamlessly. icon: a small UI symbol.'
+								},
+								prompt: {
+									type: 'string',
+									description:
+										'What to draw, subject only, with its own colours — the shared style is ' +
+										'added automatically. e.g. "a straight iron longsword, blade upward". ' +
+										'For a texture, the surface alone: "seamless" or "tiling" draws a grid.'
+								},
+								sheet: {
+									type: 'string',
+									description:
+										'Sprites and icons only. A short group name, e.g. "items" or "characters": ' +
+										'entries with the same name are drawn together on one sheet, at one scale ' +
+										'and from one view. Group things that belong side by side; never a coin ' +
+										'with a building.'
+								},
+								negativePrompt: {
+									type: 'string',
+									description: 'Anything to avoid for this asset in particular. Usually omitted.'
+								},
+								notes: {
+									type: 'string',
+									description: 'A note for whoever reads the file. Never affects generation.'
+								}
+							},
+							required: ['title', 'kind', 'prompt']
+						}
+					}
+				},
+				required: ['style', 'entries']
+			}
+		}
+	},
+	displayLabel: (args) => {
+		const n = Array.isArray(args.entries) ? args.entries.length : 0;
+		return `asset spec: ${n} asset${n === 1 ? '' : 's'}`;
+	},
+	async execute() {
+		return toolResult('Asset spec recorded.');
+	}
+});

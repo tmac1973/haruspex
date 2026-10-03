@@ -2,6 +2,8 @@ mod app_log;
 mod audio;
 mod clipboard;
 mod code_tools;
+mod comfy;
+mod comfy_models;
 mod db;
 mod desktop;
 mod env_util;
@@ -9,6 +11,9 @@ mod feedback;
 mod fs_tools;
 mod hardware;
 mod image_cache;
+mod image_engine;
+mod image_gen;
+mod image_models;
 mod inference;
 mod inference_queue;
 mod integrations;
@@ -158,6 +163,8 @@ pub fn run() {
             }
         })
         .manage(LlamaServer::new())
+        // Nothing starts here: the image engine spawns on demand only.
+        .manage(image_engine::ImageEngine::new())
         .manage(McpInstaller::new())
         .manage(InferenceQueue::new())
         .manage(ProxyState::new())
@@ -189,6 +196,7 @@ pub fn run() {
             models::context_fit_ceiling,
             models::download_model,
             models::cancel_download,
+            models::download_status,
             hardware::cmd_detect_hardware,
             models::import_model,
             models::get_models_dir,
@@ -220,6 +228,18 @@ pub fn run() {
             proxy::images::proxy_fetch_url_images,
             image_cache::commands::image_resolve,
             image_cache::commands::image_sweep,
+            image_cache::commands::image_store_bytes,
+            image_gen::commands::image_check,
+            image_gen::commands::image_palette_spread,
+            image_gen::commands::image_contact_sheet,
+            image_gen::commands::image_split_sheet,
+            image_gen::commands::image_normalize,
+            image_gen::commands::image_extract_palette,
+            image_gen::commands::image_effective_profile,
+            image_gen::commands::image_default_profile,
+            image_gen::commands::image_clear_canvas,
+            image_gen::commands::image_seam_inputs,
+            image_gen::commands::image_seam_finish,
             inference::probe_inference_server,
             inference_queue::inference_acquire,
             inference_queue::inference_cancel,
@@ -236,6 +256,22 @@ pub fn run() {
             whisper::get_whisper_logs,
             whisper::clear_whisper_logs,
             whisper::transcribe_audio,
+            image_engine::image_engine_start,
+            image_engine::image_engine_stop,
+            image_engine::image_engine_status,
+            image_engine::image_engine_logs,
+            image_engine::image_engine_request,
+            comfy::comfy_json,
+            comfy::comfy_bytes,
+            comfy::comfy_cancel,
+            comfy::comfy_subscribe,
+            comfy_models::comfy_model_catalogue,
+            comfy_models::comfy_can_install_directly,
+            comfy_models::comfy_install_direct,
+            image_models::image_models,
+            image_models::image_model_recommended,
+            image_models::download_image_model,
+            image_models::delete_image_model,
             tts::tts_initialize,
             tts::tts_synthesize_and_play,
             tts::tts_stop_playback,
@@ -298,6 +334,9 @@ pub fn run() {
             fs_tools::absolute::fs_write_text_absolute,
             fs_tools::absolute::fs_edit_text_absolute,
             fs_tools::path::fs_list_dir,
+            fs_tools::bytes::fs_read_bytes,
+            fs_tools::bytes::fs_write_bytes,
+            fs_tools::bytes::fs_move_in_workdir,
             fs_tools::text::fs_read_text,
             fs_tools::text::fs_read_text_full,
             fs_tools::text::fs_write_text,
@@ -419,6 +458,8 @@ pub fn run() {
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;
                     let _ = tts.stop().await;
+                    // ~7 GB of VRAM for Ming: left behind, it outlived the app.
+                    app.state::<image_engine::ImageEngine>().stop().await;
                     browser.shutdown().await;
                 });
             }

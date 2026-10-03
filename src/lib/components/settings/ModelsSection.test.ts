@@ -8,6 +8,9 @@ import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
 vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn()
 }));
+vi.mock('@tauri-apps/api/event', () => ({
+	listen: vi.fn(async () => () => {})
+}));
 
 vi.mock('$lib/models/download', () => ({
 	downloadModelWithProgress: vi.fn()

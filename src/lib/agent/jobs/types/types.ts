@@ -101,6 +101,8 @@ export interface JobTypeEditorProps {
 	 * before a working dir is chosen.
 	 */
 	workingDir: string;
+	/** The job being edited, or 'new' before its first save. */
+	jobId: number | 'new';
 }
 // Loose component typing: editors declare a subset of JobTypeEditorProps.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

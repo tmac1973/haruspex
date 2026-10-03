@@ -1,0 +1,123 @@
+{
+	"1": {
+		"class_type": "UNETLoader",
+		"inputs": {
+			"unet_name": "",
+			"weight_dtype": "default"
+		}
+	},
+	"2": {
+		"class_type": "CLIPLoader",
+		"inputs": {
+			"clip_name": "",
+			"type": "qwen_image",
+			"device": "cpu"
+		}
+	},
+	"3": {
+		"class_type": "VAELoader",
+		"inputs": {
+			"vae_name": ""
+		}
+	},
+	"4": {
+		"class_type": "CLIPTextEncode",
+		"inputs": {
+			"text": "",
+			"clip": ["2", 0]
+		}
+	},
+	"5": {
+		"class_type": "ModelSamplingFlux",
+		"inputs": {
+			"model": ["1", 0],
+			"max_shift": 1.35,
+			"base_shift": 0.5,
+			"width": 1024,
+			"height": 1024
+		}
+	},
+	"6": {
+		"class_type": "VAEEncode",
+		"inputs": {
+			"pixels": ["16", 0],
+			"vae": ["3", 0]
+		}
+	},
+	"7": {
+		"class_type": "RandomNoise",
+		"inputs": {
+			"noise_seed": 0
+		}
+	},
+	"8": {
+		"class_type": "KSamplerSelect",
+		"inputs": {
+			"sampler_name": "euler"
+		}
+	},
+	"9": {
+		"class_type": "SaveImage",
+		"inputs": {
+			"filename_prefix": "haruspex",
+			"images": ["13", 0]
+		}
+	},
+	"10": {
+		"class_type": "BasicScheduler",
+		"inputs": {
+			"model": ["5", 0],
+			"scheduler": "simple",
+			"steps": 12,
+			"denoise": 0.9
+		}
+	},
+	"11": {
+		"class_type": "BasicGuider",
+		"inputs": {
+			"model": ["5", 0],
+			"conditioning": ["4", 0]
+		}
+	},
+	"12": {
+		"class_type": "SamplerCustomAdvanced",
+		"inputs": {
+			"noise": ["7", 0],
+			"guider": ["11", 0],
+			"sampler": ["8", 0],
+			"sigmas": ["10", 0],
+			"latent_image": ["6", 0]
+		}
+	},
+	"13": {
+		"class_type": "VAEDecode",
+		"inputs": {
+			"samples": ["12", 0],
+			"vae": ["3", 0]
+		}
+	},
+	"14": {
+		"class_type": "EmptyImage",
+		"inputs": {
+			"width": 1024,
+			"height": 1024,
+			"batch_size": 1,
+			"color": 8421504
+		}
+	},
+	"15": {
+		"class_type": "SolidMask",
+		"inputs": {
+			"value": 1.0,
+			"width": 1024,
+			"height": 1024
+		}
+	},
+	"16": {
+		"class_type": "JoinImageWithAlpha",
+		"inputs": {
+			"image": ["14", 0],
+			"alpha": ["15", 0]
+		}
+	}
+}

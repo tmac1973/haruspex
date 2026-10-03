@@ -1,6 +1,7 @@
 import type { JobTypeDefinition, PlannedStep } from '../types';
 import { runGuidedPlanningPipeline } from './pipeline';
 import { type GuidedPlanningRunMode, parseGuidedPlanningConfig } from './config';
+import { DEFAULT_MAX_TURNS } from '../autonomous-coding/config';
 import Editor from './Editor.svelte';
 
 /** The guided-planning editor's working state (concrete strings, '' = unset). */
@@ -10,11 +11,13 @@ export interface GuidedPlanningEditorState {
 	skip_verification: boolean;
 	web_research: boolean;
 	use_git: boolean;
+	generate_assets: boolean;
 	run_mode: GuidedPlanningRunMode;
 	// Concrete strings/numbers in the editor ('' and 0 = unset), converted back
 	// to nulls by configToJson.
 	coding_max_attempts: number;
 	coding_context_mode: '' | 'step' | 'phase';
+	coding_max_turns: number;
 }
 
 /**
@@ -44,6 +47,11 @@ const GUIDED_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 			'An independent reviewer is reading the plan to check dependency ordering, unresolved (“TBD”) decisions, embedded code and unreachable steps. Can be switched off in the job editor.'
 	},
 	{
+		title: 'Assets',
+		description:
+			'Writing an asset spec from the finished plan, so a chained asset run can generate the art before any code is written. Only runs when "Also generate assets" is on.'
+	},
+	{
 		title: 'Approval',
 		description: 'Waiting for you to review the phase files and approve — or request changes.'
 	},
@@ -67,6 +75,8 @@ function codingRunJson(s: GuidedPlanningEditorState): Record<string, unknown> | 
 	if (s.coding_max_attempts > 0 && s.coding_max_attempts !== 3)
 		out.max_attempts = s.coding_max_attempts;
 	if (s.coding_context_mode) out.context_mode = s.coding_context_mode;
+	if (s.coding_max_turns > 0 && s.coding_max_turns !== DEFAULT_MAX_TURNS)
+		out.max_turns = s.coding_max_turns;
 	return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -97,11 +107,13 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		skip_verification: false,
 		web_research: true,
 		use_git: true,
+		generate_assets: false,
 		run_mode: 'attended',
 		// The coding job's own default, shown as itself. A 0 here meant "unset"
 		// and read on screen as "zero attempts", which is not a thing.
 		coding_max_attempts: 3,
-		coding_context_mode: ''
+		coding_context_mode: '',
+		coding_max_turns: DEFAULT_MAX_TURNS
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
@@ -111,9 +123,11 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			skip_verification: c.skip_verification,
 			web_research: c.web_research,
 			use_git: c.use_git,
+			generate_assets: c.generate_assets,
 			run_mode: c.run_mode,
 			coding_max_attempts: c.coding_run.max_attempts ?? 3,
-			coding_context_mode: c.coding_run.context_mode ?? ''
+			coding_context_mode: c.coding_run.context_mode ?? '',
+			coding_max_turns: c.coding_run.max_turns ?? DEFAULT_MAX_TURNS
 		};
 	},
 	configToJson: (config) => {
@@ -125,6 +139,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			// Sparse like skip_verification: only the non-default value is stored.
 			web_research: s.web_research ? undefined : false,
 			use_git: s.use_git ? undefined : false,
+			// Opt-in, so only `true` is worth storing.
+			generate_assets: s.generate_assets || undefined,
 			// Sparse: only a non-default mode is stored.
 			run_mode: s.run_mode === 'attended' ? undefined : s.run_mode,
 			coding_run: codingRunJson(s)

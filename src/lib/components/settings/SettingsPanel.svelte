@@ -12,6 +12,7 @@
 	import CalendarSection from '$lib/components/settings/CalendarSection.svelte';
 	import DesktopSection from '$lib/components/settings/DesktopSection.svelte';
 	import ShellSection from '$lib/components/settings/ShellSection.svelte';
+	import ImageSection from '$lib/components/settings/ImageSection.svelte';
 	import RemoteSection from '$lib/components/settings/RemoteSection.svelte';
 	import FeedbackSection from '$lib/components/settings/FeedbackSection.svelte';
 
@@ -31,6 +32,7 @@
 		| 'integrations'
 		| 'screen'
 		| 'shell'
+		| 'image'
 		| 'remote'
 		| 'feedback';
 
@@ -115,6 +117,12 @@
 					label: 'Shell',
 					subtitle: 'Terminal and the shell assistant.',
 					icon: '<polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line>'
+				},
+				{
+					id: 'image',
+					label: 'Image',
+					subtitle: 'Where pictures are generated, if anywhere.',
+					icon: '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>'
 				},
 				{
 					id: 'remote',
@@ -227,6 +235,8 @@
 				<DesktopSection />
 			{:else if activeCategory === 'shell'}
 				<ShellSection />
+			{:else if activeCategory === 'image'}
+				<ImageSection />
 			{:else if activeCategory === 'remote'}
 				<RemoteSection />
 			{:else if activeCategory === 'feedback'}

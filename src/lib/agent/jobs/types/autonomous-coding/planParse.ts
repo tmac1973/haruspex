@@ -59,7 +59,7 @@ export function parseGuidedPlan(files: PlanFile[], planDir = ''): LoopPlan | nul
 		if (!heading) return null;
 		const phaseId = String(phases.length + 1).padStart(2, '0');
 		const phaseTitle = heading[2];
-		phases.push({ id: phaseId, title: phaseTitle, verify: 'pending', repairs: 0 });
+		phases.push({ id: phaseId, title: phaseTitle, verify: 'pending', repairs: 0, builds: 0 });
 
 		const steps = extractStepTitles(file.content);
 		if (steps.length === 0) {

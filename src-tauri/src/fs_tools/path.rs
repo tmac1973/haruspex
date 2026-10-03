@@ -1003,6 +1003,32 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
 
+    /// A full disk mid-write: nothing under the real name, no staged temp, and
+    /// the file already there untouched — the next asset run must not skip a
+    /// half-written PNG as done. Opt-in, because it needs a small filesystem:
+    ///
+    /// ```text
+    /// cargo test --lib --no-run   # then, with the binary it prints:
+    /// unshare -Urm sh -c 'mkdir -p /tmp/full && mount -t tmpfs -o size=64k tmpfs /tmp/full &&
+    ///   HARUSPEX_FULL_DIR=/tmp/full <test-binary> full_disk --ignored'
+    /// ```
+    #[tokio::test]
+    #[ignore]
+    async fn a_full_disk_leaves_nothing_half_written() {
+        let dir = PathBuf::from(std::env::var("HARUSPEX_FULL_DIR").expect("HARUSPEX_FULL_DIR"));
+        let earlier = dir.join("earlier.png");
+        fs::write(&earlier, vec![7u8; 8 * 1024]).unwrap();
+
+        let target = dir.join("next.png");
+        let err = write_atomic(&target, &vec![1u8; 256 * 1024])
+            .await
+            .unwrap_err();
+        assert!(err.contains("No space left"), "{err}");
+        assert!(!target.exists(), "nothing under the real name");
+        assert!(!has_staged_tmp(&dir), "no staged temp left behind");
+        assert_eq!(fs::read(&earlier).unwrap(), vec![7u8; 8 * 1024]);
+    }
+
     /// True if any staged `write_atomic` temp file is still sitting in `dir`.
     fn has_staged_tmp(dir: &Path) -> bool {
         fs::read_dir(dir).unwrap().any(|e| {

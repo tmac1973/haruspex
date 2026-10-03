@@ -1,0 +1,69 @@
+{
+	"1": {
+		"class_type": "UNETLoader",
+		"inputs": {
+			"unet_name": "",
+			"weight_dtype": "default"
+		}
+	},
+	"2": {
+		"class_type": "CLIPLoader",
+		"inputs": {
+			"clip_name": "",
+			"type": "qwen_image",
+			"device": "cpu"
+		}
+	},
+	"3": {
+		"class_type": "VAELoader",
+		"inputs": {
+			"vae_name": ""
+		}
+	},
+	"4": {
+		"class_type": "TextEncodeQwenImage21",
+		"inputs": {
+			"clip": ["2", 0],
+			"prompt": "",
+			"negative_prompt": "",
+			"resolution": 1024
+		}
+	},
+	"6": {
+		"class_type": "EmptyLatentImage",
+		"inputs": {
+			"width": 1024,
+			"height": 1024,
+			"batch_size": 1
+		}
+	},
+	"7": {
+		"class_type": "KSampler",
+		"inputs": {
+			"seed": 0,
+			"steps": 25,
+			"cfg": 1,
+			"sampler_name": "euler",
+			"scheduler": "simple",
+			"denoise": 1,
+			"model": ["1", 0],
+			"positive": ["4", 0],
+			"negative": ["4", 1],
+			"latent_image": ["6", 0]
+		}
+	},
+	"8": {
+		"class_type": "VAEDecode",
+		"inputs": {
+			"samples": ["7", 0],
+			"vae": ["3", 0]
+		}
+	},
+	"9": {
+		"class_type": "SaveImage",
+		"inputs": {
+			"filename_prefix": "haruspex",
+			"images": ["8", 0]
+		}
+	}
+}

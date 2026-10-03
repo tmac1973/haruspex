@@ -80,6 +80,150 @@ describe('trimOldToolMessages', () => {
 	});
 });
 
+/**
+ * Trimming to a budget instead of to the floor.
+ *
+ * The all-but-three sweep is a cliff: the moment a long agentic turn crosses
+ * the line it loses every tool result it is working from. A coding run that
+ * had read twenty source files was left holding three, reported the code as
+ * missing from disk, and spent the rest of its budget rediscovering that. It
+ * happened five times in one 12-hour run.
+ */
+describe('trimOldToolMessages — budgeted', () => {
+	/** A tool result of a known, controllable size. */
+	const sized = (chars: number, id: string) => tool('x'.repeat(chars), id);
+
+	it('stops as soon as the messages fit, rather than stubbing everything', () => {
+		const msgs = [
+			sized(3500, 'a'), // ~1000 tokens each
+			sized(3500, 'b'),
+			sized(3500, 'c'),
+			sized(3500, 'd'),
+			sized(3500, 'e'),
+			sized(3500, 'f')
+		];
+		const before = estimateMessagesTokens(msgs);
+		// Ask for a cut of roughly one message's worth.
+		expect(trimOldToolMessages(msgs, { budget: before - 900 })).toBe(true);
+
+		const stubbed = msgs.filter((m) => String(m.content).startsWith('[Trimmed:'));
+		expect(stubbed).toHaveLength(1);
+		expect(estimateMessagesTokens(msgs)).toBeLessThanOrEqual(before - 900);
+	});
+
+	it('spends the expensive results first', () => {
+		// Age decides eligibility; size decides order. A 60-token list_dir
+		// result costs nothing to keep — the 40k file read is the problem.
+		const msgs = [sized(100, 'small'), sized(35000, 'huge'), sized(100, 'small2')];
+		msgs.push(tool('recent1', 'r1'), tool('recent2', 'r2'), tool('recent3', 'r3'));
+		const before = estimateMessagesTokens(msgs);
+		trimOldToolMessages(msgs, { budget: before - 1000 });
+
+		expect(String(msgs[1].content)).toContain('[Trimmed:');
+		expect(msgs[0].content).toBe('x'.repeat(100));
+		expect(msgs[2].content).toBe('x'.repeat(100));
+	});
+
+	it('never touches the most recent results, however large', () => {
+		const msgs = [sized(100, 'old'), sized(35000, 'r1'), sized(35000, 'r2'), sized(35000, 'r3')];
+		// A budget it cannot possibly reach without eating the recent three.
+		trimOldToolMessages(msgs, { budget: 1 });
+		expect(String(msgs[1].content)).not.toContain('[Trimmed:');
+		expect(String(msgs[2].content)).not.toContain('[Trimmed:');
+		expect(String(msgs[3].content)).not.toContain('[Trimmed:');
+	});
+
+	it('does nothing at all when already under budget', () => {
+		const msgs = [sized(3500, 'a'), sized(3500, 'b'), tool('c'), tool('d'), tool('e')];
+		const snapshot = JSON.stringify(msgs);
+		expect(trimOldToolMessages(msgs, { budget: 1_000_000 })).toBe(false);
+		expect(JSON.stringify(msgs)).toBe(snapshot);
+	});
+
+	it('counts the tool schemas against the budget when given them', () => {
+		const msgs = [sized(3500, 'a'), sized(3500, 'b'), tool('c'), tool('d'), tool('e')];
+		const tools = [
+			{
+				type: 'function' as const,
+				function: { name: 'f', description: 'd'.repeat(35000), parameters: {} }
+			}
+		];
+		// Under budget on messages alone; over once the schemas are counted.
+		const msgsOnly = estimateMessagesTokens(msgs);
+		expect(trimOldToolMessages(msgs, { budget: msgsOnly + 100 })).toBe(false);
+		expect(trimOldToolMessages(msgs, { budget: msgsOnly + 100, tools })).toBe(true);
+	});
+
+	it('leaves an already-stubbed result alone instead of re-stubbing it', () => {
+		const msgs = [sized(3500, 'a'), sized(3500, 'b'), tool('c'), tool('d'), tool('e')];
+		trimOldToolMessages(msgs, { budget: 1 });
+		const after = JSON.stringify(msgs);
+		// A second pass has nothing eligible left, so it must report no change
+		// rather than wrapping a stub in another stub.
+		expect(trimOldToolMessages(msgs, { budget: 1 })).toBe(false);
+		expect(JSON.stringify(msgs)).toBe(after);
+	});
+});
+
+/**
+ * "4000 chars dropped" is not actionable. The model has to be able to tell an
+ * evicted read from a file that is not there — that confusion is what turned
+ * trimming into five unbuilt phases.
+ */
+describe('the trim stub names the call it replaced', () => {
+	it('names the tool and its path', () => {
+		const msgs: ChatMessage[] = [
+			{
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{
+						id: 'c1',
+						type: 'function',
+						function: {
+							name: 'fs_read_text',
+							arguments: JSON.stringify({ path: 'crates/core/src/lib.rs' })
+						}
+					}
+				]
+			},
+			tool('x'.repeat(4000), 'c1'),
+			tool('a'),
+			tool('b'),
+			tool('c')
+		];
+		trimOldToolMessages(msgs);
+		const stub = String(msgs[1].content);
+		expect(stub).toContain('fs_read_text(crates/core/src/lib.rs)');
+		expect(stub).toContain('DROPPED TO SAVE SPACE');
+		expect(stub).toContain('says nothing about what it contained');
+	});
+
+	it('falls back to a generic phrase when the call cannot be found', () => {
+		const msgs = [tool('x'.repeat(4000), 'orphan'), tool('a'), tool('b'), tool('c')];
+		trimOldToolMessages(msgs);
+		expect(String(msgs[0].content)).toContain('an earlier tool call');
+	});
+
+	it('uses the name alone when the arguments will not parse', () => {
+		const msgs: ChatMessage[] = [
+			{
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{ id: 'c1', type: 'function', function: { name: 'code_grep', arguments: '{oops' } }
+				]
+			},
+			tool('x'.repeat(4000), 'c1'),
+			tool('a'),
+			tool('b'),
+			tool('c')
+		];
+		trimOldToolMessages(msgs);
+		expect(String(msgs[1].content)).toContain('code_grep is no longer in scope');
+	});
+});
+
 describe('fitMessagesToBudget', () => {
 	const fits = (msgs: ChatMessage[], contextSize: number, reserveOutput: number) =>
 		estimateMessagesTokens(msgs) <= contextSize - reserveOutput;

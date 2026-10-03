@@ -9,8 +9,17 @@ Private local AI desktop app — Tauri 2.x + SvelteKit 5 + llama.cpp sidecar.
 - **LLM Inference**: llama-server sidecar (port 8765, OpenAI-compatible API)
 - **Speech-to-Text**: whisper-server sidecar (port 8766, whisper.cpp)
 - **Text-to-Speech**: koko sidecar (port 3001, Kokoros OpenAI-compatible API)
+- **Image generation**: ComfyUI (a server the user runs) or the bundled
+  sd-server sidecar (port 8767, stable-diffusion.cpp). Off by default; nothing
+  starts until Settings → Image selects one. See `docs/image-generation.md`.
 - **Integrations**: MCP servers (stdio + streamable HTTP), IMAP email, CalDAV/CardDAV, screen capture
 - **Default model**: Qwen 3.5 9B (Q4_K_M, ~5.7 GB)
+- **Image models**: Ming-Image 0.1 Design (MIT; the default, ComfyUI) and
+  Qwen-Image-2.1 (non-commercial), installed into the user's ComfyUI from
+  Settings → Image (`comfy_models.rs`); the bundled engine runs the same two
+  as GGUF (`image_models.rs`, Ming converted by us and hosted on Hugging Face),
+  downloaded to `models/image/<id>/`. Licence and commercial use are
+  first-class fields in both
 
 ## Dev Setup
 
@@ -40,6 +49,12 @@ GDK_BACKEND=x11 npm run tauri dev
 | `koko-{triple}` | Kokoros | CPU | Text-to-speech |
 | `node-{triple}` | nodejs.org | — | Runs npm-packaged MCP servers |
 | `uv-{triple}` | astral-sh/uv | — | Runs PyPI-packaged MCP servers |
+| `sd-server-{triple}` | stable-diffusion.cpp | Vulkan / Metal | Local image generation |
+
+`sd-server` is DOWNLOADED, not built — upstream ships a Vulkan/Metal binary for
+every triple we target. Its shared libraries live in `binaries/sd-libs/`, apart
+from `binaries/libs/`, because it carries its own ggml whose sonames collide
+with llama.cpp's; see `docs/image-generation.md`.
 
 `node` and `uv` are bundled so a user never needs a terminal to install an MCP
 server. They are fetched by `./scripts/fetch-node.sh` and `./scripts/fetch-uv.sh`;
@@ -57,6 +72,7 @@ Binaries and `.so` files are gitignored. Run `./scripts/link-sidecar-libs.sh` to
 | 3001 | koko (TTS) |
 | 8765 | llama-server |
 | 8766 | whisper-server |
+| 8767 | sd-server, when the bundled image engine is running |
 | 9876 | Blender, when its companion addon is running |
 | 9080 | Godot's editor bridge, when its addon is enabled |
 

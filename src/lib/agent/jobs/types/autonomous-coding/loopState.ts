@@ -46,6 +46,11 @@ export interface PhaseInfo {
 	verify: PhaseVerifyStatus;
 	/** Repair cycles consumed (repair item + re-verification = one cycle). */
 	repairs: number;
+	/**
+	 * Phase-context build turns spent on this phase, including ones that
+	 * produced nothing. Zero in per-step mode, which has no phase-wide turn.
+	 */
+	builds: number;
 }
 
 /**
@@ -68,6 +73,19 @@ export interface LoopPlan {
 export const MAX_PHASE_REPAIR_CYCLES = 5;
 
 /**
+ * Phase-context build turns allowed per phase before its items are blocked.
+ *
+ * A build turn that writes nothing is retried rather than believed. An
+ * observed 12-hour run had five phases whose turn opened with "NOT
+ * IMPLEMENTED — this turn consumed itself in reading/analysis and wrote no
+ * code"; every one was marked done and committed, because the phase path
+ * trusted the turn where the per-item path checks the diff. A retry is cheap
+ * next to that: the turn starts on a fresh context, which is usually what it
+ * was short of.
+ */
+export const MAX_PHASE_BUILD_ATTEMPTS = 3;
+
+/**
  * Normalize a submit_task_list payload into a full plan, grouping items into
  * phases by their `phase` title (first-appearance order).
  *
@@ -86,7 +104,7 @@ export function normalizeTaskListPlan(raw: unknown): LoopPlan {
 		const existing = phaseIdByTitle.get(key.toLowerCase());
 		if (existing) return existing;
 		const id = String(phases.length + 1).padStart(2, '0');
-		phases.push({ id, title: key, verify: 'pending', repairs: 0 });
+		phases.push({ id, title: key, verify: 'pending', repairs: 0, builds: 0 });
 		phaseIdByTitle.set(key.toLowerCase(), id);
 		return id;
 	};
@@ -117,7 +135,7 @@ export function ensurePhased(plan: LoopPlan): LoopPlan {
 	if (plan.phases.length > 0 || plan.items.length === 0) return plan;
 	const id = '01';
 	return {
-		phases: [{ id, title: 'Whole plan', verify: 'pending', repairs: 0 }],
+		phases: [{ id, title: 'Whole plan', verify: 'pending', repairs: 0, builds: 0 }],
 		items: plan.items.map((i) => ({ ...i, phase: id }))
 	};
 }
@@ -161,7 +179,8 @@ export function renderTodoPlan(plan: LoopPlan): string {
 	for (const phase of plan.phases) {
 		lines.push(
 			'',
-			`## Phase ${phase.id} — ${phase.title} (verify: ${phase.verify}, repairs: ${phase.repairs})`,
+			`## Phase ${phase.id} — ${phase.title} (verify: ${phase.verify}, ` +
+				`repairs: ${phase.repairs}, builds: ${phase.builds})`,
 			''
 		);
 		for (const item of plan.items) {
@@ -172,7 +191,8 @@ export function renderTodoPlan(plan: LoopPlan): string {
 }
 
 const ITEM_RE = /^- \[([ x!])\] (\d{2,})\. (.+?)(?: \(attempts: (\d+)(, repair)?\))?$/;
-const PHASE_RE = /^## Phase (\d{2,}) — (.+?) \(verify: (pending|passed|blocked), repairs: (\d+)\)$/;
+const PHASE_RE =
+	/^## Phase (\d{2,}) — (.+?) \(verify: (pending|passed|blocked), repairs: (\d+)(?:, builds: (\d+))?\)$/;
 
 /**
  * Parse a TODO-coding.md back into a plan. Returns null when the text has no
@@ -195,7 +215,10 @@ export function parseTodoPlan(text: string): LoopPlan | null {
 				id: ph[1],
 				title: ph[2].trim(),
 				verify: ph[3] as PhaseVerifyStatus,
-				repairs: parseInt(ph[4], 10)
+				repairs: parseInt(ph[4], 10),
+				// Absent in a TODO file written before builds were tracked: an
+				// in-flight run must resume, not fail to parse and lose the plan.
+				builds: ph[5] ? parseInt(ph[5], 10) : 0
 			});
 			current = null;
 			continue;
@@ -294,6 +317,49 @@ export function setPhaseVerify(
 	return {
 		...plan,
 		phases: plan.phases.map((p) => (p.id === phaseId ? { ...p, verify } : p))
+	};
+}
+
+/**
+ * Record a phase-context build turn that produced no work.
+ *
+ * The turn is not believed and its items are NOT marked done. Under the cap
+ * the phase is left `todo` so the loop runs it again on a fresh context; at
+ * the cap its items are blocked and its verification marked blocked, so the
+ * run moves on to the next phase instead of spinning on this one — and the
+ * report says the phase was never built rather than claiming it passed.
+ */
+export function recordPhaseBuildFailure(
+	plan: LoopPlan,
+	phaseId: string
+): { plan: LoopPlan; builds: number; exhausted: boolean } {
+	const builds = (plan.phases.find((p) => p.id === phaseId)?.builds ?? 0) + 1;
+	const exhausted = builds >= MAX_PHASE_BUILD_ATTEMPTS;
+	return {
+		plan: {
+			phases: plan.phases.map((p) =>
+				p.id === phaseId
+					? { ...p, builds, ...(exhausted ? { verify: 'blocked' as const } : {}) }
+					: p
+			),
+			items: exhausted
+				? plan.items.map((i) =>
+						i.phase === phaseId && i.status === 'todo'
+							? { ...i, status: 'blocked' as TaskStatus, attempts: MAX_PHASE_BUILD_ATTEMPTS }
+							: i
+					)
+				: plan.items
+		},
+		builds,
+		exhausted
+	};
+}
+
+/** Record a phase-context build turn that did produce work. */
+export function recordPhaseBuild(plan: LoopPlan, phaseId: string): LoopPlan {
+	return {
+		...plan,
+		phases: plan.phases.map((p) => (p.id === phaseId ? { ...p, builds: p.builds + 1 } : p))
 	};
 }
 

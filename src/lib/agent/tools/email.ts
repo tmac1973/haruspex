@@ -237,7 +237,12 @@ registerTool({
 		];
 
 		try {
-			const summary = await runSubAgent(messages, EMAIL_SUMMARY_MAX_TOKENS, ctx.signal);
+			const summary = await runSubAgent(
+				messages,
+				EMAIL_SUMMARY_MAX_TOKENS,
+				ctx.signal,
+				ctx.backend
+			);
 			const finalSummary =
 				summary || `[summarizer returned nothing — body preview: ${input.body.slice(0, 200)}]`;
 			return toolResult(

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePlanDir, parseAutonomousCodingConfig, planDirFromPicked } from './config';
+import {
+	MAX_MAX_TURNS,
+	MIN_MAX_TURNS,
+	normalizePlanDir,
+	parseAutonomousCodingConfig,
+	planDirFromPicked
+} from './config';
 
 describe('normalizePlanDir', () => {
 	it('guarantees a trailing slash', () => {
@@ -111,5 +117,56 @@ describe('open_findings', () => {
 
 	it('degrades a non-array to empty rather than throwing', () => {
 		expect(parseAutonomousCodingConfig('{"open_findings":"oops"}').open_findings).toEqual([]);
+	});
+});
+
+/**
+ * Settings → Shell's "Max steps per task" is read by the chat shell alone and
+ * never reaches a job, so before this a job's turn budget was not adjustable
+ * at all — the number was hard-coded in the pipeline.
+ */
+describe('max_turns', () => {
+	it('defaults to null so the pipeline picks the default', () => {
+		expect(parseAutonomousCodingConfig('{}').max_turns).toBeNull();
+	});
+
+	it('takes a configured value', () => {
+		expect(parseAutonomousCodingConfig('{"max_turns":300}').max_turns).toBe(300);
+	});
+
+	it('clamps rather than trusting the stored number', () => {
+		// A hand-edited config must not be able to set a 5-turn budget (every
+		// turn fails) or a 10-million-turn one (the run never ends).
+		expect(parseAutonomousCodingConfig('{"max_turns":1}').max_turns).toBe(MIN_MAX_TURNS);
+		expect(parseAutonomousCodingConfig('{"max_turns":99999}').max_turns).toBe(MAX_MAX_TURNS);
+	});
+
+	it('ignores a non-number', () => {
+		expect(parseAutonomousCodingConfig('{"max_turns":"lots"}').max_turns).toBeNull();
+		expect(parseAutonomousCodingConfig('{"max_turns":null}').max_turns).toBeNull();
+	});
+
+	it('rounds a fractional value', () => {
+		expect(parseAutonomousCodingConfig('{"max_turns":200.6}').max_turns).toBe(201);
+	});
+});
+
+describe('mute_preflight', () => {
+	it('defaults to null, so a manual run still interviews', () => {
+		// The interview is right the FIRST time a plan is used; nothing that
+		// used to ask may silently stop asking.
+		expect(parseAutonomousCodingConfig('{}').mute_preflight).toBeNull();
+	});
+
+	it('round-trips both settings', () => {
+		expect(parseAutonomousCodingConfig('{"mute_preflight":true}').mute_preflight).toBe(true);
+		expect(parseAutonomousCodingConfig('{"mute_preflight":false}').mute_preflight).toBe(false);
+	});
+
+	it('ignores a non-boolean rather than reading it as on', () => {
+		// "yes" must not mute a run the user expected to be asked about.
+		for (const raw of ['{"mute_preflight":"yes"}', '{"mute_preflight":1}']) {
+			expect(parseAutonomousCodingConfig(raw).mute_preflight).toBeNull();
+		}
 	});
 });

@@ -153,6 +153,24 @@
 	/>
 </div>
 
+<div class="field attempts">
+	<span class="label">
+		Max model steps per turn
+		<Tooltip
+			label="About max model steps"
+			text="Tool and model steps one coding turn may spend before its result is forced. Settings → Shell's 'Max steps per task' covers the chat shell only and never applies to a job. Raise it for phases that need many read/edit/test round-trips. Default 200. 50–600."
+		/>
+	</span>
+	<input
+		type="number"
+		min="50"
+		max="600"
+		step="50"
+		bind:value={cfg.max_turns}
+		aria-label="Max model steps per turn"
+	/>
+</div>
+
 {#if cfg.use_git}
 	<div class="field branch">
 		<label class="check">
@@ -166,6 +184,17 @@
 		<span class="hint inline">(recommended)</span>
 	</div>
 {/if}
+
+<div class="field mute-preflight">
+	<label class="check">
+		<input type="checkbox" bind:checked={cfg.mute_preflight} />
+		<span>Settle decisions without asking</span>
+	</label>
+	<Tooltip
+		label="About settling decisions without asking"
+		text="Preflight normally interviews you about every open decision in the plan. With this on it settles each one itself from the plan and the working directory and records the choice in DECISIONS-coding.md — the same way a run chained from guided planning does. Use it when the plan already carries its decisions, or when you are starting the run and walking away."
+	/>
+</div>
 
 <div class="field web-research">
 	<label class="check">

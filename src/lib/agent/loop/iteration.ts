@@ -20,7 +20,13 @@ import {
 	type Usage
 } from '$lib/api';
 import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
-import { executeTool, getToolSchemas, type PendingImage, type ToolContext } from '$lib/agent/tools';
+import {
+	coerceCallArguments,
+	executeTool,
+	getToolSchemas,
+	type PendingImage,
+	type ToolContext
+} from '$lib/agent/tools';
 import { isFetchFailureResult, isToolErrorResult } from '$lib/agent/tools/_helpers';
 import type { ToolDefinition } from '$lib/api';
 import {
@@ -52,6 +58,23 @@ import type { AgentLoopOptions, CompletionMeta } from '../loop';
 // Lower than the conversation-level compaction threshold (0.8) so we
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
+
+/**
+ * The token budget the in-loop trim should aim at, or null when no trim is
+ * warranted this iteration.
+ *
+ * Split out so the policy is testable without driving a whole agent loop —
+ * and because the policy is the part that went wrong. The trim used to have
+ * no target at all: crossing the threshold stubbed every eligible tool result
+ * at once, which on a long coding turn discards the files the turn is working
+ * from. Aiming AT the threshold keeps the freed space proportional to the
+ * overage.
+ */
+export function inLoopTrimBudget(contextSize: number, promptTokens: number): number | null {
+	if (contextSize <= 0) return null;
+	if (promptTokens / contextSize < IN_LOOP_TRIM_THRESHOLD) return null;
+	return Math.floor(contextSize * IN_LOOP_TRIM_THRESHOLD);
+}
 // Last-resort per-call output cap, used only if the settings store can't be
 // read. The operative values come from Settings → Agent → Response Length,
 // resolved per turn by `resolveMaxResponseTokens` below.
@@ -189,7 +212,15 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			visionSupported: options.visionSupported ?? true,
 			shellMode,
 			codeMode,
-			toolAllowlist: options.toolAllowlist
+			// The forced final tool is always offered. A stage once listed its
+			// read tools but not its submit tool: the model, correctly, never
+			// called a tool it was not given, and the forced call then named a
+			// tool missing from the request, which vLLM refuses with a 400 — so
+			// the turn ended empty and a chain lost its art.
+			toolAllowlist:
+				options.toolAllowlist && options.forceFinalTool
+					? [...options.toolAllowlist, options.forceFinalTool]
+					: options.toolAllowlist
 		}),
 		signal: options.signal,
 		workingDir,
@@ -793,16 +824,22 @@ async function runModelCall(
 		text: response.content
 	});
 
-	if (
-		ctx.contextSize > 0 &&
-		response.usage &&
-		response.usage.prompt_tokens / ctx.contextSize >= IN_LOOP_TRIM_THRESHOLD
-	) {
+	const trimBudget = response.usage
+		? inLoopTrimBudget(ctx.contextSize, response.usage.prompt_tokens)
+		: null;
+	if (trimBudget !== null && response.usage) {
 		// Logged because this is otherwise an invisible mutation: it silently
 		// stubs earlier tool results, and the only trace was the `[Trimmed:`
 		// marker buried inside a later prompt dump. When a run degrades in
 		// quality rather than failing outright, this is the line that says why.
-		if (trimOldToolMessages(ctx.messages)) {
+		//
+		// Trim back TO the threshold, not down to the floor. This fires
+		// pre-emptively — the request that triggered it fit — so there is no
+		// reason for it to be the more destructive of the two trims, and it
+		// used to be: it stubbed every eligible tool result the moment the
+		// prompt crossed 70%, which on a long coding turn is the turn's whole
+		// working memory in one step.
+		if (trimOldToolMessages(ctx.messages, { budget: trimBudget, tools: ctx.tools })) {
 			logDebug('agent', 'in-loop trim stubbed older tool results', {
 				promptTokens: response.usage.prompt_tokens,
 				contextSize: ctx.contextSize,
@@ -1397,7 +1434,11 @@ async function executeToolCalls(
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 		logDebug('agent', `tool start: ${call.name}`, { args: call.arguments });
-		options.onToolStart(call);
+		// Coerced, as the executor will see them. A stage that captures a
+		// structured answer here read the model's raw arguments: an `entries`
+		// array sent as a JSON string was walked character by character, and
+		// a night's asset spec was rejected as dozens of "entries with no id".
+		options.onToolStart({ ...call, arguments: coerceCallArguments(call.name, call.arguments) });
 		// Race the tool call against the abort signal. Most tools dispatch
 		// to Tauri commands or fetch and don't honor signal themselves, so
 		// without this race a cancel mid-tool waits for the tool to finish
@@ -1414,6 +1455,7 @@ async function executeToolCalls(
 				codeMode: ctx.codeMode,
 				codeAutoApprove: ctx.codeAutoApprove,
 				interactive: ctx.interactive,
+				backend: ctx.backend,
 				askUser: ctx.askUser,
 				writeRoot: ctx.writeRoot,
 				shellCwd: ctx.shellCwd,

@@ -46,9 +46,14 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 
 ### Jobs and schedules
 
-Save a prompt once and run it again later, by hand or on a schedule, without sitting there. There are four kinds of job: **research**, **audit**, **guided planning** and **autonomous coding**. Each job can use its own model, so you can send a heavy job to a big remote model while your local model keeps serving the Chat and Shell tabs. ([details](#jobs))
+Save a prompt once and run it again later, by hand or on a schedule, without sitting there. There are five kinds of job: **research**, **audit**, **guided planning**, **autonomous coding** and **asset generation**. Each job can use its own model, so you can send a heavy job to a big remote model while your local model keeps serving the Chat and Shell tabs. ([details](#jobs))
 
 Audit, guided planning and autonomous coding are coding-focused. They need a larger model to be useful.
+
+### Image generation (off by default)
+
+- **Game art from a description** — The asset generation job draws a project's sprites, icons and tiling textures in one consistent style, checks each one, and writes them into the project. Guided planning can hand off to it and then to autonomous coding, so you can go from an idea to a game with its own art in one unattended run. ([details](#image-generation))
+- **Runs on your machine** — Either a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, or a bundled engine that needs nothing installed. Nothing starts until you pick one in Settings → Image.
 
 ### Where the model runs
 
@@ -171,12 +176,16 @@ Press **F1** (or click the **?** in the header) to see this list in the app at a
 
 The Jobs tab runs saved prompts without you watching — on a schedule or when you press run. Each run streams live in its own view, stops at the first error, and stays in that job's run history. If you start several, they run one after another.
 
-There are four kinds of job:
+There are five kinds of job:
 
 - **Research** — A list of steps that run in order. Each step is a fresh conversation that receives the previous step's output, so you can chain "search → summarise → write a report" into one run. Each step can turn on deep research on its own.
 - **Audit** — Used to audit code bases. Runs one prompt many times independently, groups the findings, checks each group against the source, and writes one report sorted into confirmed / refuted / uncertain. Running it many times cancels out the noise a small model produces in any single run. You can set the number of runs, the step budget per run, a read-only tool restriction, your own instructions, and an output file.
 - **Guided planning** — Turns a rough idea into a written project overview and a plan split into phases, in the right dependency order. It asks you one question at a time and reads your codebase as it goes. It writes an `overview.md` and `phase-NN-*.md` files, and stops at checkpoints so you can review or change things. A separate reviewer pass then looks for missing steps and decisions still marked "TBD". It only plans — it never writes code. A long run picks up where it left off if the app restarts.
 - **Autonomous coding** — Takes a folder of plan files (usually from a guided planning job), asks you about every open decision up front, then writes the code unattended: one small step at a time, each one checked and committed, with a deeper check at the end of every phase. Each run gets its own git branch. It finishes by writing a report of what it built, what is blocked and why, and what comes next.
+
+- **Asset generation** — Draws the images a project needs from a spec: sprites and icons in sheets, textures that tile. It writes the spec itself if you describe what you want, or a guided planning job writes one with the plan. See [Image generation](#image-generation).
+
+Guided planning can run unattended and **chain** into asset generation and then autonomous coding, so the only questions you answer are the ones at the start of planning.
 
 **These job types work much better with a bigger model.** Audit, guided planning and autonomous coding all involve reading and writing code, which is where the 4B and 9B models are weakest. You can still use these jobs with a small model but don't expect great results.
 
@@ -184,7 +193,29 @@ There are four kinds of job:
 
 **Per-job model.** By default a job uses your global backend (Settings → Inference backend). Any job can instead point at its own OpenAI-compatible server: base URL, optional API key, model ID, context size and whether it can see images. This is useful for sending a heavy audit or planning job to a bigger or faster model. Because that remote model and your local `llama-server` are separate, a job running remotely **does not block the Chat or Shell tabs** from using your local model at the same time.
 
-Audit, guided planning and autonomous coding need a working directory — the model reads your code and writes its files there. Research jobs work with or without one.
+Audit, guided planning, autonomous coding and asset generation need a working directory — the model reads your code and writes its files there. Research jobs work with or without one.
+
+## Image generation
+
+Off by default. Pick a backend in Settings → Image:
+
+- **ComfyUI** — A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, on this machine or another. Settings → Image installs the model files into it, directly or through ComfyUI-Manager, or lists them for you to copy by hand.
+- **Bundled engine** — [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp), shipped with Haruspex. It starts when a job needs it and stops when you switch away or quit. Download a model in Settings → Image first.
+
+There are two models, both available on either backend:
+
+| Model | Licence | Bundled engine needs |
+| --- | --- | --- |
+| [Ming-Image 0.1 Design](https://huggingface.co/inclusionAI/Ming-Image-0.1-Design) (default) | MIT — commercial use allowed | ~8 GB VRAM and ~10 GB RAM |
+| Qwen-Image 2.1 | Qwen Research License — **non-commercial only** | ~12 GB VRAM |
+
+The bundled engine runs Ming from a GGUF conversion we host at [voltaire321/Ming-Image-0.1-Design-GGUF](https://huggingface.co/voltaire321/Ming-Image-0.1-Design-GGUF).
+
+**What the asset job does.** It draws the first sheet as a style anchor (shown to you for approval on an attended run) and draws the rest beside it, so the set matches. Sprites and icons are drawn nine to a sheet with transparent backgrounds and cut apart. Textures are made one at a time and repaired so they tile. Every asset is checked, and a vision model can optionally judge it too. Anything that fails is retried, and `REPORT-assets.md` says what was made, what was not, and why. After a run, **Review assets** on the job lets you mark the ones you don't like, with a note on what to change, and make just those again. Earlier versions are kept in a `.history` folder.
+
+Generated images are generally not copyrightable on their own, and some storefronts require AI-generated content to be disclosed. The report names the model and its licence.
+
+The full guide, including the spec format and how to set up ComfyUI, is in [`docs/image-generation.md`](./docs/image-generation.md).
 
 ## Local files
 
@@ -359,6 +390,10 @@ This is how small local models behave: after a long research turn, they prefer t
 
 **What to do:** just ask again — _"write that to a PDF"_. The second message almost always works, because the content is already in the conversation.
 
+### Image generation is new
+
+The asset job has been run end to end on Linux with an AMD GPU. It has not yet been tested on macOS or Windows. Generation uses your GPU heavily: while it runs, the bundled engine holds most of a 16 GB card, so expect the rest of the system's GPU work to suffer.
+
 ### Presentations and image search are experimental
 
 The presentation tools (`fs_write_pptx`, `fs_write_odp`) and the image tools (`image_search`, `fetch_url_images`) work, but treat them as experimental:
@@ -408,7 +443,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 # Everything in one command. spirv-headers is required by llama.cpp's Vulkan
 # backend and is NOT pulled in by shaderc, so it must be listed explicitly.
 sudo pacman -S --needed base-devel cmake pkg-config \
-  webkit2gtk-4.1 libappindicator-gtk3 librsvg alsa-lib libxcb \
+  webkit2gtk-4.1 libayatana-appindicator librsvg alsa-lib libxcb \
   vulkan-headers shaderc spirv-headers fuse2 libsonic pcaudiolib rust nodejs npm
 ```
 
@@ -487,6 +522,7 @@ Use `make reset-data` to wipe this directory and start fresh (Linux/macOS).
 | Text-to-speech             | [Kokoros](https://github.com/lucasjinreal/Kokoros) (CPU)                                                                                                                        |
 | Models (small)             | [Qwen 3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) and [Qwen 3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF)                                                 |
 | Models (16 GB and up)      | [Gemma 4 12B](https://huggingface.co/unsloth/gemma-4-12b-it-GGUF), [Qwen 3.6 35B-A3B](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) and [Qwen 3.8 27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF) |
+| Image generation           | [ComfyUI](https://github.com/comfyanonymous/ComfyUI) (yours) or [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) (bundled, Vulkan/Metal); Ming-Image 0.1 Design and Qwen-Image 2.1 |
 | Python sandbox             | [Pyodide](https://pyodide.org/) running in the app's webview                                                                                                                    |
 | PDF text extraction        | [PDFium](https://github.com/bblanchon/pdfium-binaries) with custom layout reconstruction                                                                                        |
 | PDF rendering (for vision) | [PDF.js](https://mozilla.github.io/pdf.js/) running in the Tauri webview                                                                                                        |
