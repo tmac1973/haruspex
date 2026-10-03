@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { familyOf, pickCompanion, resolveCompanions } from './families';
+import { familyOf, pickCompanion, resolveCompanions, hasModel } from './families';
 
 describe('familyOf', () => {
 	it('recognises the DiT families by the filenames they ship under', () => {
@@ -71,7 +71,8 @@ describe('resolveCompanions', () => {
 			'fetch',
 			vi.fn(async (url: string) => {
 				const cls = url.split('/object_info/')[1];
-				const input = cls === 'CLIPLoader' ? 'clip_name' : 'vae_name';
+				const input =
+					cls === 'CLIPLoader' ? 'clip_name' : cls === 'UNETLoader' ? 'unet_name' : 'vae_name';
 				return {
 					ok: true,
 					status: 200,
@@ -97,7 +98,15 @@ describe('resolveCompanions', () => {
 		lists.VAELoader = ['ae.safetensors'];
 		await expect(resolveCompanions(cfg, 'ming')).rejects.toMatchObject({
 			kind: 'unconfigured',
-			message: expect.stringMatching(/Ming-Image VAE/)
+			message: expect.stringMatching(/Ming-Image VAE.*Settings → Image → Install/)
 		});
+	});
+
+	it('treats an empty list as having none, not as "would not say"', async () => {
+		// A server with no models at all probed as "Connected".
+		lists.UNETLoader = [];
+		expect(await hasModel(cfg, 'ming', 'ming_image_0.1_design_int8_convrot.safetensors')).toBe(
+			false
+		);
 	});
 });

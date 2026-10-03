@@ -168,3 +168,21 @@ the model drew touching it (noted in `plan/futures.md`).
 Found on the way: `research_url` summarised every page on the GLOBAL model
 (`runSubAgent` took no backend), so a chain on compute:3000 was also calling
 whatever Settings pointed at — compute2. Tools now receive the turn's backend.
+
+## Failure paths (phase 15 step 5) — 2026-10-02
+
+Exercised against the real ComfyUI backend code and a throwaway ComfyUI on
+port 8189 (CPU, its own folders; the user's models linked read-only where a
+case needed them), except where noted.
+
+| Case | Before | After |
+|---|---|---|
+| Wrong URL | "Could not reach … — fetch failed" | the same, plus "Is ComfyUI running there?" |
+| Up, no Ming files | probe: "no Ming-Image text encoder" (the missing model unmentioned) | probe names the missing diffusion model; probe and generate end "— Settings → Image → Install" |
+| Up, model nobody has | probe: **"Connected — cpu."** (empty model lists were read as "won't say"); generate: "refused /prompt." | probe: "does not have a checkpoint called …"; generate quotes ComfyUI's validation report: node, input, value, "not on the server" |
+| Stopped mid-run (killed 8 s in) | fails in 0.1 s as `unreachable`, clear message; the job retries it once at the end of the run, then fails it | report now leads with "N of M failed for the same reason: …" when three or more share a cause |
+| Cancel in flight (8 s in) | settles as `cancelled` at once; the server's queue empty 4 s later | — (works; `/interrupt` is server-wide, noted in futures) |
+| Disk full | atomic write by design; untested for a failing write | tested for real in a full 64 KB tmpfs (no root, `unshare`): "No space left on device", nothing under the real name, no temp left, the earlier file intact (`a_full_disk_leaves_nothing_half_written`, opt-in) |
+| Engine binary missing | Rust names it `SidecarMissing`, but the UI showed only the detail: "sd-server" | a sentence and the fix: reinstall, or `./scripts/fetch-sdcpp.sh` in a dev checkout (start path read, message tested; a live check needs the app on the bundled engine) |
+
+Also fixed: a reason ending in "?" was printed "there?." in the report.

@@ -137,8 +137,8 @@ async function probeModel(
 	// this check is a convenience, not a gate.
 	if ((await hasModel(cfg, family, name)) === false) {
 		return family === 'sd'
-			? `The backend does not have a checkpoint called "${name}".`
-			: `The backend does not have a diffusion model called "${name}" in models/diffusion_models.`;
+			? `The backend does not have a checkpoint called "${name}" — pick one it has in Settings → Image.`
+			: `The backend does not have a diffusion model called "${name}" in models/diffusion_models — Settings → Image → Install.`;
 	}
 	if (family !== 'sd') {
 		try {

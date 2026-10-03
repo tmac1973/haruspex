@@ -51,6 +51,42 @@ interface Call {
 	body?: unknown;
 }
 
+/**
+ * A refusal in words. ComfyUI answers a workflow it will not run with a
+ * validation report — which node, which input, which value — and "refused
+ * /prompt" alone hid the one useful fact: that the model named is not on the
+ * server. The first node error is enough; the rest are usually the same.
+ */
+export function rejectionMessage(path: string, body: string): string {
+	const base = `The image backend refused ${path}`;
+	try {
+		const json = JSON.parse(body) as {
+			error?: { message?: string };
+			node_errors?: Record<
+				string,
+				{
+					class_type?: string;
+					errors?: Array<{ type?: string; message?: string; details?: string }>;
+				}
+			>;
+		};
+		const node = Object.values(json.node_errors ?? {}).find((n) => n.errors?.length);
+		const first = node?.errors?.[0];
+		if (first) {
+			const what = (first.details || first.message || first.type || '').slice(0, 200);
+			const missing =
+				first.type === 'value_not_in_list'
+					? ' — a file the workflow needs is not on the server (Settings → Image)'
+					: '';
+			return `${base}: ${node?.class_type ?? 'a node'} — ${what}${missing}.`;
+		}
+		if (json.error?.message) return `${base}: ${json.error.message}.`;
+	} catch {
+		// Not ComfyUI's JSON; the status says what there is to say.
+	}
+	return `${base}.`;
+}
+
 function trimUrl(base: string): string {
 	return base.trim().replace(/\/+$/, '');
 }
@@ -73,9 +109,9 @@ function fromRust(e: unknown, path: string, signal?: AbortSignal): ImageBackendE
 		case 'unreachable':
 			return new ImageBackendError(err.kind, err.message);
 		case 'rejected':
-			return new ImageBackendError('rejected', `The image backend refused ${path}.`, {
+			return new ImageBackendError('rejected', rejectionMessage(path, err.body), {
 				status: err.status,
-				body: err.body
+				body: err.body.slice(0, 200)
 			});
 		default:
 			// Not ours: an IPC failure, or a cancel that raced the answer.
@@ -148,7 +184,7 @@ async function viaFetch(cfg: ClientConfig, call: Call, signal?: AbortSignal): Pr
 			timedOut ? 'timeout' : 'unreachable',
 			timedOut
 				? `The image backend did not answer ${call.path} within ${HTTP_TIMEOUT_MS / 1000}s.`
-				: `Could not reach the image backend at ${trimUrl(cfg.baseUrl)} — ${describe(e)}`
+				: `Could not reach the image backend at ${trimUrl(cfg.baseUrl)} — ${describe(e)}. Is ComfyUI running there?`
 		);
 	} finally {
 		clearTimeout(timer);
@@ -156,7 +192,7 @@ async function viaFetch(cfg: ClientConfig, call: Call, signal?: AbortSignal): Pr
 	}
 	if (!res.ok) {
 		const body = await res.text().catch(() => '');
-		throw new ImageBackendError('rejected', `The image backend refused ${call.path}.`, {
+		throw new ImageBackendError('rejected', rejectionMessage(call.path, body), {
 			status: res.status,
 			body: body.slice(0, 200)
 		});

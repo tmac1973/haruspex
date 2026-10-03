@@ -73,6 +73,28 @@ async function modelPath(): Promise<string> {
  * same model and restarts for a different one — so this does not try to
  * decide, it just asks.
  */
+/**
+ * A start failure the user can act on, in words; null for the rest.
+ *
+ * The Rust error's `detail` is a fragment — for a missing engine it was just
+ * "sd-server" — so each kind gets its own sentence and the next step.
+ */
+export function engineSetupMessage(kind: string | undefined, detail: string): string | null {
+	switch (kind) {
+		case 'NoModel':
+			return 'No image model is configured — Settings → Image.';
+		case 'ModelMissing':
+			return `The image model is not on disk (${detail}) — download it again in Settings → Image.`;
+		case 'SidecarMissing':
+			return (
+				`The bundled image engine is missing (${detail}). Reinstall Haruspex, or in a ` +
+				'development checkout run ./scripts/fetch-sdcpp.sh.'
+			);
+		default:
+			return null;
+	}
+}
+
 async function ensureRunning(): Promise<void> {
 	const path = await modelPath();
 	if (!path) {
@@ -85,9 +107,8 @@ async function ensureRunning(): Promise<void> {
 		// configuration, the rest are the engine failing to come up.
 		const kind = (e as { kind?: string })?.kind;
 		const detail = (e as { detail?: string })?.detail ?? String(e);
-		if (kind === 'NoModel' || kind === 'ModelMissing' || kind === 'SidecarMissing') {
-			throw new ImageBackendError('unconfigured', detail || 'The image engine is not set up.');
-		}
+		const setUp = engineSetupMessage(kind, detail);
+		if (setUp) throw new ImageBackendError('unconfigured', setUp);
 		throw new ImageBackendError('unreachable', detail || 'The image engine did not start.');
 	}
 }
@@ -95,11 +116,9 @@ async function ensureRunning(): Promise<void> {
 /**
  * One HTTP call to the engine, made from Rust.
  *
- * The ComfyUI client uses `fetch` because it talks to a server the user runs,
- * whose CORS policy is the user's business. This one talks to a process we
- * spawned on loopback — and a webview `fetch` sends an `Origin` header that
- * a bare HTTP server has no reason to accept. Going through Rust means no
- * origin, no preflight, and no CORS configuration for anyone to get wrong.
+ * Through Rust, like the ComfyUI client: a webview `fetch` sends an `Origin`
+ * header that a bare HTTP server has no reason to accept. Going through Rust
+ * means no origin, no preflight, and no CORS configuration to get wrong.
  */
 async function call(path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
 	if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');

@@ -166,6 +166,31 @@ describe('the unresolved section', () => {
 	it('is absent when everything worked', () => {
 		expect(renderAssetReport(input())).not.toContain('## Not produced');
 	});
+
+	it('leads with a cause many assets share, so the one fix is not buried', () => {
+		// A backend that went away fails every asset after it the same way.
+		const gone =
+			'Could not reach the image backend at http://x — refused. Is ComfyUI running there?';
+		const md = renderAssetReport(
+			input({
+				entries: ['a', 'b', 'c', 'd'].map((id) =>
+					outcome({ id, status: 'failed', reason: id === 'd' ? 'other' : gone })
+				)
+			})
+		);
+		expect(md).toContain(`**3 of 4 failed for the same reason:** ${gone} Fix that and run`);
+		// One stop, not "there?."
+		expect(md).not.toContain('there?.');
+	});
+
+	it('says nothing extra for two failures that merely agree', () => {
+		const md = renderAssetReport(
+			input({
+				entries: ['a', 'b'].map((id) => outcome({ id, status: 'failed', reason: 'same' }))
+			})
+		);
+		expect(md).not.toContain('for the same reason');
+	});
 });
 
 describe('the degraded section', () => {

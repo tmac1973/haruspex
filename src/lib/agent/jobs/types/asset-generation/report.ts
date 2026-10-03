@@ -153,6 +153,28 @@ function entryTable(input: ReportInput): string[] {
 	];
 }
 
+/** A reason as a sentence: ends in exactly one stop, whatever it ended in. */
+function sentence(text: string): string {
+	return /[.?!]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
+}
+
+/**
+ * One line for a cause shared by many: a backend that went away, or a full
+ * disk, fails every asset after it the same way, and a list of thirty
+ * identical reasons buries the one thing to fix.
+ */
+function commonCause(bad: ReportInput['entries']): string[] {
+	const counts = new Map<string, number>();
+	for (const e of bad) if (e.reason) counts.set(e.reason, (counts.get(e.reason) ?? 0) + 1);
+	const [reason, n] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? ['', 0];
+	if (n < 3) return [];
+	return [
+		`**${n} of ${bad.length} failed for the same reason:** ${sentence(reason)} Fix that and run ` +
+			'the job again; only the assets not on disk are generated.',
+		''
+	];
+}
+
 function unresolvedSection(input: ReportInput): string[] {
 	const bad = input.entries.filter((e) => e.status === 'unresolved' || e.status === 'failed');
 	if (bad.length === 0) return [];
@@ -165,11 +187,11 @@ function unresolvedSection(input: ReportInput): string[] {
 		const entry = input.spec.entries.find((x) => x.id === e.id);
 		return (
 			`- **\`${e.id}\`** (${statusWord(e.status)}, ${e.attempts} attempt(s)) — ` +
-			`${e.reason ?? 'no reason recorded'}.${closest}` +
+			`${sentence(e.reason ?? 'no reason recorded')}${closest}` +
 			(entry ? `\n  Nothing was written to \`${entry.out}\`.` : '')
 		);
 	});
-	return ['## Not produced', '', ...lines, ''];
+	return ['## Not produced', '', ...commonCause(bad), ...lines, ''];
 }
 
 /**

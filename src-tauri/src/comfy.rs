@@ -81,6 +81,9 @@ pub enum ComfySocketEvent {
     Closed,
 }
 
+/// How much of a refusal's body comes back.
+const REJECTED_BODY_MAX: usize = 4000;
+
 fn client() -> &'static reqwest::Client {
     static C: OnceLock<reqwest::Client> = OnceLock::new();
     C.get_or_init(|| {
@@ -129,7 +132,7 @@ async fn send(call: &ComfyCall) -> Result<Vec<u8>, ComfyError> {
         } else {
             ComfyError::Unreachable {
                 message: format!(
-                    "Could not reach the image backend at {} — {}",
+                    "Could not reach the image backend at {} — {}. Is ComfyUI running there?",
                     base(&call.base_url),
                     root_cause(&e)
                 ),
@@ -145,7 +148,12 @@ async fn send(call: &ComfyCall) -> Result<Vec<u8>, ComfyError> {
         ),
     })?;
     if !status.is_success() {
-        let body: String = String::from_utf8_lossy(&bytes).chars().take(200).collect();
+        // Enough for ComfyUI's validation report, which the client turns into
+        // a sentence; it clips what it shows.
+        let body: String = String::from_utf8_lossy(&bytes)
+            .chars()
+            .take(REJECTED_BODY_MAX)
+            .collect();
         return Err(ComfyError::Rejected {
             status: status.as_u16(),
             body,
@@ -375,13 +383,13 @@ mod tests {
     async fn a_refusal_carries_its_status_and_the_start_of_its_body() {
         let url = serve(Router::new().route(
             "/prompt",
-            post(|| async { (axum::http::StatusCode::BAD_REQUEST, "x".repeat(500)) }),
+            post(|| async { (axum::http::StatusCode::BAD_REQUEST, "x".repeat(5000)) }),
         ))
         .await;
         match comfy_json(call(&url, "POST", "/prompt")).await {
             Err(ComfyError::Rejected { status, body }) => {
                 assert_eq!(status, 400);
-                assert_eq!(body.len(), 200);
+                assert_eq!(body.len(), REJECTED_BODY_MAX);
             }
             other => panic!("{other:?}"),
         }

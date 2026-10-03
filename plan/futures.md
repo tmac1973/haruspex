@@ -53,6 +53,8 @@ Running list of things to address. Status annotations added 2026-07-19.
 - A chained coding job is named "<job> — assets — coding": the asset job appends " — coding" to its own name. Should be "<job> — coding".
 - Sheet cutting kept a small object the model drew touching the player as part of the player sprite (p25 chain, `player.png` has a coin-like orb beside it). A merge is only detected when a piece's body covers another subject's expected centre; a small neighbour drawn against a sprite does not. Consider a size check (a piece much wider than its siblings, or two lobes joined by a thin neck) and showing such a piece to the judge.
 
+- Cancelling an image generation calls ComfyUI's `/interrupt`, which stops whatever the server is running — another client's job on a shared ComfyUI included. Delete our own prompt from the queue (`POST /queue` with `delete`) and interrupt only when the running prompt is ours (`GET /queue` shows its id).
+
 - We may want to look at adding a second model selector for the shell tab in settings -> inference. The default could/should be to just use the main local model for everything, just as it is today, but we could offer an opt-in to select a different model (local, remote, or openrouter) for the shell tab. If the chat tab and the shell tab use different local models of course they would have to queue to use that model (wait for the other model to unload, then load then new one) Thoughts?
 
 - The output of a guided planning job is in /home/tim/Projects/hangman/plan. Have a look and tell me what you think. It was produced by qwen3.6 27b. It won't be as good as something you would produce, so no need to nitpick, but broadly is it cohesive?

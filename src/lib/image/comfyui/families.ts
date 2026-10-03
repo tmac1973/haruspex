@@ -96,11 +96,14 @@ export async function resolveCompanions(
 	if (!textEncoder) {
 		throw new ImageBackendError(
 			'unconfigured',
-			`The backend has no ${label} text encoder in models/text_encoders.`
+			`The backend has no ${label} text encoder in models/text_encoders — Settings → Image → Install.`
 		);
 	}
 	if (!vae) {
-		throw new ImageBackendError('unconfigured', `The backend has no ${label} VAE in models/vae.`);
+		throw new ImageBackendError(
+			'unconfigured',
+			`The backend has no ${label} VAE in models/vae — Settings → Image → Install.`
+		);
 	}
 	return { textEncoder, vae };
 }
@@ -162,8 +165,10 @@ export async function hasModel(
 			family === 'sd'
 				? await optionsOf(cfg, 'CheckpointLoaderSimple', 'ckpt_name')
 				: await optionsOf(cfg, 'UNETLoader', 'unet_name');
-		// An empty list means the server would not say, not that it has none.
-		return names.length === 0 ? null : names.includes(name);
+		// The server answered, so an empty list means it has none. (One that
+		// will not say throws instead, below.) Treating empty as "unknown" let
+		// a server with no models at all probe as "Connected".
+		return names.includes(name);
 	} catch {
 		return null;
 	}

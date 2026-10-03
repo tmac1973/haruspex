@@ -214,3 +214,37 @@ describe('subscribe', () => {
 		close();
 	});
 });
+
+describe('rejectionMessage', () => {
+	it('says which node and value ComfyUI refused, not just that it refused', () => {
+		const body = JSON.stringify({
+			error: {
+				type: 'prompt_outputs_failed_validation',
+				message: 'Prompt outputs failed validation'
+			},
+			node_errors: {
+				'1': {
+					class_type: 'UNETLoader',
+					errors: [
+						{
+							type: 'value_not_in_list',
+							message: 'Value not in list',
+							details: "unet_name: 'ming.safetensors' not in []"
+						}
+					]
+				}
+			}
+		});
+		expect(api.rejectionMessage('/prompt', body)).toBe(
+			"The image backend refused /prompt: UNETLoader — unet_name: 'ming.safetensors' not in [] — " +
+				'a file the workflow needs is not on the server (Settings → Image).'
+		);
+	});
+
+	it("falls back to ComfyUI's own summary, then to the bare refusal", () => {
+		expect(api.rejectionMessage('/prompt', '{"error":{"message":"Bad graph"}}')).toBe(
+			'The image backend refused /prompt: Bad graph.'
+		);
+		expect(api.rejectionMessage('/view', 'Not Found')).toBe('The image backend refused /view.');
+	});
+});
