@@ -485,6 +485,12 @@ cd haruspex
 make dev
 ```
 
+### Test machines
+
+A Mac and a Windows PC can be set up as test machines, with suites run on them
+from Linux over SSH. Setup is two scripts per machine; see
+[`scripts/ci-runner/README.md`](./scripts/ci-runner/README.md).
+
 ### Make targets
 
 Run `make help` to see all targets:

@@ -421,7 +421,10 @@ mod tests {
             comfy_json(c).await,
             Err(ComfyError::Timeout { .. })
         ));
-        let closed = call("http://127.0.0.1:9", "GET", "/system_stats");
+        let mut closed = call("http://127.0.0.1:9", "GET", "/system_stats");
+        // Windows retries a refused connection for ~2 s before giving up, which
+        // the 2 s default would report as a timeout.
+        closed.timeout_ms = 10_000;
         assert!(matches!(
             comfy_json(closed).await,
             Err(ComfyError::Unreachable { .. })

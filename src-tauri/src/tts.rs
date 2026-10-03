@@ -1,10 +1,10 @@
+use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
 use log::{error, info, warn};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
@@ -24,7 +24,7 @@ type TtsStatus = SidecarStatus;
 // TtsEngine is Send + Sync because it only contains Send+Sync types.
 // Audio playback happens on a dedicated thread (not stored in the struct).
 pub struct TtsEngine {
-    child: Mutex<Option<CommandChild>>,
+    child: Mutex<Option<SidecarChild>>,
     status: Arc<Mutex<TtsStatus>>,
     playing: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
@@ -89,7 +89,7 @@ impl TtsEngine {
         }
 
         self.stop().await?;
-        kill_process_on_port(TTS_PORT, "koko").await;
+        kill_process_on_port(TTS_PORT, "koko", sidecar_registry(app)).await?;
 
         {
             let mut status = self.status.lock().await;
@@ -152,9 +152,7 @@ impl TtsEngine {
             }
         }
 
-        let (rx, child) = sidecar
-            .spawn()
-            .map_err(|e| format!("Failed to spawn koko: {}", e))?;
+        let (rx, child) = spawn_sidecar(sidecar, "koko", sidecar_registry(app))?;
 
         {
             let mut c = self.child.lock().await;

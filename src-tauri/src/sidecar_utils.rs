@@ -7,13 +7,14 @@
 //! the UI. This module owns those primitives so the three sidecar files
 //! consume one canonical implementation each.
 
+use crate::sidecar_process::SidecarChild;
 use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::process::{Command, CommandChild, CommandEvent};
+use tauri_plugin_shell::process::{Command, CommandEvent};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
@@ -201,7 +202,7 @@ pub fn with_library_paths(cmd: Command, app: &AppHandle) -> Command {
 /// No-op when nothing is running. The caller sets the status afterward
 /// (the three sidecars track status differently enough that folding it in
 /// here doesn't generalize cleanly).
-pub async fn kill_child(child: &Mutex<Option<CommandChild>>, name: &str) -> Result<(), String> {
+pub async fn kill_child(child: &Mutex<Option<SidecarChild>>, name: &str) -> Result<(), String> {
     if let Some(c) = child.lock().await.take() {
         info!("Stopping {name}");
         c.kill()
@@ -298,57 +299,103 @@ pub async fn wait_for_port_release(port: u16) {
     warn!("Failed to free port {port}");
 }
 
-/// If a process is currently bound to `port`, terminate it and wait for
-/// the port to release. No-op when the port is already free. `name` is
-/// used purely for the warning log line so operators can tell which
-/// sidecar's preflight triggered the kill.
-pub async fn kill_process_on_port(port: u16, name: &str) {
+/// If a process of ours is bound to `port`, terminate it and wait for the port
+/// to release. No-op when the port is already free.
+///
+/// Only our own processes are killed: a binary run from our install directory,
+/// or one the sidecar registry recorded at that pid. This used to kill whatever
+/// held the port, which would take down a user's own llama-server on 8765.
+/// A port held by something else is an error naming that program, so the
+/// sidecar's start fails with a reason Settings can show.
+pub async fn kill_process_on_port(
+    port: u16,
+    name: &str,
+    registry: Option<std::path::PathBuf>,
+) -> Result<(), String> {
     if std::net::TcpStream::connect(localhost(port)).is_err() {
-        return;
+        return Ok(());
     }
+    warn!("{name}: port {port} occupied, checking who holds it");
 
-    warn!("{name}: port {port} occupied, attempting to kill the existing process");
+    let our_dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.to_string_lossy().into_owned()))
+        .unwrap_or_default();
+    let recorded = registry
+        .as_deref()
+        .map(crate::orphans::load)
+        .unwrap_or_default();
 
-    #[cfg(unix)]
-    {
-        if let Ok(output) = std::process::Command::new("lsof")
-            .args(["-t", "-i", &format!(":{port}")])
-            .output()
-        {
-            for pid_str in String::from_utf8_lossy(&output.stdout).trim().lines() {
-                if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                    info!("Killing process {pid} on port {port}");
-                    unsafe {
-                        libc::kill(pid, libc::SIGTERM);
-                    }
-                }
-            }
+    for pid in pids_on_port(port) {
+        let command = crate::orphans::pid_command(pid);
+        if !is_ours(pid, command.as_deref(), &our_dir, &recorded) {
+            let held_by = command.unwrap_or_else(|| format!("pid {pid}"));
+            warn!("{name}: port {port} is held by {held_by}, not ours — not killing it");
+            return Err(format!(
+                "Port {port} is in use by another program ({held_by}), so {name} cannot start."
+            ));
         }
-    }
-
-    #[cfg(windows)]
-    {
-        if let Ok(output) = std::process::Command::new("netstat")
-            .args(["-ano"])
-            .output()
-        {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                if line.contains(&format!(":{port}")) && line.contains("LISTENING") {
-                    if let Some(pid_str) = line.split_whitespace().last() {
-                        if let Ok(pid) = pid_str.parse::<u32>() {
-                            info!("Killing process {pid} on port {port}");
-                            let _ = std::process::Command::new("taskkill")
-                                .args(["/F", "/PID", &pid.to_string()])
-                                .output();
-                        }
-                    }
-                }
-            }
-        }
+        info!("Killing our stale {name} (pid {pid}) on port {port}");
+        terminate(pid);
     }
 
     wait_for_port_release(port).await;
+    Ok(())
+}
+
+/// Is the process at `pid`, with this command line, one of ours?
+fn is_ours(
+    pid: u32,
+    command: Option<&str>,
+    our_dir: &str,
+    recorded: &[crate::orphans::RunningServer],
+) -> bool {
+    let Some(command) = command else {
+        return false;
+    };
+    (!our_dir.is_empty() && command.contains(our_dir))
+        || recorded
+            .iter()
+            .any(|r| r.pid == pid && crate::orphans::command_matches(&r.program, Some(command)))
+}
+
+/// The pids listening on `port`.
+fn pids_on_port(port: u16) -> Vec<u32> {
+    #[cfg(unix)]
+    let pids = std::process::Command::new("lsof")
+        .args(["-t", &format!("-iTCP:{port}"), "-sTCP:LISTEN"])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter_map(|l| l.trim().parse().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    #[cfg(windows)]
+    let pids = std::process::Command::new("netstat")
+        .args(["-ano"])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| l.contains(&format!(":{port} ")) && l.contains("LISTENING"))
+                .filter_map(|l| l.split_whitespace().last()?.parse().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    pids
+}
+
+fn terminate(pid: u32) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    #[cfg(windows)]
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .output();
 }
 
 /// Poll `url` (typically a `/health` endpoint) until it returns 2xx,
@@ -391,4 +438,120 @@ where
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::orphans::RunningServer;
+
+    fn record(pid: u32, program: &str) -> RunningServer {
+        RunningServer {
+            id: "sd-server".into(),
+            pid,
+            started_at: 0,
+            program: program.into(),
+        }
+    }
+
+    #[test]
+    fn our_install_directory_makes_a_process_ours() {
+        let dir = "/opt/haruspex";
+        assert!(is_ours(
+            7,
+            Some("/opt/haruspex/llama-server --port 8765"),
+            dir,
+            &[]
+        ));
+        assert!(!is_ours(
+            7,
+            Some("/usr/bin/llama-server --port 8765"),
+            dir,
+            &[]
+        ));
+        assert!(
+            !is_ours(7, None, dir, &[]),
+            "a vanished process is not ours to kill"
+        );
+    }
+
+    #[test]
+    fn a_recorded_pid_is_ours_only_while_it_runs_what_we_recorded() {
+        // An AppImage mounts at a new path every launch, so an orphan from the
+        // last one is not under today's directory; the registry vouches for it.
+        let rec = [record(7, "/tmp/.mount_abc/sd-server")];
+        assert!(is_ours(
+            7,
+            Some("/tmp/.mount_abc/sd-server --listen-port 8767"),
+            "/tmp/.mount_new",
+            &rec
+        ));
+        assert!(
+            !is_ours(7, Some("/usr/bin/firefox"), "/tmp/.mount_new", &rec),
+            "pid reused"
+        );
+        assert!(
+            !is_ours(
+                8,
+                Some("/tmp/.mount_abc/sd-server"),
+                "/tmp/.mount_new",
+                &rec
+            ),
+            "other pid"
+        );
+    }
+
+    #[test]
+    fn an_empty_install_directory_matches_nothing() {
+        assert!(!is_ours(7, Some("/anything"), "", &[]));
+    }
+
+    /// Someone else's server on the port is left running and named.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_port_held_by_another_program_is_left_alone() {
+        if std::process::Command::new("lsof")
+            .arg("-v")
+            .output()
+            .is_err()
+        {
+            return; // no lsof: the holder cannot be found on this machine
+        }
+        let port = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+        let Ok(mut other) = std::process::Command::new("python3")
+            .args([
+                "-c",
+                &format!(
+                    "import socket,time;s=socket.socket();s.bind(('127.0.0.1',{port}));s.listen();time.sleep(30)"
+                ),
+            ])
+            .spawn()
+        else {
+            return; // no python3: nothing to hold the port with
+        };
+        for _ in 0..50 {
+            if std::net::TcpStream::connect(localhost(port)).is_ok() {
+                break;
+            }
+            sleep(Duration::from_millis(20)).await;
+        }
+        let err = kill_process_on_port(port, "test-sidecar", None)
+            .await
+            .expect_err("not ours");
+        // Named by its command line, whatever the platform calls Python
+        // (macOS: ".../Python.app/Contents/MacOS/Python").
+        assert!(
+            err.contains("another program") && err.to_lowercase().contains("python"),
+            "{err}"
+        );
+        assert!(
+            other.try_wait().unwrap().is_none(),
+            "python3 must still be running"
+        );
+        other.kill().unwrap();
+        other.wait().unwrap();
+    }
 }

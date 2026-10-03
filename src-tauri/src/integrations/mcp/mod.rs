@@ -23,7 +23,7 @@ pub mod commands;
 pub mod companion;
 pub mod http;
 pub mod install;
-pub mod orphans;
+pub(crate) use crate::orphans;
 pub mod process;
 pub mod server_config;
 pub mod types;

@@ -21,6 +21,7 @@ mod links;
 mod lint;
 mod memory;
 mod models;
+mod orphans;
 mod power;
 mod proxy;
 mod remote;
@@ -30,6 +31,7 @@ mod sandbox_save;
 mod sandbox_sync;
 mod server;
 mod shell;
+mod sidecar_process;
 mod sidecar_utils;
 mod text_util;
 mod time_util;
@@ -101,13 +103,16 @@ pub fn run() {
             // got to clean up (SIGKILL, a crash, a hard power-off). Must run
             // before anything spawns, so a fresh pid is never mistaken for a
             // stale one. See integrations::mcp::orphans.
-            integrations::mcp::orphans::sweep(app.handle());
+            orphans::sweep(app.handle(), orphans::MCP);
+            // The same for the sidecars: an orphaned image engine otherwise
+            // holds its VRAM until the next image is asked for.
+            orphans::sweep(app.handle(), orphans::SIDECARS);
             // The supervisor holds the orphan-registry path rather than an
             // AppHandle, which is what lets it be driven in tests; resolving it
             // needs the handle, so it is managed here rather than in the
             // builder chain.
             app.manage(
-                McpSupervisor::new(integrations::mcp::orphans::registry_path(app.handle()).ok())
+                McpSupervisor::new(orphans::registry_path(app.handle(), orphans::MCP).ok())
                     // A server may add or remove tools while it is running — Godot
                     // reveals a whole toolset when the model enables one — and the
                     // frontend registry has to hear about it or the new tools stay

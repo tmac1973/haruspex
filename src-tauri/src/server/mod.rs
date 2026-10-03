@@ -1,3 +1,4 @@
+use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
 use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -5,7 +6,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
-use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
@@ -183,7 +183,7 @@ impl ServerConfig {
 }
 
 struct ServerInner {
-    child: Option<CommandChild>,
+    child: Option<SidecarChild>,
     status: ServerStatus,
     config: ServerConfig,
     log_buffer: VecDeque<String>,
@@ -323,8 +323,15 @@ impl LlamaServer {
 
         let config = config.unwrap_or_default();
 
-        // Kill any orphaned process on the port (e.g., from a previous hot-reload)
-        kill_process_on_port(config.port, "llama-server").await;
+        // Kill an orphaned llama-server of ours on the port (e.g. from a
+        // previous hot-reload). Someone else's server there is left alone,
+        // and the start fails saying whose it is.
+        if let Err(msg) =
+            kill_process_on_port(config.port, "llama-server", sidecar_registry(app)).await
+        {
+            self.set_status(ServerStatus::Error(msg.clone()), app).await;
+            return Err(msg);
+        }
 
         if !Path::new(model_path).exists() {
             let msg = format!("Model file not found: {}", model_path);
@@ -435,7 +442,7 @@ impl LlamaServer {
     ) -> Result<
         (
             tauri::async_runtime::Receiver<tauri_plugin_shell::process::CommandEvent>,
-            CommandChild,
+            SidecarChild,
         ),
         String,
     > {
@@ -444,9 +451,11 @@ impl LlamaServer {
             .sidecar("llama-server")
             .map_err(|e| format!("Failed to create sidecar command: {}", e))?
             .args(args);
-        sidecar_utils::with_library_paths(cmd, app)
-            .spawn()
-            .map_err(|e| format!("Failed to spawn llama-server: {}", e))
+        spawn_sidecar(
+            sidecar_utils::with_library_paths(cmd, app),
+            "llama-server",
+            sidecar_registry(app),
+        )
     }
 
     fn spawn_output_reader(
