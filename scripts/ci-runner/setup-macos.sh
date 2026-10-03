@@ -4,8 +4,8 @@
 #
 #   ./scripts/ci-runner/setup-macos.sh --ssh-key "<your Linux public key>"
 #
-# Installs Homebrew, Node 22, the GitHub CLI, Xcode (if the App Store allows),
-# Rust and Appium with the Mac2 driver; turns on Remote Login for you only;
+# Installs Homebrew (with Apple's Command Line Tools), Node 22, the GitHub CLI
+# and Rust; turns on Remote Login for you only;
 # installs the agent that runs remote-test.sh's suites in your desktop
 # session; registers a GitHub Actions runner (self-hosted, haruspex-live,
 # macos) that starts when you log in; and keeps the Mac awake. Safe to re-run.
@@ -15,6 +15,10 @@
 #
 #   --ssh-key KEY  your Linux box's PUBLIC key (`cat ~/.ssh/<key>.pub` there);
 #                  repeat to add more
+#   --with-xcode   also install Xcode (App Store; needs an Apple account) and
+#                  Appium's Mac2 driver, for the scripted UI tests. Without it
+#                  everything else works: building, the unit suite, and the
+#                  launch/kill/relaunch checks.
 #   --no-runner    skip the GitHub runner (remote-test.sh only)
 #   --allow-sleep  leave the power settings alone
 #   --uninstall    remove the runner and the agent
@@ -29,6 +33,7 @@ TEST="$HOME/.haruspex-test"
 RUNNER="$TEST/actions-runner"
 AGENT_LABEL=com.haruspex.test-run
 SSH_KEYS=()
+WITH_XCODE=0
 RUNNER_WANTED=1
 KEEP_AWAKE=1
 MODE=install
@@ -38,11 +43,12 @@ while (($#)); do
             SSH_KEYS+=("${2:?--ssh-key needs the key}")
             shift
             ;;
+        --with-xcode) WITH_XCODE=1 ;;
         --no-runner) RUNNER_WANTED=0 ;;
         --allow-sleep) KEEP_AWAKE=0 ;;
         --uninstall) MODE=uninstall ;;
         -h | --help)
-            sed -n '2,22p' "$0"
+            sed -n '2,26p' "$0"
             exit 0
             ;;
         *)
@@ -104,13 +110,25 @@ brew install node@22 gh
 brew link --overwrite --force node@22 >/dev/null # keg-only otherwise
 echo "ok: node $(node -v), $(gh --version | head -1)"
 
-step "Xcode (Appium's Mac2 driver needs the full app)"
-if [[ ! -d /Applications/Xcode.app ]]; then
+step "Command Line Tools"
+# Homebrew's installer brings them; this covers a Homebrew that predates them.
+if ! xcode-select -p >/dev/null 2>&1; then
+    xcode-select --install || true
+    todo+=("Finish the Command Line Tools install in the dialog it opened, then re-run this script.")
+else
+    echo "ok: $(xcode-select -p)"
+fi
+
+if [[ $WITH_XCODE == 1 && ! -d /Applications/Xcode.app ]]; then
+    step "Xcode, from the App Store (asks you to sign in with an Apple account)"
     brew install mas
     mas install 497799835 ||
-        todo+=("Install Xcode from the App Store, then re-run this script.")
+        todo+=("Install Xcode from the App Store, then re-run this script with --with-xcode.")
 fi
+HAVE_XCODE=0
 if [[ -d /Applications/Xcode.app ]]; then
+    HAVE_XCODE=1
+    step "Xcode, for the scripted UI tests"
     sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
     sudo xcodebuild -license accept
     sudo xcodebuild -runFirstLaunch
@@ -128,17 +146,23 @@ fi
 source "$HOME/.cargo/env"
 echo "ok: $(cargo --version)"
 
-step "Appium and the Mac2 driver"
 # A per-user npm prefix, so a global install needs no sudo.
 npm config set prefix "$HOME/.npm-global"
 export PATH="$HOME/.npm-global/bin:$PATH"
-command -v appium >/dev/null 2>&1 || npm install -g appium
-if appium driver list --installed 2>&1 | grep -q mac2; then
-    appium driver update mac2 >/dev/null 2>&1 || true
+if [[ $HAVE_XCODE == 1 ]]; then
+    step "Appium and the Mac2 driver"
+    command -v appium >/dev/null 2>&1 || npm install -g appium
+    if appium driver list --installed 2>&1 | grep -q mac2; then
+        appium driver update mac2 >/dev/null 2>&1 || true
+    else
+        appium driver install mac2
+    fi
+    echo "ok: appium $(appium --version), mac2 driver"
 else
-    appium driver install mac2
+    echo
+    echo "-- No Xcode: skipping Appium. The scripted UI tests (e2e-mac) won't run here;"
+    echo "   the unit suite and the launch/kill/relaunch checks will."
 fi
-echo "ok: appium $(appium --version), mac2 driver"
 
 step "Remote Login (SSH), for remote-test.sh on your Linux box"
 if sudo systemsetup -getremotelogin 2>/dev/null | grep -q ': On'; then
@@ -224,14 +248,16 @@ if [[ $KEEP_AWAKE == 1 ]]; then
     echo "ok: never sleeps, wakes for the network, restarts after a power cut"
 fi
 
-step "Two permissions macOS will not let a script grant"
-cat <<EOF
+if [[ $HAVE_XCODE == 1 ]]; then
+    step "Two permissions macOS will not let a script grant"
+    cat <<EOF
 System Settings → Privacy & Security:
   - Accessibility:    Terminal, and "Xcode Helper" if listed
   - Screen Recording: Terminal
 The first UI test also asks; approving the prompts works too.
 EOF
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" || true
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" || true
+fi
 
 step "Done"
 if ((${#todo[@]})); then
