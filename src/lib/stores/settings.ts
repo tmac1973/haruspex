@@ -898,6 +898,11 @@ export function hasEnabledEmailAccount(): boolean {
 	return settings.integrations.email.accounts.some((a) => a.enabled);
 }
 
+/** An enabled account has Allow sending on. */
+export function hasSendableEmailAccount(): boolean {
+	return settings.integrations.email.accounts.some((a) => a.enabled && a.sendEnabled);
+}
+
 /**
  * Replace the full list of MCP servers. Mirrors `setEmailAccounts`: the
  * Settings UI edits a working copy and calls this once on save.

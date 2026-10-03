@@ -312,7 +312,9 @@ Microsoft 365 and Outlook.com are **not** supported. Microsoft turned off basic 
 - `email_summarize_message` — summarises one full message in a separate call, the same way web pages are summarised.
 - `email_read_full` — returns one full message as-is, when a summary is not enough.
 
-All three are hidden from the model completely unless an account is switched on. Email passwords are kept in the system keychain (GNOME Keyring or KWallet on Linux, Keychain on macOS, Credential Manager on Windows) where there is one, and in the local settings file otherwise; calendar and contacts credentials are in the settings file. Messages are fetched with `BODY.PEEK`, so reading one never marks it as read. There is no sending at all.
+All three are hidden from the model completely unless an account is switched on. Email passwords are kept in the system keychain (GNOME Keyring or KWallet on Linux, Keychain on macOS, Credential Manager on Windows) where there is one, and in the local settings file otherwise; calendar and contacts credentials are in the settings file. Messages are fetched with `BODY.PEEK`, so reading one never marks it as read.
+
+**Sending.** Sending is off until you turn on **Allow sending** for an account, which also asks for its SMTP server. The model then gets `email_compose`, which opens a draft — a reply or a new message — in a review dialog. You can edit everything, and nothing goes out until you click **Send**; discarding it tells the model you declined. Replies thread under the original, and a copy is filed in Sent. Jobs never get the tool, and auto-approve does not apply to it.
 
 ## Calendar and contacts
 

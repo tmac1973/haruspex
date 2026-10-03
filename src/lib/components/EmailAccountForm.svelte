@@ -48,6 +48,7 @@
 	let smtpPort = $state<number | ''>(untrack(() => account.smtpPort || ''));
 	let smtpTls = $state<EmailTlsMode>(untrack(() => account.smtpTls));
 	let enabled = $state(untrack(() => account.enabled));
+	let sendEnabled = $state(untrack(() => account.sendEnabled));
 
 	let testing = $state(false);
 	let testError = $state<string | null>(null);
@@ -68,8 +69,7 @@
 			emailAddress,
 			provider,
 			enabled,
-			// sendEnabled stays false in 10.1 — see README and plan doc.
-			sendEnabled: false,
+			sendEnabled,
 			imapHost,
 			imapPort: typeof imapPort === 'number' ? imapPort : 0,
 			imapTls,
@@ -103,13 +103,31 @@
 		commit();
 	}
 
+	/** Turning sending on fills an empty SMTP server from the provider's preset. */
+	function onSendToggle() {
+		const preset = currentPreset();
+		if (sendEnabled && !smtpHost.trim() && preset) {
+			smtpHost = preset.smtp_host;
+			smtpPort = preset.smtp_port;
+			smtpTls = preset.smtp_tls;
+		}
+		commit();
+	}
+
+	/** Log in to IMAP, and to SMTP too when sending is allowed. */
+	async function checkLogins() {
+		const account = testPayload();
+		await invoke('email_test_connection', { account });
+		if (sendEnabled) await invoke('email_test_smtp', { account });
+	}
+
 	async function testConnection() {
 		testing = true;
 		testError = null;
 		testOk = false;
 		commit();
 		try {
-			await invoke('email_test_connection', { account: testPayload() });
+			await checkLogins();
 			testOk = true;
 		} catch (e) {
 			testError = String(e);
@@ -124,7 +142,7 @@
 		testError = null;
 		testOk = false;
 		try {
-			await invoke('email_test_connection', { account: testPayload() });
+			await checkLogins();
 			onChange(await withStoredPassword(fields(), password));
 			password = '';
 			testOk = true;
@@ -229,7 +247,7 @@
 	</div>
 
 	<details class="advanced">
-		<summary>Advanced — IMAP / SMTP endpoints</summary>
+		<summary>Advanced — IMAP endpoint</summary>
 
 		<div class="field-row">
 			<div class="field">
@@ -248,7 +266,13 @@
 				</select>
 			</div>
 		</div>
+	</details>
 
+	<label class="toggle send" title="Lets the assistant draft mail for you to review and send">
+		<input type="checkbox" bind:checked={sendEnabled} onchange={onSendToggle} />
+		<span>Allow sending</span>
+	</label>
+	{#if sendEnabled}
 		<div class="field-row">
 			<div class="field">
 				<label for="smtp-host-{account.id}">SMTP host</label>
@@ -266,12 +290,7 @@
 				</select>
 			</div>
 		</div>
-
-		<p class="hint">
-			SMTP credentials are stored now but unused until Phase 10.2 adds email sending. Read-only in
-			this build.
-		</p>
-	</details>
+	{/if}
 
 	<div class="test-row">
 		<button type="button" class="btn" onclick={testConnection} disabled={testing}>
@@ -331,6 +350,10 @@
 	.field-row {
 		display: flex;
 		gap: 0.5rem;
+	}
+
+	.toggle.send {
+		margin-bottom: 0.75rem;
 	}
 
 	.inline {

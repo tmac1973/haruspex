@@ -176,3 +176,29 @@ The overview's gate. `check-ipc` must pass.
 
 Revert the commit and re-export the IPC types. `sendEnabled` stays in saved
 settings, ignored by the old code.
+
+## As built — notes
+
+- **Reply recipients are computed in Rust** (`smtp_client::reply_context`):
+  Reply-To else From, never the user's own address (replying to one's own
+  message goes to its recipients), and reply-all's Cc less the user and the
+  To. `email_reply_context` returns them with the subject, threading
+  headers and the quote; the tool only picks.
+- **`saves_sent_copy(provider)`** is a function, not a preset field: Gmail
+  and Fastmail file sent mail themselves; iCloud, Yahoo and Custom get an
+  APPEND. Yahoo is a guess — if its copies show up twice, add it.
+- **The Sent mailbox** is the one LIST flags `\Sent`, else a well-known
+  name (Sent, Sent Items, Sent Messages, Sent Mail, INBOX.Sent).
+- **lettre's per-command timeout does not cover the greeting,** so every
+  SMTP call also runs under a 45 s outer limit.
+- **`email_send` refuses an account without Allow sending** in Rust too, not
+  only in the tool.
+- **No `from_name`:** messages go from the bare address; nothing set a
+  display name.
+- **`interactive` reaches `getToolSchemas`** through the same lines phase 07
+  adds, so the two merge cleanly. An allowlist can never include
+  `email_compose`.
+- **The SMTP fields moved out of Advanced** into a block shown when Allow
+  sending is on; Test connection also logs in to SMTP then.
+- **`email_compose` lives in `tools/email-compose.ts`**, with its tests.
+- **Not done:** the manual checks with a real account.

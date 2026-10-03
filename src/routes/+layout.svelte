@@ -7,6 +7,7 @@
 	import CommandApprovalModal from '$lib/components/CommandApprovalModal.svelte';
 	import McpApprovalModal from '$lib/components/McpApprovalModal.svelte';
 	import MemoryApprovalModal from '$lib/components/MemoryApprovalModal.svelte';
+	import EmailReviewModal from '$lib/components/EmailReviewModal.svelte';
 	import UserQuestionModal from '$lib/components/UserQuestionModal.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import HelpModal from '$lib/components/HelpModal.svelte';
@@ -621,6 +622,7 @@
 	<CommandApprovalModal />
 	<McpApprovalModal />
 	<MemoryApprovalModal />
+	<EmailReviewModal />
 	<UserQuestionModal />
 {/if}
 

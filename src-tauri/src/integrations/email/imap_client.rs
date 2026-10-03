@@ -706,6 +706,81 @@ async fn read_in(
     )
 }
 
+/// Names a Sent folder goes by on servers that do not flag one `\Sent`.
+const SENT_NAMES: &[&str] = &[
+    "Sent",
+    "Sent Items",
+    "Sent Messages",
+    "Sent Mail",
+    "INBOX.Sent",
+    "INBOX/Sent",
+];
+
+/// The mailbox for sent mail: the one LIST flags `\Sent`, else one with a
+/// well-known name.
+fn sent_mailbox(names: &[(String, bool)]) -> Option<String> {
+    names
+        .iter()
+        .find(|(_, flagged)| *flagged)
+        .or_else(|| {
+            SENT_NAMES
+                .iter()
+                .find_map(|want| names.iter().find(|(n, _)| n.eq_ignore_ascii_case(want)))
+        })
+        .map(|(n, _)| n.clone())
+}
+
+/// Save a copy of a sent message to the account's Sent mailbox, marked read.
+pub async fn append_sent(account: &EmailAccount, raw: &[u8]) -> Result<(), String> {
+    let t = TIMEOUTS;
+    let account = &auth::resolve(account).await?;
+    let mut session = checkout(account, &t).await?;
+    let out = append_in(&mut session, account, raw, &t).await;
+    if out.is_ok() {
+        checkin(account, session);
+    }
+    out
+}
+
+async fn append_in(
+    session: &mut ImapSession,
+    account: &EmailAccount,
+    raw: &[u8],
+    t: &Timeouts,
+) -> Result<(), String> {
+    use async_imap::types::NameAttribute;
+    use futures_util::TryStreamExt;
+    let host = account.imap_host.as_str();
+    let list = async {
+        let names: Vec<async_imap::types::Name> = session
+            .list(Some(""), Some("*"))
+            .await?
+            .try_collect()
+            .await?;
+        Ok::<_, async_imap::error::Error>(
+            names
+                .iter()
+                .map(|n| {
+                    let flagged = n
+                        .attributes()
+                        .iter()
+                        .any(|a| matches!(a, NameAttribute::Sent));
+                    (n.name().to_string(), flagged)
+                })
+                .collect::<Vec<_>>(),
+        )
+    };
+    let names = within(t.command, host, "LIST", list).await?;
+    let mailbox = sent_mailbox(&names).ok_or_else(|| "no Sent mailbox was found".to_string())?;
+    within(
+        t.command,
+        host,
+        "APPEND",
+        session.append(&mailbox, Some("(\\Seen)"), None, raw),
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -891,5 +966,25 @@ mod tests {
         assert!(err.contains("127.0.0.1"), "{err}");
         assert!(err.contains("did not answer"), "{err}");
         server.abort();
+    }
+
+    #[test]
+    fn the_sent_mailbox_is_the_flagged_one_else_a_known_name() {
+        let named = |v: &[(&str, bool)]| -> Vec<(String, bool)> {
+            v.iter().map(|(n, f)| (n.to_string(), *f)).collect()
+        };
+        assert_eq!(
+            sent_mailbox(&named(&[
+                ("INBOX", false),
+                ("Gesendet", true),
+                ("Sent", false)
+            ])),
+            Some("Gesendet".into())
+        );
+        assert_eq!(
+            sent_mailbox(&named(&[("INBOX", false), ("Sent Items", false)])),
+            Some("Sent Items".into())
+        );
+        assert_eq!(sent_mailbox(&named(&[("INBOX", false)])), None);
     }
 }

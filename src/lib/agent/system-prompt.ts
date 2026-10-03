@@ -4,6 +4,7 @@ import {
 	getResponseFormatPrompt,
 	getSettings,
 	hasEnabledEmailAccount,
+	hasSendableEmailAccount,
 	hasEnabledCalendarAccount,
 	hasEnabledContactsAccount
 } from '$lib/stores/settings';
@@ -69,7 +70,11 @@ FILESYSTEM ACCESS:
 EMAIL INTEGRATION:
 - The user has connected email accounts. Only use email tools when explicitly asked about email.
 - Use email_list_recent first, then email_summarize_message on the 3-5 most important messages. Skip newsletters and automated notifications unless asked.
-- Use email_read_full only when the user needs verbatim text.`
+- Use email_read_full only when the user needs verbatim text.${
+				hasSendableEmailAccount()
+					? '\n- To write or reply to mail, use email_compose. It opens a draft the user reviews and sends themselves; say it was sent only when the result says so.'
+					: ''
+			}`
 		: '';
 
 	// Named services beat a general instruction. "Prefer integrations" loses to
