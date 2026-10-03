@@ -86,6 +86,7 @@ export const IPC = {
 	fs_lint_python: 'fs_lint_python',
 	fs_list_dir: 'fs_list_dir',
 	fs_list_dir_absolute: 'fs_list_dir_absolute',
+	fs_move_in_workdir: 'fs_move_in_workdir',
 	fs_path_exists: 'fs_path_exists',
 	fs_read_bytes: 'fs_read_bytes',
 	fs_read_docx: 'fs_read_docx',

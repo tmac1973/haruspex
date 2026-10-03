@@ -1,17 +1,23 @@
 <script lang="ts">
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import type { AssetGenerationEditorState } from './definition';
+	import ReviewAssets from './ReviewAssets.svelte';
+	import { DEFAULT_SPEC_PATH } from '$lib/assets/spec/paths';
 
 	// The asset-generation section of the job editor (see JobTypeEditorProps).
 	// The job's working dir is the project the assets are written into.
 	let {
 		config = $bindable(),
-		steps = $bindable([])
+		steps = $bindable([]),
+		workingDir = '',
+		jobId = 'new'
 	}: {
 		config: Record<string, unknown>;
 		steps?: import('$lib/stores/jobs.svelte').JobStepInput[];
 		workingDir?: string;
+		jobId?: number | 'new';
 	} = $props();
+	let reviewing = $state(false);
 	// Both are declared only because JobEditor binds them on every type's
 	// editor; this one has no use for either.
 	void steps;
@@ -28,6 +34,19 @@
 		/>
 	</span>
 	<input type="text" bind:value={cfg.spec_path} aria-label="Asset spec path" />
+	{#if typeof jobId === 'number' && workingDir.trim()}
+		<div class="review">
+			<button type="button" onclick={() => (reviewing = true)}>Review assets</button>
+			<span class="hint">Pick the ones to make again.</span>
+		</div>
+		<ReviewAssets
+			open={reviewing}
+			{jobId}
+			{workingDir}
+			specPath={cfg.spec_path?.trim() || DEFAULT_SPEC_PATH}
+			onclose={() => (reviewing = false)}
+		/>
+	{/if}
 </div>
 
 <div class="field">
@@ -141,6 +160,13 @@
 </div>
 
 <style>
+	.review {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 6px;
+	}
+
 	.field {
 		display: flex;
 		flex-direction: column;

@@ -45,3 +45,90 @@ pub async fn fs_write_bytes(
     refuse_if_exists(&resolved, overwrite, &rel_path)?;
     write_bytes_to_workdir(&resolved, &bytes).await
 }
+
+/// Move a file within the working directory, creating the destination's
+/// parents. Never overwrites: a destination that exists is an error, so a
+/// move cannot destroy a file it was not asked about.
+///
+/// For the asset review: a disliked asset is moved into `assets/.history/`
+/// rather than deleted, so the next run regenerates it (it is missing) and
+/// the old one can still be put back.
+#[tauri::command]
+pub async fn fs_move_in_workdir(
+    workdir: String,
+    from_rel: String,
+    to_rel: String,
+) -> Result<(), String> {
+    let workdir = workdir_path_for_write(&workdir)?;
+    let from = resolve_in_workdir(&workdir, &from_rel)?;
+    let to = resolve_in_workdir(&workdir, &to_rel)?;
+    if !from.is_file() {
+        return Err(format!("Not a file: {from_rel}"));
+    }
+    refuse_if_exists(&to, Some(false), &to_rel)?;
+    if let Some(parent) = to.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+    }
+    tokio::fs::rename(&from, &to)
+        .await
+        .map_err(|e| format!("Failed to move {from_rel} to {to_rel}: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("haruspex-move-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[tokio::test]
+    async fn moves_a_file_into_a_new_folder() {
+        let d = temp("ok");
+        std::fs::create_dir_all(d.join("assets")).unwrap();
+        std::fs::write(d.join("assets/player.png"), b"png").unwrap();
+        let w = d.to_string_lossy().to_string();
+        fs_move_in_workdir(
+            w,
+            "assets/player.png".into(),
+            "assets/.history/player-1.png".into(),
+        )
+        .await
+        .unwrap();
+        assert!(!d.join("assets/player.png").exists());
+        assert_eq!(
+            std::fs::read(d.join("assets/.history/player-1.png")).unwrap(),
+            b"png"
+        );
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[tokio::test]
+    async fn never_overwrites_and_never_leaves_the_workdir() {
+        let d = temp("refuse");
+        std::fs::write(d.join("a.png"), b"a").unwrap();
+        std::fs::write(d.join("b.png"), b"b").unwrap();
+        let w = d.to_string_lossy().to_string();
+        assert!(
+            fs_move_in_workdir(w.clone(), "a.png".into(), "b.png".into())
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read(d.join("b.png")).unwrap(), b"b");
+        assert!(
+            fs_move_in_workdir(w.clone(), "a.png".into(), "../escaped.png".into())
+                .await
+                .is_err()
+        );
+        assert!(fs_move_in_workdir(w, "missing.png".into(), "c.png".into())
+            .await
+            .is_err());
+        assert!(d.join("a.png").exists());
+        std::fs::remove_dir_all(&d).ok();
+    }
+}

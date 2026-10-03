@@ -333,6 +333,7 @@ pub fn run() {
             fs_tools::path::fs_list_dir,
             fs_tools::bytes::fs_read_bytes,
             fs_tools::bytes::fs_write_bytes,
+            fs_tools::bytes::fs_move_in_workdir,
             fs_tools::text::fs_read_text,
             fs_tools::text::fs_read_text_full,
             fs_tools::text::fs_write_text,
