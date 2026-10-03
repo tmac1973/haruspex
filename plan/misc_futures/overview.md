@@ -82,7 +82,7 @@ and a lighter verification mode for guided planning.
    ever freed from a process that is ours.
 8. **Most of the manual test pass is automated:** UI flows and the real app
    run on every PR against a scripted fake LLM, and a nightly live suite runs
-   on self-hosted Proxmox VMs.
+   on the user's Mac mini and Windows PC as self-hosted runners.
 
 ## Non-goals
 
