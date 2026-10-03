@@ -34,6 +34,7 @@ import {
 	type RecalledMemory
 } from '$lib/agent/memory/recall';
 import { rehydrateImages, resolveReplyImages, sweepImages } from '$lib/images/resolve.svelte';
+import { placeGeneratedImages } from '$lib/images/eligible';
 import { getSettings, SETTINGS_KEY } from '$lib/stores/settings';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import {
@@ -1167,7 +1168,10 @@ function finalizeStreamedTurn(
 ): void {
 	const fetched = extractUrlsFromSteps(conversation.searchSteps);
 	const processed = processCitations(stripToolCallArtifacts(streamingContent).trim(), fetched);
-	const finalContent = processed.content;
+	// A picture drawn this turn and left out of the answer is placed after it.
+	const finalContent = processed.content
+		? placeGeneratedImages(processed.content, conversation.searchSteps)
+		: processed.content;
 	// Snapshot before committing: commitMessage archives these into
 	// messageSteps and then empties the live array, so anything reading
 	// conversation.searchSteps afterwards sees nothing. Image resolution runs
@@ -1408,6 +1412,7 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 					expectsFileOutput,
 					visionSupported,
 					interactive: true,
+					conversationId: conversation.id,
 					signal,
 					...buildAgentLoopCallbacks(conversation, activeCtxSize, turnStats)
 				})

@@ -139,6 +139,7 @@ export const IPC = {
 	image_models: 'image_models',
 	image_normalize: 'image_normalize',
 	image_palette_spread: 'image_palette_spread',
+	image_rehydrate_local: 'image_rehydrate_local',
 	image_resolve: 'image_resolve',
 	image_seam_finish: 'image_seam_finish',
 	image_seam_inputs: 'image_seam_inputs',

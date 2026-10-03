@@ -242,6 +242,8 @@ export interface AgentLoopOptions {
 	 * with no one to answer (the tool fails safe instead).
 	 */
 	interactive?: boolean;
+	/** The chat conversation, for tools that keep what they make with it. */
+	conversationId?: string;
 	/**
 	 * Where `ask_user_question` sends its question when the person who can
 	 * answer is not at this keyboard — a remote chat guest, say. See

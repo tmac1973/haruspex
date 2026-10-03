@@ -24,6 +24,7 @@ import { imageSrc } from './url';
 import {
 	eligibleImages,
 	imageUrlsInText,
+	localImageHashesInText,
 	rehydrationUrls,
 	resolvableFromReply,
 	stripCandidates
@@ -173,6 +174,11 @@ export async function rehydrateImages(
 	stepsByMessage: readonly (readonly SearchStep[])[],
 	isStillActive: () => boolean
 ): Promise<void> {
+	// Pictures generated in this chat are looked up by hash: their messages
+	// hold the cache URL, not a source URL. Looking them up also links them,
+	// so the startup sweep keeps them however the first link went.
+	await rehydrateLocalImages(conversationId, messageTexts, isStillActive);
+
 	// Inline images are addressed by the URLs in the message text; strip images
 	// are not in the text at all, so their URLs come back from the archived
 	// steps. Both are lookups — see below.
@@ -246,5 +252,24 @@ async function runResolve(
 		// An image that cannot be resolved is one the reply does not show.
 		// There is nothing the user could do about it, so it stays in the log.
 		logDebug('images', `${reason} resolve failed: ${e}`);
+	}
+}
+
+async function rehydrateLocalImages(
+	conversationId: string,
+	messageTexts: readonly string[],
+	isStillActive: () => boolean
+): Promise<void> {
+	const hashes = localImageHashesInText(messageTexts).filter((h) => {
+		const url = imageSrc(h);
+		return url !== null && !resolved.has(url);
+	});
+	if (hashes.length === 0) return;
+	try {
+		const rows = await invoke<ImageRow[]>('image_rehydrate_local', { conversationId, hashes });
+		if (!isStillActive()) return;
+		for (const row of rows) registerLocalImage(row.hash, row);
+	} catch (e) {
+		logDebug('images', `rehydrate local: ${e instanceof Error ? e.message : String(e)}`);
 	}
 }

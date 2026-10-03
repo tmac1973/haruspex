@@ -158,6 +158,10 @@ pub async fn image_sweep(app: AppHandle, db: State<'_, Database>) -> Result<(), 
 ///   - `source` is `generated`, which the licence rules do not treat as a
 ///     scrape, because we made these pixels;
 ///   - `embeddable` is true. Nothing was borrowed, so nothing is encumbered.
+///
+/// With a `conversation_id` the image is linked to that conversation, so the
+/// startup sweep keeps it: unlinked, a picture drawn in chat was deleted the
+/// next time the app started.
 #[tauri::command]
 pub async fn image_store_bytes(
     app: AppHandle,
@@ -166,20 +170,44 @@ pub async fn image_store_bytes(
     mime: String,
     width: u32,
     height: u32,
+    conversation_id: Option<String>,
 ) -> Result<String, String> {
-    check_storable(&bytes)?;
     let dir = cache_dir(&app)?;
-    let hash = hash_bytes(&bytes);
+    store_generated(
+        &db,
+        &dir,
+        &bytes,
+        mime,
+        width,
+        height,
+        conversation_id.as_deref(),
+    )
+}
+
+/// [`image_store_bytes`], with what it needs passed in, so it can be tested.
+pub fn store_generated(
+    db: &Database,
+    dir: &std::path::Path,
+    bytes: &[u8],
+    mime: String,
+    width: u32,
+    height: u32,
+    conversation_id: Option<&str>,
+) -> Result<String, String> {
+    check_storable(bytes)?;
+    let hash = hash_bytes(bytes);
 
     // Identical bytes are the same image. Writing is already idempotent; this
-    // keeps the row's timestamps honest too.
+    // keeps the row's timestamps honest too. Linked first: the same picture
+    // drawn into a second conversation belongs to both.
     if let Some(row) = db.image_by_hash(&hash)? {
-        write_bytes(&dir, &hash, &bytes)?;
+        write_bytes(dir, &hash, bytes)?;
         db.touch_images(std::slice::from_ref(&row.hash))?;
+        link_best_effort(db, conversation_id, &hash);
         return Ok(hash);
     }
 
-    write_bytes(&dir, &hash, &bytes)?;
+    write_bytes(dir, &hash, bytes)?;
     db.insert_image(&ImageRow {
         hash: hash.clone(),
         source_url: format!("haruspex-generated:{hash}"),
@@ -195,9 +223,54 @@ pub async fn image_store_bytes(
         created_at: 0,
         last_used_at: 0,
     })?;
-    evict_to_cap(&db, &dir)?;
+    link_best_effort(db, conversation_id, &hash);
+    evict_to_cap(db, dir)?;
     debug!("stored generated image {hash}");
     Ok(hash)
+}
+
+/// Link an image to a conversation, logging rather than failing: a chat that
+/// is not saved yet has no row to link to, and the image is linked again when
+/// its message is shown (`image_rehydrate_local`).
+fn link_best_effort(db: &Database, conversation_id: Option<&str>, hash: &str) {
+    if let Some(id) = conversation_id {
+        if let Err(e) = db.link_image(id, hash) {
+            debug!("could not link generated image {hash} to {id} yet: {e}");
+        }
+    }
+}
+
+/// The images a conversation's messages show by hash, linked to it.
+///
+/// A generated image's message holds its `haruspex-img` URL, not a source URL,
+/// so the lookup by source URL that rehydrates fetched pictures misses it.
+/// This looks it up by hash instead, and links it, so the startup sweep keeps
+/// it however the earlier link went. Unknown hashes are skipped.
+#[tauri::command]
+pub async fn image_rehydrate_local(
+    db: State<'_, Database>,
+    conversation_id: String,
+    hashes: Vec<String>,
+) -> Result<Vec<ImageRow>, String> {
+    rehydrate_local(&db, &conversation_id, &hashes)
+}
+
+pub fn rehydrate_local(
+    db: &Database,
+    conversation_id: &str,
+    hashes: &[String],
+) -> Result<Vec<ImageRow>, String> {
+    let mut rows = Vec::new();
+    for hash in hashes {
+        if !super::is_valid_hash(hash) {
+            continue;
+        }
+        if let Some(row) = db.image_by_hash(hash)? {
+            link_best_effort(db, Some(conversation_id), hash);
+            rows.push(row);
+        }
+    }
+    Ok(rows)
 }
 
 /// The guards on [`image_store_bytes`], split out because the command itself
@@ -246,5 +319,96 @@ mod store_tests {
     #[test]
     fn accepts_an_ordinary_png() {
         assert!(check_storable(&[137, 80, 78, 71]).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod generated_tests {
+    use super::*;
+
+    fn png() -> Vec<u8> {
+        let mut out = Vec::new();
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    }
+
+    fn setup(name: &str) -> (Database, std::path::PathBuf) {
+        let db = Database::open_in_memory();
+        db.create_conversation("chat-1", "Chat").unwrap();
+        let dir = std::env::temp_dir().join(format!("haruspex_generated_{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        (db, dir)
+    }
+
+    #[test]
+    fn a_generated_image_linked_to_its_chat_survives_the_sweep() {
+        let (db, dir) = setup("linked");
+        let hash =
+            store_generated(&db, &dir, &png(), "image/png".into(), 4, 4, Some("chat-1")).unwrap();
+        super::super::sweep_orphans(&db, &dir).unwrap();
+        assert!(db.image_by_hash(&hash).unwrap().is_some(), "kept");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unlinked_one_is_swept_as_before() {
+        let (db, dir) = setup("unlinked");
+        let hash = store_generated(&db, &dir, &png(), "image/png".into(), 4, 4, None).unwrap();
+        super::super::sweep_orphans(&db, &dir).unwrap();
+        assert!(db.image_by_hash(&hash).unwrap().is_none(), "swept");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn storing_the_same_picture_again_still_links_it() {
+        let (db, dir) = setup("again");
+        db.create_conversation("chat-2", "Other").unwrap();
+        let hash =
+            store_generated(&db, &dir, &png(), "image/png".into(), 4, 4, Some("chat-1")).unwrap();
+        store_generated(&db, &dir, &png(), "image/png".into(), 4, 4, Some("chat-2")).unwrap();
+        db.delete_conversation("chat-1").unwrap();
+        super::super::sweep_orphans(&db, &dir).unwrap();
+        assert!(db.image_by_hash(&hash).unwrap().is_some(), "still chat-2's");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_chat_not_saved_yet_does_not_lose_the_picture() {
+        let (db, dir) = setup("unsaved");
+        let hash = store_generated(
+            &db,
+            &dir,
+            &png(),
+            "image/png".into(),
+            4,
+            4,
+            Some("no-such-chat"),
+        )
+        .unwrap();
+        assert!(db.image_by_hash(&hash).unwrap().is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rehydrating_returns_what_it_has_and_links_it() {
+        let (db, dir) = setup("rehydrate");
+        let hash = store_generated(&db, &dir, &png(), "image/png".into(), 4, 4, None).unwrap();
+        let rows = rehydrate_local(
+            &db,
+            "chat-1",
+            &[hash.clone(), "f".repeat(64), "../x".into()],
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].hash, hash);
+        super::super::sweep_orphans(&db, &dir).unwrap();
+        assert!(
+            db.image_by_hash(&hash).unwrap().is_some(),
+            "linked by the rehydrate"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

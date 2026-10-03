@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { eligibleImages, resolvableFromReply, stripCandidates } from './eligible';
+import {
+	eligibleImages,
+	imageUrlsInText,
+	localImageHashesInText,
+	placeGeneratedImages,
+	resolvableFromReply,
+	stripCandidates
+} from './eligible';
 import type { SearchStep } from '$lib/agent/loop';
 
 function step(partial: Partial<SearchStep> & { toolName: string }): SearchStep {
@@ -255,5 +262,45 @@ describe('stripCandidates', () => {
 		expect(out[0].attribution).toBe('A Photographer');
 		expect(out[0].license).toBe('CC BY-SA 4.0');
 		expect(out[0].source).toBe('commons');
+	});
+});
+
+describe('images generated in the chat', () => {
+	const H = 'a'.repeat(64);
+	const linux = `haruspex-img://localhost/${H}`;
+	const windows = `http://haruspex-img.localhost/${H}`;
+
+	it('finds our own image hashes in either URL form', () => {
+		expect(localImageHashesInText([`see ![a lighthouse](${linux})`])).toEqual([H]);
+		expect(localImageHashesInText([`![x](${windows})`])).toEqual([H]);
+		expect(localImageHashesInText(['![x](https://example.com/a.png)'])).toEqual([]);
+	});
+
+	it('never takes a Windows cache URL for a picture to fetch', () => {
+		expect(imageUrlsInText([`![x](${windows}) ![y](https://example.com/a.png)`])).toEqual([
+			'https://example.com/a.png'
+		]);
+	});
+
+	const drew = step({
+		toolName: 'generate_image',
+		result: `Image ready (1024×1024, ming, seed 7). Put ![a lighthouse](${linux}) in your answer.`
+	});
+
+	it('places a picture the model drew and then left out', () => {
+		expect(placeGeneratedImages('Here you go.', [drew])).toBe(
+			`Here you go.\n\n![a lighthouse](${linux})`
+		);
+	});
+
+	it('leaves the answer alone when the picture is already in it', () => {
+		const text = `Here: ![a lighthouse](${linux})`;
+		expect(placeGeneratedImages(text, [drew])).toBe(text);
+	});
+
+	it('ignores other tools, and a failed draw', () => {
+		const failed = step({ toolName: 'generate_image', result: 'Error: Could not draw it: down' });
+		const other = step({ toolName: 'image_search', result: `![x](${linux})` });
+		expect(placeGeneratedImages('Hi.', [failed, other])).toBe('Hi.');
 	});
 });

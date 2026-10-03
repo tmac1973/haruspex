@@ -55,6 +55,12 @@ interface ToolFilterOpts {
 	hasContacts: boolean;
 	/** The user has switched screen capture on in Settings → Screen. */
 	screenCapture: boolean;
+	/**
+	 * An image backend is set up AND someone is there to see the picture. The
+	 * second half matters: a research job runs without an allowlist, so it gets
+	 * this filter too, and must not spend GPU minutes drawing for nobody.
+	 */
+	imageGeneration: boolean;
 }
 
 // Tools exposed to the Shell-tab assistant (non-Code mode). Reads only —
@@ -160,6 +166,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'calendar' && !opts.hasCalendar) return false;
 	if (reg.category === 'contacts' && !opts.hasContacts) return false;
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
+	if (reg.category === 'image' && !opts.imageGeneration) return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
 	// MCP tools are per-tool switchable, so the category alone is not the
 	// answer; see isMcpToolEnabled for how an explicit choice beats the
@@ -184,6 +191,8 @@ export function getToolSchemas(opts: {
 	visionSupported?: boolean;
 	shellMode?: boolean;
 	codeMode?: boolean;
+	/** A live user is present. Gates tools that only make sense for one. */
+	interactive?: boolean;
 	/**
 	 * When set, the turn exposes EXACTLY these tools (by name), bypassing the
 	 * mode-based filters entirely. Used by audit runs to pin a turn to a precise
@@ -210,6 +219,7 @@ export function getToolSchemas(opts: {
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
 		screenCapture: getSettings().screenCaptureEnabled,
+		imageGeneration: (opts.interactive ?? false) && getSettings().imageBackendKind !== 'none',
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
 	};
@@ -278,6 +288,18 @@ export async function executeTool(
 	if (reg.category === 'desktop' && !getSettings().screenCaptureEnabled) {
 		return toolResult(
 			toolError('Screen capture is off. The user can turn it on in Settings → Screen.')
+		);
+	}
+
+	// Image generation spends GPU minutes, so the same gate as the schema:
+	// a backend, and someone there to see the result.
+	if (reg.category === 'image' && (getSettings().imageBackendKind === 'none' || !ctx.interactive)) {
+		return toolResult(
+			toolError(
+				getSettings().imageBackendKind === 'none'
+					? 'Image generation is not set up. The user can choose a backend in Settings → Image.'
+					: 'Image generation is only available in a conversation with the user.'
+			)
 		);
 	}
 

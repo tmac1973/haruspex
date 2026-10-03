@@ -65,6 +65,11 @@ export type UserAnswer =
 export interface ToolContext {
 	workingDir: string | null;
 	signal?: AbortSignal;
+	/**
+	 * The chat conversation this turn belongs to, when it is a chat turn. An
+	 * image the turn makes is linked to it, so the startup sweep keeps it.
+	 */
+	conversationId?: string;
 	pendingImages: PendingImage[];
 	deepResearch: boolean;
 	filesWrittenThisTurn: Set<string>;
@@ -171,7 +176,9 @@ export interface ToolRegistration {
 		| 'mcp'
 		| 'calendar'
 		| 'contacts'
-		| 'desktop';
+		| 'desktop'
+		/** Uses the image backend (Settings → Image). Chat only, and only interactive. */
+		| 'image';
 	requiresVision?: boolean;
 }
 
