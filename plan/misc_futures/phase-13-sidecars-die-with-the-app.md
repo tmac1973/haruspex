@@ -25,8 +25,8 @@ Depends on: — / Enables: —
 - **The MCP leak** was rmcp's `Drop`, which only *schedules* the kill on a
   detached task. That task never ran when the runtime ended (every test), so
   the timeout path now kills the pid synchronously.
-- **Windows** (the Job Object) is compiled only by CI's Windows job, which
-  runs on a PR labelled `windows-ci`.
+- **Windows** (the Job Object) is compiled only by CI's Windows job, and the
+  macOS sweep path only by its macOS job. Both run on every PR.
 
 ## Goal
 

@@ -121,16 +121,11 @@ jobs:
   # behavior. Single combined job — Windows runner minutes bill at a higher rate
   # than the Linux frontend/backend split.
   #
-  # It's slow (~15 min), so it does NOT run on every PR. It runs only on a
-  # manual dispatch (Actions tab → CI → Run workflow) or when a PR carries the
-  # `windows-ci` label. Add that label to Shell-tab / Phase-17 / fs_tools PRs;
-  # everything else skips it. (To restore a post-merge safety net, add
-  # `github.event_name == 'push'` to the condition below.)
+  # It's slow (~15 min) but runs on every PR and every push to main: the repo is
+  # public, so its minutes are free, and the macOS job below runs alongside it.
+  # A platform bug caught here is a manual test pass nobody has to do.
   windows:
     runs-on: windows-latest
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.pull_request.labels.*.name, 'windows-ci')
     steps:
       # Check out with LF intact so rustfmt/prettier and `git diff` aren't fooled
       # by CRLF churn on the Windows runner (autocrlf defaults to true there).
@@ -181,5 +176,54 @@ jobs:
           Set-Content -Path src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder -Value ''
 
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+  # macOS gates, the counterpart of the Windows job: compile, lint and test the
+  # `#[cfg(target_os = "macos")]` branches (screen capture, the orphan sweep's
+  # `ps` probe, Metal paths) that neither the Linux nor the Windows job builds.
+  # macos-latest is Apple Silicon, the platform the bundled engines target.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # lint/format:check are platform-independent and covered by `frontend`.
+      - run: npm run check
+      - run: npm run test
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Ensure cargo on PATH
+        shell: bash
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # macos-latest ships Xcode's toolchain and WebKit, so no system-dependency
+      # install step is needed.
+
+      - name: Create placeholder sidecar binaries and libs
+        run: |
+          TARGET=$(rustc --print host-tuple)
+          mkdir -p src-tauri/binaries
+          for name in llama-server whisper-server koko ruff node uv sd-server; do
+            echo '#!/bin/sh' > "src-tauri/binaries/${name}-${TARGET}"
+            chmod +x "src-tauri/binaries/${name}-${TARGET}"
+          done
+          mkdir -p src-tauri/binaries/node-modules src-tauri/binaries/libs src-tauri/binaries/sd-libs
+          touch src-tauri/binaries/node-modules/.placeholder src-tauri/binaries/libs/.placeholder src-tauri/binaries/sd-libs/.placeholder
+          mkdir -p src-tauri/binaries/espeak-ng-data/lang/placeholder
+          touch src-tauri/binaries/espeak-ng-data/.placeholder
+          touch src-tauri/binaries/espeak-ng-data/lang/.placeholder
+          touch src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder
+
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
