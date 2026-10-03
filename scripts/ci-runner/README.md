@@ -81,3 +81,52 @@ tools. Only code in this repo reaches it:
   fork-PR approval policy is `all_external_contributors`.
 
 Approve outside PRs only after reading what they change in `.github/`.
+
+## Undoing the old two-script setup
+
+An earlier version (in #253) set the machines up with a separate
+`haruspex-ci` user. If you ran it, clean up before running the new script.
+No runner was ever registered on GitHub, so there's nothing to remove there.
+
+**Windows,** in PowerShell opened with *Run as administrator*:
+
+```powershell
+# 1. The user, and its profile folder if it ever signed in
+Remove-LocalUser haruspex-ci
+Get-CimInstance Win32_UserProfile | Where-Object LocalPath -like '*\haruspex-ci' | Remove-CimInstance
+
+# 2. The scripts the old part 1 copied out
+Remove-Item -Recurse -Force C:\Users\Public\haruspex-ci
+
+# 3. Only if you used -AutoLogon: stop Windows signing haruspex-ci in at boot
+Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' AutoAdminLogon '0'
+```
+
+After step 3, also run `Autologon64.exe` from your Temp folder
+(`%TEMP%\AutoLogon`) once and click **Disable**. That clears the stored
+password.
+
+If you used `-KeepAwake`, the old script also turned off the sign-in prompt
+when the display wakes. The new script leaves your lock alone, so put it
+back:
+
+```powershell
+powercfg /setacvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 1
+powercfg /setdcvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 1
+powercfg /setactive SCHEME_CURRENT
+```
+
+**Keep these:** Git, Node, the GitHub CLI, the VS Build Tools, WebView2, and
+the OpenSSH server and its firewall rule. Also keep the no-sleep settings.
+The new script uses all of them and skips what's already installed.
+
+**Mac:**
+
+```bash
+sudo sysadminctl -deleteUser haruspex-ci
+sudo rm -rf /Users/Shared/haruspex-ci
+sudo sysadminctl -autologin off    # only if you used --auto-login
+```
+
+The old Mac script also limited Remote Login to you and `haruspex-ci`.
+Deleting the user leaves just you, which is what the new script sets up.
