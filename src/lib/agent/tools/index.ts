@@ -16,6 +16,7 @@ import './mcp';
 import './calendar';
 import './contacts';
 import './screen';
+import './image-gen';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel, coerceCallArguments } from './registry';

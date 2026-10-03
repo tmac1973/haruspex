@@ -180,7 +180,10 @@ export function imageUrlsInText(texts: readonly string[]): string[] {
 	for (const text of texts) {
 		for (const match of text.matchAll(IMAGE_REF_RE)) {
 			const url = match[1]?.trim();
-			if (url && /^https?:/i.test(url)) seen.add(url);
+			// Our own cache's URLs are not fetched: on Windows they look like
+			// http://haruspex-img.localhost/…, which would otherwise read as a
+			// URL the model invented.
+			if (url && /^https?:/i.test(url) && !LOCAL_IMAGE_URL.test(url)) seen.add(url);
 		}
 	}
 	return [...seen];
@@ -272,4 +275,39 @@ export function rehydrationUrls(
 ): string[] {
 	const stripUrls = stepsByMessage.flatMap((steps) => stripCandidates(steps).map((c) => c.url));
 	return [...new Set([...imageUrlsInText(messageTexts), ...stripUrls])];
+}
+
+/** One of our cache's image URLs, in either form `imageSrc` builds. */
+const LOCAL_IMAGE_URL =
+	/^(?:haruspex-img:\/\/localhost\/|http:\/\/haruspex-img\.localhost\/)([0-9a-f]{64})$/i;
+
+/**
+ * The hashes of our own cached images a message shows: pictures generated in
+ * the chat. Looked up by hash on reload, because their messages hold the
+ * cache URL rather than a source URL.
+ */
+export function localImageHashesInText(texts: readonly string[]): string[] {
+	const seen = new Set<string>();
+	for (const text of texts) {
+		for (const match of text.matchAll(IMAGE_REF_RE)) {
+			const hash = match[1]?.trim().match(LOCAL_IMAGE_URL)?.[1];
+			if (hash) seen.add(hash.toLowerCase());
+		}
+	}
+	return [...seen];
+}
+
+/**
+ * The turn's final text, with every image `generate_image` made in the turn
+ * that the model left out appended after it. A picture the user asked for is
+ * never lost to a model that forgot to place it.
+ */
+export function placeGeneratedImages(text: string, steps: readonly SearchStep[]): string {
+	const missing: string[] = [];
+	for (const step of steps) {
+		if (step.toolName !== 'generate_image' || !step.result) continue;
+		const md = step.result.match(/!\[[^\]]*\]\(([^)\s]+)\)/);
+		if (md && LOCAL_IMAGE_URL.test(md[1]) && !text.includes(md[1])) missing.push(md[0]);
+	}
+	return missing.length > 0 ? `${text}\n\n${missing.join('\n\n')}` : text;
 }

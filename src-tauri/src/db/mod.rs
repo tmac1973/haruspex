@@ -358,6 +358,18 @@ pub struct Database {
 }
 
 impl Database {
+    /// An in-memory database with the schema applied, for other modules' tests.
+    #[cfg(test)]
+    pub fn open_in_memory() -> Database {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        let db = Database {
+            conn: Arc::new(Mutex::new(conn)),
+        };
+        db.migrate().unwrap();
+        db
+    }
+
     pub fn new(app: &AppHandle) -> Result<Self, String> {
         let db_path = Self::db_path(app)?;
 

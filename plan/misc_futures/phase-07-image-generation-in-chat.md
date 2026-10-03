@@ -3,6 +3,27 @@
 Depends on: — (05 is recommended first, for clean cancel on ComfyUI) /
 Enables: 08
 
+## As built — notes
+
+- **`generateForTool` calls the backend's `generate` directly,** not
+  `generateOneImage`, which takes no `transparent` or `seamless`. It probes
+  first, drops what the backend can't do with a note, and turns a full GPU on
+  the bundled engine into `GPU_FULL_SENTENCE`.
+- **Linking is best-effort.** `store_generated` (the testable half of
+  `image_store_bytes`) links before the duplicate early-return. A link that
+  fails, such as a chat not saved yet (the table has a foreign key to
+  conversations), is logged, not fatal. Showing the message links it again
+  through `image_rehydrate_local`.
+- **The fallback** is `placeGeneratedImages` in `images/eligible.ts`, applied
+  in `finalizeStreamedTurn` before commit. It reads the markdown from the
+  `generate_image` step's own result.
+- **The gate** is `imageGeneration` in `ToolFilterOpts`: backend set up and
+  `interactive`. The loop now passes `interactive` to `getToolSchemas`, and
+  `executeTool` re-checks both.
+- **The licence note** reads `imageLocalModelId === 'qwen21'` on the bundled
+  engine, and the configured checkpoint's family (`familyOf`) on ComfyUI.
+- **Not done:** the manual checks. They need the app with an image backend.
+
 ## Goal
 
 When Settings → Image has a backend, Chat offers a `generate_image` tool.

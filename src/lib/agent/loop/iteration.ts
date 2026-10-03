@@ -122,6 +122,7 @@ export interface LoopContext {
 	codeAutoApprove: boolean;
 	/** True when a live user can answer interactive tools (ask_user_question). */
 	interactive: boolean;
+	conversationId?: string;
 	/** Alternate route to a human for `ask_user_question`. See `ToolContext.askUser`. */
 	askUser?: ToolContext['askUser'];
 	/** Confine file writes to this dir (relative to workingDir); null = no extra limit. */
@@ -212,6 +213,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			visionSupported: options.visionSupported ?? true,
 			shellMode,
 			codeMode,
+			interactive: options.interactive ?? false,
 			// The forced final tool is always offered. A stage once listed its
 			// read tools but not its submit tool: the model, correctly, never
 			// called a tool it was not given, and the forced call then named a
@@ -230,6 +232,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		codeMode,
 		codeAutoApprove,
 		interactive: options.interactive ?? false,
+		conversationId: options.conversationId,
 		askUser: options.askUser,
 		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,
@@ -1455,6 +1458,7 @@ async function executeToolCalls(
 				codeMode: ctx.codeMode,
 				codeAutoApprove: ctx.codeAutoApprove,
 				interactive: ctx.interactive,
+				conversationId: ctx.conversationId,
 				backend: ctx.backend,
 				askUser: ctx.askUser,
 				writeRoot: ctx.writeRoot,

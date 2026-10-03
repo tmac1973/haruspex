@@ -636,8 +636,18 @@ describe('runAgentLoop: tool-call round trip', () => {
 			deepResearch: true,
 			visionSupported: false,
 			shellMode: false,
-			codeMode: false
+			codeMode: false,
+			interactive: false
 		});
+	});
+
+	it('tells getToolSchemas when someone is there, which gates image generation', async () => {
+		nonStreamQueue.push(textResponse('ok'));
+		const { options } = makeOptions({ interactive: true });
+		await runAgentLoop(options);
+		expect(toolsMock.getToolSchemas).toHaveBeenCalledWith(
+			expect.objectContaining({ interactive: true })
+		);
 	});
 });
 

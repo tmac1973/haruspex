@@ -234,6 +234,7 @@ pub fn run() {
             image_cache::commands::image_resolve,
             image_cache::commands::image_sweep,
             image_cache::commands::image_store_bytes,
+            image_cache::commands::image_rehydrate_local,
             image_gen::commands::image_check,
             image_gen::commands::image_palette_spread,
             image_gen::commands::image_contact_sheet,
