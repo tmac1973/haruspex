@@ -19,6 +19,7 @@
  * Stage index constants must match CODING_STAGES in ./definition.ts.
  */
 
+import { onBoundaryRefusal, type BoundaryRefusal } from '$lib/shell/boundary';
 import { invoke } from '@tauri-apps/api/core';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import {
@@ -273,7 +274,22 @@ async function resolveCommands(
 	};
 }
 
+/**
+ * The pipeline, listening for commands refused at the project boundary for
+ * the whole run, so the report can list them. Runs are serialized, so the
+ * refusals heard are this run's.
+ */
 export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<void> {
+	const refusals: BoundaryRefusal[] = [];
+	const stopListening = onBoundaryRefusal((r) => refusals.push(r));
+	try {
+		await runPipeline(ctx, refusals);
+	} finally {
+		stopListening();
+	}
+}
+
+async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Promise<void> {
 	const { job, runId, abort } = ctx;
 	const cfg = parseAutonomousCodingConfig(job.type_config);
 	// Resolved once — the single source of the mode default. Every consumer
@@ -645,11 +661,11 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 		// Finalize — the morning-after report, write-verified and committed.
 		startStep(FINALIZE);
 		abortIfCancelled();
-		await runFinalizeTurn(ctx, planDir, reportPath);
+		await runFinalizeTurn(ctx, planDir, reportPath, refusals);
 		await ensureFileWritten(ctx, FINALIZE, {
 			relPath: reportPath,
 			writeRoot: planDir,
-			systemPrompt: finalizePrompt(planDir, reportPath),
+			systemPrompt: finalizePrompt(planDir, reportPath, refusals),
 			toolAllowlist: FINALIZE_TOOLS,
 			what: 'report',
 			abortIfCancelled
@@ -1096,7 +1112,8 @@ async function runReadmeTurn(
 async function runFinalizeTurn(
 	ctx: JobRunContext,
 	planDir: string,
-	reportPath: string
+	reportPath: string,
+	refusals: BoundaryRefusal[]
 ): Promise<void> {
 	await ctx.runJobTurn({
 		turnKind: 'finalize.report',
@@ -1105,7 +1122,7 @@ async function runFinalizeTurn(
 		visionSupported: ctx.visionSupported(),
 		maxIterations: FINALIZE_MAX_ITERATIONS,
 		writeRoot: planDir,
-		systemPrompt: finalizePrompt(planDir, reportPath),
+		systemPrompt: finalizePrompt(planDir, reportPath, refusals),
 		toolAllowlist: FINALIZE_TOOLS,
 		expectsFileOutput: true,
 		...ctx.buildStreamCallbacks(FINALIZE)

@@ -349,6 +349,7 @@ pub fn run() {
             code_tools::run_command_capture,
             code_tools::run_command_cancel,
             code_tools::code_write_overflow,
+            code_tools::app_protected_targets,
             code_tools::code_grep,
             code_tools::code_glob,
             fs_tools::pdf_read::fs_read_pdf,

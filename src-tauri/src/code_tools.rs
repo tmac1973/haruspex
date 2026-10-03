@@ -228,6 +228,122 @@ pub fn run_command_cancel(command_id: String) -> Result<(), String> {
 /// Spill a command's full output to a temp file when it's too big to return
 /// inline, returning the path. The model reads it back via fs_read_text with
 /// offset/limit instead of carrying it all in context.
+/// One thing an unattended coding run's shell must not reach, with the words
+/// a refusal uses for it.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct ProtectedPath {
+    /// Absolute, with a trailing separator.
+    pub path: String,
+    /// "data directory", "source tree", …
+    pub label: String,
+}
+
+#[derive(Clone, Debug, Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct ProtectedPort {
+    pub port: u16,
+    pub label: String,
+}
+
+/// Haruspex's own directories and local services. The frontend's boundary
+/// check (`src/lib/shell/boundary.ts`) refuses an unattended command that
+/// names one of them: a coding run once read the app's database and called
+/// the user's ComfyUI to get around a missing input.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct ProtectedTargets {
+    pub home: String,
+    pub paths: Vec<ProtectedPath>,
+    pub ports: Vec<ProtectedPort>,
+}
+
+#[tauri::command]
+pub fn app_protected_targets(
+    app: tauri::AppHandle,
+    extra_ports: Vec<ProtectedPort>,
+) -> ProtectedTargets {
+    use tauri::Manager;
+    let p = app.path();
+    let mut paths: Vec<ProtectedPath> = Vec::new();
+    let mut add = |dir: Option<PathBuf>, label: &str, only_if_ours: bool| {
+        let Some(dir) = dir else { return };
+        let s = dir.to_string_lossy().to_string();
+        // An install directory is protected only when it is plainly ours: a
+        // packaged Linux build runs from /usr/bin, and refusing every command
+        // that names /usr/bin would refuse half of all builds.
+        if only_if_ours && !s.to_lowercase().contains("haruspex") {
+            return;
+        }
+        let sep = std::path::MAIN_SEPARATOR;
+        let path = if s.ends_with(sep) {
+            s
+        } else {
+            format!("{s}{sep}")
+        };
+        if !paths.iter().any(|x| x.path == path) {
+            paths.push(ProtectedPath {
+                path,
+                label: label.to_string(),
+            });
+        }
+    };
+    add(p.app_data_dir().ok(), "data directory", false);
+    add(p.app_config_dir().ok(), "settings directory", false);
+    add(p.app_cache_dir().ok(), "cache directory", false);
+    add(p.app_log_dir().ok(), "log directory", false);
+    add(p.resource_dir().ok(), "install directory", true);
+    add(
+        std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(Path::to_path_buf)),
+        "install directory",
+        true,
+    );
+    // A dev build knows its source tree; a coding run on Haruspex itself is
+    // allowed by the frontend, which skips a path containing the run's root.
+    #[cfg(debug_assertions)]
+    add(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(Path::to_path_buf),
+        "source tree",
+        false,
+    );
+
+    let mut ports = vec![
+        ProtectedPort {
+            port: crate::sidecar_utils::ports::LLAMA,
+            label: "chat model server".into(),
+        },
+        ProtectedPort {
+            port: crate::sidecar_utils::ports::WHISPER,
+            label: "speech-to-text server".into(),
+        },
+        ProtectedPort {
+            port: crate::sidecar_utils::ports::TTS,
+            label: "text-to-speech server".into(),
+        },
+        ProtectedPort {
+            port: crate::image_engine::IMAGE_PORT,
+            label: "image engine".into(),
+        },
+    ];
+    for extra in extra_ports {
+        if !ports.iter().any(|x| x.port == extra.port) {
+            ports.push(extra);
+        }
+    }
+    ProtectedTargets {
+        home: p
+            .home_dir()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        paths,
+        ports,
+    }
+}
+
 #[tauri::command]
 pub async fn code_write_overflow(content: String) -> Result<String, String> {
     use std::time::{SystemTime, UNIX_EPOCH};

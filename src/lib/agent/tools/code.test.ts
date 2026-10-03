@@ -607,3 +607,76 @@ describe('Code-mode tool filtering', () => {
 		expect(shell).not.toContain('code_glob');
 	});
 });
+
+describe('run_command boundary', () => {
+	const targets = {
+		home: '/home/tim',
+		paths: [{ path: '/home/tim/.local/share/com.haruspex.app/', label: 'data directory' }],
+		ports: [{ port: 8767, label: 'image engine' }]
+	};
+	const DB = 'sqlite3 ~/.local/share/com.haruspex.app/haruspex.db .tables';
+
+	beforeEach(async () => {
+		(await import('$lib/shell/boundary'))._resetBoundary();
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'app_protected_targets') return Promise.resolve(targets);
+			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
+			return Promise.resolve();
+		});
+	});
+
+	it('refuses an unattended command that reaches Haruspex, even with auto-approve on', async () => {
+		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
+		const { executeTool } = await import('$lib/agent/tools');
+		const { onBoundaryRefusal } = await import('$lib/shell/boundary');
+		const refused: string[] = [];
+		const stop = onBoundaryRefusal((r) => refused.push(r.command));
+		const out = await runWithAutoApprove(() =>
+			executeTool('run_command', { command: DB }, { ...codeCtx, codeAutoApprove: true })
+		);
+		stop();
+		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
+		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(out.result).toContain("touches Haruspex's data directory");
+		expect(out.result).toContain('Do not retry');
+		// Heard by whoever is listening: the coding run puts it in its report.
+		expect(refused).toEqual([DB]);
+	});
+
+	it('asks when someone is there, and "allow for this session" does not cover it', async () => {
+		mocks.isSessionApproved.mockReturnValue(true);
+		mocks.askCommandApproval.mockResolvedValue('allow_session');
+		const { executeTool } = await import('$lib/agent/tools');
+		await executeTool(
+			'run_command',
+			{ command: 'curl localhost:8767/sdapi/v1/sd-models' },
+			codeCtx
+		);
+		expect(mocks.askCommandApproval).toHaveBeenCalledWith(
+			expect.objectContaining({
+				reasons: [
+					{ label: 'outside the project', description: "calls Haruspex's image engine (port 8767)" }
+				]
+			})
+		);
+		expect(mocks.approveSession).not.toHaveBeenCalled();
+	});
+
+	it('leaves the project’s own commands to the usual rules', async () => {
+		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await runWithAutoApprove(() =>
+			executeTool('run_command', { command: 'npm test' }, codeCtx)
+		);
+		expect(out.result).toContain('Exit code: 0');
+	});
+
+	it('names the risk in words, not "[object Object]"', async () => {
+		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
+		const { executeTool } = await import('$lib/agent/tools');
+		const out = await runWithAutoApprove(() =>
+			executeTool('run_command', { command: 'rm -rf build' }, codeCtx)
+		);
+		expect(out.result).not.toContain('[object Object]');
+	});
+});
