@@ -202,10 +202,10 @@ export type EmailTlsMode = TlsMode;
  * Rust `EmailAccount` struct (camelCase-serialized), re-exported so the
  * entire object roundtrips through `invoke` without translation.
  *
- * Credentials (password) are stored in the settings blob alongside
- * the existing Brave / inference API keys — same trust level, same
- * lifecycle. Keyring integration is deferred to a later cross-cutting
- * change.
+ * The password lives in the system keychain where there is one: the
+ * stored account then has `passwordRef` and an empty `password`
+ * (`stores/emailSecrets.ts`). Without a keychain it is kept inline here,
+ * as the Brave and inference API keys are.
  *
  * `sendEnabled` is present from day 1 so Phase 10.2 sending can be
  * opted into per-account without a settings migration. In Phase 10.1

@@ -93,6 +93,7 @@ mod tests {
             provider: EmailProvider::Gmail,
             email_address: "sender@example.com".into(),
             password: "pw".into(),
+            password_ref: None,
             imap_host: "imap.example.com".into(),
             imap_port: 993,
             imap_tls: TlsMode::Implicit,

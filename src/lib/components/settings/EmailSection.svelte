@@ -17,9 +17,12 @@
 	} from '$lib/stores/settings';
 	import type { EmailProviderPreset } from '$lib/ipc/gen/EmailProviderPreset';
 	import EmailAccountForm from '$lib/components/EmailAccountForm.svelte';
+	import { forgetStoredPassword, keychainAvailable } from '$lib/stores/emailSecrets';
 
 	let emailAccounts = $state<EmailAccount[]>(snapshot(getSettings().integrations.email.accounts));
 	let emailPresets = $state<EmailProviderPreset[]>([]);
+	// Null until probed, so the notice never flashes on a machine that has one.
+	let keychain = $state<boolean | null>(null);
 
 	async function loadEmailPresets() {
 		try {
@@ -72,12 +75,17 @@
 	}
 
 	function deleteEmailAccount(id: string) {
+		const gone = emailAccounts.find((a) => a.id === id);
+		if (gone) void forgetStoredPassword(gone);
 		emailAccounts = emailAccounts.filter((a) => a.id !== id);
 		setEmailAccounts(emailAccounts);
 		forgetSession(id);
 	}
 
-	onMount(loadEmailPresets);
+	onMount(() => {
+		void loadEmailPresets();
+		void keychainAvailable().then((ok) => (keychain = ok));
+	});
 </script>
 
 <section class="settings-section">
@@ -88,6 +96,15 @@
 		enabled on the provider and an app password (not your login password). Sending email arrives in
 		a later phase.
 	</p>
+
+	{#if keychain === false}
+		<p
+			class="section-help small"
+			title="On Linux, run a Secret Service such as GNOME Keyring or KWallet and restart Haruspex."
+		>
+			No system keychain found — passwords are kept in Haruspex's settings.
+		</p>
+	{/if}
 
 	{#if emailAccounts.length === 0}
 		<p class="section-help small">No email accounts configured.</p>

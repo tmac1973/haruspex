@@ -18,14 +18,16 @@
 //!   `account_id` and look the corresponding account up — or, when
 //!   omitted on list-style calls, fan out across all enabled
 //!   accounts.
-//! - **`password` field is plaintext in the struct** because it must
-//!   be sent to the IMAP server. Storage confidentiality is handled
-//!   at the settings-blob layer, same as every other credential
-//!   Haruspex already holds (Brave key, remote inference key, etc.).
+//! - **The password lives in the system keychain where there is one**
+//!   (`crate::secrets`): the stored account carries `password_ref` and an
+//!   empty `password`, and [`resolve`] reads it back inside Rust when a
+//!   connection is made. Without a keychain it stays inline in the
+//!   settings blob, as every other credential Haruspex holds does.
 
 use serde::{Deserialize, Serialize};
 
 use super::provider::{EmailProvider, TlsMode};
+use crate::secrets::{Keychain, Store};
 
 /// Credentials and endpoint configuration for a single email account.
 ///
@@ -62,8 +64,15 @@ pub struct EmailAccount {
     /// the `From` address when sending.
     pub email_address: String,
 
-    /// App password (plaintext). Used as the SASL password.
+    /// App password, inline. Empty when it is kept in the system keychain
+    /// under `password_ref` — the usual case where a keychain exists.
     pub password: String,
+
+    /// The keychain entry holding the password (`"email:<id>"`). Rust reads
+    /// it when it connects; the webview never sees the value again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub password_ref: Option<String>,
 
     // --- IMAP endpoint ---
     pub imap_host: String,
@@ -94,7 +103,7 @@ impl EmailAccount {
                 self.email_address
             ));
         }
-        if self.password.is_empty() {
+        if self.password.is_empty() && self.password_ref.is_none() {
             return Err("Password is empty".into());
         }
         if self.imap_host.trim().is_empty() {
@@ -117,9 +126,47 @@ impl EmailAccount {
     }
 }
 
+impl EmailAccount {
+    /// This account with its password filled in from `store` when it is kept
+    /// there. An inline password is used as it is.
+    pub fn resolved_from(&self, store: &dyn Store) -> Result<EmailAccount, String> {
+        let Some(key) = self
+            .password_ref
+            .as_deref()
+            .filter(|_| self.password.is_empty())
+        else {
+            return Ok(self.clone());
+        };
+        match store.get(key)? {
+            Some(password) => Ok(EmailAccount {
+                password,
+                ..self.clone()
+            }),
+            None => Err(format!(
+                "The password for {} is missing from the system keychain — enter it again in \
+                 Settings → Email",
+                self.email_address
+            )),
+        }
+    }
+}
+
+/// The account with its password, read from the system keychain off the
+/// async runtime (see `secrets` for why).
+pub async fn resolve(account: &EmailAccount) -> Result<EmailAccount, String> {
+    if account.password_ref.is_none() || !account.password.is_empty() {
+        return Ok(account.clone());
+    }
+    let account = account.clone();
+    tokio::task::spawn_blocking(move || account.resolved_from(&Keychain))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::secrets::Memory;
 
     fn sample_account() -> EmailAccount {
         EmailAccount {
@@ -130,6 +177,7 @@ mod tests {
             provider: EmailProvider::Gmail,
             email_address: "alice@example.com".into(),
             password: "hunter2".into(),
+            password_ref: None,
             imap_host: "imap.example.com".into(),
             imap_port: 993,
             imap_tls: TlsMode::Implicit,
@@ -166,5 +214,35 @@ mod tests {
         let mut a = sample_account();
         a.password = String::new();
         assert!(a.validate().is_err());
+    }
+
+    #[test]
+    fn a_kept_password_is_read_from_the_store() {
+        let store = Memory::default();
+        store.set("email:test-1", "from-keychain").unwrap();
+        let mut a = sample_account();
+        a.password = String::new();
+        a.password_ref = Some("email:test-1".into());
+        assert!(a.validate().is_ok());
+        assert_eq!(a.resolved_from(&store).unwrap().password, "from-keychain");
+    }
+
+    #[test]
+    fn a_missing_kept_password_says_where_to_enter_it() {
+        let mut a = sample_account();
+        a.password = String::new();
+        a.password_ref = Some("email:test-1".into());
+        let err = a.resolved_from(&Memory::default()).unwrap_err();
+        assert!(err.contains("alice@example.com"), "{err}");
+        assert!(err.contains("Settings → Email"), "{err}");
+    }
+
+    #[test]
+    fn an_inline_password_is_used_as_it_is() {
+        let a = sample_account();
+        assert_eq!(
+            a.resolved_from(&Memory::default()).unwrap().password,
+            "hunter2"
+        );
     }
 }
