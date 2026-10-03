@@ -2,6 +2,33 @@
 
 Depends on: — / Enables: —
 
+## As built — notes
+
+- **`ChainModel` uses the job's column names** (`model_remote_base_url`, …,
+  `model_advanced`), not the renamed fields in step 1. `stageModelColumns` is
+  then a straight pick, and a stored override is exactly what `createJob`
+  takes.
+- **Two parsers.** `parseChainModel` is for an override and needs a URL and a
+  model id. `parseModelColumns` is for the resolved columns the asset job is
+  handed, where all-null is valid and means "the Settings model". With a
+  single parser, a planner on Settings with an asset-stage override would
+  have leaked that override into the coding job.
+- **The form lives in a plain-TS module,** `src/lib/agent/jobs/jobModelForm.ts`
+  (`JobModelForm`, `modelFormFromColumns`, `modelColumnsFromForm`). The same
+  form is a job's own model in JobEditor and a stage's model inside the
+  guided-planning type config, which has to be plain JSON.
+  `JobModelFields.svelte` keeps only transient state: probe results, the
+  OpenRouter catalog. JobEditor went from 1476 lines to 736.
+- **JobEditor's load effect now tracks `jobId` only,** through `untrack`.
+  Loading bumps the fields' remount counter, a read as well as a write, and a
+  tracked read looped the effect.
+- **A chosen stage with no server or model fails validation,** instead of
+  saving as "same as this job".
+- The handoff names the model in both the started and the not-started
+  messages.
+- **Not done:** the manual chain run in the test plan. It needs the app and
+  two inference models.
+
 ## Goal
 
 Two fixes to chains (guided planning → assets → coding):

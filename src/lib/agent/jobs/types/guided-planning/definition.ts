@@ -2,6 +2,8 @@ import type { JobTypeDefinition, PlannedStep } from '../types';
 import { runGuidedPlanningPipeline } from './pipeline';
 import { type GuidedPlanningRunMode, parseGuidedPlanningConfig } from './config';
 import { DEFAULT_MAX_TURNS } from '../autonomous-coding/config';
+import { modelColumnsFromForm, modelFormFromColumns, type JobModelForm } from '../../jobModelForm';
+import type { ChainModel } from '../../chainModel';
 import Editor from './Editor.svelte';
 
 /** The guided-planning editor's working state (concrete strings, '' = unset). */
@@ -18,6 +20,23 @@ export interface GuidedPlanningEditorState {
 	coding_max_attempts: number;
 	coding_context_mode: '' | 'step' | 'phase';
 	coding_max_turns: number;
+	/** A chained stage's model; null = same as this job. */
+	chain_assets_model: JobModelForm | null;
+	chain_coding_model: JobModelForm | null;
+}
+
+/** A stage's form as stored, or undefined for "same as this job". */
+function stageModelJson(form: JobModelForm | null): ChainModel | undefined {
+	return form ? modelColumnsFromForm(form) : undefined;
+}
+
+/** Why a chosen stage model can't be saved, or null. */
+function stageModelProblem(label: string, form: JobModelForm | null): string | null {
+	if (!form) return null;
+	if (!form.baseUrl.trim() || !form.modelId.trim()) {
+		return `Pick a server and a model for the ${label}, or set it back to "Same as this job".`;
+	}
+	return null;
 }
 
 /**
@@ -113,7 +132,9 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		// and read on screen as "zero attempts", which is not a thing.
 		coding_max_attempts: 3,
 		coding_context_mode: '',
-		coding_max_turns: DEFAULT_MAX_TURNS
+		coding_max_turns: DEFAULT_MAX_TURNS,
+		chain_assets_model: null,
+		chain_coding_model: null
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
@@ -127,7 +148,11 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			run_mode: c.run_mode,
 			coding_max_attempts: c.coding_run.max_attempts ?? 3,
 			coding_context_mode: c.coding_run.context_mode ?? '',
-			coding_max_turns: c.coding_run.max_turns ?? DEFAULT_MAX_TURNS
+			coding_max_turns: c.coding_run.max_turns ?? DEFAULT_MAX_TURNS,
+			chain_assets_model: c.chain_models.assets
+				? modelFormFromColumns(c.chain_models.assets)
+				: null,
+			chain_coding_model: c.chain_models.coding ? modelFormFromColumns(c.chain_models.coding) : null
 		};
 	},
 	configToJson: (config) => {
@@ -143,7 +168,15 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			generate_assets: s.generate_assets || undefined,
 			// Sparse: only a non-default mode is stored.
 			run_mode: s.run_mode === 'attended' ? undefined : s.run_mode,
-			coding_run: codingRunJson(s)
+			coding_run: codingRunJson(s),
+			// Sparse like the rest: absent when both stages inherit.
+			chain_models:
+				s.chain_assets_model || s.chain_coding_model
+					? {
+							assets: stageModelJson(s.chain_assets_model),
+							coding: stageModelJson(s.chain_coding_model)
+						}
+					: undefined
 		});
 	},
 	validate: ({ workingDir, config }) => {
@@ -151,6 +184,12 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		if (!workingDir.trim())
 			return 'Guided planning needs a working directory — the project to plan in.';
 		if (!s.initial_description.trim()) return 'Describe what you want to build to start planning.';
+		if (s.run_mode === 'unattended_chain') {
+			return (
+				(s.generate_assets ? stageModelProblem('asset run', s.chain_assets_model) : null) ??
+				stageModelProblem('coding run', s.chain_coding_model)
+			);
+		}
 		return null;
 	},
 	planSteps: planGuidedSteps,

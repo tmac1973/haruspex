@@ -138,3 +138,37 @@ describe('coding_run overrides', () => {
 		}
 	});
 });
+
+describe('chain_models', () => {
+	const fast = {
+		model_remote_base_url: 'http://fast',
+		model_remote_api_key: null,
+		model_remote_api_key_id: 'key-fast',
+		model_remote_model_id: 'fast',
+		model_remote_context_size: 32768,
+		model_remote_vision_supported: false,
+		model_advanced: null
+	};
+
+	it('is "same as this job" for both stages when absent, as for every older job', () => {
+		expect(parseGuidedPlanningConfig('{}').chain_models).toEqual({ assets: null, coding: null });
+	});
+
+	it('reads a stage override', () => {
+		const c = parseGuidedPlanningConfig(JSON.stringify({ chain_models: { coding: fast } }));
+		expect(c.chain_models.coding).toEqual(fast);
+		expect(c.chain_models.assets).toBeNull();
+	});
+
+	it('reads anything malformed as "same as this job", never half an override', () => {
+		for (const chain_models of [
+			'x',
+			[],
+			{ coding: 'fast' },
+			{ coding: { model_remote_model_id: 'fast' } }
+		]) {
+			const c = parseGuidedPlanningConfig(JSON.stringify({ chain_models }));
+			expect(c.chain_models).toEqual({ assets: null, coding: null });
+		}
+	});
+});

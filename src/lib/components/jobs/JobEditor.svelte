@@ -1,33 +1,15 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
+	import JobModelFields from '$lib/components/jobs/JobModelFields.svelte';
 	import {
-		pickProbedModel,
-		probeInferenceServer,
-		probedModelCaps,
-		type NormalizedModel
-	} from '$lib/inferenceProbe';
-	import {
-		OPENROUTER_BASE_URL,
-		fetchOpenRouterCatalog,
-		openRouterModelCaps,
-		pickOpenRouterModel,
-		type OpenRouterModel
-	} from '$lib/openrouter';
-	import {
-		defaultModelAdvanced,
-		defaultSourceForCaps,
-		describeSamplingProfile,
-		parseModelAdvanced,
-		serializeModelAdvanced,
-		type DiscoveredCaps,
-		type JobModelAdvanced,
-		type ReasoningMode,
-		type SamplingSource
-	} from '$lib/agent/jobs/modelAdvanced';
-	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
-	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
-	import ModeSelector from '$lib/components/ModeSelector.svelte';
+		emptyModelForm,
+		modelColumnsFromForm,
+		modelFormFromColumns,
+		modelFormSummary,
+		modelAdvancedOf,
+		type JobModelForm
+	} from '$lib/agent/jobs/jobModelForm';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import JobScheduleField from '$lib/components/jobs/JobScheduleField.svelte';
 	import {
@@ -44,8 +26,6 @@
 		type JobStepInput,
 		type JobType
 	} from '$lib/stores/jobs.svelte';
-	import { getSettings } from '$lib/stores/settings';
-	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
@@ -99,54 +79,12 @@
 	 * rather than disabled, since a schedule is not a thing they can have.
 	 */
 	const schedulable = $derived(typeDef.supportsSchedule !== false);
-	// Where this job's model calls go (any job type): 'settings' follows the
-	// app's active Settings backend; 'remote'/'openrouter' pin the job to a
-	// specific server/model configured below. One selection — mirrors the
-	// Settings → Inference backend mode picker.
-	type ModelSource = 'settings' | 'remote' | 'openrouter';
-	let modelSource = $state<ModelSource>('settings');
-	let modelBaseUrl = $state('');
-	let modelApiKey = $state('');
-	let modelApiKeyId = $state<string | null>(null);
-	let modelModelId = $state('');
-	let modelContextSize = $state<number | ''>('');
-	// Tri-state vision capability for the override model: 'auto' inherits the
-	// global Settings capability; 'yes'/'no' force it on/off for this job.
-	let modelVision = $state<'auto' | 'yes' | 'no'>('auto');
-	// Advanced model behavior (applies to every job, override or not — a job
-	// on the Settings backend still wants its own reasoning choice).
-	let advReasoning = $state<ReasoningMode>('inherit');
-	// null = inherit the global effort selection. Only ever set to a level the
-	// job's own model advertises.
-	let advEffort = $state<string | null>(null);
-	let advSamplingSource = $state<SamplingSource>('profile');
-	// Custom sampling fields. '' means "don't send this parameter" — the
-	// request body omits undefined fields, so a blank is a real choice, not a
-	// missing value to be filled in with a default.
-	let advTemperature = $state<number | ''>('');
-	let advTopP = $state<number | ''>('');
-	let advTopK = $state<number | ''>('');
-	let advMinP = $state<number | ''>('');
-	let advPresencePenalty = $state<number | ''>('');
-	let advDiscovered = $state<DiscoveredCaps | null>(null);
-	// Whether the user has picked a sampling source by hand. Until they do, a
-	// probe that turns up server-published recommendations flips the source to
-	// 'server' — the server is the authority on its own tuning. After they do,
-	// their choice stands.
-	let advSourceTouched = $state(false);
-	// Models returned by the last successful probe — populates the Model
-	// dropdown and lets a model pick update context/vision (like Settings).
-	let probedModels = $state<NormalizedModel[]>([]);
-	let probing = $state(false);
-	let probeError = $state<string | null>(null);
-	let probeNote = $state<string | null>(null);
-	// OpenRouter-specific override state. When modelSource is 'openrouter',
-	// the form shows a catalog-powered model picker instead of the generic
-	// probe flow. The catalog is fetched from OpenRouter's /v1/models (no
-	// Rust probe round-trip) and may reuse the cache from Settings.
-	let orCatalog = $state<OpenRouterModel[] | null>(null);
-	let orLoading = $state(false);
-	let orError = $state<string | null>(null);
+	// Where this job's model calls go, and how it behaves (any job type).
+	// JobModelFields owns the fields; this is their saved state.
+	let modelForm = $state<JobModelForm>(emptyModelForm());
+	// Bumped per load, so the model fields remount and drop the previous
+	// job's probe results.
+	let modelFormVersion = $state(0);
 	let loading = $state(false);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
@@ -173,14 +111,10 @@
 			steps: $state.snapshot(steps),
 			jobType,
 			typeConfig: $state.snapshot(typeConfig),
-			modelSource,
-			modelBaseUrl,
-			modelApiKey,
-			modelApiKeyId,
-			modelModelId,
-			modelContextSize,
-			modelVision,
-			advanced: currentModelAdvanced()
+			model: modelColumnsFromForm(modelForm),
+			// The columns above serialise `model_advanced`; the raw advanced
+			// shape also catches a change serialisation would normalise away.
+			advanced: modelAdvancedOf(modelForm)
 		});
 	}
 
@@ -210,8 +144,12 @@
 		baseline = formSignature();
 	}
 
+	// Tracks jobId only. Loading reads state as well as writing it (the model
+	// fields' remount counter), and a load that tracked what it reads would
+	// re-run itself forever.
 	$effect(() => {
-		loadIntoForm(jobId);
+		const id = jobId;
+		untrack(() => loadIntoForm(id));
 	});
 
 	async function loadIntoForm(id: number | 'new') {
@@ -225,19 +163,8 @@
 			jobType = 'research';
 			typeConfigStash = {};
 			typeConfig = getJobType('research')!.configDefaults();
-			modelSource = 'settings';
-			modelBaseUrl = '';
-			modelApiKey = '';
-			modelApiKeyId = null;
-			modelModelId = '';
-			modelContextSize = '';
-			modelVision = 'auto';
-			applyModelAdvanced(defaultModelAdvanced());
-			probedModels = [];
-			probeError = null;
-			probeNote = null;
-			orCatalog = null;
-			orError = null;
+			modelForm = emptyModelForm();
+			modelFormVersion++;
 			void captureBaseline();
 			return;
 		}
@@ -263,41 +190,8 @@
 			typeConfigStash = {};
 			typeConfig =
 				getJobType(job.job_type)?.configFromJob(job.type_config) ?? ({} as Record<string, unknown>);
-			modelBaseUrl = job.model_remote_base_url ?? '';
-			modelApiKey = job.model_remote_api_key ?? '';
-			modelApiKeyId = job.model_remote_api_key_id ?? null;
-			modelModelId = job.model_remote_model_id ?? '';
-			modelContextSize = job.model_remote_context_size ?? '';
-			modelVision =
-				job.model_remote_vision_supported == null
-					? 'auto'
-					: job.model_remote_vision_supported
-						? 'yes'
-						: 'no';
-			applyModelAdvanced(parseModelAdvanced(job.model_advanced));
-			// A STORED config is the owner's decision, whatever it is, and a
-			// later probe must not quietly move it. A job saved before this
-			// column existed stored nothing, so its 'profile' is the absence of
-			// a choice rather than a choice — leave it adoptable, or every
-			// pre-existing job would keep sending the app's sampling values
-			// over a server that publishes its own.
-			advSourceTouched = job.model_advanced !== null;
-			// No saved base URL → the job follows Settings; otherwise detect
-			// OpenRouter by URL so the right form renders on reload.
-			modelSource = !modelBaseUrl
-				? 'settings'
-				: isOpenRouterUrl(modelBaseUrl)
-					? 'openrouter'
-					: 'remote';
-			// Seed the OpenRouter catalog from the Settings cache so the picker
-			// has data immediately if the user already loaded models in Settings.
-			if (modelSource === 'openrouter') {
-				orCatalog = getSettings().inferenceBackend.openrouterCatalog ?? null;
-			}
-			probedModels = [];
-			probeError = null;
-			probeNote = null;
-			orError = null;
+			modelForm = modelFormFromColumns(job);
+			modelFormVersion++;
 		} finally {
 			loading = false;
 		}
@@ -317,266 +211,6 @@
 		} catch (e) {
 			console.error('Failed to pick directory:', e);
 		}
-	}
-
-	// Server URLs saved in Settings — the options for the URL dropdown. A job
-	// loaded with a URL no longer in Settings still shows it (union below) so
-	// editing doesn't silently drop it. OpenRouter URLs are hidden from the
-	// generic dropdown (they have a dedicated override type toggle above).
-	function isOpenRouterUrl(url: string): boolean {
-		try {
-			return new URL(url).hostname === 'openrouter.ai';
-		} catch {
-			return false;
-		}
-	}
-
-	// Include the active server even if it was never explicitly added to
-	// the saved list (legacy configs / typed-URL-without-Add) so this
-	// dropdown always agrees with what Settings displays.
-	const savedServerUrls = $derived.by(() => {
-		const inf = getSettings().inferenceBackend;
-		const saved = inf.remoteServerUrls ?? [];
-		return inf.remoteBaseUrl && !saved.includes(inf.remoteBaseUrl)
-			? [...saved, inf.remoteBaseUrl]
-			: saved;
-	});
-	const serverUrlOptions = $derived(
-		[...new Set([...savedServerUrls, ...(modelBaseUrl ? [modelBaseUrl] : [])])]
-			.filter(Boolean)
-			.filter((u) => !isOpenRouterUrl(u))
-	);
-	// Model dropdown options: the probed models, plus the currently-selected id
-	// so a saved job's model shows before you re-probe.
-	const modelIdOptions = $derived(
-		[
-			...new Set([...probedModels.map((m) => m.id), ...(modelModelId ? [modelModelId] : [])])
-		].filter(Boolean)
-	);
-
-	/** Picking a server URL invalidates the previously-probed model list. */
-	function onServerUrlChange(url: string) {
-		modelBaseUrl = url;
-		probedModels = [];
-		probeError = null;
-		probeNote = null;
-	}
-
-	// "Inherit" is only meaningful if you can see what it inherits.
-	const globalThinkingLabel = $derived(getSettings().thinkingEnabled ? 'on' : 'off');
-
-	/**
-	 * The tuned sampling family this job's model resolves to, or null when the
-	 * app has no card values for it. Resolved through the same function the
-	 * runner uses, so the editor cannot claim a tuning that won't be applied —
-	 * including the rule that local models always get the default family.
-	 */
-	const backendOverride = $derived(
-		modelSource !== 'settings' && modelBaseUrl.trim()
-			? {
-					baseUrl: modelBaseUrl.trim(),
-					modelId: modelModelId.trim() || undefined,
-					discovered: advDiscovered ?? undefined
-				}
-			: undefined
-	);
-	const samplingFamily = $derived(resolveBackendDescriptor(backendOverride).samplingFamily);
-
-	/**
-	 * The effort vocabulary for THIS job's backend, resolved through the same
-	 * descriptor the runner will use. Null means the model publishes none —
-	 * the control still shows (hiding it reads as a missing feature), falling
-	 * back to the known union so a job can carry a preference that applies if
-	 * its model is later pointed somewhere that understands it.
-	 */
-	const effortCaps = $derived(resolveBackendDescriptor(backendOverride).reasoningEffort);
-	const effortOptions = $derived.by(() => {
-		const levels = effortCaps?.levels ?? KNOWN_EFFORT_LEVELS;
-		return advEffort && !levels.includes(advEffort) ? [...levels, advEffort] : levels;
-	});
-	/** Whether this job's stored level actually reaches its model. */
-	const effortApplies = $derived(!advEffort || (effortCaps?.levels.includes(advEffort) ?? false));
-
-	// What 'App-tuned profile' will actually send — four genuinely different
-	// outcomes, described by a tested pure function rather than inline prose.
-	const profileExplanation = $derived(
-		describeSamplingProfile(samplingFamily, !!advDiscovered?.sampling)
-	);
-
-	/**
-	 * Warn when the reasoning control can't actually reach this server. The
-	 * probe distinguishes "no reasoning" from "reasoning we can't drive from
-	 * here" (a toggle other than chat_template_kwargs), and silently offering
-	 * a switch that does nothing is how the original bug went unnoticed for a
-	 * whole overnight run.
-	 */
-	const reasoningCapsNote = $derived.by(() => {
-		const caps = advDiscovered?.reasoning;
-		// A named mechanism with no vocabulary is its own state: the server told
-		// us effort exists but not what it takes, and guessing a level is a
-		// raised template exception rather than a degraded response.
-		if (caps?.supported && caps.toggle === 'reasoning_effort' && !effortCaps) {
-			return "This server reports a reasoning_effort control but doesn't say which levels it accepts, so effort can't be set from here.";
-		}
-		if (advReasoning === 'inherit') return null;
-		if (caps && caps.supported && caps.toggle !== 'chat_template_kwargs') {
-			return `This server reports its reasoning toggle as "${caps.toggle}", which this app can't set. The choice above will not reach the model — configure it server-side.`;
-		}
-		if (caps && !caps.supported) {
-			return 'The last probe reported that this model has no reasoning mode to toggle.';
-		}
-		return null;
-	});
-
-	/** Load a parsed `model_advanced` into the form's flat field state. */
-	function applyModelAdvanced(cfg: JobModelAdvanced) {
-		advReasoning = cfg.reasoning.mode;
-		advEffort = cfg.reasoning.effort;
-		advSamplingSource = cfg.sampling.source;
-		advDiscovered = cfg.discovered;
-		advSourceTouched = false;
-		const p = cfg.sampling.params;
-		advTemperature = p?.temperature ?? '';
-		advTopP = p?.top_p ?? '';
-		advTopK = p?.top_k ?? '';
-		advMinP = p?.min_p ?? '';
-		advPresencePenalty = p?.presence_penalty ?? '';
-	}
-
-	/** The form's advanced fields as the shape the column stores. */
-	function currentModelAdvanced(): JobModelAdvanced {
-		const n = (v: number | '') => (v === '' ? undefined : v);
-		return {
-			reasoning: { mode: advReasoning, effort: advEffort },
-			sampling: {
-				source: advSamplingSource,
-				params: {
-					temperature: n(advTemperature),
-					top_p: n(advTopP),
-					top_k: n(advTopK),
-					min_p: n(advMinP),
-					presence_penalty: n(advPresencePenalty)
-				}
-			},
-			discovered: advDiscovered
-		};
-	}
-
-	/**
-	 * Adopt what the probe reported about this model: context and vision as
-	 * before, plus its reasoning and sampling capabilities. The capabilities
-	 * are the point — without them the runner can only guess a remote model's
-	 * reasoning mechanism from its id, and guesses "none" for anything outside
-	 * the built-in Qwen list, so the job's reasoning toggle does nothing.
-	 */
-	function onModelChange(id: string) {
-		modelModelId = id;
-		const picked = probedModels.find((x) => x.id === id);
-		const caps = probedModelCaps(picked);
-		if (caps.contextSize !== null) modelContextSize = caps.contextSize;
-		if (caps.vision !== null) modelVision = caps.vision ? 'yes' : 'no';
-		// Caps are per-model, not per-server, so re-picking must replace them
-		// rather than leave the previous model's behind.
-		advDiscovered = picked
-			? { reasoning: picked.reasoning ?? null, sampling: picked.sampling ?? null }
-			: null;
-		if (!advSourceTouched) advSamplingSource = defaultSourceForCaps(advDiscovered);
-	}
-
-	/**
-	 * Hit the override server to list its models and detect context/vision. The
-	 * point of the override is using a different — usually larger-context —
-	 * remote model, and the user shouldn't have to know the exact numbers.
-	 */
-	async function probeModel() {
-		if (!modelBaseUrl.trim()) {
-			probeError = 'Pick or enter a server URL first.';
-			return;
-		}
-		probing = true;
-		probeError = null;
-		probeNote = null;
-		try {
-			const result = await probeInferenceServer(
-				modelBaseUrl.trim(),
-				modelApiKeyId,
-				modelApiKey.trim()
-			);
-			modelBaseUrl = result.base_url;
-			probedModels = result.models;
-			const pick = pickProbedModel(result.models, modelModelId);
-			if (pick) onModelChange(pick.id);
-			// Fall back to the server-level context if the picked model didn't
-			// carry its own (llama-server reports one n_ctx for all models).
-			if (
-				!(typeof modelContextSize === 'number' && modelContextSize > 0) &&
-				typeof result.default_context_size === 'number' &&
-				result.default_context_size > 0
-			) {
-				modelContextSize = result.default_context_size;
-			}
-			const n = result.models.length;
-			probeNote =
-				`Found ${n} model${n === 1 ? '' : 's'}` +
-				(typeof modelContextSize === 'number'
-					? `, ${modelContextSize.toLocaleString()}-token context.`
-					: '. No context size reported — enter it manually.');
-		} catch (e) {
-			probeError = String(e);
-		} finally {
-			probing = false;
-		}
-	}
-
-	/**
-	 * Switch where the job's model calls go. OpenRouter pins the base URL and
-	 * seeds the catalog from the Settings cache; leaving it clears that state
-	 * so the generic probe flow takes over. Selecting 'settings' keeps the
-	 * fields as-is — they're simply not persisted (save() nulls them).
-	 */
-	function setModelSource(source: ModelSource) {
-		if (source === modelSource) return;
-		if (source === 'openrouter') {
-			modelBaseUrl = OPENROUTER_BASE_URL;
-			orCatalog = getSettings().inferenceBackend.openrouterCatalog ?? null;
-			orError = null;
-			probedModels = [];
-			probeError = null;
-			probeNote = null;
-		} else if (modelSource === 'openrouter') {
-			if (modelBaseUrl === OPENROUTER_BASE_URL) modelBaseUrl = '';
-			orCatalog = null;
-			orError = null;
-		}
-		modelSource = source;
-	}
-
-	/** Fetch the OpenRouter catalog directly (no Rust probe round-trip). */
-	async function loadOpenRouterModels() {
-		orLoading = true;
-		orError = null;
-		try {
-			const models = await fetchOpenRouterCatalog();
-			orCatalog = models;
-			const pick = pickOpenRouterModel(models, modelModelId);
-			// Only re-adopt when the pick actually changed — a valid current
-			// selection keeps the user's manual context/vision edits.
-			if (pick !== modelModelId) onOpenRouterModelSelect(pick);
-		} catch (e) {
-			orError = String(e);
-		} finally {
-			orLoading = false;
-		}
-	}
-
-	/** Selecting an OpenRouter model: update context + vision from the card. */
-	function onOpenRouterModelSelect(id: string) {
-		modelModelId = id;
-		const m = orCatalog?.find((x) => x.id === id);
-		if (!m) return;
-		const caps = openRouterModelCaps(m);
-		if (caps.contextSize !== null) modelContextSize = caps.contextSize;
-		modelVision = caps.vision ? 'yes' : 'no';
 	}
 
 	function validate(): string | null {
@@ -616,7 +250,6 @@
 			// a schedule is treated as a reset, which matches the user's
 			// mental model — "every 30 minutes starting now" rather than
 			// "the next fire was scheduled at X, keep that".
-			const overrideActive = modelSource !== 'settings';
 			const input: JobInput = {
 				name: name.trim(),
 				description: description.trim() ? description.trim() : null,
@@ -632,27 +265,9 @@
 				// The type's own knobs, serialized by its definition — Rust
 				// stores this verbatim.
 				type_config: typeDef.configToJson($state.snapshot(typeConfig)),
-				// Per-job remote model override. Only persisted when a specific
-				// source is selected AND a base URL is set — otherwise the job
-				// follows the Settings backend (all-null columns).
-				model_remote_base_url: overrideActive && modelBaseUrl.trim() ? modelBaseUrl.trim() : null,
-				model_remote_api_key:
-					overrideActive && modelBaseUrl.trim() && modelApiKey.trim() ? modelApiKey.trim() : null,
-				model_remote_api_key_id:
-					overrideActive && modelBaseUrl.trim() && modelApiKeyId ? modelApiKeyId : null,
-				model_remote_model_id:
-					overrideActive && modelBaseUrl.trim() && modelModelId.trim() ? modelModelId.trim() : null,
-				model_remote_context_size:
-					overrideActive && modelBaseUrl.trim() && typeof modelContextSize === 'number'
-						? modelContextSize
-						: null,
-				model_remote_vision_supported:
-					overrideActive && modelBaseUrl.trim() && modelVision !== 'auto'
-						? modelVision === 'yes'
-						: null,
-				// Not gated on `overrideActive`: the reasoning override applies
-				// to a job running on the Settings backend too.
-				model_advanced: serializeModelAdvanced(currentModelAdvanced())
+				// The model columns: remote ones only for a specific source with
+				// a URL; `model_advanced` either way. See jobModelForm.
+				...modelColumnsFromForm($state.snapshot(modelForm))
 			};
 			const stepsToSave: JobStepInput[] = (typeDef.persistSteps ?? defaultPersistSteps)(
 				$state.snapshot(steps)
@@ -740,11 +355,7 @@
 			...(schedulable ? [scheduleSummary(schedule)] : [])
 		].join(' · ')
 	);
-	const modelSummary = $derived(
-		modelSource === 'settings'
-			? 'Settings default'
-			: `${modelSource === 'openrouter' ? 'OpenRouter' : 'Remote'} · ${modelModelId.trim() || 'no model picked'}`
-	);
+	const modelSummary = $derived(modelFormSummary(modelForm));
 	const typeSummary = $derived(
 		jobType === 'research' ? `${steps.length} step${steps.length === 1 ? '' : 's'}` : ''
 	);
@@ -908,272 +519,9 @@
 				{#if openSections.model}
 					<div class="collapse-body">
 						<div class="field">
-							<ModeSelector
-								name="job-model-source"
-								value={modelSource}
-								onchange={setModelSource}
-								options={[
-									{
-										value: 'settings',
-										title: 'Settings model (default)',
-										description: 'Uses whatever backend Settings has active (local or remote).'
-									},
-									{
-										value: 'remote',
-										title: 'Remote server',
-										description: "A specific OpenAI-compatible server for this job's runs."
-									},
-									{
-										value: 'openrouter',
-										title: 'OpenRouter (cloud)',
-										description: 'A specific OpenRouter model — prompts leave your device.'
-									}
-								]}
-							/>
-							{#if modelSource !== 'settings'}
-								<div class="model-fields">
-									{#if modelSource === 'openrouter'}
-										<div class="model-row">
-											<label class="model-field grow">
-												<span class="sublabel">API key</span>
-												<ApiKeyPicker
-													selectedId={modelApiKeyId}
-													onSelect={(id) => {
-														modelApiKeyId = id;
-													}}
-												/>
-											</label>
-											<button
-												type="button"
-												class="btn probe-btn"
-												disabled={orLoading}
-												title="Fetch the OpenRouter model catalog."
-												onclick={loadOpenRouterModels}
-												>{orLoading ? 'Loading…' : 'Load models'}</button
-											>
-										</div>
-										{#if orCatalog}
-											<div class="model-row">
-												<label class="model-field grow">
-													<span class="sublabel">Model</span>
-													<OpenRouterModelPicker
-														models={orCatalog}
-														selectedId={modelModelId}
-														onSelect={onOpenRouterModelSelect}
-														toolsOnly={false}
-													/>
-												</label>
-											</div>
-										{/if}
-										{#if orError}
-											<span class="probe-status error-text">{orError}</span>
-										{/if}
-									{:else}
-										<div class="model-row">
-											<label class="model-field grow">
-												<span class="sublabel">Server URL</span>
-												<select
-													value={modelBaseUrl}
-													onchange={(e) => onServerUrlChange(e.currentTarget.value)}
-												>
-													{#if serverUrlOptions.length === 0}
-														<option value="" disabled selected>
-															No servers saved — add one in Settings
-														</option>
-													{:else}
-														<option value="" disabled>Select a server…</option>
-														{#each serverUrlOptions as url (url)}
-															<option value={url}>{url}</option>
-														{/each}
-													{/if}
-												</select>
-											</label>
-											<button
-												type="button"
-												class="btn probe-btn"
-												disabled={probing || !modelBaseUrl}
-												title="Connect to the selected server to list its models and detect context size + vision."
-												onclick={probeModel}>{probing ? 'Probing…' : 'Probe'}</button
-											>
-										</div>
-										<div class="model-row">
-											<label class="model-field grow">
-												<span class="sublabel">Model</span>
-												<select
-													value={modelModelId}
-													disabled={modelIdOptions.length === 0}
-													onchange={(e) => onModelChange(e.currentTarget.value)}
-												>
-													{#if modelIdOptions.length === 0}
-														<option value="" disabled selected
-															>Probe the server to list models</option
-														>
-													{:else}
-														{#each modelIdOptions as id (id)}
-															<option value={id}>{id}</option>
-														{/each}
-													{/if}
-												</select>
-											</label>
-											<label class="model-field grow">
-												<span class="sublabel"
-													>API key <span class="optional">(optional)</span></span
-												>
-												<ApiKeyPicker
-													selectedId={modelApiKeyId}
-													onSelect={(id) => {
-														modelApiKeyId = id;
-													}}
-												/>
-											</label>
-										</div>
-										{#if probeError}
-											<span class="probe-status error-text">Probe failed: {probeError}</span>
-										{:else if probeNote}
-											<span class="probe-status">{probeNote}</span>
-										{/if}
-									{/if}
-
-									<div class="model-row">
-										<label
-											class="model-field grow"
-											title="Context window of the remote model, in tokens. Used for prompt-budget and compaction math. Remote models are often far larger than the local default — Probe auto-fills this."
-										>
-											<span class="sublabel">Context size (tokens)</span>
-											<input
-												type="number"
-												min="1"
-												step="1024"
-												bind:value={modelContextSize}
-												placeholder="e.g. 131072 — blank = use Settings size"
-											/>
-										</label>
-										<label
-											class="model-field"
-											title="Whether this model accepts image input. 'From probe / Settings' inherits the global capability; override it if the probe can't tell."
-										>
-											<span class="sublabel">Vision</span>
-											<select bind:value={modelVision}>
-												<option value="auto">From probe / Settings</option>
-												<option value="yes">Supported</option>
-												<option value="no">Not supported</option>
-											</select>
-										</label>
-									</div>
-								</div>
-							{/if}
-
-							<!-- Outside the override-only fields on purpose: a job
-							     running on the Settings backend still wants its own
-							     reasoning choice. -->
-							<details class="advanced">
-								<summary>Advanced model behavior</summary>
-								<div class="advanced-body">
-									<label class="model-field">
-										<span class="sublabel">Reasoning</span>
-										<select bind:value={advReasoning}>
-											<option value="inherit"
-												>Inherit global setting (currently {globalThinkingLabel})</option
-											>
-											<option value="on">Always on</option>
-											<option value="off">Always off</option>
-										</select>
-										<span class="adv-hint">
-											Reasoning models can spend most of a run thinking. Forcing it off here affects
-											this job only.
-										</span>
-									</label>
-
-									<label class="model-field">
-										<span class="sublabel">Reasoning effort</span>
-										<select
-											value={advEffort ?? ''}
-											onchange={(e) => (advEffort = e.currentTarget.value || null)}
-											disabled={advReasoning === 'off'}
-										>
-											<option value=""
-												>Inherit global setting{effortCaps?.modelDefault
-													? ` (model default: ${effortCaps.modelDefault})`
-													: ''}</option
-											>
-											{#each effortOptions as level (level)}
-												<option value={level}>{level}</option>
-											{/each}
-										</select>
-										<span class="adv-hint">
-											How hard the model thinks when reasoning is on. Lower levels tell it up front
-											to keep the chain short, rather than cutting it off part-way.
-											{#if !effortCaps}
-												This job's model publishes no effort levels, so the choice is stored but not
-												sent to it.
-											{:else if !effortApplies}
-												This job's model accepts only {effortCaps.levels.join(', ')}, so it will use
-												its own default until you pick one of those.
-											{/if}
-										</span>
-									</label>
-
-									{#if reasoningCapsNote}
-										<p class="adv-note">{reasoningCapsNote}</p>
-									{/if}
-
-									<label class="model-field">
-										<span class="sublabel">Sampling parameters</span>
-										<select
-											value={advSamplingSource}
-											onchange={(e) => {
-												advSamplingSource = e.currentTarget.value as SamplingSource;
-												advSourceTouched = true;
-											}}
-										>
-											<option value="server">Server defaults — send nothing</option>
-											<option value="profile">App-tuned profile</option>
-											<option value="custom">Custom</option>
-										</select>
-										<span class="adv-hint">
-											{#if advSamplingSource === 'server'}
-												No sampling fields are sent, so whatever the server is configured with
-												stands.
-											{:else if advSamplingSource === 'profile'}
-												{profileExplanation}
-											{:else}
-												Exactly the values below. Leave a field blank to omit it.
-											{/if}
-										</span>
-									</label>
-
-									{#if advSamplingSource === 'custom'}
-										<div class="model-row wrap">
-											<label class="model-field">
-												<span class="sublabel">Temperature</span>
-												<input type="number" step="0.05" min="0" bind:value={advTemperature} />
-											</label>
-											<label class="model-field">
-												<span class="sublabel">top_p</span>
-												<input type="number" step="0.05" min="0" max="1" bind:value={advTopP} />
-											</label>
-											<label class="model-field">
-												<span class="sublabel">top_k</span>
-												<input type="number" step="1" min="0" bind:value={advTopK} />
-											</label>
-											<label class="model-field">
-												<span class="sublabel">min_p</span>
-												<input type="number" step="0.01" min="0" max="1" bind:value={advMinP} />
-											</label>
-											<label class="model-field">
-												<span class="sublabel">presence_penalty</span>
-												<input type="number" step="0.1" bind:value={advPresencePenalty} />
-											</label>
-										</div>
-										{#if modelSource === 'openrouter'}
-											<p class="adv-note">
-												OpenRouter ignores top_k and min_p — they are dropped from the request
-												rather than risking a 400 from a stricter upstream provider.
-											</p>
-										{/if}
-									{/if}
-								</div>
-							</details>
+							{#key modelFormVersion}
+								<JobModelFields bind:form={modelForm} name="job-model-source" />
+							{/key}
 						</div>
 					</div>
 				{/if}
@@ -1353,90 +701,6 @@
 		font-weight: normal;
 		font-size: 0.82rem;
 		color: var(--accent);
-	}
-
-	.model-fields {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		margin-top: 8px;
-	}
-
-	.model-row {
-		display: flex;
-		gap: 8px;
-		align-items: flex-end;
-	}
-
-	.model-field {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.model-field.grow {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.model-row.wrap {
-		flex-wrap: wrap;
-	}
-
-	.model-row.wrap .model-field {
-		flex: 1 1 120px;
-		min-width: 0;
-	}
-
-	.advanced {
-		margin-top: 10px;
-		border-top: 1px solid var(--border);
-		padding-top: 8px;
-	}
-
-	.advanced summary {
-		cursor: pointer;
-		user-select: none;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-	}
-
-	.advanced-body {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-		margin-top: 8px;
-	}
-
-	.adv-hint {
-		font-size: 0.72rem;
-		color: var(--text-secondary);
-		font-style: italic;
-	}
-
-	.adv-note {
-		margin: 0;
-		padding: 6px 8px;
-		border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
-		background: color-mix(in srgb, var(--warning) 12%, transparent);
-		border-radius: 4px;
-		font-size: 0.74rem;
-		line-height: 1.35;
-	}
-
-	.sublabel {
-		font-size: 0.72rem;
-		color: var(--text-secondary);
-	}
-
-	.probe-btn {
-		flex-shrink: 0;
-		white-space: nowrap;
-	}
-
-	.probe-status {
-		font-size: 0.74rem;
-		color: var(--text-secondary);
 	}
 
 	.workdir-row {
