@@ -4,8 +4,9 @@
 //! `AppSettings.integrations.email.accounts` array (localStorage /
 //! JSON blob — same trust level as other credential-bearing settings).
 //! The backend receives them as command arguments whenever it needs
-//! to open a connection. There is no server-side state: each call
-//! validates + connects fresh.
+//! to open a connection. The only backend state is a logged-in IMAP
+//! session kept per account for a couple of minutes (`imap_client`),
+//! dropped when the account is edited or its login changes.
 //!
 //! Design notes:
 //!

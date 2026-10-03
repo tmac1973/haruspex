@@ -35,26 +35,6 @@ pub fn truncate_with_note(s: &str, max_bytes: usize) -> Option<String> {
     ))
 }
 
-/// Collapse every run of whitespace in `chars` to a single space and trim the
-/// ends; all other characters pass through unchanged. Useful for flattening
-/// tag-boundary or layout whitespace into inline text.
-pub fn collapse_whitespace(chars: impl Iterator<Item = char>) -> String {
-    let mut out = String::new();
-    let mut last_was_space = true;
-    for ch in chars {
-        if ch.is_whitespace() {
-            if !last_was_space {
-                out.push(' ');
-                last_was_space = true;
-            }
-        } else {
-            out.push(ch);
-            last_was_space = false;
-        }
-    }
-    out.trim().to_string()
-}
-
 /// If `s` has more than `max_chars` characters, keep the first `max_chars` and
 /// append `marker`; otherwise return `s` unchanged. Truncates in place (reusing
 /// the allocation) and stops scanning once past the cut, so a huge string isn't

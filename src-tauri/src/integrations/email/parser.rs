@@ -12,8 +12,11 @@
 //!
 //! Both types round-trip cleanly through serde into the frontend.
 
-use mail_parser::{Address, MessageParser, MimeHeaders, PartType};
+use mail_parser::{Address, Message, MessageParser, MimeHeaders, PartType};
 use serde::{Deserialize, Serialize};
+
+use super::text::html_to_text;
+pub use super::text::strip_quoted_replies;
 
 /// Snippet length — the first ~N characters of the plaintext body,
 /// included in `EmailListing` so the model can decide which messages
@@ -42,18 +45,16 @@ pub struct EmailListing {
     /// only one account enabled, the model can ignore this field.
     pub account_label: String,
 
-    /// IMAP UID for this message within its INBOX. We store it as a
-    /// decimal string because UIDs are u32 but some providers treat
-    /// them loosely and serde-through-JSON round-trip is cleaner as
-    /// a string anyway.
+    /// Our handle for the message: `"<uidvalidity>:<uid>"` in its INBOX.
+    /// Not the RFC Message-ID, which is `rfc_message_id` on the full view.
     pub message_id: String,
 
     pub subject: String,
     pub from_name: String,
     pub from_email: String,
 
-    /// RFC 3339 / ISO 8601 date string. Empty if the message had no
-    /// Date header or it failed to parse.
+    /// RFC 3339 date in UTC, so listings from several accounts sort as
+    /// strings. Empty if the message had no usable date.
     pub date: String,
 
     /// First ~240 chars of the plaintext body, useful for the model
@@ -64,6 +65,10 @@ pub struct EmailListing {
     /// expose the attachments themselves in Phase 10.1; the flag is
     /// here so the model knows there's "more" it could ask about.
     pub has_attachments: bool,
+
+    /// Seconds since the epoch, for sorting and the `hours` filter.
+    #[serde(skip)]
+    pub timestamp: Option<i64>,
 }
 
 /// Full message view. Returned by `email_read_full` and consumed
@@ -78,9 +83,67 @@ pub struct NormalizedMessage {
     pub from_name: String,
     pub from_email: String,
     pub to: Vec<String>,
+    pub cc: Vec<String>,
+    /// Where a reply goes, when the sender asked for somewhere else.
+    pub reply_to: String,
     pub date: String,
     pub body: String,
     pub has_attachments: bool,
+    /// The RFC 5322 Message-ID, without angle brackets: what a reply's
+    /// In-Reply-To names.
+    pub rfc_message_id: String,
+    pub in_reply_to: String,
+    pub references: Vec<String>,
+}
+
+/// The headers both views are built from.
+struct Headers {
+    subject: String,
+    from_name: String,
+    from_email: String,
+    to: Vec<String>,
+    cc: Vec<String>,
+    reply_to: String,
+    date: String,
+    timestamp: Option<i64>,
+    rfc_message_id: String,
+    in_reply_to: String,
+    references: Vec<String>,
+}
+
+fn headers_of(parsed: &Message<'_>) -> Headers {
+    let (from_name, from_email) = parsed.from().map(extract_from).unwrap_or_default();
+    let timestamp = parsed.date().map(|d| d.to_timestamp());
+    let ids = |v: &mail_parser::HeaderValue<'_>| -> Vec<String> {
+        v.as_text_list()
+            .map(|l| l.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    };
+    Headers {
+        subject: clean(parsed.subject().unwrap_or("")),
+        from_name: clean(&from_name),
+        from_email: clean(&from_email),
+        to: parsed.to().map(extract_address_list).unwrap_or_default(),
+        cc: parsed.cc().map(extract_address_list).unwrap_or_default(),
+        reply_to: parsed
+            .reply_to()
+            .map(extract_from)
+            .map(|(_, e)| e)
+            .unwrap_or_default(),
+        date: timestamp.map(utc_rfc3339).unwrap_or_default(),
+        timestamp,
+        rfc_message_id: parsed.message_id().unwrap_or("").to_string(),
+        in_reply_to: ids(parsed.in_reply_to())
+            .into_iter()
+            .next()
+            .unwrap_or_default(),
+        references: ids(parsed.references()),
+    }
+}
+
+/// A timestamp as an RFC 3339 date in UTC.
+pub fn utc_rfc3339(ts: i64) -> String {
+    mail_parser::DateTime::from_timestamp(ts).to_rfc3339()
 }
 
 /// Pull a "Name" + "addr@host" pair out of a mail-parser `Address`.
@@ -116,7 +179,7 @@ fn make_snippet(body: &str) -> String {
     // Streamed collapse + cap: stop as soon as SNIPPET_LEN chars are kept (with
     // an ellipsis if there was more), so a huge body isn't fully scanned just to
     // build a 240-char preview. This interleaves the cap into the collapse, so
-    // it can't share collapse_whitespace the way html_to_plain does.
+    // it can't share a separate collapse pass.
     let mut out = String::with_capacity(SNIPPET_LEN + 1);
     let mut last_was_space = true;
     for ch in body.chars() {
@@ -137,53 +200,6 @@ fn make_snippet(body: &str) -> String {
     out.trim().to_string()
 }
 
-/// Very small HTML → plaintext fallback used only when a message has
-/// no `text/plain` alternative. mail-parser gives us the decoded HTML
-/// as a string; we strip tags with the `scraper` crate since it's
-/// already a dependency.
-fn html_to_plain(html: &str) -> String {
-    use scraper::Html;
-    let doc = Html::parse_document(html);
-    // scraper's root element text() iterator yields plain text in
-    // document order, skipping tags but preserving their textual
-    // content. This is "good enough" for an email body.
-    let root = doc.root_element();
-    let text: String = root.text().collect::<Vec<_>>().join(" ");
-    // Collapse runs of whitespace introduced by tag boundaries.
-    crate::text_util::collapse_whitespace(text.chars())
-}
-
-/// Best-effort quoted-reply stripper. Drops everything at or after a
-/// line that matches common quote markers ("On … wrote:", a run of `>`
-/// lines, etc.). Used before we hand the body to the summarizer
-/// sub-agent — quoted chains add tokens without adding information.
-pub fn strip_quoted_replies(body: &str) -> String {
-    let mut out_lines: Vec<&str> = Vec::new();
-    for line in body.lines() {
-        let trimmed = line.trim_start();
-        // "On Tue, Apr 7, 2026 at 10:14 AM Foo <foo@bar> wrote:"
-        if trimmed.starts_with("On ") && trimmed.contains("wrote:") {
-            break;
-        }
-        // Classic `>` quoted lines — one or two in a row is usually
-        // a short quote, but a run of them typically marks the start
-        // of a full quoted reply. Cut once we see the first one.
-        if trimmed.starts_with('>') {
-            break;
-        }
-        // Outlook-style separator
-        if trimmed.starts_with("-----Original Message-----") {
-            break;
-        }
-        // Gmail-style "Forwarded message" divider
-        if trimmed.starts_with("---------- Forwarded message") {
-            break;
-        }
-        out_lines.push(line);
-    }
-    out_lines.join("\n").trim().to_string()
-}
-
 /// Core conversion: bytes from a FETCH BODY.PEEK[] call → a
 /// `NormalizedMessage`. The caller supplies `account_id`,
 /// `account_label`, and `message_id` because those aren't part of
@@ -198,37 +214,13 @@ pub fn parse_rfc5322(
         .parse(bytes)
         .ok_or_else(|| "mail-parser rejected the message bytes".to_string())?;
 
-    let subject = parsed.subject().unwrap_or("").to_string();
-
-    let (from_name, from_email) = match parsed.from() {
-        Some(h) => extract_from(h),
-        None => (String::new(), String::new()),
-    };
-
-    let to = parsed.to().map(extract_address_list).unwrap_or_default();
-
-    // mail-parser exposes Date as an Option<DateTime>. It's already
-    // structured, so format it as a sortable ISO-8601-ish string.
-    let date = parsed.date().map(|d| d.to_rfc3339()).unwrap_or_default();
-
-    // Prefer the plain-text body part; fall back to HTML → plain.
-    let mut body = String::new();
-    if let Some(text) = parsed.body_text(0) {
-        body = clean(&text);
-    }
+    // Prefer the plain-text body part; fall back to HTML → text.
+    let mut body = parsed.body_text(0).map(|t| clean(&t)).unwrap_or_default();
     if body.is_empty() {
         if let Some(html) = parsed.body_html(0) {
-            body = html_to_plain(&html);
+            body = html_to_text(&html);
         }
     }
-
-    // Truncate absurdly long bodies so a single message can't blow
-    // the sub-agent's input budget.
-    body = crate::text_util::truncate_chars(
-        body,
-        MAX_BODY_CHARS,
-        "\n\n[truncated — message body exceeded the ingest cap]",
-    );
 
     // Attachment detection: any non-text part counts.
     let has_attachments = parsed.parts.iter().any(|p| {
@@ -238,38 +230,101 @@ pub fn parse_rfc5322(
                 .unwrap_or(false)
     });
 
-    Ok(NormalizedMessage {
+    Ok(message_from(
+        headers_of(&parsed),
+        body,
+        has_attachments,
         account_id,
         account_label,
         message_id,
-        subject: clean(&subject),
-        from_name: clean(&from_name),
-        from_email: clean(&from_email),
-        to,
-        date,
-        body,
-        has_attachments,
-    })
+    ))
 }
 
-/// Convenience: parse once and produce the cheap listing view.
-pub fn parse_to_listing(
-    bytes: &[u8],
+/// A full view from the header block alone and a body read separately: a
+/// message too large to download whole.
+pub fn parse_with_body(
+    header: &[u8],
+    body: String,
+    has_attachments: bool,
+    account_id: String,
+    account_label: String,
+    message_id: String,
+) -> Result<NormalizedMessage, String> {
+    let parsed = MessageParser::default()
+        .parse_headers(header)
+        .ok_or_else(|| "mail-parser rejected the message headers".to_string())?;
+    Ok(message_from(
+        headers_of(&parsed),
+        body,
+        has_attachments,
+        account_id,
+        account_label,
+        message_id,
+    ))
+}
+
+fn message_from(
+    h: Headers,
+    body: String,
+    has_attachments: bool,
+    account_id: String,
+    account_label: String,
+    message_id: String,
+) -> NormalizedMessage {
+    // Truncate absurdly long bodies so a single message can't blow
+    // the sub-agent's input budget.
+    let body = crate::text_util::truncate_chars(
+        body,
+        MAX_BODY_CHARS,
+        "\n\n[truncated — message body exceeded the ingest cap]",
+    );
+    NormalizedMessage {
+        account_id,
+        account_label,
+        message_id,
+        subject: h.subject,
+        from_name: h.from_name,
+        from_email: h.from_email,
+        to: h.to,
+        cc: h.cc,
+        reply_to: h.reply_to,
+        date: h.date,
+        body,
+        has_attachments,
+        rfc_message_id: h.rfc_message_id,
+        in_reply_to: h.in_reply_to,
+        references: h.references,
+    }
+}
+
+/// The cheap listing view, from a message's header block and the start of
+/// its text. `fallback_ts` (the server's INTERNALDATE) dates a message whose
+/// Date header is missing or unreadable.
+pub fn listing_from_header(
+    header: &[u8],
+    preview: &str,
+    has_attachments: bool,
+    fallback_ts: Option<i64>,
     account_id: String,
     account_label: String,
     message_id: String,
 ) -> Result<EmailListing, String> {
-    let msg = parse_rfc5322(bytes, account_id, account_label, message_id)?;
+    let parsed = MessageParser::default()
+        .parse_headers(header)
+        .ok_or_else(|| "mail-parser rejected the message headers".to_string())?;
+    let h = headers_of(&parsed);
+    let timestamp = h.timestamp.or(fallback_ts);
     Ok(EmailListing {
-        account_id: msg.account_id,
-        account_label: msg.account_label,
-        message_id: msg.message_id,
-        subject: msg.subject,
-        from_name: msg.from_name,
-        from_email: msg.from_email,
-        date: msg.date,
-        snippet: make_snippet(&msg.body),
-        has_attachments: msg.has_attachments,
+        account_id,
+        account_label,
+        message_id,
+        subject: h.subject,
+        from_name: h.from_name,
+        from_email: h.from_email,
+        date: timestamp.map(utc_rfc3339).unwrap_or_default(),
+        snippet: make_snippet(preview),
+        has_attachments,
+        timestamp,
     })
 }
 
@@ -325,18 +380,34 @@ On Tue, Apr 7, 2026 at 10:14 AM Bob <bob@example.com> wrote:\r\n\
     }
 
     #[test]
-    fn strips_quoted_reply_tail() {
-        let stripped =
-            strip_quoted_replies("Sure, works for me.\n\nOn Tue, Apr 7 wrote:\n> are you free?");
-        assert_eq!(stripped, "Sure, works for me.");
-    }
-
-    #[test]
     fn strips_quote_in_parsed_message() {
         let msg = parse_rfc5322(SAMPLE_QUOTED, "acc".into(), "label".into(), "9".into()).unwrap();
         let body = strip_quoted_replies(&msg.body);
         assert!(body.contains("Sure, works for me"));
         assert!(!body.contains("are you free"));
+    }
+
+    #[test]
+    fn reads_the_headers_a_reply_needs() {
+        let raw = b"From: Alice <alice@example.com>\r\n\
+To: bob@example.com\r\n\
+Cc: Carol <carol@example.com>, dave@example.com\r\n\
+Reply-To: Team <team@example.com>\r\n\
+Subject: Re: Plan\r\n\
+Date: Tue, 7 Apr 2026 12:14:00 +0200\r\n\
+Message-ID: <m3@example.com>\r\n\
+In-Reply-To: <m2@example.com>\r\n\
+References: <m1@example.com> <m2@example.com>\r\n\
+\r\n\
+Fine.\r\n";
+        let msg = parse_rfc5322(raw, "a".into(), "l".into(), "7:1".into()).unwrap();
+        assert_eq!(msg.cc, vec!["carol@example.com", "dave@example.com"]);
+        assert_eq!(msg.reply_to, "team@example.com");
+        assert_eq!(msg.rfc_message_id, "m3@example.com");
+        assert_eq!(msg.in_reply_to, "m2@example.com");
+        assert_eq!(msg.references, vec!["m1@example.com", "m2@example.com"]);
+        // In UTC, so listings from several accounts sort as strings.
+        assert_eq!(msg.date, "2026-04-07T10:14:00Z");
     }
 
     #[test]
@@ -350,11 +421,23 @@ On Tue, Apr 7, 2026 at 10:14 AM Bob <bob@example.com> wrote:\r\n\
     }
 
     #[test]
-    fn parse_to_listing_populates_snippet() {
-        let listing =
-            parse_to_listing(SAMPLE_PLAIN, "acc".into(), "Work".into(), "42".into()).unwrap();
-        assert_eq!(listing.account_label, "Work");
-        assert!(listing.snippet.contains("simple plaintext"));
+    fn a_listing_comes_from_the_header_and_a_preview() {
+        let header = b"From: Alice Example <alice@example.com>\r\nSubject: Hello\r\n\r\n";
+        let listing = listing_from_header(
+            header,
+            "First line\n\nsecond",
+            true,
+            Some(1_712_793_600),
+            "acc".into(),
+            "Work".into(),
+            "7:42".into(),
+        )
+        .unwrap();
+        assert_eq!(listing.subject, "Hello");
         assert_eq!(listing.from_email, "alice@example.com");
+        assert_eq!(listing.snippet, "First line second");
+        // No Date header: the server's INTERNALDATE stands in.
+        assert_eq!(listing.timestamp, Some(1_712_793_600));
+        assert_eq!(listing.date, "2024-04-11T00:00:00Z");
     }
 }

@@ -9,6 +9,10 @@ import { toolResult, toolError } from './types';
 
 const EMAIL_SUMMARY_MAX_TOKENS = 400;
 
+/** Listings when the model names no number; the Rust default is the same. */
+const DEFAULT_MAX_RESULTS = 25;
+
+// Hand-written: the Rust structs are serde, not ts-exported.
 interface EmailListing {
 	accountId: string;
 	accountLabel: string;
@@ -29,9 +33,14 @@ interface NormalizedEmailMessage {
 	fromName: string;
 	fromEmail: string;
 	to: string[];
+	cc: string[];
+	replyTo: string;
 	date: string;
 	body: string;
 	hasAttachments: boolean;
+	rfcMessageId: string;
+	inReplyTo: string;
+	references: string[];
 }
 
 interface EmailSummarizerInput {
@@ -58,6 +67,26 @@ function resolveEmailAccounts(selector?: string): EmailAccount[] {
 	const byLabel = all.filter((a) => a.label.trim().toLowerCase() === needle);
 	if (byLabel.length > 0) return byLabel;
 	return all.filter((a) => a.emailAddress.trim().toLowerCase() === needle);
+}
+
+/**
+ * Invoke an email command under a fresh call id, and cancel it on the Rust
+ * side when the turn is aborted: a stalled server otherwise holds the call
+ * (and the IMAP session) until its own time limit.
+ */
+async function emailCall<T>(
+	command: string,
+	args: Record<string, unknown>,
+	signal?: AbortSignal
+): Promise<T> {
+	const callId = crypto.randomUUID();
+	const cancel = () => void invoke('email_cancel', { callId }).catch(() => {});
+	signal?.addEventListener('abort', cancel, { once: true });
+	try {
+		return await invoke<T>(command, { ...args, callId });
+	} finally {
+		signal?.removeEventListener('abort', cancel);
+	}
 }
 
 // --- Registration ---
@@ -109,7 +138,7 @@ registerTool({
 		}
 	},
 	displayLabel: () => 'email',
-	async execute(args) {
+	async execute(args, ctx) {
 		const accountId = args.account_id as string | undefined;
 		const accounts = resolveEmailAccounts(accountId);
 		if (accounts.length === 0) {
@@ -122,40 +151,38 @@ registerTool({
 			);
 		}
 
-		const all: EmailListing[] = [];
-		for (const account of accounts) {
-			try {
-				const listings = await invoke<EmailListing[]>('email_list_recent', {
-					account,
-					hours: (args.hours as number | undefined) ?? null,
-					sinceDate: (args.since_date as string | undefined) ?? null,
-					from: (args.from as string | undefined) ?? null,
-					subjectContains: (args.subject_contains as string | undefined) ?? null,
-					maxResults: (args.max_results as number | undefined) ?? null
-				});
-				all.push(...listings);
-			} catch (e) {
-				all.push({
-					accountId: account.id,
-					accountLabel: account.label,
-					messageId: `error-${account.id}`,
-					subject: `[error fetching ${account.label}]`,
-					fromName: '',
-					fromEmail: '',
-					date: '',
-					snippet: String(e),
-					hasAttachments: false
-				});
-			}
-		}
+		// Every account at once: one slow server should not hold up the rest.
+		const settled = await Promise.allSettled(
+			accounts.map((account) =>
+				emailCall<EmailListing[]>(
+					'email_list_recent',
+					{
+						account,
+						hours: (args.hours as number | undefined) ?? null,
+						sinceDate: (args.since_date as string | undefined) ?? null,
+						from: (args.from as string | undefined) ?? null,
+						subjectContains: (args.subject_contains as string | undefined) ?? null,
+						maxResults: (args.max_results as number | undefined) ?? null
+					},
+					ctx.signal
+				)
+			)
+		);
+		if (ctx.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-		all.sort((a, b) => b.date.localeCompare(a.date));
-
-		// Keep in sync with the schema text ("Default 25") and the Rust
-		// per-account fetch default.
-		const maxResults = (args.max_results as number | undefined) ?? 25;
-		const trimmed = all.slice(0, maxResults);
-		return toolResult(JSON.stringify(trimmed));
+		const messages: EmailListing[] = [];
+		const errors: { account: string; error: string }[] = [];
+		settled.forEach((r, i) => {
+			if (r.status === 'fulfilled') messages.push(...r.value);
+			else errors.push({ account: accounts[i].label, error: String(r.reason) });
+		});
+		messages.sort((a, b) => b.date.localeCompare(a.date));
+		const maxResults = (args.max_results as number | undefined) ?? DEFAULT_MAX_RESULTS;
+		// Errors are kept apart, so trimming the list can never drop one.
+		const result = errors.length
+			? { messages: messages.slice(0, maxResults), errors }
+			: { messages: messages.slice(0, maxResults) };
+		return toolResult(JSON.stringify(result));
 	}
 });
 
@@ -201,11 +228,13 @@ registerTool({
 
 		let input: EmailSummarizerInput;
 		try {
-			input = await invoke<EmailSummarizerInput>('email_prepare_summary', {
-				account,
-				messageId
-			});
+			input = await emailCall<EmailSummarizerInput>(
+				'email_prepare_summary',
+				{ account, messageId },
+				ctx.signal
+			);
 		} catch (e) {
+			if (ctx.signal?.aborted) throw e;
 			return toolResult(toolInvokeError('email_prepare_summary', e));
 		}
 
@@ -287,7 +316,7 @@ registerTool({
 		}
 	},
 	displayLabel: () => 'email',
-	async execute(args) {
+	async execute(args, ctx) {
 		const accountId = args.account_id as string;
 		const messageId = args.message_id as string;
 		const [account] = resolveEmailAccounts(accountId);
@@ -295,12 +324,14 @@ registerTool({
 			return toolResult(toolError(`No enabled email account with id ${accountId}.`));
 		}
 		try {
-			const msg = await invoke<NormalizedEmailMessage>('email_read_full', {
-				account,
-				messageId
-			});
+			const msg = await emailCall<NormalizedEmailMessage>(
+				'email_read_full',
+				{ account, messageId },
+				ctx.signal
+			);
 			return toolResult(JSON.stringify(msg));
 		} catch (e) {
+			if (ctx.signal?.aborted) throw e;
 			return toolResult(toolInvokeError('email_read_full', e));
 		}
 	}
