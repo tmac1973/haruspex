@@ -21,9 +21,13 @@
 		"format:check": "prettier --check 'src/**/*.{ts,svelte,js,css,html}'",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"e2e:ui": "playwright test",
+		"e2e:ui:visual": "scripts/e2e-ui-visual.sh",
+		"e2e:fake-llm": "node e2e/fake-llm/server.mjs",
 		"tauri": "tauri"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.63.0",
 		"@sveltejs/adapter-static": "^3.0.0",
 		"@sveltejs/kit": "^2.50.2",
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",

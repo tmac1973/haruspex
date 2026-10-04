@@ -46,6 +46,40 @@ jobs:
       - name: Check hand-synced constants
         run: node scripts/check-constants.mjs
 
+  # UI flows in a real browser, against mocked IPC and the scripted fake LLM
+  # (e2e/, docs/testing.md). Inside the pinned Playwright image, so the
+  # visual baselines are compared on the renderer that made them; keep the tag
+  # in step with @playwright/test and scripts/e2e-ui-visual.sh.
+  e2e-ui:
+    runs-on: ubuntu-latest
+    if: github.event.action != 'labeled'
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    env:
+      # Playwright's own advice for this image under Actions.
+      HOME: /root
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - name: The test mocks stay out of a production build
+        run: |
+          npm run build
+          if grep -rl 'no mock for IPC command' build/; then
+            echo "src/lib/e2e reached the production build"
+            exit 1
+          fi
+      - name: UI flows and screenshots
+        run: npx playwright test
+        env:
+          E2E_VISUAL: '1'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+
   backend:
     runs-on: ubuntu-latest
     # A label changes nothing these jobs check; they ran on the push.
