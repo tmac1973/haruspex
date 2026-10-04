@@ -61,9 +61,9 @@ pub struct EmailListing {
     /// to decide which messages to expand.
     pub snippet: String,
 
-    /// Whether the MIME structure had any attachment parts. We don't
-    /// expose the attachments themselves in Phase 10.1; the flag is
-    /// here so the model knows there's "more" it could ask about.
+    /// Whether the MIME structure had any attachment parts. The
+    /// attachments themselves are never fetched for the model; the flag
+    /// tells it there is more than the text.
     pub has_attachments: bool,
 
     /// Seconds since the epoch, for sorting and the `hours` filter.

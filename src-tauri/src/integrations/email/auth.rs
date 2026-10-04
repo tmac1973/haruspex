@@ -10,9 +10,8 @@
 //!
 //! Design notes:
 //!
-//! - **Send-ready from day 1.** SMTP endpoints are part of the struct
-//!   even though Phase 10.1 doesn't use them, so Phase 10.2 doesn't
-//!   need a settings migration.
+//! - **Sending is per account.** The SMTP endpoint lives beside the
+//!   IMAP one and is used only when `send_enabled` is on.
 //! - **Multi-account.** The frontend stores an array of accounts,
 //!   each with its own UUID. Tauri commands accept an optional
 //!   `account_id` and look the corresponding account up — or, when
@@ -52,8 +51,8 @@ pub struct EmailAccount {
     /// are visible" check.
     pub enabled: bool,
 
-    /// Separate opt-in for SMTP sending. Unused in Phase 10.1.
-    /// Stored now so Phase 10.2 doesn't require a settings migration.
+    /// Allow sending: the assistant may draft mail from this account for
+    /// the user to review and send. Off by default.
     pub send_enabled: bool,
 
     /// Which preset this account was created from, or `Custom` for
@@ -79,7 +78,7 @@ pub struct EmailAccount {
     pub imap_port: u16,
     pub imap_tls: TlsMode,
 
-    // --- SMTP endpoint (Phase 10.2) ---
+    // --- SMTP endpoint (used only with send_enabled) ---
     pub smtp_host: String,
     pub smtp_port: u16,
     pub smtp_tls: TlsMode,
@@ -112,8 +111,8 @@ impl EmailAccount {
         if self.imap_port == 0 {
             return Err("IMAP port is zero".into());
         }
-        // SMTP fields are allowed to be blank in 10.1 if send is not
-        // enabled — but if the user flipped sendEnabled, require them.
+        // SMTP fields may be blank while sending is off; with
+        // sendEnabled they are required.
         if self.send_enabled {
             if self.smtp_host.trim().is_empty() {
                 return Err("SMTP host is empty but sendEnabled is true".into());

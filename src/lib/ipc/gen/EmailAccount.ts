@@ -28,8 +28,8 @@ label: string,
  */
 enabled: boolean, 
 /**
- * Separate opt-in for SMTP sending. Unused in Phase 10.1.
- * Stored now so Phase 10.2 doesn't require a settings migration.
+ * Allow sending: the assistant may draft mail from this account for
+ * the user to review and send. Off by default.
  */
 sendEnabled: boolean, 
 /**

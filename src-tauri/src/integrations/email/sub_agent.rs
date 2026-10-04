@@ -8,9 +8,8 @@
 //! will feed into the sub-agent as its user turn.
 //!
 //! Keeping prep in Rust (as opposed to doing it in TypeScript) keeps
-//! it close to the RFC 5322 parser. When Phase 10.2 adds attachment
-//! handling or richer quote detection, this file is where that work
-//! will accumulate.
+//! it close to the RFC 5322 parser; quote stripping itself lives in
+//! `text.rs`.
 
 use super::parser::{strip_quoted_replies, NormalizedMessage};
 
