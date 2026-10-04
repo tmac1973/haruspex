@@ -1,0 +1,10 @@
+[
+	{
+		"match": { "lastUser": "search" },
+		"reply": { "tool_calls": [{ "name": "web_search", "arguments": { "query": "haruspex bronze liver" } }] }
+	},
+	{
+		"match": {},
+		"reply": { "content": "The Piacenza Liver is a bronze model of a sheep's liver." }
+	}
+]

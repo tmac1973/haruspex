@@ -1,0 +1,10 @@
+[
+	{
+		"match": { "lastUser": "summarise" },
+		"reply": { "content": "In short: sunny and mild." }
+	},
+	{
+		"match": { "lastUser": "weather" },
+		"reply": { "content": "Lisbon today: sunny, 21 °C, light wind." }
+	}
+]

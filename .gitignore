@@ -60,3 +60,8 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/

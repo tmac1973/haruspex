@@ -45,7 +45,13 @@ switch ($Action) {
     'direct' {
         Prepare
         try {
+            # Windows PowerShell turns each stderr line of a native command
+            # into an error record when 2>&1 merges it, and under 'Stop' the
+            # first one (an npm deprecation warning) ended the run. Here stderr
+            # is just more of the log.
+            $ErrorActionPreference = 'Continue'
             & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Ci 'run-suite.ps1') -Suite $Suite 2>&1 |
+                ForEach-Object { "$_" } |
                 Tee-Object -FilePath $Log
             $code = $LASTEXITCODE
         } finally {

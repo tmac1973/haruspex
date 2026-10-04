@@ -1,0 +1,14 @@
+[
+	{
+		"match": { "lastUser": "write the notes file" },
+		"reply": {
+			"tool_calls": [
+				{ "name": "fs_write_text", "arguments": { "path": "notes.txt", "content": "written by the e2e scenario\n" } }
+			]
+		}
+	},
+	{
+		"match": { "toolResult": "notes\\.txt" },
+		"reply": { "content": "I wrote notes.txt." }
+	}
+]

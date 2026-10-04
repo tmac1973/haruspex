@@ -1,0 +1,6 @@
+[
+	{
+		"match": { "lastUser": "hello" },
+		"reply": { "content": "Hello from the fake model. Nothing here came from a real LLM." }
+	}
+]

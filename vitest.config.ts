@@ -8,7 +8,7 @@ export default defineConfig({
 	// and auto-cleans the DOM between tests.
 	plugins: [sveltekit(), svelteTesting()],
 	test: {
-		include: ['src/**/*.test.ts'],
+		include: ['src/**/*.test.ts', 'e2e/fake-llm/**/*.test.ts'],
 		environment: 'jsdom',
 		globals: true,
 		// Repairs `localStorage` when Node's own inert Web Storage global
