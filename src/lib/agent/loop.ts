@@ -295,6 +295,14 @@ export interface AgentLoopOptions {
 	 */
 	maxResponseTokens?: number;
 	/**
+	 * Let a large context window raise the response cap above the setting:
+	 * the larger of the setting and contextResponseFloor(contextSize). Job
+	 * turns set it — the setting's default suits small local models, and a job
+	 * on a 256K-window model had its report cut off at 8K. Ignored when
+	 * `maxResponseTokens` is pinned.
+	 */
+	scaleResponseToContext?: boolean;
+	/**
 	 * When set, the turn exposes EXACTLY these tools (by name), bypassing the
 	 * mode-based tool filters. Used by audit runs to pin a turn to a precise
 	 * read-only subset plus a structured-output tool. See `getToolSchemas`.

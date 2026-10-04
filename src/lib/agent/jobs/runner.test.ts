@@ -897,6 +897,34 @@ describe('jobs runner — multi-step pipelines', () => {
 		expect(state?.steps[1].promptAuthored).toBe('render as PDF');
 	});
 
+	it('keeps a step cut off at the response cap, says so, and carries on', async () => {
+		mocks.getJob.mockResolvedValueOnce(twoStepJob);
+		mocks.runEphemeralTurn
+			.mockResolvedValueOnce({
+				finalText: 'Headline A\nHeadline B',
+				cutOff: 'Reached the iteration limit, and the final answer was then cut off too.'
+			})
+			.mockResolvedValueOnce({ finalText: 'wrote pdf' });
+
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await tick();
+		await tick();
+
+		const state = getCurrentRun();
+		expect(state?.status).toBe('succeeded');
+		expect(state?.steps[0].status).toBe('succeeded');
+		expect(state?.steps[0].output).toContain('Headline A\nHeadline B');
+		expect(state?.steps[0].output).toContain('_Cut off: Reached the iteration limit');
+		// The next step gets the report, not the note about it.
+		const step1 = mocks.runEphemeralTurn.mock.calls[0][0] as EphemeralTurnOptions;
+		const step2 = mocks.runEphemeralTurn.mock.calls[1][0] as EphemeralTurnOptions;
+		expect(step2.userMessage).toBe('Headline A\nHeadline B\n\nrender as PDF');
+		// Research asks to keep a cut-off answer; every job turn scales its cap.
+		expect(step1.keepCutOffAnswer).toBe(true);
+		expect(step1.scaleResponseToContext).toBe(true);
+	});
+
 	it('halts on failure and leaves later steps pending', async () => {
 		mocks.getJob.mockResolvedValueOnce(
 			makeJob({
