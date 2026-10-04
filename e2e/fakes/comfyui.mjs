@@ -98,6 +98,12 @@ export function createFakeComfy() {
 		prompts,
 		listen: (port = 18188) =>
 			new Promise((r) => server.listen(port, '127.0.0.1', () => r(server.address().port))),
-		close: () => new Promise((r) => server.close(() => r()))
+		close: () =>
+			new Promise((r) => {
+				// The app's HTTP client keeps connections alive; close() alone
+				// waits for them forever.
+				server.closeAllConnections();
+				server.close(() => r());
+			})
 	};
 }
