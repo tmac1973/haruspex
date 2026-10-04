@@ -115,6 +115,7 @@ and a lighter verification mode for guided planning.
 | 12 | Context audit and verification lite | — |
 | 13 | Sidecars die with the app | — |
 | 14 | Automated end-to-end testing | — |
+| 15 | Image generation on other servers: the bundled engine remote, and OpenAI-images-API servers | 07, 10 |
 
 The phases are independent except where noted, so they can be done in any
 order. 07 lays down the single-image core that 08 reuses. 11 needs 09's
