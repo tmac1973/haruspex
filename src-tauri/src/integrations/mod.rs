@@ -7,8 +7,8 @@
 //!
 //! Current integrations:
 //!
-//! - `email` — multi-provider IMAP email access (read-only in Phase 10.1).
-//!   See the phase 10 planning doc in `plan/phase-10-email-integration.md`.
+//! - `email` — multi-provider IMAP reading, and SMTP sending of drafts the
+//!   user reviews.
 //! - `mcp` — the general MCP client for the long tail of third-party
 //!   services. Built in phases; see `plan/integrations-expansion/`. Process
 //!   lifecycle landed first, before any protocol work.

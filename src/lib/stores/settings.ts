@@ -207,9 +207,8 @@ export type EmailTlsMode = TlsMode;
  * (`stores/emailSecrets.ts`). Without a keychain it is kept inline here,
  * as the Brave and inference API keys are.
  *
- * `sendEnabled` is present from day 1 so Phase 10.2 sending can be
- * opted into per-account without a settings migration. In Phase 10.1
- * it has no effect.
+ * `sendEnabled` is the per-account Allow sending switch: it offers
+ * `email_compose`, whose drafts the user reviews and sends.
  */
 export type { EmailAccount };
 
