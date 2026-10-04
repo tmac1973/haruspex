@@ -1,6 +1,6 @@
 # Phase 12 — context measurements
 
-**Status: audit measured (run 93); research and autonomous coding to do.** Step 3 of phase 12 is a person's job: run one
+**Status: audit (run 93) and research (run 95) measured; autonomous coding to do.** Step 3 of phase 12 is a person's job: run one
 real job of each type on the job model (Qwen3.8-Flash on vLLM, compute:3000)
 with the build that records context pressure, and fill in the tables below
 from each run's Tokens card (Export JSON has every figure).
@@ -17,16 +17,33 @@ Where the figures come from:
   `forced`).
 - **Iterations and wall time** — the step's model calls and model time.
 
-## Research — 4 steps, deep research on steps 2 and 3
+## Research — 4 steps (plus a PDF step), deep research on steps 2 and 3 (run 95)
 
-Run id: — · context window: — · date: —
+Run id: 95 · Qwen3.8-Flash-Next (MXFP4-FP8) on vLLM, compute:3000 · context
+window: 262,144 · reasoning effort medium · date: 2026-10-04 · 20 min
 
-| Step | Peak % | Trims | Worst | Calls | Model time | Crosses? |
-|---|---|---|---|---|---|---|
-| 1 | | | | | | |
-| 2 (deep) | | | | | | |
-| 3 (deep) | | | | | | |
-| 4 | | | | | | |
+The job "local inference landscape": list the engines, research their
+backends and features (deep), research AMD reports (deep), write a one-page
+report. A fifth step turned the report into a PDF.
+
+| Step | Peak | Peak % | Trims | Worst | Calls | Model time | Crosses? |
+|---|---|---|---|---|---|---|---|
+| 1 List engines | 22,813 | 8.7% | 0 | — | 8 | 2 min | no |
+| 2 Backends and features (deep) | 45,432 | 17.3% | 0 | — | 28 | 9 min | no |
+| 3 AMD reports (deep) | 51,001 | 19.5% | 0 | — | 14 | 6 min | no |
+| 4 Write the report | 19,485 | 7.4% | 0 | — | 2 | <1 min | no |
+| 5 Make the PDF | 18,976 | 7.2% | 0 | — | 4 | 1 min | no |
+
+Nothing crosses: the deep steps peak under a fifth of the window, and the
+step that prepends their output (step 4) peaks at 7%. The "cap what is
+prepended" fix for research isn't needed on this model and window.
+
+What did go wrong was output, not context. Run 94, the same job before #277,
+failed on step 3: the iteration cap forced a final answer, reasoning used
+14K of its 22K output tokens, and the answer was cut off at the 8,192-token
+response cap. #277 writes that answer with reasoning off, keeps a cut-off
+research answer instead of failing, and gives a big-window job a response
+cap to match. Run 95, with #277, finished every step without a cut-off.
 
 ## Audit — 3 samples (run 93)
 
