@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { imageSrc } from '$lib/images/url';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getSettings, updateSettings } from '$lib/stores/settings';
 	import Tooltip from '$lib/components/Tooltip.svelte';
@@ -421,7 +422,7 @@
 			{#if testError}<span class="detail bad">{testError}</span>{/if}
 		</div>
 		{#if testHash}
-			<img class="preview" src={`haruspex-img://localhost/${testHash}`} alt="Test generation" />
+			<img class="preview" src={imageSrc(testHash)} alt="Test generation" />
 		{/if}
 		<p class="help">Makes one picture through the configured backend. Nothing else is affected.</p>
 	</section>
