@@ -3,8 +3,10 @@ Run one test suite on the source tree in ~\.haruspex-test\src: the Windows agent
 suite runner (the Mac has run-suite.sh).
 
   unit      npm run check + test, cargo clippy + test (what CI runs)
-  e2e-app   npm run e2e:app     } added by plan/misc_futures phase 14;
-  live      npm run e2e:live    } until then they say so and fail
+  e2e-app   the real-app tests: build with stub sidecars, then drive it
+            through tauri-driver and msedgedriver (needs you signed in)
+  live      npm run e2e:live    } added by plan/misc_futures phase 14
+                                } part 3; until then it says so and fails
 #>
 param([string]$Suite = 'unit')
 $ErrorActionPreference = 'Stop'
@@ -64,7 +66,21 @@ try {
             Run 'cargo clippy' { cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings }
             Run 'cargo test' { cargo test --manifest-path src-tauri/Cargo.toml --lib }
         }
-        'e2e-app' { Npm-Script 'e2e:app' }
+        'e2e-app' {
+            # tauri-driver, and an msedgedriver matching this machine's WebView2.
+            if (-not (Get-Command tauri-driver -ErrorAction SilentlyContinue)) {
+                Run 'install tauri-driver' { cargo install tauri-driver --locked }
+            }
+            if (-not (Get-Command msedgedriver-tool -ErrorAction SilentlyContinue)) {
+                Run 'install msedgedriver-tool' { cargo install --git https://github.com/chippers/msedgedriver-tool --locked }
+            }
+            Run 'fetch msedgedriver' { msedgedriver-tool }
+            $env:MSEDGEDRIVER = Join-Path (Get-Location) 'msedgedriver.exe'
+            # In the cache: the source tree is replaced on every run.
+            $env:E2E_TARGET_DIR = Join-Path $cache 'target-e2e'
+            Npm-Script 'e2e:app:build'
+            Npm-Script 'e2e:app'
+        }
         'live' { Npm-Script 'e2e:live' }
         default { throw "unknown suite: $Suite (unit, e2e-app, live)" }
     }

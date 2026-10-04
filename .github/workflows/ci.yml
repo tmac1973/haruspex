@@ -113,24 +113,7 @@ jobs:
             libxcb1-dev
 
       - name: Create placeholder sidecar binaries and libs
-        run: |
-          TARGET=$(rustc --print host-tuple)
-          mkdir -p src-tauri/binaries
-          for name in llama-server whisper-server koko ruff node uv sd-server; do
-            echo '#!/bin/sh' > "src-tauri/binaries/${name}-${TARGET}"
-            chmod +x "src-tauri/binaries/${name}-${TARGET}"
-          done
-          # Create dirs with placeholders for resources globs
-          mkdir -p src-tauri/binaries/node-modules
-          touch src-tauri/binaries/node-modules/.placeholder
-          mkdir -p src-tauri/binaries/libs
-          touch src-tauri/binaries/libs/.placeholder
-          mkdir -p src-tauri/binaries/sd-libs
-          touch src-tauri/binaries/sd-libs/.placeholder
-          mkdir -p src-tauri/binaries/espeak-ng-data/lang/placeholder
-          touch src-tauri/binaries/espeak-ng-data/.placeholder
-          touch src-tauri/binaries/espeak-ng-data/lang/.placeholder
-          touch src-tauri/binaries/espeak-ng-data/lang/placeholder/.placeholder
+        run: scripts/ci-placeholder-sidecars.sh
 
       # --locked turns a stale Cargo.lock into a hard failure instead of a
       # silent in-CI regeneration. This is the guard that keeps release-please
@@ -154,6 +137,49 @@ jobs:
             echo "::error::src/lib/ipc/gen is stale — run scripts/export-ipc-types.sh and commit the result."
             exit 1
           }
+
+  # The built app, driven through WebDriver (tauri-driver + WebKitWebDriver,
+  # under Xvfb) with the model scripted and every sidecar a stub: chat, a tool
+  # call writing to disk, a ComfyUI test image, and a sidecar dying with the
+  # app. See e2e/app/ and docs/testing.md.
+  e2e-app:
+    runs-on: ubuntu-latest
+    if: github.event.action != 'labeled'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Ensure cargo on PATH
+        shell: bash
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target-e2e
+          cache-bin: true
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libasound2-dev \
+            libxcb1-dev \
+            webkit2gtk-driver \
+            xvfb
+      - run: scripts/ci-placeholder-sidecars.sh
+      - run: npm ci
+      - run: cargo install tauri-driver --locked
+      - run: npm run e2e:app:build
+      - run: xvfb-run -a npm run e2e:app
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-app-linux
+          path: e2e/app/output/
 
   # Windows gates for the Shell-tab port (Phase 17). The whole point is to
   # compile + lint the `#[cfg(windows)]` branches (code_tools.rs, sidecar_utils.rs,
@@ -228,6 +254,22 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      # The real-app tests (e2e/app), through msedgedriver matching this
+      # runner's WebView2 — fetched by the tool Tauri's WebDriver docs use.
+      - name: Real-app tests
+        shell: pwsh
+        run: |
+          cargo install tauri-driver --locked
+          cargo install --git https://github.com/chippers/msedgedriver-tool --locked
+          & "$env:USERPROFILE\.cargo\bin\msedgedriver-tool.exe"
+          $env:MSEDGEDRIVER = Join-Path $PWD 'msedgedriver.exe'
+          npm run e2e:app:build
+          npm run e2e:app
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-app-windows
+          path: e2e/app/output/
 
   # macOS gates, the counterpart of the Windows job: compile, lint and test the
   # `#[cfg(target_os = "macos")]` branches (screen capture, the orphan sweep's

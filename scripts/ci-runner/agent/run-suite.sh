@@ -3,8 +3,9 @@
 # suite runner (Windows has run-suite.ps1).
 #
 #   unit      npm run check + test, cargo clippy + test (what CI runs)
-#   e2e-app   npm run e2e:app     } added by plan/misc_futures phase 14;
-#   e2e-mac   npm run e2e:mac     } until then they say so and fail
+#   e2e-app   not on macOS: tauri-driver has no WKWebView support
+#   e2e-mac   npm run e2e:mac     } added by plan/misc_futures phase 14;
+#             (needs Xcode)       } until then they say so and fail
 #   live      npm run e2e:live    }
 
 set -euo pipefail
@@ -61,7 +62,12 @@ case "$suite" in
         echo "== cargo test"
         cargo test --manifest-path src-tauri/Cargo.toml --lib
         ;;
-    e2e-app) npm_script e2e:app ;;
+    e2e-app)
+        # tauri-driver drives WebKitGTK and WebView2 only; there is no
+        # WebDriver for the app's WKWebView. The Mac's UI suite is e2e-mac.
+        echo "e2e-app does not run on macOS: tauri-driver has no WKWebView support (use e2e-mac)"
+        exit 2
+        ;;
     e2e-mac) npm_script e2e:mac ;;
     live) npm_script e2e:live ;;
     *)

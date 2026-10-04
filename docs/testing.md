@@ -7,7 +7,7 @@ others are added by `plan/misc_futures/phase-14-automated-end-to-end-testing.md`
 | --- | --- | --- |
 | Unit and component | modules and Svelte components, in jsdom; Rust in `cargo test` | `npm run test`, `cargo test --lib` |
 | UI flows | the frontend in Chromium, with Tauri's IPC mocked and the model scripted | `npm run e2e:ui` |
-| Real app | the built app through WebDriver, IPC real, model scripted | *(phase 14, part 2)* |
+| Real app | the built app through WebDriver, IPC and Rust real, model and sidecars stubbed | `npm run e2e:app:build`, `npm run e2e:app` |
 | Live | the real app against real services, on the test machines | *(phase 14, part 3)* |
 
 ## The fake LLM
@@ -83,6 +83,53 @@ npm run e2e:ui:visual -- --update-snapshots    # after an intended change
 
 Timings and token counts are masked. CI's `e2e-ui` job runs everything,
 screenshots included, in the same image.
+
+## The real app (WebdriverIO and tauri-driver)
+
+`e2e/app/` drives the built app the way a user would, with everything real
+except the model (the fake LLM) and the sidecar binaries (stubs):
+
+```bash
+npm run e2e:app:build   # debug build with the e2e identifier, stubs swapped in
+npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
+```
+
+- **Isolated from your Haruspex.** The build uses the identifier
+  `com.haruspex.app.e2e` (`e2e/app/tauri.e2e.conf.json`), so its data,
+  settings and WebView storage live in their own folders. Those folders are
+  wiped before every spec file. It is built into `src-tauri/target-e2e`, so
+  swapping in stub sidecars never touches the `target/` your dev app runs
+  from.
+- **Stub sidecars.** `e2e/sidecar-stub/main.rs` (plain `rustc`, no
+  dependencies) answers every request `200 {"status":"ok"}` on the port it is
+  given, and records its pid in `$E2E_STUB_PIDS`. The build copies it over
+  llama-server, whisper-server, koko and sd-server.
+- **Seeding:** `seed(settings)` in `e2e/app/helpers.mjs` writes the settings
+  blob and restarts the app at `/`. `REMOTE` points it at the fake LLM.
+  `LOCAL` is a fresh install, which with a stub `.gguf` in its models folder
+  starts the stub llama-server.
+- **The specs:**
+  - a chat round trip;
+  - a tool call writing a real file, through a research job's working
+    directory (Chat's needs a native folder dialog, which WebDriver can't
+    drive);
+  - Settings → Image → Generate a test image, against the fake ComfyUI in
+    `e2e/fakes/comfyui.mjs`;
+  - phase 13's guarantee: kill the app outright, and the model server goes
+    within 2 s.
+- **What you need:**
+  - **Linux:** `tauri-driver` (`cargo install tauri-driver --locked`) and
+    `WebKitWebDriver`, which comes with webkit2gtk (on Ubuntu, the
+    `webkit2gtk-driver` package). With no display, run under `xvfb-run -a`.
+  - **Windows:** `tauri-driver` too, and an `msedgedriver` that matches the
+    installed WebView2. `cargo install --git
+    https://github.com/chippers/msedgedriver-tool` fetches one; point
+    `MSEDGEDRIVER` at it.
+  - **macOS** has no WebDriver for WKWebView, so this layer doesn't run
+    there.
+- **On the test machines:** `scripts/ci-runner/remote-test.sh windows
+  e2e-app` runs it on the Windows PC, in your desktop session.
+- **Failures** leave a screenshot in `e2e/app/output/`, which CI uploads.
 
 **A new spec must be seen failing once.** Break what it asserts — rename the
 scripted answer, say — and check the failure says plainly what is wrong.
