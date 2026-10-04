@@ -40,6 +40,13 @@ vi.mock('$lib/api', () => ({
 			this.statusCode = statusCode;
 		}
 	},
+	// A cut-off answer; extends Error here, ApiError in the real module.
+	ResponseCutOffError: class ResponseCutOffError extends Error {
+		constructor(message: string) {
+			super(message);
+			this.name = 'ResponseCutOffError';
+		}
+	},
 	messageText: (content: unknown) => (typeof content === 'string' ? content : '')
 }));
 

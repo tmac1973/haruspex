@@ -11,6 +11,7 @@
 
 import {
 	ApiError,
+	ResponseCutOffError,
 	chatCompletion,
 	chatCompletionStream,
 	messageText,
@@ -168,11 +169,27 @@ export interface LoopContext {
  */
 function resolveMaxResponseTokens(options: AgentLoopOptions, expectsFileOutput: boolean): number {
 	const settings = getSettings();
-	const requested =
-		options.maxResponseTokens ??
+	const fromSettings =
 		(expectsFileOutput ? settings.maxResponseTokensFileWrite : settings.maxResponseTokens) ??
 		AGENT_LOOP_MAX_TOKENS;
+	const requested =
+		options.maxResponseTokens ??
+		(options.scaleResponseToContext
+			? Math.max(fromSettings, contextResponseFloor(options.contextSize ?? 0))
+			: fromSettings);
 	return clampToContext(requested, options.contextSize ?? 0);
+}
+
+/** The most a large window lets a response grow to on its own. */
+const RESPONSE_FLOOR_MAX = 32_768;
+
+/**
+ * A response cap proportionate to the context window: an eighth of it, up to
+ * RESPONSE_FLOOR_MAX. 32K for a 256K window; 4K for 32K, below any setting.
+ */
+export function contextResponseFloor(contextSize: number): number {
+	if (contextSize <= 0) return 0;
+	return Math.min(RESPONSE_FLOOR_MAX, Math.floor(contextSize / 8));
 }
 
 /**
@@ -737,13 +754,14 @@ async function streamFinalSynthesis(
 	ctx: LoopContext,
 	tools: ToolDefinition[] | undefined,
 	sampling: ReturnType<typeof getSamplingParams>,
-	templateKwargs: ReturnType<typeof getChatTemplateKwargs>
+	templateKwargs: ReturnType<typeof getChatTemplateKwargs>,
+	/** Reasoning for this call only; the turn's setting when absent. */
+	thinking: boolean | null = ctx.thinkingEnabled
 ): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
 	applyContextGuard(ctx, ctx.maxResponseTokens, tools);
 	const sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 	const reasoning =
-		getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled, ctx.reasoningEffort) ??
-		undefined;
+		getOpenRouterReasoningParam(ctx.descriptor, thinking, ctx.reasoningEffort) ?? undefined;
 	const stream = chatCompletionStream(
 		{
 			messages: ctx.messages,
@@ -1395,7 +1413,7 @@ async function finalizeNoToolCalls(
 	});
 	options.onComplete();
 	if (lastFinish === 'length') {
-		options.onError(new ApiError(outOfTokensMessage(ctx, postTools)));
+		options.onError(new ResponseCutOffError(outOfTokensMessage(ctx, postTools)));
 	}
 	return 'complete';
 }
@@ -1589,17 +1607,21 @@ export async function runMaxIterationsFinalSynthesis(
 			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
 		ctx.messages.push({ role: 'user', content: finalPrompt });
 	}
-	const sampling = getSamplingParams(ctx.descriptor, samplingOptionsFor(ctx, ctx.messages));
-	const templateKwargs = getChatTemplateKwargs(
-		ctx.descriptor,
-		ctx.thinkingEnabled,
-		ctx.reasoningEffort
-	);
+	// Reasoning off: the thinking happened over the whole turn, and this call
+	// writes it up. With it on, a model at the end of a long research turn
+	// spent most of the response cap deliberating and was cut off mid-answer
+	// (run 94: 14K of 22K output tokens were reasoning).
+	const sampling = getSamplingParams(ctx.descriptor, {
+		...samplingOptionsFor(ctx, ctx.messages),
+		thinkingEnabled: false
+	});
+	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, false, ctx.reasoningEffort);
 	const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
 		ctx,
 		undefined,
 		sampling,
-		templateKwargs
+		templateKwargs,
+		false
 	);
 	logDebug('agent', `final synthesis (max-iterations) ended`, {
 		chunks: totalChunks,
@@ -1612,7 +1634,7 @@ export async function runMaxIterationsFinalSynthesis(
 		// fault — the iteration cap is why the turn ended here, not why the answer
 		// was cut off. Don't point at the context size for an output-cap failure.
 		ctx.options.onError(
-			new ApiError(
+			new ResponseCutOffError(
 				'Reached the iteration limit, and the final answer was then cut off too. ' +
 					outOfTokensMessage(ctx, true)
 			)

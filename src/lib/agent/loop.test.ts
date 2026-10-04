@@ -37,6 +37,13 @@ vi.mock('$lib/api', () => ({
 			this.statusCode = statusCode;
 		}
 	},
+	// A cut-off answer; extends Error here, ApiError in the real module.
+	ResponseCutOffError: class ResponseCutOffError extends Error {
+		constructor(message: string) {
+			super(message);
+			this.name = 'ResponseCutOffError';
+		}
+	},
 	chatCompletion: api.chatCompletion,
 	chatCompletionStream: api.chatCompletionStream,
 	messageText: (content: unknown): string => {
@@ -295,7 +302,7 @@ describe('runAgentLoop: plain answer paths', () => {
 		);
 	});
 
-	it('surfaces an out-of-tokens ApiError via onError after a length-truncated synthesis', async () => {
+	it('surfaces a cut-off answer as a ResponseCutOffError after a length-truncated synthesis', async () => {
 		nonStreamQueue.push(textResponse(null, 'stop'));
 		streamQueue.push([contentChunk('Partial answ', 'length')]);
 		const { options, cb } = makeOptions();
@@ -305,7 +312,9 @@ describe('runAgentLoop: plain answer paths', () => {
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 		expect(cb.onError).toHaveBeenCalledTimes(1);
 		const err = cb.onError.mock.calls[0][0] as Error;
-		expect(err.name).toBe('ApiError');
+		// An ApiError subclass in the real module, so callers that show API errors
+		// still do; typed so a caller that can use a partial answer can keep it.
+		expect(err.name).toBe('ResponseCutOffError');
 		// Must name the limit that actually ran out (the per-response output cap)
 		// and point at the setting that changes it. The old copy told the user to
 		// raise the context size, which is a different dial and does nothing here.
@@ -354,6 +363,30 @@ describe('runAgentLoop: response-token ceiling', () => {
 
 		expect(streamMaxTokens[0]).toBe(nonStreamMaxTokens[0]);
 		expect(streamMaxTokens[0]).toBe(8192);
+	});
+
+	it('lets a large window raise a job turn’s ceiling, up to 32K', async () => {
+		const ceiling = async (o: Partial<AgentLoopOptions>) => {
+			nonStreamQueue.push(textResponse(null, 'stop'));
+			streamQueue.push([contentChunk('answer', 'stop')]);
+			nonStreamMaxTokens.length = 0;
+			await runAgentLoop(makeOptions(o).options);
+			return nonStreamMaxTokens[0];
+		};
+		// Run 94: a 256K window, an 8K setting, a research report cut off.
+		expect(await ceiling({ contextSize: 262_144, scaleResponseToContext: true })).toBe(32_768);
+		// A small window never drops below the setting.
+		expect(await ceiling({ contextSize: 32_768, scaleResponseToContext: true })).toBe(8192);
+		// Only when asked: Chat keeps exactly what the user set.
+		expect(await ceiling({ contextSize: 262_144 })).toBe(8192);
+		// A pinned ceiling still wins.
+		expect(
+			await ceiling({
+				contextSize: 262_144,
+				scaleResponseToContext: true,
+				maxResponseTokens: 12_000
+			})
+		).toBe(12_000);
 	});
 });
 
@@ -947,6 +980,25 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 		// The turn was force-stopped by the iteration cap, not the model.
 		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
+	});
+
+	it('writes the forced final answer with reasoning off', async () => {
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }])
+		);
+		streamQueue.push([contentChunk('Summary of findings.', 'stop')]);
+		const settings = await import('$lib/stores/settings');
+		const kwargs = vi.mocked(settings.getChatTemplateKwargs);
+		const { options } = makeOptions({ maxIterations: 1, thinkingEnabled: true });
+
+		await runAgentLoop(options);
+
+		// The tool-check call kept the turn's reasoning; the write-up turned it off.
+		expect(kwargs.mock.calls[0][1]).toBe(true);
+		expect(kwargs.mock.calls.at(-1)?.[1]).toBe(false);
+		expect(vi.mocked(settings.getSamplingParams).mock.calls.at(-1)?.[1]).toMatchObject({
+			thinkingEnabled: false
+		});
 	});
 
 	it('re-streams a real answer when the post-tools response is thinking-only', async () => {
